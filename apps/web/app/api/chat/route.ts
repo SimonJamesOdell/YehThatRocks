@@ -49,8 +49,14 @@ type OnlinePresenceRow = {
   lastSeen: number | Date | null;
 };
 
+const ONLINE_PRESENCE_TOUCH_INTERVAL_MS = 45_000;
+const ONLINE_PRESENCE_TOUCH_CACHE_TTL_MS = 5 * 60_000;
+
 let cachedMessageColumns: MessageColumnMap | null = null;
 let cachedOnlineColumns: OnlineColumnMap | null = null;
+let cachedMessageColumnsPromise: Promise<MessageColumnMap> | null = null;
+let cachedOnlineColumnsPromise: Promise<OnlineColumnMap> | null = null;
+const onlinePresenceTouchedAt = new Map<number, number>();
 
 function escapeIdentifier(identifier: string) {
   return `\`${identifier.replace(/`/g, "``")}\``;
@@ -71,21 +77,31 @@ async function getMessageColumns() {
     return cachedMessageColumns;
   }
 
-  const columns = await prisma.$queryRawUnsafe<Array<{ Field: string }>>("SHOW COLUMNS FROM messages");
-  const available = new Set(columns.map((column) => column.Field));
+  if (cachedMessageColumnsPromise) {
+    return cachedMessageColumnsPromise;
+  }
 
-  const resolved: MessageColumnMap = {
-    id: getFirstAvailableColumn(available, ["id"]) || "id",
-    userId: getFirstAvailableColumn(available, ["user_id", "userid"]) || "userid",
-    room: getFirstAvailableColumn(available, ["room", "type"]) || "type",
-    videoId: getFirstAvailableColumn(available, ["video_id", "videoId"]) || "videoId",
-    content: getFirstAvailableColumn(available, ["content", "message"]) || "message",
-    createdAt: getFirstAvailableColumn(available, ["created_at", "createdAt"]) || "createdAt",
-    updatedAt: getFirstAvailableColumn(available, ["updated_at", "updatedAt"]) || undefined,
-  };
+  cachedMessageColumnsPromise = (async () => {
+    const columns = await prisma.$queryRawUnsafe<Array<{ Field: string }>>("SHOW COLUMNS FROM messages");
+    const available = new Set(columns.map((column) => column.Field));
 
-  cachedMessageColumns = resolved;
-  return resolved;
+    const resolved: MessageColumnMap = {
+      id: getFirstAvailableColumn(available, ["id"]) || "id",
+      userId: getFirstAvailableColumn(available, ["user_id", "userid"]) || "userid",
+      room: getFirstAvailableColumn(available, ["room", "type"]) || "type",
+      videoId: getFirstAvailableColumn(available, ["video_id", "videoId"]) || "videoId",
+      content: getFirstAvailableColumn(available, ["content", "message"]) || "message",
+      createdAt: getFirstAvailableColumn(available, ["created_at", "createdAt"]) || "createdAt",
+      updatedAt: getFirstAvailableColumn(available, ["updated_at", "updatedAt"]) || undefined,
+    };
+
+    cachedMessageColumns = resolved;
+    return resolved;
+  })().finally(() => {
+    cachedMessageColumnsPromise = null;
+  });
+
+  return cachedMessageColumnsPromise;
 }
 
 async function getOnlineColumns() {
@@ -93,24 +109,59 @@ async function getOnlineColumns() {
     return cachedOnlineColumns;
   }
 
-  const columns = await prisma.$queryRawUnsafe<Array<{ Field: string; Type: string }>>("SHOW COLUMNS FROM online");
-  const available = new Set(columns.map((column) => column.Field));
-  const typeByField = new Map(columns.map((column) => [column.Field, column.Type.toLowerCase()]));
+  if (cachedOnlineColumnsPromise) {
+    return cachedOnlineColumnsPromise;
+  }
 
-  const lastSeenColumn = getFirstAvailableColumn(available, ["last_seen", "lastSeen"]) || "lastSeen";
-  const lastSeenTypeRaw = typeByField.get(lastSeenColumn) ?? "";
-  const lastSeenType = /(date|time|timestamp)/i.test(lastSeenTypeRaw) ? "datetime" : "epoch";
+  cachedOnlineColumnsPromise = (async () => {
+    const columns = await prisma.$queryRawUnsafe<Array<{ Field: string; Type: string }>>("SHOW COLUMNS FROM online");
+    const available = new Set(columns.map((column) => column.Field));
+    const typeByField = new Map(columns.map((column) => [column.Field, column.Type.toLowerCase()]));
 
-  const resolved: OnlineColumnMap = {
-    userId: getFirstAvailableColumn(available, ["user_id", "userid", "userId"]) || "userId",
-    lastSeen: lastSeenColumn,
-    lastSeenType,
-    createdAt: getFirstAvailableColumn(available, ["created_at", "createdAt"]) || undefined,
-    updatedAt: getFirstAvailableColumn(available, ["updated_at", "updatedAt"]) || undefined,
-  };
+    const lastSeenColumn = getFirstAvailableColumn(available, ["last_seen", "lastSeen"]) || "lastSeen";
+    const lastSeenTypeRaw = typeByField.get(lastSeenColumn) ?? "";
+    const lastSeenType = /(date|time|timestamp)/i.test(lastSeenTypeRaw) ? "datetime" : "epoch";
 
-  cachedOnlineColumns = resolved;
-  return resolved;
+    const resolved: OnlineColumnMap = {
+      userId: getFirstAvailableColumn(available, ["user_id", "userid", "userId"]) || "userId",
+      lastSeen: lastSeenColumn,
+      lastSeenType,
+      createdAt: getFirstAvailableColumn(available, ["created_at", "createdAt"]) || undefined,
+      updatedAt: getFirstAvailableColumn(available, ["updated_at", "updatedAt"]) || undefined,
+    };
+
+    cachedOnlineColumns = resolved;
+    return resolved;
+  })().finally(() => {
+    cachedOnlineColumnsPromise = null;
+  });
+
+  return cachedOnlineColumnsPromise;
+}
+
+function pruneOnlinePresenceTouchCache(now: number) {
+  if (onlinePresenceTouchedAt.size < 500) {
+    return;
+  }
+
+  for (const [cachedUserId, touchedAt] of onlinePresenceTouchedAt) {
+    if (now - touchedAt > ONLINE_PRESENCE_TOUCH_CACHE_TTL_MS) {
+      onlinePresenceTouchedAt.delete(cachedUserId);
+    }
+  }
+}
+
+async function touchOnlinePresenceThrottled(userId: number) {
+  const now = Date.now();
+  const lastTouchedAt = onlinePresenceTouchedAt.get(userId) ?? 0;
+
+  if (now - lastTouchedAt < ONLINE_PRESENCE_TOUCH_INTERVAL_MS) {
+    return;
+  }
+
+  await touchOnlinePresence(userId);
+  onlinePresenceTouchedAt.set(userId, now);
+  pruneOnlinePresenceTouchCache(now);
 }
 
 async function touchOnlinePresence(userId: number) {
@@ -207,7 +258,7 @@ export async function GET(request: NextRequest) {
 
   const { mode, videoId } = parsedQuery.data;
 
-  await touchOnlinePresence(authResult.auth.userId);
+  await touchOnlinePresenceThrottled(authResult.auth.userId).catch(() => undefined);
 
   if (mode === "online") {
     const columns = await getOnlineColumns();
@@ -355,7 +406,7 @@ export async function POST(request: NextRequest) {
     return authResult.response;
   }
 
-  await touchOnlinePresence(authResult.auth.userId);
+  await touchOnlinePresenceThrottled(authResult.auth.userId).catch(() => undefined);
 
   const bodyResult = await parseRequestJson(request);
 

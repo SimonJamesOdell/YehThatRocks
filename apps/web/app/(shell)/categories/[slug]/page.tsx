@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 
 import { CloseLink } from "@/components/close-link";
 import {
-  getArtistsByGenre,
   getGenreBySlug,
   getGenres,
   getGenreSlug,
@@ -30,10 +29,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
     notFound();
   }
 
-  const [videos, artists] = await Promise.all([
-    getVideosByGenre(genre),
-    getArtistsByGenre(genre),
-  ]);
+  const videos = await getVideosByGenre(genre);
 
   return (
     <>
@@ -52,7 +48,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
       </div>
 
       <div className="categoryVideoGrid">
-        {videos.map((video) => (
+        {videos.length > 0 ? videos.map((video) => (
           <Link
             key={video.id}
             href={`/?v=${video.id}&resume=1`}
@@ -70,28 +66,10 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
             </div>
             <h3 className="categoryVideoTitle">{video.title}</h3>
           </Link>
-        ))}
+        )) : (
+          <p className="categoryNoVideos">No videos found for this category yet.</p>
+        )}
       </div>
-
-      <section className="panel featurePanel">
-        <div className="panelHeading">
-          <span>Artists in category</span>
-          <strong>{artists.length} matching artists</strong>
-        </div>
-        <div className="catalogGrid compactGrid">
-          {artists.map((artist) => (
-            <Link
-              key={artist.slug}
-              href={`/artist/${artist.slug}`}
-              className="catalogCard linkedCard"
-            >
-              <p className="statusLabel">{artist.country}</p>
-              <h3>{artist.name}</h3>
-              <p>{artist.genre}</p>
-            </Link>
-          ))}
-        </div>
-      </section>
     </>
   );
 }

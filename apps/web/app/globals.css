@@ -631,6 +631,130 @@ h1 {
   background: rgba(255, 205, 192, 0.18);
 }
 
+.serviceFailureScreen {
+  position: relative;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.serviceFailureBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 84, 45, 0.22), transparent 42%),
+    radial-gradient(circle at 88% 92%, rgba(255, 44, 0, 0.12), transparent 38%),
+    linear-gradient(160deg, rgba(20, 6, 6, 0.94), rgba(6, 2, 2, 0.98));
+}
+
+.serviceFailurePanel {
+  position: relative;
+  z-index: 1;
+  margin: auto;
+  width: min(760px, calc(100% - 36px));
+  padding: clamp(20px, 3vw, 34px);
+  border: 1px solid rgba(255, 170, 145, 0.44);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 84, 45, 0.2), transparent 44%),
+    linear-gradient(160deg, rgba(34, 8, 6, 0.95), rgba(11, 4, 4, 0.96));
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 126, 96, 0.16) inset;
+  display: grid;
+  gap: 14px;
+}
+
+.serviceFailureEyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.74rem;
+  color: #ffbfb2;
+}
+
+.serviceFailureTitle {
+  margin: 0;
+  font-size: clamp(1.7rem, 2.2vw, 2.35rem);
+  line-height: 1;
+  color: #fff6f3;
+  text-shadow: none;
+}
+
+.serviceFailureLead {
+  margin: 0;
+  color: #fff0eb;
+  font-size: clamp(1rem, 1.4vw, 1.12rem);
+  line-height: 1.5;
+}
+
+.serviceFailureMeta {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 164, 138, 0.34);
+  background: rgba(0, 0, 0, 0.24);
+  display: grid;
+  gap: 8px;
+}
+
+.serviceFailureMeta p {
+  margin: 0;
+  color: #ffe6de;
+}
+
+.serviceFailureActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.serviceFailureActionPrimary,
+.serviceFailureActionSecondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.serviceFailureActionPrimary {
+  background: linear-gradient(180deg, #bd2717, #6d0f08);
+  color: #fff5f1;
+  border: 1px solid rgba(255, 185, 166, 0.38);
+  box-shadow: var(--glow);
+}
+
+.serviceFailureActionPrimary:hover {
+  filter: brightness(1.08);
+}
+
+.serviceFailureActionSecondary {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffd9cf;
+  border: 1px solid rgba(255, 189, 173, 0.35);
+}
+
+.serviceFailureActionSecondary:hover {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+@media (max-width: 720px) {
+  .serviceFailurePanel {
+    width: calc(100% - 18px);
+    padding: 18px;
+  }
+
+  .serviceFailureActions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
+
 .railOccluded {
   position: relative;
   pointer-events: none;
@@ -1607,9 +1731,17 @@ h1 {
 
 .categoryVideoGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 320px));
   gap: 14px;
   align-content: start;
+  justify-content: start;
+}
+
+.categoryNoVideos {
+  grid-column: 1 / -1;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.9rem;
+  padding: 12px 0;
 }
 
 .categoryVideoGridSingle {

@@ -27,7 +27,7 @@ if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
         const message = error instanceof Error ? error.message : String(error);
         // React dev profiling can sporadically emit invalid ranges; avoid hard-crashing route render.
         if (message.includes("negative time stamp")) {
-          return undefined as ReturnType<Performance["measure"]>;
+          return undefined as unknown as ReturnType<Performance["measure"]>;
         }
 
         throw error;
@@ -61,6 +61,7 @@ type OnlineUser = {
 type CurrentVideoResolvePayload = {
   currentVideo?: VideoRecord;
   relatedVideos?: VideoRecord[];
+  pending?: boolean;
   denied?: { message?: string };
 };
 
@@ -96,6 +97,11 @@ const CURRENT_VIDEO_PREFETCH_TTL_MS = 25_000;
 const RELATED_FADE_STAGGER_MS = 46;
 const RELATED_FADE_OUT_BASE_MS = 210;
 const RELATED_FADE_IN_BASE_MS = 230;
+const STARTUP_RETRY_FAST_ATTEMPTS = 4;
+const STARTUP_RETRY_SLOW_DELAY_MS = 8_000;
+const STARTUP_RETRY_MAX_ATTEMPTS = 8;
+const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
+const PREFETCH_FAILURE_MAX_BACKOFF_MS = 20_000;
 
 function dedupeVideoList(videos: VideoRecord[]) {
   return videos.filter(
@@ -127,7 +133,6 @@ function isRouteActive(href: string, pathname: string) {
 
 function ShellDynamicInner({
   initialVideo,
-  initialRelatedVideos,
   isLoggedIn,
   children,
 }: ShellDynamicProps) {
@@ -138,10 +143,8 @@ function ShellDynamicInner({
   const requestedVideoId = searchParams.get("v");
 
   const [currentVideo, setCurrentVideo] = useState(initialVideo);
-  const [relatedVideos, setRelatedVideos] = useState(initialRelatedVideos);
-  const [displayedRelatedVideos, setDisplayedRelatedVideos] = useState<VideoRecord[]>(() =>
-    dedupeVideoList(initialRelatedVideos),
-  );
+  const [relatedVideos, setRelatedVideos] = useState<VideoRecord[]>([]);
+  const [displayedRelatedVideos, setDisplayedRelatedVideos] = useState<VideoRecord[]>([]);
   const [relatedTransitionPhase, setRelatedTransitionPhase] = useState<"idle" | "fading-out" | "loading" | "fading-in">("idle");
   const activeVideoId = requestedVideoId ?? currentVideo.id;
   const [isAuthenticated, setIsAuthenticated] = useState(isLoggedIn);
@@ -158,15 +161,16 @@ function ShellDynamicInner({
     video: false,
   });
   const [isResolvingInitialVideo, setIsResolvingInitialVideo] = useState(!requestedVideoId);
-  const [isResolvingRequestedVideo, setIsResolvingRequestedVideo] = useState(false);
+  const [isResolvingRequestedVideo, setIsResolvingRequestedVideo] = useState(Boolean(requestedVideoId));
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
   const lastVideoIdRef = useRef<string | null>(null);
-  const hadInitialVideoIdRef = useRef(Boolean(requestedVideoId));
   const hasResolvedInitialVideoRef = useRef(Boolean(requestedVideoId));
   const startupHydratedVideoIdRef = useRef<string | null>(null);
   const prefetchedRelatedIdsRef = useRef<Set<string>>(new Set());
   const prefetchedCurrentVideoPayloadRef = useRef<Map<string, { expiresAt: number; payload: CurrentVideoResolvePayload }>>(new Map());
   const inFlightCurrentVideoPrefetchRef = useRef<Set<string>>(new Set());
+  const prefetchBlockedUntilRef = useRef(0);
+  const prefetchFailureCountRef = useRef(0);
   const prewarmedThumbnailIdsRef = useRef<Set<string>>(new Set());
   const pendingRelatedVideosRef = useRef<VideoRecord[] | null>(null);
   const relatedTransitionTimeoutRef = useRef<number | null>(null);
@@ -178,15 +182,28 @@ function ShellDynamicInner({
   });
 
   const isOverlayRoute = pathname !== "/";
+  const shouldRunChat = isAuthenticated && !isOverlayRoute;
   const isArtistsIndexRoute = pathname === "/artists";
-  const disableOverlayDropAnimation =
-    pathname === "/categories" || pathname.startsWith("/categories/");
   const artistLetterParam = searchParams.get("letter");
   const activeArtistLetter =
     artistLetterParam && /^[A-Za-z]$/.test(artistLetterParam)
       ? artistLetterParam.toUpperCase()
       : "A";
   const resumeParam = searchParams.get("resume") ?? undefined;
+  const overlayRouteKey = (() => {
+    const filteredParams = new URLSearchParams();
+
+    for (const [key, value] of searchParams.entries()) {
+      if (key === "v" || key === "resume") {
+        continue;
+      }
+
+      filteredParams.append(key, value);
+    }
+
+    const filteredQuery = filteredParams.toString();
+    return filteredQuery ? `${pathname}?${filteredQuery}` : pathname;
+  })();
 
   useEffect(() => {
     setIsAuthenticated(isLoggedIn);
@@ -215,12 +232,6 @@ function ShellDynamicInner({
   }, [pathname]);
 
   useEffect(() => {
-    if (requestedVideoId && hadInitialVideoIdRef.current) {
-      setIsResolvingInitialVideo(false);
-      hasResolvedInitialVideoRef.current = true;
-      return;
-    }
-
     if (requestedVideoId) {
       return;
     }
@@ -250,7 +261,7 @@ function ShellDynamicInner({
 
     const resolveStartupCandidate = (selectedVideo: VideoRecord, relatedVideos: VideoRecord[], source: string) => {
       setCurrentVideo(selectedVideo);
-      setRelatedVideos(relatedVideos.length > 0 ? relatedVideos : initialRelatedVideos);
+      setRelatedVideos(relatedVideos);
       setIsResolvingInitialVideo(false);
       hasResolvedInitialVideoRef.current = true;
       startupHydratedVideoIdRef.current = selectedVideo.id;
@@ -291,9 +302,43 @@ function ShellDynamicInner({
           return;
         }
 
-        throw new Error("Startup random response missing video id");
+        const currentVideoResponse = await fetch("/api/current-video", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        if (currentVideoResponse.ok) {
+          const currentVideoPayload = (await currentVideoResponse.json()) as CurrentVideoResolvePayload;
+          if (currentVideoPayload.currentVideo?.id) {
+            logFlow("startup-selection:current-video-success", {
+              selectedVideoId: currentVideoPayload.currentVideo.id,
+              relatedCount: Array.isArray(currentVideoPayload.relatedVideos)
+                ? currentVideoPayload.relatedVideos.length
+                : 0,
+              attempt,
+            });
+
+            resolveStartupCandidate(
+              currentVideoPayload.currentVideo,
+              Array.isArray(currentVideoPayload.relatedVideos) ? currentVideoPayload.relatedVideos : [],
+              "api-current-video",
+            );
+            return;
+          }
+        }
+
+        throw new Error("Startup random and current resolver returned no video id");
       } catch (error) {
         if (cancelled) {
+          return;
+        }
+
+        if (attempt >= STARTUP_RETRY_MAX_ATTEMPTS) {
+          logFlow("startup-selection:halted", {
+            attempt,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          setIsResolvingInitialVideo(false);
           return;
         }
 
@@ -302,7 +347,9 @@ function ShellDynamicInner({
           error: error instanceof Error ? error.message : String(error),
         });
 
-        const delayMs = Math.min(2400, 350 * attempt);
+        const delayMs = attempt <= STARTUP_RETRY_FAST_ATTEMPTS
+          ? Math.min(2400, 350 * attempt)
+          : STARTUP_RETRY_SLOW_DELAY_MS;
         retryTimeoutId = window.setTimeout(() => {
           void tryResolveStartupVideo(attempt + 1);
         }, delayMs);
@@ -317,7 +364,7 @@ function ShellDynamicInner({
         window.clearTimeout(retryTimeoutId);
       }
     };
-  }, [initialRelatedVideos, pathname, requestedVideoId, router, searchParamsKey]);
+  }, [pathname, requestedVideoId, router, searchParamsKey]);
 
   useEffect(() => {
     logFlow("requested-video:effect", {
@@ -335,11 +382,6 @@ function ShellDynamicInner({
       return;
     }
 
-    if (displayedRelatedVideos.length > 0 && relatedTransitionPhase === "idle") {
-      pendingRelatedVideosRef.current = null;
-      setRelatedTransitionPhase("fading-out");
-    }
-
     // Startup already hydrated this selected ID from /api/videos/top payload.
     // Skip one redundant /api/current-video resolve request.
     if (startupHydratedVideoIdRef.current === requestedVideoId) {
@@ -347,6 +389,11 @@ function ShellDynamicInner({
       lastVideoIdRef.current = requestedVideoId;
       setIsResolvingRequestedVideo(false);
       return;
+    }
+
+    if (displayedRelatedVideos.length > 0 && relatedTransitionPhase === "idle") {
+      pendingRelatedVideosRef.current = null;
+      setRelatedTransitionPhase("fading-out");
     }
 
     let ignore = false;
@@ -365,7 +412,7 @@ function ShellDynamicInner({
           if (pendingSelection.id === requestedVideoId) {
             setCurrentVideo((previousVideo) => ({
               ...previousVideo,
-              id: pendingSelection.id,
+              id: requestedVideoId,
               title: typeof pendingSelection.title === "string" ? pendingSelection.title : previousVideo.title,
               channelTitle:
                 typeof pendingSelection.channelTitle === "string"
@@ -429,11 +476,6 @@ function ShellDynamicInner({
 
         if (data?.denied?.message) {
           setDeniedPlaybackMessage(String(data.denied.message));
-          setIsResolvingRequestedVideo(false);
-          if (!hasResolvedInitialVideoRef.current) {
-            hasResolvedInitialVideoRef.current = true;
-            setIsResolvingInitialVideo(false);
-          }
           return;
         }
 
@@ -588,7 +630,7 @@ function ShellDynamicInner({
   // Load chat history whenever mode / video / auth changes.
   // For "online" mode we also keep a 30 s refresh so presence stays current.
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!shouldRunChat) {
       return;
     }
 
@@ -650,11 +692,11 @@ function ShellDynamicInner({
       cancelled = true;
       if (intervalId !== undefined) window.clearInterval(intervalId);
     };
-  }, [chatMode, currentVideo.id, fetchWithAuthRetry, isAuthenticated]);
+  }, [chatMode, currentVideo.id, fetchWithAuthRetry, shouldRunChat]);
 
   // Real-time SSE subscriptions for global + current video chat.
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!shouldRunChat) {
       return;
     }
 
@@ -707,7 +749,7 @@ function ShellDynamicInner({
       globalEvents.close();
       videoEvents.close();
     };
-  }, [chatMode, currentVideo.id, isAuthenticated]);
+  }, [chatMode, currentVideo.id, shouldRunChat]);
 
   useEffect(() => {
     return () => {
@@ -721,7 +763,7 @@ function ShellDynamicInner({
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (shouldRunChat) {
       return;
     }
 
@@ -854,6 +896,10 @@ function ShellDynamicInner({
   }
 
   function prefetchCurrentVideoPayload(videoId: string) {
+    if (Date.now() < prefetchBlockedUntilRef.current) {
+      return;
+    }
+
     const cached = prefetchedCurrentVideoPayloadRef.current.get(videoId);
     if (cached && cached.expiresAt > Date.now()) {
       return;
@@ -869,11 +915,29 @@ function ShellDynamicInner({
     })
       .then(async (response) => {
         if (!response.ok) {
+          prefetchFailureCountRef.current = Math.min(prefetchFailureCountRef.current + 1, 6);
+          const backoffMs = Math.min(
+            PREFETCH_FAILURE_MAX_BACKOFF_MS,
+            PREFETCH_FAILURE_BASE_BACKOFF_MS * (2 ** prefetchFailureCountRef.current),
+          );
+          prefetchBlockedUntilRef.current = Date.now() + backoffMs;
           return;
         }
 
         const data = (await response.json()) as CurrentVideoResolvePayload;
+        if (!data.currentVideo?.id) {
+          prefetchFailureCountRef.current = Math.min(prefetchFailureCountRef.current + 1, 6);
+          const backoffMs = Math.min(
+            PREFETCH_FAILURE_MAX_BACKOFF_MS,
+            PREFETCH_FAILURE_BASE_BACKOFF_MS * (2 ** prefetchFailureCountRef.current),
+          );
+          prefetchBlockedUntilRef.current = Date.now() + backoffMs;
+          return;
+        }
+
         if (data.currentVideo?.id === videoId) {
+          prefetchFailureCountRef.current = 0;
+          prefetchBlockedUntilRef.current = 0;
           prefetchedCurrentVideoPayloadRef.current.set(videoId, {
             expiresAt: Date.now() + CURRENT_VIDEO_PREFETCH_TTL_MS,
             payload: data,
@@ -884,7 +948,14 @@ function ShellDynamicInner({
           }
         }
       })
-      .catch(() => undefined)
+      .catch(() => {
+        prefetchFailureCountRef.current = Math.min(prefetchFailureCountRef.current + 1, 6);
+        const backoffMs = Math.min(
+          PREFETCH_FAILURE_MAX_BACKOFF_MS,
+          PREFETCH_FAILURE_BASE_BACKOFF_MS * (2 ** prefetchFailureCountRef.current),
+        );
+        prefetchBlockedUntilRef.current = Date.now() + backoffMs;
+      })
       .finally(() => {
         inFlightCurrentVideoPrefetchRef.current.delete(videoId);
       });
@@ -977,6 +1048,10 @@ function ShellDynamicInner({
   }, [displayedRelatedVideos]);
 
   useEffect(() => {
+    if (isOverlayRoute) {
+      return;
+    }
+
     const topTargets = sourceRelatedVideos
       .filter((video) => video.id !== currentVideo.id)
       .slice(0, 3);
@@ -999,7 +1074,7 @@ function ShellDynamicInner({
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [currentVideo.id, sourceRelatedVideos]);
+  }, [currentVideo.id, isOverlayRoute, sourceRelatedVideos]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -1319,11 +1394,8 @@ function ShellDynamicInner({
 
             {isOverlayRoute ? (
               <section
-                className={
-                  disableOverlayDropAnimation
-                    ? "favouritesBlind favouritesBlindNoDrop"
-                    : "favouritesBlind"
-                }
+                key={overlayRouteKey}
+                className="favouritesBlind"
                 aria-label="Page overlay"
               >
                 <div ref={favouritesBlindInnerRef} className="favouritesBlindInner">{children}</div>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 
 import { loginSchema } from "@/lib/api-schemas";
 import { getRequestMetadata, recordAuthAudit } from "@/lib/auth-audit";
@@ -10,6 +11,24 @@ import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
 import { rateLimitOrResponse } from "@/lib/rate-limit";
 import { parseRequestJson } from "@/lib/request-json";
+
+function isTransientDatabaseError(error: unknown) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    const lowerMessage = error.message.toLowerCase();
+    return (
+      lowerMessage.includes("timed out fetching a new connection from the connection pool") ||
+      lowerMessage.includes("can't reach database server") ||
+      lowerMessage.includes("too many connections")
+    );
+  }
+
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  return (
+    message.includes("timed out fetching a new connection from the connection pool") ||
+    message.includes("can't reach database server") ||
+    message.includes("too many connections")
+  );
+}
 
 export async function POST(request: NextRequest) {
   const requestMeta = getRequestMetadata(request.headers);
@@ -142,6 +161,7 @@ export async function POST(request: NextRequest) {
     console.error("[auth-login] unhandled login error", error);
 
     const message = error instanceof Error ? error.message : "Unknown login error";
+    const transientDatabaseError = isTransientDatabaseError(error);
 
     try {
       await recordAuthAudit({
@@ -158,10 +178,14 @@ export async function POST(request: NextRequest) {
       {
         error:
           process.env.NODE_ENV === "development"
-            ? `Login failed: ${message}`
-            : "Internal server error",
+            ? transientDatabaseError
+              ? "Login unavailable: database connection pool is exhausted"
+              : `Login failed: ${message}`
+            : transientDatabaseError
+              ? "Service unavailable"
+              : "Internal server error",
       },
-      { status: 500 },
+      { status: transientDatabaseError ? 503 : 500 },
     );
   }
 }

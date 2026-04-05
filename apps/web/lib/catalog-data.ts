@@ -154,6 +154,23 @@ function truncate(value: string, maxLength: number) {
   return value.length > maxLength ? value.slice(0, maxLength) : value;
 }
 
+async function withSoftTimeout<T>(label: string, timeoutMs: number, operation: () => Promise<T>) {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([operation(), timeoutPromise]);
+  } finally {
+    if (timeoutHandle !== undefined) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
 function normalizeParsedString(value: unknown, maxLength: number) {
   if (typeof value !== "string") {
     return null;
@@ -474,8 +491,12 @@ let topPoolCache:
   | undefined;
 
 const GENRE_RESULTS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CATEGORY_QUERY_TIMEOUT_MS = 2_500;
 const genreArtistsCache = new Map<string, { expiresAt: number; artists: ArtistRecord[] }>();
 const genreVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
+const genreVideosInFlight = new Map<string, Promise<VideoRecord[]>>();
+let genreCardsCache: { expiresAt: number; cards: GenreCard[] } | undefined;
+let genreCardsInFlight: Promise<GenreCard[]> | undefined;
 const ARTIST_VIDEOS_CACHE_TTL_MS = 60_000;
 const artistVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
 const ARTIST_LETTER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -1741,7 +1762,7 @@ export async function getCurrentVideo(videoId?: string) {
   });
 
   if (!hasDatabaseUrl()) {
-    return getSeedVideoById(normalizedVideoId);
+    return null;
   }
 
   try {
@@ -1755,7 +1776,7 @@ export async function getCurrentVideo(videoId?: string) {
           videoId: normalizedVideoId,
           reason: decision.reason,
         });
-        return getSeedVideoById(undefined);
+        return null;
       }
     }
 
@@ -1813,13 +1834,13 @@ export async function getCurrentVideo(videoId?: string) {
       reason: "no-query-hit",
     });
 
-    return getSeedVideoById(normalizedVideoId);
+    return null;
   } catch {
     debugCatalog("getCurrentVideo:return-seed-video-after-error", {
       videoId: normalizedVideoId,
     });
 
-    return getSeedVideoById(normalizedVideoId);
+    return null;
   }
 }
 
@@ -1944,7 +1965,7 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
 
 export async function getRelatedVideos(videoId: string) {
   if (!hasDatabaseUrl()) {
-    return getSeedRelatedVideos(videoId);
+    return [];
   }
 
   try {
@@ -1977,33 +1998,24 @@ export async function getRelatedVideos(videoId: string) {
       LIMIT 6
     `;
 
-    const mappedUnique = dedupeRankedRows(mappedVideos);
-    const existingIds = mappedUnique.map((video) => video.videoId);
-    const fallbackVideos = mappedUnique.length >= 6
-      ? []
-      : (await getRankedTopPool(129))
-          .filter((row) => ![videoId, ...existingIds].includes(row.videoId))
-          .slice(0, 6 - mappedUnique.length);
-
-    const videos = dedupeRankedRows([...mappedUnique, ...fallbackVideos]).slice(0, 6);
-
-    return videos.length > 0 ? videos.map(mapVideo) : getSeedRelatedVideos(videoId);
+    const videos = dedupeRankedRows(mappedVideos).slice(0, 6);
+    return videos.map(mapVideo);
   } catch {
-    return getSeedRelatedVideos(videoId);
+    return [];
   }
 }
 
 export async function getTopVideos(count = 100) {
   if (!hasDatabaseUrl()) {
-    return seedVideos;
+    return [];
   }
 
   try {
     const videos = await getRankedTopPool(Math.max(count, 1));
 
-    return videos.length > 0 ? videos.slice(0, count).map(mapVideo) : seedVideos;
+    return videos.length > 0 ? videos.slice(0, count).map(mapVideo) : [];
   } catch {
-    return seedVideos;
+    return [];
   }
 }
 
@@ -2080,7 +2092,6 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
   try {
     if (await hasArtistStatsProjection()) {
       const hasThumbnailColumn = await hasArtistStatsThumbnailColumn();
-      const thumbnailSelect = hasThumbnailColumn ? "s.thumbnail_video_id AS thumbnailVideoId" : "NULL AS thumbnailVideoId";
       const projectedRows = await prisma.$queryRawUnsafe<Array<{
         displayName: string;
         slug: string;
@@ -2096,14 +2107,38 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
             s.country,
             s.genre,
             s.video_count AS videoCount,
-            ${thumbnailSelect}
+            COALESCE(rv.thumbnailVideoId, ${hasThumbnailColumn ? "s.thumbnail_video_id" : "NULL"}) AS thumbnailVideoId
           FROM artist_stats s
+          LEFT JOIN (
+            SELECT
+              LOWER(TRIM(v.parsedArtist)) AS artistKey,
+              SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.id ASC), ',', 1) AS thumbnailVideoId
+            FROM videos v
+            WHERE v.parsedArtist IS NOT NULL
+              AND TRIM(v.parsedArtist) <> ''
+              AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+              AND UPPER(LEFT(TRIM(v.parsedArtist), 1)) = ?
+              AND EXISTS (
+                SELECT 1
+                FROM site_videos sv
+                WHERE sv.video_id = v.id
+                  AND sv.status = 'available'
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                FROM site_videos sv
+                WHERE sv.video_id = v.id
+                  AND (sv.status IS NULL OR sv.status <> 'available')
+              )
+            GROUP BY LOWER(TRIM(v.parsedArtist))
+          ) rv ON rv.artistKey = s.normalized_artist
           WHERE s.first_letter = ?
             AND s.video_count > 0
           ORDER BY s.display_name ASC
           LIMIT ${safeLimit}
           OFFSET ${safeOffset}
         `,
+        normalizedLetter,
         normalizedLetter,
       );
 
@@ -2529,12 +2564,12 @@ export async function getGenres() {
 
   try {
     const rows = await prisma.$queryRaw<Array<{ genre: string | null }>>`
-      SELECT genre
+      SELECT name AS genre
       FROM genres
-      WHERE genre IS NOT NULL
-        AND TRIM(genre) <> ''
-      ORDER BY genre ASC
-      LIMIT 200
+      WHERE name IS NOT NULL
+        AND TRIM(name) <> ''
+      ORDER BY name ASC
+      LIMIT 500
     `;
 
     const genres = rows
@@ -2550,27 +2585,144 @@ export async function getGenres() {
 }
 
 export async function getGenreCards() {
-  const genres = await getGenres();
-
-  if (!hasDatabaseUrl()) {
-    return genres.map((genre) => ({ genre, previewVideoId: null }));
+  const now = Date.now();
+  if (genreCardsCache && genreCardsCache.expiresAt > now) {
+    return genreCardsCache.cards;
   }
 
-  try {
-    const previewPool = await getRankedTopPool(129);
+  if (genreCardsInFlight) {
+    return genreCardsInFlight;
+  }
 
-    if (previewPool.length === 0) {
-      return genres.map((genre) => ({ genre, previewVideoId: null }));
+  genreCardsInFlight = (async () => {
+    const genres = await getGenres();
+
+    const buildSeedFallbackCards = () => {
+      const pool = seedVideos
+        .map((video) => video.id)
+        .filter((id): id is string => /^[A-Za-z0-9_-]{11}$/.test(id));
+
+      if (pool.length === 0) {
+        return genres.map((genre) => ({ genre, previewVideoId: null }));
+      }
+
+      const usedPreviewVideoIds = new Set<string>();
+      return genres.map((genre, index) => {
+        const rotatedPool = [...pool.slice(index), ...pool.slice(0, index)];
+        const firstUnused = rotatedPool.find((candidate) => !usedPreviewVideoIds.has(candidate));
+        const previewVideoId = firstUnused ?? rotatedPool[0] ?? null;
+
+        if (previewVideoId) {
+          usedPreviewVideoIds.add(previewVideoId);
+        }
+
+        return { genre, previewVideoId };
+      });
+    };
+
+    if (!hasDatabaseUrl()) {
+      const seedCards = genres.map((genre) => ({ genre, previewVideoId: null }));
+      genreCardsCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, cards: seedCards };
+      return seedCards;
     }
 
-    const step = previewPool.length > 1 ? previewPool.length - 1 : 1;
+    try {
+      const cards = await withSoftTimeout("getGenreCards", CATEGORY_QUERY_TIMEOUT_MS, async () => {
+        const artistColumns = await getArtistColumnMap();
+        if (artistColumns.genreColumns.length === 0) {
+          return buildSeedFallbackCards();
+        }
 
-    return genres.map((genre, index) => ({
-      genre,
-      previewVideoId: previewPool[(index * step) % previewPool.length]?.videoId ?? null,
-    }));
-  } catch {
-    return genres.map((genre) => ({ genre, previewVideoId: null }));
+        const artistNameColumn = escapeSqlIdentifier(artistColumns.name);
+        const genrePredicate = artistColumns.genreColumns
+          .map((column) => `a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', g.name, '%')`)
+          .join(" OR ");
+
+        const rows = await prisma.$queryRawUnsafe<Array<{ genre: string | null; previewCandidates: string | null }>>(
+          `
+            SELECT
+              g.name AS genre,
+              SUBSTRING_INDEX(
+                GROUP_CONCAT(
+                  DISTINCT v.videoId
+                  ORDER BY v.favourited DESC, v.views DESC, v.id ASC
+                ),
+                ',',
+                3
+              ) AS previewCandidates
+            FROM genres g
+            LEFT JOIN artists a
+              ON (${genrePredicate})
+            LEFT JOIN videos v
+              ON LOWER(TRIM(v.parsedArtist)) = LOWER(TRIM(a.${artistNameColumn}))
+              AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+              AND EXISTS (
+                SELECT 1
+                FROM site_videos sv
+                WHERE sv.video_id = v.id
+                  AND sv.status = 'available'
+              )
+            WHERE g.name IS NOT NULL
+              AND TRIM(g.name) <> ''
+            GROUP BY g.name
+            ORDER BY g.name ASC
+            LIMIT 500
+          `,
+        );
+
+        const candidateByGenre = new Map<string, string[]>();
+        for (const row of rows) {
+          const genre = row.genre?.trim();
+          if (!genre) {
+            continue;
+          }
+
+          const candidates = (row.previewCandidates ?? "")
+            .split(",")
+            .map((value) => value.trim())
+            .filter((value) => /^[A-Za-z0-9_-]{11}$/.test(value));
+          candidateByGenre.set(genre, candidates);
+        }
+
+        const cards: Array<{ genre: string; previewVideoId: string | null }> = [];
+        const usedPreviewVideoIds = new Set<string>();
+
+        for (const genre of genres) {
+          const candidates = candidateByGenre.get(genre) ?? [];
+          const firstUnused = candidates.find((videoId) => !usedPreviewVideoIds.has(videoId));
+          const previewVideoId = firstUnused ?? candidates[0] ?? null;
+
+          if (previewVideoId) {
+            usedPreviewVideoIds.add(previewVideoId);
+          }
+
+          cards.push({
+            genre,
+            previewVideoId,
+          });
+        }
+
+        const withPreviewCount = cards.reduce((count, card) => count + (card.previewVideoId ? 1 : 0), 0);
+        if (withPreviewCount < Math.ceil(genres.length * 0.2)) {
+          return buildSeedFallbackCards();
+        }
+
+        return cards;
+      });
+
+      genreCardsCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, cards };
+      return cards;
+    } catch {
+      const fallbackCards = buildSeedFallbackCards();
+      genreCardsCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, cards: fallbackCards };
+      return fallbackCards;
+    }
+  })();
+
+  try {
+    return await genreCardsInFlight;
+  } finally {
+    genreCardsInFlight = undefined;
   }
 }
 
@@ -2691,38 +2843,30 @@ export async function getVideosByGenre(
   const now = Date.now();
   if (!options?.artists) {
     const cached = genreVideosCache.get(cacheKey);
-    if (cached && cached.expiresAt > now) {
+    if (cached && cached.expiresAt > now && cached.videos.length > 0) {
       return cached.videos;
+    }
+
+    if (cached && cached.videos.length === 0) {
+      genreVideosCache.delete(cacheKey);
     }
   }
 
-  const genreHash = genre.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-
-  const buildUniqueGenreVideos = async (rows: RankedVideoRow[]) => {
-    const uniqueRows = dedupeRankedRows(rows).slice(0, 24);
-    if (uniqueRows.length >= 24) {
-      return uniqueRows.map(mapVideo);
+  const storeGenreVideosInCache = (videos: VideoRecord[]) => {
+    if (!options?.artists && videos.length > 0) {
+      genreVideosCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, videos });
     }
+  };
 
-    const fallbackPool = await getRankedTopPool(129);
-    if (fallbackPool.length === 0) {
-      return uniqueRows.map(mapVideo);
-    }
-
-    const selected = new Set(uniqueRows.map((row) => row.videoId));
-    const fillerRows = fallbackPool.filter((row) => !selected.has(row.videoId)).slice(0, 24 - uniqueRows.length);
-    return [...uniqueRows, ...fillerRows].slice(0, 24).map(mapVideo);
+  const buildUniqueGenreVideos = (rows: RankedVideoRow[]) => {
+    return dedupeRankedRows(rows).slice(0, 24).map(mapVideo);
   };
 
   const getGenreFallback = async () => {
-    const fallbackPool = await getRankedTopPool(129);
-    if (fallbackPool.length === 0) {
+    if (!hasDatabaseUrl()) {
       return seedVideos;
     }
-
-    const start = genreHash % fallbackPool.length;
-    const rotated = [...fallbackPool.slice(start), ...fallbackPool.slice(0, start)].slice(0, 24);
-    return rotated.map(mapVideo);
+    return [];
   };
 
   const getGenreKeywordVideos = async () => {
@@ -2760,31 +2904,26 @@ export async function getVideosByGenre(
   }
 
   try {
-    const keywordVideos = await getGenreKeywordVideos();
+    return await withSoftTimeout(`getVideosByGenre:${cacheKey}`, CATEGORY_QUERY_TIMEOUT_MS, async () => {
+      const keywordVideos = await getGenreKeywordVideos();
     if (keywordVideos.length >= 12) {
       const resolved = await buildUniqueGenreVideos(keywordVideos);
-      if (!options?.artists) {
-        genreVideosCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, videos: resolved });
-      }
+      storeGenreVideosInCache(resolved);
       return resolved;
     }
 
     const artists = options?.artists ?? (await getArtistsByGenre(genre));
-    const artistNames = [...new Set(artists.map((artist) => artist.name).filter(Boolean))].slice(0, 8);
+    const artistNames = [...new Set(artists.map((artist) => artist.name).filter(Boolean))].slice(0, 32);
 
     if (artistNames.length === 0) {
       if (keywordVideos.length > 0) {
         const resolved = await buildUniqueGenreVideos(keywordVideos);
-        if (!options?.artists) {
-          genreVideosCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, videos: resolved });
-        }
+        storeGenreVideosInCache(resolved);
         return resolved;
       }
 
       const fallback = await getGenreFallback();
-      if (!options?.artists) {
-        genreVideosCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, videos: fallback });
-      }
+      storeGenreVideosInCache(fallback);
       return fallback;
     }
 
@@ -2820,30 +2959,150 @@ export async function getVideosByGenre(
 
     if (videos.length > 0) {
       const resolved = await buildUniqueGenreVideos(videos);
-      if (!options?.artists) {
-        genreVideosCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, videos: resolved });
+      storeGenreVideosInCache(resolved);
+      return resolved;
+    }
+
+    const normalizedArtistNames = artistNames
+      .map((name) => name.trim().toLowerCase())
+      .filter((name) => name.length > 0)
+      .slice(0, 32);
+
+    if (normalizedArtistNames.length > 0) {
+      const placeholders = normalizedArtistNames.map(() => "?").join(", ");
+      const artistMatchedVideos = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
+        `
+          SELECT
+            v.videoId,
+            v.title,
+            NULL AS channelTitle,
+            v.favourited,
+            v.description
+          FROM videos v
+          WHERE LOWER(TRIM(v.parsedArtist)) IN (${placeholders})
+            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND sv.status = 'available'
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND (sv.status IS NULL OR sv.status <> 'available')
+            )
+          ORDER BY v.favourited DESC, v.views DESC, v.videoId ASC
+          LIMIT 24
+        `,
+        ...normalizedArtistNames,
+      );
+
+      if (artistMatchedVideos.length > 0) {
+        const resolved = await buildUniqueGenreVideos(artistMatchedVideos);
+        storeGenreVideosInCache(resolved);
+        return resolved;
       }
+    }
+
+    const artistColumns = await getArtistColumnMap();
+    if (artistColumns.genreColumns.length > 0) {
+      const artistNameColumn = escapeSqlIdentifier(artistColumns.name);
+      const genrePredicates = artistColumns.genreColumns
+        .map((column) => `a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', ?, '%')`)
+        .join(" OR ");
+      const genreParams = artistColumns.genreColumns.map(() => genre);
+
+      const artistGenreMatchedVideos = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
+        `
+          SELECT
+            v.videoId,
+            v.title,
+            NULL AS channelTitle,
+            v.favourited,
+            v.description
+          FROM artists a
+          INNER JOIN videos v ON LOWER(TRIM(v.parsedArtist)) = LOWER(TRIM(a.${artistNameColumn}))
+          WHERE (${genrePredicates})
+            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND sv.status = 'available'
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND (sv.status IS NULL OR sv.status <> 'available')
+            )
+          GROUP BY v.videoId, v.title, v.favourited, v.description
+          ORDER BY v.favourited DESC, v.views DESC, v.videoId ASC
+          LIMIT 24
+        `,
+        ...genreParams,
+      );
+
+      if (artistGenreMatchedVideos.length > 0) {
+        const resolved = await buildUniqueGenreVideos(artistGenreMatchedVideos);
+        storeGenreVideosInCache(resolved);
+        return resolved;
+      }
+    }
+
+    const normalizedGenreNeedle = `%${genre.trim().toLowerCase()}%`;
+    const textMatchedVideos = await prisma.$queryRaw<RankedVideoRow[]>`
+      SELECT
+        v.videoId,
+        v.title,
+        NULL AS channelTitle,
+        v.favourited,
+        v.description
+      FROM videos v
+      WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+        AND (
+          LOWER(v.title) LIKE ${normalizedGenreNeedle}
+          OR LOWER(COALESCE(v.description, '')) LIKE ${normalizedGenreNeedle}
+          OR LOWER(COALESCE(v.parsedArtist, '')) LIKE ${normalizedGenreNeedle}
+          OR LOWER(COALESCE(v.parsedTrack, '')) LIKE ${normalizedGenreNeedle}
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM site_videos sv
+          WHERE sv.video_id = v.id
+            AND sv.status = 'available'
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM site_videos sv
+          WHERE sv.video_id = v.id
+            AND (sv.status IS NULL OR sv.status <> 'available')
+        )
+      ORDER BY v.favourited DESC, v.views DESC, v.videoId ASC
+      LIMIT 24
+    `;
+
+    if (textMatchedVideos.length > 0) {
+      const resolved = await buildUniqueGenreVideos(textMatchedVideos);
+      storeGenreVideosInCache(resolved);
       return resolved;
     }
 
     if (keywordVideos.length > 0) {
       const resolved = await buildUniqueGenreVideos(keywordVideos);
-      if (!options?.artists) {
-        genreVideosCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, videos: resolved });
-      }
+      storeGenreVideosInCache(resolved);
       return resolved;
     }
 
-    const fallback = await getGenreFallback();
-    if (!options?.artists) {
-      genreVideosCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, videos: fallback });
-    }
-    return fallback;
+      const fallback = await getGenreFallback();
+      storeGenreVideosInCache(fallback);
+      return fallback;
+    });
   } catch {
     const fallback = await getGenreFallback();
-    if (!options?.artists) {
-      genreVideosCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, videos: fallback });
-    }
+    storeGenreVideosInCache(fallback);
     return fallback;
   }
 }

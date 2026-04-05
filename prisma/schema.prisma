@@ -70,7 +70,7 @@ model ArtistStat {
 
 model Genre {
   id   Int     @id @default(autoincrement())
-  name String  @map("genre") @db.VarChar(255)
+  name String  @db.VarChar(255)
   slug String? @db.VarChar(255)
 
   @@map("genres")

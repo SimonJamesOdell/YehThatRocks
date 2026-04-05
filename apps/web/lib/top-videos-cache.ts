@@ -1,5 +1,5 @@
 import { getTopVideos } from "@/lib/catalog-data";
-import { videos as seedVideos, type VideoRecord } from "@/lib/catalog";
+import type { VideoRecord } from "@/lib/catalog";
 
 const TOP_VIDEOS_CACHE_TTL_MS = 60_000;
 
@@ -46,7 +46,7 @@ export async function getTopVideosFast(count: number, waitMs: number) {
     const videos = await Promise.race([topVideosPromise, timeoutPromise]);
     return videos.slice(0, count);
   } catch {
-    return cachedTopVideos?.slice(0, count) ?? seedVideos.slice(0, count);
+    return cachedTopVideos?.slice(0, count) ?? [];
   }
 }
 
@@ -61,9 +61,16 @@ export async function getRandomTopVideo(options?: { excludeVideoId?: string; rel
 
   let pool = getCachedTopVideos(100);
   if (!pool) {
-    // Return quickly from seed while warming the canonical top pool in background.
+    // Warm in background; callers can keep showing loading state until canonical data arrives.
     warmTopVideos(100);
     pool = await getTopVideosFast(100, Math.min(waitMs, 120));
+  }
+
+  if (pool.length === 0) {
+    return {
+      selected: null,
+      relatedVideos: [] as VideoRecord[],
+    };
   }
 
   const eligible =
@@ -71,7 +78,7 @@ export async function getRandomTopVideo(options?: { excludeVideoId?: string; rel
       ? pool.filter((video) => video.id !== excludeVideoId)
       : pool;
 
-  const selected = eligible[Math.floor(Math.random() * eligible.length)] ?? pool[0] ?? seedVideos[0];
+  const selected = eligible[Math.floor(Math.random() * eligible.length)] ?? pool[0];
   const relatedVideos = pool.filter((video) => video.id !== selected.id).slice(0, relatedCount);
 
   return { selected, relatedVideos };

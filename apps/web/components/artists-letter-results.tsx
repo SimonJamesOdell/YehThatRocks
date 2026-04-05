@@ -60,16 +60,6 @@ export function ArtistsLetterResults({
   }, [initialArtists, initialHasMore, letter]);
 
   function handleThumbnailError(artistName: string, artistSlug: string, badVideoId?: string) {
-    setFailedThumbnails((current) => {
-      if (current[artistSlug]) {
-        return current;
-      }
-      return {
-        ...current,
-        [artistSlug]: true,
-      };
-    });
-
     const reportKey = `${artistSlug}:${badVideoId ?? ""}`;
     if (reportedBrokenThumbnailsRef.current.has(reportKey)) {
       return;
@@ -87,7 +77,74 @@ export function ArtistsLetterResults({
       }),
       cache: "no-store",
       keepalive: true,
-    }).catch(() => undefined);
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("thumbnail-refresh-failed");
+        }
+
+        const payload = (await response.json()) as { thumbnailVideoId?: string | null };
+        const nextThumbnailVideoId = payload.thumbnailVideoId?.trim();
+
+        if (nextThumbnailVideoId && nextThumbnailVideoId !== badVideoId) {
+          setArtists((current) => current.map((artist) => (
+            artist.slug === artistSlug
+              ? {
+                  ...artist,
+                  thumbnailVideoId: nextThumbnailVideoId,
+                }
+              : artist
+          )));
+          setFailedThumbnails((current) => {
+            if (!current[artistSlug]) {
+              return current;
+            }
+
+            const next = { ...current };
+            delete next[artistSlug];
+            return next;
+          });
+          return;
+        }
+
+        setFailedThumbnails((current) => {
+          if (current[artistSlug]) {
+            return current;
+          }
+          return {
+            ...current,
+            [artistSlug]: true,
+          };
+        });
+      })
+      .catch(() => {
+        setFailedThumbnails((current) => {
+          if (current[artistSlug]) {
+            return current;
+          }
+          return {
+            ...current,
+            [artistSlug]: true,
+          };
+        });
+      });
+  }
+
+  function handleThumbnailElement(
+    element: HTMLImageElement | null,
+    artistName: string,
+    artistSlug: string,
+    badVideoId?: string,
+  ) {
+    if (!element) {
+      return;
+    }
+
+    // If the browser failed this image before hydration, React's onError is missed.
+    // Detect that state and trigger the same repair flow after mount.
+    if (element.complete && element.naturalWidth === 0) {
+      handleThumbnailError(artistName, artistSlug, badVideoId);
+    }
   }
 
   const baseParams = useMemo(() => {
@@ -252,6 +309,9 @@ export function ArtistsLetterResults({
                     alt=""
                     className="categoryThumb"
                     loading="lazy"
+                    ref={(element) => {
+                      handleThumbnailElement(element, artist.name, artist.slug, artist.thumbnailVideoId);
+                    }}
                     onError={() => handleThumbnailError(artist.name, artist.slug, artist.thumbnailVideoId)}
                   />
                 </div>
