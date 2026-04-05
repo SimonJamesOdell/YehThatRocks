@@ -16,6 +16,8 @@ type PlaylistPayload = {
   videos: VideoRecord[];
 };
 
+type NextChoiceVideo = VideoRecord;
+
 type YouTubePlayerStateChangeEvent = {
   data: number;
 };
@@ -86,6 +88,7 @@ const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.e
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
 const CANONICAL_SITE_ORIGIN = "https://yehthatrocks.com";
 const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. Please choose another track.";
+const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
   const consoleWithPatchState = console as typeof console & {
@@ -208,6 +211,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
   const [historyStack, setHistoryStack] = useState<string[]>([]);
   const [showNowPlayingOverlay, setShowNowPlayingOverlay] = useState(false);
   const [unavailableOverlayMessage, setUnavailableOverlayMessage] = useState<string | null>(null);
+  const [showEndedChoiceOverlay, setShowEndedChoiceOverlay] = useState(false);
   const [overlayInstance, setOverlayInstance] = useState(0);
   const [playerHostMode, setPlayerHostMode] = useState<"nocookie" | "youtube">("nocookie");
   const [isPlayerReady, setIsPlayerReady] = useState(false);
@@ -230,7 +234,8 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
     const nextPlaylistIndexRef = useRef<number | null>(null);
     const activePlaylistIdRef = useRef<string | null>(activePlaylistId);
   const [playlistQueueIds, setPlaylistQueueIds] = useState<string[]>([]);
-  const [topFallbackVideoIds, setTopFallbackVideoIds] = useState<string[]>([]);
+  const [playlistRefreshTick, setPlaylistRefreshTick] = useState(0);
+  const [topFallbackVideos, setTopFallbackVideos] = useState<VideoRecord[]>([]);
   const autoplayEnabledRef = useRef(autoplayEnabled);
   const hasActivePlaylistSequenceRef = useRef(false);
   autoplayEnabledRef.current = autoplayEnabled;
@@ -288,13 +293,11 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
           | null;
 
         const ids = Array.isArray(payload?.videos)
-          ? payload.videos
-              .map((video) => video.id)
-              .filter((id): id is string => Boolean(id))
+          ? payload.videos.filter((video): video is VideoRecord => Boolean(video?.id))
           : [];
 
         if (!cancelled) {
-          setTopFallbackVideoIds(Array.from(new Set(ids)));
+          setTopFallbackVideos(ids);
         }
       } catch {
         // Keep existing fallback pool if loading fails.
@@ -318,6 +321,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
       .filter((videoId) => videoId !== currentVideo.id)
       .slice(0, RANDOM_NEXT_RECENT_EXCLUSION);
     const recentIdSet = new Set(recentIds);
+    const topFallbackVideoIds = Array.from(new Set(topFallbackVideos.map((video) => video.id))).filter(Boolean);
 
     const shouldUseTopFallback =
       candidateIds.length > 0 && candidateIds.length < RANDOM_NEXT_MIN_WATCH_NEXT_POOL && topFallbackVideoIds.length > 0;
@@ -382,6 +386,24 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
   const durationLabel = formatPlaybackTime(safeDuration);
   const shareUrl = buildCanonicalShareUrl(currentVideo.id);
   const shouldAutoplaySelection = Boolean(requestedVideoId && requestedVideoId === currentVideo.id);
+  const endedChoiceVideos = (() => {
+    const maxEndedChoiceVideos = 12;
+    const deduped = new Map<string, NextChoiceVideo>();
+
+    for (const video of [...queue, ...topFallbackVideos]) {
+      if (!video?.id || video.id === currentVideo.id || deduped.has(video.id)) {
+        continue;
+      }
+
+      deduped.set(video.id, video);
+
+      if (deduped.size >= maxEndedChoiceVideos) {
+        break;
+      }
+    }
+
+    return [...deduped.values()];
+  })();
 
   useEffect(() => {
     const initialRequestedVideoId = initialRequestedVideoIdRef.current;
@@ -394,6 +416,18 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
       hasLeftInitialRequestedVideoRef.current = true;
     }
   }, [currentVideo.id]);
+
+  useEffect(() => {
+    const handlePlaylistsUpdated = () => {
+      setPlaylistRefreshTick((current) => current + 1);
+    };
+
+    window.addEventListener(PLAYLISTS_UPDATED_EVENT, handlePlaylistsUpdated);
+
+    return () => {
+      window.removeEventListener(PLAYLISTS_UPDATED_EVENT, handlePlaylistsUpdated);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isLoggedIn || !activePlaylistId) {
@@ -444,7 +478,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
     return () => {
       cancelled = true;
     };
-  }, [activePlaylistId, isLoggedIn]);
+  }, [activePlaylistId, isLoggedIn, playlistRefreshTick]);
 
   function persistResumeSnapshot(wasPlaying: boolean, explicitTime?: number) {
     if (typeof window === "undefined") {
@@ -542,6 +576,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
     autoplaySuppressedVideoIdRef.current = null;
     playAttemptedAtRef.current = null;
     setUnavailableOverlayMessage(null);
+    setShowEndedChoiceOverlay(false);
     setHasPlaybackStarted(false);
     setShowControls(false);
     logFlow("current-video:changed", {
@@ -834,8 +869,8 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
               );
 
               const shouldAutoAdvance =
-                hasActivePlaylistSequenceRef.current ||
-                (autoplayEnabledRef.current && !isInitialDeepLinkedVideo);
+                autoplayEnabledRef.current &&
+                (hasActivePlaylistSequenceRef.current || !isInitialDeepLinkedVideo);
 
               if (shouldAutoAdvance) {
                 navigateToVideo(nextVideoIdRef.current, {
@@ -843,6 +878,10 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
                   playlistId: activePlaylistIdRef.current,
                   playlistItemIndex: nextPlaylistIndexRef.current,
                 });
+              } else {
+                setShowEndedChoiceOverlay(true);
+                setShowControls(true);
+                setShowShareMenu(false);
               }
             }
           },
@@ -972,6 +1011,17 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
     router.push(`${pathname}?${params.toString()}`);
   }
 
+  function handleEndedChoiceSelect(videoId: string) {
+    const playlistIndex = playlistQueueIds.findIndex((candidateId) => candidateId === videoId);
+
+    setShowEndedChoiceOverlay(false);
+    navigateToVideo(videoId, {
+      clearPlaylist: playlistIndex < 0,
+      playlistId: playlistIndex >= 0 ? activePlaylistId : null,
+      playlistItemIndex: playlistIndex >= 0 ? playlistIndex : null,
+    });
+  }
+
   function handlePrevious() {
     if (hasActivePlaylistSequence && effectivePlaylistIndex !== null) {
       const previousIndex = (effectivePlaylistIndex - 1 + playlistQueueIds.length) % playlistQueueIds.length;
@@ -1088,6 +1138,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
 
       function handlePlayPause() {
         if (!playerRef.current) return;
+        setShowEndedChoiceOverlay(false);
         if (isPlaying) {
           playerRef.current.pauseVideo();
         } else {
@@ -1300,7 +1351,34 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
                 <strong>{unavailableOverlayMessage}</strong>
               </div>
             ) : null}
+
           </div>
+
+          {showEndedChoiceOverlay && endedChoiceVideos.length > 0 ? (
+            <div className="playerEndedChoiceOverlay" role="dialog" aria-modal="false" aria-label="Choose the next video">
+              <div className="playerEndedChoiceGrid">
+                {endedChoiceVideos.map((video) => (
+                  <button
+                    key={video.id}
+                    type="button"
+                    className="playerEndedChoiceCard"
+                    onClick={() => handleEndedChoiceSelect(video.id)}
+                  >
+                    <img
+                      src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
+                      alt=""
+                      className="playerEndedChoiceThumb"
+                      loading="lazy"
+                    />
+                    <span className="playerEndedChoiceMeta">
+                      <span className="playerEndedChoiceTitle">{video.title}</span>
+                      <span className="playerEndedChoiceChannel">{video.channelTitle}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="primaryActions">
             <div className="shareUrlField">

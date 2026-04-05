@@ -1,0 +1,113 @@
+#!/usr/bin/env node
+
+const fs = require("node:fs");
+const path = require("node:path");
+
+const ROOT = process.cwd();
+
+const files = {
+  packageJson: path.join(ROOT, "package.json"),
+  editor: path.join(ROOT, "apps/web/components/playlist-editor.tsx"),
+  editorApi: path.join(ROOT, "apps/web/app/api/playlists/[id]/items/route.ts"),
+  schemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
+  data: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
+  addButton: path.join(ROOT, "apps/web/components/add-to-playlist-button.tsx"),
+  shell: path.join(ROOT, "apps/web/components/shell-dynamic.tsx"),
+  player: path.join(ROOT, "apps/web/components/player-experience.tsx"),
+  css: path.join(ROOT, "apps/web/app/globals.css"),
+};
+
+function read(filePath) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
+  }
+
+  return fs.readFileSync(filePath, "utf8");
+}
+
+function assertContains(source, needle, description, failures) {
+  if (!source.includes(needle)) {
+    failures.push(`${description} (missing: ${needle})`);
+  }
+}
+
+function assertNotContains(source, needle, description, failures) {
+  if (source.includes(needle)) {
+    failures.push(`${description} (forbidden: ${needle})`);
+  }
+}
+
+function assertMatches(source, pattern, description, failures) {
+  if (!pattern.test(source)) {
+    failures.push(`${description} (pattern: ${pattern})`);
+  }
+}
+
+function main() {
+  const failures = [];
+
+  const packageJsonSource = read(files.packageJson);
+  const editorSource = read(files.editor);
+  const editorApiSource = read(files.editorApi);
+  const schemasSource = read(files.schemas);
+  const dataSource = read(files.data);
+  const addButtonSource = read(files.addButton);
+  const shellSource = read(files.shell);
+  const playerSource = read(files.player);
+  const cssSource = read(files.css);
+
+  // API and schema invariants for playlist item remove/reorder.
+  assertContains(schemasSource, "removePlaylistItemSchema", "Remove playlist item schema exists", failures);
+  assertContains(schemasSource, "reorderPlaylistItemsSchema", "Reorder playlist items schema exists", failures);
+  assertContains(editorApiSource, "export async function DELETE", "Playlist items route supports DELETE", failures);
+  assertContains(editorApiSource, "export async function PATCH", "Playlist items route supports PATCH reorder", failures);
+  assertContains(editorApiSource, "removePlaylistItem(", "Playlist items route calls removePlaylistItem", failures);
+  assertContains(editorApiSource, "reorderPlaylistItems(", "Playlist items route calls reorderPlaylistItems", failures);
+  assertContains(dataSource, "export async function removePlaylistItem", "Data layer removePlaylistItem exists", failures);
+  assertContains(dataSource, "export async function reorderPlaylistItems", "Data layer reorderPlaylistItems exists", failures);
+
+  // Playlist editor invariants.
+  assertContains(editorSource, "draggable={isAuthenticated && !isPending && removingIndex === null}", "Playlist rows are draggable", failures);
+  assertContains(editorSource, "onDrop={(event) => handleDrop(index, event)}", "Playlist rows support drop handler", failures);
+  assertContains(editorSource, "method: \"PATCH\"", "Playlist editor persists reorder with PATCH", failures);
+  assertContains(editorSource, "method: \"DELETE\"", "Playlist editor supports per-track delete", failures);
+  assertContains(editorSource, "className=\"favouritesDeleteButton playlistEditorTrackDelete\"", "Playlist editor remove button uses fixed-right class", failures);
+  assertNotContains(editorSource, "<p>{video.channelTitle}</p>", "Playlist editor does not show channel subtitle", failures);
+
+  // Card add-to-playlist invariants (silent status + stable label + disabled-after-add).
+  assertContains(addButtonSource, "setIsAdded(true);", "Add-to-playlist button marks successful add state", failures);
+  assertContains(addButtonSource, "disabled={isPending || isAdded}", "Add-to-playlist button disables during pending or after add", failures);
+  assertContains(addButtonSource, "+ Playlist", "Add-to-playlist button keeps fixed label text", failures);
+  assertNotContains(addButtonSource, "{isPending ? \"...\" : \"+ Playlist\"}", "Add-to-playlist button avoids loading ellipsis label", failures);
+  assertNotContains(addButtonSource, "setMessage(", "Add-to-playlist button has no inline status messages", failures);
+  assertContains(addButtonSource, "const autoPlaylistName =", "Add-to-playlist auto-creates playlist when none exist", failures);
+  assertContains(addButtonSource, "window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));", "Add-to-playlist dispatches playlist refresh event", failures);
+  assertContains(addButtonSource, "const router = useRouter();", "Add-to-playlist button can update route state", failures);
+  assertContains(addButtonSource, "const searchParams = useSearchParams();", "Add-to-playlist button reads current route params", failures);
+  assertContains(addButtonSource, "params.set(\"pl\", playlistId);", "Auto-created playlist is set active in URL params", failures);
+  assertContains(addButtonSource, "router.replace(query ? `/?${query}` : \"/\");", "Auto-created playlist activation updates current route", failures);
+  assertContains(addButtonSource, "if (createdPlaylistId && selectedPlaylist.id === createdPlaylistId) {", "Auto-created playlist path activates the new playlist after add", failures);
+
+  // Player playlist rail fixed-header invariants.
+  assertContains(shellSource, "<div className=\"rightRailPlaylistBar\">", "Player rail playlist header exists", failures);
+  assertContains(shellSource, "<div className=\"relatedStackPlaylistBody\">", "Player rail has dedicated scroll body", failures);
+  assertContains(cssSource, ".relatedStackPlaylistBody", "CSS defines dedicated scroll body class", failures);
+  assertContains(cssSource, "overflow-y: auto;", "Playlist rail body scrolls independently", failures);
+  assertContains(playerSource, "PLAYLISTS_UPDATED_EVENT = \"ytr:playlists-updated\"", "Player listens to playlist update event", failures);
+  assertMatches(playerSource, /\[activePlaylistId, isLoggedIn, playlistRefreshTick\]/, "Player reload effect depends on playlist refresh tick", failures);
+
+  // Quick sanity that this invariant script is wired in package scripts.
+  assertContains(packageJsonSource, "verify:playlists-ui", "Root package includes playlist UI verify script", failures);
+
+  if (failures.length > 0) {
+    console.error("Playlist UI invariant check failed.");
+    for (const failure of failures) {
+      console.error(`- ${failure}`);
+    }
+    process.exit(1);
+  }
+
+  console.log("Playlist UI invariant check passed.");
+}
+
+main();

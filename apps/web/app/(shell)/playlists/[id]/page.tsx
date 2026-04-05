@@ -2,24 +2,39 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CloseLink } from "@/components/close-link";
-import { PlaylistItemAdder } from "@/components/playlist-item-adder";
-import { getPlaylistById, getTopVideos } from "@/lib/catalog-data";
+import { PlaylistEditor } from "@/components/playlist-editor";
+import { getPlaylistById } from "@/lib/catalog-data";
 import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
 
 type PlaylistDetailPageProps = {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ name?: string | string[] }>;
 };
 
-export default async function PlaylistDetailPage({ params }: PlaylistDetailPageProps) {
+export default async function PlaylistDetailPage({ params, searchParams }: PlaylistDetailPageProps) {
   const { id } = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const fallbackName = typeof resolvedSearchParams?.name === "string" ? resolvedSearchParams.name.trim() : "";
   const user = await getCurrentAuthenticatedUser();
-  const playlist = user ? await getPlaylistById(id, user.id) : null;
+  const loadedPlaylist = user ? await getPlaylistById(id, user.id) : null;
+  const playlist = loadedPlaylist ?? (user && fallbackName
+    ? {
+        id,
+        name: fallbackName,
+        videos: [],
+      }
+    : null);
 
   if (!user) {
     return (
       <>
         <div className="favouritesBlindBar">
-          <strong>Playlist</strong>
+          <div className="categoryHeaderBreadcrumb">
+            <span className="categoryHeaderIcon whitePlaylistGlyph" aria-hidden="true">♬</span>
+            <Link href="/playlists" className="categoryHeaderBreadcrumbLink">Playlists</Link>
+            <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">/</span>
+            <span className="categoryHeaderBreadcrumbCurrent">Playlist</span>
+          </div>
           <CloseLink />
         </div>
         <section className="panel featurePanel spanTwoColumns">
@@ -41,58 +56,7 @@ export default async function PlaylistDetailPage({ params }: PlaylistDetailPageP
     notFound();
   }
 
-  const topVideos = await getTopVideos();
-  const availableVideos = topVideos.filter(
-    (video) => !playlist.videos.some((playlistVideo) => playlistVideo.id === video.id)
-  );
-
   return (
-    <>
-      <div className="favouritesBlindBar">
-        <strong>Playlist</strong>
-        <CloseLink />
-      </div>
-
-      <section className="panel featurePanel spanTwoColumns">
-        <div className="panelHeading">
-          <span>Playlist items</span>
-          <strong>{playlist.videos.length} tracks in sequence</strong>
-        </div>
-        <div className="trackStack">
-          {playlist.videos.map((video, index) => (
-            <Link
-              key={`${video.id}-${index}`}
-              href={`/?v=${video.id}&pl=${encodeURIComponent(playlist.id)}&pli=${index}`}
-              className="trackCard linkedCard"
-            >
-              <div>
-                <h3>{video.title}</h3>
-                <p>
-                  #{index + 1} · {video.channelTitle}
-                </p>
-              </div>
-              <span className="queueBadge">Play</span>
-            </Link>
-          ))}
-        </div>
-
-        <div className="routeContractRow">
-          <Link href={`/api/playlists/${playlist.id}`} className="navLink">
-            View JSON Endpoint
-          </Link>
-          <span className="contractHint">
-            POST to <code>/api/playlists/{playlist.id}/items</code> with <code>{'{"videoId":"..."}'}</code>
-          </span>
-        </div>
-
-        <div className="panelInset">
-          <div className="panelHeading compactHeading">
-            <span>Add track</span>
-            <strong>Preview write-path against the live route</strong>
-          </div>
-          <PlaylistItemAdder playlistId={playlist.id} videos={availableVideos.slice(0, 4)} isAuthenticated={Boolean(user)} />
-        </div>
-      </section>
-    </>
+    <PlaylistEditor playlist={playlist} isAuthenticated={Boolean(user)} />
   );
 }

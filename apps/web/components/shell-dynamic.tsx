@@ -65,6 +65,29 @@ type CurrentVideoResolvePayload = {
   denied?: { message?: string };
 };
 
+type RightRailMode = "watch-next" | "playlist";
+
+type PlaylistRailVideo = {
+  id: string;
+  title: string;
+  channelTitle: string;
+  thumbnail?: string | null;
+};
+
+type PlaylistRailPayload = {
+  id: string;
+  name: string;
+  videos: PlaylistRailVideo[];
+  itemCount?: number;
+};
+
+type PlaylistRailSummary = {
+  id: string;
+  name: string;
+  itemCount: number;
+  leadVideoId: string;
+};
+
 type FlashableChatMode = "global" | "video";
 
 function formatChatTimestamp(value: string | null) {
@@ -102,6 +125,7 @@ const STARTUP_RETRY_SLOW_DELAY_MS = 8_000;
 const STARTUP_RETRY_MAX_ATTEMPTS = 8;
 const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
 const PREFETCH_FAILURE_MAX_BACKOFF_MS = 20_000;
+const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 
 function dedupeVideoList(videos: VideoRecord[]) {
   return videos.filter(
@@ -131,6 +155,13 @@ function isRouteActive(href: string, pathname: string) {
   return false;
 }
 
+function isProtectedOverlayPath(pathname: string) {
+  return pathname === "/favourites"
+    || pathname === "/account"
+    || pathname === "/playlists"
+    || pathname.startsWith("/playlists/");
+}
+
 function ShellDynamicInner({
   initialVideo,
   isLoggedIn,
@@ -141,6 +172,7 @@ function ShellDynamicInner({
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
   const requestedVideoId = searchParams.get("v");
+  const activePlaylistId = searchParams.get("pl");
 
   const [currentVideo, setCurrentVideo] = useState(initialVideo);
   const [relatedVideos, setRelatedVideos] = useState<VideoRecord[]>([]);
@@ -150,11 +182,22 @@ function ShellDynamicInner({
   const [isAuthenticated, setIsAuthenticated] = useState(isLoggedIn);
   const [deniedPlaybackMessage, setDeniedPlaybackMessage] = useState<string | null>(null);
   const [chatMode, setChatMode] = useState<ChatMode>("global");
+  const [rightRailMode, setRightRailMode] = useState<RightRailMode>("watch-next");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [chatDraft, setChatDraft] = useState("");
   const [chatError, setChatError] = useState<string | null>(null);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [playlistRailData, setPlaylistRailData] = useState<PlaylistRailPayload | null>(null);
+  const [isPlaylistRailLoading, setIsPlaylistRailLoading] = useState(false);
+  const [playlistRailError, setPlaylistRailError] = useState<string | null>(null);
+  const [playlistRailSummaries, setPlaylistRailSummaries] = useState<PlaylistRailSummary[]>([]);
+  const [isPlaylistSummaryLoading, setIsPlaylistSummaryLoading] = useState(false);
+  const [playlistSummaryError, setPlaylistSummaryError] = useState<string | null>(null);
+  const [playlistRefreshTick, setPlaylistRefreshTick] = useState(0);
+  const [playlistMutationMessage, setPlaylistMutationMessage] = useState<string | null>(null);
+  const [playlistMutationTone, setPlaylistMutationTone] = useState<"info" | "success" | "error">("info");
+  const [playlistMutationPendingVideoId, setPlaylistMutationPendingVideoId] = useState<string | null>(null);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const [flashingChatTabs, setFlashingChatTabs] = useState<Record<FlashableChatMode, boolean>>({
     global: false,
@@ -184,6 +227,11 @@ function ShellDynamicInner({
   });
 
   const isOverlayRoute = pathname !== "/";
+  const disableOverlayDropAnimation =
+    pathname === "/categories"
+    || pathname.startsWith("/categories/")
+    || pathname === "/playlists"
+    || pathname.startsWith("/playlists/");
   const shouldRunChat = isAuthenticated && !isOverlayRoute;
   const isArtistsIndexRoute = pathname === "/artists";
   const artistLetterParam = searchParams.get("letter");
@@ -193,6 +241,16 @@ function ShellDynamicInner({
       : "A";
   const resumeParam = searchParams.get("resume") ?? undefined;
   const overlayRouteKey = (() => {
+    if (disableOverlayDropAnimation) {
+      if (pathname === "/playlists" || pathname.startsWith("/playlists/")) {
+        return "playlists-overlay";
+      }
+
+      if (pathname === "/categories" || pathname.startsWith("/categories/")) {
+        return "categories-overlay";
+      }
+    }
+
     const filteredParams = new URLSearchParams();
 
     for (const [key, value] of searchParams.entries()) {
@@ -634,6 +692,133 @@ function ShellDynamicInner({
     [refreshAuthSession],
   );
 
+  useEffect(() => {
+    const handlePlaylistsUpdated = () => {
+      setPlaylistRefreshTick((current) => current + 1);
+    };
+
+    window.addEventListener(PLAYLISTS_UPDATED_EVENT, handlePlaylistsUpdated);
+
+    return () => {
+      window.removeEventListener(PLAYLISTS_UPDATED_EVENT, handlePlaylistsUpdated);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (rightRailMode !== "playlist") {
+      return;
+    }
+
+    if (!activePlaylistId) {
+      setPlaylistRailData(null);
+      setPlaylistRailError(null);
+      setIsPlaylistRailLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadPlaylistRail = async () => {
+      setIsPlaylistRailLoading(true);
+      setPlaylistRailError(null);
+
+      try {
+        const response = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(activePlaylistId)}`);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (response.status === 401 || response.status === 403) {
+          setIsAuthenticated(false);
+          setPlaylistRailData(null);
+          setPlaylistRailError("Sign in to view playlist tracks.");
+          return;
+        }
+
+        if (!response.ok) {
+          setPlaylistRailData(null);
+          setPlaylistRailError("Could not load playlist tracks.");
+          return;
+        }
+
+        const payload = (await response.json()) as PlaylistRailPayload;
+        if (!cancelled) {
+          setPlaylistRailData(payload);
+        }
+      } catch {
+        if (!cancelled) {
+          setPlaylistRailData(null);
+          setPlaylistRailError("Could not load playlist tracks.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsPlaylistRailLoading(false);
+        }
+      }
+    };
+
+    void loadPlaylistRail();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePlaylistId, fetchWithAuthRetry, pathname, playlistRefreshTick, rightRailMode, searchParamsKey]);
+
+  useEffect(() => {
+    if (rightRailMode !== "playlist") {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadPlaylistSummaries = async () => {
+      setIsPlaylistSummaryLoading(true);
+      setPlaylistSummaryError(null);
+
+      try {
+        const response = await fetchWithAuthRetry("/api/playlists");
+
+        if (cancelled) {
+          return;
+        }
+
+        if (response.status === 401 || response.status === 403) {
+          setIsAuthenticated(false);
+          setPlaylistRailSummaries([]);
+          setPlaylistSummaryError("Sign in to view playlists.");
+          return;
+        }
+
+        if (!response.ok) {
+          setPlaylistRailSummaries([]);
+          setPlaylistSummaryError("Could not load playlists.");
+          return;
+        }
+
+        const payload = (await response.json()) as { playlists?: PlaylistRailSummary[] };
+        if (!cancelled) {
+          setPlaylistRailSummaries(Array.isArray(payload.playlists) ? payload.playlists : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setPlaylistRailSummaries([]);
+          setPlaylistSummaryError("Could not load playlists.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsPlaylistSummaryLoading(false);
+        }
+      }
+    };
+
+    void loadPlaylistSummaries();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePlaylistId, fetchWithAuthRetry, playlistRefreshTick, rightRailMode]);
+
   function triggerChatTabFlash(mode: FlashableChatMode) {
     const existingTimeoutId = flashTimeoutRef.current[mode];
     if (existingTimeoutId !== null) {
@@ -823,6 +1008,12 @@ function ShellDynamicInner({
   const sourceRelatedVideos = dedupeVideoList(relatedVideos);
   const uniqueRelatedVideos = dedupeRelatedRailVideos(sourceRelatedVideos, currentVideo.id);
   const displayedRenderableRelatedVideos = dedupeRelatedRailVideos(displayedRelatedVideos, currentVideo.id);
+  const activePlaylistSummary = activePlaylistId
+    ? playlistRailSummaries.find((playlist) => playlist.id === activePlaylistId) ?? null
+    : null;
+  const activePlaylistTrackCount = playlistRailData
+    ? Math.max(playlistRailData.videos.length, playlistRailData.itemCount ?? activePlaylistSummary?.itemCount ?? 0)
+    : (activePlaylistSummary?.itemCount ?? 0);
 
   useEffect(() => {
     const currentSignature = displayedRelatedVideos.map((video) => video.id).join("|");
@@ -916,6 +1107,25 @@ function ShellDynamicInner({
 
   function getRelatedThumbnail(id: string) {
     return `https://i.ytimg.com/vi/${encodeURIComponent(id)}/mqdefault.jpg`;
+  }
+
+  function getActivatePlaylistHref(playlistId: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("v", currentVideo.id);
+    params.set("resume", "1");
+    params.set("pl", playlistId);
+    params.delete("pli");
+    return `/?${params.toString()}`;
+  }
+
+  function getClosePlaylistHref() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("v", currentVideo.id);
+    params.set("resume", "1");
+    params.delete("pl");
+    params.delete("pli");
+    const query = params.toString();
+    return query.length > 0 ? `/?${query}` : "/";
   }
 
   function prewarmRelatedThumbnail(videoId: string) {
@@ -1021,6 +1231,134 @@ function ShellDynamicInner({
       );
     }
   }
+
+  function buildGeneratedPlaylistName() {
+    const now = new Date();
+    const datePart = now.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+    const timePart = now.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    return `Playlist ${datePart} ${timePart}`;
+  }
+
+  async function handleAddToPlaylistFromWatchNext(track: VideoRecord) {
+    if (playlistMutationPendingVideoId) {
+      return;
+    }
+
+    setPlaylistMutationPendingVideoId(track.id);
+    setPlaylistMutationMessage(null);
+    setPlaylistMutationTone("info");
+
+    try {
+      if (activePlaylistId) {
+        const addResponse = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(activePlaylistId)}/items`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ videoId: track.id }),
+        });
+
+        if (addResponse.status === 401 || addResponse.status === 403) {
+          setIsAuthenticated(false);
+          setPlaylistMutationTone("error");
+          setPlaylistMutationMessage("Sign in to save tracks to playlists.");
+          return;
+        }
+
+        if (!addResponse.ok) {
+          setPlaylistMutationTone("error");
+          setPlaylistMutationMessage("Could not add track to playlist.");
+          return;
+        }
+        return;
+      }
+
+      const createResponse = await fetchWithAuthRetry("/api/playlists", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: buildGeneratedPlaylistName(),
+          videoIds: [],
+        }),
+      });
+
+      if (createResponse.status === 401 || createResponse.status === 403) {
+        setIsAuthenticated(false);
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Sign in to create playlists.");
+        return;
+      }
+
+      if (!createResponse.ok) {
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Could not create playlist.");
+        return;
+      }
+
+      const created = (await createResponse.json()) as { id?: string };
+
+      if (!created.id) {
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Playlist was created but could not be opened.");
+        return;
+      }
+
+      const addResponse = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(created.id)}/items`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ videoId: track.id }),
+      });
+
+      if (addResponse.status === 401 || addResponse.status === 403) {
+        setIsAuthenticated(false);
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Sign in to save tracks to playlists.");
+        return;
+      }
+
+      if (!addResponse.ok) {
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Playlist created, but this track could not be added.");
+        return;
+      }
+
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("v", currentVideo.id);
+      params.set("resume", "1");
+      params.set("pl", created.id);
+      params.delete("pli");
+      router.replace(`/?${params.toString()}`);
+    } catch {
+      setPlaylistMutationTone("error");
+      setPlaylistMutationMessage("Could not update playlists right now.");
+    } finally {
+      setPlaylistMutationPendingVideoId(null);
+    }
+  }
+
+  useEffect(() => {
+    if (!playlistMutationMessage) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setPlaylistMutationMessage(null);
+    }, 2500);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [playlistMutationMessage]);
 
   async function handleChatSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1157,6 +1495,24 @@ function ShellDynamicInner({
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [fetchWithAuthRetry, isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      return;
+    }
+
+    if (!isProtectedOverlayPath(pathname)) {
+      return;
+    }
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("v", currentVideo.id);
+    params.set("resume", "1");
+    params.delete("pl");
+    params.delete("pli");
+    const query = params.toString();
+    router.replace(query ? `/?${query}` : "/");
+  }, [currentVideo.id, isAuthenticated, pathname, router, searchParams]);
 
   return (
     <main className={isOverlayRoute ? "shell shellOverlayRoute" : "shell"}>
@@ -1433,7 +1789,7 @@ function ShellDynamicInner({
             {isOverlayRoute ? (
               <section
                 key={overlayRouteKey}
-                className="favouritesBlind"
+                className={disableOverlayDropAnimation ? "favouritesBlind favouritesBlindNoDrop" : "favouritesBlind"}
                 aria-label="Page overlay"
               >
                 <div ref={favouritesBlindInnerRef} className="favouritesBlindInner">{children}</div>
@@ -1452,58 +1808,209 @@ function ShellDynamicInner({
           aria-hidden={isOverlayRoute}
           inert={isOverlayRoute ? true : undefined}
         >
-          <h2 className="railHeading">Watch Next</h2>
-
-          <div
-            className={`relatedStack${
-              relatedTransitionPhase === "fading-out"
-                ? " relatedStackFadingOut"
-                : relatedTransitionPhase === "fading-in"
-                  ? " relatedStackFadingIn"
-                  : ""
-            }`}
-          >
-            {relatedTransitionPhase === "loading" ? (
-              <div className="relatedLoadingState" role="status" aria-live="polite" aria-busy="true">
-                <span className="playerBootBars" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                </span>
-                <span>Loading related videos...</span>
-              </div>
-            ) : null}
-
-            {displayedRenderableRelatedVideos.map((track, index) => (
-              <Link
-                key={track.id}
-                href={`/?v=${track.id}`}
-                className="relatedCard linkedCard relatedCardTransition"
-                style={{ "--related-index": index } as CSSProperties}
-                onMouseEnter={() => prefetchRelatedSelection(track)}
-                onFocus={() => prefetchRelatedSelection(track)}
-                onPointerDown={() => prefetchRelatedSelection(track)}
-              >
-                <div className="thumbGlow">
-                  <Image
-                    src={getRelatedThumbnail(track.id)}
-                    alt={track.title}
-                    width={128}
-                    height={72}
-                    unoptimized
-                    loading={index < 3 ? "eager" : "lazy"}
-                    fetchPriority={index < 2 ? "high" : "auto"}
-                    className="relatedThumb"
-                  />
-                </div>
-                <div>
-                  <h3>{track.title}</h3>
-                  <p>{track.channelTitle}</p>
-                </div>
-              </Link>
-            ))}
+          <div className="railTabs rightRailTabs">
+            <button
+              type="button"
+              className={rightRailMode === "watch-next" ? "activeTab" : undefined}
+              onClick={() => setRightRailMode("watch-next")}
+            >
+              Watch Next
+            </button>
+            <button
+              type="button"
+              className={rightRailMode === "playlist" ? "activeTab" : undefined}
+              onClick={() => setRightRailMode("playlist")}
+            >
+              Playlist
+            </button>
           </div>
+
+          {rightRailMode === "watch-next" ? (
+            <div
+              className={`relatedStack${
+                relatedTransitionPhase === "fading-out"
+                  ? " relatedStackFadingOut"
+                  : relatedTransitionPhase === "fading-in"
+                    ? " relatedStackFadingIn"
+                    : ""
+              }`}
+            >
+              {playlistMutationMessage ? (
+                <p className={`rightRailStatus rightRailStatus${playlistMutationTone === "success" ? "Success" : playlistMutationTone === "error" ? "Error" : "Info"}`}>
+                  {playlistMutationMessage}
+                </p>
+              ) : null}
+
+              {relatedTransitionPhase === "loading" ? (
+                <div className="relatedLoadingState" role="status" aria-live="polite" aria-busy="true">
+                  <span className="playerBootBars" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                  <span>Loading related videos...</span>
+                </div>
+              ) : null}
+
+              {displayedRenderableRelatedVideos.map((track, index) => (
+                <div
+                  key={track.id}
+                  className="relatedCardSlot"
+                >
+                  <Link
+                    href={`/?v=${track.id}`}
+                    className="relatedCard linkedCard relatedCardTransition"
+                    style={{ "--related-index": index } as CSSProperties}
+                    onMouseEnter={() => prefetchRelatedSelection(track)}
+                    onFocus={() => prefetchRelatedSelection(track)}
+                    onPointerDown={() => prefetchRelatedSelection(track)}
+                  >
+                    <div className="thumbGlow">
+                      <Image
+                        src={getRelatedThumbnail(track.id)}
+                        alt={track.title}
+                        width={128}
+                        height={72}
+                        unoptimized
+                        loading={index < 3 ? "eager" : "lazy"}
+                        fetchPriority={index < 2 ? "high" : "auto"}
+                        className="relatedThumb"
+                      />
+                    </div>
+                    <div>
+                      <h3>{track.title}</h3>
+                      <p>{track.channelTitle}</p>
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    className="relatedCardPlaylistAdd"
+                    aria-label={`Add ${track.title} to playlist`}
+                    title={activePlaylistId ? "Add to current playlist" : "Create playlist and add"}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void handleAddToPlaylistFromWatchNext(track);
+                    }}
+                    disabled={playlistMutationPendingVideoId === track.id}
+                  >
+                    {playlistMutationPendingVideoId === track.id ? "..." : "+"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="relatedStack relatedStackPlaylist">
+              {activePlaylistId ? (
+                <div className="rightRailPlaylistBar">
+                  <span className="rightRailPlaylistLabel">
+                    {playlistRailData
+                      ? `${playlistRailData.name} • ${activePlaylistTrackCount} ${activePlaylistTrackCount === 1 ? "track" : "tracks"}`
+                      : "Active playlist"}
+                  </span>
+                  <Link href={getClosePlaylistHref()} className="rightRailPlaylistClose">
+                    Close playlist
+                  </Link>
+                </div>
+              ) : null}
+
+              <div className="relatedStackPlaylistBody">
+
+              {!activePlaylistId ? (
+                isPlaylistSummaryLoading ? (
+                  <div className="relatedLoadingState" role="status" aria-live="polite" aria-busy="true">
+                    <span className="playerBootBars" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                    <span>Loading playlists...</span>
+                  </div>
+                ) : playlistSummaryError ? (
+                  <p className="rightRailStatus">{playlistSummaryError}</p>
+                ) : playlistRailSummaries.length > 0 ? (
+                  playlistRailSummaries.map((playlist) => {
+                    const hasLeadThumbnail = playlist.itemCount > 0 && playlist.leadVideoId !== "__placeholder__";
+
+                    return (
+                      <Link
+                        key={playlist.id}
+                        href={getActivatePlaylistHref(playlist.id)}
+                        className="relatedCard linkedCard rightRailPlaylistCard"
+                      >
+                        <div className="thumbGlow">
+                          {hasLeadThumbnail ? (
+                            <Image
+                              src={getRelatedThumbnail(playlist.leadVideoId)}
+                              alt=""
+                              width={128}
+                              height={72}
+                              unoptimized
+                              loading="lazy"
+                              className="relatedThumb"
+                            />
+                          ) : (
+                            <div className="playlistRailThumbPlaceholder" aria-hidden="true">♬</div>
+                          )}
+                        </div>
+                        <div>
+                          <h3>{playlist.name}</h3>
+                          <p>{playlist.itemCount} {playlist.itemCount === 1 ? "track" : "tracks"}</p>
+                        </div>
+                      </Link>
+                    );
+                  })
+                ) : (
+                  <p className="rightRailStatus">No playlists yet. Create one in Playlists.</p>
+                )
+              ) : isPlaylistRailLoading ? (
+                <div className="relatedLoadingState" role="status" aria-live="polite" aria-busy="true">
+                  <span className="playerBootBars" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                  <span>Loading playlist tracks...</span>
+                </div>
+              ) : playlistRailError ? (
+                <p className="rightRailStatus">{playlistRailError}</p>
+              ) : playlistRailData && playlistRailData.videos.length > 0 ? (
+                playlistRailData.videos.map((track, index) => {
+                  const isCurrentPlaylistTrack = currentVideo.id === track.id;
+                  return (
+                    <Link
+                      key={`${track.id}-${index}`}
+                      href={`/?v=${track.id}&pl=${encodeURIComponent(playlistRailData.id)}&pli=${index}`}
+                      className={`relatedCard linkedCard rightRailPlaylistTrackCard${isCurrentPlaylistTrack ? " relatedCardActive" : ""}`}
+                    >
+                      <div className="thumbGlow">
+                        <Image
+                          src={getRelatedThumbnail(track.id)}
+                          alt={track.title}
+                          width={128}
+                          height={72}
+                          unoptimized
+                          loading={index < 3 ? "eager" : "lazy"}
+                          fetchPriority={index < 2 ? "high" : "auto"}
+                          className="relatedThumb"
+                        />
+                      </div>
+                      <div>
+                        <h3>{track.title}</h3>
+                        <p>{track.channelTitle}</p>
+                      </div>
+                    </Link>
+                  );
+                })
+              ) : (
+                <p className="rightRailStatus">This playlist has no tracks yet.</p>
+              )}
+              </div>
+            </div>
+          )}
         </aside>
       </section>
     </main>

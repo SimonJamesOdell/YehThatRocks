@@ -4,6 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useRef } from "react";
 
+import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
+
 type Top100VideoLinkProps = {
   track: {
     id: string;
@@ -55,31 +57,36 @@ export function Top100VideoLink({ track, index }: Top100VideoLinkProps) {
   }, [track]);
 
   return (
-    <Link
-      href={`/?v=${track.id}&resume=1`}
-      className="trackCard linkedCard leaderboardCard"
-      onMouseEnter={warmSelection}
-      onFocus={warmSelection}
-      onPointerDown={warmSelection}
-      onClick={warmSelection}
-    >
-      <div className="leaderboardRank">#{index + 1}</div>
-      <div className="leaderboardThumbWrap">
-        <Image
-          src={getLeaderboardThumbnail(track)}
-          alt=""
-          width={160}
-          height={90}
-          className="leaderboardThumb"
-          loading="lazy"
-        />
+    <article className="trackCard leaderboardCard top100CardWithPlaylistAction">
+      <Link
+        href={`/?v=${track.id}&resume=1`}
+        className="linkedCard leaderboardTrackLink"
+        onMouseEnter={warmSelection}
+        onFocus={warmSelection}
+        onPointerDown={warmSelection}
+        onClick={warmSelection}
+      >
+        <div className="leaderboardRank">#{index + 1}</div>
+        <div className="leaderboardThumbWrap">
+          <Image
+            src={getLeaderboardThumbnail(track)}
+            alt=""
+            width={160}
+            height={90}
+            className="leaderboardThumb"
+            loading="lazy"
+          />
+        </div>
+        <div className="leaderboardMeta">
+          <h3>{track.title}</h3>
+          <p>
+            {track.channelTitle} · {track.favourited.toLocaleString()} favourites
+          </p>
+        </div>
+      </Link>
+      <div className="top100CardAction">
+        <AddToPlaylistButton videoId={track.id} />
       </div>
-      <div className="leaderboardMeta">
-        <h3>{track.title}</h3>
-        <p>
-          {track.channelTitle} · {track.favourited.toLocaleString()} favourites
-        </p>
-      </div>
-    </Link>
+    </article>
   );
 }

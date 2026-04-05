@@ -11,6 +11,7 @@ const files = {
   chatRoute: path.join(ROOT, "apps/web/app/api/chat/route.ts"),
   chatStreamRoute: path.join(ROOT, "apps/web/app/api/chat/stream/route.ts"),
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
+  css: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
 function read(filePath) {
@@ -35,9 +36,12 @@ function main() {
   const chatRouteSource = read(files.chatRoute);
   const chatStreamRouteSource = read(files.chatStreamRoute);
   const currentVideoRouteSource = read(files.currentVideoRoute);
+  const cssSource = read(files.css);
 
   // Watch Next and current-video resolver invariants.
-  assertContains(shellDynamicSource, "<h2 className=\"railHeading\">Watch Next</h2>", "Shell labels the right rail as Watch Next", failures);
+  assertContains(shellDynamicSource, "<div className=\"railTabs rightRailTabs\">", "Shell renders right rail tabs container", failures);
+  assertContains(shellDynamicSource, "Watch Next", "Shell labels a right rail tab as Watch Next", failures);
+  assertContains(shellDynamicSource, "Playlist", "Shell labels a right rail tab as Playlist", failures);
   assertContains(shellDynamicSource, "const [relatedTransitionPhase, setRelatedTransitionPhase] = useState<\"idle\" | \"fading-out\" | \"loading\" | \"fading-in\">(\"idle\");", "Watch Next uses explicit transition phases", failures);
   assertContains(shellDynamicSource, "watchNextRailRef.current.scrollTop = 0;", "Watch Next resets scroll top during transition", failures);
   assertContains(currentVideoRouteSource, "const targetRelatedCount = 10;", "Current-video API targets 10 Watch Next items", failures);
@@ -52,6 +56,16 @@ function main() {
   assertContains(playerExperienceSource, "const response = await fetch(`/api/playlists/${encodeURIComponent(activePlaylistId)}`, {", "Player loads playlist sequence for ordered playback", failures);
   assertContains(playerExperienceSource, "const shouldUseTopFallback =", "Player uses Top 100 fallback when Watch Next pool is small", failures);
   assertContains(playerExperienceSource, "const shouldAutoAdvance =", "Player computes auto-advance using playlist/deep-link/autoplay guard", failures);
+  assertContains(playerExperienceSource, "const [showEndedChoiceOverlay, setShowEndedChoiceOverlay] = useState(false);", "Player tracks autoplay-off end chooser overlay state", failures);
+  assertContains(playerExperienceSource, "setShowEndedChoiceOverlay(true);", "Player opens chooser overlay when autoplay-off playback ends", failures);
+  assertContains(playerExperienceSource, "className=\"playerEndedChoiceOverlay\"", "Player renders chooser overlay container", failures);
+  assertContains(playerExperienceSource, "className=\"playerEndedChoiceGrid\"", "Player renders chooser overlay grid", failures);
+  assertContains(playerExperienceSource, "const maxEndedChoiceVideos = 12;", "Player caps chooser cards to 12 for larger screens", failures);
+  assertContains(playerExperienceSource, "autoplayEnabledRef.current &&", "Player only auto-advances when autoplay is enabled", failures);
+  assertContains(cssSource, ".playerEndedChoiceOverlay", "Chooser overlay styles are defined", failures);
+  assertContains(cssSource, ".playerEndedChoiceGrid", "Chooser overlay grid styles are defined", failures);
+  assertContains(cssSource, "@media (min-width: 2200px)", "Chooser overlay defines ultrawide breakpoint", failures);
+  assertContains(cssSource, "grid-template-columns: repeat(6, minmax(0, 1fr));", "Chooser overlay uses 6 columns on ultrawide for two rows", failures);
   assertContains(playerExperienceSource, "const shouldAutoplaySelection = Boolean(requestedVideoId && requestedVideoId === currentVideo.id);", "Player only autoplays when requested id matches loaded video", failures);
   assertContains(playerExperienceSource, "showUnavailableOverlayMessage();", "Player shows unavailable apology overlay when runtime checks fail", failures);
   assertContains(playerExperienceSource, "const response = await fetch(\"/api/videos/unavailable\", {", "Player reports unavailable videos to API", failures);

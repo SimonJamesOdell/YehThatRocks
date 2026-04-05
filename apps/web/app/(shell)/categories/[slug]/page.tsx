@@ -1,7 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ArtistVideoLink } from "@/components/artist-video-link";
 import { CategoriesScrollReset } from "@/components/categories-scroll-reset";
 import { CloseLink } from "@/components/close-link";
 import {
@@ -51,23 +51,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
 
       <div className="categoryVideoGrid">
         {videos.length > 0 ? videos.map((video) => (
-          <Link
-            key={video.id}
-            href={`/?v=${video.id}&resume=1`}
-            className="categoryVideoCard linkedCard"
-          >
-            <div className="categoryThumbWrap">
-              <Image
-                src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
-                alt=""
-                width={320}
-                height={180}
-                className="categoryThumb"
-                loading="lazy"
-              />
-            </div>
-            <h3 className="categoryVideoTitle">{video.title}</h3>
-          </Link>
+          <ArtistVideoLink key={video.id} video={video} />
         )) : (
           <p className="categoryNoVideos">No videos found for this category yet.</p>
         )}

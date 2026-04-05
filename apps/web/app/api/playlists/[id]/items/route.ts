@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { addPlaylistItemSchema } from "@/lib/api-schemas";
+import { addPlaylistItemSchema, removePlaylistItemSchema, reorderPlaylistItemsSchema } from "@/lib/api-schemas";
 import { requireApiAuth } from "@/lib/auth-request";
-import { addPlaylistItem } from "@/lib/catalog-data";
+import { addPlaylistItem, removePlaylistItem, reorderPlaylistItems } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
@@ -43,4 +43,79 @@ export async function POST(request: NextRequest, context: PlaylistItemsRouteCont
   }
 
   return NextResponse.json(playlist, { status: 201 });
+}
+
+export async function DELETE(request: NextRequest, context: PlaylistItemsRouteContext) {
+  const authResult = await requireApiAuth(request);
+
+  if (!authResult.ok) {
+    return authResult.response;
+  }
+
+  const csrfError = verifySameOrigin(request);
+
+  if (csrfError) {
+    return csrfError;
+  }
+
+  const { id } = await context.params;
+  const bodyResult = await parseRequestJson(request);
+
+  if (!bodyResult.ok) {
+    return bodyResult.response;
+  }
+
+  const parsed = removePlaylistItemSchema.safeParse(bodyResult.data);
+
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const playlist = await removePlaylistItem(id, parsed.data.playlistItemIndex, authResult.auth.userId);
+
+  if (!playlist) {
+    return NextResponse.json({ error: "Playlist item not found" }, { status: 404 });
+  }
+
+  return NextResponse.json(playlist);
+}
+
+export async function PATCH(request: NextRequest, context: PlaylistItemsRouteContext) {
+  const authResult = await requireApiAuth(request);
+
+  if (!authResult.ok) {
+    return authResult.response;
+  }
+
+  const csrfError = verifySameOrigin(request);
+
+  if (csrfError) {
+    return csrfError;
+  }
+
+  const { id } = await context.params;
+  const bodyResult = await parseRequestJson(request);
+
+  if (!bodyResult.ok) {
+    return bodyResult.response;
+  }
+
+  const parsed = reorderPlaylistItemsSchema.safeParse(bodyResult.data);
+
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const playlist = await reorderPlaylistItems(
+    id,
+    parsed.data.fromIndex,
+    parsed.data.toIndex,
+    authResult.auth.userId,
+  );
+
+  if (!playlist) {
+    return NextResponse.json({ error: "Playlist reorder failed" }, { status: 404 });
+  }
+
+  return NextResponse.json(playlist);
 }

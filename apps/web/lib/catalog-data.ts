@@ -621,7 +621,7 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
       v.favourited,
       v.description
     FROM videos v
-    WHERE v.favourited = 1
+    WHERE v.favourited > 0
       AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
       AND EXISTS (
         SELECT 1
@@ -635,7 +635,7 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
         WHERE sv.video_id = v.id
           AND (sv.status IS NULL OR sv.status <> 'available')
       )
-    ORDER BY v.views DESC, v.videoId ASC
+    ORDER BY v.favourited DESC, v.views DESC, v.videoId ASC
     LIMIT ${limit}
   `;
 
@@ -653,9 +653,14 @@ function mapVideo(video: {
   videoId: string;
   title: string;
   channelTitle: string | null;
-  favourited: number;
+  favourited: number | bigint | null;
   description: string | null;
 }): VideoRecord {
+  const favouritedValue =
+    typeof video.favourited === "bigint"
+      ? Number(video.favourited)
+      : Number(video.favourited ?? 0);
+
   const inferredChannelTitle = video.title.includes(" - ")
     ? video.title.split(" - ", 1)[0].trim()
     : video.title.split("|", 1)[0].trim();
@@ -665,7 +670,7 @@ function mapVideo(video: {
     title: video.title,
     channelTitle: video.channelTitle ?? (inferredChannelTitle || "Unknown Channel"),
     genre: "Rock / Metal",
-    favourited: video.favourited,
+    favourited: Number.isFinite(favouritedValue) ? favouritedValue : 0,
     description: video.description ?? "Legacy video entry from the retained Yeh database.",
   };
 }
@@ -3146,7 +3151,7 @@ function toPlaylistSummary(playlist: PlaylistDetail): PlaylistSummary {
 
 export async function getPlaylists(userId?: number): Promise<PlaylistSummary[]> {
   if (!hasDatabaseUrl()) {
-    return getPreviewPlaylists(userId).map(toPlaylistSummary);
+    return [];
   }
 
   if (!userId) {
@@ -3154,92 +3159,341 @@ export async function getPlaylists(userId?: number): Promise<PlaylistSummary[]> 
   }
 
   try {
-    const playlists = await prisma.playlistName.findMany({
-      where: {
-        userId,
-      },
-      orderBy: { id: "asc" },
-      take: 24,
-      include: {
-        items: {
-          orderBy: { sortOrder: "asc" },
-          take: 1,
-          include: {
-            video: {
-              select: {
-                videoId: true,
-              },
-            },
-          },
-        },
-        _count: {
-          select: {
-            items: true,
-          },
-        },
-      },
-    });
+    type PlaylistSummaryRow = {
+      id: number | bigint;
+      name: string | null;
+      itemCount: number | bigint;
+      leadVideoId: string | null;
+    };
 
-    if (playlists.length === 0) {
-      return getPreviewPlaylists(userId).map(toPlaylistSummary);
+    const rowsByLegacySchema = await (async () => {
+      try {
+        return await prisma.$queryRaw<PlaylistSummaryRow[]>`
+          SELECT
+            p.id AS id,
+            p.name AS name,
+            (
+              SELECT COUNT(*)
+              FROM playlistitems pi
+              WHERE pi.playlistId = p.id
+            ) AS itemCount,
+            (
+              SELECT pi.videoId
+              FROM playlistitems pi
+              WHERE pi.playlistId = p.id
+              ORDER BY pi.id ASC
+              LIMIT 1
+            ) AS leadVideoId
+          FROM playlistnames p
+          WHERE p.userId = ${userId}
+          ORDER BY p.id ASC
+          LIMIT 24
+        `;
+      } catch {
+        return [] as PlaylistSummaryRow[];
+      }
+    })();
+
+    const rowsByMappedSchema = await (async () => {
+      try {
+        return await prisma.$queryRaw<PlaylistSummaryRow[]>`
+          SELECT
+            p.id AS id,
+            p.name AS name,
+            (
+              SELECT COUNT(*)
+              FROM playlistitems pi
+              WHERE pi.playlist_id = p.id
+            ) AS itemCount,
+            (
+              SELECT v.videoId
+              FROM playlistitems pi
+              LEFT JOIN videos v ON v.id = pi.video_id
+              WHERE pi.playlist_id = p.id
+              ORDER BY pi.id ASC
+              LIMIT 1
+            ) AS leadVideoId
+          FROM playlistnames p
+          WHERE p.user_id = ${userId}
+          ORDER BY p.id ASC
+          LIMIT 24
+        `;
+      } catch {
+        return [] as PlaylistSummaryRow[];
+      }
+    })();
+
+    const legacyTotal = rowsByLegacySchema.reduce((sum, row) => {
+      const count = typeof row.itemCount === "bigint" ? Number(row.itemCount) : Number(row.itemCount ?? 0);
+      return sum + (Number.isFinite(count) ? count : 0);
+    }, 0);
+
+    const mappedTotal = rowsByMappedSchema.reduce((sum, row) => {
+      const count = typeof row.itemCount === "bigint" ? Number(row.itemCount) : Number(row.itemCount ?? 0);
+      return sum + (Number.isFinite(count) ? count : 0);
+    }, 0);
+
+    const rows = mappedTotal > legacyTotal ? rowsByMappedSchema : rowsByLegacySchema;
+
+    if (rows.length === 0) {
+      return [];
     }
 
-    return playlists.map((playlist) => ({
-      id: String(playlist.id),
-      name: playlist.name,
-      itemCount: playlist._count.items,
-      leadVideoId: playlist.items[0]?.video.videoId ?? seedVideos[0].id,
-    }));
+    return rows.map((row) => {
+      const lead = typeof row.leadVideoId === "string" && row.leadVideoId.length > 0 ? row.leadVideoId : "__placeholder__";
+      const count = typeof row.itemCount === "bigint" ? Number(row.itemCount) : Number(row.itemCount ?? 0);
+
+      return {
+        id: String(typeof row.id === "bigint" ? Number(row.id) : row.id),
+        name: row.name ?? "Untitled Playlist",
+        itemCount: Number.isFinite(count) ? count : 0,
+        leadVideoId: lead,
+      };
+    });
   } catch {
-    return getPreviewPlaylists(userId).map(toPlaylistSummary);
+    return [];
   }
 }
 
 export async function getPlaylistById(id: string, userId?: number): Promise<PlaylistDetail | null> {
-  const fallback = getPreviewPlaylists(userId).find((playlist) => playlist.id === id) ?? null;
-
-  if (!hasDatabaseUrl()) {
-    return fallback;
+  if (!hasDatabaseUrl() || !userId) {
+    return null;
   }
 
   const numericId = Number(id);
 
   if (!Number.isInteger(numericId)) {
-    return fallback;
+    return null;
   }
 
   try {
-    const playlist = await prisma.playlistName.findUnique({
-      where: { id: numericId },
-      include: {
-        items: {
-          orderBy: { sortOrder: "asc" },
-          include: {
-            video: {
-              select: {
-                videoId: true,
-                title: true,
-                channelTitle: true,
-                favourited: true,
-                description: true,
-              },
-            },
-          },
-        },
-      },
-    });
+    const playlistRowsByLegacyOwner = await (async () => {
+      try {
+        return await prisma.$queryRaw<Array<{ id: number | bigint; name: string | null }>>`
+          SELECT id, name
+          FROM playlistnames
+          WHERE id = ${numericId} AND userId = ${userId}
+          LIMIT 1
+        `;
+      } catch {
+        return [] as Array<{ id: number | bigint; name: string | null }>;
+      }
+    })();
 
-    if (!playlist || playlist.userId !== userId || playlist.items.length === 0) {
-      return fallback;
+    const playlistRowsByMappedOwner = await (async () => {
+      try {
+        return await prisma.$queryRaw<Array<{ id: number | bigint; name: string | null }>>`
+          SELECT id, name
+          FROM playlistnames
+          WHERE id = ${numericId} AND user_id = ${userId}
+          LIMIT 1
+        `;
+      } catch {
+        return [] as Array<{ id: number | bigint; name: string | null }>;
+      }
+    })();
+
+    const playlist = playlistRowsByLegacyOwner[0] ?? playlistRowsByMappedOwner[0];
+
+    if (!playlist) {
+      return null;
+    }
+
+    type PlaylistDetailRow = RankedVideoRow & {
+      playlistItemId: number | bigint;
+    };
+
+    const collapseToPlaylistItems = (rows: PlaylistDetailRow[]) => {
+      const byPlaylistItemId = new Map<string, RankedVideoRow>();
+
+      for (const row of rows) {
+        const itemId = typeof row.playlistItemId === "bigint"
+          ? row.playlistItemId.toString()
+          : String(row.playlistItemId);
+
+        if (byPlaylistItemId.has(itemId)) {
+          continue;
+        }
+
+        byPlaylistItemId.set(itemId, {
+          videoId: row.videoId,
+          title: row.title,
+          channelTitle: row.channelTitle,
+          favourited: row.favourited,
+          description: row.description,
+        });
+      }
+
+      return [...byPlaylistItemId.values()];
+    };
+
+    const queryVariants: Array<() => Promise<PlaylistDetailRow[]>> = [
+      async () =>
+        prisma.$queryRaw<PlaylistDetailRow[]>`
+          SELECT
+            pi.id AS playlistItemId,
+            COALESCE(v.videoId, pi.videoId) AS videoId,
+            COALESCE(v.title, CONCAT('Video ', pi.videoId)) AS title,
+            COALESCE(v.channelTitle, 'Unknown Channel') AS channelTitle,
+            COALESCE(v.favourited, 0) AS favourited,
+            COALESCE(v.description, 'Playlist track') AS description
+          FROM playlistitems pi
+          LEFT JOIN videos v ON v.videoId = pi.videoId
+          WHERE pi.playlistId = ${numericId}
+          ORDER BY pi.id ASC
+        `,
+      async () =>
+          prisma.$queryRaw<PlaylistDetailRow[]>`
+          SELECT
+              pi.id AS playlistItemId,
+            COALESCE(v.videoId, CAST(pi.videoId AS CHAR)) AS videoId,
+            COALESCE(v.title, CONCAT('Video ', CAST(pi.videoId AS CHAR))) AS title,
+            COALESCE(v.channelTitle, 'Unknown Channel') AS channelTitle,
+            COALESCE(v.favourited, 0) AS favourited,
+            COALESCE(v.description, 'Playlist track') AS description
+          FROM playlistitems pi
+          LEFT JOIN videos v ON v.id = pi.videoId
+          WHERE pi.playlistId = ${numericId}
+          ORDER BY pi.id ASC
+        `,
+      async () =>
+          prisma.$queryRaw<PlaylistDetailRow[]>`
+          SELECT
+              pi.id AS playlistItemId,
+            COALESCE(v.videoId, CAST(pi.video_id AS CHAR)) AS videoId,
+            COALESCE(v.title, CONCAT('Video ', CAST(pi.video_id AS CHAR))) AS title,
+            COALESCE(v.channelTitle, 'Unknown Channel') AS channelTitle,
+            COALESCE(v.favourited, 0) AS favourited,
+            COALESCE(v.description, 'Playlist track') AS description
+          FROM playlistitems pi
+          LEFT JOIN videos v ON v.id = pi.video_id
+          WHERE pi.playlist_id = ${numericId}
+          ORDER BY pi.id ASC
+        `,
+      async () =>
+          prisma.$queryRaw<PlaylistDetailRow[]>`
+          SELECT
+              pi.id AS playlistItemId,
+            COALESCE(v.videoId, pi.video_id) AS videoId,
+            COALESCE(v.title, CONCAT('Video ', pi.video_id)) AS title,
+            COALESCE(v.channelTitle, 'Unknown Channel') AS channelTitle,
+            COALESCE(v.favourited, 0) AS favourited,
+            COALESCE(v.description, 'Playlist track') AS description
+          FROM playlistitems pi
+          LEFT JOIN videos v ON v.videoId = pi.video_id
+          WHERE pi.playlist_id = ${numericId}
+          ORDER BY pi.id ASC
+        `,
+    ];
+
+    let videoRows: RankedVideoRow[] = [];
+
+    for (const query of queryVariants) {
+      try {
+        const rows = await query();
+        const collapsed = collapseToPlaylistItems(rows);
+
+        if (collapsed.length > videoRows.length) {
+          videoRows = collapsed;
+        }
+      } catch {
+        // Try next known schema variant.
+      }
+    }
+
+    {
+      const loadTableColumns = async (tableName: string) => {
+        try {
+          return await prisma.$queryRawUnsafe<Array<{ Field: string; Type: string }>>(
+            `SHOW COLUMNS FROM ${tableName}`,
+          );
+        } catch {
+          return [] as Array<{ Field: string; Type: string }>;
+        }
+      };
+
+      const pickColumn = (columns: Array<{ Field: string; Type: string }>, names: string[]) =>
+        columns.find((column) => names.includes(column.Field));
+
+      const [playlistColumns, videoColumns] = await Promise.all([
+        loadTableColumns("playlistitems"),
+        loadTableColumns("videos"),
+      ]);
+
+      const playlistRef = pickColumn(playlistColumns, ["playlist_id", "playlistId", "playlistid"]);
+      const videoRef = pickColumn(playlistColumns, ["video_id", "videoId", "videoid"]);
+      const orderRef = pickColumn(playlistColumns, ["sort_order", "sortOrder", "id"]);
+      const rowIdRef = pickColumn(playlistColumns, ["id"]);
+      const videoPkRef = pickColumn(videoColumns, ["id"]);
+      const videoExternalIdRef = pickColumn(videoColumns, ["videoId", "video_id", "videoid"]);
+      const videoTitleRef = pickColumn(videoColumns, ["title"]);
+      const videoChannelTitleRef = pickColumn(videoColumns, ["channelTitle", "channel_title", "channel"]);
+      const videoFavouritedRef = pickColumn(videoColumns, ["favourited", "favorite", "is_favourited"]);
+      const videoDescriptionRef = pickColumn(videoColumns, ["description", "desc"]);
+      const isPlaylistVideoRefNumeric = Boolean(videoRef && /int|bigint|smallint|tinyint/i.test(videoRef.Type));
+
+      if (playlistRef && videoRef && orderRef && rowIdRef && videoExternalIdRef) {
+        const playlistCol = escapeSqlIdentifier(playlistRef.Field);
+        const videoCol = escapeSqlIdentifier(videoRef.Field);
+        const orderCol = escapeSqlIdentifier(orderRef.Field);
+        const rowIdCol = escapeSqlIdentifier(rowIdRef.Field);
+        const externalVideoCol = escapeSqlIdentifier(videoExternalIdRef.Field);
+        const titleExpr = videoTitleRef ? `v.${escapeSqlIdentifier(videoTitleRef.Field)}` : "NULL";
+        const channelTitleExpr = videoChannelTitleRef
+          ? `v.${escapeSqlIdentifier(videoChannelTitleRef.Field)}`
+          : "NULL";
+        const favouritedExpr = videoFavouritedRef
+          ? `v.${escapeSqlIdentifier(videoFavouritedRef.Field)}`
+          : "0";
+        const descriptionExpr = videoDescriptionRef
+          ? `v.${escapeSqlIdentifier(videoDescriptionRef.Field)}`
+          : "NULL";
+
+        const joinCondition =
+          isPlaylistVideoRefNumeric && videoPkRef
+            ? `v.${escapeSqlIdentifier(videoPkRef.Field)} = pi.${videoCol}`
+            : `v.${externalVideoCol} = pi.${videoCol}`;
+
+        const unresolvedVideoExpr = isPlaylistVideoRefNumeric
+          ? `CAST(pi.${videoCol} AS CHAR)`
+          : `pi.${videoCol}`;
+
+        try {
+          const fallbackRows = await prisma.$queryRawUnsafe<PlaylistDetailRow[]>(
+            `
+              SELECT
+                pi.${rowIdCol} AS playlistItemId,
+                COALESCE(v.${externalVideoCol}, ${unresolvedVideoExpr}) AS videoId,
+                COALESCE(${titleExpr}, CONCAT('Video ', ${unresolvedVideoExpr})) AS title,
+                COALESCE(${channelTitleExpr}, 'Unknown Channel') AS channelTitle,
+                COALESCE(${favouritedExpr}, 0) AS favourited,
+                COALESCE(${descriptionExpr}, 'Playlist track') AS description
+              FROM playlistitems pi
+              LEFT JOIN videos v ON ${joinCondition}
+              WHERE pi.${playlistCol} = ?
+              ORDER BY pi.${orderCol} ASC
+            `,
+            numericId,
+          );
+
+          const collapsed = collapseToPlaylistItems(fallbackRows);
+
+          if (collapsed.length > 0) {
+            videoRows = collapsed;
+          }
+        } catch {
+          // Keep empty rows and return playlist shell below.
+        }
+      }
     }
 
     return {
-      id: String(playlist.id),
-      name: playlist.name,
-      videos: playlist.items.map((item) => mapVideo(item.video)),
+      id: String(typeof playlist.id === "bigint" ? Number(playlist.id) : playlist.id),
+      name: playlist.name ?? "Untitled Playlist",
+      videos: videoRows.map(mapVideo),
     };
   } catch {
-    return fallback;
+    return null;
   }
 }
 
@@ -3296,25 +3550,40 @@ export async function getFavouriteVideos(userId?: number) {
 
 export async function updateFavourite(videoId: string, action: "add" | "remove", userId?: number) {
   if (hasDatabaseUrl() && userId) {
+    const normalizedVideoId = normalizeYouTubeVideoId(videoId) ?? videoId;
+
     if (action === "add") {
       const existing = await prisma.favourite.findFirst({
-        where: { userid: userId, videoId },
+        where: { userid: userId, videoId: normalizedVideoId },
         select: { id: true },
       });
 
       if (!existing) {
         await prisma.favourite.create({
-          data: { userid: userId, videoId },
+          data: { userid: userId, videoId: normalizedVideoId },
         });
       }
     } else {
       await prisma.favourite.deleteMany({
-        where: { userid: userId, videoId },
+        where: { userid: userId, videoId: normalizedVideoId },
       });
     }
 
+    const favouriteCount = await prisma.favourite.count({
+      where: { videoId: normalizedVideoId },
+    });
+
+    await prisma.video.updateMany({
+      where: { videoId: normalizedVideoId },
+      data: { favourited: favouriteCount },
+    });
+
+    topPoolCache = undefined;
+    const { invalidateTopVideosCache } = await import("@/lib/top-videos-cache");
+    invalidateTopVideosCache();
+
     return {
-      videoId,
+      videoId: normalizedVideoId,
       isFavourite: action === "add",
       favourites: await getFavouriteVideos(userId),
     };
@@ -3329,167 +3598,641 @@ export async function updateFavourite(videoId: string, action: "add" | "remove",
 
 export async function createPlaylist(name: string, videoIds: string[] = [], userId?: number) {
   if (hasDatabaseUrl() && userId) {
-    const matchingVideos = await prisma.video.findMany({
-      where: {
-        videoId: {
-          in: videoIds,
-        },
-      },
-      select: {
-        id: true,
-      },
-      take: 50,
-    });
+    const now = new Date();
 
-    const playlist = await prisma.playlistName.create({
-      data: {
-        name,
-        userId,
-        isPrivate: false,
-        items: {
-          create:
-            matchingVideos.length > 0
-              ? matchingVideos.map((video, index) => ({
-                  videoId: video.id,
-                  sortOrder: index,
-                }))
-              : undefined,
-        },
-      },
-      include: {
-        items: {
-          orderBy: {
-            sortOrder: "asc",
-          },
-          include: {
-            video: {
-              select: {
-                videoId: true,
-                title: true,
-                channelTitle: true,
-                favourited: true,
-                description: true,
-              },
-            },
-          },
-        },
-      },
-    });
+    // The active DB schema for playlists can vary by environment; try known column shapes.
+    let inserted = false;
+
+    try {
+      await prisma.$executeRaw`
+        INSERT INTO playlistnames (userId, name, createdAt, updatedAt)
+        VALUES (${userId}, ${name}, ${now}, ${now})
+      `;
+      inserted = true;
+    } catch {
+      // no-op, try alternative shape
+    }
+
+    if (!inserted) {
+      try {
+        await prisma.$executeRaw`
+          INSERT INTO playlistnames (user_id, name, is_private)
+          VALUES (${userId}, ${name}, ${false})
+        `;
+        inserted = true;
+      } catch {
+        // no-op, handled by final throw below
+      }
+    }
+
+    if (!inserted) {
+      throw new Error("Playlist insert failed for known playlistnames schemas.");
+    }
+
+    const insertedIdRows = await prisma.$queryRaw<Array<{ id: number | bigint }>>`
+      SELECT LAST_INSERT_ID() AS id
+    `;
+    const createdId = insertedIdRows[0]?.id;
+    const playlistId = typeof createdId === "bigint" ? Number(createdId) : createdId;
+
+    if (!playlistId) {
+      throw new Error("Playlist inserted but id could not be resolved.");
+    }
+
+    if (videoIds.length > 0) {
+      const uniqueVideoIds = [...new Set(videoIds.filter(Boolean))].slice(0, 50);
+
+      for (const videoId of uniqueVideoIds) {
+        try {
+          await prisma.$executeRaw`
+            INSERT INTO playlistitems (playlistId, videoId, createdAt, updatedAt)
+            VALUES (${playlistId}, ${videoId}, ${now}, ${now})
+          `;
+        } catch {
+          // Item linkage is optional for create success; keep base playlist creation successful.
+        }
+      }
+    }
 
     return {
-      id: String(playlist.id),
-      name: playlist.name,
-      videos: playlist.items.map((item) => mapVideo(item.video)),
+      id: String(playlistId),
+      name,
+      videos: [],
     };
   }
 
-  const topVideos = await getTopVideos();
-  const combined = [...topVideos, ...seedVideos].filter(
-    (video, index, array) => array.findIndex((entry) => entry.id === video.id) === index,
-  );
-  const chosenVideos = combined.filter((video) => videoIds.includes(video.id));
-  const playlistVideos = chosenVideos.length > 0 ? chosenVideos : [combined[0] ?? seedVideos[0]];
-  const previewPlaylists = getPreviewPlaylists(userId);
-  const nextId = String(
-    Math.max(0, ...previewPlaylists.map((playlist) => Number(playlist.id) || 0)) + 1,
-  );
-
-  const playlist: PlaylistDetail = {
-    id: nextId,
-    name,
-    videos: playlistVideos,
-  };
-
-  const store = getPreviewStore();
-  const resolvedUserId = getPreviewUserId(userId);
-  store.playlistsByUser.set(resolvedUserId, [...previewPlaylists, playlist]);
-  return playlist;
+  throw new Error("Playlist creation requires a configured database and authenticated user.");
 }
 
 export async function addPlaylistItem(playlistId: string, videoId: string, userId?: number) {
   if (hasDatabaseUrl() && userId) {
     const numericPlaylistId = Number(playlistId);
+    const normalizedVideoId = normalizeYouTubeVideoId(videoId) ?? videoId;
 
     if (!Number.isInteger(numericPlaylistId)) {
       return null;
     }
 
-    const playlist = await prisma.playlistName.findFirst({
-      where: {
-        id: numericPlaylistId,
-        userId,
-      },
-      select: {
-        id: true,
-        name: true,
-      },
-    });
+    try {
+      let ownerColumn: "userId" | "user_id" | null = null;
 
-    if (!playlist) {
+      try {
+        const rows = await prisma.$queryRaw<Array<{ id: number | bigint }>>`
+          SELECT id
+          FROM playlistnames
+          WHERE id = ${numericPlaylistId} AND userId = ${userId}
+          LIMIT 1
+        `;
+
+        if (rows.length > 0) {
+          ownerColumn = "userId";
+        }
+      } catch {
+        // Try alternative schema below.
+      }
+
+      if (!ownerColumn) {
+        try {
+          const rows = await prisma.$queryRaw<Array<{ id: number | bigint }>>`
+            SELECT id
+            FROM playlistnames
+            WHERE id = ${numericPlaylistId} AND user_id = ${userId}
+            LIMIT 1
+          `;
+
+          if (rows.length > 0) {
+            ownerColumn = "user_id";
+          }
+        } catch {
+          // no-op
+        }
+      }
+
+      if (!ownerColumn) {
+        return null;
+      }
+
+      const existingPlaylist = await getPlaylistById(String(numericPlaylistId), userId);
+      if (existingPlaylist?.videos.some((video) => {
+        const existingNormalizedId = normalizeYouTubeVideoId(video.id) ?? video.id;
+        return existingNormalizedId === normalizedVideoId;
+      })) {
+        return existingPlaylist;
+      }
+
+      const now = new Date();
+      let inserted = false;
+
+      const legacyAttempts: Array<() => Promise<number>> = [
+        async () =>
+          Number(
+            await prisma.$executeRaw`
+              INSERT INTO playlistitems (playlistId, videoId, createdAt, updatedAt)
+              VALUES (${numericPlaylistId}, ${normalizedVideoId}, ${now}, ${now})
+            `,
+          ),
+        async () =>
+          Number(
+            await prisma.$executeRaw`
+              INSERT INTO playlistitems (playlistId, videoId)
+              VALUES (${numericPlaylistId}, ${normalizedVideoId})
+            `,
+          ),
+      ];
+
+      for (const attempt of legacyAttempts) {
+        try {
+          const changed = await attempt();
+          if (changed > 0) {
+            inserted = true;
+            break;
+          }
+        } catch {
+          // Try next known insert shape.
+        }
+      }
+
+      if (!inserted) {
+        let videoPk: number | null = null;
+
+        try {
+          const videoRows = await prisma.$queryRaw<Array<{ id: number | bigint }>>`
+            SELECT id
+            FROM videos
+            WHERE videoId = ${normalizedVideoId}
+            LIMIT 1
+          `;
+          const resolvedId = videoRows[0]?.id;
+          videoPk = typeof resolvedId === "bigint" ? Number(resolvedId) : Number(resolvedId ?? NaN);
+
+          if (!Number.isInteger(videoPk)) {
+            videoPk = null;
+          }
+        } catch {
+          videoPk = null;
+        }
+
+        if (videoPk !== null) {
+          const modernAttempts: Array<() => Promise<number>> = [
+            async () =>
+              Number(
+                await prisma.$executeRaw`
+                  INSERT INTO playlistitems (playlist_id, video_id, sort_order)
+                  VALUES (
+                    ${numericPlaylistId},
+                    ${videoPk},
+                    COALESCE((SELECT MAX(sort_order) + 1 FROM playlistitems WHERE playlist_id = ${numericPlaylistId}), 0)
+                  )
+                `,
+              ),
+            async () =>
+              Number(
+                await prisma.$executeRaw`
+                  INSERT INTO playlistitems (playlist_id, video_id)
+                  VALUES (${numericPlaylistId}, ${videoPk})
+                `,
+              ),
+          ];
+
+          for (const attempt of modernAttempts) {
+            try {
+              const changed = await attempt();
+              if (changed > 0) {
+                inserted = true;
+                break;
+              }
+            } catch {
+              // Try next known insert shape.
+            }
+          }
+        }
+      }
+
+      if (!inserted) {
+        return null;
+      }
+
+      const resolvedPlaylist = await getPlaylistById(String(numericPlaylistId), userId);
+
+      if (resolvedPlaylist) {
+        return resolvedPlaylist;
+      }
+
+      const fallbackRows =
+        ownerColumn === "userId"
+          ? await prisma.$queryRaw<Array<{ id: number | bigint; name: string | null }>>`
+              SELECT id, name
+              FROM playlistnames
+              WHERE id = ${numericPlaylistId} AND userId = ${userId}
+              LIMIT 1
+            `
+          : await prisma.$queryRaw<Array<{ id: number | bigint; name: string | null }>>`
+              SELECT id, name
+              FROM playlistnames
+              WHERE id = ${numericPlaylistId} AND user_id = ${userId}
+              LIMIT 1
+            `;
+
+      const fallback = fallbackRows[0];
+
+      if (!fallback) {
+        return null;
+      }
+
+      return {
+        id: String(typeof fallback.id === "bigint" ? Number(fallback.id) : fallback.id),
+        name: fallback.name ?? "Untitled Playlist",
+        videos: [],
+      };
+    } catch {
       return null;
     }
-
-    const video = await prisma.video.findUnique({
-      where: {
-        videoId,
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    if (!video) {
-      return null;
-    }
-
-    const existingCount = await prisma.playlistItem.count({
-      where: {
-        playlistId: playlist.id,
-      },
-    });
-
-    await prisma.playlistItem.create({
-      data: {
-        playlistId: playlist.id,
-        videoId: video.id,
-        sortOrder: existingCount,
-      },
-    });
-
-    return getPlaylistById(String(playlist.id));
   }
 
-  const topVideos = await getTopVideos();
-  const combined = [...topVideos, ...seedVideos].filter(
-    (video, index, array) => array.findIndex((entry) => entry.id === video.id) === index,
-  );
-  const video = combined.find((entry) => entry.id === videoId);
+  return null;
+}
 
-  if (!video) {
+export async function removePlaylistItem(playlistId: string, playlistItemIndex: number, userId?: number) {
+  if (!hasDatabaseUrl() || !userId) {
     return null;
   }
 
-  const store = getPreviewStore();
-  const resolvedUserId = getPreviewUserId(userId);
-  const previewPlaylists = getPreviewPlaylists(userId);
-  let updatedPlaylist: PlaylistDetail | null = null;
+  const numericPlaylistId = Number(playlistId);
 
-  const nextPlaylists = previewPlaylists.map((playlist) => {
-    if (playlist.id !== playlistId) {
-      return playlist;
+  if (!Number.isInteger(numericPlaylistId) || !Number.isInteger(playlistItemIndex) || playlistItemIndex < 0) {
+    return null;
+  }
+
+  try {
+    let ownerColumn: "userId" | "user_id" | null = null;
+
+    try {
+      const rows = await prisma.$queryRaw<Array<{ id: number | bigint }>>`
+        SELECT id
+        FROM playlistnames
+        WHERE id = ${numericPlaylistId} AND userId = ${userId}
+        LIMIT 1
+      `;
+
+      if (rows.length > 0) {
+        ownerColumn = "userId";
+      }
+    } catch {
+      // Try mapped owner column below.
     }
 
-    updatedPlaylist = {
-      ...playlist,
-      videos: [...playlist.videos, video],
+    if (!ownerColumn) {
+      try {
+        const rows = await prisma.$queryRaw<Array<{ id: number | bigint }>>`
+          SELECT id
+          FROM playlistnames
+          WHERE id = ${numericPlaylistId} AND user_id = ${userId}
+          LIMIT 1
+        `;
+
+        if (rows.length > 0) {
+          ownerColumn = "user_id";
+        }
+      } catch {
+        // no-op
+      }
+    }
+
+    if (!ownerColumn) {
+      return null;
+    }
+
+    const loadTableColumns = async (tableName: string) => {
+      try {
+        return await prisma.$queryRawUnsafe<Array<{ Field: string; Type: string }>>(
+          `SHOW COLUMNS FROM ${tableName}`,
+        );
+      } catch {
+        return [] as Array<{ Field: string; Type: string }>;
+      }
     };
 
-    return updatedPlaylist;
-  });
+    const pickColumn = (columns: Array<{ Field: string; Type: string }>, names: string[]) =>
+      columns.find((column) => names.includes(column.Field));
 
-  store.playlistsByUser.set(resolvedUserId, nextPlaylists);
+    const playlistColumns = await loadTableColumns("playlistitems");
+    const playlistRef = pickColumn(playlistColumns, ["playlist_id", "playlistId", "playlistid"]);
+    const rowIdRef = pickColumn(playlistColumns, ["id"]);
+    const orderRef = pickColumn(playlistColumns, ["sort_order", "sortOrder", "id"]);
 
-  return updatedPlaylist;
+    if (!playlistRef || !rowIdRef || !orderRef) {
+      return null;
+    }
+
+    const playlistCol = escapeSqlIdentifier(playlistRef.Field);
+    const rowIdCol = escapeSqlIdentifier(rowIdRef.Field);
+    const orderCol = escapeSqlIdentifier(orderRef.Field);
+
+    const itemRows = await prisma.$queryRawUnsafe<Array<{ rowId: number | bigint }>>(
+      `
+        SELECT pi.${rowIdCol} AS rowId
+        FROM playlistitems pi
+        WHERE pi.${playlistCol} = ?
+        ORDER BY pi.${orderCol} ASC, pi.${rowIdCol} ASC
+      `,
+      numericPlaylistId,
+    );
+
+    const target = itemRows[playlistItemIndex];
+
+    if (!target) {
+      return null;
+    }
+
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM playlistitems WHERE ${rowIdCol} = ? LIMIT 1`,
+      typeof target.rowId === "bigint" ? Number(target.rowId) : target.rowId,
+    );
+
+    return await getPlaylistById(String(numericPlaylistId), userId);
+  } catch {
+    return null;
+  }
+}
+
+export async function reorderPlaylistItems(playlistId: string, fromIndex: number, toIndex: number, userId?: number) {
+  if (!hasDatabaseUrl() || !userId) {
+    return null;
+  }
+
+  const numericPlaylistId = Number(playlistId);
+
+  if (!Number.isInteger(numericPlaylistId) || !Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) {
+    return null;
+  }
+
+  if (fromIndex < 0 || toIndex < 0) {
+    return null;
+  }
+
+  if (fromIndex === toIndex) {
+    return await getPlaylistById(String(numericPlaylistId), userId);
+  }
+
+  try {
+    let ownerColumn: "userId" | "user_id" | null = null;
+
+    try {
+      const rows = await prisma.$queryRaw<Array<{ id: number | bigint }>>`
+        SELECT id
+        FROM playlistnames
+        WHERE id = ${numericPlaylistId} AND userId = ${userId}
+        LIMIT 1
+      `;
+
+      if (rows.length > 0) {
+        ownerColumn = "userId";
+      }
+    } catch {
+      // Try mapped owner column below.
+    }
+
+    if (!ownerColumn) {
+      try {
+        const rows = await prisma.$queryRaw<Array<{ id: number | bigint }>>`
+          SELECT id
+          FROM playlistnames
+          WHERE id = ${numericPlaylistId} AND user_id = ${userId}
+          LIMIT 1
+        `;
+
+        if (rows.length > 0) {
+          ownerColumn = "user_id";
+        }
+      } catch {
+        // no-op
+      }
+    }
+
+    if (!ownerColumn) {
+      return null;
+    }
+
+    const loadTableColumns = async (tableName: string) => {
+      try {
+        return await prisma.$queryRawUnsafe<Array<{ Field: string; Type: string }>>(
+          `SHOW COLUMNS FROM ${tableName}`,
+        );
+      } catch {
+        return [] as Array<{ Field: string; Type: string }>;
+      }
+    };
+
+    const pickColumn = (columns: Array<{ Field: string; Type: string }>, names: string[]) =>
+      columns.find((column) => names.includes(column.Field));
+
+    const playlistColumns = await loadTableColumns("playlistitems");
+    const playlistRef = pickColumn(playlistColumns, ["playlist_id", "playlistId", "playlistid"]);
+    const rowIdRef = pickColumn(playlistColumns, ["id"]);
+    const orderRef = pickColumn(playlistColumns, ["sort_order", "sortOrder", "id"]);
+
+    if (!playlistRef || !rowIdRef || !orderRef) {
+      return null;
+    }
+
+    // Reordering requires a mutable ordering column.
+    if (orderRef.Field === "id") {
+      return null;
+    }
+
+    const playlistCol = escapeSqlIdentifier(playlistRef.Field);
+    const rowIdCol = escapeSqlIdentifier(rowIdRef.Field);
+    const orderCol = escapeSqlIdentifier(orderRef.Field);
+
+    const itemRows = await prisma.$queryRawUnsafe<Array<{ rowId: number | bigint }>>(
+      `
+        SELECT pi.${rowIdCol} AS rowId
+        FROM playlistitems pi
+        WHERE pi.${playlistCol} = ?
+        ORDER BY pi.${orderCol} ASC, pi.${rowIdCol} ASC
+      `,
+      numericPlaylistId,
+    );
+
+    if (fromIndex >= itemRows.length || toIndex >= itemRows.length) {
+      return null;
+    }
+
+    const reordered = [...itemRows];
+    const [moved] = reordered.splice(fromIndex, 1);
+
+    if (!moved) {
+      return null;
+    }
+
+    reordered.splice(toIndex, 0, moved);
+
+    for (let index = 0; index < reordered.length; index += 1) {
+      const rowId = reordered[index]?.rowId;
+
+      if (rowId === undefined || rowId === null) {
+        continue;
+      }
+
+      const normalizedRowId = typeof rowId === "bigint" ? Number(rowId) : rowId;
+      await prisma.$executeRawUnsafe(
+        `UPDATE playlistitems SET ${orderCol} = ? WHERE ${rowIdCol} = ? LIMIT 1`,
+        index,
+        normalizedRowId,
+      );
+    }
+
+    return await getPlaylistById(String(numericPlaylistId), userId);
+  } catch {
+    return null;
+  }
+}
+
+export async function renamePlaylist(playlistId: string, name: string, userId?: number) {
+  if (hasDatabaseUrl() && userId) {
+    const numericId = Number(playlistId);
+    const trimmedName = name.trim();
+
+    if (!Number.isInteger(numericId) || trimmedName.length < 2) {
+      return false;
+    }
+
+    const now = new Date();
+
+    try {
+      const attempts: Array<() => Promise<number>> = [
+        async () =>
+          Number(
+            await prisma.$executeRaw`
+              UPDATE playlistnames
+              SET name = ${trimmedName}, updatedAt = ${now}
+              WHERE id = ${numericId} AND userId = ${userId}
+            `,
+          ),
+        async () =>
+          Number(
+            await prisma.$executeRaw`
+              UPDATE playlistnames
+              SET name = ${trimmedName}
+              WHERE id = ${numericId} AND userId = ${userId}
+            `,
+          ),
+        async () =>
+          Number(
+            await prisma.$executeRaw`
+              UPDATE playlistnames
+              SET name = ${trimmedName}, updatedAt = ${now}
+              WHERE id = ${numericId} AND user_id = ${userId}
+            `,
+          ),
+        async () =>
+          Number(
+            await prisma.$executeRaw`
+              UPDATE playlistnames
+              SET name = ${trimmedName}
+              WHERE id = ${numericId} AND user_id = ${userId}
+            `,
+          ),
+      ];
+
+      for (const attempt of attempts) {
+        try {
+          const changed = await attempt();
+
+          if (changed > 0) {
+            return true;
+          }
+        } catch {
+          // Try the next known schema shape.
+        }
+      }
+
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+export async function deletePlaylist(playlistId: string, userId?: number) {
+  if (hasDatabaseUrl() && userId) {
+    const numericId = Number(playlistId);
+
+    if (!Number.isInteger(numericId)) {
+      return false;
+    }
+
+    try {
+      let ownerColumn: "userId" | "user_id" | null = null;
+
+      try {
+        const rows = await prisma.$queryRaw<Array<{ id: number | bigint }>>`
+          SELECT id
+          FROM playlistnames
+          WHERE id = ${numericId} AND userId = ${userId}
+          LIMIT 1
+        `;
+
+        if (rows.length > 0) {
+          ownerColumn = "userId";
+        }
+      } catch {
+        // Try alternative schema below.
+      }
+
+      if (!ownerColumn) {
+        try {
+          const rows = await prisma.$queryRaw<Array<{ id: number | bigint }>>`
+            SELECT id
+            FROM playlistnames
+            WHERE id = ${numericId} AND user_id = ${userId}
+            LIMIT 1
+          `;
+
+          if (rows.length > 0) {
+            ownerColumn = "user_id";
+          }
+        } catch {
+          // no-op
+        }
+      }
+
+      if (!ownerColumn) {
+        return false;
+      }
+
+      try {
+        await prisma.$executeRaw`
+          DELETE FROM playlistitems
+          WHERE playlistId = ${numericId}
+        `;
+      } catch {
+        await prisma.$executeRaw`
+          DELETE FROM playlistitems
+          WHERE playlist_id = ${numericId}
+        `;
+      }
+
+      const deleted =
+        ownerColumn === "userId"
+          ? await prisma.$executeRaw`
+              DELETE FROM playlistnames
+              WHERE id = ${numericId} AND userId = ${userId}
+            `
+          : await prisma.$executeRaw`
+              DELETE FROM playlistnames
+              WHERE id = ${numericId} AND user_id = ${userId}
+            `;
+
+      return Number(deleted) > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 export async function submitAiVote(trackId: string, vote: 1 | -1) {

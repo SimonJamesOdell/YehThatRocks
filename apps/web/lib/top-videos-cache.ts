@@ -7,6 +7,12 @@ let cachedTopVideos: VideoRecord[] | null = null;
 let cachedTopVideosExpiresAt = 0;
 let topVideosRefreshPromise: Promise<VideoRecord[]> | null = null;
 
+export function invalidateTopVideosCache() {
+  cachedTopVideos = null;
+  cachedTopVideosExpiresAt = 0;
+  topVideosRefreshPromise = null;
+}
+
 function uniqueVideosById(videos: VideoRecord[]) {
   const seen = new Set<string>();
   const unique: VideoRecord[] = [];

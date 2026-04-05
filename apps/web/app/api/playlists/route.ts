@@ -42,7 +42,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const playlist = await createPlaylist(parsed.data.name, parsed.data.videoIds, authResult.auth.userId);
-  return NextResponse.json(playlist, { status: 201 });
+  try {
+    const playlist = await createPlaylist(parsed.data.name, parsed.data.videoIds, authResult.auth.userId);
+    return NextResponse.json(playlist, { status: 201 });
+  } catch (error) {
+    console.error("Failed to create playlist", error);
+    const details = error instanceof Error ? error.message : String(error);
+
+    return NextResponse.json(
+      {
+        error: "Failed to create playlist",
+        ...(process.env.NODE_ENV !== "production" ? { details } : null),
+      },
+      { status: 500 },
+    );
+  }
 }
 

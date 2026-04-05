@@ -32,7 +32,11 @@ export async function AppShell({
     getCurrentAuthenticatedUser(),
   ]);
   const isOverlayRoute = activePath !== "/";
-  const disableOverlayDropAnimation = activePath === "/categories" || activePath.startsWith("/categories/");
+  const disableOverlayDropAnimation =
+    activePath === "/categories"
+    || activePath.startsWith("/categories/")
+    || activePath === "/playlists"
+    || activePath.startsWith("/playlists/");
   const uniqueRelatedVideos = relatedVideos.filter(
     (video, index, allVideos) =>
       video.id !== currentVideo.id && allVideos.findIndex((candidate) => candidate.id === video.id) === index,

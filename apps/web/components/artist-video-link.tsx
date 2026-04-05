@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useRef } from "react";
 
+import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import type { VideoRecord } from "@/lib/catalog";
 
 const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
@@ -41,25 +42,30 @@ export function ArtistVideoLink({ video }: ArtistVideoLinkProps) {
   }, [video]);
 
   return (
-    <Link
-      href={`/?v=${video.id}&resume=1`}
-      className="categoryVideoCard linkedCard"
-      onMouseEnter={warmSelection}
-      onFocus={warmSelection}
-      onPointerDown={warmSelection}
-      onClick={warmSelection}
-    >
-      <div className="categoryThumbWrap">
-        <Image
-          src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
-          alt=""
-          width={320}
-          height={180}
-          className="categoryThumb"
-          loading="lazy"
-        />
+    <article className="categoryVideoCard">
+      <Link
+        href={`/?v=${video.id}&resume=1`}
+        className="linkedCard categoryVideoPrimaryLink"
+        onMouseEnter={warmSelection}
+        onFocus={warmSelection}
+        onPointerDown={warmSelection}
+        onClick={warmSelection}
+      >
+        <div className="categoryThumbWrap">
+          <Image
+            src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
+            alt=""
+            width={320}
+            height={180}
+            className="categoryThumb"
+            loading="lazy"
+          />
+        </div>
+        <h3 className="categoryVideoTitle">{video.title}</h3>
+      </Link>
+      <div className="actionRow categoryVideoActions">
+        <AddToPlaylistButton videoId={video.id} />
       </div>
-      <h3 className="categoryVideoTitle">{video.title}</h3>
-    </Link>
+    </article>
   );
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
+import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import type { VideoRecord } from "@/lib/catalog";
 
 type FavouritesGridProps = {
@@ -146,6 +147,9 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
                   </Link>
                 </h3>
                 <p>{track.channelTitle}</p>
+                <div className="actionRow favouritesCardActionsRow">
+                  <AddToPlaylistButton videoId={track.id} isAuthenticated={isAuthenticated} />
+                </div>
               </article>
             );
           })}

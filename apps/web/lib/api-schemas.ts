@@ -14,6 +14,19 @@ export const addPlaylistItemSchema = z.object({
   videoId: z.string().min(1)
 });
 
+export const removePlaylistItemSchema = z.object({
+  playlistItemIndex: z.number().int().min(0),
+});
+
+export const reorderPlaylistItemsSchema = z.object({
+  fromIndex: z.number().int().min(0),
+  toIndex: z.number().int().min(0),
+});
+
+export const renamePlaylistSchema = z.object({
+  name: z.string().min(2).max(80),
+});
+
 export const aiVoteSchema = z.object({
   vote: z.union([z.literal(1), z.literal(-1)])
 });
