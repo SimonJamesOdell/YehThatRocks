@@ -11,6 +11,11 @@ type PlayerExperienceProps = {
   isLoggedIn: boolean;
 };
 
+type PlaylistPayload = {
+  id: string;
+  videos: VideoRecord[];
+};
+
 type YouTubePlayerStateChangeEvent = {
   data: number;
 };
@@ -74,10 +79,13 @@ const AUTOPLAY_KEY = "yeh-player-autoplay";
 const HISTORY_KEY = "yeh-player-history";
 const RESUME_KEY = "yeh-player-resume";
 const HISTORY_LIMIT = 20;
+const RANDOM_NEXT_RECENT_EXCLUSION = 6;
+const RANDOM_NEXT_MIN_WATCH_NEXT_POOL = 5;
 const UNAVAILABLE_PLAYER_CODES = new Set([5, 100, 101, 150]);
 const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_PLAYER === "1";
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
 const CANONICAL_SITE_ORIGIN = "https://yehthatrocks.com";
+const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. Please choose another track.";
 
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
   const consoleWithPatchState = console as typeof console & {
@@ -177,16 +185,29 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const requestedVideoId = searchParams.get("v");
+  const activePlaylistId = searchParams.get("pl");
+  const rawPlaylistItemIndex = searchParams.get("pli");
+  const activePlaylistItemIndex =
+    rawPlaylistItemIndex !== null && /^\d+$/.test(rawPlaylistItemIndex)
+      ? Number(rawPlaylistItemIndex)
+      : null;
   const playerElementRef = useRef<HTMLDivElement | null>(null);
   const playerFrameRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YouTubePlayer | null>(null);
   const overlayTimeoutRef = useRef<number | null>(null);
+  const unavailableOverlayTimeoutRef = useRef<number | null>(null);
+  const initialRequestedVideoIdRef = useRef<string | null>(requestedVideoId);
+  const hasLeftInitialRequestedVideoRef = useRef(false);
   const isBootstrappingHistoryRef = useRef(true);
   const previousVideoIdRef = useRef<string | null>(null);
+  const favouriteSaveTimeoutRef = useRef<number | null>(null);
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [favouriteSaveState, setFavouriteSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [historyStack, setHistoryStack] = useState<string[]>([]);
   const [showNowPlayingOverlay, setShowNowPlayingOverlay] = useState(false);
+  const [unavailableOverlayMessage, setUnavailableOverlayMessage] = useState<string | null>(null);
   const [overlayInstance, setOverlayInstance] = useState(0);
   const [playerHostMode, setPlayerHostMode] = useState<"nocookie" | "youtube">("nocookie");
   const [isPlayerReady, setIsPlayerReady] = useState(false);
@@ -203,10 +224,17 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
     const progressIntervalRef = useRef<number | null>(null);
     const nowPlayingShownForVideoRef = useRef<string | null>(null);
     const reportedUnavailableVideoIdRef = useRef<string | null>(null);
+    const autoplaySuppressedVideoIdRef = useRef<string | null>(null);
     const playAttemptedAtRef = useRef<number | null>(null);
     const nextVideoIdRef = useRef<string>(currentVideo.id);
+    const nextPlaylistIndexRef = useRef<number | null>(null);
+    const activePlaylistIdRef = useRef<string | null>(activePlaylistId);
+  const [playlistQueueIds, setPlaylistQueueIds] = useState<string[]>([]);
+  const [topFallbackVideoIds, setTopFallbackVideoIds] = useState<string[]>([]);
   const autoplayEnabledRef = useRef(autoplayEnabled);
+  const hasActivePlaylistSequenceRef = useRef(false);
   autoplayEnabledRef.current = autoplayEnabled;
+  activePlaylistIdRef.current = activePlaylistId;
 
   function handleFullscreenToggle() {
     if (!document.fullscreenElement) {
@@ -224,16 +252,199 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
 
-  const currentIndex = queue.findIndex((video) => video.id === currentVideo.id);
-  const nextVideo = currentIndex >= 0 ? queue[(currentIndex + 1) % queue.length] : queue[0];
-  nextVideoIdRef.current = nextVideo.id;
-  const hasPreviousTrack = historyStack.length >= 2;
+  const playlistCurrentIndex = playlistQueueIds.findIndex((videoId) => videoId === currentVideo.id);
+  const effectivePlaylistIndex =
+    activePlaylistItemIndex !== null &&
+    activePlaylistItemIndex >= 0 &&
+    activePlaylistItemIndex < playlistQueueIds.length
+      ? activePlaylistItemIndex
+      : playlistCurrentIndex >= 0
+        ? playlistCurrentIndex
+        : null;
+  const hasActivePlaylistSequence = Boolean(
+    activePlaylistId &&
+      playlistQueueIds.length > 0 &&
+      effectivePlaylistIndex !== null,
+  );
+  hasActivePlaylistSequenceRef.current = hasActivePlaylistSequence;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTopFallbackPool() {
+      try {
+        const response = await fetch("/api/videos/top?count=100", {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json().catch(() => null)) as
+          | {
+              videos?: VideoRecord[];
+            }
+          | null;
+
+        const ids = Array.isArray(payload?.videos)
+          ? payload.videos
+              .map((video) => video.id)
+              .filter((id): id is string => Boolean(id))
+          : [];
+
+        if (!cancelled) {
+          setTopFallbackVideoIds(Array.from(new Set(ids)));
+        }
+      } catch {
+        // Keep existing fallback pool if loading fails.
+      }
+    }
+
+    void loadTopFallbackPool();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function getRandomWatchNextId() {
+    const candidateIds = Array.from(new Set(queue.map((video) => video.id))).filter(
+      (videoId) => videoId !== currentVideo.id,
+    );
+
+    // Avoid recently played videos when possible so random-next feels fresh.
+    const recentIds = Array.from(new Set([...historyStack].reverse()))
+      .filter((videoId) => videoId !== currentVideo.id)
+      .slice(0, RANDOM_NEXT_RECENT_EXCLUSION);
+    const recentIdSet = new Set(recentIds);
+
+    const shouldUseTopFallback =
+      candidateIds.length > 0 && candidateIds.length < RANDOM_NEXT_MIN_WATCH_NEXT_POOL && topFallbackVideoIds.length > 0;
+
+    const topFallbackCandidateIds = shouldUseTopFallback
+      ? topFallbackVideoIds.filter((videoId) => videoId !== currentVideo.id)
+      : [];
+
+    const freshCandidateIds = candidateIds.filter((videoId) => !recentIdSet.has(videoId));
+    const freshTopFallbackIds = topFallbackCandidateIds.filter((videoId) => !recentIdSet.has(videoId));
+
+    const selectionPool = shouldUseTopFallback
+      ? (freshTopFallbackIds.length > 0 ? freshTopFallbackIds : topFallbackCandidateIds)
+      : (freshCandidateIds.length > 0 ? freshCandidateIds : candidateIds);
+
+    if (selectionPool.length === 0) {
+      return null;
+    }
+
+    const randomIndex = Math.floor(Math.random() * selectionPool.length);
+    return selectionPool[randomIndex] ?? null;
+  }
+
+  function resolveNextTarget() {
+    if (hasActivePlaylistSequence && effectivePlaylistIndex !== null) {
+      const nextIndex = (effectivePlaylistIndex + 1) % playlistQueueIds.length;
+      const nextId = playlistQueueIds[nextIndex] ?? null;
+
+      if (nextId) {
+        return {
+          videoId: nextId,
+          playlistItemIndex: nextIndex,
+          clearPlaylist: false,
+        };
+      }
+    }
+
+    const randomWatchNextId = getRandomWatchNextId();
+
+    if (!randomWatchNextId) {
+      return null;
+    }
+
+    return {
+      videoId: randomWatchNextId,
+      playlistItemIndex: null,
+      clearPlaylist: true,
+    };
+  }
+
+  const resolvedNextTarget = resolveNextTarget();
+  nextVideoIdRef.current = resolvedNextTarget?.videoId ?? currentVideo.id;
+  nextPlaylistIndexRef.current = resolvedNextTarget?.playlistItemIndex ?? null;
+
+  const hasPreviousTrack = hasActivePlaylistSequence
+    ? playlistQueueIds.length > 1
+    : historyStack.length >= 2;
   const safeDuration = Math.max(0, toSafeNumber(duration, 0));
   const safeCurrentTime = Math.max(0, Math.min(toSafeNumber(currentTime, 0), safeDuration || Number.MAX_SAFE_INTEGER));
   const progressPercent = safeDuration > 0 ? Math.min(100, Math.max(0, (safeCurrentTime / safeDuration) * 100)) : 0;
   const elapsedLabel = formatPlaybackTime(safeCurrentTime);
   const durationLabel = formatPlaybackTime(safeDuration);
   const shareUrl = buildCanonicalShareUrl(currentVideo.id);
+  const shouldAutoplaySelection = Boolean(requestedVideoId && requestedVideoId === currentVideo.id);
+
+  useEffect(() => {
+    const initialRequestedVideoId = initialRequestedVideoIdRef.current;
+
+    if (!initialRequestedVideoId) {
+      return;
+    }
+
+    if (currentVideo.id !== initialRequestedVideoId) {
+      hasLeftInitialRequestedVideoRef.current = true;
+    }
+  }, [currentVideo.id]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !activePlaylistId) {
+      setPlaylistQueueIds([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadPlaylistSequence() {
+      try {
+        const response = await fetch(`/api/playlists/${encodeURIComponent(activePlaylistId)}`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          if (!cancelled) {
+            setPlaylistQueueIds([]);
+          }
+          return;
+        }
+
+        const payload = (await response.json().catch(() => null)) as PlaylistPayload | null;
+
+        if (!payload || !Array.isArray(payload.videos)) {
+          if (!cancelled) {
+            setPlaylistQueueIds([]);
+          }
+          return;
+        }
+
+        const sequenceIds = payload.videos
+          .map((video) => video.id)
+          .filter((id): id is string => Boolean(id));
+
+        if (!cancelled) {
+          setPlaylistQueueIds(sequenceIds);
+        }
+      } catch {
+        if (!cancelled) {
+          setPlaylistQueueIds([]);
+        }
+      }
+    }
+
+    void loadPlaylistSequence();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePlaylistId, isLoggedIn]);
 
   function persistResumeSnapshot(wasPlaying: boolean, explicitTime?: number) {
     if (typeof window === "undefined") {
@@ -270,6 +481,19 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
     overlayTimeoutRef.current = window.setTimeout(() => {
       setShowNowPlayingOverlay(false);
     }, 3200);
+  }
+
+  function showUnavailableOverlayMessage() {
+    if (unavailableOverlayTimeoutRef.current) {
+      window.clearTimeout(unavailableOverlayTimeoutRef.current);
+    }
+
+    setUnavailableOverlayMessage(UNAVAILABLE_OVERLAY_MESSAGE);
+
+    unavailableOverlayTimeoutRef.current = window.setTimeout(() => {
+      setUnavailableOverlayMessage(null);
+      unavailableOverlayTimeoutRef.current = null;
+    }, 6200);
   }
 
   useEffect(() => {
@@ -315,7 +539,9 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
   useEffect(() => {
     nowPlayingShownForVideoRef.current = null;
     reportedUnavailableVideoIdRef.current = null;
+    autoplaySuppressedVideoIdRef.current = null;
     playAttemptedAtRef.current = null;
+    setUnavailableOverlayMessage(null);
     setHasPlaybackStarted(false);
     setShowControls(false);
     logFlow("current-video:changed", {
@@ -364,9 +590,10 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
         state,
       });
 
-      const nextId = nextVideoIdRef.current;
-      if (shouldSkip && nextId !== currentVideo.id) {
-        navigateToVideo(nextId);
+      if (shouldSkip) {
+        autoplaySuppressedVideoIdRef.current = currentVideo.id;
+        playAttemptedAtRef.current = null;
+        showUnavailableOverlayMessage();
       }
     }, 4500);
 
@@ -471,6 +698,15 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
             setIsMuted(Boolean(playerRef.current.isMuted()));
           }
 
+          if (shouldAutoplaySelection && autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
+            playAttemptedAtRef.current = Date.now();
+            window.setTimeout(() => {
+              if (!cancelled && playerRef.current) {
+                playerRef.current.playVideo();
+              }
+            }, 0);
+          }
+
           return;
         }
 
@@ -547,6 +783,11 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
               params.delete("resume");
               router.replace(`${pathname}?${params.toString()}`);
             }
+
+            if (shouldAutoplaySelection && autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
+              playAttemptedAtRef.current = Date.now();
+              event.target.playVideo();
+            }
           },
           onStateChange: (event) => {
             logFlow("player:onStateChange", {
@@ -585,8 +826,24 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
               }
             }
 
-            if (event.data === window.YT?.PlayerState.ENDED && autoplayEnabledRef.current) {
-              navigateToVideo(nextVideoIdRef.current);
+            if (event.data === window.YT?.PlayerState.ENDED) {
+              const isInitialDeepLinkedVideo = Boolean(
+                initialRequestedVideoIdRef.current &&
+                  !hasLeftInitialRequestedVideoRef.current &&
+                  currentVideo.id === initialRequestedVideoIdRef.current,
+              );
+
+              const shouldAutoAdvance =
+                hasActivePlaylistSequenceRef.current ||
+                (autoplayEnabledRef.current && !isInitialDeepLinkedVideo);
+
+              if (shouldAutoAdvance) {
+                navigateToVideo(nextVideoIdRef.current, {
+                  clearPlaylist: nextPlaylistIndexRef.current === null,
+                  playlistId: activePlaylistIdRef.current,
+                  playlistItemIndex: nextPlaylistIndexRef.current,
+                });
+              }
             }
           },
           onError: async (event) => {
@@ -632,13 +889,10 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
               shouldSkip,
             });
 
-            const nextId = nextVideoIdRef.current;
-            if (shouldSkip && nextId !== currentVideo.id) {
-              logPlayerDebug("onError:navigate-next", {
-                currentVideoId: currentVideo.id,
-                nextVideoId: nextId,
-              });
-              navigateToVideo(nextId);
+            if (shouldSkip) {
+              autoplaySuppressedVideoIdRef.current = currentVideo.id;
+              playAttemptedAtRef.current = null;
+              showUnavailableOverlayMessage();
             }
           },
         },
@@ -675,6 +929,10 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
         window.clearTimeout(overlayTimeoutRef.current);
       }
 
+      if (unavailableOverlayTimeoutRef.current) {
+        window.clearTimeout(unavailableOverlayTimeoutRef.current);
+      }
+
       if (progressIntervalRef.current) {
         window.clearInterval(progressIntervalRef.current);
       }
@@ -692,13 +950,43 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
     };
   }, []);
 
-  function navigateToVideo(videoId: string) {
+  function navigateToVideo(
+    videoId: string,
+    options?: {
+      clearPlaylist?: boolean;
+      playlistId?: string | null;
+      playlistItemIndex?: number | null;
+    },
+  ) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("v", videoId);
+
+    if (options?.clearPlaylist) {
+      params.delete("pl");
+      params.delete("pli");
+    } else if (options?.playlistId && options.playlistItemIndex !== null && options.playlistItemIndex !== undefined) {
+      params.set("pl", options.playlistId);
+      params.set("pli", String(options.playlistItemIndex));
+    }
+
     router.push(`${pathname}?${params.toString()}`);
   }
 
   function handlePrevious() {
+    if (hasActivePlaylistSequence && effectivePlaylistIndex !== null) {
+      const previousIndex = (effectivePlaylistIndex - 1 + playlistQueueIds.length) % playlistQueueIds.length;
+      const previousId = playlistQueueIds[previousIndex] ?? null;
+
+      if (previousId) {
+        navigateToVideo(previousId, {
+          playlistId: activePlaylistId,
+          playlistItemIndex: previousIndex,
+        });
+      }
+
+      return;
+    }
+
     const previousId = historyStack.at(-2);
 
     if (!previousId) {
@@ -714,7 +1002,17 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
   }
 
   function handleNext() {
-    navigateToVideo(nextVideo.id);
+    const nextTarget = resolveNextTarget();
+
+    if (!nextTarget) {
+      return;
+    }
+
+    navigateToVideo(nextTarget.videoId, {
+      clearPlaylist: nextTarget.clearPlaylist,
+      playlistId: activePlaylistId,
+      playlistItemIndex: nextTarget.playlistItemIndex,
+    });
   }
 
   function handleToggleAutoplay() {
@@ -723,6 +1021,32 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
       window.localStorage.setItem(AUTOPLAY_KEY, String(nextValue));
       return nextValue;
     });
+  }
+
+  async function handleAddFavourite() {
+    setFavouriteSaveState("saving");
+    try {
+      const response = await fetch("/api/favourites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId: currentVideo.id, action: "add" }),
+      });
+
+      if (response.ok) {
+        window.dispatchEvent(new Event("ytr:favourites-updated"));
+      }
+
+      setFavouriteSaveState(response.ok ? "saved" : "error");
+    } catch {
+      setFavouriteSaveState("error");
+    }
+    if (favouriteSaveTimeoutRef.current !== null) {
+      window.clearTimeout(favouriteSaveTimeoutRef.current);
+    }
+    favouriteSaveTimeoutRef.current = window.setTimeout(() => {
+      setFavouriteSaveState("idle");
+      favouriteSaveTimeoutRef.current = null;
+    }, 2000);
   }
 
   async function handleCopyShareLink() {
@@ -969,6 +1293,13 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
                 <strong>{currentVideo.title}</strong>
               </div>
             ) : null}
+
+            {unavailableOverlayMessage ? (
+              <div className="videoUnavailableOverlay" role="status" aria-live="polite">
+                <p>Apologies</p>
+                <strong>{unavailableOverlayMessage}</strong>
+              </div>
+            ) : null}
           </div>
 
           <div className="primaryActions">
@@ -979,7 +1310,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
                 type="text"
                 className="shareUrlInput"
                 size={Math.min(Math.max(shareUrl.length, 24), 48)}
-                style={{ width: `calc(${Math.min(Math.max(shareUrl.length, 24), 48)}ch - 12px)` }}
+                style={{ width: `calc(${Math.min(Math.max(shareUrl.length, 24), 48)}ch - 7px)` }}
                 readOnly
                 value={shareUrl}
                 onFocus={(event) => event.currentTarget.select()}
@@ -988,14 +1319,24 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
               />
             </div>
             {isLoggedIn && (
-              <button
-                type="button"
-                className="primaryActionIconButton"
-                aria-label="Add to favourites"
-                title="Add to favourites"
-              >
-                <span className="navFavouritesGlyph" aria-hidden="true">❤️</span>
-              </button>
+              <div className="primaryActionIconButtonWrap">
+                {favouriteSaveState === "saved" && (
+                  <div className="favouriteSavedToast" role="status" aria-live="polite">Favourite Saved!</div>
+                )}
+                {favouriteSaveState === "error" && (
+                  <div className="favouriteSavedToast favouriteSavedToastError" role="status" aria-live="polite">Could not save</div>
+                )}
+                <button
+                  type="button"
+                  className="primaryActionIconButton"
+                  aria-label="Add to favourites"
+                  title="Add to favourites"
+                  disabled={favouriteSaveState === "saving"}
+                  onClick={handleAddFavourite}
+                >
+                  <span className="navFavouritesGlyph" aria-hidden="true">❤️</span>
+                </button>
+              </div>
             )}
             <button
               type="button"

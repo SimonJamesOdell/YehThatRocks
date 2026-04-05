@@ -43,6 +43,10 @@ function containsAgeRestrictionMarker(html: string) {
   return AGE_RESTRICTED_PATTERNS.some((pattern) => pattern.test(html));
 }
 
+function shouldForcePruneFromRuntimeReason(reason: string) {
+  return /(yt-player-age-or-owner-restricted-(101|150)|yt-player-error-(101|150))/i.test(reason);
+}
+
 async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityCheckResult> {
   const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`;
 
@@ -121,10 +125,12 @@ export async function POST(request: NextRequest) {
   }
 
   const reason = parsed.data.reason?.trim() ?? "runtime-player-error";
+  const forcePrune = shouldForcePruneFromRuntimeReason(reason);
 
   debugUnavailable("incoming-report", {
     videoId,
     reason,
+    forcePrune,
   });
 
   const videos = await prisma.video.findMany({
@@ -135,6 +141,21 @@ export async function POST(request: NextRequest) {
   if (videos.length === 0) {
     debugUnavailable("unknown-video-id", { videoId });
     return NextResponse.json({ ok: true, skipped: true, reason: "unknown-video-id" }, { status: 202 });
+  }
+
+  if (forcePrune) {
+    debugUnavailable("force-prune-from-runtime-reason", {
+      videoId,
+      reason,
+      matchedVideoRows: videos.length,
+    });
+
+    const pruneResult = await pruneVideoAndAssociationsByVideoId(
+      videoId,
+      `runtime-force-prune:${reason}`,
+    ).catch(() => ({ pruned: false, deletedVideoRows: 0, reason: "prune-failed" }));
+
+    return NextResponse.json({ ok: true, pruned: pruneResult.pruned, deletedVideoRows: pruneResult.deletedVideoRows });
   }
 
   const verification = await verifyYouTubeAvailability(videoId);

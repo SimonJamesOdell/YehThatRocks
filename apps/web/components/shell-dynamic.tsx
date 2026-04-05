@@ -164,6 +164,7 @@ function ShellDynamicInner({
   const [isResolvingRequestedVideo, setIsResolvingRequestedVideo] = useState(Boolean(requestedVideoId));
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
   const lastVideoIdRef = useRef<string | null>(null);
+  const deniedRequestedVideoIdRef = useRef<string | null>(null);
   const hasResolvedInitialVideoRef = useRef(Boolean(requestedVideoId));
   const startupHydratedVideoIdRef = useRef<string | null>(null);
   const prefetchedRelatedIdsRef = useRef<Set<string>>(new Set());
@@ -375,6 +376,12 @@ function ShellDynamicInner({
     });
 
     if (!requestedVideoId) {
+      deniedRequestedVideoIdRef.current = null;
+      setIsResolvingRequestedVideo(false);
+      return;
+    }
+
+    if (deniedRequestedVideoIdRef.current === requestedVideoId) {
       setIsResolvingRequestedVideo(false);
       return;
     }
@@ -481,11 +488,23 @@ function ShellDynamicInner({
 
         if (data?.denied?.message) {
           setDeniedPlaybackMessage(String(data.denied.message));
+          deniedRequestedVideoIdRef.current = requestedVideoId;
           setIsResolvingRequestedVideo(false);
           if (!hasResolvedInitialVideoRef.current) {
             hasResolvedInitialVideoRef.current = true;
             setIsResolvingInitialVideo(false);
           }
+
+          // Clear invalid requested video from URL so we don't repeatedly
+          // resolve and deny the same unavailable id on every render cycle.
+          if (typeof window !== "undefined") {
+            const params = new URLSearchParams(window.location.search);
+            params.delete("v");
+            params.delete("resume");
+            const nextQuery = params.toString();
+            router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+          }
+
           return;
         }
 

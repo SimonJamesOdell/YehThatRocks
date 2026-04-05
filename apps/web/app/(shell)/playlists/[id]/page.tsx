@@ -60,7 +60,11 @@ export default async function PlaylistDetailPage({ params }: PlaylistDetailPageP
         </div>
         <div className="trackStack">
           {playlist.videos.map((video, index) => (
-            <Link key={`${video.id}-${index}`} href={`/?v=${video.id}`} className="trackCard linkedCard">
+            <Link
+              key={`${video.id}-${index}`}
+              href={`/?v=${video.id}&pl=${encodeURIComponent(playlist.id)}&pli=${index}`}
+              className="trackCard linkedCard"
+            >
               <div>
                 <h3>{video.title}</h3>
                 <p>

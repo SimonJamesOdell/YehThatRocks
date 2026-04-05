@@ -1290,6 +1290,37 @@ h1 {
   animation: nowPlayingFade 3.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+.videoUnavailableOverlay {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: min(92%, 760px);
+  padding: 14px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 153, 133, 0.46);
+  background: linear-gradient(180deg, rgba(70, 8, 5, 0.93), rgba(32, 4, 3, 0.95));
+  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  text-align: center;
+  z-index: 12;
+  pointer-events: none;
+}
+
+.videoUnavailableOverlay p {
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.75rem;
+  color: #ffc3b6;
+}
+
+.videoUnavailableOverlay strong {
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  line-height: 1.3;
+  color: #fff2ed;
+}
+
 @keyframes nowPlayingFade {
   0% {
     opacity: 0;
@@ -1359,8 +1390,8 @@ h1 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  min-width: 48px;
+  width: 56px;
+  min-width: 56px;
   min-height: 50px;
   padding: 0;
 }
@@ -1412,6 +1443,12 @@ h1 {
   gap: 10px;
 }
 
+.primaryActions .primaryActionToggleButton {
+  height: 50px;
+  min-height: 50px;
+  padding: 0 16px;
+}
+
 .primaryActionGlyph {
   display: inline-block;
   font-size: 1.7rem;
@@ -1437,6 +1474,46 @@ h1 {
   min-width: 56px;
   min-height: 50px;
   padding: 0;
+}
+
+.primaryActions .primaryActionNavIconButton,
+.primaryActions .primaryActionIconButton {
+  padding: 0;
+}
+
+.primaryActionIconButtonWrap {
+  position: relative;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.favouriteSavedToast {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: rgba(20, 12, 12, 0.92);
+  color: #fff2ed;
+  border: 1px solid rgba(255, 103, 74, 0.4);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  animation: favouriteToastIn 200ms ease-out;
+}
+
+.favouriteSavedToastError {
+  border-color: rgba(255, 60, 60, 0.5);
+  color: #ffaaaa;
+}
+
+@keyframes favouriteToastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
 .primaryActionToggleButtonActive {
@@ -1774,6 +1851,56 @@ h1 {
 .favouritesCatalogGrid {
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   justify-content: start;
+}
+
+.favouritesCardCompact {
+  gap: 8px;
+  padding: 10px;
+}
+
+.favouritesCardCompact h3 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.favouritesCardCompact p {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.15;
+  opacity: 0.9;
+}
+
+.favouritesCardCompact .actionRow {
+  justify-content: flex-end;
+}
+
+.favouritesThumbOverlayWrap {
+  position: relative;
+}
+
+.favouritesDeleteButton {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.favouritesDeleteOverlayButton {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  background: rgba(12, 8, 8, 0.88);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
 }
 
 .favouritesEmptyState {

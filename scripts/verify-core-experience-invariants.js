@@ -48,9 +48,20 @@ function main() {
   assertContains(playerExperienceSource, "const AUTOPLAY_KEY = \"yeh-player-autoplay\";", "Player persists autoplay preference key", failures);
   assertContains(playerExperienceSource, "const RESUME_KEY = \"yeh-player-resume\";", "Player defines resume snapshot key", failures);
   assertContains(playerExperienceSource, "window.localStorage.setItem(AUTOPLAY_KEY, String(nextValue));", "Player writes autoplay preference to localStorage", failures);
-  assertContains(playerExperienceSource, "if (event.data === window.YT?.PlayerState.ENDED && autoplayEnabledRef.current) {", "Player advances to next video on ended when autoplay is enabled", failures);
+  assertContains(playerExperienceSource, "const activePlaylistId = searchParams.get(\"pl\");", "Player reads playlist context from query params", failures);
+  assertContains(playerExperienceSource, "const response = await fetch(`/api/playlists/${encodeURIComponent(activePlaylistId)}`, {", "Player loads playlist sequence for ordered playback", failures);
+  assertContains(playerExperienceSource, "const shouldUseTopFallback =", "Player uses Top 100 fallback when Watch Next pool is small", failures);
+  assertContains(playerExperienceSource, "const shouldAutoAdvance =", "Player computes auto-advance using playlist/deep-link/autoplay guard", failures);
+  assertContains(playerExperienceSource, "const shouldAutoplaySelection = Boolean(requestedVideoId && requestedVideoId === currentVideo.id);", "Player only autoplays when requested id matches loaded video", failures);
+  assertContains(playerExperienceSource, "showUnavailableOverlayMessage();", "Player shows unavailable apology overlay when runtime checks fail", failures);
   assertContains(playerExperienceSource, "const response = await fetch(\"/api/videos/unavailable\", {", "Player reports unavailable videos to API", failures);
   assertContains(playerExperienceSource, "setPlayerHostMode(\"youtube\");", "Player retries restricted videos with youtube host fallback", failures);
+
+  // Denied deep-link loop guard invariants.
+  assertContains(shellDynamicSource, "const deniedRequestedVideoIdRef = useRef<string | null>(null);", "Shell tracks denied requested video ids", failures);
+  assertContains(shellDynamicSource, "if (deniedRequestedVideoIdRef.current === requestedVideoId) {", "Shell skips repeated denied requested video resolution", failures);
+  assertContains(shellDynamicSource, "params.delete(\"v\");", "Shell clears denied video id from query params", failures);
+  assertContains(shellDynamicSource, "params.delete(\"resume\");", "Shell clears resume marker when denied video id is removed", failures);
 
   // Chat UI invariants.
   assertContains(shellDynamicSource, "const globalEvents = new EventSource(\"/api/chat/stream?mode=global\");", "Shell subscribes to global chat stream", failures);

@@ -1645,6 +1645,16 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
         `DELETE FROM related WHERE ${escapeSqlIdentifier(relatedVideoRef.Field)} = ? OR ${escapeSqlIdentifier(relatedRelatedRef.Field)} = ?`,
         [normalizedVideoId, normalizedVideoId],
       );
+    } else if (relatedVideoRef) {
+      await executeWithRetry(
+        `DELETE FROM related WHERE ${escapeSqlIdentifier(relatedVideoRef.Field)} = ?`,
+        [normalizedVideoId],
+      );
+    } else if (relatedRelatedRef) {
+      await executeWithRetry(
+        `DELETE FROM related WHERE ${escapeSqlIdentifier(relatedRelatedRef.Field)} = ?`,
+        [normalizedVideoId],
+      );
     }
 
     await executeWithRetry(
@@ -3240,24 +3250,45 @@ export async function getFavouriteVideos(userId?: number) {
 
   try {
     const favourites = await prisma.favourite.findMany({
-      where: {
-        userId,
-      },
-      include: {
-        video: {
-          select: {
-            videoId: true,
-            title: true,
-            channelTitle: true,
-            favourited: true,
-            description: true,
-          },
-        },
-      },
+      where: { userid: userId },
+      select: { videoId: true },
       take: 50,
     });
 
-    return favourites.map((entry) => mapVideo(entry.video));
+    const youtubeIds = favourites
+      .map((f) => f.videoId)
+      .filter((id): id is string => Boolean(id));
+
+    if (youtubeIds.length === 0) return [];
+
+    const videos = await prisma.video.findMany({
+      where: { videoId: { in: youtubeIds } },
+      select: {
+        videoId: true,
+        title: true,
+        favourited: true,
+        description: true,
+      },
+    });
+
+    const firstVideoById = new Map<string, (typeof videos)[number]>();
+
+    for (const video of videos) {
+      if (!firstVideoById.has(video.videoId)) {
+        firstVideoById.set(video.videoId, video);
+      }
+    }
+
+    const orderedVideos = youtubeIds
+      .map((id) => firstVideoById.get(id))
+      .filter((video): video is (typeof videos)[number] => Boolean(video));
+
+    return orderedVideos.map((video) =>
+      mapVideo({
+        ...video,
+        channelTitle: null,
+      }),
+    );
   } catch {
     return [];
   }
@@ -3265,42 +3296,20 @@ export async function getFavouriteVideos(userId?: number) {
 
 export async function updateFavourite(videoId: string, action: "add" | "remove", userId?: number) {
   if (hasDatabaseUrl() && userId) {
-    const video = await prisma.video.findUnique({
-      where: { videoId },
-      select: { id: true },
-    });
-
-    if (!video) {
-      return {
-        videoId,
-        isFavourite: false,
-        favourites: await getFavouriteVideos(userId),
-      };
-    }
-
     if (action === "add") {
       const existing = await prisma.favourite.findFirst({
-        where: {
-          userId,
-          videoId: video.id,
-        },
+        where: { userid: userId, videoId },
         select: { id: true },
       });
 
       if (!existing) {
         await prisma.favourite.create({
-          data: {
-            userId,
-            videoId: video.id,
-          },
+          data: { userid: userId, videoId },
         });
       }
     } else {
       await prisma.favourite.deleteMany({
-        where: {
-          userId,
-          videoId: video.id,
-        },
+        where: { userid: userId, videoId },
       });
     }
 

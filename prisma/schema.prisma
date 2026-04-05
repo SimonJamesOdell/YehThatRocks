@@ -26,7 +26,6 @@ model Video {
   description     String?        @db.LongText
   createdAt       DateTime?      @map("created_at")
   updatedAt       DateTime?      @map("updated_at")
-  favourites      Favourite[]
   playlistItems   PlaylistItem[]
   artistVideos    ArtistVideo[]
   siteVideos      SiteVideo[]
@@ -93,7 +92,6 @@ model User {
   screenName              String?                  @map("screen_name") @db.VarChar(255)
   passwordHash            String?                  @map("password_hash") @db.VarChar(255)
   avatarUrl               String?                  @map("avatar_url") @db.VarChar(500)
-  favourites              Favourite[]
   playlists               PlaylistName[]
   messages                Message[]
   aiTracks                AiTrack[]
@@ -167,11 +165,11 @@ model AuthAuditLog {
 }
 
 model Favourite {
-  id      Int   @id @default(autoincrement())
-  userId  Int   @map("user_id")
-  videoId Int   @map("video_id")
-  user    User  @relation(fields: [userId], references: [id])
-  video   Video @relation(fields: [videoId], references: [id])
+  id        Int       @id @default(autoincrement())
+  userid    Int?
+  videoId   String?   @db.VarChar(20)
+  createdAt DateTime?
+  updatedAt DateTime?
 
   @@map("favourites")
 }
