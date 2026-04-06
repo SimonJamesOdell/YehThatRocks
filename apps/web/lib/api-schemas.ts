@@ -27,10 +27,6 @@ export const renamePlaylistSchema = z.object({
   name: z.string().min(2).max(80),
 });
 
-export const aiVoteSchema = z.object({
-  vote: z.union([z.literal(1), z.literal(-1)])
-});
-
 export const registerSchema = z.object({
   email: z.email().max(255),
   screenName: z.string().trim().min(2).max(40),

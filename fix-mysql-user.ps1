@@ -51,7 +51,7 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host ""
     Write-Host "Next steps:" -ForegroundColor Cyan
     Write-Host "1. Verify DATABASE_URL in apps/web/.env.local has correct credentials:" -ForegroundColor White
-    Write-Host "   DATABASE_URL=mysql://$TargetUser:$TargetPassword@$MySQLHost:3306/yeh" -ForegroundColor Gray
+    Write-Host "   DATABASE_URL=mysql://$TargetUser:<your-password>@$MySQLHost:3306/yeh" -ForegroundColor Gray
     Write-Host ""
     Write-Host "2. Restart the dev server:" -ForegroundColor White
     Write-Host "   npm -w web run dev" -ForegroundColor Gray

@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { ArtistVideoLink } from "@/components/artist-video-link";
 import { CloseLink } from "@/components/close-link";
+import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { getArtistBySlug, getVideosByArtist } from "@/lib/catalog-data";
 
 type ArtistPageProps = {
@@ -11,6 +13,8 @@ type ArtistPageProps = {
 };
 
 export default async function ArtistPage({ params, searchParams }: ArtistPageProps) {
+  const cookieStore = await cookies();
+  const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
   const { slug } = await params;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const letter = typeof resolvedSearchParams?.letter === "string" ? resolvedSearchParams.letter : undefined;
@@ -48,7 +52,7 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
 
       <div className="categoryVideoGrid artistVideoGrid">
         {artistVideos.map((video) => (
-          <ArtistVideoLink key={video.id} video={video} />
+          <ArtistVideoLink key={video.id} video={video} isAuthenticated={isAuthenticated} />
         ))}
       </div>
     </>

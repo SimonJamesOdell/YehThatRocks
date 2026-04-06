@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { ArtistVideoLink } from "@/components/artist-video-link";
@@ -10,6 +11,7 @@ import {
   getGenreSlug,
   getVideosByGenre,
 } from "@/lib/catalog-data";
+import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 
 export const revalidate = 3600;
 
@@ -23,6 +25,8 @@ type CategoryPageProps = {
 };
 
 export default async function CategoryDetailPage({ params }: CategoryPageProps) {
+  const cookieStore = await cookies();
+  const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
   const { slug } = await params;
   const genre = await getGenreBySlug(slug);
 
@@ -51,7 +55,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
 
       <div className="categoryVideoGrid">
         {videos.length > 0 ? videos.map((video) => (
-          <ArtistVideoLink key={video.id} video={video} />
+          <ArtistVideoLink key={video.id} video={video} isAuthenticated={isAuthenticated} />
         )) : (
           <p className="categoryNoVideos">No videos found for this category yet.</p>
         )}

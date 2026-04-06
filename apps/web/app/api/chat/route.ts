@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireApiAuth } from "@/lib/auth-request";
 import { chatChannel, chatEvents } from "@/lib/chat-events";
 import { prisma } from "@/lib/db";
+import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
 import { parseRequestJson } from "@/lib/request-json";
 
 const chatQuerySchema = z.object({
@@ -421,6 +422,26 @@ export async function POST(request: NextRequest) {
   }
 
   const { content, mode, videoId } = parsedBody.data;
+
+  if (mode === "global") {
+    // Per-user: max 4 messages per 30 seconds (~1 every 7.5s sustained)
+    const userRateLimited = rateLimitOrResponse(
+      request,
+      `chat:global:user:${authResult.auth.userId}`,
+      4,
+      30 * 1000,
+    );
+    if (userRateLimited) {
+      return userRateLimited;
+    }
+
+    // Room-level cap: max 60 messages per minute across ALL users combined
+    const roomRateLimited = rateLimitSharedOrResponse("chat:global:room", 60, 60 * 1000);
+    if (roomRateLimited) {
+      return roomRateLimited;
+    }
+  }
+
   const columns = await getMessageColumns();
 
   if (mode === "video" && !videoId) {

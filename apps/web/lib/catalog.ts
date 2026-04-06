@@ -15,16 +15,6 @@ export type ArtistRecord = {
   thumbnailVideoId?: string;
 };
 
-export type AiTrackRecord = {
-  id: string;
-  title: string;
-  tool: string;
-  genre: string;
-  playCount: number;
-  score: number;
-  prompt: string;
-};
-
 export const videos: VideoRecord[] = [
   {
     id: "3YxaaGgTQYM",
@@ -92,36 +82,6 @@ export const artists: ArtistRecord[] = [
   { name: "Opeth", slug: "opeth", country: "Sweden", genre: "Progressive Metal" }
 ];
 
-export const aiTracks: AiTrackRecord[] = [
-  {
-    id: "iron-horizon",
-    title: "Iron Horizon",
-    tool: "Suno",
-    genre: "Power Metal",
-    playCount: 1242,
-    score: 88,
-    prompt: "anthemic power metal with choirs, double-kick drums, and soaring lead guitar"
-  },
-  {
-    id: "ashen-cathedral",
-    title: "Ashen Cathedral",
-    tool: "Udio",
-    genre: "Gothic Metal",
-    playCount: 914,
-    score: 74,
-    prompt: "slow gothic metal with cathedral organ, deep toms, and a massive chorus"
-  },
-  {
-    id: "fracture-engine",
-    title: "Fracture Engine",
-    tool: "Other",
-    genre: "Industrial Metal",
-    playCount: 1506,
-    score: 91,
-    prompt: "industrial metal with mechanical percussion, syncopated riffs, and harsh vocals"
-  }
-];
-
 export const chatMessages = [
   {
     user: "MetalFan204",
@@ -147,7 +107,6 @@ export const navItems = [
   { href: "/top100", label: "Top 100" },
   { href: "/favourites", label: "Favourites" },
   { href: "/playlists", label: "Playlists" },
-  { href: "/ai", label: "AI" },
   { href: "/account", label: "Account" }
 ];
 

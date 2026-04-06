@@ -46,6 +46,10 @@ export function AddToPlaylistButton({
   isAuthenticated = true,
   className,
 }: AddToPlaylistButtonProps) {
+  if (!isAuthenticated) {
+    return null;
+  }
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isAdded, setIsAdded] = useState(false);

@@ -129,7 +129,7 @@ $envPath = "apps/web/.env.local"
 $dbUrl = "mysql://$DBUser`:$DBPassword@$MySQLHost`:3306/$DBName"
 
 Write-Info "File: $envPath"
-Write-Info "DATABASE_URL=$dbUrl"
+Write-Info "DATABASE_URL=mysql://$DBUser:***@$MySQLHost:3306/$DBName"
 
 $envContent = @"
 DATABASE_URL="$dbUrl"

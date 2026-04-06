@@ -119,6 +119,7 @@ export async function AppShell({
                   name="q"
                   type="search"
                   placeholder="Search rock, metal, artists, playlists..."
+                  required
                 />
                 <button type="submit">Search</button>
               </div>

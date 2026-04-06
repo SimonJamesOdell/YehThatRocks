@@ -17,6 +17,7 @@ type Top100VideoLinkProps = {
     thumbnail?: string | null;
   };
   index: number;
+  isAuthenticated?: boolean;
 };
 
 const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
@@ -28,7 +29,7 @@ function getLeaderboardThumbnail(track: { id: string; thumbnail?: string | null 
     : `https://i.ytimg.com/vi/${encodeURIComponent(track.id)}/mqdefault.jpg`;
 }
 
-export function Top100VideoLink({ track, index }: Top100VideoLinkProps) {
+export function Top100VideoLink({ track, index, isAuthenticated = true }: Top100VideoLinkProps) {
   const hasWarmedRef = useRef(false);
 
   const warmSelection = useCallback(() => {
@@ -85,7 +86,7 @@ export function Top100VideoLink({ track, index }: Top100VideoLinkProps) {
         </div>
       </Link>
       <div className="top100CardAction">
-        <AddToPlaylistButton videoId={track.id} />
+        <AddToPlaylistButton videoId={track.id} isAuthenticated={isAuthenticated} />
       </div>
     </article>
   );

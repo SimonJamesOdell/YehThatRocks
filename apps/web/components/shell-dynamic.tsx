@@ -10,6 +10,7 @@ import { AuthLoginForm } from "@/components/auth-login-form";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { PlayerExperience } from "@/components/player-experience";
 import { navItems, type VideoRecord } from "@/lib/catalog";
+import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
 
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
   const perfWithPatchState = performance as Performance & {
@@ -91,6 +92,12 @@ type PlaylistRailSummary = {
 
 type FlashableChatMode = "global" | "video";
 
+type SharedVideoPreview = {
+  id: string;
+  title: string;
+  channelTitle: string;
+};
+
 function formatChatTimestamp(value: string | null) {
   if (!value) {
     return "Now";
@@ -105,6 +112,69 @@ function formatChatTimestamp(value: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function buildYouTubeThumbnail(videoId: string) {
+  return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
+}
+
+function SharedVideoMessageCard({ videoId }: { videoId: string }) {
+  const [preview, setPreview] = useState<SharedVideoPreview | null>(null);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadPreview() {
+      try {
+        const response = await fetch(`/api/current-video?v=${encodeURIComponent(videoId)}`);
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json()) as CurrentVideoResolvePayload;
+        if (isCancelled || !("currentVideo" in payload) || !payload.currentVideo?.id) {
+          return;
+        }
+
+        setPreview({
+          id: payload.currentVideo.id,
+          title: payload.currentVideo.title,
+          channelTitle: payload.currentVideo.channelTitle,
+        });
+      } catch {
+        // Keep fallback card if fetch fails.
+      }
+    }
+
+    void loadPreview();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [videoId]);
+
+  const resolvedId = preview?.id ?? videoId;
+
+  return (
+    <Link
+      href={`/?v=${encodeURIComponent(resolvedId)}`}
+      className="chatSharedVideoCard"
+      onClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      <Image
+        src={buildYouTubeThumbnail(resolvedId)}
+        alt=""
+        width={84}
+        height={48}
+        className="chatSharedVideoThumb"
+      />
+      <span className="chatSharedVideoMeta">
+        <strong>{preview?.title ?? "Shared video"}</strong>
+        <span>{preview?.channelTitle ?? "Tap to open"}</span>
+      </span>
+    </Link>
+  );
 }
 
 type ShellDynamicProps = {
@@ -227,6 +297,21 @@ function ShellDynamicInner({
     video: null,
   });
 
+  // Search autocomplete
+  type SearchSuggestion = { type: "artist" | "track" | "genre"; label: string; url: string };
+  const [searchValue, setSearchValue] = useState("");
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [activeSuggestionIdx, setActiveSuggestionIdx] = useState(-1);
+  const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggestAbortRef = useRef<AbortController | null>(null);
+  const latestSuggestQueryRef = useRef("");
+  const searchComboboxRef = useRef<HTMLDivElement | null>(null);
+  // Refs to reliably access current state in event handlers
+  const suggestionsRef = useRef<SearchSuggestion[]>([]);
+  const showSuggestionsRef = useRef(false);
+  const activeSuggestionIdxRef = useRef(-1);
+
   const isOverlayRoute = pathname !== "/";
   const disableOverlayDropAnimation =
     pathname === "/categories"
@@ -267,6 +352,12 @@ function ShellDynamicInner({
   })();
 
   useEffect(() => {
+    if (!isAuthenticated && rightRailMode === "playlist") {
+      setRightRailMode("watch-next");
+    }
+  }, [isAuthenticated, rightRailMode]);
+
+  useEffect(() => {
     setIsAuthenticated(isLoggedIn);
   }, [isLoggedIn]);
 
@@ -294,6 +385,12 @@ function ShellDynamicInner({
 
   useEffect(() => {
     if (requestedVideoId) {
+      return;
+    }
+
+    // Don't re-run startup if we already resolved a video in this session
+    // (e.g. user navigated to a route without ?v= after startup completed)
+    if (hasResolvedInitialVideoRef.current) {
       return;
     }
 
@@ -332,16 +429,19 @@ function ShellDynamicInner({
     };
 
     let retryTimeoutId: number | null = null;
+    let activeController: AbortController | null = null;
 
     const tryResolveStartupVideo = async (attempt = 1): Promise<void> => {
       try {
         const controller = new AbortController();
-        const timeoutId = window.setTimeout(() => controller.abort(), 900);
+        activeController = controller;
+        const timeoutId = window.setTimeout(() => controller.abort(), 4000);
         const response = await fetch(`/api/videos/top/random${previousVideoId ? `?exclude=${encodeURIComponent(previousVideoId)}` : ""}`, {
           cache: "no-store",
           signal: controller.signal,
         });
         window.clearTimeout(timeoutId);
+        activeController = null;
 
         if (!response.ok || cancelled) {
           throw new Error("Failed to load startup random video");
@@ -390,6 +490,7 @@ function ShellDynamicInner({
 
         throw new Error("Startup random and current resolver returned no video id");
       } catch (error) {
+        activeController = null;
         if (cancelled) {
           return;
         }
@@ -421,6 +522,7 @@ function ShellDynamicInner({
 
     return () => {
       cancelled = true;
+      activeController?.abort();
       if (retryTimeoutId !== null) {
         window.clearTimeout(retryTimeoutId);
       }
@@ -445,6 +547,12 @@ function ShellDynamicInner({
       return;
     }
 
+    // Guard against duplicate effect executions for the same requested id
+    // while a resolve is already in flight (can happen during rapid rerenders).
+    if (requestedVideoId === lastVideoIdRef.current && isResolvingRequestedVideo) {
+      return;
+    }
+
     if (
       requestedVideoId === lastVideoIdRef.current &&
       currentVideo.id === requestedVideoId &&
@@ -460,11 +568,6 @@ function ShellDynamicInner({
       lastVideoIdRef.current = requestedVideoId;
       setIsResolvingRequestedVideo(false);
       return;
-    }
-
-    if (displayedRelatedVideos.length > 0 && relatedTransitionPhase === "idle") {
-      pendingRelatedVideosRef.current = null;
-      setRelatedTransitionPhase("fading-out");
     }
 
     let ignore = false;
@@ -554,16 +657,6 @@ function ShellDynamicInner({
             setIsResolvingInitialVideo(false);
           }
 
-          // Clear invalid requested video from URL so we don't repeatedly
-          // resolve and deny the same unavailable id on every render cycle.
-          if (typeof window !== "undefined") {
-            const params = new URLSearchParams(window.location.search);
-            params.delete("v");
-            params.delete("resume");
-            const nextQuery = params.toString();
-            router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
-          }
-
           return;
         }
 
@@ -612,13 +705,7 @@ function ShellDynamicInner({
         window.clearTimeout(retryTimeoutId);
       }
     };
-  }, [
-    currentVideo.id,
-    displayedRelatedVideos.length,
-    isResolvingRequestedVideo,
-    relatedTransitionPhase,
-    requestedVideoId,
-  ]);
+  }, [requestedVideoId]);
 
   useEffect(() => {
     if (!deniedPlaybackMessage) {
@@ -1515,6 +1602,133 @@ function ShellDynamicInner({
     router.replace(query ? `/?${query}` : "/");
   }, [currentVideo.id, isAuthenticated, pathname, router, searchParams]);
 
+  // Dismiss suggestions when clicking outside the combobox
+  useEffect(() => {
+    function onPointerDown(e: PointerEvent) {
+      if (searchComboboxRef.current && !searchComboboxRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+        setActiveSuggestionIdx(-1);
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (suggestDebounceRef.current) {
+        clearTimeout(suggestDebounceRef.current);
+        suggestDebounceRef.current = null;
+      }
+
+      if (suggestAbortRef.current) {
+        suggestAbortRef.current.abort();
+        suggestAbortRef.current = null;
+      }
+    };
+  }, []);
+
+  function handleSearchInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const value = e.target.value;
+    setSearchValue(value);
+    setActiveSuggestionIdx(-1);
+
+    if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
+
+    const trimmed = value.trim();
+    latestSuggestQueryRef.current = trimmed;
+
+    if (suggestAbortRef.current) {
+      suggestAbortRef.current.abort();
+      suggestAbortRef.current = null;
+    }
+
+    if (!trimmed) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    suggestDebounceRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      suggestAbortRef.current = controller;
+
+      try {
+        const res = await fetch(`/api/search/suggest?q=${encodeURIComponent(trimmed)}`, { signal: controller.signal });
+        if (res.ok) {
+          const data = await res.json() as { suggestions: SearchSuggestion[] };
+          if (latestSuggestQueryRef.current !== trimmed) {
+            return;
+          }
+          setSuggestions(data.suggestions);
+          setShowSuggestions(data.suggestions.length > 0);
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        // non-critical — ignore suggest failures silently
+      } finally {
+        if (suggestAbortRef.current === controller) {
+          suggestAbortRef.current = null;
+        }
+      }
+    }, 220);
+  }
+
+  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    const isOpen = showSuggestions && suggestions && suggestions.length > 0;
+
+    if (e.key === "ArrowDown") {
+      if (isOpen) {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveSuggestionIdx((prev) => Math.min(prev + 1, suggestions!.length - 1));
+      }
+    } else if (e.key === "ArrowUp") {
+      if (isOpen) {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveSuggestionIdx((prev) => Math.max(prev - 1, -1));
+      }
+    } else if (e.key === "Escape") {
+      if (isOpen) {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowSuggestions(false);
+        setActiveSuggestionIdx(-1);
+      }
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Only navigate to a suggestion when one is explicitly highlighted.
+      if (isOpen && suggestions && activeSuggestionIdx >= 0) {
+        const selected = suggestions[activeSuggestionIdx];
+        if (selected) {
+          handleSuggestionClick(selected);
+          return;
+        }
+      }
+
+      // No dropdown - search with the query text
+      if (searchValue.trim()) {
+        router.push(`/search?q=${encodeURIComponent(searchValue.trim())}&v=${encodeURIComponent(currentVideo.id)}`);
+        setShowSuggestions(false);
+        setSearchValue("");
+      }
+    }
+  }
+
+  function handleSuggestionClick(suggestion: SearchSuggestion) {
+    const url = suggestion.type === "track"
+      ? suggestion.url
+      : `${suggestion.url}?v=${encodeURIComponent(currentVideo.id)}&resume=1`;
+    setShowSuggestions(false);
+    setSearchValue("");
+    router.push(url);
+  }
+
   return (
     <main className={isOverlayRoute ? "shell shellOverlayRoute" : "shell"}>
       <div className="backdrop" />
@@ -1579,13 +1793,6 @@ function ShellDynamicInner({
                       </span>
                       <span>{item.label}</span>
                     </>
-                  ) : item.href === "/ai" ? (
-                    <>
-                      <span className="navAiGlyph" aria-hidden="true">
-                        🤖
-                      </span>
-                      <span>{item.label}</span>
-                    </>
                   ) : item.href === "/account" ? (
                     <>
                       <span className="navAccountGlyph" aria-hidden="true">
@@ -1602,21 +1809,65 @@ function ShellDynamicInner({
           </nav>
 
           <div className="searchWrap">
-            <form action="/search">
-              <input type="hidden" name="v" value={currentVideo.id} />
+            <div className="searchBar">
+              <div className="searchCombobox" ref={searchComboboxRef} role="combobox" aria-expanded={showSuggestions} aria-haspopup="listbox">
+                <input
+                  id="search"
+                  type="search"
+                  placeholder="Search rock, metal, artists, playlists..."
+                  required
+                  autoComplete="off"
+                  value={searchValue}
+                  onChange={handleSearchInput}
+                  onKeyDown={handleSearchKeyDown}
+                  onFocus={() => {
+                    if (searchValue.trim().length >= 1 && suggestions.length > 0) {
+                      setShowSuggestions(true);
+                    }
+                  }}
+                  aria-expanded={showSuggestions}
+                  aria-autocomplete="list"
+                  aria-controls="search-suggestions"
+                  aria-activedescendant={activeSuggestionIdx >= 0 ? `search-suggestion-${activeSuggestionIdx}` : undefined}
+                />
+                {showSuggestions && suggestions.length > 0 && (
+                  <ul className="searchSuggestions" id="search-suggestions" role="listbox">
+                    {suggestions.map((s, i) => (
+                      <li key={`${s.type}-${s.label}`} role="option" aria-selected={i === activeSuggestionIdx}>
+                        <button
+                          type="button"
+                          id={`search-suggestion-${i}`}
+                          className="searchSuggestionItem"
+                          aria-selected={i === activeSuggestionIdx}
+                          onPointerDown={(e) => {
+                            e.preventDefault(); // prevent input blur before click fires
+                            handleSuggestionClick(s);
+                          }}
+                        >
+                          <span className="searchSuggestionType">{s.type}</span>
+                          <span className="searchSuggestionLabel">{s.label}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (searchValue.trim()) {
+                    router.push(`/search?q=${encodeURIComponent(searchValue.trim())}&v=${encodeURIComponent(currentVideo.id)}`);
+                    setShowSuggestions(false);
+                    setSearchValue("");
+                  }
+                }}
+              >
+                Search
+              </button>
               <label className="searchLabel srOnly" htmlFor="search">
                 Search artists, tracks, and chaos
               </label>
-              <div className="searchBar">
-                <input
-                  id="search"
-                  name="q"
-                  type="search"
-                  placeholder="Search rock, metal, artists, playlists..."
-                />
-                <button type="submit">Search</button>
-              </div>
-            </form>
+            </div>
           </div>
         </div>
       </header>
@@ -1703,6 +1954,7 @@ function ShellDynamicInner({
                 ) : (
                   chatMessages.map((message) => {
                     const isUserOnline = onlineUsers.some((u) => u.name === message.user.name);
+                    const sharedVideoId = parseSharedVideoMessage(message.content);
                     return (
                       <article
                         key={message.id}
@@ -1720,7 +1972,13 @@ function ShellDynamicInner({
                             {isUserOnline ? <span className="chatOnlineBadge" title="Online now">● Online</span> : null}
                             <span>{formatChatTimestamp(message.createdAt)}</span>
                           </div>
-                          <p>{message.content}</p>
+                          {sharedVideoId ? (
+                            <>
+                              <SharedVideoMessageCard videoId={sharedVideoId} />
+                            </>
+                          ) : (
+                            <p>{message.content}</p>
+                          )}
                         </div>
                       </article>
                     );
@@ -1831,20 +2089,26 @@ function ShellDynamicInner({
           inert={isOverlayRoute ? true : undefined}
         >
           <div className="railTabs rightRailTabs">
-            <button
-              type="button"
-              className={rightRailMode === "watch-next" ? "activeTab" : undefined}
-              onClick={() => setRightRailMode("watch-next")}
-            >
-              Watch Next
-            </button>
-            <button
-              type="button"
-              className={rightRailMode === "playlist" ? "activeTab" : undefined}
-              onClick={() => setRightRailMode("playlist")}
-            >
-              Playlist
-            </button>
+            {isAuthenticated ? (
+              <button
+                type="button"
+                className={rightRailMode === "watch-next" ? "activeTab" : undefined}
+                onClick={() => setRightRailMode("watch-next")}
+              >
+                Watch Next
+              </button>
+            ) : (
+              <span className={rightRailMode === "watch-next" ? "tabLabel activeTab" : "tabLabel"}>Watch Next</span>
+            )}
+            {isAuthenticated ? (
+              <button
+                type="button"
+                className={rightRailMode === "playlist" ? "activeTab" : undefined}
+                onClick={() => setRightRailMode("playlist")}
+              >
+                Playlist
+              </button>
+            ) : null}
           </div>
 
           {rightRailMode === "watch-next" ? (
@@ -1889,12 +2153,10 @@ function ShellDynamicInner({
                     onPointerDown={() => prefetchRelatedSelection(track)}
                   >
                     <div className="thumbGlow">
-                      <Image
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
                         src={getRelatedThumbnail(track.id)}
                         alt={track.title}
-                        width={128}
-                        height={72}
-                        unoptimized
                         loading={index < 3 ? "eager" : "lazy"}
                         fetchPriority={index < 2 ? "high" : "auto"}
                         className="relatedThumb"
@@ -1905,20 +2167,22 @@ function ShellDynamicInner({
                       <p>{track.channelTitle}</p>
                     </div>
                   </Link>
-                  <button
-                    type="button"
-                    className="relatedCardPlaylistAdd"
-                    aria-label={`Add ${track.title} to playlist`}
-                    title={activePlaylistId ? "Add to current playlist" : "Create playlist and add"}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      void handleAddToPlaylistFromWatchNext(track);
-                    }}
-                    disabled={playlistMutationPendingVideoId === track.id}
-                  >
-                    {playlistMutationPendingVideoId === track.id ? "..." : "+"}
-                  </button>
+                  {isAuthenticated ? (
+                    <button
+                      type="button"
+                      className="relatedCardPlaylistAdd"
+                      aria-label={`Add ${track.title} to playlist`}
+                      title={activePlaylistId ? "Add to current playlist" : "Create playlist and add"}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void handleAddToPlaylistFromWatchNext(track);
+                      }}
+                      disabled={playlistMutationPendingVideoId === track.id}
+                    >
+                      {playlistMutationPendingVideoId === track.id ? "..." : "+"}
+                    </button>
+                  ) : null}
                 </div>
               ))}
             </div>

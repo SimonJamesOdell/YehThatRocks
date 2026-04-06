@@ -249,7 +249,6 @@ button:not(:disabled):active::after {
 .navArtistsGlyph,
 .navFavouritesGlyph,
 .navPlaylistsGlyph,
-.navAiGlyph,
 .navAccountGlyph {
   display: inline-block;
   width: 1.1em;
@@ -286,12 +285,6 @@ button:not(:disabled):active::after {
   font-family: "Segoe UI Symbol", var(--font-body), sans-serif;
 }
 
-.navAiGlyph {
-  font-size: 1.24rem;
-  font-family: "Segoe UI Emoji", "Segoe UI Symbol", var(--font-body), sans-serif;
-  filter: grayscale(1) brightness(2.2) contrast(1.1);
-}
-
 .navAccountGlyph {
   font-size: 1.24rem;
   font-family: "Segoe UI Emoji", "Segoe UI Symbol", var(--font-body), sans-serif;
@@ -312,7 +305,6 @@ button:not(:disabled):active::after {
   font-family: "Segoe UI Symbol", var(--font-body), sans-serif;
 }
 
-.whiteAiGlyph,
 .whiteAccountGlyph {
   display: inline-block;
   margin-right: 6px;
@@ -419,6 +411,98 @@ h1 {
   box-shadow: var(--glow);
 }
 
+.searchCombobox {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.searchCombobox input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.searchCombobox input[aria-expanded="true"] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-color: transparent;
+}
+
+.searchSuggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), var(--glow);
+  backdrop-filter: blur(18px);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.searchSuggestions .searchSuggestionItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.92rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+}
+
+.searchSuggestions .searchSuggestionItem:hover,
+.searchSuggestions .searchSuggestionItem:focus-visible {
+  background: rgba(222, 22, 5, 0.18);
+  color: #fff;
+}
+
+.searchSuggestions .searchSuggestionItem[aria-selected="true"] {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.searchSuggestionType {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+
+.searchSuggestions .searchSuggestionItem[aria-selected="true"] .searchSuggestionType {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--muted);
+}
+
+.searchSuggestionLabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .heroGrid {
   display: grid;
   grid-template-columns: var(--left-rail-width) minmax(0, 1fr) var(--right-rail-width);
@@ -490,6 +574,20 @@ h1 {
 .rightRailTabs button {
   font-size: 0.92rem;
   letter-spacing: 0.01em;
+}
+
+.rightRailTabs .tabLabel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 18px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
+  cursor: default;
+  user-select: none;
 }
 
 .railTabs button {
@@ -609,6 +707,55 @@ h1 {
   overflow-wrap: anywhere;
   word-break: break-word;
   white-space: pre-wrap;
+}
+
+.chatSharedVideoCard {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 8px;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 6px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.chatSharedVideoCard:hover {
+  background: rgba(220, 22, 5, 0.22);
+  border-color: rgba(255, 121, 108, 0.48);
+}
+
+.chatSharedVideoThumb {
+  width: 84px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.chatSharedVideoMeta {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+}
+
+.chatSharedVideoMeta strong {
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.18;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.chatSharedVideoMeta span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chatComposer {
@@ -2073,7 +2220,19 @@ h1 {
   pointer-events: none;
 }
 
+.relatedStackFadingOut .relatedCardPlaylistAdd {
+  animation: relatedRailFadeOut 210ms ease forwards;
+  animation-delay: calc(var(--related-index, 0) * 46ms);
+  pointer-events: none;
+}
+
 .relatedStackFadingIn .relatedCardTransition {
+  opacity: 0;
+  animation: relatedRailFadeIn 230ms ease forwards;
+  animation-delay: calc(var(--related-index, 0) * 46ms);
+}
+
+.relatedStackFadingIn .relatedCardPlaylistAdd {
   opacity: 0;
   animation: relatedRailFadeIn 230ms ease forwards;
   animation-delay: calc(var(--related-index, 0) * 46ms);
@@ -2109,7 +2268,9 @@ h1 {
 
 @media (prefers-reduced-motion: reduce) {
   .relatedStackFadingOut .relatedCardTransition,
-  .relatedStackFadingIn .relatedCardTransition {
+  .relatedStackFadingIn .relatedCardTransition,
+  .relatedStackFadingOut .relatedCardPlaylistAdd,
+  .relatedStackFadingIn .relatedCardPlaylistAdd {
     animation: none;
     opacity: 1;
     transform: none;
@@ -2804,31 +2965,9 @@ h1 {
   text-shadow: 0 0 18px rgba(255, 78, 54, 0.2);
 }
 
-.artistHeroCard,
-.aiTrackCard {
+.artistHeroCard {
   display: grid;
   gap: 6px;
-}
-
-.aiDetailCard {
-  display: grid;
-  gap: 14px;
-}
-
-.audioPlaceholder {
-  padding: 18px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.audioPlaceholder strong {
-  display: block;
-  margin-bottom: 6px;
-}
-
-.voteRow {
-  display: flex;
-  gap: 12px;
 }
 
 .routeContractRow {
@@ -2886,14 +3025,6 @@ h1 {
   border-radius: 0.2rem;
   background: rgba(255, 255, 255, 0.08);
   color: var(--text);
-}
-
-.voteRow button {
-  padding: 14px 18px;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #aa1e11, #5a0906);
-  color: var(--text);
-  box-shadow: var(--glow);
 }
 
 .authForm {
@@ -3139,10 +3270,6 @@ h1 {
 
 .compactActions {
   margin-top: 0;
-}
-
-.promptPreview {
-  color: #ffdfd6;
 }
 
 /* ── User public profile ─────────────────────────────────── */

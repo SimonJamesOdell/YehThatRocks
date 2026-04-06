@@ -4,6 +4,7 @@ import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import type { VideoRecord } from "@/lib/catalog";
+import { buildSharedVideoMessage } from "@/lib/chat-shared-video";
 
 type PlayerExperienceProps = {
   currentVideo: VideoRecord;
@@ -205,8 +206,10 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
   const isBootstrappingHistoryRef = useRef(true);
   const previousVideoIdRef = useRef<string | null>(null);
   const favouriteSaveTimeoutRef = useRef<number | null>(null);
+  const shareToChatResetTimeoutRef = useRef<number | null>(null);
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [shareToChatState, setShareToChatState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [favouriteSaveState, setFavouriteSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [historyStack, setHistoryStack] = useState<string[]>([]);
   const [showNowPlayingOverlay, setShowNowPlayingOverlay] = useState(false);
@@ -255,6 +258,15 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
     }
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (shareToChatResetTimeoutRef.current !== null) {
+        window.clearTimeout(shareToChatResetTimeoutRef.current);
+        shareToChatResetTimeoutRef.current = null;
+      }
+    };
   }, []);
 
   const playlistCurrentIndex = playlistQueueIds.findIndex((videoId) => videoId === currentVideo.id);
@@ -1120,7 +1132,47 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
   }
 
       async function handleShareToChat() {
-        await handleCopyShareLink();
+        if (!isLoggedIn) {
+          await handleCopyShareLink();
+          setShowShareMenu(false);
+          return;
+        }
+
+        const content = buildSharedVideoMessage(currentVideo.id);
+        if (!content) {
+          setShareToChatState("error");
+          return;
+        }
+
+        setShareToChatState("sending");
+        try {
+          const response = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mode: "global",
+              content,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`share-chat-failed:${response.status}`);
+          }
+
+          setShareToChatState("sent");
+        } catch {
+          setShareToChatState("error");
+        }
+
+        if (shareToChatResetTimeoutRef.current !== null) {
+          window.clearTimeout(shareToChatResetTimeoutRef.current);
+        }
+
+        shareToChatResetTimeoutRef.current = window.setTimeout(() => {
+          setShareToChatState("idle");
+          shareToChatResetTimeoutRef.current = null;
+        }, 1800);
+
         setShowShareMenu(false);
       }
 
@@ -1231,7 +1283,17 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
                     {showShareMenu && (
                       <div className="shareMenu">
                         <button type="button" onClick={handleShareToChat}>
-                          {copied ? "Link Copied!" : "Share to Global Chat"}
+                          {isLoggedIn
+                            ? shareToChatState === "sending"
+                              ? "Sharing..."
+                              : shareToChatState === "sent"
+                                ? "Shared to Global Chat"
+                                : shareToChatState === "error"
+                                  ? "Could not share"
+                                  : "Share to Global Chat"
+                            : copied
+                              ? "Link Copied!"
+                              : "Copy Share Link"}
                         </button>
                         <button type="button" onClick={handleShareToSocials}>
                           Share to Socials

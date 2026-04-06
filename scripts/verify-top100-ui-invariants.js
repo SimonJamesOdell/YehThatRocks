@@ -39,7 +39,7 @@ function main() {
 
   // Top 100 page should render warmed link component (not a plain Link card).
   assertContains(top100PageSource, 'import { Top100VideoLink } from "@/components/top100-video-link";', "Top 100 page imports warmed link component", failures);
-  assertContains(top100PageSource, "<Top100VideoLink key={track.id} track={track} index={index} />", "Top 100 page renders warmed link component per item", failures);
+  assertContains(top100PageSource, "<Top100VideoLink key={track.id} track={track} index={index} isAuthenticated={isAuthenticated} />", "Top 100 page renders warmed link component per item", failures);
 
   // Warmed handoff invariants in the top100 link component.
   assertContains(top100LinkSource, "const PENDING_VIDEO_SELECTION_KEY = \"ytr:pending-video-selection\";", "Top 100 warmed link uses pending selection cache key", failures);
@@ -52,7 +52,7 @@ function main() {
   assertContains(top100LinkSource, "onClick={warmSelection}", "Top 100 warmed link warms on click", failures);
 
   // Top 100 ranking must use favourite counts, not a boolean one-favourite flag.
-  assertContains(catalogDataSource, "WHERE v.favourited > 0", "Top 100 pool includes any positively favourited videos", failures);
+  assertContains(catalogDataSource, "WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'", "Top 100 pool filters to valid YouTube ids", failures);
   assertContains(catalogDataSource, "ORDER BY v.favourited DESC, v.views DESC, v.videoId ASC", "Top 100 pool ranks by favourite count first", failures);
   assertContains(catalogDataSource, "await prisma.video.updateMany({", "Favourite mutations persist favourite counts back to videos", failures);
   assertContains(catalogDataSource, "data: { favourited: favouriteCount },", "Favourite mutations store recalculated favourite totals", failures);

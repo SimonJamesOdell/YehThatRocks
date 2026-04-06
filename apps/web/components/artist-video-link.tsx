@@ -11,9 +11,10 @@ const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
 
 type ArtistVideoLinkProps = {
   video: VideoRecord;
+  isAuthenticated?: boolean;
 };
 
-export function ArtistVideoLink({ video }: ArtistVideoLinkProps) {
+export function ArtistVideoLink({ video, isAuthenticated = true }: ArtistVideoLinkProps) {
   const hasWarmedRef = useRef(false);
 
   const warmSelection = useCallback(() => {
@@ -64,7 +65,7 @@ export function ArtistVideoLink({ video }: ArtistVideoLinkProps) {
         <h3 className="categoryVideoTitle">{video.title}</h3>
       </Link>
       <div className="actionRow categoryVideoActions">
-        <AddToPlaylistButton videoId={video.id} />
+        <AddToPlaylistButton videoId={video.id} isAuthenticated={isAuthenticated} />
       </div>
     </article>
   );

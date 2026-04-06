@@ -28,6 +28,12 @@ function assertContains(source, needle, description, failures) {
   }
 }
 
+function assertNotContains(source, needle, description, failures) {
+  if (source.includes(needle)) {
+    failures.push(`${description} (unexpected: ${needle})`);
+  }
+}
+
 function main() {
   const failures = [];
 
@@ -79,8 +85,9 @@ function main() {
   // Denied deep-link loop guard invariants.
   assertContains(shellDynamicSource, "const deniedRequestedVideoIdRef = useRef<string | null>(null);", "Shell tracks denied requested video ids", failures);
   assertContains(shellDynamicSource, "if (deniedRequestedVideoIdRef.current === requestedVideoId) {", "Shell skips repeated denied requested video resolution", failures);
-  assertContains(shellDynamicSource, "params.delete(\"v\");", "Shell clears denied video id from query params", failures);
-  assertContains(shellDynamicSource, "params.delete(\"resume\");", "Shell clears resume marker when denied video id is removed", failures);
+  assertContains(shellDynamicSource, "if (requestedVideoId === lastVideoIdRef.current && isResolvingRequestedVideo) {", "Shell avoids duplicate in-flight resolve loops for same requested id", failures);
+  assertNotContains(shellDynamicSource, "params.delete(\"v\");", "Shell no longer mutates URL to clear denied video id", failures);
+  assertNotContains(shellDynamicSource, "params.delete(\"resume\");", "Shell no longer removes resume marker on denied id", failures);
 
   // Chat UI invariants.
   assertContains(shellDynamicSource, "const globalEvents = new EventSource(\"/api/chat/stream?mode=global\");", "Shell subscribes to global chat stream", failures);

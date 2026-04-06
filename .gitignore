@@ -13,6 +13,23 @@ rocks.sql
 .env.local
 .env.*.local
 apps/web/.env.local
+.env.*
+!.env.example
+
+# Local database dumps/exports (keep migration/admin SQL tracked)
+*.sql.gz
+*.sql.zip
+*.dump
+*dump*.sql
+*backup*.sql
+*export*.sql
+tmp-*.sql
+tmp_*.sql
+!clear-messages.sql
+!create-app-user.sql
+!fix-mysql-user.sql
+!prisma/migrations/**/migration.sql
+
 pnpm-lock.yaml
 *.tsbuildinfo
 apps/web/.tmp-*.ts

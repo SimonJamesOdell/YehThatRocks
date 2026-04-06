@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/db";
 import {
-  aiTracks,
   artists as seedArtists,
   genres as seedGenres,
   getArtistBySlug as getSeedArtistBySlug,
@@ -8,7 +7,6 @@ import {
   getVideoById as getSeedVideoById,
   searchCatalog as searchSeedCatalog,
   videos as seedVideos,
-  type AiTrackRecord,
   type ArtistRecord,
   type VideoRecord,
 } from "@/lib/catalog";
@@ -35,10 +33,6 @@ export type PlaylistDetail = {
   videos: VideoRecord[];
 };
 
-export type AiTrackDetail = AiTrackRecord & {
-  description: string;
-};
-
 export type GenreCard = {
   genre: string;
   previewVideoId: string | null;
@@ -47,7 +41,6 @@ export type GenreCard = {
 type PreviewStore = {
   favouriteIdsByUser: Map<number, Set<string>>;
   playlistsByUser: Map<number, PlaylistDetail[]>;
-  aiTrackDetails: AiTrackDetail[];
 };
 
 type RankedVideoRow = {
@@ -556,11 +549,6 @@ const seedPlaylists: PlaylistDetail[] = [
   },
 ];
 
-const seedAiTrackDetails: AiTrackDetail[] = aiTracks.map((track) => ({
-  ...track,
-  description: `A clearly labelled AI-generated ${track.genre.toLowerCase()} track presented as a distinct experience from YouTube videos.`,
-}));
-
 declare global {
   var __yehPreviewStore: PreviewStore | undefined;
 }
@@ -579,7 +567,6 @@ function createPreviewStore(): PreviewStore {
         })),
       ],
     ]),
-    aiTrackDetails: seedAiTrackDetails.map((track) => ({ ...track })),
   };
 }
 
@@ -621,19 +608,12 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
       v.favourited,
       v.description
     FROM videos v
-    WHERE v.favourited > 0
-      AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+    WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
       AND EXISTS (
         SELECT 1
         FROM site_videos sv
         WHERE sv.video_id = v.id
           AND sv.status = 'available'
-      )
-      AND NOT EXISTS (
-        SELECT 1
-        FROM site_videos sv
-        WHERE sv.video_id = v.id
-          AND (sv.status IS NULL OR sv.status <> 'available')
       )
     ORDER BY v.favourited DESC, v.views DESC, v.videoId ASC
     LIMIT ${limit}
@@ -1726,8 +1706,9 @@ async function findArtistsInDatabase(options: {
   limit: number;
   search?: string;
   orderByName?: boolean;
+  prefixOnly?: boolean;
 }) {
-  const { limit, search, orderByName } = options;
+  const { limit, search, orderByName, prefixOnly } = options;
   const columns = await getArtistColumnMap();
 
   const nameCol = escapeSqlIdentifier(columns.name);
@@ -1741,7 +1722,7 @@ async function findArtistsInDatabase(options: {
   const params: string[] = [];
 
   if (search && search.trim()) {
-    const needle = `%${search.trim()}%`;
+    const needle = prefixOnly ? `${search.trim()}%` : `%${search.trim()}%`;
     whereParts.push(`a.${nameCol} LIKE ?`);
     params.push(needle);
 
@@ -2581,22 +2562,52 @@ export async function searchCatalog(query: string) {
   }
 
   try {
-    // Append * to each word for prefix matching in boolean mode
-    const booleanQuery = normalized.split(/\s+/).map((w) => `+${w}*`).join(" ");
-    const [videos, artists] = await Promise.all([
-      prisma.$queryRaw<Array<{ videoId: string; title: string; channelTitle: string | null; favourited: number; description: string | null }>>`
-        SELECT videoId, title, NULL AS channelTitle, favourited, description,
-               MATCH(title, parsedArtist, parsedTrack) AGAINST(${booleanQuery} IN BOOLEAN MODE) AS score
-        FROM videos
-        WHERE MATCH(title, parsedArtist, parsedTrack) AGAINST(${booleanQuery} IN BOOLEAN MODE)
-        ORDER BY score DESC
-        LIMIT 12
-      `,
+    // MySQL fulltext ignores words shorter than ft_min_word_len (default 4, InnoDB default 3).
+    // Filtering here avoids the common failure where all tokens are stop-words/too-short
+    // which would cause +word* syntax to return zero results.
+    const FT_MIN_WORD_LEN = 3;
+    // Strip MySQL FTS boolean-mode operators before building the query to avoid syntax errors
+    const ftWords = normalized
+      .split(/\s+/)
+      .map((w) => w.replace(/[+\-><()~*"@]/g, ""))
+      .filter((w) => w.length >= FT_MIN_WORD_LEN);
+
+    // Use word* (OR mode, no + prefix) so partial matches are returned ranked by relevance.
+    // Requiring all tokens with + breaks multi-word artist names that include stop words.
+    const booleanQuery = ftWords.map((w) => `${w}*`).join(" ");
+
+    const [ftVideos, artists] = await Promise.all([
+      ftWords.length > 0
+        ? prisma.$queryRaw<Array<{ videoId: string; title: string; channelTitle: string | null; favourited: number; description: string | null }>>`
+            SELECT videoId, title, NULL AS channelTitle, favourited, description,
+                   MATCH(title, parsedArtist, parsedTrack) AGAINST(${booleanQuery} IN BOOLEAN MODE) AS score
+            FROM videos
+            WHERE MATCH(title, parsedArtist, parsedTrack) AGAINST(${booleanQuery} IN BOOLEAN MODE)
+            ORDER BY score DESC
+            LIMIT 50
+          `
+        : Promise.resolve([]),
       findArtistsInDatabase({
         limit: 12,
         search: normalized,
       }),
     ]);
+
+    // LIKE fallback: when fulltext returns no results (all short words, or no indexed terms)
+    // try a phrase-level LIKE across all searchable text columns.
+    let videos = ftVideos;
+    if (videos.length === 0) {
+      const likePattern = `%${normalized}%`;
+      videos = await prisma.$queryRaw<Array<{ videoId: string; title: string; channelTitle: string | null; favourited: number; description: string | null }>>`
+        SELECT videoId, title, NULL AS channelTitle, favourited, description, 1 AS score
+        FROM videos
+        WHERE title LIKE ${likePattern}
+           OR parsedArtist LIKE ${likePattern}
+           OR parsedTrack LIKE ${likePattern}
+        ORDER BY favourited DESC
+        LIMIT 50
+      `;
+    }
 
     return {
       videos: videos.length > 0 ? videos.map(mapVideo) : searchSeedCatalog(query).videos,
@@ -2607,6 +2618,76 @@ export async function searchCatalog(query: string) {
     console.error("[searchCatalog] query failed, falling back to seed:", err);
     return searchSeedCatalog(query);
   }
+}
+
+export type SearchSuggestion = {
+  type: "artist" | "track" | "genre";
+  label: string;
+  /** Relative URL destination used directly by the search UI. */
+  url: string;
+};
+
+export async function suggestCatalog(query: string): Promise<SearchSuggestion[]> {
+  const normalized = query.trim();
+  if (!normalized) return [];
+  const normalizedLower = normalized.toLowerCase();
+
+  const prefixPattern = `${normalized}%`;
+
+  const [artistRows, trackRows] = await Promise.all([
+    hasDatabaseUrl()
+      ? findArtistsInDatabase({ limit: 4, search: normalized, orderByName: true, prefixOnly: true })
+      : seedArtists
+          .filter((a) => a.name.toLowerCase().startsWith(normalized.toLowerCase()))
+          .slice(0, 4),
+
+    hasDatabaseUrl()
+      ? prisma.$queryRaw<Array<{ videoId: string; title: string }>>`
+          SELECT videoId, title
+          FROM videos
+          WHERE title LIKE ${prefixPattern}
+          ORDER BY favourited DESC
+          LIMIT 4
+        `
+      : seedVideos
+          .filter((v) => v.title.toLowerCase().startsWith(normalized.toLowerCase()))
+          .map((v) => ({ videoId: v.id, title: v.title }))
+          .slice(0, 4),
+  ]);
+
+  const genreSuggestions: SearchSuggestion[] = seedGenres
+    .filter((g) => g.toLowerCase().startsWith(normalized.toLowerCase()))
+    .slice(0, 3)
+    .map((g) => ({ type: "genre", label: g, url: `/categories/${getGenreSlug(g)}` }));
+
+  const artistSuggestions: SearchSuggestion[] = artistRows.map((r) => ({
+    type: "artist",
+    label: r.name,
+    url: `/artists/${slugify(r.name)}`,
+  }));
+
+  const trackSuggestions: SearchSuggestion[] = trackRows.map((r) => ({
+    type: "track",
+    label: r.title,
+    url: `/?v=${encodeURIComponent(r.videoId)}&resume=1`,
+  }));
+
+  const strictPrefixSuggestions = [...artistSuggestions, ...genreSuggestions, ...trackSuggestions].filter((suggestion) =>
+    suggestion.label.trim().toLowerCase().startsWith(normalizedLower),
+  );
+
+  // Interleave: artists first, then genres, then tracks, deduped by label
+  const seen = new Set<string>();
+  const results: SearchSuggestion[] = [];
+  for (const s of strictPrefixSuggestions) {
+    const key = s.label.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      results.push(s);
+    }
+    if (results.length >= 10) break;
+  }
+  return results;
 }
 
 export async function getGenres() {
@@ -2691,55 +2772,6 @@ export async function getGenreCards() {
   }
 
   return genreCardsCache.cards;
-}
-
-export async function getAiTracks(): Promise<AiTrackRecord[]> {
-  return getPreviewStore().aiTrackDetails.map(({ description, ...track }) => track);
-}
-
-export async function getAiTrackById(id: string): Promise<AiTrackDetail | null> {
-  const fallback = getPreviewStore().aiTrackDetails.find((track) => track.id === id) ?? null;
-
-  if (!hasDatabaseUrl()) {
-    return fallback;
-  }
-
-  const numericId = Number(id);
-
-  if (!Number.isInteger(numericId)) {
-    return fallback;
-  }
-
-  try {
-    const track = await prisma.aiTrack.findUnique({
-      where: { id: numericId },
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        prompt: true,
-        tool: true,
-        playCount: true,
-      },
-    });
-
-    if (!track) {
-      return fallback;
-    }
-
-    return {
-      id: String(track.id),
-      title: track.title,
-      tool: track.tool ?? "Other",
-      genre: "AI Rock / Metal",
-      playCount: track.playCount,
-      score: 0,
-      prompt: track.prompt ?? "Prompt unavailable",
-      description: track.description ?? "AI-generated track from the retained Yeh dataset.",
-    };
-  } catch {
-    return fallback;
-  }
 }
 
 export async function getGenreBySlug(slug: string) {
@@ -4309,22 +4341,3 @@ export async function getPublicPlaylistVideos(userId: number, playlistId: string
   }
 }
 
-export async function submitAiVote(trackId: string, vote: 1 | -1) {
-  const previewStore = getPreviewStore();
-  let updatedTrack: AiTrackDetail | null = null;
-
-  previewStore.aiTrackDetails = previewStore.aiTrackDetails.map((track) => {
-    if (track.id !== trackId) {
-      return track;
-    }
-
-    updatedTrack = {
-      ...track,
-      score: track.score + vote,
-    };
-
-    return updatedTrack;
-  });
-
-  return updatedTrack;
-}
