@@ -1,0 +1,33 @@
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: yehthatrocks
+      MYSQL_DATABASE: yeh
+      MYSQL_USER: yeh
+      MYSQL_PASSWORD: yehthatrocks
+    ports:
+      - "3307:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "yeh", "-pyehthatrocks"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "mysql://yeh:yehthatrocks@db:3306/yeh"
+      AUTH_JWT_SECRET: "docker-dev-secret-change-me-in-production-min-32-chars"
+      APP_URL: "http://localhost:3000"
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:

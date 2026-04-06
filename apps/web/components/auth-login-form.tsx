@@ -47,7 +47,7 @@ export function AuthLoginForm() {
 
       if (formRef.current && typeof window !== "undefined" && "PasswordCredential" in window && credentials?.store) {
         try {
-          const credential = new PasswordCredential(formRef.current);
+          const credential = new (window as unknown as { PasswordCredential: new (form: HTMLFormElement) => Credential }).PasswordCredential(formRef.current);
           await credentials.store(credential);
         } catch {
           // Ignore browser credential storage failures; auth already succeeded.
