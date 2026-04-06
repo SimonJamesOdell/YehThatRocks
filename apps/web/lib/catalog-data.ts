@@ -1052,7 +1052,7 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
             getYouTubeThumbnailUrl(relatedId),
         } satisfies PersistableVideoRecord;
       })
-      .filter((item): item is PersistableVideoRecord => Boolean(item));
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
     debugCatalog("fetchRelatedYouTubeVideos:success", {
       videoId,

@@ -439,7 +439,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
 
     async function loadPlaylistSequence() {
       try {
-        const response = await fetch(`/api/playlists/${encodeURIComponent(activePlaylistId)}`, {
+        const response = await fetch(`/api/playlists/${encodeURIComponent(activePlaylistId!)}`, {
           cache: "no-store",
         });
 
