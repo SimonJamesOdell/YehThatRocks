@@ -2,6 +2,7 @@ import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   allowedDevOrigins: ["192.168.0.60"],
   images: {
     remotePatterns: [

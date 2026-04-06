@@ -64,15 +64,33 @@ function getPrismaDatabaseUrl() {
   }
 }
 
-export const prisma =
-  global.__yehPrisma__ ??
-  new PrismaClient({
-    datasources: {
-      db: {
-        url: getPrismaDatabaseUrl(),
+function createPrismaClient() {
+  const url = getPrismaDatabaseUrl();
+
+  if (!url) {
+    // Return a lazy proxy that defers PrismaClient creation until first use.
+    // This lets the app boot and serve the "Backend unavailable" UI without
+    // DATABASE_URL being set.
+    return new Proxy({} as PrismaClient, {
+      get(_target, prop) {
+        if (prop === "$disconnect" || prop === "then") {
+          return () => Promise.resolve();
+        }
+        throw new Error(
+          `DATABASE_URL is not configured. Cannot access prisma.${String(prop)}.`,
+        );
       },
+    });
+  }
+
+  return new PrismaClient({
+    datasources: {
+      db: { url },
     },
   });
+}
+
+export const prisma = global.__yehPrisma__ ?? createPrismaClient();
 
 if (!global.__yehPrismaShutdownHooks__) {
   const shutdown = async () => {

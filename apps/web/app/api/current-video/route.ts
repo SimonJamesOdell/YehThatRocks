@@ -198,7 +198,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const payload = await boundedResolvePromise;
-    if (payload.pending) {
+    if ("pending" in payload && payload.pending) {
       currentVideoPendingCache.set(cacheKey, {
         expiresAt: Date.now() + CURRENT_VIDEO_PENDING_CACHE_TTL_MS,
         payload,
