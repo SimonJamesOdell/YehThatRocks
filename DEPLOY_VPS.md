@@ -194,9 +194,34 @@ Once the service is installed, your update flow is:
 
 ```bash
 cd /srv/yehthatrocks
-git pull
-sudo systemctl restart yehthatrocks
+sudo ./deploy/deploy-prod-hot-swap.sh
 ```
+
+This script performs a safer deploy sequence for a live site:
+
+- Pull latest code with `--ff-only`
+- Build the `web` image first
+- Recreate only the `web` container (`db` stays running)
+- Wait for `http://127.0.0.1:${APP_PORT}/api/status`
+- Roll back to previous image automatically if health times out
+
+Optional environment overrides:
+
+```bash
+REPO_DIR=/srv/yehthatrocks \
+TARGET_BRANCH=main \
+HEALTH_TIMEOUT_SEC=180 \
+HEALTH_PATH=/api/status \
+sudo -E ./deploy/deploy-prod-hot-swap.sh
+```
+
+If you still want to use `systemctl`, prefer reload over restart:
+
+```bash
+sudo systemctl reload yehthatrocks
+```
+
+`restart` executes `ExecStop`, which can cause avoidable downtime.
 
 If you want to watch startup logs immediately after a deploy:
 
