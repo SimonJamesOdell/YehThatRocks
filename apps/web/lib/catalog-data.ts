@@ -2087,6 +2087,26 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
     }
   }
 
+  // Check availability status first — if explicitly marked available, allow playback
+  // and trigger metadata backfill async in the background.
+  if (!Boolean(row.hasAvailable) || Boolean(row.hasBlocked)) {
+    if (!hydratedFromDirectRequest) {
+      await hydrateAndPersistVideo(normalizedVideoId, undefined, { forceAvailabilityRefresh: true });
+      row = (await fetchDecisionRows())[0] ?? row;
+    }
+
+    if (Boolean(row.hasAvailable) && !Boolean(row.hasBlocked)) {
+      // Video is available, but allow it through before metadata validation.
+      // Metadata will be backfilled asynchronously below.
+    } else {
+      return {
+        allowed: false,
+        reason: "unavailable",
+        message: "Sorry, that video cannot be played on YehThatRocks.",
+      };
+    }
+  }
+
   const needsMetadataBackfill =
     !row.parsedArtist?.trim() ||
     !row.parsedTrack?.trim() ||
@@ -2120,58 +2140,10 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
     }
   }
 
-  if (!row.parsedArtist?.trim() || !row.parsedTrack?.trim()) {
-    if (hydratedFromDirectRequest && Boolean(row.hasAvailable) && !Boolean(row.hasBlocked)) {
-      return { allowed: true, reason: "ok" };
-    }
-
-    return {
-      allowed: false,
-      reason: "missing-metadata",
-      message: "Sorry, that video cannot be played on YehThatRocks.",
-    };
-  }
-
-  if (row.parsedVideoType === "unknown") {
-    if (hydratedFromDirectRequest && Boolean(row.hasAvailable) && !Boolean(row.hasBlocked)) {
-      return { allowed: true, reason: "ok" };
-    }
-
-    return {
-      allowed: false,
-      reason: "unknown-video-type",
-      message: "Sorry, that video cannot be played on YehThatRocks.",
-    };
-  }
-
-  const confidence = Number(row.parseConfidence ?? NaN);
-  if (!Number.isFinite(confidence) || confidence < PLAYBACK_MIN_CONFIDENCE) {
-    if (hydratedFromDirectRequest && Boolean(row.hasAvailable) && !Boolean(row.hasBlocked)) {
-      return { allowed: true, reason: "ok" };
-    }
-
-    return {
-      allowed: false,
-      reason: "low-confidence",
-      message: "Sorry, that video cannot be played on YehThatRocks.",
-    };
-  }
-
-  if (!Boolean(row.hasAvailable) || Boolean(row.hasBlocked)) {
-    if (!hydratedFromDirectRequest) {
-      await hydrateAndPersistVideo(normalizedVideoId, undefined, { forceAvailabilityRefresh: true });
-      row = (await fetchDecisionRows())[0] ?? row;
-    }
-
-    if (Boolean(row.hasAvailable) && !Boolean(row.hasBlocked)) {
-      return { allowed: true, reason: "ok" };
-    }
-
-    return {
-      allowed: false,
-      reason: "unavailable",
-      message: "Sorry, that video cannot be played on YehThatRocks.",
-    };
+  // If video is marked available, allow playback even if metadata is incomplete.
+  // This ensures imported videos play immediately regardless of LLM classification state.
+  if (Boolean(row.hasAvailable) && !Boolean(row.hasBlocked)) {
+    return { allowed: true, reason: "ok" };
   }
 
   return { allowed: true, reason: "ok" };
