@@ -2301,6 +2301,35 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
   }
 
   const decision = evaluatePlaybackMetadataEligibility(row);
+
+  // Direct-link playback should never hard-fail when YouTube embed is available.
+  // If metadata classification is weak, allow playback but keep the video out of
+  // promoted "available" pools by marking the site entry as check-failed.
+  if (
+    !decision.allowed
+    && Boolean(row.hasAvailable)
+    && !Boolean(row.hasBlocked)
+    && (decision.reason === "missing-metadata" || decision.reason === "unknown-video-type" || decision.reason === "low-confidence")
+  ) {
+    await prisma.siteVideo.updateMany({
+      where: {
+        videoId: row.id,
+      },
+      data: {
+        status: "check-failed",
+        title: truncate(`${row.title} [metadata-gate:${decision.reason}]`, 255),
+      },
+    });
+
+    const passthroughDecision: PlaybackDecision = { allowed: true, reason: "ok" };
+    playbackDecisionCache.set(normalizedVideoId, {
+      expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS,
+      decision: passthroughDecision,
+    });
+
+    return passthroughDecision;
+  }
+
   playbackDecisionCache.set(normalizedVideoId, {
     expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS,
     decision,
