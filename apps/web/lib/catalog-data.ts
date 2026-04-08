@@ -2035,13 +2035,29 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
   `;
 
   let row = (await fetchDecisionRows())[0];
+  let hydratedFromDirectRequest = false;
 
   if (!row) {
-    return {
-      allowed: false,
-      reason: "not-found",
-      message: "Sorry, that video cannot be played on YehThatRocks.",
-    };
+    const hydrated = await hydrateAndPersistVideo(normalizedVideoId);
+
+    if (!hydrated) {
+      return {
+        allowed: false,
+        reason: "not-found",
+        message: "Sorry, that video cannot be played on YehThatRocks.",
+      };
+    }
+
+    row = (await fetchDecisionRows())[0];
+    hydratedFromDirectRequest = true;
+
+    if (!row) {
+      return {
+        allowed: false,
+        reason: "not-found",
+        message: "Sorry, that video cannot be played on YehThatRocks.",
+      };
+    }
   }
 
   const needsMetadataBackfill =
@@ -2078,6 +2094,10 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
   }
 
   if (!row.parsedArtist?.trim() || !row.parsedTrack?.trim()) {
+    if (hydratedFromDirectRequest && Boolean(row.hasAvailable) && !Boolean(row.hasBlocked)) {
+      return { allowed: true, reason: "ok" };
+    }
+
     return {
       allowed: false,
       reason: "missing-metadata",
@@ -2086,6 +2106,10 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
   }
 
   if (row.parsedVideoType === "unknown") {
+    if (hydratedFromDirectRequest && Boolean(row.hasAvailable) && !Boolean(row.hasBlocked)) {
+      return { allowed: true, reason: "ok" };
+    }
+
     return {
       allowed: false,
       reason: "unknown-video-type",
@@ -2095,6 +2119,10 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
 
   const confidence = Number(row.parseConfidence ?? NaN);
   if (!Number.isFinite(confidence) || confidence < PLAYBACK_MIN_CONFIDENCE) {
+    if (hydratedFromDirectRequest && Boolean(row.hasAvailable) && !Boolean(row.hasBlocked)) {
+      return { allowed: true, reason: "ok" };
+    }
+
     return {
       allowed: false,
       reason: "low-confidence",
@@ -2809,7 +2837,7 @@ export async function suggestCatalog(query: string): Promise<SearchSuggestion[]>
   const artistSuggestions: SearchSuggestion[] = artistRows.map((r) => ({
     type: "artist",
     label: r.name,
-    url: `/artists/${slugify(r.name)}`,
+    url: `/artist/${slugify(r.name)}`,
   }));
 
   const trackSuggestions: SearchSuggestion[] = trackRows.map((r) => ({
