@@ -9,7 +9,7 @@ import { getNewestVideos } from "@/lib/catalog-data";
 export default async function NewPage() {
   const cookieStore = await cookies();
   const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
-  const newestVideos = await getNewestVideos(20);
+  const newestVideos = await getNewestVideos(100);
 
   return (
     <>
