@@ -5,8 +5,21 @@ import { useEffect, useState } from "react";
 import type { VideoRecord } from "@/lib/catalog";
 import { Top100VideoLink } from "@/components/top100-video-link";
 
+function dedupeVideos(videos: VideoRecord[]) {
+  const seen = new Set<string>();
+
+  return videos.filter((video) => {
+    if (seen.has(video.id)) {
+      return false;
+    }
+
+    seen.add(video.id);
+    return true;
+  });
+}
+
 export function NewVideosLoader({ initialVideos, isAuthenticated }: { initialVideos: VideoRecord[]; isAuthenticated: boolean }) {
-  const [allVideos, setAllVideos] = useState(initialVideos);
+  const [allVideos, setAllVideos] = useState(() => dedupeVideos(initialVideos));
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,7 +32,7 @@ export function NewVideosLoader({ initialVideos, isAuthenticated }: { initialVid
 
         if (response.ok) {
           const { videos } = (await response.json()) as { videos: VideoRecord[] };
-          setAllVideos((prev) => [...prev, ...videos]);
+          setAllVideos((prev) => dedupeVideos([...prev, ...videos]));
         }
       } catch (error) {
         console.error("Failed to load remaining videos:", error);
