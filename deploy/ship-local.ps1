@@ -1,7 +1,7 @@
 param(
   [string]$RepoDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
   [string]$Branch = "main",
-  [string]$VpsHost = $env:YTR_VPS_HOST,
+  [string]$VpsHost = $(if ($env:YTR_VPS_HOST) { $env:YTR_VPS_HOST } else { "root@206.189.122.114" }),
   [string]$VpsRepoDir = "/srv/yehthatrocks",
   [string]$ImageBase = "yehthatrocks-web",
   [switch]$SkipGitPush

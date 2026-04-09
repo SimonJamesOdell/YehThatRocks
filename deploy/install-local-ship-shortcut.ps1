@@ -1,5 +1,6 @@
 param(
-  [string]$RepoDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+  [string]$RepoDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
+  [string]$VpsHost = "root@206.189.122.114"
 )
 
 Set-StrictMode -Version Latest
@@ -30,5 +31,9 @@ if ($existing -notmatch "function\s+ship\s*\{") {
 } else {
   Write-Host "'ship' function already exists in $profilePath" -ForegroundColor Yellow
 }
+
+[Environment]::SetEnvironmentVariable("YTR_VPS_HOST", $VpsHost, "User")
+$env:YTR_VPS_HOST = $VpsHost
+Write-Host "Saved YTR_VPS_HOST=$VpsHost" -ForegroundColor Green
 
 Write-Host "Restart PowerShell, then run: ship" -ForegroundColor Cyan
