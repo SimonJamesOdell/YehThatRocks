@@ -1339,20 +1339,29 @@ export async function importVideoFromDirectSource(source: string) {
   await hydrateAndPersistVideo(normalizedVideoId, undefined, { forceAvailabilityRefresh: true });
   let decision = await getVideoPlaybackDecision(normalizedVideoId);
 
-  if (
-    hasDatabaseUrl()
-    && !decision.allowed
-    && (decision.reason === "missing-metadata" || decision.reason === "unknown-video-type" || decision.reason === "low-confidence")
-  ) {
-    const fallbackRows = await prisma.$queryRaw<Array<{ id: number; title: string }>>`
-      SELECT id, title
+  // Apply the title-parsing heuristic fallback whenever parsedArtist is absent in the DB.
+  // This covers two cases: (a) decision was denied due to missing/weak metadata, and (b) the
+  // passthrough already allowed playback (embed available, metadata absent) but the video was
+  // marked check-failed — e.g. when the Groq classifier was unavailable. Without this, an
+  // admin-imported video with a clear title would remain undiscoverable whenever Groq is down.
+  if (hasDatabaseUrl()) {
+    const fallbackRows = await prisma.$queryRaw<Array<{ id: number; title: string; parsedArtist: string | null }>>`
+      SELECT id, title, parsedArtist
       FROM videos
       WHERE videoId = ${normalizedVideoId}
       LIMIT 1
     `;
 
     const fallbackRow = fallbackRows[0];
-    const fallbackMeta = fallbackRow ? deriveAdminImportFallbackMetadata(fallbackRow.title) : null;
+    const metadataAbsent = fallbackRow && !fallbackRow.parsedArtist?.trim();
+    const decisionNeedsHelp =
+      !decision.allowed &&
+      (decision.reason === "missing-metadata" || decision.reason === "unknown-video-type" || decision.reason === "low-confidence");
+
+    const fallbackMeta =
+      fallbackRow && (metadataAbsent || decisionNeedsHelp)
+        ? deriveAdminImportFallbackMetadata(fallbackRow.title)
+        : null;
 
     if (fallbackRow && fallbackMeta) {
       await prisma.$executeRaw`
