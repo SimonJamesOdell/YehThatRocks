@@ -22,6 +22,10 @@ if (-not $PrepareOnly -and [string]::IsNullOrWhiteSpace($VpsHost)) {
 
 Push-Location $RepoDir
 try {
+  if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    throw "Docker CLI not found. Use GitHub Actions build instead: push to main, wait for workflow 'Publish Web Image' to finish, then run 'deploy' on VPS."
+  }
+
   Exec "git fetch origin $Branch"
   Exec "git checkout $Branch"
 
