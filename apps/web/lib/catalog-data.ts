@@ -2441,18 +2441,20 @@ export async function getTopVideos(count = 100) {
   }
 }
 
-export async function getNewestVideos(count = 20) {
+export async function getNewestVideos(count = 20, offset = 0) {
   if (!hasDatabaseUrl()) {
     return [];
   }
 
-  const safeCount = Math.max(1, Math.min(100, Math.floor(count)));
+  const safeCount = Math.max(1, Math.min(500, Math.floor(count)));
+  const safeOffset = Math.max(0, Math.floor(offset));
   const now = Date.now();
 
   if (
     newestVideosCache
     && newestVideosCache.expiresAt > now
-    && newestVideosCache.count >= safeCount
+    && newestVideosCache.count >= safeCount + safeOffset
+    && safeOffset === 0
   ) {
     return newestVideosCache.rows.slice(0, safeCount).map(mapVideo);
   }
@@ -2474,13 +2476,16 @@ export async function getNewestVideos(count = 20) {
       )
       ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC
       LIMIT ${safeCount}
+      OFFSET ${safeOffset}
     `;
 
-    newestVideosCache = {
-      expiresAt: now + NEWEST_CACHE_TTL_MS,
-      count: safeCount,
-      rows: videos,
-    };
+    if (safeOffset === 0) {
+      newestVideosCache = {
+        expiresAt: now + NEWEST_CACHE_TTL_MS,
+        count: safeCount,
+        rows: videos,
+      };
+    }
 
     return videos.map(mapVideo);
   } catch {
