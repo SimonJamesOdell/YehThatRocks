@@ -18,6 +18,7 @@ LOCK_FILE="${LOCK_FILE:-/tmp/yehthatrocks-deploy.lock}"
 CLEANUP_AFTER_DEPLOY="${CLEANUP_AFTER_DEPLOY:-1}"
 CLEANUP_BUILDER_CACHE="${CLEANUP_BUILDER_CACHE:-1}"
 CLEANUP_UNUSED_IMAGES="${CLEANUP_UNUSED_IMAGES:-1}"
+SKIP_PULL="${SKIP_PULL:-0}"
 WEB_IMAGE_DEFAULT="ghcr.io/simonjamesodell/yehthatrocks-web:latest"
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -111,8 +112,12 @@ if [ -n "$PREV_IMAGE_ID" ]; then
   docker tag "$PREV_IMAGE_ID" yehthatrocks-web:rollback
 fi
 
-echo "[deploy] pulling web image: $WEB_IMAGE"
-WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" pull web
+if [ "$SKIP_PULL" = "1" ]; then
+  echo "[deploy] skipping image pull (SKIP_PULL=1), expecting image to already exist locally: $WEB_IMAGE"
+else
+  echo "[deploy] pulling web image: $WEB_IMAGE"
+  WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" pull web
+fi
 
 echo "[deploy] swapping web container only"
 WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" up -d --no-deps web
