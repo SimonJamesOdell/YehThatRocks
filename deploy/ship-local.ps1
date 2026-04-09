@@ -19,7 +19,15 @@ function Exec([string]$Command) {
 }
 
 if ([string]::IsNullOrWhiteSpace($VpsHost)) {
-  throw "VpsHost is required. Set YTR_VPS_HOST or pass -VpsHost."
+  $VpsHost = (Read-Host "Enter VPS SSH host (example: root@ubuntu-s-1vcpu-1gb-lon1-01)").Trim()
+  if ([string]::IsNullOrWhiteSpace($VpsHost)) {
+    throw "VpsHost is required. Set YTR_VPS_HOST or pass -VpsHost."
+  }
+
+  # Persist for future no-flag runs.
+  & setx YTR_VPS_HOST $VpsHost | Out-Null
+  $env:YTR_VPS_HOST = $VpsHost
+  Write-Host "Saved YTR_VPS_HOST for future runs: $VpsHost" -ForegroundColor Green
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
