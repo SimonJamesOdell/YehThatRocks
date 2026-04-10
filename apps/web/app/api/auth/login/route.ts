@@ -30,6 +30,13 @@ function isTransientDatabaseError(error: unknown) {
   );
 }
 
+function normalizeLoginSecret(value: string) {
+  return value
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\r\n?/g, "\n");
+}
+
 export async function POST(request: NextRequest) {
   const requestMeta = getRequestMetadata(request.headers);
   const csrfError = verifySameOrigin(request);
@@ -69,23 +76,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
 
-    const email = parsed.data.email.toLowerCase().trim();
-    const rateLimited = rateLimitOrResponse(request, `auth:login:${email}`, 10, 15 * 60 * 1000);
+    const loginIdentifier = parsed.data.email.trim();
+    const normalizedEmail = loginIdentifier.toLowerCase();
+    const rateLimited = rateLimitOrResponse(request, `auth:login:${normalizedEmail}`, 10, 15 * 60 * 1000);
 
     if (rateLimited) {
       await recordAuthAudit({
         action: "login",
         success: false,
-        email,
+        email: normalizedEmail,
         detail: "Login rate limited",
         ...requestMeta,
       });
       return rateLimited;
     }
 
-    const user = await prisma.user.findFirst({
+    let user = await prisma.user.findFirst({
       where: {
-        email,
+        OR: [
+          { email: normalizedEmail },
+          { screenName: loginIdentifier },
+        ],
       },
       select: {
         id: true,
@@ -96,10 +107,36 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
+      try {
+        const fallbackRows = await prisma.$queryRaw<Array<{
+          id: number;
+          email: string | null;
+          screenName: string | null;
+          passwordHash: string | null;
+        }>>`
+          SELECT
+            id,
+            email,
+            screen_name AS screenName,
+            password_hash AS passwordHash
+          FROM users
+          WHERE LOWER(TRIM(COALESCE(email, ''))) = ${normalizedEmail}
+             OR LOWER(TRIM(COALESCE(screen_name, ''))) = ${normalizedEmail}
+          ORDER BY id ASC
+          LIMIT 1
+        `;
+
+        user = fallbackRows[0] ?? null;
+      } catch {
+        // Keep the original not-found behavior when raw lookup is unavailable.
+      }
+    }
+
+    if (!user) {
       await recordAuthAudit({
         action: "login",
         success: false,
-        email,
+        email: normalizedEmail,
         detail: "User not found",
         ...requestMeta,
       });
@@ -112,7 +149,7 @@ export async function POST(request: NextRequest) {
       await recordAuthAudit({
         action: "login",
         success: false,
-        email,
+        email: user.email ?? normalizedEmail,
         userId: user.id,
         detail: "Password login unavailable",
         ...requestMeta,
@@ -120,13 +157,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Password login is not enabled for this account" }, { status: 401 });
     }
 
-    const isValid = await verifyPassword(parsed.data.password, storedHash);
+    const candidatePasswords = new Set<string>();
+    const rawPassword = parsed.data.password;
+    const normalizedPassword = normalizeLoginSecret(rawPassword);
+    const trimmedPassword = rawPassword.trim();
+    const trimmedNormalizedPassword = normalizedPassword.trim();
+
+    candidatePasswords.add(rawPassword);
+    candidatePasswords.add(normalizedPassword);
+    if (trimmedPassword.length > 0) {
+      candidatePasswords.add(trimmedPassword);
+    }
+    if (trimmedNormalizedPassword.length > 0) {
+      candidatePasswords.add(trimmedNormalizedPassword);
+    }
+
+    let isValid = false;
+    for (const candidatePassword of candidatePasswords) {
+      if (await verifyPassword(candidatePassword, storedHash)) {
+        isValid = true;
+        break;
+      }
+    }
 
     if (!isValid) {
       await recordAuthAudit({
         action: "login",
         success: false,
-        email,
+        email: user.email ?? normalizedEmail,
         userId: user.id,
         detail: "Invalid password",
         ...requestMeta,
@@ -134,8 +192,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
     }
 
-    const accessToken = await signAccessToken(user.id, user.email ?? email);
-    const refreshToken = await signRefreshToken(user.id, user.email ?? email, parsed.data.remember);
+    const accessToken = await signAccessToken(user.id, user.email ?? normalizedEmail);
+    const refreshToken = await signRefreshToken(user.id, user.email ?? normalizedEmail, parsed.data.remember);
     await createRefreshSession(user.id, refreshToken, parsed.data.remember);
 
     const response = NextResponse.json({

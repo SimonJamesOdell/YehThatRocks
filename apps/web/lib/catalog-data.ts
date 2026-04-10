@@ -882,7 +882,7 @@ function mapVideo(video: {
   return {
     id: video.videoId,
     title: video.title,
-    channelTitle: video.channelTitle ?? (inferredChannelTitle || "Unknown Channel"),
+    channelTitle: video.channelTitle ?? (inferredChannelTitle || "Unknown Artist"),
     genre: "Rock / Metal",
     favourited: Number.isFinite(favouritedValue) ? favouritedValue : 0,
     description: video.description ?? "Legacy video entry from the retained Yeh database.",
@@ -3836,7 +3836,7 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
             pi.id AS playlistItemId,
             COALESCE(v.videoId, pi.videoId) AS videoId,
             COALESCE(v.title, CONCAT('Video ', pi.videoId)) AS title,
-            COALESCE(v.channelTitle, 'Unknown Channel') AS channelTitle,
+            COALESCE(v.parsedArtist, NULL) AS channelTitle,
             COALESCE(v.favourited, 0) AS favourited,
             COALESCE(v.description, 'Playlist track') AS description
           FROM playlistitems pi
@@ -3850,7 +3850,7 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
               pi.id AS playlistItemId,
             COALESCE(v.videoId, CAST(pi.videoId AS CHAR)) AS videoId,
             COALESCE(v.title, CONCAT('Video ', CAST(pi.videoId AS CHAR))) AS title,
-            COALESCE(v.channelTitle, 'Unknown Channel') AS channelTitle,
+            COALESCE(v.parsedArtist, NULL) AS channelTitle,
             COALESCE(v.favourited, 0) AS favourited,
             COALESCE(v.description, 'Playlist track') AS description
           FROM playlistitems pi
@@ -3864,7 +3864,7 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
               pi.id AS playlistItemId,
             COALESCE(v.videoId, CAST(pi.video_id AS CHAR)) AS videoId,
             COALESCE(v.title, CONCAT('Video ', CAST(pi.video_id AS CHAR))) AS title,
-            COALESCE(v.channelTitle, 'Unknown Channel') AS channelTitle,
+            COALESCE(v.parsedArtist, NULL) AS channelTitle,
             COALESCE(v.favourited, 0) AS favourited,
             COALESCE(v.description, 'Playlist track') AS description
           FROM playlistitems pi
@@ -3878,7 +3878,7 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
               pi.id AS playlistItemId,
             COALESCE(v.videoId, pi.video_id) AS videoId,
             COALESCE(v.title, CONCAT('Video ', pi.video_id)) AS title,
-            COALESCE(v.channelTitle, 'Unknown Channel') AS channelTitle,
+            COALESCE(v.parsedArtist, NULL) AS channelTitle,
             COALESCE(v.favourited, 0) AS favourited,
             COALESCE(v.description, 'Playlist track') AS description
           FROM playlistitems pi
@@ -3929,7 +3929,14 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
       const videoPkRef = pickColumn(videoColumns, ["id"]);
       const videoExternalIdRef = pickColumn(videoColumns, ["videoId", "video_id", "videoid"]);
       const videoTitleRef = pickColumn(videoColumns, ["title"]);
-      const videoChannelTitleRef = pickColumn(videoColumns, ["channelTitle", "channel_title", "channel"]);
+      const videoArtistRef = pickColumn(videoColumns, [
+        "parsedArtist",
+        "parsed_artist",
+        "artist",
+        "channelTitle",
+        "channel_title",
+        "channel",
+      ]);
       const videoFavouritedRef = pickColumn(videoColumns, ["favourited", "favorite", "is_favourited"]);
       const videoDescriptionRef = pickColumn(videoColumns, ["description", "desc"]);
       const isPlaylistVideoRefNumeric = Boolean(videoRef && /int|bigint|smallint|tinyint/i.test(videoRef.Type));
@@ -3941,8 +3948,8 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
         const rowIdCol = escapeSqlIdentifier(rowIdRef.Field);
         const externalVideoCol = escapeSqlIdentifier(videoExternalIdRef.Field);
         const titleExpr = videoTitleRef ? `v.${escapeSqlIdentifier(videoTitleRef.Field)}` : "NULL";
-        const channelTitleExpr = videoChannelTitleRef
-          ? `v.${escapeSqlIdentifier(videoChannelTitleRef.Field)}`
+        const artistExpr = videoArtistRef
+          ? `v.${escapeSqlIdentifier(videoArtistRef.Field)}`
           : "NULL";
         const favouritedExpr = videoFavouritedRef
           ? `v.${escapeSqlIdentifier(videoFavouritedRef.Field)}`
@@ -3967,7 +3974,7 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
                 pi.${rowIdCol} AS playlistItemId,
                 COALESCE(v.${externalVideoCol}, ${unresolvedVideoExpr}) AS videoId,
                 COALESCE(${titleExpr}, CONCAT('Video ', ${unresolvedVideoExpr})) AS title,
-                COALESCE(${channelTitleExpr}, 'Unknown Channel') AS channelTitle,
+                COALESCE(${artistExpr}, NULL) AS channelTitle,
                 COALESCE(${favouritedExpr}, 0) AS favourited,
                 COALESCE(${descriptionExpr}, 'Playlist track') AS description
               FROM playlistitems pi
