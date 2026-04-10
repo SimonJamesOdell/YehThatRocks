@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { AuthAccountActions } from "@/components/auth-account-actions";
@@ -19,7 +20,18 @@ type AccountSettingsPanelProps = {
   user: AccountUser;
 };
 
-type AccountTab = "details" | "security";
+type AccountHistoryItem = {
+  video: {
+    id: string;
+    title: string;
+    channelTitle: string;
+  };
+  lastWatchedAt: string;
+  watchCount: number;
+  maxProgressPercent: number;
+};
+
+type AccountTab = "details" | "security" | "history";
 
 export function AccountSettingsPanel({ user }: AccountSettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<AccountTab>("details");
@@ -30,6 +42,9 @@ export function AccountSettingsPanel({ user }: AccountSettingsPanelProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [historyItems, setHistoryItems] = useState<AccountHistoryItem[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const avatarPreview = useMemo(() => {
     const trimmed = avatarUrl.trim();
@@ -74,6 +89,60 @@ export function AccountSettingsPanel({ user }: AccountSettingsPanelProps) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== "history") {
+      return;
+    }
+
+    let cancelled = false;
+    setIsHistoryLoading(true);
+    setHistoryError(null);
+
+    const loadHistory = async () => {
+      try {
+        const response = await fetch("/api/watch-history?limit=120", {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          if (!cancelled) {
+            setHistoryError("Could not load watch history.");
+          }
+          return;
+        }
+
+        const payload = (await response.json().catch(() => null)) as { history?: AccountHistoryItem[] } | null;
+        if (!cancelled) {
+          setHistoryItems(Array.isArray(payload?.history) ? payload.history : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setHistoryError("Could not load watch history.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsHistoryLoading(false);
+        }
+      }
+    };
+
+    void loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab]);
+
+  function formatWatchedAt(value: string) {
+    const timestamp = new Date(value);
+    if (Number.isNaN(timestamp.getTime())) {
+      return "Recently watched";
+    }
+
+    return timestamp.toLocaleString();
+  }
 
   async function handleSaveDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -142,6 +211,15 @@ export function AccountSettingsPanel({ user }: AccountSettingsPanelProps) {
           onClick={() => setActiveTab("security")}
         >
           Security
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "history"}
+          className={activeTab === "history" ? "activeTab" : undefined}
+          onClick={() => setActiveTab("history")}
+        >
+          Watch history
         </button>
       </div>
 
@@ -215,7 +293,7 @@ export function AccountSettingsPanel({ user }: AccountSettingsPanelProps) {
             {saveMessage ? <p className="authMessage">{saveMessage}</p> : null}
             {saveError ? <p className="authMessage">{saveError}</p> : null}
         </form>
-      ) : (
+      ) : activeTab === "security" ? (
         <div className="accountSecurityLayout" role="tabpanel" aria-label="Security">
           <div className="accountSecurityColumn">
             <h3 className="accountSecurityHeading">Change password</h3>
@@ -227,6 +305,34 @@ export function AccountSettingsPanel({ user }: AccountSettingsPanelProps) {
             </div>
           ) : null}
         </div>
+      ) : (
+        <section className="panel featurePanel accountHistoryPanel" role="tabpanel" aria-label="Watch history">
+          <div className="panelHeading">
+            <span>Watch history</span>
+            <strong>{historyItems.length} tracks</strong>
+          </div>
+
+          {isHistoryLoading ? <p className="authMessage">Loading watch history...</p> : null}
+          {historyError ? <p className="authMessage">{historyError}</p> : null}
+
+          {!isHistoryLoading && !historyError && historyItems.length === 0 ? (
+            <p className="authMessage">No watch history yet. Play a few tracks and they will appear here.</p>
+          ) : null}
+
+          {!isHistoryLoading && !historyError && historyItems.length > 0 ? (
+            <ul className="accountHistoryList">
+              {historyItems.map((entry) => (
+                <li key={`${entry.video.id}:${entry.lastWatchedAt}`}>
+                  <Link href={`/?v=${encodeURIComponent(entry.video.id)}`} className="accountHistoryLink">
+                    <strong>{entry.video.title}</strong>
+                    <span>{entry.video.channelTitle}</span>
+                    <span>{formatWatchedAt(entry.lastWatchedAt)} • {entry.watchCount} plays • {Math.round(entry.maxProgressPercent)}%</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
       )}
     </>
   );

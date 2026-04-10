@@ -52,3 +52,11 @@ export const resetPasswordSchema = z.object({
 export const verifyEmailSchema = z.object({
   token: z.string().min(20).max(512),
 });
+
+export const watchHistoryEventSchema = z.object({
+  videoId: z.string().trim().regex(/^[A-Za-z0-9_-]{11}$/),
+  reason: z.enum(["qualified", "ended"]).default("qualified"),
+  positionSec: z.number().min(0).max(86_400).optional().default(0),
+  durationSec: z.number().min(0).max(86_400).optional().default(0),
+  progressPercent: z.number().min(0).max(100).optional().default(0),
+});

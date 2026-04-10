@@ -176,6 +176,23 @@ model Favourite {
   @@map("favourites")
 }
 
+model WatchHistory {
+  id                 Int      @id @default(autoincrement())
+  userId             Int      @map("user_id")
+  videoId            String   @map("video_id") @db.VarChar(32)
+  watchCount         Int      @default(0) @map("watch_count")
+  firstWatchedAt     DateTime @default(now()) @map("first_watched_at")
+  lastWatchedAt      DateTime @default(now()) @map("last_watched_at")
+  lastPositionSec    Int      @default(0) @map("last_position_sec")
+  lastDurationSec    Int      @default(0) @map("last_duration_sec")
+  maxProgressPercent Float    @default(0) @map("max_progress_percent")
+
+  @@unique([userId, videoId])
+  @@index([userId, lastWatchedAt])
+  @@index([videoId])
+  @@map("watch_history")
+}
+
 model PlaylistName {
   id        Int            @id @default(autoincrement())
   userId    Int?           @map("user_id")

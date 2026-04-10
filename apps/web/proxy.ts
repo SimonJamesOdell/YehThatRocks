@@ -7,6 +7,7 @@ const PROTECTED_API_PREFIXES = [
   "/api/chat",
   "/api/chat/stream",
   "/api/favourites",
+  "/api/watch-history",
   "/api/playlists",
   "/api/auth/change-password",
   "/api/auth/me",

@@ -202,12 +202,15 @@ const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env
 const LAST_RANDOM_START_VIDEO_ID_KEY = "ytr:last-random-start-video-id";
 const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
 const CURRENT_VIDEO_PREFETCH_TTL_MS = 25_000;
-const RELATED_FADE_STAGGER_MS = 46;
-const RELATED_FADE_OUT_BASE_MS = 210;
-const RELATED_FADE_IN_BASE_MS = 230;
+const RELATED_FADE_STAGGER_MS = 22;
+const RELATED_FADE_OUT_BASE_MS = 120;
+const RELATED_FADE_IN_BASE_MS = 120;
 const STARTUP_RETRY_FAST_ATTEMPTS = 4;
 const STARTUP_RETRY_SLOW_DELAY_MS = 8_000;
 const STARTUP_RETRY_MAX_ATTEMPTS = 8;
+const REQUESTED_VIDEO_RETRY_FAST_ATTEMPTS = 4;
+const REQUESTED_VIDEO_RETRY_SLOW_DELAY_MS = 8_000;
+const REQUESTED_VIDEO_RETRY_MAX_ATTEMPTS = 8;
 const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
 const PREFETCH_FAILURE_MAX_BACKOFF_MS = 20_000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
@@ -242,6 +245,7 @@ function isRouteActive(href: string, pathname: string) {
 
 function isProtectedOverlayPath(pathname: string) {
   return pathname === "/favourites"
+    || pathname === "/history"
     || pathname === "/account"
     || pathname === "/playlists"
     || pathname.startsWith("/playlists/");
@@ -309,6 +313,7 @@ function ShellDynamicInner({
   const pendingRelatedVideosRef = useRef<VideoRecord[] | null>(null);
   const relatedTransitionTimeoutRef = useRef<number | null>(null);
   const watchNextRailRef = useRef<HTMLElement | null>(null);
+  const prevFadeVideoIdRef = useRef<string | null>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const favouritesBlindInnerRef = useRef<HTMLDivElement | null>(null);
   const flashTimeoutRef = useRef<Record<FlashableChatMode, number | null>>({
@@ -338,6 +343,16 @@ function ShellDynamicInner({
     || pathname.startsWith("/categories/")
     || pathname === "/playlists"
     || pathname.startsWith("/playlists/");
+  const isPlayerWidthOverlayRoute =
+    pathname === "/new"
+    || pathname === "/top100"
+    || pathname === "/history"
+    || pathname === "/search";
+  const overlayPanelClassName = [
+    "favouritesBlind",
+    disableOverlayDropAnimation ? "favouritesBlindNoDrop" : "",
+    isPlayerWidthOverlayRoute ? "favouritesBlindPlayerWidth" : "",
+  ].filter(Boolean).join(" ");
   const shouldRunChat = isAuthenticated && !isOverlayRoute;
   const isArtistsIndexRoute = pathname === "/artists";
   const isMobileCommunityCollapsed = isMobileViewport && !isMobileCommunityOpen;
@@ -422,7 +437,7 @@ function ShellDynamicInner({
   }, [isLoggedIn]);
 
   useEffect(() => {
-    if (pathname !== "/top100") {
+    if (pathname !== "/top100" && pathname !== "/history") {
       return;
     }
 
@@ -735,6 +750,13 @@ function ShellDynamicInner({
           }
           return;
         }
+
+        if (data?.pending) {
+          logFlow("requested-video:pending", {
+            requestedVideoId,
+            attempt,
+          });
+        }
       } catch (error) {
         if (ignore) {
           return;
@@ -751,7 +773,18 @@ function ShellDynamicInner({
         return;
       }
 
-      const delayMs = Math.min(2400, 350 * attempt);
+      if (attempt >= REQUESTED_VIDEO_RETRY_MAX_ATTEMPTS) {
+        logFlow("requested-video:halted", {
+          requestedVideoId,
+          attempt,
+        });
+        setIsResolvingRequestedVideo(false);
+        return;
+      }
+
+      const delayMs = attempt <= REQUESTED_VIDEO_RETRY_FAST_ATTEMPTS
+        ? Math.min(2400, 350 * attempt)
+        : REQUESTED_VIDEO_RETRY_SLOW_DELAY_MS;
       retryTimeoutId = window.setTimeout(() => {
         void resolveRequestedVideo(attempt + 1);
       }, delayMs);
@@ -1167,6 +1200,15 @@ function ShellDynamicInner({
     ? Math.max(playlistRailData.videos.length, playlistRailData.itemCount ?? activePlaylistSummary?.itemCount ?? 0)
     : (activePlaylistSummary?.itemCount ?? 0);
 
+  // Kick off the fade-out as soon as the user selects a new video so the
+  // animation overlaps the API round-trip rather than adding to it.
+  useEffect(() => {
+    if (!requestedVideoId || requestedVideoId === prevFadeVideoIdRef.current) return;
+    prevFadeVideoIdRef.current = requestedVideoId;
+    setRelatedTransitionPhase((prev) => (prev === "idle" ? "fading-out" : prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedVideoId]);
+
   useEffect(() => {
     const currentSignature = displayedRelatedVideos.map((video) => video.id).join("|");
     const nextSignature = sourceRelatedVideos.map((video) => video.id).join("|");
@@ -1241,7 +1283,7 @@ function ShellDynamicInner({
       ? navItems
       : navItems.filter(
           (item) =>
-            !["/favourites", "/playlists", "/account"].includes(item.href),
+            !["/favourites", "/playlists", "/history", "/account"].includes(item.href),
         )
   ).filter((item) => item.href !== "/" && item.href !== "/ai");
 
@@ -1715,7 +1757,7 @@ function ShellDynamicInner({
       suggestAbortRef.current = null;
     }
 
-    if (!trimmed) {
+    if (!trimmed || trimmed.length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
@@ -1745,7 +1787,7 @@ function ShellDynamicInner({
           suggestAbortRef.current = null;
         }
       }
-    }, 220);
+    }, 140);
   }
 
   function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -1862,6 +1904,13 @@ function ShellDynamicInner({
                     <>
                       <span className="navPlaylistsGlyph" aria-hidden="true">
                         ♬
+                      </span>
+                      <span>{item.label}</span>
+                    </>
+                  ) : item.href === "/history" ? (
+                    <>
+                      <span className="navHistoryGlyph" aria-hidden="true">
+                        🕘
                       </span>
                       <span>{item.label}</span>
                     </>
@@ -2162,7 +2211,7 @@ function ShellDynamicInner({
             {isOverlayRoute ? (
               <section
                 key={overlayRouteKey}
-                className={disableOverlayDropAnimation ? "favouritesBlind favouritesBlindNoDrop" : "favouritesBlind"}
+                className={overlayPanelClassName}
                 aria-label="Page overlay"
               >
                 <div ref={favouritesBlindInnerRef} className="favouritesBlindInner">{children}</div>

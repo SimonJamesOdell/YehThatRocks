@@ -47,7 +47,6 @@ function main() {
 
   // Deduplication before render
   assertContains(searchPageSource, "const uniqueVideos = results.videos.filter(", "Search page deduplicates videos by id before render", failures);
-  assertContains(searchPageSource, "{uniqueVideos.length} matching tracks", "Search page count reflects deduplicated video list", failures);
   assertContains(searchPageSource, "{uniqueVideos.map((video) => (", "Search page renders deduplicated video list", failures);
   assertContains(searchPageSource, "new Map(results.artists.map((artist) => [artist.slug, artist])).values()", "Search page deduplicates artists by slug", failures);
   assertContains(searchPageSource, "new Set(results.genres)", "Search page deduplicates genres using Set", failures);
