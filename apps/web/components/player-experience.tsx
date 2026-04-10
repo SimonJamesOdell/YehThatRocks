@@ -84,8 +84,8 @@ const AUTOPLAY_KEY = "yeh-player-autoplay";
 const HISTORY_KEY = "yeh-player-history";
 const RESUME_KEY = "yeh-player-resume";
 const HISTORY_LIMIT = 20;
-const RANDOM_NEXT_RECENT_EXCLUSION = 6;
-const RANDOM_NEXT_MIN_WATCH_NEXT_POOL = 5;
+const AUTOPLAY_FALLBACK_POOL_SIZE = 600;
+const RANDOM_NEXT_RECENT_EXCLUSION = 18;
 const UNAVAILABLE_PLAYER_CODES = new Set([5, 100, 101, 150]);
 const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_PLAYER === "1";
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
@@ -306,7 +306,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
 
     async function loadTopFallbackPool() {
       try {
-        const response = await fetch("/api/videos/top?count=100", {
+        const response = await fetch(`/api/videos/top?count=${AUTOPLAY_FALLBACK_POOL_SIZE}`, {
           cache: "no-store",
         });
 
@@ -340,30 +340,30 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
   }, []);
 
   function getRandomWatchNextId() {
-    const candidateIds = Array.from(new Set(queue.map((video) => video.id))).filter(
-      (videoId) => videoId !== currentVideo.id,
+    const queueIds = Array.from(new Set(queue.map((video) => video.id))).filter((videoId) => videoId !== currentVideo.id);
+    const topFallbackVideoIds = Array.from(new Set(topFallbackVideos.map((video) => video.id))).filter(
+      (videoId) => Boolean(videoId) && videoId !== currentVideo.id,
     );
+    const blendedCandidateIds = Array.from(new Set([...queueIds, ...topFallbackVideoIds]));
+
+    if (blendedCandidateIds.length === 0) {
+      return null;
+    }
 
     // Avoid recently played videos when possible so random-next feels fresh.
     const recentIds = Array.from(new Set([...historyStack].reverse()))
       .filter((videoId) => videoId !== currentVideo.id)
       .slice(0, RANDOM_NEXT_RECENT_EXCLUSION);
     const recentIdSet = new Set(recentIds);
-    const topFallbackVideoIds = Array.from(new Set(topFallbackVideos.map((video) => video.id))).filter(Boolean);
+    const freshBlendedIds = blendedCandidateIds.filter((videoId) => !recentIdSet.has(videoId));
 
-    const shouldUseTopFallback =
-      candidateIds.length > 0 && candidateIds.length < RANDOM_NEXT_MIN_WATCH_NEXT_POOL && topFallbackVideoIds.length > 0;
+    // Keep related/queue tracks discoverable, but diversify with a larger quality pool.
+    const freshQueueIds = queueIds.filter((videoId) => !recentIdSet.has(videoId));
+    const preferQueuePool = freshQueueIds.length >= 5;
 
-    const topFallbackCandidateIds = shouldUseTopFallback
-      ? topFallbackVideoIds.filter((videoId) => videoId !== currentVideo.id)
-      : [];
-
-    const freshCandidateIds = candidateIds.filter((videoId) => !recentIdSet.has(videoId));
-    const freshTopFallbackIds = topFallbackCandidateIds.filter((videoId) => !recentIdSet.has(videoId));
-
-    const selectionPool = shouldUseTopFallback
-      ? (freshTopFallbackIds.length > 0 ? freshTopFallbackIds : topFallbackCandidateIds)
-      : (freshCandidateIds.length > 0 ? freshCandidateIds : candidateIds);
+    const selectionPool = preferQueuePool
+      ? freshQueueIds
+      : (freshBlendedIds.length > 0 ? freshBlendedIds : blendedCandidateIds);
 
     if (selectionPool.length === 0) {
       return null;
