@@ -28,19 +28,6 @@ type CreatedPlaylistPayload = {
   name?: string;
 };
 
-function sortPlaylistsByRecency(playlists: PlaylistSummary[]) {
-  return [...playlists].sort((a, b) => {
-    const aId = Number(a.id);
-    const bId = Number(b.id);
-
-    if (Number.isFinite(aId) && Number.isFinite(bId)) {
-      return bId - aId;
-    }
-
-    return b.id.localeCompare(a.id);
-  });
-}
-
 export function AddToPlaylistButton({
   videoId,
   isAuthenticated = true,
@@ -135,14 +122,13 @@ export function AddToPlaylistButton({
           }];
         }
 
-        const orderedByRecency = sortPlaylistsByRecency(playlists);
         const lastUsedPlaylistId =
           typeof window !== "undefined"
             ? window.localStorage.getItem(LAST_PLAYLIST_ID_KEY)
             : null;
 
         const initialSelectedPlaylist =
-          orderedByRecency.find((playlist) => playlist.id === lastUsedPlaylistId) ?? orderedByRecency[0];
+          playlists.find((playlist) => playlist.id === lastUsedPlaylistId) ?? playlists[0];
 
         if (!initialSelectedPlaylist) {
           return;
@@ -150,7 +136,7 @@ export function AddToPlaylistButton({
 
         const candidatePlaylists = [
           initialSelectedPlaylist,
-          ...orderedByRecency.filter((playlist) => playlist.id !== initialSelectedPlaylist.id),
+          ...playlists.filter((playlist) => playlist.id !== initialSelectedPlaylist.id),
         ];
 
         let selectedPlaylist: PlaylistSummary | null = null;

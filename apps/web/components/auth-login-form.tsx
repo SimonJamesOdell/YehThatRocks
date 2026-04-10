@@ -25,6 +25,11 @@ export function AuthLoginForm() {
   async function submitLogin(email: string, password: string) {
     const remember = true;
 
+    if (!email || !password) {
+      setError("Please enter your email and password.");
+      return false;
+    }
+
     setError(null);
     setIsSubmitting(true);
 
@@ -57,6 +62,9 @@ export function AuthLoginForm() {
       const videoParam = new URLSearchParams(window.location.search).get("v");
       window.location.assign(videoParam ? `/?v=${encodeURIComponent(videoParam)}` : "/");
       return true;
+    } catch {
+      setError("Unable to reach login service. Please try again.");
+      return false;
     } finally {
       setIsSubmitting(false);
     }
@@ -86,12 +94,13 @@ export function AuthLoginForm() {
 
     let cancelled = false;
 
-    void credentials
-      .get({
-        password: true,
-        mediation: "optional",
-      })
-      .then(async (credential) => {
+    void (async () => {
+      try {
+        const credential = await credentials.get({
+          password: true,
+          mediation: "optional",
+        });
+
         if (cancelled || isSubmitting || !credential || typeof credential !== "object") {
           return;
         }
@@ -118,8 +127,10 @@ export function AuthLoginForm() {
         }
 
         await submitLogin(email, password);
-      })
-      .catch(() => {});
+      } catch {
+        // Ignore credential API failures on unsupported or unstable browser implementations.
+      }
+    })();
 
     return () => {
       cancelled = true;
@@ -139,7 +150,6 @@ export function AuthLoginForm() {
           type="password"
           placeholder="••••••••"
           required
-          minLength={8}
           autoComplete="current-password"
         />
       </label>
