@@ -13,7 +13,8 @@
   --left-rail-width: clamp(280px, 24vw, 420px);
   --right-rail-width: clamp(260px, 22vw, 420px);
   --header-overhang-side: 20px;
-  --header-search-width: clamp(220px, 16vw, 300px);
+  --header-side-reserved: clamp(250px, 16vw, 320px);
+  --header-search-width: clamp(260px, calc(16vw + 40px), 340px);
 }
 
 * {
@@ -133,9 +134,9 @@ button:not(:disabled):active::after {
 .headerBar {
   display: grid;
   grid-template-columns:
-    max(220px, calc(var(--left-rail-width) - var(--header-overhang-side)))
+    var(--header-side-reserved)
     minmax(0, 1fr)
-    max(220px, calc(var(--right-rail-width) - var(--header-overhang-side)));
+    var(--header-side-reserved);
   align-items: center;
   gap: 16px;
   min-height: 64px;
@@ -191,6 +192,8 @@ button:not(:disabled):active::after {
   gap: 0;
   grid-column: 2;
   align-self: stretch;
+  width: calc(100% - 80px);
+  justify-self: center;
   height: calc(100% + 20px);
   margin-top: -10px;
   margin-bottom: -10px;
@@ -221,8 +224,8 @@ button:not(:disabled):active::after {
   border-radius: 0;
   padding-top: 0;
   padding-bottom: 0;
-  padding-left: 22px;
-  padding-right: 22px;
+  padding-left: 12px;
+  padding-right: 12px;
   position: relative;
   overflow: hidden;
   transition: background 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
@@ -2255,6 +2258,13 @@ h1 {
   position: relative;
 }
 
+@supports (content-visibility: auto) {
+  .relatedCardSlot {
+    content-visibility: auto;
+    contain-intrinsic-size: 150px 96px;
+  }
+}
+
 .relatedCardPlaylistAdd {
   position: absolute;
   bottom: 8px;
@@ -2323,6 +2333,11 @@ h1 {
 
 .rightRail .relatedStack {
   padding: 0 18px;
+}
+
+.relatedLoadMoreSentinel {
+  width: 100%;
+  height: 2px;
 }
 
 .relatedLoadingState {
@@ -3964,6 +3979,8 @@ h1 {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 8px;
+    width: 100%;
+    justify-self: auto;
     align-self: auto;
     height: auto;
     margin-top: 0;

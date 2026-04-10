@@ -9,10 +9,13 @@ const CURRENT_VIDEO_FAILURE_COOLDOWN_MS = 8_000;
 const CURRENT_VIDEO_PENDING_CACHE_TTL_MS = 2_000;
 const CURRENT_VIDEO_RESOLVER_TIMEOUT_MS = 2_500;
 const CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS = 1;
+const CURRENT_VIDEO_RELATED_POOL_CACHE_TTL_MS = 30_000;
+const CURRENT_VIDEO_RELATED_POOL_SIZE = 100;
 
 type CurrentVideoPayload = {
   currentVideo: Awaited<ReturnType<typeof getCurrentVideo>>;
   relatedVideos: Awaited<ReturnType<typeof getRelatedVideos>>;
+  hasMore?: boolean;
 };
 
 type PendingPayload = {
@@ -25,6 +28,8 @@ type CurrentVideoResolvePayload = CurrentVideoPayload | PendingPayload;
 const currentVideoCache = new Map<string, { expiresAt: number; payload: CurrentVideoPayload }>();
 const currentVideoPendingCache = new Map<string, { expiresAt: number; payload: PendingPayload }>();
 const currentVideoInflight = new Map<string, Promise<CurrentVideoResolvePayload>>();
+const currentVideoRelatedPoolCache = new Map<string, { expiresAt: number; videos: Awaited<ReturnType<typeof getRelatedVideos>> }>();
+const currentVideoRelatedPoolInflight = new Map<string, Promise<Awaited<ReturnType<typeof getRelatedVideos>>>>();
 let currentVideoResolverBlockedUntil = 0;
 
 function shuffleVideos<T>(rows: T[]) {
@@ -65,58 +70,126 @@ function logCurrentVideoRoute(event: string, detail?: Record<string, unknown>) {
   console.log(`[current-video-route] ${event}${payload}`);
 }
 
+async function getRelatedPoolForCurrentVideo(currentVideoId: string, userId?: number) {
+  const cacheKey = `${currentVideoId}:u:${userId ?? 0}`;
+  const now = Date.now();
+  const cached = currentVideoRelatedPoolCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.videos;
+  }
+
+  const inFlight = currentVideoRelatedPoolInflight.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const pending = (async () => {
+    const baseRelated = await getRelatedVideos(currentVideoId, {
+      userId,
+      count: CURRENT_VIDEO_RELATED_POOL_SIZE,
+    });
+
+    const deduped = uniqueVideosById(baseRelated).filter((video) => video.id !== currentVideoId);
+    if (deduped.length >= CURRENT_VIDEO_RELATED_POOL_SIZE) {
+      return deduped.slice(0, CURRENT_VIDEO_RELATED_POOL_SIZE);
+    }
+
+    const fillerCandidates = await getTopVideos(220);
+    const blockedIds = new Set<string>([currentVideoId, ...deduped.map((video) => video.id)]);
+    const filler = uniqueVideosById(fillerCandidates.filter((video) => !blockedIds.has(video.id)));
+    return [...deduped, ...filler].slice(0, CURRENT_VIDEO_RELATED_POOL_SIZE);
+  })();
+  currentVideoRelatedPoolInflight.set(cacheKey, pending);
+
+  try {
+    const videos = await pending;
+    currentVideoRelatedPoolCache.set(cacheKey, {
+      expiresAt: Date.now() + CURRENT_VIDEO_RELATED_POOL_CACHE_TTL_MS,
+      videos,
+    });
+    return videos;
+  } finally {
+    if (currentVideoRelatedPoolInflight.get(cacheKey) === pending) {
+      currentVideoRelatedPoolInflight.delete(cacheKey);
+    }
+  }
+}
+
 export async function GET(request: NextRequest) {
   const v = request.nextUrl.searchParams.get("v") ?? undefined;
+  const requestedRelatedCount = Math.max(
+    1,
+    Math.min(30, Number.parseInt(request.nextUrl.searchParams.get("count") ?? "10", 10) || 10),
+  );
+  const requestedRelatedOffset = Math.max(
+    0,
+    Number.parseInt(request.nextUrl.searchParams.get("offset") ?? "0", 10) || 0,
+  );
+  const excludedRelatedIds = Array.from(
+    new Set(
+      request.nextUrl.searchParams
+        .getAll("exclude")
+        .flatMap((value) => value.split(","))
+        .map((value) => value.trim())
+        .filter((value) => /^[A-Za-z0-9_-]{11}$/.test(value)),
+    ),
+  );
+  const isCustomRelatedRequest = requestedRelatedCount !== 10 || excludedRelatedIds.length > 0 || requestedRelatedOffset > 0;
+  const usePagedRelatedPool = isCustomRelatedRequest && excludedRelatedIds.length === 0;
   const optionalAuth = await getOptionalApiAuth(request);
   const cacheKey = `${v ?? "__default__"}:u:${optionalAuth?.userId ?? 0}`;
   const now = Date.now();
 
-  const cachedPending = currentVideoPendingCache.get(cacheKey);
-  if (cachedPending && cachedPending.expiresAt > now) {
-    logCurrentVideoRoute("request:pending-cache-hit", { requestedVideoId: v });
-    return NextResponse.json(cachedPending.payload);
-  }
+  if (!isCustomRelatedRequest) {
+    const cachedPending = currentVideoPendingCache.get(cacheKey);
+    if (cachedPending && cachedPending.expiresAt > now) {
+      logCurrentVideoRoute("request:pending-cache-hit", { requestedVideoId: v });
+      return NextResponse.json(cachedPending.payload);
+    }
 
-  if (currentVideoResolverBlockedUntil > now) {
-    logCurrentVideoRoute("request:cooldown", {
-      requestedVideoId: v,
-      blockedUntil: currentVideoResolverBlockedUntil,
-    });
-    const pendingPayload: PendingPayload = { pending: true };
-    currentVideoPendingCache.set(cacheKey, {
-      expiresAt: now + CURRENT_VIDEO_PENDING_CACHE_TTL_MS,
-      payload: pendingPayload,
-    });
-    return NextResponse.json(pendingPayload);
-  }
+    if (currentVideoResolverBlockedUntil > now) {
+      logCurrentVideoRoute("request:cooldown", {
+        requestedVideoId: v,
+        blockedUntil: currentVideoResolverBlockedUntil,
+      });
+      const pendingPayload: PendingPayload = { pending: true };
+      currentVideoPendingCache.set(cacheKey, {
+        expiresAt: now + CURRENT_VIDEO_PENDING_CACHE_TTL_MS,
+        payload: pendingPayload,
+      });
+      return NextResponse.json(pendingPayload);
+    }
 
-  const cached = currentVideoCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) {
-    logCurrentVideoRoute("request:cache-hit", { requestedVideoId: v });
-    return NextResponse.json(cached.payload);
+    const cached = currentVideoCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      logCurrentVideoRoute("request:cache-hit", { requestedVideoId: v });
+      return NextResponse.json(cached.payload);
+    }
   }
 
   logCurrentVideoRoute("request:start", { requestedVideoId: v });
 
-  const inFlight = currentVideoInflight.get(cacheKey);
-  if (inFlight) {
-    logCurrentVideoRoute("request:inflight-reuse", { requestedVideoId: v });
-    const reusedPayload = await inFlight;
-    return NextResponse.json(reusedPayload);
-  }
+  if (!isCustomRelatedRequest) {
+    const inFlight = currentVideoInflight.get(cacheKey);
+    if (inFlight) {
+      logCurrentVideoRoute("request:inflight-reuse", { requestedVideoId: v });
+      const reusedPayload = await inFlight;
+      return NextResponse.json(reusedPayload);
+    }
 
-  if (currentVideoInflight.size >= CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS) {
-    logCurrentVideoRoute("request:concurrency-shed", {
-      requestedVideoId: v,
-      inflight: currentVideoInflight.size,
-      limit: CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS,
-    });
-    const pendingPayload: PendingPayload = { pending: true };
-    currentVideoPendingCache.set(cacheKey, {
-      expiresAt: now + CURRENT_VIDEO_PENDING_CACHE_TTL_MS,
-      payload: pendingPayload,
-    });
-    return NextResponse.json(pendingPayload);
+    if (currentVideoInflight.size >= CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS) {
+      logCurrentVideoRoute("request:concurrency-shed", {
+        requestedVideoId: v,
+        inflight: currentVideoInflight.size,
+        limit: CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS,
+      });
+      const pendingPayload: PendingPayload = { pending: true };
+      currentVideoPendingCache.set(cacheKey, {
+        expiresAt: now + CURRENT_VIDEO_PENDING_CACHE_TTL_MS,
+        payload: pendingPayload,
+      });
+      return NextResponse.json(pendingPayload);
+    }
   }
 
   const resolvePayloadPromise = (async () => {
@@ -157,11 +230,28 @@ export async function GET(request: NextRequest) {
       return { pending: true as const };
     }
 
-    const relatedVideos = await getRelatedVideos(currentVideo.id, { userId: optionalAuth?.userId });
+    let relatedVideos: Awaited<ReturnType<typeof getRelatedVideos>> = [];
+    let hasMoreForCustomRequest: boolean | undefined;
+
+    if (usePagedRelatedPool) {
+      const relatedPool = await getRelatedPoolForCurrentVideo(currentVideo.id, optionalAuth?.userId);
+      const start = Math.min(requestedRelatedOffset, relatedPool.length);
+      const end = Math.min(relatedPool.length, start + requestedRelatedCount);
+      relatedVideos = relatedPool.slice(start, end);
+      hasMoreForCustomRequest = end < relatedPool.length;
+    } else {
+      relatedVideos = await getRelatedVideos(currentVideo.id, {
+        userId: optionalAuth?.userId,
+        count: requestedRelatedCount,
+        excludeVideoIds: excludedRelatedIds,
+      });
+      hasMoreForCustomRequest = relatedVideos.length >= requestedRelatedCount;
+    }
+
     const targetRelatedCount = 10;
     let paddedRelatedVideos = relatedVideos;
 
-    if (relatedVideos.length < targetRelatedCount) {
+    if (!isCustomRelatedRequest && relatedVideos.length < targetRelatedCount) {
       const topVideos = await getTopVideos(30);
       const blockedIds = new Set([currentVideo.id, ...relatedVideos.map((video) => video.id)]);
       const fillerPool = uniqueVideosById(topVideos.filter((video) => !blockedIds.has(video.id)));
@@ -169,14 +259,22 @@ export async function GET(request: NextRequest) {
       paddedRelatedVideos = [...relatedVideos, ...filler];
     }
 
-    const normalizedPayload: CurrentVideoPayload = { currentVideo, relatedVideos: paddedRelatedVideos };
+    const normalizedPayload: CurrentVideoPayload = {
+      currentVideo,
+      relatedVideos: paddedRelatedVideos,
+      hasMore: isCustomRelatedRequest ? hasMoreForCustomRequest : undefined,
+    };
 
-    currentVideoCache.set(cacheKey, {
-      expiresAt: Date.now() + CURRENT_VIDEO_CACHE_TTL_MS,
-      payload: normalizedPayload,
-    });
+    if (!isCustomRelatedRequest) {
+      currentVideoCache.set(cacheKey, {
+        expiresAt: Date.now() + CURRENT_VIDEO_CACHE_TTL_MS,
+        payload: normalizedPayload,
+      });
+    }
 
-    currentVideoResolverBlockedUntil = 0;
+    if (!isCustomRelatedRequest) {
+      currentVideoResolverBlockedUntil = 0;
+    }
 
     logCurrentVideoRoute("request:success", {
       requestedVideoId: v,
@@ -186,6 +284,15 @@ export async function GET(request: NextRequest) {
 
     return normalizedPayload;
   })();
+
+  if (isCustomRelatedRequest) {
+    try {
+      const payload = await resolvePayloadPromise;
+      return NextResponse.json(payload);
+    } catch {
+      return NextResponse.json({ pending: true } satisfies PendingPayload);
+    }
+  }
 
   const boundedResolvePromise = Promise.race<CurrentVideoResolvePayload>([
     resolvePayloadPromise,

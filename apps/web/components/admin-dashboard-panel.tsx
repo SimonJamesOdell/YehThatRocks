@@ -189,24 +189,53 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     return { width, height, points, path };
   }, [orderedTraffic, maxTrafficCount]);
 
-  async function loadAll() {
+  async function loadOverview() {
+    const dashboardPayload = await readJson<DashboardPayload>("/api/admin/dashboard");
+    setDashboard(dashboardPayload);
+  }
+
+  async function loadCategories() {
+    const categoryPayload = await readJson<{ categories: CategoryRow[] }>("/api/admin/categories");
+    setCategories(categoryPayload.categories);
+  }
+
+  async function loadVideos() {
+    const videoPayload = await readJson<{ videos: VideoRow[] }>(
+      `/api/admin/videos${videoQuery ? `?q=${encodeURIComponent(videoQuery)}` : ""}`,
+    );
+    setVideos(videoPayload.videos);
+  }
+
+  async function loadArtists() {
+    const artistPayload = await readJson<{ artists: ArtistRow[] }>(
+      `/api/admin/artists${artistQuery ? `?q=${encodeURIComponent(artistQuery)}` : ""}`,
+    );
+    setArtists(artistPayload.artists);
+  }
+
+  async function loadAmbiguousVideos() {
+    const ambiguousPayload = await readJson<{ ambiguousVideos: AmbiguousVideoRow[] }>(
+      `/api/admin/videos/ambiguous${ambiguousQuery ? `?q=${encodeURIComponent(ambiguousQuery)}` : ""}`,
+    );
+    setAmbiguousVideos(ambiguousPayload.ambiguousVideos);
+  }
+
+  async function loadActiveTab() {
     setLoading(true);
     setError(null);
 
     try {
-      const [dashboardPayload, categoryPayload, videoPayload, artistPayload, ambiguousPayload] = await Promise.all([
-        readJson<DashboardPayload>("/api/admin/dashboard"),
-        readJson<{ categories: CategoryRow[] }>("/api/admin/categories"),
-        readJson<{ videos: VideoRow[] }>(`/api/admin/videos${videoQuery ? `?q=${encodeURIComponent(videoQuery)}` : ""}`),
-        readJson<{ artists: ArtistRow[] }>(`/api/admin/artists${artistQuery ? `?q=${encodeURIComponent(artistQuery)}` : ""}`),
-        readJson<{ ambiguousVideos: AmbiguousVideoRow[] }>(`/api/admin/videos/ambiguous${ambiguousQuery ? `?q=${encodeURIComponent(ambiguousQuery)}` : ""}`),
-      ]);
-
-      setDashboard(dashboardPayload);
-      setCategories(categoryPayload.categories);
-      setVideos(videoPayload.videos);
-      setArtists(artistPayload.artists);
-      setAmbiguousVideos(ambiguousPayload.ambiguousVideos);
+      if (activeTab === "overview") {
+        await loadOverview();
+      } else if (activeTab === "categories") {
+        await loadCategories();
+      } else if (activeTab === "videos") {
+        await loadVideos();
+      } else if (activeTab === "artists") {
+        await loadArtists();
+      } else if (activeTab === "ambiguous") {
+        await loadAmbiguousVideos();
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load admin data.");
     } finally {
@@ -215,8 +244,9 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   }
 
   useEffect(() => {
-    void loadAll();
-  }, []);
+    void loadActiveTab();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   async function patchJson(url: string, body: Record<string, unknown>) {
     await readJson(url, {
@@ -238,7 +268,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     try {
       await patchJson("/api/admin/categories", row);
       setSaveMessage(`Saved category ${row.genre}.`);
-      await loadAll();
+      await loadCategories();
     } catch (saveError) {
       setSaveMessage(saveError instanceof Error ? saveError.message : "Category save failed.");
     }
@@ -248,7 +278,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     try {
       await patchJson("/api/admin/videos", row);
       setSaveMessage(`Saved video ${row.videoId}.`);
-      await loadAll();
+      await loadVideos();
     } catch (saveError) {
       setSaveMessage(saveError instanceof Error ? saveError.message : "Video save failed.");
     }
@@ -278,7 +308,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       }
 
       setVideoImportSource("");
-      await loadAll();
+      await loadVideos();
     } catch (importError) {
       setSaveMessage(importError instanceof Error ? importError.message : "Video import failed.");
     } finally {
@@ -290,7 +320,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     try {
       await patchJson("/api/admin/artists", row);
       setSaveMessage(`Saved artist ${row.name}.`);
-      await loadAll();
+      await loadArtists();
     } catch (saveError) {
       setSaveMessage(saveError instanceof Error ? saveError.message : "Artist save failed.");
     }
@@ -302,7 +332,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     try {
       await postJson<{ ok: boolean }>("/api/admin/videos/ambiguous", { videoId, action });
       setSaveMessage(action === "delete" ? `Deleted ${videoId}.` : `Kept ${videoId}.`);
-      await loadAll();
+      await loadAmbiguousVideos();
     } catch (moderationError) {
       setSaveMessage(moderationError instanceof Error ? moderationError.message : "Moderation action failed.");
     } finally {
@@ -582,7 +612,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
               <span>Search</span>
               <input value={videoQuery} onChange={(event) => setVideoQuery(event.target.value)} placeholder="videoId, title, artist, track" />
             </label>
-            <button type="button" onClick={() => void loadAll()}>Refresh Video Search</button>
+            <button type="button" onClick={() => void loadVideos()}>Refresh Video Search</button>
             {videos.slice(0, 25).map((row) => (
               <div key={row.id} className="authForm">
                 <p className="authMessage">{row.videoId}</p>
@@ -634,7 +664,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
               <span>Search</span>
               <input value={artistQuery} onChange={(event) => setArtistQuery(event.target.value)} placeholder="artist, country, genre" />
             </label>
-            <button type="button" onClick={() => void loadAll()}>Refresh Artist Search</button>
+            <button type="button" onClick={() => void loadArtists()}>Refresh Artist Search</button>
             {artists.slice(0, 25).map((row) => (
               <div key={row.id} className="authForm">
                 <label>
@@ -692,7 +722,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                 placeholder="videoId, title, artist, track"
               />
             </label>
-            <button type="button" onClick={() => void loadAll()}>Refresh Ambiguous List</button>
+            <button type="button" onClick={() => void loadAmbiguousVideos()}>Refresh Ambiguous List</button>
             {ambiguousVideos.map((row) => (
               <div key={row.id} className="authForm">
                 <p className="authMessage"><strong>{row.videoId}</strong></p>
