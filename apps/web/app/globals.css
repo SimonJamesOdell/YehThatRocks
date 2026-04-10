@@ -2569,6 +2569,78 @@ h1 {
   margin-bottom: 6px;
 }
 
+.accountHistoryPanel {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+}
+
+.historyPagePanel {
+  width: 100%;
+  max-width: none;
+}
+
+.historyGroups {
+  display: grid;
+  gap: 14px;
+}
+
+.historyDateGroup {
+  display: grid;
+  gap: 10px;
+}
+
+.historyDateHeading {
+  margin: 0;
+  font-family: var(--font-display), cursive;
+  font-size: 1.08rem;
+  letter-spacing: 0.04em;
+  color: #ffd8d0;
+}
+
+.historyGroupList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.historyCard {
+  grid-template-columns: auto minmax(128px, 160px) minmax(0, 1fr);
+  align-items: center;
+}
+
+.historyCard .leaderboardThumbWrap {
+  width: 100%;
+}
+
+.historyCard .accountHistoryThumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.historyTimeBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(118, 16, 18, 0.66), rgba(45, 6, 8, 0.74));
+}
+
+.historyTrackLink {
+  display: contents;
+  color: inherit;
+  text-decoration: none;
+}
+
+.historyMeta {
+  min-width: 0;
+}
+
 .catalogGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
