@@ -140,8 +140,8 @@ export function AuthLoginForm() {
   return (
     <form ref={formRef} className="authForm" onSubmit={handleSubmit}>
       <label>
-        <span>Email</span>
-        <input name="email" type="email" placeholder="you@example.com" required autoComplete="username" />
+        <span>Email or username</span>
+        <input name="email" type="text" placeholder="you@example.com or your handle" required autoComplete="username" />
       </label>
       <label>
         <span>Password</span>

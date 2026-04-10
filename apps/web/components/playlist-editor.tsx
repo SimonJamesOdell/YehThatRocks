@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { CloseLink } from "@/components/close-link";
 import type { PlaylistDetail } from "@/lib/catalog-data";
 
@@ -317,6 +318,11 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
                   </div>
                   <div className="leaderboardMeta">
                     <h3>{video.title}</h3>
+                    <p>
+                      <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
+                        {video.channelTitle}
+                      </ArtistWikiLink>
+                    </p>
                   </div>
                 </Link>
                 <button
