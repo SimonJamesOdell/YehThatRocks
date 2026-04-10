@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { CloseLink } from "@/components/close-link";
+import { NewScrollReset } from "@/components/new-scroll-reset";
 import { getGenreSlug, searchCatalog } from "@/lib/catalog-data";
 
 type SearchPageProps = {
@@ -20,20 +21,26 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
 
   return (
     <>
+      <NewScrollReset />
       <div className="favouritesBlindBar">
-        <strong>Search</strong>
+        <strong>Search Results ({uniqueVideos.length + uniqueArtists.length + uniqueGenres.length})</strong>
         <CloseLink />
       </div>
 
-      <div className="panelHeading">
-        <span>Videos</span>
-        <strong>{uniqueVideos.length} matching tracks</strong>
-      </div>
       <div className="trackStack">
         {uniqueVideos.map((video) => (
-          <article key={video.id} className="trackCard">
-            <Link href={`/?v=${video.id}&resume=1`} className="linkedCard trackCardMainLink">
-              <div>
+          <article key={video.id} className="trackCard leaderboardCard searchResultCard">
+            <Link href={`/?v=${video.id}&resume=1`} className="linkedCard leaderboardTrackLink">
+              <div className="leaderboardThumbWrap">
+                <img
+                  src={`https://i.ytimg.com/vi/${encodeURIComponent(video.id)}/mqdefault.jpg`}
+                  alt=""
+                  className="leaderboardThumb"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+              <div className="leaderboardMeta">
                 <h3>{video.title}</h3>
                 <p>
                   <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
@@ -41,7 +48,6 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                   </ArtistWikiLink>
                 </p>
               </div>
-              <span className="queueBadge">Play</span>
             </Link>
           </article>
         ))}

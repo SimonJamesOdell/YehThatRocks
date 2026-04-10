@@ -108,6 +108,7 @@ export const navItems = [
   { href: "/top100", label: "Top 100" },
   { href: "/favourites", label: "Favourites" },
   { href: "/playlists", label: "Playlists" },
+  { href: "/history", label: "History" },
   { href: "/account", label: "Account" }
 ];
 

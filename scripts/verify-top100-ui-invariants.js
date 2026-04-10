@@ -8,6 +8,7 @@ const ROOT = process.cwd();
 const files = {
   top100Page: path.join(ROOT, "apps/web/app/(shell)/top100/page.tsx"),
   top100Link: path.join(ROOT, "apps/web/components/top100-video-link.tsx"),
+  top100Loader: path.join(ROOT, "apps/web/components/top100-videos-loader.tsx"),
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic.tsx"),
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
@@ -32,24 +33,30 @@ function main() {
 
   const top100PageSource = read(files.top100Page);
   const top100LinkSource = read(files.top100Link);
+  const top100LoaderSource = read(files.top100Loader);
   const shellDynamicSource = read(files.shellDynamic);
   const currentVideoRouteSource = read(files.currentVideoRoute);
   const catalogDataSource = read(files.catalogData);
   const globalCssSource = read(files.globalCss);
 
-  // Top 100 page should render warmed link component (not a plain Link card).
-  assertContains(top100PageSource, 'import { Top100VideoLink } from "@/components/top100-video-link";', "Top 100 page imports warmed link component", failures);
-  assertContains(top100PageSource, "<Top100VideoLink key={track.id} track={track} index={index} isAuthenticated={isAuthenticated} />", "Top 100 page renders warmed link component per item", failures);
+  // Top 100 page should delegate heavy list work to client loader for faster shell open.
+  assertContains(top100PageSource, 'import { Top100VideosLoader } from "@/components/top100-videos-loader";', "Top 100 page imports client videos loader", failures);
+  assertContains(top100PageSource, "<Top100VideosLoader isAuthenticated={isAuthenticated} />", "Top 100 page renders client videos loader", failures);
+  assertContains(top100LoaderSource, 'import { Top100VideoLink } from "@/components/top100-video-link";', "Top 100 loader renders warmed link component", failures);
+  assertContains(top100LoaderSource, "fetch(\"/api/videos/top?count=100\"", "Top 100 loader fetches videos from top API", failures);
+  assertContains(top100LoaderSource, "TOP100_SESSION_CACHE_KEY", "Top 100 loader uses session cache to reduce repeat requests", failures);
 
   // Warmed handoff invariants in the top100 link component.
   assertContains(top100LinkSource, "const PENDING_VIDEO_SELECTION_KEY = \"ytr:pending-video-selection\";", "Top 100 warmed link uses pending selection cache key", failures);
   assertContains(top100LinkSource, "window.sessionStorage.setItem(", "Top 100 warmed link writes optimistic pending selection", failures);
   assertContains(top100LinkSource, "void fetch(`/api/current-video?v=${encodeURIComponent(track.id)}`", "Top 100 warmed link prefetches current-video payload", failures);
   assertContains(top100LinkSource, "href={`/?v=${track.id}&resume=1`}", "Top 100 warmed link navigates with v+resume query", failures);
-  assertContains(top100LinkSource, "onMouseEnter={warmSelection}", "Top 100 warmed link warms on hover", failures);
-  assertContains(top100LinkSource, "onFocus={warmSelection}", "Top 100 warmed link warms on focus", failures);
+  assertContains(top100LinkSource, "onMouseEnter={stagePendingSelection}", "Top 100 warmed link stages pending selection on hover", failures);
+  assertContains(top100LinkSource, "onFocus={stagePendingSelection}", "Top 100 warmed link stages pending selection on focus", failures);
   assertContains(top100LinkSource, "onPointerDown={warmSelection}", "Top 100 warmed link warms on pointer-down", failures);
   assertContains(top100LinkSource, "onClick={warmSelection}", "Top 100 warmed link warms on click", failures);
+  assertContains(top100LinkSource, "prefetch={false}", "Top 100 warmed link disables Next.js link prefetch fan-out", failures);
+  assertContains(top100LinkSource, "TOP100_WARM_LIMIT_PER_WINDOW", "Top 100 warmed link caps warm requests per time window", failures);
   assertContains(top100LinkSource, 'import { ArtistWikiLink } from "@/components/artist-wiki-link";', "Top 100 warmed link imports artist wiki link helper", failures);
   assertContains(top100LinkSource, '<ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">', "Top 100 warmed link wraps artist name with wiki link", failures);
 

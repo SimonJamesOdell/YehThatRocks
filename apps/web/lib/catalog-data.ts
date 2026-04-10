@@ -33,6 +33,13 @@ export type PlaylistDetail = {
   videos: VideoRecord[];
 };
 
+export type WatchHistoryEntry = {
+  video: VideoRecord;
+  lastWatchedAt: string;
+  watchCount: number;
+  maxProgressPercent: number;
+};
+
 export type GenreCard = {
   genre: string;
   previewVideoId: string | null;
@@ -154,6 +161,8 @@ const NON_MUSIC_SIGNAL_PATTERN = /\b(instagram|tiktok|facebook|whatsapp|snapchat
 
 let hasCheckedVideoMetadataColumns = false;
 let videoMetadataColumnsAvailable = false;
+let hasCheckedVideoChannelTitleColumn = false;
+let videoChannelTitleColumnAvailable = false;
 
 function debugCatalog(event: string, detail?: Record<string, unknown>) {
   if (!CATALOG_DEBUG_ENABLED) {
@@ -403,6 +412,23 @@ async function ensureVideoMetadataColumnsAvailable() {
   return videoMetadataColumnsAvailable;
 }
 
+async function ensureVideoChannelTitleColumnAvailable() {
+  if (hasCheckedVideoChannelTitleColumn || !hasDatabaseUrl()) {
+    return videoChannelTitleColumnAvailable;
+  }
+
+  hasCheckedVideoChannelTitleColumn = true;
+
+  try {
+    const columns = await prisma.$queryRaw<Array<{ Field: string }>>`SHOW COLUMNS FROM videos LIKE 'channelTitle'`;
+    videoChannelTitleColumnAvailable = columns.length > 0;
+  } catch {
+    videoChannelTitleColumnAvailable = false;
+  }
+
+  return videoChannelTitleColumnAvailable;
+}
+
 function buildGroqMetadataPrompt(video: PersistableVideoRecord) {
   const descriptionSnippet = truncate(video.description ?? "", 700);
 
@@ -638,6 +664,39 @@ function dedupeRankedRows(rows: RankedVideoRow[]) {
   return [...byId.values()];
 }
 
+function selectUniqueVideoRows(rows: RankedVideoRow[], blockedIds: Set<string>, limit: number) {
+  const selected: RankedVideoRow[] = [];
+
+  for (const row of rows) {
+    if (blockedIds.has(row.videoId)) {
+      continue;
+    }
+
+    blockedIds.add(row.videoId);
+    selected.push(row);
+
+    if (selected.length >= limit) {
+      break;
+    }
+  }
+
+  return selected;
+}
+
+function rotateRowsBySeed(rows: RankedVideoRow[], seedInput: string) {
+  if (rows.length <= 1) {
+    return rows;
+  }
+
+  let hash = 0;
+  for (let index = 0; index < seedInput.length; index += 1) {
+    hash = (hash * 31 + seedInput.charCodeAt(index)) >>> 0;
+  }
+
+  const offset = hash % rows.length;
+  return [...rows.slice(offset), ...rows.slice(0, offset)];
+}
+
 export function normalizeYouTubeVideoId(value?: string | null) {
   const trimmed = value?.trim();
 
@@ -701,7 +760,7 @@ export function resolveSelectedVideoId(
   return selectedVideoId ?? fallbackVideoId;
 }
 
-const TOP_POOL_CACHE_TTL_MS = 5_000;
+const TOP_POOL_CACHE_TTL_MS = 60_000;
 let topPoolCache:
   | {
       expiresAt: number;
@@ -727,6 +786,8 @@ let genreCardsCache: { expiresAt: number; cards: GenreCard[] } | undefined;
 let genreCardsInFlight: Promise<GenreCard[]> | undefined;
 const ARTIST_VIDEOS_CACHE_TTL_MS = 60_000;
 const artistVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
+const RELATED_VIDEOS_CACHE_TTL_MS = 20_000;
+const relatedVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
 const ARTIST_LETTER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const artistLetterCache = new Map<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>();
 const ARTIST_LETTER_PAGE_CACHE_TTL_MS = 60_000; // 1 minute
@@ -842,12 +903,14 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
       v.favourited,
       v.description
     FROM videos v
-    INNER JOIN site_videos sv
-      ON sv.video_id = v.id
-      AND sv.status = 'available'
     WHERE v.videoId IS NOT NULL
       AND CHAR_LENGTH(v.videoId) = 11
-    GROUP BY v.id, v.videoId, v.title, v.favourited, v.description
+      AND EXISTS (
+        SELECT 1
+        FROM site_videos sv
+        WHERE sv.video_id = v.id
+          AND sv.status = 'available'
+      )
     ORDER BY v.favourited DESC, v.views DESC, v.videoId ASC
     LIMIT ${limit}
   `;
@@ -874,15 +937,12 @@ function mapVideo(video: {
       ? Number(video.favourited)
       : Number(video.favourited ?? 0);
 
-  const inferredChannelTitle = inferArtistFromTitle(video.title)
-    ?? (video.title.includes(" - ")
-      ? video.title.split(" - ", 1)[0].trim()
-      : video.title.split("|", 1)[0].trim());
+  const inferredChannelTitle = inferArtistFromTitle(video.title);
 
   return {
     id: video.videoId,
     title: video.title,
-    channelTitle: video.channelTitle ?? (inferredChannelTitle || "Unknown Artist"),
+    channelTitle: video.channelTitle ?? inferredChannelTitle ?? "Unknown Artist",
     genre: "Rock / Metal",
     favourited: Number.isFinite(favouritedValue) ? favouritedValue : 0,
     description: video.description ?? "Legacy video entry from the retained Yeh database.",
@@ -1980,6 +2040,7 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
 
   // Reset hot caches so lists immediately reflect the prune.
   topPoolCache = undefined;
+  relatedVideosCache.clear();
   artistVideosCache.clear();
   artistLetterCache.clear();
   artistLetterPageCache.clear();
@@ -2023,8 +2084,9 @@ async function findArtistsInDatabase(options: {
   search?: string;
   orderByName?: boolean;
   prefixOnly?: boolean;
+  nameOnly?: boolean;
 }) {
-  const { limit, search, orderByName, prefixOnly } = options;
+  const { limit, search, orderByName, prefixOnly, nameOnly } = options;
   const columns = await getArtistColumnMap();
 
   const nameCol = escapeSqlIdentifier(columns.name);
@@ -2042,14 +2104,16 @@ async function findArtistsInDatabase(options: {
     whereParts.push(`a.${nameCol} LIKE ?`);
     params.push(needle);
 
-    if (columns.country) {
+    if (!nameOnly && columns.country) {
       whereParts.push(`a.${escapeSqlIdentifier(columns.country)} LIKE ?`);
       params.push(needle);
     }
 
-    for (const genreColumn of columns.genreColumns) {
-      whereParts.push(`a.${escapeSqlIdentifier(genreColumn)} LIKE ?`);
-      params.push(needle);
+    if (!nameOnly) {
+      for (const genreColumn of columns.genreColumns) {
+        whereParts.push(`a.${escapeSqlIdentifier(genreColumn)} LIKE ?`);
+        params.push(needle);
+      }
     }
   }
 
@@ -2385,45 +2449,266 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
   return decision;
 }
 
-export async function getRelatedVideos(videoId: string) {
+export async function getRelatedVideos(videoId: string, options?: { userId?: number }) {
   if (!hasDatabaseUrl()) {
-    return [];
+    return getSeedRelatedVideos(videoId);
+  }
+
+  const normalizedVideoId = normalizeYouTubeVideoId(videoId) ?? videoId;
+  const now = Date.now();
+  const cacheKey = options?.userId ? `${normalizedVideoId}:u:${options.userId}` : normalizedVideoId;
+  const cached = relatedVideosCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.videos;
   }
 
   try {
-    const mappedVideos = await prisma.$queryRaw<RankedVideoRow[]>`
-      SELECT
-        v.videoId,
-        v.title,
-        NULL AS channelTitle,
-        v.favourited,
-        v.description
-      FROM related r
-      INNER JOIN videos v ON v.videoId = r.related
-      WHERE r.videoId = ${videoId}
-        AND r.related <> ${videoId}
-        AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
-        AND EXISTS (
-          SELECT 1
-          FROM site_videos sv
-          WHERE sv.video_id = v.id
-            AND sv.status = 'available'
-        )
-        AND NOT EXISTS (
-          SELECT 1
-          FROM site_videos sv
-          WHERE sv.video_id = v.id
-            AND (sv.status IS NULL OR sv.status <> 'available')
-        )
-      GROUP BY v.videoId, v.title, v.favourited, v.description
-      ORDER BY v.favourited DESC, MAX(v.views) DESC, v.videoId ASC
-      LIMIT 10
+    const queryTimeoutMs = 1_250;
+    const targetCount = 10;
+    const timeBucket = Math.floor(now / (15 * 60 * 1000));
+    const rotationSeed = `${normalizedVideoId}:${options?.userId ?? "anon"}:${timeBucket}`;
+
+    const currentRows = await prisma.$queryRaw<Array<{ parsedArtist: string | null }>>`
+      SELECT parsedArtist
+      FROM videos
+      WHERE videoId = ${normalizedVideoId}
+      LIMIT 1
     `;
 
-    const videos = dedupeRankedRows(mappedVideos).slice(0, 10);
-    return videos.map(mapVideo);
+    const currentArtist = currentRows[0]?.parsedArtist?.trim() || null;
+
+    // Fetch user's watch history in parallel with the video candidate queries.
+    // This lets us hard-exclude already-watched videos from every bucket.
+    const watchedIdsPromise = options?.userId
+      ? fetchRecentlyWatchedIds(options.userId)
+      : Promise.resolve(new Set<string>());
+
+    const [dbQueryResult, watchedIds] = await Promise.all([
+      withSoftTimeout(
+        `getRelatedVideos:${normalizedVideoId}`,
+        queryTimeoutMs,
+        async () => {
+        const topPromise = getRankedTopPool(200);
+
+        const directRelatedPromise = prisma.$queryRaw<RankedVideoRow[]>`
+          SELECT
+            v.videoId,
+            v.title,
+            COALESCE(v.parsedArtist, NULL) AS channelTitle,
+            v.favourited,
+            v.description
+          FROM related r
+          INNER JOIN videos v ON v.videoId = r.related
+          WHERE r.videoId = ${normalizedVideoId}
+            AND r.related <> ${normalizedVideoId}
+            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND sv.status = 'available'
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND (sv.status IS NULL OR sv.status <> 'available')
+            )
+          GROUP BY v.videoId, v.title, v.parsedArtist, v.favourited, v.description
+          ORDER BY v.favourited DESC, MAX(v.views) DESC, v.videoId ASC
+          LIMIT 36
+        `;
+
+        const sameArtistPromise = currentArtist
+          ? prisma.$queryRaw<RankedVideoRow[]>`
+              SELECT
+                v.videoId,
+                v.title,
+                COALESCE(v.parsedArtist, NULL) AS channelTitle,
+                v.favourited,
+                v.description
+              FROM videos v
+              WHERE LOWER(TRIM(v.parsedArtist)) = LOWER(TRIM(${currentArtist}))
+                AND v.videoId <> ${normalizedVideoId}
+                AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+                AND EXISTS (
+                  SELECT 1
+                  FROM site_videos sv
+                  WHERE sv.video_id = v.id
+                    AND sv.status = 'available'
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM site_videos sv
+                  WHERE sv.video_id = v.id
+                    AND (sv.status IS NULL OR sv.status <> 'available')
+                )
+              ORDER BY v.favourited DESC, v.views DESC, v.id DESC
+              LIMIT 36
+            `
+          : Promise.resolve([] as RankedVideoRow[]);
+
+        const newestPromise = prisma.$queryRaw<RankedVideoRow[]>`
+          SELECT
+            v.videoId,
+            v.title,
+            COALESCE(v.parsedArtist, NULL) AS channelTitle,
+            v.favourited,
+            v.description
+          FROM videos v
+          WHERE v.videoId <> ${normalizedVideoId}
+            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND sv.status = 'available'
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND (sv.status IS NULL OR sv.status <> 'available')
+            )
+          ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC
+          LIMIT 50
+        `;
+
+        const sameGenrePromise = (async () => {
+          if (!currentArtist) {
+            return [] as RankedVideoRow[];
+          }
+
+          const artistColumns = await getArtistColumnMap();
+          if (artistColumns.genreColumns.length === 0) {
+            return [] as RankedVideoRow[];
+          }
+
+          const nameCol = escapeSqlIdentifier(artistColumns.name);
+          const genreExpr = `COALESCE(${artistColumns.genreColumns.map((column) => `a.${escapeSqlIdentifier(column)}`).join(", ")})`;
+
+          const currentArtistGenreRows = await prisma.$queryRawUnsafe<Array<{ genre: string | null }>>(
+            `
+              SELECT ${genreExpr} AS genre
+              FROM artists a
+              WHERE LOWER(TRIM(a.${nameCol})) = LOWER(TRIM(?))
+              LIMIT 1
+            `,
+            currentArtist,
+          );
+
+          const genre = currentArtistGenreRows[0]?.genre?.trim();
+          if (!genre) {
+            return [] as RankedVideoRow[];
+          }
+
+          const genrePredicate = artistColumns.genreColumns
+            .map((column) => `a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', ?, '%')`)
+            .join(" OR ");
+          const genreParams = artistColumns.genreColumns.map(() => genre);
+
+          return prisma.$queryRawUnsafe<RankedVideoRow[]>(
+            `
+              SELECT
+                v.videoId,
+                v.title,
+                COALESCE(v.parsedArtist, NULL) AS channelTitle,
+                v.favourited,
+                v.description
+              FROM videos v
+              WHERE v.videoId <> ?
+                AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+                AND LOWER(TRIM(COALESCE(v.parsedArtist, ''))) <> LOWER(TRIM(?))
+                AND EXISTS (
+                  SELECT 1
+                  FROM artists a
+                  WHERE LOWER(TRIM(a.${nameCol})) = LOWER(TRIM(v.parsedArtist))
+                    AND (${genrePredicate})
+                )
+                AND EXISTS (
+                  SELECT 1
+                  FROM site_videos sv
+                  WHERE sv.video_id = v.id
+                    AND sv.status = 'available'
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM site_videos sv
+                  WHERE sv.video_id = v.id
+                    AND (sv.status IS NULL OR sv.status <> 'available')
+                )
+              ORDER BY v.favourited DESC, v.views DESC, v.id DESC
+              LIMIT 40
+            `,
+            normalizedVideoId,
+            currentArtist,
+            ...genreParams,
+          );
+        })();
+
+        const [topRows, directRows, artistRows, recentRows, genreRows] = await Promise.all([
+          topPromise,
+          directRelatedPromise,
+          sameArtistPromise,
+          newestPromise,
+          sameGenrePromise,
+        ]);
+
+        return [
+          directRows,
+          artistRows,
+          recentRows,
+          topRows,
+          genreRows,
+        ] as const;
+      },
+      ),
+      watchedIdsPromise,
+    ]);
+
+    const [directRelatedRows, sameArtistRows, newestRows, topPoolRows, sameGenreRows] = dbQueryResult;
+
+    // Hard-exclude the current video and anything the user has already watched.
+    const blockedIds = new Set<string>([normalizedVideoId, ...watchedIds]);
+    const assembledRows: RankedVideoRow[] = [];
+
+    const buckets = [
+      { rows: rotateRowsBySeed(dedupeRankedRows(directRelatedRows), `${rotationSeed}:direct`), quota: 3 },
+      { rows: rotateRowsBySeed(dedupeRankedRows(sameArtistRows), `${rotationSeed}:artist`), quota: 2 },
+      { rows: rotateRowsBySeed(dedupeRankedRows(sameGenreRows), `${rotationSeed}:genre`), quota: 2 },
+      { rows: rotateRowsBySeed(dedupeRankedRows(newestRows), `${rotationSeed}:new`), quota: 2 },
+      { rows: rotateRowsBySeed(dedupeRankedRows(topPoolRows), `${rotationSeed}:top`), quota: 2 },
+    ];
+
+    for (const bucket of buckets) {
+      assembledRows.push(...selectUniqueVideoRows(bucket.rows, blockedIds, bucket.quota));
+      if (assembledRows.length >= targetCount) {
+        break;
+      }
+    }
+
+    if (assembledRows.length < targetCount) {
+      const overflowPool = dedupeRankedRows(buckets.flatMap((bucket) => bucket.rows));
+      assembledRows.push(...selectUniqueVideoRows(overflowPool, blockedIds, targetCount - assembledRows.length));
+    }
+
+    const mapped = assembledRows.slice(0, targetCount).map(mapVideo);
+    relatedVideosCache.set(cacheKey, {
+      expiresAt: now + RELATED_VIDEOS_CACHE_TTL_MS,
+      videos: mapped,
+    });
+
+    return mapped;
   } catch {
-    return [];
+    try {
+      const fallbackPool = await getRankedTopPool(30);
+      return dedupeRankedRows(fallbackPool)
+        .filter((row) => row.videoId !== normalizedVideoId)
+        .slice(0, 10)
+        .map(mapVideo);
+    } catch {
+      return [];
+    }
   }
 }
 
@@ -3097,67 +3382,97 @@ export type SearchSuggestion = {
   url: string;
 };
 
+const suggestCacheMap = new Map<string, { expiresAt: number; results: SearchSuggestion[] }>();
+const suggestInFlightMap = new Map<string, Promise<SearchSuggestion[]>>();
+const SUGGEST_CACHE_TTL_MS = 10_000;
+
 export async function suggestCatalog(query: string): Promise<SearchSuggestion[]> {
   const normalized = query.trim();
-  if (!normalized) return [];
+  if (normalized.length < 2) return [];
   const normalizedLower = normalized.toLowerCase();
 
-  const prefixPattern = `${normalized}%`;
+  const now = Date.now();
+  const cached = suggestCacheMap.get(normalizedLower);
+  if (cached && cached.expiresAt > now) return cached.results;
 
-  const [artistRows, trackRows] = await Promise.all([
-    hasDatabaseUrl()
-      ? findArtistsInDatabase({ limit: 4, search: normalized, orderByName: true, prefixOnly: true })
-      : seedArtists
-          .filter((a) => a.name.toLowerCase().startsWith(normalized.toLowerCase()))
-          .slice(0, 4),
+  const inFlight = suggestInFlightMap.get(normalizedLower);
+  if (inFlight) return inFlight;
 
-    hasDatabaseUrl()
-      ? prisma.$queryRaw<Array<{ videoId: string; title: string }>>`
-          SELECT videoId, title
-          FROM videos
-          WHERE title LIKE ${prefixPattern}
-          ORDER BY favourited DESC
-          LIMIT 4
-        `
-      : seedVideos
-          .filter((v) => v.title.toLowerCase().startsWith(normalized.toLowerCase()))
-          .map((v) => ({ videoId: v.id, title: v.title }))
-          .slice(0, 4),
-  ]);
+  const resolveSuggestions = (async () => {
+    const prefixPattern = `${normalized}%`;
 
-  const genreSuggestions: SearchSuggestion[] = seedGenres
-    .filter((g) => g.toLowerCase().startsWith(normalized.toLowerCase()))
-    .slice(0, 3)
-    .map((g) => ({ type: "genre", label: g, url: `/categories/${getGenreSlug(g)}` }));
+    const [artistRows, trackRows] = await Promise.all([
+      hasDatabaseUrl()
+        ? findArtistsInDatabase({
+            limit: 4,
+            search: normalized,
+            orderByName: true,
+            prefixOnly: true,
+            nameOnly: true,
+          })
+        : seedArtists
+            .filter((a) => a.name.toLowerCase().startsWith(normalized.toLowerCase()))
+            .slice(0, 4),
 
-  const artistSuggestions: SearchSuggestion[] = artistRows.map((r) => ({
-    type: "artist",
-    label: r.name,
-    url: `/artist/${slugify(r.name)}`,
-  }));
+      hasDatabaseUrl()
+        ? prisma.$queryRaw<Array<{ videoId: string; title: string }>>`
+            SELECT videoId, title
+            FROM videos
+            WHERE title LIKE ${prefixPattern}
+            ORDER BY favourited DESC
+            LIMIT 4
+          `
+        : seedVideos
+            .filter((v) => v.title.toLowerCase().startsWith(normalized.toLowerCase()))
+            .map((v) => ({ videoId: v.id, title: v.title }))
+            .slice(0, 4),
+    ]);
 
-  const trackSuggestions: SearchSuggestion[] = trackRows.map((r) => ({
-    type: "track",
-    label: r.title,
-    url: `/?v=${encodeURIComponent(r.videoId)}&resume=1`,
-  }));
+    const genreSuggestions: SearchSuggestion[] = seedGenres
+      .filter((g) => g.toLowerCase().startsWith(normalized.toLowerCase()))
+      .slice(0, 3)
+      .map((g) => ({ type: "genre", label: g, url: `/categories/${getGenreSlug(g)}` }));
 
-  const strictPrefixSuggestions = [...artistSuggestions, ...genreSuggestions, ...trackSuggestions].filter((suggestion) =>
-    suggestion.label.trim().toLowerCase().startsWith(normalizedLower),
-  );
+    const artistSuggestions: SearchSuggestion[] = artistRows.map((r) => ({
+      type: "artist",
+      label: r.name,
+      url: `/artist/${slugify(r.name)}`,
+    }));
 
-  // Interleave: artists first, then genres, then tracks, deduped by label
-  const seen = new Set<string>();
-  const results: SearchSuggestion[] = [];
-  for (const s of strictPrefixSuggestions) {
-    const key = s.label.toLowerCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      results.push(s);
+    const trackSuggestions: SearchSuggestion[] = trackRows.map((r) => ({
+      type: "track",
+      label: r.title,
+      url: `/?v=${encodeURIComponent(r.videoId)}&resume=1`,
+    }));
+
+    const strictPrefixSuggestions = [...artistSuggestions, ...genreSuggestions, ...trackSuggestions].filter((suggestion) =>
+      suggestion.label.trim().toLowerCase().startsWith(normalizedLower),
+    );
+
+    // Interleave: artists first, then genres, then tracks, deduped by label
+    const seen = new Set<string>();
+    const results: SearchSuggestion[] = [];
+    for (const s of strictPrefixSuggestions) {
+      const key = s.label.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push(s);
+      }
+      if (results.length >= 10) break;
     }
-    if (results.length >= 10) break;
+
+    suggestCacheMap.set(normalizedLower, { expiresAt: Date.now() + SUGGEST_CACHE_TTL_MS, results });
+    return results;
+  })();
+
+  suggestInFlightMap.set(normalizedLower, resolveSuggestions);
+  try {
+    return await resolveSuggestions;
+  } finally {
+    if (suggestInFlightMap.get(normalizedLower) === resolveSuggestions) {
+      suggestInFlightMap.delete(normalizedLower);
+    }
   }
-  return results;
 }
 
 export async function getGenres() {
@@ -4054,6 +4369,185 @@ export async function getFavouriteVideos(userId?: number) {
     );
   } catch {
     return [];
+  }
+}
+
+async function fetchRecentlyWatchedIds(userId: number, limit = 300): Promise<Set<string>> {
+  try {
+    const rows = await prisma.$queryRaw<Array<{ videoId: string | null }>>`
+      SELECT video_id AS videoId
+      FROM watch_history
+      WHERE user_id = ${userId}
+      ORDER BY last_watched_at DESC
+      LIMIT ${limit}
+    `;
+    return new Set(rows.map((r) => r.videoId).filter((id): id is string => Boolean(id)));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+export async function recordVideoWatch(input: {
+  userId: number;
+  videoId: string;
+  reason?: "qualified" | "ended";
+  positionSec?: number;
+  durationSec?: number;
+  progressPercent?: number;
+}) {
+  const normalizedVideoId = normalizeYouTubeVideoId(input.videoId);
+  if (!hasDatabaseUrl() || !normalizedVideoId || !Number.isInteger(input.userId) || input.userId <= 0) {
+    return { ok: false as const };
+  }
+
+  const positionSec = Math.max(0, Math.min(86_400, Math.floor(Number(input.positionSec ?? 0))));
+  const durationSec = Math.max(0, Math.min(86_400, Math.floor(Number(input.durationSec ?? 0))));
+  const progressPercent = Math.max(0, Math.min(100, Number(input.progressPercent ?? 0)));
+  const now = new Date();
+
+  try {
+    await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO watch_history (
+          user_id,
+          video_id,
+          watch_count,
+          first_watched_at,
+          last_watched_at,
+          last_position_sec,
+          last_duration_sec,
+          max_progress_percent
+        )
+        VALUES (?, ?, 1, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          watch_count = IF(
+            TIMESTAMPDIFF(SECOND, last_watched_at, VALUES(last_watched_at)) >= 600,
+            watch_count + 1,
+            watch_count
+          ),
+          last_watched_at = VALUES(last_watched_at),
+          last_position_sec = VALUES(last_position_sec),
+          last_duration_sec = VALUES(last_duration_sec),
+          max_progress_percent = GREATEST(COALESCE(max_progress_percent, 0), VALUES(max_progress_percent))
+      `,
+      input.userId,
+      normalizedVideoId,
+      now,
+      now,
+      positionSec,
+      durationSec,
+      progressPercent,
+    );
+
+    return { ok: true as const };
+  } catch {
+    return { ok: false as const };
+  }
+}
+
+export async function getWatchHistory(userId: number, options?: { limit?: number; offset?: number }) {
+  if (!hasDatabaseUrl() || !Number.isInteger(userId) || userId <= 0) {
+    return [] as WatchHistoryEntry[];
+  }
+
+  const limit = Math.max(1, Math.min(200, Math.floor(options?.limit ?? 50)));
+  const offset = Math.max(0, Math.floor(options?.offset ?? 0));
+  const hasChannelTitleColumn = await ensureVideoChannelTitleColumnAvailable();
+  const channelTitleExpr = hasChannelTitleColumn
+    ? "NULLIF(TRIM(v.channelTitle), '')"
+    : "NULL";
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{
+      videoId: string | null;
+      title: string | null;
+      parsedArtist: string | null;
+      parsedTrack: string | null;
+      channelTitle: string | null;
+      favourited: number | bigint | null;
+      description: string | null;
+      lastWatchedAt: Date | string | null;
+      watchCount: number | bigint | null;
+      maxProgressPercent: number | null;
+    }>>(
+      `
+        SELECT
+          wh.video_id AS videoId,
+          COALESCE(v.title, CONCAT('Video ', wh.video_id)) AS title,
+          NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
+          NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
+          ${channelTitleExpr} AS channelTitle,
+          COALESCE(v.favourited, 0) AS favourited,
+          COALESCE(v.description, 'Watched track') AS description,
+          wh.last_watched_at AS lastWatchedAt,
+          wh.watch_count AS watchCount,
+          COALESCE(wh.max_progress_percent, 0) AS maxProgressPercent
+        FROM watch_history wh
+        LEFT JOIN videos v ON v.videoId = wh.video_id
+        WHERE wh.user_id = ?
+        ORDER BY wh.last_watched_at DESC
+        LIMIT ${limit}
+        OFFSET ${offset}
+      `,
+      userId,
+    );
+
+    return rows
+      .filter((row) => typeof row.videoId === "string" && row.videoId.length > 0)
+      .map((row) => {
+        const videoTitle = row.title ?? "Unknown title";
+        const normalizedTitle = videoTitle.trim().toLowerCase();
+
+        // Resolve the best available artist name from the metadata fields.
+        // 1. parsedArtist from the DB is the primary candidate.
+        // 2. Reject it when it equals the video title (incorrectly stored track name).
+        // 3. Apply swap detection: if parsedArtist looks like the track (it appears on the
+        //    title's track-side) and parsedTrack is different, the pair were stored inverted.
+        // 4. Fall back to the YouTube channelTitle column, then let mapVideo infer from title.
+        let resolvedChannelTitle: string | null = null;
+
+        const rawParsedArtist = typeof row.parsedArtist === "string" ? row.parsedArtist.trim() : null;
+        const rawParsedTrack = typeof row.parsedTrack === "string" ? row.parsedTrack.trim() : null;
+
+        if (rawParsedArtist) {
+          const artistMatchesTitle = rawParsedArtist.toLowerCase() === normalizedTitle;
+          const swapped = !artistMatchesTitle && isLikelySwappedByTitleOrder(videoTitle, rawParsedArtist, rawParsedTrack);
+
+          if (swapped && rawParsedTrack) {
+            // parsedArtist and parsedTrack were stored inverted — use parsedTrack as artist.
+            resolvedChannelTitle = rawParsedTrack;
+          } else if (!artistMatchesTitle) {
+            resolvedChannelTitle = rawParsedArtist;
+          }
+          // else: parsedArtist == title (bad data), leave resolvedChannelTitle null so mapVideo infers.
+        }
+
+        // Secondary: use the stored YouTube channel name when parsedArtist was rejected/absent.
+        if (!resolvedChannelTitle && row.channelTitle) {
+          const channelMatchesTitle = row.channelTitle.trim().toLowerCase() === normalizedTitle;
+          if (!channelMatchesTitle) {
+            resolvedChannelTitle = row.channelTitle.trim();
+          }
+        }
+
+        return ({
+          video: mapVideo({
+            videoId: row.videoId as string,
+            title: videoTitle,
+            // Pass null when no artist was resolved so mapVideo's title inference runs.
+            channelTitle: resolvedChannelTitle,
+            favourited: row.favourited ?? 0,
+            description: row.description,
+          }),
+        lastWatchedAt: new Date(row.lastWatchedAt ?? Date.now()).toISOString(),
+        watchCount: typeof row.watchCount === "bigint" ? Number(row.watchCount) : Number(row.watchCount ?? 0),
+        maxProgressPercent: Number.isFinite(Number(row.maxProgressPercent ?? 0))
+          ? Number(row.maxProgressPercent ?? 0)
+          : 0,
+        });
+      });
+  } catch {
+    return [] as WatchHistoryEntry[];
   }
 }
 

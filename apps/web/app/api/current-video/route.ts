@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getCurrentVideo, getRelatedVideos, getTopVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { getOptionalApiAuth } from "@/lib/auth-request";
 
 const CURRENT_VIDEO_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_CATALOG === "1";
 const CURRENT_VIDEO_CACHE_TTL_MS = 20_000;
@@ -66,7 +67,8 @@ function logCurrentVideoRoute(event: string, detail?: Record<string, unknown>) {
 
 export async function GET(request: NextRequest) {
   const v = request.nextUrl.searchParams.get("v") ?? undefined;
-  const cacheKey = v ?? "__default__";
+  const optionalAuth = await getOptionalApiAuth(request);
+  const cacheKey = `${v ?? "__default__"}:u:${optionalAuth?.userId ?? 0}`;
   const now = Date.now();
 
   const cachedPending = currentVideoPendingCache.get(cacheKey);
@@ -155,7 +157,7 @@ export async function GET(request: NextRequest) {
       return { pending: true as const };
     }
 
-    const relatedVideos = await getRelatedVideos(currentVideo.id);
+    const relatedVideos = await getRelatedVideos(currentVideo.id, { userId: optionalAuth?.userId });
     const targetRelatedCount = 10;
     let paddedRelatedVideos = relatedVideos;
 

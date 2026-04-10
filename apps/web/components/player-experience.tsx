@@ -235,6 +235,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
     const nextVideoIdRef = useRef<string>(currentVideo.id);
     const nextPlaylistIndexRef = useRef<number | null>(null);
     const activePlaylistIdRef = useRef<string | null>(activePlaylistId);
+  const watchHistoryLevelRef = useRef<Map<string, number>>(new Map());
   const [playlistQueueIds, setPlaylistQueueIds] = useState<string[]>([]);
   const [playlistRefreshTick, setPlaylistRefreshTick] = useState(0);
   const [topFallbackVideos, setTopFallbackVideos] = useState<VideoRecord[]>([]);
@@ -359,11 +360,11 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
 
     // Keep related/queue tracks discoverable, but diversify with a larger quality pool.
     const freshQueueIds = queueIds.filter((videoId) => !recentIdSet.has(videoId));
-    const preferQueuePool = freshQueueIds.length >= 5;
+    const shouldUseTopFallback = freshQueueIds.length < 5;
 
-    const selectionPool = preferQueuePool
-      ? freshQueueIds
-      : (freshBlendedIds.length > 0 ? freshBlendedIds : blendedCandidateIds);
+    const selectionPool = shouldUseTopFallback
+      ? (freshBlendedIds.length > 0 ? freshBlendedIds : blendedCandidateIds)
+      : freshQueueIds;
 
     if (selectionPool.length === 0) {
       return null;
@@ -598,6 +599,60 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
     }, 6200);
   }
 
+  async function reportWatchEvent(level: number, reason: "qualified" | "ended", explicitTime?: number, explicitDuration?: number) {
+    if (!isLoggedIn) {
+      return;
+    }
+
+    const currentLevel = watchHistoryLevelRef.current.get(currentVideo.id) ?? 0;
+    if (currentLevel >= level) {
+      return;
+    }
+
+    watchHistoryLevelRef.current.set(currentVideo.id, level);
+
+    const player = playerRef.current;
+    const positionSec = Math.max(
+      0,
+      Math.floor(
+        explicitTime
+          ?? (typeof player?.getCurrentTime === "function" ? toSafeNumber(player.getCurrentTime(), 0) : currentTime),
+      ),
+    );
+    const durationSec = Math.max(
+      0,
+      Math.floor(
+        explicitDuration
+          ?? (typeof player?.getDuration === "function" ? toSafeNumber(player.getDuration(), 0) : duration),
+      ),
+    );
+    const progressPercent = durationSec > 0
+      ? Math.min(100, Math.max(0, (positionSec / durationSec) * 100))
+      : 0;
+
+    try {
+      const response = await fetch("/api/watch-history", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          videoId: currentVideo.id,
+          reason,
+          positionSec,
+          durationSec,
+          progressPercent,
+        }),
+      });
+
+      if (!response.ok) {
+        watchHistoryLevelRef.current.set(currentVideo.id, currentLevel);
+      }
+    } catch {
+      watchHistoryLevelRef.current.set(currentVideo.id, currentLevel);
+    }
+  }
+
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -637,6 +692,12 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
       return nextHistory;
     });
   }, [currentVideo.id]);
+
+  useEffect(() => {
+    // Persist watch history as soon as the track is opened.
+    // Playback progress/ended events still enrich metadata later.
+    void reportWatchEvent(1, "qualified", 0, 0);
+  }, [currentVideo.id, isLoggedIn]);
 
   useEffect(() => {
     nowPlayingShownForVideoRef.current = null;
@@ -929,9 +990,15 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
               progressIntervalRef.current = window.setInterval(() => {
                 if (playerRef.current) {
                   const liveTime = toSafeNumber(playerRef.current.getCurrentTime(), 0);
+                  const liveDuration = toSafeNumber(playerRef.current.getDuration(), 0);
                   setCurrentTime(liveTime);
-                  setDuration(toSafeNumber(playerRef.current.getDuration(), 0));
+                  setDuration(liveDuration);
                   persistResumeSnapshot(true, liveTime);
+
+                  const progressPercent = liveDuration > 0 ? (liveTime / liveDuration) * 100 : 0;
+                  if (liveTime >= 8 || progressPercent >= 20) {
+                    void reportWatchEvent(1, "qualified", liveTime, liveDuration);
+                  }
                 }
               }, 500);
             } else {
@@ -942,6 +1009,14 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
             }
 
             if (event.data === window.YT?.PlayerState.ENDED) {
+              const endedTime = playerRef.current && typeof playerRef.current.getCurrentTime === "function"
+                ? toSafeNumber(playerRef.current.getCurrentTime(), 0)
+                : currentTime;
+              const endedDuration = playerRef.current && typeof playerRef.current.getDuration === "function"
+                ? toSafeNumber(playerRef.current.getDuration(), 0)
+                : duration;
+              void reportWatchEvent(2, "ended", endedTime, endedDuration);
+
               const isInitialDeepLinkedVideo = Boolean(
                 initialRequestedVideoIdRef.current &&
                   !hasLeftInitialRequestedVideoRef.current &&

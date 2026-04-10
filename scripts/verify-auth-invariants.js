@@ -71,8 +71,9 @@ function main() {
   assertContains(profileRouteSource, "(prisma as PrismaWithProfileUser).user.update({", "Profile API persists profile fields through Prisma update", failures);
 
   // --- Login form ---
-  assertContains(loginFormSource, 'name="email"', "Login form has email input field", failures);
-  assertContains(loginFormSource, 'type="email"', "Login form email input uses email type", failures);
+  assertContains(loginFormSource, 'name="email"', "Login form has email/handle input field", failures);
+  // Login accepts email OR handle so the input intentionally uses type="text", not type="email"
+  assertContains(loginFormSource, 'type="text"', "Login form identifier input uses type=text (accepts email or handle)", failures);
   assertContains(loginFormSource, 'name="password"', "Login form has password input field", failures);
   assertContains(loginFormSource, 'type="password"', "Login form password input uses password type", failures);
   assertContains(loginFormSource, 'autoComplete="username"', "Login form email input has correct autocomplete", failures);

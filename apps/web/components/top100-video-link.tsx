@@ -22,6 +22,25 @@ type Top100VideoLinkProps = {
 };
 
 const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
+const TOP100_WARM_WINDOW_MS = 12_000;
+const TOP100_WARM_LIMIT_PER_WINDOW = 6;
+let top100WarmWindowStartedAt = 0;
+let top100WarmCountInWindow = 0;
+
+function canWarmTop100Selection() {
+  const now = Date.now();
+  if (top100WarmWindowStartedAt === 0 || now - top100WarmWindowStartedAt > TOP100_WARM_WINDOW_MS) {
+    top100WarmWindowStartedAt = now;
+    top100WarmCountInWindow = 0;
+  }
+
+  if (top100WarmCountInWindow >= TOP100_WARM_LIMIT_PER_WINDOW) {
+    return false;
+  }
+
+  top100WarmCountInWindow += 1;
+  return true;
+}
 
 function getLeaderboardThumbnail(track: { id: string; thumbnail?: string | null }) {
   const thumbnail = track.thumbnail?.trim();
@@ -33,7 +52,7 @@ function getLeaderboardThumbnail(track: { id: string; thumbnail?: string | null 
 export function Top100VideoLink({ track, index, isAuthenticated = true }: Top100VideoLinkProps) {
   const hasWarmedRef = useRef(false);
 
-  const warmSelection = useCallback(() => {
+  const stagePendingSelection = useCallback(() => {
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(
         PENDING_VIDEO_SELECTION_KEY,
@@ -48,7 +67,16 @@ export function Top100VideoLink({ track, index, isAuthenticated = true }: Top100
       );
     }
 
+    return true;
+  }, [track]);
+
+  const warmSelection = useCallback(() => {
+    stagePendingSelection();
     if (hasWarmedRef.current) {
+      return;
+    }
+
+    if (!canWarmTop100Selection()) {
       return;
     }
 
@@ -56,15 +84,16 @@ export function Top100VideoLink({ track, index, isAuthenticated = true }: Top100
     void fetch(`/api/current-video?v=${encodeURIComponent(track.id)}`, {
       cache: "no-store",
     }).catch(() => undefined);
-  }, [track]);
+  }, [stagePendingSelection, track.id]);
 
   return (
     <article className="trackCard leaderboardCard top100CardWithPlaylistAction">
       <Link
         href={`/?v=${track.id}&resume=1`}
         className="linkedCard leaderboardTrackLink"
-        onMouseEnter={warmSelection}
-        onFocus={warmSelection}
+        prefetch={false}
+        onMouseEnter={stagePendingSelection}
+        onFocus={stagePendingSelection}
         onPointerDown={warmSelection}
         onClick={warmSelection}
       >
