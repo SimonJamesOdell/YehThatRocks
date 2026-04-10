@@ -292,6 +292,8 @@ function ShellDynamicInner({
   });
   const [isResolvingInitialVideo, setIsResolvingInitialVideo] = useState(!requestedVideoId);
   const [isResolvingRequestedVideo, setIsResolvingRequestedVideo] = useState(Boolean(requestedVideoId));
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [isMobileCommunityOpen, setIsMobileCommunityOpen] = useState(false);
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
   const authProbeFailureCountRef = useRef(0);
   const lastVideoIdRef = useRef<string | null>(null);
@@ -338,6 +340,8 @@ function ShellDynamicInner({
     || pathname.startsWith("/playlists/");
   const shouldRunChat = isAuthenticated && !isOverlayRoute;
   const isArtistsIndexRoute = pathname === "/artists";
+  const isMobileCommunityCollapsed = isMobileViewport && !isMobileCommunityOpen;
+  const isLeftRailSuppressed = isOverlayRoute || isMobileCommunityCollapsed;
   const artistLetterParam = searchParams.get("letter");
   const activeArtistLetter =
     artistLetterParam && /^[A-Za-z]$/.test(artistLetterParam)
@@ -375,6 +379,42 @@ function ShellDynamicInner({
       setRightRailMode("watch-next");
     }
   }, [isAuthenticated, rightRailMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(max-width: 760px)");
+
+    const syncViewportState = () => {
+      const isMobile = mediaQuery.matches;
+      setIsMobileViewport(isMobile);
+      if (!isMobile) {
+        setIsMobileCommunityOpen(false);
+      }
+    };
+
+    syncViewportState();
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", syncViewportState);
+      return () => {
+        mediaQuery.removeEventListener("change", syncViewportState);
+      };
+    }
+
+    mediaQuery.addListener(syncViewportState);
+    return () => {
+      mediaQuery.removeListener(syncViewportState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isOverlayRoute) {
+      setIsMobileCommunityOpen(false);
+    }
+  }, [isOverlayRoute]);
 
   useEffect(() => {
     setIsAuthenticated(isLoggedIn);
@@ -1845,6 +1885,18 @@ function ShellDynamicInner({
                 </Link>
               );
             })}
+            {!isOverlayRoute ? (
+              <button
+                type="button"
+                className={isMobileCommunityOpen ? "mobileRailToggle navLink navLinkActive" : "mobileRailToggle navLink"}
+                onClick={() => setIsMobileCommunityOpen((current) => !current)}
+                aria-expanded={isMobileCommunityOpen}
+                aria-controls="mobile-community-rail"
+              >
+                <span className="navCommunityGlyph" aria-hidden="true">💬</span>
+                <span>Community</span>
+              </button>
+            ) : null}
           </nav>
 
           <div className="searchWrap">
@@ -1921,13 +1973,15 @@ function ShellDynamicInner({
         ) : null}
 
         <aside
-          className={
-            isOverlayRoute
-              ? "leftRail panel translucent railOccluded"
-              : "leftRail panel translucent"
-          }
-          aria-hidden={isOverlayRoute}
-          inert={isOverlayRoute ? true : undefined}
+          id={isMobileViewport ? "mobile-community-rail" : undefined}
+          className={[
+            "leftRail panel translucent",
+            isOverlayRoute ? "railOccluded" : "",
+            isMobileViewport ? "mobileRail" : "",
+            isMobileViewport && !isMobileCommunityOpen ? "mobileRailClosed" : "",
+          ].filter(Boolean).join(" ")}
+          aria-hidden={isLeftRailSuppressed}
+          inert={isLeftRailSuppressed ? true : undefined}
         >
           {isAuthenticated ? (
             <>

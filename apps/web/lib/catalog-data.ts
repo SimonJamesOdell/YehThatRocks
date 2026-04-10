@@ -3688,7 +3688,7 @@ export async function getPlaylists(userId?: number): Promise<PlaylistSummary[]> 
             ) AS leadVideoId
           FROM playlistnames p
           WHERE p.userId = ${userId}
-          ORDER BY p.id ASC
+          ORDER BY p.id DESC
           LIMIT 24
         `;
       } catch {
@@ -3717,7 +3717,7 @@ export async function getPlaylists(userId?: number): Promise<PlaylistSummary[]> 
             ) AS leadVideoId
           FROM playlistnames p
           WHERE p.user_id = ${userId}
-          ORDER BY p.id ASC
+          ORDER BY p.id DESC
           LIMIT 24
         `;
       } catch {
