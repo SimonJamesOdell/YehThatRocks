@@ -788,6 +788,8 @@ const ARTIST_VIDEOS_CACHE_TTL_MS = 60_000;
 const artistVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
 const RELATED_VIDEOS_CACHE_TTL_MS = 20_000;
 const relatedVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
+const relatedVideosInFlight = new Map<string, Promise<VideoRecord[]>>();
+const ENABLE_SAME_GENRE_RELATED = process.env.RELATED_ENABLE_SAME_GENRE === "1";
 const ARTIST_LETTER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const artistLetterCache = new Map<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>();
 const ARTIST_LETTER_PAGE_CACHE_TTL_MS = 60_000; // 1 minute
@@ -2449,22 +2451,54 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
   return decision;
 }
 
-export async function getRelatedVideos(videoId: string, options?: { userId?: number }) {
+export async function getRelatedVideos(
+  videoId: string,
+  options?: { userId?: number; count?: number; excludeVideoIds?: string[] },
+) {
+  const requestedCount = Math.max(1, Math.min(30, Math.floor(options?.count ?? 10)));
+  const excludedIds = new Set(
+    (options?.excludeVideoIds ?? [])
+      .map((id) => normalizeYouTubeVideoId(id) ?? id)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const baseBlockedIds = new Set<string>([videoId, ...excludedIds]);
+  const useCachedDefaultQuery = excludedIds.size === 0 && requestedCount === 10;
+
   if (!hasDatabaseUrl()) {
-    return getSeedRelatedVideos(videoId);
+    const seen = new Set<string>();
+    return getSeedRelatedVideos(videoId)
+      .filter((video) => {
+        if (baseBlockedIds.has(video.id) || seen.has(video.id)) {
+          return false;
+        }
+
+        seen.add(video.id);
+        return true;
+      })
+      .slice(0, requestedCount);
   }
 
   const normalizedVideoId = normalizeYouTubeVideoId(videoId) ?? videoId;
+  baseBlockedIds.add(normalizedVideoId);
   const now = Date.now();
   const cacheKey = options?.userId ? `${normalizedVideoId}:u:${options.userId}` : normalizedVideoId;
-  const cached = relatedVideosCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) {
-    return cached.videos;
+  if (useCachedDefaultQuery) {
+    const cached = relatedVideosCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return cached.videos;
+    }
+
+    const inFlight = relatedVideosInFlight.get(cacheKey);
+    if (inFlight) {
+      return inFlight;
+    }
   }
+
+  const resolveRelatedVideos = async () => {
 
   try {
     const queryTimeoutMs = 1_250;
-    const targetCount = 10;
+    const targetCount = requestedCount;
     const timeBucket = Math.floor(now / (15 * 60 * 1000));
     const rotationSeed = `${normalizedVideoId}:${options?.userId ?? "anon"}:${timeBucket}`;
 
@@ -2575,6 +2609,10 @@ export async function getRelatedVideos(videoId: string, options?: { userId?: num
         `;
 
         const sameGenrePromise = (async () => {
+          if (!ENABLE_SAME_GENRE_RELATED) {
+            return [] as RankedVideoRow[];
+          }
+
           if (!currentArtist) {
             return [] as RankedVideoRow[];
           }
@@ -2609,7 +2647,7 @@ export async function getRelatedVideos(videoId: string, options?: { userId?: num
 
           return prisma.$queryRawUnsafe<RankedVideoRow[]>(
             `
-              SELECT
+              SELECT /*+ MAX_EXECUTION_TIME(800) */
                 v.videoId,
                 v.title,
                 COALESCE(v.parsedArtist, NULL) AS channelTitle,
@@ -2669,7 +2707,7 @@ export async function getRelatedVideos(videoId: string, options?: { userId?: num
     const [directRelatedRows, sameArtistRows, newestRows, topPoolRows, sameGenreRows] = dbQueryResult;
 
     // Hard-exclude the current video and anything the user has already watched.
-    const blockedIds = new Set<string>([normalizedVideoId, ...watchedIds]);
+    const blockedIds = new Set<string>([normalizedVideoId, ...watchedIds, ...excludedIds]);
     const assembledRows: RankedVideoRow[] = [];
 
     const buckets = [
@@ -2693,21 +2731,39 @@ export async function getRelatedVideos(videoId: string, options?: { userId?: num
     }
 
     const mapped = assembledRows.slice(0, targetCount).map(mapVideo);
-    relatedVideosCache.set(cacheKey, {
-      expiresAt: now + RELATED_VIDEOS_CACHE_TTL_MS,
-      videos: mapped,
-    });
+    if (useCachedDefaultQuery) {
+      relatedVideosCache.set(cacheKey, {
+        expiresAt: now + RELATED_VIDEOS_CACHE_TTL_MS,
+        videos: mapped,
+      });
+    }
 
     return mapped;
   } catch {
     try {
       const fallbackPool = await getRankedTopPool(30);
       return dedupeRankedRows(fallbackPool)
-        .filter((row) => row.videoId !== normalizedVideoId)
-        .slice(0, 10)
+        .filter((row) => row.videoId !== normalizedVideoId && !baseBlockedIds.has(row.videoId))
+        .slice(0, requestedCount)
         .map(mapVideo);
     } catch {
       return [];
+    }
+  }
+  };
+
+  if (!useCachedDefaultQuery) {
+    return resolveRelatedVideos();
+  }
+
+  const pending = resolveRelatedVideos();
+  relatedVideosInFlight.set(cacheKey, pending);
+
+  try {
+    return await pending;
+  } finally {
+    if (relatedVideosInFlight.get(cacheKey) === pending) {
+      relatedVideosInFlight.delete(cacheKey);
     }
   }
 }

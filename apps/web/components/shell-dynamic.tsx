@@ -211,6 +211,9 @@ const STARTUP_RETRY_MAX_ATTEMPTS = 8;
 const REQUESTED_VIDEO_RETRY_FAST_ATTEMPTS = 4;
 const REQUESTED_VIDEO_RETRY_SLOW_DELAY_MS = 8_000;
 const REQUESTED_VIDEO_RETRY_MAX_ATTEMPTS = 8;
+const RELATED_LOAD_BATCH_SIZE = 5;
+const RELATED_LOAD_AHEAD_PX = 560;
+const RELATED_MAX_VIDEOS = 100;
 const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
 const PREFETCH_FAILURE_MAX_BACKOFF_MS = 20_000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
@@ -269,6 +272,8 @@ function ShellDynamicInner({
   const [relatedVideos, setRelatedVideos] = useState<VideoRecord[]>([]);
   const [displayedRelatedVideos, setDisplayedRelatedVideos] = useState<VideoRecord[]>([]);
   const [relatedTransitionPhase, setRelatedTransitionPhase] = useState<"idle" | "fading-out" | "loading" | "fading-in">("idle");
+  const [isLoadingMoreRelated, setIsLoadingMoreRelated] = useState(false);
+  const [hasMoreRelated, setHasMoreRelated] = useState(true);
   const activeVideoId = requestedVideoId ?? currentVideo.id;
   const [isAuthenticated, setIsAuthenticated] = useState(isLoggedIn);
   const [deniedPlaybackMessage, setDeniedPlaybackMessage] = useState<string | null>(null);
@@ -312,6 +317,11 @@ function ShellDynamicInner({
   const prewarmedThumbnailIdsRef = useRef<Set<string>>(new Set());
   const pendingRelatedVideosRef = useRef<VideoRecord[] | null>(null);
   const relatedTransitionTimeoutRef = useRef<number | null>(null);
+  const relatedStackRef = useRef<HTMLDivElement | null>(null);
+  const relatedLoadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const relatedLoadInFlightRef = useRef(false);
+  const relatedScrollRafRef = useRef<number | null>(null);
+  const relatedVideosRef = useRef<VideoRecord[]>([]);
   const watchNextRailRef = useRef<HTMLElement | null>(null);
   const prevFadeVideoIdRef = useRef<string | null>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
@@ -1193,12 +1203,147 @@ function ShellDynamicInner({
   const sourceRelatedVideos = dedupeVideoList(relatedVideos);
   const uniqueRelatedVideos = dedupeRelatedRailVideos(sourceRelatedVideos, currentVideo.id);
   const displayedRenderableRelatedVideos = dedupeRelatedRailVideos(displayedRelatedVideos, currentVideo.id);
+  useEffect(() => {
+    relatedVideosRef.current = relatedVideos;
+  }, [relatedVideos]);
+
   const activePlaylistSummary = activePlaylistId
     ? playlistRailSummaries.find((playlist) => playlist.id === activePlaylistId) ?? null
     : null;
   const activePlaylistTrackCount = playlistRailData
     ? Math.max(playlistRailData.videos.length, playlistRailData.itemCount ?? activePlaylistSummary?.itemCount ?? 0)
     : (activePlaylistSummary?.itemCount ?? 0);
+
+  const loadMoreRelatedVideos = useCallback(async () => {
+    if (relatedLoadInFlightRef.current || !hasMoreRelated || rightRailMode !== "watch-next") {
+      return;
+    }
+
+    if (dedupeRelatedRailVideos(dedupeVideoList(relatedVideosRef.current), currentVideo.id).length >= RELATED_MAX_VIDEOS) {
+      setHasMoreRelated(false);
+      return;
+    }
+
+    relatedLoadInFlightRef.current = true;
+    setIsLoadingMoreRelated(true);
+
+    try {
+      const params = new URLSearchParams();
+      params.set("v", currentVideo.id);
+      params.set("count", String(RELATED_LOAD_BATCH_SIZE));
+      params.set("offset", String(dedupeRelatedRailVideos(dedupeVideoList(relatedVideosRef.current), currentVideo.id).length));
+
+      const response = await fetch(`/api/current-video?${params.toString()}`, {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as CurrentVideoResolvePayload & { hasMore?: boolean };
+      const nextVideos = Array.isArray(payload.relatedVideos) ? payload.relatedVideos : [];
+
+      if (nextVideos.length === 0) {
+        return;
+      }
+
+      let appendedCount = 0;
+      setRelatedVideos((previous) => {
+        const previousDeduped = dedupeRelatedRailVideos(dedupeVideoList(previous), currentVideo.id);
+        const merged = dedupeRelatedRailVideos(dedupeVideoList([...previous, ...nextVideos]), currentVideo.id)
+          .slice(0, RELATED_MAX_VIDEOS);
+        appendedCount = merged.length - previousDeduped.length;
+        return merged;
+      });
+
+      const loadedCount = dedupeRelatedRailVideos(dedupeVideoList(relatedVideosRef.current), currentVideo.id).length;
+      if (loadedCount >= RELATED_MAX_VIDEOS || payload.hasMore === false) {
+        setHasMoreRelated(false);
+      }
+    } catch {
+      // Ignore transient load-more failures and let the next scroll retry.
+    } finally {
+      relatedLoadInFlightRef.current = false;
+      setIsLoadingMoreRelated(false);
+    }
+  }, [currentVideo.id, hasMoreRelated, rightRailMode]);
+
+  const maybeLoadMoreIfNearEnd = useCallback(() => {
+    if (relatedLoadInFlightRef.current || !hasMoreRelated || rightRailMode !== "watch-next" || relatedTransitionPhase !== "idle") {
+      return;
+    }
+
+    const node = relatedStackRef.current;
+    if (!node) {
+      return;
+    }
+
+    const remainingPx = node.scrollHeight - (node.scrollTop + node.clientHeight);
+    if (remainingPx <= RELATED_LOAD_AHEAD_PX) {
+      void loadMoreRelatedVideos();
+    }
+  }, [hasMoreRelated, loadMoreRelatedVideos, relatedTransitionPhase, rightRailMode]);
+
+  const handleRelatedScroll = useCallback(() => {
+    if (relatedScrollRafRef.current !== null) {
+      return;
+    }
+
+    relatedScrollRafRef.current = window.requestAnimationFrame(() => {
+      relatedScrollRafRef.current = null;
+      maybeLoadMoreIfNearEnd();
+    });
+  }, [maybeLoadMoreIfNearEnd]);
+
+  useEffect(() => {
+    return () => {
+      if (relatedScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(relatedScrollRafRef.current);
+        relatedScrollRafRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    relatedLoadInFlightRef.current = false;
+    setIsLoadingMoreRelated(false);
+    setHasMoreRelated(true);
+  }, [currentVideo.id]);
+
+  useEffect(() => {
+    maybeLoadMoreIfNearEnd();
+  }, [displayedRenderableRelatedVideos.length, maybeLoadMoreIfNearEnd]);
+
+  useEffect(() => {
+    if (rightRailMode !== "watch-next" || !hasMoreRelated || isLoadingMoreRelated || relatedTransitionPhase !== "idle") {
+      return;
+    }
+
+    const root = relatedStackRef.current;
+    const sentinel = relatedLoadMoreSentinelRef.current;
+    if (!root || !sentinel) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadMoreRelatedVideos();
+        }
+      },
+      {
+        root,
+        rootMargin: `0px 0px ${RELATED_LOAD_AHEAD_PX}px 0px`,
+        threshold: 0.01,
+      },
+    );
+
+    observer.observe(sentinel);
+    return () => {
+      observer.disconnect();
+    };
+  }, [displayedRenderableRelatedVideos.length, hasMoreRelated, isLoadingMoreRelated, loadMoreRelatedVideos, relatedTransitionPhase, rightRailMode]);
 
   // Kick off the fade-out as soon as the user selects a new video so the
   // animation overlaps the API round-trip rather than adding to it.
@@ -1214,6 +1359,16 @@ function ShellDynamicInner({
     const nextSignature = sourceRelatedVideos.map((video) => video.id).join("|");
 
     if (currentSignature === nextSignature) {
+      return;
+    }
+
+    const isAppendOnlyUpdate = displayedRelatedVideos.length > 0
+      && sourceRelatedVideos.length > displayedRelatedVideos.length
+      && displayedRelatedVideos.every((video, index) => sourceRelatedVideos[index]?.id === video.id);
+
+    if (isAppendOnlyUpdate) {
+      setDisplayedRelatedVideos(sourceRelatedVideos);
+      setRelatedTransitionPhase("idle");
       return;
     }
 
@@ -1244,6 +1399,9 @@ function ShellDynamicInner({
     }
 
     if (relatedTransitionPhase === "fading-out") {
+      if (relatedStackRef.current) {
+        relatedStackRef.current.scrollTop = 0;
+      }
       if (watchNextRailRef.current) {
         watchNextRailRef.current.scrollTop = 0;
       }
@@ -2255,6 +2413,7 @@ function ShellDynamicInner({
 
           {rightRailMode === "watch-next" ? (
             <div
+              ref={relatedStackRef}
               className={`relatedStack${
                 relatedTransitionPhase === "fading-out"
                   ? " relatedStackFadingOut"
@@ -2262,6 +2421,7 @@ function ShellDynamicInner({
                     ? " relatedStackFadingIn"
                     : ""
               }`}
+              onScroll={handleRelatedScroll}
             >
               {playlistMutationMessage ? (
                 <p className={`rightRailStatus rightRailStatus${playlistMutationTone === "success" ? "Success" : playlistMutationTone === "error" ? "Error" : "Info"}`}>
@@ -2331,6 +2491,10 @@ function ShellDynamicInner({
                   ) : null}
                 </div>
               ))}
+
+              <div ref={relatedLoadMoreSentinelRef} className="relatedLoadMoreSentinel" aria-hidden="true" />
+
+              {isLoadingMoreRelated ? <p className="rightRailStatus">Loading more suggestions...</p> : null}
             </div>
           ) : (
             <div className="relatedStack relatedStackPlaylist">
