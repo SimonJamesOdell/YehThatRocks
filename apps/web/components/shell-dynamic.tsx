@@ -1280,7 +1280,6 @@ function ShellDynamicInner({
 
       if (
         nextLoadedCount >= RELATED_MAX_VIDEOS
-        || payload.hasMore === false
         || relatedNoProgressBatchesRef.current >= 2
       ) {
         setHasMoreRelated(false);
