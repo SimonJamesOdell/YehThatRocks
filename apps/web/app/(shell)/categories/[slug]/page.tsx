@@ -2,7 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
-import { ArtistVideoLink } from "@/components/artist-video-link";
+import { CategoryVideosInfinite } from "@/components/category-videos-infinite";
 import { CategoriesScrollReset } from "@/components/categories-scroll-reset";
 import { CloseLink } from "@/components/close-link";
 import {
@@ -14,6 +14,7 @@ import {
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 
 export const revalidate = 3600;
+const CATEGORY_INITIAL_PAGE_SIZE = 48;
 
 export async function generateStaticParams() {
   const genres = await getGenres();
@@ -34,7 +35,9 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
     notFound();
   }
 
-  const videos = await getVideosByGenre(genre);
+  const initialVideosWithProbe = await getVideosByGenre(genre, { offset: 0, limit: CATEGORY_INITIAL_PAGE_SIZE + 1 });
+  const initialHasMore = initialVideosWithProbe.length > CATEGORY_INITIAL_PAGE_SIZE;
+  const initialVideos = initialVideosWithProbe.slice(0, CATEGORY_INITIAL_PAGE_SIZE);
 
   return (
     <>
@@ -53,13 +56,14 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
         <CloseLink />
       </div>
 
-      <div className="categoryVideoGrid">
-        {videos.length > 0 ? videos.map((video) => (
-          <ArtistVideoLink key={video.id} video={video} isAuthenticated={isAuthenticated} />
-        )) : (
-          <p className="categoryNoVideos">No videos found for this category yet.</p>
-        )}
-      </div>
+      <CategoryVideosInfinite
+        slug={slug}
+        genre={genre}
+        isAuthenticated={isAuthenticated}
+        initialVideos={initialVideos}
+        initialHasMore={initialHasMore}
+        pageSize={CATEGORY_INITIAL_PAGE_SIZE}
+      />
     </>
   );
 }

@@ -4031,7 +4031,6 @@ export async function getArtistsByGenre(genre: string) {
         OR a.genre5 LIKE CONCAT('%', ${genre}, '%')
         OR a.genre6 LIKE CONCAT('%', ${genre}, '%')
       )
-      LIMIT 24
     `;
 
     const mappedArtists = artists.length > 0
@@ -4053,11 +4052,18 @@ export async function getVideosByGenre(
   genre: string,
   options?: {
     artists?: Awaited<ReturnType<typeof getArtistsByGenre>>;
+    offset?: number;
+    limit?: number;
   }
 ) {
   const cacheKey = genre.trim().toLowerCase();
+  const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
+  const requestedLimit = Math.max(1, Math.min(120, Number.isFinite(options?.limit) ? Number(options?.limit) : 24));
+  const minRequiredRows = requestedOffset + requestedLimit;
+  const useDefaultCacheWindow = !options?.artists && requestedOffset === 0 && requestedLimit === 24;
+  const fetchQueryLimit = Math.max(requestedLimit + requestedOffset + 24, requestedLimit + 24);
   const now = Date.now();
-  if (!options?.artists) {
+  if (useDefaultCacheWindow) {
     const cached = genreVideosCache.get(cacheKey);
     if (cached && cached.expiresAt > now && cached.videos.length > 0) {
       return cached.videos;
@@ -4069,18 +4075,40 @@ export async function getVideosByGenre(
   }
 
   const storeGenreVideosInCache = (videos: VideoRecord[]) => {
-    if (!options?.artists && videos.length > 0) {
+    if (useDefaultCacheWindow && videos.length > 0) {
       genreVideosCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, videos });
     }
   };
 
   const buildUniqueGenreVideos = (rows: RankedVideoRow[]) => {
-    return dedupeRankedRows(rows).slice(0, 24).map(mapVideo);
+    return dedupeRankedRows(rows)
+      .slice(requestedOffset, requestedOffset + requestedLimit)
+      .map(mapVideo);
+  };
+
+  let bestRows: RankedVideoRow[] = [];
+
+  const considerRows = (rows: RankedVideoRow[]) => {
+    if (!rows || rows.length === 0) {
+      return;
+    }
+
+    bestRows = dedupeRankedRows([...bestRows, ...rows]);
+  };
+
+  const canResolveWindow = () => bestRows.length >= minRequiredRows;
+
+  const resolveFromBestRows = () => {
+    if (bestRows.length === 0) {
+      return [] as VideoRecord[];
+    }
+
+    return buildUniqueGenreVideos(bestRows);
   };
 
   const getGenreFallback = async () => {
     if (!hasDatabaseUrl()) {
-      return seedVideos;
+      return seedVideos.slice(requestedOffset, requestedOffset + requestedLimit);
     }
     return [];
   };
@@ -4109,7 +4137,7 @@ export async function getVideosByGenre(
             AND (sv.status IS NULL OR sv.status <> 'available')
         )
       ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
-      LIMIT 24
+      LIMIT ${fetchQueryLimit}
     `;
 
     return rows;
@@ -4122,8 +4150,52 @@ export async function getVideosByGenre(
   try {
     return await withSoftTimeout(`getVideosByGenre:${cacheKey}`, CATEGORY_QUERY_TIMEOUT_MS, async () => {
       const keywordVideos = await getGenreKeywordVideos();
-    if (keywordVideos.length >= 12) {
-      const resolved = await buildUniqueGenreVideos(keywordVideos);
+      considerRows(keywordVideos);
+
+      const artistColumns = await getArtistColumnMap();
+      if (artistColumns.genreColumns.length > 0) {
+        const artistNameColumn = escapeSqlIdentifier(artistColumns.name);
+        const genrePredicates = artistColumns.genreColumns
+          .map((column) => `a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', ?, '%')`)
+          .join(" OR ");
+        const genreParams = artistColumns.genreColumns.map(() => genre);
+
+        const artistGenreMatchedVideos = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
+          `
+            SELECT
+              v.videoId,
+              v.title,
+              NULL AS channelTitle,
+              v.favourited,
+              v.description
+            FROM artists a
+            INNER JOIN videos v ON LOWER(TRIM(v.parsedArtist)) = LOWER(TRIM(a.${artistNameColumn}))
+            WHERE (${genrePredicates})
+              AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+              AND EXISTS (
+                SELECT 1
+                FROM site_videos sv
+                WHERE sv.video_id = v.id
+                  AND sv.status = 'available'
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                FROM site_videos sv
+                WHERE sv.video_id = v.id
+                  AND (sv.status IS NULL OR sv.status <> 'available')
+              )
+            GROUP BY v.videoId, v.title, v.favourited, v.description
+            ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
+            LIMIT ${fetchQueryLimit}
+          `,
+          ...genreParams,
+        );
+
+        considerRows(artistGenreMatchedVideos);
+      }
+
+    if (canResolveWindow()) {
+      const resolved = resolveFromBestRows();
       storeGenreVideosInCache(resolved);
       return resolved;
     }
@@ -4132,8 +4204,8 @@ export async function getVideosByGenre(
     const artistNames = [...new Set(artists.map((artist) => artist.name).filter(Boolean))].slice(0, 32);
 
     if (artistNames.length === 0) {
-      if (keywordVideos.length > 0) {
-        const resolved = await buildUniqueGenreVideos(keywordVideos);
+      if (bestRows.length > 0) {
+        const resolved = resolveFromBestRows();
         storeGenreVideosInCache(resolved);
         return resolved;
       }
@@ -4170,11 +4242,13 @@ export async function getVideosByGenre(
             AND (sv.status IS NULL OR sv.status <> 'available')
         )
       ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
-      LIMIT 24
+      LIMIT ${fetchQueryLimit}
     `;
 
-    if (videos.length > 0) {
-      const resolved = await buildUniqueGenreVideos(videos);
+    considerRows(videos);
+
+    if (canResolveWindow()) {
+      const resolved = resolveFromBestRows();
       storeGenreVideosInCache(resolved);
       return resolved;
     }
@@ -4210,59 +4284,15 @@ export async function getVideosByGenre(
                 AND (sv.status IS NULL OR sv.status <> 'available')
             )
           ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
-          LIMIT 24
+          LIMIT ${fetchQueryLimit}
         `,
         ...normalizedArtistNames,
       );
 
-      if (artistMatchedVideos.length > 0) {
-        const resolved = await buildUniqueGenreVideos(artistMatchedVideos);
-        storeGenreVideosInCache(resolved);
-        return resolved;
-      }
-    }
+      considerRows(artistMatchedVideos);
 
-    const artistColumns = await getArtistColumnMap();
-    if (artistColumns.genreColumns.length > 0) {
-      const artistNameColumn = escapeSqlIdentifier(artistColumns.name);
-      const genrePredicates = artistColumns.genreColumns
-        .map((column) => `a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', ?, '%')`)
-        .join(" OR ");
-      const genreParams = artistColumns.genreColumns.map(() => genre);
-
-      const artistGenreMatchedVideos = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
-        `
-          SELECT
-            v.videoId,
-            v.title,
-            NULL AS channelTitle,
-            v.favourited,
-            v.description
-          FROM artists a
-          INNER JOIN videos v ON LOWER(TRIM(v.parsedArtist)) = LOWER(TRIM(a.${artistNameColumn}))
-          WHERE (${genrePredicates})
-            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
-            AND EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND sv.status = 'available'
-            )
-            AND NOT EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND (sv.status IS NULL OR sv.status <> 'available')
-            )
-          GROUP BY v.videoId, v.title, v.favourited, v.description
-          ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
-          LIMIT 24
-        `,
-        ...genreParams,
-      );
-
-      if (artistGenreMatchedVideos.length > 0) {
-        const resolved = await buildUniqueGenreVideos(artistGenreMatchedVideos);
+      if (canResolveWindow()) {
+        const resolved = resolveFromBestRows();
         storeGenreVideosInCache(resolved);
         return resolved;
       }
@@ -4297,17 +4327,19 @@ export async function getVideosByGenre(
             AND (sv.status IS NULL OR sv.status <> 'available')
         )
       ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
-      LIMIT 24
+      LIMIT ${fetchQueryLimit}
     `;
 
-    if (textMatchedVideos.length > 0) {
-      const resolved = await buildUniqueGenreVideos(textMatchedVideos);
+    considerRows(textMatchedVideos);
+
+    if (canResolveWindow()) {
+      const resolved = resolveFromBestRows();
       storeGenreVideosInCache(resolved);
       return resolved;
     }
 
-    if (keywordVideos.length > 0) {
-      const resolved = await buildUniqueGenreVideos(keywordVideos);
+    if (bestRows.length > 0) {
+      const resolved = resolveFromBestRows();
       storeGenreVideosInCache(resolved);
       return resolved;
     }
@@ -4331,7 +4363,9 @@ export async function getVideosByGenre(
       `;
 
       if (genreCardFallbackRows.length > 0) {
-        const resolved = genreCardFallbackRows.map(mapVideo);
+        const resolved = genreCardFallbackRows
+          .slice(requestedOffset, requestedOffset + requestedLimit)
+          .map(mapVideo);
         storeGenreVideosInCache(resolved);
         return resolved;
       }

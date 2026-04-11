@@ -41,6 +41,7 @@ apps/web/.tmp-*.ts
 
 # Local development/debug files
 debug-*.mjs
+scripts/tmp-*
 
 # Local setup scripts
 audit.ps1

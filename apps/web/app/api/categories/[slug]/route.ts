@@ -7,6 +7,11 @@ type CategoryRouteContext = {
 };
 
 export async function GET(_request: NextRequest, context: CategoryRouteContext) {
+  const limitParam = _request.nextUrl.searchParams.get("limit");
+  const offsetParam = _request.nextUrl.searchParams.get("offset");
+  const includeArtists = _request.nextUrl.searchParams.get("includeArtists") === "1";
+  const limit = Math.max(1, Math.min(96, Number.parseInt(limitParam ?? "48", 10) || 48));
+  const offset = Math.max(0, Number.parseInt(offsetParam ?? "0", 10) || 0);
   const { slug } = await context.params;
   const genre = await getGenreBySlug(slug);
 
@@ -14,11 +19,21 @@ export async function GET(_request: NextRequest, context: CategoryRouteContext) 
     return NextResponse.json({ error: "Category not found" }, { status: 404 });
   }
 
-  const [videos, artists] = await Promise.all([getVideosByGenre(genre), getArtistsByGenre(genre)]);
+  const videosWithProbe = await getVideosByGenre(genre, { offset, limit: limit + 1 });
+
+  let artists: Awaited<ReturnType<typeof getArtistsByGenre>> | undefined;
+  if (includeArtists) {
+    artists = await getArtistsByGenre(genre);
+  }
+
+  const hasMore = videosWithProbe.length > limit;
+  const videos = videosWithProbe.slice(0, limit);
 
   return NextResponse.json({
     genre,
     videos,
-    artists
+    artists,
+    hasMore,
+    nextOffset: offset + videos.length,
   });
 }
