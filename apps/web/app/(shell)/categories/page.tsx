@@ -1,9 +1,6 @@
-import Image from "next/image";
-import Link from "next/link";
-
+import { CategoriesFilterGrid } from "@/components/categories-filter-grid";
 import { CategoriesScrollReset } from "@/components/categories-scroll-reset";
-import { CloseLink } from "@/components/close-link";
-import { getGenreCards, getGenreSlug } from "@/lib/catalog-data";
+import { getGenreCards } from "@/lib/catalog-data";
 
 export default async function CategoriesPage() {
   const genreCards = await getGenreCards();
@@ -11,38 +8,7 @@ export default async function CategoriesPage() {
   return (
     <>
       <CategoriesScrollReset />
-      <div className="favouritesBlindBar">
-        <strong>
-          <span className="categoryHeaderBreadcrumb">☣ Categories</span>
-        </strong>
-        <CloseLink />
-      </div>
-
-      <div className="catalogGrid">
-        {genreCards.map(({ genre, previewVideoId }) => (
-          <Link
-            key={genre}
-            href={`/categories/${getGenreSlug(genre)}`}
-            prefetch={false}
-            className="catalogCard categoryCard linkedCard"
-          >
-            {previewVideoId ? (
-              <div className="categoryThumbWrap">
-                <Image
-                  src={`https://i.ytimg.com/vi/${previewVideoId}/mqdefault.jpg`}
-                  alt=""
-                  width={320}
-                  height={180}
-                  className="categoryThumb"
-                  loading="lazy"
-                />
-              </div>
-            ) : null}
-            <p className="statusLabel">Category</p>
-            <h3>{genre}</h3>
-          </Link>
-        ))}
-      </div>
+      <CategoriesFilterGrid genreCards={genreCards} />
     </>
   );
 }

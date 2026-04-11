@@ -355,6 +355,7 @@ function ShellDynamicInner({
   const prevFadeVideoIdRef = useRef<string | null>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const favouritesBlindInnerRef = useRef<HTMLDivElement | null>(null);
+  const previousPathnameRef = useRef<string | null>(null);
   const flashTimeoutRef = useRef<Record<FlashableChatMode, number | null>>({
     global: null,
     video: null,
@@ -394,8 +395,11 @@ function ShellDynamicInner({
   const showSuggestionsRef = useRef(false);
   const activeSuggestionIdxRef = useRef(-1);
 
+  const isCategoriesRoute = pathname === "/categories" || pathname.startsWith("/categories/");
+  const previousPathname = previousPathnameRef.current;
+  const previousWasCategoriesRoute = previousPathname === "/categories" || previousPathname?.startsWith("/categories/") === true;
   const isOverlayRoute = pathname !== "/";
-  const disableOverlayDropAnimation = false;
+  const disableOverlayDropAnimation = isCategoriesRoute && previousWasCategoriesRoute;
   const isPlayerWidthOverlayRoute =
     pathname === "/new"
     || pathname === "/top100"
@@ -432,6 +436,10 @@ function ShellDynamicInner({
     } as CSSProperties)
     : undefined;
   const isMobileCommunityCollapsed = isMobileViewport && !isMobileCommunityOpen;
+
+  useEffect(() => {
+    previousPathnameRef.current = pathname;
+  }, [pathname]);
 
   useEffect(() => {
     desktopIntroPhaseRef.current = desktopIntroPhase;

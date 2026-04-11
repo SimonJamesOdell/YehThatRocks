@@ -125,25 +125,44 @@ function Start-DevServer([string]$RepoRoot) {
     return
   }
 
-  $devProcess = Start-Process -FilePath $npmCmd.Source -ArgumentList @(
-    "-w", "web", "run", "dev"
-  ) -WorkingDirectory $RepoRoot -WindowStyle Hidden -PassThru
+  $restartCandidates = @(
+    @("run", "dev"),
+    @("-w", "web", "run", "dev")
+  )
 
-  # Wait briefly and confirm something is listening on 3000.
-  $started = $false
-  for ($i = 0; $i -lt 25; $i++) {
-    Start-Sleep -Milliseconds 200
-    if (Get-DevServerPid) {
-      $started = $true
-      break
+  foreach ($candidate in $restartCandidates) {
+    $display = "npm " + ($candidate -join " ")
+    Write-Host "Trying dev restart command: $display" -ForegroundColor DarkYellow
+
+    $devProcess = Start-Process -FilePath $npmCmd.Source -ArgumentList $candidate -WorkingDirectory $RepoRoot -WindowStyle Hidden -PassThru
+
+    $started = $false
+    for ($i = 0; $i -lt 40; $i++) {
+      Start-Sleep -Milliseconds 250
+      if (Get-DevServerPid) {
+        $started = $true
+        break
+      }
+
+      if ($devProcess) {
+        $devProcess.Refresh()
+        if ($devProcess.HasExited) {
+          break
+        }
+      }
+    }
+
+    if ($started) {
+      Write-Host "Dev server restarted using '$display' (PID $($devProcess.Id))." -ForegroundColor DarkGreen
+      return
+    }
+
+    if ($devProcess -and -not $devProcess.HasExited) {
+      Stop-Process -Id $devProcess.Id -Force -ErrorAction SilentlyContinue
     }
   }
 
-  if (-not $started) {
-    Write-Warning "Dev server did not come back on port 3000 after ship."
-  } elseif ($devProcess) {
-    Write-Host "Dev server restart requested (PID $($devProcess.Id))." -ForegroundColor DarkGreen
-  }
+  Write-Warning "Dev server did not come back on port 3000 after ship. Tried: npm run dev, npm -w web run dev"
 }
 
 function Try-PruneDockerCaches {
