@@ -258,6 +258,7 @@ const AUTH_PROBE_FAILURE_THRESHOLD = 2;
 
 function ShellDynamicInner({
   initialVideo,
+  initialRelatedVideos,
   isLoggedIn,
   children,
 }: ShellDynamicProps) {
@@ -267,10 +268,11 @@ function ShellDynamicInner({
   const searchParamsKey = searchParams.toString();
   const requestedVideoId = searchParams.get("v");
   const activePlaylistId = searchParams.get("pl");
+  const initialHydratedRelatedVideos = dedupeRelatedRailVideos(dedupeVideoList(initialRelatedVideos), initialVideo.id);
 
   const [currentVideo, setCurrentVideo] = useState(initialVideo);
-  const [relatedVideos, setRelatedVideos] = useState<VideoRecord[]>([]);
-  const [displayedRelatedVideos, setDisplayedRelatedVideos] = useState<VideoRecord[]>([]);
+  const [relatedVideos, setRelatedVideos] = useState<VideoRecord[]>(initialHydratedRelatedVideos);
+  const [displayedRelatedVideos, setDisplayedRelatedVideos] = useState<VideoRecord[]>(initialHydratedRelatedVideos);
   const [relatedTransitionPhase, setRelatedTransitionPhase] = useState<"idle" | "fading-out" | "loading" | "fading-in">("idle");
   const [isLoadingMoreRelated, setIsLoadingMoreRelated] = useState(false);
   const [hasMoreRelated, setHasMoreRelated] = useState(true);
@@ -299,15 +301,19 @@ function ShellDynamicInner({
     global: false,
     video: false,
   });
-  const [isResolvingInitialVideo, setIsResolvingInitialVideo] = useState(!requestedVideoId);
-  const [isResolvingRequestedVideo, setIsResolvingRequestedVideo] = useState(Boolean(requestedVideoId));
+  const [isResolvingInitialVideo, setIsResolvingInitialVideo] = useState(
+    !requestedVideoId && initialHydratedRelatedVideos.length === 0,
+  );
+  const [isResolvingRequestedVideo, setIsResolvingRequestedVideo] = useState(
+    Boolean(requestedVideoId && requestedVideoId !== initialVideo.id),
+  );
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isMobileCommunityOpen, setIsMobileCommunityOpen] = useState(false);
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
   const authProbeFailureCountRef = useRef(0);
   const lastVideoIdRef = useRef<string | null>(null);
   const deniedRequestedVideoIdRef = useRef<string | null>(null);
-  const hasResolvedInitialVideoRef = useRef(Boolean(requestedVideoId));
+  const hasResolvedInitialVideoRef = useRef(Boolean(requestedVideoId) || initialHydratedRelatedVideos.length > 0);
   const startupHydratedVideoIdRef = useRef<string | null>(null);
   const prefetchedRelatedIdsRef = useRef<Set<string>>(new Set());
   const prefetchedCurrentVideoPayloadRef = useRef<Map<string, { expiresAt: number; payload: CurrentVideoResolvePayload }>>(new Map());
