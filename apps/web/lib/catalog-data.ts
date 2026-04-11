@@ -638,9 +638,16 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
     const shouldSwapParsed = isLikelySwappedByTitleOrder(video.title, parsed.artist, parsed.track);
     const correctedArtist = shouldSwapParsed ? parsed.track : parsed.artist;
     const correctedTrack = shouldSwapParsed ? parsed.artist : parsed.track;
-    const correctedReason = shouldSwapParsed
+    const artistKnown = correctedArtist ? await isKnownArtistName(correctedArtist) : false;
+    const adjustedConfidence = artistKnown
+      ? Math.max(parsed.confidence ?? 0, 0.9)
+      : parsed.confidence;
+    const correctedReasonBase = shouldSwapParsed
       ? `${parsed.reason ?? ""}${parsed.reason ? " | " : ""}Auto-corrected swapped artist/track by title order.`
       : parsed.reason;
+    const correctedReason = artistKnown
+      ? `${correctedReasonBase ?? ""}${correctedReasonBase ? " | " : ""}Artist matched known artists catalog.`
+      : correctedReasonBase;
 
     await prisma.$executeRaw`
       UPDATE videos
@@ -650,7 +657,7 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
         parsedVideoType = ${parsed.videoType},
         parseMethod = ${shouldSwapParsed ? "groq-llm-corrected" : "groq-llm"},
         parseReason = ${correctedReason},
-        parseConfidence = ${parsed.confidence},
+        parseConfidence = ${adjustedConfidence},
         parsedAt = ${new Date()}
       WHERE id = ${videoRowId}
     `;
@@ -660,7 +667,8 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
       rowId: videoRowId,
       artist: correctedArtist,
       track: correctedTrack,
-      confidence: parsed.confidence,
+      confidence: adjustedConfidence,
+      artistKnown,
       corrected: shouldSwapParsed,
     });
 
@@ -854,6 +862,8 @@ let artistVideoColumnMapCache:
     }
   | undefined;
 let artistVideoStatsSourceCache: "videosbyartist" | "parsedArtist" | undefined;
+const KNOWN_ARTIST_MATCH_CACHE_TTL_MS = 10 * 60 * 1000;
+const knownArtistMatchCache = new Map<string, { expiresAt: number; known: boolean }>();
 let artistStatsProjectionAvailabilityCache:
   | {
       checkedAt: number;
@@ -1975,6 +1985,42 @@ async function getArtistColumnMap() {
   };
 
   return artistColumnMapCache;
+}
+
+async function isKnownArtistName(artistName: string) {
+  const normalized = artistName.trim().toLowerCase();
+  if (!normalized || !hasDatabaseUrl()) {
+    return false;
+  }
+
+  const now = Date.now();
+  const cached = knownArtistMatchCache.get(normalized);
+  if (cached && cached.expiresAt > now) {
+    return cached.known;
+  }
+
+  try {
+    const columns = await getArtistColumnMap();
+    const nameCol = escapeSqlIdentifier(columns.name);
+    const rows = await prisma.$queryRawUnsafe<Array<{ matchCount: number }>>(
+      `
+        SELECT COUNT(*) AS matchCount
+        FROM artists a
+        WHERE LOWER(TRIM(a.${nameCol})) = ?
+        LIMIT 1
+      `,
+      normalized,
+    );
+
+    const known = Number(rows[0]?.matchCount ?? 0) > 0;
+    knownArtistMatchCache.set(normalized, {
+      expiresAt: now + KNOWN_ARTIST_MATCH_CACHE_TTL_MS,
+      known,
+    });
+    return known;
+  } catch {
+    return false;
+  }
 }
 
 async function getArtistVideoColumnMap() {
