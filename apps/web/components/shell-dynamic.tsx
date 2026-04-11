@@ -539,19 +539,24 @@ function ShellDynamicInner({
         return;
       }
 
-      const chromeRect = chrome.getBoundingClientRect();
+      const frame = chrome.querySelector(".playerFrame") as HTMLElement | null;
+      if (!frame) {
+        setPlayerDockScaleX(1);
+        setPlayerDockScaleY(1);
+        return;
+      }
+
+      const frameRect = frame.getBoundingClientRect();
       const railRect = leftRail.getBoundingClientRect();
-      if (chromeRect.width <= 0 || chromeRect.height <= 0 || railRect.width <= 0) {
+      if (frameRect.width <= 0 || railRect.width <= 0) {
         setPlayerDockScaleX(1);
         setPlayerDockScaleY(1);
         return;
       }
 
       const targetWidth = railRect.width;
-      const targetHeight = Math.min(window.innerHeight * 0.52, targetWidth * (9 / 16));
-      const nextScaleX = Math.max(0.2, Math.min(1, targetWidth / chromeRect.width));
-      const nextScaleY = Math.max(0.2, Math.min(1, targetHeight / chromeRect.height));
-      const uniformScale = Math.max(0.2, Math.min(1, Math.min(nextScaleX, nextScaleY)));
+      // Lock scaling to final rail width while preserving aspect ratio via uniform scale.
+      const uniformScale = Math.max(0.2, Math.min(1, targetWidth / frameRect.width));
 
       setPlayerDockScaleX(uniformScale);
       setPlayerDockScaleY(uniformScale);
