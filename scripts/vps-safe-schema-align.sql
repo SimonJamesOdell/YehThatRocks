@@ -128,16 +128,16 @@ UPDATE playlistitems SET playlist_id = @recovered_playlist_id WHERE playlist_id 
 CALL ytr_exec_if_col_exists(
   'playlistitems',
   'videoId',
-  'INSERT INTO videos (videoId, title, favourited, created_at, updated_at)
-   SELECT DISTINCT pi.videoId, CONCAT(''Recovered video '', pi.videoId), 0, NOW(), NOW()
+  'INSERT INTO videos (videoId, title, favourited)
+   SELECT DISTINCT pi.videoId, CONCAT(''Recovered video '', pi.videoId), 0
    FROM playlistitems pi
    LEFT JOIN videos v ON v.videoId = pi.videoId
    WHERE pi.videoId IS NOT NULL AND pi.video_id IS NULL AND v.id IS NULL'
 );
 
 -- Handle rows with NULL legacy videoId by generating deterministic placeholder ids.
-INSERT INTO videos (videoId, title, favourited, created_at, updated_at)
-SELECT CONCAT('legacy-', LPAD(pi.id, 10, '0')), CONCAT('Recovered playlist item ', pi.id), 0, NOW(), NOW()
+INSERT INTO videos (videoId, title, favourited)
+SELECT CONCAT('legacy-', LPAD(pi.id, 10, '0')), CONCAT('Recovered playlist item ', pi.id), 0
 FROM playlistitems pi
 LEFT JOIN videos v ON v.videoId = CONCAT('legacy-', LPAD(pi.id, 10, '0'))
 WHERE pi.video_id IS NULL AND v.id IS NULL;
