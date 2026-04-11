@@ -6,7 +6,11 @@ param(
   [string]$ImageBase = "yehthatrocks-web",
   [switch]$SkipGitPush,
   # Dump the local Docker DB and restore it on the VPS before deploying.
-  [switch]$RestoreDb
+  [switch]$RestoreDb,
+  # Skip local transient cache cleanup before/after shipping.
+  [switch]$SkipLocalCleanup,
+  # Skip Docker cache pruning after shipping.
+  [switch]$SkipDockerPrune
 )
 
 Set-StrictMode -Version Latest
@@ -71,6 +75,33 @@ $statusOutput
   }
 }
 
+function Remove-PathIfPresent([string]$TargetPath) {
+  if (-not (Test-Path -LiteralPath $TargetPath)) {
+    return
+  }
+
+  Write-Host "Cleaning local cache path: $TargetPath" -ForegroundColor DarkYellow
+  Remove-Item -LiteralPath $TargetPath -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+function Clean-RepoTransientCaches([string]$RepoRoot) {
+  Remove-PathIfPresent (Join-Path $RepoRoot ".turbo\cache")
+  Remove-PathIfPresent (Join-Path $RepoRoot "apps\web\.next")
+}
+
+function Try-PruneDockerCaches {
+  $dockerInfoOutput = & docker info 2>&1 | Out-String
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warning "Skipping Docker prune because daemon is unavailable."
+    return
+  }
+
+  Write-Host "Pruning local Docker build/image cache older than 7 days..." -ForegroundColor DarkYellow
+  & docker builder prune -af --filter "until=168h" | Out-Null
+  & docker image prune -af --filter "until=168h" | Out-Null
+  & docker container prune -f | Out-Null
+}
+
 function Transfer-ImageToVps([string]$ImageTag, [string]$VpsHost) {
   $tempDir = [System.IO.Path]::GetTempPath()
   $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -131,6 +162,10 @@ if (-not (Get-Command scp -ErrorAction SilentlyContinue)) {
 
 Push-Location $RepoDir
 try {
+  if (-not $SkipLocalCleanup) {
+    Clean-RepoTransientCaches -RepoRoot $RepoDir
+  }
+
   Ensure-CleanGitWorktree
 
   Exec "git fetch origin $Branch"
@@ -221,6 +256,10 @@ try {
   Exec "ssh $VpsHost '$remoteDeploy'"
 
   Write-Host "Deploy complete: $imageTag" -ForegroundColor Green
+
+  if ((-not $SkipLocalCleanup) -and (-not $SkipDockerPrune)) {
+    Try-PruneDockerCaches
+  }
 } finally {
   Pop-Location
 }
