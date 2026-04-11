@@ -326,6 +326,7 @@ function ShellDynamicInner({
   const relatedStackRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadInFlightRef = useRef(false);
+  const relatedNoProgressLoadsRef = useRef(0);
   const relatedScrollRafRef = useRef<number | null>(null);
   const relatedVideosRef = useRef<VideoRecord[]>([]);
   const watchNextRailRef = useRef<HTMLElement | null>(null);
@@ -1268,7 +1269,17 @@ function ShellDynamicInner({
         return merged;
       });
 
-      if (appendedCount === 0 || nextLoadedCount >= RELATED_MAX_VIDEOS || payload.hasMore === false) {
+      if (appendedCount === 0) {
+        relatedNoProgressLoadsRef.current += 1;
+      } else {
+        relatedNoProgressLoadsRef.current = 0;
+      }
+
+      if (
+        nextLoadedCount >= RELATED_MAX_VIDEOS
+        || payload.hasMore === false
+        || relatedNoProgressLoadsRef.current >= 3
+      ) {
         setHasMoreRelated(false);
       }
     } catch {
@@ -1317,6 +1328,7 @@ function ShellDynamicInner({
 
   useEffect(() => {
     relatedLoadInFlightRef.current = false;
+    relatedNoProgressLoadsRef.current = 0;
     setIsLoadingMoreRelated(false);
     setHasMoreRelated(true);
   }, [currentVideo.id]);
