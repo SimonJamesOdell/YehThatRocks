@@ -3078,6 +3078,86 @@ export async function getNewestVideos(count = 20, offset = 0) {
   }
 }
 
+export async function getUnseenCatalogVideos(options?: {
+  userId?: number;
+  count?: number;
+  excludeVideoIds?: string[];
+}) {
+  if (!hasDatabaseUrl()) {
+    return [];
+  }
+
+  const requested = Math.max(1, Math.min(500, Math.floor(options?.count ?? 100)));
+  const fetchLimit = Math.min(1500, Math.max(requested * 3, requested + 100));
+  const excluded = new Set(
+    (options?.excludeVideoIds ?? [])
+      .map((id) => normalizeYouTubeVideoId(id) ?? id)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  try {
+    const rows = options?.userId
+      ? await prisma.$queryRaw<RankedVideoRow[]>`
+          SELECT
+            v.videoId,
+            v.title,
+            COALESCE(v.parsedArtist, NULL) AS channelTitle,
+            v.favourited,
+            v.description
+          FROM videos v
+          WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND sv.status = 'available'
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM watch_history wh
+              WHERE wh.user_id = ${options.userId}
+                AND wh.video_id = v.videoId
+            )
+          ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
+          LIMIT ${fetchLimit}
+        `
+      : await prisma.$queryRaw<RankedVideoRow[]>`
+          SELECT
+            v.videoId,
+            v.title,
+            COALESCE(v.parsedArtist, NULL) AS channelTitle,
+            v.favourited,
+            v.description
+          FROM videos v
+          WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND sv.status = 'available'
+            )
+          ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
+          LIMIT ${fetchLimit}
+        `;
+
+    const seen = new Set<string>();
+    const result = rows
+      .filter((row) => {
+        if (!row.videoId || excluded.has(row.videoId) || seen.has(row.videoId)) {
+          return false;
+        }
+        seen.add(row.videoId);
+        return true;
+      })
+      .slice(0, requested)
+      .map(mapVideo);
+
+    return result;
+  } catch {
+    return [];
+  }
+}
+
 export async function getArtists() {
   if (!hasDatabaseUrl()) {
     return seedArtists;
