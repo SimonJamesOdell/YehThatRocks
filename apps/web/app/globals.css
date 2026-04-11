@@ -1278,6 +1278,14 @@ h1 {
     pointer-events: none;
   }
 
+  .playerChromeDockedDesktop .overlayTop,
+  .playerChromeDockedDesktop.playerOverlayVisible .overlayTop,
+  .playerChromeDockedDesktop .playerOverlayVisible .overlayTop {
+    padding-top: 0;
+    padding-bottom: 0;
+    background: transparent;
+  }
+
   .playerChromeDockedDesktop .overlayCenter {
     position: absolute;
     inset: 0;
