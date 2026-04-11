@@ -165,7 +165,7 @@ try {
       # Pipe mysqldump output directly to a local file
       $dumpArgs = @("compose", "exec", "-T", "db",
         "mysqldump", "-uyeh", "-pyehthatrocks",
-        "--single-transaction", "--routines", "--triggers", "yeh")
+        "--single-transaction", "--no-tablespaces", "--routines", "--triggers", "yeh")
       Write-Host "> docker $($dumpArgs -join ' ') > $localDumpPath" -ForegroundColor Cyan
       & docker @dumpArgs | Set-Content -Path $localDumpPath -Encoding UTF8
       if ($LASTEXITCODE -ne 0) { throw "mysqldump failed" }
