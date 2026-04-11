@@ -224,6 +224,11 @@ const DOCK_MOVE_DURATION_MS = 520;
 const DOCK_CONTROLS_FADE_DURATION_MS = 220;
 const DOCK_CONTROLS_FADE_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - DOCK_CONTROLS_FADE_DURATION_MS);
 const FOOTER_REVEAL_DURATION_MS = 240;
+const DESKTOP_INTRO_HOLD_MS = 1300;
+const DESKTOP_INTRO_MOVE_MS = 760;
+const DESKTOP_INTRO_REVEAL_MS = 820;
+const DESKTOP_INTRO_MAX_LOGO_WIDTH_PX = 1128;
+const DESKTOP_INTRO_VIEWPORT_WIDTH_RATIO = 1.128;
 
 function dedupeVideoList(videos: VideoRecord[]) {
   return videos.filter(
@@ -318,6 +323,11 @@ function ShellDynamicInner({
   );
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isMobileCommunityOpen, setIsMobileCommunityOpen] = useState(false);
+  const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(true);
+  const [desktopIntroPhase, setDesktopIntroPhase] = useState<"disabled" | "hold" | "moving" | "revealing" | "done">("disabled");
+  const [desktopIntroDeltaX, setDesktopIntroDeltaX] = useState(0);
+  const [desktopIntroDeltaY, setDesktopIntroDeltaY] = useState(0);
+  const [desktopIntroScale, setDesktopIntroScale] = useState(1);
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
   const authProbeFailureCountRef = useRef(0);
   const lastVideoIdRef = useRef<string | null>(null);
@@ -341,6 +351,7 @@ function ShellDynamicInner({
   const relatedVideosRef = useRef<VideoRecord[]>([]);
   const watchNextRailRef = useRef<HTMLElement | null>(null);
   const playerChromeRef = useRef<HTMLDivElement | null>(null);
+  const brandLogoTargetRef = useRef<HTMLAnchorElement | null>(null);
   const prevFadeVideoIdRef = useRef<string | null>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const favouritesBlindInnerRef = useRef<HTMLDivElement | null>(null);
@@ -367,6 +378,12 @@ function ShellDynamicInner({
   const footerRevealTimeoutRef = useRef<number | null>(null);
   const shouldRunFooterRevealRef = useRef(false);
   const dockTransitionTimeoutRef = useRef<number | null>(null);
+  const desktopIntroHoldTimeoutRef = useRef<number | null>(null);
+  const desktopIntroMoveTimeoutRef = useRef<number | null>(null);
+  const desktopIntroRevealTimeoutRef = useRef<number | null>(null);
+  const desktopIntroMeasureRafRef = useRef<number | null>(null);
+  const shouldReplayDesktopIntroOnHomeRef = useRef(false);
+  const desktopIntroPhaseRef = useRef<"disabled" | "hold" | "moving" | "revealing" | "done">("disabled");
   const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestAbortRef = useRef<AbortController | null>(null);
   const latestSuggestQueryRef = useRef("");
@@ -390,6 +407,10 @@ function ShellDynamicInner({
   ].filter(Boolean).join(" ");
   const shouldRunChat = isAuthenticated && !isOverlayRoute;
   const shouldDisableRelatedRailTransition = pathname === "/new";
+  const isDesktopIntroActive =
+    desktopIntroPhase === "hold"
+    || desktopIntroPhase === "moving"
+    || desktopIntroPhase === "revealing";
   const isArtistsIndexRoute = pathname === "/artists";
   const shouldDockDesktopPlayer = isOverlayRoute;
   const shouldDockUnderArtistsAlphabet = shouldDockDesktopPlayer && isArtistsIndexRoute;
@@ -410,6 +431,107 @@ function ShellDynamicInner({
     } as CSSProperties)
     : undefined;
   const isMobileCommunityCollapsed = isMobileViewport && !isMobileCommunityOpen;
+
+  useEffect(() => {
+    desktopIntroPhaseRef.current = desktopIntroPhase;
+  }, [desktopIntroPhase]);
+
+  const clearDesktopIntroTimers = useCallback(() => {
+    if (desktopIntroHoldTimeoutRef.current !== null) {
+      window.clearTimeout(desktopIntroHoldTimeoutRef.current);
+      desktopIntroHoldTimeoutRef.current = null;
+    }
+
+    if (desktopIntroMoveTimeoutRef.current !== null) {
+      window.clearTimeout(desktopIntroMoveTimeoutRef.current);
+      desktopIntroMoveTimeoutRef.current = null;
+    }
+
+    if (desktopIntroRevealTimeoutRef.current !== null) {
+      window.clearTimeout(desktopIntroRevealTimeoutRef.current);
+      desktopIntroRevealTimeoutRef.current = null;
+    }
+
+    if (desktopIntroMeasureRafRef.current !== null) {
+      window.cancelAnimationFrame(desktopIntroMeasureRafRef.current);
+      desktopIntroMeasureRafRef.current = null;
+    }
+  }, []);
+
+  const syncDesktopIntroTarget = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const target = brandLogoTargetRef.current;
+    if (!target) {
+      return;
+    }
+
+    const logoImage = target.querySelector("img.brandLogo");
+    const rect = (logoImage ?? target).getBoundingClientRect();
+    const viewportCenterX = window.innerWidth / 2;
+    const viewportCenterY = window.innerHeight / 2;
+    const targetCenterX = rect.left + rect.width / 2;
+    const targetCenterY = rect.top + rect.height / 2;
+    const introStartWidth = Math.min(window.innerWidth * DESKTOP_INTRO_VIEWPORT_WIDTH_RATIO, DESKTOP_INTRO_MAX_LOGO_WIDTH_PX);
+    const targetScale = Math.max(0.3, Math.min(1.2, rect.width / introStartWidth));
+
+    setDesktopIntroDeltaX(targetCenterX - viewportCenterX);
+    setDesktopIntroDeltaY(targetCenterY - viewportCenterY);
+    setDesktopIntroScale(targetScale);
+  }, []);
+
+  const startDesktopIntroSequence = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const isDesktop = window.matchMedia("(min-width: 1181px)").matches;
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (!isDesktop || prefersReducedMotion) {
+      setDesktopIntroPhase("disabled");
+      setIsDesktopIntroPreload(false);
+      return;
+    }
+
+    clearDesktopIntroTimers();
+    setDesktopIntroDeltaX(0);
+    setDesktopIntroDeltaY(0);
+    setDesktopIntroScale(1);
+    setDesktopIntroPhase("hold");
+    setIsDesktopIntroPreload(false);
+
+    desktopIntroMeasureRafRef.current = window.requestAnimationFrame(() => {
+      syncDesktopIntroTarget();
+      desktopIntroMeasureRafRef.current = null;
+    });
+
+    desktopIntroHoldTimeoutRef.current = window.setTimeout(() => {
+      syncDesktopIntroTarget();
+      setDesktopIntroPhase("moving");
+
+      desktopIntroMoveTimeoutRef.current = window.setTimeout(() => {
+        setDesktopIntroPhase("revealing");
+        desktopIntroMoveTimeoutRef.current = null;
+
+        desktopIntroRevealTimeoutRef.current = window.setTimeout(() => {
+          setDesktopIntroPhase("done");
+          desktopIntroRevealTimeoutRef.current = null;
+        }, DESKTOP_INTRO_REVEAL_MS);
+      }, DESKTOP_INTRO_MOVE_MS);
+    }, DESKTOP_INTRO_HOLD_MS);
+  }, [clearDesktopIntroTimers, syncDesktopIntroTarget]);
+
+  const handleBrandLogoClick = useCallback(() => {
+    shouldReplayDesktopIntroOnHomeRef.current = true;
+
+    if (pathname === "/") {
+      shouldReplayDesktopIntroOnHomeRef.current = false;
+      startDesktopIntroSequence();
+    }
+  }, [pathname, startDesktopIntroSequence]);
   const isLeftRailSuppressed = isOverlayRoute || isMobileCommunityCollapsed;
   const artistLetterParam = searchParams.get("letter");
   const activeArtistLetter =
@@ -616,6 +738,38 @@ function ShellDynamicInner({
       shouldRunFooterRevealRef.current = false;
     };
   }, [currentVideo.id, isOverlayRoute, router]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    startDesktopIntroSequence();
+
+    const handleResize = () => {
+      const phase = desktopIntroPhaseRef.current;
+      if (phase === "hold" || phase === "moving") {
+        syncDesktopIntroTarget();
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+
+      clearDesktopIntroTimers();
+    };
+  }, [clearDesktopIntroTimers, startDesktopIntroSequence, syncDesktopIntroTarget]);
+
+  useEffect(() => {
+    if (pathname !== "/" || !shouldReplayDesktopIntroOnHomeRef.current) {
+      return;
+    }
+
+    shouldReplayDesktopIntroOnHomeRef.current = false;
+    startDesktopIntroSequence();
+  }, [pathname, startDesktopIntroSequence]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2351,13 +2505,42 @@ function ShellDynamicInner({
     router.push(url);
   }
 
+  const shellClassName = [
+    isOverlayRoute ? "shell shellOverlayRoute" : "shell",
+    isDesktopIntroPreload ? "shellDesktopIntroPreload" : "",
+    isDesktopIntroActive ? "shellDesktopIntroActive" : "",
+    desktopIntroPhase === "moving" ? "shellDesktopIntroMoving" : "",
+    desktopIntroPhase === "revealing" ? "shellDesktopIntroRevealing" : "",
+  ].filter(Boolean).join(" ");
+
+  const shellStyle = isDesktopIntroActive
+    ? ({
+      "--desktop-intro-dx": `${desktopIntroDeltaX}px`,
+      "--desktop-intro-dy": `${desktopIntroDeltaY}px`,
+      "--desktop-intro-scale": String(desktopIntroScale),
+    } as CSSProperties)
+    : undefined;
+
   return (
-    <main className={isOverlayRoute ? "shell shellOverlayRoute" : "shell"}>
+    <main className={shellClassName} style={shellStyle}>
       <div className="backdrop" />
+
+      {isDesktopIntroActive ? (
+        <div className="desktopIntroOverlay" aria-hidden="true">
+          <Image
+            src="/assets/images/yeh4.png"
+            alt=""
+            width={306}
+            height={102}
+            priority
+            className="desktopIntroLogo"
+          />
+        </div>
+      ) : null}
 
       <header className="topbar">
         <div className="brandLockup">
-          <a href="/" aria-label="Yeh That Rocks home">
+          <Link href="/" aria-label="Yeh That Rocks home" ref={brandLogoTargetRef} onClick={handleBrandLogoClick}>
             <Image
               src="/assets/images/yeh4.png"
               alt="Yeh That Rocks"
@@ -2366,7 +2549,7 @@ function ShellDynamicInner({
               priority
               className="brandLogo"
             />
-          </a>
+          </Link>
           <h1 className="brandTagline">The world&apos;s loudest website</h1>
         </div>
 

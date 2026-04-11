@@ -101,6 +101,140 @@ button:not(:disabled):active::after {
   pointer-events: none;
 }
 
+.desktopIntroOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 320ms ease;
+}
+
+.desktopIntroLogo {
+  width: min(112.8vw, 1128px);
+  height: auto;
+  opacity: 0;
+  filter: drop-shadow(0 14px 24px rgba(0, 0, 0, 0.5));
+  transform: translate3d(0, 0, 0) scale(1);
+  transform-origin: center center;
+  will-change: transform;
+  transition: transform 760ms cubic-bezier(0.2, 0.92, 0.34, 1);
+}
+
+.shellDesktopIntroActive .desktopIntroLogo {
+  animation: desktopIntroLogoFadeIn 500ms ease forwards;
+}
+
+@keyframes desktopIntroLogoFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.topbar,
+.heroGrid {
+  transition: opacity 320ms ease;
+}
+
+.shellDesktopIntroActive .topbar,
+.shellDesktopIntroActive .heroGrid {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (min-width: 1181px) {
+  .shellDesktopIntroPreload .topbar,
+  .shellDesktopIntroPreload .heroGrid {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+.shellDesktopIntroMoving .desktopIntroLogo {
+  transform:
+    translate3d(var(--desktop-intro-dx, 0px), var(--desktop-intro-dy, 0px), 0)
+    scale(var(--desktop-intro-scale, 1));
+}
+
+.shellDesktopIntroRevealing .desktopIntroLogo {
+  transform:
+    translate3d(var(--desktop-intro-dx, 0px), var(--desktop-intro-dy, 0px), 0)
+    scale(var(--desktop-intro-scale, 1));
+}
+
+.shellDesktopIntroRevealing .desktopIntroOverlay {
+  opacity: 0;
+}
+
+.shellDesktopIntroRevealing .topbar,
+.shellDesktopIntroRevealing .heroGrid {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.shellDesktopIntroRevealing .headerBar {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition:
+    transform 500ms cubic-bezier(0.18, 0.88, 0.3, 1),
+    opacity 280ms ease;
+}
+
+.shellDesktopIntroRevealing .heroGrid,
+.shellDesktopIntroRevealing .playerChrome,
+.shellDesktopIntroRevealing .chatPanel {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition:
+    transform 560ms cubic-bezier(0.2, 0.9, 0.3, 1),
+    opacity 320ms ease;
+  transition-delay: 460ms;
+}
+
+@media (min-width: 1181px) {
+  .shellDesktopIntroActive .headerBar {
+    opacity: 0;
+    transform: translate3d(-72px, 0, 0);
+  }
+
+  .shellDesktopIntroActive .heroGrid,
+  .shellDesktopIntroActive .playerChrome,
+  .shellDesktopIntroActive .chatPanel {
+    opacity: 0;
+    transform: translate3d(0, -44px, 0);
+  }
+
+  .shellDesktopIntroActive.shellDesktopIntroRevealing .headerBar {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+
+  .shellDesktopIntroActive.shellDesktopIntroRevealing .heroGrid,
+  .shellDesktopIntroActive.shellDesktopIntroRevealing .playerChrome,
+  .shellDesktopIntroActive.shellDesktopIntroRevealing .chatPanel {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (max-width: 1180px) {
+  .desktopIntroOverlay {
+    display: none;
+  }
+
+  .shellDesktopIntroActive .topbar,
+  .shellDesktopIntroActive .heroGrid {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .topbar,
 .heroGrid {
   position: relative;
