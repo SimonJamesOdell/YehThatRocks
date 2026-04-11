@@ -1258,10 +1258,10 @@ h1 {
     max-height: 52vh;
     transform: translateX(calc(-1 * (var(--left-rail-width) + 12px))) translateY(0);
     transition:
-      transform 520ms cubic-bezier(0.22, 1, 0.36, 1),
-      width 520ms cubic-bezier(0.22, 1, 0.36, 1),
-      max-height 520ms cubic-bezier(0.22, 1, 0.36, 1),
-      border-radius 520ms cubic-bezier(0.22, 1, 0.36, 1);
+      transform 760ms cubic-bezier(0.22, 1, 0.36, 1),
+      width 760ms cubic-bezier(0.22, 1, 0.36, 1),
+      max-height 760ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-radius 760ms cubic-bezier(0.22, 1, 0.36, 1);
     will-change: transform, width;
   }
 
@@ -1270,6 +1270,28 @@ h1 {
     transform:
       translateX(calc(-1 * (var(--left-rail-width) + 12px)))
       translateY(var(--player-dock-artists-offset, 0px));
+  }
+
+  .playerChromeDockedDesktop .overlayCenter {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    pointer-events: none;
+  }
+
+  .playerChromeDockedDesktop .overlayPlayBtn {
+    width: 74px;
+    height: 74px;
+    pointer-events: auto;
+  }
+
+  .playerChromeDockedDesktop .overlayPlayBtn svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .playerChromeDockedDesktop .overlayPlayIcon {
+    transform: translateX(2px);
   }
 }
 
