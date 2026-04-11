@@ -1227,10 +1227,13 @@ function ShellDynamicInner({
     setIsLoadingMoreRelated(true);
 
     try {
+      const existing = dedupeRelatedRailVideos(dedupeVideoList(relatedVideosRef.current), currentVideo.id);
       const params = new URLSearchParams();
       params.set("v", currentVideo.id);
       params.set("count", String(RELATED_LOAD_BATCH_SIZE));
-      params.set("offset", String(dedupeRelatedRailVideos(dedupeVideoList(relatedVideosRef.current), currentVideo.id).length));
+      if (existing.length > 0) {
+        params.set("exclude", existing.map((video) => video.id).join(","));
+      }
 
       const response = await fetch(`/api/current-video?${params.toString()}`, {
         cache: "no-store",
