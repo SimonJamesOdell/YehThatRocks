@@ -290,25 +290,12 @@ function parseSimpleTitleSides(title: string) {
 }
 
 function isLikelySwappedByTitleOrder(title: string, artist: string | null | undefined, track: string | null | undefined) {
-  if (!artist || !track) {
-    return false;
-  }
-
-  const sides = parseSimpleTitleSides(title);
-  if (!sides) {
-    return false;
-  }
-
-  const left = normalizeLooseToken(sides.left);
-  const right = normalizeLooseToken(sides.right);
-  const artistToken = normalizeLooseToken(artist);
-  const trackToken = normalizeLooseToken(track);
-
-  if (!left || !right || !artistToken || !trackToken) {
-    return false;
-  }
-
-  return left.includes(artistToken) && right.includes(trackToken) && !left.includes(trackToken);
+  // Source titles are user-entered and cannot be trusted for artist/track ordering.
+  // Never auto-swap based on title patterns; require parser/admin corrections instead.
+  void title;
+  void artist;
+  void track;
+  return false;
 }
 
 function inferArtistFromTitle(title: string) {
