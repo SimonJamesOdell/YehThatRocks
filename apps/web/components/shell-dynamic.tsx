@@ -327,7 +327,6 @@ function ShellDynamicInner({
   const relatedLoadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadInFlightRef = useRef(false);
   const relatedFetchOffsetRef = useRef<number | null>(null);
-  const relatedNoProgressBatchesRef = useRef(0);
   const relatedScrollRafRef = useRef<number | null>(null);
   const relatedVideosRef = useRef<VideoRecord[]>([]);
   const watchNextRailRef = useRef<HTMLElement | null>(null);
@@ -1272,15 +1271,8 @@ function ShellDynamicInner({
         return merged;
       });
 
-      if (appendedCount === 0) {
-        relatedNoProgressBatchesRef.current += 1;
-      } else {
-        relatedNoProgressBatchesRef.current = 0;
-      }
-
       if (
         nextLoadedCount >= RELATED_MAX_VIDEOS
-        || relatedNoProgressBatchesRef.current >= 2
       ) {
         setHasMoreRelated(false);
       }
@@ -1331,7 +1323,6 @@ function ShellDynamicInner({
   useEffect(() => {
     relatedLoadInFlightRef.current = false;
     relatedFetchOffsetRef.current = null;
-    relatedNoProgressBatchesRef.current = 0;
     setIsLoadingMoreRelated(false);
     setHasMoreRelated(true);
   }, [currentVideo.id]);
