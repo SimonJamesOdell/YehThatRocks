@@ -2613,7 +2613,7 @@ export async function getRelatedVideos(
   const resolveRelatedVideos = async () => {
 
   try {
-    const queryTimeoutMs = 1_250;
+    const queryTimeoutMs = 4_500;
     const targetCount = requestedCount;
     const timeBucket = Math.floor(now / (15 * 60 * 1000));
     const rotationSeed = `${normalizedVideoId}:${options?.userId ?? "anon"}:${timeBucket}`;
@@ -2857,7 +2857,7 @@ export async function getRelatedVideos(
     return mapped;
   } catch {
     try {
-      const fallbackPool = await getRankedTopPool(30);
+      const fallbackPool = await getRankedTopPool(Math.max(requestedCount + 20, 120));
       return dedupeRankedRows(fallbackPool)
         .filter((row) => row.videoId !== normalizedVideoId && !baseBlockedIds.has(row.videoId))
         .slice(0, requestedCount)
