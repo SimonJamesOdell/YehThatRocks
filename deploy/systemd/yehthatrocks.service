@@ -8,7 +8,8 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/srv/yehthatrocks
-ExecStart=/usr/bin/docker compose --env-file /srv/yehthatrocks/.env.production -f /srv/yehthatrocks/docker-compose.prod.yml up -d --build
+ExecStart=/usr/bin/docker compose --env-file /srv/yehthatrocks/.env.production -f /srv/yehthatrocks/docker-compose.prod.yml up -d
+ExecStartPost=/usr/bin/bash -lc 'for i in $(seq 1 30); do curl -fsS "http://127.0.0.1:3000/api/videos/newest?skip=0&take=100" > /dev/null && exit 0; sleep 2; done; echo "newest warm-up failed" >&2; exit 1'
 ExecStop=/usr/bin/docker compose --env-file /srv/yehthatrocks/.env.production -f /srv/yehthatrocks/docker-compose.prod.yml stop
 ExecReload=/srv/yehthatrocks/deploy/deploy-prod-hot-swap.sh
 TimeoutStartSec=0
