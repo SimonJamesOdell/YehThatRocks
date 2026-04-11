@@ -115,12 +115,12 @@ function Stop-DevServer {
 # Restarts the dev server in the background from the given repo root.
 function Start-DevServer([string]$RepoRoot) {
   Write-Host "Restarting local dev server..." -ForegroundColor DarkYellow
-  $scriptBlock = {
-    param($dir)
-    Set-Location $dir
-    & npm -w web run dev
-  }
-  Start-Job -ScriptBlock $scriptBlock -ArgumentList $RepoRoot | Out-Null
+  $startupCommand = "Set-Location -LiteralPath '$RepoRoot'; npm -w web run dev"
+  Start-Process -FilePath "powershell" -ArgumentList @(
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-Command", $startupCommand
+  ) -WindowStyle Hidden | Out-Null
 }
 
 function Try-PruneDockerCaches {
