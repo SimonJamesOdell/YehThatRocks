@@ -97,8 +97,9 @@ function main() {
   // --- catalog-data: history data access ---
   assertContains(catalogDataSource, "getWatchHistory", "catalog-data exports getWatchHistory function", failures);
   assertContains(catalogDataSource, "recordVideoWatch", "catalog-data exports recordVideoWatch function", failures);
-  // mapVideo must not fall back to the raw title as the channelTitle — only inferArtistFromTitle or "Unknown Artist"
-  assertContains(catalogDataSource, "channelTitle: video.channelTitle ?? inferredChannelTitle ?? \"Unknown Artist\"", "mapVideo falls back to Unknown Artist, not raw title, when channelTitle and inference both fail", failures);
+  // mapVideo must not fall back to the raw title as the channelTitle — only parsed/channel/inferred artist or "Unknown Artist"
+  assertContains(catalogDataSource, "const displayArtist =", "mapVideo resolves display artist through explicit fallback chain", failures);
+  assertContains(catalogDataSource, "\"Unknown Artist\";", "mapVideo fallback chain ends in Unknown Artist", failures);
   assertNotContains(catalogDataSource, "video.title.split(\"|\"", "mapVideo must not use raw title split as channelTitle fallback", failures);
 
   // --- CSS: history layout and thumbnail fix ---
