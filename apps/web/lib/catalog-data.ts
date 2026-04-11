@@ -289,15 +289,6 @@ function parseSimpleTitleSides(title: string) {
   return null;
 }
 
-function isLikelySwappedByTitleOrder(title: string, artist: string | null | undefined, track: string | null | undefined) {
-  // Source titles are user-entered and cannot be trusted for artist/track ordering.
-  // Never auto-swap based on title patterns; require parser/admin corrections instead.
-  void title;
-  void artist;
-  void track;
-  return false;
-}
-
 function inferArtistFromTitle(title: string) {
   const sides = parseSimpleTitleSides(title);
   if (!sides) {
@@ -575,11 +566,6 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
     `;
 
     const existingMeta = existing[0];
-    const existingLikelySwapped = isLikelySwappedByTitleOrder(
-      video.title,
-      existingMeta?.parsedArtist,
-      existingMeta?.parsedTrack,
-    );
     const existingConfidence = Number(existingMeta?.parseConfidence ?? NaN);
     const existingVideoType = (existingMeta?.parsedVideoType ?? "").trim().toLowerCase();
     const hasSufficientMetadata =
@@ -590,20 +576,7 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
       existingConfidence >= PLAYBACK_MIN_CONFIDENCE;
 
     if (hasSufficientMetadata) {
-      if (existingLikelySwapped && existingMeta?.parsedArtist && existingMeta?.parsedTrack) {
-        await prisma.$executeRaw`
-          UPDATE videos
-          SET
-            parsedArtist = ${existingMeta.parsedTrack},
-            parsedTrack = ${existingMeta.parsedArtist},
-            parseMethod = ${"groq-llm-corrected"},
-            parseReason = ${`Auto-corrected swapped artist/track by title order: ${video.id}`},
-            parsedAt = ${new Date()}
-          WHERE id = ${videoRowId}
-        `;
-
-        await refreshArtistProjectionForName(existingMeta.parsedTrack);
-      } else if (existingMeta?.parsedArtist?.trim()) {
+      if (existingMeta?.parsedArtist?.trim()) {
         await refreshArtistProjectionForName(existingMeta.parsedArtist);
       }
       return;
@@ -635,16 +608,13 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
       return;
     }
 
-    const shouldSwapParsed = isLikelySwappedByTitleOrder(video.title, parsed.artist, parsed.track);
-    const correctedArtist = shouldSwapParsed ? parsed.track : parsed.artist;
-    const correctedTrack = shouldSwapParsed ? parsed.artist : parsed.track;
+    const correctedArtist = parsed.artist;
+    const correctedTrack = parsed.track;
     const artistKnown = correctedArtist ? await isKnownArtistName(correctedArtist) : false;
     const adjustedConfidence = artistKnown
       ? Math.max(parsed.confidence ?? 0, 0.9)
       : parsed.confidence;
-    const correctedReasonBase = shouldSwapParsed
-      ? `${parsed.reason ?? ""}${parsed.reason ? " | " : ""}Auto-corrected swapped artist/track by title order.`
-      : parsed.reason;
+    const correctedReasonBase = parsed.reason;
     const correctedReason = artistKnown
       ? `${correctedReasonBase ?? ""}${correctedReasonBase ? " | " : ""}Artist matched known artists catalog.`
       : correctedReasonBase;
@@ -655,7 +625,7 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
         parsedArtist = ${correctedArtist},
         parsedTrack = ${correctedTrack},
         parsedVideoType = ${parsed.videoType},
-        parseMethod = ${shouldSwapParsed ? "groq-llm-corrected" : "groq-llm"},
+        parseMethod = ${"groq-llm"},
         parseReason = ${correctedReason},
         parseConfidence = ${adjustedConfidence},
         parsedAt = ${new Date()}
@@ -669,7 +639,6 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
       track: correctedTrack,
       confidence: adjustedConfidence,
       artistKnown,
-      corrected: shouldSwapParsed,
     });
 
     if (correctedArtist) {
@@ -2586,13 +2555,7 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
     !Number.isFinite(Number(row.parseConfidence ?? NaN)) ||
     Number(row.parseConfidence ?? NaN) < PLAYBACK_MIN_CONFIDENCE;
 
-  const likelySwappedMetadata = isLikelySwappedByTitleOrder(
-    row.title,
-    row.parsedArtist,
-    row.parsedTrack,
-  );
-
-  if (needsMetadataBackfill || likelySwappedMetadata) {
+  if (needsMetadataBackfill) {
     triggerRuntimeMetadataBackfill(row.id, {
       id: normalizedVideoId,
       title: row.title,
@@ -2602,14 +2565,6 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
       description: row.description ?? "Catalog video pending metadata classification.",
       thumbnail: getYouTubeThumbnailUrl(normalizedVideoId),
     });
-
-    if (likelySwappedMetadata) {
-      row = {
-        ...row,
-        parsedArtist: row.parsedTrack,
-        parsedTrack: row.parsedArtist,
-      };
-    }
   }
 
   const decision = evaluatePlaybackMetadataEligibility(row);
@@ -4994,22 +4949,14 @@ export async function getWatchHistory(userId: number, options?: { limit?: number
         // Resolve the best available artist name from the metadata fields.
         // 1. parsedArtist from the DB is the primary candidate.
         // 2. Reject it when it equals the video title (incorrectly stored track name).
-        // 3. Apply swap detection: if parsedArtist looks like the track (it appears on the
-        //    title's track-side) and parsedTrack is different, the pair were stored inverted.
-        // 4. Fall back to the YouTube channelTitle column, then let mapVideo infer from title.
+        // 3. Fall back to the YouTube channelTitle column, then let mapVideo infer from title.
         let resolvedChannelTitle: string | null = null;
 
         const rawParsedArtist = typeof row.parsedArtist === "string" ? row.parsedArtist.trim() : null;
-        const rawParsedTrack = typeof row.parsedTrack === "string" ? row.parsedTrack.trim() : null;
 
         if (rawParsedArtist) {
           const artistMatchesTitle = rawParsedArtist.toLowerCase() === normalizedTitle;
-          const swapped = !artistMatchesTitle && isLikelySwappedByTitleOrder(videoTitle, rawParsedArtist, rawParsedTrack);
-
-          if (swapped && rawParsedTrack) {
-            // parsedArtist and parsedTrack were stored inverted — use parsedTrack as artist.
-            resolvedChannelTitle = rawParsedTrack;
-          } else if (!artistMatchesTitle) {
+          if (!artistMatchesTitle) {
             resolvedChannelTitle = rawParsedArtist;
           }
           // else: parsedArtist == title (bad data), leave resolvedChannelTitle null so mapVideo infers.
