@@ -551,9 +551,10 @@ function ShellDynamicInner({
       const targetHeight = Math.min(window.innerHeight * 0.52, targetWidth * (9 / 16));
       const nextScaleX = Math.max(0.2, Math.min(1, targetWidth / chromeRect.width));
       const nextScaleY = Math.max(0.2, Math.min(1, targetHeight / chromeRect.height));
+      const uniformScale = Math.max(0.2, Math.min(1, Math.min(nextScaleX, nextScaleY)));
 
-      setPlayerDockScaleX(nextScaleX);
-      setPlayerDockScaleY(nextScaleY);
+      setPlayerDockScaleX(uniformScale);
+      setPlayerDockScaleY(uniformScale);
     };
 
     syncPlayerDockScale();
