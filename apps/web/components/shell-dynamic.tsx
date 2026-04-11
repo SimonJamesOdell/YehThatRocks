@@ -356,8 +356,7 @@ function ShellDynamicInner({
   const isPlayerWidthOverlayRoute =
     pathname === "/new"
     || pathname === "/top100"
-    || pathname === "/history"
-    || pathname === "/search";
+    || pathname === "/history";
   const overlayPanelClassName = [
     "favouritesBlind",
     disableOverlayDropAnimation ? "favouritesBlindNoDrop" : "",
@@ -1249,16 +1248,17 @@ function ShellDynamicInner({
       }
 
       let appendedCount = 0;
+      let nextLoadedCount = 0;
       setRelatedVideos((previous) => {
         const previousDeduped = dedupeRelatedRailVideos(dedupeVideoList(previous), currentVideo.id);
         const merged = dedupeRelatedRailVideos(dedupeVideoList([...previous, ...nextVideos]), currentVideo.id)
           .slice(0, RELATED_MAX_VIDEOS);
         appendedCount = merged.length - previousDeduped.length;
+        nextLoadedCount = merged.length;
         return merged;
       });
 
-      const loadedCount = dedupeRelatedRailVideos(dedupeVideoList(relatedVideosRef.current), currentVideo.id).length;
-      if (loadedCount >= RELATED_MAX_VIDEOS || payload.hasMore === false) {
+      if (appendedCount === 0 || nextLoadedCount >= RELATED_MAX_VIDEOS || payload.hasMore === false) {
         setHasMoreRelated(false);
       }
     } catch {

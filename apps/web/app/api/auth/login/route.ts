@@ -107,32 +107,6 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      try {
-        const fallbackRows = await prisma.$queryRaw<Array<{
-          id: number;
-          email: string | null;
-          screenName: string | null;
-          passwordHash: string | null;
-        }>>`
-          SELECT
-            id,
-            email,
-            screen_name AS screenName,
-            password_hash AS passwordHash
-          FROM users
-          WHERE LOWER(TRIM(COALESCE(email, ''))) = ${normalizedEmail}
-             OR LOWER(TRIM(COALESCE(screen_name, ''))) = ${normalizedEmail}
-          ORDER BY id ASC
-          LIMIT 1
-        `;
-
-        user = fallbackRows[0] ?? null;
-      } catch {
-        // Keep the original not-found behavior when raw lookup is unavailable.
-      }
-    }
-
-    if (!user) {
       await recordAuthAudit({
         action: "login",
         success: false,

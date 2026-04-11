@@ -4,7 +4,9 @@ param(
   [string]$VpsHost = $(if ($env:YTR_VPS_HOST) { $env:YTR_VPS_HOST } else { "root@206.189.122.114" }),
   [string]$VpsRepoDir = "/srv/yehthatrocks",
   [string]$ImageBase = "yehthatrocks-web",
-  [switch]$SkipGitPush
+  [switch]$SkipGitPush,
+  # Dump the local Docker DB and restore it on the VPS before deploying.
+  [switch]$RestoreDb
 )
 
 Set-StrictMode -Version Latest
@@ -151,6 +153,63 @@ try {
 
   Write-Host "Transferring image to VPS (no registry)..." -ForegroundColor Yellow
   Transfer-ImageToVps -ImageTag $imageTag -VpsHost $VpsHost
+
+  if ($RestoreDb) {
+    Write-Host "=== DB RESTORE: Dumping local database from Docker ===" -ForegroundColor Magenta
+    $tempDir = [System.IO.Path]::GetTempPath()
+    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $localDumpPath = Join-Path $tempDir "ytr-db-$timestamp.sql"
+    $remoteDumpPath = "/tmp/ytr-db-$timestamp.sql"
+
+    try {
+      # Pipe mysqldump output directly to a local file
+      $dumpArgs = @("compose", "exec", "-T", "db",
+        "mysqldump", "-uyeh", "-pyehthatrocks",
+        "--single-transaction", "--routines", "--triggers", "yeh")
+      Write-Host "> docker $($dumpArgs -join ' ') > $localDumpPath" -ForegroundColor Cyan
+      & docker @dumpArgs | Set-Content -Path $localDumpPath -Encoding UTF8
+      if ($LASTEXITCODE -ne 0) { throw "mysqldump failed" }
+
+      $dumpBytes = (Get-Item $localDumpPath).Length
+      if ($dumpBytes -lt 10240) {
+        throw "Dump is suspiciously small ($dumpBytes bytes) — aborting to protect VPS data."
+      }
+      Write-Host "Dump size: $([math]::Round($dumpBytes / 1MB, 1)) MB" -ForegroundColor Green
+
+      Write-Host "Uploading dump to VPS..." -ForegroundColor Yellow
+      ExecNative -Program "scp" -CommandArgs @($localDumpPath, "${VpsHost}:${remoteDumpPath}")
+
+      Write-Host "Restoring database on VPS..." -ForegroundColor Yellow
+      # Single-quoted heredoc passed via ssh — inner vars intentionally use \$ to be evaluated on server
+      $remoteRestore = @'
+set -euo pipefail
+cd /srv/yehthatrocks
+set -a; source .env.production; set +a
+DB="${MYSQL_DATABASE:-yeh}"
+USER="${MYSQL_USER:-yeh}"
+PASS="${MYSQL_PASSWORD}"
+COMPOSE_CMD="docker compose --env-file .env.production -f docker-compose.prod.yml"
+echo "[db-restore] Stopping web container..."
+$COMPOSE_CMD stop web 2>/dev/null || true
+echo "[db-restore] Dropping and recreating database: $DB"
+$COMPOSE_CMD exec -T db mysql -u"$USER" -p"$PASS" \
+  -e "DROP DATABASE IF EXISTS \`$DB\`; CREATE DATABASE \`$DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+echo "[db-restore] Importing dump..."
+'@
+      $remoteRestore += "`n" + '$COMPOSE_CMD exec -T db mysql -u"$USER" -p"$PASS" "$DB" < ' + $remoteDumpPath
+      $remoteRestore += @'
+
+rm -f REMOTE_DUMP_PATH
+echo "[db-restore] Complete."
+'@
+      $remoteRestore = $remoteRestore -replace 'REMOTE_DUMP_PATH', $remoteDumpPath
+
+      ExecNative -Program "ssh" -CommandArgs @($VpsHost, $remoteRestore)
+    } finally {
+      if (Test-Path $localDumpPath) { Remove-Item -Force $localDumpPath -ErrorAction SilentlyContinue }
+    }
+    Write-Host "=== DB RESTORE complete ===" -ForegroundColor Magenta
+  }
 
   $remoteDeploy = "cd $VpsRepoDir && git pull --ff-only origin $Branch && WEB_IMAGE=$imageTag SKIP_PULL=1 ./deploy/deploy-prod-hot-swap.sh"
   Write-Host "Triggering VPS hot-swap deploy..." -ForegroundColor Yellow
