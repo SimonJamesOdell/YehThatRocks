@@ -945,6 +945,36 @@ export function hasDatabaseUrl() {
   return Boolean(process.env.DATABASE_URL);
 }
 
+function resetGenreCardCaches() {
+  genreCardsCache = undefined;
+  genreListCache = undefined;
+}
+
+async function clearGenreCardThumbnailForVideo(videoId: string) {
+  const normalizedVideoId = normalizeYouTubeVideoId(videoId);
+  if (!normalizedVideoId || !hasDatabaseUrl()) {
+    return;
+  }
+
+  try {
+    const cleared = await prisma.$executeRaw`
+      UPDATE genre_cards
+      SET thumbnail_video_id = NULL
+      WHERE CONVERT(thumbnail_video_id USING utf8mb4) = CONVERT(${normalizedVideoId} USING utf8mb4)
+    `;
+
+    if (Number(cleared) > 0) {
+      resetGenreCardCaches();
+      debugCatalog("clearGenreCardThumbnailForVideo:cleared", {
+        videoId: normalizedVideoId,
+        cleared,
+      });
+    }
+  } catch {
+    // best effort only: category cards are periodically rebuilt by maintenance scripts
+  }
+}
+
 async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
   const now = Date.now();
 
@@ -1321,6 +1351,10 @@ async function persistVideoAvailability(video: PersistableVideoRecord, availabil
     hadExistingSiteVideo: Boolean(existingSiteVideo),
     status: availability.status,
   });
+
+  if (availability.status !== "available") {
+    await clearGenreCardThumbnailForVideo(video.id);
+  }
 
   await maybePersistRuntimeMetadata(persistedVideo.id, video);
 
@@ -2155,6 +2189,8 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
 
     return { pruned: false, deletedVideoRows: 0, reason: "lock-timeout-marked-unavailable" };
   }
+
+  await clearGenreCardThumbnailForVideo(normalizedVideoId);
 
   // Reset hot caches so lists immediately reflect the prune.
   topPoolCache = undefined;
@@ -3907,8 +3943,13 @@ export async function getGenreCards() {
   genreCardsInFlight = (async () => {
     try {
       const rows = await prisma.$queryRaw<Array<{ genre: string; thumbnailVideoId: string | null }>>`
-        SELECT genre, thumbnail_video_id AS thumbnailVideoId
-        FROM genre_cards
+        SELECT gc.genre, MAX(gc.thumbnail_video_id) AS thumbnailVideoId
+        FROM genre_cards gc
+        WHERE gc.thumbnail_video_id IS NOT NULL
+          AND gc.thumbnail_video_id <> ''
+          AND gc.genre IS NOT NULL
+          AND TRIM(gc.genre) <> ''
+        GROUP BY gc.genre
         ORDER BY genre ASC
         LIMIT 1000
       `;
@@ -4259,6 +4300,30 @@ export async function getVideosByGenre(
       storeGenreVideosInCache(resolved);
       return resolved;
     }
+
+      const genreCardFallbackRows = await prisma.$queryRaw<Array<{ videoId: string; title: string; channelTitle: string | null; favourited: number | bigint | null; description: string | null }>>`
+        SELECT
+          v.videoId,
+          v.title,
+          NULL AS channelTitle,
+          v.favourited,
+          v.description
+        FROM genre_cards gc
+        INNER JOIN videos v
+          ON CONVERT(v.videoId USING utf8mb4) = CONVERT(gc.thumbnail_video_id USING utf8mb4)
+        INNER JOIN site_videos sv
+          ON sv.video_id = v.id
+         AND sv.status = 'available'
+        WHERE LOWER(TRIM(gc.genre)) = LOWER(TRIM(${genre}))
+        ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
+        LIMIT 1
+      `;
+
+      if (genreCardFallbackRows.length > 0) {
+        const resolved = genreCardFallbackRows.map(mapVideo);
+        storeGenreVideosInCache(resolved);
+        return resolved;
+      }
 
       const fallback = await getGenreFallback();
       storeGenreVideosInCache(fallback);

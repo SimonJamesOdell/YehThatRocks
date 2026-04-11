@@ -195,6 +195,7 @@ type ShellDynamicProps = {
   initialVideo: VideoRecord;
   initialRelatedVideos: VideoRecord[];
   isLoggedIn: boolean;
+  isAdmin: boolean;
   children: ReactNode;
 };
 
@@ -262,6 +263,7 @@ function ShellDynamicInner({
   initialVideo,
   initialRelatedVideos,
   isLoggedIn,
+  isAdmin,
   children,
 }: ShellDynamicProps) {
   const pathname = usePathname();
@@ -2416,6 +2418,7 @@ function ShellDynamicInner({
                   currentVideo={currentVideo}
                   queue={[currentVideo, ...uniqueRelatedVideos]}
                   isLoggedIn={isAuthenticated}
+                  isAdmin={isAdmin}
                 />
               )}
             </Suspense>

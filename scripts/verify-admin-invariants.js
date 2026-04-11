@@ -70,12 +70,12 @@ function main() {
   assertContains(adminVideosRouteSource, "const csrf = verifySameOrigin(request);", "Admin videos PATCH enforces CSRF", failures);
   assertContains(adminArtistsRouteSource, "const csrf = verifySameOrigin(request);", "Admin artists PATCH enforces CSRF", failures);
 
-  // Admin artists route must remain schema-drift resilient.
-  assertContains(adminVideosRouteSource, "SHOW COLUMNS FROM videos", "Admin videos API introspects live table columns", failures);
-  assertContains(adminVideosRouteSource, "channelTitle: pickColumn(available, [\"channelTitle\", \"channel_title\"])", "Admin videos API supports channel title column drift", failures);
-  assertContains(adminVideosRouteSource, "const orderCol = columns.updatedAt ? columns.updatedAt : columns.id;", "Admin videos API supports ordering fallback when updatedAt column differs", failures);
-  assertContains(adminArtistsRouteSource, "SHOW COLUMNS FROM artists", "Admin artists API introspects live table columns", failures);
-  assertContains(adminArtistsRouteSource, "const name = pickColumn(available, [\"artist\", \"name\"]);", "Admin artists API supports artist/name column drift", failures);
+  // Admin videos/artists APIs use Prisma models and explicit selects.
+  assertContains(adminVideosRouteSource, "const videos = await prisma.video.findMany({", "Admin videos API reads via Prisma video model", failures);
+  assertContains(adminVideosRouteSource, "orderBy: [{ updatedAt: \"desc\" }, { id: \"desc\" }]", "Admin videos API keeps deterministic recency ordering", failures);
+  assertContains(adminVideosRouteSource, "description: true,", "Admin videos API includes description in GET payload", failures);
+  assertContains(adminArtistsRouteSource, "const artists = await prisma.artist.findMany({", "Admin artists API reads via Prisma artist model", failures);
+  assertContains(adminArtistsRouteSource, "orderBy: { name: \"asc\" }", "Admin artists API keeps alphabetical ordering", failures);
 
   if (failures.length > 0) {
     console.error("Admin invariant check failed.");

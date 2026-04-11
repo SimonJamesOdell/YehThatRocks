@@ -1375,11 +1375,25 @@ h1 {
   color: #fff;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.95);
   margin: 0;
-  max-width: 78%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
   line-height: 1.25;
+}
+
+.overlayTitleRow {
+  display: flex;
+  align-items: flex-start;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-width: 0;
+}
+
+.overlayAdminEditBtn {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.28);
 }
 
 .overlayCenter {
@@ -1622,12 +1636,100 @@ h1 {
   gap: 8px;
 }
 
+.adminVideoEditModal {
+  width: min(92vw, 720px);
+}
+
+.adminVideoEditGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.adminVideoEditGrid label {
+  display: grid;
+  gap: 6px;
+}
+
+.adminVideoEditGrid label > span {
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 219, 210, 0.9);
+}
+
+.adminVideoEditGrid input,
+.adminVideoEditGrid textarea {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(9, 7, 7, 0.92);
+  color: #fff2ed;
+  padding: 10px 12px;
+}
+
+.adminVideoEditGrid textarea {
+  resize: vertical;
+}
+
+.adminVideoEditFieldFull {
+  grid-column: 1 / -1;
+}
+
+.adminVideoEditActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.adminVideoEditButton {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: filter 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+}
+
+.adminVideoEditButtonSecondary {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff7f3;
+}
+
+.adminVideoEditButtonSecondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.adminVideoEditButtonPrimary {
+  border-color: rgba(255, 86, 58, 0.56);
+  background: linear-gradient(180deg, #e24526, #8e1b0d);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35), 0 0 14px rgba(255, 70, 36, 0.24);
+}
+
+.adminVideoEditButtonPrimary:hover {
+  filter: brightness(1.08);
+}
+
+.adminVideoEditButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 @media (max-width: 680px) {
   .shareModalGrid {
     grid-template-columns: 1fr;
   }
 
   .shareModalUrlRow {
+    grid-template-columns: 1fr;
+  }
+
+  .adminVideoEditGrid {
     grid-template-columns: 1fr;
   }
 }
