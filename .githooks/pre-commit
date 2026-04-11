@@ -1,0 +1,52 @@
+#!/bin/sh
+# Automatically generate a Prisma migration when prisma/schema.prisma is staged.
+# Uses schema-to-schema diff — no database connection required.
+# The generated migration file is staged and included in the same commit.
+
+set -e
+
+# Nothing to do if schema.prisma isn't part of this commit
+if ! git diff --cached --name-only | grep -q "^prisma/schema\.prisma$"; then
+  exit 0
+fi
+
+echo "[pre-commit] prisma/schema.prisma staged — checking for schema drift..."
+
+# Require prisma to be installed
+PRISMA_BIN="node_modules/.bin/prisma"
+if [ ! -f "$PRISMA_BIN" ]; then
+  echo "[pre-commit] ERROR: node_modules not found. Run 'npm install' before committing." >&2
+  exit 1
+fi
+
+# Retrieve the previously committed schema to diff against.
+# Falls back to empty file on very first commit.
+PREV_SCHEMA=$(mktemp)
+trap 'rm -f "$PREV_SCHEMA"' EXIT
+git show HEAD:prisma/schema.prisma > "$PREV_SCHEMA" 2>/dev/null || printf '' > "$PREV_SCHEMA"
+
+# Generate the migration SQL (pure schema-to-schema diff, no DB needed).
+DIFF=$("$PRISMA_BIN" migrate diff \
+  --from-schema-datamodel "$PREV_SCHEMA" \
+  --to-schema-datamodel prisma/schema.prisma \
+  --script 2>/dev/null) || true
+
+# Check for meaningful SQL (ignore comment-only output)
+MEANINGFUL=$(printf '%s\n' "$DIFF" | grep -v "^--" | grep -v "^[[:space:]]*$" | head -1)
+
+if [ -z "$MEANINGFUL" ]; then
+  echo "[pre-commit] Schema already covered by existing migrations — nothing to generate."
+  exit 0
+fi
+
+# Create a timestamped migration directory and write the SQL
+TIMESTAMP=$(date -u +%Y%m%d%H%M%S)
+MIGRATION_DIR="prisma/migrations/${TIMESTAMP}_auto"
+mkdir -p "$MIGRATION_DIR"
+printf '%s\n' "$DIFF" > "$MIGRATION_DIR/migration.sql"
+
+# Stage the new migration so it's part of this commit
+git add "$MIGRATION_DIR/migration.sql"
+
+echo "[pre-commit] Auto-generated migration staged: $MIGRATION_DIR/migration.sql"
+echo "[pre-commit] This file is now included in your commit."
