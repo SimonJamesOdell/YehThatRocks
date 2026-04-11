@@ -135,7 +135,7 @@ export async function GET(request: NextRequest) {
     ),
   );
   const isCustomRelatedRequest = requestedRelatedCount !== 10 || excludedRelatedIds.length > 0 || requestedRelatedOffset > 0;
-  const usePagedRelatedPool = isCustomRelatedRequest && excludedRelatedIds.length === 0;
+  const usePagedRelatedPool = isCustomRelatedRequest;
   const optionalAuth = await getOptionalApiAuth(request);
   const cacheKey = `${v ?? "__default__"}:u:${optionalAuth?.userId ?? 0}`;
   const now = Date.now();
@@ -235,10 +235,13 @@ export async function GET(request: NextRequest) {
 
     if (usePagedRelatedPool) {
       const relatedPool = await getRelatedPoolForCurrentVideo(currentVideo.id, optionalAuth?.userId);
-      const start = Math.min(requestedRelatedOffset, relatedPool.length);
-      const end = Math.min(relatedPool.length, start + requestedRelatedCount);
-      relatedVideos = relatedPool.slice(start, end);
-      hasMoreForCustomRequest = end < relatedPool.length;
+      const filteredPool = excludedRelatedIds.length > 0
+        ? relatedPool.filter((video) => !excludedRelatedIds.includes(video.id))
+        : relatedPool;
+      const start = Math.min(requestedRelatedOffset, filteredPool.length);
+      const end = Math.min(filteredPool.length, start + requestedRelatedCount);
+      relatedVideos = filteredPool.slice(start, end);
+      hasMoreForCustomRequest = end < filteredPool.length;
     } else {
       const requestedWithProbe = Math.min(30, requestedRelatedCount + 1);
       const fetchedRelatedVideos = await getRelatedVideos(currentVideo.id, {
