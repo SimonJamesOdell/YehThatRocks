@@ -1238,9 +1238,7 @@ function ShellDynamicInner({
       const params = new URLSearchParams();
       params.set("v", currentVideo.id);
       params.set("count", String(RELATED_LOAD_BATCH_SIZE));
-      if (existing.length > 0) {
-        params.set("exclude", existing.map((video) => video.id).join(","));
-      }
+      params.set("offset", String(existing.length));
 
       const response = await fetch(`/api/current-video?${params.toString()}`, {
         cache: "no-store",
