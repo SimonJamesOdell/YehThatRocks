@@ -75,6 +75,8 @@ function main() {
   assertContains(playerExperienceSource, "const shouldAutoAdvance =", "Player computes auto-advance using playlist/deep-link/autoplay guard", failures);
   assertContains(playerExperienceSource, "const [showEndedChoiceOverlay, setShowEndedChoiceOverlay] = useState(false);", "Player tracks autoplay-off end chooser overlay state", failures);
   assertContains(playerExperienceSource, "setShowEndedChoiceOverlay(true);", "Player opens chooser overlay when autoplay-off playback ends", failures);
+  assertNotContains(playerExperienceSource, "void reportWatchEvent(1, \"qualified\", 0, 0);", "Player must not record watch history before real playback progress", failures);
+  assertContains(playerExperienceSource, "const hasPlaybackEvidence = hasPlaybackStartedRef.current || positionSec > 0 || progressPercent > 0;", "Player records watch history only with real playback evidence", failures);
   assertContains(playerExperienceSource, "className=\"playerEndedChoiceOverlay\"", "Player renders chooser overlay container", failures);
   assertContains(playerExperienceSource, "className=\"playerEndedChoiceGrid\"", "Player renders chooser overlay grid", failures);
   assertContains(playerExperienceSource, "const maxEndedChoiceVideos = 12;", "Player caps chooser cards to 12 for larger screens", failures);
