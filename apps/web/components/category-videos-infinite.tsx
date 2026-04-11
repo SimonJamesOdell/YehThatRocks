@@ -57,7 +57,7 @@ export function CategoryVideosInfinite({
   const requestedOffsetsRef = useRef(new Set<number>());
   const seenIdsRef = useRef(new Set(initialVideos.map((video) => video.id)));
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const chunkTriggerRef = useRef<HTMLElement | null>(null);
+  const chunkTriggerRef = useRef<HTMLDivElement | null>(null);
   const hasMoreRef = useRef(initialHasMore);
   const videosCountRef = useRef(initialVideos.length);
   const bufferWarmInFlightRef = useRef(false);
