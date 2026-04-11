@@ -12,8 +12,11 @@ until node -e "
   sleep 2
 done
 
-echo "[entrypoint] MySQL is ready. Pushing Prisma schema..."
-npx prisma db push --skip-generate --accept-data-loss 2>&1 || echo "[entrypoint] prisma db push failed (non-fatal, tables may already exist)"
+echo "[entrypoint] Resolving migration baseline (no-op after first boot)..."
+node /app/docker/migrate-baseline.js
+
+echo "[entrypoint] Applying pending database migrations..."
+npx prisma migrate deploy --schema /app/prisma/schema.prisma
 
 echo "[entrypoint] Seeding database..."
 npx prisma db execute --schema /app/prisma/schema.prisma --file /app/prisma/seed.sql 2>&1 || echo "[entrypoint] Seed skipped (non-fatal, data may already exist)"
