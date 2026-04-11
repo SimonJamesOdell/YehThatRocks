@@ -1634,6 +1634,20 @@ function escapeSqlIdentifier(identifier: string) {
   return `\`${identifier.replace(/`/g, "``")}\``;
 }
 
+type TableColumnInfo = { Field: string; Type: string };
+
+async function loadTableColumns(tableName: string): Promise<TableColumnInfo[]> {
+  try {
+    return await prisma.$queryRawUnsafe<TableColumnInfo[]>(`SHOW COLUMNS FROM ${tableName}`);
+  } catch {
+    return [] as TableColumnInfo[];
+  }
+}
+
+function pickColumn(columns: TableColumnInfo[], names: string[]) {
+  return columns.find((column) => names.includes(column.Field));
+}
+
 function mapArtistProjectionRow(row: {
   displayName: string;
   slug: string;
@@ -2053,16 +2067,6 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
     ),
   );
 
-  const loadTableColumns = async (tableName: string) => {
-    try {
-      return await prisma.$queryRawUnsafe<Array<{ Field: string; Type: string }>>(
-        `SHOW COLUMNS FROM ${tableName}`,
-      );
-    } catch {
-      return [] as Array<{ Field: string; Type: string }>;
-    }
-  };
-
   const [siteVideoColumns, playlistColumns, favouriteColumns, artistVideoColumns, messageColumns, relatedColumns] = await Promise.all([
     loadTableColumns("site_videos"),
     loadTableColumns("playlistitems"),
@@ -2071,9 +2075,6 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
     loadTableColumns("messages"),
     loadTableColumns("related"),
   ]);
-
-  const pickColumn = (columns: Array<{ Field: string; Type: string }>, names: string[]) =>
-    columns.find((column) => names.includes(column.Field));
 
   const executeWithRetry = async (query: string, params: unknown[]) => {
     const maxAttempts = 4;
@@ -4667,19 +4668,6 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
     }
 
     {
-      const loadTableColumns = async (tableName: string) => {
-        try {
-          return await prisma.$queryRawUnsafe<Array<{ Field: string; Type: string }>>(
-            `SHOW COLUMNS FROM ${tableName}`,
-          );
-        } catch {
-          return [] as Array<{ Field: string; Type: string }>;
-        }
-      };
-
-      const pickColumn = (columns: Array<{ Field: string; Type: string }>, names: string[]) =>
-        columns.find((column) => names.includes(column.Field));
-
       const [playlistColumns, videoColumns] = await Promise.all([
         loadTableColumns("playlistitems"),
         loadTableColumns("videos"),
@@ -5345,19 +5333,6 @@ export async function removePlaylistItem(playlistId: string, playlistItemIndex: 
       return null;
     }
 
-    const loadTableColumns = async (tableName: string) => {
-      try {
-        return await prisma.$queryRawUnsafe<Array<{ Field: string; Type: string }>>(
-          `SHOW COLUMNS FROM ${tableName}`,
-        );
-      } catch {
-        return [] as Array<{ Field: string; Type: string }>;
-      }
-    };
-
-    const pickColumn = (columns: Array<{ Field: string; Type: string }>, names: string[]) =>
-      columns.find((column) => names.includes(column.Field));
-
     const playlistColumns = await loadTableColumns("playlistitems");
     const playlistRef = pickColumn(playlistColumns, ["playlist_id", "playlistId", "playlistid"]);
     const rowIdRef = pickColumn(playlistColumns, ["id"]);
@@ -5455,19 +5430,6 @@ export async function reorderPlaylistItems(playlistId: string, fromIndex: number
     if (!ownerColumn) {
       return null;
     }
-
-    const loadTableColumns = async (tableName: string) => {
-      try {
-        return await prisma.$queryRawUnsafe<Array<{ Field: string; Type: string }>>(
-          `SHOW COLUMNS FROM ${tableName}`,
-        );
-      } catch {
-        return [] as Array<{ Field: string; Type: string }>;
-      }
-    };
-
-    const pickColumn = (columns: Array<{ Field: string; Type: string }>, names: string[]) =>
-      columns.find((column) => names.includes(column.Field));
 
     const playlistColumns = await loadTableColumns("playlistitems");
     const playlistRef = pickColumn(playlistColumns, ["playlist_id", "playlistId", "playlistid"]);
