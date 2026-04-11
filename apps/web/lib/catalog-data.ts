@@ -2720,7 +2720,7 @@ export async function getRelatedVideos(
               WHERE sv.video_id = v.id
                 AND (sv.status IS NULL OR sv.status <> 'available')
             )
-          ORDER BY COALESCE(v.updated_at, v.created_at) DESC, v.id DESC
+          ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
           LIMIT 50
         `;
 
@@ -2931,7 +2931,7 @@ export async function getNewestVideos(count = 20, offset = 0) {
         WHERE sv.video_id = v.id
           AND sv.status = 'available'
       )
-      ORDER BY COALESCE(v.updated_at, v.created_at) DESC, v.id DESC
+      ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
       LIMIT ${safeCount}
       OFFSET ${safeOffset}
     `;
@@ -2960,7 +2960,7 @@ export async function getNewestVideos(count = 20, offset = 0) {
       FROM videos v
       WHERE v.videoId IS NOT NULL
         AND CHAR_LENGTH(v.videoId) = 11
-      ORDER BY COALESCE(v.updated_at, v.created_at) DESC, v.id DESC
+      ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
       LIMIT ${safeCount}
       OFFSET ${safeOffset}
     `;
