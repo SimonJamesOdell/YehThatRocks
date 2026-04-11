@@ -2571,7 +2571,7 @@ export async function getRelatedVideos(
   videoId: string,
   options?: { userId?: number; count?: number; excludeVideoIds?: string[] },
 ) {
-  const requestedCount = Math.max(1, Math.min(30, Math.floor(options?.count ?? 10)));
+  const requestedCount = Math.max(1, Math.min(120, Math.floor(options?.count ?? 10)));
   const excludedIds = new Set(
     (options?.excludeVideoIds ?? [])
       .map((id) => normalizeYouTubeVideoId(id) ?? id)
