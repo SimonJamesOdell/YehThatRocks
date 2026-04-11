@@ -2822,8 +2822,9 @@ export async function getRelatedVideos(
 
     const [directRelatedRows, sameArtistRows, newestRows, topPoolRows, sameGenreRows] = dbQueryResult;
 
-    // Hard-exclude the current video and anything the user has already watched.
-    const blockedIds = new Set<string>([normalizedVideoId, ...watchedIds, ...excludedIds]);
+    // Prefer unseen videos first. If we cannot reach targetCount, relax watched exclusion
+    // so the rail can still fill toward its max size.
+    const strictBlockedIds = new Set<string>([normalizedVideoId, ...watchedIds, ...excludedIds]);
     const assembledRows: RankedVideoRow[] = [];
 
     const buckets = [
@@ -2835,15 +2836,25 @@ export async function getRelatedVideos(
     ];
 
     for (const bucket of buckets) {
-      assembledRows.push(...selectUniqueVideoRows(bucket.rows, blockedIds, bucket.quota));
+      assembledRows.push(...selectUniqueVideoRows(bucket.rows, strictBlockedIds, bucket.quota));
       if (assembledRows.length >= targetCount) {
         break;
       }
     }
 
+    const overflowPool = dedupeRankedRows(buckets.flatMap((bucket) => bucket.rows));
+
     if (assembledRows.length < targetCount) {
-      const overflowPool = dedupeRankedRows(buckets.flatMap((bucket) => bucket.rows));
-      assembledRows.push(...selectUniqueVideoRows(overflowPool, blockedIds, targetCount - assembledRows.length));
+      assembledRows.push(...selectUniqueVideoRows(overflowPool, strictBlockedIds, targetCount - assembledRows.length));
+    }
+
+    if (assembledRows.length < targetCount && watchedIds.size > 0) {
+      const relaxedBlockedIds = new Set<string>([
+        normalizedVideoId,
+        ...excludedIds,
+        ...assembledRows.map((row) => row.videoId),
+      ]);
+      assembledRows.push(...selectUniqueVideoRows(overflowPool, relaxedBlockedIds, targetCount - assembledRows.length));
     }
 
     const mapped = assembledRows.slice(0, targetCount).map(mapVideo);
