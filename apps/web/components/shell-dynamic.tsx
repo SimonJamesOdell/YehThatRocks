@@ -326,6 +326,8 @@ function ShellDynamicInner({
   const relatedStackRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadInFlightRef = useRef(false);
+  const relatedFetchOffsetRef = useRef<number | null>(null);
+  const relatedNoProgressBatchesRef = useRef(0);
   const relatedScrollRafRef = useRef<number | null>(null);
   const relatedVideosRef = useRef<VideoRecord[]>([]);
   const watchNextRailRef = useRef<HTMLElement | null>(null);
@@ -1234,10 +1236,13 @@ function ShellDynamicInner({
 
     try {
       const existing = dedupeRelatedRailVideos(dedupeVideoList(relatedVideosRef.current), currentVideo.id);
+      if (relatedFetchOffsetRef.current === null || relatedFetchOffsetRef.current < existing.length) {
+        relatedFetchOffsetRef.current = existing.length;
+      }
       const params = new URLSearchParams();
       params.set("v", currentVideo.id);
       params.set("count", String(RELATED_LOAD_BATCH_SIZE));
-      params.set("offset", String(existing.length));
+      params.set("offset", String(relatedFetchOffsetRef.current));
 
       const response = await fetch(`/api/current-video?${params.toString()}`, {
         cache: "no-store",
@@ -1249,6 +1254,7 @@ function ShellDynamicInner({
 
       const payload = (await response.json()) as CurrentVideoResolvePayload & { hasMore?: boolean };
       const nextVideos = Array.isArray(payload.relatedVideos) ? payload.relatedVideos : [];
+      relatedFetchOffsetRef.current = (relatedFetchOffsetRef.current ?? existing.length) + nextVideos.length;
 
       if (nextVideos.length === 0) {
         setHasMoreRelated(false);
@@ -1266,9 +1272,16 @@ function ShellDynamicInner({
         return merged;
       });
 
+      if (appendedCount === 0) {
+        relatedNoProgressBatchesRef.current += 1;
+      } else {
+        relatedNoProgressBatchesRef.current = 0;
+      }
+
       if (
         nextLoadedCount >= RELATED_MAX_VIDEOS
         || payload.hasMore === false
+        || relatedNoProgressBatchesRef.current >= 2
       ) {
         setHasMoreRelated(false);
       }
@@ -1318,6 +1331,8 @@ function ShellDynamicInner({
 
   useEffect(() => {
     relatedLoadInFlightRef.current = false;
+    relatedFetchOffsetRef.current = null;
+    relatedNoProgressBatchesRef.current = 0;
     setIsLoadingMoreRelated(false);
     setHasMoreRelated(true);
   }, [currentVideo.id]);
