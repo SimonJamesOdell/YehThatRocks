@@ -54,6 +54,7 @@ type RankedVideoRow = {
   videoId: string;
   title: string;
   channelTitle: string | null;
+  parsedArtist?: string | null;
   favourited: number;
   description: string | null;
 };
@@ -1048,6 +1049,7 @@ function mapVideo(video: {
   videoId: string;
   title: string;
   channelTitle: string | null;
+  parsedArtist?: string | null;
   favourited: number | bigint | null;
   description: string | null;
 }): VideoRecord {
@@ -1058,10 +1060,16 @@ function mapVideo(video: {
 
   const inferredChannelTitle = inferArtistFromTitle(video.title);
 
+  const displayArtist =
+    video.parsedArtist?.trim() ||
+    video.channelTitle ||
+    inferredChannelTitle ||
+    "Unknown Artist";
+
   return {
     id: video.videoId,
     title: video.title,
-    channelTitle: video.channelTitle ?? inferredChannelTitle ?? "Unknown Artist",
+    channelTitle: displayArtist,
     genre: "Rock / Metal",
     favourited: Number.isFinite(favouritedValue) ? favouritedValue : 0,
     description: video.description ?? "Legacy video entry from the retained Yeh database.",
@@ -1232,7 +1240,12 @@ async function fetchOEmbedVideo(videoId: string): Promise<PersistableVideoRecord
 async function persistVideoAvailability(video: PersistableVideoRecord, availability: VideoAvailability) {
   const persistedTitle = truncate(video.title, 255);
   const persistedDescription = video.description;
-  const persistedChannelTitle = truncate(video.channelTitle ?? "", 255) || null;
+  const GENERIC_CHANNEL_FALLBACKS = new Set(["unknown artist", "youtube", "unknown"]);
+  const rawChannelTitle = video.channelTitle?.trim() ?? "";
+  const persistedChannelTitle =
+    rawChannelTitle && !GENERIC_CHANNEL_FALLBACKS.has(rawChannelTitle.toLowerCase())
+      ? truncate(rawChannelTitle, 255)
+      : null;
   const persistedTimestamp = new Date();
   const hasChannelTitleColumn = await ensureVideoChannelTitleColumnAvailable();
 
@@ -2998,6 +3011,7 @@ export async function getNewestVideos(count = 20, offset = 0) {
         v.videoId,
         v.title,
         NULL AS channelTitle,
+        v.parsedArtist,
         v.favourited,
         v.description
       FROM videos v
@@ -3031,6 +3045,7 @@ export async function getNewestVideos(count = 20, offset = 0) {
         v.videoId,
         v.title,
         NULL AS channelTitle,
+        v.parsedArtist,
         v.favourited,
         v.description
       FROM videos v
