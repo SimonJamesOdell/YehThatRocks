@@ -98,6 +98,12 @@ UPDATE messages SET content = '' WHERE content IS NULL;
 ALTER TABLE messages MODIFY content TEXT NOT NULL;
 
 -- ------------------------------------------------------------------
+-- playlistnames: add user_id/is_private expected by Prisma
+-- ------------------------------------------------------------------
+CALL ytr_exec_if_col_missing('playlistnames', 'user_id', 'ALTER TABLE playlistnames ADD COLUMN user_id INT NULL');
+CALL ytr_exec_if_col_missing('playlistnames', 'is_private', 'ALTER TABLE playlistnames ADD COLUMN is_private TINYINT(1) NULL DEFAULT 0');
+
+-- ------------------------------------------------------------------
 -- playlistitems: legacy playlistId/videoId(varchar) -> playlist_id/video_id(int fk to videos.id)
 -- ------------------------------------------------------------------
 CALL ytr_exec_if_col_missing('playlistitems', 'playlist_id', 'ALTER TABLE playlistitems ADD COLUMN playlist_id INT NULL');
