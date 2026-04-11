@@ -3,6 +3,7 @@ FROM node:22-alpine AS base
 # --- Dependencies ---
 FROM base AS deps
 WORKDIR /app
+RUN apk add --no-cache git
 COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY packages/config/package.json packages/config/package.json
