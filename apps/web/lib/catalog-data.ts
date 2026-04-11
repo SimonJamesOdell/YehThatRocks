@@ -2857,6 +2857,35 @@ export async function getRelatedVideos(
       assembledRows.push(...selectUniqueVideoRows(overflowPool, relaxedBlockedIds, targetCount - assembledRows.length));
     }
 
+    if (assembledRows.length < targetCount) {
+      const remaining = targetCount - assembledRows.length;
+      const backfillPool = await prisma.$queryRaw<RankedVideoRow[]>`
+        SELECT
+          v.videoId,
+          v.title,
+          COALESCE(v.parsedArtist, NULL) AS channelTitle,
+          v.favourited,
+          v.description
+        FROM videos v
+        WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+          AND EXISTS (
+            SELECT 1
+            FROM site_videos sv
+            WHERE sv.video_id = v.id
+              AND sv.status = 'available'
+          )
+        ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
+        LIMIT ${Math.max(remaining * 6, 300)}
+      `;
+
+      const backfillBlockedIds = new Set<string>([
+        normalizedVideoId,
+        ...excludedIds,
+        ...assembledRows.map((row) => row.videoId),
+      ]);
+      assembledRows.push(...selectUniqueVideoRows(dedupeRankedRows(backfillPool), backfillBlockedIds, remaining));
+    }
+
     const mapped = assembledRows.slice(0, targetCount).map(mapVideo);
     if (useCachedDefaultQuery) {
       relatedVideosCache.set(cacheKey, {
