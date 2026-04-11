@@ -180,31 +180,30 @@ try {
       ExecNative -Program "scp" -CommandArgs @($localDumpPath, "${VpsHost}:${remoteDumpPath}")
 
       Write-Host "Restoring database on VPS..." -ForegroundColor Yellow
-      # Write restore script to a temp file, upload and run it — avoids quoting hell over SSH.
       $localScriptPath = Join-Path $tempDir "ytr-restore-$timestamp.sh"
       $remoteScriptPath = "/tmp/ytr-restore-$timestamp.sh"
       try {
-        $restoreScript = @"
-#!/bin/sh
-set -eu
-cd /srv/yehthatrocks
-. .env.production
-DB=`${MYSQL_DATABASE:-yeh}
-USR=`${MYSQL_USER:-yeh}
-PASS=`${MYSQL_PASSWORD}
-echo '[db-restore] Stopping web container...'
-docker compose --env-file /srv/yehthatrocks/.env.production -f /srv/yehthatrocks/docker-compose.prod.yml stop web 2>/dev/null || true
-echo '[db-restore] Dropping and recreating database...'
-docker compose --env-file /srv/yehthatrocks/.env.production -f /srv/yehthatrocks/docker-compose.prod.yml exec -T db mysql -u"`$USR" -p"`$PASS" -e "DROP DATABASE IF EXISTS \`\`$DB\`\`; CREATE DATABASE \`\`$DB\`\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-echo '[db-restore] Importing dump...'
-docker compose --env-file /srv/yehthatrocks/.env.production -f /srv/yehthatrocks/docker-compose.prod.yml exec -T db mysql -u"`$USR" -p"`$PASS" "`$DB" < $remoteDumpPath
-rm -f $remoteDumpPath $remoteScriptPath
-echo '[db-restore] Complete.'
-"@
-        # Write with LF line endings (Unix)
-        [System.IO.File]::WriteAllText($localScriptPath, ($restoreScript -replace "`r`n", "`n"))
+        # Build script as an array of plain lines — no escaping ambiguity
+        $lines = @(
+          '#!/bin/sh',
+          'set -eu',
+          'cd /srv/yehthatrocks',
+          '. .env.production',
+          'DB=${MYSQL_DATABASE:-yeh}',
+          'USR=${MYSQL_USER:-yeh}',
+          'PASS=${MYSQL_PASSWORD}',
+          "echo '[db-restore] Stopping web container...'",
+          'docker compose --env-file /srv/yehthatrocks/.env.production -f /srv/yehthatrocks/docker-compose.prod.yml stop web 2>/dev/null || true',
+          "echo '[db-restore] Dropping and recreating database...'",
+          'docker compose --env-file /srv/yehthatrocks/.env.production -f /srv/yehthatrocks/docker-compose.prod.yml exec -T db mysql -u"$USR" -p"$PASS" -e "DROP DATABASE IF EXISTS \`$DB\`; CREATE DATABASE \`$DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"',
+          "echo '[db-restore] Importing dump...'",
+          ('docker compose --env-file /srv/yehthatrocks/.env.production -f /srv/yehthatrocks/docker-compose.prod.yml exec -T db mysql -u"$USR" -p"$PASS" "$DB" < ' + $remoteDumpPath),
+          ('rm -f ' + $remoteDumpPath + ' ' + $remoteScriptPath),
+          "echo '[db-restore] Complete.'"
+        )
+        [System.IO.File]::WriteAllText($localScriptPath, ($lines -join "`n") + "`n")
         ExecNative -Program "scp" -CommandArgs @($localScriptPath, "${VpsHost}:${remoteScriptPath}")
-        ExecNative -Program "ssh" -CommandArgs @($VpsHost, "chmod +x $remoteScriptPath && $remoteScriptPath")
+        ExecNative -Program "ssh" -CommandArgs @($VpsHost, "chmod +x $remoteScriptPath && sh $remoteScriptPath")
       } finally {
         if (Test-Path $localScriptPath) { Remove-Item -Force $localScriptPath -ErrorAction SilentlyContinue }
       }
