@@ -1233,8 +1233,7 @@ h1 {
 .playerFrame {
   position: relative;
   width: 100%;
-  flex: 0 0 auto;
-  height: 100%;
+  flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
   border-radius: 10px;
@@ -1307,11 +1306,61 @@ h1 {
   .playerChromeDockedDesktop .overlayPlayIcon {
     transform: translateX(2px);
   }
+
+  .playerChromeDockedDesktop .primaryActions {
+    position: absolute;
+    left: 0;
+    top: calc(var(--player-dock-artists-offset, 0px) + var(--player-dock-height, 0px) + 10px);
+    width: var(--left-rail-width);
+    padding: 8px;
+    gap: 8px;
+    justify-content: flex-start;
+    align-items: center;
+    transform: translateX(calc(-1 * (var(--left-rail-width) + 12px)));
+    transform-origin: top left;
+    transition: transform 760ms cubic-bezier(0.22, 1, 0.36, 1), top 760ms cubic-bezier(0.22, 1, 0.36, 1);
+    z-index: 9;
+  }
+
+  .playerChromeDockedDesktop .primaryActions button {
+    min-height: 40px;
+    padding: 10px 12px;
+  }
+
+  .playerChromeDockedDesktop .primaryActionNavIconButton,
+  .playerChromeDockedDesktop .primaryActionIconButton {
+    width: 44px;
+    min-width: 44px;
+    min-height: 40px;
+  }
+
+  .playerChromeDockedDesktop .primaryNavGlyph {
+    font-size: 1.5rem;
+  }
+
+  .playerChromeDockedDesktop .primaryActionGlyph {
+    font-size: 1.2rem;
+  }
+
+  .playerChromeDockedDesktop .shareUrlField {
+    gap: 6px;
+    max-width: 100%;
+  }
+
+  .playerChromeDockedDesktop .shareUrlLabel {
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+  }
+
+  .playerChromeDockedDesktop .shareUrlInput {
+    max-width: 100%;
+    padding: 8px 9px;
+    font-size: 0.8rem;
+  }
 }
 
 .playerLoadingFallback {
-  flex: 0 0 auto;
-  height: 100%;
+  flex: 1 1 auto;
   min-height: 0;
   border-radius: 10px;
   background: #000;
