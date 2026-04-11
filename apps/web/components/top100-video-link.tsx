@@ -43,10 +43,7 @@ function canWarmTop100Selection() {
 }
 
 function getLeaderboardThumbnail(track: { id: string; thumbnail?: string | null }) {
-  const thumbnail = track.thumbnail?.trim();
-  return thumbnail && thumbnail.length > 0
-    ? thumbnail
-    : `https://i.ytimg.com/vi/${encodeURIComponent(track.id)}/mqdefault.jpg`;
+  return `https://i.ytimg.com/vi/${encodeURIComponent(track.id)}/mqdefault.jpg`;
 }
 
 export function Top100VideoLink({ track, index, isAuthenticated = true }: Top100VideoLinkProps) {

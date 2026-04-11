@@ -374,6 +374,7 @@ function ShellDynamicInner({
   const [isOverlayClosing, setIsOverlayClosing] = useState(false);
   const [isFooterRevealActive, setIsFooterRevealActive] = useState(false);
   const [isDockTransitioning, setIsDockTransitioning] = useState(false);
+  const [startupSelectionRefreshTick, setStartupSelectionRefreshTick] = useState(0);
   const overlayCloseTimeoutRef = useRef<number | null>(null);
   const footerRevealTimeoutRef = useRef<number | null>(null);
   const shouldRunFooterRevealRef = useRef(false);
@@ -525,13 +526,20 @@ function ShellDynamicInner({
   }, [clearDesktopIntroTimers, syncDesktopIntroTarget]);
 
   const handleBrandLogoClick = useCallback(() => {
+    // Force startup resolver to run again after logo navigation clears ?v.
+    hasResolvedInitialVideoRef.current = false;
+    startupHydratedVideoIdRef.current = null;
     shouldReplayDesktopIntroOnHomeRef.current = true;
+
+    if (pathname === "/" && !requestedVideoId) {
+      setStartupSelectionRefreshTick((value) => value + 1);
+    }
 
     if (pathname === "/") {
       shouldReplayDesktopIntroOnHomeRef.current = false;
       startDesktopIntroSequence();
     }
-  }, [pathname, startDesktopIntroSequence]);
+  }, [pathname, requestedVideoId, startDesktopIntroSequence]);
   const isLeftRailSuppressed = isOverlayRoute || isMobileCommunityCollapsed;
   const artistLetterParam = searchParams.get("letter");
   const activeArtistLetter =
@@ -1041,7 +1049,7 @@ function ShellDynamicInner({
         window.clearTimeout(retryTimeoutId);
       }
     };
-  }, [pathname, requestedVideoId, router, searchParamsKey]);
+  }, [pathname, requestedVideoId, router, searchParamsKey, startupSelectionRefreshTick]);
 
   useEffect(() => {
     logFlow("requested-video:effect", {
