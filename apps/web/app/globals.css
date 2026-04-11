@@ -1233,7 +1233,8 @@ h1 {
 .playerFrame {
   position: relative;
   width: 100%;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   border-radius: 10px;
@@ -1253,14 +1254,13 @@ h1 {
   .playerChromeDockedDesktop .playerFrame,
   .playerChromeDockedDesktop .playerLoadingFallback {
     width: var(--left-rail-width);
+    height: min(52vh, calc(var(--left-rail-width) * 0.5625));
     aspect-ratio: 16 / 9;
-    flex: 0 0 auto;
-    max-height: 52vh;
     transform: translateX(calc(-1 * (var(--left-rail-width) + 12px))) translateY(0);
     transition:
       transform 760ms cubic-bezier(0.22, 1, 0.36, 1),
       width 760ms cubic-bezier(0.22, 1, 0.36, 1),
-      max-height 760ms cubic-bezier(0.22, 1, 0.36, 1),
+      height 760ms cubic-bezier(0.22, 1, 0.36, 1),
       border-radius 760ms cubic-bezier(0.22, 1, 0.36, 1);
     will-change: transform, width;
   }
@@ -1310,7 +1310,8 @@ h1 {
 }
 
 .playerLoadingFallback {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+  height: 100%;
   min-height: 0;
   border-radius: 10px;
   background: #000;
