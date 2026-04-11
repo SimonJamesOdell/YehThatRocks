@@ -240,12 +240,14 @@ export async function GET(request: NextRequest) {
       relatedVideos = relatedPool.slice(start, end);
       hasMoreForCustomRequest = end < relatedPool.length;
     } else {
-      relatedVideos = await getRelatedVideos(currentVideo.id, {
+      const requestedWithProbe = Math.min(30, requestedRelatedCount + 1);
+      const fetchedRelatedVideos = await getRelatedVideos(currentVideo.id, {
         userId: optionalAuth?.userId,
-        count: requestedRelatedCount,
+        count: requestedWithProbe,
         excludeVideoIds: excludedRelatedIds,
       });
-      hasMoreForCustomRequest = relatedVideos.length >= requestedRelatedCount;
+      hasMoreForCustomRequest = fetchedRelatedVideos.length > requestedRelatedCount;
+      relatedVideos = fetchedRelatedVideos.slice(0, requestedRelatedCount);
     }
 
     const targetRelatedCount = 10;
