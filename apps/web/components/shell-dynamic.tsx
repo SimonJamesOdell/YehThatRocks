@@ -334,6 +334,7 @@ function ShellDynamicInner({
   const relatedScrollRafRef = useRef<number | null>(null);
   const relatedVideosRef = useRef<VideoRecord[]>([]);
   const watchNextRailRef = useRef<HTMLElement | null>(null);
+  const playerChromeRef = useRef<HTMLDivElement | null>(null);
   const prevFadeVideoIdRef = useRef<string | null>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const favouritesBlindInnerRef = useRef<HTMLDivElement | null>(null);
@@ -350,6 +351,8 @@ function ShellDynamicInner({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestionIdx, setActiveSuggestionIdx] = useState(-1);
   const [artistsPanelDockOffset, setArtistsPanelDockOffset] = useState(0);
+  const [playerDockScaleX, setPlayerDockScaleX] = useState(1);
+  const [playerDockScaleY, setPlayerDockScaleY] = useState(1);
   const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestAbortRef = useRef<AbortController | null>(null);
   const latestSuggestQueryRef = useRef("");
@@ -383,8 +386,12 @@ function ShellDynamicInner({
     shouldDockDesktopPlayer ? "playerChromeDockedDesktop" : "",
     shouldDockUnderArtistsAlphabet ? "playerChromeDockedArtists" : "",
   ].filter(Boolean).join(" ");
-  const playerChromeStyle = shouldDockUnderArtistsAlphabet
-    ? ({ "--player-dock-artists-offset": `${artistsPanelDockOffset}px` } as CSSProperties)
+  const playerChromeStyle = shouldDockDesktopPlayer
+    ? ({
+      "--player-dock-artists-offset": `${artistsPanelDockOffset}px`,
+      "--player-dock-scale-x": String(playerDockScaleX),
+      "--player-dock-scale-y": String(playerDockScaleY),
+    } as CSSProperties)
     : undefined;
   const isMobileCommunityCollapsed = isMobileViewport && !isMobileCommunityOpen;
   const isLeftRailSuppressed = isOverlayRoute || isMobileCommunityCollapsed;
@@ -511,6 +518,50 @@ function ShellDynamicInner({
       window.removeEventListener("resize", syncArtistsPanelOffset);
     };
   }, [shouldDockUnderArtistsAlphabet, pathname]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const syncPlayerDockScale = () => {
+      if (!shouldDockDesktopPlayer || window.innerWidth < 1181) {
+        setPlayerDockScaleX(1);
+        setPlayerDockScaleY(1);
+        return;
+      }
+
+      const chrome = playerChromeRef.current;
+      const leftRail = document.querySelector(".leftRail") as HTMLElement | null;
+      if (!chrome || !leftRail) {
+        setPlayerDockScaleX(1);
+        setPlayerDockScaleY(1);
+        return;
+      }
+
+      const chromeRect = chrome.getBoundingClientRect();
+      const railRect = leftRail.getBoundingClientRect();
+      if (chromeRect.width <= 0 || chromeRect.height <= 0 || railRect.width <= 0) {
+        setPlayerDockScaleX(1);
+        setPlayerDockScaleY(1);
+        return;
+      }
+
+      const targetWidth = railRect.width;
+      const targetHeight = Math.min(window.innerHeight * 0.52, targetWidth * (9 / 16));
+      const nextScaleX = Math.max(0.2, Math.min(1, targetWidth / chromeRect.width));
+      const nextScaleY = Math.max(0.2, Math.min(1, targetHeight / chromeRect.height));
+
+      setPlayerDockScaleX(nextScaleX);
+      setPlayerDockScaleY(nextScaleY);
+    };
+
+    syncPlayerDockScale();
+    window.addEventListener("resize", syncPlayerDockScale);
+    return () => {
+      window.removeEventListener("resize", syncPlayerDockScale);
+    };
+  }, [shouldDockDesktopPlayer, pathname]);
 
   useEffect(() => {
     if (requestedVideoId) {
@@ -2419,7 +2470,7 @@ function ShellDynamicInner({
         </aside>
 
         <section className="playerStage">
-          <div className={playerChromeClassName} style={playerChromeStyle}>
+          <div ref={playerChromeRef} className={playerChromeClassName} style={playerChromeStyle}>
             {deniedPlaybackMessage ? (
               <div className="playbackDeniedBanner" role="status" aria-live="polite">
                 <span>{deniedPlaybackMessage}</span>

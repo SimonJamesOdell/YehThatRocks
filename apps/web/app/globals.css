@@ -1253,23 +1253,23 @@ h1 {
 
   .playerChromeDockedDesktop .playerFrame,
   .playerChromeDockedDesktop .playerLoadingFallback {
-    width: var(--left-rail-width);
-    height: min(52vh, calc(var(--left-rail-width) * 0.5625));
-    aspect-ratio: 16 / 9;
-    transform: translateX(calc(-1 * (var(--left-rail-width) + 12px))) translateY(0);
+    width: 100%;
+    height: 100%;
+    transform-origin: top left;
     transition:
       transform 760ms cubic-bezier(0.22, 1, 0.36, 1),
-      width 760ms cubic-bezier(0.22, 1, 0.36, 1),
-      height 760ms cubic-bezier(0.22, 1, 0.36, 1),
       border-radius 760ms cubic-bezier(0.22, 1, 0.36, 1);
-    will-change: transform, width;
+    will-change: transform;
+    transform: translateX(calc(-1 * (var(--left-rail-width) + 12px))) translateY(0)
+      scale(var(--player-dock-scale-x, 1), var(--player-dock-scale-y, 1));
   }
 
   .playerChromeDockedArtists .playerFrame,
   .playerChromeDockedArtists .playerLoadingFallback {
     transform:
       translateX(calc(-1 * (var(--left-rail-width) + 12px)))
-      translateY(var(--player-dock-artists-offset, 0px));
+      translateY(var(--player-dock-artists-offset, 0px))
+      scale(var(--player-dock-scale-x, 1), var(--player-dock-scale-y, 1));
   }
 
   .playerChromeDockedDesktop .overlayTitleRow {
