@@ -2665,13 +2665,16 @@ export async function getRelatedVideos(
 
     const currentArtist = currentRows[0]?.parsedArtist?.trim() || null;
 
-    // Fetch user's watch history in parallel with the video candidate queries.
-    // This lets us hard-exclude already-watched videos from every bucket.
+    // Fetch watch history and favourites in parallel with candidate queries.
+    // Seen videos are excluded unless they are in the user's favourites.
     const watchedIdsPromise = options?.userId
       ? fetchRecentlyWatchedIds(options.userId)
       : Promise.resolve(new Set<string>());
+    const favouriteIdsPromise = options?.userId
+      ? fetchFavouriteVideoIds(options.userId)
+      : Promise.resolve(new Set<string>());
 
-    const [dbQueryResult, watchedIds] = await Promise.all([
+    const [dbQueryResult, watchedIds, favouriteIds] = await Promise.all([
       withSoftTimeout(
         `getRelatedVideos:${normalizedVideoId}`,
         queryTimeoutMs,
@@ -2856,13 +2859,17 @@ export async function getRelatedVideos(
       },
       ),
       watchedIdsPromise,
+      favouriteIdsPromise,
     ]);
 
     const [directRelatedRows, sameArtistRows, newestRows, topPoolRows, sameGenreRows] = dbQueryResult;
 
     // Prefer unseen videos first. If we cannot reach targetCount, relax watched exclusion
     // so the rail can still fill toward its max size.
-    const strictBlockedIds = new Set<string>([normalizedVideoId, ...watchedIds, ...excludedIds]);
+    const watchedIdsToExclude = new Set(
+      Array.from(watchedIds).filter((videoId) => !favouriteIds.has(videoId)),
+    );
+    const strictBlockedIds = new Set<string>([normalizedVideoId, ...watchedIdsToExclude, ...excludedIds]);
     const assembledRows: RankedVideoRow[] = [];
 
     const buckets = [
@@ -4818,6 +4825,24 @@ async function fetchRecentlyWatchedIds(userId: number, limit = 300): Promise<Set
       LIMIT ${limit}
     `;
     return new Set(rows.map((r) => r.videoId).filter((id): id is string => Boolean(id)));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+async function fetchFavouriteVideoIds(userId: number, limit = 1000): Promise<Set<string>> {
+  try {
+    const rows = await prisma.favourite.findMany({
+      where: { userid: userId },
+      select: { videoId: true },
+      take: limit,
+    });
+
+    return new Set(
+      rows
+        .map((row) => row.videoId)
+        .filter((id): id is string => Boolean(id)),
+    );
   } catch {
     return new Set<string>();
   }
