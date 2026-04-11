@@ -11,6 +11,39 @@ type ArtistWikiPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+function resolveInternalWikiHref(rawUrl: string) {
+  if (!rawUrl) {
+    return null;
+  }
+
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+    return trimmed;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    const host = parsed.hostname.toLowerCase();
+    const isKnownInternalHost =
+      host === "localhost"
+      || host === "127.0.0.1"
+      || host === "yehthatrocks.com"
+      || host === "www.yehthatrocks.com";
+
+    if (!isKnownInternalHost) {
+      return null;
+    }
+
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return null;
+  }
+}
+
 function renderList(items: string[], emptyLabel = "No verified entries yet.") {
   if (items.length === 0) {
     return <p>{emptyLabel}</p>;
@@ -45,6 +78,11 @@ export default async function ArtistWikiPage({ params, searchParams }: ArtistWik
 
   const artistPagePath = getArtistPagePath(artist.name);
   const artistPageHref = artistPagePath ? withVideoContext(artistPagePath, videoId, resume === "1") : "/artists";
+  const filteredSources = wiki.sources.filter((source) => {
+    const internalHref = resolveInternalWikiHref(source.url);
+    const title = source.title.trim().toLowerCase();
+    return !internalHref && !title.startsWith("yehthatrocks:");
+  });
 
   return (
     <>
@@ -72,6 +110,9 @@ export default async function ArtistWikiPage({ params, searchParams }: ArtistWik
             <article className="artistWikiSection artistWikiOverviewSection">
               <h2>Overview</h2>
               <p>{wiki.sections.overview}</p>
+              <Link href={artistPageHref} className="artistWikiOverviewAction">
+                More by {artist.name} &gt;
+              </Link>
             </article>
 
             {wiki.images[0] ? (
@@ -125,11 +166,13 @@ export default async function ArtistWikiPage({ params, searchParams }: ArtistWik
 
           <article className="artistWikiSection">
             <h2>Sources</h2>
-            {wiki.sources.length > 0 ? (
+            {filteredSources.length > 0 ? (
               <ul className="artistWikiSourceList">
-                {wiki.sources.map((source) => (
+                {filteredSources.map((source) => (
                   <li key={source.url}>
-                    <a href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a>
+                    <a href={source.url} target="_blank" rel="noopener noreferrer">
+                      {source.title}
+                    </a>
                   </li>
                 ))}
               </ul>

@@ -29,6 +29,12 @@ function assertContains(source, needle, description, failures) {
   }
 }
 
+function assertNotContains(source, needle, description, failures) {
+  if (source.includes(needle)) {
+    failures.push(`${description} (unexpected: ${needle})`);
+  }
+}
+
 function assertMatches(source, pattern, description, failures) {
   if (!pattern.test(source)) {
     failures.push(`${description} (pattern: ${pattern})`);
@@ -81,8 +87,7 @@ function main() {
   assertContains(resultsSource, "<Fragment key={artist.slug}>", "Artist list rendering remains keyed and stable", failures);
 
   // Artist detail and wiki route invariants.
-  assertContains(artistPageSource, 'Link href={wikiHref} className="categoryHeaderWikiLink"', "Artist detail page exposes a wiki header link", failures);
-  assertContains(artistPageSource, 'withVideoContext(`/artist/${encodeURIComponent(artist.slug)}/wiki`, v, resume === "1")', "Artist detail page preserves video context when linking to wiki", failures);
+  assertNotContains(artistPageSource, 'className="categoryHeaderWikiLink"', "Artist detail page no longer exposes a wiki header link", failures);
   assertContains(artistWikiPageSource, 'const wiki = await getOrCreateArtistWiki(artist.name, slug);', "Artist wiki page resolves cached-or-generated wiki content", failures);
   assertContains(artistWikiPageSource, 'className="artistWikiTopRow"', "Artist wiki page renders overview and image top row", failures);
   assertContains(artistWikiPageSource, '<h2>Formation and Backstory</h2>', "Artist wiki page renders formation section", failures);

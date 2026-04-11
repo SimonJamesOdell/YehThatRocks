@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
@@ -51,6 +51,29 @@ function getLeaderboardThumbnail(track: { id: string; thumbnail?: string | null 
 
 export function Top100VideoLink({ track, index, isAuthenticated = true }: Top100VideoLinkProps) {
   const hasWarmedRef = useRef(false);
+  const clickFlashTimeoutRef = useRef<number | null>(null);
+  const [isClickFlashing, setIsClickFlashing] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (clickFlashTimeoutRef.current !== null) {
+        window.clearTimeout(clickFlashTimeoutRef.current);
+        clickFlashTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const triggerClickFlash = useCallback(() => {
+    setIsClickFlashing(true);
+    if (clickFlashTimeoutRef.current !== null) {
+      window.clearTimeout(clickFlashTimeoutRef.current);
+    }
+
+    clickFlashTimeoutRef.current = window.setTimeout(() => {
+      setIsClickFlashing(false);
+      clickFlashTimeoutRef.current = null;
+    }, 220);
+  }, []);
 
   const stagePendingSelection = useCallback(() => {
     if (typeof window !== "undefined") {
@@ -71,6 +94,7 @@ export function Top100VideoLink({ track, index, isAuthenticated = true }: Top100
   }, [track]);
 
   const warmSelection = useCallback(() => {
+    triggerClickFlash();
     stagePendingSelection();
     if (hasWarmedRef.current) {
       return;
@@ -84,10 +108,10 @@ export function Top100VideoLink({ track, index, isAuthenticated = true }: Top100
     void fetch(`/api/current-video?v=${encodeURIComponent(track.id)}`, {
       cache: "no-store",
     }).catch(() => undefined);
-  }, [stagePendingSelection, track.id]);
+  }, [stagePendingSelection, track.id, triggerClickFlash]);
 
   return (
-    <article className="trackCard leaderboardCard top100CardWithPlaylistAction">
+    <article className={`trackCard leaderboardCard top100CardWithPlaylistAction${isClickFlashing ? " top100CardClickFlash" : ""}`}>
       <Link
         href={`/?v=${track.id}&resume=1`}
         className="linkedCard leaderboardTrackLink"

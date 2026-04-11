@@ -34,6 +34,42 @@ function Clean-RepoTransientCaches([string]$RepoRoot) {
   Remove-PathIfPresent (Join-Path $RepoRoot "apps\web\.next")
 }
 
+# Returns the PID of the process listening on port 3000, or $null.
+function Get-DevServerPid {
+  $conn = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($conn) { return $conn.OwningProcess }
+  return $null
+}
+
+# Kills the process on port 3000 (if any) and returns whether it was running.
+function Stop-DevServer {
+  $pid3000 = Get-DevServerPid
+  if (-not $pid3000) { return $false }
+
+  Write-Host "Stopping local dev server (PID $pid3000) before cache cleanup..." -ForegroundColor DarkYellow
+  Stop-Process -Id $pid3000 -Force -ErrorAction SilentlyContinue
+
+  # Wait up to 5s for the port to free.
+  $waited = 0
+  while ((Get-DevServerPid) -and $waited -lt 5) {
+    Start-Sleep -Milliseconds 400
+    $waited += 0.4
+  }
+
+  return $true
+}
+
+# Restarts the dev server in the background from the given repo root.
+function Start-DevServer([string]$RepoRoot) {
+  Write-Host "Restarting local dev server..." -ForegroundColor DarkYellow
+  $startupCommand = "Set-Location -LiteralPath '$RepoRoot'; npm -w web run dev"
+  Start-Process -FilePath "powershell" -ArgumentList @(
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-Command", $startupCommand
+  ) -WindowStyle Hidden | Out-Null
+}
+
 function Try-PruneDockerCaches {
   $dockerInfoOutput = & docker info 2>&1 | Out-String
   if ($LASTEXITCODE -ne 0) {
@@ -52,8 +88,10 @@ if (-not $PrepareOnly -and [string]::IsNullOrWhiteSpace($VpsHost)) {
 }
 
 Push-Location $RepoDir
+$devServerWasRunning = $false
 try {
   if (-not $SkipLocalCleanup) {
+    $devServerWasRunning = Stop-DevServer
     Clean-RepoTransientCaches -RepoRoot $RepoDir
   }
 
@@ -98,5 +136,8 @@ try {
     Try-PruneDockerCaches
   }
 } finally {
+  if ($devServerWasRunning) {
+    Start-DevServer -RepoRoot $RepoDir
+  }
   Pop-Location
 }
