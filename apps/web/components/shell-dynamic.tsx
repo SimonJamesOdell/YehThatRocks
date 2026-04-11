@@ -1244,6 +1244,7 @@ function ShellDynamicInner({
       const nextVideos = Array.isArray(payload.relatedVideos) ? payload.relatedVideos : [];
 
       if (nextVideos.length === 0) {
+        setHasMoreRelated(false);
         return;
       }
 

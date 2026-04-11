@@ -20,6 +20,7 @@ const BASELINE_MIGRATIONS = [
   '20260405_genre_cards',
   '20260406_user_profile_fields',
   '20260410_watch_history',
+  '20260411000000_align_legacy_schema',
 ];
 
 function getDatabaseNameFromUrl() {
@@ -53,9 +54,26 @@ async function columnExists(prisma, dbName, tableName, columnName) {
   return Array.isArray(rows) && rows.length > 0;
 }
 
-async function getAppliedMigrationNames(prisma) {
-  const rows = await prisma.$queryRaw`SELECT migration_name FROM _prisma_migrations`;
-  return new Set(rows.map((row) => row.migration_name));
+async function getMigrationStatusMap(prisma) {
+  const rows = await prisma.$queryRaw`
+    SELECT migration_name, finished_at
+    FROM _prisma_migrations
+  `;
+
+  const statusByName = new Map();
+  for (const row of rows) {
+    const name = row.migration_name;
+    const finished = Boolean(row.finished_at);
+    const previous = statusByName.get(name) ?? { hasFinished: false, hasFailedOrPending: false };
+    if (finished) {
+      previous.hasFinished = true;
+    } else {
+      previous.hasFailedOrPending = true;
+    }
+    statusByName.set(name, previous);
+  }
+
+  return statusByName;
 }
 
 async function migrationArtifactExists(prisma, dbName, migrationName) {
@@ -85,6 +103,16 @@ async function migrationArtifactExists(prisma, dbName, migrationName) {
       );
     case '20260410_watch_history':
       return tableExists(prisma, dbName, 'watch_history');
+    case '20260411000000_align_legacy_schema':
+      return (
+        (await columnExists(prisma, dbName, 'users', 'screen_name')) &&
+        (await columnExists(prisma, dbName, 'users', 'password_hash')) &&
+        (await columnExists(prisma, dbName, 'videos', 'created_at')) &&
+        (await columnExists(prisma, dbName, 'videos', 'updated_at')) &&
+        (await columnExists(prisma, dbName, 'videos', 'viewCount')) &&
+        (await columnExists(prisma, dbName, 'playlistitems', 'playlist_id')) &&
+        (await columnExists(prisma, dbName, 'playlistitems', 'video_id'))
+      );
     default:
       return false;
   }
@@ -95,7 +123,7 @@ async function main() {
   try {
     const dbName = getDatabaseNameFromUrl();
     const hasMigrationsTable = await tableExists(prisma, dbName, '_prisma_migrations');
-    const applied = hasMigrationsTable ? await getAppliedMigrationNames(prisma) : new Set();
+    const migrationStatusByName = hasMigrationsTable ? await getMigrationStatusMap(prisma) : new Map();
     let resolved = 0;
 
     if (!hasMigrationsTable) {
@@ -103,7 +131,8 @@ async function main() {
     }
 
     for (const name of BASELINE_MIGRATIONS) {
-      if (applied.has(name)) {
+      const status = migrationStatusByName.get(name);
+      if (status?.hasFinished) {
         continue;
       }
       const artifactExists = await migrationArtifactExists(prisma, dbName, name);
