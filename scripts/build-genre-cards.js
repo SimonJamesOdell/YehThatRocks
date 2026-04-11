@@ -222,12 +222,18 @@ async function main() {
   if (missing.length > 0) {
     console.log(`\nStrategies 5-6 (artists table) for ${missing.length} genres...`);
 
-    // Load artists with genre columns
-    const artistRows = await prisma.$queryRaw`
-      SELECT LOWER(TRIM(name)) AS nameLow, genre1, genre2, genre3, genre4, genre5, genre6
-      FROM artists
-      WHERE name IS NOT NULL AND TRIM(name) <> ''
+    const artistColumns = await prisma.$queryRaw`
+      SHOW COLUMNS FROM artists
     `;
+    const artistFieldNames = new Set(artistColumns.map((column) => column.Field));
+    const artistNameColumn = artistFieldNames.has("artist") ? "artist" : artistFieldNames.has("name") ? "name" : "artist";
+
+    // Load artists with genre columns
+    const artistRows = await prisma.$queryRawUnsafe(`
+      SELECT LOWER(TRIM(${artistNameColumn})) AS nameLow, genre1, genre2, genre3, genre4, genre5, genre6
+      FROM artists
+      WHERE ${artistNameColumn} IS NOT NULL AND TRIM(${artistNameColumn}) <> ''
+    `);
 
     // artByName: normalised artist name → array of genre values (lowercased)
     const artByName = new Map();
@@ -245,7 +251,7 @@ async function main() {
       JOIN site_videos sv ON sv.video_id = v.id AND sv.status = 'available'
       WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
         AND v.parsedArtist IS NOT NULL AND v.parsedArtist <> ''
-      ORDER BY v.favourited DESC, v.views DESC, v.id ASC
+      ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC
     `;
 
     const artistBestVideo = new Map();
@@ -286,12 +292,12 @@ async function main() {
     console.log(`\nStrategy 7 (video text relevance) for ${stillMissing.length} genres...`);
 
     const textRows = await prisma.$queryRaw`
-      SELECT v.videoId, v.title, v.description, v.favourited, v.views
+      SELECT v.videoId, v.title, v.description, v.favourited, COALESCE(v.viewCount, 0) AS viewCount
       FROM videos v
       JOIN site_videos sv ON sv.video_id = v.id AND sv.status = 'available'
       WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
         AND v.title IS NOT NULL
-      ORDER BY v.favourited DESC, v.views DESC, v.id ASC
+      ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC
       LIMIT 25000
     `;
 
@@ -308,7 +314,7 @@ async function main() {
       }
 
       // Guardrail to avoid very weak, random assignments.
-      if (best && bestScore >= 42) {
+      if (best && bestScore >= 36) {
         results.set(genre, best);
       }
     }

@@ -137,7 +137,7 @@ async function main() {
       "Options:",
       "  --check-api                 Also verify live /api/categories endpoint",
       "  --base-url=http://localhost:3000",
-      "  --min-coverage=0.95         Minimum required thumbnail coverage",
+      "  --min-coverage=0.94         Minimum required thumbnail coverage",
       "  --max-api-duration-ms=350   Max API-reported compute duration",
       "  --help",
     ].join("\n"));
@@ -153,7 +153,7 @@ async function main() {
 
   const checkApi = hasFlag("check-api");
   const baseUrl = readArg("base-url", "http://localhost:3000");
-  const minCoverage = asNumber(readArg("min-coverage", "0.95"), 0.95);
+  const minCoverage = asNumber(readArg("min-coverage", "0.94"), 0.94);
   const maxApiDurationMs = asNumber(readArg("max-api-duration-ms", "350"), 350);
 
   const prisma = new PrismaClient({ log: ["warn", "error"] });

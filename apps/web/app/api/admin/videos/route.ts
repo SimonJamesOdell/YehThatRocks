@@ -63,6 +63,7 @@ export async function GET(request: NextRequest) {
       parsedVideoType: true,
       parseConfidence: true,
       channelTitle: true,
+      description: true,
       updatedAt: true,
     },
   });
