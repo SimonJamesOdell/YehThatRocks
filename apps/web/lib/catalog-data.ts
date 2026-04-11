@@ -952,25 +952,57 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
     return topPoolCache.rows.slice(0, limit);
   }
 
-  const rows = await prisma.$queryRaw<RankedVideoRow[]>`
-    SELECT
-      v.videoId,
-      v.title,
-      NULL AS channelTitle,
-      v.favourited,
-      v.description
-    FROM videos v
-    WHERE v.videoId IS NOT NULL
-      AND CHAR_LENGTH(v.videoId) = 11
-      AND EXISTS (
-        SELECT 1
-        FROM site_videos sv
-        WHERE sv.video_id = v.id
-          AND sv.status = 'available'
-      )
-    ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
-    LIMIT ${limit}
-  `;
+  let rows: RankedVideoRow[] = [];
+
+  try {
+    rows = await prisma.$queryRaw<RankedVideoRow[]>`
+      SELECT
+        v.videoId,
+        v.title,
+        NULL AS channelTitle,
+        COALESCE(fv.favouriteCount, 0) AS favourited,
+        v.description
+      FROM videos v
+      LEFT JOIN (
+        SELECT
+          f.videoId,
+          COUNT(DISTINCT f.userid) AS favouriteCount
+        FROM favourites f
+        WHERE f.videoId IS NOT NULL
+        GROUP BY f.videoId
+      ) fv ON fv.videoId = v.videoId
+      WHERE v.videoId IS NOT NULL
+        AND CHAR_LENGTH(v.videoId) = 11
+        AND EXISTS (
+          SELECT 1
+          FROM site_videos sv
+          WHERE sv.video_id = v.id
+            AND sv.status = 'available'
+        )
+      ORDER BY COALESCE(fv.favouriteCount, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
+      LIMIT ${limit}
+    `;
+  } catch {
+    rows = await prisma.$queryRaw<RankedVideoRow[]>`
+      SELECT
+        v.videoId,
+        v.title,
+        NULL AS channelTitle,
+        v.favourited,
+        v.description
+      FROM videos v
+      WHERE v.videoId IS NOT NULL
+        AND CHAR_LENGTH(v.videoId) = 11
+        AND EXISTS (
+          SELECT 1
+          FROM site_videos sv
+          WHERE sv.video_id = v.id
+            AND sv.status = 'available'
+        )
+      ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
+      LIMIT ${limit}
+    `;
+  }
 
   const dedupedRows = dedupeRankedRows(rows);
 
