@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { FormEvent, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { FormEvent, Suspense, useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { CSSProperties } from "react";
 
@@ -220,6 +220,10 @@ const RELATED_BACKGROUND_PREFETCH_DELAY_MS = 650;
 const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
 const PREFETCH_FAILURE_MAX_BACKOFF_MS = 20_000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
+const DOCK_MOVE_DURATION_MS = 520;
+const DOCK_CONTROLS_FADE_DURATION_MS = 220;
+const DOCK_CONTROLS_FADE_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - DOCK_CONTROLS_FADE_DURATION_MS);
+const FOOTER_REVEAL_DURATION_MS = 240;
 
 function dedupeVideoList(videos: VideoRecord[]) {
   return videos.filter(
@@ -300,6 +304,7 @@ function ShellDynamicInner({
   const [playlistMutationMessage, setPlaylistMutationMessage] = useState<string | null>(null);
   const [playlistMutationTone, setPlaylistMutationTone] = useState<"info" | "success" | "error">("info");
   const [playlistMutationPendingVideoId, setPlaylistMutationPendingVideoId] = useState<string | null>(null);
+  const [clickedRelatedVideoId, setClickedRelatedVideoId] = useState<string | null>(null);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const [flashingChatTabs, setFlashingChatTabs] = useState<Record<FlashableChatMode, boolean>>({
     global: false,
@@ -327,6 +332,7 @@ function ShellDynamicInner({
   const prewarmedThumbnailIdsRef = useRef<Set<string>>(new Set());
   const pendingRelatedVideosRef = useRef<VideoRecord[] | null>(null);
   const relatedTransitionTimeoutRef = useRef<number | null>(null);
+  const relatedClickFlashTimeoutRef = useRef<number | null>(null);
   const relatedStackRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadInFlightRef = useRef(false);
@@ -353,6 +359,14 @@ function ShellDynamicInner({
   const [artistsPanelDockOffset, setArtistsPanelDockOffset] = useState(0);
   const [playerDockScaleX, setPlayerDockScaleX] = useState(1);
   const [playerDockScaleY, setPlayerDockScaleY] = useState(1);
+  const [playerDockHeightPx, setPlayerDockHeightPx] = useState(0);
+  const [isOverlayClosing, setIsOverlayClosing] = useState(false);
+  const [isFooterRevealActive, setIsFooterRevealActive] = useState(false);
+  const [isDockTransitioning, setIsDockTransitioning] = useState(false);
+  const overlayCloseTimeoutRef = useRef<number | null>(null);
+  const footerRevealTimeoutRef = useRef<number | null>(null);
+  const shouldRunFooterRevealRef = useRef(false);
+  const dockTransitionTimeoutRef = useRef<number | null>(null);
   const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestAbortRef = useRef<AbortController | null>(null);
   const latestSuggestQueryRef = useRef("");
@@ -363,11 +377,7 @@ function ShellDynamicInner({
   const activeSuggestionIdxRef = useRef(-1);
 
   const isOverlayRoute = pathname !== "/";
-  const disableOverlayDropAnimation =
-    pathname === "/categories"
-    || pathname.startsWith("/categories/")
-    || pathname === "/playlists"
-    || pathname.startsWith("/playlists/");
+  const disableOverlayDropAnimation = false;
   const isPlayerWidthOverlayRoute =
     pathname === "/new"
     || pathname === "/top100"
@@ -376,21 +386,27 @@ function ShellDynamicInner({
     "favouritesBlind",
     disableOverlayDropAnimation ? "favouritesBlindNoDrop" : "",
     isPlayerWidthOverlayRoute ? "favouritesBlindPlayerWidth" : "",
+    isOverlayClosing ? "favouritesBlindClosing" : "",
   ].filter(Boolean).join(" ");
   const shouldRunChat = isAuthenticated && !isOverlayRoute;
+  const shouldDisableRelatedRailTransition = pathname === "/new";
   const isArtistsIndexRoute = pathname === "/artists";
   const shouldDockDesktopPlayer = isOverlayRoute;
-  const shouldDockUnderArtistsAlphabet = isOverlayRoute && isArtistsIndexRoute;
+  const shouldDockUnderArtistsAlphabet = shouldDockDesktopPlayer && isArtistsIndexRoute;
   const playerChromeClassName = [
     "playerChrome",
     shouldDockDesktopPlayer ? "playerChromeDockedDesktop" : "",
     shouldDockUnderArtistsAlphabet ? "playerChromeDockedArtists" : "",
+    shouldDockDesktopPlayer && isDockTransitioning ? "playerChromeDockTransitioning" : "",
+    isOverlayClosing ? "playerChromeUndocking" : "",
+    !isOverlayRoute && isFooterRevealActive ? "playerChromeFooterReveal" : "",
   ].filter(Boolean).join(" ");
   const playerChromeStyle = shouldDockDesktopPlayer
     ? ({
       "--player-dock-artists-offset": `${artistsPanelDockOffset}px`,
       "--player-dock-scale-x": String(playerDockScaleX),
       "--player-dock-scale-y": String(playerDockScaleY),
+      "--player-dock-height": `${playerDockHeightPx}px`,
     } as CSSProperties)
     : undefined;
   const isMobileCommunityCollapsed = isMobileViewport && !isMobileCommunityOpen;
@@ -426,6 +442,57 @@ function ShellDynamicInner({
     return filteredQuery ? `${pathname}?${filteredQuery}` : pathname;
   })();
   const routeLoadingLabel = pathname.endsWith("/wiki") ? "Loading wiki" : "Loading video";
+
+  const handleOverlayVideoLinkClickCapture = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    if (!isOverlayRoute || isOverlayClosing) {
+      return;
+    }
+
+    if (
+      event.defaultPrevented
+      || event.button !== 0
+      || event.metaKey
+      || event.ctrlKey
+      || event.shiftKey
+      || event.altKey
+    ) {
+      return;
+    }
+
+    const target = event.target as Element | null;
+    const anchor = target?.closest("a") as HTMLAnchorElement | null;
+    if (!anchor) {
+      return;
+    }
+
+    if (anchor.classList.contains("favouritesBlindClose")) {
+      const closeHref = anchor.getAttribute("href") ?? "/";
+      event.preventDefault();
+      window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", {
+        detail: { href: closeHref },
+      }));
+      return;
+    }
+
+    const url = new URL(anchor.href, window.location.href);
+    if (url.origin !== window.location.origin || url.pathname !== "/") {
+      return;
+    }
+
+    const targetVideoId = url.searchParams.get("v");
+    if (!targetVideoId) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("v", targetVideoId);
+    params.delete('resume');
+
+    const nextQuery = params.toString();
+    router.push(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+  }, [isOverlayClosing, isOverlayRoute, pathname, router, searchParams]);
 
   useEffect(() => {
     if (!isAuthenticated && rightRailMode === "playlist") {
@@ -466,8 +533,118 @@ function ShellDynamicInner({
   useEffect(() => {
     if (isOverlayRoute) {
       setIsMobileCommunityOpen(false);
+      return;
+    }
+
+    setIsOverlayClosing(false);
+
+    if (!shouldRunFooterRevealRef.current) {
+      setIsFooterRevealActive(false);
+      return;
+    }
+
+    shouldRunFooterRevealRef.current = false;
+    setIsFooterRevealActive(true);
+
+    if (typeof window !== "undefined") {
+      if (footerRevealTimeoutRef.current !== null) {
+        window.clearTimeout(footerRevealTimeoutRef.current);
+      }
+
+      footerRevealTimeoutRef.current = window.setTimeout(() => {
+        setIsFooterRevealActive(false);
+        footerRevealTimeoutRef.current = null;
+      }, FOOTER_REVEAL_DURATION_MS);
     }
   }, [isOverlayRoute]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleOverlayCloseRequest = (event: Event) => {
+      const closeEvent = event as CustomEvent<{ href?: string }>;
+      const href = closeEvent.detail?.href;
+      if (!href) {
+        return;
+      }
+
+      const closeUrl = new URL(href, window.location.origin);
+      if (closeUrl.origin !== window.location.origin) {
+        window.location.assign(closeUrl.toString());
+        return;
+      }
+
+      const fallbackHomeHref = `/?v=${encodeURIComponent(currentVideo.id)}&resume=1`;
+      const nextHref = closeUrl.pathname === "/"
+        ? `${closeUrl.pathname}${closeUrl.search}${closeUrl.hash}`
+        : fallbackHomeHref;
+
+      if (!isOverlayRoute) {
+        router.push(nextHref);
+        return;
+      }
+
+      if (overlayCloseTimeoutRef.current !== null) {
+        window.clearTimeout(overlayCloseTimeoutRef.current);
+        overlayCloseTimeoutRef.current = null;
+      }
+
+      setIsOverlayClosing(true);
+      shouldRunFooterRevealRef.current = true;
+      overlayCloseTimeoutRef.current = window.setTimeout(() => {
+        overlayCloseTimeoutRef.current = null;
+        router.push(nextHref);
+      }, DOCK_MOVE_DURATION_MS);
+    };
+
+    window.addEventListener("ytr:overlay-close-request", handleOverlayCloseRequest);
+    return () => {
+      window.removeEventListener("ytr:overlay-close-request", handleOverlayCloseRequest);
+      if (overlayCloseTimeoutRef.current !== null) {
+        window.clearTimeout(overlayCloseTimeoutRef.current);
+        overlayCloseTimeoutRef.current = null;
+      }
+
+      if (footerRevealTimeoutRef.current !== null) {
+        window.clearTimeout(footerRevealTimeoutRef.current);
+        footerRevealTimeoutRef.current = null;
+      }
+
+      setIsFooterRevealActive(false);
+      shouldRunFooterRevealRef.current = false;
+    };
+  }, [currentVideo.id, isOverlayRoute, router]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (dockTransitionTimeoutRef.current !== null) {
+      window.clearTimeout(dockTransitionTimeoutRef.current);
+      dockTransitionTimeoutRef.current = null;
+    }
+
+    if (!shouldDockDesktopPlayer) {
+      setIsDockTransitioning(false);
+      return;
+    }
+
+    setIsDockTransitioning(true);
+    dockTransitionTimeoutRef.current = window.setTimeout(() => {
+      setIsDockTransitioning(false);
+      dockTransitionTimeoutRef.current = null;
+    }, DOCK_CONTROLS_FADE_DELAY_MS);
+
+    return () => {
+      if (dockTransitionTimeoutRef.current !== null) {
+        window.clearTimeout(dockTransitionTimeoutRef.current);
+        dockTransitionTimeoutRef.current = null;
+      }
+    };
+  }, [shouldDockDesktopPlayer, shouldDockUnderArtistsAlphabet]);
 
   useEffect(() => {
     setIsAuthenticated(isLoggedIn);
@@ -509,7 +686,7 @@ function ShellDynamicInner({
         return;
       }
 
-      setArtistsPanelDockOffset(panel.offsetHeight + 12);
+      setArtistsPanelDockOffset(panel.offsetHeight + 8);
     };
 
     syncArtistsPanelOffset();
@@ -528,38 +705,35 @@ function ShellDynamicInner({
       if (!shouldDockDesktopPlayer || window.innerWidth < 1181) {
         setPlayerDockScaleX(1);
         setPlayerDockScaleY(1);
+        setPlayerDockHeightPx(0);
         return;
       }
 
       const chrome = playerChromeRef.current;
       const leftRail = document.querySelector(".leftRail") as HTMLElement | null;
       if (!chrome || !leftRail) {
-        setPlayerDockScaleX(1);
-        setPlayerDockScaleY(1);
         return;
       }
 
       const frame = chrome.querySelector(".playerFrame") as HTMLElement | null;
       if (!frame) {
-        setPlayerDockScaleX(1);
-        setPlayerDockScaleY(1);
         return;
       }
 
-      const frameRect = frame.getBoundingClientRect();
+      const baseFrameWidth = frame.offsetWidth;
+      const baseFrameHeight = frame.offsetHeight;
       const railRect = leftRail.getBoundingClientRect();
-      if (frameRect.width <= 0 || railRect.width <= 0) {
-        setPlayerDockScaleX(1);
-        setPlayerDockScaleY(1);
+      if (baseFrameWidth <= 0 || railRect.width <= 0) {
         return;
       }
 
       const targetWidth = railRect.width;
       // Lock scaling to final rail width while preserving aspect ratio via uniform scale.
-      const uniformScale = Math.max(0.2, Math.min(1, targetWidth / frameRect.width));
+      const uniformScale = Math.max(0.2, Math.min(1, targetWidth / baseFrameWidth));
 
       setPlayerDockScaleX(uniformScale);
       setPlayerDockScaleY(uniformScale);
+      setPlayerDockHeightPx(baseFrameHeight * uniformScale);
     };
 
     syncPlayerDockScale();
@@ -1495,15 +1669,30 @@ function ShellDynamicInner({
   // Kick off the fade-out as soon as the user selects a new video so the
   // animation overlaps the API round-trip rather than adding to it.
   useEffect(() => {
+    if (shouldDisableRelatedRailTransition) {
+      return;
+    }
+
     if (!requestedVideoId || requestedVideoId === prevFadeVideoIdRef.current) return;
     prevFadeVideoIdRef.current = requestedVideoId;
     setRelatedTransitionPhase((prev) => (prev === "idle" ? "fading-out" : prev));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedVideoId]);
+  }, [requestedVideoId, shouldDisableRelatedRailTransition]);
 
   useEffect(() => {
     const currentSignature = displayedRelatedVideos.map((video) => video.id).join("|");
     const nextSignature = sourceRelatedVideos.map((video) => video.id).join("|");
+
+    if (shouldDisableRelatedRailTransition) {
+      pendingRelatedVideosRef.current = null;
+      if (currentSignature !== nextSignature) {
+        setDisplayedRelatedVideos(sourceRelatedVideos);
+      }
+      if (relatedTransitionPhase !== "idle") {
+        setRelatedTransitionPhase("idle");
+      }
+      return;
+    }
 
     if (currentSignature === nextSignature) {
       return;
@@ -1537,9 +1726,14 @@ function ShellDynamicInner({
     if (relatedTransitionPhase === "idle") {
       setRelatedTransitionPhase("fading-out");
     }
-  }, [displayedRelatedVideos, sourceRelatedVideos, relatedTransitionPhase]);
+  }, [displayedRelatedVideos, sourceRelatedVideos, relatedTransitionPhase, shouldDisableRelatedRailTransition]);
 
   useEffect(() => {
+    if (shouldDisableRelatedRailTransition) {
+      setRelatedTransitionPhase("idle");
+      return;
+    }
+
     if (relatedTransitionTimeoutRef.current !== null) {
       window.clearTimeout(relatedTransitionTimeoutRef.current);
       relatedTransitionTimeoutRef.current = null;
@@ -1581,7 +1775,16 @@ function ShellDynamicInner({
         relatedTransitionTimeoutRef.current = null;
       }
     };
-  }, [displayedRelatedVideos.length, relatedTransitionPhase]);
+  }, [displayedRelatedVideos.length, relatedTransitionPhase, shouldDisableRelatedRailTransition]);
+
+  useEffect(() => {
+    return () => {
+      if (relatedClickFlashTimeoutRef.current !== null) {
+        window.clearTimeout(relatedClickFlashTimeoutRef.current);
+        relatedClickFlashTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const visibleNavItems = (
     isAuthenticated
@@ -2317,7 +2520,14 @@ function ShellDynamicInner({
         </div>
       </header>
 
-      <section className={isOverlayRoute ? "heroGrid heroGridOverlayRoute" : "heroGrid"}>
+      <section
+        className={[
+          "heroGrid",
+          isOverlayRoute ? "heroGridOverlayRoute" : "",
+          isOverlayClosing ? "heroGridOverlayClosing" : "",
+        ].filter(Boolean).join(" ")}
+        onClickCapture={handleOverlayVideoLinkClickCapture}
+      >
         {isArtistsIndexRoute ? (
           <ArtistsLetterNav
             activeLetter={activeArtistLetter}
@@ -2596,8 +2806,18 @@ function ShellDynamicInner({
                 >
                   <Link
                     href={`/?v=${track.id}`}
-                    className="relatedCard linkedCard relatedCardTransition"
+                    className={`relatedCard linkedCard relatedCardTransition${clickedRelatedVideoId === track.id ? " relatedCardClickFlash" : ""}`}
                     style={{ "--related-index": index } as CSSProperties}
+                    onClick={() => {
+                      setClickedRelatedVideoId(track.id);
+                      if (relatedClickFlashTimeoutRef.current !== null) {
+                        window.clearTimeout(relatedClickFlashTimeoutRef.current);
+                      }
+                      relatedClickFlashTimeoutRef.current = window.setTimeout(() => {
+                        setClickedRelatedVideoId((activeId) => (activeId === track.id ? null : activeId));
+                        relatedClickFlashTimeoutRef.current = null;
+                      }, 240);
+                    }}
                     onMouseEnter={() => prefetchRelatedSelection(track)}
                     onFocus={() => prefetchRelatedSelection(track)}
                     onPointerDown={() => prefetchRelatedSelection(track)}
