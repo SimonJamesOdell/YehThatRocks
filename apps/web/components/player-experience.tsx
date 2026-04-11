@@ -241,8 +241,10 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
   const [topFallbackVideos, setTopFallbackVideos] = useState<VideoRecord[]>([]);
   const autoplayEnabledRef = useRef(autoplayEnabled);
   const hasActivePlaylistSequenceRef = useRef(false);
+  const hasPlaybackStartedRef = useRef(false);
   autoplayEnabledRef.current = autoplayEnabled;
   activePlaylistIdRef.current = activePlaylistId;
+  hasPlaybackStartedRef.current = hasPlaybackStarted;
 
   function handleFullscreenToggle() {
     if (!document.fullscreenElement) {
@@ -609,8 +611,6 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
       return;
     }
 
-    watchHistoryLevelRef.current.set(currentVideo.id, level);
-
     const player = playerRef.current;
     const positionSec = Math.max(
       0,
@@ -629,6 +629,13 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
     const progressPercent = durationSec > 0
       ? Math.min(100, Math.max(0, (positionSec / durationSec) * 100))
       : 0;
+
+    const hasPlaybackEvidence = hasPlaybackStartedRef.current || positionSec > 0 || progressPercent > 0;
+    if (!hasPlaybackEvidence) {
+      return;
+    }
+
+    watchHistoryLevelRef.current.set(currentVideo.id, level);
 
     try {
       const response = await fetch("/api/watch-history", {
@@ -694,12 +701,6 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
   }, [currentVideo.id]);
 
   useEffect(() => {
-    // Persist watch history as soon as the track is opened.
-    // Playback progress/ended events still enrich metadata later.
-    void reportWatchEvent(1, "qualified", 0, 0);
-  }, [currentVideo.id, isLoggedIn]);
-
-  useEffect(() => {
     nowPlayingShownForVideoRef.current = null;
     reportedUnavailableVideoIdRef.current = null;
     autoplaySuppressedVideoIdRef.current = null;
@@ -707,6 +708,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
     setUnavailableOverlayMessage(null);
     setShowEndedChoiceOverlay(false);
     setHasPlaybackStarted(false);
+    hasPlaybackStartedRef.current = false;
     setShowControls(false);
     logFlow("current-video:changed", {
       currentVideoId: currentVideo.id,
@@ -982,6 +984,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
             if (playing) {
               playAttemptedAtRef.current = null;
               setHasPlaybackStarted(true);
+              hasPlaybackStartedRef.current = true;
               if (nowPlayingShownForVideoRef.current !== currentVideo.id) {
                 triggerNowPlayingOverlay();
                 nowPlayingShownForVideoRef.current = currentVideo.id;

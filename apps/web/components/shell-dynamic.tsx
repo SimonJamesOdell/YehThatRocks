@@ -214,6 +214,8 @@ const REQUESTED_VIDEO_RETRY_MAX_ATTEMPTS = 8;
 const RELATED_LOAD_BATCH_SIZE = 5;
 const RELATED_LOAD_AHEAD_PX = 560;
 const RELATED_MAX_VIDEOS = 100;
+const RELATED_BACKGROUND_PREFETCH_TARGET = 35;
+const RELATED_BACKGROUND_PREFETCH_DELAY_MS = 650;
 const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
 const PREFETCH_FAILURE_MAX_BACKOFF_MS = 20_000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
@@ -302,7 +304,7 @@ function ShellDynamicInner({
     video: false,
   });
   const [isResolvingInitialVideo, setIsResolvingInitialVideo] = useState(
-    !requestedVideoId && initialHydratedRelatedVideos.length === 0,
+    !requestedVideoId,
   );
   const [isResolvingRequestedVideo, setIsResolvingRequestedVideo] = useState(
     Boolean(requestedVideoId && requestedVideoId !== initialVideo.id),
@@ -313,7 +315,7 @@ function ShellDynamicInner({
   const authProbeFailureCountRef = useRef(0);
   const lastVideoIdRef = useRef<string | null>(null);
   const deniedRequestedVideoIdRef = useRef<string | null>(null);
-  const hasResolvedInitialVideoRef = useRef(Boolean(requestedVideoId) || initialHydratedRelatedVideos.length > 0);
+  const hasResolvedInitialVideoRef = useRef(Boolean(requestedVideoId));
   const startupHydratedVideoIdRef = useRef<string | null>(null);
   const prefetchedRelatedIdsRef = useRef<Set<string>>(new Set());
   const prefetchedCurrentVideoPayloadRef = useRef<Map<string, { expiresAt: number; payload: CurrentVideoResolvePayload }>>(new Map());
@@ -1330,6 +1332,42 @@ function ShellDynamicInner({
   useEffect(() => {
     maybeLoadMoreIfNearEnd();
   }, [displayedRenderableRelatedVideos.length, maybeLoadMoreIfNearEnd]);
+
+  useEffect(() => {
+    if (
+      isOverlayRoute
+      || rightRailMode !== "watch-next"
+      || relatedTransitionPhase !== "idle"
+      || !hasMoreRelated
+      || isLoadingMoreRelated
+    ) {
+      return;
+    }
+
+    if (
+      displayedRenderableRelatedVideos.length === 0
+      || displayedRenderableRelatedVideos.length >= RELATED_BACKGROUND_PREFETCH_TARGET
+      || displayedRenderableRelatedVideos.length >= RELATED_MAX_VIDEOS
+    ) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadMoreRelatedVideos();
+    }, RELATED_BACKGROUND_PREFETCH_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    displayedRenderableRelatedVideos.length,
+    hasMoreRelated,
+    isLoadingMoreRelated,
+    isOverlayRoute,
+    loadMoreRelatedVideos,
+    relatedTransitionPhase,
+    rightRailMode,
+  ]);
 
   useEffect(() => {
     if (rightRailMode !== "watch-next" || !hasMoreRelated || isLoadingMoreRelated || relatedTransitionPhase !== "idle") {
