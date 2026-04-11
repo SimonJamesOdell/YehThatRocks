@@ -1064,6 +1064,11 @@ h1 {
   .heroGridOverlayRoute .favouritesBlind {
     right: calc(-1 * (var(--right-rail-width) + 12px));
   }
+
+  .heroGridOverlayRoute .favouritesBlind.favouritesBlindPlayerWidth {
+    right: 0;
+    border-top-right-radius: 10px;
+  }
 }
 
 .favouritesBlindNoDrop {

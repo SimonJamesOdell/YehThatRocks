@@ -22,7 +22,7 @@ type ChatMessageRow = {
   id: number;
   userId: number | null;
   content: string;
-  createdAt: Date | null;
+  createdAt: Date | string | null;
   room: string | null;
   videoId: string | null;
 };
@@ -225,12 +225,25 @@ function mapChatMessage(
   row: ChatMessageRow,
   userById: Map<number, { id: number; screenName: string | null; email: string | null; avatarUrl: string | null }>,
 ) {
+  const createdAtIso = (() => {
+    if (!row.createdAt) {
+      return null;
+    }
+
+    if (row.createdAt instanceof Date) {
+      return row.createdAt.toISOString();
+    }
+
+    const parsed = new Date(row.createdAt);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  })();
+
   const user = row.userId ? userById.get(row.userId) : null;
 
   return {
     id: row.id,
     content: row.content,
-    createdAt: row.createdAt?.toISOString() ?? null,
+    createdAt: createdAtIso,
     room: row.room ?? "global",
     videoId: row.videoId,
     user: {

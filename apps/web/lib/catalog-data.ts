@@ -328,7 +328,22 @@ function inferArtistFromTitle(title: string) {
     return sides.left;
   }
 
-  return sides.left;
+  if (leftHasMarkers && rightHasMarkers) {
+    return null;
+  }
+
+  const leftWords = sides.left.trim().split(/\s+/).filter(Boolean).length;
+  const rightWords = sides.right.trim().split(/\s+/).filter(Boolean).length;
+
+  if (leftWords >= 1 && leftWords <= 4 && rightWords >= 1 && rightWords <= 12) {
+    return sides.left;
+  }
+
+  if (rightWords >= 1 && rightWords <= 4 && leftWords > 4) {
+    return sides.right;
+  }
+
+  return null;
 }
 
 function sanitizeFallbackMetadataToken(value: string | null | undefined, maxLength: number) {
@@ -346,17 +361,55 @@ function sanitizeFallbackMetadataToken(value: string | null | undefined, maxLeng
   return normalizeParsedString(cleaned, maxLength);
 }
 
-function deriveAdminImportFallbackMetadata(title: string) {
-  const sides = parseSimpleTitleSides(title);
-
-  if (!sides) {
+function deriveArtistFromChannelTitle(channelTitle: string | null | undefined, title?: string | null) {
+  if (!channelTitle) {
     return null;
   }
 
+  const cleaned = channelTitle
+    .replace(/\s*-\s*topic\s*$/i, "")
+    .replace(/\b(official|vevo|records|music channel)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const candidate = sanitizeFallbackMetadataToken(cleaned, 255);
+  if (!candidate) {
+    return null;
+  }
+
+  const normalizedCandidate = candidate.toLowerCase();
+  if (normalizedCandidate === "youtube" || normalizedCandidate === "unknown artist") {
+    return null;
+  }
+
+  if (title && normalizedCandidate === title.trim().toLowerCase()) {
+    return null;
+  }
+
+  return candidate;
+}
+
+function deriveAdminImportFallbackMetadata(title: string, channelTitle?: string | null) {
+  const sides = parseSimpleTitleSides(title);
+
   const inferredArtist = inferArtistFromTitle(title);
-  const fallbackArtist = sanitizeFallbackMetadataToken(inferredArtist ?? sides.left, 255);
+  const channelArtist = deriveArtistFromChannelTitle(channelTitle, title);
+  const selectedArtist = inferredArtist ?? channelArtist;
+  if (!selectedArtist) {
+    return null;
+  }
+
+  const fallbackSourceTrack = sides
+    ? (() => {
+        const inferredArtistToken = normalizeLooseToken(selectedArtist);
+        const leftToken = normalizeLooseToken(sides.left);
+        return inferredArtistToken === leftToken ? sides.right : sides.left;
+      })()
+    : title;
+
+  const fallbackArtist = sanitizeFallbackMetadataToken(selectedArtist, 255);
   const fallbackTrack = sanitizeFallbackMetadataToken(
-    inferredArtist && inferredArtist.toLowerCase() === sides.left.toLowerCase() ? sides.right : sides.left,
+    fallbackSourceTrack,
     255,
   );
 
@@ -369,7 +422,9 @@ function deriveAdminImportFallbackMetadata(title: string) {
     track: fallbackTrack,
     videoType: "official",
     confidence: Math.max(PLAYBACK_MIN_CONFIDENCE, 0.82),
-    reason: "Admin direct import heuristic fallback from title parsing.",
+    reason: inferredArtist
+      ? "Admin direct import heuristic fallback from title parsing."
+      : "Admin direct import fallback from channel title.",
   } as const;
 }
 
@@ -913,7 +968,7 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
         WHERE sv.video_id = v.id
           AND sv.status = 'available'
       )
-    ORDER BY v.favourited DESC, v.views DESC, v.videoId ASC
+    ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
     LIMIT ${limit}
   `;
 
@@ -975,7 +1030,7 @@ async function getStoredVideoById(videoId: string): Promise<StoredVideoRow | nul
     FROM videos
     WHERE videoId = ${normalizedVideoId}
       AND videoId REGEXP '^[A-Za-z0-9_-]{11}$'
-    ORDER BY updatedAt DESC, id DESC
+    ORDER BY updated_at DESC, id DESC
     LIMIT 1
   `;
 
@@ -1115,32 +1170,61 @@ async function fetchOEmbedVideo(videoId: string): Promise<PersistableVideoRecord
 async function persistVideoAvailability(video: PersistableVideoRecord, availability: VideoAvailability) {
   const persistedTitle = truncate(video.title, 255);
   const persistedDescription = video.description;
+  const persistedChannelTitle = truncate(video.channelTitle ?? "", 255) || null;
   const persistedTimestamp = new Date();
+  const hasChannelTitleColumn = await ensureVideoChannelTitleColumnAvailable();
 
   const existingVideo = await getStoredVideoById(video.id);
 
   if (existingVideo) {
-    await prisma.$executeRaw`
-      UPDATE videos
-      SET
-        title = ${persistedTitle},
-        description = ${persistedDescription},
-        updatedAt = ${persistedTimestamp}
-      WHERE id = ${existingVideo.id}
-    `;
+    if (hasChannelTitleColumn) {
+      await prisma.$executeRaw`
+        UPDATE videos
+        SET
+          title = ${persistedTitle},
+          description = ${persistedDescription},
+          channelTitle = ${persistedChannelTitle},
+          updated_at = ${persistedTimestamp}
+        WHERE id = ${existingVideo.id}
+      `;
+    } else {
+      await prisma.$executeRaw`
+        UPDATE videos
+        SET
+          title = ${persistedTitle},
+          description = ${persistedDescription},
+          updated_at = ${persistedTimestamp}
+        WHERE id = ${existingVideo.id}
+      `;
+    }
   } else {
     try {
-      await prisma.$executeRaw`
-        INSERT INTO videos (videoId, title, favourited, description, createdAt, updatedAt)
-        VALUES (
-          ${video.id},
-          ${persistedTitle},
-          0,
-          ${persistedDescription},
-          ${persistedTimestamp},
-          ${persistedTimestamp}
-        )
-      `;
+      if (hasChannelTitleColumn) {
+        await prisma.$executeRaw`
+          INSERT INTO videos (videoId, title, channelTitle, favourited, description, created_at, updated_at)
+          VALUES (
+            ${video.id},
+            ${persistedTitle},
+            ${persistedChannelTitle},
+            0,
+            ${persistedDescription},
+            ${persistedTimestamp},
+            ${persistedTimestamp}
+          )
+        `;
+      } else {
+        await prisma.$executeRaw`
+          INSERT INTO videos (videoId, title, favourited, description, created_at, updated_at)
+          VALUES (
+            ${video.id},
+            ${persistedTitle},
+            0,
+            ${persistedDescription},
+            ${persistedTimestamp},
+            ${persistedTimestamp}
+          )
+        `;
+      }
     } catch (error) {
       // Race condition: another request inserted the same videoId between our check and insert.
       // Treat this as a successful upsert and proceed.
@@ -1446,8 +1530,8 @@ export async function importVideoFromDirectSource(source: string) {
   // marked check-failed — e.g. when the Groq classifier was unavailable. Without this, an
   // admin-imported video with a clear title would remain undiscoverable whenever Groq is down.
   if (hasDatabaseUrl()) {
-    const fallbackRows = await prisma.$queryRaw<Array<{ id: number; title: string; parsedArtist: string | null }>>`
-      SELECT id, title, parsedArtist
+    const fallbackRows = await prisma.$queryRaw<Array<{ id: number; title: string; parsedArtist: string | null; channelTitle: string | null }>>`
+      SELECT id, title, parsedArtist, channelTitle
       FROM videos
       WHERE videoId = ${normalizedVideoId}
       LIMIT 1
@@ -1461,7 +1545,7 @@ export async function importVideoFromDirectSource(source: string) {
 
     const fallbackMeta =
       fallbackRow && (metadataAbsent || decisionNeedsHelp)
-        ? deriveAdminImportFallbackMetadata(fallbackRow.title)
+        ? deriveAdminImportFallbackMetadata(fallbackRow.title, fallbackRow.channelTitle)
         : null;
 
     if (fallbackRow && fallbackMeta) {
@@ -2202,7 +2286,7 @@ export async function getCurrentVideo(videoId?: string, options?: { skipPlayback
               WHERE sv.video_id = videos.id
                 AND (sv.status IS NULL OR sv.status <> 'available')
             )
-          ORDER BY updatedAt DESC, id DESC
+          ORDER BY updated_at DESC, id DESC
           LIMIT 1
         `
       : await getRankedTopPool(1);
@@ -2316,7 +2400,7 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
       ) AS hasBlocked
     FROM videos v
     WHERE v.videoId = ${normalizedVideoId}
-    ORDER BY hasAvailable DESC, hasBlocked ASC, v.updatedAt DESC, v.id DESC
+    ORDER BY hasAvailable DESC, hasBlocked ASC, v.updated_at DESC, v.id DESC
     LIMIT 1
   `;
 
@@ -2549,7 +2633,7 @@ export async function getRelatedVideos(
                 AND (sv.status IS NULL OR sv.status <> 'available')
             )
           GROUP BY v.videoId, v.title, v.parsedArtist, v.favourited, v.description
-          ORDER BY v.favourited DESC, MAX(v.views) DESC, v.videoId ASC
+          ORDER BY v.favourited DESC, MAX(COALESCE(v.viewCount, 0)) DESC, v.videoId ASC
           LIMIT 36
         `;
 
@@ -2577,7 +2661,7 @@ export async function getRelatedVideos(
                   WHERE sv.video_id = v.id
                     AND (sv.status IS NULL OR sv.status <> 'available')
                 )
-              ORDER BY v.favourited DESC, v.views DESC, v.id DESC
+              ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id DESC
               LIMIT 36
             `
           : Promise.resolve([] as RankedVideoRow[]);
@@ -2604,7 +2688,7 @@ export async function getRelatedVideos(
               WHERE sv.video_id = v.id
                 AND (sv.status IS NULL OR sv.status <> 'available')
             )
-          ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC
+          ORDER BY COALESCE(v.updated_at, v.created_at) DESC, v.id DESC
           LIMIT 50
         `;
 
@@ -2675,7 +2759,7 @@ export async function getRelatedVideos(
                   WHERE sv.video_id = v.id
                     AND (sv.status IS NULL OR sv.status <> 'available')
                 )
-              ORDER BY v.favourited DESC, v.views DESC, v.id DESC
+              ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id DESC
               LIMIT 40
             `,
             normalizedVideoId,
@@ -2815,7 +2899,7 @@ export async function getNewestVideos(count = 20, offset = 0) {
         WHERE sv.video_id = v.id
           AND sv.status = 'available'
       )
-      ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC
+      ORDER BY COALESCE(v.updated_at, v.created_at) DESC, v.id DESC
       LIMIT ${safeCount}
       OFFSET ${safeOffset}
     `;
@@ -3270,7 +3354,7 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
           WHERE sv.video_id = v.id
             AND (sv.status IS NULL OR sv.status <> 'available')
         )
-      ORDER BY v.views DESC, v.id ASC
+      ORDER BY COALESCE(v.viewCount, 0) DESC, v.id ASC
       LIMIT ${safeLimit}
     `;
 
@@ -3732,7 +3816,7 @@ export async function getVideosByGenre(
           WHERE sv.video_id = v.id
             AND (sv.status IS NULL OR sv.status <> 'available')
         )
-      ORDER BY v.favourited DESC, v.views DESC, v.videoId ASC
+      ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
       LIMIT 24
     `;
 
@@ -3793,7 +3877,7 @@ export async function getVideosByGenre(
           WHERE sv.video_id = v.id
             AND (sv.status IS NULL OR sv.status <> 'available')
         )
-      ORDER BY v.favourited DESC, v.views DESC, v.videoId ASC
+      ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
       LIMIT 24
     `;
 
@@ -3833,7 +3917,7 @@ export async function getVideosByGenre(
               WHERE sv.video_id = v.id
                 AND (sv.status IS NULL OR sv.status <> 'available')
             )
-          ORDER BY v.favourited DESC, v.views DESC, v.videoId ASC
+          ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
           LIMIT 24
         `,
         ...normalizedArtistNames,
@@ -3879,7 +3963,7 @@ export async function getVideosByGenre(
                 AND (sv.status IS NULL OR sv.status <> 'available')
             )
           GROUP BY v.videoId, v.title, v.favourited, v.description
-          ORDER BY v.favourited DESC, v.views DESC, v.videoId ASC
+          ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
           LIMIT 24
         `,
         ...genreParams,
@@ -3920,7 +4004,7 @@ export async function getVideosByGenre(
           WHERE sv.video_id = v.id
             AND (sv.status IS NULL OR sv.status <> 'available')
         )
-      ORDER BY v.favourited DESC, v.views DESC, v.videoId ASC
+      ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
       LIMIT 24
     `;
 
