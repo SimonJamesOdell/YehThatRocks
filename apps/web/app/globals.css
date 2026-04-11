@@ -1272,6 +1272,12 @@ h1 {
       translateY(var(--player-dock-artists-offset, 0px));
   }
 
+  .playerChromeDockedDesktop .overlayTitleRow {
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+  }
+
   .playerChromeDockedDesktop .overlayCenter {
     position: absolute;
     inset: 0;
@@ -1437,6 +1443,7 @@ h1 {
   flex: 1 1 auto;
   gap: 8px;
   min-width: 0;
+  transition: opacity 220ms ease, transform 220ms ease;
 }
 
 .overlayAdminEditBtn {
