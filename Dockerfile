@@ -3,7 +3,6 @@ FROM node:22-alpine AS base
 # --- Dependencies ---
 FROM base AS deps
 WORKDIR /app
-RUN apk add --no-cache git
 COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY packages/config/package.json packages/config/package.json
@@ -11,7 +10,7 @@ COPY packages/core/package.json packages/core/package.json
 COPY packages/schemas/package.json packages/schemas/package.json
 COPY packages/ui/package.json packages/ui/package.json
 COPY packages/api-client/package.json packages/api-client/package.json
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 # --- Builder ---
 FROM base AS builder
