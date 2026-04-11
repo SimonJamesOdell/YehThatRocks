@@ -349,6 +349,7 @@ function ShellDynamicInner({
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestionIdx, setActiveSuggestionIdx] = useState(-1);
+  const [artistsPanelDockOffset, setArtistsPanelDockOffset] = useState(0);
   const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestAbortRef = useRef<AbortController | null>(null);
   const latestSuggestQueryRef = useRef("");
@@ -375,6 +376,16 @@ function ShellDynamicInner({
   ].filter(Boolean).join(" ");
   const shouldRunChat = isAuthenticated && !isOverlayRoute;
   const isArtistsIndexRoute = pathname === "/artists";
+  const shouldDockDesktopPlayer = isOverlayRoute;
+  const shouldDockUnderArtistsAlphabet = isOverlayRoute && isArtistsIndexRoute;
+  const playerChromeClassName = [
+    "playerChrome",
+    shouldDockDesktopPlayer ? "playerChromeDockedDesktop" : "",
+    shouldDockUnderArtistsAlphabet ? "playerChromeDockedArtists" : "",
+  ].filter(Boolean).join(" ");
+  const playerChromeStyle = shouldDockUnderArtistsAlphabet
+    ? ({ "--player-dock-artists-offset": `${artistsPanelDockOffset}px` } as CSSProperties)
+    : undefined;
   const isMobileCommunityCollapsed = isMobileViewport && !isMobileCommunityOpen;
   const isLeftRailSuppressed = isOverlayRoute || isMobileCommunityCollapsed;
   const artistLetterParam = searchParams.get("letter");
@@ -477,6 +488,29 @@ function ShellDynamicInner({
       window.cancelAnimationFrame(frameId);
     };
   }, [pathname]);
+
+  useEffect(() => {
+    if (!shouldDockUnderArtistsAlphabet || typeof window === "undefined") {
+      setArtistsPanelDockOffset(0);
+      return;
+    }
+
+    const syncArtistsPanelOffset = () => {
+      const panel = document.querySelector(".artistsLetterPanel") as HTMLElement | null;
+      if (!panel) {
+        setArtistsPanelDockOffset(0);
+        return;
+      }
+
+      setArtistsPanelDockOffset(panel.offsetHeight + 12);
+    };
+
+    syncArtistsPanelOffset();
+    window.addEventListener("resize", syncArtistsPanelOffset);
+    return () => {
+      window.removeEventListener("resize", syncArtistsPanelOffset);
+    };
+  }, [shouldDockUnderArtistsAlphabet, pathname]);
 
   useEffect(() => {
     if (requestedVideoId) {
@@ -2385,7 +2419,7 @@ function ShellDynamicInner({
         </aside>
 
         <section className="playerStage">
-          <div className="playerChrome">
+          <div className={playerChromeClassName} style={playerChromeStyle}>
             {deniedPlaybackMessage ? (
               <div className="playbackDeniedBanner" role="status" aria-live="polite">
                 <span>{deniedPlaybackMessage}</span>

@@ -1245,6 +1245,34 @@ h1 {
   background: #000;
 }
 
+@media (min-width: 1181px) {
+  .playerChromeDockedDesktop {
+    overflow: visible;
+  }
+
+  .playerChromeDockedDesktop .playerFrame,
+  .playerChromeDockedDesktop .playerLoadingFallback {
+    width: var(--left-rail-width);
+    aspect-ratio: 16 / 9;
+    flex: 0 0 auto;
+    max-height: 52vh;
+    transform: translateX(calc(-1 * (var(--left-rail-width) + 12px))) translateY(0);
+    transition:
+      transform 520ms cubic-bezier(0.22, 1, 0.36, 1),
+      width 520ms cubic-bezier(0.22, 1, 0.36, 1),
+      max-height 520ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-radius 520ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform, width;
+  }
+
+  .playerChromeDockedArtists .playerFrame,
+  .playerChromeDockedArtists .playerLoadingFallback {
+    transform:
+      translateX(calc(-1 * (var(--left-rail-width) + 12px)))
+      translateY(var(--player-dock-artists-offset, 0px));
+  }
+}
+
 .playerLoadingFallback {
   flex: 1 1 auto;
   min-height: 0;
