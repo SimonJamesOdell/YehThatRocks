@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState, type CSSProperties } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import type { VideoRecord } from "@/lib/catalog";
@@ -1207,6 +1207,18 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     });
   }
 
+  function handleEndedChoiceWatchAgain() {
+    setShowEndedChoiceOverlay(false);
+
+    if (!playerRef.current) {
+      return;
+    }
+
+    playerRef.current.seekTo(0, true);
+    playAttemptedAtRef.current = Date.now();
+    playerRef.current.playVideo();
+  }
+
   function handlePrevious() {
     if (hasActivePlaylistSequence && effectivePlaylistIndex !== null) {
       const previousIndex = (effectivePlaylistIndex - 1 + playlistQueueIds.length) % playlistQueueIds.length;
@@ -1722,11 +1734,16 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
           {showEndedChoiceOverlay && endedChoiceVideos.length > 0 ? (
             <div className="playerEndedChoiceOverlay" role="dialog" aria-modal="false" aria-label="Choose the next video">
               <div className="playerEndedChoiceGrid">
-                {endedChoiceVideos.map((video) => (
+                {endedChoiceVideos.map((video, index) => (
                   <button
                     key={video.id}
                     type="button"
                     className="playerEndedChoiceCard"
+                    style={{
+                      "--ended-choice-row-4": Math.floor(index / 4),
+                      "--ended-choice-row-2": Math.floor(index / 2),
+                      "--ended-choice-row-1": index,
+                    } as CSSProperties}
                     onClick={() => handleEndedChoiceSelect(video.id)}
                   >
                     <img
@@ -1745,6 +1762,15 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                     </span>
                   </button>
                 ))}
+              </div>
+              <div className="playerEndedChoiceActions">
+                <button
+                  type="button"
+                  className="playerEndedChoiceWatchAgain"
+                  onClick={handleEndedChoiceWatchAgain}
+                >
+                  {"<- watch again"}
+                </button>
               </div>
             </div>
           ) : null}

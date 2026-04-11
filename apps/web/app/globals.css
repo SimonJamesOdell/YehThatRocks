@@ -2216,6 +2216,33 @@ h1 {
   gap: 12px;
 }
 
+.playerEndedChoiceActions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
+.playerEndedChoiceWatchAgain {
+  appearance: none;
+  border: none;
+  background: linear-gradient(180deg, #aa1e11, #5a0906);
+  box-shadow: var(--glow);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 12px 18px;
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 160ms ease, filter 160ms ease;
+}
+
+.playerEndedChoiceWatchAgain:hover,
+.playerEndedChoiceWatchAgain:focus-visible {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
 @media (min-width: 2200px) {
   .playerEndedChoiceGrid {
     grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -2223,6 +2250,7 @@ h1 {
 }
 
 .playerEndedChoiceCard {
+  --ended-choice-row: var(--ended-choice-row-4, 0);
   padding: 0;
   overflow: hidden;
   display: grid;
@@ -2234,6 +2262,10 @@ h1 {
   text-align: left;
   cursor: pointer;
   transition: transform 160ms ease, border-color 160ms ease, filter 160ms ease;
+  opacity: 0;
+  clip-path: inset(0 0 100% 0 round 12px);
+  animation: playerEndedChoiceBlindIn 320ms cubic-bezier(0.22, 0.84, 0.2, 1) forwards;
+  animation-delay: calc(var(--ended-choice-row) * 120ms);
 }
 
 .playerEndedChoiceCard:hover,
@@ -2276,18 +2308,38 @@ h1 {
 }
 
 @media (max-width: 920px) {
+  .playerEndedChoiceCard {
+    --ended-choice-row: var(--ended-choice-row-2, 0);
+  }
+
   .playerEndedChoiceGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 640px) {
+  .playerEndedChoiceCard {
+    --ended-choice-row: var(--ended-choice-row-1, 0);
+  }
+
   .playerEndedChoiceOverlay {
     padding: 14px;
   }
 
   .playerEndedChoiceGrid {
     grid-template-columns: 1fr;
+  }
+}
+
+@keyframes playerEndedChoiceBlindIn {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0 round 12px);
+  }
+
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0 round 12px);
   }
 }
 
