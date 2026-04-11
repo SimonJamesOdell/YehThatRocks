@@ -23,34 +23,53 @@ export function NewVideosLoader({ initialVideos, isAuthenticated }: { initialVid
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadRemaining = async () => {
+    const loadVideos = async () => {
       try {
-        const response = await fetch(`/api/videos/newest?skip=10&take=90`, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-        });
+        let working = dedupeVideos(initialVideos);
 
-        if (response.ok) {
-          const { videos } = (await response.json()) as { videos: VideoRecord[] };
-          setAllVideos((prev) => dedupeVideos([...prev, ...videos]));
+        if (working.length === 0) {
+          const initialResponse = await fetch(`/api/videos/newest?skip=0&take=10`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+          });
+
+          if (initialResponse.ok) {
+            const { videos } = (await initialResponse.json()) as { videos: VideoRecord[] };
+            working = dedupeVideos(videos);
+            setAllVideos(working);
+          }
+        }
+
+        const remainingTake = Math.max(0, 100 - working.length);
+        if (remainingTake > 0) {
+          const response = await fetch(`/api/videos/newest?skip=${working.length}&take=${remainingTake}`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+          });
+
+          if (response.ok) {
+            const { videos } = (await response.json()) as { videos: VideoRecord[] };
+            setAllVideos((prev) => dedupeVideos([...prev, ...videos]));
+          }
         }
       } catch (error) {
-        console.error("Failed to load remaining videos:", error);
+        console.error("Failed to load new videos:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    // Start fetch immediately, don't wait for render
-    void loadRemaining();
-  }, []);
+    void loadVideos();
+  }, [initialVideos]);
 
   return (
     <div className="trackStack spanTwoColumns">
       {allVideos.map((track, index) => (
         <Top100VideoLink key={track.id} track={track} index={index} isAuthenticated={isAuthenticated} />
       ))}
-      {loading && allVideos.length === initialVideos.length && (
+      {loading && allVideos.length === 0 && (
         <div style={{ padding: "20px", textAlign: "center", color: "#999" }}>Loading more videos...</div>
       )}
     </div>

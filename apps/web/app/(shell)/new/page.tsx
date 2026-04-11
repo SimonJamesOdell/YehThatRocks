@@ -4,12 +4,10 @@ import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { CloseLink } from "@/components/close-link";
 import { NewScrollReset } from "@/components/new-scroll-reset";
 import { NewVideosLoader } from "@/components/new-videos-loader";
-import { getNewestVideos } from "@/lib/catalog-data";
 
 export default async function NewPage() {
   const cookieStore = await cookies();
   const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
-  const initialVideos = await getNewestVideos(10);
 
   return (
     <>
@@ -20,7 +18,7 @@ export default async function NewPage() {
         <CloseLink />
       </div>
 
-      <NewVideosLoader initialVideos={initialVideos} isAuthenticated={isAuthenticated} />
+      <NewVideosLoader initialVideos={[]} isAuthenticated={isAuthenticated} />
     </>
   );
 }
