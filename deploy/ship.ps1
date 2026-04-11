@@ -62,12 +62,35 @@ function Stop-DevServer {
 # Restarts the dev server in the background from the given repo root.
 function Start-DevServer([string]$RepoRoot) {
   Write-Host "Restarting local dev server..." -ForegroundColor DarkYellow
-  $startupCommand = "Set-Location -LiteralPath '$RepoRoot'; npm -w web run dev"
-  Start-Process -FilePath "powershell" -ArgumentList @(
-    "-NoProfile",
-    "-ExecutionPolicy", "Bypass",
-    "-Command", $startupCommand
-  ) -WindowStyle Hidden | Out-Null
+  $npmCmd = (Get-Command npm.cmd -ErrorAction SilentlyContinue)
+  if (-not $npmCmd) {
+    $npmCmd = (Get-Command npm -ErrorAction SilentlyContinue)
+  }
+
+  if (-not $npmCmd) {
+    Write-Warning "Could not find npm executable to restart dev server."
+    return
+  }
+
+  $devProcess = Start-Process -FilePath $npmCmd.Source -ArgumentList @(
+    "-w", "web", "run", "dev"
+  ) -WorkingDirectory $RepoRoot -WindowStyle Hidden -PassThru
+
+  # Wait briefly and confirm something is listening on 3000.
+  $started = $false
+  for ($i = 0; $i -lt 25; $i++) {
+    Start-Sleep -Milliseconds 200
+    if (Get-DevServerPid) {
+      $started = $true
+      break
+    }
+  }
+
+  if (-not $started) {
+    Write-Warning "Dev server did not come back on port 3000 after ship."
+  } elseif ($devProcess) {
+    Write-Host "Dev server restart requested (PID $($devProcess.Id))." -ForegroundColor DarkGreen
+  }
 }
 
 function Try-PruneDockerCaches {
