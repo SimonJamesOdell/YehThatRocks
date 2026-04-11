@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getCurrentVideo, getRelatedVideos, getTopVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { getCurrentVideo, getNewestVideos, getRelatedVideos, getTopVideos, getUnseenCatalogVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { getOptionalApiAuth } from "@/lib/auth-request";
 
 const CURRENT_VIDEO_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_CATALOG === "1";
@@ -90,14 +90,29 @@ async function getRelatedPoolForCurrentVideo(currentVideoId: string, userId?: nu
     });
 
     const deduped = uniqueVideosById(baseRelated).filter((video) => video.id !== currentVideoId);
+    const blockedIds = new Set<string>([currentVideoId, ...deduped.map((video) => video.id)]);
     if (deduped.length >= CURRENT_VIDEO_RELATED_POOL_SIZE) {
       return deduped.slice(0, CURRENT_VIDEO_RELATED_POOL_SIZE);
     }
 
-    const fillerCandidates = await getTopVideos(220);
-    const blockedIds = new Set<string>([currentVideoId, ...deduped.map((video) => video.id)]);
-    const filler = uniqueVideosById(fillerCandidates.filter((video) => !blockedIds.has(video.id)));
-    return [...deduped, ...filler].slice(0, CURRENT_VIDEO_RELATED_POOL_SIZE);
+    const [topCandidates, newestCandidates, unseenCandidates] = await Promise.all([
+      getTopVideos(300),
+      getNewestVideos(200, 0),
+      getUnseenCatalogVideos({
+        userId,
+        count: 400,
+        excludeVideoIds: Array.from(blockedIds),
+      }),
+    ]);
+
+    const merged = uniqueVideosById([
+      ...deduped,
+      ...topCandidates,
+      ...newestCandidates,
+      ...unseenCandidates,
+    ]).filter((video) => !blockedIds.has(video.id));
+
+    return [...deduped, ...merged].slice(0, CURRENT_VIDEO_RELATED_POOL_SIZE);
   })();
   currentVideoRelatedPoolInflight.set(cacheKey, pending);
 
