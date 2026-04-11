@@ -2904,17 +2904,105 @@ export async function getNewestVideos(count = 20, offset = 0) {
       OFFSET ${safeOffset}
     `;
 
-    if (safeOffset === 0) {
+    if (videos.length > 0) {
+      if (safeOffset === 0) {
+        newestVideosCache = {
+          expiresAt: now + NEWEST_CACHE_TTL_MS,
+          count: safeCount,
+          rows: videos,
+        };
+      }
+
+      return videos.map(mapVideo);
+    }
+
+    // Fallback: if availability/status linkage has drifted on a restored DB,
+    // still surface newest videos instead of returning an empty New page.
+    const fallbackByMappedTimestamps = await prisma.$queryRaw<RankedVideoRow[]>`
+      SELECT
+        v.videoId,
+        v.title,
+        NULL AS channelTitle,
+        v.favourited,
+        v.description
+      FROM videos v
+      WHERE v.videoId IS NOT NULL
+        AND CHAR_LENGTH(v.videoId) = 11
+      ORDER BY COALESCE(v.updated_at, v.created_at) DESC, v.id DESC
+      LIMIT ${safeCount}
+      OFFSET ${safeOffset}
+    `;
+
+    if (fallbackByMappedTimestamps.length > 0) {
+      if (safeOffset === 0) {
+        newestVideosCache = {
+          expiresAt: now + NEWEST_CACHE_TTL_MS,
+          count: safeCount,
+          rows: fallbackByMappedTimestamps,
+        };
+      }
+
+      return fallbackByMappedTimestamps.map(mapVideo);
+    }
+
+    const fallbackByLegacyTimestamps = await prisma.$queryRaw<RankedVideoRow[]>`
+      SELECT
+        v.videoId,
+        v.title,
+        NULL AS channelTitle,
+        v.favourited,
+        v.description
+      FROM videos v
+      WHERE v.videoId IS NOT NULL
+        AND CHAR_LENGTH(v.videoId) = 11
+      ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC
+      LIMIT ${safeCount}
+      OFFSET ${safeOffset}
+    `;
+
+    if (safeOffset === 0 && fallbackByLegacyTimestamps.length > 0) {
       newestVideosCache = {
         expiresAt: now + NEWEST_CACHE_TTL_MS,
         count: safeCount,
-        rows: videos,
+        rows: fallbackByLegacyTimestamps,
       };
     }
 
-    return videos.map(mapVideo);
+    return fallbackByLegacyTimestamps.map(mapVideo);
   } catch {
-    return [];
+    // Final fallback for partially migrated DBs where SQL above errors.
+    try {
+      const fallbackRows = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
+        `
+          SELECT
+            videoId,
+            title,
+            NULL AS channelTitle,
+            favourited,
+            description
+          FROM videos
+          WHERE videoId IS NOT NULL
+            AND CHAR_LENGTH(videoId) = 11
+          ORDER BY id DESC
+          LIMIT ?
+          OFFSET ?
+        `,
+        safeCount,
+        safeOffset,
+      );
+
+      if (safeOffset === 0 && fallbackRows.length > 0) {
+        newestVideosCache = {
+          expiresAt: now + NEWEST_CACHE_TTL_MS,
+          count: safeCount,
+          rows: fallbackRows,
+        };
+      }
+
+      return fallbackRows.map(mapVideo);
+    } catch {
+      return [];
+    }
   }
 }
 
