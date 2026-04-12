@@ -71,30 +71,51 @@
     }
   </style>
 </head>
-<body>
+<body data-maintenance-page="1">
   <img class="logo" src="/images/yeh3.png" alt="YehThatRocks" />
   <div class="divider"></div>
   <p class="message">We&rsquo;re updating the site</p>
   <p class="sub">We&rsquo;ll be back shortly. This page will reload automatically the moment we&rsquo;re live again.</p>
   <div class="pulse"></div>
-  <p class="countdown" id="countdown"></p>
   <script>
     (function () {
       var CHECK_INTERVAL_MS = 5000;
       var BACKOFF_MAX_MS = 30000;
+      var STABLE_SUCCESS_TARGET = 2;
       var interval = CHECK_INTERVAL_MS;
       var timer = null;
+      var MAINTENANCE_MARKER = 'data-maintenance-page="1"';
+      var stableSuccesses = 0;
 
       function check() {
-        fetch('/api/status', { method: 'GET', cache: 'no-store' })
+        fetch('/', { method: 'GET', cache: 'no-store' })
           .then(function (res) {
-            if (res.ok) {
-              window.location.reload();
-            } else {
+            if (!res.ok) {
               schedule();
+              return;
             }
+
+            return res.text().then(function (html) {
+              // Only exit maintenance when the root page no longer serves maintenance HTML.
+              if (html.indexOf(MAINTENANCE_MARKER) === -1) {
+                stableSuccesses += 1;
+                if (stableSuccesses >= STABLE_SUCCESS_TARGET) {
+                  window.location.replace('/');
+                  return;
+                }
+
+                interval = CHECK_INTERVAL_MS;
+                clearTimeout(timer);
+                timer = setTimeout(check, CHECK_INTERVAL_MS);
+                return;
+              }
+
+              stableSuccesses = 0;
+              schedule();
+            });
           })
           .catch(function () {
+            stableSuccesses = 0;
             schedule();
           });
       }
