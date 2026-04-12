@@ -12,6 +12,7 @@ const files = {
   newPage: path.join(ROOT, "apps/web/app/(shell)/new/page.tsx"),
   newLoading: path.join(ROOT, "apps/web/app/(shell)/new/loading.tsx"),
   newVideosLoader: path.join(ROOT, "apps/web/components/new-videos-loader.tsx"),
+  css: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
 function read(filePath) {
@@ -43,6 +44,7 @@ function main() {
   const newPageSource = read(files.newPage);
   const newLoadingSource = read(files.newLoading);
   const newVideosLoaderSource = read(files.newVideosLoader);
+  const cssSource = read(files.css);
 
   // Watch Next load-more invariants.
   assertContains(shellDynamicSource, "const relatedFetchOffsetRef = useRef<number | null>(null);", "Watch Next tracks a dedicated offset for paged fetches", failures);
@@ -83,6 +85,11 @@ function main() {
   assertContains(newVideosLoaderSource, "filterHiddenVideos", "New videos loader filters hidden videos", failures);
   assertNotContains(newVideosLoaderSource, "sortVideosBySeen(", "New videos loader does not reorder rows by seen state", failures);
   assertNotContains(newVideosLoaderSource, "/api/watch-history", "New videos loader does not pad with watch-history rows", failures);
+
+  // Watch Next card title clamp invariants: title must be clamped to 2 lines with ellipsis
+  // so that the card height stays consistent and the thumbnail column is not pushed wider.
+  assertContains(cssSource, "-webkit-line-clamp: 2;", "Watch Next card title clamped to 2 lines", failures);
+  assertContains(cssSource, ".relatedCardSlot .relatedCard h3", "Watch Next card h3 has its own CSS rule", failures);
 
   if (failures.length > 0) {
     console.error("Watch Next + New invariant check failed.");

@@ -94,6 +94,7 @@ export function NewVideosLoader({
           index={index}
           isAuthenticated={isAuthenticated}
           isSeen={seenVideoIdSet.has(track.id)}
+          rowVariant="new"
         />
       ))}
       {loading && allVideos.length === 0 && (

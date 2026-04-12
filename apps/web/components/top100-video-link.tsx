@@ -20,6 +20,9 @@ type Top100VideoLinkProps = {
   index: number;
   isAuthenticated?: boolean;
   isSeen?: boolean;
+  rowVariant?: "default" | "new";
+  onHideVideo?: (track: Top100VideoLinkProps["track"]) => void;
+  isHidePending?: boolean;
 };
 
 const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
@@ -47,7 +50,15 @@ function getLeaderboardThumbnail(track: { id: string; thumbnail?: string | null 
   return `https://i.ytimg.com/vi/${encodeURIComponent(track.id)}/mqdefault.jpg`;
 }
 
-export function Top100VideoLink({ track, index, isAuthenticated = true, isSeen = false }: Top100VideoLinkProps) {
+export function Top100VideoLink({
+  track,
+  index,
+  isAuthenticated = true,
+  isSeen = false,
+  rowVariant = "default",
+  onHideVideo,
+  isHidePending = false,
+}: Top100VideoLinkProps) {
   const hasWarmedRef = useRef(false);
   const clickFlashTimeoutRef = useRef<number | null>(null);
   const [isClickFlashing, setIsClickFlashing] = useState(false);
@@ -110,8 +121,24 @@ export function Top100VideoLink({ track, index, isAuthenticated = true, isSeen =
 
   return (
     <article
-      className={`trackCard leaderboardCard top100CardWithPlaylistAction${isSeen ? " top100CardSeen" : ""}${isClickFlashing ? " top100CardClickFlash" : ""}`}
+      className={`trackCard leaderboardCard top100CardWithPlaylistAction${isSeen ? " top100CardSeen" : ""}${isSeen && rowVariant === "new" ? " top100CardSeenNew" : ""}${isClickFlashing ? " top100CardClickFlash" : ""}${isAuthenticated ? " top100CardCornerActions" : ""}`}
     >
+      {isAuthenticated && onHideVideo ? (
+        <button
+          type="button"
+          className="top100CardHideButton"
+          aria-label={`Hide ${track.title} from Top 100`}
+          title="Hide from Top 100"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onHideVideo(track);
+          }}
+          disabled={isHidePending}
+        >
+          ×
+        </button>
+      ) : null}
       <Link
         href={`/?v=${track.id}&resume=1`}
         className="linkedCard leaderboardTrackLink"
@@ -144,7 +171,12 @@ export function Top100VideoLink({ track, index, isAuthenticated = true, isSeen =
         </div>
       </Link>
       <div className="top100CardAction">
-        <AddToPlaylistButton videoId={track.id} isAuthenticated={isAuthenticated} />
+        <AddToPlaylistButton
+          videoId={track.id}
+          isAuthenticated={isAuthenticated}
+          compact
+          className="top100CardPlaylistAddButton"
+        />
       </div>
     </article>
   );

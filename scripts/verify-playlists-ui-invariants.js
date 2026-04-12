@@ -56,6 +56,27 @@ function main() {
   const playerSource = read(files.player);
   const cssSource = read(files.css);
 
+  // pickColumn ordering invariant: must iterate priority names first, not DB columns.
+  // If this regresses to iterating columns first, sort_order is never selected (id wins)
+  // and every reorder call silently returns null (no-op 404).
+  assertContains(dataSource, "for (const name of names)", "pickColumn iterates priority names first, not DB columns", failures);
+
+  // Playlist rail concurrency invariant: must use a sequence counter, not a boolean
+  // in-flight lock. The lock approach blocks rapid clicks; the sequence counter lets every
+  // click fire immediately and discards stale out-of-order responses.
+  assertNotContains(shellSource, "isPlaylistReorderPending", "Playlist rail does not use blocking in-flight lock for reorder", failures);
+  assertContains(shellSource, "const reorderSeqRef = useRef(0);", "Playlist rail uses sequence counter for concurrent reorder safety", failures);
+  assertContains(shellSource, "if (seq < reorderSeqRef.current)", "Playlist rail discards stale out-of-order reorder responses", failures);
+
+  // Playlist rail load effect must NOT include searchParamsKey. Including it caused the
+  // rail to fully reload on every autoplay advance (because ?v= changes each track).
+  assertContains(
+    shellSource,
+    "}, [activePlaylistId, fetchWithAuthRetry, pathname, playlistRefreshTick, rightRailMode]);",
+    "Playlist rail load effect omits searchParamsKey to prevent autoplay-triggered reloads",
+    failures,
+  );
+
   // API and schema invariants for playlist item remove/reorder.
   assertContains(schemasSource, "removePlaylistItemSchema", "Remove playlist item schema exists", failures);
   assertContains(schemasSource, "reorderPlaylistItemsSchema", "Reorder playlist items schema exists", failures);

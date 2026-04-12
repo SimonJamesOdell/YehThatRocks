@@ -13,9 +13,19 @@ type ArtistVideoLinkProps = {
   video: VideoRecord;
   isAuthenticated?: boolean;
   isSeen?: boolean;
+  useCornerActions?: boolean;
+  onHideVideo?: (video: VideoRecord) => void;
+  isHidePending?: boolean;
 };
 
-export function ArtistVideoLink({ video, isAuthenticated = true, isSeen = false }: ArtistVideoLinkProps) {
+export function ArtistVideoLink({
+  video,
+  isAuthenticated = true,
+  isSeen = false,
+  useCornerActions = false,
+  onHideVideo,
+  isHidePending = false,
+}: ArtistVideoLinkProps) {
   const hasWarmedRef = useRef(false);
 
   const warmSelection = useCallback(() => {
@@ -44,7 +54,23 @@ export function ArtistVideoLink({ video, isAuthenticated = true, isSeen = false 
   }, [video]);
 
   return (
-    <article className={`categoryVideoCard${isSeen ? " categoryVideoCardSeen artistVideoCardSeen" : ""}`}>
+    <article className={`categoryVideoCard${isSeen ? " categoryVideoCardSeen artistVideoCardSeen" : ""}${useCornerActions ? " categoryVideoCardCornerActions" : ""}`}>
+      {isAuthenticated && useCornerActions && onHideVideo ? (
+        <button
+          type="button"
+          className="categoryVideoHideButton"
+          aria-label={`Hide ${video.title} from this category`}
+          title="Hide from this category"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onHideVideo(video);
+          }}
+          disabled={isHidePending}
+        >
+          x
+        </button>
+      ) : null}
       <Link
         href={`/?v=${video.id}&resume=1`}
         className="linkedCard categoryVideoPrimaryLink"
@@ -67,7 +93,12 @@ export function ArtistVideoLink({ video, isAuthenticated = true, isSeen = false 
         <h3 className="categoryVideoTitle">{video.title}</h3>
       </Link>
       <div className="actionRow categoryVideoActions">
-        <AddToPlaylistButton videoId={video.id} isAuthenticated={isAuthenticated} />
+        <AddToPlaylistButton
+          videoId={video.id}
+          isAuthenticated={isAuthenticated}
+          compact={useCornerActions}
+          className={useCornerActions ? "categoryVideoPlaylistAddButton" : undefined}
+        />
       </div>
     </article>
   );

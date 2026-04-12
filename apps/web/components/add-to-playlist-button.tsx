@@ -7,6 +7,7 @@ type AddToPlaylistButtonProps = {
   videoId: string;
   isAuthenticated?: boolean;
   className?: string;
+  compact?: boolean;
 };
 
 const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
@@ -32,6 +33,7 @@ export function AddToPlaylistButton({
   videoId,
   isAuthenticated = true,
   className,
+  compact = false,
 }: AddToPlaylistButtonProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -215,7 +217,7 @@ export function AddToPlaylistButton({
         aria-label="Add to playlist"
         title="Add to playlist"
       >
-        + Playlist
+        {compact ? "+" : "+ Playlist"}
       </button>
     </div>
   );

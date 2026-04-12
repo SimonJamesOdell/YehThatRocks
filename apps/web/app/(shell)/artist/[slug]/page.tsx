@@ -2,7 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
-import { ArtistVideoLink } from "@/components/artist-video-link";
+import { ArtistVideosGridClient } from "@/components/artist-videos-grid-client";
 import { CloseLink } from "@/components/close-link";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { getArtistBySlug, getHiddenVideoIdsForUser, getSeenVideoIdsForUser, getVideosByArtist } from "@/lib/catalog-data";
@@ -57,16 +57,11 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
         <CloseLink />
       </div>
 
-      <div className="categoryVideoGrid artistVideoGrid">
-        {orderedArtistVideos.map((video) => (
-          <ArtistVideoLink
-            key={video.id}
-            video={video}
-            isAuthenticated={isAuthenticated}
-            isSeen={seenVideoIds.has(video.id)}
-          />
-        ))}
-      </div>
+      <ArtistVideosGridClient
+        initialVideos={orderedArtistVideos}
+        seenVideoIds={Array.from(seenVideoIds)}
+        isAuthenticated={isAuthenticated}
+      />
     </>
   );
 }

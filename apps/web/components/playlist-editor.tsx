@@ -23,6 +23,23 @@ function getPlaylistVideoThumbnail(video: { id: string; thumbnail?: string | nul
     : `https://i.ytimg.com/vi/${encodeURIComponent(video.id)}/mqdefault.jpg`;
 }
 
+function matchesPlaylistVideoOrder(
+  a: Array<{ id: string }>,
+  b: Array<{ id: string }>,
+) {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index]?.id !== b[index]?.id) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProps) {
   const router = useRouter();
   const [isEditingName, setIsEditingName] = useState(false);
@@ -102,6 +119,7 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            playlistItemId: playlistVideos[index]?.playlistItemId,
             playlistItemIndex: index,
           }),
         });
@@ -184,7 +202,15 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
     }
 
     const previous = [...playlistVideos];
-    reorderTracksLocally(fromIndex, toIndex);
+    const reordered = [...playlistVideos];
+    const [moved] = reordered.splice(fromIndex, 1);
+
+    if (!moved) {
+      return;
+    }
+
+    reordered.splice(toIndex, 0, moved);
+    setPlaylistVideos(reordered);
 
     startTransition(async () => {
       try {
@@ -196,6 +222,8 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
           body: JSON.stringify({
             fromIndex,
             toIndex,
+            fromPlaylistItemId: previous[fromIndex]?.playlistItemId,
+            toPlaylistItemId: previous[toIndex]?.playlistItemId,
           }),
         });
 
@@ -211,8 +239,13 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
           return;
         }
 
+        const updatedPlaylist = (await response.json().catch(() => null)) as { videos?: Array<{ id: string }> } | null;
+
+        if (Array.isArray(updatedPlaylist?.videos) && matchesPlaylistVideoOrder(updatedPlaylist.videos, reordered)) {
+          setPlaylistVideos(updatedPlaylist.videos as typeof playlist.videos);
+        }
+
         window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
-        router.refresh();
       } catch {
         setError("Could not reorder tracks. Please try again.");
         setPlaylistVideos(previous);
@@ -291,16 +324,34 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
       <section className="playlistEditorContent">
         {playlistVideos.length > 0 ? (
           <div className="trackStack">
-            {playlistVideos.map((video, index) => (
-              <div
-                key={`${video.id}-${index}`}
-                className={`trackCard linkedCard leaderboardCard playlistEditorTrackRow${dropTargetIndex === index ? " playlistEditorTrackRowDropTarget" : ""}`}
-                draggable={isAuthenticated && !isPending && removingIndex === null}
-                onDragStart={() => handleDragStart(index)}
-                onDragOver={(event) => handleDragOver(index, event)}
-                onDrop={(event) => handleDrop(index, event)}
-                onDragEnd={resetDragState}
-              >
+            {playlistVideos.flatMap((video, index) => {
+              const isDraggingThis = draggingIndex === index;
+              const isDropTarget = draggingIndex !== null && dropTargetIndex === index && draggingIndex !== index;
+              const showPlaceholderAbove = isDropTarget && draggingIndex > index;
+              const showPlaceholderBelow = isDropTarget && draggingIndex < index;
+              const placeholder = (key: string) => (
+                <div
+                  key={key}
+                  className="playlistEditorDropPlaceholder"
+                  aria-hidden="true"
+                  onDragOver={(event) => { event.preventDefault(); }}
+                  onDrop={(event) => handleDrop(index, event)}
+                />
+              );
+              return [
+                ...(showPlaceholderAbove ? [placeholder(`ph-above-${index}`)] : []),
+                <div
+                  key={video.playlistItemId ?? `${video.id}-${index}`}
+                  className={[
+                    "trackCard linkedCard leaderboardCard playlistEditorTrackRow",
+                    isDraggingThis ? "playlistEditorTrackDragging" : "",
+                  ].filter(Boolean).join(" ")}
+                  draggable={isAuthenticated && !isPending && removingIndex === null}
+                  onDragStart={() => handleDragStart(index)}
+                  onDragOver={(event) => handleDragOver(index, event)}
+                  onDrop={(event) => handleDrop(index, event)}
+                  onDragEnd={resetDragState}
+                >
                 <Link
                   href={`/?v=${video.id}&pl=${encodeURIComponent(playlist.id)}&pli=${index}`}
                   className="leaderboardTrackLink"
@@ -335,8 +386,10 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
                 >
                   {removingIndex === index ? "..." : "✕"}
                 </button>
-              </div>
-            ))}
+              </div>,
+                ...(showPlaceholderBelow ? [placeholder(`ph-below-${index}`)] : []),
+              ];
+            })}
           </div>
         ) : (
           <div className="playlistEditorEmptyState" role="status" aria-live="polite">
