@@ -96,8 +96,6 @@ model User {
   location                String?                  @db.VarChar(255)
   playlists               PlaylistName[]
   messages                Message[]
-  aiTracks                AiTrack[]
-  aiTrackVotes            AiTrackVote[]
   authSessions            AuthSession[]
   authAudits              AuthAuditLog[]
   emailVerificationTokens EmailVerificationToken[]
@@ -284,37 +282,4 @@ model SiteVideo {
   video     Video?    @relation(fields: [videoId], references: [id])
 
   @@map("site_videos")
-}
-
-model AiTrack {
-  id          Int           @id @default(autoincrement())
-  title       String        @db.VarChar(255)
-  description String?       @db.Text
-  prompt      String?       @db.Text
-  genreId     Int?          @map("genre_id")
-  tool        String?       @db.VarChar(100)
-  audioUrl    String?       @map("audio_url") @db.VarChar(500)
-  artworkUrl  String?       @map("artwork_url") @db.VarChar(500)
-  playCount   Int           @default(0) @map("play_count")
-  uploadedBy  Int?          @map("uploaded_by")
-  status      String        @default("pending") @db.VarChar(20)
-  createdAt   DateTime?     @map("created_at")
-  updatedAt   DateTime?     @map("updated_at")
-  user        User?         @relation(fields: [uploadedBy], references: [id])
-  votes       AiTrackVote[]
-
-  @@map("ai_tracks")
-}
-
-model AiTrackVote {
-  id        Int       @id @default(autoincrement())
-  trackId   Int       @map("track_id")
-  userId    Int       @map("user_id")
-  vote      Int
-  createdAt DateTime? @map("created_at")
-  track     AiTrack   @relation(fields: [trackId], references: [id])
-  user      User      @relation(fields: [userId], references: [id])
-
-  @@unique([trackId, userId])
-  @@map("ai_track_votes")
 }
