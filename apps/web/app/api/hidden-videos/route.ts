@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { hiddenVideoMutationSchema } from "@/lib/api-schemas";
 import { requireApiAuth } from "@/lib/auth-request";
-import { getHiddenVideoIdsForUser, hideVideoForUser, unhideVideoForUser } from "@/lib/catalog-data";
+import { getHiddenVideoIdsForUser, getHiddenVideosForUser, hideVideoForUser, unhideVideoForUser } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
@@ -11,6 +11,32 @@ export async function GET(request: NextRequest) {
 
   if (!authResult.ok) {
     return authResult.response;
+  }
+
+  const limitRaw = request.nextUrl.searchParams.get("limit");
+  const offsetRaw = request.nextUrl.searchParams.get("offset");
+  const hasPaging = limitRaw !== null || offsetRaw !== null;
+
+  if (hasPaging) {
+    const parsedLimit = Number(limitRaw ?? "24");
+    const parsedOffset = Number(offsetRaw ?? "0");
+    const pageSize = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(100, Math.floor(parsedLimit))) : 24;
+    const offset = Number.isFinite(parsedOffset) ? Math.max(0, Math.floor(parsedOffset)) : 0;
+
+    const window = await getHiddenVideosForUser(authResult.auth.userId, {
+      limit: pageSize + 1,
+      offset,
+    });
+
+    const hasMore = window.length > pageSize;
+    const blockedVideos = hasMore ? window.slice(0, pageSize) : window;
+    const nextOffset = offset + blockedVideos.length;
+
+    return NextResponse.json({
+      blockedVideos,
+      hasMore,
+      nextOffset,
+    });
   }
 
   const hiddenVideoIds = await getHiddenVideoIdsForUser(authResult.auth.userId);

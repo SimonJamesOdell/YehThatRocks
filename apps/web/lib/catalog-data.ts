@@ -40,6 +40,11 @@ export type WatchHistoryEntry = {
   maxProgressPercent: number;
 };
 
+export type HiddenVideoEntry = {
+  video: VideoRecord;
+  hiddenAt: string;
+};
+
 export type GenreCard = {
   genre: string;
   previewVideoId: string | null;
@@ -4900,6 +4905,114 @@ export async function getHiddenVideoIdsForUser(userId: number): Promise<Set<stri
   }
 }
 
+export async function getHiddenVideoMatchesForUser(
+  userId: number,
+  candidateVideoIds: string[],
+): Promise<Set<string>> {
+  if (!hasDatabaseUrl() || !Number.isInteger(userId) || userId <= 0) {
+    return new Set<string>();
+  }
+
+  const normalizedCandidates = [...new Set(candidateVideoIds.filter((id) => typeof id === "string" && id.length > 0))];
+  if (normalizedCandidates.length === 0) {
+    return new Set<string>();
+  }
+
+  const chunks: string[][] = [];
+  for (let index = 0; index < normalizedCandidates.length; index += 500) {
+    chunks.push(normalizedCandidates.slice(index, index + 500));
+  }
+
+  try {
+    const hidden = new Set<string>();
+
+    for (const chunk of chunks) {
+      const placeholders = chunk.map(() => "?").join(", ");
+      const rows = await prisma.$queryRawUnsafe<Array<{ videoId: string | null }>>(
+        `
+          SELECT video_id AS videoId
+          FROM hidden_videos
+          WHERE user_id = ?
+            AND video_id IN (${placeholders})
+        `,
+        userId,
+        ...chunk,
+      );
+
+      for (const row of rows) {
+        if (row.videoId) {
+          hidden.add(row.videoId);
+        }
+      }
+    }
+
+    return hidden;
+  } catch {
+    return new Set<string>();
+  }
+}
+
+export async function getHiddenVideosForUser(userId: number, options?: { limit?: number; offset?: number }) {
+  if (!hasDatabaseUrl() || !Number.isInteger(userId) || userId <= 0) {
+    return [] as HiddenVideoEntry[];
+  }
+
+  const limit = Math.max(1, Math.min(200, Math.floor(options?.limit ?? 50)));
+  const offset = Math.max(0, Math.floor(options?.offset ?? 0));
+  const hasChannelTitleColumn = await ensureVideoChannelTitleColumnAvailable();
+  const channelTitleExpr = hasChannelTitleColumn
+    ? "NULLIF(TRIM(v.channelTitle), '')"
+    : "NULL";
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{
+      videoId: string | null;
+      title: string | null;
+      parsedArtist: string | null;
+      channelTitle: string | null;
+      favourited: number | bigint | null;
+      description: string | null;
+      hiddenAt: Date | string | null;
+    }>>(
+      `
+        SELECT
+          hv.video_id AS videoId,
+          COALESCE(v.title, CONCAT('Video ', hv.video_id)) AS title,
+          NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
+          ${channelTitleExpr} AS channelTitle,
+          COALESCE(v.favourited, 0) AS favourited,
+          COALESCE(v.description, 'Blocked track') AS description,
+          hv.created_at AS hiddenAt
+        FROM hidden_videos hv
+        LEFT JOIN videos v ON v.videoId = hv.video_id
+        WHERE hv.user_id = ?
+        ORDER BY hv.created_at DESC
+        LIMIT ${limit}
+        OFFSET ${offset}
+      `,
+      userId,
+    );
+
+    return rows
+      .filter((row) => typeof row.videoId === "string" && row.videoId.length > 0)
+      .map((row) => ({
+        video: mapVideo({
+          videoId: row.videoId as string,
+          title: row.title ?? "Unknown title",
+          channelTitle: row.channelTitle,
+          parsedArtist: row.parsedArtist,
+          favourited: row.favourited ?? 0,
+          description: row.description,
+        }),
+        hiddenAt: row.hiddenAt
+          ? new Date(row.hiddenAt).toISOString()
+          : new Date(0).toISOString(),
+      }));
+  } catch {
+    return [] as HiddenVideoEntry[];
+  }
+}
+
 export async function hideVideoForUser(input: { userId: number; videoId: string }) {
   const normalizedVideoId = normalizeYouTubeVideoId(input.videoId);
   if (!hasDatabaseUrl() || !normalizedVideoId || !Number.isInteger(input.userId) || input.userId <= 0) {
@@ -5852,5 +5965,29 @@ export async function getPublicPlaylistVideos(userId: number, playlistId: string
   } catch {
     return [];
   }
+}
+
+/**
+ * Filter videos to exclude hidden/blocked videos for a user.
+ * Returns a new array with only non-hidden videos.
+ */
+export async function filterHiddenVideos<T extends { id: string } | { videoId: string }>(
+  videos: T[],
+  userId?: number,
+): Promise<T[]> {
+  if (!userId || !hasDatabaseUrl()) {
+    return videos;
+  }
+
+  const videoIds = videos.map((video) => ("videoId" in video ? video.videoId : video.id));
+  const hiddenIds = await getHiddenVideoMatchesForUser(userId, videoIds);
+  if (hiddenIds.size === 0) {
+    return videos;
+  }
+
+  return videos.filter((video) => {
+    const videoId = "videoId" in video ? video.videoId : video.id;
+    return !hiddenIds.has(videoId);
+  });
 }
 

@@ -4,11 +4,18 @@ import { CloseLink } from "@/components/close-link";
 import { AccountSettingsPanel } from "@/components/account-settings-panel";
 import { AuthLogoutButton } from "@/components/auth-logout-button";
 import { isAdminIdentity } from "@/lib/admin-auth";
+import { getHiddenVideosForUser } from "@/lib/catalog-data";
 import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
 
 export default async function AccountPage() {
   const user = await getCurrentAuthenticatedUser();
   const isAdminUser = Boolean(user?.email && isAdminIdentity(user.id, user.email));
+  const blockedPageSize = 24;
+  const blockedWindow = user
+    ? await getHiddenVideosForUser(user.id, { limit: blockedPageSize + 1, offset: 0 })
+    : [];
+  const hasMoreBlocked = blockedWindow.length > blockedPageSize;
+  const initialBlockedVideos = hasMoreBlocked ? blockedWindow.slice(0, blockedPageSize) : blockedWindow;
 
   return (
     <>
@@ -34,6 +41,9 @@ export default async function AccountPage() {
             bio: user.bio,
             location: user.location,
           }}
+          initialBlockedVideos={initialBlockedVideos}
+          initialBlockedHasMore={hasMoreBlocked}
+          blockedPageSize={blockedPageSize}
         />
       ) : (
         <section className="panel featurePanel">

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { favouriteMutationSchema } from "@/lib/api-schemas";
 import { requireApiAuth } from "@/lib/auth-request";
-import { getFavouriteVideos, updateFavourite } from "@/lib/catalog-data";
+import { filterHiddenVideos, getFavouriteVideos, updateFavourite } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
@@ -13,7 +13,9 @@ export async function GET(request: NextRequest) {
     return authResult.response;
   }
 
-  const favourites = await getFavouriteVideos(authResult.auth.userId);
+  let favourites = await getFavouriteVideos(authResult.auth.userId);
+  // Filter out blocked videos from favourites
+  favourites = await filterHiddenVideos(favourites, authResult.auth.userId);
   return NextResponse.json({ favourites });
 }
 

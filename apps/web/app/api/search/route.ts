@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { searchCatalog } from "@/lib/catalog-data";
+import { filterHiddenVideos, searchCatalog } from "@/lib/catalog-data";
+import { getOptionalApiAuth } from "@/lib/auth-request";
 import { rateLimitOrResponse } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
@@ -9,6 +10,12 @@ export async function GET(request: NextRequest) {
 
   const query = request.nextUrl.searchParams.get("q") ?? "";
   const results = await searchCatalog(query);
+
+  // Filter blocked videos if user is authenticated
+  const authResult = await getOptionalApiAuth(request);
+  if (authResult?.userId && results.videos) {
+    results.videos = await filterHiddenVideos(results.videos, authResult.userId);
+  }
 
   return NextResponse.json({
     query,

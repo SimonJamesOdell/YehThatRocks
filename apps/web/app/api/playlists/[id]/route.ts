@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { renamePlaylistSchema } from "@/lib/api-schemas";
 import { requireApiAuth } from "@/lib/auth-request";
-import { deletePlaylist, getPlaylistById, getPlaylists, renamePlaylist } from "@/lib/catalog-data";
+import { deletePlaylist, filterHiddenVideos, getPlaylistById, getPlaylists, renamePlaylist } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
@@ -39,9 +39,11 @@ export async function GET(_request: NextRequest, context: PlaylistRouteContext) 
   }
 
   const { id } = await context.params;
-  const playlist = await getPlaylistById(id, authResult.auth.userId);
+  let playlist = await getPlaylistById(id, authResult.auth.userId);
 
   if (playlist) {
+    // Filter out blocked videos from playlist
+    playlist.videos = await filterHiddenVideos(playlist.videos, authResult.auth.userId);
     return NextResponse.json(toJsonSafeValue({
       ...playlist,
       itemCount: playlist.videos.length,

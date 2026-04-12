@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getCurrentVideo, getNewestVideos, getRelatedVideos, getTopVideos, getUnseenCatalogVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { filterHiddenVideos, getCurrentVideo, getNewestVideos, getRelatedVideos, getTopVideos, getUnseenCatalogVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { getOptionalApiAuth } from "@/lib/auth-request";
 
 const CURRENT_VIDEO_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_CATALOG === "1";
@@ -277,6 +277,11 @@ export async function GET(request: NextRequest) {
       const fillerPool = uniqueVideosById(topVideos.filter((video) => !blockedIds.has(video.id)));
       const filler = shuffleVideos(fillerPool).slice(0, targetRelatedCount - relatedVideos.length);
       paddedRelatedVideos = [...relatedVideos, ...filler];
+    }
+
+    // Filter out blocked videos for authenticated users
+    if (optionalAuth) {
+      paddedRelatedVideos = await filterHiddenVideos(paddedRelatedVideos, optionalAuth.userId);
     }
 
     const normalizedPayload: CurrentVideoPayload = {

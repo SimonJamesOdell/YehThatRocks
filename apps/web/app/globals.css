@@ -1368,7 +1368,7 @@ h1 {
 }
 
 .accountTabs {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   padding: 0;
   margin-bottom: 16px;
 }
@@ -2620,6 +2620,29 @@ h1 {
   box-shadow: 0 0 0 1px rgba(255, 115, 82, 0.35), 0 0 14px rgba(255, 58, 26, 0.35);
 }
 
+.primaryActions .primaryActionToggleButtonTrash {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  min-width: 56px;
+  min-height: 50px;
+  padding: 0;
+  gap: 0;
+  background: linear-gradient(180deg, #2a2a2a, #0f0f0f);
+  border: 2px solid rgba(206, 63, 63, 0.98);
+  color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(206, 63, 63, 0.5), 0 0 14px rgba(0, 0, 0, 0.28);
+}
+
+.primaryActions .primaryActionToggleButtonTrash:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.primaryActions .primaryActionToggleButtonTrash svg {
+  color: #e14d4d;
+}
+
 .primaryActions button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -2898,6 +2921,21 @@ h1 {
   position: relative;
 }
 
+.relatedCardSlot .relatedCard {
+  grid-template-columns: 112px minmax(0, 1fr) 34px;
+  column-gap: 10px;
+}
+
+.relatedCardSlot .relatedCard h3,
+.relatedCardSlot .relatedCard p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.relatedCardSlot .relatedCard > :nth-child(2) {
+  min-width: 0;
+}
+
 .relatedCardSlotExiting {
   opacity: 0;
   transform: translateX(18px) scale(0.98);
@@ -2947,8 +2985,8 @@ h1 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, rgba(148, 24, 26, 0.96), rgba(60, 8, 10, 0.96));
-  border: 1px solid rgba(255, 188, 170, 0.54);
+  background: linear-gradient(180deg, rgba(34, 34, 34, 0.97), rgba(8, 8, 8, 0.97));
+  border: 1px solid rgba(255, 255, 255, 0.28);
   color: #fff;
   font-size: 1.05rem;
   line-height: 1;
@@ -2957,7 +2995,7 @@ h1 {
 }
 
 .relatedCardHideButton:hover:not(:disabled) {
-  filter: brightness(1.1);
+  filter: brightness(1.2);
 }
 
 .relatedCardHideButton:disabled {
@@ -3375,6 +3413,48 @@ h1 {
 
 .historyMeta {
   min-width: 0;
+}
+
+.blockedVideosList {
+  gap: 12px;
+}
+
+.blockedVideosCard {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.blockedVideoTrackLink {
+  display: grid;
+  grid-template-columns: auto minmax(128px, 160px) minmax(0, 1fr);
+  align-items: center;
+}
+
+.blockedVideoUnblockButton {
+  min-width: 112px;
+  min-height: 50px;
+  padding: 0 14px;
+  align-self: center;
+  border: 1px solid rgba(255, 132, 108, 0.6);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(108, 20, 14, 0.92), rgba(52, 8, 7, 0.94));
+  color: #fff3ee;
+  box-shadow: 0 0 0 1px rgba(255, 132, 108, 0.28), 0 8px 16px rgba(0, 0, 0, 0.28);
+}
+
+.blockedVideoUnblockButton:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+@media (max-width: 900px) {
+  .blockedVideosCard {
+    grid-template-columns: 1fr;
+  }
+
+  .blockedVideoUnblockButton {
+    justify-self: start;
+  }
 }
 
 .catalogGrid {
