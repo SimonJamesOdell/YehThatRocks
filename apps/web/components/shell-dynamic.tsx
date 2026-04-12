@@ -219,6 +219,7 @@ const RELATED_LOAD_AHEAD_PX = 560;
 const RELATED_MAX_VIDEOS = 100;
 const RELATED_BACKGROUND_PREFETCH_TARGET = 35;
 const RELATED_BACKGROUND_PREFETCH_DELAY_MS = 650;
+const WATCH_NEXT_HIDE_ANIMATION_MS = 240;
 const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
 const PREFETCH_FAILURE_MAX_BACKOFF_MS = 20_000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
@@ -342,6 +343,8 @@ function ShellDynamicInner({
   const [playlistMutationMessage, setPlaylistMutationMessage] = useState<string | null>(null);
   const [playlistMutationTone, setPlaylistMutationTone] = useState<"info" | "success" | "error">("info");
   const [playlistMutationPendingVideoId, setPlaylistMutationPendingVideoId] = useState<string | null>(null);
+  const [hidingRelatedVideoIds, setHidingRelatedVideoIds] = useState<string[]>([]);
+  const [hiddenMutationPendingVideoIds, setHiddenMutationPendingVideoIds] = useState<string[]>([]);
   const [clickedRelatedVideoId, setClickedRelatedVideoId] = useState<string | null>(null);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const [flashingChatTabs, setFlashingChatTabs] = useState<Record<FlashableChatMode, boolean>>({
@@ -376,6 +379,7 @@ function ShellDynamicInner({
   const pendingRelatedVideosRef = useRef<VideoRecord[] | null>(null);
   const relatedTransitionTimeoutRef = useRef<number | null>(null);
   const relatedClickFlashTimeoutRef = useRef<number | null>(null);
+  const relatedHideTimeoutsRef = useRef<Map<string, number>>(new Map());
   const relatedStackRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadInFlightRef = useRef(false);
@@ -1990,13 +1994,87 @@ function ShellDynamicInner({
   }, [displayedRelatedVideos.length, relatedTransitionPhase, shouldDisableRelatedRailTransition]);
 
   useEffect(() => {
+    const hideTimeouts = relatedHideTimeoutsRef.current;
+
     return () => {
       if (relatedClickFlashTimeoutRef.current !== null) {
         window.clearTimeout(relatedClickFlashTimeoutRef.current);
         relatedClickFlashTimeoutRef.current = null;
       }
+
+      for (const timeoutId of hideTimeouts.values()) {
+        window.clearTimeout(timeoutId);
+      }
+      hideTimeouts.clear();
     };
   }, []);
+
+  const commitWatchNextHide = useCallback((videoId: string) => {
+    setHidingRelatedVideoIds((previous) => {
+      if (previous.includes(videoId)) {
+        return previous;
+      }
+
+      return [...previous, videoId];
+    });
+
+    const existingTimeoutId = relatedHideTimeoutsRef.current.get(videoId);
+    if (existingTimeoutId !== undefined) {
+      window.clearTimeout(existingTimeoutId);
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setDisplayedRelatedVideos((previous) => previous.filter((video) => video.id !== videoId));
+      setRelatedVideos((previous) => previous.filter((video) => video.id !== videoId));
+      hiddenVideoIdsRef.current.add(videoId);
+      setHidingRelatedVideoIds((previous) => previous.filter((candidateId) => candidateId !== videoId));
+      relatedHideTimeoutsRef.current.delete(videoId);
+    }, WATCH_NEXT_HIDE_ANIMATION_MS);
+
+    relatedHideTimeoutsRef.current.set(videoId, timeoutId);
+  }, []);
+
+  const handleHideFromWatchNext = useCallback(async (track: VideoRecord) => {
+    if (!isAuthenticated) {
+      setPlaylistMutationTone("error");
+      setPlaylistMutationMessage("Sign in to hide tracks from Watch Next.");
+      return;
+    }
+
+    if (hidingRelatedVideoIds.includes(track.id) || hiddenMutationPendingVideoIds.includes(track.id)) {
+      return;
+    }
+
+    commitWatchNextHide(track.id);
+    setHiddenMutationPendingVideoIds((previous) => [...previous, track.id]);
+
+    try {
+      const response = await fetchWithAuthRetry("/api/hidden-videos", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ videoId: track.id }),
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        setIsAuthenticated(false);
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Sign in to hide tracks from Watch Next.");
+        return;
+      }
+
+      if (!response.ok) {
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Track removed, but hidden preference could not be saved.");
+      }
+    } catch {
+      setPlaylistMutationTone("error");
+      setPlaylistMutationMessage("Track removed, but hidden preference could not be saved.");
+    } finally {
+      setHiddenMutationPendingVideoIds((previous) => previous.filter((videoId) => videoId !== track.id));
+    }
+  }, [commitWatchNextHide, fetchWithAuthRetry, hiddenMutationPendingVideoIds, hidingRelatedVideoIds, isAuthenticated]);
 
   const visibleNavItems = (
     isAuthenticated
@@ -3043,8 +3121,24 @@ function ShellDynamicInner({
               {displayedRenderableRelatedVideos.map((track, index) => (
                 <div
                   key={track.id}
-                  className="relatedCardSlot"
+                  className={hidingRelatedVideoIds.includes(track.id) ? "relatedCardSlot relatedCardSlotExiting" : "relatedCardSlot"}
                 >
+                  {isAuthenticated ? (
+                    <button
+                      type="button"
+                      className="relatedCardHideButton"
+                      aria-label={`Hide ${track.title} from Watch Next`}
+                      title="Hide from Watch Next"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void handleHideFromWatchNext(track);
+                      }}
+                      disabled={hidingRelatedVideoIds.includes(track.id) || hiddenMutationPendingVideoIds.includes(track.id)}
+                    >
+                      ×
+                    </button>
+                  ) : null}
                   <Link
                     href={`/?v=${track.id}`}
                     className={`relatedCard linkedCard relatedCardTransition${clickedRelatedVideoId === track.id ? " relatedCardClickFlash" : ""}`}
@@ -3096,7 +3190,7 @@ function ShellDynamicInner({
                         event.stopPropagation();
                         void handleAddToPlaylistFromWatchNext(track);
                       }}
-                      disabled={playlistMutationPendingVideoId === track.id}
+                      disabled={playlistMutationPendingVideoId === track.id || hidingRelatedVideoIds.includes(track.id)}
                     >
                       {playlistMutationPendingVideoId === track.id ? "..." : "+"}
                     </button>
