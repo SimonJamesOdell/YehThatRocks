@@ -1,4 +1,3 @@
--- AI feature was dropped. Remove legacy AI tables safely.
--- Drop child table first to avoid FK dependency issues.
-DROP TABLE IF EXISTS `ai_track_votes`;
-DROP TABLE IF EXISTS `ai_tracks`;
+-- No-op migration retained for compatibility.
+-- Canonical AI table removal is in 20260412072657_auto.
+SELECT 1;
