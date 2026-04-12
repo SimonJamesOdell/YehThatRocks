@@ -102,6 +102,7 @@ const AUTOPLAY_FALLBACK_POOL_SIZE = 600;
 const RANDOM_NEXT_RECENT_EXCLUSION = 18;
 const UNAVAILABLE_PLAYER_CODES = new Set([5, 100, 101, 150]);
 const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_PLAYER === "1";
+const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
 const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. Please choose another track.";
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
@@ -250,6 +251,8 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     const nextPlaylistIndexRef = useRef<number | null>(null);
     const activePlaylistIdRef = useRef<string | null>(activePlaylistId);
   const watchHistoryLevelRef = useRef<Map<string, number>>(new Map());
+  const watchHistoryRefreshInFlightRef = useRef<Promise<boolean> | null>(null);
+  const watchHistoryRefreshBlockedUntilRef = useRef(0);
   const [playlistQueueIds, setPlaylistQueueIds] = useState<string[]>([]);
   const [playlistRefreshTick, setPlaylistRefreshTick] = useState(0);
   const [topFallbackVideos, setTopFallbackVideos] = useState<VideoRecord[]>([]);
@@ -266,12 +269,17 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
   const [isAdminEditSaving, setIsAdminEditSaving] = useState(false);
   const [adminEditError, setAdminEditError] = useState<string | null>(null);
   const [adminEditStatus, setAdminEditStatus] = useState<string | null>(null);
+  const currentVideoRef = useRef(currentVideo);
   const autoplayEnabledRef = useRef(autoplayEnabled);
   const hasActivePlaylistSequenceRef = useRef(false);
   const hasPlaybackStartedRef = useRef(false);
   autoplayEnabledRef.current = autoplayEnabled;
   activePlaylistIdRef.current = activePlaylistId;
   hasPlaybackStartedRef.current = hasPlaybackStarted;
+
+  useEffect(() => {
+    currentVideoRef.current = currentVideo;
+  }, [currentVideo]);
 
   function handleFullscreenToggle() {
     if (!document.fullscreenElement) {
@@ -629,11 +637,8 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
   }
 
   async function reportWatchEvent(level: number, reason: "qualified" | "ended", explicitTime?: number, explicitDuration?: number) {
-    if (!isLoggedIn) {
-      return;
-    }
-
-    const currentLevel = watchHistoryLevelRef.current.get(currentVideo.id) ?? 0;
+    const activeVideoId = currentVideoRef.current.id;
+    const currentLevel = watchHistoryLevelRef.current.get(activeVideoId) ?? 0;
     if (currentLevel >= level) {
       return;
     }
@@ -662,28 +667,95 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
       return;
     }
 
-    watchHistoryLevelRef.current.set(currentVideo.id, level);
+    watchHistoryLevelRef.current.set(activeVideoId, level);
 
     try {
-      const response = await fetch("/api/watch-history", {
+      const requestPayload = {
+        videoId: activeVideoId,
+        reason,
+        positionSec,
+        durationSec,
+        progressPercent,
+      };
+
+      const sendWatchHistory = async () => fetch("/api/watch-history", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          videoId: currentVideo.id,
-          reason,
-          positionSec,
-          durationSec,
-          progressPercent,
-        }),
+        body: JSON.stringify(requestPayload),
       });
 
+      const refreshAccessTokenForWatchHistory = async () => {
+        const now = Date.now();
+
+        if (watchHistoryRefreshBlockedUntilRef.current > now) {
+          return false;
+        }
+
+        const inFlight = watchHistoryRefreshInFlightRef.current;
+        if (inFlight) {
+          return inFlight;
+        }
+
+        const pending = (async () => {
+          try {
+            const refreshResponse = await fetch("/api/auth/refresh", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: "{}",
+            });
+
+            if (!refreshResponse.ok) {
+              watchHistoryRefreshBlockedUntilRef.current = Date.now() + 60_000;
+              return false;
+            }
+
+            return true;
+          } catch {
+            watchHistoryRefreshBlockedUntilRef.current = Date.now() + 60_000;
+            return false;
+          }
+        })();
+
+        watchHistoryRefreshInFlightRef.current = pending;
+
+        try {
+          return await pending;
+        } finally {
+          if (watchHistoryRefreshInFlightRef.current === pending) {
+            watchHistoryRefreshInFlightRef.current = null;
+          }
+        }
+      };
+
+      let response = await sendWatchHistory();
+
+      if (!response.ok && (response.status === 401 || response.status === 403)) {
+        const refreshed = await refreshAccessTokenForWatchHistory();
+        if (refreshed) {
+          response = await sendWatchHistory();
+        }
+      }
+
       if (!response.ok) {
-        watchHistoryLevelRef.current.set(currentVideo.id, currentLevel);
+        watchHistoryLevelRef.current.set(activeVideoId, currentLevel);
+      } else {
+        const payload = (await response.json().catch(() => null)) as { ok?: boolean } | null;
+        if (!payload?.ok) {
+          watchHistoryLevelRef.current.set(activeVideoId, currentLevel);
+          return;
+        }
+
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event(WATCH_HISTORY_UPDATED_EVENT));
+        }
       }
     } catch {
-      watchHistoryLevelRef.current.set(currentVideo.id, currentLevel);
+      watchHistoryLevelRef.current.set(activeVideoId, currentLevel);
     }
   }
 
@@ -1012,6 +1084,15 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
               playAttemptedAtRef.current = null;
               setHasPlaybackStarted(true);
               hasPlaybackStartedRef.current = true;
+
+              const startedTime = playerRef.current && typeof playerRef.current.getCurrentTime === "function"
+                ? toSafeNumber(playerRef.current.getCurrentTime(), 0)
+                : currentTime;
+              const startedDuration = playerRef.current && typeof playerRef.current.getDuration === "function"
+                ? toSafeNumber(playerRef.current.getDuration(), 0)
+                : duration;
+              void reportWatchEvent(1, "qualified", startedTime, startedDuration);
+
               if (nowPlayingShownForVideoRef.current !== currentVideo.id) {
                 triggerNowPlayingOverlay();
                 nowPlayingShownForVideoRef.current = currentVideo.id;
@@ -1026,7 +1107,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                   persistResumeSnapshot(true, liveTime);
 
                   const progressPercent = liveDuration > 0 ? (liveTime / liveDuration) * 100 : 0;
-                  if (liveTime >= 8 || progressPercent >= 20) {
+                  if (liveTime >= 3 || progressPercent >= 8) {
                     void reportWatchEvent(1, "qualified", liveTime, liveDuration);
                   }
                 }

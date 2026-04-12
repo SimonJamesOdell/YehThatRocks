@@ -7,9 +7,12 @@ import type { MouseEvent } from "react";
 
 import type { ArtistRecord } from "@/lib/catalog";
 import {
+  ARTISTS_FILTER_CHANGE_EVENT,
   ARTISTS_LETTER_CHANGE_EVENT,
   isValidArtistLetter,
+  normalizeArtistFilterValue,
   normalizeArtistLetter,
+  type ArtistsFilterChangeDetail,
   type ArtistsLetterChangeDetail,
 } from "@/lib/artists-letter-events";
 
@@ -50,6 +53,7 @@ export function ArtistsLetterResults({
   const [currentLetter, setCurrentLetter] = useState(letter);
   const [artists, setArtists] = useState<ArtistWithCount[]>(() => dedupeArtistsBySlug(initialArtists));
   const [hasMore, setHasMore] = useState(initialHasMore);
+  const [filterValue, setFilterValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pendingArtistSlug, setPendingArtistSlug] = useState<string | null>(null);
@@ -240,6 +244,28 @@ export function ArtistsLetterResults({
     if (resume) params.set("resume", resume);
     return params;
   }, [currentLetter, resume, v]);
+
+  const normalizedFilterValue = useMemo(() => normalizeArtistFilterValue(filterValue), [filterValue]);
+
+  const filteredArtists = useMemo(() => {
+    if (!normalizedFilterValue) {
+      return artists;
+    }
+
+    return artists.filter((artist) => artist.name.toLowerCase().startsWith(normalizedFilterValue));
+  }, [artists, normalizedFilterValue]);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const custom = event as CustomEvent<ArtistsFilterChangeDetail>;
+      setFilterValue(custom.detail?.value ?? "");
+    };
+
+    window.addEventListener(ARTISTS_FILTER_CHANGE_EVENT, handler);
+    return () => {
+      window.removeEventListener(ARTISTS_FILTER_CHANGE_EVENT, handler);
+    };
+  }, []);
 
   function artistHref(slug: string) {
     return `/artist/${slug}?${baseParams.toString()}`;
@@ -480,14 +506,14 @@ export function ArtistsLetterResults({
     };
   }, [artists.length, currentLetter, hasMore, isLoading, pageSize]);
 
-  const chunkTriggerIndex = artists.length > pageSize ? Math.max(0, artists.length - pageSize) : -1;
+  const chunkTriggerIndex = filteredArtists.length > pageSize ? Math.max(0, filteredArtists.length - pageSize) : -1;
 
   return (
     <>
       <div ref={resultsTopRef} aria-hidden="true" style={{ height: 1 }} />
-      <div className="catalogGrid">
-        {artists.length > 0 ? (
-          artists.map((artist, index) => (
+      <div className="catalogGrid artistsCatalogGrid">
+        {filteredArtists.length > 0 ? (
+          filteredArtists.map((artist, index) => (
             <Fragment key={artist.slug}>
               <Link
                 ref={index === chunkTriggerIndex ? (element) => setChunkTriggerElement(chunkTriggerRef, element) : undefined}
@@ -522,13 +548,22 @@ export function ArtistsLetterResults({
         ) : (
           <article className="catalogCard">
             <p className="statusLabel">Artist directory</p>
-            <h3>No artists found for {currentLetter}</h3>
-            <p>Try another letter from the A-Z buttons above.</p>
+            {artists.length > 0 && normalizedFilterValue ? (
+              <>
+                <h3>No artists match that prefix in {currentLetter}</h3>
+                <p>Try a shorter filter or another letter from A-Z.</p>
+              </>
+            ) : (
+              <>
+                <h3>No artists found for {currentLetter}</h3>
+                <p>Try another letter from the A-Z buttons above.</p>
+              </>
+            )}
           </article>
         )}
       </div>
 
-      {artists.length > 0 ? (
+      {filteredArtists.length > 0 ? (
         <div className="routeContractRow" aria-live="polite">
           {pendingArtistSlug ? (
             <>

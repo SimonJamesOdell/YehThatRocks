@@ -2,13 +2,15 @@ import type { ReactNode } from "react";
 import { cookies } from "next/headers";
 import { ShellDynamic } from "@/components/shell-dynamic";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
-import { getCurrentVideo, getRelatedVideos } from "@/lib/catalog-data";
+import { getCurrentVideo, getRelatedVideos, getSeenVideoIdsForUser } from "@/lib/catalog-data";
 import { requireAdminUser } from "@/lib/admin-auth";
+import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
 
 export default async function ShellLayout({ children }: { children: ReactNode }) {
   const cookieStore = await cookies();
   const hasAccessToken = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
   const adminUser = await requireAdminUser();
+  const user = await getCurrentAuthenticatedUser();
   const initialVideo = await getCurrentVideo();
 
   if (!initialVideo) {
@@ -28,11 +30,13 @@ export default async function ShellLayout({ children }: { children: ReactNode })
   }
 
   const initialRelatedVideos = await getRelatedVideos(initialVideo.id);
+  const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();
 
   return (
     <ShellDynamic
       initialVideo={initialVideo}
       initialRelatedVideos={initialRelatedVideos}
+      initialSeenVideoIds={Array.from(seenVideoIds)}
       isLoggedIn={hasAccessToken}
       isAdmin={Boolean(adminUser)}
     >

@@ -18,9 +18,18 @@ function dedupeVideos(videos: VideoRecord[]) {
   });
 }
 
-export function NewVideosLoader({ initialVideos, isAuthenticated }: { initialVideos: VideoRecord[]; isAuthenticated: boolean }) {
+export function NewVideosLoader({
+  initialVideos,
+  isAuthenticated,
+  seenVideoIds = [],
+}: {
+  initialVideos: VideoRecord[];
+  isAuthenticated: boolean;
+  seenVideoIds?: string[];
+}) {
   const [allVideos, setAllVideos] = useState(() => dedupeVideos(initialVideos));
   const [loading, setLoading] = useState(true);
+  const seenVideoIdSet = new Set(seenVideoIds);
 
   useEffect(() => {
     const loadVideos = async () => {
@@ -54,6 +63,7 @@ export function NewVideosLoader({ initialVideos, isAuthenticated }: { initialVid
             setAllVideos((prev) => dedupeVideos([...prev, ...videos]));
           }
         }
+
       } catch (error) {
         console.error("Failed to load new videos:", error);
       } finally {
@@ -62,12 +72,18 @@ export function NewVideosLoader({ initialVideos, isAuthenticated }: { initialVid
     };
 
     void loadVideos();
-  }, [initialVideos]);
+  }, [initialVideos, isAuthenticated]);
 
   return (
     <div className="trackStack spanTwoColumns">
       {allVideos.map((track, index) => (
-        <Top100VideoLink key={track.id} track={track} index={index} isAuthenticated={isAuthenticated} />
+        <Top100VideoLink
+          key={track.id}
+          track={track}
+          index={index}
+          isAuthenticated={isAuthenticated}
+          isSeen={seenVideoIdSet.has(track.id)}
+        />
       ))}
       {loading && allVideos.length === 0 && (
         <div style={{ padding: "20px", textAlign: "center", color: "#999" }}>Loading more videos...</div>

@@ -25,39 +25,46 @@ function dedupeVideos(videos: VideoRecord[]) {
   });
 }
 
-export function Top100VideosLoader({ isAuthenticated }: { isAuthenticated: boolean }) {
-  const [videos, setVideos] = useState<VideoRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+function readTop100SessionCache() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(TOP100_SESSION_CACHE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as { cachedAt?: number; videos?: VideoRecord[] };
+    if (!Array.isArray(parsed.videos) || !Number.isFinite(parsed.cachedAt)) {
+      return null;
+    }
+
+    if (Date.now() - Number(parsed.cachedAt) > TOP100_SESSION_CACHE_TTL_MS) {
+      return null;
+    }
+
+    return dedupeVideos(parsed.videos).slice(0, 100);
+  } catch {
+    return null;
+  }
+}
+
+export function Top100VideosLoader({
+  isAuthenticated,
+  seenVideoIds = [],
+}: {
+  isAuthenticated: boolean;
+  seenVideoIds?: string[];
+}) {
+  const [videos, setVideos] = useState<VideoRecord[]>(() => readTop100SessionCache() ?? []);
+  const [isLoading, setIsLoading] = useState(() => videos.length === 0);
   const [error, setError] = useState<string | null>(null);
+  const seenVideoIdSet = new Set(seenVideoIds);
 
   useEffect(() => {
     let cancelled = false;
-
-    const readSessionCache = () => {
-      if (typeof window === "undefined") {
-        return null;
-      }
-
-      try {
-        const raw = window.sessionStorage.getItem(TOP100_SESSION_CACHE_KEY);
-        if (!raw) {
-          return null;
-        }
-
-        const parsed = JSON.parse(raw) as { cachedAt?: number; videos?: VideoRecord[] };
-        if (!Array.isArray(parsed.videos) || !Number.isFinite(parsed.cachedAt)) {
-          return null;
-        }
-
-        if (Date.now() - Number(parsed.cachedAt) > TOP100_SESSION_CACHE_TTL_MS) {
-          return null;
-        }
-
-        return dedupeVideos(parsed.videos).slice(0, 100);
-      } catch {
-        return null;
-      }
-    };
 
     const writeSessionCache = (rows: VideoRecord[]) => {
       if (typeof window === "undefined" || rows.length === 0) {
@@ -77,11 +84,7 @@ export function Top100VideosLoader({ isAuthenticated }: { isAuthenticated: boole
       }
     };
 
-    const cached = readSessionCache();
-    if (cached && cached.length > 0) {
-      setVideos(cached);
-      setIsLoading(false);
-      setError(null);
+    if (videos.length > 0) {
       return () => {
         cancelled = true;
       };
@@ -136,7 +139,7 @@ export function Top100VideosLoader({ isAuthenticated }: { isAuthenticated: boole
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [videos.length]);
 
   if (videos.length === 0) {
     return (
@@ -161,7 +164,13 @@ export function Top100VideosLoader({ isAuthenticated }: { isAuthenticated: boole
   return (
     <div className="trackStack spanTwoColumns">
       {videos.map((track, index) => (
-        <Top100VideoLink key={track.id} track={track} index={index} isAuthenticated={isAuthenticated} />
+        <Top100VideoLink
+          key={track.id}
+          track={track}
+          index={index}
+          isAuthenticated={isAuthenticated}
+          isSeen={seenVideoIdSet.has(track.id)}
+        />
       ))}
     </div>
   );

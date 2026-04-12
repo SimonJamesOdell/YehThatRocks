@@ -19,6 +19,7 @@ type Top100VideoLinkProps = {
   };
   index: number;
   isAuthenticated?: boolean;
+  isSeen?: boolean;
 };
 
 const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
@@ -46,7 +47,7 @@ function getLeaderboardThumbnail(track: { id: string; thumbnail?: string | null 
   return `https://i.ytimg.com/vi/${encodeURIComponent(track.id)}/mqdefault.jpg`;
 }
 
-export function Top100VideoLink({ track, index, isAuthenticated = true }: Top100VideoLinkProps) {
+export function Top100VideoLink({ track, index, isAuthenticated = true, isSeen = false }: Top100VideoLinkProps) {
   const hasWarmedRef = useRef(false);
   const clickFlashTimeoutRef = useRef<number | null>(null);
   const [isClickFlashing, setIsClickFlashing] = useState(false);
@@ -108,7 +109,9 @@ export function Top100VideoLink({ track, index, isAuthenticated = true }: Top100
   }, [stagePendingSelection, track.id, triggerClickFlash]);
 
   return (
-    <article className={`trackCard leaderboardCard top100CardWithPlaylistAction${isClickFlashing ? " top100CardClickFlash" : ""}`}>
+    <article
+      className={`trackCard leaderboardCard top100CardWithPlaylistAction${isSeen ? " top100CardSeen" : ""}${isClickFlashing ? " top100CardClickFlash" : ""}`}
+    >
       <Link
         href={`/?v=${track.id}&resume=1`}
         className="linkedCard leaderboardTrackLink"
@@ -128,6 +131,7 @@ export function Top100VideoLink({ track, index, isAuthenticated = true }: Top100
             className="leaderboardThumb"
             loading="lazy"
           />
+          {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay">Seen</span> : null}
         </div>
         <div className="leaderboardMeta">
           <h3>{track.title}</h3>

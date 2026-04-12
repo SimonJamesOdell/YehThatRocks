@@ -9,6 +9,7 @@ type CategoryVideosInfiniteProps = {
   slug: string;
   genre: string;
   isAuthenticated: boolean;
+  seenVideoIds?: string[];
   initialVideos: VideoRecord[];
   initialHasMore: boolean;
   pageSize?: number;
@@ -41,10 +42,30 @@ function dedupeVideosById(rows: VideoRecord[]) {
   return unique;
 }
 
+function sortVideosBySeen(videos: VideoRecord[], seenVideoIdSet: Set<string>) {
+  if (seenVideoIdSet.size === 0) {
+    return videos;
+  }
+
+  const unseen: VideoRecord[] = [];
+  const seen: VideoRecord[] = [];
+
+  for (const video of videos) {
+    if (seenVideoIdSet.has(video.id)) {
+      seen.push(video);
+    } else {
+      unseen.push(video);
+    }
+  }
+
+  return [...unseen, ...seen];
+}
+
 export function CategoryVideosInfinite({
   slug,
   genre,
   isAuthenticated,
+  seenVideoIds = [],
   initialVideos,
   initialHasMore,
   pageSize = 48,
@@ -53,6 +74,7 @@ export function CategoryVideosInfinite({
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const seenVideoIdSet = new Set(seenVideoIds);
   const nextOffsetRef = useRef(initialVideos.length);
   const requestedOffsetsRef = useRef(new Set<number>());
   const seenIdsRef = useRef(new Set(initialVideos.map((video) => video.id)));
@@ -233,8 +255,10 @@ export function CategoryVideosInfinite({
     };
   }, [hasMore, isLoading, pageSize, warmBuffer, videos.length]);
 
-  const chunkTriggerIndex = videos.length > pageSize
-    ? Math.max(0, videos.length - pageSize * SCROLL_BUFFER_PAGES)
+  const orderedVideos = sortVideosBySeen(videos, seenVideoIdSet);
+
+  const chunkTriggerIndex = orderedVideos.length > pageSize
+    ? Math.max(0, orderedVideos.length - pageSize * SCROLL_BUFFER_PAGES)
     : -1;
 
   if (videos.length === 0) {
@@ -244,13 +268,13 @@ export function CategoryVideosInfinite({
   return (
     <>
       <div className="categoryVideoGrid">
-        {videos.map((video, index) => (
+        {orderedVideos.map((video, index) => (
           <div
             key={video.id}
             className="categoryVideoObserverAnchor"
             ref={index === chunkTriggerIndex ? chunkTriggerRef : undefined}
           >
-            <ArtistVideoLink video={video} isAuthenticated={isAuthenticated} />
+            <ArtistVideoLink video={video} isAuthenticated={isAuthenticated} isSeen={seenVideoIdSet.has(video.id)} />
           </div>
         ))}
       </div>

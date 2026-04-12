@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import type { WatchHistoryEntry } from "@/lib/catalog-data";
@@ -23,6 +23,8 @@ type HistoryGroup = {
   label: string;
   entries: WatchHistoryEntry[];
 };
+
+const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
 
 function getVideoThumbnailUrl(videoId: string) {
   return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/mqdefault.jpg`;
@@ -90,12 +92,26 @@ function getDateHeadingLabel(value: string) {
 
 export function HistoryInfiniteList({ initialHistory, initialHasMore, pageSize = 40 }: HistoryInfiniteListProps) {
   const [history, setHistory] = useState<WatchHistoryEntry[]>(initialHistory);
+  const [filterValue, setFilterValue] = useState("");
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const nextOffsetRef = useRef(initialHistory.length);
   const requestedOffsetsRef = useRef(new Set<number>());
+
+  const filteredHistory = useMemo(() => {
+    const needle = filterValue.trim().toLowerCase();
+    if (!needle) {
+      return history;
+    }
+
+    return history.filter((entry) => {
+      const title = entry.video.title.toLowerCase();
+      const artist = (entry.video.channelTitle || "").toLowerCase();
+      return title.startsWith(needle) || artist.startsWith(needle);
+    });
+  }, [filterValue, history]);
 
   const seenKeys = useMemo(() => {
     return new Set(history.map((entry) => `${entry.video.id}:${entry.lastWatchedAt}`));
@@ -105,7 +121,7 @@ export function HistoryInfiniteList({ initialHistory, initialHasMore, pageSize =
     const groups: HistoryGroup[] = [];
     const byKey = new Map<string, HistoryGroup>();
 
-    for (const entry of history) {
+    for (const entry of filteredHistory) {
       const parsed = new Date(entry.lastWatchedAt);
       const key = Number.isNaN(parsed.getTime()) ? "unknown" : toLocalDayKey(parsed);
       let group = byKey.get(key);
@@ -124,7 +140,58 @@ export function HistoryInfiniteList({ initialHistory, initialHasMore, pageSize =
     }
 
     return groups;
-  }, [history]);
+  }, [filteredHistory]);
+
+  const refreshLatestHistoryWindow = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/watch-history?limit=${pageSize}&offset=0`, {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as WatchHistoryPayload;
+      const latest = Array.isArray(payload.history) ? payload.history : [];
+      const hasMoreLatest = Boolean(payload.hasMore);
+      const nextOffset = Number(payload.nextOffset);
+
+      setHistory(latest);
+      setHasMore(hasMoreLatest);
+      nextOffsetRef.current = Number.isFinite(nextOffset) ? nextOffset : latest.length;
+      requestedOffsetsRef.current.clear();
+    } catch {
+      // Keep existing history when refresh fails.
+    }
+  }, [pageSize]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      await refreshLatestHistoryWindow();
+      if (cancelled) {
+        return;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshLatestHistoryWindow]);
+
+  useEffect(() => {
+    const handleWatchHistoryUpdated = () => {
+      void refreshLatestHistoryWindow();
+    };
+
+    window.addEventListener(WATCH_HISTORY_UPDATED_EVENT, handleWatchHistoryUpdated);
+
+    return () => {
+      window.removeEventListener(WATCH_HISTORY_UPDATED_EVENT, handleWatchHistoryUpdated);
+    };
+  }, [refreshLatestHistoryWindow]);
 
   async function loadMore(offset: number) {
     if (requestedOffsetsRef.current.has(offset) || isLoading || !hasMore) {
@@ -210,8 +277,21 @@ export function HistoryInfiniteList({ initialHistory, initialHasMore, pageSize =
 
   return (
     <section className="accountHistoryPanel historyPagePanel">
+      <div className="historyFilterBar">
+        <input
+          type="text"
+          className="categoriesFilterInput"
+          placeholder="type to filter..."
+          value={filterValue}
+          onChange={(event) => setFilterValue(event.target.value)}
+          aria-label="Filter history by prefix"
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </div>
+
       <div className="historyGroups">
-        {groupedHistory.map((group) => (
+        {groupedHistory.length > 0 ? groupedHistory.map((group) => (
           <section key={group.key} className="historyDateGroup" aria-label={group.label}>
             <h3 className="historyDateHeading">{group.label}</h3>
             <ul className="accountHistoryList historyGroupList">
@@ -252,7 +332,11 @@ export function HistoryInfiniteList({ initialHistory, initialHasMore, pageSize =
               ))}
             </ul>
           </section>
-        ))}
+        )) : (
+          <section className="accountHistoryPanel historyPagePanel">
+            <p className="authMessage">No history entries match that prefix.</p>
+          </section>
+        )}
       </div>
 
       <div className="routeContractRow" aria-live="polite">

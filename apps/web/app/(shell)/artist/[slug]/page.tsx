@@ -5,7 +5,8 @@ import { notFound } from "next/navigation";
 import { ArtistVideoLink } from "@/components/artist-video-link";
 import { CloseLink } from "@/components/close-link";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
-import { getArtistBySlug, getVideosByArtist } from "@/lib/catalog-data";
+import { getArtistBySlug, getSeenVideoIdsForUser, getVideosByArtist } from "@/lib/catalog-data";
+import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
 
 type ArtistPageProps = {
   params: Promise<{ slug: string }>;
@@ -15,6 +16,8 @@ type ArtistPageProps = {
 export default async function ArtistPage({ params, searchParams }: ArtistPageProps) {
   const cookieStore = await cookies();
   const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
+  const user = await getCurrentAuthenticatedUser();
+  const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();
   const { slug } = await params;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const letter = typeof resolvedSearchParams?.letter === "string" ? resolvedSearchParams.letter : undefined;
@@ -33,6 +36,9 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
   const artistsHref = artistsParams.toString() ? `/artists?${artistsParams.toString()}` : "/artists";
 
   const artistVideos = await getVideosByArtist(artist.name);
+  const orderedArtistVideos = artistVideos
+    .filter((video) => !seenVideoIds.has(video.id))
+    .concat(artistVideos.filter((video) => seenVideoIds.has(video.id)));
 
   return (
     <>
@@ -51,8 +57,13 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
       </div>
 
       <div className="categoryVideoGrid artistVideoGrid">
-        {artistVideos.map((video) => (
-          <ArtistVideoLink key={video.id} video={video} isAuthenticated={isAuthenticated} />
+        {orderedArtistVideos.map((video) => (
+          <ArtistVideoLink
+            key={video.id}
+            video={video}
+            isAuthenticated={isAuthenticated}
+            isSeen={seenVideoIds.has(video.id)}
+          />
         ))}
       </div>
     </>

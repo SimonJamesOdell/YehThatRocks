@@ -9,9 +9,11 @@ import {
   getGenreBySlug,
   getGenres,
   getGenreSlug,
+  getSeenVideoIdsForUser,
   getVideosByGenre,
 } from "@/lib/catalog-data";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
+import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
 
 export const revalidate = 3600;
 const CATEGORY_INITIAL_PAGE_SIZE = 48;
@@ -28,6 +30,8 @@ type CategoryPageProps = {
 export default async function CategoryDetailPage({ params }: CategoryPageProps) {
   const cookieStore = await cookies();
   const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
+  const user = await getCurrentAuthenticatedUser();
+  const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();
   const { slug } = await params;
   const genre = await getGenreBySlug(slug);
 
@@ -60,6 +64,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
         slug={slug}
         genre={genre}
         isAuthenticated={isAuthenticated}
+        seenVideoIds={Array.from(seenVideoIds)}
         initialVideos={initialVideos}
         initialHasMore={initialHasMore}
         pageSize={CATEGORY_INITIAL_PAGE_SIZE}

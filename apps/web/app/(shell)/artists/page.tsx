@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 
+import { ArtistsFilterHeader } from "@/components/artists-filter-header";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { ArtistsLetterResults } from "@/components/artists-letter-results";
-import { CloseLink } from "@/components/close-link";
+import { ArtistsScrollReset } from "@/components/artists-scroll-reset";
 import { getArtistsByLetter } from "@/lib/catalog-data";
 
 type ArtistsPageProps = {
@@ -34,12 +35,9 @@ export default async function ArtistsPage({ searchParams }: ArtistsPageProps) {
 
   return (
     <>
-      <div className="favouritesBlindBar">
-        <strong>
-          <span className="categoryHeaderBreadcrumb">🎸 Artists</span>
-        </strong>
-        <CloseLink />
-      </div>
+      <ArtistsScrollReset />
+
+      <ArtistsFilterHeader activeLetter={activeLetter} v={v} resume={resume} />
 
       <ArtistsLetterNav activeLetter={activeLetter} v={v} resume={resume} variant="mobile" />
 

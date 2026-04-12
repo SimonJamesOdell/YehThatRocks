@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 
-import { CloseLink } from "@/components/close-link";
 import { FavouritesGrid } from "@/components/favourites-grid";
+import { FavouritesScrollReset } from "@/components/favourites-scroll-reset";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { getFavouriteVideos } from "@/lib/catalog-data";
 import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
@@ -14,11 +14,7 @@ export default async function FavouritesPage() {
 
   return (
     <>
-      <div className="favouritesBlindBar">
-        <strong><span className="whiteHeart" aria-hidden="true">❤️</span> Favourites</strong>
-        <CloseLink />
-      </div>
-
+      <FavouritesScrollReset />
       <FavouritesGrid initialFavourites={favourites} isAuthenticated={hasAccessToken} />
     </>
   );
