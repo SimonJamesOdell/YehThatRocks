@@ -5013,6 +5013,16 @@ h1 {
   color: var(--text);
 }
 
+.authPasswordInputWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.authPasswordInputWrap input {
+  padding-right: 52px;
+}
+
 .authForm textarea {
   width: 100%;
   padding: 14px 16px;
@@ -5030,6 +5040,35 @@ h1 {
   background: linear-gradient(180deg, #aa1e11, #5a0906);
   color: var(--text);
   box-shadow: var(--glow);
+}
+
+.authForm .authPasswordToggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.authForm .authPasswordToggle:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.authForm .authPasswordToggle:focus-visible {
+  outline: 2px solid rgba(255, 103, 74, 0.42);
+  outline-offset: 2px;
 }
 
 .authMessage {

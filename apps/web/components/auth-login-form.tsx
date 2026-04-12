@@ -21,6 +21,7 @@ export function AuthLoginForm() {
   const hasAttemptedAutoLoginRef = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
   async function submitLogin(email: string, password: string) {
     const remember = true;
@@ -143,15 +144,27 @@ export function AuthLoginForm() {
         <span>Email or username</span>
         <input name="email" type="text" placeholder="you@example.com or your handle" required autoComplete="username" />
       </label>
-      <label>
+      <label className="authPasswordField">
         <span>Password</span>
-        <input
-          name="password"
-          type="password"
-          placeholder="••••••••"
-          required
-          autoComplete="current-password"
-        />
+        <div className="authPasswordInputWrap">
+          <input
+            name="password"
+            type={isPasswordVisible ? "text" : "password"}
+            placeholder="••••••••"
+            required
+            autoComplete="current-password"
+          />
+          <button
+            type="button"
+            className="authPasswordToggle"
+            aria-label={isPasswordVisible ? "Hide password" : "Show password"}
+            title={isPasswordVisible ? "Hide password" : "Show password"}
+            aria-pressed={isPasswordVisible}
+            onClick={() => setIsPasswordVisible((current) => !current)}
+          >
+            <span aria-hidden="true">👁</span>
+          </button>
+        </div>
       </label>
       <button type="submit" disabled={isSubmitting}>
         {isSubmitting ? "Logging in..." : "Login"}

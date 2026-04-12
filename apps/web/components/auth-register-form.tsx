@@ -7,6 +7,8 @@ export function AuthRegisterForm() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -58,27 +60,51 @@ export function AuthRegisterForm() {
         <span>Screen name</span>
         <input name="screenName" type="text" placeholder="MetalFan204" required minLength={2} maxLength={40} autoComplete="nickname" />
       </label>
-      <label>
+      <label className="authPasswordField">
         <span>Password</span>
-        <input
-          name="password"
-          type="password"
-          placeholder="Minimum 8 characters"
-          required
-          minLength={8}
-          autoComplete="new-password"
-        />
+        <div className="authPasswordInputWrap">
+          <input
+            name="password"
+            type={isPasswordVisible ? "text" : "password"}
+            placeholder="Minimum 8 characters"
+            required
+            minLength={8}
+            autoComplete="new-password"
+          />
+          <button
+            type="button"
+            className="authPasswordToggle"
+            aria-label={isPasswordVisible ? "Hide password" : "Show password"}
+            title={isPasswordVisible ? "Hide password" : "Show password"}
+            aria-pressed={isPasswordVisible}
+            onClick={() => setIsPasswordVisible((current) => !current)}
+          >
+            <span aria-hidden="true">👁</span>
+          </button>
+        </div>
       </label>
-      <label>
+      <label className="authPasswordField">
         <span>Confirm password</span>
-        <input
-          name="confirmPassword"
-          type="password"
-          placeholder="Repeat password"
-          required
-          minLength={8}
-          autoComplete="new-password"
-        />
+        <div className="authPasswordInputWrap">
+          <input
+            name="confirmPassword"
+            type={isConfirmPasswordVisible ? "text" : "password"}
+            placeholder="Repeat password"
+            required
+            minLength={8}
+            autoComplete="new-password"
+          />
+          <button
+            type="button"
+            className="authPasswordToggle"
+            aria-label={isConfirmPasswordVisible ? "Hide confirm password" : "Show confirm password"}
+            title={isConfirmPasswordVisible ? "Hide confirm password" : "Show confirm password"}
+            aria-pressed={isConfirmPasswordVisible}
+            onClick={() => setIsConfirmPasswordVisible((current) => !current)}
+          >
+            <span aria-hidden="true">👁</span>
+          </button>
+        </div>
       </label>
       <button type="submit" disabled={isSubmitting} className="spanTwoColumns">
         {isSubmitting ? "Registering..." : "Register"}
