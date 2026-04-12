@@ -170,13 +170,9 @@ else
   WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" pull web
 fi
 
-echo "[deploy] checking pending migrations"
-WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" run --rm --no-deps web \
-  sh -c 'npx prisma migrate status --schema /app/prisma/schema.prisma' || true
-
 echo "[deploy] applying database migrations"
 if ! WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" run --rm --no-deps web \
-    sh -c 'npx prisma migrate deploy --schema /app/prisma/schema.prisma'; then
+    sh -c 'npx prisma migrate status --schema /app/prisma/schema.prisma; npx prisma migrate deploy --schema /app/prisma/schema.prisma'; then
   echo "[deploy] migration failed — aborting before any traffic is affected" >&2
   cleanup_docker_artifacts
   exit 1
