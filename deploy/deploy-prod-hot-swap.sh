@@ -170,6 +170,19 @@ else
   WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" pull web
 fi
 
+echo "[deploy] checking pending migrations"
+WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" run --rm --no-deps web \
+  sh -c 'npx prisma migrate status --schema /app/prisma/schema.prisma' || true
+
+echo "[deploy] applying database migrations"
+if ! WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" run --rm --no-deps web \
+    sh -c 'npx prisma migrate deploy --schema /app/prisma/schema.prisma'; then
+  echo "[deploy] migration failed — aborting before any traffic is affected" >&2
+  cleanup_docker_artifacts
+  exit 1
+fi
+echo "[deploy] migrations applied"
+
 STATUS_URL="http://127.0.0.1:${APP_PORT}${HEALTH_PATH}"
 echo "[deploy] preflighting candidate image before swap"
 CANARY_NAME="yehthatrocks-web-canary-${CURRENT_COMMIT}-$$"
@@ -194,6 +207,11 @@ if wait_for_public_health "$STATUS_URL" "$HEALTH_TIMEOUT_SEC"; then
   echo "[deploy] health check passed"
   cleanup_docker_artifacts
   echo "[deploy] deploy complete: $CURRENT_COMMIT"
+  if [ -f "$REPO_DIR/deploy/verify-live-schema.sh" ]; then
+    echo "[deploy] verifying schema parity"
+    REPO_DIR="$REPO_DIR" ENV_FILE="$ENV_FILE" COMPOSE_FILE="$COMPOSE_FILE" \
+      bash "$REPO_DIR/deploy/verify-live-schema.sh" || echo "[deploy] WARNING: schema verification failed — run: bash deploy/verify-live-schema.sh" >&2
+  fi
   exit 0
 fi
 
