@@ -1,15 +1,24 @@
+import { cookies } from "next/headers";
+import Image from "next/image";
 import Link from "next/link";
 
+import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { CloseLink } from "@/components/close-link";
 import { NewScrollReset } from "@/components/new-scroll-reset";
-import { getGenreSlug, searchCatalog } from "@/lib/catalog-data";
+import { getGenreSlug, getSeenVideoIdsForUser, searchCatalog } from "@/lib/catalog-data";
+import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
 
 type SearchPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 export default async function SearchPage({ searchParams }: SearchPageProps) {
+  const cookieStore = await cookies();
+  const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
+  const user = await getCurrentAuthenticatedUser();
+  const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const query = typeof resolvedSearchParams?.q === "string" ? resolvedSearchParams.q : "";
   const results = await searchCatalog(query);
@@ -27,18 +36,27 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
         <CloseLink />
       </div>
 
-      <div className="trackStack">
-        {uniqueVideos.map((video) => (
-          <article key={video.id} className="trackCard leaderboardCard searchResultCard">
+      <div className="trackStack spanTwoColumns">
+        {uniqueVideos.map((video) => {
+          const isSeen = seenVideoIds.has(video.id);
+
+          return (
+          <article
+            key={video.id}
+            className={`trackCard leaderboardCard top100CardWithPlaylistAction${isSeen ? " top100CardSeen" : ""}`}
+          >
             <Link href={`/?v=${video.id}&resume=1`} className="linkedCard leaderboardTrackLink">
+              <div className="queueBadge">Result</div>
               <div className="leaderboardThumbWrap">
-                <img
+                <Image
                   src={`https://i.ytimg.com/vi/${encodeURIComponent(video.id)}/mqdefault.jpg`}
                   alt=""
+                  width={160}
+                  height={90}
                   className="leaderboardThumb"
                   loading="lazy"
-                  decoding="async"
                 />
+                {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay">Seen</span> : null}
               </div>
               <div className="leaderboardMeta">
                 <h3>{video.title}</h3>
@@ -49,8 +67,12 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                 </p>
               </div>
             </Link>
+            <div className="top100CardAction">
+              <AddToPlaylistButton videoId={video.id} isAuthenticated={isAuthenticated} />
+            </div>
           </article>
-        ))}
+          );
+        })}
       </div>
 
       {(uniqueArtists.length > 0 || uniqueGenres.length > 0) && (

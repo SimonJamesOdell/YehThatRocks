@@ -47,9 +47,13 @@ function main() {
 
   // Deduplication before render
   assertContains(searchPageSource, "const uniqueVideos = results.videos.filter(", "Search page deduplicates videos by id before render", failures);
-  assertContains(searchPageSource, "{uniqueVideos.map((video) => (", "Search page renders deduplicated video list", failures);
+  assertContains(searchPageSource, "{uniqueVideos.map((video) => {", "Search page renders deduplicated video list", failures);
   assertContains(searchPageSource, "new Map(results.artists.map((artist) => [artist.slug, artist])).values()", "Search page deduplicates artists by slug", failures);
   assertContains(searchPageSource, "new Set(results.genres)", "Search page deduplicates genres using Set", failures);
+  assertContains(searchPageSource, "const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();", "Search page loads seen video ids for authenticated users", failures);
+  assertContains(searchPageSource, "const isSeen = seenVideoIds.has(video.id);", "Search page computes seen status per video", failures);
+  assertContains(searchPageSource, "top100CardSeen", "Search page applies seen-card darkening class used by New/Top100", failures);
+  assertContains(searchPageSource, 'videoSeenBadge videoSeenBadgeOverlay', "Search page renders seen badge overlay on thumbnails", failures);
 
   // Results: videos linked with resume flag
   assertContains(searchPageSource, "/?v=${video.id}&resume=1", "Search page video links include resume=1 flag", failures);
