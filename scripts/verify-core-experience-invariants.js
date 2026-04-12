@@ -66,8 +66,12 @@ function main() {
 
   // Player invariants.
   assertContains(playerExperienceSource, "const AUTOPLAY_KEY = \"yeh-player-autoplay\";", "Player persists autoplay preference key", failures);
+  assertContains(playerExperienceSource, "const PLAYER_VOLUME_KEY = \"yeh-player-volume\";", "Player defines persisted volume preference key", failures);
+  assertContains(playerExperienceSource, "const PLAYER_MUTED_KEY = \"yeh-player-muted\";", "Player defines persisted mute preference key", failures);
   assertContains(playerExperienceSource, "const RESUME_KEY = \"yeh-player-resume\";", "Player defines resume snapshot key", failures);
   assertContains(playerExperienceSource, "window.localStorage.setItem(AUTOPLAY_KEY, String(nextValue));", "Player writes autoplay preference to localStorage", failures);
+  assertContains(playerExperienceSource, "window.localStorage.setItem(PLAYER_VOLUME_KEY, String(Math.max(0, Math.min(100, volume))));", "Player writes volume preference to localStorage", failures);
+  assertContains(playerExperienceSource, "window.localStorage.setItem(PLAYER_MUTED_KEY, String(isMuted));", "Player writes mute preference to localStorage", failures);
   assertContains(playerExperienceSource, "const activePlaylistId = searchParams.get(\"pl\");", "Player reads playlist context from query params", failures);
   assertContains(playerExperienceSource, "const playlistId = activePlaylistId;", "Player snapshots active playlist id before async loading", failures);
   assertContains(playerExperienceSource, "const response = await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {", "Player loads playlist sequence for ordered playback", failures);
@@ -88,6 +92,10 @@ function main() {
   assertContains(playerExperienceSource, "const shouldAutoplaySelection = Boolean(requestedVideoId && requestedVideoId === currentVideo.id);", "Player only autoplays when requested id matches loaded video", failures);
   assertContains(playerExperienceSource, "showUnavailableOverlayMessage();", "Player shows unavailable apology overlay when runtime checks fail", failures);
   assertContains(playerExperienceSource, "const response = await fetch(\"/api/videos/unavailable\", {", "Player reports unavailable videos to API", failures);
+  assertContains(playerExperienceSource, "const activeVideoId = currentVideoRef.current.id;", "Player evaluates errors against active runtime video id", failures);
+  assertContains(playerExperienceSource, "if (activeVideoId !== currentVideo.id) {", "Player ignores stale unavailable callbacks from replaced instances", failures);
+  assertContains(playerExperienceSource, "const playbackAlreadyEstablished =", "Player skips unavailable handling once playback is established", failures);
+  assertContains(playerExperienceSource, "setUnavailableOverlayMessage(null);", "Player clears stale unavailable overlay once playback starts", failures);
   assertContains(playerExperienceSource, "setPlayerHostMode(\"youtube\");", "Player retries restricted videos with youtube host fallback", failures);
   assertContains(playerExperienceSource, "const [showShareModal, setShowShareModal] = useState(false);", "Player tracks modal share state", failures);
   assertContains(playerExperienceSource, "setShowShareModal(true);", "Player opens share modal from social share action", failures);
@@ -95,6 +103,12 @@ function main() {
   assertContains(playerExperienceSource, 'buildCanonicalShareUrl(currentVideo.id)', "Player uses canonical short share URLs", failures);
   assertContains(playerExperienceSource, '<ArtistWikiLink', "Player renders artist wiki links in player surfaces", failures);
   assertContains(playerExperienceSource, 'asButton', "Player uses button mode for footer artist wiki control", failures);
+  assertContains(playerExperienceSource, "const [localTitleOverride, setLocalTitleOverride] = useState<string | null>(null);", "Player keeps a local title override for immediate admin edit feedback", failures);
+  assertContains(playerExperienceSource, "const displayTitle = localTitleOverride ?? currentVideo.title;", "Player uses title override for immediate UI updates", failures);
+  assertContains(playerExperienceSource, "setLocalTitleOverride(adminEditTitle);", "Player applies admin title update locally immediately after save", failures);
+
+  // Dock sizing hot-reload invariant.
+  assertContains(shellDynamicSource, "const frame = chrome.querySelector(\".playerFrame, .playerLoadingFallback\") as HTMLElement | null;", "Shell computes dock sizing using either player frame or loading fallback", failures);
 
   // Player hover-controls recovery invariants.
   assertContains(playerExperienceSource, "playerFrameRef.current?.matches(\":hover\")", "Player checks real hover state via :hover pseudo-class after pathname change", failures);
