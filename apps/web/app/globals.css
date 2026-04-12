@@ -16,6 +16,24 @@
   --header-side-reserved: clamp(250px, 16vw, 320px);
   --header-search-width: clamp(260px, calc(16vw + 40px), 340px);
 }
+.videoSeenBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  background: #000;
+  color: #fff;
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  white-space: nowrap;
+  vertical-align: middle;
+}
 
 * {
   box-sizing: border-box;
@@ -1578,40 +1596,61 @@ h1 {
   }
 
   .playerChromeDockedDesktop .overlayBottom {
-    gap: 8px;
+    gap: 16px;
     padding: 46px 12px 14px;
   }
 
   .playerChromeDockedDesktop .overlayProgress {
-    height: 8px;
-    margin: 6px 0;
+    height: 16px;
+    margin: 12px 0;
   }
 
   .playerChromeDockedDesktop .overlayProgressWrap {
-    gap: 6px;
+    gap: 12px;
   }
 
   .playerChromeDockedDesktop .overlayVolume {
-    gap: 10px;
+    gap: 20px;
   }
 
   .playerChromeDockedDesktop .overlayVolumeSlider {
-    width: 132px;
-    height: 8px;
+    width: 264px;
+    height: 16px;
   }
 
   .playerChromeDockedDesktop .overlayIconBtn {
-    padding: 9px;
+    padding: 18px;
   }
 
   .playerChromeDockedDesktop .overlayIconBtn svg {
-    width: 22px;
-    height: 22px;
+    width: 44px;
+    height: 44px;
   }
 
   .playerChromeDockedDesktop .overlayTimeMeta {
-    font-size: 0.95rem;
-    gap: 6px;
+    margin-left: 16px;
+    font-size: 2.2rem;
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: 0.01em;
+    gap: 10px;
+  }
+
+  .playerChromeDockedDesktop .shareMenu {
+    top: calc(100% + 8px);
+    width: min(360px, calc(100vw - 32px));
+    min-width: 0;
+    border-radius: 16px;
+    padding: 12px;
+    gap: 4px;
+  }
+
+  .playerChromeDockedDesktop .shareMenu button {
+    padding: 16px 24px;
+    border-radius: 12px;
+    font-size: 2rem;
+    font-weight: 600;
+    line-height: 1.15;
   }
 
   .playerChromeDockedDesktop .shareUrlField {
@@ -3092,6 +3131,21 @@ h1 {
   box-shadow: var(--glow);
 }
 
+.trackCard.leaderboardCard.top100CardSeen {
+  background: linear-gradient(180deg, rgba(14, 14, 14, 0.92), rgba(8, 8, 8, 0.96));
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.trackCard.leaderboardCard.top100CardSeen .leaderboardThumb {
+  filter: brightness(0.42) saturate(0.65) contrast(0.95);
+}
+
+.trackCard.leaderboardCard.top100CardSeen:hover {
+  background: linear-gradient(180deg, rgba(30, 30, 30, 0.95), rgba(12, 12, 12, 0.98));
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
 .trackCard.leaderboardCard.top100CardClickFlash {
   animation: top100CardClickFlash 220ms ease-out;
 }
@@ -3162,6 +3216,19 @@ h1 {
   object-fit: cover;
 }
 
+.videoSeenBadgeOverlay {
+  position: absolute;
+  bottom: 8px;
+  left: 23px;
+  margin-left: 0;
+  z-index: 2;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
+}
+
+.categorySeenBadgeOverlay {
+  left: 3px;
+}
+
 .leaderboardMeta {
   min-width: 0;
 }
@@ -3190,6 +3257,10 @@ h1 {
 .historyGroups {
   display: grid;
   gap: 14px;
+}
+
+.historyFilterBar {
+  width: min(100%, 420px);
 }
 
 .historyDateGroup {
@@ -3255,6 +3326,11 @@ h1 {
 }
 
 .categoriesCatalogGrid {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  justify-content: start;
+}
+
+.artistsCatalogGrid {
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   justify-content: start;
 }
@@ -3761,6 +3837,36 @@ h1 {
   box-shadow: var(--glow);
 }
 
+.categoryVideoCard.categoryVideoCardSeen {
+  background: linear-gradient(180deg, rgba(14, 14, 14, 0.92), rgba(8, 8, 8, 0.96));
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.categoryVideoCard.categoryVideoCardSeen .categoryThumb {
+  filter: brightness(0.42) saturate(0.65) contrast(0.95);
+}
+
+.categoryVideoCard.categoryVideoCardSeen:hover {
+  background: linear-gradient(180deg, rgba(170, 30, 17, 0.56), rgba(90, 9, 6, 0.7));
+  border-color: rgba(255, 116, 88, 0.78);
+  box-shadow: var(--glow);
+}
+
+.artistVideoGrid .categoryVideoCard.artistVideoCardSeen {
+  background: linear-gradient(180deg, rgba(14, 14, 14, 0.92), rgba(8, 8, 8, 0.96));
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.artistVideoGrid .categoryVideoCard.artistVideoCardSeen .categoryThumb {
+  filter: brightness(0.42) saturate(0.65) contrast(0.95);
+}
+
+.artistVideoGrid .categoryVideoCard.artistVideoCardSeen:hover {
+  background: linear-gradient(180deg, rgba(170, 30, 17, 0.56), rgba(90, 9, 6, 0.7));
+  border-color: rgba(255, 116, 88, 0.78);
+  box-shadow: var(--glow);
+}
+
 .categoryVideoTitle {
   margin: 0;
   font-size: 1rem;
@@ -3824,6 +3930,7 @@ h1 {
 }
 
 .categoryThumbWrap {
+  position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
   border-radius: 8px;

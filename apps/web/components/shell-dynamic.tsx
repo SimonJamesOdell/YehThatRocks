@@ -194,6 +194,7 @@ function SharedVideoMessageCard({ videoId }: { videoId: string }) {
 type ShellDynamicProps = {
   initialVideo: VideoRecord;
   initialRelatedVideos: VideoRecord[];
+  initialSeenVideoIds?: string[];
   isLoggedIn: boolean;
   isAdmin: boolean;
   children: ReactNode;
@@ -240,6 +241,25 @@ function dedupeRelatedRailVideos(videos: VideoRecord[], currentVideoId: string) 
   return dedupeVideoList(videos).filter((video) => video.id !== currentVideoId);
 }
 
+function sortVideosBySeen(videos: VideoRecord[], seenVideoIdSet: Set<string>) {
+  if (seenVideoIdSet.size === 0) {
+    return videos;
+  }
+
+  const unseen: VideoRecord[] = [];
+  const seen: VideoRecord[] = [];
+
+  for (const video of videos) {
+    if (seenVideoIdSet.has(video.id)) {
+      seen.push(video);
+    } else {
+      unseen.push(video);
+    }
+  }
+
+  return [...unseen, ...seen];
+}
+
 function logFlow(event: string, detail?: Record<string, unknown>) {
   if (!FLOW_DEBUG_ENABLED) {
     return;
@@ -271,6 +291,7 @@ const AUTH_PROBE_FAILURE_THRESHOLD = 2;
 function ShellDynamicInner({
   initialVideo,
   initialRelatedVideos,
+  initialSeenVideoIds = [],
   isLoggedIn,
   isAdmin,
   children,
@@ -289,6 +310,7 @@ function ShellDynamicInner({
   const [relatedTransitionPhase, setRelatedTransitionPhase] = useState<"idle" | "fading-out" | "loading" | "fading-in">("idle");
   const [isLoadingMoreRelated, setIsLoadingMoreRelated] = useState(false);
   const [hasMoreRelated, setHasMoreRelated] = useState(true);
+  const seenVideoIdsRef = useRef<Set<string>>(new Set(initialSeenVideoIds));
   const activeVideoId = requestedVideoId ?? currentVideo.id;
   const [isAuthenticated, setIsAuthenticated] = useState(isLoggedIn);
   const [deniedPlaybackMessage, setDeniedPlaybackMessage] = useState<string | null>(null);
@@ -1647,7 +1669,10 @@ function ShellDynamicInner({
 
   const sourceRelatedVideos = dedupeVideoList(relatedVideos);
   const uniqueRelatedVideos = dedupeRelatedRailVideos(sourceRelatedVideos, currentVideo.id);
-  const displayedRenderableRelatedVideos = dedupeRelatedRailVideos(displayedRelatedVideos, currentVideo.id);
+  const displayedRenderableRelatedVideos = sortVideosBySeen(
+    dedupeRelatedRailVideos(displayedRelatedVideos, currentVideo.id),
+    seenVideoIdsRef.current,
+  );
   useEffect(() => {
     relatedVideosRef.current = relatedVideos;
   }, [relatedVideos]);
@@ -3032,7 +3057,10 @@ function ShellDynamicInner({
                       />
                     </div>
                     <div>
-                      <h3>{track.title}</h3>
+                      <h3>
+                        {track.title}
+                        {seenVideoIdsRef.current.has(track.id) ? <span className="videoSeenBadge">Seen</span> : null}
+                      </h3>
                       <p>
                         <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
                           {track.channelTitle}

@@ -4864,6 +4864,24 @@ async function fetchRecentlyWatchedIds(userId: number, limit = 300): Promise<Set
   }
 }
 
+export async function getSeenVideoIdsForUser(userId: number): Promise<Set<string>> {
+  if (!hasDatabaseUrl() || !Number.isInteger(userId) || userId <= 0) {
+    return new Set<string>();
+  }
+
+  try {
+    const rows = await prisma.$queryRaw<Array<{ videoId: string | null }>>`
+      SELECT video_id AS videoId
+      FROM watch_history
+      WHERE user_id = ${userId}
+    `;
+
+    return new Set(rows.map((row) => row.videoId).filter((videoId): videoId is string => Boolean(videoId)));
+  } catch {
+    return new Set<string>();
+  }
+}
+
 async function fetchFavouriteVideoIds(userId: number, limit = 1000): Promise<Set<string>> {
   try {
     const rows = await prisma.favourite.findMany({

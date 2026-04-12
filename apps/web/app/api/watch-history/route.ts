@@ -64,5 +64,15 @@ export async function POST(request: NextRequest) {
     progressPercent: parsed.data.progressPercent,
   });
 
-  return NextResponse.json({ ok: result.ok });
+  if (!result.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Failed to record watch history",
+      },
+      { status: 503 },
+    );
+  }
+
+  return NextResponse.json({ ok: true });
 }

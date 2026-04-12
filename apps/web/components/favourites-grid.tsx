@@ -3,10 +3,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { CloseLink } from "@/components/close-link";
 import type { VideoRecord } from "@/lib/catalog";
 
 type FavouritesGridProps = {
@@ -17,9 +18,23 @@ type FavouritesGridProps = {
 export function FavouritesGrid({ initialFavourites, isAuthenticated }: FavouritesGridProps) {
   const pathname = usePathname();
   const [favourites, setFavourites] = useState<VideoRecord[]>(initialFavourites);
+  const [filterValue, setFilterValue] = useState("");
   const [pendingVideoId, setPendingVideoId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const filteredFavourites = useMemo(() => {
+    const needle = filterValue.trim().toLowerCase();
+    if (!needle) {
+      return favourites;
+    }
+
+    return favourites.filter((track) => {
+      const title = track.title.toLowerCase();
+      const artist = track.channelTitle.toLowerCase();
+      return title.startsWith(needle) || artist.startsWith(needle);
+    });
+  }, [filterValue, favourites]);
 
   useEffect(() => {
     if (!isAuthenticated || pathname !== "/favourites") {
@@ -111,9 +126,28 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
 
   return (
     <>
-      {favourites.length > 0 ? (
+      <div className="favouritesBlindBar categoriesHeaderBar">
+        <div className="categoriesHeaderMain">
+          <strong><span className="whiteHeart" aria-hidden="true">❤️</span> Favourites</strong>
+          <div className="categoriesFilterBar">
+            <input
+              type="text"
+              className="categoriesFilterInput"
+              placeholder="type to filter..."
+              value={filterValue}
+              onChange={(event) => setFilterValue(event.target.value)}
+              aria-label="Filter favourites by prefix"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+        </div>
+        <CloseLink />
+      </div>
+
+      {filteredFavourites.length > 0 ? (
         <div className="catalogGrid favouritesCatalogGrid">
-          {favourites.map((track) => {
+          {filteredFavourites.map((track) => {
             const isRemoving = pendingVideoId === track.id;
 
             return (
@@ -161,8 +195,17 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
         </div>
       ) : (
         <div className="favouritesEmptyState" role="status" aria-live="polite">
-          <h3>There are no favourites saved yet.</h3>
-          <p>Save tracks with the heart button to build your favourites list.</p>
+          {favourites.length > 0 ? (
+            <>
+              <h3>No favourites match that prefix.</h3>
+              <p>Try a shorter starting string.</p>
+            </>
+          ) : (
+            <>
+              <h3>There are no favourites saved yet.</h3>
+              <p>Save tracks with the heart button to build your favourites list.</p>
+            </>
+          )}
         </div>
       )}
 

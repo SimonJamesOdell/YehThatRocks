@@ -12,9 +12,10 @@ const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
 type ArtistVideoLinkProps = {
   video: VideoRecord;
   isAuthenticated?: boolean;
+  isSeen?: boolean;
 };
 
-export function ArtistVideoLink({ video, isAuthenticated = true }: ArtistVideoLinkProps) {
+export function ArtistVideoLink({ video, isAuthenticated = true, isSeen = false }: ArtistVideoLinkProps) {
   const hasWarmedRef = useRef(false);
 
   const warmSelection = useCallback(() => {
@@ -43,7 +44,7 @@ export function ArtistVideoLink({ video, isAuthenticated = true }: ArtistVideoLi
   }, [video]);
 
   return (
-    <article className="categoryVideoCard">
+    <article className={`categoryVideoCard${isSeen ? " categoryVideoCardSeen artistVideoCardSeen" : ""}`}>
       <Link
         href={`/?v=${video.id}&resume=1`}
         className="linkedCard categoryVideoPrimaryLink"
@@ -61,6 +62,7 @@ export function ArtistVideoLink({ video, isAuthenticated = true }: ArtistVideoLi
             className="categoryThumb"
             loading="lazy"
           />
+          {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay categorySeenBadgeOverlay">Seen</span> : null}
         </div>
         <h3 className="categoryVideoTitle">{video.title}</h3>
       </Link>
