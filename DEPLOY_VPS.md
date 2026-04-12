@@ -108,7 +108,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml logs -f web
 
 Important notes:
 
-- The app container currently runs `prisma db push` on startup.
+- The app container runs `prisma migrate deploy` on startup (migration-history based, drift-safe).
 - The bundled seed file is idempotent and is executed on startup.
 - MySQL is not published publicly in the production compose file.
 - The web container is bound to `127.0.0.1:3000`, so you should put Nginx in front of it.
@@ -294,4 +294,29 @@ ENV_FILE=/srv/yehthatrocks/.env.production \
 COMPOSE_FILE=/srv/yehthatrocks/docker-compose.prod.yml \
 TARGET_BIN=/usr/local/bin/o \
 sudo -E bash deploy/install-o-shortcut.sh
+```
+
+## 12. Prevent Schema Drift (Recommended Every Deploy)
+
+Run the bundled schema verification script on the VPS after each deployment:
+
+```bash
+cd /srv/yehthatrocks
+bash deploy/verify-live-schema.sh
+```
+
+What it verifies:
+
+- `prisma migrate status` reports expected migration state in the running web container.
+- `prisma migrate diff` confirms live DB matches `prisma/schema.prisma`.
+- `SHOW CREATE TABLE` confirms `hidden_videos` and `watch_history` indexes exist as expected.
+- `_prisma_migrations` includes the relevant migration rows.
+
+Optional path overrides:
+
+```bash
+REPO_DIR=/srv/yehthatrocks \
+ENV_FILE=/srv/yehthatrocks/.env.production \
+COMPOSE_FILE=/srv/yehthatrocks/docker-compose.prod.yml \
+bash deploy/verify-live-schema.sh
 ```
