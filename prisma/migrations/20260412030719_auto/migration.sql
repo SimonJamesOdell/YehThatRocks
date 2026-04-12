@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE `hidden_videos` (
+CREATE TABLE IF NOT EXISTS `hidden_videos` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `user_id` INTEGER NOT NULL,
     `video_id` VARCHAR(32) NOT NULL,
