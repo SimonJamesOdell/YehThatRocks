@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cookies } from "next/headers";
 import { ShellDynamic } from "@/components/shell-dynamic";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
-import { getCurrentVideo, getRelatedVideos, getSeenVideoIdsForUser } from "@/lib/catalog-data";
+import { getCurrentVideo, getHiddenVideoIdsForUser, getRelatedVideos, getSeenVideoIdsForUser } from "@/lib/catalog-data";
 import { requireAdminUser } from "@/lib/admin-auth";
 import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
 
@@ -31,12 +31,14 @@ export default async function ShellLayout({ children }: { children: ReactNode })
 
   const initialRelatedVideos = await getRelatedVideos(initialVideo.id);
   const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();
+  const hiddenVideoIds = user ? await getHiddenVideoIdsForUser(user.id) : new Set<string>();
 
   return (
     <ShellDynamic
       initialVideo={initialVideo}
       initialRelatedVideos={initialRelatedVideos}
       initialSeenVideoIds={Array.from(seenVideoIds)}
+      initialHiddenVideoIds={Array.from(hiddenVideoIds)}
       isLoggedIn={hasAccessToken}
       isAdmin={Boolean(adminUser)}
     >

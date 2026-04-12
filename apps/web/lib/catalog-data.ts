@@ -4882,6 +4882,69 @@ export async function getSeenVideoIdsForUser(userId: number): Promise<Set<string
   }
 }
 
+export async function getHiddenVideoIdsForUser(userId: number): Promise<Set<string>> {
+  if (!hasDatabaseUrl() || !Number.isInteger(userId) || userId <= 0) {
+    return new Set<string>();
+  }
+
+  try {
+    const rows = await prisma.$queryRaw<Array<{ videoId: string | null }>>`
+      SELECT video_id AS videoId
+      FROM hidden_videos
+      WHERE user_id = ${userId}
+    `;
+
+    return new Set(rows.map((row) => row.videoId).filter((videoId): videoId is string => Boolean(videoId)));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+export async function hideVideoForUser(input: { userId: number; videoId: string }) {
+  const normalizedVideoId = normalizeYouTubeVideoId(input.videoId);
+  if (!hasDatabaseUrl() || !normalizedVideoId || !Number.isInteger(input.userId) || input.userId <= 0) {
+    return { ok: false as const };
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO hidden_videos (user_id, video_id)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE video_id = VALUES(video_id)
+      `,
+      input.userId,
+      normalizedVideoId,
+    );
+
+    return { ok: true as const };
+  } catch {
+    return { ok: false as const };
+  }
+}
+
+export async function unhideVideoForUser(input: { userId: number; videoId: string }) {
+  const normalizedVideoId = normalizeYouTubeVideoId(input.videoId);
+  if (!hasDatabaseUrl() || !normalizedVideoId || !Number.isInteger(input.userId) || input.userId <= 0) {
+    return { ok: false as const };
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(
+      `
+        DELETE FROM hidden_videos
+        WHERE user_id = ? AND video_id = ?
+      `,
+      input.userId,
+      normalizedVideoId,
+    );
+
+    return { ok: true as const };
+  } catch {
+    return { ok: false as const };
+  }
+}
+
 async function fetchFavouriteVideoIds(userId: number, limit = 1000): Promise<Set<string>> {
   try {
     const rows = await prisma.favourite.findMany({

@@ -193,6 +193,18 @@ model WatchHistory {
   @@map("watch_history")
 }
 
+model HiddenVideo {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  videoId   String   @map("video_id") @db.VarChar(32)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, videoId])
+  @@index([userId, createdAt])
+  @@index([videoId])
+  @@map("hidden_videos")
+}
+
 model PlaylistName {
   id        Int            @id @default(autoincrement())
   userId    Int?           @map("user_id")

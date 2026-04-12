@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { ArtistVideoLink } from "@/components/artist-video-link";
 import { CloseLink } from "@/components/close-link";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
-import { getArtistBySlug, getSeenVideoIdsForUser, getVideosByArtist } from "@/lib/catalog-data";
+import { getArtistBySlug, getHiddenVideoIdsForUser, getSeenVideoIdsForUser, getVideosByArtist } from "@/lib/catalog-data";
 import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
 
 type ArtistPageProps = {
@@ -18,6 +18,7 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
   const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
   const user = await getCurrentAuthenticatedUser();
   const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();
+  const hiddenVideoIds = user ? await getHiddenVideoIdsForUser(user.id) : new Set<string>();
   const { slug } = await params;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const letter = typeof resolvedSearchParams?.letter === "string" ? resolvedSearchParams.letter : undefined;
@@ -35,7 +36,7 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
   if (resume) artistsParams.set("resume", resume);
   const artistsHref = artistsParams.toString() ? `/artists?${artistsParams.toString()}` : "/artists";
 
-  const artistVideos = await getVideosByArtist(artist.name);
+  const artistVideos = (await getVideosByArtist(artist.name)).filter((video) => !hiddenVideoIds.has(video.id));
   const orderedArtistVideos = artistVideos
     .filter((video) => !seenVideoIds.has(video.id))
     .concat(artistVideos.filter((video) => seenVideoIds.has(video.id)));

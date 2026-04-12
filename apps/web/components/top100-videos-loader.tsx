@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { Top100VideoLink } from "@/components/top100-video-link";
@@ -23,6 +23,14 @@ function dedupeVideos(videos: VideoRecord[]) {
     seen.add(video.id);
     return true;
   });
+}
+
+function filterHiddenVideos(videos: VideoRecord[], hiddenVideoIdSet: Set<string>) {
+  if (hiddenVideoIdSet.size === 0) {
+    return videos;
+  }
+
+  return videos.filter((video) => !hiddenVideoIdSet.has(video.id));
 }
 
 function readTop100SessionCache() {
@@ -54,11 +62,14 @@ function readTop100SessionCache() {
 export function Top100VideosLoader({
   isAuthenticated,
   seenVideoIds = [],
+  hiddenVideoIds = [],
 }: {
   isAuthenticated: boolean;
   seenVideoIds?: string[];
+  hiddenVideoIds?: string[];
 }) {
-  const [videos, setVideos] = useState<VideoRecord[]>(() => readTop100SessionCache() ?? []);
+  const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
+  const [videos, setVideos] = useState<VideoRecord[]>(() => filterHiddenVideos(readTop100SessionCache() ?? [], hiddenVideoIdSet));
   const [isLoading, setIsLoading] = useState(() => videos.length === 0);
   const [error, setError] = useState<string | null>(null);
   const seenVideoIdSet = new Set(seenVideoIds);
@@ -105,7 +116,9 @@ export function Top100VideosLoader({
         }
 
         const payload = (await response.json()) as TopVideosPayload;
-        return Array.isArray(payload.videos) ? dedupeVideos(payload.videos).slice(0, 100) : [];
+        return Array.isArray(payload.videos)
+          ? dedupeVideos(filterHiddenVideos(payload.videos, hiddenVideoIdSet)).slice(0, 100)
+          : [];
       };
 
       try {
@@ -139,7 +152,7 @@ export function Top100VideosLoader({
     return () => {
       cancelled = true;
     };
-  }, [videos.length]);
+  }, [hiddenVideoIdSet, videos.length]);
 
   if (videos.length === 0) {
     return (

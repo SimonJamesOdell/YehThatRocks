@@ -9,6 +9,7 @@ import {
   getGenreBySlug,
   getGenres,
   getGenreSlug,
+  getHiddenVideoIdsForUser,
   getSeenVideoIdsForUser,
   getVideosByGenre,
 } from "@/lib/catalog-data";
@@ -32,6 +33,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
   const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
   const user = await getCurrentAuthenticatedUser();
   const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();
+  const hiddenVideoIds = user ? await getHiddenVideoIdsForUser(user.id) : new Set<string>();
   const { slug } = await params;
   const genre = await getGenreBySlug(slug);
 
@@ -65,6 +67,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
         genre={genre}
         isAuthenticated={isAuthenticated}
         seenVideoIds={Array.from(seenVideoIds)}
+        hiddenVideoIds={Array.from(hiddenVideoIds)}
         initialVideos={initialVideos}
         initialHasMore={initialHasMore}
         pageSize={CATEGORY_INITIAL_PAGE_SIZE}

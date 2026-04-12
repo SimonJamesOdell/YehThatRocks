@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { Top100VideoLink } from "@/components/top100-video-link";
@@ -18,23 +18,34 @@ function dedupeVideos(videos: VideoRecord[]) {
   });
 }
 
+function filterHiddenVideos(videos: VideoRecord[], hiddenVideoIdSet: Set<string>) {
+  if (hiddenVideoIdSet.size === 0) {
+    return videos;
+  }
+
+  return videos.filter((video) => !hiddenVideoIdSet.has(video.id));
+}
+
 export function NewVideosLoader({
   initialVideos,
   isAuthenticated,
   seenVideoIds = [],
+  hiddenVideoIds = [],
 }: {
   initialVideos: VideoRecord[];
   isAuthenticated: boolean;
   seenVideoIds?: string[];
+  hiddenVideoIds?: string[];
 }) {
-  const [allVideos, setAllVideos] = useState(() => dedupeVideos(initialVideos));
+  const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
+  const [allVideos, setAllVideos] = useState(() => dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet)));
   const [loading, setLoading] = useState(true);
   const seenVideoIdSet = new Set(seenVideoIds);
 
   useEffect(() => {
     const loadVideos = async () => {
       try {
-        let working = dedupeVideos(initialVideos);
+        let working = dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet));
 
         if (working.length === 0) {
           const initialResponse = await fetch(`/api/videos/newest?skip=0&take=10`, {
@@ -45,7 +56,7 @@ export function NewVideosLoader({
 
           if (initialResponse.ok) {
             const { videos } = (await initialResponse.json()) as { videos: VideoRecord[] };
-            working = dedupeVideos(videos);
+            working = dedupeVideos(filterHiddenVideos(videos, hiddenVideoIdSet));
             setAllVideos(working);
           }
         }
@@ -60,7 +71,7 @@ export function NewVideosLoader({
 
           if (response.ok) {
             const { videos } = (await response.json()) as { videos: VideoRecord[] };
-            setAllVideos((prev) => dedupeVideos([...prev, ...videos]));
+            setAllVideos((prev) => dedupeVideos([...prev, ...filterHiddenVideos(videos, hiddenVideoIdSet)]));
           }
         }
 
@@ -72,7 +83,7 @@ export function NewVideosLoader({
     };
 
     void loadVideos();
-  }, [initialVideos, isAuthenticated]);
+  }, [hiddenVideoIdSet, initialVideos, isAuthenticated]);
 
   return (
     <div className="trackStack spanTwoColumns">
