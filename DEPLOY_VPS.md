@@ -318,6 +318,40 @@ Behavior note:
 - If unrelated full-schema drift exists, it reports a warning by default and still validates those critical tables.
 - To fail hard on any global drift, run with `STRICT_FULL_DRIFT=1`.
 
+## 13. Diffing and Patching Schema Drift
+
+When the verifier reports drift, use the bundled patch script to diff live DB against `schema.prisma` (the authoritative local/dev state) and generate — or apply — a SQL patch.
+
+**Step 1 — Preview the patch (dry run):**
+
+```bash
+cd /srv/yehthatrocks
+bash deploy/patch-live-schema.sh
+```
+
+This prints the SQL diff and writes it to `logs/schema-patch-<timestamp>.sql`. Nothing is changed.
+
+**Step 2 — Apply the patch:**
+
+```bash
+bash deploy/patch-live-schema.sh --apply
+```
+
+This applies the patch SQL via `prisma db execute` inside the web container then re-runs `verify-live-schema.sh` to confirm parity.
+
+**How it works:**
+
+- Uses `prisma migrate diff --from-url <live> --to-schema-datamodel schema.prisma --script` to generate idiomatic SQL.
+- Schema.prisma (dev state) is the authoritative target — the patch moves live toward it.
+- The patch SQL is preserved in `logs/` for audit.
+- On success, runs the schema verifier automatically.
+
+**One-liner for the common case (drift found → apply → verify):**
+
+```bash
+bash deploy/patch-live-schema.sh --apply
+```
+
 Optional path overrides:
 
 ```bash
