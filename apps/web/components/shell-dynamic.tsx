@@ -918,7 +918,7 @@ function ShellDynamicInner({
         return;
       }
 
-      const frame = chrome.querySelector(".playerFrame") as HTMLElement | null;
+      const frame = chrome.querySelector(".playerFrame, .playerLoadingFallback") as HTMLElement | null;
       if (!frame) {
         return;
       }
