@@ -2555,15 +2555,16 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
     }
   }
 
-  // Check availability status first — if explicitly marked available, allow playback
-  // and trigger metadata backfill async in the background.
-  if (!Boolean(row.hasAvailable) || Boolean(row.hasBlocked)) {
+  // Check availability status first.
+  // If at least one available row exists, direct playback should be allowed even if
+  // stale non-available rows also exist for the same video.
+  if (!Boolean(row.hasAvailable)) {
     if (!hydratedFromDirectRequest) {
       await hydrateAndPersistVideo(normalizedVideoId, undefined, { forceAvailabilityRefresh: true });
       row = (await fetchDecisionRows())[0] ?? row;
     }
 
-    if (Boolean(row.hasAvailable) && !Boolean(row.hasBlocked)) {
+    if (Boolean(row.hasAvailable)) {
       // Video is available, but allow it through before metadata validation.
       // Metadata will be backfilled asynchronously below.
     } else {
