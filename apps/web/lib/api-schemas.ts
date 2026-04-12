@@ -60,3 +60,7 @@ export const watchHistoryEventSchema = z.object({
   durationSec: z.number().min(0).max(86_400).optional().default(0),
   progressPercent: z.number().min(0).max(100).optional().default(0),
 });
+
+export const hiddenVideoMutationSchema = z.object({
+  videoId: z.string().trim().regex(/^[A-Za-z0-9_-]{11}$/),
+});

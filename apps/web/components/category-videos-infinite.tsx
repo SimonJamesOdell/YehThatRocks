@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArtistVideoLink } from "@/components/artist-video-link";
 import type { VideoRecord } from "@/lib/catalog";
@@ -10,6 +10,7 @@ type CategoryVideosInfiniteProps = {
   genre: string;
   isAuthenticated: boolean;
   seenVideoIds?: string[];
+  hiddenVideoIds?: string[];
   initialVideos: VideoRecord[];
   initialHasMore: boolean;
   pageSize?: number;
@@ -42,6 +43,14 @@ function dedupeVideosById(rows: VideoRecord[]) {
   return unique;
 }
 
+function filterHiddenVideos(videos: VideoRecord[], hiddenVideoIdSet: Set<string>) {
+  if (hiddenVideoIdSet.size === 0) {
+    return videos;
+  }
+
+  return videos.filter((video) => !hiddenVideoIdSet.has(video.id));
+}
+
 function sortVideosBySeen(videos: VideoRecord[], seenVideoIdSet: Set<string>) {
   if (seenVideoIdSet.size === 0) {
     return videos;
@@ -66,18 +75,20 @@ export function CategoryVideosInfinite({
   genre,
   isAuthenticated,
   seenVideoIds = [],
+  hiddenVideoIds = [],
   initialVideos,
   initialHasMore,
   pageSize = 48,
 }: CategoryVideosInfiniteProps) {
-  const [videos, setVideos] = useState<VideoRecord[]>(() => dedupeVideosById(initialVideos));
+  const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
+  const [videos, setVideos] = useState<VideoRecord[]>(() => dedupeVideosById(filterHiddenVideos(initialVideos, hiddenVideoIdSet)));
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const seenVideoIdSet = new Set(seenVideoIds);
   const nextOffsetRef = useRef(initialVideos.length);
   const requestedOffsetsRef = useRef(new Set<number>());
-  const seenIdsRef = useRef(new Set(initialVideos.map((video) => video.id)));
+  const seenIdsRef = useRef(new Set(filterHiddenVideos(initialVideos, hiddenVideoIdSet).map((video) => video.id)));
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const chunkTriggerRef = useRef<HTMLDivElement | null>(null);
   const hasMoreRef = useRef(initialHasMore);
@@ -121,7 +132,7 @@ export function CategoryVideosInfinite({
 
       const payload = (await response.json()) as CategoryVideosPayload;
       const incoming = Array.isArray(payload.videos) ? payload.videos : [];
-      const uniqueIncoming = incoming.filter((video) => {
+      const uniqueIncoming = filterHiddenVideos(incoming, hiddenVideoIdSet).filter((video) => {
         if (!video?.id || seenIdsRef.current.has(video.id)) {
           return false;
         }
@@ -161,7 +172,7 @@ export function CategoryVideosInfinite({
         setIsLoading(false);
       }
     }
-  }, [hasMore, pageSize, slug]);
+  }, [hasMore, hiddenVideoIdSet, pageSize, slug]);
 
   const warmBuffer = useCallback(async (targetCount: number) => {
     if (bufferWarmInFlightRef.current) {

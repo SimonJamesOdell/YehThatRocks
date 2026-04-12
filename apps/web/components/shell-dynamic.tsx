@@ -195,6 +195,7 @@ type ShellDynamicProps = {
   initialVideo: VideoRecord;
   initialRelatedVideos: VideoRecord[];
   initialSeenVideoIds?: string[];
+  initialHiddenVideoIds?: string[];
   isLoggedIn: boolean;
   isAdmin: boolean;
   children: ReactNode;
@@ -239,6 +240,14 @@ function dedupeVideoList(videos: VideoRecord[]) {
 
 function dedupeRelatedRailVideos(videos: VideoRecord[], currentVideoId: string) {
   return dedupeVideoList(videos).filter((video) => video.id !== currentVideoId);
+}
+
+function filterHiddenRelatedVideos(videos: VideoRecord[], hiddenVideoIdSet: Set<string>) {
+  if (hiddenVideoIdSet.size === 0) {
+    return videos;
+  }
+
+  return videos.filter((video) => !hiddenVideoIdSet.has(video.id));
 }
 
 function sortVideosBySeen(videos: VideoRecord[], seenVideoIdSet: Set<string>) {
@@ -292,6 +301,7 @@ function ShellDynamicInner({
   initialVideo,
   initialRelatedVideos,
   initialSeenVideoIds = [],
+  initialHiddenVideoIds = [],
   isLoggedIn,
   isAdmin,
   children,
@@ -311,6 +321,7 @@ function ShellDynamicInner({
   const [isLoadingMoreRelated, setIsLoadingMoreRelated] = useState(false);
   const [hasMoreRelated, setHasMoreRelated] = useState(true);
   const seenVideoIdsRef = useRef<Set<string>>(new Set(initialSeenVideoIds));
+  const hiddenVideoIdsRef = useRef<Set<string>>(new Set(initialHiddenVideoIds));
   const activeVideoId = requestedVideoId ?? currentVideo.id;
   const [isAuthenticated, setIsAuthenticated] = useState(isLoggedIn);
   const [deniedPlaybackMessage, setDeniedPlaybackMessage] = useState<string | null>(null);
@@ -1668,9 +1679,15 @@ function ShellDynamicInner({
   }, [chatMessages]);
 
   const sourceRelatedVideos = dedupeVideoList(relatedVideos);
-  const uniqueRelatedVideos = dedupeRelatedRailVideos(sourceRelatedVideos, currentVideo.id);
+  const uniqueRelatedVideos = filterHiddenRelatedVideos(
+    dedupeRelatedRailVideos(sourceRelatedVideos, currentVideo.id),
+    hiddenVideoIdsRef.current,
+  );
   const displayedRenderableRelatedVideos = sortVideosBySeen(
-    dedupeRelatedRailVideos(displayedRelatedVideos, currentVideo.id),
+    filterHiddenRelatedVideos(
+      dedupeRelatedRailVideos(displayedRelatedVideos, currentVideo.id),
+      hiddenVideoIdsRef.current,
+    ),
     seenVideoIdsRef.current,
   );
   useEffect(() => {

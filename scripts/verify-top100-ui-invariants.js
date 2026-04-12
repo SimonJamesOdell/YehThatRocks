@@ -47,10 +47,13 @@ function main() {
 
   // Top 100 page should delegate heavy list work to client loader for faster shell open.
   assertContains(top100PageSource, 'import { Top100VideosLoader } from "@/components/top100-videos-loader";', "Top 100 page imports client videos loader", failures);
-  assertContains(top100PageSource, "<Top100VideosLoader isAuthenticated={isAuthenticated} seenVideoIds={Array.from(seenVideoIds)} />", "Top 100 page renders client videos loader with seen ids", failures);
+  assertContains(top100PageSource, "<Top100VideosLoader", "Top 100 page renders client videos loader", failures);
+  assertContains(top100PageSource, "seenVideoIds={Array.from(seenVideoIds)}", "Top 100 page passes seen ids to loader", failures);
+  assertContains(top100PageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "Top 100 page passes hidden ids to loader", failures);
   assertContains(top100LoaderSource, 'import { Top100VideoLink } from "@/components/top100-video-link";', "Top 100 loader renders warmed link component", failures);
   assertContains(top100LoaderSource, "fetch(\"/api/videos/top?count=100\"", "Top 100 loader fetches videos from top API", failures);
   assertContains(top100LoaderSource, "TOP100_SESSION_CACHE_KEY", "Top 100 loader uses session cache to reduce repeat requests", failures);
+  assertContains(top100LoaderSource, "filterHiddenVideos", "Top 100 loader filters hidden videos", failures);
   assertNotContains(top100LoaderSource, "sortVideosBySeen(", "Top 100 loader does not reorder rows by seen state", failures);
   assertNotContains(top100LoaderSource, "/api/watch-history", "Top 100 loader does not pad with watch history rows", failures);
 

@@ -53,6 +53,8 @@ function main() {
   assertContains(shellDynamicSource, "params.set(\"offset\", String(relatedFetchOffsetRef.current));", "Watch Next sends offset-based pagination requests", failures);
   assertContains(shellDynamicSource, "relatedFetchOffsetRef.current = (relatedFetchOffsetRef.current ?? existing.length) + nextVideos.length;", "Watch Next advances offset by server batch size", failures);
   assertContains(shellDynamicSource, "relatedFetchOffsetRef.current = null;", "Watch Next resets offset when the current video changes", failures);
+  assertContains(shellDynamicSource, "initialHiddenVideoIds", "Watch Next shell accepts hidden video ids", failures);
+  assertContains(shellDynamicSource, "filterHiddenRelatedVideos", "Watch Next shell filters hidden videos from rail", failures);
   assertNotContains(shellDynamicSource, "params.set(\"exclude\"", "Watch Next no longer sends giant exclude id lists in URL", failures);
 
   // Current-video related pool invariants.
@@ -72,11 +74,13 @@ function main() {
   assertContains(newPageSource, "initialVideos={[]}", "New page passes empty initial payload for quick route open", failures);
   assertContains(newPageSource, "isAuthenticated={isAuthenticated}", "New page passes auth state into client loader", failures);
   assertContains(newPageSource, "seenVideoIds={Array.from(seenVideoIds)}", "New page passes seen ids into client loader", failures);
+  assertContains(newPageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "New page passes hidden ids into client loader", failures);
   assertNotContains(newPageSource, "getNewestVideos(", "New page does not block route open on server-side newest query", failures);
   assertContains(newLoadingSource, "Loading new videos...", "New route exposes a dedicated loading state", failures);
   assertContains(newVideosLoaderSource, "fetch(`/api/videos/newest?skip=0&take=10`", "New videos loader performs a fast first-page fetch", failures);
   assertContains(newVideosLoaderSource, "const remainingTake = Math.max(0, 100 - working.length);", "New videos loader backfills remaining slots up to 100", failures);
   assertContains(newVideosLoaderSource, "fetch(`/api/videos/newest?skip=${working.length}&take=${remainingTake}`", "New videos loader fetches a second batch for full list completion", failures);
+  assertContains(newVideosLoaderSource, "filterHiddenVideos", "New videos loader filters hidden videos", failures);
   assertNotContains(newVideosLoaderSource, "sortVideosBySeen(", "New videos loader does not reorder rows by seen state", failures);
   assertNotContains(newVideosLoaderSource, "/api/watch-history", "New videos loader does not pad with watch-history rows", failures);
 
