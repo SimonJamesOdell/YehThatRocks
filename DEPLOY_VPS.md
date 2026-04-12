@@ -312,11 +312,20 @@ What it verifies:
 - `SHOW CREATE TABLE` confirms `hidden_videos` and `watch_history` indexes exist as expected.
 - `_prisma_migrations` includes the relevant migration rows.
 
+Behavior note:
+
+- The script always performs strict checks for `hidden_videos` and `watch_history`.
+- If unrelated full-schema drift exists, it reports a warning by default and still validates those critical tables.
+- To fail hard on any global drift, run with `STRICT_FULL_DRIFT=1`.
+
 Optional path overrides:
 
 ```bash
 REPO_DIR=/srv/yehthatrocks \
 ENV_FILE=/srv/yehthatrocks/.env.production \
 COMPOSE_FILE=/srv/yehthatrocks/docker-compose.prod.yml \
+bash deploy/verify-live-schema.sh
+
+STRICT_FULL_DRIFT=1 \
 bash deploy/verify-live-schema.sh
 ```
