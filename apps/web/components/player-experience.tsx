@@ -225,6 +225,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
   const [copied, setCopied] = useState(false);
   const [shareToChatState, setShareToChatState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [favouriteSaveState, setFavouriteSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [hideCurrentVideoState, setHideCurrentVideoState] = useState<"idle" | "saving">("idle");
   const [historyStack, setHistoryStack] = useState<string[]>([]);
   const [showNowPlayingOverlay, setShowNowPlayingOverlay] = useState(false);
   const [unavailableOverlayMessage, setUnavailableOverlayMessage] = useState<string | null>(null);
@@ -1175,28 +1176,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                 ? toSafeNumber(playerRef.current.getDuration(), 0)
                 : duration;
               void reportWatchEvent(2, "ended", endedTime, endedDuration);
-
-              const isInitialDeepLinkedVideo = Boolean(
-                initialRequestedVideoIdRef.current &&
-                  !hasLeftInitialRequestedVideoRef.current &&
-                  currentVideo.id === initialRequestedVideoIdRef.current,
-              );
-
-              const shouldAutoAdvance =
-                autoplayEnabledRef.current &&
-                (hasActivePlaylistSequenceRef.current || !isInitialDeepLinkedVideo);
-
-              if (shouldAutoAdvance) {
-                navigateToVideo(nextVideoIdRef.current, {
-                  clearPlaylist: nextPlaylistIndexRef.current === null,
-                  playlistId: activePlaylistIdRef.current,
-                  playlistItemIndex: nextPlaylistIndexRef.current,
-                });
-              } else {
-                setShowEndedChoiceOverlay(true);
-                setShowControls(true);
-                setShowShareMenu(false);
-              }
+              triggerEndOfVideoAction();
             }
           },
           onError: async (event) => {
@@ -1356,6 +1336,31 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     router.push(`${pathname}?${params.toString()}`);
   }
 
+  function triggerEndOfVideoAction() {
+    const isInitialDeepLinkedVideo = Boolean(
+      initialRequestedVideoIdRef.current &&
+        !hasLeftInitialRequestedVideoRef.current &&
+        currentVideo.id === initialRequestedVideoIdRef.current,
+    );
+
+    const shouldAutoAdvance =
+      autoplayEnabledRef.current &&
+      (hasActivePlaylistSequenceRef.current || !isInitialDeepLinkedVideo);
+
+    if (shouldAutoAdvance) {
+      navigateToVideo(nextVideoIdRef.current, {
+        clearPlaylist: nextPlaylistIndexRef.current === null,
+        playlistId: activePlaylistIdRef.current,
+        playlistItemIndex: nextPlaylistIndexRef.current,
+      });
+      return;
+    }
+
+    setShowEndedChoiceOverlay(true);
+    setShowControls(true);
+    setShowShareMenu(false);
+  }
+
   function handleEndedChoiceSelect(videoId: string) {
     const playlistIndex = playlistQueueIds.findIndex((candidateId) => candidateId === videoId);
 
@@ -1420,6 +1425,27 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
       playlistId: activePlaylistId,
       playlistItemIndex: nextTarget.playlistItemIndex,
     });
+  }
+
+  async function handleHideCurrentVideo() {
+    if (!isLoggedIn || hideCurrentVideoState === "saving") {
+      return;
+    }
+
+    setHideCurrentVideoState("saving");
+
+    try {
+      await fetch("/api/hidden-videos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId: currentVideo.id }),
+      });
+    } catch {
+      // Keep skip flow responsive even if hide persistence fails.
+    } finally {
+      setHideCurrentVideoState("idle");
+      triggerEndOfVideoAction();
+    }
   }
 
   function handleToggleAutoplay() {
@@ -2193,6 +2219,26 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
               <span className="primaryActionGlyph" aria-hidden="true">⇮</span>
               <span>Autoplay: {autoplayEnabled ? "On" : "Off"}</span>
             </button>
+            {isLoggedIn ? (
+              <button
+                type="button"
+                className="primaryActionToggleButton primaryActionToggleButtonTrash"
+                onClick={() => {
+                  void handleHideCurrentVideo();
+                }}
+                disabled={hideCurrentVideoState === "saving"}
+                aria-label="Hide this video and skip"
+                title={hideCurrentVideoState === "saving" ? "Hiding..." : "Hide this video and skip"}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14H6L5 6" />
+                  <path d="M10 11v6" />
+                  <path d="M14 11v6" />
+                  <path d="M9 6V4h6v2" />
+                </svg>
+              </button>
+            ) : null}
           </div>
         </>
       );

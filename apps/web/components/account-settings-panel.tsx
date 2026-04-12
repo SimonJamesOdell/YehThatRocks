@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { AuthAccountActions } from "@/components/auth-account-actions";
 import { AuthChangePasswordForm } from "@/components/auth-change-password-form";
+import { BlockedVideosInfiniteList } from "@/components/blocked-videos-infinite-list";
+import type { HiddenVideoEntry } from "@/lib/catalog-data";
 
 type AccountUser = {
   id: number;
@@ -17,11 +19,19 @@ type AccountUser = {
 
 type AccountSettingsPanelProps = {
   user: AccountUser;
+  initialBlockedVideos: HiddenVideoEntry[];
+  initialBlockedHasMore: boolean;
+  blockedPageSize?: number;
 };
 
-type AccountTab = "details" | "security";
+type AccountTab = "details" | "security" | "blocked";
 
-export function AccountSettingsPanel({ user }: AccountSettingsPanelProps) {
+export function AccountSettingsPanel({
+  user,
+  initialBlockedVideos,
+  initialBlockedHasMore,
+  blockedPageSize = 24,
+}: AccountSettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<AccountTab>("details");
   const [screenName, setScreenName] = useState(user.screenName ?? "");
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? "");
@@ -143,6 +153,15 @@ export function AccountSettingsPanel({ user }: AccountSettingsPanelProps) {
         >
           Security
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "blocked"}
+          className={activeTab === "blocked" ? "activeTab" : undefined}
+          onClick={() => setActiveTab("blocked")}
+        >
+          Blocked videos
+        </button>
       </div>
 
       {activeTab === "details" ? (
@@ -215,7 +234,7 @@ export function AccountSettingsPanel({ user }: AccountSettingsPanelProps) {
             {saveMessage ? <p className="authMessage">{saveMessage}</p> : null}
             {saveError ? <p className="authMessage">{saveError}</p> : null}
         </form>
-      ) : (
+      ) : activeTab === "security" ? (
         <div className="accountSecurityLayout" role="tabpanel" aria-label="Security">
           <div className="accountSecurityColumn">
             <h3 className="accountSecurityHeading">Change password</h3>
@@ -226,6 +245,14 @@ export function AccountSettingsPanel({ user }: AccountSettingsPanelProps) {
               <AuthAccountActions emailVerified={false} showLogout={false} />
             </div>
           ) : null}
+        </div>
+      ) : (
+        <div role="tabpanel" aria-label="Blocked videos">
+          <BlockedVideosInfiniteList
+            initialBlockedVideos={initialBlockedVideos}
+            initialHasMore={initialBlockedHasMore}
+            pageSize={blockedPageSize}
+          />
         </div>
       )}
     </>

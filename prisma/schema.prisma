@@ -171,6 +171,8 @@ model Favourite {
   createdAt DateTime?
   updatedAt DateTime?
 
+  @@index([userid, videoId])
+  @@index([videoId])
   @@map("favourites")
 }
 

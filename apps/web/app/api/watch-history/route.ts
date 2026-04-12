@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { watchHistoryEventSchema } from "@/lib/api-schemas";
 import { requireApiAuth } from "@/lib/auth-request";
-import { getWatchHistory, recordVideoWatch } from "@/lib/catalog-data";
+import { getHiddenVideoMatchesForUser, getWatchHistory, recordVideoWatch } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
@@ -23,8 +23,15 @@ export async function GET(request: NextRequest) {
     offset,
   });
 
-  const hasMore = historyWindow.length > limit;
-  const history = hasMore ? historyWindow.slice(0, limit) : historyWindow;
+  // Filter out blocked videos from history by checking the nested video property
+  const hiddenIds = await getHiddenVideoMatchesForUser(
+    authResult.auth.userId,
+    historyWindow.map((entry) => entry.video.id),
+  );
+  const filteredHistory = historyWindow.filter((entry) => !hiddenIds.has(entry.video.id));
+
+  const hasMore = filteredHistory.length > limit;
+  const history = hasMore ? filteredHistory.slice(0, limit) : filteredHistory;
   const nextOffset = offset + history.length;
 
   return NextResponse.json({ history, hasMore, nextOffset });

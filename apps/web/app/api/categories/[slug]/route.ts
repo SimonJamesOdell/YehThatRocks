@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getArtistsByGenre, getGenreBySlug, getVideosByGenre } from "@/lib/catalog-data";
+import { filterHiddenVideos, getArtistsByGenre, getGenreBySlug, getVideosByGenre } from "@/lib/catalog-data";
+import { getOptionalApiAuth } from "@/lib/auth-request";
 
 type CategoryRouteContext = {
   params: Promise<{ slug: string }>;
@@ -21,13 +22,20 @@ export async function GET(_request: NextRequest, context: CategoryRouteContext) 
 
   const videosWithProbe = await getVideosByGenre(genre, { offset, limit: limit + 1 });
 
+  // Filter blocked videos if user is authenticated
+  const authResult = await getOptionalApiAuth(_request);
+  let filteredVideos = videosWithProbe;
+  if (authResult?.userId) {
+    filteredVideos = await filterHiddenVideos(videosWithProbe, authResult.userId);
+  }
+
   let artists: Awaited<ReturnType<typeof getArtistsByGenre>> | undefined;
   if (includeArtists) {
     artists = await getArtistsByGenre(genre);
   }
 
-  const hasMore = videosWithProbe.length > limit;
-  const videos = videosWithProbe.slice(0, limit);
+  const hasMore = filteredVideos.length > limit;
+  const videos = filteredVideos.slice(0, limit);
 
   return NextResponse.json({
     genre,
