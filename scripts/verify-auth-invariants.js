@@ -75,7 +75,11 @@ function main() {
   // Login accepts email OR handle so the input intentionally uses type="text", not type="email"
   assertContains(loginFormSource, 'type="text"', "Login form identifier input uses type=text (accepts email or handle)", failures);
   assertContains(loginFormSource, 'name="password"', "Login form has password input field", failures);
-  assertContains(loginFormSource, 'type="password"', "Login form password input uses password type", failures);
+  const loginPasswordHasStaticType = loginFormSource.includes('type="password"');
+  const loginPasswordHasToggleType = loginFormSource.includes('type={isPasswordVisible ? "text" : "password"}');
+  if (!loginPasswordHasStaticType && !loginPasswordHasToggleType) {
+    failures.push("Login form password input uses password type or password visibility toggle");
+  }
   assertContains(loginFormSource, 'autoComplete="username"', "Login form email input has correct autocomplete", failures);
   assertContains(loginFormSource, 'autoComplete="current-password"', "Login form password input has correct autocomplete", failures);
   assertContains(loginFormSource, 'className="authForm"', "Login form uses authForm CSS class", failures);
