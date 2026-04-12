@@ -1128,6 +1128,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
             }
 
             if (playing) {
+              setUnavailableOverlayMessage(null);
               playAttemptedAtRef.current = null;
               setHasPlaybackStarted(true);
               hasPlaybackStartedRef.current = true;
@@ -1199,6 +1200,12 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
             }
           },
           onError: async (event) => {
+            const activeVideoId = currentVideoRef.current.id;
+            if (activeVideoId !== currentVideo.id) {
+              // Ignore stale events emitted by a previously replaced player instance.
+              return;
+            }
+
             logPlayerDebug("onError", {
               videoId: currentVideo.id,
               playerHostMode,
@@ -1206,6 +1213,31 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
             });
 
             if (!UNAVAILABLE_PLAYER_CODES.has(event.data)) {
+              return;
+            }
+
+            const runtimePlayer = playerRef.current;
+            const runtimeState =
+              runtimePlayer && typeof runtimePlayer.getPlayerState === "function"
+                ? runtimePlayer.getPlayerState()
+                : -1;
+            const runtimeTime =
+              runtimePlayer && typeof runtimePlayer.getCurrentTime === "function"
+                ? toSafeNumber(runtimePlayer.getCurrentTime(), 0)
+                : 0;
+            const playbackAlreadyEstablished =
+              runtimeState === window.YT?.PlayerState.PLAYING
+              || hasPlaybackStartedRef.current
+              || runtimeTime > 1;
+
+            if (playbackAlreadyEstablished) {
+              logPlayerDebug("onError:ignored-due-to-active-playback", {
+                videoId: currentVideo.id,
+                playerHostMode,
+                errorCode: event.data,
+                runtimeState,
+                runtimeTime,
+              });
               return;
             }
 
