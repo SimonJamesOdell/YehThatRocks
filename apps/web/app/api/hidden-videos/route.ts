@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { hiddenVideoMutationSchema } from "@/lib/api-schemas";
 import { requireApiAuth } from "@/lib/auth-request";
-import { getHiddenVideoIdsForUser, getHiddenVideosForUser, hideVideoForUser, unhideVideoForUser } from "@/lib/catalog-data";
+import { getHiddenVideoIdsForUser, getHiddenVideosForUser, hideVideoAndPrunePlaylistsForUser, unhideVideoForUser } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
@@ -65,16 +65,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const result = await hideVideoForUser({
+  const activePlaylistId = request.nextUrl.searchParams.get("activePlaylistId");
+
+  const result = await hideVideoAndPrunePlaylistsForUser({
     userId: authResult.auth.userId,
     videoId: parsed.data.videoId,
+    activePlaylistId,
   });
 
   if (!result.ok) {
     return NextResponse.json({ ok: false, error: "Failed to hide video" }, { status: 503 });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    removedItemCount: result.removedItemCount,
+    removedFromPlaylistIds: result.removedFromPlaylistIds,
+    deletedPlaylistIds: result.deletedPlaylistIds,
+    activePlaylistDeleted: result.activePlaylistDeleted,
+  });
 }
 
 export async function DELETE(request: NextRequest) {

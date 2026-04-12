@@ -70,9 +70,33 @@ export function Top100VideosLoader({
 }) {
   const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
   const [videos, setVideos] = useState<VideoRecord[]>(() => filterHiddenVideos(readTop100SessionCache() ?? [], hiddenVideoIdSet));
+  const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(() => videos.length === 0);
   const [error, setError] = useState<string | null>(null);
   const seenVideoIdSet = new Set(seenVideoIds);
+
+  const handleHideVideo = async (track: VideoRecord) => {
+    if (!isAuthenticated || hidingVideoIds.includes(track.id)) {
+      return;
+    }
+
+    setHidingVideoIds((current) => [...current, track.id]);
+    setVideos((current) => current.filter((candidate) => candidate.id !== track.id));
+
+    try {
+      await fetch("/api/hidden-videos", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ videoId: track.id }),
+      });
+    } catch {
+      // Keep card hidden even if persistence fails, matching quick-hide behavior elsewhere.
+    } finally {
+      setHidingVideoIds((current) => current.filter((id) => id !== track.id));
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -183,6 +207,8 @@ export function Top100VideosLoader({
           index={index}
           isAuthenticated={isAuthenticated}
           isSeen={seenVideoIdSet.has(track.id)}
+          onHideVideo={handleHideVideo}
+          isHidePending={hidingVideoIds.includes(track.id)}
         />
       ))}
     </div>

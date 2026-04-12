@@ -31,7 +31,7 @@ export async function getCurrentAuthenticatedUser() {
 
   try {
     const payload = await verifyToken(accessToken, "access");
-    return (prisma as PrismaWithVerifiedUser).user.findUnique({
+    return await (prisma as PrismaWithVerifiedUser).user.findUnique({
       where: { id: payload.uid },
       select: {
         id: true,

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { FormEvent, Suspense, useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { FormEvent, Suspense, useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { CSSProperties } from "react";
 
@@ -71,6 +71,7 @@ type CurrentVideoResolvePayload = {
 type RightRailMode = "watch-next" | "playlist";
 
 type PlaylistRailVideo = {
+  playlistItemId: string;
   id: string;
   title: string;
   channelTitle: string;
@@ -239,6 +240,20 @@ function dedupeVideoList(videos: VideoRecord[]) {
   );
 }
 
+function matchesPlaylistVideoOrder(a: PlaylistRailVideo[], b: PlaylistRailVideo[]) {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index]?.id !== b[index]?.id) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function dedupeRelatedRailVideos(videos: VideoRecord[], currentVideoId: string) {
   return dedupeVideoList(videos).filter((video) => video.id !== currentVideoId);
 }
@@ -343,6 +358,18 @@ function ShellDynamicInner({
   const [playlistMutationMessage, setPlaylistMutationMessage] = useState<string | null>(null);
   const [playlistMutationTone, setPlaylistMutationTone] = useState<"info" | "success" | "error">("info");
   const [playlistMutationPendingVideoId, setPlaylistMutationPendingVideoId] = useState<string | null>(null);
+  const [lastAddedRelatedVideoId, setLastAddedRelatedVideoId] = useState<string | null>(null);
+  const [hidingPlaylistTrackKeys, setHidingPlaylistTrackKeys] = useState<string[]>([]);
+  const [playlistItemMutationPendingKeys, setPlaylistItemMutationPendingKeys] = useState<string[]>([]);
+  const reorderSeqRef = useRef(0);
+  const suppressPlaylistRailAutoSwitchRef = useRef(false);
+  // Stores the id of a playlist created via the Watch Next rail before the URL params
+  // (?pl=) have propagated to the next React render. Without this, rapid successive
+  // clicks each see activePlaylistId===null and create separate playlists.
+  const pendingCreatedPlaylistIdRef = useRef<string | null>(null);
+  const [draggedPlaylistTrackIndex, setDraggedPlaylistTrackIndex] = useState<number | null>(null);
+  const [dragOverPlaylistTrackIndex, setDragOverPlaylistTrackIndex] = useState<number | null>(null);
+  const [isDeletingActivePlaylist, setIsDeletingActivePlaylist] = useState(false);
   const [hidingRelatedVideoIds, setHidingRelatedVideoIds] = useState<string[]>([]);
   const [hiddenMutationPendingVideoIds, setHiddenMutationPendingVideoIds] = useState<string[]>([]);
   const [clickedRelatedVideoId, setClickedRelatedVideoId] = useState<string | null>(null);
@@ -380,6 +407,7 @@ function ShellDynamicInner({
   const relatedTransitionTimeoutRef = useRef<number | null>(null);
   const relatedClickFlashTimeoutRef = useRef<number | null>(null);
   const relatedHideTimeoutsRef = useRef<Map<string, number>>(new Map());
+  const playlistItemHideTimeoutsRef = useRef<Map<string, number>>(new Map());
   const relatedStackRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadInFlightRef = useRef(false);
@@ -393,6 +421,9 @@ function ShellDynamicInner({
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const favouritesBlindInnerRef = useRef<HTMLDivElement | null>(null);
   const previousPathnameRef = useRef<string | null>(null);
+  const previousActivePlaylistIdRef = useRef<string | null>(activePlaylistId);
+  const playlistRailLoadRequestIdRef = useRef(0);
+  const playlistRailMutationVersionRef = useRef(0);
   const flashTimeoutRef = useRef<Record<FlashableChatMode, number | null>>({
     global: null,
     video: null,
@@ -674,6 +705,45 @@ function ShellDynamicInner({
       setRightRailMode("watch-next");
     }
   }, [isAuthenticated, rightRailMode]);
+
+  useEffect(() => {
+    if (isAuthenticated && activePlaylistId && rightRailMode !== "playlist") {
+      if (suppressPlaylistRailAutoSwitchRef.current) {
+        suppressPlaylistRailAutoSwitchRef.current = false;
+        return;
+      }
+      setRightRailMode("playlist");
+    }
+  }, [activePlaylistId, isAuthenticated, rightRailMode]);
+
+  useEffect(() => {
+    if (pathname !== "/" || activePlaylistId || rightRailMode === "watch-next") {
+      return;
+    }
+
+    // Only force-reset when returning from an overlay route to home.
+    if (!previousPathname || previousPathname === "/") {
+      return;
+    }
+
+    setRightRailMode("watch-next");
+  }, [activePlaylistId, pathname, previousPathname, rightRailMode]);
+
+  useEffect(() => {
+    const previousActivePlaylistId = previousActivePlaylistIdRef.current;
+
+    if (previousActivePlaylistId && !activePlaylistId && rightRailMode === "playlist") {
+      setRightRailMode("watch-next");
+    }
+
+    previousActivePlaylistIdRef.current = activePlaylistId;
+
+    // Once the URL param has propagated, clear the pending ref so subsequent
+    // navigation away and back doesn't skip playlist creation unexpectedly.
+    if (activePlaylistId && pendingCreatedPlaylistIdRef.current === activePlaylistId) {
+      pendingCreatedPlaylistIdRef.current = null;
+    }
+  }, [activePlaylistId, rightRailMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1390,15 +1460,19 @@ function ShellDynamicInner({
     }
 
     let cancelled = false;
+    const requestId = ++playlistRailLoadRequestIdRef.current;
+    const mutationVersionAtStart = playlistRailMutationVersionRef.current;
 
     const loadPlaylistRail = async () => {
       setIsPlaylistRailLoading(true);
       setPlaylistRailError(null);
 
       try {
-        const response = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(activePlaylistId)}`);
+        const response = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(activePlaylistId)}`, {
+          cache: "no-store",
+        });
 
-        if (cancelled) {
+        if (cancelled || requestId !== playlistRailLoadRequestIdRef.current) {
           return;
         }
 
@@ -1416,16 +1490,20 @@ function ShellDynamicInner({
         }
 
         const payload = (await response.json()) as PlaylistRailPayload;
-        if (!cancelled) {
+        if (
+          !cancelled
+          && requestId === playlistRailLoadRequestIdRef.current
+          && mutationVersionAtStart === playlistRailMutationVersionRef.current
+        ) {
           setPlaylistRailData(payload);
         }
       } catch {
-        if (!cancelled) {
+        if (!cancelled && requestId === playlistRailLoadRequestIdRef.current) {
           setPlaylistRailData(null);
           setPlaylistRailError("Could not load playlist tracks.");
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && requestId === playlistRailLoadRequestIdRef.current) {
           setIsPlaylistRailLoading(false);
         }
       }
@@ -1436,7 +1514,7 @@ function ShellDynamicInner({
     return () => {
       cancelled = true;
     };
-  }, [activePlaylistId, fetchWithAuthRetry, pathname, playlistRefreshTick, rightRailMode, searchParamsKey]);
+  }, [activePlaylistId, fetchWithAuthRetry, pathname, playlistRefreshTick, rightRailMode]);
 
   useEffect(() => {
     if (rightRailMode !== "playlist") {
@@ -1995,6 +2073,7 @@ function ShellDynamicInner({
 
   useEffect(() => {
     const hideTimeouts = relatedHideTimeoutsRef.current;
+    const playlistHideTimeouts = playlistItemHideTimeoutsRef.current;
 
     return () => {
       if (relatedClickFlashTimeoutRef.current !== null) {
@@ -2006,7 +2085,48 @@ function ShellDynamicInner({
         window.clearTimeout(timeoutId);
       }
       hideTimeouts.clear();
+
+      for (const timeoutId of playlistHideTimeouts.values()) {
+        window.clearTimeout(timeoutId);
+      }
+      playlistHideTimeouts.clear();
     };
+  }, []);
+
+  const commitPlaylistTrackRemoval = useCallback((slotKey: string, playlistItemIndex: number) => {
+    setHidingPlaylistTrackKeys((previous) => {
+      if (previous.includes(slotKey)) {
+        return previous;
+      }
+
+      return [...previous, slotKey];
+    });
+
+    const existingTimeoutId = playlistItemHideTimeoutsRef.current.get(slotKey);
+    if (existingTimeoutId !== undefined) {
+      window.clearTimeout(existingTimeoutId);
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setPlaylistRailData((previous) => {
+        if (!previous) {
+          return previous;
+        }
+
+        if (playlistItemIndex < 0 || playlistItemIndex >= previous.videos.length) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          videos: previous.videos.filter((_, index) => index !== playlistItemIndex),
+        };
+      });
+      setHidingPlaylistTrackKeys((previous) => previous.filter((candidateKey) => candidateKey !== slotKey));
+      playlistItemHideTimeoutsRef.current.delete(slotKey);
+    }, WATCH_NEXT_HIDE_ANIMATION_MS);
+
+    playlistItemHideTimeoutsRef.current.set(slotKey, timeoutId);
   }, []);
 
   const commitWatchNextHide = useCallback((videoId: string) => {
@@ -2076,6 +2196,198 @@ function ShellDynamicInner({
     }
   }, [commitWatchNextHide, fetchWithAuthRetry, hiddenMutationPendingVideoIds, hidingRelatedVideoIds, isAuthenticated]);
 
+  const handleRemoveTrackFromActivePlaylist = useCallback(async (track: PlaylistRailVideo, playlistItemIndex: number) => {
+    if (!activePlaylistId) {
+      return;
+    }
+
+    const slotKey = track.playlistItemId ?? `${track.id}:${playlistItemIndex}`;
+
+    if (hidingPlaylistTrackKeys.includes(slotKey) || playlistItemMutationPendingKeys.includes(slotKey)) {
+      return;
+    }
+
+    commitPlaylistTrackRemoval(slotKey, playlistItemIndex);
+    setPlaylistItemMutationPendingKeys((previous) => [...previous, slotKey]);
+
+    try {
+      const response = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(activePlaylistId)}/items`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ playlistItemId: track.playlistItemId, playlistItemIndex }),
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        setIsAuthenticated(false);
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Sign in to edit playlists.");
+        return;
+      }
+
+      if (!response.ok) {
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Track removed visually, but playlist update failed.");
+        return;
+      }
+
+      const updatedPlaylist = (await response.json().catch(() => null)) as PlaylistRailPayload | null;
+
+      setPlaylistRailSummaries((previous) =>
+        previous.map((summary) =>
+          summary.id === activePlaylistId
+            ? {
+                ...summary,
+                itemCount: updatedPlaylist?.videos.length ?? Math.max(0, summary.itemCount - 1),
+                leadVideoId: updatedPlaylist?.videos[0]?.id ?? "__placeholder__",
+              }
+            : summary,
+        ),
+      );
+
+      if (updatedPlaylist?.id === activePlaylistId && Array.isArray(updatedPlaylist.videos)) {
+        setPlaylistRailData(updatedPlaylist);
+      }
+    } catch {
+      setPlaylistMutationTone("error");
+      setPlaylistMutationMessage("Track removed visually, but playlist update failed.");
+    } finally {
+      setPlaylistItemMutationPendingKeys((previous) => previous.filter((candidateKey) => candidateKey !== slotKey));
+    }
+  }, [activePlaylistId, commitPlaylistTrackRemoval, fetchWithAuthRetry, hidingPlaylistTrackKeys, playlistItemMutationPendingKeys]);
+
+  const handleReorderActivePlaylistTrack = useCallback(async (fromIndex: number, toIndex: number) => {
+    if (!activePlaylistId || fromIndex === toIndex) {
+      return;
+    }
+
+    const currentPlaylist = playlistRailData;
+
+    if (!currentPlaylist || !Array.isArray(currentPlaylist.videos)) {
+      return;
+    }
+
+    if (
+      fromIndex < 0
+      || toIndex < 0
+      || fromIndex >= currentPlaylist.videos.length
+      || toIndex >= currentPlaylist.videos.length
+    ) {
+      return;
+    }
+
+    // Read item IDs before state changes (safe — human-speed clicks always have fresh closure).
+    const fromPlaylistItemId = currentPlaylist.videos[fromIndex]?.playlistItemId;
+    const toPlaylistItemId = currentPlaylist.videos[toIndex]?.playlistItemId;
+
+    // Optimistic update via functional form so rapid queued calls each build on the latest state.
+    playlistRailMutationVersionRef.current += 1;
+    setPlaylistRailData((prev) => {
+      if (!prev || !Array.isArray(prev.videos)) return prev;
+      if (fromIndex >= prev.videos.length || toIndex >= prev.videos.length) return prev;
+      const reorderedVideos = [...prev.videos];
+      const [moved] = reorderedVideos.splice(fromIndex, 1);
+      if (!moved) return prev;
+      reorderedVideos.splice(toIndex, 0, moved);
+      return { ...prev, videos: reorderedVideos };
+    });
+
+    // Sequence number: only the latest response updates persisted state.
+    const seq = ++reorderSeqRef.current;
+
+    try {
+      const response = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(activePlaylistId)}/items`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fromPlaylistItemId,
+          toPlaylistItemId,
+          fromIndex,
+          toIndex,
+        }),
+      });
+
+      // A newer reorder was initiated while this one was in flight — discard this response.
+      if (seq < reorderSeqRef.current) {
+        return;
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        setIsAuthenticated(false);
+        setPlaylistRailData(currentPlaylist);
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Sign in to edit playlists.");
+        return;
+      }
+
+      if (!response.ok) {
+        setPlaylistRailData(currentPlaylist);
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Could not reorder playlist tracks.");
+        return;
+      }
+
+      const updatedPlaylist = (await response.json().catch(() => null)) as PlaylistRailPayload | null;
+
+      if (updatedPlaylist?.id === activePlaylistId && Array.isArray(updatedPlaylist.videos)) {
+        setPlaylistRailData(updatedPlaylist);
+        setPlaylistRailSummaries((previous) =>
+          previous.map((summary) =>
+            summary.id === activePlaylistId
+              ? {
+                  ...summary,
+                  itemCount: updatedPlaylist.videos.length,
+                  leadVideoId: updatedPlaylist.videos[0]?.id ?? "__placeholder__",
+                }
+              : summary,
+          ),
+        );
+      }
+    } catch {
+      if (seq >= reorderSeqRef.current) {
+        setPlaylistRailData(currentPlaylist);
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Could not reorder playlist tracks.");
+      }
+    }
+  }, [activePlaylistId, fetchWithAuthRetry, playlistRailData]);
+
+  const handlePlaylistTrackDragStart = useCallback((event: ReactDragEvent<HTMLDivElement>, index: number) => {
+    event.stopPropagation();
+    setDraggedPlaylistTrackIndex(index);
+    setDragOverPlaylistTrackIndex(index);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(index));
+  }, []);
+
+  const handlePlaylistTrackDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>, index: number) => {
+    event.preventDefault();
+    if (dragOverPlaylistTrackIndex !== index) {
+      setDragOverPlaylistTrackIndex(index);
+    }
+  }, [dragOverPlaylistTrackIndex]);
+
+  const handlePlaylistTrackDrop = useCallback((event: ReactDragEvent<HTMLDivElement>, toIndex: number) => {
+    event.preventDefault();
+    const fromIndex = draggedPlaylistTrackIndex;
+    setDraggedPlaylistTrackIndex(null);
+    setDragOverPlaylistTrackIndex(null);
+
+    if (fromIndex === null || fromIndex === toIndex) {
+      return;
+    }
+
+    void handleReorderActivePlaylistTrack(fromIndex, toIndex);
+  }, [draggedPlaylistTrackIndex, handleReorderActivePlaylistTrack]);
+
+  const handlePlaylistTrackDragEnd = useCallback(() => {
+    setDraggedPlaylistTrackIndex(null);
+    setDragOverPlaylistTrackIndex(null);
+  }, []);
+
   const visibleNavItems = (
     isAuthenticated
       ? navItems
@@ -2118,6 +2430,56 @@ function ShellDynamicInner({
     params.delete("pli");
     const query = params.toString();
     return query.length > 0 ? `/?${query}` : "/";
+  }
+
+  const handleSwitchToWatchNextRail = useCallback(() => {
+    setRightRailMode("watch-next");
+
+    if (!activePlaylistId) {
+      return;
+    }
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("v", currentVideo.id);
+    params.set("resume", "1");
+    params.delete("pl");
+    params.delete("pli");
+
+    const query = params.toString();
+    router.replace(query ? `/?${query}` : "/");
+  }, [activePlaylistId, currentVideo.id, router, searchParams]);
+
+  async function handleDeleteActivePlaylist() {
+    if (!activePlaylistId || isDeletingActivePlaylist) {
+      return;
+    }
+
+    setIsDeletingActivePlaylist(true);
+
+    try {
+      const response = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(activePlaylistId)}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Could not delete playlist.");
+        return;
+      }
+
+      window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+      setPlaylistRailData(null);
+      setPlaylistRailError(null);
+      router.push(getClosePlaylistHref());
+    } catch {
+      setPlaylistMutationTone("error");
+      setPlaylistMutationMessage("Could not delete playlist.");
+    } finally {
+      setIsDeletingActivePlaylist(false);
+    }
   }
 
   function prewarmRelatedThumbnail(videoId: string) {
@@ -2247,8 +2609,10 @@ function ShellDynamicInner({
     setPlaylistMutationTone("info");
 
     try {
-      if (activePlaylistId) {
-        const addResponse = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(activePlaylistId)}/items`, {
+      const effectivePlaylistId = activePlaylistId ?? pendingCreatedPlaylistIdRef.current;
+
+      if (effectivePlaylistId) {
+        const addResponse = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(effectivePlaylistId)}/items`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -2268,6 +2632,11 @@ function ShellDynamicInner({
           setPlaylistMutationMessage("Could not add track to playlist.");
           return;
         }
+
+        setLastAddedRelatedVideoId(track.id);
+        setPlaylistRailData((prev) =>
+          prev ? { ...prev, itemCount: Math.max(prev.videos.length, prev.itemCount ?? 0) + 1 } : prev,
+        );
         return;
       }
 
@@ -2324,6 +2693,9 @@ function ShellDynamicInner({
         return;
       }
 
+      setLastAddedRelatedVideoId(track.id);
+      pendingCreatedPlaylistIdRef.current = created.id;
+      suppressPlaylistRailAutoSwitchRef.current = true;
       const params = new URLSearchParams(searchParams.toString());
       params.set("v", currentVideo.id);
       params.set("resume", "1");
@@ -2351,6 +2723,20 @@ function ShellDynamicInner({
       window.clearTimeout(timeoutId);
     };
   }, [playlistMutationMessage]);
+
+  useEffect(() => {
+    if (!lastAddedRelatedVideoId) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setLastAddedRelatedVideoId(null);
+    }, 1800);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [lastAddedRelatedVideoId]);
 
   async function handleChatSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -3039,6 +3425,9 @@ function ShellDynamicInner({
                   queue={[currentVideo, ...uniqueRelatedVideos]}
                   isLoggedIn={isAuthenticated}
                   isAdmin={isAdmin}
+                  seenVideoIds={seenVideoIdsRef.current}
+                  onHideVideo={handleHideFromWatchNext}
+                  onAddVideoToPlaylist={handleAddToPlaylistFromWatchNext}
                 />
               )}
             </Suspense>
@@ -3070,7 +3459,7 @@ function ShellDynamicInner({
               <button
                 type="button"
                 className={rightRailMode === "watch-next" ? "activeTab" : undefined}
-                onClick={() => setRightRailMode("watch-next")}
+                onClick={handleSwitchToWatchNextRail}
               >
                 Watch Next
               </button>
@@ -3083,7 +3472,7 @@ function ShellDynamicInner({
                 className={rightRailMode === "playlist" ? "activeTab" : undefined}
                 onClick={() => setRightRailMode("playlist")}
               >
-                Playlist
+                {activePlaylistTrackCount > 0 ? `Playlist (${activePlaylistTrackCount})` : "Playlist"}
               </button>
             ) : null}
           </div>
@@ -3182,7 +3571,7 @@ function ShellDynamicInner({
                   {isAuthenticated ? (
                     <button
                       type="button"
-                      className="relatedCardPlaylistAdd"
+                      className={`relatedCardPlaylistAdd${lastAddedRelatedVideoId === track.id ? " relatedCardPlaylistAddAdded" : ""}`}
                       aria-label={`Add ${track.title} to playlist`}
                       title={activePlaylistId ? "Add to current playlist" : "Create playlist and add"}
                       onClick={(event) => {
@@ -3192,7 +3581,7 @@ function ShellDynamicInner({
                       }}
                       disabled={playlistMutationPendingVideoId === track.id || hidingRelatedVideoIds.includes(track.id)}
                     >
-                      {playlistMutationPendingVideoId === track.id ? "..." : "+"}
+                      {playlistMutationPendingVideoId === track.id ? "…" : lastAddedRelatedVideoId === track.id ? "✓" : "+"}
                     </button>
                   ) : null}
                 </div>
@@ -3211,9 +3600,23 @@ function ShellDynamicInner({
                       ? `${playlistRailData.name} • ${activePlaylistTrackCount} ${activePlaylistTrackCount === 1 ? "track" : "tracks"}`
                       : "Active playlist"}
                   </span>
-                  <Link href={getClosePlaylistHref()} className="rightRailPlaylistClose">
-                    Close playlist
-                  </Link>
+                  <div className="rightRailPlaylistActions">
+                    <Link href={getClosePlaylistHref()} className="rightRailPlaylistClose">
+                      Close
+                    </Link>
+                    <button
+                      type="button"
+                      className="rightRailPlaylistDelete"
+                      aria-label="Delete playlist"
+                      title="Delete playlist"
+                      onClick={() => {
+                        void handleDeleteActivePlaylist();
+                      }}
+                      disabled={isDeletingActivePlaylist}
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
               ) : null}
 
@@ -3280,36 +3683,121 @@ function ShellDynamicInner({
               ) : playlistRailError ? (
                 <p className="rightRailStatus">{playlistRailError}</p>
               ) : playlistRailData && playlistRailData.videos.length > 0 ? (
-                playlistRailData.videos.map((track, index) => {
+                playlistRailData.videos.flatMap((track, index) => {
                   const isCurrentPlaylistTrack = currentVideo.id === track.id;
-                  return (
-                    <Link
-                      key={`${track.id}-${index}`}
-                      href={`/?v=${track.id}&pl=${encodeURIComponent(playlistRailData.id)}&pli=${index}`}
-                      className={`relatedCard linkedCard rightRailPlaylistTrackCard${isCurrentPlaylistTrack ? " relatedCardActive" : ""}`}
-                    >
-                      <div className="thumbGlow">
-                        <Image
-                          src={getRelatedThumbnail(track.id)}
-                          alt={track.title}
-                          width={128}
-                          height={72}
-                          unoptimized
-                          loading={index < 3 ? "eager" : "lazy"}
-                          fetchPriority={index < 2 ? "high" : "auto"}
-                          className="relatedThumb"
-                        />
-                      </div>
-                      <div>
-                        <h3>{track.title}</h3>
-                        <p>
-                          <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
-                            {track.channelTitle}
-                          </ArtistWikiLink>
-                        </p>
-                      </div>
-                    </Link>
+                  const slotKey = track.playlistItemId ?? `${track.id}:${index}`;
+                  const isTrackRemoving = hidingPlaylistTrackKeys.includes(slotKey);
+                  const isTrackMutating = playlistItemMutationPendingKeys.includes(slotKey);
+                  const isDraggingThis = draggedPlaylistTrackIndex === index;
+                  const isDragOver = dragOverPlaylistTrackIndex === index && draggedPlaylistTrackIndex !== null && !isDraggingThis;
+                  const showPlaceholderAbove = isDragOver && draggedPlaylistTrackIndex > index;
+                  const showPlaceholderBelow = isDragOver && draggedPlaylistTrackIndex < index;
+                  const placeholder = (key: string) => (
+                    <div
+                      key={key}
+                      className="playlistRailDropPlaceholder"
+                      aria-hidden="true"
+                      onDragOver={(event) => { event.preventDefault(); setDragOverPlaylistTrackIndex(index); }}
+                      onDrop={(event) => handlePlaylistTrackDrop(event, index)}
+                    />
                   );
+                  return [
+                    ...(showPlaceholderAbove ? [placeholder(`rph-above-${index}`)] : []),
+                    <div
+                      key={track.playlistItemId ?? `${track.id}-${index}`}
+                      className={[
+                        "playlistRailTrackRow",
+                        isTrackRemoving ? "relatedCardSlotExiting" : "",
+                        isDraggingThis ? "playlistRailTrackRowDraggingSource" : "",
+                        isDragOver ? "playlistRailTrackRowDragOver" : "",
+                      ].filter(Boolean).join(" ")}
+                      onDragOver={(event) => handlePlaylistTrackDragOver(event, index)}
+                      onDrop={(event) => handlePlaylistTrackDrop(event, index)}
+                    >
+                      <div className="playlistRailReorderColumn">
+                        <button
+                          type="button"
+                          className="playlistRailReorderChevron"
+                          aria-label={`Move ${track.title} up`}
+                          title="Move up"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void handleReorderActivePlaylistTrack(index, index - 1);
+                          }}
+                          disabled={index === 0 || isTrackRemoving || isTrackMutating}
+                        >
+                          <span className="playlistRailChevronGlyph">{"<"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="playlistRailReorderChevron"
+                          aria-label={`Move ${track.title} down`}
+                          title="Move down"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void handleReorderActivePlaylistTrack(index, index + 1);
+                          }}
+                          disabled={index >= playlistRailData.videos.length - 1 || isTrackRemoving || isTrackMutating}
+                        >
+                          <span className="playlistRailChevronGlyph">{">"}</span>
+                        </button>
+                      </div>
+                      <div
+                        className={[
+                          "relatedCardSlot",
+                          "playlistRailTrackDraggable",
+                          isTrackRemoving ? "relatedCardSlotExiting" : "",
+                        ].filter(Boolean).join(" ")}
+                        draggable={!isTrackRemoving && !isTrackMutating}
+                        onDragStart={(event) => handlePlaylistTrackDragStart(event, index)}
+                        onDragEnd={handlePlaylistTrackDragEnd}
+                      >
+                      <button
+                        type="button"
+                        className="relatedCardHideButton"
+                        aria-label={`Remove ${track.title} from playlist`}
+                        title="Remove from playlist"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          void handleRemoveTrackFromActivePlaylist(track, index);
+                        }}
+                        disabled={isTrackRemoving || isTrackMutating}
+                      >
+                        ×
+                      </button>
+                      <Link
+                        href={`/?v=${track.id}&pl=${encodeURIComponent(playlistRailData.id)}&pli=${index}`}
+                        className={`relatedCard linkedCard rightRailPlaylistTrackCard${isCurrentPlaylistTrack ? " relatedCardActive" : ""}`}
+                        draggable={false}
+                      >
+                        <div className="thumbGlow">
+                          <Image
+                            src={getRelatedThumbnail(track.id)}
+                            alt={track.title}
+                            width={128}
+                            height={72}
+                            unoptimized
+                            loading={index < 3 ? "eager" : "lazy"}
+                            fetchPriority={index < 2 ? "high" : "auto"}
+                            className="relatedThumb"
+                          />
+                        </div>
+                        <div>
+                          <h3>{track.title}</h3>
+                          <p>
+                            <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
+                              {track.channelTitle}
+                            </ArtistWikiLink>
+                          </p>
+                        </div>
+                      </Link>
+                      </div>
+                    </div>,
+                    ...(showPlaceholderBelow ? [placeholder(`rph-below-${index}`)] : []),
+                  ];
                 })
               ) : (
                 <p className="rightRailStatus">This playlist has no tracks yet.</p>

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { addPlaylistItemSchema, removePlaylistItemSchema, reorderPlaylistItemsSchema } from "@/lib/api-schemas";
 import { requireApiAuth } from "@/lib/auth-request";
-import { addPlaylistItem, removePlaylistItem, reorderPlaylistItems } from "@/lib/catalog-data";
+import { addPlaylistItem, filterHiddenVideos, removePlaylistItem, reorderPlaylistItems } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
@@ -71,11 +71,18 @@ export async function DELETE(request: NextRequest, context: PlaylistItemsRouteCo
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const playlist = await removePlaylistItem(id, parsed.data.playlistItemIndex, authResult.auth.userId);
+  const playlist = await removePlaylistItem(
+    id,
+    parsed.data.playlistItemIndex ?? null,
+    authResult.auth.userId,
+    parsed.data.playlistItemId ?? null,
+  );
 
   if (!playlist) {
     return NextResponse.json({ error: "Playlist item not found" }, { status: 404 });
   }
+
+  playlist.videos = await filterHiddenVideos(playlist.videos, authResult.auth.userId);
 
   return NextResponse.json(playlist);
 }
@@ -108,14 +115,18 @@ export async function PATCH(request: NextRequest, context: PlaylistItemsRouteCon
 
   const playlist = await reorderPlaylistItems(
     id,
-    parsed.data.fromIndex,
-    parsed.data.toIndex,
+    parsed.data.fromIndex ?? null,
+    parsed.data.toIndex ?? null,
     authResult.auth.userId,
+    parsed.data.fromPlaylistItemId ?? null,
+    parsed.data.toPlaylistItemId ?? null,
   );
 
   if (!playlist) {
     return NextResponse.json({ error: "Playlist reorder failed" }, { status: 404 });
   }
+
+  playlist.videos = await filterHiddenVideos(playlist.videos, authResult.auth.userId);
 
   return NextResponse.json(playlist);
 }

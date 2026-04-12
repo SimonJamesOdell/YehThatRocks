@@ -13,6 +13,7 @@ const files = {
   apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
   shellLayout: path.join(ROOT, "apps/web/app/(shell)/layout.tsx"),
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic.tsx"),
+  playerExperience: path.join(ROOT, "apps/web/components/player-experience.tsx"),
   newPage: path.join(ROOT, "apps/web/app/(shell)/new/page.tsx"),
   newLoader: path.join(ROOT, "apps/web/components/new-videos-loader.tsx"),
   top100Page: path.join(ROOT, "apps/web/app/(shell)/top100/page.tsx"),
@@ -46,6 +47,7 @@ function main() {
   const apiSchemasSource = read(files.apiSchemas);
   const shellLayoutSource = read(files.shellLayout);
   const shellDynamicSource = read(files.shellDynamic);
+  const playerExperienceSource = read(files.playerExperience);
   const newPageSource = read(files.newPage);
   const newLoaderSource = read(files.newLoader);
   const top100PageSource = read(files.top100Page);
@@ -64,11 +66,17 @@ function main() {
   // Data helpers + API invariants.
   assertContains(catalogDataSource, "export async function getHiddenVideoIdsForUser", "Catalog data exposes hidden video lookup", failures);
   assertContains(catalogDataSource, "export async function hideVideoForUser", "Catalog data exposes hide operation", failures);
+  assertContains(catalogDataSource, "export async function hideVideoAndPrunePlaylistsForUser", "Catalog data exposes hide+playlist-prune operation", failures);
+  assertContains(catalogDataSource, "const playlists = await getPlaylists(input.userId);", "Hide+prune operation enumerates user playlists", failures);
+  assertContains(catalogDataSource, "const deleted = await deletePlaylist(playlist.id, input.userId);", "Hide+prune operation deletes empty playlists", failures);
   assertContains(catalogDataSource, "export async function unhideVideoForUser", "Catalog data exposes unhide operation", failures);
   assertContains(apiSchemasSource, "export const hiddenVideoMutationSchema", "API schemas define hidden video mutation payload", failures);
   assertContains(apiRouteSource, "export async function GET", "Hidden videos route supports GET", failures);
   assertContains(apiRouteSource, "export async function POST", "Hidden videos route supports POST", failures);
   assertContains(apiRouteSource, "export async function DELETE", "Hidden videos route supports DELETE", failures);
+  assertContains(apiRouteSource, "const activePlaylistId = request.nextUrl.searchParams.get(\"activePlaylistId\");", "Hidden videos POST accepts active playlist context", failures);
+  assertContains(apiRouteSource, "hideVideoAndPrunePlaylistsForUser", "Hidden videos POST uses hide+prune helper", failures);
+  assertContains(apiRouteSource, "activePlaylistDeleted: result.activePlaylistDeleted", "Hidden videos POST returns activePlaylistDeleted result", failures);
 
   // UI usage invariants.
   assertContains(shellLayoutSource, "initialHiddenVideoIds={Array.from(hiddenVideoIds)}", "Shell layout forwards hidden ids to shell dynamic", failures);
@@ -88,6 +96,17 @@ function main() {
 
   assertContains(artistPageSource, "getHiddenVideoIdsForUser", "Artist page loads hidden video ids", failures);
   assertContains(artistPageSource, "!hiddenVideoIds.has(video.id)", "Artist page excludes hidden videos", failures);
+
+  // Player hide-video safety invariant: the player MUST pause active playback before
+  // performing the hide flow. Without this, the hidden video keeps playing audio in the
+  // dock after the skip transition completes.
+  assertContains(playerExperienceSource, "function pauseActivePlayback(", "Player defines pauseActivePlayback helper to stop audio on hide", failures);
+  assertContains(playerExperienceSource, "pauseActivePlayback();", "Player calls pauseActivePlayback when hiding current video", failures);
+  assertContains(playerExperienceSource, "const activePlaylistQuery = activePlaylistId ? `?activePlaylistId=${encodeURIComponent(activePlaylistId)}` : \"\";", "Player sends active playlist context when blocking current video", failures);
+  assertContains(playerExperienceSource, "window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));", "Player refreshes playlist state after blocking current video", failures);
+  assertContains(playerExperienceSource, "if (payload?.activePlaylistDeleted)", "Player handles active playlist deletion response after block", failures);
+  assertContains(playerExperienceSource, "params.delete(\"pl\");", "Player clears active playlist id when blocked track deletes playlist", failures);
+  assertContains(playerExperienceSource, "params.delete(\"pli\");", "Player clears active playlist index when blocked track deletes playlist", failures);
 
   if (failures.length > 0) {
     console.error("Hidden videos invariant check failed.");

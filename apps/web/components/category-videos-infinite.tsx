@@ -85,6 +85,7 @@ export function CategoryVideosInfinite({
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
   const seenVideoIdSet = new Set(seenVideoIds);
   const nextOffsetRef = useRef(initialVideos.length);
   const requestedOffsetsRef = useRef(new Set<number>());
@@ -268,6 +269,29 @@ export function CategoryVideosInfinite({
 
   const orderedVideos = sortVideosBySeen(videos, seenVideoIdSet);
 
+  const handleHideVideo = useCallback(async (video: VideoRecord) => {
+    if (!isAuthenticated || hidingVideoIds.includes(video.id)) {
+      return;
+    }
+
+    setHidingVideoIds((current) => [...current, video.id]);
+    setVideos((current) => current.filter((candidate) => candidate.id !== video.id));
+
+    try {
+      await fetch("/api/hidden-videos", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ videoId: video.id }),
+      });
+    } catch {
+      // Keep card hidden even if persistence fails, matching quick-hide behavior elsewhere.
+    } finally {
+      setHidingVideoIds((current) => current.filter((id) => id !== video.id));
+    }
+  }, [hidingVideoIds, isAuthenticated]);
+
   const chunkTriggerIndex = orderedVideos.length > pageSize
     ? Math.max(0, orderedVideos.length - pageSize * SCROLL_BUFFER_PAGES)
     : -1;
@@ -285,7 +309,14 @@ export function CategoryVideosInfinite({
             className="categoryVideoObserverAnchor"
             ref={index === chunkTriggerIndex ? chunkTriggerRef : undefined}
           >
-            <ArtistVideoLink video={video} isAuthenticated={isAuthenticated} isSeen={seenVideoIdSet.has(video.id)} />
+            <ArtistVideoLink
+              video={video}
+              isAuthenticated={isAuthenticated}
+              isSeen={seenVideoIdSet.has(video.id)}
+              useCornerActions
+              onHideVideo={handleHideVideo}
+              isHidePending={hidingVideoIds.includes(video.id)}
+            />
           </div>
         ))}
       </div>

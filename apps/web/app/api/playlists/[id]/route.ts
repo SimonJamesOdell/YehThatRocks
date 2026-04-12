@@ -6,6 +6,15 @@ import { deletePlaylist, filterHiddenVideos, getPlaylistById, getPlaylists, rena
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
+export const dynamic = "force-dynamic";
+
+function withNoStore(response: NextResponse) {
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
+
 type PlaylistRouteContext = {
   params: Promise<{ id: string }>;
 };
@@ -44,10 +53,10 @@ export async function GET(_request: NextRequest, context: PlaylistRouteContext) 
   if (playlist) {
     // Filter out blocked videos from playlist
     playlist.videos = await filterHiddenVideos(playlist.videos, authResult.auth.userId);
-    return NextResponse.json(toJsonSafeValue({
+    return withNoStore(NextResponse.json(toJsonSafeValue({
       ...playlist,
       itemCount: playlist.videos.length,
-    }));
+    })));
   }
 
   // Some database shapes fail to resolve empty playlists in detail lookup.
@@ -56,15 +65,15 @@ export async function GET(_request: NextRequest, context: PlaylistRouteContext) 
   const matchingSummary = playlistSummaries.find((candidate) => candidate.id === id);
 
   if (!matchingSummary) {
-    return NextResponse.json({ error: "Playlist not found" }, { status: 404 });
+    return withNoStore(NextResponse.json({ error: "Playlist not found" }, { status: 404 }));
   }
 
-  return NextResponse.json(toJsonSafeValue({
+  return withNoStore(NextResponse.json(toJsonSafeValue({
     id: matchingSummary.id,
     name: matchingSummary.name,
     videos: [],
     itemCount: matchingSummary.itemCount,
-  }));
+  })));
 }
 
 export async function DELETE(request: NextRequest, context: PlaylistRouteContext) {

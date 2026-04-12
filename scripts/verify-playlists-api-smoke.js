@@ -207,6 +207,8 @@ async function main() {
         }
 
         if (createdPlaylistId) {
+          let firstPlaylistItemId = null;
+
           const addOne = await fetchJson(
             `${baseUrl}/api/playlists/${encodeURIComponent(createdPlaylistId)}/items`,
             {
@@ -324,17 +326,28 @@ async function main() {
             const { response, payload } = detailAfterReorder;
             const videos = Array.isArray(payload?.videos) ? payload.videos : [];
             const firstId = videos[0]?.id;
+            firstPlaylistItemId = typeof videos[0]?.playlistItemId === "string" ? videos[0].playlistItemId : null;
 
             assertInvariant(response.ok, "Authenticated detail after reorder returns 2xx", `status=${response.status}`, failures);
             assertInvariant(firstId === videoIdB, "Reorder moves second item to first position", `expectedFirst=${videoIdB} actualFirst=${String(firstId)}`, failures);
+            assertInvariant(
+              typeof firstPlaylistItemId === "string" && firstPlaylistItemId.length > 0,
+              "Playlist detail exposes stable playlistItemId for each row",
+              `firstPlaylistItemId=${String(firstPlaylistItemId)}`,
+              failures,
+            );
           }
+
+          const removeBody = firstPlaylistItemId
+            ? { playlistItemId: firstPlaylistItemId }
+            : { playlistItemIndex: 0 };
 
           const removeResult = await fetchJson(
             `${baseUrl}/api/playlists/${encodeURIComponent(createdPlaylistId)}/items`,
             {
               method: "DELETE",
               headers: authHeaders,
-              body: JSON.stringify({ playlistItemIndex: 0 }),
+              body: JSON.stringify(removeBody),
             },
             timeoutMs,
           ).catch((error) => ({ error }));

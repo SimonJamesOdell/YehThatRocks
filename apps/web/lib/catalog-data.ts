@@ -27,10 +27,14 @@ export type PlaylistSummary = {
   leadVideoId: string;
 };
 
+export type PlaylistVideoRecord = VideoRecord & {
+  playlistItemId?: string;
+};
+
 export type PlaylistDetail = {
   id: string;
   name: string;
-  videos: VideoRecord[];
+  videos: PlaylistVideoRecord[];
 };
 
 export type WatchHistoryEntry = {
@@ -1053,6 +1057,24 @@ function mapStoredVideoToPersistable(video: StoredVideoRow): PersistableVideoRec
   };
 }
 
+function mapPlaylistVideo(video: {
+  playlistItemId: number | bigint | string;
+  videoId: string;
+  title: string;
+  channelTitle: string | null;
+  parsedArtist?: string | null;
+  favourited: number | bigint | null;
+  description: string | null;
+}): PlaylistVideoRecord {
+  return {
+    ...mapVideo(video),
+    playlistItemId:
+      typeof video.playlistItemId === "bigint"
+        ? video.playlistItemId.toString()
+        : String(video.playlistItemId),
+  };
+}
+
 async function getStoredVideoById(videoId: string): Promise<StoredVideoRow | null> {
   const normalizedVideoId = normalizeYouTubeVideoId(videoId);
 
@@ -1650,7 +1672,11 @@ async function loadTableColumns(tableName: string): Promise<TableColumnInfo[]> {
 }
 
 function pickColumn(columns: TableColumnInfo[], names: string[]) {
-  return columns.find((column) => names.includes(column.Field));
+  for (const name of names) {
+    const match = columns.find((column) => column.Field === name);
+    if (match) return match;
+  }
+  return undefined;
 }
 
 function mapArtistProjectionRow(row: {
@@ -4636,7 +4662,10 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
         });
       }
 
-      return [...byPlaylistItemId.values()];
+      return [...byPlaylistItemId.entries()].map(([playlistItemId, video]) => ({
+        ...video,
+        playlistItemId,
+      }));
     };
 
     const queryVariants: Array<() => Promise<PlaylistDetailRow[]>> = [
@@ -4698,7 +4727,7 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
         `,
     ];
 
-    let videoRows: RankedVideoRow[] = [];
+    let videoRows: Array<RankedVideoRow & { playlistItemId: string }> = [];
 
     for (const query of queryVariants) {
       try {
@@ -4721,7 +4750,18 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
 
       const playlistRef = pickColumn(playlistColumns, ["playlist_id", "playlistId", "playlistid"]);
       const videoRef = pickColumn(playlistColumns, ["video_id", "videoId", "videoid"]);
-      const orderRef = pickColumn(playlistColumns, ["sort_order", "sortOrder", "id"]);
+      const orderRef = pickColumn(playlistColumns, [
+        "sort_order",
+        "sortOrder",
+        "display_order",
+        "displayOrder",
+        "order_index",
+        "orderIndex",
+        "position",
+        "sequence",
+        "idx",
+        "id",
+      ]);
       const rowIdRef = pickColumn(playlistColumns, ["id"]);
       const videoPkRef = pickColumn(videoColumns, ["id"]);
       const videoExternalIdRef = pickColumn(videoColumns, ["videoId", "video_id", "videoid"]);
@@ -4785,6 +4825,8 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
           const collapsed = collapseToPlaylistItems(fallbackRows);
 
           if (collapsed.length > 0) {
+            // Prefer the dynamically ordered result so persisted reorders are reflected
+            // even when earlier legacy queries returned the same row count ordered by id.
             videoRows = collapsed;
           }
         } catch {
@@ -4796,7 +4838,16 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
     return {
       id: String(typeof playlist.id === "bigint" ? Number(playlist.id) : playlist.id),
       name: playlist.name ?? "Untitled Playlist",
-      videos: videoRows.map(mapVideo),
+      videos: videoRows.map((video) =>
+        mapPlaylistVideo({
+          playlistItemId: (video as RankedVideoRow & { playlistItemId: string }).playlistItemId,
+          videoId: video.videoId,
+          title: video.title,
+          channelTitle: video.channelTitle,
+          favourited: video.favourited,
+          description: video.description,
+        }),
+      ),
     };
   } catch {
     return null;
@@ -5034,6 +5085,101 @@ export async function hideVideoForUser(input: { userId: number; videoId: string 
   } catch {
     return { ok: false as const };
   }
+}
+
+export async function hideVideoAndPrunePlaylistsForUser(input: {
+  userId: number;
+  videoId: string;
+  activePlaylistId?: string | null;
+}) {
+  const normalizedVideoId = normalizeYouTubeVideoId(input.videoId);
+  if (!hasDatabaseUrl() || !normalizedVideoId || !Number.isInteger(input.userId) || input.userId <= 0) {
+    return {
+      ok: false as const,
+      removedItemCount: 0,
+      removedFromPlaylistIds: [] as string[],
+      deletedPlaylistIds: [] as string[],
+      activePlaylistDeleted: false,
+    };
+  }
+
+  const hideResult = await hideVideoForUser({
+    userId: input.userId,
+    videoId: normalizedVideoId,
+  });
+
+  if (!hideResult.ok) {
+    return {
+      ok: false as const,
+      removedItemCount: 0,
+      removedFromPlaylistIds: [] as string[],
+      deletedPlaylistIds: [] as string[],
+      activePlaylistDeleted: false,
+    };
+  }
+
+  const removedFromPlaylistIds = new Set<string>();
+  const deletedPlaylistIds = new Set<string>();
+  let removedItemCount = 0;
+
+  try {
+    const playlists = await getPlaylists(input.userId);
+
+    for (const playlist of playlists) {
+      let current = await getPlaylistById(playlist.id, input.userId);
+
+      if (!current || current.videos.length === 0) {
+        continue;
+      }
+
+      let matchIndex = current.videos.findIndex((video) => (normalizeYouTubeVideoId(video.id) ?? video.id) === normalizedVideoId);
+
+      while (matchIndex >= 0) {
+        const match = current.videos[matchIndex];
+        const updated = await removePlaylistItem(
+          playlist.id,
+          matchIndex,
+          input.userId,
+          match?.playlistItemId ?? null,
+        );
+
+        if (!updated) {
+          break;
+        }
+
+        removedItemCount += 1;
+        removedFromPlaylistIds.add(playlist.id);
+        current = updated;
+        matchIndex = current.videos.findIndex((video) => (normalizeYouTubeVideoId(video.id) ?? video.id) === normalizedVideoId);
+      }
+
+      if (!removedFromPlaylistIds.has(playlist.id)) {
+        continue;
+      }
+
+      const refreshed = await getPlaylistById(playlist.id, input.userId);
+
+      if (!refreshed || refreshed.videos.length === 0) {
+        const deleted = await deletePlaylist(playlist.id, input.userId);
+        if (deleted) {
+          deletedPlaylistIds.add(playlist.id);
+        }
+      }
+    }
+  } catch {
+    // Keep block/hide resilient even if playlist pruning partially fails.
+  }
+
+  return {
+    ok: true as const,
+    removedItemCount,
+    removedFromPlaylistIds: [...removedFromPlaylistIds],
+    deletedPlaylistIds: [...deletedPlaylistIds],
+    activePlaylistDeleted: Boolean(
+      input.activePlaylistId
+      && deletedPlaylistIds.has(input.activePlaylistId),
+    ),
+  };
 }
 
 export async function unhideVideoForUser(input: { userId: number; videoId: string }) {
@@ -5327,13 +5473,84 @@ export async function createPlaylist(name: string, videoIds: string[] = [], user
       const uniqueVideoIds = [...new Set(videoIds.filter(Boolean))].slice(0, 50);
 
       for (const videoId of uniqueVideoIds) {
+        const normalizedVideoId = normalizeYouTubeVideoId(videoId) ?? videoId;
+        let linked = false;
+
         try {
           await prisma.$executeRaw`
             INSERT INTO playlistitems (playlistId, videoId, createdAt, updatedAt)
-            VALUES (${playlistId}, ${videoId}, ${now}, ${now})
+            VALUES (${playlistId}, ${normalizedVideoId}, ${now}, ${now})
+          `;
+          linked = true;
+        } catch {
+          // Legacy shape not available in this environment; try additional known schemas below.
+        }
+
+        if (linked) {
+          continue;
+        }
+
+        try {
+          await prisma.$executeRaw`
+            INSERT INTO playlistitems (playlistId, videoId)
+            VALUES (${playlistId}, ${normalizedVideoId})
+          `;
+          linked = true;
+        } catch {
+          // Continue to modern schema attempts.
+        }
+
+        if (linked) {
+          continue;
+        }
+
+        let videoPk: number | null = null;
+
+        try {
+          const videoRows = await prisma.$queryRaw<Array<{ id: number | bigint }>>`
+            SELECT id
+            FROM videos
+            WHERE videoId = ${normalizedVideoId}
+            LIMIT 1
+          `;
+          const resolvedId = videoRows[0]?.id;
+          const parsedId = typeof resolvedId === "bigint" ? Number(resolvedId) : Number(resolvedId ?? NaN);
+          if (Number.isInteger(parsedId)) {
+            videoPk = parsedId;
+          }
+        } catch {
+          videoPk = null;
+        }
+
+        if (videoPk === null) {
+          continue;
+        }
+
+        try {
+          await prisma.$executeRaw`
+            INSERT INTO playlistitems (playlist_id, video_id, sort_order)
+            VALUES (
+              ${playlistId},
+              ${videoPk},
+              COALESCE((SELECT MAX(sort_order) + 1 FROM playlistitems WHERE playlist_id = ${playlistId}), 0)
+            )
+          `;
+          linked = true;
+        } catch {
+          // Try final modern fallback.
+        }
+
+        if (linked) {
+          continue;
+        }
+
+        try {
+          await prisma.$executeRaw`
+            INSERT INTO playlistitems (playlist_id, video_id)
+            VALUES (${playlistId}, ${videoPk})
           `;
         } catch {
-          // Item linkage is optional for create success; keep base playlist creation successful.
+          // Keep base playlist creation successful even if one item linkage fails.
         }
       }
     }
@@ -5536,14 +5753,22 @@ export async function addPlaylistItem(playlistId: string, videoId: string, userI
   return null;
 }
 
-export async function removePlaylistItem(playlistId: string, playlistItemIndex: number, userId?: number) {
+export async function removePlaylistItem(
+  playlistId: string,
+  playlistItemIndex: number | null,
+  userId?: number,
+  playlistItemId?: string | null,
+) {
   if (!hasDatabaseUrl() || !userId) {
     return null;
   }
 
   const numericPlaylistId = Number(playlistId);
 
-  if (!Number.isInteger(numericPlaylistId) || !Number.isInteger(playlistItemIndex) || playlistItemIndex < 0) {
+  if (
+    !Number.isInteger(numericPlaylistId)
+    || ((playlistItemId == null || playlistItemId.length === 0) && (!Number.isInteger(playlistItemIndex) || (playlistItemIndex ?? -1) < 0))
+  ) {
     return null;
   }
 
@@ -5589,7 +5814,18 @@ export async function removePlaylistItem(playlistId: string, playlistItemIndex: 
     const playlistColumns = await loadTableColumns("playlistitems");
     const playlistRef = pickColumn(playlistColumns, ["playlist_id", "playlistId", "playlistid"]);
     const rowIdRef = pickColumn(playlistColumns, ["id"]);
-    const orderRef = pickColumn(playlistColumns, ["sort_order", "sortOrder", "id"]);
+    const orderRef = pickColumn(playlistColumns, [
+      "sort_order",
+      "sortOrder",
+      "display_order",
+      "displayOrder",
+      "order_index",
+      "orderIndex",
+      "position",
+      "sequence",
+      "idx",
+      "id",
+    ]);
 
     if (!playlistRef || !rowIdRef || !orderRef) {
       return null;
@@ -5609,7 +5845,9 @@ export async function removePlaylistItem(playlistId: string, playlistItemIndex: 
       numericPlaylistId,
     );
 
-    const target = itemRows[playlistItemIndex];
+    const target = playlistItemId
+      ? itemRows.find((row) => String(typeof row.rowId === "bigint" ? row.rowId.toString() : row.rowId) === playlistItemId)
+      : itemRows[playlistItemIndex ?? -1];
 
     if (!target) {
       return null;
@@ -5626,22 +5864,41 @@ export async function removePlaylistItem(playlistId: string, playlistItemIndex: 
   }
 }
 
-export async function reorderPlaylistItems(playlistId: string, fromIndex: number, toIndex: number, userId?: number) {
+export async function reorderPlaylistItems(
+  playlistId: string,
+  fromIndex: number | null,
+  toIndex: number | null,
+  userId?: number,
+  fromPlaylistItemId?: string | null,
+  toPlaylistItemId?: string | null,
+) {
   if (!hasDatabaseUrl() || !userId) {
     return null;
   }
 
   const numericPlaylistId = Number(playlistId);
 
-  if (!Number.isInteger(numericPlaylistId) || !Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) {
+  if (
+    !Number.isInteger(numericPlaylistId)
+    || (
+      (fromPlaylistItemId == null || fromPlaylistItemId.length === 0 || toPlaylistItemId == null || toPlaylistItemId.length === 0)
+      && (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex))
+    )
+  ) {
     return null;
   }
 
-  if (fromIndex < 0 || toIndex < 0) {
+  if (
+    (fromPlaylistItemId == null || fromPlaylistItemId.length === 0 || toPlaylistItemId == null || toPlaylistItemId.length === 0)
+    && ((fromIndex ?? -1) < 0 || (toIndex ?? -1) < 0)
+  ) {
     return null;
   }
 
-  if (fromIndex === toIndex) {
+  if (
+    (fromPlaylistItemId && toPlaylistItemId && fromPlaylistItemId === toPlaylistItemId)
+    || (fromIndex !== null && toIndex !== null && fromIndex === toIndex)
+  ) {
     return await getPlaylistById(String(numericPlaylistId), userId);
   }
 
@@ -5687,7 +5944,18 @@ export async function reorderPlaylistItems(playlistId: string, fromIndex: number
     const playlistColumns = await loadTableColumns("playlistitems");
     const playlistRef = pickColumn(playlistColumns, ["playlist_id", "playlistId", "playlistid"]);
     const rowIdRef = pickColumn(playlistColumns, ["id"]);
-    const orderRef = pickColumn(playlistColumns, ["sort_order", "sortOrder", "id"]);
+    const orderRef = pickColumn(playlistColumns, [
+      "sort_order",
+      "sortOrder",
+      "display_order",
+      "displayOrder",
+      "order_index",
+      "orderIndex",
+      "position",
+      "sequence",
+      "idx",
+      "id",
+    ]);
 
     if (!playlistRef || !rowIdRef || !orderRef) {
       return null;
@@ -5712,18 +5980,43 @@ export async function reorderPlaylistItems(playlistId: string, fromIndex: number
       numericPlaylistId,
     );
 
-    if (fromIndex >= itemRows.length || toIndex >= itemRows.length) {
+    const resolvedFromIndex = fromPlaylistItemId
+      ? itemRows.findIndex((row) => String(typeof row.rowId === "bigint" ? row.rowId.toString() : row.rowId) === fromPlaylistItemId)
+      : (fromIndex ?? -1);
+    const resolvedToIndex = toPlaylistItemId
+      ? itemRows.findIndex((row) => String(typeof row.rowId === "bigint" ? row.rowId.toString() : row.rowId) === toPlaylistItemId)
+      : (toIndex ?? -1);
+
+    if (resolvedFromIndex < 0 || resolvedToIndex < 0 || resolvedFromIndex >= itemRows.length || resolvedToIndex >= itemRows.length) {
       return null;
     }
 
     const reordered = [...itemRows];
-    const [moved] = reordered.splice(fromIndex, 1);
+    const [moved] = reordered.splice(resolvedFromIndex, 1);
 
     if (!moved) {
       return null;
     }
 
-    reordered.splice(toIndex, 0, moved);
+    reordered.splice(resolvedToIndex, 0, moved);
+
+    // Two-phase update avoids collisions when ordering column is unique/indexed.
+    const tempOffset = reordered.length + 1024;
+
+    for (let index = 0; index < reordered.length; index += 1) {
+      const rowId = reordered[index]?.rowId;
+
+      if (rowId === undefined || rowId === null) {
+        continue;
+      }
+
+      const normalizedRowId = typeof rowId === "bigint" ? Number(rowId) : rowId;
+      await prisma.$executeRawUnsafe(
+        `UPDATE playlistitems SET ${orderCol} = ? WHERE ${rowIdCol} = ? LIMIT 1`,
+        tempOffset + index,
+        normalizedRowId,
+      );
+    }
 
     for (let index = 0; index < reordered.length; index += 1) {
       const rowId = reordered[index]?.rowId;

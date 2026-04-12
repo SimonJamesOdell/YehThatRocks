@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useRef, useState, type CSSProperties } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import type { VideoRecord } from "@/lib/catalog";
@@ -13,6 +13,9 @@ type PlayerExperienceProps = {
   queue: VideoRecord[];
   isLoggedIn: boolean;
   isAdmin?: boolean;
+  seenVideoIds?: Set<string>;
+  onHideVideo?: (track: VideoRecord) => void | Promise<void>;
+  onAddVideoToPlaylist?: (track: VideoRecord) => void | Promise<void>;
 };
 
 type AdminEditableVideo = {
@@ -101,6 +104,7 @@ const HISTORY_KEY = "yeh-player-history";
 const RESUME_KEY = "yeh-player-resume";
 const HISTORY_LIMIT = 20;
 const AUTOPLAY_FALLBACK_POOL_SIZE = 600;
+const NEW_AUTOPLAY_PLAYLIST_SIZE = 50;
 const RANDOM_NEXT_RECENT_EXCLUSION = 18;
 const UNAVAILABLE_PLAYER_CODES = new Set([5, 100, 101, 150]);
 const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_PLAYER === "1";
@@ -199,7 +203,7 @@ function switchPlayerVideo(player: YouTubePlayer, videoId: string) {
   return false;
 }
 
-export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = false }: PlayerExperienceProps) {
+export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = false, seenVideoIds, onHideVideo, onAddVideoToPlaylist }: PlayerExperienceProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -230,6 +234,9 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
   const [showNowPlayingOverlay, setShowNowPlayingOverlay] = useState(false);
   const [unavailableOverlayMessage, setUnavailableOverlayMessage] = useState<string | null>(null);
   const [showEndedChoiceOverlay, setShowEndedChoiceOverlay] = useState(false);
+  const [endedChoiceReshuffleKey, setEndedChoiceReshuffleKey] = useState(0);
+  const [endedChoiceHidingIds, setEndedChoiceHidingIds] = useState<string[]>([]);
+  const [endedChoicePlaylistPendingId, setEndedChoicePlaylistPendingId] = useState<string | null>(null);
   const [overlayInstance, setOverlayInstance] = useState(0);
   const [playerHostMode, setPlayerHostMode] = useState<"nocookie" | "youtube">("nocookie");
   const [isPlayerReady, setIsPlayerReady] = useState(false);
@@ -249,14 +256,17 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     const nowPlayingShownForVideoRef = useRef<string | null>(null);
     const reportedUnavailableVideoIdRef = useRef<string | null>(null);
     const autoplaySuppressedVideoIdRef = useRef<string | null>(null);
+    const autoplayRouteTransitionRef = useRef(false);
     const playAttemptedAtRef = useRef<number | null>(null);
-    const nextVideoIdRef = useRef<string>(currentVideo.id);
+    const nextVideoIdRef = useRef<string | null>(currentVideo.id);
     const nextPlaylistIndexRef = useRef<number | null>(null);
+    const nextClearPlaylistRef = useRef(false);
     const activePlaylistIdRef = useRef<string | null>(activePlaylistId);
   const watchHistoryLevelRef = useRef<Map<string, number>>(new Map());
   const watchHistoryRefreshInFlightRef = useRef<Promise<boolean> | null>(null);
   const watchHistoryRefreshBlockedUntilRef = useRef(0);
   const [playlistQueueIds, setPlaylistQueueIds] = useState<string[]>([]);
+  const [playlistQueueOwnerId, setPlaylistQueueOwnerId] = useState<string | null>(null);
   const [playlistRefreshTick, setPlaylistRefreshTick] = useState(0);
   const [topFallbackVideos, setTopFallbackVideos] = useState<VideoRecord[]>([]);
   const [showAdminVideoEditModal, setShowAdminVideoEditModal] = useState(false);
@@ -332,18 +342,24 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
 
   const playlistCurrentIndex = playlistQueueIds.findIndex((videoId) => videoId === currentVideo.id);
   const effectivePlaylistIndex =
-    activePlaylistItemIndex !== null &&
-    activePlaylistItemIndex >= 0 &&
-    activePlaylistItemIndex < playlistQueueIds.length
-      ? activePlaylistItemIndex
-      : playlistCurrentIndex >= 0
-        ? playlistCurrentIndex
+    playlistCurrentIndex >= 0
+      ? playlistCurrentIndex
+      : activePlaylistItemIndex !== null &&
+          activePlaylistItemIndex >= 0 &&
+          activePlaylistItemIndex < playlistQueueIds.length
+        ? activePlaylistItemIndex
         : null;
   const hasActivePlaylistSequence = Boolean(
     activePlaylistId &&
       playlistQueueIds.length > 0 &&
       effectivePlaylistIndex !== null,
   );
+  const hasActivePlaylistContext = Boolean(
+    activePlaylistId &&
+    playlistQueueOwnerId === activePlaylistId &&
+    playlistQueueIds.length > 0,
+  );
+  const hasActivePlaylistIntent = Boolean(activePlaylistId);
   hasActivePlaylistSequenceRef.current = hasActivePlaylistSequence;
 
   useEffect(() => {
@@ -419,17 +435,24 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
   }
 
   function resolveNextTarget() {
-    if (hasActivePlaylistSequence && effectivePlaylistIndex !== null) {
-      const nextIndex = (effectivePlaylistIndex + 1) % playlistQueueIds.length;
-      const nextId = playlistQueueIds[nextIndex] ?? null;
+    if (activePlaylistId) {
+      if (hasActivePlaylistContext) {
+        const nextIndex = effectivePlaylistIndex !== null
+          ? (effectivePlaylistIndex + 1) % playlistQueueIds.length
+          : 0;
+        const nextId = playlistQueueIds[nextIndex] ?? null;
 
-      if (nextId) {
-        return {
-          videoId: nextId,
-          playlistItemIndex: nextIndex,
-          clearPlaylist: false,
-        };
+        if (nextId) {
+          return {
+            videoId: nextId,
+            playlistItemIndex: nextIndex,
+            clearPlaylist: false,
+          };
+        }
       }
+
+      // A playlist is selected but not ready yet; do not switch to random Watch Next.
+      return null;
     }
 
     const randomWatchNextId = getRandomWatchNextId();
@@ -446,8 +469,9 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
   }
 
   const resolvedNextTarget = resolveNextTarget();
-  nextVideoIdRef.current = resolvedNextTarget?.videoId ?? currentVideo.id;
+  nextVideoIdRef.current = resolvedNextTarget?.videoId ?? null;
   nextPlaylistIndexRef.current = resolvedNextTarget?.playlistItemIndex ?? null;
+  nextClearPlaylistRef.current = resolvedNextTarget?.clearPlaylist ?? false;
 
   const hasPreviousTrack = hasActivePlaylistSequence
     ? playlistQueueIds.length > 1
@@ -499,7 +523,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     },
   ] as const;
   const shouldAutoplaySelection = Boolean(requestedVideoId && requestedVideoId === currentVideo.id);
-  const endedChoiceVideos = (() => {
+  const endedChoiceVideos = useMemo(() => {
     const maxEndedChoiceVideos = 12;
     const deduped = new Map<string, NextChoiceVideo>();
 
@@ -509,14 +533,12 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
       }
 
       deduped.set(video.id, video);
-
-      if (deduped.size >= maxEndedChoiceVideos) {
-        break;
-      }
     }
 
-    return [...deduped.values()];
-  })();
+    const all = [...deduped.values()];
+    const offset = (endedChoiceReshuffleKey * maxEndedChoiceVideos) % Math.max(all.length, 1);
+    return [...all.slice(offset), ...all.slice(0, offset)].slice(0, maxEndedChoiceVideos);
+  }, [queue, topFallbackVideos, currentVideo.id, endedChoiceReshuffleKey]);
 
   useEffect(() => {
     const initialRequestedVideoId = initialRequestedVideoIdRef.current;
@@ -545,12 +567,17 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
   useEffect(() => {
     if (!isLoggedIn || !activePlaylistId) {
       setPlaylistQueueIds([]);
+      setPlaylistQueueOwnerId(null);
       return;
     }
 
     const playlistId = activePlaylistId;
 
     let cancelled = false;
+
+    // Prevent stale tracks from previous playlist driving next/autoplay while new playlist loads.
+    setPlaylistQueueIds([]);
+    setPlaylistQueueOwnerId(null);
 
     async function loadPlaylistSequence() {
       try {
@@ -561,6 +588,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
         if (!response.ok) {
           if (!cancelled) {
             setPlaylistQueueIds([]);
+            setPlaylistQueueOwnerId(null);
           }
           return;
         }
@@ -570,6 +598,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
         if (!payload || !Array.isArray(payload.videos)) {
           if (!cancelled) {
             setPlaylistQueueIds([]);
+            setPlaylistQueueOwnerId(null);
           }
           return;
         }
@@ -580,10 +609,12 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
 
         if (!cancelled) {
           setPlaylistQueueIds(sequenceIds);
+          setPlaylistQueueOwnerId(playlistId);
         }
       } catch {
         if (!cancelled) {
           setPlaylistQueueIds([]);
+          setPlaylistQueueOwnerId(null);
         }
       }
     }
@@ -643,6 +674,21 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
       setUnavailableOverlayMessage(null);
       unavailableOverlayTimeoutRef.current = null;
     }, 6200);
+  }
+
+  function pauseActivePlayback() {
+    if (progressIntervalRef.current) {
+      window.clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+
+    const runtimePlayer = playerRef.current;
+
+    if (runtimePlayer && typeof runtimePlayer.pauseVideo === "function") {
+      runtimePlayer.pauseVideo();
+    }
+
+    setIsPlaying(false);
   }
 
   async function reportWatchEvent(level: number, reason: "qualified" | "ended", explicitTime?: number, explicitDuration?: number) {
@@ -858,6 +904,20 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
       return () => window.clearTimeout(id);
     }
   }, [pathname]);
+
+  useEffect(() => {
+    if (pathname === "/") {
+      autoplayRouteTransitionRef.current = false;
+      return;
+    }
+
+    if (!autoplayEnabled || autoplayRouteTransitionRef.current) {
+      return;
+    }
+
+    setAutoplayEnabled(false);
+    window.localStorage.setItem(AUTOPLAY_KEY, "false");
+  }, [pathname, autoplayEnabled]);
 
   useEffect(() => {
     if (!isPlayerReady || isPlaying || !playAttemptedAtRef.current) {
@@ -1345,14 +1405,19 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
 
     const shouldAutoAdvance =
       autoplayEnabledRef.current &&
-      (hasActivePlaylistSequenceRef.current || !isInitialDeepLinkedVideo);
+      (hasActivePlaylistIntent || !isInitialDeepLinkedVideo);
 
-    if (shouldAutoAdvance) {
+    if (shouldAutoAdvance && nextVideoIdRef.current) {
       navigateToVideo(nextVideoIdRef.current, {
-        clearPlaylist: nextPlaylistIndexRef.current === null,
+        clearPlaylist: nextClearPlaylistRef.current,
         playlistId: activePlaylistIdRef.current,
         playlistItemIndex: nextPlaylistIndexRef.current,
       });
+      return;
+    }
+
+    if (shouldAutoAdvance && hasActivePlaylistIntent) {
+      // Wait for selected playlist queue to load, then continue sequencing there.
       return;
     }
 
@@ -1370,6 +1435,25 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
       playlistId: playlistIndex >= 0 ? activePlaylistId : null,
       playlistItemIndex: playlistIndex >= 0 ? playlistIndex : null,
     });
+  }
+
+  function handleEndedChoiceReshuffle() {
+    setEndedChoiceReshuffleKey((k) => k + 1);
+  }
+
+  function handleEndedChoiceHide(track: VideoRecord) {
+    setEndedChoiceHidingIds((prev) => [...prev, track.id]);
+    void onHideVideo?.(track);
+    setTimeout(() => {
+      setEndedChoiceHidingIds((prev) => prev.filter((id) => id !== track.id));
+    }, 400);
+  }
+
+  function handleEndedChoiceAddToPlaylist(track: VideoRecord) {
+    if (endedChoicePlaylistPendingId) return;
+    setEndedChoicePlaylistPendingId(track.id);
+    void onAddVideoToPlaylist?.(track);
+    setTimeout(() => setEndedChoicePlaylistPendingId(null), 2500);
   }
 
   function handleEndedChoiceWatchAgain() {
@@ -1433,13 +1517,34 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     }
 
     setHideCurrentVideoState("saving");
+    pauseActivePlayback();
 
     try {
-      await fetch("/api/hidden-videos", {
+      const activePlaylistQuery = activePlaylistId ? `?activePlaylistId=${encodeURIComponent(activePlaylistId)}` : "";
+      const response = await fetch(`/api/hidden-videos${activePlaylistQuery}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ videoId: currentVideo.id }),
       });
+
+      const payload = (await response.json().catch(() => null)) as {
+        activePlaylistDeleted?: boolean;
+      } | null;
+
+      if (response.ok) {
+        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+
+        if (payload?.activePlaylistDeleted) {
+          const params = new URLSearchParams(searchParams.toString());
+          params.delete("pl");
+          params.delete("pli");
+          activePlaylistIdRef.current = null;
+          setPlaylistQueueIds([]);
+          setPlaylistQueueOwnerId(null);
+          const query = params.toString();
+          router.replace(query ? `${pathname}?${query}` : pathname);
+        }
+      }
     } catch {
       // Keep skip flow responsive even if hide persistence fails.
     } finally {
@@ -1448,12 +1553,498 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     }
   }
 
-  function handleToggleAutoplay() {
-    setAutoplayEnabled((currentValue) => {
-      const nextValue = !currentValue;
-      window.localStorage.setItem(AUTOPLAY_KEY, String(nextValue));
-      return nextValue;
-    });
+  async function buildNewPageAutoplayPlaylist() {
+    if (!isLoggedIn) {
+      return { playlistId: null as string | null, firstVideoId: null as string | null };
+    }
+
+    try {
+      const newestResponse = await fetch(
+        `/api/videos/newest?skip=0&take=${NEW_AUTOPLAY_PLAYLIST_SIZE}`,
+        {
+          cache: "no-store",
+        },
+      );
+
+      if (!newestResponse.ok) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const newestPayload = (await newestResponse.json().catch(() => null)) as
+        | {
+            videos?: VideoRecord[];
+          }
+        | null;
+
+      const rawVideoIds = Array.isArray(newestPayload?.videos)
+        ? newestPayload.videos.map((video) => video.id).filter((id): id is string => Boolean(id))
+        : [];
+
+      if (rawVideoIds.length === 0) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const hiddenResponse = await fetch("/api/hidden-videos", {
+        cache: "no-store",
+      });
+      const hiddenPayload = hiddenResponse.ok
+        ? ((await hiddenResponse.json().catch(() => null)) as { hiddenVideoIds?: string[] } | null)
+        : null;
+      const hiddenSet = new Set(Array.isArray(hiddenPayload?.hiddenVideoIds) ? hiddenPayload.hiddenVideoIds : []);
+
+      const filteredVideoIds = Array.from(new Set(rawVideoIds.filter((videoId) => !hiddenSet.has(videoId)))).slice(
+        0,
+        NEW_AUTOPLAY_PLAYLIST_SIZE,
+      );
+      const firstVideoId = filteredVideoIds[0] ?? null;
+
+      if (!firstVideoId) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const now = new Date();
+      const playlistName = `New autoplay ${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+
+      const createResponse = await fetch("/api/playlists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: playlistName,
+          videoIds: filteredVideoIds,
+        }),
+      });
+
+      if (!createResponse.ok) {
+        return { playlistId: null as string | null, firstVideoId };
+      }
+
+      const playlistPayload = (await createResponse.json().catch(() => null)) as { id?: string } | null;
+      const playlistId = typeof playlistPayload?.id === "string" ? playlistPayload.id : null;
+
+      if (playlistId) {
+        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+      }
+
+      return {
+        playlistId,
+        firstVideoId,
+      };
+    } catch {
+      return { playlistId: null as string | null, firstVideoId: null as string | null };
+    }
+  }
+
+  async function buildCategoryPageAutoplayPlaylist(categorySlug: string) {
+    if (!isLoggedIn || !categorySlug) {
+      return { playlistId: null as string | null, firstVideoId: null as string | null };
+    }
+
+    try {
+      const categoryResponse = await fetch(
+        `/api/categories/${encodeURIComponent(categorySlug)}?limit=96&offset=0`,
+        {
+          cache: "no-store",
+        },
+      );
+
+      if (!categoryResponse.ok) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const categoryPayload = (await categoryResponse.json().catch(() => null)) as
+        | {
+            videos?: VideoRecord[];
+          }
+        | null;
+
+      const rawVideoIds = Array.isArray(categoryPayload?.videos)
+        ? categoryPayload.videos.map((video) => video.id).filter((id): id is string => Boolean(id))
+        : [];
+
+      if (rawVideoIds.length === 0) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const hiddenResponse = await fetch("/api/hidden-videos", {
+        cache: "no-store",
+      });
+      const hiddenPayload = hiddenResponse.ok
+        ? ((await hiddenResponse.json().catch(() => null)) as { hiddenVideoIds?: string[] } | null)
+        : null;
+      const hiddenSet = new Set(Array.isArray(hiddenPayload?.hiddenVideoIds) ? hiddenPayload.hiddenVideoIds : []);
+
+      const filteredVideoIds = Array.from(new Set(rawVideoIds.filter((videoId) => !hiddenSet.has(videoId)))).slice(
+        0,
+        NEW_AUTOPLAY_PLAYLIST_SIZE,
+      );
+      const firstVideoId = filteredVideoIds[0] ?? null;
+
+      if (!firstVideoId) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const now = new Date();
+      const readableCategory = decodeURIComponent(categorySlug).replace(/-/g, " ");
+      const playlistName = `${readableCategory} autoplay ${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+
+      const createResponse = await fetch("/api/playlists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: playlistName,
+          videoIds: filteredVideoIds,
+        }),
+      });
+
+      if (!createResponse.ok) {
+        return { playlistId: null as string | null, firstVideoId };
+      }
+
+      const playlistPayload = (await createResponse.json().catch(() => null)) as { id?: string } | null;
+      const playlistId = typeof playlistPayload?.id === "string" ? playlistPayload.id : null;
+
+      if (playlistId) {
+        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+      }
+
+      return {
+        playlistId,
+        firstVideoId,
+      };
+    } catch {
+      return { playlistId: null as string | null, firstVideoId: null as string | null };
+    }
+  }
+
+  async function buildArtistPageAutoplayPlaylist(artistSlug: string) {
+    if (!isLoggedIn || !artistSlug) {
+      return { playlistId: null as string | null, firstVideoId: null as string | null };
+    }
+
+    try {
+      const artistResponse = await fetch(`/api/artists/${encodeURIComponent(artistSlug)}`, {
+        cache: "no-store",
+      });
+
+      if (!artistResponse.ok) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const artistPayload = (await artistResponse.json().catch(() => null)) as
+        | {
+            videos?: VideoRecord[];
+          }
+        | null;
+
+      const rawVideoIds = Array.isArray(artistPayload?.videos)
+        ? artistPayload.videos.map((video) => video.id).filter((id): id is string => Boolean(id))
+        : [];
+
+      if (rawVideoIds.length === 0) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const hiddenResponse = await fetch("/api/hidden-videos", {
+        cache: "no-store",
+      });
+      const hiddenPayload = hiddenResponse.ok
+        ? ((await hiddenResponse.json().catch(() => null)) as { hiddenVideoIds?: string[] } | null)
+        : null;
+      const hiddenSet = new Set(Array.isArray(hiddenPayload?.hiddenVideoIds) ? hiddenPayload.hiddenVideoIds : []);
+
+      const filteredVideoIds = Array.from(new Set(rawVideoIds.filter((videoId) => !hiddenSet.has(videoId)))).slice(
+        0,
+        NEW_AUTOPLAY_PLAYLIST_SIZE,
+      );
+      const firstVideoId = filteredVideoIds[0] ?? null;
+
+      if (!firstVideoId) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const now = new Date();
+      const readableArtist = decodeURIComponent(artistSlug).replace(/-/g, " ");
+      const playlistName = `${readableArtist} autoplay ${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+
+      const createResponse = await fetch("/api/playlists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: playlistName,
+          videoIds: filteredVideoIds,
+        }),
+      });
+
+      if (!createResponse.ok) {
+        return { playlistId: null as string | null, firstVideoId };
+      }
+
+      const playlistPayload = (await createResponse.json().catch(() => null)) as { id?: string } | null;
+      const playlistId = typeof playlistPayload?.id === "string" ? playlistPayload.id : null;
+
+      if (playlistId) {
+        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+      }
+
+      return {
+        playlistId,
+        firstVideoId,
+      };
+    } catch {
+      return { playlistId: null as string | null, firstVideoId: null as string | null };
+    }
+  }
+
+  async function buildTop100AutoplayPlaylist() {
+    if (!isLoggedIn) {
+      return { playlistId: null as string | null, firstVideoId: null as string | null };
+    }
+
+    try {
+      const topResponse = await fetch(`/api/videos/top?count=${NEW_AUTOPLAY_PLAYLIST_SIZE}`, {
+        cache: "no-store",
+      });
+
+      if (!topResponse.ok) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const topPayload = (await topResponse.json().catch(() => null)) as
+        | {
+            videos?: VideoRecord[];
+          }
+        | null;
+
+      const rawVideoIds = Array.isArray(topPayload?.videos)
+        ? topPayload.videos.map((video) => video.id).filter((id): id is string => Boolean(id))
+        : [];
+
+      if (rawVideoIds.length === 0) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const hiddenResponse = await fetch("/api/hidden-videos", {
+        cache: "no-store",
+      });
+      const hiddenPayload = hiddenResponse.ok
+        ? ((await hiddenResponse.json().catch(() => null)) as { hiddenVideoIds?: string[] } | null)
+        : null;
+      const hiddenSet = new Set(Array.isArray(hiddenPayload?.hiddenVideoIds) ? hiddenPayload.hiddenVideoIds : []);
+
+      const filteredVideoIds = Array.from(new Set(rawVideoIds.filter((videoId) => !hiddenSet.has(videoId)))).slice(
+        0,
+        NEW_AUTOPLAY_PLAYLIST_SIZE,
+      );
+      const firstVideoId = filteredVideoIds[0] ?? null;
+
+      if (!firstVideoId) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const now = new Date();
+      const playlistName = `Top 100 autoplay ${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+
+      const createResponse = await fetch("/api/playlists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: playlistName,
+          videoIds: filteredVideoIds,
+        }),
+      });
+
+      if (!createResponse.ok) {
+        return { playlistId: null as string | null, firstVideoId };
+      }
+
+      const playlistPayload = (await createResponse.json().catch(() => null)) as { id?: string } | null;
+      const playlistId = typeof playlistPayload?.id === "string" ? playlistPayload.id : null;
+
+      if (playlistId) {
+        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+      }
+
+      return {
+        playlistId,
+        firstVideoId,
+      };
+    } catch {
+      return { playlistId: null as string | null, firstVideoId: null as string | null };
+    }
+  }
+
+  async function buildFavouritesAutoplayPlaylist() {
+    if (!isLoggedIn) {
+      return { playlistId: null as string | null, firstVideoId: null as string | null };
+    }
+
+    try {
+      const favouritesResponse = await fetch("/api/favourites", {
+        cache: "no-store",
+      });
+
+      if (!favouritesResponse.ok) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const favouritesPayload = (await favouritesResponse.json().catch(() => null)) as
+        | {
+            favourites?: VideoRecord[];
+          }
+        | null;
+
+      const rawVideoIds = Array.isArray(favouritesPayload?.favourites)
+        ? favouritesPayload.favourites.map((video) => video.id).filter((id): id is string => Boolean(id))
+        : [];
+
+      if (rawVideoIds.length === 0) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const filteredVideoIds = Array.from(new Set(rawVideoIds)).slice(0, NEW_AUTOPLAY_PLAYLIST_SIZE);
+      const firstVideoId = filteredVideoIds[0] ?? null;
+
+      if (!firstVideoId) {
+        return { playlistId: null as string | null, firstVideoId: null as string | null };
+      }
+
+      const now = new Date();
+      const playlistName = `Favourites autoplay ${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+
+      const createResponse = await fetch("/api/playlists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: playlistName,
+          videoIds: filteredVideoIds,
+        }),
+      });
+
+      if (!createResponse.ok) {
+        return { playlistId: null as string | null, firstVideoId };
+      }
+
+      const playlistPayload = (await createResponse.json().catch(() => null)) as { id?: string } | null;
+      const playlistId = typeof playlistPayload?.id === "string" ? playlistPayload.id : null;
+
+      if (playlistId) {
+        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+      }
+
+      return {
+        playlistId,
+        firstVideoId,
+      };
+    } catch {
+      return { playlistId: null as string | null, firstVideoId: null as string | null };
+    }
+  }
+
+  async function handleToggleAutoplay() {
+    const enablingAutoplay = !autoplayEnabled;
+
+    if (!enablingAutoplay) {
+      setAutoplayEnabled(false);
+      window.localStorage.setItem(AUTOPLAY_KEY, "false");
+      return;
+    }
+
+    setAutoplayEnabled(true);
+    window.localStorage.setItem(AUTOPLAY_KEY, "true");
+
+    if (pathname === "/new") {
+      autoplayRouteTransitionRef.current = true;
+      const { playlistId, firstVideoId } = await buildNewPageAutoplayPlaylist();
+      const targetVideoId = firstVideoId ?? currentVideo.id;
+      const params = new URLSearchParams();
+      params.set("v", targetVideoId);
+      params.set("resume", "1");
+
+      if (playlistId) {
+        params.set("pl", playlistId);
+        params.set("pli", "0");
+      }
+
+      router.push(`/?${params.toString()}`);
+      return;
+    }
+
+    if (pathname.startsWith("/categories/")) {
+      autoplayRouteTransitionRef.current = true;
+      const categorySlug = pathname.slice("/categories/".length).split("/")[0] ?? "";
+      const { playlistId, firstVideoId } = await buildCategoryPageAutoplayPlaylist(categorySlug);
+      const targetVideoId = firstVideoId ?? currentVideo.id;
+      const params = new URLSearchParams();
+      params.set("v", targetVideoId);
+      params.set("resume", "1");
+
+      if (playlistId) {
+        params.set("pl", playlistId);
+        params.set("pli", "0");
+      }
+
+      router.push(`/?${params.toString()}`);
+      return;
+    }
+
+    if (pathname.startsWith("/artist/")) {
+      autoplayRouteTransitionRef.current = true;
+      const artistSlug = pathname.slice("/artist/".length).split("/")[0] ?? "";
+      const { playlistId, firstVideoId } = await buildArtistPageAutoplayPlaylist(artistSlug);
+      const targetVideoId = firstVideoId ?? currentVideo.id;
+      const params = new URLSearchParams();
+      params.set("v", targetVideoId);
+      params.set("resume", "1");
+
+      if (playlistId) {
+        params.set("pl", playlistId);
+        params.set("pli", "0");
+      }
+
+      router.push(`/?${params.toString()}`);
+      return;
+    }
+
+    if (pathname === "/top100") {
+      autoplayRouteTransitionRef.current = true;
+      const { playlistId, firstVideoId } = await buildTop100AutoplayPlaylist();
+      const targetVideoId = firstVideoId ?? currentVideo.id;
+      const params = new URLSearchParams();
+      params.set("v", targetVideoId);
+      params.set("resume", "1");
+
+      if (playlistId) {
+        params.set("pl", playlistId);
+        params.set("pli", "0");
+      }
+
+      router.push(`/?${params.toString()}`);
+      return;
+    }
+
+    if (pathname === "/favourites") {
+      autoplayRouteTransitionRef.current = true;
+      const { playlistId, firstVideoId } = await buildFavouritesAutoplayPlaylist();
+      const targetVideoId = firstVideoId ?? currentVideo.id;
+      const params = new URLSearchParams();
+      params.set("v", targetVideoId);
+      params.set("resume", "1");
+
+      if (playlistId) {
+        params.set("pl", playlistId);
+        params.set("pli", "0");
+      }
+
+      router.push(`/?${params.toString()}`);
+      return;
+    }
+
+    if (pathname !== "/") {
+      autoplayRouteTransitionRef.current = true;
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("v", currentVideo.id);
+      router.push(`/?${params.toString()}`);
+    }
   }
 
   async function handleAddFavourite() {
@@ -1922,34 +2513,67 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
           {showEndedChoiceOverlay && endedChoiceVideos.length > 0 ? (
             <div className="playerEndedChoiceOverlay" role="dialog" aria-modal="false" aria-label="Choose the next video">
               <div className="playerEndedChoiceGrid">
-                {endedChoiceVideos.map((video, index) => (
-                  <button
-                    key={video.id}
-                    type="button"
-                    className="playerEndedChoiceCard"
-                    style={{
-                      "--ended-choice-row-4": Math.floor(index / 4),
-                      "--ended-choice-row-2": Math.floor(index / 2),
-                      "--ended-choice-row-1": index,
-                    } as CSSProperties}
-                    onClick={() => handleEndedChoiceSelect(video.id)}
-                  >
-                    <img
-                      src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
-                      alt=""
-                      className="playerEndedChoiceThumb"
-                      loading="lazy"
-                    />
-                    <span className="playerEndedChoiceMeta">
-                      <span className="playerEndedChoiceTitle">{video.title}</span>
-                      <span className="playerEndedChoiceChannel">
-                        <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
-                          {video.channelTitle}
-                        </ArtistWikiLink>
-                      </span>
-                    </span>
-                  </button>
-                ))}
+                {endedChoiceVideos.map((video, index) => {
+                  const isSeen = seenVideoIds?.has(video.id) ?? false;
+                  const isHiding = endedChoiceHidingIds.includes(video.id);
+                  return (
+                    <div
+                      key={video.id}
+                      className={isHiding ? "endedChoiceCardSlot endedChoiceCardSlotExiting" : "endedChoiceCardSlot"}
+                    >
+                      {isLoggedIn ? (
+                        <button
+                          type="button"
+                          className="endedChoiceCardHideBtn"
+                          aria-label={`Hide ${video.title} from suggestions`}
+                          title="Hide from suggestions"
+                          onClick={(e) => { e.stopPropagation(); handleEndedChoiceHide(video); }}
+                          disabled={isHiding}
+                        >×</button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className={isSeen ? "playerEndedChoiceCard playerEndedChoiceCardSeen" : "playerEndedChoiceCard"}
+                        style={{
+                          "--ended-choice-row-4": Math.floor(index / 4),
+                          "--ended-choice-row-2": Math.floor(index / 2),
+                          "--ended-choice-row-1": index,
+                        } as CSSProperties}
+                        onClick={() => handleEndedChoiceSelect(video.id)}
+                      >
+                        <img
+                          src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
+                          alt=""
+                          className="playerEndedChoiceThumb"
+                          loading="lazy"
+                        />
+                        <span className="playerEndedChoiceMeta">
+                          <span className="playerEndedChoiceTitle">
+                            {video.title}
+                            {isSeen ? <span className="videoSeenBadge">Seen</span> : null}
+                          </span>
+                          <span className="playerEndedChoiceChannel">
+                            <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
+                              {video.channelTitle}
+                            </ArtistWikiLink>
+                          </span>
+                        </span>
+                      </button>
+                      {isLoggedIn ? (
+                        <button
+                          type="button"
+                          className="endedChoiceCardPlaylistBtn"
+                          aria-label={`Add ${video.title} to playlist`}
+                          title="Add to playlist"
+                          onClick={(e) => { e.stopPropagation(); handleEndedChoiceAddToPlaylist(video); }}
+                          disabled={endedChoicePlaylistPendingId === video.id || isHiding}
+                        >
+                          {endedChoicePlaylistPendingId === video.id ? "\u2026" : "+"}
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
               <div className="playerEndedChoiceActions">
                 <button
@@ -1958,6 +2582,13 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                   onClick={handleEndedChoiceWatchAgain}
                 >
                   {"<- watch again"}
+                </button>
+                <button
+                  type="button"
+                  className="playerEndedChoiceWatchAgain"
+                  onClick={handleEndedChoiceReshuffle}
+                >
+                  {"more choices ->"}
                 </button>
               </div>
             </div>
@@ -2202,22 +2833,22 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                 artistName={displayChannelTitle}
                 videoId={currentVideo.id}
                 asButton
-                className="primaryActionToggleButton"
+                className="primaryActionToggleButton primaryActionWikiButton"
                 title={`Open ${displayChannelTitle} wiki`}
               >
                 <span className="primaryActionGlyph" aria-hidden="true">📖</span>
-                <span>Artist Wiki</span>
+                <span className="primaryActionWikiLabel">wiki</span>
               </ArtistWikiLink>
             ) : null}
             <button
               type="button"
-              className={autoplayEnabled ? "primaryActionToggleButton primaryActionToggleButtonActive" : "primaryActionToggleButton"}
+              className={autoplayEnabled ? "primaryActionToggleButton primaryActionAutoplayButton primaryActionToggleButtonActive" : "primaryActionToggleButton primaryActionAutoplayButton"}
               onClick={handleToggleAutoplay}
               aria-label={autoplayEnabled ? "Disable autoplay" : "Enable autoplay"}
               title={autoplayEnabled ? "Disable autoplay" : "Enable autoplay"}
             >
               <span className="primaryActionGlyph" aria-hidden="true">⇮</span>
-              <span>Autoplay: {autoplayEnabled ? "On" : "Off"}</span>
+              <span>{autoplayEnabled ? "On" : "Off"}</span>
             </button>
             {isLoggedIn ? (
               <button
@@ -2228,15 +2859,10 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                 }}
                 disabled={hideCurrentVideoState === "saving"}
                 aria-label="Hide this video and skip"
-                title={hideCurrentVideoState === "saving" ? "Hiding..." : "Hide this video and skip"}
+                title={hideCurrentVideoState === "saving" ? "Hiding..." : "No That SUCKS!"}
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polyline points="3 6 5 6 21 6" />
-                  <path d="M19 6l-1 14H6L5 6" />
-                  <path d="M10 11v6" />
-                  <path d="M14 11v6" />
-                  <path d="M9 6V4h6v2" />
-                </svg>
+                <span className="primaryActionThumbsDownGlyph" aria-hidden="true">👎</span>
+                <span className="primaryActionTrashLabel">No That SUCKS!</span>
               </button>
             ) : null}
           </div>

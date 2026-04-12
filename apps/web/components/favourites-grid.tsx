@@ -187,7 +187,12 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
                   </ArtistWikiLink>
                 </p>
                 <div className="actionRow favouritesCardActionsRow">
-                  <AddToPlaylistButton videoId={track.id} isAuthenticated={isAuthenticated} />
+                  <AddToPlaylistButton
+                    videoId={track.id}
+                    isAuthenticated={isAuthenticated}
+                    compact
+                    className="favouritesPlaylistCircleButton"
+                  />
                 </div>
               </article>
             );

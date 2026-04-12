@@ -15,13 +15,24 @@ export const addPlaylistItemSchema = z.object({
 });
 
 export const removePlaylistItemSchema = z.object({
-  playlistItemIndex: z.number().int().min(0),
+  playlistItemIndex: z.number().int().min(0).optional(),
+  playlistItemId: z.string().min(1).optional(),
+}).refine((value) => value.playlistItemId || value.playlistItemIndex !== undefined, {
+  message: "playlistItemId or playlistItemIndex is required",
 });
 
 export const reorderPlaylistItemsSchema = z.object({
-  fromIndex: z.number().int().min(0),
-  toIndex: z.number().int().min(0),
-});
+  fromIndex: z.number().int().min(0).optional(),
+  toIndex: z.number().int().min(0).optional(),
+  fromPlaylistItemId: z.string().min(1).optional(),
+  toPlaylistItemId: z.string().min(1).optional(),
+}).refine(
+  (value) => (
+    (value.fromPlaylistItemId && value.toPlaylistItemId)
+    || (value.fromIndex !== undefined && value.toIndex !== undefined)
+  ),
+  { message: "from/to playlist item ids or indexes are required" },
+);
 
 export const renamePlaylistSchema = z.object({
   name: z.string().min(2).max(80),
