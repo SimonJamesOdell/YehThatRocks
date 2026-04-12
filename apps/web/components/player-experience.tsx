@@ -260,6 +260,8 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
   const [adminEditVideoRowId, setAdminEditVideoRowId] = useState<number | null>(null);
   const [adminEditTitle, setAdminEditTitle] = useState("");
   const [adminEditChannelTitle, setAdminEditChannelTitle] = useState("");
+  const [localTitleOverride, setLocalTitleOverride] = useState<string | null>(null);
+  const [localChannelTitleOverride, setLocalChannelTitleOverride] = useState<string | null>(null);
   const [adminEditParsedArtist, setAdminEditParsedArtist] = useState("");
   const [adminEditParsedTrack, setAdminEditParsedTrack] = useState("");
   const [adminEditParsedVideoType, setAdminEditParsedVideoType] = useState("");
@@ -279,6 +281,8 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
 
   useEffect(() => {
     currentVideoRef.current = currentVideo;
+    setLocalTitleOverride(null);
+    setLocalChannelTitleOverride(null);
   }, [currentVideo]);
 
   function handleFullscreenToggle() {
@@ -451,12 +455,14 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
   const elapsedLabel = formatPlaybackTime(safeCurrentTime);
   const durationLabel = formatPlaybackTime(safeDuration);
   const shareUrl = buildCanonicalShareUrl(currentVideo.id);
-  const hasArtistName = Boolean(currentVideo.channelTitle && currentVideo.channelTitle.trim().length > 0);
+  const displayTitle = localTitleOverride ?? currentVideo.title;
+  const displayChannelTitle = localChannelTitleOverride ?? currentVideo.channelTitle;
+  const hasArtistName = Boolean(displayChannelTitle && displayChannelTitle.trim().length > 0);
   const socialShareTargets = [
     {
       id: "x",
       label: "Share on X",
-      href: `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(currentVideo.title)}`,
+      href: `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(displayTitle)}`,
     },
     {
       id: "facebook",
@@ -466,7 +472,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     {
       id: "reddit",
       label: "Share on Reddit",
-      href: `https://www.reddit.com/submit?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(currentVideo.title)}`,
+      href: `https://www.reddit.com/submit?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(displayTitle)}`,
     },
     {
       id: "linkedin",
@@ -476,17 +482,17 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     {
       id: "whatsapp",
       label: "Share on WhatsApp",
-      href: `https://api.whatsapp.com/send?text=${encodeURIComponent(`${currentVideo.title} ${shareUrl}`)}`,
+      href: `https://api.whatsapp.com/send?text=${encodeURIComponent(`${displayTitle} ${shareUrl}`)}`,
     },
     {
       id: "telegram",
       label: "Share on Telegram",
-      href: `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(currentVideo.title)}`,
+      href: `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(displayTitle)}`,
     },
     {
       id: "email",
       label: "Share by Email",
-      href: `mailto:?subject=${encodeURIComponent(currentVideo.title)}&body=${encodeURIComponent(`Check this out: ${shareUrl}`)}`,
+      href: `mailto:?subject=${encodeURIComponent(displayTitle)}&body=${encodeURIComponent(`Check this out: ${shareUrl}`)}`,
     },
   ] as const;
   const shouldAutoplaySelection = Boolean(requestedVideoId && requestedVideoId === currentVideo.id);
@@ -1597,6 +1603,8 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
           }
 
           setAdminEditStatus("Saved.");
+          setLocalTitleOverride(adminEditTitle);
+          setLocalChannelTitleOverride(adminEditChannelTitle);
           setShowAdminVideoEditModal(false);
           router.refresh();
         } catch {
@@ -1637,7 +1645,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
               <div className={!hasPlaybackStarted || !isPlaying || showControls ? "playerOverlay playerOverlayVisible" : "playerOverlay"}>
                 <div className="overlayTop">
                   <div className="overlayTitleRow">
-                    <p className="overlayTitle">{currentVideo.title}</p>
+                    <p className="overlayTitle">{displayTitle}</p>
                     {isAdmin ? (
                       <button
                         type="button"
@@ -1799,7 +1807,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
             {showNowPlayingOverlay ? (
               <div key={`${currentVideo.id}-${overlayInstance}`} className="nowPlayingOverlay nowPlayingOverlayAnimate">
                 <p className="statusLabel">Now playing</p>
-                <strong>{currentVideo.title}</strong>
+                <strong>{displayTitle}</strong>
               </div>
             ) : null}
 
@@ -2092,11 +2100,11 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
             </button>
             {hasArtistName ? (
               <ArtistWikiLink
-                artistName={currentVideo.channelTitle}
+                artistName={displayChannelTitle}
                 videoId={currentVideo.id}
                 asButton
                 className="primaryActionToggleButton"
-                title={`Open ${currentVideo.channelTitle} wiki`}
+                title={`Open ${displayChannelTitle} wiki`}
               >
                 <span className="primaryActionGlyph" aria-hidden="true">📖</span>
                 <span>Artist Wiki</span>
