@@ -75,7 +75,39 @@
   <img class="logo" src="/images/yeh3.png" alt="YehThatRocks" />
   <div class="divider"></div>
   <p class="message">We&rsquo;re updating the site</p>
-  <p class="sub">We&rsquo;ll be back in a few seconds. Thanks for your patience — stay loud.</p>
+  <p class="sub">We&rsquo;ll be back shortly. This page will reload automatically the moment we&rsquo;re live again.</p>
   <div class="pulse"></div>
+  <p class="countdown" id="countdown"></p>
+  <script>
+    (function () {
+      var CHECK_INTERVAL_MS = 5000;
+      var BACKOFF_MAX_MS = 30000;
+      var interval = CHECK_INTERVAL_MS;
+      var timer = null;
+
+      function check() {
+        fetch('/api/status', { method: 'GET', cache: 'no-store' })
+          .then(function (res) {
+            if (res.ok) {
+              window.location.reload();
+            } else {
+              schedule();
+            }
+          })
+          .catch(function () {
+            schedule();
+          });
+      }
+
+      function schedule() {
+        interval = Math.min(interval * 1.5, BACKOFF_MAX_MS);
+        clearTimeout(timer);
+        timer = setTimeout(check, interval);
+      }
+
+      // Start first check after initial interval
+      timer = setTimeout(check, CHECK_INTERVAL_MS);
+    })();
+  </script>
 </body>
 </html>
