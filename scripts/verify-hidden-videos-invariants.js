@@ -74,6 +74,8 @@ function main() {
   assertContains(shellLayoutSource, "initialHiddenVideoIds={Array.from(hiddenVideoIds)}", "Shell layout forwards hidden ids to shell dynamic", failures);
   assertContains(shellDynamicSource, "initialHiddenVideoIds", "Shell dynamic accepts hidden ids", failures);
   assertContains(shellDynamicSource, "filterHiddenRelatedVideos", "Shell dynamic filters Watch Next by hidden ids", failures);
+  assertContains(shellDynamicSource, "relatedCardHideButton", "Shell dynamic renders hide button on Watch Next cards", failures);
+  assertContains(shellDynamicSource, 'fetchWithAuthRetry("/api/hidden-videos"', "Shell dynamic persists hidden Watch Next cards to hidden-videos API", failures);
 
   assertContains(newPageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "New page passes hidden ids to loader", failures);
   assertContains(newLoaderSource, "filterHiddenVideos", "New loader filters hidden videos", failures);

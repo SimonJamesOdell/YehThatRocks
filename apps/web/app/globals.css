@@ -2898,6 +2898,13 @@ h1 {
   position: relative;
 }
 
+.relatedCardSlotExiting {
+  opacity: 0;
+  transform: translateX(18px) scale(0.98);
+  transition: opacity 220ms ease, transform 240ms ease;
+  pointer-events: none;
+}
+
 @supports (content-visibility: auto) {
   .relatedCardSlot {
     content-visibility: auto;
@@ -2925,6 +2932,37 @@ h1 {
   line-height: 1;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
   z-index: 3;
+}
+
+.relatedCardHideButton {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(148, 24, 26, 0.96), rgba(60, 8, 10, 0.96));
+  border: 1px solid rgba(255, 188, 170, 0.54);
+  color: #fff;
+  font-size: 1.05rem;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  z-index: 4;
+}
+
+.relatedCardHideButton:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.relatedCardHideButton:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
 }
 
 .relatedCardPlaylistAdd:hover:not(:disabled) {
