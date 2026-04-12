@@ -95,6 +95,8 @@ declare global {
 }
 
 const AUTOPLAY_KEY = "yeh-player-autoplay";
+const PLAYER_VOLUME_KEY = "yeh-player-volume";
+const PLAYER_MUTED_KEY = "yeh-player-muted";
 const HISTORY_KEY = "yeh-player-history";
 const RESUME_KEY = "yeh-player-resume";
 const HISTORY_LIMIT = 20;
@@ -775,6 +777,18 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
 
     setAutoplayEnabled(savedAutoplay === "true");
 
+    const savedVolume = Number(window.localStorage.getItem(PLAYER_VOLUME_KEY));
+    if (Number.isFinite(savedVolume)) {
+      setVolume(Math.max(0, Math.min(100, savedVolume)));
+    }
+
+    const savedMuted = window.localStorage.getItem(PLAYER_MUTED_KEY);
+    if (savedMuted === "true") {
+      setIsMuted(true);
+    } else if (savedMuted === "false") {
+      setIsMuted(false);
+    }
+
     if (savedHistory) {
       try {
         const parsedHistory = JSON.parse(savedHistory) as string[];
@@ -786,6 +800,15 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
 
     isBootstrappingHistoryRef.current = false;
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(PLAYER_VOLUME_KEY, String(Math.max(0, Math.min(100, volume))));
+    window.localStorage.setItem(PLAYER_MUTED_KEY, String(isMuted));
+  }, [volume, isMuted]);
 
   useEffect(() => {
     if (isBootstrappingHistoryRef.current) {
@@ -1017,6 +1040,24 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
             setIsPlayerReady(true);
             setVolume(toSafeNumber(event.target.getVolume(), 100));
             setDuration(toSafeNumber(event.target.getDuration(), 0));
+
+            const savedVolume = Number(window.localStorage.getItem(PLAYER_VOLUME_KEY));
+            if (Number.isFinite(savedVolume)) {
+              const normalizedVolume = Math.max(0, Math.min(100, savedVolume));
+              event.target.setVolume(normalizedVolume);
+              setVolume(normalizedVolume);
+            }
+
+            const savedMuted = window.localStorage.getItem(PLAYER_MUTED_KEY);
+            if (savedMuted === "true") {
+              event.target.mute();
+              setIsMuted(true);
+            } else if (savedMuted === "false") {
+              event.target.unMute();
+              setIsMuted(false);
+            } else {
+              setIsMuted(Boolean(event.target.isMuted()));
+            }
 
             logPlayerDebug("onReady", {
               videoId: currentVideo.id,
