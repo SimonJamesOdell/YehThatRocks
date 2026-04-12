@@ -7,7 +7,7 @@ const ROOT = process.cwd();
 
 const files = {
   prismaSchema: path.join(ROOT, "prisma/schema.prisma"),
-  migration: path.join(ROOT, "prisma/migrations/20260412_hidden_videos/migration.sql"),
+  migration: path.join(ROOT, "prisma/migrations/20260412030719_auto/migration.sql"),
   apiRoute: path.join(ROOT, "apps/web/app/api/hidden-videos/route.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
   apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
@@ -58,8 +58,8 @@ function main() {
   assertContains(prismaSchemaSource, "model HiddenVideo", "Prisma schema defines HiddenVideo model", failures);
   assertContains(prismaSchemaSource, '@@map("hidden_videos")', "HiddenVideo model maps to hidden_videos table", failures);
   assertContains(prismaSchemaSource, '@@unique([userId, videoId])', "HiddenVideo enforces per-user uniqueness", failures);
-  assertContains(migrationSource, "CREATE TABLE hidden_videos", "Hidden videos migration creates table", failures);
-  assertContains(migrationSource, "UNIQUE KEY hidden_videos_user_video_unique", "Hidden videos migration enforces unique user/video rows", failures);
+  assertContains(migrationSource, "CREATE TABLE IF NOT EXISTS `hidden_videos`", "Hidden videos migration creates table idempotently", failures);
+  assertContains(migrationSource, "`hidden_videos_user_id_video_id_key`", "Hidden videos migration enforces unique user/video rows", failures);
 
   // Data helpers + API invariants.
   assertContains(catalogDataSource, "export async function getHiddenVideoIdsForUser", "Catalog data exposes hidden video lookup", failures);
