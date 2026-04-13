@@ -1728,6 +1728,41 @@ h1 {
   text-transform: uppercase;
 }
 
+.playerBootRefreshBtn {
+  border: 1px solid rgba(255, 175, 160, 0.55);
+  border-radius: 999px;
+  background: rgba(118, 14, 4, 0.52);
+  color: rgba(255, 236, 231, 0.95);
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.playerBootRefreshBtn:hover {
+  background: rgba(166, 24, 8, 0.62);
+  border-color: rgba(255, 205, 192, 0.78);
+  transform: translateY(-1px);
+}
+
+.playerBootRefreshWrap {
+  margin-top: 4px;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.playerBootRefreshLabel {
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 220, 212, 0.9);
+}
+
 .playerBootBars {
   display: inline-flex;
   align-items: flex-end;
@@ -2282,6 +2317,24 @@ h1 {
   min-width: 120px;
   min-height: 42px;
   border-radius: 999px;
+}
+
+.videoUnavailableOverlayRefresh {
+  margin-top: 16px;
+  min-width: 170px;
+  min-height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 186, 172, 0.62);
+  background: linear-gradient(180deg, rgba(188, 44, 25, 0.9), rgba(92, 15, 8, 0.95));
+  color: #fff3ef;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.videoUnavailableOverlayRefresh:hover {
+  filter: brightness(1.08);
 }
 
 @media (min-width: 1181px) {
