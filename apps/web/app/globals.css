@@ -2444,6 +2444,27 @@ h1 {
   display: block;
 }
 
+.playerEndedChoiceThumbWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+
+.playerEndedChoiceSeenBadge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff6f3;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  line-height: 1;
+  font-weight: 500;
+  z-index: 2;
+}
+
 .playerEndedChoiceMeta {
   display: grid;
   grid-template-rows: minmax(0, 2.5em) minmax(0, 1.2em);

@@ -3443,16 +3443,18 @@ export function PlayerExperience({
                         } as CSSProperties}
                         onClick={() => handleEndedChoiceSelect(video.id)}
                       >
-                        <img
-                          src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
-                          alt=""
-                          className="playerEndedChoiceThumb"
-                          loading="lazy"
-                        />
+                        <div className="playerEndedChoiceThumbWrap">
+                          <img
+                            src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
+                            alt=""
+                            className="playerEndedChoiceThumb"
+                            loading="lazy"
+                          />
+                          {isSeen ? <span className="playerEndedChoiceSeenBadge">Seen</span> : null}
+                        </div>
                         <span className="playerEndedChoiceMeta">
                           <span className="playerEndedChoiceTitle">
                             {video.title}
-                            {isSeen ? <span className="videoSeenBadge">Seen</span> : null}
                           </span>
                           <span className="playerEndedChoiceChannel">
                             <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
