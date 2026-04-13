@@ -2419,7 +2419,6 @@ h1 {
 }
 
 .playerEndedChoiceCard {
-  --ended-choice-row: var(--ended-choice-row-4, 0);
   padding: 0;
   overflow: hidden;
   display: grid;
@@ -2432,10 +2431,6 @@ h1 {
   text-align: left;
   cursor: pointer;
   transition: transform 160ms ease, border-color 160ms ease, filter 160ms ease;
-  opacity: 0;
-  clip-path: inset(0 0 100% 0 round 12px);
-  animation: playerEndedChoiceBlindIn 320ms cubic-bezier(0.22, 0.84, 0.2, 1) forwards;
-  animation-delay: calc(var(--ended-choice-row) * 120ms);
 }
 
 .playerEndedChoiceCard:hover,
@@ -2503,7 +2498,7 @@ h1 {
 }
 
 @media (max-width: 920px) {
-  .playerEndedChoiceCard {
+  .endedChoiceCardSlot {
     --ended-choice-row: var(--ended-choice-row-2, 0);
   }
 
@@ -2513,7 +2508,7 @@ h1 {
 }
 
 @media (max-width: 640px) {
-  .playerEndedChoiceCard {
+  .endedChoiceCardSlot {
     --ended-choice-row: var(--ended-choice-row-1, 0);
   }
 
@@ -2552,9 +2547,18 @@ h1 {
 .endedChoiceCardSlot {
   position: relative;
   height: 100%;
+  --ended-choice-row: var(--ended-choice-row-4, 0);
+  border-radius: 12px;
+  overflow: hidden;
+  opacity: 0;
+  clip-path: inset(0 0 100% 0 round 12px);
+  animation: playerEndedChoiceBlindIn 320ms cubic-bezier(0.22, 0.84, 0.2, 1) forwards;
+  animation-delay: calc(var(--ended-choice-row) * 120ms);
 }
 
 .endedChoiceCardSlotExiting {
+  animation: none;
+  clip-path: inset(0 0 0 0 round 12px);
   opacity: 0;
   transform: scale(0.96);
   transition: opacity 360ms ease, transform 360ms ease;
@@ -4178,8 +4182,8 @@ h1 {
 .trackCard.leaderboardCard .searchResultAdminEditBtn {
   appearance: none;
   position: absolute;
-  top: 72px;
-  right: 8px;
+  top: 8px;
+  right: 40px;
   width: 26px;
   height: 26px;
   min-width: 26px;
@@ -4197,13 +4201,8 @@ h1 {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
   z-index: 6;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 160ms ease;
-}
-
-.top100CardCornerActions:hover .searchResultAdminEditBtn,
-.top100CardCornerActions:focus-within .searchResultAdminEditBtn {
   opacity: 1;
+  transition: opacity 160ms ease;
 }
 
 .searchResultAdminEditBtn:hover:not(:disabled) {
@@ -4211,6 +4210,40 @@ h1 {
 }
 
 .searchResultAdminEditBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.trackCard.leaderboardCard .searchResultAdminDeleteBtn {
+  appearance: none;
+  position: absolute;
+  top: 40px;
+  right: 40px;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(34, 34, 34, 0.97), rgba(8, 8, 8, 0.97));
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  z-index: 6;
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 160ms ease;
+}
+
+.searchResultAdminDeleteBtn:hover:not(:disabled) {
+  filter: brightness(1.2);
+}
+
+.searchResultAdminDeleteBtn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }

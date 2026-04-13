@@ -15,6 +15,7 @@ const files = {
   searchFlagButton: path.join(ROOT, "apps/web/components/search-flag-button.tsx"),
   adminVideoEditModal: path.join(ROOT, "apps/web/components/admin-video-edit-modal.tsx"),
   adminVideoEditButton: path.join(ROOT, "apps/web/components/admin-video-edit-button.tsx"),
+  adminVideoDeleteButton: path.join(ROOT, "apps/web/components/admin-video-delete-button.tsx"),
   globalCss: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
@@ -49,6 +50,7 @@ function main() {
   const searchFlagButtonSource = read(files.searchFlagButton);
   const adminVideoEditModalSource = read(files.adminVideoEditModal);
   const adminVideoEditButtonSource = read(files.adminVideoEditButton);
+  const adminVideoDeleteButtonSource = read(files.adminVideoDeleteButton);
   const globalCssSource = read(files.globalCss);
 
   // --- Search page: server-side rendering ---
@@ -150,26 +152,41 @@ function main() {
   // --- Admin video edit modal and button on search results ---
   assertContains(searchPageSource, 'import { isAdminIdentity } from "@/lib/admin-auth";', "Search page imports admin identity helper", failures);
   assertContains(searchPageSource, 'import { AdminVideoEditButton } from "@/components/admin-video-edit-button";', "Search page imports admin video edit button", failures);
+  assertContains(searchPageSource, 'import { AdminVideoDeleteButton } from "@/components/admin-video-delete-button";', "Search page imports admin video delete button", failures);
   assertContains(searchPageSource, "const isAdminUser = Boolean(user && isAdminIdentity(user.id, user.email ?? \"\"));", "Search page computes admin status from user", failures);
   assertContains(searchPageSource, "<AdminVideoEditButton videoId={video.id} isAdmin={isAdminUser} />", "Search page renders admin edit button for each video", failures);
+  assertContains(searchPageSource, "<AdminVideoDeleteButton videoId={video.id} title={video.title} isAdmin={isAdminUser} />", "Search page renders admin delete button for each video", failures);
 
   assertContains(adminVideoEditButtonSource, '"use client"', "Admin video edit button is a client component", failures);
   assertContains(adminVideoEditButtonSource, 'import { AdminVideoEditModal } from "@/components/admin-video-edit-modal"', "Admin edit button imports the modal", failures);
   assertContains(adminVideoEditButtonSource, "if (!isAdmin) {", "Admin edit button hides itself for non-admin users", failures);
   assertContains(adminVideoEditButtonSource, "className=\"top100CardAdminEditBtn searchResultAdminEditBtn\"", "Admin edit button uses admin edit button styling", failures);
+  assertContains(adminVideoEditButtonSource, "onSaveComplete={handleSaveComplete}", "Admin edit button wires save callback for immediate card updates", failures);
+  assertContains(adminVideoEditButtonSource, ".leaderboardMeta h3", "Admin edit button updates search card title after save", failures);
+  assertContains(adminVideoEditButtonSource, ".artistInlineLink", "Admin edit button updates search card artist/channel text after save", failures);
 
   assertContains(adminVideoEditModalSource, '"use client"', "Admin video edit modal is a client component", failures);
   assertContains(adminVideoEditModalSource, "isOpen", "Admin edit modal controls visibility via isOpen prop", failures);
   assertContains(adminVideoEditModalSource, "videoId", "Admin edit modal receives videoId prop", failures);
   assertContains(adminVideoEditModalSource, 'fetch(`/api/admin/videos?q=${encodeURIComponent(videoId)}`', "Admin edit modal fetches video details from admin API", failures);
+  assertContains(adminVideoEditModalSource, 'method: "PATCH"', "Admin edit modal saves through PATCH /api/admin/videos", failures);
   assertContains(adminVideoEditModalSource, "adminEditTitle", "Admin edit modal allows editing title", failures);
   assertContains(adminVideoEditModalSource, "adminEditParsedArtist", "Admin edit modal allows editing parsed artist", failures);
   assertContains(adminVideoEditModalSource, "parsedTrack", "Admin edit modal allows editing parsed track", failures);
   assertContains(adminVideoEditModalSource, 'fetch("/api/admin/videos"', "Admin edit modal posts changes to admin videos API", failures);
   assertContains(adminVideoEditModalSource, "createPortal", "Admin edit modal renders as portal to body", failures);
 
+  assertContains(adminVideoDeleteButtonSource, '"use client"', "Admin video delete button is a client component", failures);
+  assertContains(adminVideoDeleteButtonSource, "if (!isAdmin)", "Admin delete button hides itself for non-admin users", failures);
+  assertContains(adminVideoDeleteButtonSource, "createPortal", "Admin delete button uses a proper confirmation modal", failures);
+  assertContains(adminVideoDeleteButtonSource, 'method: "DELETE"', "Admin delete button calls DELETE /api/admin/videos", failures);
+  assertContains(adminVideoDeleteButtonSource, "className=\"shareModalBackdrop\"", "Admin delete confirmation uses site modal backdrop styling", failures);
+  assertContains(adminVideoDeleteButtonSource, "className=\"adminVideoEditButton adminVideoEditButtonPrimary\"", "Admin delete confirmation uses site primary button styling", failures);
+
   assertContains(globalCssSource, ".searchResultAdminEditBtn", "CSS includes admin edit button styling", failures);
-  assertContains(globalCssSource, "top: 72px;", "Admin edit button positioned below block and flag buttons", failures);
+  assertContains(globalCssSource, "top: 8px;", "Admin edit button is positioned on the top corner row", failures);
+  assertContains(globalCssSource, "right: 40px;", "Admin edit button is positioned to the left of the block button", failures);
+  assertContains(globalCssSource, ".searchResultAdminDeleteBtn", "CSS includes admin delete button styling", failures);
 
   if (failures.length > 0) {
     console.error("Search invariant check failed.");

@@ -6,6 +6,7 @@ import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { isAdminIdentity } from "@/lib/admin-auth";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
+import { AdminVideoDeleteButton } from "@/components/admin-video-delete-button";
 import { AdminVideoEditButton } from "@/components/admin-video-edit-button";
 import { CloseLink } from "@/components/close-link";
 import { NewScrollReset } from "@/components/new-scroll-reset";
@@ -60,6 +61,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
               {isAuthenticated ? <SearchResultBlockButton videoId={video.id} title={video.title} /> : null}
               {isAuthenticated ? <SearchFlagButton videoId={video.id} title={video.title} searchQuery={query} /> : null}
               <AdminVideoEditButton videoId={video.id} isAdmin={isAdminUser} />
+              <AdminVideoDeleteButton videoId={video.id} title={video.title} isAdmin={isAdminUser} />
               <Link href={`/?v=${video.id}&resume=1`} className="linkedCard leaderboardTrackLink">
                 <div className="queueBadge">Result</div>
                 <div className="leaderboardThumbWrap">
