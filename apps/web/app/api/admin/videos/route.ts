@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireAdminApiAuth } from "@/lib/admin-auth";
+import { pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { prisma } from "@/lib/db";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
@@ -15,6 +16,10 @@ const updateSchema = z.object({
   parseConfidence: z.number().min(0).max(1).nullable().optional(),
   channelTitle: z.string().trim().max(255).nullable().optional(),
   description: z.string().trim().nullable().optional(),
+});
+
+const deleteSchema = z.object({
+  videoId: z.string().trim().min(1).max(64),
 });
 
 type VideoColumnMap = {
@@ -142,4 +147,39 @@ export async function PATCH(request: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, video: updated });
+}
+
+export async function DELETE(request: NextRequest) {
+  const auth = await requireAdminApiAuth(request);
+
+  if (!auth.ok) {
+    return auth.response;
+  }
+
+  const csrf = verifySameOrigin(request);
+  if (csrf) {
+    return csrf;
+  }
+
+  const body = await parseRequestJson(request);
+  if (!body.ok) {
+    return body.response;
+  }
+
+  const parsed = deleteSchema.safeParse(body.data);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.data.videoId, "admin-hard-delete");
+
+  if (pruneResult.reason === "not-found") {
+    return NextResponse.json({ error: "Video not found" }, { status: 404 });
+  }
+
+  if (!pruneResult.pruned) {
+    return NextResponse.json({ error: "Could not delete video", reason: pruneResult.reason }, { status: 409 });
+  }
+
+  return NextResponse.json({ ok: true, deletedVideoRows: pruneResult.deletedVideoRows });
 }
