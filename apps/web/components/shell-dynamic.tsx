@@ -1822,12 +1822,9 @@ function ShellDynamicInner({
     dedupeRelatedRailVideos(sourceRelatedVideos, currentVideo.id),
     hiddenVideoIdsRef.current,
   );
-  const displayedRenderableRelatedVideos = sortVideosBySeen(
-    filterHiddenRelatedVideos(
-      dedupeRelatedRailVideos(displayedRelatedVideos, currentVideo.id),
-      hiddenVideoIdsRef.current,
-    ),
-    seenVideoIdsRef.current,
+  const displayedRenderableRelatedVideos = filterHiddenRelatedVideos(
+    dedupeRelatedRailVideos(displayedRelatedVideos, currentVideo.id),
+    hiddenVideoIdsRef.current,
   );
   useEffect(() => {
     relatedVideosRef.current = relatedVideos;
@@ -3642,11 +3639,11 @@ function ShellDynamicInner({
                         fetchPriority={index < 2 ? "high" : "auto"}
                         className="relatedThumb"
                       />
+                      {seenVideoIdsRef.current.has(track.id) ? <span className="videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay">Seen</span> : null}
                     </div>
                     <div>
                       <h3>
                         {track.title}
-                        {seenVideoIdsRef.current.has(track.id) ? <span className="videoSeenBadge">Seen</span> : null}
                       </h3>
                       <p>
                         <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">

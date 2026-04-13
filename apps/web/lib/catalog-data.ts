@@ -1102,6 +1102,17 @@ function mapStoredVideoToPersistable(video: StoredVideoRow): PersistableVideoRec
   };
 }
 
+export function clearCatalogVideoCaches() {
+  topPoolCache = undefined;
+  relatedVideosCache.clear();
+  artistVideosCache.clear();
+  artistLetterCache.clear();
+  artistLetterPageCache.clear();
+  artistLetterPageInFlight.clear();
+  genreArtistsCache.clear();
+  genreVideosCache.clear();
+}
+
 function mapPlaylistVideo(video: {
   playlistItemId: number | bigint | string;
   videoId: string;
@@ -2287,14 +2298,7 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
   await clearGenreCardThumbnailForVideo(normalizedVideoId);
 
   // Reset hot caches so lists immediately reflect the prune.
-  topPoolCache = undefined;
-  relatedVideosCache.clear();
-  artistVideosCache.clear();
-  artistLetterCache.clear();
-  artistLetterPageCache.clear();
-  artistLetterPageInFlight.clear();
-  genreArtistsCache.clear();
-  genreVideosCache.clear();
+  clearCatalogVideoCaches();
 
   debugCatalog("pruneVideoAndAssociationsByVideoId:done", {
     videoId: normalizedVideoId,

@@ -4573,6 +4573,11 @@ h1 {
   left: 3px;
 }
 
+.relatedSeenBadgeOverlay {
+  left: 6px;
+  bottom: 6px;
+}
+
 .leaderboardMeta {
   min-width: 0;
 }
@@ -6300,6 +6305,7 @@ h1 {
 }
 
 .thumbGlow {
+  position: relative;
   width: 102px;
   height: 100%;
   min-height: 72px;

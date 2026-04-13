@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { filterHiddenVideos, getCurrentVideo, getNewestVideos, getRelatedVideos, getTopVideos, getUnseenCatalogVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { getOptionalApiAuth } from "@/lib/auth-request";
+import {
+  currentVideoCache,
+  currentVideoInflight,
+  currentVideoPendingCache,
+  currentVideoRelatedPoolCache,
+  currentVideoRelatedPoolInflight,
+} from "@/lib/current-video-cache";
 
 const CURRENT_VIDEO_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_CATALOG === "1";
 const CURRENT_VIDEO_CACHE_TTL_MS = 20_000;
@@ -25,11 +32,6 @@ type PendingPayload = {
 
 type CurrentVideoResolvePayload = CurrentVideoPayload | PendingPayload;
 
-const currentVideoCache = new Map<string, { expiresAt: number; payload: CurrentVideoPayload }>();
-const currentVideoPendingCache = new Map<string, { expiresAt: number; payload: PendingPayload }>();
-const currentVideoInflight = new Map<string, Promise<CurrentVideoResolvePayload>>();
-const currentVideoRelatedPoolCache = new Map<string, { expiresAt: number; videos: Awaited<ReturnType<typeof getRelatedVideos>> }>();
-const currentVideoRelatedPoolInflight = new Map<string, Promise<Awaited<ReturnType<typeof getRelatedVideos>>>>();
 let currentVideoResolverBlockedUntil = 0;
 
 function shuffleVideos<T>(rows: T[]) {
