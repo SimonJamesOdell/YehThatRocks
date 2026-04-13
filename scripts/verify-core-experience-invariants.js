@@ -99,6 +99,12 @@ function main() {
   assertContains(playerExperienceSource, "setPlayerHostMode(\"youtube\");", "Player retries restricted videos with youtube host fallback", failures);
   assertContains(playerExperienceSource, "const [showShareModal, setShowShareModal] = useState(false);", "Player tracks modal share state", failures);
   assertContains(playerExperienceSource, "setShowShareModal(true);", "Player opens share modal from social share action", failures);
+  assertContains(playerExperienceSource, 'className="primaryActionIconButtonWrap primaryActionPlaylistWrap"', "Player renders footer playlist quick-add control", failures);
+  assertContains(playerExperienceSource, "const [showFooterPlaylistMenu, setShowFooterPlaylistMenu] = useState(false);", "Player tracks footer playlist menu state", failures);
+  assertContains(playerExperienceSource, "if (activePlaylistId) {", "Player adds current track directly when playlist context is active", failures);
+  assertContains(playerExperienceSource, "void loadFooterPlaylistMenu();", "Player loads playlist menu options on quick-add open", failures);
+  assertContains(playerExperienceSource, "handleFooterCreatePlaylist", "Player supports create-playlist flow from footer menu", failures);
+  assertContains(playerExperienceSource, "handleFooterPlaylistSelect", "Player supports selecting an existing playlist from footer menu", failures);
   assertContains(playerExperienceSource, 'className="shareModalBackdrop"', "Player renders share modal backdrop", failures);
   assertContains(playerExperienceSource, 'buildCanonicalShareUrl(currentVideo.id)', "Player uses canonical short share URLs", failures);
   assertContains(playerExperienceSource, '<ArtistWikiLink', "Player renders artist wiki links in player surfaces", failures);
@@ -158,6 +164,8 @@ function main() {
   assertContains(artistWikiLinkSource, 'router.push(targetHref);', "Artist wiki link performs client-side navigation", failures);
   assertContains(cssSource, '.shareModalBackdrop', "Share modal backdrop styles are defined", failures);
   assertContains(cssSource, '.shareModalGrid', "Share modal platform grid styles are defined", failures);
+  assertContains(cssSource, '.primaryActionPlaylistMenu', "Footer playlist quick-add menu styles are defined", failures);
+  assertContains(cssSource, '.primaryActionPlaylistMenuAction:hover:not(:disabled)', "Footer playlist menu keeps explicit hover accent styles", failures);
   assertContains(cssSource, '.categoryHeaderWikiLink', "Artist wiki header link styles are defined", failures);
   assertContains(cssSource, '.artistInlineLink', "Artist wiki inline link styles are defined", failures);
 

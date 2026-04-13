@@ -51,7 +51,7 @@ function main() {
 
   // Account page entry-point invariants.
   assertContains(accountPageSource, 'import { isAdminIdentity } from "@/lib/admin-auth";', "Account page reuses centralized admin identity logic", failures);
-  assertContains(accountPageSource, "const isAdminUser = Boolean(user?.email && isAdminIdentity(user.id, user.email));", "Account page computes admin visibility from shared helper", failures);
+  assertContains(accountPageSource, "const isAdminUser = Boolean(user && isAdminIdentity(user.id, user.email ?? \"\"));", "Account page computes admin visibility from shared helper", failures);
   assertContains(accountPageSource, '<Link href="/admin" className="favouritesBlindClose">Admin Panel</Link>', "Account top bar renders admin button for admin user", failures);
   assertContains(accountPageSource, "className=\"accountTopBarActions\"", "Account page keeps grouped top bar actions", failures);
 

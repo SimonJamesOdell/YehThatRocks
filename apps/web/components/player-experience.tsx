@@ -36,6 +36,12 @@ type PlaylistPayload = {
   videos: VideoRecord[];
 };
 
+type PlaylistSummary = {
+  id: string;
+  name: string;
+  itemCount?: number;
+};
+
 type NextChoiceVideo = VideoRecord;
 
 type YouTubePlayerStateChangeEvent = {
@@ -171,6 +177,19 @@ function formatPlaybackTime(value: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function buildGeneratedPlaylistName() {
+  const now = new Date();
+  const datePart = now.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+  const timePart = now.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `Playlist ${datePart} ${timePart}`;
+}
+
 function switchPlayerVideo(player: YouTubePlayer, videoId: string) {
   const playerWithFallbacks = player as YouTubePlayer & {
     cueVideoById?: (id: string) => void;
@@ -224,11 +243,16 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
   const isBootstrappingHistoryRef = useRef(true);
   const previousVideoIdRef = useRef<string | null>(null);
   const favouriteSaveTimeoutRef = useRef<number | null>(null);
+  const footerPlaylistMenuRef = useRef<HTMLDivElement | null>(null);
   const shareToChatResetTimeoutRef = useRef<number | null>(null);
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
   const [copied, setCopied] = useState(false);
   const [shareToChatState, setShareToChatState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [favouriteSaveState, setFavouriteSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [footerPlaylistAddState, setFooterPlaylistAddState] = useState<"idle" | "saving" | "added" | "error">("idle");
+  const [showFooterPlaylistMenu, setShowFooterPlaylistMenu] = useState(false);
+  const [footerPlaylistMenuLoading, setFooterPlaylistMenuLoading] = useState(false);
+  const [footerPlaylistMenuPlaylists, setFooterPlaylistMenuPlaylists] = useState<PlaylistSummary[]>([]);
   const [hideCurrentVideoState, setHideCurrentVideoState] = useState<"idle" | "saving">("idle");
   const [historyStack, setHistoryStack] = useState<string[]>([]);
   const [showNowPlayingOverlay, setShowNowPlayingOverlay] = useState(false);
@@ -339,6 +363,36 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [showShareModal]);
+
+  useEffect(() => {
+    if (!showFooterPlaylistMenu) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!footerPlaylistMenuRef.current) {
+        return;
+      }
+
+      if (event.target instanceof Node && !footerPlaylistMenuRef.current.contains(event.target)) {
+        setShowFooterPlaylistMenu(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowFooterPlaylistMenu(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [showFooterPlaylistMenu]);
 
   const playlistCurrentIndex = playlistQueueIds.findIndex((videoId) => videoId === currentVideo.id);
   const effectivePlaylistIndex =
@@ -1550,6 +1604,151 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     } finally {
       setHideCurrentVideoState("idle");
       triggerEndOfVideoAction();
+    }
+  }
+
+  async function addCurrentTrackToPlaylist(playlistId: string) {
+    const addResponse = await fetch(`/api/playlists/${encodeURIComponent(playlistId)}/items`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ videoId: currentVideo.id }),
+    });
+
+    if (!addResponse.ok) {
+      return false;
+    }
+
+    window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+    return true;
+  }
+
+  async function loadFooterPlaylistMenu() {
+    setFooterPlaylistMenuLoading(true);
+
+    try {
+      const response = await fetch("/api/playlists", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        setFooterPlaylistMenuPlaylists([]);
+        return;
+      }
+
+      const payload = (await response.json().catch(() => null)) as { playlists?: PlaylistSummary[] } | null;
+      setFooterPlaylistMenuPlaylists(Array.isArray(payload?.playlists) ? payload.playlists : []);
+    } catch {
+      setFooterPlaylistMenuPlaylists([]);
+    } finally {
+      setFooterPlaylistMenuLoading(false);
+    }
+  }
+
+  function markFooterPlaylistAdded() {
+    setFooterPlaylistAddState("added");
+    window.setTimeout(() => {
+      setFooterPlaylistAddState((current) => (current === "added" ? "idle" : current));
+    }, 1800);
+  }
+
+  async function handleFooterPlaylistButtonClick() {
+    if (!isLoggedIn || footerPlaylistAddState === "saving") {
+      return;
+    }
+
+    if (activePlaylistId) {
+      setFooterPlaylistAddState("saving");
+
+      try {
+        const ok = await addCurrentTrackToPlaylist(activePlaylistId);
+        if (ok) {
+          markFooterPlaylistAdded();
+          return;
+        }
+        setFooterPlaylistAddState("error");
+      } catch {
+        setFooterPlaylistAddState("error");
+      }
+
+      return;
+    }
+
+    const shouldOpen = !showFooterPlaylistMenu;
+    setShowFooterPlaylistMenu(shouldOpen);
+    if (shouldOpen) {
+      void loadFooterPlaylistMenu();
+    }
+  }
+
+  async function handleFooterPlaylistSelect(playlistId: string) {
+    if (footerPlaylistAddState === "saving") {
+      return;
+    }
+
+    setFooterPlaylistAddState("saving");
+
+    try {
+      const ok = await addCurrentTrackToPlaylist(playlistId);
+      if (ok) {
+        markFooterPlaylistAdded();
+        setShowFooterPlaylistMenu(false);
+        return;
+      }
+      setFooterPlaylistAddState("error");
+    } catch {
+      setFooterPlaylistAddState("error");
+    }
+  }
+
+  async function handleFooterCreatePlaylist() {
+    if (footerPlaylistAddState === "saving") {
+      return;
+    }
+
+    setFooterPlaylistAddState("saving");
+
+    try {
+      const createResponse = await fetch("/api/playlists", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: buildGeneratedPlaylistName(),
+          videoIds: [],
+        }),
+      });
+
+      if (!createResponse.ok) {
+        setFooterPlaylistAddState("error");
+        return;
+      }
+
+      const created = (await createResponse.json().catch(() => null)) as { id?: string } | null;
+      if (!created?.id) {
+        setFooterPlaylistAddState("error");
+        return;
+      }
+
+      const added = await addCurrentTrackToPlaylist(created.id);
+      if (!added) {
+        setFooterPlaylistAddState("error");
+        return;
+      }
+
+      markFooterPlaylistAdded();
+      setShowFooterPlaylistMenu(false);
+
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("v", currentVideo.id);
+      params.set("resume", "1");
+      params.set("pl", created.id);
+      params.delete("pli");
+      router.replace(`${pathname}?${params.toString()}`);
+    } catch {
+      setFooterPlaylistAddState("error");
     }
   }
 
@@ -2809,6 +3008,57 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                 </button>
               </div>
             )}
+            {isLoggedIn ? (
+              <div className="primaryActionIconButtonWrap primaryActionPlaylistWrap" ref={footerPlaylistMenuRef}>
+                <button
+                  type="button"
+                  className="primaryActionIconButton primaryActionPlaylistButton"
+                  aria-label="Add to playlist"
+                  title={activePlaylistId ? "Add to current playlist" : "Add to playlist"}
+                  onClick={() => {
+                    void handleFooterPlaylistButtonClick();
+                  }}
+                  disabled={footerPlaylistAddState === "saving"}
+                >
+                  <span className="primaryActionPlaylistGlyph" aria-hidden="true">+</span>
+                </button>
+                {showFooterPlaylistMenu ? (
+                  <div className="primaryActionPlaylistMenu" role="menu" aria-label="Choose playlist">
+                    <button
+                      type="button"
+                      className="primaryActionPlaylistMenuAction"
+                      onClick={() => {
+                        void handleFooterCreatePlaylist();
+                      }}
+                      disabled={footerPlaylistAddState === "saving"}
+                    >
+                      + Create new playlist
+                    </button>
+                    {footerPlaylistMenuLoading ? (
+                      <p className="primaryActionPlaylistMenuStatus">Loading playlists...</p>
+                    ) : footerPlaylistMenuPlaylists.length === 0 ? (
+                      <p className="primaryActionPlaylistMenuStatus">No playlists yet</p>
+                    ) : (
+                      <div className="primaryActionPlaylistMenuList">
+                        {footerPlaylistMenuPlaylists.map((playlist) => (
+                          <button
+                            key={playlist.id}
+                            type="button"
+                            className="primaryActionPlaylistMenuAction"
+                            onClick={() => {
+                              void handleFooterPlaylistSelect(playlist.id);
+                            }}
+                            disabled={footerPlaylistAddState === "saving"}
+                          >
+                            {playlist.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <button
               type="button"
               className="primaryActionNavIconButton"
