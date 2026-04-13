@@ -47,7 +47,12 @@ export default async function HistoryPage() {
           <p className="authMessage">Play a few tracks and your history will appear here.</p>
         </section>
       ) : (
-        <HistoryInfiniteList initialHistory={initialHistory} initialHasMore={hasMore} pageSize={pageSize} />
+        <HistoryInfiniteList
+          initialHistory={initialHistory}
+          initialHasMore={hasMore}
+          pageSize={pageSize}
+          isAuthenticated={Boolean(user)}
+        />
       )}
     </>
   );

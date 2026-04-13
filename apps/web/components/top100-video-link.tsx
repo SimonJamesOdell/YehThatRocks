@@ -23,6 +23,8 @@ type Top100VideoLinkProps = {
   rowVariant?: "default" | "new";
   onHideVideo?: (track: Top100VideoLinkProps["track"]) => void;
   isHidePending?: boolean;
+  onFlagVideo?: (track: Top100VideoLinkProps["track"]) => void;
+  isFlagPending?: boolean;
 };
 
 const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
@@ -58,6 +60,8 @@ export function Top100VideoLink({
   rowVariant = "default",
   onHideVideo,
   isHidePending = false,
+  onFlagVideo,
+  isFlagPending = false,
 }: Top100VideoLinkProps) {
   const hasWarmedRef = useRef(false);
   const clickFlashTimeoutRef = useRef<number | null>(null);
@@ -121,7 +125,7 @@ export function Top100VideoLink({
 
   return (
     <article
-      className={`trackCard leaderboardCard top100CardWithPlaylistAction${isSeen ? " top100CardSeen" : ""}${isSeen && rowVariant === "new" ? " top100CardSeenNew" : ""}${isClickFlashing ? " top100CardClickFlash" : ""}${isAuthenticated ? " top100CardCornerActions" : ""}`}
+      className={`trackCard leaderboardCard top100CardWithPlaylistAction${isSeen ? " top100CardSeen" : ""}${isSeen && rowVariant === "new" ? " top100CardSeenNew" : ""}${isClickFlashing ? " top100CardClickFlash" : ""}${isAuthenticated ? " top100CardCornerActions" : ""}${rowVariant === "new" ? " top100CardNewPersistentActions" : ""}`}
     >
       {isAuthenticated && onHideVideo ? (
         <button
@@ -137,6 +141,22 @@ export function Top100VideoLink({
           disabled={isHidePending}
         >
           ×
+        </button>
+      ) : null}
+      {isAuthenticated && onFlagVideo ? (
+        <button
+          type="button"
+          className="top100CardFlagButton"
+          aria-label={`Flag ${track.title} for quality review`}
+          title="Flag for quality review"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onFlagVideo(track);
+          }}
+          disabled={isFlagPending}
+        >
+          ⚑
         </button>
       ) : null}
       <Link

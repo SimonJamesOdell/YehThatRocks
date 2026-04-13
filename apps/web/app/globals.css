@@ -2244,7 +2244,7 @@ h1 {
   backdrop-filter: blur(6px);
   text-align: center;
   z-index: 12;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .videoUnavailableOverlay p {
@@ -2260,6 +2260,13 @@ h1 {
   font-size: clamp(1.3rem, 2.8vw, 2rem);
   line-height: 1.3;
   color: #fff2ed;
+}
+
+.videoUnavailableOverlayAcknowledge {
+  margin-top: 16px;
+  min-width: 120px;
+  min-height: 42px;
+  border-radius: 999px;
 }
 
 @media (min-width: 1181px) {
@@ -2477,11 +2484,6 @@ h1 {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
   z-index: 4;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 160ms ease;
-}
-
-.endedChoiceCardSlot:hover .endedChoiceCardHideBtn {
   opacity: 1;
 }
 
@@ -2494,10 +2496,17 @@ h1 {
   cursor: not-allowed;
 }
 
-.endedChoiceCardPlaylistBtn {
+.endedChoiceCardSlot > .playlistQuickAddWrap {
   position: absolute;
   bottom: 8px;
   right: 8px;
+  z-index: 3;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.endedChoiceCardPlaylistBtn {
+  position: static;
   width: 24px;
   height: 24px;
   min-width: 24px;
@@ -2513,14 +2522,7 @@ h1 {
   font-size: 1rem;
   line-height: 1;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
-  z-index: 3;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 160ms ease;
-}
-
-.endedChoiceCardSlot:hover .endedChoiceCardPlaylistBtn {
-  opacity: 1;
 }
 
 .endedChoiceCardPlaylistBtn:hover:not(:disabled) {
@@ -2593,6 +2595,11 @@ h1 {
   padding: 12px 0;
   opacity: 1;
   transition: opacity 220ms ease;
+}
+
+.primaryActionsUnavailable {
+  pointer-events: none;
+  opacity: 0.45;
 }
 
 .playerChromeFooterReveal .primaryActions {
@@ -2764,7 +2771,7 @@ h1 {
   overflow-y: auto;
 }
 
-.primaryActionPlaylistMenuAction {
+.primaryActions .primaryActionPlaylistMenuAction {
   width: 100%;
   text-align: left;
   padding: 10px 12px;
@@ -2778,10 +2785,14 @@ h1 {
   box-shadow: none;
 }
 
-.primaryActionPlaylistMenuAction:hover:not(:disabled),
-.primaryActionPlaylistMenuAction:focus-visible {
+.primaryActions .primaryActionPlaylistMenuAction:hover:not(:disabled) {
   background: rgba(189, 34, 15, 0.88);
   border-color: rgba(255, 126, 94, 0.7);
+}
+
+.primaryActions .primaryActionPlaylistMenuAction:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.45);
+  outline-offset: 2px;
 }
 
 .primaryActionPlaylistMenuStatus {
@@ -2965,6 +2976,7 @@ h1 {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  position: relative;
 }
 
 .playlistQuickAddButton {
@@ -2984,6 +2996,149 @@ h1 {
 
 .playlistQuickAddButtonAdded {
   filter: grayscale(0.9) saturate(0.4);
+}
+
+.playlistQuickAddMenu {
+  position: fixed;
+  min-width: 220px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 0;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 8, 8, 0.98);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  z-index: 400;
+}
+
+.playlistQuickAddMenuHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-display), cursive;
+  font-size: 0.98rem;
+  color: #ffdfd6;
+}
+
+.playlistQuickAddMenuClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(226, 81, 81, 0.5);
+  border-radius: 6px;
+  background: rgba(126, 19, 19, 0.6);
+  color: #ffd4d4;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.playlistQuickAddMenuClose:hover {
+  background: rgba(160, 30, 30, 0.8);
+  border-color: rgba(226, 81, 81, 0.8);
+}
+
+.playlistQuickAddMenuClose:active {
+  background: rgba(126, 19, 19, 0.95);
+}
+
+.playlistQuickAddMenuAction {
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0;
+  background: transparent;
+  color: #fff5f2;
+  font-family: var(--font-body), "Rajdhani", sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.2;
+  box-shadow: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.playlistQuickAddMenuAction:last-of-type {
+  border-bottom: none;
+}
+
+.playlistQuickAddMenuAction:hover:not(:disabled) {
+  background: rgba(189, 34, 15, 0.3);
+}
+
+.playlistQuickAddMenuAction:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.playlistQuickAddModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(4px);
+}
+
+.playlistQuickAddModal {
+  width: min(94vw, 1000px);
+  max-height: 90vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 0;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: linear-gradient(180deg, rgba(22, 10, 10, 0.98), rgba(12, 7, 7, 0.98));
+  overflow: hidden;
+}
+
+.playlistQuickAddModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.playlistQuickAddModalList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  padding: 18px;
+  overflow-y: auto;
+}
+
+.playlistQuickAddCard {
+  all: unset;
+  display: grid;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.playlistQuickAddCard:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.playlistQuickAddCard:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .playlistQuickAddStatus {
@@ -3149,6 +3304,28 @@ h1 {
 .playlistRailTrackRowDragOver .relatedCardSlot .relatedCard {
   border-color: rgba(255, 143, 124, 0.66);
   box-shadow: 0 0 0 1px rgba(255, 143, 124, 0.38) inset;
+}
+
+.playlistRailTrackRowAdded .relatedCardSlot .relatedCard {
+  animation: playlistRailTrackAddedFlash 900ms ease-out;
+}
+
+@keyframes playlistRailTrackAddedFlash {
+  0% {
+    border-color: rgba(255, 173, 129, 0.26);
+    box-shadow: 0 0 0 0 rgba(255, 146, 102, 0);
+  }
+
+  40% {
+    border-color: rgba(255, 143, 101, 0.95);
+    box-shadow: 0 0 0 2px rgba(255, 143, 101, 0.52), 0 0 18px rgba(255, 103, 74, 0.36);
+    background: linear-gradient(180deg, rgba(255, 132, 92, 0.18), rgba(255, 132, 92, 0.05));
+  }
+
+  100% {
+    border-color: rgba(255, 173, 129, 0.26);
+    box-shadow: 0 0 0 0 rgba(255, 146, 102, 0);
+  }
 }
 
 .playlistRailReorderColumn {
@@ -3358,6 +3535,17 @@ h1 {
   z-index: 3;
 }
 
+.relatedCardSlot > .playlistQuickAddWrap {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  z-index: 3;
+}
+
+.relatedCardSlot > .playlistQuickAddWrap .relatedCardPlaylistAdd {
+  position: static;
+}
+
 .relatedCardHideButton {
   position: absolute;
   top: 8px;
@@ -3533,6 +3721,48 @@ h1 {
   padding: 14px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
+  position: relative;
+}
+
+.rightRailPlaylistCard {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  padding: 0;
+  position: relative;
+}
+
+.rightRailPlaylistCardDelete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(226, 81, 81, 0.5);
+  background: rgba(126, 19, 19, 0.7);
+  color: #ffd4d4;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.rightRailPlaylistCardDelete:hover:not(:disabled) {
+  background: rgba(160, 30, 30, 0.9);
+  border-color: rgba(226, 81, 81, 0.8);
+}
+
+.rightRailPlaylistCardDelete:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .linkedCard {
@@ -3674,11 +3904,11 @@ h1 {
   right: 8px;
   bottom: 8px;
   margin: 0;
-  z-index: 4;
+  z-index: 32;
 }
 
 .top100CardAction .playlistQuickAddWrap {
-  display: contents;
+  display: inline-flex;
 }
 
 .trackCard.leaderboardCard .top100CardHideButton {
@@ -3707,6 +3937,40 @@ h1 {
   transition: opacity 160ms ease;
 }
 
+.trackCard.leaderboardCard .top100CardFlagButton {
+  appearance: none;
+  position: absolute;
+  top: 8px;
+  right: 40px;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(34, 34, 34, 0.97), rgba(8, 8, 8, 0.97));
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #ffd8b8;
+  font-size: 1rem;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  z-index: 5;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.trackCard.leaderboardCard.top100CardNewPersistentActions .top100CardFlagButton {
+  top: 8px;
+  left: auto;
+  right: 8px;
+  bottom: auto;
+  opacity: 1;
+}
+
 .trackCard.leaderboardCard .top100CardPlaylistAddButton {
   appearance: none;
   width: 24px;
@@ -3730,8 +3994,14 @@ h1 {
   transition: opacity 160ms ease;
 }
 
+.trackCard.leaderboardCard.top100CardNewPersistentActions .top100CardPlaylistAddButton {
+  opacity: 1;
+}
+
 .top100CardCornerActions:hover .top100CardHideButton,
 .top100CardCornerActions:focus-within .top100CardHideButton,
+.top100CardCornerActions:hover .top100CardFlagButton,
+.top100CardCornerActions:focus-within .top100CardFlagButton,
 .top100CardCornerActions:hover .top100CardPlaylistAddButton,
 .top100CardCornerActions:focus-within .top100CardPlaylistAddButton {
   opacity: 1;
@@ -3745,10 +4015,139 @@ h1 {
   filter: brightness(1.1);
 }
 
+.top100CardFlagButton:hover:not(:disabled) {
+  filter: brightness(1.16);
+}
+
 .top100CardHideButton:disabled,
+.top100CardFlagButton:disabled,
 .top100CardPlaylistAddButton:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.newPageHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.newPageSeenToggle {
+  font-family: var(--font-display), cursive;
+  font-size: 0.95rem;
+  letter-spacing: 0.03em;
+  padding: 6px 16px;
+  border-radius: 6px;
+  border: 1.5px solid rgba(126, 19, 19, 0.55);
+  background: rgba(30, 12, 12, 0.7);
+  color: rgba(255, 200, 190, 0.75);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.newPageSeenToggle:hover {
+  background: rgba(126, 19, 19, 0.35);
+  border-color: rgba(160, 30, 30, 0.8);
+  color: rgba(255, 220, 210, 1);
+}
+
+.newPageSeenToggle.newPageSeenToggleActive {
+  background: rgba(126, 19, 19, 0.6);
+  border-color: rgba(180, 40, 40, 0.9);
+  color: #fff;
+}
+
+.newPageSeenToggle.newPageSeenToggleActive:hover {
+  background: rgba(160, 30, 30, 0.8);
+}
+
+.newFlagModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(4px);
+}
+
+.newFlagModalPanel {
+  width: min(92vw, 440px);
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: linear-gradient(180deg, rgba(22, 10, 10, 0.98), rgba(12, 7, 7, 0.98));
+}
+
+.newFlagModalPanel h3 {
+  margin: 0;
+}
+
+.newFlagModalMeta {
+  margin: 0;
+  color: rgba(255, 226, 213, 0.92);
+}
+
+.newFlagModalField {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.newFlagModalPanel select {
+  min-height: 42px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(8, 8, 8, 0.95);
+  color: #fff6f2;
+  padding: 0 10px;
+}
+
+.newFlagModalStatus {
+  margin: 2px 0 0;
+  font-size: 0.9rem;
+  color: #ffd8bf;
+}
+
+.newFlagModalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.newFlagModalActions button {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(60, 60, 60, 0.6);
+  color: #fff6f2;
+  font-family: var(--font-body), "Rajdhani", sans-serif;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.newFlagModalActions button:hover:not(:disabled) {
+  background: rgba(80, 80, 80, 0.8);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.newFlagModalActions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.newFlagModalActions button:last-child {
+  background: rgba(126, 19, 19, 0.6);
+  border-color: rgba(226, 81, 81, 0.5);
+  color: #ffd4d4;
+}
+
+.newFlagModalActions button:last-child:hover:not(:disabled) {
+  background: rgba(160, 30, 30, 0.8);
+  border-color: rgba(226, 81, 81, 0.8);
 }
 
 .leaderboardTrackLink {
@@ -3946,6 +4345,42 @@ h1 {
   min-width: 0;
 }
 
+.historyCardAction {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  margin: 0;
+  z-index: 32;
+}
+
+.historyCardAction .playlistQuickAddWrap {
+  display: inline-flex;
+}
+
+.historyCardPlaylistAddButton {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(138, 18, 20, 0.95), rgba(55, 6, 8, 0.95));
+  border: 1px solid rgba(255, 188, 170, 0.5);
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  z-index: 3;
+}
+
+.historyCardPlaylistAddButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .blockedVideosList {
   gap: 12px;
 }
@@ -4068,30 +4503,34 @@ h1 {
 }
 
 .favouritesCatalogGrid {
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
   justify-content: start;
 }
 
 .favouritesCardCompact {
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
 }
 
 .favouritesCardCompact h3 {
   margin: 0;
-  font-size: 1rem;
-  line-height: 1.2;
+  font-size: 0.98rem;
+  line-height: 1.18;
+  letter-spacing: 0.01em;
 }
 
 .favouritesCardCompact p {
   margin: 0;
-  font-size: 0.86rem;
-  line-height: 1.15;
-  opacity: 0.9;
+  font-size: 0.82rem;
+  line-height: 1.1;
+  opacity: 0.86;
 }
 
 .favouritesCardCompact .actionRow {
   justify-content: flex-end;
+  margin-top: 4px;
 }
 
 .favouritesCardActionsRow {
@@ -4532,11 +4971,11 @@ h1 {
   right: 8px;
   bottom: 8px;
   margin: 0;
-  z-index: 4;
+  z-index: 32;
 }
 
 .categoryVideoCardCornerActions .playlistQuickAddWrap {
-  display: contents;
+  display: inline-flex;
 }
 
 .categoryVideoHideButton {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import type { WatchHistoryEntry } from "@/lib/catalog-data";
 
@@ -10,6 +11,7 @@ type HistoryInfiniteListProps = {
   initialHistory: WatchHistoryEntry[];
   initialHasMore: boolean;
   pageSize?: number;
+  isAuthenticated?: boolean;
 };
 
 type WatchHistoryPayload = {
@@ -90,7 +92,12 @@ function getDateHeadingLabel(value: string) {
   });
 }
 
-export function HistoryInfiniteList({ initialHistory, initialHasMore, pageSize = 40 }: HistoryInfiniteListProps) {
+export function HistoryInfiniteList({
+  initialHistory,
+  initialHasMore,
+  pageSize = 40,
+  isAuthenticated = false,
+}: HistoryInfiniteListProps) {
   const [history, setHistory] = useState<WatchHistoryEntry[]>(initialHistory);
   const [filterValue, setFilterValue] = useState("");
   const [hasMore, setHasMore] = useState(initialHasMore);
@@ -327,6 +334,16 @@ export function HistoryInfiniteList({ initialHistory, initialHasMore, pageSize =
                         </p>
                       </div>
                     </Link>
+                    {isAuthenticated ? (
+                      <div className="historyCardAction">
+                        <AddToPlaylistButton
+                          videoId={entry.video.id}
+                          isAuthenticated={isAuthenticated}
+                          className="historyCardPlaylistAddButton"
+                          compact
+                        />
+                      </div>
+                    ) : null}
                   </article>
                 </li>
               ))}

@@ -11,7 +11,9 @@ export async function GET(request: NextRequest) {
   const take = Math.max(1, Math.min(200, Number(takeParam ?? "50")));
 
   try {
-    const videos = await getNewestVideos(take, skip);
+    const videos = await getNewestVideos(take, skip, {
+      enforcePlaybackAvailability: true,
+    });
 
     return NextResponse.json({
       ok: true,
