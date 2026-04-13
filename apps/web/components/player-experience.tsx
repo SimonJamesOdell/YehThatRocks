@@ -289,6 +289,7 @@ export function PlayerExperience({
   const [endedChoiceReshuffleKey, setEndedChoiceReshuffleKey] = useState(0);
   const [endedChoiceGridExiting, setEndedChoiceGridExiting] = useState(false);
   const [endedChoiceHidingIds, setEndedChoiceHidingIds] = useState<string[]>([]);
+  const [endedChoiceDismissedIds, setEndedChoiceDismissedIds] = useState<string[]>([]);
   const [playerClosedByEndOfVideo, setPlayerClosedByEndOfVideo] = useState(false);
   const [playlistChooserOpen, setPlaylistChooserOpen] = useState(false);
   const [overlayInstance, setOverlayInstance] = useState(0);
@@ -678,10 +679,10 @@ export function PlayerExperience({
       deduped.set(video.id, video);
     }
 
-    const all = [...deduped.values()];
+    const all = [...deduped.values()].filter((video) => !endedChoiceDismissedIds.includes(video.id));
     const offset = (endedChoiceReshuffleKey * maxEndedChoiceVideos) % Math.max(all.length, 1);
     return [...all.slice(offset), ...all.slice(0, offset)].slice(0, maxEndedChoiceVideos);
-  }, [queue, topFallbackVideos, currentVideo.id, endedChoiceReshuffleKey]);
+  }, [queue, topFallbackVideos, currentVideo.id, endedChoiceReshuffleKey, endedChoiceDismissedIds]);
   const footerActionsBlocked = Boolean(unavailableOverlayMessage) || showEndedChoiceOverlay || playlistChooserOpen;
   const isUpstreamConnectivityOverlay = unavailableOverlayMessage === UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE;
   const footerSelectablePlaylists = activePlaylistId
@@ -2018,6 +2019,7 @@ export function PlayerExperience({
     void onHideVideo?.(track);
     setTimeout(() => {
       setEndedChoiceHidingIds((prev) => prev.filter((id) => id !== track.id));
+      setEndedChoiceDismissedIds((prev) => (prev.includes(track.id) ? prev : [...prev, track.id]));
     }, 400);
   }
 
@@ -3427,6 +3429,11 @@ export function PlayerExperience({
                     <div
                       key={video.id}
                       className={isHiding ? "endedChoiceCardSlot endedChoiceCardSlotExiting" : "endedChoiceCardSlot"}
+                      style={{
+                        "--ended-choice-row-4": Math.floor(index / 4),
+                        "--ended-choice-row-2": Math.floor(index / 2),
+                        "--ended-choice-row-1": index,
+                      } as CSSProperties}
                     >
                       {isLoggedIn ? (
                         <button
@@ -3441,11 +3448,6 @@ export function PlayerExperience({
                       <button
                         type="button"
                         className={isSeen ? "playerEndedChoiceCard playerEndedChoiceCardSeen" : "playerEndedChoiceCard"}
-                        style={{
-                          "--ended-choice-row-4": Math.floor(index / 4),
-                          "--ended-choice-row-2": Math.floor(index / 2),
-                          "--ended-choice-row-1": index,
-                        } as CSSProperties}
                         onClick={() => handleEndedChoiceSelect(video.id)}
                       >
                         <div className="playerEndedChoiceThumbWrap">

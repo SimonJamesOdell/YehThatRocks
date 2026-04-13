@@ -87,9 +87,22 @@ export function AdminVideoEditModal({ isOpen, videoId, onClose, onSaveComplete }
     setAdminEditError(null);
     setAdminEditStatus(null);
 
+    const confidenceValue = adminEditParseConfidence.trim();
+    let parseConfidence: number | null = null;
+
+    if (confidenceValue.length > 0) {
+      const parsed = Number(confidenceValue);
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+        setAdminEditError("Parse confidence must be between 0 and 1.");
+        setIsAdminEditSaving(false);
+        return;
+      }
+      parseConfidence = parsed;
+    }
+
     try {
       const response = await fetch("/api/admin/videos", {
-        method: "POST",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: adminEditVideoRowId,
@@ -98,8 +111,7 @@ export function AdminVideoEditModal({ isOpen, videoId, onClose, onSaveComplete }
           parsedArtist: adminEditParsedArtist,
           parsedTrack: adminEditParsedTrack,
           parsedVideoType: adminEditParsedVideoType,
-          parseConfidence:
-            adminEditParseConfidence === "" ? null : Math.max(0, Math.min(1, Number(adminEditParseConfidence))),
+          parseConfidence,
           description: adminEditDescription,
         }),
       });

@@ -11,6 +11,40 @@ type AdminVideoEditButtonProps = {
 export function AdminVideoEditButton({ videoId, isAdmin }: AdminVideoEditButtonProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  function handleSaveComplete(updates: { title: string; channelTitle: string; parsedArtist: string }) {
+    const card = document.querySelector(`article[data-video-id="${videoId}"]`);
+    if (!(card instanceof HTMLElement)) {
+      return;
+    }
+
+    const nextTitle = updates.title.trim();
+    const nextChannelTitle = updates.channelTitle.trim();
+
+    if (nextTitle.length > 0) {
+      const titleEl = card.querySelector(".leaderboardMeta h3");
+      if (titleEl instanceof HTMLElement) {
+        titleEl.textContent = nextTitle;
+      }
+
+      const flagBtn = card.querySelector(".top100CardFlagButton");
+      if (flagBtn instanceof HTMLButtonElement) {
+        flagBtn.setAttribute("aria-label", `Flag ${nextTitle} for review`);
+      }
+
+      const blockBtn = card.querySelector(".searchResultBlockButton");
+      if (blockBtn instanceof HTMLButtonElement) {
+        blockBtn.setAttribute("aria-label", `Block ${nextTitle}`);
+      }
+    }
+
+    if (nextChannelTitle.length > 0) {
+      const channelEl = card.querySelector(".leaderboardMeta .artistInlineLink");
+      if (channelEl instanceof HTMLElement) {
+        channelEl.textContent = nextChannelTitle;
+      }
+    }
+  }
+
   if (!isAdmin) {
     return null;
   }
@@ -29,7 +63,12 @@ export function AdminVideoEditButton({ videoId, isAdmin }: AdminVideoEditButtonP
           <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
         </svg>
       </button>
-      <AdminVideoEditModal isOpen={isModalOpen} videoId={videoId} onClose={() => setIsModalOpen(false)} />
+      <AdminVideoEditModal
+        isOpen={isModalOpen}
+        videoId={videoId}
+        onClose={() => setIsModalOpen(false)}
+        onSaveComplete={handleSaveComplete}
+      />
     </>
   );
 }
