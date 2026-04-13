@@ -281,6 +281,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     const reportedUnavailableVideoIdRef = useRef<string | null>(null);
     const autoplaySuppressedVideoIdRef = useRef<string | null>(null);
     const autoplayRouteTransitionRef = useRef(false);
+    const autoplayRecoveryRequestIdRef = useRef(0);
     const playAttemptedAtRef = useRef<number | null>(null);
     const nextVideoIdRef = useRef<string | null>(currentVideo.id);
     const nextPlaylistIndexRef = useRef<number | null>(null);
@@ -520,6 +521,45 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
       playlistItemIndex: null,
       clearPlaylist: true,
     };
+  }
+
+  async function resolveAutoplayRecoveryTarget() {
+    try {
+      const response = await fetch(`/api/videos/top?count=${AUTOPLAY_FALLBACK_POOL_SIZE}`, {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            videos?: VideoRecord[];
+          }
+        | null;
+
+      const currentId = currentVideoRef.current.id;
+      const fallbackIds = Array.isArray(payload?.videos)
+        ? Array.from(new Set(payload.videos.map((video) => video.id))).filter((videoId) => Boolean(videoId) && videoId !== currentId)
+        : [];
+
+      if (fallbackIds.length === 0) {
+        return null;
+      }
+
+      const recentIds = Array.from(new Set([...historyStack].reverse()))
+        .filter((videoId) => videoId !== currentId)
+        .slice(0, RANDOM_NEXT_RECENT_EXCLUSION);
+      const recentIdSet = new Set(recentIds);
+      const freshIds = fallbackIds.filter((videoId) => !recentIdSet.has(videoId));
+      const selectionPool = freshIds.length > 0 ? freshIds : fallbackIds;
+      const randomIndex = Math.floor(Math.random() * selectionPool.length);
+
+      return selectionPool[randomIndex] ?? null;
+    } catch {
+      return null;
+    }
   }
 
   const resolvedNextTarget = resolveNextTarget();
@@ -1472,6 +1512,38 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
 
     if (shouldAutoAdvance && hasActivePlaylistIntent) {
       // Wait for selected playlist queue to load, then continue sequencing there.
+      return;
+    }
+
+    if (shouldAutoAdvance && !hasActivePlaylistIntent) {
+      const requestId = ++autoplayRecoveryRequestIdRef.current;
+      const endedVideoId = currentVideo.id;
+
+      void (async () => {
+        const recoveredVideoId = await resolveAutoplayRecoveryTarget();
+
+        if (requestId !== autoplayRecoveryRequestIdRef.current) {
+          return;
+        }
+
+        if (!recoveredVideoId) {
+          setShowEndedChoiceOverlay(true);
+          setShowControls(true);
+          setShowShareMenu(false);
+          return;
+        }
+
+        if (currentVideoRef.current.id !== endedVideoId) {
+          return;
+        }
+
+        navigateToVideo(recoveredVideoId, {
+          clearPlaylist: true,
+          playlistId: null,
+          playlistItemIndex: null,
+        });
+      })();
+
       return;
     }
 
