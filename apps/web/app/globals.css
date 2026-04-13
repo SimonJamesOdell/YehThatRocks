@@ -2376,6 +2376,15 @@ h1 {
   align-items: stretch;
 }
 
+.playerEndedChoiceGridExiting {
+  opacity: 0;
+  transition: opacity 260ms ease;
+}
+
+.playerEndedChoiceGridExiting > * {
+  pointer-events: none;
+}
+
 .playerEndedChoiceActions {
   display: flex;
   justify-content: space-between;

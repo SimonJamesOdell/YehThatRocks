@@ -287,6 +287,7 @@ export function PlayerExperience({
   const [showEndedChoiceOverlay, setShowEndedChoiceOverlay] = useState(false);
   const [endedChoiceFromUnavailable, setEndedChoiceFromUnavailable] = useState(false);
   const [endedChoiceReshuffleKey, setEndedChoiceReshuffleKey] = useState(0);
+  const [endedChoiceGridExiting, setEndedChoiceGridExiting] = useState(false);
   const [endedChoiceHidingIds, setEndedChoiceHidingIds] = useState<string[]>([]);
   const [playerClosedByEndOfVideo, setPlayerClosedByEndOfVideo] = useState(false);
   const [playlistChooserOpen, setPlaylistChooserOpen] = useState(false);
@@ -2005,7 +2006,11 @@ export function PlayerExperience({
   }
 
   function handleEndedChoiceReshuffle() {
-    setEndedChoiceReshuffleKey((k) => k + 1);
+    setEndedChoiceGridExiting(true);
+    setTimeout(() => {
+      setEndedChoiceReshuffleKey((k) => k + 1);
+      setEndedChoiceGridExiting(false);
+    }, 280);
   }
 
   function handleEndedChoiceHide(track: VideoRecord) {
@@ -3414,7 +3419,7 @@ export function PlayerExperience({
 
           {showEndedChoiceOverlay && endedChoiceVideos.length > 0 ? (
             <div className="playerEndedChoiceOverlay" role="dialog" aria-modal="false" aria-label="Choose the next video">
-              <div className="playerEndedChoiceGrid">
+              <div className={endedChoiceGridExiting ? "playerEndedChoiceGrid playerEndedChoiceGridExiting" : "playerEndedChoiceGrid"}>
                 {endedChoiceVideos.map((video, index) => {
                   const isSeen = seenVideoIds?.has(video.id) ?? false;
                   const isHiding = endedChoiceHidingIds.includes(video.id);
