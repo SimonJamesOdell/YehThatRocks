@@ -120,12 +120,13 @@ const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.e
 const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
 const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. Please choose another track.";
-const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstream video provider for this track. This is not a YehThatRocks failure. Please try again or choose another track.";
+const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstream video provider for this track. This is not a YehThatRocks failure. Please try the refresh button and if that does not work, choose another track.";
 const STUCK_PLAYBACK_CHECK_MS = 3200;
 const STUCK_PLAYBACK_MAX_RETRIES = 3;
 const STUCK_PLAYBACK_RETRY_DELAYS_MS = [600, 1400, 2600] as const;
 const MID_PLAYBACK_BUFFERING_CHECK_MS = 1000;
 const MID_PLAYBACK_BUFFERING_THRESHOLD_MS = 8000;
+const PLAYER_LOAD_REFRESH_HINT_DELAY_MS = 2000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
 const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
@@ -260,6 +261,7 @@ export function PlayerExperience({
   const overlayTimeoutRef = useRef<number | null>(null);
   const unavailableOverlayTimeoutRef = useRef<number | null>(null);
   const unavailableAutoActionTimeoutRef = useRef<number | null>(null);
+  const playerLoadRefreshHintTimeoutRef = useRef<number | null>(null);
   const initialRequestedVideoIdRef = useRef<string | null>(requestedVideoId);
   const hasLeftInitialRequestedVideoRef = useRef(false);
   const isBootstrappingHistoryRef = useRef(true);
@@ -275,6 +277,8 @@ export function PlayerExperience({
   const [showFooterPlaylistMenu, setShowFooterPlaylistMenu] = useState(false);
   const [footerPlaylistMenuLoading, setFooterPlaylistMenuLoading] = useState(false);
   const [footerPlaylistMenuPlaylists, setFooterPlaylistMenuPlaylists] = useState<PlaylistSummary[]>([]);
+  const [footerOpenAfterSelect, setFooterOpenAfterSelect] = useState(false);
+  const [footerShowExistingList, setFooterShowExistingList] = useState(false);
   const [hideCurrentVideoState, setHideCurrentVideoState] = useState<"idle" | "saving">("idle");
   const [historyStack, setHistoryStack] = useState<string[]>([]);
   const [showNowPlayingOverlay, setShowNowPlayingOverlay] = useState(false);
@@ -289,6 +293,8 @@ export function PlayerExperience({
   const [overlayInstance, setOverlayInstance] = useState(0);
   const [playerHostMode, setPlayerHostMode] = useState<"nocookie" | "youtube">("nocookie");
   const [isPlayerReady, setIsPlayerReady] = useState(false);
+  const [showPlayerRefreshHint, setShowPlayerRefreshHint] = useState(false);
+  const [playerReloadNonce, setPlayerReloadNonce] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
@@ -676,6 +682,10 @@ export function PlayerExperience({
     return [...all.slice(offset), ...all.slice(0, offset)].slice(0, maxEndedChoiceVideos);
   }, [queue, topFallbackVideos, currentVideo.id, endedChoiceReshuffleKey]);
   const footerActionsBlocked = Boolean(unavailableOverlayMessage) || showEndedChoiceOverlay || playlistChooserOpen;
+  const isUpstreamConnectivityOverlay = unavailableOverlayMessage === UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE;
+  const footerSelectablePlaylists = activePlaylistId
+    ? footerPlaylistMenuPlaylists.filter((playlist) => playlist.id !== activePlaylistId)
+    : footerPlaylistMenuPlaylists;
   // Also suppress the player on overlay pages when the user is waiting to choose the next video
   // (video ended with autoplay off). On "/", the choice overlay is shown instead.
   const suppressUnavailablePlaybackSurface = endedChoiceFromUnavailable || Boolean(unavailableOverlayMessage) || playerClosedByEndOfVideo || (showEndedChoiceOverlay && pathname !== "/");
@@ -891,6 +901,13 @@ export function PlayerExperience({
       midPlaybackBufferingCheckTimeoutRef.current = null;
     }
     midPlaybackBufferingStartedAtRef.current = null;
+  }
+
+  function clearPlayerLoadRefreshHintTimer() {
+    if (playerLoadRefreshHintTimeoutRef.current !== null) {
+      window.clearTimeout(playerLoadRefreshHintTimeoutRef.current);
+      playerLoadRefreshHintTimeoutRef.current = null;
+    }
   }
 
   function scheduleStuckPlaybackWatchdog(trigger: string) {
@@ -1288,6 +1305,7 @@ export function PlayerExperience({
   useEffect(() => {
     if (showEndedChoiceOverlay) {
       setShowFooterPlaylistMenu(false);
+      setFooterShowExistingList(false);
     }
   }, [showEndedChoiceOverlay]);
 
@@ -1435,6 +1453,27 @@ export function PlayerExperience({
       });
       return false;
     }
+  }
+
+  function handleReloadPlayerIframe() {
+    clearStuckPlaybackRetryTimer();
+    clearStuckPlaybackWatchdogTimer();
+    clearMidPlaybackBufferingCheck();
+    clearPlayerLoadRefreshHintTimer();
+    setShowPlayerRefreshHint(false);
+
+    if (playerRef.current && typeof playerRef.current.destroy === "function") {
+      playerRef.current.destroy();
+      playerRef.current = null;
+    }
+
+    setIsPlayerReady(false);
+    setIsPlaying(false);
+    setHasPlaybackStarted(false);
+    hasPlaybackStartedRef.current = false;
+    playAttemptedAtRef.current = null;
+    stuckPlaybackRetryCountRef.current = 0;
+    setPlayerReloadNonce((currentNonce) => currentNonce + 1);
   }
 
   useEffect(() => {
@@ -1781,8 +1820,26 @@ export function PlayerExperience({
       cancelled = true;
       clearStuckPlaybackRetryTimer();
       clearStuckPlaybackWatchdogTimer();
+      clearMidPlaybackBufferingCheck();
     };
-  }, [currentVideo.id, playerHostMode]);
+  }, [currentVideo.id, playerHostMode, playerReloadNonce]);
+
+  useEffect(() => {
+    clearPlayerLoadRefreshHintTimer();
+
+    if (!isPlayerReady) {
+      playerLoadRefreshHintTimeoutRef.current = window.setTimeout(() => {
+        playerLoadRefreshHintTimeoutRef.current = null;
+        setShowPlayerRefreshHint(true);
+      }, PLAYER_LOAD_REFRESH_HINT_DELAY_MS);
+    } else {
+      setShowPlayerRefreshHint(false);
+    }
+
+    return () => {
+      clearPlayerLoadRefreshHintTimer();
+    };
+  }, [isPlayerReady, currentVideo.id, playerReloadNonce]);
 
   useEffect(() => {
     // Reset the end-of-video closure state when a new video is selected
@@ -2109,27 +2166,10 @@ export function PlayerExperience({
       return;
     }
 
-    if (activePlaylistId) {
-      setFooterPlaylistAddState("saving");
-
-      try {
-        const ok = await addCurrentTrackToPlaylist(activePlaylistId);
-        if (ok) {
-          markFooterPlaylistAdded();
-          return;
-        }
-        setFooterPlaylistAddState("error");
-      } catch {
-        setFooterPlaylistAddState("error");
-      }
-
-      return;
-    }
-
     const shouldOpen = !showFooterPlaylistMenu;
     setShowFooterPlaylistMenu(shouldOpen);
-    if (shouldOpen) {
-      void loadFooterPlaylistMenu();
+    if (!shouldOpen) {
+      setFooterShowExistingList(false);
     }
   }
 
@@ -2145,6 +2185,7 @@ export function PlayerExperience({
       if (ok) {
         markFooterPlaylistAdded();
         setShowFooterPlaylistMenu(false);
+        setFooterShowExistingList(false);
 
         window.dispatchEvent(new CustomEvent(RIGHT_RAIL_MODE_EVENT, {
           detail: {
@@ -2154,15 +2195,60 @@ export function PlayerExperience({
           },
         }));
 
-        const params = new URLSearchParams(searchParams.toString());
-        params.set("v", currentVideo.id);
-        params.set("resume", "1");
-        params.set("pl", playlistId);
-        params.delete("pli");
-        router.replace(`${pathname}?${params.toString()}`);
+        if (footerOpenAfterSelect) {
+          const params = new URLSearchParams(searchParams.toString());
+          params.set("v", currentVideo.id);
+          params.set("resume", "1");
+          params.set("pl", playlistId);
+          params.delete("pli");
+          router.replace(`${pathname}?${params.toString()}`);
+        }
         return;
       }
       setFooterPlaylistAddState("error");
+    } catch {
+      setFooterPlaylistAddState("error");
+    }
+  }
+
+  async function handleFooterCreatePlaylistNoOpen() {
+    if (footerPlaylistAddState === "saving") {
+      return;
+    }
+
+    setFooterPlaylistAddState("saving");
+
+    try {
+      const createResponse = await fetch("/api/playlists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: buildGeneratedPlaylistName(), videoIds: [] }),
+      });
+
+      if (!createResponse.ok) {
+        setFooterPlaylistAddState("error");
+        return;
+      }
+
+      const created = (await createResponse.json().catch(() => null)) as { id?: string } | null;
+      if (!created?.id) {
+        setFooterPlaylistAddState("error");
+        return;
+      }
+
+      const added = await addCurrentTrackToPlaylist(created.id);
+      if (!added) {
+        setFooterPlaylistAddState("error");
+        return;
+      }
+
+      markFooterPlaylistAdded();
+      setShowFooterPlaylistMenu(false);
+      setFooterShowExistingList(false);
+
+      window.dispatchEvent(new CustomEvent(RIGHT_RAIL_MODE_EVENT, {
+        detail: { mode: "playlist", playlistId: created.id, trackId: currentVideo.id },
+      }));
     } catch {
       setFooterPlaylistAddState("error");
     }
@@ -3086,6 +3172,25 @@ export function PlayerExperience({
                     <span />
                   </div>
                   <p>Loading player...</p>
+                  {showPlayerRefreshHint ? (
+                    <div className="playerBootRefreshWrap">
+                      <button
+                        type="button"
+                        className="playerBootRefreshBtn"
+                        onClick={handleReloadPlayerIframe}
+                        aria-label="Reload player"
+                        title="Reload player"
+                      >
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <polyline points="23 4 23 10 17 10" />
+                          <polyline points="1 20 1 14 7 14" />
+                          <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10" />
+                          <path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14" />
+                        </svg>
+                      </button>
+                      <span className="playerBootRefreshLabel">Reload player</span>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -3286,6 +3391,15 @@ export function PlayerExperience({
             <div className="videoUnavailableOverlay" role="alertdialog" aria-modal="true" aria-label="Video unavailable">
               <p>Apologies</p>
               <strong>{unavailableOverlayMessage}</strong>
+              {isUpstreamConnectivityOverlay ? (
+                <button
+                  type="button"
+                  className="videoUnavailableOverlayRefresh"
+                  onClick={handleReloadPlayerIframe}
+                >
+                  Refresh player
+                </button>
+              ) : null}
               {unavailableOverlayRequiresOk ? (
                 <button
                   type="button"
@@ -3603,7 +3717,7 @@ export function PlayerExperience({
                   type="button"
                   className="primaryActionIconButton primaryActionPlaylistButton"
                   aria-label="Add to playlist"
-                  title={activePlaylistId ? "Add to current playlist" : "Add to playlist"}
+                  title="Add to playlist"
                   onClick={() => {
                     void handleFooterPlaylistButtonClick();
                   }}
@@ -3613,6 +3727,31 @@ export function PlayerExperience({
                 </button>
                 {showFooterPlaylistMenu ? (
                   <div className="primaryActionPlaylistMenu" role="menu" aria-label="Choose playlist">
+                    <div className="playlistQuickAddMenuHeader">
+                      <strong>Add to...</strong>
+                    </div>
+                    {activePlaylistId ? (
+                      <button
+                        type="button"
+                        className="primaryActionPlaylistMenuAction"
+                        onClick={() => {
+                          void handleFooterPlaylistSelect(activePlaylistId);
+                        }}
+                        disabled={footerPlaylistAddState === "saving" || footerActionsBlocked}
+                      >
+                        Current Playlist
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="primaryActionPlaylistMenuAction"
+                      onClick={() => {
+                        void handleFooterCreatePlaylistNoOpen();
+                      }}
+                      disabled={footerPlaylistAddState === "saving" || footerActionsBlocked}
+                    >
+                      New playlist
+                    </button>
                     <button
                       type="button"
                       className="primaryActionPlaylistMenuAction"
@@ -3621,29 +3760,55 @@ export function PlayerExperience({
                       }}
                       disabled={footerPlaylistAddState === "saving" || footerActionsBlocked}
                     >
-                      Add to new playlist
+                      New playlist then open
                     </button>
-                    {footerPlaylistMenuLoading ? (
-                      <p className="primaryActionPlaylistMenuStatus">Loading playlists...</p>
-                    ) : footerPlaylistMenuPlaylists.length === 0 ? (
-                      <p className="primaryActionPlaylistMenuStatus">No playlists yet</p>
-                    ) : (
-                      <div className="primaryActionPlaylistMenuList">
-                        {footerPlaylistMenuPlaylists.map((playlist) => (
-                          <button
-                            key={playlist.id}
-                            type="button"
-                            className="primaryActionPlaylistMenuAction"
-                            onClick={() => {
-                              void handleFooterPlaylistSelect(playlist.id);
-                            }}
-                            disabled={footerPlaylistAddState === "saving" || footerActionsBlocked}
-                          >
-                            {playlist.name}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    <button
+                      type="button"
+                      className="primaryActionPlaylistMenuAction"
+                      onClick={() => {
+                        setFooterOpenAfterSelect(false);
+                        setFooterShowExistingList(true);
+                        void loadFooterPlaylistMenu();
+                      }}
+                      disabled={footerPlaylistAddState === "saving" || footerActionsBlocked}
+                    >
+                      Existing playlist
+                    </button>
+                    <button
+                      type="button"
+                      className="primaryActionPlaylistMenuAction"
+                      onClick={() => {
+                        setFooterOpenAfterSelect(true);
+                        setFooterShowExistingList(true);
+                        void loadFooterPlaylistMenu();
+                      }}
+                      disabled={footerPlaylistAddState === "saving" || footerActionsBlocked}
+                    >
+                      Existing playlist then open
+                    </button>
+                    {footerShowExistingList ? (
+                      footerPlaylistMenuLoading ? (
+                        <p className="primaryActionPlaylistMenuStatus">Loading playlists...</p>
+                      ) : footerSelectablePlaylists.length === 0 ? (
+                        <p className="primaryActionPlaylistMenuStatus">No playlists yet</p>
+                      ) : (
+                        <div className="primaryActionPlaylistMenuList">
+                          {footerSelectablePlaylists.map((playlist) => (
+                            <button
+                              key={playlist.id}
+                              type="button"
+                              className="primaryActionPlaylistMenuAction"
+                              onClick={() => {
+                                void handleFooterPlaylistSelect(playlist.id);
+                              }}
+                              disabled={footerPlaylistAddState === "saving" || footerActionsBlocked}
+                            >
+                              {playlist.name}
+                            </button>
+                          ))}
+                        </div>
+                      )
+                    ) : null}
                   </div>
                 ) : null}
               </div>

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getSearchRankingSignals } from "@/lib/search-flag-data";
 import {
   artists as seedArtists,
   genres as seedGenres,
@@ -3914,6 +3915,29 @@ export async function searchCatalog(query: string) {
         LIMIT 50
       `;
     }
+
+    const rankingSignals = await getSearchRankingSignals({
+      query: normalized,
+      candidateVideoIds: videos.map((video) => video.videoId),
+    });
+
+    const rankedVideos = videos
+      .filter((video) => !rankingSignals.suppressedVideoIds.has(video.videoId))
+      .map((video, index) => ({
+        video,
+        index,
+        penalty: rankingSignals.penaltyByVideoId.get(video.videoId) ?? 0,
+      }))
+      .sort((left, right) => {
+        if (left.penalty !== right.penalty) {
+          return left.penalty - right.penalty;
+        }
+
+        return left.index - right.index;
+      })
+      .map((entry) => entry.video);
+
+    videos = rankedVideos;
 
     return {
       videos: videos.length > 0 ? videos.map(mapVideo) : searchSeedCatalog(query).videos,
