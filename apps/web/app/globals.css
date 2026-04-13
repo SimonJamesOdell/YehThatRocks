@@ -4145,6 +4145,46 @@ h1 {
   top: 40px;
 }
 
+.trackCard.leaderboardCard .searchResultAdminEditBtn {
+  appearance: none;
+  position: absolute;
+  top: 72px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(34, 34, 34, 0.97), rgba(8, 8, 8, 0.97));
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  z-index: 6;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.top100CardCornerActions:hover .searchResultAdminEditBtn,
+.top100CardCornerActions:focus-within .searchResultAdminEditBtn {
+  opacity: 1;
+}
+
+.searchResultAdminEditBtn:hover:not(:disabled) {
+  filter: brightness(1.2);
+}
+
+.searchResultAdminEditBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .searchResultCardRemoving {
   pointer-events: none;
   animation: searchResultFadeOut 260ms ease forwards;
