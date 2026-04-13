@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { VIDEO_QUALITY_FLAG_REASONS } from "@/lib/video-quality-flags";
+import { SEARCH_FLAG_REASONS } from "@/lib/search-flags";
 
 export const favouriteMutationSchema = z.object({
   videoId: z.string().min(1),
@@ -80,4 +81,19 @@ export const hiddenVideoMutationSchema = z.object({
 export const videoQualityFlagSchema = z.object({
   videoId: z.string().trim().regex(/^[A-Za-z0-9_-]{11}$/),
   reason: z.enum(VIDEO_QUALITY_FLAG_REASONS),
+});
+
+export const searchFlagSchema = z.object({
+  videoId: z.string().trim().regex(/^[A-Za-z0-9_-]{11}$/),
+  query: z.string().trim().min(1).max(255),
+  reason: z.enum(SEARCH_FLAG_REASONS),
+  correction: z.string().trim().max(255).optional(),
+}).superRefine((value, ctx) => {
+  if ((value.reason === "wrong-artist" || value.reason === "wrong-trackname") && value.correction && value.correction.trim().length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["correction"],
+      message: "Correction must not be empty when provided",
+    });
+  }
 });

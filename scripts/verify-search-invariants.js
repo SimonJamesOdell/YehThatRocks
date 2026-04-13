@@ -8,8 +8,11 @@ const ROOT = process.cwd();
 const files = {
   searchPage: path.join(ROOT, "apps/web/app/(shell)/search/page.tsx"),
   searchRoute: path.join(ROOT, "apps/web/app/api/search/route.ts"),
+  searchFlagsRoute: path.join(ROOT, "apps/web/app/api/search-flags/route.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
+  searchFlagData: path.join(ROOT, "apps/web/lib/search-flag-data.ts"),
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic.tsx"),
+  searchFlagButton: path.join(ROOT, "apps/web/components/search-flag-button.tsx"),
   globalCss: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
@@ -37,8 +40,11 @@ function main() {
 
   const searchPageSource = read(files.searchPage);
   const searchRouteSource = read(files.searchRoute);
+  const searchFlagsRouteSource = read(files.searchFlagsRoute);
   const catalogDataSource = read(files.catalogData);
+  const searchFlagDataSource = read(files.searchFlagData);
   const shellDynamicSource = read(files.shellDynamic);
+  const searchFlagButtonSource = read(files.searchFlagButton);
   const globalCssSource = read(files.globalCss);
 
   // --- Search page: server-side rendering ---
@@ -54,6 +60,14 @@ function main() {
   assertContains(searchPageSource, "const isSeen = seenVideoIds.has(video.id);", "Search page computes seen status per video", failures);
   assertContains(searchPageSource, "top100CardSeen", "Search page applies seen-card darkening class used by New/Top100", failures);
   assertContains(searchPageSource, 'videoSeenBadge videoSeenBadgeOverlay', "Search page renders seen badge overlay on thumbnails", failures);
+  assertContains(searchPageSource, 'import { SearchResultBlockButton } from "@/components/search-result-block-button";', "Search page imports the block button", failures);
+  assertContains(searchPageSource, 'import { SearchFlagButton } from "@/components/search-flag-button";', "Search page imports the search flag button", failures);
+  assertContains(searchPageSource, 'import { SearchSeenToggle } from "@/components/search-seen-toggle";', "Search page imports the seen toggle", failures);
+  assertContains(searchPageSource, "const suppressedVideoIds = await getSuppressedSearchVideoIds({ userId: user?.id ?? null, query });", "Search page loads query-scoped suppressed ids", failures);
+  assertContains(searchPageSource, ').filter((video) => !suppressedVideoIds.has(video.id));', "Search page filters suppressed videos from results", failures);
+  assertContains(searchPageSource, '<SearchSeenToggle trackStackId="search-video-grid"', "Search page renders seen toggle for video results", failures);
+  assertContains(searchPageSource, '<SearchResultBlockButton videoId={video.id} title={video.title} />', "Search page renders block button on video cards", failures);
+  assertContains(searchPageSource, '<SearchFlagButton videoId={video.id} title={video.title} searchQuery={query} />', "Search page renders flag button with current query context", failures);
 
   // Results: videos linked with resume flag
   assertContains(searchPageSource, "/?v=${video.id}&resume=1", "Search page video links include resume=1 flag", failures);
@@ -73,6 +87,14 @@ function main() {
   assertContains(searchRouteSource, "query,", "Search API response includes query echo", failures);
   assertContains(searchRouteSource, "...results", "Search API spreads catalog results into response", failures);
 
+  // --- Search flags API route: authenticated, query-aware moderation ---
+  assertContains(searchFlagsRouteSource, "requireApiAuth", "Search flags route requires authentication", failures);
+  assertContains(searchFlagsRouteSource, "verifySameOrigin", "Search flags route enforces same-origin CSRF protection", failures);
+  assertContains(searchFlagsRouteSource, "searchFlagSchema.safeParse", "Search flags route validates request body with search flag schema", failures);
+  assertContains(searchFlagsRouteSource, "recordSearchFlag", "Search flags route persists submitted flags", failures);
+  assertContains(searchFlagsRouteSource, "getSearchFlagConsensus", "Search flags route checks prior matching flags before acting", failures);
+  assertContains(searchFlagsRouteSource, "appliedImmediately", "Search flags route reports whether the new flag triggered automatic action", failures);
+
   // --- searchCatalog data logic: full-text boolean mode ---
   assertContains(catalogDataSource, "BOOLEAN MODE", "searchCatalog uses MySQL full-text BOOLEAN MODE for prefix matching", failures);
   assertContains(catalogDataSource, "FT_MIN_WORD_LEN", "searchCatalog filters short words below ft_min_word_len before building fulltext query", failures);
@@ -91,10 +113,24 @@ function main() {
   // Fallback to seed data on DB failure
   assertContains(catalogDataSource, "searchSeedCatalog(query)", "searchCatalog falls back to seed catalog when DB query fails", failures);
   assertContains(catalogDataSource, "console.error(\"[searchCatalog] query failed, falling back to seed:\"", "searchCatalog logs DB query failure before falling back", failures);
+  assertContains(catalogDataSource, "getSearchRankingSignals({", "searchCatalog consults stored search-flag signals before returning results", failures);
+  assertContains(catalogDataSource, "rankingSignals.suppressedVideoIds.has(video.videoId)", "searchCatalog suppresses consensus-bad videos for the current query", failures);
+  assertContains(catalogDataSource, "rankingSignals.penaltyByVideoId.get(video.videoId)", "searchCatalog demotes repeatedly-flagged videos in ranking", failures);
 
   // Partial fallback: seed used only when DB returns empty results
   assertContains(catalogDataSource, "videos.length > 0 ? videos.map(mapVideo) : searchSeedCatalog(query).videos", "searchCatalog falls back to seed videos when DB returns zero results", failures);
   assertContains(catalogDataSource, "artists.length > 0 ? artists.map(mapArtist) : searchSeedCatalog(query).artists", "searchCatalog falls back to seed artists when DB returns zero results", failures);
+
+  // --- Search flag persistence and UI wiring ---
+  assertContains(searchFlagDataSource, "CREATE TABLE IF NOT EXISTS search_result_flags", "Search flag data layer creates persistence table on demand", failures);
+  assertContains(searchFlagDataSource, "normalized_query", "Search flag data layer stores flags against normalized query text", failures);
+  assertContains(searchFlagDataSource, "SEARCH_FLAG_MIN_USERS_FOR_ACTION", "Search flag data layer uses a consensus threshold before automatic action", failures);
+  assertContains(searchFlagDataSource, "getSearchRankingSignals", "Search flag data layer exposes ranking penalties and suppressions", failures);
+  assertContains(searchFlagButtonSource, 'fetch("/api/search-flags"', "Search flag button posts to the dedicated search flags API", failures);
+  assertContains(searchFlagButtonSource, "query: searchQuery", "Search flag button submits the active search query with the flag", failures);
+  assertContains(searchFlagButtonSource, "searchResultCardRemoving", "Search flag button removes the card immediately after successful flagging", failures);
+  assertContains(globalCssSource, ".searchResultCardRemoving", "Search UI includes removal animation styling", failures);
+  assertContains(globalCssSource, ".searchResultBlockButton", "Search UI includes dedicated block button styling", failures);
 
   // Result limit: capped at 50
   assertContains(catalogDataSource, "LIMIT 50", "searchCatalog caps video results to 50 per query", failures);

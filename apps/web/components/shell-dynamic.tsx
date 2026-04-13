@@ -335,7 +335,7 @@ function ShellDynamicInner({
   const router = useRouter();
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
-  const requestedVideoId = searchParams.get("v");
+  const requestedVideoId = searchParams.get("v") || null;
   const activePlaylistId = searchParams.get("pl");
   const initialHydratedRelatedVideos = dedupeRelatedRailVideos(dedupeVideoList(initialRelatedVideos), initialVideo.id);
 
@@ -485,7 +485,8 @@ function ShellDynamicInner({
   const isPlayerWidthOverlayRoute =
     pathname === "/new"
     || pathname === "/top100"
-    || pathname === "/history";
+    || pathname === "/history"
+    || pathname === "/search";
   const overlayPanelClassName = [
     "favouritesBlind",
     disableOverlayDropAnimation ? "favouritesBlindNoDrop" : "",
@@ -3251,7 +3252,7 @@ function ShellDynamicInner({
                 <input
                   id="search"
                   type="search"
-                  placeholder="Search rock, metal, artists, playlists..."
+                  placeholder="Search rock, metal, artists..."
                   required
                   autoComplete="off"
                   value={searchValue}

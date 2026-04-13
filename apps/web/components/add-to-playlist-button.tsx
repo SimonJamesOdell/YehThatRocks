@@ -407,6 +407,30 @@ export function AddToPlaylistButton({
     });
   }
 
+  function handleAddToCurrentPlaylist() {
+    if (isPending || !activePlaylistId) {
+      return;
+    }
+
+    setMenuOpen(false);
+    startTransition(async () => {
+      try {
+        const ok = await addVideoToPlaylist(activePlaylistId);
+        if (!ok) {
+          return;
+        }
+
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(LAST_PLAYLIST_ID_KEY, activePlaylistId);
+        }
+
+        markAdded("Added");
+      } catch {
+        // Silent failure for card-level quick-add actions.
+      }
+    });
+  }
+
   function handleChooseExistingPlaylist(playlistId: string) {
     if (isPending) {
       return;
@@ -490,6 +514,16 @@ export function AddToPlaylistButton({
                 ×
               </button>
             </div>
+            {activePlaylistId ? (
+              <button
+                type="button"
+                className="playlistQuickAddMenuAction"
+                onClick={handleAddToCurrentPlaylist}
+                disabled={isPending}
+              >
+                Current Playlist
+              </button>
+            ) : null}
             <button
               type="button"
               className="playlistQuickAddMenuAction"
