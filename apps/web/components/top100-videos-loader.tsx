@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
+import { CloseLink } from "@/components/close-link";
 import { Top100VideoLink } from "@/components/top100-video-link";
 
 type TopVideosPayload = {
@@ -73,7 +74,19 @@ export function Top100VideosLoader({
   const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(() => videos.length === 0);
   const [error, setError] = useState<string | null>(null);
-  const seenVideoIdSet = new Set(seenVideoIds);
+  const [hideSeen, setHideSeen] = useState(false);
+  const seenVideoIdSet = useMemo(() => new Set(seenVideoIds), [seenVideoIds]);
+  const visibleVideos = useMemo(
+    () => (hideSeen ? videos.filter((video) => !seenVideoIdSet.has(video.id)) : videos),
+    [hideSeen, seenVideoIdSet, videos],
+  );
+  const videoRankById = useMemo(() => {
+    const rankMap = new Map<string, number>();
+    videos.forEach((video, index) => {
+      rankMap.set(video.id, index);
+    });
+    return rankMap;
+  }, [videos]);
 
   const handleHideVideo = async (track: VideoRecord) => {
     if (!isAuthenticated || hidingVideoIds.includes(track.id)) {
@@ -199,18 +212,38 @@ export function Top100VideosLoader({
   }
 
   return (
-    <div className="trackStack spanTwoColumns">
-      {videos.map((track, index) => (
+    <>
+      <div className="favouritesBlindBar">
+        <div className="newPageHeaderLeft">
+          <strong>Top 100</strong>
+          <button
+            type="button"
+            className={`newPageSeenToggle${hideSeen ? " newPageSeenToggleActive" : ""}`}
+            onClick={() => setHideSeen((value) => !value)}
+            aria-pressed={hideSeen}
+          >
+            {hideSeen ? "Showing unseen only" : "Show unseen only"}
+          </button>
+        </div>
+        <CloseLink />
+      </div>
+
+      <div className="trackStack spanTwoColumns">
+      {visibleVideos.map((track, index) => (
         <Top100VideoLink
           key={track.id}
           track={track}
-          index={index}
+          index={videoRankById.get(track.id) ?? index}
           isAuthenticated={isAuthenticated}
           isSeen={seenVideoIdSet.has(track.id)}
           onHideVideo={handleHideVideo}
           isHidePending={hidingVideoIds.includes(track.id)}
         />
       ))}
+      {visibleVideos.length === 0 ? (
+        <div style={{ padding: "20px", textAlign: "center", color: "#999" }}>No unseen videos in Top 100 right now.</div>
+      ) : null}
     </div>
+    </>
   );
 }

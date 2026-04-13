@@ -6,6 +6,21 @@ import { verifySameOrigin } from "@/lib/csrf";
 import { signAccessToken, signRefreshToken, verifyToken } from "@/lib/auth-jwt";
 import { rotateRefreshSession } from "@/lib/auth-sessions";
 
+function shouldClearCookiesOnRefreshFailure(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message;
+  return (
+    message === "invalid signature"
+    || message === "token expired"
+    || message === "Session not found"
+    || message === "Session expired"
+    || message === "Refresh token reuse detected"
+  );
+}
+
 export async function POST(request: NextRequest) {
   const requestMeta = getRequestMetadata(request.headers);
   const csrfError = verifySameOrigin(request);
@@ -43,15 +58,24 @@ export async function POST(request: NextRequest) {
       ...requestMeta,
     });
     return response;
-  } catch {
+  } catch (error) {
+    const shouldClearCookies = shouldClearCookiesOnRefreshFailure(error);
+
     await recordAuthAudit({
       action: "refresh",
       success: false,
-      detail: "Refresh failed",
+      detail: shouldClearCookies ? "Refresh failed (invalid token/session)" : "Refresh failed (transient)",
       ...requestMeta,
     });
-    const response = NextResponse.json({ error: "Invalid refresh token" }, { status: 401 });
-    clearAuthCookies(response);
+
+    const response = shouldClearCookies
+      ? NextResponse.json({ error: "Invalid refresh token" }, { status: 401 })
+      : NextResponse.json({ error: "Refresh temporarily unavailable" }, { status: 503 });
+
+    if (shouldClearCookies) {
+      clearAuthCookies(response);
+    }
+
     return response;
   }
 }

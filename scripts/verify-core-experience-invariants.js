@@ -79,6 +79,19 @@ function main() {
   assertContains(playerExperienceSource, "const shouldAutoAdvance =", "Player computes auto-advance using playlist/deep-link/autoplay guard", failures);
   assertContains(playerExperienceSource, "const [showEndedChoiceOverlay, setShowEndedChoiceOverlay] = useState(false);", "Player tracks autoplay-off end chooser overlay state", failures);
   assertContains(playerExperienceSource, "setShowEndedChoiceOverlay(true);", "Player opens chooser overlay when autoplay-off playback ends", failures);
+
+  // End-of-video docked player close behaviour invariants.
+  // When autoplay is off and the video ends in the docked position the player
+  // should silently close rather than show the choice overlay over the dock.
+  // When the user returns to "/" the player is restored and the choice overlay
+  // is shown. While an overlay page is open the dock must remain hidden.
+  assertContains(playerExperienceSource, "const [playerClosedByEndOfVideo, setPlayerClosedByEndOfVideo] = useState(false);", "Player tracks end-of-video closure state for docked mode", failures);
+  assertContains(playerExperienceSource, "|| playerClosedByEndOfVideo || (showEndedChoiceOverlay && pathname !== \"/\")", "Player suppresses dock surface when closed by EOV or choice overlay is pending on an overlay page", failures);
+  assertContains(playerExperienceSource, "// When autoplay is off and player is in docked position, close the player instead of showing overlay", "triggerEndOfVideoAction documents docked close logic", failures);
+  assertContains(playerExperienceSource, "setPlayerClosedByEndOfVideo(true);", "triggerEndOfVideoAction silently closes docked player on video end", failures);
+  assertContains(playerExperienceSource, "setPlayerClosedByEndOfVideo(false);", "Player resets EOV closure state when a new video is selected", failures);
+  assertContains(playerExperienceSource, "setPlayerClosedByEndOfVideo((wasClosed) => {", "Player restores dock and conditionally shows choice overlay when returning to home route", failures);
+  assertContains(playerExperienceSource, "if (wasClosed) {", "Player shows choice overlay on home-route restore only if player was previously closed by EOV", failures);
   assertNotContains(playerExperienceSource, "void reportWatchEvent(1, \"qualified\", 0, 0);", "Player must not record watch history before real playback progress", failures);
   assertContains(playerExperienceSource, "const hasPlaybackEvidence = hasPlaybackStartedRef.current || positionSec > 0 || progressPercent > 0;", "Player records watch history only with real playback evidence", failures);
   assertContains(playerExperienceSource, "className=\"playerEndedChoiceOverlay\"", "Player renders chooser overlay container", failures);
@@ -136,7 +149,17 @@ function main() {
   assertContains(shellDynamicSource, "videoId: chatMode === \"video\" ? currentVideo.id : undefined,", "Shell sends video chat context when posting", failures);
   assertContains(shellDynamicSource, "node.scrollTop = node.scrollHeight;", "Shell auto-scrolls chat list to latest message", failures);
   assertContains(shellDynamicSource, 'fetch(`/api/videos/share-preview?v=${encodeURIComponent(videoId)}`)', "Shared chat cards resolve preview metadata via share-preview API", failures);
+  assertContains(shellDynamicSource, "const REQUEST_VIDEO_REPLAY_EVENT = \"ytr:request-video-replay\";", "Shell defines replay-request event constant for shared chat cards", failures);
+  assertContains(shellDynamicSource, "window.dispatchEvent(new CustomEvent(REQUEST_VIDEO_REPLAY_EVENT, {", "Shell dispatches replay request when shared chat card is clicked", failures);
   assertContains(shellDynamicSource, 'const routeLoadingLabel = pathname.endsWith("/wiki") ? "Loading wiki" : "Loading video";', "Shell loading fallback derives wiki-aware copy", failures);
+
+  // Shared-chat same-video replay invariants.
+  assertContains(playerExperienceSource, "const REQUEST_VIDEO_REPLAY_EVENT = \"ytr:request-video-replay\";", "Player defines replay-request event constant", failures);
+  assertContains(playerExperienceSource, "window.addEventListener(REQUEST_VIDEO_REPLAY_EVENT, handleReplayRequest);", "Player subscribes to shared replay requests", failures);
+  assertContains(playerExperienceSource, "if (!requestedVideoId || requestedVideoId !== currentVideoRef.current.id) {", "Player ignores replay requests for non-current videos", failures);
+  assertContains(playerExperienceSource, "if (!showEndedChoiceOverlay) {", "Player only handles same-video replay while ended chooser is visible", failures);
+  assertContains(playerExperienceSource, "handleEndedChoiceWatchAgain();", "Player reuses watch-again flow for replay requests", failures);
+  assertContains(playerExperienceSource, "if (!playerClosedByEndOfVideo) {", "Player keeps runtime instance alive when surface is closed by end-of-video state", failures);
 
   // Chat API invariants.
   assertContains(chatRouteSource, "const authResult = await requireApiAuth(request);", "Chat REST API requires authenticated session", failures);

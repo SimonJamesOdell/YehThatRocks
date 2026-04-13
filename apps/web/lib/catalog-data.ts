@@ -237,6 +237,50 @@ function truncate(value: string, maxLength: number) {
   return value.length > maxLength ? value.slice(0, maxLength) : value;
 }
 
+function scoreLikelyMojibake(value: string) {
+  const markerCount = (value.match(/(?:Ã.|Â.|â.|Ð.|Ñ.|┬.|�)/g) ?? []).length;
+  const replacementCount = (value.match(/�/g) ?? []).length;
+  const boxDrawingCount = (value.match(/[┬▒░]/g) ?? []).length;
+  return markerCount * 3 + replacementCount * 4 + boxDrawingCount * 2;
+}
+
+function normalizePossiblyMojibakeText(value: string) {
+  const input = value.trim();
+  if (!input) {
+    return input;
+  }
+
+  const originalScore = scoreLikelyMojibake(input);
+  if (originalScore === 0) {
+    return input;
+  }
+
+  const candidates = new Set<string>();
+  const repairedOnce = Buffer.from(input, "latin1").toString("utf8").trim();
+  if (repairedOnce && repairedOnce !== input) {
+    candidates.add(repairedOnce);
+  }
+
+  const repairedTwice = Buffer.from(repairedOnce, "latin1").toString("utf8").trim();
+  if (repairedTwice && repairedTwice !== input) {
+    candidates.add(repairedTwice);
+  }
+
+  let best = input;
+  let bestScore = originalScore;
+
+  for (const candidate of candidates) {
+    const candidateScore = scoreLikelyMojibake(candidate);
+    if (candidateScore < bestScore) {
+      best = candidate;
+      bestScore = candidateScore;
+    }
+  }
+
+  // Require a meaningful reduction so artistic punctuation/symbol choices are preserved.
+  return bestScore <= originalScore - 2 ? best : input;
+}
+
 async function withSoftTimeout<T>(label: string, timeoutMs: number, operation: () => Promise<T>) {
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<T>((_, reject) => {
@@ -1197,8 +1241,8 @@ async function fetchOEmbedVideo(videoId: string): Promise<PersistableVideoRecord
     }
 
     const data = (await response.json()) as YouTubeOEmbedResponse;
-    const title = data.title?.trim();
-    const channelTitle = data.author_name?.trim();
+    const title = data.title?.trim() ? normalizePossiblyMojibakeText(data.title) : "";
+    const channelTitle = data.author_name?.trim() ? normalizePossiblyMojibakeText(data.author_name) : "";
 
     if (!title) {
       debugCatalog("fetchOEmbedVideo:missing-title", {
@@ -1231,10 +1275,10 @@ async function fetchOEmbedVideo(videoId: string): Promise<PersistableVideoRecord
 }
 
 async function persistVideoAvailability(video: PersistableVideoRecord, availability: VideoAvailability) {
-  const persistedTitle = truncate(video.title, 255);
+  const persistedTitle = truncate(normalizePossiblyMojibakeText(video.title), 255);
   const persistedDescription = video.description;
   const GENERIC_CHANNEL_FALLBACKS = new Set(["unknown artist", "youtube", "unknown"]);
-  const rawChannelTitle = video.channelTitle?.trim() ?? "";
+  const rawChannelTitle = normalizePossiblyMojibakeText(video.channelTitle?.trim() ?? "");
   const persistedChannelTitle =
     rawChannelTitle && !GENERIC_CHANNEL_FALLBACKS.has(rawChannelTitle.toLowerCase())
       ? truncate(rawChannelTitle, 255)
@@ -1329,7 +1373,7 @@ async function persistVideoAvailability(video: PersistableVideoRecord, availabil
     },
   });
 
-  const titleWithReason = truncate(`${video.title} [${availability.reason}]`, 255);
+  const titleWithReason = truncate(`${persistedTitle} [${availability.reason}]`, 255);
 
   if (existingSiteVideo) {
     await prisma.siteVideo.update({
@@ -1477,7 +1521,7 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
     const mapped = (data.items ?? [])
       .map((item) => {
         const relatedId = normalizeYouTubeVideoId(item.id?.videoId);
-        const title = item.snippet?.title?.trim();
+        const title = item.snippet?.title?.trim() ? normalizePossiblyMojibakeText(item.snippet.title) : "";
 
         if (!relatedId || !title || relatedId === videoId) {
           return null;
@@ -1486,7 +1530,9 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
         return {
           id: relatedId,
           title,
-          channelTitle: item.snippet?.channelTitle?.trim() || "YouTube",
+          channelTitle: item.snippet?.channelTitle?.trim()
+            ? normalizePossiblyMojibakeText(item.snippet.channelTitle)
+            : "YouTube",
           genre: "Rock / Metal",
           favourited: 0,
           description: item.snippet?.description?.trim() || "Related YouTube video discovered via YouTube Data API.",
@@ -3015,7 +3061,37 @@ export async function getTopVideos(count = 100) {
   }
 }
 
-export async function getNewestVideos(count = 20, offset = 0) {
+async function filterPlayableNewestRows(rows: RankedVideoRow[], targetCount: number) {
+  if (rows.length === 0) {
+    return rows;
+  }
+
+  const playableRows: RankedVideoRow[] = [];
+
+  for (const row of rows) {
+    const decision = await getVideoPlaybackDecision(row.videoId);
+
+    if (decision.allowed) {
+      playableRows.push(row);
+    } else if (decision.reason === "unavailable") {
+      await pruneVideoAndAssociationsByVideoId(row.videoId, "newest-preflight-unavailable").catch(() => undefined);
+    }
+
+    if (playableRows.length >= targetCount) {
+      break;
+    }
+  }
+
+  return playableRows;
+}
+
+export async function getNewestVideos(
+  count = 20,
+  offset = 0,
+  options?: {
+    enforcePlaybackAvailability?: boolean;
+  },
+) {
   if (!hasDatabaseUrl()) {
     return [];
   }
@@ -3055,15 +3131,19 @@ export async function getNewestVideos(count = 20, offset = 0) {
     `;
 
     if (videos.length > 0) {
+      const effectiveRows = options?.enforcePlaybackAvailability
+        ? await filterPlayableNewestRows(videos, safeCount)
+        : videos;
+
       if (safeOffset === 0) {
         newestVideosCache = {
           expiresAt: now + NEWEST_CACHE_TTL_MS,
-          count: safeCount,
-          rows: videos,
+          count: effectiveRows.length,
+          rows: effectiveRows,
         };
       }
 
-      return videos.map(mapVideo);
+      return effectiveRows.map(mapVideo);
     }
 
     // Fallback: if availability/status linkage has drifted on a restored DB,
@@ -3085,15 +3165,19 @@ export async function getNewestVideos(count = 20, offset = 0) {
     `;
 
     if (fallbackByMappedTimestamps.length > 0) {
+      const effectiveRows = options?.enforcePlaybackAvailability
+        ? await filterPlayableNewestRows(fallbackByMappedTimestamps, safeCount)
+        : fallbackByMappedTimestamps;
+
       if (safeOffset === 0) {
         newestVideosCache = {
           expiresAt: now + NEWEST_CACHE_TTL_MS,
-          count: safeCount,
-          rows: fallbackByMappedTimestamps,
+          count: effectiveRows.length,
+          rows: effectiveRows,
         };
       }
 
-      return fallbackByMappedTimestamps.map(mapVideo);
+      return effectiveRows.map(mapVideo);
     }
 
     const fallbackByLegacyTimestamps = await prisma.$queryRaw<RankedVideoRow[]>`
@@ -3111,15 +3195,19 @@ export async function getNewestVideos(count = 20, offset = 0) {
       OFFSET ${safeOffset}
     `;
 
-    if (safeOffset === 0 && fallbackByLegacyTimestamps.length > 0) {
+    const effectiveLegacyRows = options?.enforcePlaybackAvailability
+      ? await filterPlayableNewestRows(fallbackByLegacyTimestamps, safeCount)
+      : fallbackByLegacyTimestamps;
+
+    if (safeOffset === 0 && effectiveLegacyRows.length > 0) {
       newestVideosCache = {
         expiresAt: now + NEWEST_CACHE_TTL_MS,
-        count: safeCount,
-        rows: fallbackByLegacyTimestamps,
+        count: effectiveLegacyRows.length,
+        rows: effectiveLegacyRows,
       };
     }
 
-    return fallbackByLegacyTimestamps.map(mapVideo);
+    return effectiveLegacyRows.map(mapVideo);
   } catch {
     // Final fallback for partially migrated DBs where SQL above errors.
     try {
@@ -3142,15 +3230,19 @@ export async function getNewestVideos(count = 20, offset = 0) {
         safeOffset,
       );
 
-      if (safeOffset === 0 && fallbackRows.length > 0) {
+      const effectiveRows = options?.enforcePlaybackAvailability
+        ? await filterPlayableNewestRows(fallbackRows, safeCount)
+        : fallbackRows;
+
+      if (safeOffset === 0 && effectiveRows.length > 0) {
         newestVideosCache = {
           expiresAt: now + NEWEST_CACHE_TTL_MS,
-          count: safeCount,
-          rows: fallbackRows,
+          count: effectiveRows.length,
+          rows: effectiveRows,
         };
       }
 
-      return fallbackRows.map(mapVideo);
+      return effectiveRows.map(mapVideo);
     } catch {
       return [];
     }

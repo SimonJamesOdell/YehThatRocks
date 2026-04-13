@@ -50,6 +50,7 @@ function main() {
   assertContains(historyPageSource, "HistoryInfiniteList", "History page delegates list rendering to HistoryInfiniteList", failures);
   assertContains(historyPageSource, "initialHistory={initialHistory}", "History page passes server-loaded history to HistoryInfiniteList", failures);
   assertContains(historyPageSource, "initialHasMore={hasMore}", "History page passes hasMore flag to HistoryInfiniteList", failures);
+  assertContains(historyPageSource, "isAuthenticated={Boolean(user)}", "History page passes authentication state to HistoryInfiniteList", failures);
   assertContains(historyPageSource, "historyPagePanel", "History page uses historyPagePanel class for full-width layout", failures);
 
   // --- HistoryInfiniteList: structure and pagination ---
@@ -61,6 +62,9 @@ function main() {
   assertContains(historyListSource, "historyDateGroup", "HistoryInfiniteList renders per-date section elements", failures);
   assertContains(historyListSource, "historyDateHeading", "HistoryInfiniteList renders per-date heading", failures);
   assertContains(historyListSource, "historyTimeBadge", "HistoryInfiniteList shows time badge per entry", failures);
+  assertContains(historyListSource, "AddToPlaylistButton", "HistoryInfiniteList integrates AddToPlaylistButton on history cards", failures);
+  assertContains(historyListSource, "className=\"historyCardAction\"", "HistoryInfiniteList renders history card playlist action wrapper", failures);
+  assertContains(historyListSource, "className=\"historyCardPlaylistAddButton\"", "HistoryInfiniteList applies history-specific playlist add button class", failures);
   assertContains(historyListSource, "historyPagePanel", "HistoryInfiniteList uses historyPagePanel class for full-width layout", failures);
 
   // --- HistoryInfiniteList: link performance (no eager prefetch fan-out) ---
@@ -115,6 +119,8 @@ function main() {
   assertContains(globalCssSource, ".historyTimeBadge", "globals.css defines .historyTimeBadge pill style", failures);
   assertContains(globalCssSource, ".historyTrackLink", "globals.css defines .historyTrackLink display style", failures);
   assertContains(globalCssSource, ".historyMeta", "globals.css defines .historyMeta text layout", failures);
+  assertContains(globalCssSource, ".historyCardAction", "globals.css defines history card playlist action anchor", failures);
+  assertContains(globalCssSource, ".historyCardPlaylistAddButton", "globals.css defines history playlist add button style", failures);
 
   if (failures.length > 0) {
     console.error("History UI invariant check failed.");

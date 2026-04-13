@@ -7,6 +7,7 @@ import type { VideoRecord } from "@/lib/catalog";
 import { buildSharedVideoMessage } from "@/lib/chat-shared-video";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
+import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 
 type PlayerExperienceProps = {
   currentVideo: VideoRecord;
@@ -16,6 +17,8 @@ type PlayerExperienceProps = {
   seenVideoIds?: Set<string>;
   onHideVideo?: (track: VideoRecord) => void | Promise<void>;
   onAddVideoToPlaylist?: (track: VideoRecord) => void | Promise<void>;
+  forcedUnavailableSignal?: number;
+  forcedUnavailableMessage?: string | null;
 };
 
 type AdminEditableVideo = {
@@ -118,6 +121,8 @@ const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
 const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. Please choose another track.";
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
+const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
+const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
 
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
   const consoleWithPatchState = console as typeof console & {
@@ -222,7 +227,17 @@ function switchPlayerVideo(player: YouTubePlayer, videoId: string) {
   return false;
 }
 
-export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = false, seenVideoIds, onHideVideo, onAddVideoToPlaylist }: PlayerExperienceProps) {
+export function PlayerExperience({
+  currentVideo,
+  queue,
+  isLoggedIn,
+  isAdmin = false,
+  seenVideoIds,
+  onHideVideo,
+  onAddVideoToPlaylist,
+  forcedUnavailableSignal = 0,
+  forcedUnavailableMessage = null,
+}: PlayerExperienceProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -238,6 +253,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
   const playerRef = useRef<YouTubePlayer | null>(null);
   const overlayTimeoutRef = useRef<number | null>(null);
   const unavailableOverlayTimeoutRef = useRef<number | null>(null);
+  const unavailableAutoActionTimeoutRef = useRef<number | null>(null);
   const initialRequestedVideoIdRef = useRef<string | null>(requestedVideoId);
   const hasLeftInitialRequestedVideoRef = useRef(false);
   const isBootstrappingHistoryRef = useRef(true);
@@ -257,10 +273,13 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
   const [historyStack, setHistoryStack] = useState<string[]>([]);
   const [showNowPlayingOverlay, setShowNowPlayingOverlay] = useState(false);
   const [unavailableOverlayMessage, setUnavailableOverlayMessage] = useState<string | null>(null);
+  const [unavailableOverlayRequiresOk, setUnavailableOverlayRequiresOk] = useState(false);
   const [showEndedChoiceOverlay, setShowEndedChoiceOverlay] = useState(false);
+  const [endedChoiceFromUnavailable, setEndedChoiceFromUnavailable] = useState(false);
   const [endedChoiceReshuffleKey, setEndedChoiceReshuffleKey] = useState(0);
   const [endedChoiceHidingIds, setEndedChoiceHidingIds] = useState<string[]>([]);
-  const [endedChoicePlaylistPendingId, setEndedChoicePlaylistPendingId] = useState<string | null>(null);
+  const [playerClosedByEndOfVideo, setPlayerClosedByEndOfVideo] = useState(false);
+  const [playlistChooserOpen, setPlaylistChooserOpen] = useState(false);
   const [overlayInstance, setOverlayInstance] = useState(0);
   const [playerHostMode, setPlayerHostMode] = useState<"nocookie" | "youtube">("nocookie");
   const [isPlayerReady, setIsPlayerReady] = useState(false);
@@ -337,6 +356,17 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     }
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    function handlePlaylistChooserStateChange(event: Event) {
+      if (event instanceof CustomEvent) {
+        const isOpen = event.detail?.isOpen ?? false;
+        setPlaylistChooserOpen(isOpen);
+      }
+    }
+    window.addEventListener("ytr:playlist-chooser-state", handlePlaylistChooserStateChange);
+    return () => window.removeEventListener("ytr:playlist-chooser-state", handlePlaylistChooserStateChange);
   }, []);
 
   useEffect(() => {
@@ -633,6 +663,10 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     const offset = (endedChoiceReshuffleKey * maxEndedChoiceVideos) % Math.max(all.length, 1);
     return [...all.slice(offset), ...all.slice(0, offset)].slice(0, maxEndedChoiceVideos);
   }, [queue, topFallbackVideos, currentVideo.id, endedChoiceReshuffleKey]);
+  const footerActionsBlocked = Boolean(unavailableOverlayMessage) || showEndedChoiceOverlay || playlistChooserOpen;
+  // Also suppress the player on overlay pages when the user is waiting to choose the next video
+  // (video ended with autoplay off). On "/", the choice overlay is shown instead.
+  const suppressUnavailablePlaybackSurface = endedChoiceFromUnavailable || Boolean(unavailableOverlayMessage) || playerClosedByEndOfVideo || (showEndedChoiceOverlay && pathname !== "/");
 
   useEffect(() => {
     const initialRequestedVideoId = initialRequestedVideoIdRef.current;
@@ -757,17 +791,53 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     }, 3200);
   }
 
-  function showUnavailableOverlayMessage() {
+  function clearUnavailableOverlayMessage() {
     if (unavailableOverlayTimeoutRef.current) {
       window.clearTimeout(unavailableOverlayTimeoutRef.current);
     }
 
-    setUnavailableOverlayMessage(UNAVAILABLE_OVERLAY_MESSAGE);
+    if (unavailableAutoActionTimeoutRef.current) {
+      window.clearTimeout(unavailableAutoActionTimeoutRef.current);
+      unavailableAutoActionTimeoutRef.current = null;
+    }
 
-    unavailableOverlayTimeoutRef.current = window.setTimeout(() => {
-      setUnavailableOverlayMessage(null);
-      unavailableOverlayTimeoutRef.current = null;
-    }, 6200);
+    unavailableOverlayTimeoutRef.current = null;
+    setUnavailableOverlayMessage(null);
+    setUnavailableOverlayRequiresOk(false);
+  }
+
+  function acknowledgeUnavailableOverlay() {
+    clearUnavailableOverlayMessage();
+
+    if (!autoplayEnabledRef.current) {
+      setEndedChoiceFromUnavailable(true);
+      setShowEndedChoiceOverlay(true);
+      setShowControls(true);
+      setShowShareMenu(false);
+    }
+  }
+
+  function showUnavailableOverlayMessage(message?: string | null) {
+    clearUnavailableOverlayMessage();
+
+    setUnavailableOverlayMessage(message?.trim() || UNAVAILABLE_OVERLAY_MESSAGE);
+    setShowEndedChoiceOverlay(false);
+    const shouldAutoAdvance = autoplayEnabledRef.current;
+    setUnavailableOverlayRequiresOk(!shouldAutoAdvance);
+
+    if (shouldAutoAdvance) {
+      unavailableOverlayTimeoutRef.current = window.setTimeout(() => {
+        clearUnavailableOverlayMessage();
+      }, 5200);
+
+      unavailableAutoActionTimeoutRef.current = window.setTimeout(() => {
+        clearUnavailableOverlayMessage();
+        triggerEndOfVideoAction();
+      }, 2800);
+      return;
+    }
+
+    unavailableOverlayTimeoutRef.current = null;
   }
 
   function pauseActivePlayback() {
@@ -974,8 +1044,9 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     reportedUnavailableVideoIdRef.current = null;
     autoplaySuppressedVideoIdRef.current = null;
     playAttemptedAtRef.current = null;
-    setUnavailableOverlayMessage(null);
+    clearUnavailableOverlayMessage();
     setShowEndedChoiceOverlay(false);
+    setEndedChoiceFromUnavailable(false);
     setHasPlaybackStarted(false);
     hasPlaybackStartedRef.current = false;
     setShowControls(false);
@@ -984,6 +1055,55 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
       queueSize: queue.length,
     });
   }, [currentVideo.id]);
+
+  useEffect(() => {
+    if (showEndedChoiceOverlay) {
+      setShowFooterPlaylistMenu(false);
+    }
+  }, [showEndedChoiceOverlay]);
+
+  useEffect(() => {
+    if (!suppressUnavailablePlaybackSurface) {
+      return;
+    }
+
+    pauseActivePlayback();
+
+    if (!playerClosedByEndOfVideo) {
+      if (playerRef.current && typeof playerRef.current.destroy === "function") {
+        playerRef.current.destroy();
+        playerRef.current = null;
+      }
+
+      setIsPlayerReady(false);
+    }
+
+    setShowControls(false);
+    setShowShareMenu(false);
+  }, [playerClosedByEndOfVideo, suppressUnavailablePlaybackSurface]);
+
+  useEffect(() => {
+    if (suppressUnavailablePlaybackSurface || !playerFrameRef.current) {
+      return;
+    }
+    
+    const checkMouseOverPlayer = () => {
+      if (playerFrameRef.current?.matches(":hover")) {
+        setShowControls(true);
+      }
+    };
+    
+    requestAnimationFrame(checkMouseOverPlayer);
+  }, [overlayInstance, suppressUnavailablePlaybackSurface]);
+
+  useEffect(() => {
+    if (forcedUnavailableSignal <= 0) {
+      return;
+    }
+
+    pauseActivePlayback();
+    showUnavailableOverlayMessage(forcedUnavailableMessage);
+  }, [forcedUnavailableMessage, forcedUnavailableSignal]);
 
   useEffect(() => {
     // When an overlay page closes, the pointer may already be over the player.
@@ -1012,6 +1132,31 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     setAutoplayEnabled(false);
     window.localStorage.setItem(AUTOPLAY_KEY, "false");
   }, [pathname, autoplayEnabled]);
+
+  useEffect(() => {
+    function handleReplayRequest(event: Event) {
+      if (!(event instanceof CustomEvent)) {
+        return;
+      }
+
+      const requestedVideoId = typeof event.detail?.videoId === "string"
+        ? event.detail.videoId
+        : null;
+
+      if (!requestedVideoId || requestedVideoId !== currentVideoRef.current.id) {
+        return;
+      }
+
+      if (!showEndedChoiceOverlay) {
+        return;
+      }
+
+      handleEndedChoiceWatchAgain();
+    }
+
+    window.addEventListener(REQUEST_VIDEO_REPLAY_EVENT, handleReplayRequest);
+    return () => window.removeEventListener(REQUEST_VIDEO_REPLAY_EVENT, handleReplayRequest);
+  }, [showEndedChoiceOverlay]);
 
   useEffect(() => {
     if (!isPlayerReady || isPlaying || !playAttemptedAtRef.current) {
@@ -1048,6 +1193,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
       if (shouldSkip) {
         autoplaySuppressedVideoIdRef.current = currentVideo.id;
         playAttemptedAtRef.current = null;
+        pauseActivePlayback();
         showUnavailableOverlayMessage();
       }
     }, 4500);
@@ -1283,7 +1429,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
             }
 
             if (playing) {
-              setUnavailableOverlayMessage(null);
+              clearUnavailableOverlayMessage();
               playAttemptedAtRef.current = null;
               setHasPlaybackStarted(true);
               hasPlaybackStartedRef.current = true;
@@ -1410,6 +1556,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
             if (shouldSkip) {
               autoplaySuppressedVideoIdRef.current = currentVideo.id;
               playAttemptedAtRef.current = null;
+              pauseActivePlayback();
               showUnavailableOverlayMessage();
             }
           },
@@ -1442,6 +1589,26 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
   }, [currentVideo.id, playerHostMode]);
 
   useEffect(() => {
+    // Reset the end-of-video closure state when a new video is selected
+    setPlayerClosedByEndOfVideo(false);
+  }, [currentVideo.id]);
+
+  useEffect(() => {
+    // When returning to home route, restore the player. If it was closed due to
+    // end-of-video, show the choice overlay so the user can pick what to watch next.
+    if (pathname === "/") {
+      setPlayerClosedByEndOfVideo((wasClosed) => {
+        if (wasClosed) {
+          setShowEndedChoiceOverlay(true);
+          setShowControls(true);
+          setShowShareMenu(false);
+        }
+        return false;
+      });
+    }
+  }, [pathname]);
+
+  useEffect(() => {
     return () => {
       if (overlayTimeoutRef.current) {
         window.clearTimeout(overlayTimeoutRef.current);
@@ -1449,6 +1616,10 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
 
       if (unavailableOverlayTimeoutRef.current) {
         window.clearTimeout(unavailableOverlayTimeoutRef.current);
+      }
+
+      if (unavailableAutoActionTimeoutRef.current) {
+        window.clearTimeout(unavailableAutoActionTimeoutRef.current);
       }
 
       if (progressIntervalRef.current) {
@@ -1547,6 +1718,19 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
       return;
     }
 
+    // When autoplay is off and player is in docked position, close the player instead of showing overlay
+    if (!autoplayEnabledRef.current) {
+      setPlayerClosedByEndOfVideo(true);
+
+      if (pathname === "/") {
+        setShowEndedChoiceOverlay(true);
+        setShowControls(true);
+        setShowShareMenu(false);
+      }
+
+      return;
+    }
+
     setShowEndedChoiceOverlay(true);
     setShowControls(true);
     setShowShareMenu(false);
@@ -1556,6 +1740,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     const playlistIndex = playlistQueueIds.findIndex((candidateId) => candidateId === videoId);
 
     setShowEndedChoiceOverlay(false);
+    setEndedChoiceFromUnavailable(false);
     navigateToVideo(videoId, {
       clearPlaylist: playlistIndex < 0,
       playlistId: playlistIndex >= 0 ? activePlaylistId : null,
@@ -1575,15 +1760,10 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
     }, 400);
   }
 
-  function handleEndedChoiceAddToPlaylist(track: VideoRecord) {
-    if (endedChoicePlaylistPendingId) return;
-    setEndedChoicePlaylistPendingId(track.id);
-    void onAddVideoToPlaylist?.(track);
-    setTimeout(() => setEndedChoicePlaylistPendingId(null), 2500);
-  }
-
   function handleEndedChoiceWatchAgain() {
     setShowEndedChoiceOverlay(false);
+    setEndedChoiceFromUnavailable(false);
+    setPlayerClosedByEndOfVideo(false);
 
     if (!playerRef.current) {
       return;
@@ -1766,6 +1946,21 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
       if (ok) {
         markFooterPlaylistAdded();
         setShowFooterPlaylistMenu(false);
+
+        window.dispatchEvent(new CustomEvent(RIGHT_RAIL_MODE_EVENT, {
+          detail: {
+            mode: "playlist",
+            playlistId,
+            trackId: currentVideo.id,
+          },
+        }));
+
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("v", currentVideo.id);
+        params.set("resume", "1");
+        params.set("pl", playlistId);
+        params.delete("pli");
+        router.replace(`${pathname}?${params.toString()}`);
         return;
       }
       setFooterPlaylistAddState("error");
@@ -1812,6 +2007,14 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
 
       markFooterPlaylistAdded();
       setShowFooterPlaylistMenu(false);
+
+      window.dispatchEvent(new CustomEvent(RIGHT_RAIL_MODE_EVENT, {
+        detail: {
+          mode: "playlist",
+          playlistId: created.id,
+          trackId: currentVideo.id,
+        },
+      }));
 
       const params = new URLSearchParams(searchParams.toString());
       params.set("v", currentVideo.id);
@@ -2577,33 +2780,34 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
 
       return (
         <>
-          <div
-            ref={playerFrameRef}
-            className={isPlayerReady ? "playerFrame playerFrameLoaded" : "playerFrame"}
-            onMouseEnter={() => setShowControls(true)}
-            onMouseLeave={() => {
-              if (isPlaying) {
-                setShowControls(false);
-                setShowShareMenu(false);
-              }
-            }}
-          >
-            <div ref={playerElementRef} className="playerMount" />
+          {!suppressUnavailablePlaybackSurface ? (
+            <div
+              ref={playerFrameRef}
+              className={isPlayerReady ? "playerFrame playerFrameLoaded" : "playerFrame"}
+              onMouseEnter={() => setShowControls(true)}
+              onMouseLeave={() => {
+                if (isPlaying) {
+                  setShowControls(false);
+                  setShowShareMenu(false);
+                }
+              }}
+            >
+              <div ref={playerElementRef} className="playerMount" />
 
-            {!isPlayerReady ? (
-              <div className="playerBootLoader" role="status" aria-live="polite" aria-label="Loading video player">
-                <div className="playerBootBars" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                  <span />
+              {!isPlayerReady ? (
+                <div className="playerBootLoader" role="status" aria-live="polite" aria-label="Loading video player">
+                  <div className="playerBootBars" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                  <p>Loading player...</p>
                 </div>
-                <p>Loading player...</p>
-              </div>
-            ) : null}
+              ) : null}
 
-            {isPlayerReady && (
-              <div className={!hasPlaybackStarted || !isPlaying || showControls ? "playerOverlay playerOverlayVisible" : "playerOverlay"}>
+              {isPlayerReady && (
+                <div className={!hasPlaybackStarted || !isPlaying || showControls ? "playerOverlay playerOverlayVisible" : "playerOverlay"}>
                 <div className="overlayTop">
                   <div className="overlayTitleRow">
                     <p className="overlayTitle">{displayTitle}</p>
@@ -2762,24 +2966,34 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                     </button>
                   </div>
                 </div>
-              </div>
-            )}
+                </div>
+              )}
 
-            {showNowPlayingOverlay ? (
-              <div key={`${currentVideo.id}-${overlayInstance}`} className="nowPlayingOverlay nowPlayingOverlayAnimate">
-                <p className="statusLabel">Now playing</p>
-                <strong>{displayTitle}</strong>
-              </div>
-            ) : null}
+              {showNowPlayingOverlay ? (
+                <div key={`${currentVideo.id}-${overlayInstance}`} className="nowPlayingOverlay nowPlayingOverlayAnimate">
+                  <p className="statusLabel">Now playing</p>
+                  <strong>{displayTitle}</strong>
+                </div>
+              ) : null}
 
-            {unavailableOverlayMessage ? (
-              <div className="videoUnavailableOverlay" role="status" aria-live="polite">
-                <p>Apologies</p>
-                <strong>{unavailableOverlayMessage}</strong>
-              </div>
-            ) : null}
+            </div>
+          ) : null}
 
-          </div>
+          {unavailableOverlayMessage ? (
+            <div className="videoUnavailableOverlay" role="alertdialog" aria-modal="true" aria-label="Video unavailable">
+              <p>Apologies</p>
+              <strong>{unavailableOverlayMessage}</strong>
+              {unavailableOverlayRequiresOk ? (
+                <button
+                  type="button"
+                  className="videoUnavailableOverlayAcknowledge"
+                  onClick={acknowledgeUnavailableOverlay}
+                >
+                  OK
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           {showEndedChoiceOverlay && endedChoiceVideos.length > 0 ? (
             <div className="playerEndedChoiceOverlay" role="dialog" aria-modal="false" aria-label="Choose the next video">
@@ -2831,16 +3045,12 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                         </span>
                       </button>
                       {isLoggedIn ? (
-                        <button
-                          type="button"
+                        <AddToPlaylistButton
+                          videoId={video.id}
+                          isAuthenticated={isLoggedIn}
                           className="endedChoiceCardPlaylistBtn"
-                          aria-label={`Add ${video.title} to playlist`}
-                          title="Add to playlist"
-                          onClick={(e) => { e.stopPropagation(); handleEndedChoiceAddToPlaylist(video); }}
-                          disabled={endedChoicePlaylistPendingId === video.id || isHiding}
-                        >
-                          {endedChoicePlaylistPendingId === video.id ? "\u2026" : "+"}
-                        </button>
+                          compact
+                        />
                       ) : null}
                     </div>
                   );
@@ -3044,7 +3254,11 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
             </div>
           ) : null}
 
-          <div className="primaryActions">
+          {!suppressUnavailablePlaybackSurface ? (
+            <div
+              className={footerActionsBlocked ? "primaryActions primaryActionsUnavailable" : "primaryActions"}
+              aria-disabled={footerActionsBlocked ? true : undefined}
+            >
             <div className="shareUrlField">
               <label htmlFor="share-url" className="shareUrlLabel">Share URL</label>
               <input
@@ -3073,14 +3287,14 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                   className="primaryActionIconButton"
                   aria-label="Add to favourites"
                   title="Add to favourites"
-                  disabled={favouriteSaveState === "saving"}
+                  disabled={favouriteSaveState === "saving" || footerActionsBlocked}
                   onClick={handleAddFavourite}
                 >
                   <span className="navFavouritesGlyph" aria-hidden="true">❤️</span>
                 </button>
               </div>
             )}
-            {isLoggedIn ? (
+            {isLoggedIn && !showEndedChoiceOverlay ? (
               <div className="primaryActionIconButtonWrap primaryActionPlaylistWrap" ref={footerPlaylistMenuRef}>
                 <button
                   type="button"
@@ -3090,7 +3304,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                   onClick={() => {
                     void handleFooterPlaylistButtonClick();
                   }}
-                  disabled={footerPlaylistAddState === "saving"}
+                  disabled={footerPlaylistAddState === "saving" || footerActionsBlocked}
                 >
                   <span className="primaryActionPlaylistGlyph" aria-hidden="true">+</span>
                 </button>
@@ -3102,9 +3316,9 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                       onClick={() => {
                         void handleFooterCreatePlaylist();
                       }}
-                      disabled={footerPlaylistAddState === "saving"}
+                      disabled={footerPlaylistAddState === "saving" || footerActionsBlocked}
                     >
-                      + Create new playlist
+                      Add to new playlist
                     </button>
                     {footerPlaylistMenuLoading ? (
                       <p className="primaryActionPlaylistMenuStatus">Loading playlists...</p>
@@ -3120,7 +3334,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                             onClick={() => {
                               void handleFooterPlaylistSelect(playlist.id);
                             }}
-                            disabled={footerPlaylistAddState === "saving"}
+                            disabled={footerPlaylistAddState === "saving" || footerActionsBlocked}
                           >
                             {playlist.name}
                           </button>
@@ -3135,7 +3349,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
               type="button"
               className="primaryActionNavIconButton"
               onClick={handlePrevious}
-              disabled={!hasPreviousTrack}
+              disabled={!hasPreviousTrack || footerActionsBlocked}
               aria-label="Previous"
               title="Previous"
             >
@@ -3145,6 +3359,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
               type="button"
               className="primaryActionNavIconButton"
               onClick={handleNext}
+              disabled={footerActionsBlocked}
               aria-label="Next"
               title="Next"
             >
@@ -3166,6 +3381,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
               type="button"
               className={autoplayEnabled ? "primaryActionToggleButton primaryActionAutoplayButton primaryActionToggleButtonActive" : "primaryActionToggleButton primaryActionAutoplayButton"}
               onClick={handleToggleAutoplay}
+              disabled={footerActionsBlocked}
               aria-label={autoplayEnabled ? "Disable autoplay" : "Enable autoplay"}
               title={autoplayEnabled ? "Disable autoplay" : "Enable autoplay"}
             >
@@ -3179,7 +3395,7 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                 onClick={() => {
                   void handleHideCurrentVideo();
                 }}
-                disabled={hideCurrentVideoState === "saving"}
+                disabled={hideCurrentVideoState === "saving" || footerActionsBlocked}
                 aria-label="Hide this video and skip"
                 title={hideCurrentVideoState === "saving" ? "Hiding..." : "No That SUCKS!"}
               >
@@ -3187,7 +3403,8 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn, isAdmin = fa
                 <span className="primaryActionTrashLabel">No That SUCKS!</span>
               </button>
             ) : null}
-          </div>
+            </div>
+          ) : null}
         </>
       );
     }

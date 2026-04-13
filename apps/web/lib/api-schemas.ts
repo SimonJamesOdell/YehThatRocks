@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { VIDEO_QUALITY_FLAG_REASONS } from "@/lib/video-quality-flags";
 
 export const favouriteMutationSchema = z.object({
   videoId: z.string().min(1),
@@ -74,4 +75,9 @@ export const watchHistoryEventSchema = z.object({
 
 export const hiddenVideoMutationSchema = z.object({
   videoId: z.string().trim().regex(/^[A-Za-z0-9_-]{11}$/),
+});
+
+export const videoQualityFlagSchema = z.object({
+  videoId: z.string().trim().regex(/^[A-Za-z0-9_-]{11}$/),
+  reason: z.enum(VIDEO_QUALITY_FLAG_REASONS),
 });

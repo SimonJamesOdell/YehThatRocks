@@ -109,6 +109,41 @@ function main() {
   assertContains(addButtonSource, "router.replace(query ? `/?${query}` : \"/\");", "Auto-created playlist activation updates current route", failures);
   assertContains(addButtonSource, "if (createdPlaylistId && selectedPlaylist.id === createdPlaylistId) {", "Auto-created playlist path activates the new playlist after add", failures);
 
+  // Add-to-playlist menu invariants (header, options, close button, interactions).
+  assertContains(addButtonSource, "<strong>Add to...</strong>", "Add-to-playlist menu has 'Add to...' header", failures);
+  assertContains(addButtonSource, "New playlist", "Add-to-playlist menu has 'New playlist' option", failures);
+  assertContains(addButtonSource, "New playlist then open", "Add-to-playlist menu has 'New playlist then open' option", failures);
+  assertContains(addButtonSource, "Existing playlist", "Add-to-playlist menu has 'Existing playlist' option", failures);
+  assertContains(addButtonSource, "Existing playlist then open", "Add-to-playlist menu has 'Existing playlist then open' option", failures);
+  assertContains(addButtonSource, "className=\"playlistQuickAddMenuClose\"", "Add-to-playlist menu has close button with correct class", failures);
+  assertContains(addButtonSource, "onClick={() => setMenuOpen(false)}", "Add-to-playlist menu close button closes menu", failures);
+  assertContains(addButtonSource, "const PLAYLIST_CHOOSER_STATE_EVENT = \"ytr:playlist-chooser-state\";", "Playlist chooser broadcasts state events", failures);
+  assertContains(addButtonSource, "new CustomEvent(\"ytr:playlist-chooser-state\", {", "Add-to-playlist broadcasts chooser open/close state", failures);
+  assertContains(addButtonSource, "function handleScroll() {", "Add-to-playlist menu has scroll handler", failures);
+  assertContains(addButtonSource, "setMenuOpen(false);", "Scroll handler closes menu", failures);
+  assertContains(addButtonSource, 'window.addEventListener("scroll", handleScroll, true);', "Menu scroll close listener is registered with capture phase", failures);
+  assertContains(addButtonSource, "createPortal(", "Add-to-playlist menu uses portal rendering", failures);
+  assertContains(addButtonSource, "document.body", "Menu portal renders to document.body", failures);
+  assertContains(cssSource, ".playlistQuickAddMenuHeader {", "CSS defines menu header styles", failures);
+  assertContains(cssSource, "display: flex;", "Menu header uses flex layout", failures);
+  assertContains(cssSource, "justify-content: space-between;", "Menu header justifies content between title and close", failures);
+  assertContains(cssSource, ".playlistQuickAddMenuClose {", "CSS defines menu close button styles", failures);
+  assertContains(cssSource, "background: rgba(126, 19, 19, 0.6);", "Menu close button is red", failures);
+  assertContains(cssSource, "var(--font-display)", "Menu header uses Metal Mania display font", failures);
+  assertContains(playerSource, "const [playlistChooserOpen, setPlaylistChooserOpen] = useState(false);", "Player tracks playlist chooser state", failures);
+  assertContains(playerSource, "\"ytr:playlist-chooser-state\"", "Player listens to playlist chooser state events", failures);
+  assertContains(playerSource, "|| playlistChooserOpen", "Player blocks footer actions when chooser is open", failures);
+
+  // Playlist rail delete button invariants.
+  assertContains(shellSource, "const [playlistBeingDeletedId, setPlaylistBeingDeletedId] = useState<string | null>(null);", "Shell tracks playlist being deleted from rail", failures);
+  assertContains(shellSource, "async function handleDeletePlaylistFromRail(playlistId: string)", "Shell has delete handler for playlist rail card", failures);
+  assertContains(shellSource, "className=\"rightRailPlaylistCardDelete\"", "Playlist rail cards have delete button", failures);
+  assertContains(shellSource, "void handleDeletePlaylistFromRail(playlist.id);", "Playlist rail delete button invokes handler", failures);
+  assertContains(cssSource, ".rightRailPlaylistCardDelete {", "CSS defines delete button for rail cards", failures);
+  assertContains(cssSource, "position: absolute;", "Delete button is positioned absolutely", failures);
+  assertContains(cssSource, "top: 8px;", "Delete button positioned at top", failures);
+  assertContains(cssSource, "right: 8px;", "Delete button positioned at right", failures);
+
   // Player playlist rail fixed-header invariants.
   assertContains(shellSource, "<div className=\"rightRailPlaylistBar\">", "Player rail playlist header exists", failures);
   assertContains(shellSource, "<div className=\"relatedStackPlaylistBody\">", "Player rail has dedicated scroll body", failures);

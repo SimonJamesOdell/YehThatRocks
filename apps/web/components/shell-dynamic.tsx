@@ -7,6 +7,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { CSSProperties } from "react";
 
 import { AuthLoginForm } from "@/components/auth-login-form";
+import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { PlayerExperience } from "@/components/player-experience";
@@ -65,7 +66,7 @@ type CurrentVideoResolvePayload = {
   currentVideo?: VideoRecord;
   relatedVideos?: VideoRecord[];
   pending?: boolean;
-  denied?: { message?: string };
+  denied?: { message?: string; reason?: string; videoId?: string };
 };
 
 type RightRailMode = "watch-next" | "playlist";
@@ -99,6 +100,8 @@ type SharedVideoPreview = {
   title: string;
   channelTitle: string;
 };
+
+const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
 
 function formatChatTimestamp(value: string | null) {
   if (!value) {
@@ -168,7 +171,12 @@ function SharedVideoMessageCard({ videoId }: { videoId: string }) {
     <Link
       href={`/?v=${encodeURIComponent(resolvedId)}`}
       className="chatSharedVideoCard"
-      onClick={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        window.dispatchEvent(new CustomEvent(REQUEST_VIDEO_REPLAY_EVENT, {
+          detail: { videoId: resolvedId },
+        }));
+      }}
       onMouseDown={(event) => event.stopPropagation()}
     >
       <Image
@@ -224,6 +232,7 @@ const WATCH_NEXT_HIDE_ANIMATION_MS = 240;
 const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
 const PREFETCH_FAILURE_MAX_BACKOFF_MS = 20_000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
+const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
 const DOCK_MOVE_DURATION_MS = 520;
 const DOCK_CONTROLS_FADE_DURATION_MS = 220;
 const DOCK_CONTROLS_FADE_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - DOCK_CONTROLS_FADE_DURATION_MS);
@@ -359,6 +368,9 @@ function ShellDynamicInner({
   const [playlistMutationTone, setPlaylistMutationTone] = useState<"info" | "success" | "error">("info");
   const [playlistMutationPendingVideoId, setPlaylistMutationPendingVideoId] = useState<string | null>(null);
   const [lastAddedRelatedVideoId, setLastAddedRelatedVideoId] = useState<string | null>(null);
+  const [recentlyAddedPlaylistTrack, setRecentlyAddedPlaylistTrack] = useState<{ playlistId: string; trackId: string } | null>(null);
+  const [forcedUnavailableSignal, setForcedUnavailableSignal] = useState(0);
+  const [forcedUnavailableMessage, setForcedUnavailableMessage] = useState<string | null>(null);
   const [hidingPlaylistTrackKeys, setHidingPlaylistTrackKeys] = useState<string[]>([]);
   const [playlistItemMutationPendingKeys, setPlaylistItemMutationPendingKeys] = useState<string[]>([]);
   const reorderSeqRef = useRef(0);
@@ -370,6 +382,7 @@ function ShellDynamicInner({
   const [draggedPlaylistTrackIndex, setDraggedPlaylistTrackIndex] = useState<number | null>(null);
   const [dragOverPlaylistTrackIndex, setDragOverPlaylistTrackIndex] = useState<number | null>(null);
   const [isDeletingActivePlaylist, setIsDeletingActivePlaylist] = useState(false);
+  const [playlistBeingDeletedId, setPlaylistBeingDeletedId] = useState<string | null>(null);
   const [hidingRelatedVideoIds, setHidingRelatedVideoIds] = useState<string[]>([]);
   const [hiddenMutationPendingVideoIds, setHiddenMutationPendingVideoIds] = useState<string[]>([]);
   const [clickedRelatedVideoId, setClickedRelatedVideoId] = useState<string | null>(null);
@@ -429,6 +442,7 @@ function ShellDynamicInner({
     video: null,
   });
   const chatModeRef = useRef<ChatMode>(chatMode);
+  const recentlyAddedPlaylistTrackTimeoutRef = useRef<number | null>(null);
 
   // Search autocomplete
   type SearchSuggestion = { type: "artist" | "track" | "genre"; label: string; url: string };
@@ -1286,7 +1300,13 @@ function ShellDynamicInner({
         });
 
         if (data?.denied?.message) {
-          setDeniedPlaybackMessage(String(data.denied.message));
+          if (data.denied.reason === "unavailable") {
+            setForcedUnavailableMessage(String(data.denied.message));
+            setForcedUnavailableSignal((value) => value + 1);
+            setDeniedPlaybackMessage(null);
+          } else {
+            setDeniedPlaybackMessage(String(data.denied.message));
+          }
           deniedRequestedVideoIdRef.current = requestedVideoId;
           setIsResolvingRequestedVideo(false);
           if (!hasResolvedInitialVideoRef.current) {
@@ -1378,6 +1398,7 @@ function ShellDynamicInner({
 
   useEffect(() => {
     setDeniedPlaybackMessage(null);
+    setForcedUnavailableMessage(null);
   }, [pathname, searchParamsKey]);
 
   const refreshAuthSession = useCallback(async () => {
@@ -1440,10 +1461,45 @@ function ShellDynamicInner({
       setPlaylistRefreshTick((current) => current + 1);
     };
 
+    const handleRightRailMode = (event: Event) => {
+      const detail = (event as CustomEvent<{ mode?: RightRailMode; playlistId?: string; trackId?: string }>).detail;
+      const mode = detail?.mode;
+      if (mode === "watch-next" || mode === "playlist") {
+        setRightRailMode(mode);
+      }
+
+      if (detail?.playlistId && detail?.trackId) {
+        setRecentlyAddedPlaylistTrack({
+          playlistId: detail.playlistId,
+          trackId: detail.trackId,
+        });
+
+        if (recentlyAddedPlaylistTrackTimeoutRef.current !== null) {
+          window.clearTimeout(recentlyAddedPlaylistTrackTimeoutRef.current);
+        }
+
+        recentlyAddedPlaylistTrackTimeoutRef.current = window.setTimeout(() => {
+          setRecentlyAddedPlaylistTrack((current) => (
+            current?.playlistId === detail.playlistId && current?.trackId === detail.trackId
+              ? null
+              : current
+          ));
+          recentlyAddedPlaylistTrackTimeoutRef.current = null;
+        }, 2600);
+      }
+    };
+
     window.addEventListener(PLAYLISTS_UPDATED_EVENT, handlePlaylistsUpdated);
+    window.addEventListener(RIGHT_RAIL_MODE_EVENT, handleRightRailMode);
 
     return () => {
       window.removeEventListener(PLAYLISTS_UPDATED_EVENT, handlePlaylistsUpdated);
+      window.removeEventListener(RIGHT_RAIL_MODE_EVENT, handleRightRailMode);
+
+      if (recentlyAddedPlaylistTrackTimeoutRef.current !== null) {
+        window.clearTimeout(recentlyAddedPlaylistTrackTimeoutRef.current);
+        recentlyAddedPlaylistTrackTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -2482,6 +2538,34 @@ function ShellDynamicInner({
     }
   }
 
+  async function handleDeletePlaylistFromRail(playlistId: string) {
+    if (playlistBeingDeletedId) {
+      return;
+    }
+
+    setPlaylistBeingDeletedId(playlistId);
+
+    try {
+      const response = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(playlistId)}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+      setPlaylistRailSummaries((current) => current.filter((p) => p.id !== playlistId));
+    } catch {
+      // Silent failure
+    } finally {
+      setPlaylistBeingDeletedId(null);
+    }
+  }
+
   function prewarmRelatedThumbnail(videoId: string) {
     if (typeof window === "undefined") {
       return;
@@ -3428,6 +3512,8 @@ function ShellDynamicInner({
                   seenVideoIds={seenVideoIdsRef.current}
                   onHideVideo={handleHideFromWatchNext}
                   onAddVideoToPlaylist={handleAddToPlaylistFromWatchNext}
+                  forcedUnavailableSignal={forcedUnavailableSignal}
+                  forcedUnavailableMessage={forcedUnavailableMessage}
                 />
               )}
             </Suspense>
@@ -3569,20 +3655,12 @@ function ShellDynamicInner({
                     </div>
                   </Link>
                   {isAuthenticated ? (
-                    <button
-                      type="button"
-                      className={`relatedCardPlaylistAdd${lastAddedRelatedVideoId === track.id ? " relatedCardPlaylistAddAdded" : ""}`}
-                      aria-label={`Add ${track.title} to playlist`}
-                      title={activePlaylistId ? "Add to current playlist" : "Create playlist and add"}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        void handleAddToPlaylistFromWatchNext(track);
-                      }}
-                      disabled={playlistMutationPendingVideoId === track.id || hidingRelatedVideoIds.includes(track.id)}
-                    >
-                      {playlistMutationPendingVideoId === track.id ? "…" : lastAddedRelatedVideoId === track.id ? "✓" : "+"}
-                    </button>
+                    <AddToPlaylistButton
+                      videoId={track.id}
+                      isAuthenticated={isAuthenticated}
+                      className="relatedCardPlaylistAdd"
+                      compact
+                    />
                   ) : null}
                 </div>
               ))}
@@ -3638,6 +3716,7 @@ function ShellDynamicInner({
                 ) : playlistRailSummaries.length > 0 ? (
                   playlistRailSummaries.map((playlist) => {
                     const hasLeadThumbnail = playlist.itemCount > 0 && playlist.leadVideoId !== "__placeholder__";
+                    const isDeleting = playlistBeingDeletedId === playlist.id;
 
                     return (
                       <Link
@@ -3645,6 +3724,20 @@ function ShellDynamicInner({
                         href={getActivatePlaylistHref(playlist.id)}
                         className="relatedCard linkedCard rightRailPlaylistCard"
                       >
+                        <button
+                          type="button"
+                          className="rightRailPlaylistCardDelete"
+                          aria-label={`Delete ${playlist.name}`}
+                          title="Delete playlist"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void handleDeletePlaylistFromRail(playlist.id);
+                          }}
+                          disabled={playlistBeingDeletedId !== null}
+                        >
+                          {isDeleting ? "…" : "🗑"}
+                        </button>
                         <div className="thumbGlow">
                           {hasLeadThumbnail ? (
                             <Image
@@ -3685,6 +3778,9 @@ function ShellDynamicInner({
               ) : playlistRailData && playlistRailData.videos.length > 0 ? (
                 playlistRailData.videos.flatMap((track, index) => {
                   const isCurrentPlaylistTrack = currentVideo.id === track.id;
+                  const isRecentlyAddedTrack =
+                    recentlyAddedPlaylistTrack?.playlistId === playlistRailData.id
+                    && recentlyAddedPlaylistTrack?.trackId === track.id;
                   const slotKey = track.playlistItemId ?? `${track.id}:${index}`;
                   const isTrackRemoving = hidingPlaylistTrackKeys.includes(slotKey);
                   const isTrackMutating = playlistItemMutationPendingKeys.includes(slotKey);
@@ -3707,6 +3803,7 @@ function ShellDynamicInner({
                       key={track.playlistItemId ?? `${track.id}-${index}`}
                       className={[
                         "playlistRailTrackRow",
+                        isRecentlyAddedTrack ? "playlistRailTrackRowAdded" : "",
                         isTrackRemoving ? "relatedCardSlotExiting" : "",
                         isDraggingThis ? "playlistRailTrackRowDraggingSource" : "",
                         isDragOver ? "playlistRailTrackRowDragOver" : "",
