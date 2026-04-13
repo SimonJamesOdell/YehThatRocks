@@ -124,6 +124,8 @@ const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstr
 const STUCK_PLAYBACK_CHECK_MS = 3200;
 const STUCK_PLAYBACK_MAX_RETRIES = 3;
 const STUCK_PLAYBACK_RETRY_DELAYS_MS = [600, 1400, 2600] as const;
+const MID_PLAYBACK_BUFFERING_CHECK_MS = 1000;
+const MID_PLAYBACK_BUFFERING_THRESHOLD_MS = 8000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
 const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
@@ -309,6 +311,8 @@ export function PlayerExperience({
     const stuckPlaybackRetryCountRef = useRef(0);
     const stuckPlaybackRetryTimeoutRef = useRef<number | null>(null);
     const stuckPlaybackWatchdogTimeoutRef = useRef<number | null>(null);
+    const midPlaybackBufferingStartedAtRef = useRef<number | null>(null);
+    const midPlaybackBufferingCheckTimeoutRef = useRef<number | null>(null);
     const nextVideoIdRef = useRef<string | null>(currentVideo.id);
     const nextPlaylistIndexRef = useRef<number | null>(null);
     const nextClearPlaylistRef = useRef(false);
@@ -829,6 +833,8 @@ export function PlayerExperience({
     clearUnavailableOverlayMessage();
     clearStuckPlaybackRetryTimer();
     clearStuckPlaybackWatchdogTimer();
+    clearMidPlaybackBufferingCheck();
+    clearMidPlaybackBufferingCheck();
 
     setUnavailableOverlayMessage(message?.trim() || UNAVAILABLE_OVERLAY_MESSAGE);
     setShowEndedChoiceOverlay(false);
@@ -877,6 +883,14 @@ export function PlayerExperience({
       window.clearTimeout(stuckPlaybackWatchdogTimeoutRef.current);
       stuckPlaybackWatchdogTimeoutRef.current = null;
     }
+  }
+
+  function clearMidPlaybackBufferingCheck() {
+    if (midPlaybackBufferingCheckTimeoutRef.current !== null) {
+      window.clearTimeout(midPlaybackBufferingCheckTimeoutRef.current);
+      midPlaybackBufferingCheckTimeoutRef.current = null;
+    }
+    midPlaybackBufferingStartedAtRef.current = null;
   }
 
   function scheduleStuckPlaybackWatchdog(trigger: string) {
@@ -1005,6 +1019,66 @@ export function PlayerExperience({
     }, delayMs);
 
     return true;
+  }
+
+  function scheduleMidPlaybackBufferingCheck(trigger: string) {
+    clearMidPlaybackBufferingCheck();
+
+    const targetVideoId = currentVideoRef.current.id;
+    midPlaybackBufferingStartedAtRef.current = null;
+
+    midPlaybackBufferingCheckTimeoutRef.current = window.setTimeout(() => {
+      midPlaybackBufferingCheckTimeoutRef.current = null;
+
+      if (currentVideoRef.current.id !== targetVideoId) {
+        return;
+      }
+
+      const player = playerRef.current;
+      if (!player) {
+        return;
+      }
+
+      const state = typeof player.getPlayerState === "function" ? player.getPlayerState() : -1;
+      const bufferingState = 3;
+      const isBuffering = state === bufferingState;
+
+      if (!isBuffering) {
+        // No longer buffering, we're good
+        midPlaybackBufferingStartedAtRef.current = null;
+        return;
+      }
+
+      // Still buffering, track how long it's been
+      if (midPlaybackBufferingStartedAtRef.current === null) {
+        midPlaybackBufferingStartedAtRef.current = Date.now();
+      }
+
+      const bufferingDurationMs = Date.now() - midPlaybackBufferingStartedAtRef.current;
+
+      if (bufferingDurationMs >= MID_PLAYBACK_BUFFERING_THRESHOLD_MS) {
+        // Buffering has lasted too long, treat as upstream connectivity issue
+        logPlayerDebug("mid-playback:buffering-timeout", {
+          videoId: targetVideoId,
+          bufferingDurationMs,
+          playerHostMode,
+        });
+
+        autoplaySuppressedVideoIdRef.current = targetVideoId;
+        showUnavailableOverlayMessage(UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE);
+        return;
+      }
+
+      // Still within threshold, keep checking
+      logPlayerDebug("mid-playback:buffering-check", {
+        videoId: targetVideoId,
+        bufferingDurationMs,
+        trigger,
+        playerHostMode,
+      });
+
+      scheduleMidPlaybackBufferingCheck("recurring");
+    }, MID_PLAYBACK_BUFFERING_CHECK_MS);
   }
 
   async function reportWatchEvent(level: number, reason: "qualified" | "ended", explicitTime?: number, explicitDuration?: number) {
@@ -1542,6 +1616,7 @@ export function PlayerExperience({
               clearUnavailableOverlayMessage();
               clearStuckPlaybackRetryTimer();
               clearStuckPlaybackWatchdogTimer();
+              clearMidPlaybackBufferingCheck();
               stuckPlaybackRetryCountRef.current = 0;
               playAttemptedAtRef.current = null;
               setHasPlaybackStarted(true);
@@ -1590,6 +1665,12 @@ export function PlayerExperience({
                 : duration;
               void reportWatchEvent(2, "ended", endedTime, endedDuration);
               triggerEndOfVideoAction();
+            }
+
+            // Detect if we're buffering after playback had started (mid-playback buffering)
+            const bufferingState = 3;
+            if (event.data === bufferingState && hasPlaybackStartedRef.current) {
+              scheduleMidPlaybackBufferingCheck("state-change-to-buffering");
             }
           },
           onError: async (event) => {
