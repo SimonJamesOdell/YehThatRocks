@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireAdminApiAuth } from "@/lib/admin-auth";
-import { pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { clearCatalogVideoCaches, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";
 import { prisma } from "@/lib/db";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
@@ -145,6 +146,9 @@ export async function PATCH(request: NextRequest) {
   if (!updated) {
     return NextResponse.json({ error: "Video not found" }, { status: 404 });
   }
+
+  clearCatalogVideoCaches();
+  clearCurrentVideoRouteCaches();
 
   return NextResponse.json({ ok: true, video: updated });
 }

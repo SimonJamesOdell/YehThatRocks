@@ -13,6 +13,8 @@ const files = {
   adminCategoriesRoute: path.join(ROOT, "apps/web/app/api/admin/categories/route.ts"),
   adminVideosRoute: path.join(ROOT, "apps/web/app/api/admin/videos/route.ts"),
   adminArtistsRoute: path.join(ROOT, "apps/web/app/api/admin/artists/route.ts"),
+  catalogData: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
+  currentVideoCache: path.join(ROOT, "apps/web/lib/current-video-cache.ts"),
 };
 
 function read(filePath) {
@@ -39,6 +41,8 @@ function main() {
   const adminCategoriesRouteSource = read(files.adminCategoriesRoute);
   const adminVideosRouteSource = read(files.adminVideosRoute);
   const adminArtistsRouteSource = read(files.adminArtistsRoute);
+  const catalogDataSource = read(files.catalogData);
+  const currentVideoCacheSource = read(files.currentVideoCache);
 
   // Admin identity and auth guard invariants.
   assertContains(adminAuthSource, 'const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "simonjamesodell@live.co.uk").trim().toLowerCase();', "Admin auth pins owner email with env override", failures);
@@ -74,8 +78,18 @@ function main() {
   assertContains(adminVideosRouteSource, "const videos = await prisma.video.findMany({", "Admin videos API reads via Prisma video model", failures);
   assertContains(adminVideosRouteSource, "orderBy: [{ updatedAt: \"desc\" }, { id: \"desc\" }]", "Admin videos API keeps deterministic recency ordering", failures);
   assertContains(adminVideosRouteSource, "description: true,", "Admin videos API includes description in GET payload", failures);
+  assertContains(adminVideosRouteSource, 'import { clearCatalogVideoCaches, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";', "Admin videos API imports shared catalog cache invalidation helper", failures);
+  assertContains(adminVideosRouteSource, 'import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";', "Admin videos API imports shared current-video cache invalidation helper", failures);
+  assertContains(adminVideosRouteSource, "clearCatalogVideoCaches();", "Admin videos PATCH clears catalog-side video caches after metadata edits", failures);
+  assertContains(adminVideosRouteSource, "clearCurrentVideoRouteCaches();", "Admin videos PATCH clears current-video route caches after metadata edits", failures);
   assertContains(adminArtistsRouteSource, "const artists = await prisma.artist.findMany({", "Admin artists API reads via Prisma artist model", failures);
   assertContains(adminArtistsRouteSource, "orderBy: { name: \"asc\" }", "Admin artists API keeps alphabetical ordering", failures);
+
+  // Shared cache helpers must exist so admin edit invalidation is centralized.
+  assertContains(catalogDataSource, "export function clearCatalogVideoCaches()", "Catalog data exposes shared video cache clear helper", failures);
+  assertContains(catalogDataSource, "relatedVideosCache.clear();", "Catalog cache helper clears related video cache", failures);
+  assertContains(currentVideoCacheSource, "export function clearCurrentVideoRouteCaches()", "Current-video cache module exposes shared route cache clear helper", failures);
+  assertContains(currentVideoCacheSource, "currentVideoRelatedPoolCache.clear();", "Current-video cache helper clears related pool cache", failures);
 
   if (failures.length > 0) {
     console.error("Admin invariant check failed.");
