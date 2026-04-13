@@ -95,11 +95,13 @@ function main() {
   assertNotContains(playerExperienceSource, "void reportWatchEvent(1, \"qualified\", 0, 0);", "Player must not record watch history before real playback progress", failures);
   assertContains(playerExperienceSource, "const hasPlaybackEvidence = hasPlaybackStartedRef.current || positionSec > 0 || progressPercent > 0;", "Player records watch history only with real playback evidence", failures);
   assertContains(playerExperienceSource, "className=\"playerEndedChoiceOverlay\"", "Player renders chooser overlay container", failures);
-  assertContains(playerExperienceSource, "className=\"playerEndedChoiceGrid\"", "Player renders chooser overlay grid", failures);
+  assertContains(playerExperienceSource, "playerEndedChoiceGrid", "Player renders chooser overlay grid", failures);
+  assertContains(playerExperienceSource, "playerEndedChoiceGridExiting", "Player defines exit animation for chooser overlay grid reshuffle", failures);
   assertContains(playerExperienceSource, "const maxEndedChoiceVideos = 12;", "Player caps chooser cards to 12 for larger screens", failures);
   assertContains(playerExperienceSource, "autoplayEnabledRef.current &&", "Player only auto-advances when autoplay is enabled", failures);
   assertContains(cssSource, ".playerEndedChoiceOverlay", "Chooser overlay styles are defined", failures);
   assertContains(cssSource, ".playerEndedChoiceGrid", "Chooser overlay grid styles are defined", failures);
+  assertContains(cssSource, ".playerEndedChoiceGridExiting", "Chooser overlay grid exit animation is defined", failures);
   assertContains(cssSource, "@media (min-width: 2200px)", "Chooser overlay defines ultrawide breakpoint", failures);
   assertContains(cssSource, "grid-template-columns: repeat(6, minmax(0, 1fr));", "Chooser overlay uses 6 columns on ultrawide for two rows", failures);
   assertContains(playerExperienceSource, "const shouldAutoplaySelection = Boolean(requestedVideoId && requestedVideoId === currentVideo.id);", "Player only autoplays when requested id matches loaded video", failures);
