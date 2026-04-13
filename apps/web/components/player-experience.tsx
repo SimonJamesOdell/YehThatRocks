@@ -120,6 +120,10 @@ const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.e
 const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
 const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. Please choose another track.";
+const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstream video provider for this track. This is not a YehThatRocks failure. Please try again or choose another track.";
+const STUCK_PLAYBACK_CHECK_MS = 3200;
+const STUCK_PLAYBACK_MAX_RETRIES = 3;
+const STUCK_PLAYBACK_RETRY_DELAYS_MS = [600, 1400, 2600] as const;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
 const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
@@ -302,6 +306,9 @@ export function PlayerExperience({
     const autoplayRouteTransitionRef = useRef(false);
     const autoplayRecoveryRequestIdRef = useRef(0);
     const playAttemptedAtRef = useRef<number | null>(null);
+    const stuckPlaybackRetryCountRef = useRef(0);
+    const stuckPlaybackRetryTimeoutRef = useRef<number | null>(null);
+    const stuckPlaybackWatchdogTimeoutRef = useRef<number | null>(null);
     const nextVideoIdRef = useRef<string | null>(currentVideo.id);
     const nextPlaylistIndexRef = useRef<number | null>(null);
     const nextClearPlaylistRef = useRef(false);
@@ -819,6 +826,8 @@ export function PlayerExperience({
 
   function showUnavailableOverlayMessage(message?: string | null) {
     clearUnavailableOverlayMessage();
+    clearStuckPlaybackRetryTimer();
+    clearStuckPlaybackWatchdogTimer();
 
     setUnavailableOverlayMessage(message?.trim() || UNAVAILABLE_OVERLAY_MESSAGE);
     setShowEndedChoiceOverlay(false);
@@ -853,6 +862,148 @@ export function PlayerExperience({
     }
 
     setIsPlaying(false);
+  }
+
+  function clearStuckPlaybackRetryTimer() {
+    if (stuckPlaybackRetryTimeoutRef.current !== null) {
+      window.clearTimeout(stuckPlaybackRetryTimeoutRef.current);
+      stuckPlaybackRetryTimeoutRef.current = null;
+    }
+  }
+
+  function clearStuckPlaybackWatchdogTimer() {
+    if (stuckPlaybackWatchdogTimeoutRef.current !== null) {
+      window.clearTimeout(stuckPlaybackWatchdogTimeoutRef.current);
+      stuckPlaybackWatchdogTimeoutRef.current = null;
+    }
+  }
+
+  function scheduleStuckPlaybackWatchdog(trigger: string) {
+    clearStuckPlaybackWatchdogTimer();
+
+    const targetVideoId = currentVideoRef.current.id;
+
+    stuckPlaybackWatchdogTimeoutRef.current = window.setTimeout(() => {
+      stuckPlaybackWatchdogTimeoutRef.current = null;
+
+      void (async () => {
+        if (currentVideoRef.current.id !== targetVideoId) {
+          return;
+        }
+
+        const player = playerRef.current;
+        const attemptedAt = playAttemptedAtRef.current;
+
+        if (!player || !attemptedAt) {
+          return;
+        }
+
+        const state = typeof player.getPlayerState === "function" ? player.getPlayerState() : -1;
+        const durationValue = typeof player.getDuration === "function" ? toSafeNumber(player.getDuration(), 0) : 0;
+        const currentPosition = typeof player.getCurrentTime === "function" ? toSafeNumber(player.getCurrentTime(), 0) : 0;
+        const bufferingState = 3;
+        const stillBlocked =
+          state !== window.YT?.PlayerState.PLAYING
+          && (durationValue <= 0 || (state === bufferingState && currentPosition < 1.5));
+
+        if (!stillBlocked) {
+          return;
+        }
+
+        const scheduledRetry = scheduleStuckPlaybackRetry("runtime-stuck-loading");
+
+        if (scheduledRetry) {
+          logPlayerDebug("runtime-block-check:retry-scheduled", {
+            videoId: currentVideoRef.current.id,
+            playerHostMode,
+            durationValue,
+            currentPosition,
+            state,
+            retryAttempt: stuckPlaybackRetryCountRef.current,
+            trigger,
+          });
+          return;
+        }
+
+        const shouldSkip = await reportUnavailableFromPlayer("yt-player-upstream-connect-timeout");
+
+        logPlayerDebug("runtime-block-check", {
+          videoId: currentVideoRef.current.id,
+          playerHostMode,
+          shouldSkip,
+          durationValue,
+          currentPosition,
+          state,
+          retryAttempt: stuckPlaybackRetryCountRef.current,
+          trigger,
+        });
+
+        if (shouldSkip) {
+          autoplaySuppressedVideoIdRef.current = currentVideoRef.current.id;
+        }
+
+        playAttemptedAtRef.current = null;
+        pauseActivePlayback();
+        showUnavailableOverlayMessage(UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE);
+      })();
+    }, STUCK_PLAYBACK_CHECK_MS);
+  }
+
+  function notePlayAttempt() {
+    playAttemptedAtRef.current = Date.now();
+    scheduleStuckPlaybackWatchdog("play-attempt");
+  }
+
+  function scheduleStuckPlaybackRetry(trigger: string) {
+    const attempt = stuckPlaybackRetryCountRef.current;
+
+    if (attempt >= STUCK_PLAYBACK_MAX_RETRIES) {
+      return false;
+    }
+
+    const targetVideoId = currentVideoRef.current.id;
+    const delayMs = STUCK_PLAYBACK_RETRY_DELAYS_MS[Math.min(attempt, STUCK_PLAYBACK_RETRY_DELAYS_MS.length - 1)];
+    const nextAttempt = attempt + 1;
+
+    stuckPlaybackRetryCountRef.current = nextAttempt;
+    clearStuckPlaybackRetryTimer();
+
+    logPlayerDebug("stuck-playback:retry-scheduled", {
+      videoId: targetVideoId,
+      trigger,
+      attempt: nextAttempt,
+      delayMs,
+      playerHostMode,
+    });
+
+    stuckPlaybackRetryTimeoutRef.current = window.setTimeout(() => {
+      stuckPlaybackRetryTimeoutRef.current = null;
+
+      if (currentVideoRef.current.id !== targetVideoId) {
+        return;
+      }
+
+      const runtimePlayer = playerRef.current;
+      if (!runtimePlayer) {
+        return;
+      }
+
+      const didSwitch = switchPlayerVideo(runtimePlayer, targetVideoId);
+      if (!didSwitch) {
+        return;
+      }
+
+      notePlayAttempt();
+      runtimePlayer.playVideo();
+
+      logPlayerDebug("stuck-playback:retry-fired", {
+        videoId: targetVideoId,
+        trigger,
+        attempt: nextAttempt,
+      });
+    }, delayMs);
+
+    return true;
   }
 
   async function reportWatchEvent(level: number, reason: "qualified" | "ended", explicitTime?: number, explicitDuration?: number) {
@@ -1044,6 +1195,9 @@ export function PlayerExperience({
     reportedUnavailableVideoIdRef.current = null;
     autoplaySuppressedVideoIdRef.current = null;
     playAttemptedAtRef.current = null;
+    stuckPlaybackRetryCountRef.current = 0;
+    clearStuckPlaybackRetryTimer();
+    clearStuckPlaybackWatchdogTimer();
     clearUnavailableOverlayMessage();
     setShowEndedChoiceOverlay(false);
     setEndedChoiceFromUnavailable(false);
@@ -1158,51 +1312,6 @@ export function PlayerExperience({
     return () => window.removeEventListener(REQUEST_VIDEO_REPLAY_EVENT, handleReplayRequest);
   }, [showEndedChoiceOverlay]);
 
-  useEffect(() => {
-    if (!isPlayerReady || isPlaying || !playAttemptedAtRef.current) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(async () => {
-      const player = playerRef.current;
-      const attemptedAt = playAttemptedAtRef.current;
-
-      if (!player || !attemptedAt || isPlaying) {
-        return;
-      }
-
-      const state = typeof player.getPlayerState === "function" ? player.getPlayerState() : -1;
-      const durationValue =
-        typeof player.getDuration === "function" ? toSafeNumber(player.getDuration(), 0) : 0;
-      const stillBlocked = state !== window.YT?.PlayerState.PLAYING && durationValue <= 0;
-
-      if (!stillBlocked) {
-        return;
-      }
-
-      const shouldSkip = await reportUnavailableFromPlayer("yt-player-runtime-blocked-or-age-restricted");
-
-      logPlayerDebug("runtime-block-check", {
-        videoId: currentVideo.id,
-        playerHostMode,
-        shouldSkip,
-        durationValue,
-        state,
-      });
-
-      if (shouldSkip) {
-        autoplaySuppressedVideoIdRef.current = currentVideo.id;
-        playAttemptedAtRef.current = null;
-        pauseActivePlayback();
-        showUnavailableOverlayMessage();
-      }
-    }, 4500);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [currentVideo.id, isPlayerReady, isPlaying, playerHostMode]);
-
   async function reportUnavailableFromPlayer(reason: string) {
     if (reportedUnavailableVideoIdRef.current === currentVideo.id) {
       logPlayerDebug("report-unavailable:already-reported", {
@@ -1300,7 +1409,7 @@ export function PlayerExperience({
           }
 
           if (shouldAutoplaySelection && autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
-            playAttemptedAtRef.current = Date.now();
+            notePlayAttempt();
             window.setTimeout(() => {
               if (!cancelled && playerRef.current) {
                 playerRef.current.playVideo();
@@ -1404,7 +1513,7 @@ export function PlayerExperience({
             }
 
             if (shouldAutoplaySelection && autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
-              playAttemptedAtRef.current = Date.now();
+              notePlayAttempt();
               event.target.playVideo();
             }
           },
@@ -1430,6 +1539,9 @@ export function PlayerExperience({
 
             if (playing) {
               clearUnavailableOverlayMessage();
+              clearStuckPlaybackRetryTimer();
+              clearStuckPlaybackWatchdogTimer();
+              stuckPlaybackRetryCountRef.current = 0;
               playAttemptedAtRef.current = null;
               setHasPlaybackStarted(true);
               hasPlaybackStartedRef.current = true;
@@ -1585,6 +1697,8 @@ export function PlayerExperience({
 
     return () => {
       cancelled = true;
+      clearStuckPlaybackRetryTimer();
+      clearStuckPlaybackWatchdogTimer();
     };
   }, [currentVideo.id, playerHostMode]);
 
@@ -1621,6 +1735,9 @@ export function PlayerExperience({
       if (unavailableAutoActionTimeoutRef.current) {
         window.clearTimeout(unavailableAutoActionTimeoutRef.current);
       }
+
+      clearStuckPlaybackRetryTimer();
+      clearStuckPlaybackWatchdogTimer();
 
       if (progressIntervalRef.current) {
         window.clearInterval(progressIntervalRef.current);
@@ -1770,7 +1887,7 @@ export function PlayerExperience({
     }
 
     playerRef.current.seekTo(0, true);
-    playAttemptedAtRef.current = Date.now();
+    notePlayAttempt();
     playerRef.current.playVideo();
   }
 
@@ -2637,7 +2754,7 @@ export function PlayerExperience({
             playerRef.current.unMute();
             setIsMuted(false);
           }
-          playAttemptedAtRef.current = Date.now();
+          notePlayAttempt();
           playerRef.current.playVideo();
         }
       }
