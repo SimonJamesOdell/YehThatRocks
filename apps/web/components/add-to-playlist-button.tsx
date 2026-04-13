@@ -20,6 +20,7 @@ type PlaylistSummary = {
   id: string;
   name: string;
   itemCount?: number;
+  leadVideoId?: string;
 };
 
 type CreatedPlaylistPayload = {
@@ -547,7 +548,7 @@ export function AddToPlaylistButton({
                 <div className="playlistQuickAddModalList">
                   {chooserPlaylists.map((playlist) => {
                     const hasLeadThumbnail =
-                      playlist.itemCount > 0 && playlist.leadVideoId !== "__placeholder__";
+                      (playlist.itemCount ?? 0) > 0 && playlist.leadVideoId !== "__placeholder__";
                     return (
                       <button
                         key={playlist.id}
