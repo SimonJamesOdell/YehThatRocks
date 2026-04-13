@@ -8,16 +8,12 @@ const ADMIN_USER_ID = Number(process.env.ADMIN_USER_ID ?? "");
 const ENFORCE_ADMIN_USER_ID = Number.isInteger(ADMIN_USER_ID) && ADMIN_USER_ID > 0;
 
 export function isAdminIdentity(userId: number, email: string) {
+  if (ENFORCE_ADMIN_USER_ID) {
+    return userId === ADMIN_USER_ID;
+  }
+
   const normalizedEmail = email.trim().toLowerCase();
-  if (normalizedEmail !== ADMIN_EMAIL) {
-    return false;
-  }
-
-  if (!ENFORCE_ADMIN_USER_ID) {
-    return true;
-  }
-
-  return userId === ADMIN_USER_ID;
+  return normalizedEmail === ADMIN_EMAIL;
 }
 
 export async function requireAdminApiAuth(request: NextRequest): Promise<
@@ -43,7 +39,7 @@ export async function requireAdminApiAuth(request: NextRequest): Promise<
 export async function requireAdminUser() {
   const user = await getCurrentAuthenticatedUser();
 
-  if (!user?.email || !isAdminIdentity(user.id, user.email)) {
+  if (!user || !isAdminIdentity(user.id, user.email ?? "")) {
     return null;
   }
 

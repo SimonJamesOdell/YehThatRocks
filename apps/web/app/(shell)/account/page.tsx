@@ -9,7 +9,7 @@ import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
 
 export default async function AccountPage() {
   const user = await getCurrentAuthenticatedUser();
-  const isAdminUser = Boolean(user?.email && isAdminIdentity(user.id, user.email));
+  const isAdminUser = Boolean(user && isAdminIdentity(user.id, user.email ?? ""));
   const blockedPageSize = 24;
   const blockedWindow = user
     ? await getHiddenVideosForUser(user.id, { limit: blockedPageSize + 1, offset: 0 })
