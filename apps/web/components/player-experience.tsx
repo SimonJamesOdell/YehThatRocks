@@ -333,6 +333,7 @@ export function PlayerExperience({
   const [adminEditDescription, setAdminEditDescription] = useState("");
   const [isAdminEditLoading, setIsAdminEditLoading] = useState(false);
   const [isAdminEditSaving, setIsAdminEditSaving] = useState(false);
+  const [isAdminDeleting, setIsAdminDeleting] = useState(false);
   const [adminEditError, setAdminEditError] = useState<string | null>(null);
   const [adminEditStatus, setAdminEditStatus] = useState<string | null>(null);
   const currentVideoRef = useRef(currentVideo);
@@ -2895,6 +2896,90 @@ export function PlayerExperience({
         }
       }
 
+      async function handleAdminDeleteCurrentVideo() {
+        if (!isAdmin || isAdminDeleting) {
+          return;
+        }
+
+        const deletingVideoId = currentVideo.id;
+        setIsAdminDeleting(true);
+        setShowShareMenu(false);
+        setAdminEditError(null);
+        setAdminEditStatus(null);
+        pauseActivePlayback();
+
+        try {
+          const response = await fetch("/api/admin/videos", {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              videoId: deletingVideoId,
+            }),
+          });
+
+          if (!response.ok) {
+            showUnavailableOverlayMessage("Could not remove this video from the site.");
+            return;
+          }
+
+          window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+          window.dispatchEvent(new Event("ytr:favourites-updated"));
+          setPlaylistQueueIds((currentIds) => currentIds.filter((id) => id !== deletingVideoId));
+
+          if (activePlaylistId) {
+            const remainingPlaylistIds = playlistQueueIds.filter((id) => id !== deletingVideoId);
+            if (remainingPlaylistIds.length > 0) {
+              const deletedIndex = effectivePlaylistIndex ?? playlistQueueIds.findIndex((id) => id === deletingVideoId);
+              const nextIndex = Math.max(0, Math.min(deletedIndex, remainingPlaylistIds.length - 1));
+              const nextId = remainingPlaylistIds[nextIndex] ?? remainingPlaylistIds[0] ?? null;
+
+              if (nextId && nextId !== deletingVideoId) {
+                navigateToVideo(nextId, {
+                  clearPlaylist: false,
+                  playlistId: activePlaylistId,
+                  playlistItemIndex: nextIndex,
+                });
+                return;
+              }
+            }
+          }
+
+          if (resolvedNextTarget?.videoId && resolvedNextTarget.videoId !== deletingVideoId) {
+            navigateToVideo(resolvedNextTarget.videoId, {
+              clearPlaylist: resolvedNextTarget.clearPlaylist,
+              playlistId: resolvedNextTarget.clearPlaylist ? null : activePlaylistId,
+              playlistItemIndex: resolvedNextTarget.playlistItemIndex,
+            });
+            return;
+          }
+
+          const recoveredVideoId = await resolveAutoplayRecoveryTarget();
+
+          if (recoveredVideoId && recoveredVideoId !== deletingVideoId) {
+            navigateToVideo(recoveredVideoId, {
+              clearPlaylist: true,
+              playlistId: null,
+              playlistItemIndex: null,
+            });
+            return;
+          }
+
+          const params = new URLSearchParams(searchParams.toString());
+          params.delete("v");
+          params.delete("pl");
+          params.delete("pli");
+          const query = params.toString();
+          router.replace(query ? `${pathname}?${query}` : pathname);
+          router.refresh();
+        } catch {
+          showUnavailableOverlayMessage("Could not remove this video from the site.");
+        } finally {
+          setIsAdminDeleting(false);
+        }
+      }
+
       return (
         <>
           {!suppressUnavailablePlaybackSurface ? (
@@ -2946,6 +3031,26 @@ export function PlayerExperience({
                     ) : null}
                   </div>
                   <div className="shareMenuWrap">
+                    {isAdmin ? (
+                      <button
+                        type="button"
+                        className="overlayIconBtn overlayAdminDeleteBtn"
+                        onClick={() => {
+                          void handleAdminDeleteCurrentVideo();
+                        }}
+                        aria-label="Remove video from site"
+                        title="Remove video from site"
+                        disabled={isAdminDeleting}
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6l-1 14H6L5 6" />
+                          <path d="M10 11v6" />
+                          <path d="M14 11v6" />
+                          <path d="M9 6V4h6v2" />
+                        </svg>
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="overlayIconBtn"

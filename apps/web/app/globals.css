@@ -1846,6 +1846,21 @@ h1 {
   background: rgba(0, 0, 0, 0.28);
 }
 
+.overlayAdminDeleteBtn {
+  border: 1px solid rgba(255, 110, 110, 0.5);
+  border-radius: 6px;
+  background: rgba(120, 0, 0, 0.32);
+}
+
+.overlayAdminDeleteBtn:hover {
+  background: rgba(170, 0, 0, 0.45);
+}
+
+.overlayAdminDeleteBtn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 .overlayCenter {
   display: flex;
   align-items: center;
