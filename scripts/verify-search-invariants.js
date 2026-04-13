@@ -13,6 +13,8 @@ const files = {
   searchFlagData: path.join(ROOT, "apps/web/lib/search-flag-data.ts"),
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic.tsx"),
   searchFlagButton: path.join(ROOT, "apps/web/components/search-flag-button.tsx"),
+  adminVideoEditModal: path.join(ROOT, "apps/web/components/admin-video-edit-modal.tsx"),
+  adminVideoEditButton: path.join(ROOT, "apps/web/components/admin-video-edit-button.tsx"),
   globalCss: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
@@ -45,6 +47,8 @@ function main() {
   const searchFlagDataSource = read(files.searchFlagData);
   const shellDynamicSource = read(files.shellDynamic);
   const searchFlagButtonSource = read(files.searchFlagButton);
+  const adminVideoEditModalSource = read(files.adminVideoEditModal);
+  const adminVideoEditButtonSource = read(files.adminVideoEditButton);
   const globalCssSource = read(files.globalCss);
 
   // --- Search page: server-side rendering ---
@@ -142,6 +146,30 @@ function main() {
   // Keyboard semantics: Enter only shortcuts when a suggestion is explicitly highlighted.
   assertContains(shellDynamicSource, "if (isOpen && suggestions && activeSuggestionIdx >= 0) {", "Shell only shortcuts to suggestion when keyboard selection is active", failures);
   assertContains(shellDynamicSource, "router.push(`/search?q=${encodeURIComponent(searchValue.trim())}&v=${encodeURIComponent(currentVideo.id)}`);", "Shell Enter without active suggestion routes to search results", failures);
+
+  // --- Admin video edit modal and button on search results ---
+  assertContains(searchPageSource, 'import { isAdminIdentity } from "@/lib/admin-auth";', "Search page imports admin identity helper", failures);
+  assertContains(searchPageSource, 'import { AdminVideoEditButton } from "@/components/admin-video-edit-button";', "Search page imports admin video edit button", failures);
+  assertContains(searchPageSource, "const isAdminUser = Boolean(user && isAdminIdentity(user.id, user.email ?? \"\"));", "Search page computes admin status from user", failures);
+  assertContains(searchPageSource, "<AdminVideoEditButton videoId={video.id} isAdmin={isAdminUser} />", "Search page renders admin edit button for each video", failures);
+
+  assertContains(adminVideoEditButtonSource, '"use client"', "Admin video edit button is a client component", failures);
+  assertContains(adminVideoEditButtonSource, 'import { AdminVideoEditModal } from "@/components/admin-video-edit-modal"', "Admin edit button imports the modal", failures);
+  assertContains(adminVideoEditButtonSource, "if (!isAdmin) {", "Admin edit button hides itself for non-admin users", failures);
+  assertContains(adminVideoEditButtonSource, "className=\"top100CardAdminEditBtn searchResultAdminEditBtn\"", "Admin edit button uses admin edit button styling", failures);
+
+  assertContains(adminVideoEditModalSource, '"use client"', "Admin video edit modal is a client component", failures);
+  assertContains(adminVideoEditModalSource, "isOpen", "Admin edit modal controls visibility via isOpen prop", failures);
+  assertContains(adminVideoEditModalSource, "videoId", "Admin edit modal receives videoId prop", failures);
+  assertContains(adminVideoEditModalSource, 'fetch(`/api/admin/videos?q=${encodeURIComponent(videoId)}`', "Admin edit modal fetches video details from admin API", failures);
+  assertContains(adminVideoEditModalSource, "adminEditTitle", "Admin edit modal allows editing title", failures);
+  assertContains(adminVideoEditModalSource, "adminEditParsedArtist", "Admin edit modal allows editing parsed artist", failures);
+  assertContains(adminVideoEditModalSource, "parsedTrack", "Admin edit modal allows editing parsed track", failures);
+  assertContains(adminVideoEditModalSource, 'fetch("/api/admin/videos"', "Admin edit modal posts changes to admin videos API", failures);
+  assertContains(adminVideoEditModalSource, "createPortal", "Admin edit modal renders as portal to body", failures);
+
+  assertContains(globalCssSource, ".searchResultAdminEditBtn", "CSS includes admin edit button styling", failures);
+  assertContains(globalCssSource, "top: 72px;", "Admin edit button positioned below block and flag buttons", failures);
 
   if (failures.length > 0) {
     console.error("Search invariant check failed.");

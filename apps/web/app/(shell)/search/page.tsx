@@ -3,8 +3,10 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
+import { isAdminIdentity } from "@/lib/admin-auth";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
+import { AdminVideoEditButton } from "@/components/admin-video-edit-button";
 import { CloseLink } from "@/components/close-link";
 import { NewScrollReset } from "@/components/new-scroll-reset";
 import { SearchResultBlockButton } from "@/components/search-result-block-button";
@@ -22,6 +24,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const cookieStore = await cookies();
   const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
   const user = await getCurrentAuthenticatedUser();
+  const isAdminUser = Boolean(user && isAdminIdentity(user.id, user.email ?? ""));
   const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const query = typeof resolvedSearchParams?.q === "string" ? resolvedSearchParams.q : "";
@@ -56,6 +59,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
             >
               {isAuthenticated ? <SearchResultBlockButton videoId={video.id} title={video.title} /> : null}
               {isAuthenticated ? <SearchFlagButton videoId={video.id} title={video.title} searchQuery={query} /> : null}
+              <AdminVideoEditButton videoId={video.id} isAdmin={isAdminUser} />
               <Link href={`/?v=${video.id}&resume=1`} className="linkedCard leaderboardTrackLink">
                 <div className="queueBadge">Result</div>
                 <div className="leaderboardThumbWrap">
