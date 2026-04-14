@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { requireAdminApiAuth } from "@/lib/admin-auth";
 import { refreshArtistThumbnailForName } from "@/lib/catalog-data";
+import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
 const refreshArtistThumbnailSchema = z.object({
@@ -14,6 +16,16 @@ const refreshArtistThumbnailSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAdminApiAuth(request);
+  if (!auth.ok) {
+    return auth.response;
+  }
+
+  const csrf = verifySameOrigin(request);
+  if (csrf) {
+    return csrf;
+  }
+
   const bodyResult = await parseRequestJson<unknown>(request);
   if (!bodyResult.ok) {
     return bodyResult.response;

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { requireApiAuth } from "@/lib/auth-request";
 import { chatChannel, chatEvents } from "@/lib/chat-events";
+import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
 import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
 import { parseRequestJson } from "@/lib/request-json";
@@ -418,6 +419,11 @@ export async function POST(request: NextRequest) {
 
   if (!authResult.ok) {
     return authResult.response;
+  }
+
+  const csrfError = verifySameOrigin(request);
+  if (csrfError) {
+    return csrfError;
   }
 
   await touchOnlinePresenceThrottled(authResult.auth.userId).catch(() => undefined);

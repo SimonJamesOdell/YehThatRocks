@@ -690,7 +690,7 @@ function ShellDynamicInner({
       return;
     }
 
-    if (anchor.classList.contains("favouritesBlindClose")) {
+    if (anchor.dataset.overlayClose === "true") {
       const closeHref = anchor.getAttribute("href") ?? "/";
       event.preventDefault();
       window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", {
