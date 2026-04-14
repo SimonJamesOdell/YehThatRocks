@@ -12,6 +12,7 @@ import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { PlayerExperience } from "@/components/player-experience";
 import { navItems, type VideoRecord } from "@/lib/catalog";
+import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
 
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
@@ -233,6 +234,7 @@ const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
 const PREFETCH_FAILURE_MAX_BACKOFF_MS = 20_000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
+const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
 const OVERLAY_OPEN_REQUEST_EVENT = "ytr:overlay-open-request";
 const DOCK_MOVE_DURATION_MS = 520;
 const DOCK_CONTROLS_FADE_DURATION_MS = 220;
@@ -386,6 +388,8 @@ function ShellDynamicInner({
   const [playlistBeingDeletedId, setPlaylistBeingDeletedId] = useState<string | null>(null);
   const [hidingRelatedVideoIds, setHidingRelatedVideoIds] = useState<string[]>([]);
   const [hiddenMutationPendingVideoIds, setHiddenMutationPendingVideoIds] = useState<string[]>([]);
+  const [watchNextHideSeen, setWatchNextHideSeen] = useState(false);
+  const [, setSeenVideoRefreshTick] = useState(0);
   const [clickedRelatedVideoId, setClickedRelatedVideoId] = useState<string | null>(null);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const [flashingChatTabs, setFlashingChatTabs] = useState<Record<FlashableChatMode, boolean>>({
@@ -527,6 +531,20 @@ function ShellDynamicInner({
   useEffect(() => {
     previousPathnameRef.current = pathname;
   }, [pathname]);
+
+  // Analytics: fire page_view once on shell mount
+  useEffect(() => {
+    void trackPageView();
+  }, []);
+
+  // Analytics: fire video_view each time the active video changes
+  const analyticsLastVideoIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeVideoId && activeVideoId !== analyticsLastVideoIdRef.current) {
+      analyticsLastVideoIdRef.current = activeVideoId;
+      void trackVideoView(activeVideoId);
+    }
+  }, [activeVideoId]);
 
   useEffect(() => {
     desktopIntroPhaseRef.current = desktopIntroPhase;
@@ -1903,9 +1921,36 @@ function ShellDynamicInner({
     dedupeRelatedRailVideos(displayedRelatedVideos, currentVideo.id),
     hiddenVideoIdsRef.current,
   );
+  const visibleWatchNextVideos = watchNextHideSeen
+    ? displayedRenderableRelatedVideos.filter((video) => !seenVideoIdsRef.current.has(video.id))
+    : displayedRenderableRelatedVideos;
+  const hasSeenWatchNextVideos = displayedRenderableRelatedVideos.some((video) => seenVideoIdsRef.current.has(video.id));
   useEffect(() => {
     relatedVideosRef.current = relatedVideos;
   }, [relatedVideos]);
+
+  useEffect(() => {
+    const handleWatchHistoryUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ videoId?: string }>;
+      const payloadVideoId = customEvent.detail?.videoId;
+      const fallbackVideoId = currentVideo.id;
+      const resolvedVideoId = payloadVideoId && /^[A-Za-z0-9_-]{11}$/.test(payloadVideoId)
+        ? payloadVideoId
+        : fallbackVideoId;
+
+      if (!resolvedVideoId || seenVideoIdsRef.current.has(resolvedVideoId)) {
+        return;
+      }
+
+      seenVideoIdsRef.current.add(resolvedVideoId);
+      setSeenVideoRefreshTick((value) => value + 1);
+    };
+
+    window.addEventListener(WATCH_HISTORY_UPDATED_EVENT, handleWatchHistoryUpdated as EventListener);
+    return () => {
+      window.removeEventListener(WATCH_HISTORY_UPDATED_EVENT, handleWatchHistoryUpdated as EventListener);
+    };
+  }, [currentVideo.id]);
 
   const activePlaylistSummary = activePlaylistId
     ? playlistRailSummaries.find((playlist) => playlist.id === activePlaylistId) ?? null
@@ -3664,6 +3709,15 @@ function ShellDynamicInner({
               }`}
               onScroll={handleRelatedScroll}
             >
+              <button
+                type="button"
+                className={`newPageSeenToggle${watchNextHideSeen ? " newPageSeenToggleActive" : ""}`}
+                onClick={() => setWatchNextHideSeen((value) => !value)}
+                aria-pressed={watchNextHideSeen}
+              >
+                {watchNextHideSeen ? "Showing unseen only" : "Show unseen only"}
+              </button>
+
               {playlistMutationMessage ? (
                 <p className={`rightRailStatus rightRailStatus${playlistMutationTone === "success" ? "Success" : playlistMutationTone === "error" ? "Error" : "Info"}`}>
                   {playlistMutationMessage}
@@ -3682,7 +3736,7 @@ function ShellDynamicInner({
                 </div>
               ) : null}
 
-              {displayedRenderableRelatedVideos.map((track, index) => (
+              {visibleWatchNextVideos.map((track, index) => (
                 <div
                   key={track.id}
                   className={hidingRelatedVideoIds.includes(track.id) ? "relatedCardSlot relatedCardSlotExiting" : "relatedCardSlot"}
@@ -3753,6 +3807,10 @@ function ShellDynamicInner({
                   ) : null}
                 </div>
               ))}
+
+              {watchNextHideSeen && hasSeenWatchNextVideos && visibleWatchNextVideos.length === 0 ? (
+                <p className="rightRailStatus">No unseen videos in Watch Next right now.</p>
+              ) : null}
 
               <div ref={relatedLoadMoreSentinelRef} className="relatedLoadMoreSentinel" aria-hidden="true" />
 

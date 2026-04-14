@@ -1222,7 +1222,9 @@ export function PlayerExperience({
         }
 
         if (typeof window !== "undefined") {
-          window.dispatchEvent(new Event(WATCH_HISTORY_UPDATED_EVENT));
+          window.dispatchEvent(new CustomEvent(WATCH_HISTORY_UPDATED_EVENT, {
+            detail: { videoId: activeVideoId },
+          }));
         }
       }
     } catch {
@@ -3211,25 +3213,27 @@ export function PlayerExperience({
               {isPlayerReady && (
                 <div className={!hasPlaybackStarted || !isPlaying || showControls ? "playerOverlay playerOverlayVisible" : "playerOverlay"}>
                 <div className="overlayTop">
-                  <div className="overlayTitleRow">
-                    <p className="overlayTitle">{displayTitle}</p>
-                    {isAdmin ? (
-                      <button
-                        type="button"
-                        className="overlayIconBtn overlayAdminEditBtn"
-                        onClick={() => {
-                          void handleOpenAdminVideoEdit();
-                        }}
-                        aria-label="Edit video record"
-                        title="Edit video record"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M12 20h9" />
-                          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
-                        </svg>
-                      </button>
-                    ) : null}
-                  </div>
+                  {!isFullscreen ? (
+                    <div className="overlayTitleRow">
+                      <p className="overlayTitle">{displayTitle}</p>
+                      {isAdmin ? (
+                        <button
+                          type="button"
+                          className="overlayIconBtn overlayAdminEditBtn"
+                          onClick={() => {
+                            void handleOpenAdminVideoEdit();
+                          }}
+                          aria-label="Edit video record"
+                          title="Edit video record"
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                          </svg>
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="shareMenuWrap">
                     {isAdmin ? (
                       <button

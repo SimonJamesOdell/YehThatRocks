@@ -285,3 +285,20 @@ model SiteVideo {
 
   @@map("site_videos")
 }
+
+model AnalyticsEvent {
+  id           BigInt   @id @default(autoincrement())
+  eventType    String   @db.VarChar(32) @map("event_type")
+  visitorId    String   @db.VarChar(64) @map("visitor_id")
+  sessionId    String   @db.VarChar(64) @map("session_id")
+  isNewVisitor Boolean  @default(false) @map("is_new_visitor")
+  userId       Int?     @map("user_id")
+  videoId      String?  @db.VarChar(32) @map("video_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([visitorId])
+  @@index([sessionId])
+  @@index([eventType, createdAt])
+  @@map("analytics_events")
+}
