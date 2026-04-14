@@ -25,6 +25,12 @@ export function ArtistWikiLink({ artistName, videoId, className, children, title
   const targetHref = withVideoContext(href, videoId, true);
 
   const openWiki = () => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("ytr:overlay-open-request", {
+        detail: { href: targetHref, kind: "wiki" },
+      }));
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    }
     router.push(targetHref);
   };
 

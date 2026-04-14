@@ -2376,6 +2376,19 @@ h1 {
   align-items: stretch;
 }
 
+.playerEndedChoiceEmptyState {
+  grid-column: 1 / -1;
+  min-height: 140px;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+  color: rgba(255, 235, 229, 0.88);
+  text-align: center;
+}
+
 .playerEndedChoiceGridExiting {
   opacity: 0;
   transition: opacity 260ms ease;
@@ -2386,9 +2399,19 @@ h1 {
 }
 
 .playerEndedChoiceActions {
+  position: relative;
   display: flex;
   justify-content: space-between;
+  align-items: center;
   margin-top: 8px;
+}
+
+.playerEndedChoiceSeenToggle {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  z-index: 1;
 }
 
 .playerEndedChoiceWatchAgain {
