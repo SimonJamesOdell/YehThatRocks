@@ -18,6 +18,14 @@ function isProtectedApi(pathname: string) {
   return PROTECTED_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
+function sanitizedAuthHeaders(request: NextRequest) {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.delete("x-auth-user-id");
+  requestHeaders.delete("x-auth-user-email");
+  requestHeaders.delete("x-auth-verified");
+  return requestHeaders;
+}
+
 function withSecurityHeaders(response: NextResponse) {
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("X-Content-Type-Options", "nosniff");
@@ -37,9 +45,16 @@ function withSecurityHeaders(response: NextResponse) {
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const requestHeaders = sanitizedAuthHeaders(request);
 
   if (!isProtectedApi(pathname)) {
-    return withSecurityHeaders(NextResponse.next());
+    return withSecurityHeaders(
+      NextResponse.next({
+        request: {
+          headers: requestHeaders,
+        },
+      }),
+    );
   }
 
   const { accessToken } = readAuthCookies(request);
@@ -47,10 +62,6 @@ export async function proxy(request: NextRequest) {
   if (accessToken) {
     try {
       const access = await verifyToken(accessToken, "access");
-      const requestHeaders = new Headers(request.headers);
-      requestHeaders.delete("x-auth-user-id");
-      requestHeaders.delete("x-auth-user-email");
-      requestHeaders.delete("x-auth-verified");
       requestHeaders.set("x-auth-user-id", String(access.uid));
       requestHeaders.set("x-auth-user-email", access.email);
       requestHeaders.set("x-auth-verified", "1");

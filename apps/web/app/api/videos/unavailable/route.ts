@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { isAdminIdentity } from "@/lib/admin-auth";
+import { requireApiAuth } from "@/lib/auth-request";
 import { prisma } from "@/lib/db";
 import { pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
+import { rateLimitOrResponse } from "@/lib/rate-limit";
 import { parseRequestJson } from "@/lib/request-json";
 
 type MarkUnavailableBody = {
@@ -106,6 +109,21 @@ async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityC
 }
 
 export async function POST(request: NextRequest) {
+  const authResult = await requireApiAuth(request);
+  if (!authResult.ok) {
+    return authResult.response;
+  }
+
+  const rateLimited = rateLimitOrResponse(
+    request,
+    `videos:unavailable:${authResult.auth.userId}`,
+    20,
+    10 * 60 * 1000,
+  );
+  if (rateLimited) {
+    return rateLimited;
+  }
+
   const csrfError = verifySameOrigin(request);
 
   if (csrfError) {
@@ -125,7 +143,8 @@ export async function POST(request: NextRequest) {
   }
 
   const reason = parsed.data.reason?.trim() ?? "runtime-player-error";
-  const forcePrune = shouldForcePruneFromRuntimeReason(reason);
+  const adminReporter = isAdminIdentity(authResult.auth.userId, authResult.auth.email);
+  const forcePrune = adminReporter && shouldForcePruneFromRuntimeReason(reason);
 
   debugUnavailable("incoming-report", {
     videoId,

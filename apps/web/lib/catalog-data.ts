@@ -2499,11 +2499,18 @@ export async function getVideoForSharing(videoId?: string) {
         videoId,
         title,
         NULL AS channelTitle,
+        parsedArtist,
         favourited,
         description
       FROM videos
       WHERE videoId = ${normalizedVideoId}
         AND videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+      ORDER BY
+        CASE
+          WHEN parsedArtist IS NULL OR TRIM(parsedArtist) = '' THEN 1
+          ELSE 0
+        END ASC,
+        id DESC
       LIMIT 1
     `;
 

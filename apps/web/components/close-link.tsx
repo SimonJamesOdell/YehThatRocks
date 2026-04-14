@@ -13,6 +13,7 @@ function CloseLinkInner() {
     <Link
       href={closeHref}
       className="favouritesBlindClose"
+      data-overlay-close="true"
       onClick={(event) => {
         if (
           event.defaultPrevented
