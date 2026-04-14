@@ -233,6 +233,7 @@ const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
 const PREFETCH_FAILURE_MAX_BACKOFF_MS = 20_000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
+const OVERLAY_OPEN_REQUEST_EVENT = "ytr:overlay-open-request";
 const DOCK_MOVE_DURATION_MS = 520;
 const DOCK_CONTROLS_FADE_DURATION_MS = 220;
 const DOCK_CONTROLS_FADE_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - DOCK_CONTROLS_FADE_DURATION_MS);
@@ -457,8 +458,10 @@ function ShellDynamicInner({
   const [isOverlayClosing, setIsOverlayClosing] = useState(false);
   const [isFooterRevealActive, setIsFooterRevealActive] = useState(false);
   const [isDockTransitioning, setIsDockTransitioning] = useState(false);
+  const [pendingOverlayOpenKind, setPendingOverlayOpenKind] = useState<"wiki" | "video" | null>(null);
   const [startupSelectionRefreshTick, setStartupSelectionRefreshTick] = useState(0);
   const overlayCloseTimeoutRef = useRef<number | null>(null);
+  const overlayOpenTimeoutRef = useRef<number | null>(null);
   const footerRevealTimeoutRef = useRef<number | null>(null);
   const shouldRunFooterRevealRef = useRef(false);
   const dockTransitionTimeoutRef = useRef<number | null>(null);
@@ -481,6 +484,7 @@ function ShellDynamicInner({
   const previousPathname = previousPathnameRef.current;
   const previousWasCategoriesRoute = previousPathname === "/categories" || previousPathname?.startsWith("/categories/") === true;
   const isOverlayRoute = pathname !== "/";
+  const shouldShowOverlayPanel = isOverlayRoute || pendingOverlayOpenKind !== null;
   const disableOverlayDropAnimation = isCategoriesRoute && previousWasCategoriesRoute;
   const isPlayerWidthOverlayRoute =
     pathname === "/new"
@@ -493,14 +497,14 @@ function ShellDynamicInner({
     isPlayerWidthOverlayRoute ? "favouritesBlindPlayerWidth" : "",
     isOverlayClosing ? "favouritesBlindClosing" : "",
   ].filter(Boolean).join(" ");
-  const shouldRunChat = isAuthenticated && !isOverlayRoute;
+  const shouldRunChat = isAuthenticated && !shouldShowOverlayPanel;
   const shouldDisableRelatedRailTransition = pathname === "/new";
   const isDesktopIntroActive =
     desktopIntroPhase === "hold"
     || desktopIntroPhase === "moving"
     || desktopIntroPhase === "revealing";
   const isArtistsIndexRoute = pathname === "/artists";
-  const shouldDockDesktopPlayer = isOverlayRoute;
+  const shouldDockDesktopPlayer = shouldShowOverlayPanel;
   const shouldDockUnderArtistsAlphabet = shouldDockDesktopPlayer && isArtistsIndexRoute;
   const playerChromeClassName = [
     "playerChrome",
@@ -508,7 +512,7 @@ function ShellDynamicInner({
     shouldDockUnderArtistsAlphabet ? "playerChromeDockedArtists" : "",
     shouldDockDesktopPlayer && isDockTransitioning ? "playerChromeDockTransitioning" : "",
     isOverlayClosing ? "playerChromeUndocking" : "",
-    !isOverlayRoute && isFooterRevealActive ? "playerChromeFooterReveal" : "",
+    !shouldShowOverlayPanel && isFooterRevealActive ? "playerChromeFooterReveal" : "",
   ].filter(Boolean).join(" ");
   const playerChromeStyle = shouldDockDesktopPlayer
     ? ({
@@ -631,7 +635,7 @@ function ShellDynamicInner({
       startDesktopIntroSequence();
     }
   }, [pathname, requestedVideoId, startDesktopIntroSequence]);
-  const isLeftRailSuppressed = isOverlayRoute || isMobileCommunityCollapsed;
+  const isLeftRailSuppressed = shouldShowOverlayPanel || isMobileCommunityCollapsed;
   const artistLetterParam = searchParams.get("letter");
   const activeArtistLetter =
     artistLetterParam && /^[A-Za-z]$/.test(artistLetterParam)
@@ -662,10 +666,10 @@ function ShellDynamicInner({
     const filteredQuery = filteredParams.toString();
     return filteredQuery ? `${pathname}?${filteredQuery}` : pathname;
   })();
-  const routeLoadingLabel = pathname.endsWith("/wiki") ? "Loading wiki" : "Loading video";
+  const routeLoadingLabel = pathname.endsWith("/wiki") || pendingOverlayOpenKind === "wiki" ? "Loading wiki" : "Loading video";
 
   const handleOverlayVideoLinkClickCapture = useCallback((event: ReactMouseEvent<HTMLElement>) => {
-    if (!isOverlayRoute || isOverlayClosing) {
+    if (!shouldShowOverlayPanel || isOverlayClosing) {
       return;
     }
 
@@ -713,7 +717,7 @@ function ShellDynamicInner({
 
     const nextQuery = params.toString();
     router.push(nextQuery ? `${pathname}?${nextQuery}` : pathname);
-  }, [isOverlayClosing, isOverlayRoute, pathname, router, searchParams]);
+  }, [isOverlayClosing, pathname, router, searchParams, shouldShowOverlayPanel]);
 
   useEffect(() => {
     if (!isAuthenticated && rightRailMode === "playlist") {
@@ -791,7 +795,7 @@ function ShellDynamicInner({
   }, []);
 
   useEffect(() => {
-    if (isOverlayRoute) {
+    if (shouldShowOverlayPanel) {
       setIsMobileCommunityOpen(false);
       return;
     }
@@ -816,7 +820,58 @@ function ShellDynamicInner({
         footerRevealTimeoutRef.current = null;
       }, FOOTER_REVEAL_DURATION_MS);
     }
-  }, [isOverlayRoute]);
+  }, [shouldShowOverlayPanel]);
+
+  useEffect(() => {
+    if (pathname !== "/" && pendingOverlayOpenKind !== null) {
+      setPendingOverlayOpenKind(null);
+    }
+  }, [pathname, pendingOverlayOpenKind]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleOverlayOpenRequest = (event: Event) => {
+      const openEvent = event as CustomEvent<{ href?: string; kind?: string }>;
+      const href = openEvent.detail?.href;
+      if (!href) {
+        return;
+      }
+
+      const openUrl = new URL(href, window.location.origin);
+      if (openUrl.origin !== window.location.origin) {
+        return;
+      }
+
+      const kind = openEvent.detail?.kind === "wiki" || openUrl.pathname.endsWith("/wiki") ? "wiki" : "video";
+      setPendingOverlayOpenKind(kind);
+
+      const node = favouritesBlindInnerRef.current;
+      if (node) {
+        node.scrollTop = 0;
+      }
+
+      if (overlayOpenTimeoutRef.current !== null) {
+        window.clearTimeout(overlayOpenTimeoutRef.current);
+      }
+
+      overlayOpenTimeoutRef.current = window.setTimeout(() => {
+        overlayOpenTimeoutRef.current = null;
+        setPendingOverlayOpenKind((current) => (pathname === "/" ? null : current));
+      }, 4500);
+    };
+
+    window.addEventListener(OVERLAY_OPEN_REQUEST_EVENT, handleOverlayOpenRequest);
+    return () => {
+      window.removeEventListener(OVERLAY_OPEN_REQUEST_EVENT, handleOverlayOpenRequest);
+      if (overlayOpenTimeoutRef.current !== null) {
+        window.clearTimeout(overlayOpenTimeoutRef.current);
+        overlayOpenTimeoutRef.current = null;
+      }
+    };
+  }, [pathname]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -945,6 +1000,28 @@ function ShellDynamicInner({
 
   useEffect(() => {
     if (pathname !== "/top100" && pathname !== "/history") {
+      return;
+    }
+
+    const node = favouritesBlindInnerRef.current;
+    if (!node) {
+      return;
+    }
+
+    node.scrollTop = 0;
+    const frameId = window.requestAnimationFrame(() => {
+      if (favouritesBlindInnerRef.current) {
+        favouritesBlindInnerRef.current.scrollTop = 0;
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!pathname.endsWith("/wiki")) {
       return;
     }
 
@@ -3110,7 +3187,7 @@ function ShellDynamicInner({
   }
 
   const shellClassName = [
-    isOverlayRoute ? "shell shellOverlayRoute" : "shell",
+    shouldShowOverlayPanel ? "shell shellOverlayRoute" : "shell",
     isDesktopIntroPreload ? "shellDesktopIntroPreload" : "",
     isDesktopIntroActive ? "shellDesktopIntroActive" : "",
     desktopIntroPhase === "moving" ? "shellDesktopIntroMoving" : "",
@@ -3229,7 +3306,7 @@ function ShellDynamicInner({
                 </Link>
               );
             })}
-            {!isOverlayRoute ? (
+            {!shouldShowOverlayPanel ? (
               <button
                 type="button"
                 className={isMobileCommunityOpen ? "mobileRailToggle navLink navLinkActive" : "mobileRailToggle navLink"}
@@ -3310,7 +3387,7 @@ function ShellDynamicInner({
       <section
         className={[
           "heroGrid",
-          isOverlayRoute ? "heroGridOverlayRoute" : "",
+          shouldShowOverlayPanel ? "heroGridOverlayRoute" : "",
           isOverlayClosing ? "heroGridOverlayClosing" : "",
         ].filter(Boolean).join(" ")}
         onClickCapture={handleOverlayVideoLinkClickCapture}
@@ -3327,7 +3404,7 @@ function ShellDynamicInner({
           id={isMobileViewport ? "mobile-community-rail" : undefined}
           className={[
             "leftRail panel translucent",
-            isOverlayRoute ? "railOccluded" : "",
+            shouldShowOverlayPanel ? "railOccluded" : "",
             isMobileViewport ? "mobileRail" : "",
             isMobileViewport && !isMobileCommunityOpen ? "mobileRailClosed" : "",
           ].filter(Boolean).join(" ")}
@@ -3516,13 +3593,27 @@ function ShellDynamicInner({
               )}
             </Suspense>
 
-            {isOverlayRoute ? (
+            {shouldShowOverlayPanel ? (
               <section
                 key={overlayRouteKey}
                 className={overlayPanelClassName}
                 aria-label="Page overlay"
               >
-                <div ref={favouritesBlindInnerRef} className="favouritesBlindInner">{children}</div>
+                <div ref={favouritesBlindInnerRef} className="favouritesBlindInner">
+                  {isOverlayRoute ? children : (
+                    <div className="playerLoadingFallback" role="status" aria-live="polite" aria-label={routeLoadingLabel}>
+                      <div className="playerBootLoader">
+                        <div className="playerBootBars" aria-hidden="true">
+                          <span />
+                          <span />
+                          <span />
+                          <span />
+                        </div>
+                        <p>{routeLoadingLabel}...</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </section>
             ) : null}
           </div>
@@ -3531,12 +3622,12 @@ function ShellDynamicInner({
         <aside
           ref={watchNextRailRef}
           className={
-            isOverlayRoute
+            shouldShowOverlayPanel
               ? "rightRail panel translucent railOccluded"
               : "rightRail panel translucent"
           }
-          aria-hidden={isOverlayRoute}
-          inert={isOverlayRoute ? true : undefined}
+          aria-hidden={shouldShowOverlayPanel}
+          inert={shouldShowOverlayPanel ? true : undefined}
         >
           <div className="railTabs rightRailTabs">
             {isAuthenticated ? (

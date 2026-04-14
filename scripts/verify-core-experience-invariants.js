@@ -98,9 +98,15 @@ function main() {
   assertContains(playerExperienceSource, "playerEndedChoiceGrid", "Player renders chooser overlay grid", failures);
   assertContains(playerExperienceSource, "playerEndedChoiceGridExiting", "Player defines exit animation for chooser overlay grid reshuffle", failures);
   assertContains(playerExperienceSource, "const maxEndedChoiceVideos = 12;", "Player caps chooser cards to 12 for larger screens", failures);
+  assertContains(playerExperienceSource, "const [endedChoiceHideSeen, setEndedChoiceHideSeen] = useState(false);", "Player tracks a local seen filter state for the end chooser", failures);
+  assertContains(playerExperienceSource, "const hasSeenEndedChoiceVideos = endedChoiceVideos.some((video) => seenVideoIds?.has(video.id));", "Player detects when the end chooser includes seen videos", failures);
+  assertContains(playerExperienceSource, 'className={`newPageSeenToggle playerEndedChoiceSeenToggle${endedChoiceHideSeen ? " newPageSeenToggleActive" : ""}`}', "Player reuses the New page seen-toggle styling in the end chooser", failures);
+  assertContains(playerExperienceSource, 'No unseen choices right now. Try more choices or watch again.', "Player shows an empty state when the chooser is filtered to no unseen videos", failures);
   assertContains(playerExperienceSource, "autoplayEnabledRef.current &&", "Player only auto-advances when autoplay is enabled", failures);
   assertContains(cssSource, ".playerEndedChoiceOverlay", "Chooser overlay styles are defined", failures);
+  assertContains(cssSource, ".playerEndedChoiceSeenToggle", "Chooser overlay defines a bottom-centered seen toggle style", failures);
   assertContains(cssSource, ".playerEndedChoiceGrid", "Chooser overlay grid styles are defined", failures);
+  assertContains(cssSource, ".playerEndedChoiceEmptyState", "Chooser overlay defines an empty state for unseen-only filtering", failures);
   assertContains(cssSource, ".playerEndedChoiceGridExiting", "Chooser overlay grid exit animation is defined", failures);
   assertContains(cssSource, "@media (min-width: 2200px)", "Chooser overlay defines ultrawide breakpoint", failures);
   assertContains(cssSource, "grid-template-columns: repeat(6, minmax(0, 1fr));", "Chooser overlay uses 6 columns on ultrawide for two rows", failures);
@@ -153,7 +159,9 @@ function main() {
   assertContains(shellDynamicSource, 'fetch(`/api/videos/share-preview?v=${encodeURIComponent(videoId)}`)', "Shared chat cards resolve preview metadata via share-preview API", failures);
   assertContains(shellDynamicSource, "const REQUEST_VIDEO_REPLAY_EVENT = \"ytr:request-video-replay\";", "Shell defines replay-request event constant for shared chat cards", failures);
   assertContains(shellDynamicSource, "window.dispatchEvent(new CustomEvent(REQUEST_VIDEO_REPLAY_EVENT, {", "Shell dispatches replay request when shared chat card is clicked", failures);
-  assertContains(shellDynamicSource, 'const routeLoadingLabel = pathname.endsWith("/wiki") ? "Loading wiki" : "Loading video";', "Shell loading fallback derives wiki-aware copy", failures);
+  assertContains(shellDynamicSource, 'const routeLoadingLabel = pathname.endsWith("/wiki") || pendingOverlayOpenKind === "wiki" ? "Loading wiki" : "Loading video";', "Shell loading fallback derives wiki-aware copy including optimistic wiki opens", failures);
+  assertContains(shellDynamicSource, 'const OVERLAY_OPEN_REQUEST_EVENT = "ytr:overlay-open-request";', "Shell defines an optimistic overlay-open request event constant", failures);
+  assertContains(shellDynamicSource, 'window.addEventListener(OVERLAY_OPEN_REQUEST_EVENT, handleOverlayOpenRequest);', "Shell listens for optimistic overlay-open requests", failures);
 
   // Shared-chat same-video replay invariants.
   assertContains(playerExperienceSource, "const REQUEST_VIDEO_REPLAY_EVENT = \"ytr:request-video-replay\";", "Player defines replay-request event constant", failures);
@@ -187,6 +195,7 @@ function main() {
   assertContains(chatSharedVideoSource, 'const SHARED_VIDEO_FIELD_SEPARATOR = "\\t";', "Shared chat video payload supports structured fields", failures);
   assertContains(chatSharedVideoSource, 'return {', "Shared chat video parsing returns structured payload object", failures);
   assertContains(artistWikiLinkSource, 'router.push(targetHref);', "Artist wiki link performs client-side navigation", failures);
+  assertContains(artistWikiLinkSource, 'window.dispatchEvent(new CustomEvent("ytr:overlay-open-request", {', "Artist wiki link triggers immediate overlay-open requests", failures);
   assertContains(cssSource, '.shareModalBackdrop', "Share modal backdrop styles are defined", failures);
   assertContains(cssSource, '.shareModalGrid', "Share modal platform grid styles are defined", failures);
   assertContains(cssSource, '.primaryActionPlaylistMenu', "Footer playlist quick-add menu styles are defined", failures);

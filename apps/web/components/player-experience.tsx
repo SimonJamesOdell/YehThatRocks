@@ -290,6 +290,7 @@ export function PlayerExperience({
   const [endedChoiceGridExiting, setEndedChoiceGridExiting] = useState(false);
   const [endedChoiceHidingIds, setEndedChoiceHidingIds] = useState<string[]>([]);
   const [endedChoiceDismissedIds, setEndedChoiceDismissedIds] = useState<string[]>([]);
+  const [endedChoiceHideSeen, setEndedChoiceHideSeen] = useState(false);
   const [playerClosedByEndOfVideo, setPlayerClosedByEndOfVideo] = useState(false);
   const [playlistChooserOpen, setPlaylistChooserOpen] = useState(false);
   const [overlayInstance, setOverlayInstance] = useState(0);
@@ -360,6 +361,7 @@ export function PlayerExperience({
     currentVideoRef.current = currentVideo;
     setLocalTitleOverride(null);
     setLocalChannelTitleOverride(null);
+    setEndedChoiceHideSeen(false);
   }, [currentVideo]);
 
   function handleFullscreenToggle() {
@@ -683,6 +685,10 @@ export function PlayerExperience({
     const offset = (endedChoiceReshuffleKey * maxEndedChoiceVideos) % Math.max(all.length, 1);
     return [...all.slice(offset), ...all.slice(0, offset)].slice(0, maxEndedChoiceVideos);
   }, [queue, topFallbackVideos, currentVideo.id, endedChoiceReshuffleKey, endedChoiceDismissedIds]);
+  const hasSeenEndedChoiceVideos = endedChoiceVideos.some((video) => seenVideoIds?.has(video.id));
+  const visibleEndedChoiceVideos = endedChoiceHideSeen
+    ? endedChoiceVideos.filter((video) => !(seenVideoIds?.has(video.id) ?? false))
+    : endedChoiceVideos;
   const footerActionsBlocked = Boolean(unavailableOverlayMessage) || showEndedChoiceOverlay || playlistChooserOpen;
   const isUpstreamConnectivityOverlay = unavailableOverlayMessage === UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE;
   const footerSelectablePlaylists = activePlaylistId
@@ -3422,7 +3428,7 @@ export function PlayerExperience({
           {showEndedChoiceOverlay && endedChoiceVideos.length > 0 ? (
             <div className="playerEndedChoiceOverlay" role="dialog" aria-modal="false" aria-label="Choose the next video">
               <div className={endedChoiceGridExiting ? "playerEndedChoiceGrid playerEndedChoiceGridExiting" : "playerEndedChoiceGrid"}>
-                {endedChoiceVideos.map((video, index) => {
+                {visibleEndedChoiceVideos.map((video, index) => {
                   const isSeen = seenVideoIds?.has(video.id) ?? false;
                   const isHiding = endedChoiceHidingIds.includes(video.id);
                   return (
@@ -3481,6 +3487,11 @@ export function PlayerExperience({
                     </div>
                   );
                 })}
+                {visibleEndedChoiceVideos.length === 0 ? (
+                  <div className="playerEndedChoiceEmptyState">
+                    No unseen choices right now. Try more choices or watch again.
+                  </div>
+                ) : null}
               </div>
               <div className="playerEndedChoiceActions">
                 <button
@@ -3490,6 +3501,16 @@ export function PlayerExperience({
                 >
                   {"<- watch again"}
                 </button>
+                {hasSeenEndedChoiceVideos ? (
+                  <button
+                    type="button"
+                    className={`newPageSeenToggle playerEndedChoiceSeenToggle${endedChoiceHideSeen ? " newPageSeenToggleActive" : ""}`}
+                    onClick={() => setEndedChoiceHideSeen((value) => !value)}
+                    aria-pressed={endedChoiceHideSeen}
+                  >
+                    {endedChoiceHideSeen ? "Showing unseen only" : "Show unseen only"}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="playerEndedChoiceWatchAgain"
