@@ -2,6 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+const HEALTH_FALLBACK_POLL_MS = 2_000;
+
+function finiteOrNull(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 type DashboardPayload = {
   meta: { durationMs: number; generatedAt: string };
   health: {
@@ -13,13 +19,23 @@ type DashboardPayload = {
       totalMemMb: number;
       freeMemMb: number;
       cpuUsagePercent: number | null;
+      cpuAverageUsagePercent: number | null;
+      cpuPeakCoreUsagePercent: number | null;
       memoryUsagePercent: number;
+      diskUsagePercent: number | null;
+      swapUsagePercent: number | null;
       networkUsagePercent: number | null;
     };
   };
   counts: { users: number; videos: number; artists: number; categories: number };
   locations: Array<{ location: string; count: number }>;
   traffic: Array<{ day: string; count: number }>;
+  analytics: {
+    daily: Array<{ day: string; pageViews: number; videoViews: number; uniqueVisitors: number }>;
+    newVsRepeat: { newVisitors: number; repeatVisitors: number };
+    registrationsPerDay: Array<{ day: string; count: number }>;
+    totals: { pageViews: number; videoViews: number; uniqueVisitors: number; sessions: number };
+  };
   insights: {
     auth24h: {
       total: number;
@@ -42,6 +58,11 @@ type DashboardPayload = {
       daily: Array<{ day: string; classified: number; errors: number }>;
     };
   };
+};
+
+type AdminHealthStreamPayload = {
+  health: DashboardPayload["health"];
+  meta: { generatedAt: string };
 };
 
 type CategoryRow = { id: number; genre: string; thumbnailVideoId: string | null; updatedAt: string };
@@ -96,16 +117,28 @@ async function readJson<T>(input: RequestInfo | URL, init?: RequestInit): Promis
   return response.json() as Promise<T>;
 }
 
-function Dial({ label, value, color }: { label: string; value: number | null; color: string }) {
+async function readNoStoreJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  return readJson<T>(input, {
+    ...init,
+    cache: "no-store",
+    headers: {
+      ...(init?.headers ?? {}),
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+function Dial({ label, value, color, detail }: { label: string; value: number | null; color: string; detail?: string | null }) {
   const radius = 34;
   const stroke = 8;
   const size = 90;
   const circumference = 2 * Math.PI * radius;
   const safeValue = value === null ? 0 : Math.max(0, Math.min(100, value));
   const offset = circumference * (1 - safeValue / 100);
+  const dialWidthPx = 132;
 
   return (
-    <div style={{ display: "grid", justifyItems: "center", gap: 6 }}>
+    <div style={{ display: "grid", justifyItems: "center", gap: 6, width: dialWidthPx, minWidth: dialWidthPx }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${label} ${value === null ? "n/a" : `${Math.round(safeValue)} percent`}`}>
         <circle cx={size / 2} cy={size / 2} r={radius} stroke="rgba(255,255,255,0.14)" strokeWidth={stroke} fill="none" />
         <circle
@@ -120,11 +153,16 @@ function Dial({ label, value, color }: { label: string; value: number | null; co
           strokeLinecap="round"
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
-        <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle" fill="#fff" style={{ fontSize: 14, fontWeight: 700 }}>
+        <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle" fill="#fff" style={{ fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
           {value === null ? "n/a" : `${Math.round(safeValue)}%`}
         </text>
       </svg>
       <span className="authMessage" style={{ margin: 0 }}>{label}</span>
+      {detail ? (
+        <span className="authMessage" style={{ margin: 0, width: "100%", textAlign: "center", whiteSpace: "pre-line", fontVariantNumeric: "tabular-nums" }}>
+          {detail}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -146,48 +184,151 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [ambiguousQuery, setAmbiguousQuery] = useState("");
   const [moderatingVideoId, setModeratingVideoId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [trafficRangeDays, setTrafficRangeDays] = useState<number>(0);
+  const cpuAvgPeakText =
+    finiteOrNull(dashboard?.health.host.cpuAverageUsagePercent) === null ||
+    finiteOrNull(dashboard?.health.host.cpuPeakCoreUsagePercent) === null
+      ? "Avg : n/a\nPeak : n/a"
+      : `Avg : ${Math.round(finiteOrNull(dashboard?.health.host.cpuAverageUsagePercent) ?? 0)}%\nPeak : ${Math.round(finiteOrNull(dashboard?.health.host.cpuPeakCoreUsagePercent) ?? 0)}%`;
 
-  const selectedLocations = useMemo(() => dashboard?.locations.slice(0, 10) ?? [], [dashboard]);
   const orderedTraffic = useMemo(() => (dashboard?.traffic ?? []).slice().reverse(), [dashboard]);
+  const orderedAnalyticsDaily = useMemo(() => (dashboard?.analytics.daily ?? []).slice().reverse(), [dashboard]);
+  const combinedAvailableDays = useMemo(() => {
+    return new Set([
+      ...orderedAnalyticsDaily.map((item) => item.day),
+      ...orderedTraffic.map((item) => item.day),
+    ]).size;
+  }, [orderedAnalyticsDaily, orderedTraffic]);
+  const trafficRangeOptions = useMemo(() => {
+    const available = combinedAvailableDays;
+    const candidates = [3, 7, 14, 30, 60, 90].filter((value) => value <= available);
+
+    if (available > 0 && !candidates.includes(available)) {
+      candidates.push(available);
+    }
+
+    return [0, ...candidates.sort((a, b) => a - b)];
+  }, [combinedAvailableDays]);
   const orderedIngestVelocity = useMemo(() => (dashboard?.insights.ingestVelocity ?? []).slice().reverse(), [dashboard]);
   const orderedGroqSpend = useMemo(() => (dashboard?.insights.groqSpend.daily ?? []).slice().reverse(), [dashboard]);
-  const maxTrafficCount = useMemo(() => Math.max(1, ...orderedTraffic.map((item) => item.count)), [orderedTraffic]);
   const maxIngestCount = useMemo(() => Math.max(1, ...orderedIngestVelocity.map((item) => item.count)), [orderedIngestVelocity]);
   const maxGroqCount = useMemo(() => Math.max(1, ...orderedGroqSpend.map((item) => item.classified + item.errors)), [orderedGroqSpend]);
-  const maxLocationCount = useMemo(() => Math.max(1, ...selectedLocations.map((item) => item.count)), [selectedLocations]);
-  const authSuccessRate = useMemo(() => {
-    const total = dashboard?.insights.auth24h.total ?? 0;
-    const success = dashboard?.insights.auth24h.success ?? 0;
+  const mergedChartRows = useMemo(() => {
+    const analyticsByDay = new Map(
+      orderedAnalyticsDaily.map((item) => [item.day, item]),
+    );
+    const authByDay = new Map(orderedTraffic.map((item) => [item.day, item.count]));
+    const mergedDays = Array.from(new Set([...analyticsByDay.keys(), ...authByDay.keys()])).sort();
 
-    if (!total) {
-      return 0;
-    }
-
-    return Math.round((success / total) * 100);
-  }, [dashboard]);
-  const trafficGraph = useMemo(() => {
-    const width = 680;
-    const height = 220;
-    const padding = 24;
-
-    if (orderedTraffic.length === 0) {
-      return { width, height, points: [], path: "" };
-    }
-
-    const chartWidth = width - padding * 2;
-    const chartHeight = height - padding * 2;
-    const step = orderedTraffic.length > 1 ? chartWidth / (orderedTraffic.length - 1) : 0;
-
-    const points = orderedTraffic.map((item, index) => {
-      const x = padding + index * step;
-      const y = padding + chartHeight - (item.count / maxTrafficCount) * chartHeight;
-      return { x, y, day: item.day, count: item.count };
+    const rows = mergedDays.map((day) => {
+      const analytics = analyticsByDay.get(day);
+      return {
+        day,
+        pageViews: analytics?.pageViews ?? 0,
+        videoViews: analytics?.videoViews ?? 0,
+        uniqueVisitors: analytics?.uniqueVisitors ?? 0,
+        authEvents: authByDay.get(day) ?? 0,
+      };
     });
 
-    const path = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
+    if (!trafficRangeDays || trafficRangeDays <= 0) {
+      return rows;
+    }
 
-    return { width, height, points, path };
-  }, [orderedTraffic, maxTrafficCount]);
+    return rows.slice(-trafficRangeDays);
+  }, [orderedAnalyticsDaily, orderedTraffic, trafficRangeDays]);
+
+  const [analyticsSeriesOn, setAnalyticsSeriesOn] = useState({ pageViews: true, videoViews: true, visitors: true, authEvents: true });
+  const analyticsGraph = useMemo(() => {
+    const width = 680;
+    const height = 220;
+    const paddingLeft = 46;
+    const paddingRight = 20;
+    const paddingTop = 14;
+    const paddingBottom = 46;
+
+    if (mergedChartRows.length === 0) {
+      return {
+        width,
+        height,
+        pageViewsPath: "",
+        videoViewsPath: "",
+        visitorsPath: "",
+        authEventsPath: "",
+        yTicks: [],
+        xTicks: [],
+        points: [],
+        axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
+      };
+    }
+
+    const enabledSeriesMaxPerDay = (row: { pageViews: number; videoViews: number; uniqueVisitors: number; authEvents: number }) => Math.max(
+      analyticsSeriesOn.pageViews ? row.pageViews : 0,
+      analyticsSeriesOn.videoViews ? row.videoViews : 0,
+      analyticsSeriesOn.visitors ? row.uniqueVisitors : 0,
+      analyticsSeriesOn.authEvents ? row.authEvents : 0,
+    );
+
+    const maxVal = Math.max(
+      1,
+      ...mergedChartRows.map((d) => enabledSeriesMaxPerDay(d)),
+    );
+    const chartWidth = width - paddingLeft - paddingRight;
+    const chartHeight = height - paddingTop - paddingBottom;
+    const step = mergedChartRows.length > 1 ? chartWidth / (mergedChartRows.length - 1) : 0;
+
+    const points = mergedChartRows.map((item, index) => {
+      const x = paddingLeft + index * step;
+      return {
+        x,
+        yPageViews: paddingTop + chartHeight - (item.pageViews / maxVal) * chartHeight,
+        yVideoViews: paddingTop + chartHeight - (item.videoViews / maxVal) * chartHeight,
+        yVisitors: paddingTop + chartHeight - (item.uniqueVisitors / maxVal) * chartHeight,
+        yAuthEvents: paddingTop + chartHeight - (item.authEvents / maxVal) * chartHeight,
+        day: item.day,
+        pageViews: item.pageViews,
+        videoViews: item.videoViews,
+        uniqueVisitors: item.uniqueVisitors,
+        authEvents: item.authEvents,
+      };
+    });
+
+    const makePath = (ys: number[]) =>
+      ys.map((y, i) => `${i === 0 ? "M" : "L"} ${(paddingLeft + i * step).toFixed(2)} ${y.toFixed(2)}`).join(" ");
+
+    const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
+      y: paddingTop + chartHeight - ratio * chartHeight,
+      value: Math.round(maxVal * ratio),
+    }));
+
+    const xTicks = points.map((p) => ({
+      x: p.x,
+      label: p.day.includes("-") ? p.day.slice(5) : p.day,
+    }));
+
+    return {
+      width,
+      height,
+      yTicks,
+      xTicks,
+      points,
+      axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
+      pageViewsPath: makePath(points.map((p) => p.yPageViews)),
+      videoViewsPath: makePath(points.map((p) => p.yVideoViews)),
+      visitorsPath: makePath(points.map((p) => p.yVisitors)),
+      authEventsPath: makePath(points.map((p) => p.yAuthEvents)),
+    };
+  }, [analyticsSeriesOn, mergedChartRows]);
+
+  useEffect(() => {
+    if (!trafficRangeDays || trafficRangeDays <= 0) {
+      return;
+    }
+
+    if (trafficRangeDays > mergedChartRows.length) {
+      setTrafficRangeDays(0);
+    }
+  }, [mergedChartRows.length, trafficRangeDays]);
 
   async function loadOverview() {
     const dashboardPayload = await readJson<DashboardPayload>("/api/admin/dashboard");
@@ -246,6 +387,96 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   useEffect(() => {
     void loadActiveTab();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "overview") {
+      return;
+    }
+
+    let cancelled = false;
+    let lastStreamMessageAt = 0;
+
+    const applyHealthPayload = (payload: AdminHealthStreamPayload) => {
+      if (!payload?.health) {
+        return;
+      }
+
+      const sanitizedHost = {
+        ...payload.health.host,
+        cpuUsagePercent: finiteOrNull(payload.health.host.cpuUsagePercent),
+        cpuAverageUsagePercent: finiteOrNull(payload.health.host.cpuAverageUsagePercent),
+        cpuPeakCoreUsagePercent: finiteOrNull(payload.health.host.cpuPeakCoreUsagePercent),
+        memoryUsagePercent: finiteOrNull(payload.health.host.memoryUsagePercent) ?? 0,
+        diskUsagePercent: finiteOrNull(payload.health.host.diskUsagePercent),
+        swapUsagePercent: finiteOrNull(payload.health.host.swapUsagePercent),
+        networkUsagePercent: finiteOrNull(payload.health.host.networkUsagePercent),
+      };
+
+      setDashboard((previous) => {
+        if (!previous) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          health: {
+            ...payload.health,
+            host: sanitizedHost,
+          },
+          meta: {
+            ...previous.meta,
+            generatedAt: payload.meta?.generatedAt ?? previous.meta.generatedAt,
+          },
+        };
+      });
+    };
+
+    const refreshHealth = async () => {
+      try {
+        const payload = await readNoStoreJson<AdminHealthStreamPayload>("/api/admin/dashboard/health");
+        if (cancelled) {
+          return;
+        }
+        applyHealthPayload(payload);
+      } catch {
+        // Ignore polling failures and keep the last known state.
+      }
+    };
+
+    const stream = new EventSource("/api/admin/dashboard/stream");
+
+    stream.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as AdminHealthStreamPayload;
+        if (!payload?.health || cancelled) {
+          return;
+        }
+
+        lastStreamMessageAt = Date.now();
+        applyHealthPayload(payload);
+      } catch {
+        // Ignore malformed payloads.
+      }
+    };
+
+    stream.onerror = () => {
+      void refreshHealth();
+    };
+
+    void refreshHealth();
+
+    const pollingTimer = window.setInterval(() => {
+      if (Date.now() - lastStreamMessageAt > HEALTH_FALLBACK_POLL_MS * 2) {
+        void refreshHealth();
+      }
+    }, HEALTH_FALLBACK_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(pollingTimer);
+      stream.close();
+    };
   }, [activeTab]);
 
   async function patchJson(url: string, body: Record<string, unknown>) {
@@ -353,203 +584,123 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       {saveMessage ? <p className="authMessage">{saveMessage}</p> : null}
 
       {activeTab === "overview" ? (
-        <>
-          <section className="panel featurePanel">
-            <div className="panelHeading">
-              <span>Server Health</span>
-              <strong>{dashboard?.meta.generatedAt ?? "n/a"}</strong>
+        <div style={{ display: "grid", gap: 10 }}>
+          <div className="adminOverviewHealthLayout">
+            <div className="adminOverviewDials">
+              <Dial label="Memory" value={dashboard?.health.host.memoryUsagePercent ?? null} color="#ffc14d" />
+              <Dial label="Swap" value={dashboard?.health.host.swapUsagePercent ?? null} color="#f5d96b" />
+              <Dial label="CPU" value={finiteOrNull(dashboard?.health.host.cpuUsagePercent)} color="#ff6f43" detail={cpuAvgPeakText} />
+              <Dial label="Disk" value={dashboard?.health.host.diskUsagePercent ?? null} color="#7ce0a3" />
+              <Dial label="Network" value={dashboard?.health.host.networkUsagePercent ?? null} color="#5fc1ff" />
             </div>
-            <p className="authMessage">
-              Node uptime: {dashboard?.health.nodeUptimeSec ?? 0}s | RSS: {dashboard?.health.memory.rssMb ?? 0}MB | Heap: {dashboard?.health.memory.heapUsedMb ?? 0}/{dashboard?.health.memory.heapTotalMb ?? 0}MB
-            </p>
-            <p className="authMessage">
-              Host: {dashboard?.health.host.platform ?? "n/a"} | Free memory: {dashboard?.health.host.freeMemMb ?? 0}/{dashboard?.health.host.totalMemMb ?? 0}MB | Load avg: {(dashboard?.health.host.loadAvg ?? []).join(", ")}
-            </p>
             <div className="statusMetrics">
               <div><strong>Users</strong><p>{dashboard?.counts.users ?? 0}</p></div>
               <div><strong>Videos</strong><p>{dashboard?.counts.videos ?? 0}</p></div>
               <div><strong>Artists</strong><p>{dashboard?.counts.artists ?? 0}</p></div>
             </div>
-            <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 10 }}>
-              <Dial label="Memory" value={dashboard?.health.host.memoryUsagePercent ?? null} color="#ffc14d" />
-              <Dial label="CPU" value={dashboard?.health.host.cpuUsagePercent ?? null} color="#ff6f43" />
-              <Dial label="Network" value={dashboard?.health.host.networkUsagePercent ?? null} color="#5fc1ff" />
-            </div>
-          </section>
+          </div>
 
-          <section className="panel featurePanel">
-            <div className="panelHeading">
-              <span>Traffic Visual (Auth Events)</span>
-              <strong>Last {orderedTraffic.length} days</strong>
-            </div>
-            <div className="interactiveStack">
-              {trafficGraph.points.length > 0 ? (
-                <svg
-                  viewBox={`0 0 ${trafficGraph.width} ${trafficGraph.height}`}
-                  role="img"
-                  aria-label="Traffic trend chart"
-                  style={{ width: "100%", height: "auto", borderRadius: 10, background: "rgba(255,255,255,0.04)" }}
+          {/* Analytics Chart */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }}>User analytics · last 30 days</span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {(([
+                { key: "pageViews", label: "Page Views", color: "#ff9d5c" },
+                { key: "videoViews", label: "Video Views", color: "#5fc1ff" },
+                { key: "visitors", label: "Unique Visitors", color: "#7ce0a3" },
+                { key: "authEvents", label: "Auth Events", color: "#ffd1c4" },
+              ]) as Array<{ key: keyof typeof analyticsSeriesOn; label: string; color: string }>).map(({ key, label, color }) => (
+                <button
+                  key={key}
+                  onClick={() => setAnalyticsSeriesOn((prev) => ({ ...prev, [key]: !prev[key] }))}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                    padding: "3px 8px",
+                    borderRadius: 20,
+                    border: `1px solid ${analyticsSeriesOn[key] ? color : "rgba(255,255,255,0.12)"}`,
+                    background: analyticsSeriesOn[key] ? `${color}22` : "transparent",
+                    color: analyticsSeriesOn[key] ? color : "rgba(255,255,255,0.35)",
+                    fontSize: 11,
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
                 >
-                  <line x1="24" y1="24" x2="24" y2={String(trafficGraph.height - 24)} stroke="rgba(255,255,255,0.22)" strokeWidth="1" />
-                  <line x1="24" y1={String(trafficGraph.height - 24)} x2={String(trafficGraph.width - 24)} y2={String(trafficGraph.height - 24)} stroke="rgba(255,255,255,0.22)" strokeWidth="1" />
-                  <path d={trafficGraph.path} fill="none" stroke="#ff6f43" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                  {trafficGraph.points.map((point) => (
-                    <g key={point.day}>
-                      <circle cx={point.x} cy={point.y} r="3.6" fill="#ffd1c4" />
-                      <title>{`${point.day}: ${point.count}`}</title>
-                    </g>
-                  ))}
-                </svg>
-              ) : (
-                <p className="authMessage">No traffic data available.</p>
-              )}
-              <div className="authMessage">Peak daily events: {maxTrafficCount}</div>
-            </div>
-          </section>
-
-          <section className="panel featurePanel">
-            <div className="panelHeading">
-              <span>Activity Quality (Last 24h)</span>
-              <strong>Auth signal</strong>
-            </div>
-            <div className="statusMetrics">
-              <div><strong>Events</strong><p>{dashboard?.insights.auth24h.total ?? 0}</p></div>
-              <div><strong>Success Rate</strong><p>{authSuccessRate}%</p></div>
-              <div><strong>Failed</strong><p>{dashboard?.insights.auth24h.failed ?? 0}</p></div>
-              <div><strong>Unique IPs</strong><p>{dashboard?.insights.auth24h.uniqueIps ?? 0}</p></div>
-              <div><strong>Active Users</strong><p>{dashboard?.insights.auth24h.uniqueUsers ?? 0}</p></div>
-            </div>
-            <div className="interactiveStack">
-              <div className="panelHeading">
-                <span>Top Auth Actions (7d)</span>
-                <strong>{dashboard?.insights.authActionBreakdown.length ?? 0} actions</strong>
-              </div>
-              {(dashboard?.insights.authActionBreakdown ?? []).map((row) => {
-                const failRate = row.total > 0 ? Math.round((row.failed / row.total) * 100) : 0;
-                return (
-                  <div key={row.action}>
-                    <p className="authMessage">{row.action}: {row.total} events - {row.failed} failed ({failRate}%)</p>
-                    <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 8, height: 10, overflow: "hidden" }}>
-                      <div
-                        style={{
-                          width: `${Math.max(3, failRate)}%`,
-                          height: "100%",
-                          background: "linear-gradient(90deg, #ff6f43, #6a1a05)",
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="panel featurePanel">
-            <div className="panelHeading">
-              <span>Catalog Quality</span>
-              <strong>Metadata health</strong>
-            </div>
-            <div className="statusMetrics">
-              <div><strong>Playable</strong><p>{dashboard?.insights.metadataQuality.availableVideos ?? 0}</p></div>
-              <div><strong>Check Failed</strong><p>{dashboard?.insights.metadataQuality.checkFailedEntries ?? 0}</p></div>
-              <div><strong>Missing Meta</strong><p>{dashboard?.insights.metadataQuality.missingMetadata ?? 0}</p></div>
-              <div><strong>Low Confidence</strong><p>{dashboard?.insights.metadataQuality.lowConfidence ?? 0}</p></div>
-              <div><strong>Unknown Type</strong><p>{dashboard?.insights.metadataQuality.unknownType ?? 0}</p></div>
-            </div>
-          </section>
-
-          <section className="panel featurePanel">
-            <div className="panelHeading">
-              <span>Ingestion Velocity</span>
-              <strong>Videos added (14d)</strong>
-            </div>
-            <div className="interactiveStack">
-              {orderedIngestVelocity.length > 0 ? orderedIngestVelocity.map((item) => (
-                <div key={item.day}>
-                  <p className="authMessage">{item.day}: {item.count}</p>
-                  <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 8, height: 10, overflow: "hidden" }}>
-                    <div
-                      style={{
-                        width: `${Math.max(3, Math.round((item.count / maxIngestCount) * 100))}%`,
-                        height: "100%",
-                        background: "linear-gradient(90deg, #5fc1ff, #1f4f6d)",
-                      }}
-                    />
-                  </div>
-                </div>
-              )) : <p className="authMessage">No ingestion data available.</p>}
-            </div>
-          </section>
-
-          <section className="panel featurePanel">
-            <div className="panelHeading">
-              <span>Groq API Spend</span>
-              <strong>Metadata calls (14d)</strong>
-            </div>
-            <div className="statusMetrics" style={{ marginBottom: 12 }}>
-              <div>
-                <strong>Wiki Cached</strong>
-                <p>{dashboard?.insights.groqSpend.wikiCacheCount ?? 0}</p>
-              </div>
-              <div>
-                <strong>Est. tokens today</strong>
-                <p>{(() => {
-                  const today = orderedGroqSpend.at(-1);
-                  if (!today) return "—";
-                  const est = (today.classified * 600) + (today.errors * 400);
-                  return est >= 1000 ? `${(est / 1000).toFixed(1)}k` : String(est);
-                })()}</p>
-              </div>
-              <div>
-                <strong>14d classified</strong>
-                <p>{orderedGroqSpend.reduce((s, r) => s + r.classified, 0)}</p>
-              </div>
-              <div>
-                <strong>14d errors</strong>
-                <p>{orderedGroqSpend.reduce((s, r) => s + r.errors, 0)}</p>
-              </div>
-            </div>
-            <div className="interactiveStack">
-              {orderedGroqSpend.length > 0 ? orderedGroqSpend.map((item) => {
-                const total = item.classified + item.errors;
-                const pct = Math.max(3, Math.round((total / maxGroqCount) * 100));
-                const okPct = total > 0 ? Math.round((item.classified / total) * 100) : 0;
-                return (
-                  <div key={item.day}>
-                    <p className="authMessage">{item.day}: {item.classified} ok / {item.errors} err (~{((item.classified * 600 + item.errors * 400) / 1000).toFixed(1)}k tokens)</p>
-                    <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 8, height: 10, overflow: "hidden", display: "flex" }}>
-                      <div style={{ width: `${pct * okPct / 100}%`, height: "100%", background: "linear-gradient(90deg, #5fc16e, #1f6d2d)" }} />
-                      <div style={{ width: `${pct * (100 - okPct) / 100}%`, height: "100%", background: "linear-gradient(90deg, #ff6f43, #6a1a05)" }} />
-                    </div>
-                  </div>
-                );
-              }) : <p className="authMessage">No Groq call data in last 14 days.</p>}
-            </div>
-          </section>
-
-          <section className="panel featurePanel">
-            <div className="panelHeading">
-              <span>User Location Visual</span>
-              <strong>Top {selectedLocations.length}</strong>
-            </div>
-            <div className="interactiveStack">
-              {selectedLocations.map((item) => (
-                <div key={item.location}>
-                  <p className="authMessage">{item.location}: {item.count}</p>
-                  <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 8, height: 10, overflow: "hidden" }}>
-                    <div
-                      style={{
-                        width: `${Math.max(3, Math.round((item.count / maxLocationCount) * 100))}%`,
-                        height: "100%",
-                        background: "linear-gradient(90deg, #ffc14d, #a35b08)",
-                      }}
-                    />
-                  </div>
-                </div>
+                  <svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke={analyticsSeriesOn[key] ? color : "rgba(255,255,255,0.25)"} strokeWidth="2" strokeDasharray={analyticsSeriesOn[key] ? undefined : "3 2"} /></svg>
+                  {label}
+                </button>
               ))}
+              {trafficRangeOptions.length > 1 ? (
+                <>
+                  <label className="authMessage" htmlFor="trafficRangeSelect" style={{ margin: 0 }}>Date range</label>
+                  <select
+                    id="trafficRangeSelect"
+                    value={String(trafficRangeDays)}
+                    onChange={(event) => {
+                      const parsed = Number(event.target.value);
+                      setTrafficRangeDays(Number.isFinite(parsed) ? parsed : 0);
+                    }}
+                    style={{
+                      borderRadius: 8,
+                      border: "1px solid rgba(255,255,255,0.2)",
+                      background: "rgba(8,8,8,0.82)",
+                      color: "#fff",
+                      padding: "6px 10px",
+                    }}
+                  >
+                    {trafficRangeOptions.map((value) => (
+                      <option key={`traffic-range-${value}`} value={String(value)}>
+                        {value === 0 ? `All (${combinedAvailableDays} days)` : `Last ${value} days`}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              ) : null}
             </div>
-          </section>
-        </>
+          </div>
+
+          <svg
+            viewBox={analyticsGraph.points.length > 0 ? `0 0 ${analyticsGraph.width} ${analyticsGraph.height}` : "0 0 680 250"}
+            role="img"
+            aria-label="Analytics chart — page views, video views, unique visitors, auth events"
+            style={{ width: "100%", height: "auto", borderRadius: 10, background: "rgba(255,255,255,0.04)" }}
+          >
+            {analyticsGraph.points.length === 0 ? (
+              <text x="340" y="130" textAnchor="middle" fill="rgba(255,255,255,0.2)" style={{ fontSize: 13 }}>No data yet</text>
+            ) : (
+              <>
+                {analyticsGraph.yTicks.map((tick) => (
+                  <g key={`ay-${tick.value}-${tick.y.toFixed(1)}`}>
+                    <line x1={String(analyticsGraph.axis.paddingLeft)} y1={String(tick.y)} x2={String(analyticsGraph.width - analyticsGraph.axis.paddingRight)} y2={String(tick.y)} stroke="rgba(255,255,255,0.14)" strokeWidth="1" />
+                    <text x={String(analyticsGraph.axis.paddingLeft - 6)} y={String(tick.y + 3)} textAnchor="end" fill="rgba(255,255,255,0.78)" style={{ fontSize: 10, fontVariantNumeric: "tabular-nums" }}>{tick.value}</text>
+                  </g>
+                ))}
+                {analyticsGraph.xTicks.map((tick) => (
+                  <g key={`ax-${tick.label}-${tick.x.toFixed(1)}`}>
+                    <line x1={String(tick.x)} y1={String(analyticsGraph.axis.paddingTop)} x2={String(tick.x)} y2={String(analyticsGraph.height - analyticsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
+                    <text x={String(tick.x)} y={String(analyticsGraph.height - 12)} textAnchor="end" fill="rgba(255,255,255,0.78)" transform={`rotate(-45 ${tick.x} ${analyticsGraph.height - 12})`} style={{ fontSize: 10 }}>{tick.label}</text>
+                  </g>
+                ))}
+                <line x1={String(analyticsGraph.axis.paddingLeft)} y1={String(analyticsGraph.axis.paddingTop)} x2={String(analyticsGraph.axis.paddingLeft)} y2={String(analyticsGraph.height - analyticsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
+                <line x1={String(analyticsGraph.axis.paddingLeft)} y1={String(analyticsGraph.height - analyticsGraph.axis.paddingBottom)} x2={String(analyticsGraph.width - analyticsGraph.axis.paddingRight)} y2={String(analyticsGraph.height - analyticsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
+                {analyticsSeriesOn.pageViews && <path d={analyticsGraph.pageViewsPath} fill="none" stroke="#ff9d5c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+                {analyticsSeriesOn.videoViews && <path d={analyticsGraph.videoViewsPath} fill="none" stroke="#5fc1ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+                {analyticsSeriesOn.visitors && <path d={analyticsGraph.visitorsPath} fill="none" stroke="#7ce0a3" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+                {analyticsSeriesOn.authEvents && <path d={analyticsGraph.authEventsPath} fill="none" stroke="#ffd1c4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+                {analyticsGraph.points.map((point) => (
+                  <g key={point.day}>
+                    {analyticsSeriesOn.pageViews && <circle cx={point.x} cy={point.yPageViews} r="3" fill="#ff9d5c" />}
+                    {analyticsSeriesOn.videoViews && <circle cx={point.x} cy={point.yVideoViews} r="3" fill="#5fc1ff" />}
+                    {analyticsSeriesOn.visitors && <circle cx={point.x} cy={point.yVisitors} r="3" fill="#7ce0a3" />}
+                    {analyticsSeriesOn.authEvents && <circle cx={point.x} cy={point.yAuthEvents} r="3" fill="#ffd1c4" />}
+                    <title>{`${point.day} — Page views: ${point.pageViews}, Video views: ${point.videoViews}, Visitors: ${point.uniqueVisitors}, Auth events: ${point.authEvents}`}</title>
+                  </g>
+                ))}
+              </>
+            )}
+          </svg>
+        </div>
       ) : null}
 
       {activeTab === "categories" ? (
@@ -591,12 +742,50 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       ) : null}
 
       {activeTab === "videos" ? (
-        <section className="panel featurePanel">
-          <div className="panelHeading">
-            <span>Edit Videos</span>
-            <strong>{videos.length} rows</strong>
-          </div>
-          <div className="interactiveStack">
+        <>
+          <section className="panel featurePanel">
+            <div className="panelHeading">
+              <span>Catalog Quality</span>
+              <strong>Metadata health</strong>
+            </div>
+            <div className="statusMetrics">
+              <div><strong>Playable</strong><p>{dashboard?.insights.metadataQuality.availableVideos ?? 0}</p></div>
+              <div><strong>Check Failed</strong><p>{dashboard?.insights.metadataQuality.checkFailedEntries ?? 0}</p></div>
+              <div><strong>Missing Meta</strong><p>{dashboard?.insights.metadataQuality.missingMetadata ?? 0}</p></div>
+              <div><strong>Low Confidence</strong><p>{dashboard?.insights.metadataQuality.lowConfidence ?? 0}</p></div>
+              <div><strong>Unknown Type</strong><p>{dashboard?.insights.metadataQuality.unknownType ?? 0}</p></div>
+            </div>
+          </section>
+
+          <section className="panel featurePanel">
+            <div className="panelHeading">
+              <span>Ingestion Velocity</span>
+              <strong>Videos added (14d)</strong>
+            </div>
+            <div className="interactiveStack">
+              {orderedIngestVelocity.length > 0 ? orderedIngestVelocity.map((item) => (
+                <div key={item.day}>
+                  <p className="authMessage">{item.day}: {item.count}</p>
+                  <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 8, height: 10, overflow: "hidden" }}>
+                    <div
+                      style={{
+                        width: `${Math.max(3, Math.round((item.count / maxIngestCount) * 100))}%`,
+                        height: "100%",
+                        background: "linear-gradient(90deg, #5fc1ff, #1f4f6d)",
+                      }}
+                    />
+                  </div>
+                </div>
+              )) : <p className="authMessage">No ingestion data available.</p>}
+            </div>
+          </section>
+
+          <section className="panel featurePanel">
+            <div className="panelHeading">
+              <span>Edit Videos</span>
+              <strong>{videos.length} rows</strong>
+            </div>
+            <div className="interactiveStack">
             <label>
               <span>Import by YouTube URL or ID</span>
               <input
@@ -649,8 +838,9 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                 <button type="button" onClick={() => void saveVideo(row)}>Save Video</button>
               </div>
             ))}
-          </div>
-        </section>
+            </div>
+          </section>
+        </>
       ) : null}
 
       {activeTab === "artists" ? (

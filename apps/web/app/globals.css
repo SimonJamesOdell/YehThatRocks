@@ -1914,6 +1914,7 @@ h1 {
 .overlayPlayBtn {
   width: 92px;
   height: 92px;
+  margin-top: -4px;
   border-radius: 50%;
   background: linear-gradient(180deg, var(--btn-blood-start), var(--btn-blood-end));
   border: 1px solid var(--border);
@@ -6367,6 +6368,59 @@ h1 {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.adminOverviewHealthLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 1.2fr);
+  gap: 12px;
+}
+
+.adminOverviewDials {
+  display: flex;
+  gap: 12px;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.adminOverviewHealthLayout .statusMetrics {
+  margin-top: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.adminOverviewHealthLayout .statusMetrics > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+}
+
+.adminOverviewHealthLayout .statusMetrics strong {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  opacity: 0.5;
+  line-height: 1;
+}
+
+.adminOverviewHealthLayout .statusMetrics p {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 1180px) {
   .shell {
     height: auto;
@@ -6428,6 +6482,10 @@ h1 {
   }
 
   .statusMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .adminOverviewHealthLayout {
     grid-template-columns: 1fr;
   }
 
