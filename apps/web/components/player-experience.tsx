@@ -683,12 +683,13 @@ export function PlayerExperience({
 
     const all = [...deduped.values()].filter((video) => !endedChoiceDismissedIds.includes(video.id));
     const offset = (endedChoiceReshuffleKey * maxEndedChoiceVideos) % Math.max(all.length, 1);
-    return [...all.slice(offset), ...all.slice(0, offset)].slice(0, maxEndedChoiceVideos);
+    return [...all.slice(offset), ...all.slice(0, offset)];
   }, [queue, topFallbackVideos, currentVideo.id, endedChoiceReshuffleKey, endedChoiceDismissedIds]);
+  const maxEndedChoiceVideos = 12;
   const hasSeenEndedChoiceVideos = endedChoiceVideos.some((video) => seenVideoIds?.has(video.id));
   const visibleEndedChoiceVideos = endedChoiceHideSeen
-    ? endedChoiceVideos.filter((video) => !(seenVideoIds?.has(video.id) ?? false))
-    : endedChoiceVideos;
+    ? endedChoiceVideos.filter((video) => !(seenVideoIds?.has(video.id) ?? false)).slice(0, maxEndedChoiceVideos)
+    : endedChoiceVideos.slice(0, maxEndedChoiceVideos);
   const footerActionsBlocked = Boolean(unavailableOverlayMessage) || showEndedChoiceOverlay || playlistChooserOpen;
   const isUpstreamConnectivityOverlay = unavailableOverlayMessage === UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE;
   const footerSelectablePlaylists = activePlaylistId
