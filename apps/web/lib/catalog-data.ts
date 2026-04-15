@@ -2814,18 +2814,13 @@ export async function getRelatedVideos(
           INNER JOIN videos v ON v.videoId = r.related
           WHERE r.videoId = ${normalizedVideoId}
             AND r.related <> ${normalizedVideoId}
-            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND v.videoId IS NOT NULL
+            AND CHAR_LENGTH(v.videoId) = 11
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
               WHERE sv.video_id = v.id
                 AND sv.status = 'available'
-            )
-            AND NOT EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND (sv.status IS NULL OR sv.status <> 'available')
             )
           GROUP BY v.videoId, v.title, v.parsedArtist, v.favourited, v.description
           ORDER BY v.favourited DESC, MAX(COALESCE(v.viewCount, 0)) DESC, v.videoId ASC
@@ -2843,18 +2838,13 @@ export async function getRelatedVideos(
               FROM videos v
               WHERE LOWER(TRIM(v.parsedArtist)) = LOWER(TRIM(${currentArtist}))
                 AND v.videoId <> ${normalizedVideoId}
-                AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+                AND v.videoId IS NOT NULL
+                AND CHAR_LENGTH(v.videoId) = 11
                 AND EXISTS (
                   SELECT 1
                   FROM site_videos sv
                   WHERE sv.video_id = v.id
                     AND sv.status = 'available'
-                )
-                AND NOT EXISTS (
-                  SELECT 1
-                  FROM site_videos sv
-                  WHERE sv.video_id = v.id
-                    AND (sv.status IS NULL OR sv.status <> 'available')
                 )
               ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id DESC
               LIMIT 36
@@ -2870,18 +2860,13 @@ export async function getRelatedVideos(
             v.description
           FROM videos v
           WHERE v.videoId <> ${normalizedVideoId}
-            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND v.videoId IS NOT NULL
+            AND CHAR_LENGTH(v.videoId) = 11
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
               WHERE sv.video_id = v.id
                 AND sv.status = 'available'
-            )
-            AND NOT EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND (sv.status IS NULL OR sv.status <> 'available')
             )
           ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
           LIMIT 50
@@ -2934,7 +2919,8 @@ export async function getRelatedVideos(
                 v.description
               FROM videos v
               WHERE v.videoId <> ?
-                AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+                AND v.videoId IS NOT NULL
+                AND CHAR_LENGTH(v.videoId) = 11
                 AND LOWER(TRIM(COALESCE(v.parsedArtist, ''))) <> LOWER(TRIM(?))
                 AND EXISTS (
                   SELECT 1
@@ -2947,12 +2933,6 @@ export async function getRelatedVideos(
                   FROM site_videos sv
                   WHERE sv.video_id = v.id
                     AND sv.status = 'available'
-                )
-                AND NOT EXISTS (
-                  SELECT 1
-                  FROM site_videos sv
-                  WHERE sv.video_id = v.id
-                    AND (sv.status IS NULL OR sv.status <> 'available')
                 )
               ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id DESC
               LIMIT 40
@@ -3039,7 +3019,8 @@ export async function getRelatedVideos(
             SELECT 1
             FROM site_videos sv
             WHERE sv.video_id = v.id
-              AND sv.status = 'available'
+              AND v.videoId IS NOT NULL
+              AND CHAR_LENGTH(v.videoId) = 11
           )
         ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
         LIMIT ${Math.max(remaining * 6, 300)}
@@ -3047,12 +3028,6 @@ export async function getRelatedVideos(
 
       const backfillBlockedIds = new Set<string>([
         normalizedVideoId,
-        ...excludedIds,
-        ...assembledRows.map((row) => row.videoId),
-      ]);
-      assembledRows.push(...selectUniqueVideoRows(dedupeRankedRows(backfillPool), backfillBlockedIds, remaining));
-    }
-
     const mapped = assembledRows.slice(0, targetCount).map(mapVideo);
     if (useCachedDefaultQuery) {
       relatedVideosCache.set(cacheKey, {
@@ -3167,19 +3142,14 @@ export async function getNewestVideos(
         SELECT 1
         FROM site_videos sv
         WHERE sv.video_id = v.id
-          AND sv.status = 'available'
+          AND v.videoId IS NOT NULL
+          AND CHAR_LENGTH(v.videoId) = 11
       )
       ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
       LIMIT ${safeCount}
       OFFSET ${safeOffset}
     `;
 
-    if (videos.length > 0) {
-      const effectiveRows = options?.enforcePlaybackAvailability
-        ? await filterPlayableNewestRows(videos, safeCount)
-        : videos;
-
-      if (safeOffset === 0) {
         newestVideosCache = {
           expiresAt: now + NEWEST_CACHE_TTL_MS,
           count: effectiveRows.length,
@@ -3581,18 +3551,13 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
           FROM videos v
           WHERE v.parsedArtist IS NOT NULL
             AND TRIM(v.parsedArtist) <> ''
-            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND v.videoId IS NOT NULL
+            AND CHAR_LENGTH(v.videoId) = 11
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
               WHERE sv.video_id = v.id
                 AND sv.status = 'available'
-            )
-            AND NOT EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND (sv.status IS NULL OR sv.status <> 'available')
             )
             AND v.parsedArtist LIKE ?
           GROUP BY v.parsedArtist
@@ -3638,7 +3603,8 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
       FROM videos v
       WHERE v.parsedArtist IS NOT NULL
         AND TRIM(v.parsedArtist) <> ''
-        AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+        AND v.videoId IS NOT NULL
+        AND CHAR_LENGTH(v.videoId) = 11
         AND UPPER(LEFT(TRIM(v.parsedArtist), 1)) = ?
       GROUP BY LOWER(TRIM(v.parsedArtist))
     `;
@@ -3657,7 +3623,8 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
         FROM videosbyartist va
         INNER JOIN videos v ON ${joinVideoExpr} = va.${vaVideoRefCol}
         WHERE UPPER(LEFT(TRIM(va.${vaArtistCol}), 1)) = ?
-          AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+          AND v.videoId IS NOT NULL
+          AND CHAR_LENGTH(v.videoId) = 11
         GROUP BY LOWER(TRIM(va.${vaArtistCol}))
       `;
     }
