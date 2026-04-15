@@ -3,15 +3,18 @@ import { cookies } from "next/headers";
 import { ShellDynamic } from "@/components/shell-dynamic";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { getCurrentVideo, getHiddenVideoIdsForUser, getRelatedVideos, getSeenVideoIdsForUser } from "@/lib/catalog-data";
-import { requireAdminUser } from "@/lib/admin-auth";
-import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
+import { isAdminIdentity } from "@/lib/admin-auth";
+import { getCurrentAuthenticatedUserByAccessToken } from "@/lib/server-auth";
 
 export default async function ShellLayout({ children }: { children: ReactNode }) {
   const cookieStore = await cookies();
-  const hasAccessToken = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
-  const adminUser = await requireAdminUser();
-  const user = await getCurrentAuthenticatedUser();
-  const initialVideo = await getCurrentVideo();
+  const accessToken = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value;
+  const hasAccessToken = Boolean(accessToken);
+  const [user, initialVideo] = await Promise.all([
+    getCurrentAuthenticatedUserByAccessToken(accessToken),
+    getCurrentVideo(),
+  ]);
+  const isAdmin = Boolean(user && isAdminIdentity(user.id, user.email ?? ""));
 
   if (!initialVideo) {
     return (
@@ -29,9 +32,11 @@ export default async function ShellLayout({ children }: { children: ReactNode })
     );
   }
 
-  const initialRelatedVideos = await getRelatedVideos(initialVideo.id);
-  const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();
-  const hiddenVideoIds = user ? await getHiddenVideoIdsForUser(user.id) : new Set<string>();
+  const [initialRelatedVideos, seenVideoIds, hiddenVideoIds] = await Promise.all([
+    getRelatedVideos(initialVideo.id),
+    user ? getSeenVideoIdsForUser(user.id) : Promise.resolve(new Set<string>()),
+    user ? getHiddenVideoIdsForUser(user.id) : Promise.resolve(new Set<string>()),
+  ]);
 
   return (
     <ShellDynamic
@@ -40,7 +45,7 @@ export default async function ShellLayout({ children }: { children: ReactNode })
       initialSeenVideoIds={Array.from(seenVideoIds)}
       initialHiddenVideoIds={Array.from(hiddenVideoIds)}
       isLoggedIn={hasAccessToken}
-      isAdmin={Boolean(adminUser)}
+      isAdmin={isAdmin}
     >
       {children}
     </ShellDynamic>
