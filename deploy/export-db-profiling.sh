@@ -48,9 +48,11 @@ if [ ! -f "$STATE_FILE" ]; then
   exit 1
 fi
 
-# shellcheck disable=SC1090
-source "$STATE_FILE"
-if [ -z "${STARTED_AT_UTC:-}" ]; then
+STARTED_AT_UTC="$(grep -E '^STARTED_AT_UTC=' "$STATE_FILE" | head -n 1 | cut -d'=' -f2- || true)"
+STARTED_AT_UTC="${STARTED_AT_UTC#\"}"
+STARTED_AT_UTC="${STARTED_AT_UTC%\"}"
+
+if [ -z "$STARTED_AT_UTC" ]; then
   echo "[profiling] STARTED_AT_UTC missing in $STATE_FILE" >&2
   exit 1
 fi
