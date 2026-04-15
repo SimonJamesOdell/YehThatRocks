@@ -55,6 +55,7 @@ export function ArtistsLetterResults({
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [filterValue, setFilterValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isBackgroundLoading, setIsBackgroundLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pendingArtistSlug, setPendingArtistSlug] = useState<string | null>(null);
   const [failedThumbnails, setFailedThumbnails] = useState<Record<string, boolean>>({});
@@ -67,12 +68,14 @@ export function ArtistsLetterResults({
   const reportedBrokenThumbnailsRef = useRef<Set<string>>(new Set());
   const prefetchedArtistSlugsRef = useRef<Set<string>>(new Set());
   const nextOffsetRef = useRef<number>(initialArtists.length);
+  const backgroundLoadCountRef = useRef(0);
 
   useEffect(() => {
     setCurrentLetter(letter);
     setArtists(dedupeArtistsBySlug(initialArtists));
     setHasMore(initialHasMore);
     setIsLoading(false);
+    setIsBackgroundLoading(false);
     setLoadError(null);
     setPendingArtistSlug(null);
     setFailedThumbnails({});
@@ -80,6 +83,7 @@ export function ArtistsLetterResults({
     requestedOffsetsRef.current = new Set();
     seenArtistSlugsRef.current = new Set(initialArtists.map((artist) => artist.slug));
     switchingLetterRef.current = false;
+    backgroundLoadCountRef.current = 0;
     reportedBrokenThumbnailsRef.current = new Set();
   }, [initialArtists, initialHasMore, letter]);
 
@@ -367,6 +371,9 @@ export function ArtistsLetterResults({
     if (!isBackground) {
       setIsLoading(true);
       setLoadError(null);
+    } else {
+      backgroundLoadCountRef.current += 1;
+      setIsBackgroundLoading(true);
     }
 
     try {
@@ -427,6 +434,11 @@ export function ArtistsLetterResults({
     } finally {
       if (!isBackground) {
         setIsLoading(false);
+      } else {
+        backgroundLoadCountRef.current = Math.max(0, backgroundLoadCountRef.current - 1);
+        if (backgroundLoadCountRef.current === 0) {
+          setIsBackgroundLoading(false);
+        }
       }
     }
   }
@@ -507,6 +519,10 @@ export function ArtistsLetterResults({
   }, [artists.length, currentLetter, hasMore, isLoading, pageSize]);
 
   const chunkTriggerIndex = filteredArtists.length > pageSize ? Math.max(0, filteredArtists.length - pageSize) : -1;
+  const shouldShowFilterLoadingState = normalizedFilterValue.length > 0
+    && filteredArtists.length === 0
+    && !loadError
+    && (isLoading || isBackgroundLoading || hasMore);
 
   return (
     <>
@@ -548,7 +564,18 @@ export function ArtistsLetterResults({
         ) : (
           <article className="catalogCard">
             <p className="statusLabel">Artist directory</p>
-            {artists.length > 0 && normalizedFilterValue ? (
+            {shouldShowFilterLoadingState ? (
+              <>
+                <span className="playerBootBars" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </span>
+                <h3>Searching artists...</h3>
+                <p>Loading more artist results for this filter.</p>
+              </>
+            ) : artists.length > 0 && normalizedFilterValue ? (
               <>
                 <h3>No artists match that prefix in {currentLetter}</h3>
                 <p>Try a shorter filter or another letter from A-Z.</p>
@@ -576,9 +603,9 @@ export function ArtistsLetterResults({
               <span>Opening artist...</span>
             </>
           ) : null}
-          {isLoading ? <span>Loading more artists...</span> : null}
+          {isLoading || isBackgroundLoading ? <span>Loading more artists...</span> : null}
           {loadError ? <span>{loadError}</span> : null}
-          {!pendingArtistSlug && !isLoading && !hasMore && !loadError ? <span>End of {currentLetter} artists.</span> : null}
+          {!pendingArtistSlug && !isLoading && !isBackgroundLoading && !hasMore && !loadError ? <span>End of {currentLetter} artists.</span> : null}
         </div>
       ) : null}
 
