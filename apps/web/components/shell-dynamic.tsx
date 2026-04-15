@@ -1220,38 +1220,27 @@ function ShellDynamicInner({
           resolveStartupCandidate(data.video, related, "api-random");
           return;
         }
-
-        const currentVideoResponse = await fetch("/api/current-video", {
-          cache: "no-store",
-          signal: controller.signal,
+        logFlow("startup-selection:server-fallback", {
+          selectedVideoId: initialVideo.id,
+          relatedCount: initialHydratedRelatedVideos.length,
+          attempt,
         });
-
-        if (currentVideoResponse.ok) {
-          const currentVideoPayload = (await currentVideoResponse.json()) as CurrentVideoResolvePayload;
-          if (currentVideoPayload.currentVideo?.id) {
-            logFlow("startup-selection:current-video-success", {
-              selectedVideoId: currentVideoPayload.currentVideo.id,
-              relatedCount: Array.isArray(currentVideoPayload.relatedVideos)
-                ? currentVideoPayload.relatedVideos.length
-                : 0,
-              attempt,
-            });
-
-            resolveStartupCandidate(
-              currentVideoPayload.currentVideo,
-              Array.isArray(currentVideoPayload.relatedVideos) ? currentVideoPayload.relatedVideos : [],
-              "api-current-video",
-            );
-            return;
-          }
-        }
-
-        throw new Error("Startup random and current resolver returned no video id");
+        resolveStartupCandidate(initialVideo, initialHydratedRelatedVideos, "server-initial");
+        return;
       } catch (error) {
         activeController = null;
         if (cancelled) {
           return;
         }
+
+        logFlow("startup-selection:server-fallback-after-error", {
+          selectedVideoId: initialVideo.id,
+          relatedCount: initialHydratedRelatedVideos.length,
+          attempt,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        resolveStartupCandidate(initialVideo, initialHydratedRelatedVideos, "server-initial-fallback");
+        return;
 
         if (attempt >= STARTUP_RETRY_MAX_ATTEMPTS) {
           logFlow("startup-selection:halted", {
@@ -1285,7 +1274,7 @@ function ShellDynamicInner({
         window.clearTimeout(retryTimeoutId);
       }
     };
-  }, [pathname, requestedVideoId, router, searchParamsKey, startupSelectionRefreshTick]);
+  }, [initialHydratedRelatedVideos, initialVideo, pathname, requestedVideoId, router, searchParamsKey, startupSelectionRefreshTick]);
 
   useEffect(() => {
     logFlow("requested-video:effect", {
