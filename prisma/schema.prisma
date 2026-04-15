@@ -283,6 +283,7 @@ model SiteVideo {
   createdAt DateTime? @map("created_at")
   video     Video?    @relation(fields: [videoId], references: [id])
 
+  @@index([videoId, status])
   @@map("site_videos")
 }
 
