@@ -21,10 +21,7 @@ type PrismaWithVerifiedUser = typeof prisma & {
   };
 };
 
-export async function getCurrentAuthenticatedUser() {
-  const cookieStore = await cookies();
-  const accessToken = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value;
-
+async function getAuthenticatedUserByAccessToken(accessToken?: string | null) {
   if (!accessToken) {
     return null;
   }
@@ -46,4 +43,15 @@ export async function getCurrentAuthenticatedUser() {
   } catch {
     return null;
   }
+}
+
+export async function getCurrentAuthenticatedUserByAccessToken(accessToken?: string | null) {
+  return getAuthenticatedUserByAccessToken(accessToken);
+}
+
+export async function getCurrentAuthenticatedUser() {
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value;
+
+  return getAuthenticatedUserByAccessToken(accessToken);
 }
