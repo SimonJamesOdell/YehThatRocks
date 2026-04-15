@@ -46,11 +46,13 @@ export async function POST(request: NextRequest) {
   // For page_view events, determine if this visitor has been seen before
   let isNewVisitor = false;
   if (eventType === "page_view") {
-    const existing = await prisma.$queryRaw<Array<{ cnt: bigint }>>`
-      SELECT COUNT(*) AS cnt FROM analytics_events
-      WHERE visitor_id = ${visitorId} LIMIT 1
-    `.catch(() => [{ cnt: 0n }]);
-    isNewVisitor = !existing[0] || Number(existing[0].cnt) === 0;
+    const existing = await prisma.$queryRaw<Array<{ marker: number }>>`
+      SELECT 1 AS marker
+      FROM analytics_events
+      WHERE visitor_id = ${visitorId}
+      LIMIT 1
+    `.catch(() => []);
+    isNewVisitor = existing.length === 0;
   }
 
   await prisma.$executeRaw`

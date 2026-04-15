@@ -95,7 +95,7 @@ async function getRelatedPoolForCurrentVideo(currentVideoId: string, userId: num
   }
 
   const pending = (async () => {
-    const discoveryCount = Math.max(400, Math.min(CURRENT_VIDEO_RELATED_POOL_MAX_SIZE, targetSize * 2));
+    const discoveryCount = Math.max(300, Math.min(CURRENT_VIDEO_RELATED_POOL_MAX_SIZE, targetSize * 2));
     const baseRelated = await getRelatedVideos(currentVideoId, {
       userId,
       count: 120,
