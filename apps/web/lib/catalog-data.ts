@@ -863,6 +863,9 @@ const artistVideosCache = new Map<string, { expiresAt: number; videos: VideoReco
 const RELATED_VIDEOS_CACHE_TTL_MS = 20_000;
 const relatedVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
 const relatedVideosInFlight = new Map<string, Promise<VideoRecord[]>>();
+const HIDDEN_VIDEO_IDS_CACHE_TTL_MS = 20_000;
+const hiddenVideoIdsCache = new Map<number, { expiresAt: number; ids: Set<string> }>();
+const hiddenVideoIdsInFlight = new Map<number, Promise<Set<string>>>();
 const ENABLE_SAME_GENRE_RELATED = process.env.RELATED_ENABLE_SAME_GENRE === "1";
 const ARTIST_LETTER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const artistLetterCache = new Map<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>();
@@ -5095,21 +5098,86 @@ export async function getSeenVideoIdsForUser(userId: number): Promise<Set<string
   }
 }
 
-export async function getHiddenVideoIdsForUser(userId: number): Promise<Set<string>> {
-  if (!hasDatabaseUrl() || !Number.isInteger(userId) || userId <= 0) {
-    return new Set<string>();
+function cloneHiddenIdSet(ids: Set<string>) {
+  return new Set(ids);
+}
+
+function cacheHiddenVideoIdsForUser(userId: number, ids: Set<string>) {
+  hiddenVideoIdsCache.set(userId, {
+    expiresAt: Date.now() + HIDDEN_VIDEO_IDS_CACHE_TTL_MS,
+    ids: cloneHiddenIdSet(ids),
+  });
+}
+
+function getCachedHiddenVideoIdsForUser(userId: number): Set<string> | undefined {
+  const cached = hiddenVideoIdsCache.get(userId);
+  if (!cached) {
+    return undefined;
   }
 
-  try {
-    const rows = await prisma.$queryRaw<Array<{ videoId: string | null }>>`
+  if (cached.expiresAt <= Date.now()) {
+    hiddenVideoIdsCache.delete(userId);
+    return undefined;
+  }
+
+  return cloneHiddenIdSet(cached.ids);
+}
+
+function updateCachedHiddenVideoIdsForUser(userId: number, videoId: string, hidden: boolean) {
+  const cached = hiddenVideoIdsCache.get(userId);
+  if (!cached || cached.expiresAt <= Date.now()) {
+    hiddenVideoIdsCache.delete(userId);
+    return;
+  }
+
+  const next = cloneHiddenIdSet(cached.ids);
+  if (hidden) {
+    next.add(videoId);
+  } else {
+    next.delete(videoId);
+  }
+
+  cacheHiddenVideoIdsForUser(userId, next);
+}
+
+async function loadHiddenVideoIdsForUser(userId: number): Promise<Set<string>> {
+  const rows = await prisma.$queryRaw<Array<{ videoId: string | null }>>`
       SELECT video_id AS videoId
       FROM hidden_videos
       WHERE user_id = ${userId}
     `;
 
-    return new Set(rows.map((row) => row.videoId).filter((videoId): videoId is string => Boolean(videoId)));
+  const ids = new Set(rows.map((row) => row.videoId).filter((videoId): videoId is string => Boolean(videoId)));
+  cacheHiddenVideoIdsForUser(userId, ids);
+  return ids;
+}
+
+export async function getHiddenVideoIdsForUser(userId: number): Promise<Set<string>> {
+  if (!hasDatabaseUrl() || !Number.isInteger(userId) || userId <= 0) {
+    return new Set<string>();
+  }
+
+  const cached = getCachedHiddenVideoIdsForUser(userId);
+  if (cached) {
+    return cached;
+  }
+
+  const inFlight = hiddenVideoIdsInFlight.get(userId);
+  if (inFlight) {
+    return cloneHiddenIdSet(await inFlight);
+  }
+
+  const pending = loadHiddenVideoIdsForUser(userId);
+  hiddenVideoIdsInFlight.set(userId, pending);
+
+  try {
+    return cloneHiddenIdSet(await pending);
   } catch {
     return new Set<string>();
+  } finally {
+    if (hiddenVideoIdsInFlight.get(userId) === pending) {
+      hiddenVideoIdsInFlight.delete(userId);
+    }
   }
 }
 
@@ -5126,31 +5194,13 @@ export async function getHiddenVideoMatchesForUser(
     return new Set<string>();
   }
 
-  const chunks: string[][] = [];
-  for (let index = 0; index < normalizedCandidates.length; index += 500) {
-    chunks.push(normalizedCandidates.slice(index, index + 500));
-  }
-
   try {
+    const hiddenIds = await getHiddenVideoIdsForUser(userId);
     const hidden = new Set<string>();
 
-    for (const chunk of chunks) {
-      const placeholders = chunk.map(() => "?").join(", ");
-      const rows = await prisma.$queryRawUnsafe<Array<{ videoId: string | null }>>(
-        `
-          SELECT video_id AS videoId
-          FROM hidden_videos
-          WHERE user_id = ?
-            AND video_id IN (${placeholders})
-        `,
-        userId,
-        ...chunk,
-      );
-
-      for (const row of rows) {
-        if (row.videoId) {
-          hidden.add(row.videoId);
-        }
+    for (const candidateVideoId of normalizedCandidates) {
+      if (hiddenIds.has(candidateVideoId)) {
+        hidden.add(candidateVideoId);
       }
     }
 
@@ -5237,6 +5287,8 @@ export async function hideVideoForUser(input: { userId: number; videoId: string 
       input.userId,
       normalizedVideoId,
     );
+
+    updateCachedHiddenVideoIdsForUser(input.userId, normalizedVideoId, true);
 
     return { ok: true as const };
   } catch {
@@ -5354,6 +5406,8 @@ export async function unhideVideoForUser(input: { userId: number; videoId: strin
       input.userId,
       normalizedVideoId,
     );
+
+    updateCachedHiddenVideoIdsForUser(input.userId, normalizedVideoId, false);
 
     return { ok: true as const };
   } catch {
