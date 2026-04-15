@@ -48,7 +48,7 @@ if [ "$DIFF_EXIT" -eq 2 ]; then
   echo "[schema-verify] Warning: full-schema drift detected (continuing with hidden/watch checks)" >&2
 fi
 
-if [ "$DIFF_EXIT" -ne 0 ]; then
+if [ "$DIFF_EXIT" -ne 0 ] && [ "$DIFF_EXIT" -ne 2 ]; then
   echo "[schema-verify] prisma migrate diff failed with exit code $DIFF_EXIT" >&2
   exit "$DIFF_EXIT"
 fi
@@ -94,6 +94,8 @@ fi
 if [ "$GLOBAL_DRIFT" -eq 1 ]; then
   echo "[schema-verify] NOTE: Full-schema drift exists, but hidden_videos/watch_history checks passed" >&2
   echo "[schema-verify] Set STRICT_FULL_DRIFT=1 to fail on any global drift" >&2
+  echo "[schema-verify] OK (with drift): critical hidden/watch schema checks passed" >&2
+  exit 0
 fi
 
 echo "[schema-verify] OK: Live schema matches schema.prisma and expected table indexes are present"
