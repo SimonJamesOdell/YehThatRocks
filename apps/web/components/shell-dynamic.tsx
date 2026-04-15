@@ -14,6 +14,7 @@ import { PlayerExperience } from "@/components/player-experience";
 import { navItems, type VideoRecord } from "@/lib/catalog";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
+import { readPersistedBoolean, writePersistedBoolean } from "@/lib/persisted-boolean";
 
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
   const perfWithPatchState = performance as Performance & {
@@ -226,10 +227,11 @@ const REQUESTED_VIDEO_RETRY_SLOW_DELAY_MS = 8_000;
 const REQUESTED_VIDEO_RETRY_MAX_ATTEMPTS = 8;
 const RELATED_LOAD_BATCH_SIZE = 5;
 const RELATED_LOAD_AHEAD_PX = 560;
-const RELATED_MAX_VIDEOS = 100;
+const RELATED_MAX_VIDEOS = Number.MAX_SAFE_INTEGER;
 const RELATED_BACKGROUND_PREFETCH_TARGET = 35;
 const RELATED_BACKGROUND_PREFETCH_DELAY_MS = 650;
 const WATCH_NEXT_HIDE_ANIMATION_MS = 240;
+const WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-watch-next";
 const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
 const PREFETCH_FAILURE_MAX_BACKOFF_MS = 20_000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
@@ -388,7 +390,7 @@ function ShellDynamicInner({
   const [playlistBeingDeletedId, setPlaylistBeingDeletedId] = useState<string | null>(null);
   const [hidingRelatedVideoIds, setHidingRelatedVideoIds] = useState<string[]>([]);
   const [hiddenMutationPendingVideoIds, setHiddenMutationPendingVideoIds] = useState<string[]>([]);
-  const [watchNextHideSeen, setWatchNextHideSeen] = useState(false);
+  const [watchNextHideSeen, setWatchNextHideSeen] = useState(() => readPersistedBoolean(WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY, false));
   const [, setSeenVideoRefreshTick] = useState(0);
   const [clickedRelatedVideoId, setClickedRelatedVideoId] = useState<string | null>(null);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
@@ -1912,6 +1914,10 @@ function ShellDynamicInner({
     node.scrollTop = node.scrollHeight;
   }, [chatMessages]);
 
+  useEffect(() => {
+    writePersistedBoolean(WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY, watchNextHideSeen);
+  }, [watchNextHideSeen]);
+
   const sourceRelatedVideos = dedupeVideoList(relatedVideos);
   const uniqueRelatedVideos = filterHiddenRelatedVideos(
     dedupeRelatedRailVideos(sourceRelatedVideos, currentVideo.id),
@@ -1992,29 +1998,25 @@ function ShellDynamicInner({
 
       const payload = (await response.json()) as CurrentVideoResolvePayload & { hasMore?: boolean };
       const nextVideos = Array.isArray(payload.relatedVideos) ? payload.relatedVideos : [];
+      const payloadHasMore = payload.hasMore !== false;
       relatedFetchOffsetRef.current = (relatedFetchOffsetRef.current ?? existing.length) + nextVideos.length;
 
-      if (nextVideos.length === 0) {
+      if (nextVideos.length === 0 && !payloadHasMore) {
         setHasMoreRelated(false);
         return;
       }
 
-      let appendedCount = 0;
-      let nextLoadedCount = 0;
       setRelatedVideos((previous) => {
-        const previousDeduped = dedupeRelatedRailVideos(dedupeVideoList(previous), currentVideo.id);
         const merged = dedupeRelatedRailVideos(dedupeVideoList([...previous, ...nextVideos]), currentVideo.id)
           .slice(0, RELATED_MAX_VIDEOS);
-        appendedCount = merged.length - previousDeduped.length;
-        nextLoadedCount = merged.length;
         return merged;
       });
 
-      if (
-        nextLoadedCount >= RELATED_MAX_VIDEOS
-      ) {
+      if (!payloadHasMore) {
         setHasMoreRelated(false);
+        return;
       }
+
     } catch {
       // Ignore transient load-more failures and let the next scroll retry.
     } finally {
@@ -2104,6 +2106,35 @@ function ShellDynamicInner({
     loadMoreRelatedVideos,
     relatedTransitionPhase,
     rightRailMode,
+  ]);
+
+  useEffect(() => {
+    if (
+      !watchNextHideSeen
+      || rightRailMode !== "watch-next"
+      || relatedTransitionPhase !== "idle"
+      || !hasMoreRelated
+      || isLoadingMoreRelated
+      || visibleWatchNextVideos.length > 0
+    ) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadMoreRelatedVideos();
+    }, 160);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    hasMoreRelated,
+    isLoadingMoreRelated,
+    loadMoreRelatedVideos,
+    relatedTransitionPhase,
+    rightRailMode,
+    visibleWatchNextVideos.length,
+    watchNextHideSeen,
   ]);
 
   useEffect(() => {

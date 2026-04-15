@@ -6,11 +6,14 @@ import type { VideoRecord } from "@/lib/catalog";
 import { Top100VideoLink } from "@/components/top100-video-link";
 import { CloseLink } from "@/components/close-link";
 import { NewScrollReset } from "@/components/new-scroll-reset";
+import { readPersistedBoolean, writePersistedBoolean } from "@/lib/persisted-boolean";
 import {
   VIDEO_QUALITY_FLAG_REASON_LABELS,
   VIDEO_QUALITY_FLAG_REASONS,
   type VideoQualityFlagReason,
 } from "@/lib/video-quality-flags";
+
+const NEW_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-new";
 
 function dedupeVideos(videos: VideoRecord[]) {
   const seen = new Set<string>();
@@ -53,7 +56,7 @@ export function NewVideosLoader({
   const [flagPendingVideoId, setFlagPendingVideoId] = useState<string | null>(null);
   const [flagStatus, setFlagStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [hideSeen, setHideSeen] = useState(false);
+  const [hideSeen, setHideSeen] = useState(() => readPersistedBoolean(NEW_HIDE_SEEN_TOGGLE_KEY, false));
   const seenVideoIdSet = useMemo(() => new Set(seenVideoIds), [seenVideoIds]);
   const visibleVideos = useMemo(
     () => hideSeen ? allVideos.filter((v) => !seenVideoIdSet.has(v.id)) : allVideos,
@@ -176,6 +179,10 @@ export function NewVideosLoader({
 
     void loadVideos();
   }, [hiddenVideoIdSet, initialVideos, isAuthenticated]);
+
+  useEffect(() => {
+    writePersistedBoolean(NEW_HIDE_SEEN_TOGGLE_KEY, hideSeen);
+  }, [hideSeen]);
 
   return (
     <>
