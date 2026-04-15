@@ -1241,27 +1241,6 @@ function ShellDynamicInner({
         });
         resolveStartupCandidate(initialVideo, initialHydratedRelatedVideos, "server-initial-fallback");
         return;
-
-        if (attempt >= STARTUP_RETRY_MAX_ATTEMPTS) {
-          logFlow("startup-selection:halted", {
-            attempt,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          setIsResolvingInitialVideo(false);
-          return;
-        }
-
-        logFlow("startup-selection:retry", {
-          attempt,
-          error: error instanceof Error ? error.message : String(error),
-        });
-
-        const delayMs = attempt <= STARTUP_RETRY_FAST_ATTEMPTS
-          ? Math.min(2400, 350 * attempt)
-          : STARTUP_RETRY_SLOW_DELAY_MS;
-        retryTimeoutId = window.setTimeout(() => {
-          void tryResolveStartupVideo(attempt + 1);
-        }, delayMs);
       }
     };
 
