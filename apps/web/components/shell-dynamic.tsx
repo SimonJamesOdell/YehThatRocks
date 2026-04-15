@@ -3698,6 +3698,19 @@ function ShellDynamicInner({
           </div>
 
           {rightRailMode === "watch-next" ? (
+            <div className="rightRailWatchNextHeader">
+              <button
+                type="button"
+                className={`newPageSeenToggle watchNextSeenToggle${watchNextHideSeen ? " newPageSeenToggleActive" : ""}`}
+                onClick={() => setWatchNextHideSeen((value) => !value)}
+                aria-pressed={watchNextHideSeen}
+              >
+                {watchNextHideSeen ? "Showing unseen only" : "Show unseen only"}
+              </button>
+            </div>
+          ) : null}
+
+          {rightRailMode === "watch-next" ? (
             <div
               ref={relatedStackRef}
               className={`relatedStack${
@@ -3709,15 +3722,6 @@ function ShellDynamicInner({
               }`}
               onScroll={handleRelatedScroll}
             >
-              <button
-                type="button"
-                className={`newPageSeenToggle${watchNextHideSeen ? " newPageSeenToggleActive" : ""}`}
-                onClick={() => setWatchNextHideSeen((value) => !value)}
-                aria-pressed={watchNextHideSeen}
-              >
-                {watchNextHideSeen ? "Showing unseen only" : "Show unseen only"}
-              </button>
-
               {playlistMutationMessage ? (
                 <p className={`rightRailStatus rightRailStatus${playlistMutationTone === "success" ? "Success" : playlistMutationTone === "error" ? "Error" : "Info"}`}>
                   {playlistMutationMessage}
@@ -3740,6 +3744,7 @@ function ShellDynamicInner({
                 <div
                   key={track.id}
                   className={hidingRelatedVideoIds.includes(track.id) ? "relatedCardSlot relatedCardSlotExiting" : "relatedCardSlot"}
+                  style={{ "--related-index": index } as CSSProperties}
                 >
                   {isAuthenticated ? (
                     <button
@@ -3760,7 +3765,6 @@ function ShellDynamicInner({
                   <Link
                     href={`/?v=${track.id}`}
                     className={`relatedCard linkedCard relatedCardTransition${clickedRelatedVideoId === track.id ? " relatedCardClickFlash" : ""}`}
-                    style={{ "--related-index": index } as CSSProperties}
                     onClick={() => {
                       setClickedRelatedVideoId(track.id);
                       if (relatedClickFlashTimeoutRef.current !== null) {
