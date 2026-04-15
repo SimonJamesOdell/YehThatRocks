@@ -3014,13 +3014,13 @@ export async function getRelatedVideos(
           v.favourited,
           v.description
         FROM videos v
-        WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+        WHERE v.videoId IS NOT NULL
+          AND CHAR_LENGTH(v.videoId) = 11
           AND EXISTS (
             SELECT 1
             FROM site_videos sv
             WHERE sv.video_id = v.id
-              AND v.videoId IS NOT NULL
-              AND CHAR_LENGTH(v.videoId) = 11
+              AND sv.status = 'available'
           )
         ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
         LIMIT ${Math.max(remaining * 6, 300)}
@@ -3028,6 +3028,12 @@ export async function getRelatedVideos(
 
       const backfillBlockedIds = new Set<string>([
         normalizedVideoId,
+        ...excludedIds,
+        ...assembledRows.map((row) => row.videoId),
+      ]);
+      assembledRows.push(...selectUniqueVideoRows(dedupeRankedRows(backfillPool), backfillBlockedIds, remaining));
+    }
+
     const mapped = assembledRows.slice(0, targetCount).map(mapVideo);
     if (useCachedDefaultQuery) {
       relatedVideosCache.set(cacheKey, {
@@ -3138,18 +3144,25 @@ export async function getNewestVideos(
         v.favourited,
         v.description
       FROM videos v
-      WHERE EXISTS (
+      WHERE v.videoId IS NOT NULL
+        AND CHAR_LENGTH(v.videoId) = 11
+        AND EXISTS (
         SELECT 1
         FROM site_videos sv
         WHERE sv.video_id = v.id
-          AND v.videoId IS NOT NULL
-          AND CHAR_LENGTH(v.videoId) = 11
+          AND sv.status = 'available'
       )
       ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
       LIMIT ${safeCount}
       OFFSET ${safeOffset}
     `;
 
+    if (videos.length > 0) {
+      const effectiveRows = options?.enforcePlaybackAvailability
+        ? await filterPlayableNewestRows(videos, safeCount)
+        : videos;
+
+      if (safeOffset === 0) {
         newestVideosCache = {
           expiresAt: now + NEWEST_CACHE_TTL_MS,
           count: effectiveRows.length,
