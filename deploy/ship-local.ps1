@@ -73,6 +73,25 @@ Pending changes:
 $statusOutput
 "@
   }
+
+  # git status --porcelain does not report untracked empty directories.
+  # These can still end up in the Docker build context and break things (e.g.
+  # an empty Prisma migration directory causes Prisma P3015 on deploy).
+  # Use `git clean -nd` to detect anything that would be swept by a clean.
+  $cleanOutput = (& git clean -nd) -join "`n"
+  if ($LASTEXITCODE -ne 0) {
+    throw "Unable to run git clean dry-run check."
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($cleanOutput)) {
+    throw @"
+Working tree has untracked files or empty directories that are not in .gitignore.
+These would be included in the Docker build context and may corrupt the image.
+Remove them (or add to .gitignore) before running ship:
+
+$cleanOutput
+"@
+  }
 }
 
 function Remove-PathIfPresent([string]$TargetPath) {
