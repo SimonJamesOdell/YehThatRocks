@@ -8,6 +8,7 @@ import { buildSharedVideoMessage } from "@/lib/chat-shared-video";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
+import { readPersistedBoolean, writePersistedBoolean } from "@/lib/persisted-boolean";
 
 type PlayerExperienceProps = {
   currentVideo: VideoRecord;
@@ -134,6 +135,7 @@ const maxEndedChoiceVideos = 12;
 const ENDED_CHOICE_SET_SIZE = maxEndedChoiceVideos;
 const ENDED_CHOICE_INITIAL_PREFETCH_SETS = 2;
 const ENDED_CHOICE_SCROLL_PREFETCH_BUFFER_SETS = 3;
+const ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-ended-choice";
 
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
   const consoleWithPatchState = console as typeof console & {
@@ -360,6 +362,7 @@ export function PlayerExperience({
   const endedChoiceFetchingRef = useRef(false);
   const endedChoiceHasMoreRef = useRef(true);
   const endedChoiceSkipRef = useRef(0);
+  const endedChoiceHideSeenHydratedRef = useRef(false);
   const currentVideoRef = useRef(currentVideo);
   const autoplayEnabledRef = useRef(autoplayEnabled);
   const hasActivePlaylistSequenceRef = useRef(false);
@@ -372,13 +375,25 @@ export function PlayerExperience({
     currentVideoRef.current = currentVideo;
     setLocalTitleOverride(null);
     setLocalChannelTitleOverride(null);
-    setEndedChoiceHideSeen(false);
     setEndedChoiceRemoteVideos([]);
     endedChoiceUserScrolledRef.current = false;
     endedChoiceFetchingRef.current = false;
     endedChoiceHasMoreRef.current = true;
     endedChoiceSkipRef.current = 0;
   }, [currentVideo]);
+
+  useEffect(() => {
+    setEndedChoiceHideSeen(readPersistedBoolean(ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY, false));
+    endedChoiceHideSeenHydratedRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!endedChoiceHideSeenHydratedRef.current) {
+      return;
+    }
+
+    writePersistedBoolean(ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY, endedChoiceHideSeen);
+  }, [endedChoiceHideSeen]);
 
   useEffect(() => {
     return () => {
@@ -2061,30 +2076,48 @@ export function PlayerExperience({
     const take = Math.max(1, setCount) * ENDED_CHOICE_SET_SIZE;
     const skip = endedChoiceSkipRef.current;
     endedChoiceFetchingRef.current = true;
-    endedChoiceSkipRef.current = skip + take;
 
     try {
-      const response = await fetch(`/api/videos/top?skip=${skip}&take=${take}`, {
+      const params = new URLSearchParams();
+      params.set("v", currentVideo.id);
+      params.set("count", String(take));
+      params.set("offset", String(skip));
+
+      const response = await fetch(`/api/current-video?${params.toString()}`, {
         cache: "no-store",
       });
 
       if (!response.ok) {
-        endedChoiceSkipRef.current = skip;
         return;
       }
 
       const payload = (await response.json().catch(() => null)) as
         | {
             videos?: VideoRecord[];
+            relatedVideos?: VideoRecord[];
+            hasMore?: boolean;
           }
         | null;
 
-      const fetchedVideos = Array.isArray(payload?.videos)
-        ? payload.videos.filter((video): video is VideoRecord => Boolean(video?.id) && video.id !== currentVideo.id)
-        : [];
+      const fetchedVideosRaw = Array.isArray(payload?.relatedVideos)
+        ? payload.relatedVideos
+        : Array.isArray(payload?.videos)
+          ? payload.videos
+          : [];
+      const fetchedVideos = fetchedVideosRaw.filter((video): video is VideoRecord => Boolean(video?.id) && video.id !== currentVideo.id);
+      const payloadHasMore = payload?.hasMore !== false;
+      endedChoiceSkipRef.current = skip + fetchedVideosRaw.length;
+
+      if (fetchedVideos.length === 0 && !payloadHasMore) {
+        endedChoiceHasMoreRef.current = false;
+        return;
+      }
+
+      if (!payloadHasMore) {
+        endedChoiceHasMoreRef.current = false;
+      }
 
       if (fetchedVideos.length === 0) {
-        endedChoiceHasMoreRef.current = false;
         return;
       }
 
@@ -2104,7 +2137,7 @@ export function PlayerExperience({
         return merged;
       });
     } catch {
-      endedChoiceSkipRef.current = skip;
+      // Ignore transient failures; next scroll/prefetch will retry.
     } finally {
       endedChoiceFetchingRef.current = false;
     }
@@ -2196,6 +2229,32 @@ export function PlayerExperience({
 
     scheduleEndedChoicePrefetchCheck();
   }, [showEndedChoiceOverlay, endedChoiceVideos.length]);
+
+  useEffect(() => {
+    if (
+      !showEndedChoiceOverlay
+      || !endedChoiceHideSeen
+      || visibleEndedChoiceVideos.length > 0
+      || endedChoiceFetchingRef.current
+      || !endedChoiceHasMoreRef.current
+    ) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void fetchEndedChoiceSets(1);
+    }, 140);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    currentVideo.id,
+    endedChoiceHideSeen,
+    endedChoiceVideos.length,
+    showEndedChoiceOverlay,
+    visibleEndedChoiceVideos.length,
+  ]);
 
   function handleEndedChoiceReshuffle() {
     setEndedChoiceGridExiting(true);

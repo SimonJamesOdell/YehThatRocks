@@ -18,6 +18,8 @@ const CURRENT_VIDEO_RESOLVER_TIMEOUT_MS = 2_500;
 const CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS = 1;
 const CURRENT_VIDEO_RELATED_POOL_CACHE_TTL_MS = 30_000;
 const CURRENT_VIDEO_RELATED_POOL_SIZE = 100;
+const CURRENT_VIDEO_RELATED_POOL_BASE_SIZE = CURRENT_VIDEO_RELATED_POOL_SIZE;
+const CURRENT_VIDEO_RELATED_POOL_MAX_SIZE = 300_000;
 
 type CurrentVideoPayload = {
   currentVideo: Awaited<ReturnType<typeof getCurrentVideo>>;
@@ -72,49 +74,73 @@ function logCurrentVideoRoute(event: string, detail?: Record<string, unknown>) {
   console.log(`[current-video-route] ${event}${payload}`);
 }
 
-async function getRelatedPoolForCurrentVideo(currentVideoId: string, userId?: number) {
+async function getRelatedPoolForCurrentVideo(currentVideoId: string, userId: number | undefined, minimumSize: number) {
+  const targetSize = Math.max(
+    CURRENT_VIDEO_RELATED_POOL_BASE_SIZE,
+    Math.min(CURRENT_VIDEO_RELATED_POOL_MAX_SIZE, Math.floor(minimumSize)),
+  );
   const cacheKey = `${currentVideoId}:u:${userId ?? 0}`;
   const now = Date.now();
   const cached = currentVideoRelatedPoolCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) {
-    return cached.videos;
+  if (cached && cached.expiresAt > now && cached.videos.length >= targetSize) {
+    return cached.videos.slice(0, targetSize);
   }
 
   const inFlight = currentVideoRelatedPoolInflight.get(cacheKey);
   if (inFlight) {
-    return inFlight;
+    const inFlightVideos = await inFlight;
+    if (inFlightVideos.length >= targetSize) {
+      return inFlightVideos.slice(0, targetSize);
+    }
   }
 
   const pending = (async () => {
+    const discoveryCount = Math.max(400, Math.min(CURRENT_VIDEO_RELATED_POOL_MAX_SIZE, targetSize * 2));
     const baseRelated = await getRelatedVideos(currentVideoId, {
       userId,
-      count: CURRENT_VIDEO_RELATED_POOL_SIZE,
+      count: 120,
     });
 
     const deduped = uniqueVideosById(baseRelated).filter((video) => video.id !== currentVideoId);
     const blockedIds = new Set<string>([currentVideoId, ...deduped.map((video) => video.id)]);
-    if (deduped.length >= CURRENT_VIDEO_RELATED_POOL_SIZE) {
-      return deduped.slice(0, CURRENT_VIDEO_RELATED_POOL_SIZE);
+    if (deduped.length >= targetSize) {
+      return deduped.slice(0, targetSize);
     }
 
-    const [topCandidates, newestCandidates, unseenCandidates] = await Promise.all([
+    const [baselineTopCandidates, baselineNewestCandidates, unseenCandidates] = await Promise.all([
       getTopVideos(300),
       getNewestVideos(200, 0),
       getUnseenCatalogVideos({
         userId,
-        count: 400,
+        count: Math.min(500, Math.max(200, Math.floor(targetSize / 2))),
         excludeVideoIds: Array.from(blockedIds),
       }),
     ]);
 
+    let topCandidates = baselineTopCandidates;
+    let newestCandidates = baselineNewestCandidates;
+
+    if (discoveryCount > 300) {
+      const [expandedTopCandidates, expandedNewestCandidates] = await Promise.all([
+        getTopVideos(discoveryCount),
+        getNewestVideos(discoveryCount, 0),
+      ]);
+      topCandidates = uniqueVideosById([...baselineTopCandidates, ...expandedTopCandidates]);
+      newestCandidates = uniqueVideosById([...baselineNewestCandidates, ...expandedNewestCandidates]);
+    }
+
     const merged = uniqueVideosById([
       ...deduped,
+      ...unseenCandidates,
       ...topCandidates,
       ...newestCandidates,
-      ...unseenCandidates,
     ]).filter((video) => !blockedIds.has(video.id));
 
-    return [...deduped, ...merged].slice(0, CURRENT_VIDEO_RELATED_POOL_SIZE);
+    if (targetSize <= CURRENT_VIDEO_RELATED_POOL_SIZE) {
+      return [...deduped, ...merged].slice(0, CURRENT_VIDEO_RELATED_POOL_SIZE);
+    }
+
+    return [...deduped, ...merged].slice(0, targetSize);
   })();
   currentVideoRelatedPoolInflight.set(cacheKey, pending);
 
@@ -124,7 +150,7 @@ async function getRelatedPoolForCurrentVideo(currentVideoId: string, userId?: nu
       expiresAt: Date.now() + CURRENT_VIDEO_RELATED_POOL_CACHE_TTL_MS,
       videos,
     });
-    return videos;
+    return videos.slice(0, targetSize);
   } finally {
     if (currentVideoRelatedPoolInflight.get(cacheKey) === pending) {
       currentVideoRelatedPoolInflight.delete(cacheKey);
@@ -251,7 +277,8 @@ export async function GET(request: NextRequest) {
     let hasMoreForCustomRequest: boolean | undefined;
 
     if (usePagedRelatedPool) {
-      const relatedPool = await getRelatedPoolForCurrentVideo(currentVideo.id, optionalAuth?.userId);
+      const poolSizeTarget = requestedRelatedOffset + requestedRelatedCount + 1;
+      const relatedPool = await getRelatedPoolForCurrentVideo(currentVideo.id, optionalAuth?.userId, poolSizeTarget);
       const filteredPool = excludedRelatedIds.length > 0
         ? relatedPool.filter((video) => !excludedRelatedIds.includes(video.id))
         : relatedPool;

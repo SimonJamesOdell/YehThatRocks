@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { VideoRecord } from "@/lib/catalog";
 import { CloseLink } from "@/components/close-link";
 import { Top100VideoLink } from "@/components/top100-video-link";
+import { readPersistedBoolean, writePersistedBoolean } from "@/lib/persisted-boolean";
 
 type TopVideosPayload = {
   videos?: VideoRecord[];
@@ -12,6 +13,7 @@ type TopVideosPayload = {
 
 const TOP100_SESSION_CACHE_KEY = "ytr:top100-cache-v1";
 const TOP100_SESSION_CACHE_TTL_MS = 60_000;
+const TOP100_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-top100";
 
 function dedupeVideos(videos: VideoRecord[]) {
   const seen = new Set<string>();
@@ -74,7 +76,7 @@ export function Top100VideosLoader({
   const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(() => videos.length === 0);
   const [error, setError] = useState<string | null>(null);
-  const [hideSeen, setHideSeen] = useState(false);
+  const [hideSeen, setHideSeen] = useState(() => readPersistedBoolean(TOP100_HIDE_SEEN_TOGGLE_KEY, false));
   const seenVideoIdSet = useMemo(() => new Set(seenVideoIds), [seenVideoIds]);
   const visibleVideos = useMemo(
     () => (hideSeen ? videos.filter((video) => !seenVideoIdSet.has(video.id)) : videos),
@@ -190,6 +192,10 @@ export function Top100VideosLoader({
       cancelled = true;
     };
   }, [hiddenVideoIdSet, videos.length]);
+
+  useEffect(() => {
+    writePersistedBoolean(TOP100_HIDE_SEEN_TOGGLE_KEY, hideSeen);
+  }, [hideSeen]);
 
   if (videos.length === 0) {
     return (
