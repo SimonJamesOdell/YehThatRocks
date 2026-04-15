@@ -687,6 +687,9 @@ function ShellDynamicInner({
     return filteredQuery ? `${pathname}?${filteredQuery}` : pathname;
   })();
   const routeLoadingLabel = pathname.endsWith("/wiki") || pendingOverlayOpenKind === "wiki" ? "Loading wiki" : "Loading video";
+  const routeLoadingMessage = routeLoadingLabel === "Loading video"
+    ? "connecting to upstream video provider..."
+    : `${routeLoadingLabel}...`;
 
   const handleOverlayVideoLinkClickCapture = useCallback((event: ReactMouseEvent<HTMLElement>) => {
     if (!shouldShowOverlayPanel || isOverlayClosing) {
@@ -3651,7 +3654,7 @@ function ShellDynamicInner({
                       <span />
                       <span />
                     </div>
-                    <p>{routeLoadingLabel}...</p>
+                    <p>{routeLoadingMessage}</p>
                   </div>
                 </div>
               ) : (
@@ -3685,7 +3688,7 @@ function ShellDynamicInner({
                           <span />
                           <span />
                         </div>
-                        <p>{routeLoadingLabel}...</p>
+                        <p>{routeLoadingMessage}</p>
                       </div>
                     </div>
                   )}
