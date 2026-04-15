@@ -3432,15 +3432,15 @@ export function PlayerExperience({
                     <span />
                     <span />
                   </div>
-                  <p>Loading player...</p>
+                  <p>connecting to upstream video provider...</p>
                   {showPlayerRefreshHint ? (
                     <div className="playerBootRefreshWrap">
                       <button
                         type="button"
                         className="playerBootRefreshBtn"
                         onClick={handleReloadPlayerIframe}
-                        aria-label="Reload player"
-                        title="Reload player"
+                        aria-label="Try connecting again"
+                        title="Try connecting again"
                       >
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <polyline points="23 4 23 10 17 10" />
@@ -3449,7 +3449,7 @@ export function PlayerExperience({
                           <path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14" />
                         </svg>
                       </button>
-                      <span className="playerBootRefreshLabel">Reload player</span>
+                      <span className="playerBootRefreshLabel">Try connecting again</span>
                     </div>
                   ) : null}
                 </div>
