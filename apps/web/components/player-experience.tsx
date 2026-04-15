@@ -3715,13 +3715,6 @@ export function PlayerExperience({
                     {endedChoiceHideSeen ? "Showing unseen only" : "Show unseen only"}
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  className="playerEndedChoiceWatchAgain"
-                  onClick={handleEndedChoiceReshuffle}
-                >
-                  {"more choices ->"}
-                </button>
               </div>
             </div>
           ) : null}
