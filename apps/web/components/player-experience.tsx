@@ -297,6 +297,7 @@ export function PlayerExperience({
   const [endedChoiceHidingIds, setEndedChoiceHidingIds] = useState<string[]>([]);
   const [endedChoiceDismissedIds, setEndedChoiceDismissedIds] = useState<string[]>([]);
   const [endedChoiceHideSeen, setEndedChoiceHideSeen] = useState(false);
+  const [endedChoiceLoading, setEndedChoiceLoading] = useState(false);
   const [endedChoiceRemoteVideos, setEndedChoiceRemoteVideos] = useState<VideoRecord[]>([]);
   const [playerClosedByEndOfVideo, setPlayerClosedByEndOfVideo] = useState(false);
   const [playlistChooserOpen, setPlaylistChooserOpen] = useState(false);
@@ -375,6 +376,7 @@ export function PlayerExperience({
     currentVideoRef.current = currentVideo;
     setLocalTitleOverride(null);
     setLocalChannelTitleOverride(null);
+    setEndedChoiceLoading(false);
     setEndedChoiceRemoteVideos([]);
     endedChoiceUserScrolledRef.current = false;
     endedChoiceFetchingRef.current = false;
@@ -2076,6 +2078,7 @@ export function PlayerExperience({
     const take = Math.max(1, setCount) * ENDED_CHOICE_SET_SIZE;
     const skip = endedChoiceSkipRef.current;
     endedChoiceFetchingRef.current = true;
+    setEndedChoiceLoading(true);
 
     try {
       const params = new URLSearchParams();
@@ -2139,6 +2142,7 @@ export function PlayerExperience({
     } catch {
       // Ignore transient failures; next scroll/prefetch will retry.
     } finally {
+      setEndedChoiceLoading(false);
       endedChoiceFetchingRef.current = false;
     }
   }
@@ -3675,7 +3679,7 @@ export function PlayerExperience({
             </div>
           ) : null}
 
-          {showEndedChoiceOverlay && endedChoiceVideos.length > 0 ? (
+          {showEndedChoiceOverlay && (endedChoiceVideos.length > 0 || endedChoiceLoading) ? (
             <div
               className="playerEndedChoiceOverlay"
               role="dialog"
@@ -3686,10 +3690,22 @@ export function PlayerExperience({
                 ref={endedChoiceOverlayRef}
                 className="playerEndedChoiceScrollArea"
                 onScroll={handleEndedChoiceOverlayScroll}
+                aria-busy={endedChoiceLoading}
               >
               <div
                 className={endedChoiceGridExiting ? "playerEndedChoiceGrid playerEndedChoiceGridExiting" : "playerEndedChoiceGrid"}
               >
+                {endedChoiceLoading && visibleEndedChoiceVideos.length === 0 ? (
+                  <div className="playerEndedChoiceLoadingState" role="status" aria-live="polite" aria-label="Loading more choices">
+                    <span className="playerBootBars" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                    <span className="playerEndedChoiceLoadingLabel">Loading choices...</span>
+                  </div>
+                ) : null}
                 {visibleEndedChoiceVideos.map((video, index) => {
                   const isSeen = seenVideoIds?.has(video.id) ?? false;
                   const isHiding = endedChoiceHidingIds.includes(video.id);
