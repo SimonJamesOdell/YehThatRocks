@@ -1721,11 +1721,40 @@ function escapeSqlIdentifier(identifier: string) {
 
 type TableColumnInfo = { Field: string; Type: string };
 
+const tableColumnsCache = new Map<string, TableColumnInfo[]>();
+const tableColumnsInFlight = new Map<string, Promise<TableColumnInfo[]>>();
+
 async function loadTableColumns(tableName: string): Promise<TableColumnInfo[]> {
+  const cached = tableColumnsCache.get(tableName);
+  if (cached) {
+    return cached;
+  }
+
+  const inFlight = tableColumnsInFlight.get(tableName);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const pending = (async () => {
   try {
-    return await prisma.$queryRawUnsafe<TableColumnInfo[]>(`SHOW COLUMNS FROM ${tableName}`);
+      const columns = await prisma.$queryRawUnsafe<TableColumnInfo[]>(`SHOW COLUMNS FROM ${tableName}`);
+      tableColumnsCache.set(tableName, columns);
+      return columns;
   } catch {
-    return [] as TableColumnInfo[];
+      const empty: TableColumnInfo[] = [];
+      tableColumnsCache.set(tableName, empty);
+      return empty;
+  }
+  })();
+
+  tableColumnsInFlight.set(tableName, pending);
+
+  try {
+    return await pending;
+  } finally {
+    if (tableColumnsInFlight.get(tableName) === pending) {
+      tableColumnsInFlight.delete(tableName);
+    }
   }
 }
 

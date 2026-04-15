@@ -16,6 +16,12 @@ function toNumber(value: bigint | number | null | undefined) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+const ADMIN_DASHBOARD_CACHE_TTL_MS = 30_000;
+let adminDashboardCache: {
+  expiresAt: number;
+  payload: Record<string, unknown>;
+} | null = null;
+
 
 export async function GET(request: NextRequest) {
   const auth = await requireAdminApiAuth(request);
@@ -24,7 +30,12 @@ export async function GET(request: NextRequest) {
     return auth.response;
   }
 
-  const startedAt = Date.now();
+  const now = Date.now();
+  if (adminDashboardCache && adminDashboardCache.expiresAt > now) {
+    return NextResponse.json(adminDashboardCache.payload);
+  }
+
+  const startedAt = now;
 
   const { health } = await buildAdminHealthPayload();
 
@@ -183,7 +194,7 @@ export async function GET(request: NextRequest) {
   const auth24hRow = auth24h[0];
   const metadataRow = metadataQuality[0];
 
-  return NextResponse.json({
+  const payload = {
     ok: true,
     meta: {
       durationMs: Date.now() - startedAt,
@@ -259,5 +270,12 @@ export async function GET(request: NextRequest) {
         })),
       },
     },
-  });
+  };
+
+  adminDashboardCache = {
+    expiresAt: Date.now() + ADMIN_DASHBOARD_CACHE_TTL_MS,
+    payload,
+  };
+
+  return NextResponse.json(payload);
 }

@@ -13,8 +13,19 @@ import {
   VIDEO_QUALITY_FLAG_REASON_LABELS,
 } from "@/lib/video-quality-flags";
 
+let hasEnsuredVideoQualityFlagsTable = false;
+let ensureVideoQualityFlagsTablePromise: Promise<void> | null = null;
+
 async function ensureVideoQualityFlagsTable() {
-  await prisma.$executeRawUnsafe(`
+  if (hasEnsuredVideoQualityFlagsTable) {
+    return;
+  }
+
+  if (ensureVideoQualityFlagsTablePromise) {
+    return ensureVideoQualityFlagsTablePromise;
+  }
+
+  ensureVideoQualityFlagsTablePromise = prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS video_quality_flags (
       id INT AUTO_INCREMENT PRIMARY KEY,
       user_id INT NOT NULL,
@@ -25,7 +36,15 @@ async function ensureVideoQualityFlagsTable() {
       KEY idx_video_quality_flags_video_reason (video_id, reason),
       KEY idx_video_quality_flags_video (video_id)
     )
-  `);
+  `)
+    .then(() => {
+      hasEnsuredVideoQualityFlagsTable = true;
+    })
+    .finally(() => {
+      ensureVideoQualityFlagsTablePromise = null;
+    });
+
+  return ensureVideoQualityFlagsTablePromise;
 }
 
 async function getFlagStats(videoId: string, reason: string) {

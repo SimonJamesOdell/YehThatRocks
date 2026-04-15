@@ -18,8 +18,19 @@ type SearchFlagAggregateRow = {
   admin_count: bigint | number;
 };
 
+let hasEnsuredSearchResultFlagsTable = false;
+let ensureSearchResultFlagsTablePromise: Promise<void> | null = null;
+
 export async function ensureSearchResultFlagsTable() {
-  await prisma.$executeRawUnsafe(`
+  if (hasEnsuredSearchResultFlagsTable) {
+    return;
+  }
+
+  if (ensureSearchResultFlagsTablePromise) {
+    return ensureSearchResultFlagsTablePromise;
+  }
+
+  ensureSearchResultFlagsTablePromise = prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS search_result_flags (
       id INT AUTO_INCREMENT PRIMARY KEY,
       user_id INT NOT NULL,
@@ -35,7 +46,15 @@ export async function ensureSearchResultFlagsTable() {
       KEY idx_search_result_flags_query_reason (normalized_query, reason, video_id),
       KEY idx_search_result_flags_admin_query (admin_flagger, normalized_query, video_id)
     )
-  `);
+  `)
+    .then(() => {
+      hasEnsuredSearchResultFlagsTable = true;
+    })
+    .finally(() => {
+      ensureSearchResultFlagsTablePromise = null;
+    });
+
+  return ensureSearchResultFlagsTablePromise;
 }
 
 type RecordSearchFlagInput = {
