@@ -86,7 +86,7 @@ function main() {
   assertContains(loginFormSource, 'className="authMessage"', "Login form renders errors with authMessage class", failures);
   assertContains(loginFormSource, "disabled={isSubmitting}", "Login form disables submit button during submission", failures);
   assertContains(loginFormSource, '"/api/auth/login"', "Login form posts to /api/auth/login", failures);
-  assertContains(loginFormSource, 'window.location.assign(', "Login form redirects on success via window.location.assign", failures);
+  assertContains(loginFormSource, 'router.push(target)', "Login form redirects on success via router.push", failures);
   assertContains(loginFormSource, "`/?v=${encodeURIComponent(videoParam)}`", "Login redirects back to video param when present", failures);
 
   // --- Change password form ---

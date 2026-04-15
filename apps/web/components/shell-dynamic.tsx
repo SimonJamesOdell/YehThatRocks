@@ -960,7 +960,13 @@ function ShellDynamicInner({
       return;
     }
 
-    startDesktopIntroSequence();
+    if (sessionStorage.getItem("ytr-intro-played")) {
+      setDesktopIntroPhase("disabled");
+      setIsDesktopIntroPreload(false);
+    } else {
+      sessionStorage.setItem("ytr-intro-played", "1");
+      startDesktopIntroSequence();
+    }
 
     const handleResize = () => {
       const phase = desktopIntroPhaseRef.current;
