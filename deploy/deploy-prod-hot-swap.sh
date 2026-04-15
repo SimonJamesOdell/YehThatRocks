@@ -20,6 +20,7 @@ CLEANUP_AFTER_DEPLOY="${CLEANUP_AFTER_DEPLOY:-1}"
 CLEANUP_BUILDER_CACHE="${CLEANUP_BUILDER_CACHE:-1}"
 CLEANUP_UNUSED_IMAGES="${CLEANUP_UNUSED_IMAGES:-1}"
 SKIP_PULL="${SKIP_PULL:-0}"
+ENABLE_DB_PROFILING_ON_DEPLOY="${ENABLE_DB_PROFILING_ON_DEPLOY:-0}"
 WEB_IMAGE_DEFAULT="ghcr.io/simonjamesodell/yehthatrocks-web:latest"
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -201,6 +202,11 @@ WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" up -d --no-deps web
 echo "[deploy] verifying live health after swap: $STATUS_URL"
 if wait_for_public_health "$STATUS_URL" "$HEALTH_TIMEOUT_SEC"; then
   echo "[deploy] health check passed"
+  if [ "$ENABLE_DB_PROFILING_ON_DEPLOY" = "1" ] && [ -f "$REPO_DIR/deploy/start-db-profiling.sh" ]; then
+    echo "[deploy] enabling db profiling (ENABLE_DB_PROFILING_ON_DEPLOY=1)"
+    REPO_DIR="$REPO_DIR" ENV_FILE="$ENV_FILE" COMPOSE_FILE="$COMPOSE_FILE" \
+      bash "$REPO_DIR/deploy/start-db-profiling.sh" || echo "[deploy] WARNING: db profiling start failed — run: bash deploy/start-db-profiling.sh" >&2
+  fi
   cleanup_docker_artifacts
   echo "[deploy] deploy complete: $CURRENT_COMMIT"
   if [ -f "$REPO_DIR/deploy/verify-live-schema.sh" ]; then
