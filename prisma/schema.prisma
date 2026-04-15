@@ -19,6 +19,7 @@ model Video {
   parseReason     String?        @db.VarChar(500)
   parseConfidence Float?
   parsedAt        DateTime?      @db.DateTime
+  parsedArtistNorm String?       @map("parsed_artist_norm") @db.VarChar(255)
   channelTitle    String?        @map("channelTitle") @db.VarChar(255)
   thumbnail       String?        @db.VarChar(500)
   viewCount       Int?           @map("viewCount")
@@ -31,12 +32,14 @@ model Video {
   siteVideos      SiteVideo[]
 
   @@fulltext([title, parsedArtist, parsedTrack])
+  @@index([parsedArtistNorm], map: "idx_videos_parsed_artist_norm")
   @@map("videos")
 }
 
 model Artist {
   id      Int     @id @default(autoincrement())
   name    String  @map("artist") @db.VarChar(255)
+  artistNameNorm String? @map("artist_name_norm") @db.VarChar(255)
   country String? @db.VarChar(255)
   genre1  String? @db.VarChar(255)
   genre2  String? @db.VarChar(255)
@@ -45,6 +48,7 @@ model Artist {
   genre5  String? @db.VarChar(255)
   genre6  String? @db.VarChar(255)
 
+  @@index([artistNameNorm], map: "idx_artists_artist_name_norm")
   @@map("artists")
 }
 
