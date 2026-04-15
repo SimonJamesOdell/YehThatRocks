@@ -873,6 +873,12 @@ const ARTIST_LETTER_PAGE_CACHE_TTL_MS = 60_000; // 1 minute
 const artistLetterPageCache = new Map<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>();
 const artistLetterPageInFlight = new Map<string, Promise<Array<ArtistRecord & { videoCount: number }>>>();
 const ARTIST_STATS_TABLE_CACHE_TTL_MS = 60_000;
+const ARTIST_PROJECTION_REFRESH_TTL_MS = 30_000;
+const artistProjectionRefreshCache = new Map<string, { expiresAt: number }>();
+const artistProjectionRefreshInFlight = new Map<string, Promise<void>>();
+const ARTIST_STATS_LETTER_BACKFILL_TTL_MS = 10 * 60 * 1000;
+const artistStatsLetterBackfillCache = new Map<string, { expiresAt: number }>();
+const artistStatsLetterBackfillInFlight = new Map<string, Promise<void>>();
 let artistColumnMapCache:
   | {
       name: string;
@@ -1825,11 +1831,11 @@ async function hasArtistStatsProjection() {
   }
 
   try {
-    const rows = await prisma.$queryRawUnsafe<Array<{ hasRows: number }>>(
-      "SELECT EXISTS(SELECT 1 FROM artist_stats LIMIT 1) AS hasRows",
+    const rows = await prisma.$queryRawUnsafe<Array<{ Field: string }>>(
+      "SHOW COLUMNS FROM artist_stats LIKE 'normalized_artist'",
     );
 
-    const available = Number(rows[0]?.hasRows ?? 0) > 0;
+    const available = rows.length > 0;
     artistStatsProjectionAvailabilityCache = {
       checkedAt: now,
       available,
@@ -1873,6 +1879,171 @@ async function hasArtistStatsThumbnailColumn() {
   }
 }
 
+async function getArtistStatRow(normalizedArtist: string) {
+  if (!(await hasArtistStatsProjection())) {
+    return null;
+  }
+
+  const hasThumbnailColumn = await hasArtistStatsThumbnailColumn();
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    displayName: string | null;
+    country: string | null;
+    genre: string | null;
+    thumbnailVideoId: string | null;
+    videoCount: number | null;
+  }>>(
+    `
+      SELECT
+        display_name AS displayName,
+        country,
+        genre,
+        ${hasThumbnailColumn ? "thumbnail_video_id" : "NULL"} AS thumbnailVideoId,
+        video_count AS videoCount
+      FROM artist_stats
+      WHERE normalized_artist = ?
+      LIMIT 1
+    `,
+    normalizedArtist,
+  );
+
+  return rows[0] ?? null;
+}
+
+async function upsertArtistStatsRow(row: {
+  name: string;
+  country: string | null;
+  genre: string | null;
+  videoCount: number;
+  thumbnailVideoId?: string | null;
+}, source: string) {
+  if (!(await hasArtistStatsProjection())) {
+    return;
+  }
+
+  const displayName = row.name.trim();
+  if (!displayName) {
+    return;
+  }
+
+  const normalizedArtist = normalizeArtistKey(displayName);
+  const firstLetter = displayName.charAt(0).toUpperCase();
+  const slug = slugify(displayName);
+  const hasThumbnailColumn = await hasArtistStatsThumbnailColumn();
+
+  if (hasThumbnailColumn) {
+    await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO artist_stats (
+          normalized_artist,
+          display_name,
+          slug,
+          first_letter,
+          country,
+          genre,
+          thumbnail_video_id,
+          video_count,
+          source
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          display_name = VALUES(display_name),
+          slug = VALUES(slug),
+          first_letter = VALUES(first_letter),
+          country = VALUES(country),
+          genre = VALUES(genre),
+          thumbnail_video_id = VALUES(thumbnail_video_id),
+          video_count = VALUES(video_count),
+          source = VALUES(source)
+      `,
+      normalizedArtist,
+      displayName,
+      slug,
+      firstLetter,
+      row.country,
+      row.genre,
+      row.thumbnailVideoId ?? null,
+      row.videoCount,
+      source,
+    );
+    return;
+  }
+
+  await prisma.$executeRawUnsafe(
+    `
+      INSERT INTO artist_stats (
+        normalized_artist,
+        display_name,
+        slug,
+        first_letter,
+        country,
+        genre,
+        video_count,
+        source
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        display_name = VALUES(display_name),
+        slug = VALUES(slug),
+        first_letter = VALUES(first_letter),
+        country = VALUES(country),
+        genre = VALUES(genre),
+        video_count = VALUES(video_count),
+        source = VALUES(source)
+    `,
+    normalizedArtist,
+    displayName,
+    slug,
+    firstLetter,
+    row.country,
+    row.genre,
+    row.videoCount,
+    source,
+  );
+}
+
+function scheduleArtistStatsLetterBackfill(letter: string, rows: Array<ArtistRecord & { videoCount: number }>) {
+  const normalizedLetter = letter.trim().toUpperCase();
+  const now = Date.now();
+  const cached = artistStatsLetterBackfillCache.get(normalizedLetter);
+  if (cached && cached.expiresAt > now) {
+    return;
+  }
+
+  if (artistStatsLetterBackfillInFlight.has(normalizedLetter)) {
+    return;
+  }
+
+  const promise = (async () => {
+    if (!(await hasArtistStatsProjection())) {
+      return;
+    }
+
+    for (const row of rows) {
+      if (row.videoCount <= 0) {
+        continue;
+      }
+
+      await upsertArtistStatsRow({
+        name: row.name,
+        country: row.country,
+        genre: row.genre,
+        videoCount: row.videoCount,
+        thumbnailVideoId: row.thumbnailVideoId,
+      }, "runtime-letter-backfill");
+    }
+
+    artistStatsLetterBackfillCache.set(normalizedLetter, {
+      expiresAt: Date.now() + ARTIST_STATS_LETTER_BACKFILL_TTL_MS,
+    });
+  })()
+    .catch(() => undefined)
+    .finally(() => {
+      artistStatsLetterBackfillInFlight.delete(normalizedLetter);
+    });
+
+  artistStatsLetterBackfillInFlight.set(normalizedLetter, promise);
+}
+
 async function refreshArtistProjectionForName(artistName: string) {
   const displayName = artistName.trim();
   if (!displayName) {
@@ -1888,6 +2059,18 @@ async function refreshArtistProjectionForName(artistName: string) {
   }
 
   const normalizedArtist = normalizeArtistKey(displayName);
+  const cachedRefresh = artistProjectionRefreshCache.get(normalizedArtist);
+  if (cachedRefresh && cachedRefresh.expiresAt > Date.now()) {
+    return;
+  }
+
+  const inFlightRefresh = artistProjectionRefreshInFlight.get(normalizedArtist);
+  if (inFlightRefresh) {
+    await inFlightRefresh;
+    return;
+  }
+
+  const refreshPromise = (async () => {
   const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
   const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
 
@@ -1941,80 +2124,26 @@ async function refreshArtistProjectionForName(artistName: string) {
 
   const country = artistMetaRows[0]?.country ?? null;
   const genre = artistMetaRows[0]?.genre ?? null;
-  const firstLetter = displayName.charAt(0).toUpperCase();
-  const slug = slugify(displayName);
   const thumbnailVideoId = statsRows[0]?.thumbnailVideoId ?? null;
-  const hasThumbnailColumn = await hasArtistStatsThumbnailColumn();
-
-  if (hasThumbnailColumn) {
-    await prisma.$executeRawUnsafe(
-      `
-        INSERT INTO artist_stats (
-          normalized_artist,
-          display_name,
-          slug,
-          first_letter,
-          country,
-          genre,
-          thumbnail_video_id,
-          video_count,
-          source
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          display_name = VALUES(display_name),
-          slug = VALUES(slug),
-          first_letter = VALUES(first_letter),
-          country = VALUES(country),
-          genre = VALUES(genre),
-          thumbnail_video_id = VALUES(thumbnail_video_id),
-          video_count = VALUES(video_count),
-          source = VALUES(source)
-      `,
-      normalizedArtist,
-      displayName,
-      slug,
-      firstLetter,
-      country,
-      genre,
-      thumbnailVideoId,
-      videoCount,
-      "runtime",
-    );
-    return;
-  }
-
-  await prisma.$executeRawUnsafe(
-    `
-      INSERT INTO artist_stats (
-        normalized_artist,
-        display_name,
-        slug,
-        first_letter,
-        country,
-        genre,
-        video_count,
-        source
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        display_name = VALUES(display_name),
-        slug = VALUES(slug),
-        first_letter = VALUES(first_letter),
-        country = VALUES(country),
-        genre = VALUES(genre),
-        video_count = VALUES(video_count),
-        source = VALUES(source)
-    `,
-    normalizedArtist,
-    displayName,
-    slug,
-    firstLetter,
+  await upsertArtistStatsRow({
+    name: displayName,
     country,
     genre,
     videoCount,
-    "runtime",
-  );
+    thumbnailVideoId,
+  }, "runtime");
+
+  artistProjectionRefreshCache.set(normalizedArtist, {
+    expiresAt: Date.now() + ARTIST_PROJECTION_REFRESH_TTL_MS,
+  });
+  })()
+    .catch(() => undefined)
+    .finally(() => {
+      artistProjectionRefreshInFlight.delete(normalizedArtist);
+    });
+
+  artistProjectionRefreshInFlight.set(normalizedArtist, refreshPromise);
+  await refreshPromise;
 }
 
 export async function refreshArtistThumbnailForName(artistName: string, badVideoId?: string) {
@@ -2028,11 +2157,17 @@ export async function refreshArtistThumbnailForName(artistName: string, badVideo
   }
 
   const normalizedArtist = normalizeArtistKey(displayName);
+  const existingStat = await getArtistStatRow(normalizedArtist).catch(() => null);
   const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
   const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
   const bad = typeof badVideoId === "string" && /^[A-Za-z0-9_-]{11}$/.test(badVideoId)
     ? badVideoId
     : null;
+
+  const existingThumbnail = existingStat?.thumbnailVideoId?.trim() ?? null;
+  if (existingThumbnail && existingThumbnail !== bad) {
+    return existingThumbnail;
+  }
 
   const candidateRows = await prisma.$queryRawUnsafe<Array<{ thumbnailVideoId: string | null }>>(
     `
@@ -3670,6 +3805,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
         .filter((artist) => artist.videoCount > 0);
 
       setArtistLetterCache(letterCacheKey, rows);
+      scheduleArtistStatsLetterBackfill(normalizedLetter, rows);
       return rows.slice(safeOffset, safeOffset + safeLimit);
     }
 
@@ -3737,6 +3873,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
       videoCount: Number(row.videoCount ?? 0),
       thumbnailVideoId: row.thumbnailVideoId ?? undefined,
     }));
+    scheduleArtistStatsLetterBackfill(normalizedLetter, mappedRows);
     return mappedRows;
   } catch {
     return seedArtists
