@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type BrowserPasswordCredential = {
   id: string;
@@ -17,6 +18,7 @@ function getBrowserCredentialsContainer() {
 }
 
 export function AuthLoginForm() {
+  const router = useRouter();
   const formRef = useRef<HTMLFormElement | null>(null);
   const hasAttemptedAutoLoginRef = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -61,7 +63,9 @@ export function AuthLoginForm() {
       }
 
       const videoParam = new URLSearchParams(window.location.search).get("v");
-      window.location.assign(videoParam ? `/?v=${encodeURIComponent(videoParam)}` : "/");
+      const target = videoParam ? `/?v=${encodeURIComponent(videoParam)}` : "/";
+      router.push(target);
+      router.refresh();
       return true;
     } catch {
       setError("Unable to reach login service. Please try again.");
