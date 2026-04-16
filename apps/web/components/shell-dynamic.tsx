@@ -3637,6 +3637,7 @@ function ShellDynamicInner({
                   queue={[currentVideo, ...uniqueRelatedVideos]}
                   isLoggedIn={isAuthenticated}
                   isAdmin={isAdmin}
+                  isDockedDesktop={shouldDockDesktopPlayer}
                   seenVideoIds={seenVideoIdsRef.current}
                   onHideVideo={handleHideFromWatchNext}
                   onAddVideoToPlaylist={handleAddToPlaylistFromWatchNext}

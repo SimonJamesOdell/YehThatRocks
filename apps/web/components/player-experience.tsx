@@ -15,6 +15,7 @@ type PlayerExperienceProps = {
   queue: VideoRecord[];
   isLoggedIn: boolean;
   isAdmin?: boolean;
+  isDockedDesktop?: boolean;
   seenVideoIds?: Set<string>;
   onHideVideo?: (track: VideoRecord) => void | Promise<void>;
   onAddVideoToPlaylist?: (track: VideoRecord) => void | Promise<void>;
@@ -245,6 +246,7 @@ export function PlayerExperience({
   queue,
   isLoggedIn,
   isAdmin = false,
+  isDockedDesktop = false,
   seenVideoIds,
   onHideVideo,
   onAddVideoToPlaylist,
@@ -753,6 +755,7 @@ export function PlayerExperience({
   // Also suppress the player on overlay pages when the user is waiting to choose the next video
   // (video ended with autoplay off). On "/", the choice overlay is shown instead.
   const suppressUnavailablePlaybackSurface = endedChoiceFromUnavailable || Boolean(unavailableOverlayMessage) || playerClosedByEndOfVideo || (showEndedChoiceOverlay && pathname !== "/");
+  const showDockCloseButton = isDockedDesktop && pathname !== "/";
 
   useEffect(() => {
     const initialRequestedVideoId = initialRequestedVideoIdRef.current;
@@ -3111,6 +3114,19 @@ export function PlayerExperience({
     }, 1600);
   }
 
+  function handleDockClose() {
+    setShowShareMenu(false);
+
+    if (typeof window === "undefined" || pathname === "/") {
+      return;
+    }
+
+    const currentHref = `${pathname}${window.location.search}${window.location.hash}`;
+    window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", {
+      detail: { href: currentHref },
+    }));
+  }
+
       async function handleShareToChat() {
         if (!isLoggedIn) {
           await handleCopyShareLink();
@@ -3504,21 +3520,36 @@ export function PlayerExperience({
                         </svg>
                       </button>
                     ) : null}
-                    <button
-                      type="button"
-                      className="overlayIconBtn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowShareMenu((v) => !v);
-                      }}
-                      aria-label="Share"
-                    >
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                      </svg>
-                    </button>
-                    {showShareMenu && (
+                    {showDockCloseButton ? (
+                      <button
+                        type="button"
+                        className="overlayIconBtn overlayDockCloseBtn"
+                        onClick={handleDockClose}
+                        aria-label="Close docked video"
+                        title="Close video"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="overlayIconBtn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowShareMenu((v) => !v);
+                        }}
+                        aria-label="Share"
+                      >
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                        </svg>
+                      </button>
+                    )}
+                    {!showDockCloseButton && showShareMenu && (
                       <div className="shareMenu">
                         <button type="button" onClick={handleShareToChat}>
                           {isLoggedIn
