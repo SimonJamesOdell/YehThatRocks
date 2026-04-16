@@ -12,6 +12,11 @@ const files = {
   newPage: path.join(ROOT, "apps/web/app/(shell)/new/page.tsx"),
   newLoading: path.join(ROOT, "apps/web/app/(shell)/new/loading.tsx"),
   newVideosLoader: path.join(ROOT, "apps/web/components/new-videos-loader.tsx"),
+  top100VideosLoader: path.join(ROOT, "apps/web/components/top100-videos-loader.tsx"),
+  seenToggleHook: path.join(ROOT, "apps/web/components/use-seen-toggle-preference.ts"),
+  seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
+  seenToggleData: path.join(ROOT, "apps/web/lib/seen-toggle-preference-data.ts"),
+  apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
@@ -44,6 +49,11 @@ function main() {
   const newPageSource = read(files.newPage);
   const newLoadingSource = read(files.newLoading);
   const newVideosLoaderSource = read(files.newVideosLoader);
+  const top100VideosLoaderSource = read(files.top100VideosLoader);
+  const seenToggleHookSource = read(files.seenToggleHook);
+  const seenToggleRouteSource = read(files.seenToggleRoute);
+  const seenToggleDataSource = read(files.seenToggleData);
+  const apiSchemasSource = read(files.apiSchemas);
   const cssSource = read(files.css);
 
   // Watch Next load-more invariants.
@@ -85,6 +95,24 @@ function main() {
   assertContains(newVideosLoaderSource, "filterHiddenVideos", "New videos loader filters hidden videos", failures);
   assertNotContains(newVideosLoaderSource, "sortVideosBySeen(", "New videos loader does not reorder rows by seen state", failures);
   assertNotContains(newVideosLoaderSource, "/api/watch-history", "New videos loader does not pad with watch-history rows", failures);
+
+  // Seen-toggle persistence invariants for New/Top100/Watch Next.
+  assertContains(newVideosLoaderSource, "useSeenTogglePreference", "New videos loader uses shared seen-toggle persistence hook", failures);
+  assertContains(newVideosLoaderSource, "key: NEW_HIDE_SEEN_TOGGLE_KEY", "New videos loader stores preference under New-specific key", failures);
+  assertContains(newVideosLoaderSource, "isAuthenticated,", "New videos loader passes auth state into seen-toggle hook", failures);
+  assertContains(top100VideosLoaderSource, "useSeenTogglePreference", "Top 100 loader uses shared seen-toggle persistence hook", failures);
+  assertContains(top100VideosLoaderSource, "key: TOP100_HIDE_SEEN_TOGGLE_KEY", "Top 100 loader stores preference under Top 100 key", failures);
+  assertContains(shellDynamicSource, "useSeenTogglePreference", "Watch Next shell uses shared seen-toggle persistence hook", failures);
+  assertContains(shellDynamicSource, "key: WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY", "Watch Next shell stores preference under Watch Next key", failures);
+
+  assertContains(seenToggleHookSource, 'fetch(`/api/seen-toggle-preferences?key=${encodeURIComponent(key)}`', "Seen-toggle hook fetches authenticated preference values from API", failures);
+  assertContains(seenToggleHookSource, "void fetch(\"/api/seen-toggle-preferences\"", "Seen-toggle hook posts updated preference values to API", failures);
+  assertContains(seenToggleRouteSource, "requireApiAuth", "Seen-toggle preference API requires authentication", failures);
+  assertContains(seenToggleRouteSource, "verifySameOrigin", "Seen-toggle preference API enforces same-origin checks for mutations", failures);
+  assertContains(seenToggleRouteSource, "seenTogglePreferenceMutationSchema.safeParse", "Seen-toggle preference API validates mutation payloads", failures);
+  assertContains(seenToggleDataSource, "CREATE TABLE IF NOT EXISTS user_seen_toggle_preferences", "Seen-toggle preference data layer bootstraps persistence table", failures);
+  assertContains(seenToggleDataSource, "ON DUPLICATE KEY UPDATE", "Seen-toggle preference writes are upserted per user/key", failures);
+  assertContains(apiSchemasSource, "seenTogglePreferenceKeySchema", "API schemas define a dedicated seen-toggle key schema", failures);
 
   // Watch Next card title clamp invariants: title must be clamped to 2 lines with ellipsis
   // so that the card height stays consistent and the thumbnail column is not pushed wider.

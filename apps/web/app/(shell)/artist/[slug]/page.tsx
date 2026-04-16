@@ -1,9 +1,7 @@
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { ArtistVideosGridClient } from "@/components/artist-videos-grid-client";
-import { CloseLink } from "@/components/close-link";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { getArtistBySlug, getHiddenVideoIdsForUser, getSeenVideoIdsForUser, getVideosByArtist } from "@/lib/catalog-data";
 import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
@@ -43,21 +41,9 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
 
   return (
     <>
-      <div className="favouritesBlindBar">
-        <strong>
-          <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
-            <span className="categoryHeaderIcon" aria-hidden="true">🎸</span>
-            <Link href={artistsHref} className="categoryHeaderBreadcrumbLink">
-              Artists
-            </Link>
-            <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">&gt;</span>
-            <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{artist.name}</span>
-          </span>
-        </strong>
-        <CloseLink />
-      </div>
-
       <ArtistVideosGridClient
+        artistName={artist.name}
+        artistsHref={artistsHref}
         initialVideos={orderedArtistVideos}
         seenVideoIds={Array.from(seenVideoIds)}
         isAuthenticated={isAuthenticated}

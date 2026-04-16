@@ -25,6 +25,8 @@
     "audit:catalog": "node scripts/audit-catalog-integrity.js",
     "dedupe:videos": "node scripts/prune-duplicate-videos.js",
     "dedupe:videos:apply": "node scripts/prune-duplicate-videos.js --apply",
+    "dedupe:videos:enforce": "node scripts/prune-duplicate-videos.js --enforce-unique",
+    "dedupe:videos:apply:enforce": "node scripts/prune-duplicate-videos.js --apply --enforce-unique",
     "scan:non-music": "node scripts/scan-non-music-candidates.js",
     "scan:non-music:review": "node scripts/scan-non-music-candidates.js --scan-all=1 --scope=all-videos --max-candidates=0 --batch-size=3000 --min-score=3",
     "scan:non-music:strict": "node scripts/scan-non-music-candidates.js --min-score=5 --max-candidates=1000",

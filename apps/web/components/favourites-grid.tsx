@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
@@ -17,9 +17,12 @@ type FavouritesGridProps = {
 
 export function FavouritesGrid({ initialFavourites, isAuthenticated }: FavouritesGridProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [favourites, setFavourites] = useState<VideoRecord[]>(initialFavourites);
   const [filterValue, setFilterValue] = useState("");
   const [pendingVideoId, setPendingVideoId] = useState<string | null>(null);
+  const [isCreatingPlaylistFromFavourites, setIsCreatingPlaylistFromFavourites] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -124,11 +127,202 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
     });
   }
 
+  async function createPlaylistFromFavourites() {
+    if (!isAuthenticated) {
+      setMessage("Sign in to create playlists.");
+      return;
+    }
+
+    const favouriteVideoIds = favourites.map((track) => track.id).filter(Boolean);
+
+    if (favouriteVideoIds.length === 0) {
+      setMessage("No favourites available to add.");
+      return;
+    }
+
+    setIsCreatingPlaylistFromFavourites(true);
+    setMessage(null);
+
+    const playlistName = `Favourites ${new Date().toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })}`;
+    let createdPlaylistIdForProgress: string | null = null;
+
+    try {
+      const createResponse = await fetch("/api/playlists", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: playlistName,
+          videoIds: [],
+        }),
+      });
+
+      if (createResponse.status === 401 || createResponse.status === 403) {
+        setMessage("Sign in to create playlists.");
+        return;
+      }
+
+      if (!createResponse.ok) {
+        setMessage("Could not create playlist from favourites. Please try again.");
+        return;
+      }
+
+      const created = (await createResponse.json().catch(() => null)) as { id?: string; name?: string } | null;
+      const createdPlaylistId = created?.id;
+
+      if (!createdPlaylistId) {
+        setMessage("Could not create playlist from favourites. Please try again.");
+        return;
+      }
+
+      createdPlaylistIdForProgress = createdPlaylistId;
+
+      // Navigate and open the rail immediately — no loading state needed.
+      const currentVideoId = searchParams.get("v");
+      const closeHref = currentVideoId
+        ? `/?v=${encodeURIComponent(currentVideoId)}&pl=${encodeURIComponent(createdPlaylistId)}&resume=1`
+        : `/?pl=${encodeURIComponent(createdPlaylistId)}`;
+
+      window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", {
+        detail: { href: closeHref },
+      }));
+      window.dispatchEvent(new CustomEvent("ytr:right-rail-mode", {
+        detail: { mode: "playlist", playlistId: createdPlaylistId },
+      }));
+      router.push(closeHref);
+
+      // Immediately populate the rail from the already-loaded favourites list
+      // using a staggered reveal so tracks animate in without waiting for the server.
+      const ANIMATED_TRACK_LIMIT = 40;
+      const optimisticVideos = favourites;
+      const animatedVideos = optimisticVideos.slice(0, ANIMATED_TRACK_LIMIT);
+      const optimisticItemCount = optimisticVideos.length;
+
+      for (let index = 0; index < animatedVideos.length; index += 1) {
+        const video = animatedVideos[index];
+
+        window.setTimeout(() => {
+          const visible = optimisticVideos.slice(0, index + 1);
+
+          window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
+            detail: {
+              playlist: {
+                id: createdPlaylistId,
+                name: playlistName,
+                videos: visible,
+                itemCount: optimisticItemCount,
+              },
+              trackId: video.id,
+            },
+          }));
+
+          window.dispatchEvent(new CustomEvent("ytr:right-rail-mode", {
+            detail: {
+              mode: "playlist",
+              playlistId: createdPlaylistId,
+              trackId: video.id,
+            },
+          }));
+        }, index * 22);
+      }
+
+      // Once the optimistic animation is done, send the full list to the server
+      // in the background and reconcile with the authoritative server response.
+      const animationDoneMs = animatedVideos.length * 22 + 40;
+
+      window.setTimeout(() => {
+        // Show all tracks (including any beyond ANIMATED_TRACK_LIMIT) optimistically.
+        window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
+          detail: {
+            playlist: {
+              id: createdPlaylistId,
+              name: playlistName,
+              videos: optimisticVideos,
+              itemCount: optimisticItemCount,
+            },
+          },
+        }));
+      }, animationDoneMs);
+
+      // Fire bulk add in background; reconcile rail with server truth when it returns.
+      void fetch(`/api/playlists/${encodeURIComponent(createdPlaylistId)}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoIds: favouriteVideoIds }),
+      }).then(async (addAllResponse) => {
+        if (!addAllResponse.ok) {
+          setMessage("Playlist was created, but some tracks could not be saved.");
+          window.dispatchEvent(new Event("ytr:playlists-updated"));
+          return;
+        }
+
+        const updatedPlaylist = (await addAllResponse.json().catch(() => null)) as
+          | { id?: string; videos?: VideoRecord[]; itemCount?: number; name?: string }
+          | null;
+
+        const finalVideos = Array.isArray(updatedPlaylist?.videos) ? updatedPlaylist.videos : optimisticVideos;
+        const finalName = updatedPlaylist?.name ?? playlistName;
+        const finalItemCount = updatedPlaylist?.itemCount ?? finalVideos.length;
+
+        // Only reconcile if the server returned a meaningfully different set
+        // (different IDs order/count or name) to avoid a redundant re-render.
+        const optimisticIds = optimisticVideos.map((v) => v.id).join(",");
+        const serverIds = finalVideos.map((v) => v.id).join(",");
+        if (serverIds !== optimisticIds || finalName !== playlistName) {
+          window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
+            detail: {
+              playlist: {
+                id: createdPlaylistId,
+                name: finalName,
+                videos: finalVideos,
+                itemCount: finalItemCount,
+              },
+            },
+          }));
+        }
+
+        window.dispatchEvent(new Event("ytr:playlists-updated"));
+
+        const addedCount = finalVideos.length;
+        if (addedCount < favouriteVideoIds.length) {
+          setMessage(`Created playlist "${finalName}" with ${addedCount}/${favouriteVideoIds.length} tracks.`);
+        } else {
+          setMessage(`Created playlist "${finalName}" with all ${addedCount} favourites.`);
+        }
+      }).catch(() => {
+        setMessage("Playlist was created, but tracks could not be saved.");
+        window.dispatchEvent(new Event("ytr:playlists-updated"));
+      });
+
+      // Mark creation complete once the optimistic animation has finished.
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("ytr:playlist-creation-progress", {
+          detail: { playlistId: createdPlaylistId, phase: "done" },
+        }));
+      }, animationDoneMs);
+    } catch {
+      if (createdPlaylistIdForProgress) {
+        window.dispatchEvent(new CustomEvent("ytr:playlist-creation-progress", {
+          detail: { playlistId: createdPlaylistIdForProgress, phase: "failed" },
+        }));
+      }
+      setMessage("Could not create playlist from favourites. Please try again.");
+    } finally {
+      setIsCreatingPlaylistFromFavourites(false);
+    }
+  }
+
   return (
     <>
       <div className="favouritesBlindBar categoriesHeaderBar">
         <div className="categoriesHeaderMain">
-          <strong><span className="whiteHeart" aria-hidden="true">❤️</span> Favourites</strong>
+          <strong><span className="whiteHeart" aria-hidden="true">❤️</span> Favourites ({favourites.length})</strong>
           <div className="categoriesFilterBar">
             <input
               type="text"
@@ -140,6 +334,18 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
               autoComplete="off"
               spellCheck={false}
             />
+          </div>
+          <div className="categoriesHeaderActions">
+            <button
+              type="button"
+              className="newPageSeenToggle favouritesCreatePlaylistButton"
+              onClick={() => {
+                void createPlaylistFromFavourites();
+              }}
+              disabled={!isAuthenticated || favourites.length === 0 || isCreatingPlaylistFromFavourites}
+            >
+                {isCreatingPlaylistFromFavourites ? "+ Creating..." : "+ New Playlist"}
+            </button>
           </div>
         </div>
         <CloseLink />
@@ -169,7 +375,7 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
                     type="button"
                     className="favouritesDeleteButton favouritesDeleteOverlayButton"
                     onClick={() => removeFavourite(track.id)}
-                    disabled={!isAuthenticated || isPending || isRemoving}
+                    disabled={!isAuthenticated || isPending || isRemoving || isCreatingPlaylistFromFavourites}
                     aria-label={`Remove ${track.title} from favourites`}
                     title="Remove from favourites"
                   >

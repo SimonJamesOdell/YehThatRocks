@@ -136,9 +136,11 @@ function main() {
 
   // Playlist rail delete button invariants.
   assertContains(shellSource, "const [playlistBeingDeletedId, setPlaylistBeingDeletedId] = useState<string | null>(null);", "Shell tracks playlist being deleted from rail", failures);
+  assertContains(shellSource, "const [confirmDeleteRailPlaylist, setConfirmDeleteRailPlaylist] = useState<{ id: string; name: string } | null>(null);", "Shell tracks pending playlist delete confirmation state", failures);
   assertContains(shellSource, "async function handleDeletePlaylistFromRail(playlistId: string)", "Shell has delete handler for playlist rail card", failures);
   assertContains(shellSource, "className=\"rightRailPlaylistCardDelete\"", "Playlist rail cards have delete button", failures);
-  assertContains(shellSource, "void handleDeletePlaylistFromRail(playlist.id);", "Playlist rail delete button invokes handler", failures);
+  assertContains(shellSource, "setConfirmDeleteRailPlaylist({ id: playlist.id, name: playlist.name });", "Playlist rail delete button opens confirmation modal", failures);
+  assertContains(shellSource, "void handleDeletePlaylistFromRail(playlistId);", "Playlist rail confirmation modal invokes delete handler", failures);
   assertContains(cssSource, ".rightRailPlaylistCardDelete {", "CSS defines delete button for rail cards", failures);
   assertContains(cssSource, "position: absolute;", "Delete button is positioned absolutely", failures);
   assertContains(cssSource, "top: 8px;", "Delete button positioned at top", failures);

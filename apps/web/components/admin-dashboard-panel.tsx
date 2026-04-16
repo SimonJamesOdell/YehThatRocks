@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const HEALTH_FALLBACK_POLL_MS = 2_000;
+const ANALYTICS_AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 function finiteOrNull(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -485,14 +486,24 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     };
   }, [hostMetricRows]);
 
-  async function loadOverview(forceRefresh = false) {
+  const loadOverview = useCallback(async (forceRefresh = false) => {
     const query = forceRefresh ? `?refresh=1&t=${Date.now()}` : "";
     const url = `/api/admin/dashboard${query}`;
     const dashboardPayload = forceRefresh
       ? await readNoStoreJson<DashboardPayload>(url)
       : await readJson<DashboardPayload>(url);
     setDashboard(dashboardPayload);
-  }
+  }, []);
+
+  const refreshOverviewAnalytics = useCallback(async () => {
+    setRefreshingAnalytics(true);
+
+    try {
+      await loadOverview(true);
+    } finally {
+      setRefreshingAnalytics(false);
+    }
+  }, [loadOverview]);
 
   async function loadCategories() {
     const categoryPayload = await readJson<{ categories: CategoryRow[] }>("/api/admin/categories");
@@ -546,7 +557,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   useEffect(() => {
     void loadActiveTab();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  }, [activeTab, refreshOverviewAnalytics]);
 
   useEffect(() => {
     if (activeTab !== "overview") {
@@ -635,6 +646,39 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       cancelled = true;
       window.clearInterval(pollingTimer);
       stream.close();
+    };
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "overview") {
+      return;
+    }
+
+    let cancelled = false;
+    let refreshing = false;
+
+    const refreshIfVisible = async () => {
+      if (cancelled || refreshing || document.hidden) {
+        return;
+      }
+
+      refreshing = true;
+      try {
+        await refreshOverviewAnalytics();
+      } catch {
+        // Keep last known data; manual refresh remains available.
+      } finally {
+        refreshing = false;
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void refreshIfVisible();
+    }, ANALYTICS_AUTO_REFRESH_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
     };
   }, [activeTab]);
 
@@ -745,7 +789,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       {activeTab === "overview" ? (
         <div style={{ display: "grid", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-            <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }}>Host health · live dials + 24h history</span>
+            <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }}></span>
             <button
               type="button"
               onClick={() => setShowHostMetricsGraph((previous) => !previous)}
@@ -858,7 +902,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                   : analyticsZoomLevel === "weekly"
                     ? "User analytics · rolling weekly buckets"
                     : analyticsZoomLevel === "daily"
-                      ? "User analytics · rolling daily buckets"
+                      ? ""
                       : "User analytics · recent hourly buckets"}
             </span>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -893,13 +937,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
               ))}
               <button
                 type="button"
-                onClick={async () => {
-                  setRefreshingAnalytics(true);
-                  try {
-                    await loadOverview(true);
-                  } finally {
-                    setRefreshingAnalytics(false);
-                  }
+                onClick={() => {
+                  void refreshOverviewAnalytics();
                 }}
                 disabled={refreshingAnalytics}
                 style={{
@@ -952,7 +991,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                 : analyticsZoomLevel === "weekly"
                   ? "Click a bucket to zoom into daily traffic for that week window."
                   : analyticsZoomLevel === "daily"
-                    ? "Use the Hourly button above to zoom in further."
+                    ? ""
                     : "Showing the latest 24 hourly buckets."}
           </p>
 

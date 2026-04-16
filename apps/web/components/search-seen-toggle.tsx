@@ -1,20 +1,24 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 
-import { readPersistedBoolean, writePersistedBoolean } from "@/lib/persisted-boolean";
+import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 
 type SearchSeenToggleProps = {
   trackStackId: string;
   hasSeen: boolean;
+  isAuthenticated: boolean;
 };
 
 const HIDE_SEEN_CLASS = "searchResultsHideSeen";
 const SEARCH_HIDE_SEEN_TOGGLE_KEY_PREFIX = "ytr-toggle-hide-seen-search";
 
-export function SearchSeenToggle({ trackStackId, hasSeen }: SearchSeenToggleProps) {
+export function SearchSeenToggle({ trackStackId, hasSeen, isAuthenticated }: SearchSeenToggleProps) {
   const toggleKey = `${SEARCH_HIDE_SEEN_TOGGLE_KEY_PREFIX}:${trackStackId}`;
-  const [hideSeen, setHideSeen] = useState(() => readPersistedBoolean(toggleKey, false));
+  const [hideSeen, setHideSeen] = useSeenTogglePreference({
+    key: toggleKey,
+    isAuthenticated,
+  });
 
   useEffect(() => {
     const el = document.getElementById(trackStackId);
@@ -22,10 +26,6 @@ export function SearchSeenToggle({ trackStackId, hasSeen }: SearchSeenToggleProp
       el.classList.toggle(HIDE_SEEN_CLASS, hideSeen);
     }
   }, [hideSeen, trackStackId]);
-
-  useEffect(() => {
-    writePersistedBoolean(toggleKey, hideSeen);
-  }, [hideSeen, toggleKey]);
 
   if (!hasSeen) {
     return null;

@@ -16,6 +16,10 @@ export const addPlaylistItemSchema = z.object({
   videoId: z.string().min(1)
 });
 
+export const addPlaylistItemsBulkSchema = z.object({
+  videoIds: z.array(z.string().min(1)).min(1).max(5000),
+});
+
 export const removePlaylistItemSchema = z.object({
   playlistItemIndex: z.number().int().min(0).optional(),
   playlistItemId: z.string().min(1).optional(),
@@ -96,4 +100,15 @@ export const searchFlagSchema = z.object({
       message: "Correction must not be empty when provided",
     });
   }
+});
+
+export const seenTogglePreferenceKeySchema = z.string()
+  .trim()
+  .min(1)
+  .max(160)
+  .regex(/^ytr-toggle-hide-seen-[A-Za-z0-9:_-]+$/);
+
+export const seenTogglePreferenceMutationSchema = z.object({
+  key: seenTogglePreferenceKeySchema,
+  value: z.boolean(),
 });

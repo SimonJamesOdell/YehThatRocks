@@ -8,7 +8,7 @@ import { buildSharedVideoMessage } from "@/lib/chat-shared-video";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
-import { readPersistedBoolean, writePersistedBoolean } from "@/lib/persisted-boolean";
+import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 
 type PlayerExperienceProps = {
   currentVideo: VideoRecord;
@@ -123,13 +123,14 @@ const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
 const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. Please choose another track.";
 const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstream video provider for this track. This is not a YehThatRocks failure. Please try the refresh button and if that does not work, choose another track.";
-const STUCK_PLAYBACK_CHECK_MS = 3200;
+const STUCK_PLAYBACK_CHECK_MS = 5000;
 const STUCK_PLAYBACK_MAX_RETRIES = 3;
 const STUCK_PLAYBACK_RETRY_DELAYS_MS = [600, 1400, 2600] as const;
 const MID_PLAYBACK_BUFFERING_CHECK_MS = 1000;
 const MID_PLAYBACK_BUFFERING_THRESHOLD_MS = 8000;
 const PLAYER_LOAD_REFRESH_HINT_DELAY_MS = 2000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
+const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
 const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
 const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
 const maxEndedChoiceVideos = 12;
@@ -298,7 +299,10 @@ export function PlayerExperience({
   const [endedChoiceGridExiting, setEndedChoiceGridExiting] = useState(false);
   const [endedChoiceHidingIds, setEndedChoiceHidingIds] = useState<string[]>([]);
   const [endedChoiceDismissedIds, setEndedChoiceDismissedIds] = useState<string[]>([]);
-  const [endedChoiceHideSeen, setEndedChoiceHideSeen] = useState(false);
+  const [endedChoiceHideSeen, setEndedChoiceHideSeen] = useSeenTogglePreference({
+    key: ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY,
+    isAuthenticated: isLoggedIn,
+  });
   const [endedChoiceLoading, setEndedChoiceLoading] = useState(false);
   const [endedChoiceRemoteVideos, setEndedChoiceRemoteVideos] = useState<VideoRecord[]>([]);
   const [playerClosedByEndOfVideo, setPlayerClosedByEndOfVideo] = useState(false);
@@ -365,11 +369,11 @@ export function PlayerExperience({
   const endedChoiceFetchingRef = useRef(false);
   const endedChoiceHasMoreRef = useRef(true);
   const endedChoiceSkipRef = useRef(0);
-  const endedChoiceHideSeenHydratedRef = useRef(false);
   const currentVideoRef = useRef(currentVideo);
   const autoplayEnabledRef = useRef(autoplayEnabled);
   const hasActivePlaylistSequenceRef = useRef(false);
   const hasPlaybackStartedRef = useRef(false);
+  const previousActivePlaylistIdRef = useRef<string | null>(activePlaylistId);
   autoplayEnabledRef.current = autoplayEnabled;
   activePlaylistIdRef.current = activePlaylistId;
   hasPlaybackStartedRef.current = hasPlaybackStarted;
@@ -385,19 +389,6 @@ export function PlayerExperience({
     endedChoiceHasMoreRef.current = true;
     endedChoiceSkipRef.current = 0;
   }, [currentVideo]);
-
-  useEffect(() => {
-    setEndedChoiceHideSeen(readPersistedBoolean(ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY, false));
-    endedChoiceHideSeenHydratedRef.current = true;
-  }, []);
-
-  useEffect(() => {
-    if (!endedChoiceHideSeenHydratedRef.current) {
-      return;
-    }
-
-    writePersistedBoolean(ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY, endedChoiceHideSeen);
-  }, [endedChoiceHideSeen]);
 
   useEffect(() => {
     return () => {
@@ -489,6 +480,14 @@ export function PlayerExperience({
       window.removeEventListener("mousedown", handleClickOutside);
       window.removeEventListener("keydown", handleEscape);
     };
+  }, [showFooterPlaylistMenu]);
+
+  useEffect(() => {
+    if (!showFooterPlaylistMenu) {
+      return;
+    }
+
+    void loadFooterPlaylistMenu();
   }, [showFooterPlaylistMenu]);
 
   const playlistCurrentIndex = playlistQueueIds.findIndex((videoId) => videoId === currentVideo.id);
@@ -747,11 +746,28 @@ export function PlayerExperience({
   const visibleEndedChoiceVideos = endedChoiceHideSeen
     ? endedChoiceVideos.filter((video) => !(seenVideoIds?.has(video.id) ?? false))
     : endedChoiceVideos;
+  const endedChoiceGridVideos = useMemo(() => {
+    if (!endedChoiceHideSeen) {
+      return visibleEndedChoiceVideos;
+    }
+
+    const fullRowCount = Math.floor(visibleEndedChoiceVideos.length / 4) * 4;
+    return visibleEndedChoiceVideos.slice(0, fullRowCount);
+  }, [endedChoiceHideSeen, visibleEndedChoiceVideos]);
   const footerActionsBlocked = Boolean(unavailableOverlayMessage) || showEndedChoiceOverlay || playlistChooserOpen;
   const isUpstreamConnectivityOverlay = unavailableOverlayMessage === UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE;
   const footerSelectablePlaylists = activePlaylistId
     ? footerPlaylistMenuPlaylists.filter((playlist) => playlist.id !== activePlaylistId)
     : footerPlaylistMenuPlaylists;
+  const footerLastPlaylistId = typeof window !== "undefined"
+    ? window.localStorage.getItem(LAST_PLAYLIST_ID_KEY)
+    : null;
+  const footerSamePlaylistId =
+    footerLastPlaylistId
+    && footerLastPlaylistId !== activePlaylistId
+    && footerPlaylistMenuPlaylists.some((playlist) => playlist.id === footerLastPlaylistId)
+      ? footerLastPlaylistId
+      : null;
   // Also suppress the player on overlay pages when the user is waiting to choose the next video
   // (video ended with autoplay off). On "/", the choice overlay is shown instead.
   const suppressUnavailablePlaybackSurface = endedChoiceFromUnavailable || Boolean(unavailableOverlayMessage) || playerClosedByEndOfVideo || (showEndedChoiceOverlay && pathname !== "/");
@@ -1525,6 +1541,7 @@ export function PlayerExperience({
   }
 
   function handleReloadPlayerIframe() {
+    clearUnavailableOverlayMessage();
     clearStuckPlaybackRetryTimer();
     clearStuckPlaybackWatchdogTimer();
     clearMidPlaybackBufferingCheck();
@@ -1540,6 +1557,8 @@ export function PlayerExperience({
     setIsPlaying(false);
     setHasPlaybackStarted(false);
     hasPlaybackStartedRef.current = false;
+    reportedUnavailableVideoIdRef.current = null;
+    autoplaySuppressedVideoIdRef.current = null;
     playAttemptedAtRef.current = null;
     stuckPlaybackRetryCountRef.current = 0;
     setPlayerReloadNonce((currentNonce) => currentNonce + 1);
@@ -1931,6 +1950,17 @@ export function PlayerExperience({
   }, [pathname]);
 
   useEffect(() => {
+    const previousActivePlaylistId = previousActivePlaylistIdRef.current;
+
+    // Deleting/closing a playlist should never leave the playback surface hidden.
+    if (previousActivePlaylistId && !activePlaylistId) {
+      setPlayerClosedByEndOfVideo(false);
+    }
+
+    previousActivePlaylistIdRef.current = activePlaylistId;
+  }, [activePlaylistId]);
+
+  useEffect(() => {
     return () => {
       if (overlayTimeoutRef.current) {
         window.clearTimeout(overlayTimeoutRef.current);
@@ -2088,6 +2118,10 @@ export function PlayerExperience({
       params.set("v", currentVideo.id);
       params.set("count", String(take));
       params.set("offset", String(skip));
+      params.set("mode", "ended-choice");
+      if (endedChoiceHideSeen) {
+        params.set("hideSeen", "1");
+      }
 
       const response = await fetch(`/api/current-video?${params.toString()}`, {
         cache: "no-store",
@@ -2238,10 +2272,13 @@ export function PlayerExperience({
   }, [showEndedChoiceOverlay, endedChoiceVideos.length]);
 
   useEffect(() => {
+    const needsSeenRowFill =
+      visibleEndedChoiceVideos.length === 0
+      || (endedChoiceHideSeen && visibleEndedChoiceVideos.length % 4 !== 0);
+
     if (
       !showEndedChoiceOverlay
-      || !endedChoiceHideSeen
-      || visibleEndedChoiceVideos.length > 0
+      || !needsSeenRowFill
       || endedChoiceFetchingRef.current
       || !endedChoiceHasMoreRef.current
     ) {
@@ -2451,6 +2488,9 @@ export function PlayerExperience({
     try {
       const ok = await addCurrentTrackToPlaylist(playlistId);
       if (ok) {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(LAST_PLAYLIST_ID_KEY, playlistId);
+        }
         markFooterPlaylistAdded();
         setShowFooterPlaylistMenu(false);
         setFooterShowExistingList(false);
@@ -2510,6 +2550,10 @@ export function PlayerExperience({
         return;
       }
 
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(LAST_PLAYLIST_ID_KEY, created.id);
+      }
+
       markFooterPlaylistAdded();
       setShowFooterPlaylistMenu(false);
       setFooterShowExistingList(false);
@@ -2556,6 +2600,10 @@ export function PlayerExperience({
       if (!added) {
         setFooterPlaylistAddState("error");
         return;
+      }
+
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(LAST_PLAYLIST_ID_KEY, created.id);
       }
 
       markFooterPlaylistAdded();
@@ -3116,15 +3164,8 @@ export function PlayerExperience({
 
   function handleDockClose() {
     setShowShareMenu(false);
-
-    if (typeof window === "undefined" || pathname === "/") {
-      return;
-    }
-
-    const currentHref = `${pathname}${window.location.search}${window.location.hash}`;
-    window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", {
-      detail: { href: currentHref },
-    }));
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));
   }
 
       async function handleShareToChat() {
@@ -3335,13 +3376,27 @@ export function PlayerExperience({
           setAdminEditStatus("Saved.");
           setLocalTitleOverride(adminEditTitle);
           setLocalChannelTitleOverride(adminEditChannelTitle);
-          setShowAdminVideoEditModal(false);
+          closeAdminVideoEditModal();
           router.refresh();
         } catch {
           setAdminEditError("Could not save video changes.");
         } finally {
           setIsAdminEditSaving(false);
         }
+      }
+
+      function closeAdminVideoEditModal() {
+        setShowAdminVideoEditModal(false);
+
+        if (typeof window === "undefined") {
+          return;
+        }
+
+        window.requestAnimationFrame(() => {
+          if (playerFrameRef.current?.matches(":hover")) {
+            setShowControls(true);
+          }
+        });
       }
 
       async function handleAdminDeleteCurrentVideo() {
@@ -3687,26 +3742,33 @@ export function PlayerExperience({
 
           {unavailableOverlayMessage ? (
             <div className="videoUnavailableOverlay" role="alertdialog" aria-modal="true" aria-label="Video unavailable">
-              <p>Apologies</p>
-              <strong>{unavailableOverlayMessage}</strong>
-              {isUpstreamConnectivityOverlay ? (
-                <button
-                  type="button"
-                  className="videoUnavailableOverlayRefresh"
-                  onClick={handleReloadPlayerIframe}
-                >
-                  Refresh player
-                </button>
-              ) : null}
-              {unavailableOverlayRequiresOk ? (
-                <button
-                  type="button"
-                  className="videoUnavailableOverlayAcknowledge"
-                  onClick={acknowledgeUnavailableOverlay}
-                >
-                  OK
-                </button>
-              ) : null}
+              <p className="videoUnavailableOverlayEyebrow">
+                {isUpstreamConnectivityOverlay ? "Provider connection timeout" : "Playback issue"}
+              </p>
+              <strong className="videoUnavailableOverlayTitle">
+                {isUpstreamConnectivityOverlay ? "Could not start this track yet" : "This track is unavailable"}
+              </strong>
+              <p className="videoUnavailableOverlayBody">{unavailableOverlayMessage}</p>
+              <div className="videoUnavailableOverlayActions">
+                {isUpstreamConnectivityOverlay ? (
+                  <button
+                    type="button"
+                    className="videoUnavailableOverlayRefresh"
+                    onClick={handleReloadPlayerIframe}
+                  >
+                    Retry connection
+                  </button>
+                ) : null}
+                {unavailableOverlayRequiresOk ? (
+                  <button
+                    type="button"
+                    className="videoUnavailableOverlayAcknowledge"
+                    onClick={acknowledgeUnavailableOverlay}
+                  >
+                    Choose another track
+                  </button>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -3726,7 +3788,7 @@ export function PlayerExperience({
               <div
                 className={endedChoiceGridExiting ? "playerEndedChoiceGrid playerEndedChoiceGridExiting" : "playerEndedChoiceGrid"}
               >
-                {endedChoiceLoading && visibleEndedChoiceVideos.length === 0 ? (
+                {endedChoiceLoading && endedChoiceGridVideos.length === 0 ? (
                   <div className="playerEndedChoiceLoadingState" role="status" aria-live="polite" aria-label="Loading more choices">
                     <span className="playerBootBars" aria-hidden="true">
                       <span />
@@ -3737,7 +3799,7 @@ export function PlayerExperience({
                     <span className="playerEndedChoiceLoadingLabel">Loading choices...</span>
                   </div>
                 ) : null}
-                {visibleEndedChoiceVideos.map((video, index) => {
+                {endedChoiceGridVideos.map((video, index) => {
                   const isSeen = seenVideoIds?.has(video.id) ?? false;
                   const isHiding = endedChoiceHidingIds.includes(video.id);
                   return (
@@ -3796,7 +3858,18 @@ export function PlayerExperience({
                     </div>
                   );
                 })}
-                {visibleEndedChoiceVideos.length === 0 ? (
+                {endedChoiceLoading && endedChoiceGridVideos.length > 0 ? (
+                  <div className="playerEndedChoiceLoadingState" role="status" aria-live="polite" aria-label="Loading more choices">
+                    <span className="playerBootBars" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                    <span className="playerEndedChoiceLoadingLabel">Loading more choices...</span>
+                  </div>
+                ) : null}
+                {endedChoiceGridVideos.length === 0 ? (
                   <div className="playerEndedChoiceEmptyState">
                     No unseen choices right now. Try more choices or watch again.
                   </div>
@@ -3891,7 +3964,7 @@ export function PlayerExperience({
               aria-label="Edit video record"
               onClick={() => {
                 if (!isAdminEditSaving) {
-                  setShowAdminVideoEditModal(false);
+                  closeAdminVideoEditModal();
                 }
               }}
             >
@@ -3901,7 +3974,7 @@ export function PlayerExperience({
                   <button
                     type="button"
                     className="overlayIconBtn"
-                    onClick={() => setShowAdminVideoEditModal(false)}
+                    onClick={closeAdminVideoEditModal}
                     aria-label="Close editor"
                     disabled={isAdminEditSaving}
                   >
@@ -3984,7 +4057,7 @@ export function PlayerExperience({
                   <button
                     type="button"
                     className="adminVideoEditButton adminVideoEditButtonSecondary"
-                    onClick={() => setShowAdminVideoEditModal(false)}
+                    onClick={closeAdminVideoEditModal}
                     disabled={isAdminEditSaving}
                   >
                     Cancel
@@ -4073,6 +4146,18 @@ export function PlayerExperience({
                         disabled={footerPlaylistAddState === "saving" || footerActionsBlocked}
                       >
                         Current Playlist
+                      </button>
+                    ) : null}
+                    {footerSamePlaylistId ? (
+                      <button
+                        type="button"
+                        className="primaryActionPlaylistMenuAction"
+                        onClick={() => {
+                          void handleFooterPlaylistSelect(footerSamePlaylistId);
+                        }}
+                        disabled={footerPlaylistAddState === "saving" || footerActionsBlocked}
+                      >
+                        The same playlist
                       </button>
                     ) : null}
                     <button

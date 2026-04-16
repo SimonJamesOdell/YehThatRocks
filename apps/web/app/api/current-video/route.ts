@@ -160,6 +160,8 @@ async function getRelatedPoolForCurrentVideo(currentVideoId: string, userId: num
 
 export async function GET(request: NextRequest) {
   const v = request.nextUrl.searchParams.get("v") ?? undefined;
+  const requestMode = request.nextUrl.searchParams.get("mode") ?? "";
+  const hideSeenOnly = request.nextUrl.searchParams.get("hideSeen") === "1";
   const requestedRelatedCount = Math.max(
     1,
     Math.min(30, Number.parseInt(request.nextUrl.searchParams.get("count") ?? "10", 10) || 10),
@@ -180,6 +182,7 @@ export async function GET(request: NextRequest) {
   const isCustomRelatedRequest = requestedRelatedCount !== 10 || excludedRelatedIds.length > 0 || requestedRelatedOffset > 0;
   const usePagedRelatedPool = isCustomRelatedRequest;
   const optionalAuth = await getOptionalApiAuth(request);
+  const preferUnseenForEndedChoice = requestMode === "ended-choice" && hideSeenOnly && Boolean(optionalAuth?.userId);
   const cacheKey = `${v ?? "__default__"}:u:${optionalAuth?.userId ?? 0}`;
   const now = Date.now();
 
@@ -277,11 +280,27 @@ export async function GET(request: NextRequest) {
     let hasMoreForCustomRequest: boolean | undefined;
 
     if (usePagedRelatedPool) {
-      const poolSizeTarget = requestedRelatedOffset + requestedRelatedCount + 1;
+      const poolSizeTarget = preferUnseenForEndedChoice
+        ? Math.max(1000, requestedRelatedOffset + requestedRelatedCount + 1)
+        : requestedRelatedOffset + requestedRelatedCount + 1;
       const relatedPool = await getRelatedPoolForCurrentVideo(currentVideo.id, optionalAuth?.userId, poolSizeTarget);
-      const filteredPool = excludedRelatedIds.length > 0
+      let filteredPool = excludedRelatedIds.length > 0
         ? relatedPool.filter((video) => !excludedRelatedIds.includes(video.id))
         : relatedPool;
+
+      if (preferUnseenForEndedChoice && optionalAuth?.userId) {
+        const unseenBoost = await getUnseenCatalogVideos({
+          userId: optionalAuth.userId,
+          count: Math.max(300, Math.min(CURRENT_VIDEO_RELATED_POOL_MAX_SIZE, poolSizeTarget)),
+          excludeVideoIds: [currentVideo.id, ...excludedRelatedIds],
+        });
+
+        filteredPool = uniqueVideosById([
+          ...unseenBoost,
+          ...filteredPool,
+        ]);
+      }
+
       const start = Math.min(requestedRelatedOffset, filteredPool.length);
       const end = Math.min(filteredPool.length, start + requestedRelatedCount);
       relatedVideos = filteredPool.slice(start, end);

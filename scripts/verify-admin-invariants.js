@@ -13,6 +13,7 @@ const files = {
   adminCategoriesRoute: path.join(ROOT, "apps/web/app/api/admin/categories/route.ts"),
   adminVideosRoute: path.join(ROOT, "apps/web/app/api/admin/videos/route.ts"),
   adminArtistsRoute: path.join(ROOT, "apps/web/app/api/admin/artists/route.ts"),
+  adminDashboardPanel: path.join(ROOT, "apps/web/components/admin-dashboard-panel.tsx"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
   currentVideoCache: path.join(ROOT, "apps/web/lib/current-video-cache.ts"),
 };
@@ -41,6 +42,7 @@ function main() {
   const adminCategoriesRouteSource = read(files.adminCategoriesRoute);
   const adminVideosRouteSource = read(files.adminVideosRoute);
   const adminArtistsRouteSource = read(files.adminArtistsRoute);
+  const adminDashboardPanelSource = read(files.adminDashboardPanel);
   const catalogDataSource = read(files.catalogData);
   const currentVideoCacheSource = read(files.currentVideoCache);
 
@@ -84,6 +86,15 @@ function main() {
   assertContains(adminVideosRouteSource, "clearCurrentVideoRouteCaches();", "Admin videos PATCH clears current-video route caches after metadata edits", failures);
   assertContains(adminArtistsRouteSource, "const artists = await prisma.artist.findMany({", "Admin artists API reads via Prisma artist model", failures);
   assertContains(adminArtistsRouteSource, "orderBy: { name: \"asc\" }", "Admin artists API keeps alphabetical ordering", failures);
+
+  // Admin overview analytics refresh invariants.
+  assertContains(adminDashboardPanelSource, "const ANALYTICS_AUTO_REFRESH_MS = 5 * 60 * 1000;", "Admin dashboard defines 5-minute analytics auto-refresh interval", failures);
+  assertContains(adminDashboardPanelSource, "const refreshOverviewAnalytics = useCallback(async () => {", "Admin dashboard uses a shared overview refresh helper", failures);
+  assertContains(adminDashboardPanelSource, "if (activeTab !== \"overview\") {", "Admin dashboard only auto-refreshes while overview tab is active", failures);
+  assertContains(adminDashboardPanelSource, "if (cancelled || refreshing || document.hidden) {", "Admin dashboard skips background auto-refresh for hidden tabs and in-flight refreshes", failures);
+  assertContains(adminDashboardPanelSource, "window.setInterval(() => {", "Admin dashboard schedules periodic analytics refresh", failures);
+  assertContains(adminDashboardPanelSource, "}, ANALYTICS_AUTO_REFRESH_MS);", "Admin dashboard interval uses the 5-minute refresh constant", failures);
+  assertContains(adminDashboardPanelSource, "void refreshOverviewAnalytics();", "Admin dashboard manual refresh button reuses shared refresh helper", failures);
 
   // Shared cache helpers must exist so admin edit invalidation is centralized.
   assertContains(catalogDataSource, "export function clearCatalogVideoCaches()", "Catalog data exposes shared video cache clear helper", failures);

@@ -13,6 +13,9 @@ const files = {
   searchFlagData: path.join(ROOT, "apps/web/lib/search-flag-data.ts"),
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic.tsx"),
   searchFlagButton: path.join(ROOT, "apps/web/components/search-flag-button.tsx"),
+  searchSeenToggle: path.join(ROOT, "apps/web/components/search-seen-toggle.tsx"),
+  seenToggleHook: path.join(ROOT, "apps/web/components/use-seen-toggle-preference.ts"),
+  seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
   adminVideoEditModal: path.join(ROOT, "apps/web/components/admin-video-edit-modal.tsx"),
   adminVideoEditButton: path.join(ROOT, "apps/web/components/admin-video-edit-button.tsx"),
   adminVideoDeleteButton: path.join(ROOT, "apps/web/components/admin-video-delete-button.tsx"),
@@ -48,6 +51,9 @@ function main() {
   const searchFlagDataSource = read(files.searchFlagData);
   const shellDynamicSource = read(files.shellDynamic);
   const searchFlagButtonSource = read(files.searchFlagButton);
+  const searchSeenToggleSource = read(files.searchSeenToggle);
+  const seenToggleHookSource = read(files.seenToggleHook);
+  const seenToggleRouteSource = read(files.seenToggleRoute);
   const adminVideoEditModalSource = read(files.adminVideoEditModal);
   const adminVideoEditButtonSource = read(files.adminVideoEditButton);
   const adminVideoDeleteButtonSource = read(files.adminVideoDeleteButton);
@@ -72,8 +78,16 @@ function main() {
   assertContains(searchPageSource, "const suppressedVideoIds = await getSuppressedSearchVideoIds({ userId: user?.id ?? null, query });", "Search page loads query-scoped suppressed ids", failures);
   assertContains(searchPageSource, ').filter((video) => !suppressedVideoIds.has(video.id));', "Search page filters suppressed videos from results", failures);
   assertContains(searchPageSource, '<SearchSeenToggle trackStackId="search-video-grid"', "Search page renders seen toggle for video results", failures);
+  assertContains(searchPageSource, "isAuthenticated={isAuthenticated}", "Search page passes auth state into seen toggle component", failures);
   assertContains(searchPageSource, '<SearchResultBlockButton videoId={video.id} title={video.title} />', "Search page renders block button on video cards", failures);
   assertContains(searchPageSource, '<SearchFlagButton videoId={video.id} title={video.title} searchQuery={query} />', "Search page renders flag button with current query context", failures);
+
+  // Search seen-toggle persistence invariants.
+  assertContains(searchSeenToggleSource, "useSeenTogglePreference", "Search seen-toggle uses shared preference hook", failures);
+  assertContains(searchSeenToggleSource, "const SEARCH_HIDE_SEEN_TOGGLE_KEY_PREFIX = \"ytr-toggle-hide-seen-search\";", "Search seen-toggle uses a dedicated key prefix", failures);
+  assertContains(searchSeenToggleSource, "isAuthenticated,", "Search seen-toggle forwards auth state into preference hook", failures);
+  assertContains(seenToggleHookSource, 'fetch(`/api/seen-toggle-preferences?key=${encodeURIComponent(key)}`', "Seen-toggle hook reads persisted values through API", failures);
+  assertContains(seenToggleRouteSource, "seenTogglePreferenceKeySchema.safeParse", "Seen-toggle API validates query key schema for GET", failures);
 
   // Results: videos linked with resume flag
   assertContains(searchPageSource, "/?v=${video.id}&resume=1", "Search page video links include resume=1 flag", failures);

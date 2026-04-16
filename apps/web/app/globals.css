@@ -755,11 +755,17 @@ h1 {
 .rightRailTabs {
   grid-template-columns: repeat(2, 1fr);
   margin-bottom: 12px;
+  position: relative;
+  z-index: 5;
+  pointer-events: auto;
 }
 
 .rightRailTabs button {
   font-size: 0.92rem;
   letter-spacing: 0.01em;
+  position: relative;
+  z-index: 6;
+  pointer-events: auto;
 }
 
 .rightRailTabs .tabLabel {
@@ -1021,6 +1027,13 @@ h1 {
     rgba(0, 0, 0, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 32px 80px rgba(0, 0, 0, 0.45), var(--glow);
+  display: flex;
+  flex-direction: column;
+}
+
+.playerDockLayer {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -1943,6 +1956,11 @@ h1 {
   background: linear-gradient(180deg, rgba(228, 46, 46, 0.96), rgba(144, 10, 10, 0.98));
 }
 
+.playerChromeDockedHidden .playerDockLayer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .overlayAdminDeleteBtn:disabled {
   opacity: 0.55;
   cursor: wait;
@@ -2014,6 +2032,18 @@ h1 {
 
 .overlayIconBtn:hover {
   background: rgba(255, 255, 255, 0.15);
+}
+
+.overlayIconBtn.overlayDockCloseBtn {
+  border: 1px solid rgba(255, 92, 92, 0.62);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(205, 35, 35, 0.92), rgba(122, 8, 8, 0.96));
+  color: #fff4f4;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+}
+
+.overlayIconBtn.overlayDockCloseBtn:hover {
+  background: linear-gradient(180deg, rgba(228, 46, 46, 0.96), rgba(144, 10, 10, 0.98));
 }
 
 .overlayProgress {
@@ -2338,74 +2368,125 @@ h1 {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: min(92%, 820px);
-  padding: 22px 24px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 153, 133, 0.46);
-  background: linear-gradient(180deg, rgba(70, 8, 5, 0.93), rgba(32, 4, 3, 0.95));
-  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(6px);
-  text-align: center;
+  width: min(92%, 760px);
+  padding: 22px 24px 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 153, 133, 0.5);
+  background:
+    radial-gradient(circle at top, rgba(255, 113, 76, 0.18), transparent 56%),
+    linear-gradient(180deg, rgba(65, 9, 6, 0.96), rgba(26, 4, 3, 0.97));
+  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(8px);
   z-index: 12;
   pointer-events: auto;
 }
 
-.videoUnavailableOverlay p {
-  margin: 0 0 10px;
+.videoUnavailableOverlayEyebrow {
+  margin: 0 0 8px;
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  font-size: 0.9rem;
-  color: #ffc3b6;
+  font-size: 0.8rem;
+  color: rgba(255, 200, 188, 0.95);
+  text-align: center;
 }
 
-.videoUnavailableOverlay strong {
+.videoUnavailableOverlayTitle {
   display: block;
-  font-size: clamp(1.3rem, 2.8vw, 2rem);
-  line-height: 1.3;
-  color: #fff2ed;
+  margin: 0;
+  font-size: clamp(1.28rem, 2.7vw, 1.9rem);
+  line-height: 1.24;
+  color: rgba(255, 244, 239, 0.98);
+  text-align: center;
+}
+
+.videoUnavailableOverlayBody {
+  margin: 10px auto 0;
+  max-width: 64ch;
+  font-size: 0.99rem;
+  line-height: 1.52;
+  color: rgba(255, 230, 223, 0.93);
+  text-align: center;
+}
+
+.videoUnavailableOverlayActions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.videoUnavailableOverlayAcknowledge,
+.videoUnavailableOverlayRefresh {
+  min-width: 190px;
+  min-height: 42px;
+  border-radius: 999px;
+  padding: 0 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 
 .videoUnavailableOverlayAcknowledge {
-  margin-top: 16px;
-  min-width: 120px;
-  min-height: 42px;
-  border-radius: 999px;
+  border: 1px solid rgba(255, 190, 176, 0.35);
+  background: rgba(255, 245, 241, 0.08);
+  color: rgba(255, 236, 230, 0.96);
+}
+
+.videoUnavailableOverlayAcknowledge:hover {
+  background: rgba(255, 245, 241, 0.14);
 }
 
 .videoUnavailableOverlayRefresh {
-  margin-top: 16px;
-  min-width: 170px;
-  min-height: 42px;
-  border-radius: 999px;
   border: 1px solid rgba(255, 186, 172, 0.62);
   background: linear-gradient(180deg, rgba(188, 44, 25, 0.9), rgba(92, 15, 8, 0.95));
   color: #fff3ef;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  cursor: pointer;
 }
 
 .videoUnavailableOverlayRefresh:hover {
   filter: brightness(1.08);
 }
 
-@media (min-width: 1181px) {
-  .playerChromeDockedDesktop .videoUnavailableOverlay {
-    width: min(92%, 960px);
-    padding: 30px 32px;
-    border-radius: 16px;
+@media (max-width: 760px) {
+  .videoUnavailableOverlay {
+    width: min(94%, 640px);
+    padding: 18px 16px 16px;
+    border-radius: 14px;
   }
 
-  .playerChromeDockedDesktop .videoUnavailableOverlay p {
-    margin-bottom: 14px;
-    font-size: 1.25rem;
+  .videoUnavailableOverlayBody {
+    font-size: 0.94rem;
+    line-height: 1.46;
+  }
+
+  .videoUnavailableOverlayAcknowledge,
+  .videoUnavailableOverlayRefresh {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (min-width: 1181px) {
+  .playerChromeDockedDesktop .videoUnavailableOverlay {
+    width: min(92%, 900px);
+    padding: 30px 32px 26px;
+    border-radius: 18px;
+  }
+
+  .playerChromeDockedDesktop .videoUnavailableOverlayEyebrow {
+    margin-bottom: 12px;
+    font-size: 1rem;
     letter-spacing: 0.12em;
   }
 
-  .playerChromeDockedDesktop .videoUnavailableOverlay strong {
-    font-size: clamp(2.1rem, 4.4vw, 3.4rem);
+  .playerChromeDockedDesktop .videoUnavailableOverlayTitle {
+    font-size: clamp(1.9rem, 4vw, 3rem);
     line-height: 1.22;
+  }
+
+  .playerChromeDockedDesktop .videoUnavailableOverlayBody {
+    font-size: 1.16rem;
   }
 }
 
@@ -2478,8 +2559,9 @@ h1 {
 .playerEndedChoiceActions {
   flex-shrink: 0;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
+  position: relative;
   padding: 10px 18px 14px;
   background: linear-gradient(180deg, rgba(14, 7, 6, 0.55), rgba(14, 7, 6, 0.98));
 }
@@ -3390,6 +3472,36 @@ h1 {
   line-height: 1.35;
 }
 
+.rightRailEmptyState {
+  display: grid;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.rightRailCreatePlaylistButton {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(226, 81, 81, 0.42);
+  background: rgba(126, 19, 19, 0.38);
+  color: #ffd4d4;
+  font-size: 0.86rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.rightRailCreatePlaylistButton:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.rightRailCreatePlaylistButton:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
+}
+
 .rightRailStatusInfo {
   background: rgba(255, 255, 255, 0.04);
   border-radius: 8px;
@@ -3478,6 +3590,113 @@ h1 {
 .rightRailPlaylistDelete:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.rightRailDeleteConfirmBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3400;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: radial-gradient(circle at 50% 18%, rgba(132, 20, 20, 0.3), rgba(7, 3, 3, 0.84) 58%);
+  backdrop-filter: blur(4px);
+}
+
+.rightRailDeleteConfirmModal {
+  width: min(380px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 174, 160, 0.42);
+  background: linear-gradient(165deg, rgba(60, 12, 12, 0.97), rgba(26, 6, 6, 0.98));
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.rightRailDeleteConfirmHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rightRailDeleteConfirmIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(231, 92, 78, 0.3), rgba(130, 20, 20, 0.46));
+  border: 1px solid rgba(244, 138, 127, 0.55);
+  color: #ffd4cf;
+  font-size: 0.86rem;
+}
+
+.rightRailDeleteConfirmModal h3 {
+  margin: 0;
+  font-size: 1.14rem;
+  letter-spacing: 0.02em;
+  color: #ffe6de;
+}
+
+.rightRailDeleteConfirmPrompt {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.rightRailDeleteConfirmTarget {
+  margin: 0;
+  font-family: var(--font-display), cursive;
+  font-size: 1rem;
+  color: #ffd9d0;
+  letter-spacing: 0.015em;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(246, 160, 148, 0.35);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.rightRailDeleteConfirmActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.rightRailDeleteConfirmActions button {
+  min-height: 38px;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.rightRailDeleteConfirmActions button:first-child {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f1dbd5;
+}
+
+.rightRailDeleteConfirmActions button:first-child:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.rightRailDeleteConfirmActions button:last-child {
+  background: linear-gradient(180deg, rgba(164, 34, 34, 0.9), rgba(84, 14, 14, 0.95));
+  border: 1px solid rgba(236, 109, 109, 0.62);
+  color: #ffd5d5;
+}
+
+.rightRailDeleteConfirmActions button:last-child:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.rightRailDeleteConfirmActions button:disabled {
+  opacity: 0.62;
 }
 
 .relatedStackPlaylist {
@@ -4409,17 +4628,23 @@ h1 {
   display: flex;
   align-items: center;
   gap: 14px;
+  flex-wrap: wrap;
 }
 
 .newPageSeenToggle {
   font-family: var(--font-display), cursive;
   font-size: 0.95rem;
   letter-spacing: 0.03em;
+  min-height: 40px;
   padding: 6px 16px;
   border-radius: 6px;
   border: 1.5px solid rgba(126, 19, 19, 0.55);
   background: rgba(30, 12, 12, 0.7);
   color: rgba(255, 200, 190, 0.75);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
@@ -4438,6 +4663,25 @@ h1 {
 
 .newPageSeenToggle.newPageSeenToggleActive:hover {
   background: rgba(160, 30, 30, 0.8);
+}
+
+.newPageSeenToggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.top100CreatePlaylistButton {
+  min-height: 40px;
+  padding: 6px 16px;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 820px) {
+  .top100CreatePlaylistButton {
+    width: 100%;
+  }
 }
 
 .newFlagModalBackdrop {
@@ -4926,6 +5170,20 @@ h1 {
   min-width: 0;
 }
 
+.categoriesHeaderActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.favouritesCreatePlaylistButton {
+  min-height: 40px;
+  padding: 6px 16px;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
 .categoriesFilterInput {
   width: 100%;
   padding: 14px 16px;
@@ -4962,6 +5220,14 @@ h1 {
 
   .categoriesFilterBar {
     max-width: none;
+  }
+
+  .categoriesHeaderActions {
+    width: 100%;
+  }
+
+  .favouritesCreatePlaylistButton {
+    width: 100%;
   }
 }
 
