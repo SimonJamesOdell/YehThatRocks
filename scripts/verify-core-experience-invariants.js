@@ -16,6 +16,7 @@ const files = {
   shareMetadata: path.join(ROOT, "apps/web/lib/share-metadata.ts"),
   chatSharedVideo: path.join(ROOT, "apps/web/lib/chat-shared-video.ts"),
   artistWikiLink: path.join(ROOT, "apps/web/components/artist-wiki-link.tsx"),
+  seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
@@ -52,6 +53,7 @@ function main() {
   const shareMetadataSource = read(files.shareMetadata);
   const chatSharedVideoSource = read(files.chatSharedVideo);
   const artistWikiLinkSource = read(files.artistWikiLink);
+  const seenToggleRouteSource = read(files.seenToggleRoute);
   const cssSource = read(files.css);
 
   // Watch Next and current-video resolver invariants.
@@ -98,8 +100,14 @@ function main() {
   assertContains(playerExperienceSource, "playerEndedChoiceGrid", "Player renders chooser overlay grid", failures);
   assertContains(playerExperienceSource, "playerEndedChoiceGridExiting", "Player defines exit animation for chooser overlay grid reshuffle", failures);
   assertContains(playerExperienceSource, "const maxEndedChoiceVideos = 12;", "Player caps chooser cards to 12 for larger screens", failures);
-  assertContains(playerExperienceSource, "const [endedChoiceHideSeen, setEndedChoiceHideSeen] = useState(false);", "Player tracks a local seen filter state for the end chooser", failures);
+  assertContains(playerExperienceSource, "const [endedChoiceHideSeen, setEndedChoiceHideSeen] = useSeenTogglePreference({", "Player tracks end chooser seen-filter with shared persisted preference hook", failures);
+  assertContains(playerExperienceSource, "key: ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY", "Player stores end chooser seen-filter under dedicated key", failures);
+  assertContains(playerExperienceSource, "isAuthenticated: isLoggedIn,", "Player binds seen-toggle persistence to auth state", failures);
   assertContains(playerExperienceSource, "const hasSeenEndedChoiceVideos = endedChoiceVideos.some((video) => seenVideoIds?.has(video.id));", "Player detects when the end chooser includes seen videos", failures);
+  assertContains(playerExperienceSource, "const endedChoiceGridVideos = useMemo(() => {", "Player derives a rendered end-choice grid list from filter state", failures);
+  assertContains(playerExperienceSource, "const fullRowCount = Math.floor(visibleEndedChoiceVideos.length / 4) * 4;", "Player keeps end-choice seen-filter rows as complete multiples of four", failures);
+  assertContains(playerExperienceSource, "const needsSeenRowFill =", "Player computes when seen-filtered rows need background refill", failures);
+  assertContains(playerExperienceSource, "endedChoiceLoading && endedChoiceGridVideos.length > 0", "Player shows a bottom loading state while additional end-choice rows are fetched", failures);
   assertContains(playerExperienceSource, 'className={`newPageSeenToggle playerEndedChoiceSeenToggle${endedChoiceHideSeen ? " newPageSeenToggleActive" : ""}`}', "Player reuses the New page seen-toggle styling in the end chooser", failures);
   assertContains(playerExperienceSource, 'No unseen choices right now. Try more choices or watch again.', "Player shows an empty state when the chooser is filtered to no unseen videos", failures);
   assertContains(playerExperienceSource, "autoplayEnabledRef.current &&", "Player only auto-advances when autoplay is enabled", failures);
@@ -133,6 +141,23 @@ function main() {
   assertContains(playerExperienceSource, "const [localTitleOverride, setLocalTitleOverride] = useState<string | null>(null);", "Player keeps a local title override for immediate admin edit feedback", failures);
   assertContains(playerExperienceSource, "const displayTitle = localTitleOverride ?? currentVideo.title;", "Player uses title override for immediate UI updates", failures);
   assertContains(playerExperienceSource, "setLocalTitleOverride(adminEditTitle);", "Player applies admin title update locally immediately after save", failures);
+
+  // Dock-hide interaction invariants.
+  assertContains(playerExperienceSource, 'window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));', "Dock close control dispatches hide-only event instead of navigating away", failures);
+  assertContains(shellDynamicSource, "const handleDockHideRequest = () => {", "Shell defines a dock-hide event handler", failures);
+  assertContains(shellDynamicSource, "setIsDockHidden(true);", "Shell hides docked player in response to dock-hide event", failures);
+  assertContains(shellDynamicSource, 'window.addEventListener("ytr:dock-hide-request", handleDockHideRequest);', "Shell subscribes to dock-hide requests", failures);
+  assertContains(shellDynamicSource, 'window.removeEventListener("ytr:dock-hide-request", handleDockHideRequest);', "Shell cleans up dock-hide listener", failures);
+  assertContains(shellDynamicSource, '<div className="playerDockLayer">', "Shell keeps player content in a dedicated dock layer", failures);
+  assertContains(cssSource, ".playerDockLayer", "CSS defines dedicated dock layer sizing", failures);
+  assertContains(cssSource, ".playerChromeDockedHidden .playerDockLayer", "Dock-hide class only hides player layer, not overlay page", failures);
+  assertContains(cssSource, ".overlayIconBtn.overlayDockCloseBtn", "Dock close button keeps explicit red styling with high specificity", failures);
+
+  // API invariants for shared seen-toggle persistence used by player surfaces.
+  assertContains(seenToggleRouteSource, "requireApiAuth", "Seen-toggle API requires auth before reading persisted player preferences", failures);
+  assertContains(seenToggleRouteSource, "verifySameOrigin", "Seen-toggle API protects mutations with same-origin checks", failures);
+  assertContains(seenToggleRouteSource, "getSeenTogglePreferenceForUser", "Seen-toggle API reads persisted values from data layer", failures);
+  assertContains(seenToggleRouteSource, "setSeenTogglePreferenceForUser", "Seen-toggle API writes persisted values through data layer", failures);
 
   // Dock sizing hot-reload invariant.
   assertContains(shellDynamicSource, "const frame = chrome.querySelector(\".playerFrame, .playerLoadingFallback\") as HTMLElement | null;", "Shell computes dock sizing using either player frame or loading fallback", failures);

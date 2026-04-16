@@ -51,7 +51,9 @@ function main() {
   assertContains(top100PageSource, "seenVideoIds={Array.from(seenVideoIds)}", "Top 100 page passes seen ids to loader", failures);
   assertContains(top100PageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "Top 100 page passes hidden ids to loader", failures);
   assertContains(top100LoaderSource, 'import { Top100VideoLink } from "@/components/top100-video-link";', "Top 100 loader renders warmed link component", failures);
-  assertContains(top100LoaderSource, "fetch(\"/api/videos/top?count=100\"", "Top 100 loader fetches videos from top API", failures);
+  assertContains(top100LoaderSource, "const TOP100_TARGET_COUNT = 100;", "Top 100 loader keeps a 100-item target list", failures);
+  assertContains(top100LoaderSource, "const TOP100_FETCH_SOURCE_COUNT =", "Top 100 loader defines an expandable source fetch count", failures);
+  assertContains(top100LoaderSource, "fetch(`/api/videos/top?count=${TOP100_FETCH_SOURCE_COUNT}`", "Top 100 loader fetches videos from top API using configured source count", failures);
   assertContains(top100LoaderSource, "TOP100_SESSION_CACHE_KEY", "Top 100 loader uses session cache to reduce repeat requests", failures);
   assertContains(top100LoaderSource, "filterHiddenVideos", "Top 100 loader filters hidden videos", failures);
   assertNotContains(top100LoaderSource, "sortVideosBySeen(", "Top 100 loader does not reorder rows by seen state", failures);

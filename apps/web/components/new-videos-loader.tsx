@@ -1,12 +1,13 @@
 "use client";
 
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { Top100VideoLink } from "@/components/top100-video-link";
 import { CloseLink } from "@/components/close-link";
 import { NewScrollReset } from "@/components/new-scroll-reset";
-import { readPersistedBoolean, writePersistedBoolean } from "@/lib/persisted-boolean";
+import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import {
   VIDEO_QUALITY_FLAG_REASON_LABELS,
   VIDEO_QUALITY_FLAG_REASONS,
@@ -49,14 +50,21 @@ export function NewVideosLoader({
   seenVideoIds?: string[];
   hiddenVideoIds?: string[];
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
   const [allVideos, setAllVideos] = useState(() => dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet)));
   const [flaggingVideo, setFlaggingVideo] = useState<VideoRecord | null>(null);
   const [flagReason, setFlagReason] = useState<VideoQualityFlagReason>("broken-playback");
   const [flagPendingVideoId, setFlagPendingVideoId] = useState<string | null>(null);
   const [flagStatus, setFlagStatus] = useState<string | null>(null);
+  const [playlistStatus, setPlaylistStatus] = useState<string | null>(null);
+  const [isCreatingPlaylistFromNew, setIsCreatingPlaylistFromNew] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [hideSeen, setHideSeen] = useState(() => readPersistedBoolean(NEW_HIDE_SEEN_TOGGLE_KEY, false));
+  const [hideSeen, setHideSeen] = useSeenTogglePreference({
+    key: NEW_HIDE_SEEN_TOGGLE_KEY,
+    isAuthenticated,
+  });
   const seenVideoIdSet = useMemo(() => new Set(seenVideoIds), [seenVideoIds]);
   const visibleVideos = useMemo(
     () => hideSeen ? allVideos.filter((v) => !seenVideoIdSet.has(v.id)) : allVideos,
@@ -137,6 +145,129 @@ export function NewVideosLoader({
     }
   };
 
+  const createPlaylistFromNew = async () => {
+    if (!isAuthenticated) {
+      setPlaylistStatus("Sign in to create playlists.");
+      return;
+    }
+
+    if (isCreatingPlaylistFromNew) {
+      return;
+    }
+
+    const sourceVideos = visibleVideos;
+    const videoIds = sourceVideos.map((video) => video.id).filter(Boolean);
+
+    if (videoIds.length === 0) {
+      setPlaylistStatus(hideSeen ? "No unseen New videos to add." : "No New videos to add.");
+      return;
+    }
+
+    setIsCreatingPlaylistFromNew(true);
+    setPlaylistStatus(null);
+
+    const playlistName = `New ${hideSeen ? "Unseen " : ""}${new Date().toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })}`;
+
+    try {
+      const createResponse = await fetch("/api/playlists", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: playlistName,
+          videoIds: [],
+        }),
+      });
+
+      if (createResponse.status === 401 || createResponse.status === 403) {
+        setPlaylistStatus("Sign in to create playlists.");
+        return;
+      }
+
+      if (!createResponse.ok) {
+        setPlaylistStatus("Could not create playlist from New. Please try again.");
+        return;
+      }
+
+      const created = (await createResponse.json().catch(() => null)) as { id?: string; name?: string } | null;
+      const createdPlaylistId = created?.id;
+
+      if (!createdPlaylistId) {
+        setPlaylistStatus("Could not create playlist from New. Please try again.");
+        return;
+      }
+
+      const currentVideoId = searchParams.get("v");
+      const closeHref = currentVideoId
+        ? `/?v=${encodeURIComponent(currentVideoId)}&pl=${encodeURIComponent(createdPlaylistId)}&resume=1`
+        : `/?pl=${encodeURIComponent(createdPlaylistId)}`;
+
+      window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", {
+        detail: { href: closeHref },
+      }));
+      window.dispatchEvent(new CustomEvent("ytr:right-rail-mode", {
+        detail: { mode: "playlist", playlistId: createdPlaylistId },
+      }));
+      router.push(closeHref);
+
+      window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
+        detail: {
+          playlist: {
+            id: createdPlaylistId,
+            name: playlistName,
+            videos: sourceVideos,
+            itemCount: sourceVideos.length,
+          },
+        },
+      }));
+
+      void fetch(`/api/playlists/${encodeURIComponent(createdPlaylistId)}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoIds }),
+      }).then(async (addAllResponse) => {
+        window.dispatchEvent(new Event("ytr:playlists-updated"));
+
+        if (!addAllResponse.ok) {
+          setPlaylistStatus("Playlist was created, but some tracks could not be saved.");
+          return;
+        }
+
+        const updatedPlaylist = (await addAllResponse.json().catch(() => null)) as
+          | { id?: string; videos?: VideoRecord[]; itemCount?: number; name?: string }
+          | null;
+
+        const finalVideos = Array.isArray(updatedPlaylist?.videos) ? updatedPlaylist.videos : sourceVideos;
+        const finalName = updatedPlaylist?.name ?? playlistName;
+        const finalItemCount = updatedPlaylist?.itemCount ?? finalVideos.length;
+
+        window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
+          detail: {
+            playlist: {
+              id: createdPlaylistId,
+              name: finalName,
+              videos: finalVideos,
+              itemCount: finalItemCount,
+            },
+          },
+        }));
+      }).catch(() => {
+        setPlaylistStatus("Playlist was created, but tracks could not be saved.");
+        window.dispatchEvent(new Event("ytr:playlists-updated"));
+      });
+    } catch {
+      setPlaylistStatus("Could not create playlist from New. Please try again.");
+    } finally {
+      setIsCreatingPlaylistFromNew(false);
+    }
+  };
+
   useEffect(() => {
     const loadVideos = async () => {
       try {
@@ -180,10 +311,6 @@ export function NewVideosLoader({
     void loadVideos();
   }, [hiddenVideoIdSet, initialVideos, isAuthenticated]);
 
-  useEffect(() => {
-    writePersistedBoolean(NEW_HIDE_SEEN_TOGGLE_KEY, hideSeen);
-  }, [hideSeen]);
-
   return (
     <>
       <NewScrollReset />
@@ -198,9 +325,20 @@ export function NewVideosLoader({
           >
             {hideSeen ? "Showing unseen only" : "Show unseen only"}
           </button>
+          <button
+            type="button"
+            className="newPageSeenToggle top100CreatePlaylistButton"
+            onClick={() => {
+              void createPlaylistFromNew();
+            }}
+            disabled={!isAuthenticated || visibleVideos.length === 0 || isCreatingPlaylistFromNew}
+          >
+            {isCreatingPlaylistFromNew ? "+ Creating..." : "+ New Playlist"}
+          </button>
         </div>
         <CloseLink />
       </div>
+      {playlistStatus ? <p className="rightRailStatus">{playlistStatus}</p> : null}
       <div className="trackStack spanTwoColumns">
       {visibleVideos.map((track, index) => (
         <Top100VideoLink

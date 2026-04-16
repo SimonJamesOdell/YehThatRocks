@@ -11,10 +11,10 @@ import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { PlayerExperience } from "@/components/player-experience";
+import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { navItems, type VideoRecord } from "@/lib/catalog";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
-import { readPersistedBoolean, writePersistedBoolean } from "@/lib/persisted-boolean";
 
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
   const perfWithPatchState = performance as Performance & {
@@ -236,6 +236,8 @@ const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
 const PREFETCH_FAILURE_MAX_BACKOFF_MS = 20_000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
+const PLAYLIST_RAIL_SYNC_EVENT = "ytr:playlist-rail-sync";
+const PLAYLIST_CREATION_PROGRESS_EVENT = "ytr:playlist-creation-progress";
 const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
 const OVERLAY_OPEN_REQUEST_EVENT = "ytr:overlay-open-request";
 const DOCK_MOVE_DURATION_MS = 520;
@@ -372,6 +374,8 @@ function ShellDynamicInner({
   const [playlistMutationMessage, setPlaylistMutationMessage] = useState<string | null>(null);
   const [playlistMutationTone, setPlaylistMutationTone] = useState<"info" | "success" | "error">("info");
   const [playlistMutationPendingVideoId, setPlaylistMutationPendingVideoId] = useState<string | null>(null);
+  const [isCreatingRailPlaylist, setIsCreatingRailPlaylist] = useState(false);
+  const [playlistCreationPendingId, setPlaylistCreationPendingId] = useState<string | null>(null);
   const [lastAddedRelatedVideoId, setLastAddedRelatedVideoId] = useState<string | null>(null);
   const [recentlyAddedPlaylistTrack, setRecentlyAddedPlaylistTrack] = useState<{ playlistId: string; trackId: string } | null>(null);
   const [forcedUnavailableSignal, setForcedUnavailableSignal] = useState(0);
@@ -387,10 +391,15 @@ function ShellDynamicInner({
   const [draggedPlaylistTrackIndex, setDraggedPlaylistTrackIndex] = useState<number | null>(null);
   const [dragOverPlaylistTrackIndex, setDragOverPlaylistTrackIndex] = useState<number | null>(null);
   const [isDeletingActivePlaylist, setIsDeletingActivePlaylist] = useState(false);
+  const [showDeleteActivePlaylistConfirm, setShowDeleteActivePlaylistConfirm] = useState(false);
+  const [confirmDeleteRailPlaylist, setConfirmDeleteRailPlaylist] = useState<{ id: string; name: string } | null>(null);
   const [playlistBeingDeletedId, setPlaylistBeingDeletedId] = useState<string | null>(null);
   const [hidingRelatedVideoIds, setHidingRelatedVideoIds] = useState<string[]>([]);
   const [hiddenMutationPendingVideoIds, setHiddenMutationPendingVideoIds] = useState<string[]>([]);
-  const [watchNextHideSeen, setWatchNextHideSeen] = useState(() => readPersistedBoolean(WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY, false));
+  const [watchNextHideSeen, setWatchNextHideSeen] = useSeenTogglePreference({
+    key: WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY,
+    isAuthenticated,
+  });
   const [, setSeenVideoRefreshTick] = useState(0);
   const [clickedRelatedVideoId, setClickedRelatedVideoId] = useState<string | null>(null);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
@@ -464,6 +473,7 @@ function ShellDynamicInner({
   const [isOverlayClosing, setIsOverlayClosing] = useState(false);
   const [isFooterRevealActive, setIsFooterRevealActive] = useState(false);
   const [isDockTransitioning, setIsDockTransitioning] = useState(false);
+  const [isDockHidden, setIsDockHidden] = useState(false);
   const [pendingOverlayOpenKind, setPendingOverlayOpenKind] = useState<"wiki" | "video" | null>(null);
   const [startupSelectionRefreshTick, setStartupSelectionRefreshTick] = useState(0);
   const overlayCloseTimeoutRef = useRef<number | null>(null);
@@ -519,6 +529,7 @@ function ShellDynamicInner({
     shouldDockDesktopPlayer && isDockTransitioning ? "playerChromeDockTransitioning" : "",
     isOverlayClosing ? "playerChromeUndocking" : "",
     !shouldShowOverlayPanel && isFooterRevealActive ? "playerChromeFooterReveal" : "",
+    shouldDockDesktopPlayer && isDockHidden ? "playerChromeDockedHidden" : "",
   ].filter(Boolean).join(" ");
   const playerChromeStyle = shouldDockDesktopPlayer
     ? ({
@@ -937,9 +948,15 @@ function ShellDynamicInner({
       }, DOCK_MOVE_DURATION_MS);
     };
 
+    const handleDockHideRequest = () => {
+      setIsDockHidden(true);
+    };
+
     window.addEventListener("ytr:overlay-close-request", handleOverlayCloseRequest);
+    window.addEventListener("ytr:dock-hide-request", handleDockHideRequest);
     return () => {
       window.removeEventListener("ytr:overlay-close-request", handleOverlayCloseRequest);
+      window.removeEventListener("ytr:dock-hide-request", handleDockHideRequest);
       if (overlayCloseTimeoutRef.current !== null) {
         window.clearTimeout(overlayCloseTimeoutRef.current);
         overlayCloseTimeoutRef.current = null;
@@ -954,6 +971,12 @@ function ShellDynamicInner({
       shouldRunFooterRevealRef.current = false;
     };
   }, [currentVideo.id, isOverlayRoute, router]);
+
+  useEffect(() => {
+    if (requestedVideoId) {
+      setIsDockHidden(false);
+    }
+  }, [requestedVideoId]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1005,6 +1028,7 @@ function ShellDynamicInner({
 
     if (!shouldDockDesktopPlayer) {
       setIsDockTransitioning(false);
+      setIsDockHidden(false);
       return;
     }
 
@@ -1536,6 +1560,49 @@ function ShellDynamicInner({
       setPlaylistRefreshTick((current) => current + 1);
     };
 
+    const handlePlaylistRailSync = (event: Event) => {
+      const detail = (event as CustomEvent<{ playlist?: PlaylistRailPayload; trackId?: string }>).detail;
+      const playlist = detail?.playlist;
+
+      if (!playlist?.id || !Array.isArray(playlist.videos)) {
+        return;
+      }
+
+      if (rightRailMode !== "playlist") {
+        return;
+      }
+
+      if (activePlaylistId && playlist.id !== activePlaylistId) {
+        return;
+      }
+
+      setPlaylistCreationPendingId((currentPendingId) => (
+        currentPendingId === playlist.id ? null : currentPendingId
+      ));
+
+      setPlaylistRailData(playlist);
+      setPlaylistRailError(null);
+      setIsPlaylistRailLoading(false);
+    };
+
+    const handlePlaylistCreationProgress = (event: Event) => {
+      const detail = (event as CustomEvent<{ playlistId?: string; phase?: "creating" | "done" | "failed" }>).detail;
+      const playlistId = detail?.playlistId;
+
+      if (!playlistId) {
+        return;
+      }
+
+      if (detail?.phase === "creating") {
+        setPlaylistCreationPendingId(playlistId);
+        return;
+      }
+
+      setPlaylistCreationPendingId((currentPendingId) => (
+        currentPendingId === playlistId ? null : currentPendingId
+      ));
+    };
+
     const handleRightRailMode = (event: Event) => {
       const detail = (event as CustomEvent<{ mode?: RightRailMode; playlistId?: string; trackId?: string }>).detail;
       const mode = detail?.mode;
@@ -1565,18 +1632,22 @@ function ShellDynamicInner({
     };
 
     window.addEventListener(PLAYLISTS_UPDATED_EVENT, handlePlaylistsUpdated);
+    window.addEventListener(PLAYLIST_RAIL_SYNC_EVENT, handlePlaylistRailSync);
     window.addEventListener(RIGHT_RAIL_MODE_EVENT, handleRightRailMode);
+    window.addEventListener(PLAYLIST_CREATION_PROGRESS_EVENT, handlePlaylistCreationProgress);
 
     return () => {
       window.removeEventListener(PLAYLISTS_UPDATED_EVENT, handlePlaylistsUpdated);
+      window.removeEventListener(PLAYLIST_RAIL_SYNC_EVENT, handlePlaylistRailSync);
       window.removeEventListener(RIGHT_RAIL_MODE_EVENT, handleRightRailMode);
+      window.removeEventListener(PLAYLIST_CREATION_PROGRESS_EVENT, handlePlaylistCreationProgress);
 
       if (recentlyAddedPlaylistTrackTimeoutRef.current !== null) {
         window.clearTimeout(recentlyAddedPlaylistTrackTimeoutRef.current);
         recentlyAddedPlaylistTrackTimeoutRef.current = null;
       }
     };
-  }, []);
+  }, [activePlaylistId, rightRailMode]);
 
   useEffect(() => {
     if (rightRailMode !== "playlist") {
@@ -1627,6 +1698,9 @@ function ShellDynamicInner({
           && mutationVersionAtStart === playlistRailMutationVersionRef.current
         ) {
           setPlaylistRailData(payload);
+          setPlaylistCreationPendingId((currentPendingId) => (
+            currentPendingId === payload.id ? null : currentPendingId
+          ));
         }
       } catch {
         if (!cancelled && requestId === playlistRailLoadRequestIdRef.current) {
@@ -1891,10 +1965,6 @@ function ShellDynamicInner({
     node.scrollTop = node.scrollHeight;
   }, [chatMessages]);
 
-  useEffect(() => {
-    writePersistedBoolean(WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY, watchNextHideSeen);
-  }, [watchNextHideSeen]);
-
   const sourceRelatedVideos = dedupeVideoList(relatedVideos);
   const uniqueRelatedVideos = filterHiddenRelatedVideos(
     dedupeRelatedRailVideos(sourceRelatedVideos, currentVideo.id),
@@ -1941,6 +2011,11 @@ function ShellDynamicInner({
   const activePlaylistTrackCount = playlistRailData
     ? Math.max(playlistRailData.videos.length, playlistRailData.itemCount ?? activePlaylistSummary?.itemCount ?? 0)
     : (activePlaylistSummary?.itemCount ?? 0);
+  const isCreatingActivePlaylist = Boolean(
+    activePlaylistId
+    && playlistCreationPendingId === activePlaylistId
+    && isPlaylistRailLoading,
+  );
 
   const loadMoreRelatedVideos = useCallback(async () => {
     if (relatedLoadInFlightRef.current || !hasMoreRelated || rightRailMode !== "watch-next") {
@@ -2666,6 +2741,18 @@ function ShellDynamicInner({
     }
   }
 
+  useEffect(() => {
+    if (!activePlaylistId) {
+      setShowDeleteActivePlaylistConfirm(false);
+    }
+  }, [activePlaylistId]);
+
+  useEffect(() => {
+    if (rightRailMode !== "playlist") {
+      setConfirmDeleteRailPlaylist(null);
+    }
+  }, [rightRailMode]);
+
   async function handleDeletePlaylistFromRail(playlistId: string) {
     if (playlistBeingDeletedId) {
       return;
@@ -2691,6 +2778,58 @@ function ShellDynamicInner({
       // Silent failure
     } finally {
       setPlaylistBeingDeletedId(null);
+    }
+  }
+
+  async function handleCreatePlaylistFromRail() {
+    if (isCreatingRailPlaylist) {
+      return;
+    }
+
+    setIsCreatingRailPlaylist(true);
+    setPlaylistMutationTone("info");
+    setPlaylistMutationMessage(null);
+
+    try {
+      const response = await fetchWithAuthRetry("/api/playlists", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: buildGeneratedPlaylistName(),
+          videoIds: [],
+        }),
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        setIsAuthenticated(false);
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Sign in to create playlists.");
+        return;
+      }
+
+      if (!response.ok) {
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Could not create playlist.");
+        return;
+      }
+
+      const created = (await response.json()) as { id?: string };
+      if (!created.id) {
+        setPlaylistMutationTone("error");
+        setPlaylistMutationMessage("Playlist was created but could not be opened.");
+        return;
+      }
+
+      setPlaylistCreationPendingId(created.id);
+      window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+      router.replace(getActivatePlaylistHref(created.id));
+    } catch {
+      setPlaylistMutationTone("error");
+      setPlaylistMutationMessage("Could not create playlist.");
+    } finally {
+      setIsCreatingRailPlaylist(false);
     }
   }
 
@@ -3604,48 +3743,50 @@ function ShellDynamicInner({
 
         <section className="playerStage">
           <div ref={playerChromeRef} className={playerChromeClassName} style={playerChromeStyle}>
-            {deniedPlaybackMessage ? (
-              <div className="playbackDeniedBanner" role="status" aria-live="polite">
-                <span>{deniedPlaybackMessage}</span>
-                <button
-                  type="button"
-                  className="playbackDeniedClose"
-                  onClick={() => setDeniedPlaybackMessage(null)}
-                  aria-label="Dismiss message"
-                >
-                  x
-                </button>
-              </div>
-            ) : null}
-
-            <Suspense fallback={<div className="playerLoadingFallback" />}>
-              {isResolvingInitialVideo || isResolvingRequestedVideo ? (
-                <div className="playerLoadingFallback" role="status" aria-live="polite" aria-label={routeLoadingLabel}>
-                  <div className="playerBootLoader">
-                    <div className="playerBootBars" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                    <p>{routeLoadingMessage}</p>
-                  </div>
+            <div className="playerDockLayer">
+              {deniedPlaybackMessage ? (
+                <div className="playbackDeniedBanner" role="status" aria-live="polite">
+                  <span>{deniedPlaybackMessage}</span>
+                  <button
+                    type="button"
+                    className="playbackDeniedClose"
+                    onClick={() => setDeniedPlaybackMessage(null)}
+                    aria-label="Dismiss message"
+                  >
+                    x
+                  </button>
                 </div>
-              ) : (
-                <PlayerExperience
-                  currentVideo={currentVideo}
-                  queue={[currentVideo, ...uniqueRelatedVideos]}
-                  isLoggedIn={isAuthenticated}
-                  isAdmin={isAdmin}
-                  isDockedDesktop={shouldDockDesktopPlayer}
-                  seenVideoIds={seenVideoIdsRef.current}
-                  onHideVideo={handleHideFromWatchNext}
-                  onAddVideoToPlaylist={handleAddToPlaylistFromWatchNext}
-                  forcedUnavailableSignal={forcedUnavailableSignal}
-                  forcedUnavailableMessage={forcedUnavailableMessage}
-                />
-              )}
-            </Suspense>
+              ) : null}
+
+              <Suspense fallback={<div className="playerLoadingFallback" />}>
+                {isResolvingInitialVideo || isResolvingRequestedVideo ? (
+                  <div className="playerLoadingFallback" role="status" aria-live="polite" aria-label={routeLoadingLabel}>
+                    <div className="playerBootLoader">
+                      <div className="playerBootBars" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                      <p>{routeLoadingMessage}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <PlayerExperience
+                    currentVideo={currentVideo}
+                    queue={[currentVideo, ...uniqueRelatedVideos]}
+                    isLoggedIn={isAuthenticated}
+                    isAdmin={isAdmin}
+                    isDockedDesktop={shouldDockDesktopPlayer}
+                    seenVideoIds={seenVideoIdsRef.current}
+                    onHideVideo={handleHideFromWatchNext}
+                    onAddVideoToPlaylist={handleAddToPlaylistFromWatchNext}
+                    forcedUnavailableSignal={forcedUnavailableSignal}
+                    forcedUnavailableMessage={forcedUnavailableMessage}
+                  />
+                )}
+              </Suspense>
+            </div>
 
             {shouldShowOverlayPanel ? (
               <section
@@ -3848,12 +3989,113 @@ function ShellDynamicInner({
                       aria-label="Delete playlist"
                       title="Delete playlist"
                       onClick={() => {
-                        void handleDeleteActivePlaylist();
+                        setShowDeleteActivePlaylistConfirm(true);
                       }}
                       disabled={isDeletingActivePlaylist}
                     >
-                      ×
+                      🗑
                     </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {activePlaylistId && showDeleteActivePlaylistConfirm ? (
+                <div
+                  className="rightRailDeleteConfirmBackdrop"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Delete playlist confirmation"
+                  onClick={() => {
+                    if (!isDeletingActivePlaylist) {
+                      setShowDeleteActivePlaylistConfirm(false);
+                    }
+                  }}
+                >
+                  <div
+                    className="rightRailDeleteConfirmModal"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                    }}
+                  >
+                    <div className="rightRailDeleteConfirmHeader">
+                      <span className="rightRailDeleteConfirmIcon" aria-hidden="true">⚠</span>
+                      <h3>Delete Playlist?</h3>
+                    </div>
+                    <p className="rightRailDeleteConfirmPrompt">This action is permanent and cannot be undone.</p>
+                    <p className="rightRailDeleteConfirmTarget">
+                      {playlistRailData?.name ?? activePlaylistSummary?.name ?? "Current playlist"}
+                    </p>
+                    <div className="rightRailDeleteConfirmActions">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDeleteActivePlaylistConfirm(false);
+                        }}
+                        disabled={isDeletingActivePlaylist}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDeleteActivePlaylistConfirm(false);
+                          void handleDeleteActivePlaylist();
+                        }}
+                        disabled={isDeletingActivePlaylist}
+                      >
+                        {isDeletingActivePlaylist ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {confirmDeleteRailPlaylist ? (
+                <div
+                  className="rightRailDeleteConfirmBackdrop"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Delete playlist confirmation"
+                  onClick={() => {
+                    if (!playlistBeingDeletedId) {
+                      setConfirmDeleteRailPlaylist(null);
+                    }
+                  }}
+                >
+                  <div
+                    className="rightRailDeleteConfirmModal"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                    }}
+                  >
+                    <div className="rightRailDeleteConfirmHeader">
+                      <span className="rightRailDeleteConfirmIcon" aria-hidden="true">⚠</span>
+                      <h3>Delete Playlist?</h3>
+                    </div>
+                    <p className="rightRailDeleteConfirmPrompt">This action is permanent and cannot be undone.</p>
+                    <p className="rightRailDeleteConfirmTarget">{confirmDeleteRailPlaylist.name}</p>
+                    <div className="rightRailDeleteConfirmActions">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmDeleteRailPlaylist(null);
+                        }}
+                        disabled={Boolean(playlistBeingDeletedId)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const playlistId = confirmDeleteRailPlaylist.id;
+                          setConfirmDeleteRailPlaylist(null);
+                          void handleDeletePlaylistFromRail(playlistId);
+                        }}
+                        disabled={Boolean(playlistBeingDeletedId)}
+                      >
+                        {playlistBeingDeletedId ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : null}
@@ -3892,7 +4134,7 @@ function ShellDynamicInner({
                           onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
-                            void handleDeletePlaylistFromRail(playlist.id);
+                            setConfirmDeleteRailPlaylist({ id: playlist.id, name: playlist.name });
                           }}
                           disabled={playlistBeingDeletedId !== null}
                         >
@@ -3921,9 +4163,21 @@ function ShellDynamicInner({
                     );
                   })
                 ) : (
-                  <p className="rightRailStatus">No playlists yet. Create one in Playlists.</p>
+                  <div className="rightRailEmptyState">
+                    <p className="rightRailStatus">No playlists yet.</p>
+                    <button
+                      type="button"
+                      className="rightRailCreatePlaylistButton"
+                      onClick={() => {
+                        void handleCreatePlaylistFromRail();
+                      }}
+                      disabled={isCreatingRailPlaylist}
+                    >
+                      {isCreatingRailPlaylist ? "+ Creating..." : "+ Create playlist"}
+                    </button>
+                  </div>
                 )
-              ) : isPlaylistRailLoading ? (
+              ) : isPlaylistRailLoading || isCreatingActivePlaylist ? (
                 <div className="relatedLoadingState" role="status" aria-live="polite" aria-busy="true">
                   <span className="playerBootBars" aria-hidden="true">
                     <span />
@@ -3931,7 +4185,7 @@ function ShellDynamicInner({
                     <span />
                     <span />
                   </span>
-                  <span>Loading playlist tracks...</span>
+                  <span>{isCreatingActivePlaylist ? "Creating playlist..." : "Loading playlist tracks..."}</span>
                 </div>
               ) : playlistRailError ? (
                 <p className="rightRailStatus">{playlistRailError}</p>

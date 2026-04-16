@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { addPlaylistItemSchema, removePlaylistItemSchema, reorderPlaylistItemsSchema } from "@/lib/api-schemas";
+import { addPlaylistItemSchema, addPlaylistItemsBulkSchema, removePlaylistItemSchema, reorderPlaylistItemsSchema } from "@/lib/api-schemas";
 import { requireApiAuth } from "@/lib/auth-request";
-import { addPlaylistItem, filterHiddenVideos, removePlaylistItem, reorderPlaylistItems } from "@/lib/catalog-data";
+import { addPlaylistItem, addPlaylistItems, filterHiddenVideos, removePlaylistItem, reorderPlaylistItems } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
@@ -30,17 +30,31 @@ export async function POST(request: NextRequest, context: PlaylistItemsRouteCont
     return bodyResult.response;
   }
 
-  const parsed = addPlaylistItemSchema.safeParse(bodyResult.data);
+  const singleParsed = addPlaylistItemSchema.safeParse(bodyResult.data);
 
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  if (singleParsed.success) {
+    const playlist = await addPlaylistItem(id, singleParsed.data.videoId, authResult.auth.userId);
+
+    if (!playlist) {
+      return NextResponse.json({ error: "Playlist or video not found" }, { status: 404 });
+    }
+
+    return NextResponse.json(playlist, { status: 201 });
   }
 
-  const playlist = await addPlaylistItem(id, parsed.data.videoId, authResult.auth.userId);
+  const bulkParsed = addPlaylistItemsBulkSchema.safeParse(bodyResult.data);
 
+  if (!bulkParsed.success) {
+    return NextResponse.json({ error: bulkParsed.error.flatten() }, { status: 400 });
+  }
+
+  const uniqueVideoIds = Array.from(new Set(bulkParsed.data.videoIds));
+  const playlist = await addPlaylistItems(id, uniqueVideoIds, authResult.auth.userId);
   if (!playlist) {
-    return NextResponse.json({ error: "Playlist or video not found" }, { status: 404 });
+    return NextResponse.json({ error: "Playlist or videos not found" }, { status: 404 });
   }
+
+  playlist.videos = await filterHiddenVideos(playlist.videos, authResult.auth.userId);
 
   return NextResponse.json(playlist, { status: 201 });
 }

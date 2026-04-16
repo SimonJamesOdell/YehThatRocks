@@ -1,8 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArtistVideoLink } from "@/components/artist-video-link";
+import { CategoryCreatePlaylistButton } from "@/components/category-create-playlist-button";
+import { CloseLink } from "@/components/close-link";
+import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import type { VideoRecord } from "@/lib/catalog";
 
 type CategoryVideosInfiniteProps = {
@@ -26,6 +30,7 @@ const PREFETCH_ROOT_MARGIN = "1800px 0px";
 const CHUNK_TRIGGER_ROOT_MARGIN = "1400px 0px";
 const INITIAL_BUFFER_PAGES = 3;
 const SCROLL_BUFFER_PAGES = 2;
+const CATEGORY_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-category";
 
 function dedupeVideosById(rows: VideoRecord[]) {
   const seen = new Set<string>();
@@ -86,6 +91,10 @@ export function CategoryVideosInfinite({
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
+  const [hideSeen, setHideSeen] = useSeenTogglePreference({
+    key: CATEGORY_HIDE_SEEN_TOGGLE_KEY,
+    isAuthenticated,
+  });
   const seenVideoIdSet = new Set(seenVideoIds);
   const nextOffsetRef = useRef(initialVideos.length);
   const requestedOffsetsRef = useRef(new Set<number>());
@@ -292,8 +301,11 @@ export function CategoryVideosInfinite({
     }
   }, [hidingVideoIds, isAuthenticated]);
 
-  const chunkTriggerIndex = orderedVideos.length > pageSize
-    ? Math.max(0, orderedVideos.length - pageSize * SCROLL_BUFFER_PAGES)
+  const visibleOrderedVideos = hideSeen
+    ? orderedVideos.filter((video) => !seenVideoIdSet.has(video.id))
+    : orderedVideos;
+  const chunkTriggerIndex = visibleOrderedVideos.length > pageSize
+    ? Math.max(0, visibleOrderedVideos.length - pageSize * SCROLL_BUFFER_PAGES)
     : -1;
 
   if (videos.length === 0) {
@@ -302,8 +314,40 @@ export function CategoryVideosInfinite({
 
   return (
     <>
+      <div className="favouritesBlindBar">
+        <div className="newPageHeaderLeft">
+          <strong>
+            <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
+              <span className="categoryHeaderIcon" aria-hidden="true">☣</span>
+              <Link href="/categories" className="categoryHeaderBreadcrumbLink">
+                Categories
+              </Link>
+              <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">&gt;</span>
+              <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{genre}</span>
+            </span>
+          </strong>
+          <button
+            type="button"
+            className={`newPageSeenToggle${hideSeen ? " newPageSeenToggleActive" : ""}`}
+            onClick={() => setHideSeen((value) => !value)}
+            aria-pressed={hideSeen}
+          >
+            {hideSeen ? "Showing unseen only" : "Show unseen only"}
+          </button>
+          <CategoryCreatePlaylistButton
+            isAuthenticated={isAuthenticated}
+            slug={slug}
+            categoryName={genre}
+            videos={visibleOrderedVideos}
+            seenVideoIds={seenVideoIds}
+            hideSeenOnly={hideSeen}
+          />
+        </div>
+        <CloseLink />
+      </div>
+
       <div className="categoryVideoGrid">
-        {orderedVideos.map((video, index) => (
+        {visibleOrderedVideos.map((video, index) => (
           <div
             key={video.id}
             className="categoryVideoObserverAnchor"

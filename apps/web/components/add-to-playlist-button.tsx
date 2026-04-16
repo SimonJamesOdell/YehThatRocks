@@ -151,6 +151,30 @@ export function AddToPlaylistButton({
   }, [menuOpen, updateMenuPosition]);
 
   useEffect(() => {
+    if (!menuOpen || playlistsLoaded) {
+      return;
+    }
+
+    void ensurePlaylistsLoaded().catch(() => undefined);
+  }, [menuOpen, playlistsLoaded]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !playlistsLoaded) {
+      return;
+    }
+
+    const lastUsedPlaylistId = window.localStorage.getItem(LAST_PLAYLIST_ID_KEY);
+    if (!lastUsedPlaylistId) {
+      return;
+    }
+
+    const playlistStillExists = playlists.some((playlist) => playlist.id === lastUsedPlaylistId);
+    if (!playlistStillExists) {
+      window.localStorage.removeItem(LAST_PLAYLIST_ID_KEY);
+    }
+  }, [playlists, playlistsLoaded]);
+
+  useEffect(() => {
     setMenuOpen(false);
     setChooserOpen(false);
   }, [searchParamsKey]);
@@ -220,6 +244,7 @@ export function AddToPlaylistButton({
     }
 
     if (typeof window !== "undefined") {
+      window.localStorage.setItem(LAST_PLAYLIST_ID_KEY, playlistId);
       window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
     }
 
@@ -431,6 +456,34 @@ export function AddToPlaylistButton({
     });
   }
 
+  function handleAddToSamePlaylist() {
+    if (isPending || activePlaylistId) {
+      return;
+    }
+
+    const samePlaylistId = typeof window !== "undefined"
+      ? window.localStorage.getItem(LAST_PLAYLIST_ID_KEY)
+      : null;
+
+    if (!samePlaylistId) {
+      return;
+    }
+
+    setMenuOpen(false);
+    startTransition(async () => {
+      try {
+        const ok = await addVideoToPlaylist(samePlaylistId);
+        if (!ok) {
+          return;
+        }
+
+        markAdded("Added");
+      } catch {
+        // Silent failure for card-level quick-add actions.
+      }
+    });
+  }
+
   function handleChooseExistingPlaylist(playlistId: string) {
     if (isPending) {
       return;
@@ -464,6 +517,10 @@ export function AddToPlaylistButton({
     typeof window !== "undefined"
       ? window.localStorage.getItem(LAST_PLAYLIST_ID_KEY)
       : null;
+  const samePlaylistId =
+    activePlaylistId || !lastUsedPlaylistId || !playlists.some((playlist) => playlist.id === lastUsedPlaylistId)
+      ? null
+      : lastUsedPlaylistId;
 
   const chooserPlaylists = (activePlaylistId
     ? playlists.filter((playlist) => playlist.id !== activePlaylistId)
@@ -522,6 +579,16 @@ export function AddToPlaylistButton({
                 disabled={isPending}
               >
                 Current Playlist
+              </button>
+            ) : null}
+            {samePlaylistId ? (
+              <button
+                type="button"
+                className="playlistQuickAddMenuAction"
+                onClick={handleAddToSamePlaylist}
+                disabled={isPending}
+              >
+                The same playlist
               </button>
             ) : null}
             <button

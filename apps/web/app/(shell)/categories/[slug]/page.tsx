@@ -1,10 +1,8 @@
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { CategoryVideosInfinite } from "@/components/category-videos-infinite";
 import { CategoriesScrollReset } from "@/components/categories-scroll-reset";
-import { CloseLink } from "@/components/close-link";
 import {
   getGenreBySlug,
   getGenres,
@@ -44,23 +42,9 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
   const initialVideosWithProbe = await getVideosByGenre(genre, { offset: 0, limit: CATEGORY_INITIAL_PAGE_SIZE + 1 });
   const initialHasMore = initialVideosWithProbe.length > CATEGORY_INITIAL_PAGE_SIZE;
   const initialVideos = initialVideosWithProbe.slice(0, CATEGORY_INITIAL_PAGE_SIZE);
-
   return (
     <>
       <CategoriesScrollReset />
-      <div className="favouritesBlindBar">
-        <strong>
-          <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
-            <span className="categoryHeaderIcon" aria-hidden="true">☣</span>
-            <Link href="/categories" className="categoryHeaderBreadcrumbLink">
-              Categories
-            </Link>
-            <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">&gt;</span>
-            <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{genre}</span>
-          </span>
-        </strong>
-        <CloseLink />
-      </div>
 
       <CategoryVideosInfinite
         slug={slug}

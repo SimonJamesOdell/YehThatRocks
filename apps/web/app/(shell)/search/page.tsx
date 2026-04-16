@@ -43,7 +43,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       <div className="favouritesBlindBar">
         <div className="newPageHeaderLeft">
           <strong>Search Results ({uniqueVideos.length + uniqueArtists.length + uniqueGenres.length})</strong>
-          <SearchSeenToggle trackStackId="search-video-grid" hasSeen={uniqueVideos.some((v) => seenVideoIds.has(v.id))} />
+          <SearchSeenToggle trackStackId="search-video-grid" hasSeen={uniqueVideos.some((v) => seenVideoIds.has(v.id))} isAuthenticated={isAuthenticated} />
         </div>
         <CloseLink />
       </div>

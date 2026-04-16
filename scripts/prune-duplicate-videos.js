@@ -60,6 +60,7 @@ async function main() {
   }
 
   const apply = process.argv.includes("--apply");
+  const enforceUnique = process.argv.includes("--enforce-unique");
   const sampleSize = Math.max(1, Number(parseArg("sample", "10")) || 10);
   const targetVideoId = (parseArg("video-id", "") || "").trim();
   const prisma = new PrismaClient();
@@ -146,6 +147,17 @@ async function main() {
     const duplicateRows = await prisma.$queryRawUnsafe(
       "SELECT COUNT(*) AS c FROM ytr_duplicate_rows",
     );
+    const uniqueIndexRows = await prisma.$queryRawUnsafe(
+      `
+        SELECT COUNT(*) AS c
+        FROM information_schema.statistics
+        WHERE table_schema = DATABASE()
+          AND table_name = 'videos'
+          AND column_name = 'videoId'
+          AND non_unique = 0
+      `,
+    );
+    const hasUniqueVideoIdIndex = toNumber(uniqueIndexRows[0], "c") > 0;
 
     const impactedRefs = await prisma.$queryRawUnsafe(`
       SELECT 'site_videos' AS tableName, COUNT(*) AS impacted
@@ -179,6 +191,7 @@ async function main() {
 
     console.log("Duplicate groups:", toNumber(duplicateGroups[0], "c"));
     console.log("Rows to delete:", toNumber(duplicateRows[0], "c"));
+    console.log("Unique index on videos.videoId:", hasUniqueVideoIdIndex ? "present" : "missing");
     if (targetVideoId) {
       console.log("Target videoId:", targetVideoId);
     }
@@ -196,6 +209,9 @@ async function main() {
         console.log(`Dry run complete for ${targetVideoId}. Re-run with --apply to execute updates/deletes.`);
       } else {
         console.log("Dry run complete. Re-run with --apply to execute updates/deletes.");
+      }
+      if (enforceUnique) {
+        console.log("Note: --enforce-unique is only applied together with --apply.");
       }
       return;
     }
@@ -238,9 +254,26 @@ async function main() {
         "SELECT COUNT(*) AS c FROM (SELECT videoId FROM videos GROUP BY videoId HAVING COUNT(*) > 1) x",
       );
 
+      const remainingDuplicateGroups = toNumber(remaining[0], "c");
+
+      if (enforceUnique) {
+        if (remainingDuplicateGroups > 0) {
+          throw new Error(`Cannot enforce unique index: ${remainingDuplicateGroups} duplicate groups remain.`);
+        }
+
+        if (!hasUniqueVideoIdIndex) {
+          await prisma.$executeRawUnsafe(
+            "ALTER TABLE videos ADD UNIQUE KEY videos_videoId_key (videoId)",
+          );
+          console.log("Added UNIQUE KEY videos_videoId_key(videoId).");
+        } else {
+          console.log("Unique index already present; no index change needed.");
+        }
+      }
+
       console.log("Prune completed.");
       console.log("Deleted rows:", Number(deleted ?? 0));
-      console.log("Remaining duplicate groups:", toNumber(remaining[0], "c"));
+      console.log("Remaining duplicate groups:", remainingDuplicateGroups);
     } catch (error) {
       await prisma.$executeRawUnsafe("ROLLBACK");
       throw error;

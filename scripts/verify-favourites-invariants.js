@@ -62,7 +62,7 @@ function main() {
 
   // --- FavouritesGrid: accessibility ---
   assertContains(favouritesGridSource, "aria-label={`Remove ${track.title} from favourites`}", "FavouritesGrid remove button has descriptive aria-label", failures);
-  assertContains(favouritesGridSource, "disabled={!isAuthenticated || isPending || isRemoving}", "FavouritesGrid remove button is disabled while mutations are in-flight", failures);
+  assertContains(favouritesGridSource, "disabled={!isAuthenticated || isPending || isRemoving || isCreatingPlaylistFromFavourites}", "FavouritesGrid remove button is disabled while mutations or playlist creation are in-flight", failures);
 
   // --- FavouritesGrid: empty state ---
   assertContains(favouritesGridSource, "favouritesEmptyState", "FavouritesGrid renders empty state container", failures);
