@@ -4,7 +4,7 @@ import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireAdminApiAuth } from "@/lib/admin-auth";
-import { buildAdminHealthPayload } from "@/lib/admin-dashboard-health";
+import { buildAdminHealthPayload, readAdminHostMetricHistory } from "@/lib/admin-dashboard-health";
 import { prisma } from "@/lib/db";
 
 function toNumber(value: bigint | number | null | undefined) {
@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
     `.catch(() => []),
   ]);
 
-  const [analyticsDaily, analyticsNewVsRepeat, registrationsPerDay, analyticsTotals] = await Promise.all([
+  const [analyticsDaily, analyticsNewVsRepeat, registrationsPerDay, analyticsTotals, hostMetricHistory] = await Promise.all([
     prisma.$queryRaw<Array<{
       day: Date;
       pageViews: bigint | number;
@@ -179,6 +179,7 @@ export async function GET(request: NextRequest) {
       FROM analytics_events
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
     `.catch(() => []),
+    readAdminHostMetricHistory(),
   ]);
 
   const wikiCacheCount = await (async () => {
@@ -236,6 +237,9 @@ export async function GET(request: NextRequest) {
         uniqueVisitors: toNumber(analyticsTotals[0]?.uniqueVisitors),
         sessions: toNumber(analyticsTotals[0]?.totalSessions),
       },
+    },
+    hostMetrics: {
+      minute: hostMetricHistory,
     },
     insights: {
       auth24h: {

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Metal_Mania, Rajdhani } from "next/font/google";
 import Script from "next/script";
+
+import { startAdminHostMetricSampling } from "@/lib/admin-dashboard-health";
 import "./globals.css";
 
 const metalMania = Metal_Mania({
@@ -26,6 +28,8 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  startAdminHostMetricSampling();
+
   return (
     <html lang="en">
       <head>

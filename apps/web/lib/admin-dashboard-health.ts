@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 
+import { prisma } from "@/lib/db";
+
 type NetworkSample = {
   ts: number;
   totalBytes: number;
@@ -25,11 +27,39 @@ type CpuMinuteBucket = {
   peakPercent: number;
 };
 
+type HostHealthMetrics = {
+  platform: string;
+  loadAvg: number[];
+  totalMemMb: number;
+  freeMemMb: number;
+  cpuUsagePercent: number | null;
+  cpuAverageUsagePercent: number | null;
+  cpuPeakCoreUsagePercent: number | null;
+  memoryUsagePercent: number;
+  diskUsagePercent: number | null;
+  swapUsagePercent: number | null;
+  networkUsagePercent: number | null;
+};
+
+type AdminHostMetricHistoryRow = {
+  bucketStart: Date;
+  cpuUsagePercent: number | null;
+  memoryUsagePercent: number | null;
+  swapUsagePercent: number | null;
+  diskUsagePercent: number | null;
+  networkUsagePercent: number | null;
+};
+
 let previousNetworkSample: NetworkSample | null = null;
 let cpuMinuteHistory: CpuMinuteBucket[] = [];
+let adminHostMetricSamplingStarted = false;
+let adminHostMetricPersistInFlight: Promise<void> | null = null;
+let hostHealthCollectionInFlight: Promise<HostHealthMetrics> | null = null;
+let lastPersistedAdminHostMetricBucketStartMs: number | null = null;
 
 const CPU_24H_WINDOW_MS = 24 * 60 * 60 * 1000;
 const CPU_BUCKET_MS = 60 * 1000;
+const ADMIN_HOST_METRIC_SAMPLE_MS = readPositiveNumberEnv("ADMIN_HOST_METRIC_SAMPLE_INTERVAL_MS", CPU_BUCKET_MS, CPU_BUCKET_MS);
 
 function readPositiveNumberEnv(name: string, defaultValue: number, minValue: number) {
   const raw = process.env[name];
@@ -49,6 +79,14 @@ function sleep(ms: number) {
 
 function clampPercent(value: number) {
   return Math.max(0, Math.min(100, value));
+}
+
+function getCurrentBucketStartMs(now = Date.now()) {
+  return Math.floor(now / CPU_BUCKET_MS) * CPU_BUCKET_MS;
+}
+
+function finitePercentOrNull(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? clampPercent(value) : null;
 }
 
 function getCpuSnapshot(): CpuSnapshot {
@@ -329,15 +367,173 @@ async function computeCpuUsagePercent() {
   return { averagePercent: 0, pressurePercent: 0, peakCorePercent: 0 };
 }
 
+async function collectHostHealthMetrics() {
+  if (hostHealthCollectionInFlight) {
+    return hostHealthCollectionInFlight;
+  }
+
+  const collectionPromise = (async (): Promise<HostHealthMetrics> => {
+    const cpuMetrics = await computeCpuUsagePercent();
+    const networkUsagePercent = await computeNetworkUsagePercent();
+    const diskUsagePercent = await computeDiskUsagePercent();
+    const swapUsagePercent = await computeSwapUsagePercent();
+    const memoryUsagePercent = clampPercent(
+      ((os.totalmem() - os.freemem()) / Math.max(1, os.totalmem())) * 100,
+    );
+    const cpuUsagePercent = Math.max(cpuMetrics.averagePercent ?? 0, cpuMetrics.pressurePercent ?? 0);
+
+    return {
+      platform: process.platform,
+      loadAvg: os.loadavg(),
+      totalMemMb: Math.round(os.totalmem() / 1024 / 1024),
+      freeMemMb: Math.round(os.freemem() / 1024 / 1024),
+      cpuUsagePercent: finitePercentOrNull(cpuUsagePercent),
+      cpuAverageUsagePercent: finitePercentOrNull(cpuMetrics.averagePercent),
+      cpuPeakCoreUsagePercent: finitePercentOrNull(cpuMetrics.peakCorePercent),
+      memoryUsagePercent: clampPercent(memoryUsagePercent),
+      diskUsagePercent: finitePercentOrNull(diskUsagePercent),
+      swapUsagePercent: finitePercentOrNull(swapUsagePercent),
+      networkUsagePercent: finitePercentOrNull(networkUsagePercent),
+    };
+  })();
+
+  hostHealthCollectionInFlight = collectionPromise;
+
+  try {
+    return await collectionPromise;
+  } finally {
+    if (hostHealthCollectionInFlight === collectionPromise) {
+      hostHealthCollectionInFlight = null;
+    }
+  }
+}
+
+async function persistAdminHostMetricSample() {
+  if (!process.env.DATABASE_URL) {
+    return;
+  }
+
+  const bucketStartMs = getCurrentBucketStartMs();
+  if (lastPersistedAdminHostMetricBucketStartMs === bucketStartMs) {
+    return;
+  }
+
+  if (adminHostMetricPersistInFlight) {
+    return adminHostMetricPersistInFlight;
+  }
+
+  const persistPromise = (async () => {
+    const hostMetrics = await collectHostHealthMetrics();
+    const persistedBucketStartMs = getCurrentBucketStartMs();
+    const bucketStart = new Date(persistedBucketStartMs);
+    const cutoff = new Date(Date.now() - CPU_24H_WINDOW_MS);
+
+    await prisma.$executeRaw`
+      INSERT INTO admin_host_metric_samples (
+        bucket_start,
+        cpu_usage_percent,
+        cpu_average_usage_percent,
+        cpu_peak_core_usage_percent,
+        memory_usage_percent,
+        disk_usage_percent,
+        swap_usage_percent,
+        network_usage_percent
+      ) VALUES (
+        ${bucketStart},
+        ${hostMetrics.cpuUsagePercent},
+        ${hostMetrics.cpuAverageUsagePercent},
+        ${hostMetrics.cpuPeakCoreUsagePercent},
+        ${hostMetrics.memoryUsagePercent},
+        ${hostMetrics.diskUsagePercent},
+        ${hostMetrics.swapUsagePercent},
+        ${hostMetrics.networkUsagePercent}
+      )
+      ON DUPLICATE KEY UPDATE
+        cpu_usage_percent = VALUES(cpu_usage_percent),
+        cpu_average_usage_percent = VALUES(cpu_average_usage_percent),
+        cpu_peak_core_usage_percent = VALUES(cpu_peak_core_usage_percent),
+        memory_usage_percent = VALUES(memory_usage_percent),
+        disk_usage_percent = VALUES(disk_usage_percent),
+        swap_usage_percent = VALUES(swap_usage_percent),
+        network_usage_percent = VALUES(network_usage_percent),
+        updated_at = CURRENT_TIMESTAMP(3)
+    `;
+
+    await prisma.$executeRaw`
+      DELETE FROM admin_host_metric_samples
+      WHERE bucket_start < ${cutoff}
+    `;
+
+    lastPersistedAdminHostMetricBucketStartMs = persistedBucketStartMs;
+  })()
+    .catch(() => {
+      // Ignore persistence failures and keep dashboard health reads working.
+    })
+    .finally(() => {
+      if (adminHostMetricPersistInFlight === persistPromise) {
+        adminHostMetricPersistInFlight = null;
+      }
+    });
+
+  adminHostMetricPersistInFlight = persistPromise;
+  return persistPromise;
+}
+
+export function startAdminHostMetricSampling() {
+  if (adminHostMetricSamplingStarted || !process.env.DATABASE_URL) {
+    return;
+  }
+
+  adminHostMetricSamplingStarted = true;
+  void persistAdminHostMetricSample();
+
+  const timer = setInterval(() => {
+    void persistAdminHostMetricSample();
+  }, ADMIN_HOST_METRIC_SAMPLE_MS);
+
+  timer.unref?.();
+}
+
+export async function readAdminHostMetricHistory() {
+  if (!process.env.DATABASE_URL) {
+    return [] as Array<{
+      bucketStart: string;
+      cpuUsagePercent: number | null;
+      memoryUsagePercent: number | null;
+      swapUsagePercent: number | null;
+      diskUsagePercent: number | null;
+      networkUsagePercent: number | null;
+    }>;
+  }
+
+  const cutoff = new Date(Date.now() - CPU_24H_WINDOW_MS);
+
+  const rows = await prisma.$queryRaw<Array<AdminHostMetricHistoryRow>>`
+    SELECT
+      bucket_start AS bucketStart,
+      cpu_usage_percent AS cpuUsagePercent,
+      memory_usage_percent AS memoryUsagePercent,
+      swap_usage_percent AS swapUsagePercent,
+      disk_usage_percent AS diskUsagePercent,
+      network_usage_percent AS networkUsagePercent
+    FROM admin_host_metric_samples
+    WHERE bucket_start >= ${cutoff}
+    ORDER BY bucket_start ASC
+  `.catch(() => []);
+
+  return rows.map((row) => ({
+    bucketStart: row.bucketStart instanceof Date ? row.bucketStart.toISOString() : new Date(row.bucketStart).toISOString(),
+    cpuUsagePercent: finitePercentOrNull(row.cpuUsagePercent),
+    memoryUsagePercent: finitePercentOrNull(row.memoryUsagePercent),
+    swapUsagePercent: finitePercentOrNull(row.swapUsagePercent),
+    diskUsagePercent: finitePercentOrNull(row.diskUsagePercent),
+    networkUsagePercent: finitePercentOrNull(row.networkUsagePercent),
+  }));
+}
+
 export async function buildAdminHealthPayload() {
-  const cpuMetrics = await computeCpuUsagePercent();
-  const networkUsagePercent = await computeNetworkUsagePercent();
-  const diskUsagePercent = await computeDiskUsagePercent();
-  const swapUsagePercent = await computeSwapUsagePercent();
-  const memoryUsagePercent = clampPercent(
-    ((os.totalmem() - os.freemem()) / Math.max(1, os.totalmem())) * 100,
-  );
-  const cpuUsagePercent = Math.max(cpuMetrics.averagePercent ?? 0, cpuMetrics.pressurePercent ?? 0);
+  startAdminHostMetricSampling();
+  const hostMetrics = await collectHostHealthMetrics();
 
   return {
     meta: {
@@ -351,17 +547,17 @@ export async function buildAdminHealthPayload() {
         heapTotalMb: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
       },
       host: {
-        platform: process.platform,
-        loadAvg: os.loadavg(),
-        totalMemMb: Math.round(os.totalmem() / 1024 / 1024),
-        freeMemMb: Math.round(os.freemem() / 1024 / 1024),
-        cpuUsagePercent,
-        cpuAverageUsagePercent: cpuMetrics.averagePercent,
-        cpuPeakCoreUsagePercent: cpuMetrics.peakCorePercent,
-        memoryUsagePercent,
-        diskUsagePercent,
-        swapUsagePercent,
-        networkUsagePercent,
+        platform: hostMetrics.platform,
+        loadAvg: hostMetrics.loadAvg,
+        totalMemMb: hostMetrics.totalMemMb,
+        freeMemMb: hostMetrics.freeMemMb,
+        cpuUsagePercent: hostMetrics.cpuUsagePercent,
+        cpuAverageUsagePercent: hostMetrics.cpuAverageUsagePercent,
+        cpuPeakCoreUsagePercent: hostMetrics.cpuPeakCoreUsagePercent,
+        memoryUsagePercent: hostMetrics.memoryUsagePercent,
+        diskUsagePercent: hostMetrics.diskUsagePercent,
+        swapUsagePercent: hostMetrics.swapUsagePercent,
+        networkUsagePercent: hostMetrics.networkUsagePercent,
       },
     },
   };
