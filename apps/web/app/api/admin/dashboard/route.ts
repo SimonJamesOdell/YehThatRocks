@@ -33,6 +33,7 @@ type AnalyticsSeriesBucket = {
   pageViews: number;
   videoViews: number;
   uniqueVisitors: number;
+  returnVisits: number;
   authEvents: number;
 };
 
@@ -80,11 +81,13 @@ async function readAnalyticsBucketMetrics(bucketStart: Date, bucketEnd: Date) {
       pageViews: bigint | number;
       videoViews: bigint | number;
       uniqueVisitors: bigint | number;
+      returnVisits: bigint | number;
     }>>`
       SELECT
         SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS pageViews,
         SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS videoViews,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS uniqueVisitors
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS uniqueVisitors,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS returnVisits
       FROM analytics_events
       WHERE created_at >= ${bucketStart}
         AND created_at < ${bucketEnd}
@@ -101,6 +104,7 @@ async function readAnalyticsBucketMetrics(bucketStart: Date, bucketEnd: Date) {
     pageViews: toNumber(analyticsRows[0]?.pageViews),
     videoViews: toNumber(analyticsRows[0]?.videoViews),
     uniqueVisitors: toNumber(analyticsRows[0]?.uniqueVisitors),
+    returnVisits: toNumber(analyticsRows[0]?.returnVisits),
     authEvents: toNumber(authRows[0]?.authEvents),
   };
 }
@@ -283,12 +287,14 @@ export async function GET(request: NextRequest) {
       pageViews: bigint | number;
       videoViews: bigint | number;
       uniqueVisitors: bigint | number;
+      returnVisits: bigint | number;
     }>>`
       SELECT
         DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') AS bucketStart,
         SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS pageViews,
         SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS videoViews,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS uniqueVisitors
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS uniqueVisitors,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS returnVisits
       FROM analytics_events
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
       GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
@@ -370,6 +376,7 @@ export async function GET(request: NextRequest) {
       pageViews: toNumber(row.pageViews),
       videoViews: toNumber(row.videoViews),
       uniqueVisitors: toNumber(row.uniqueVisitors),
+      returnVisits: toNumber(row.returnVisits),
       authEvents: authByHour.get(bucketStart) ?? 0,
     };
   });
