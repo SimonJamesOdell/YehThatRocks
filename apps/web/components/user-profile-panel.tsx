@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
+import { CloseLink } from "@/components/close-link";
 import type { PlaylistSummary } from "@/lib/catalog-data";
 import type { PublicUserProfile } from "@/lib/catalog-data";
 import type { VideoRecord } from "@/lib/catalog";
@@ -66,23 +67,52 @@ export function UserProfilePanel({ user, favourites, playlists }: UserProfilePan
     setTab("playlists");
   }
 
+  const tabControls = (
+    <div className="railTabs userProfileTabs">
+      <button
+        type="button"
+        className={tab === "favourites" ? "activeTab" : undefined}
+        onClick={() => setTab("favourites")}
+      >
+        Favourites
+      </button>
+      <button
+        type="button"
+        className={tab === "playlists" || tab === "playlist-detail" ? "activeTab" : undefined}
+        onClick={() => tab === "playlist-detail" ? backToPlaylists() : setTab("playlists")}
+      >
+        {tab === "playlist-detail" && selectedPlaylist ? `← ${selectedPlaylist.name}` : "Playlists"}
+      </button>
+    </div>
+  );
+
   return (
     <div className="userProfilePage">
-      <div className="railTabs userProfileTabs">
-        <button
-          type="button"
-          className={tab === "favourites" ? "activeTab" : undefined}
-          onClick={() => setTab("favourites")}
-        >
-          Favourites
-        </button>
-        <button
-          type="button"
-          className={tab === "playlists" || tab === "playlist-detail" ? "activeTab" : undefined}
-          onClick={() => tab === "playlist-detail" ? backToPlaylists() : setTab("playlists")}
-        >
-          {tab === "playlist-detail" && selectedPlaylist ? `← ${selectedPlaylist.name}` : "Playlists"}
-        </button>
+      <div className="favouritesBlindBar userProfileBar">
+        <div className="userProfileHeaderWrap">
+          {user.avatarUrl ? (
+            <Image
+              src={user.avatarUrl}
+              alt=""
+              width={56}
+              height={56}
+              className="userProfileHeaderAvatar"
+            />
+          ) : (
+            <div className="userProfileHeaderAvatarFallback" aria-hidden="true">👤</div>
+          )}
+          <div className="userProfileHeaderContent">
+            <strong>{user.screenName}</strong>
+            {user.bio && <p className="userProfileHeaderBio">{user.bio}</p>}
+            {user.location && (
+              <p className="userProfileHeaderLocation">
+                <span aria-hidden="true">📍</span> {user.location}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="userProfileHeaderTabsSlot">{tabControls}</div>
+        <CloseLink />
       </div>
 
       {tab === "favourites" && (
@@ -105,7 +135,11 @@ export function UserProfilePanel({ user, favourites, playlists }: UserProfilePan
                     <h3 className="categoryVideoTitle">{track.title}</h3>
                   </Link>
                   <div className="actionRow categoryVideoActions">
-                    <AddToPlaylistButton videoId={track.id} />
+                    <AddToPlaylistButton
+                      videoId={track.id}
+                      compact
+                      className="historyCardPlaylistAddButton"
+                    />
                   </div>
                 </article>
               ))}
@@ -177,7 +211,11 @@ export function UserProfilePanel({ user, favourites, playlists }: UserProfilePan
                     <h3 className="categoryVideoTitle">{track.title}</h3>
                   </Link>
                   <div className="actionRow categoryVideoActions">
-                    <AddToPlaylistButton videoId={track.id} />
+                    <AddToPlaylistButton
+                      videoId={track.id}
+                      compact
+                      className="historyCardPlaylistAddButton"
+                    />
                   </div>
                 </article>
               ))}

@@ -32,6 +32,13 @@ type DashboardPayload = {
   traffic: Array<{ day: string; count: number }>;
   analytics: {
     daily: Array<{ day: string; pageViews: number; videoViews: number; uniqueVisitors: number }>;
+    hourly: Array<{
+      bucketStart: string;
+      pageViews: number;
+      videoViews: number;
+      uniqueVisitors: number;
+      authEvents: number;
+    }>;
     newVsRepeat: { newVisitors: number; repeatVisitors: number };
     registrationsPerDay: Array<{ day: string; count: number }>;
     totals: { pageViews: number; videoViews: number; uniqueVisitors: number; sessions: number };
@@ -194,7 +201,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [ambiguousQuery, setAmbiguousQuery] = useState("");
   const [moderatingVideoId, setModeratingVideoId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  const [trafficRangeDays, setTrafficRangeDays] = useState<number>(0);
+  const [refreshingAnalytics, setRefreshingAnalytics] = useState(false);
   const [showHostMetricsGraph, setShowHostMetricsGraph] = useState(false);
   const [hostMetricSeriesOn, setHostMetricSeriesOn] = useState({
     cpu: true,
@@ -209,53 +216,22 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       ? "Avg : n/a\nPeak : n/a"
       : `Avg : ${Math.round(finiteOrNull(dashboard?.health.host.cpuAverageUsagePercent) ?? 0)}%\nPeak : ${Math.round(finiteOrNull(dashboard?.health.host.cpuPeakCoreUsagePercent) ?? 0)}%`;
 
-  const orderedTraffic = useMemo(() => (dashboard?.traffic ?? []).slice().reverse(), [dashboard]);
-  const orderedAnalyticsDaily = useMemo(() => (dashboard?.analytics.daily ?? []).slice().reverse(), [dashboard]);
   const hostMetricRows = useMemo(() => (dashboard?.hostMetrics.minute ?? []).slice(), [dashboard]);
-  const combinedAvailableDays = useMemo(() => {
-    return new Set([
-      ...orderedAnalyticsDaily.map((item) => item.day),
-      ...orderedTraffic.map((item) => item.day),
-    ]).size;
-  }, [orderedAnalyticsDaily, orderedTraffic]);
-  const trafficRangeOptions = useMemo(() => {
-    const available = combinedAvailableDays;
-    const candidates = [3, 7, 14, 30, 60, 90].filter((value) => value <= available);
-
-    if (available > 0 && !candidates.includes(available)) {
-      candidates.push(available);
-    }
-
-    return [0, ...candidates.sort((a, b) => a - b)];
-  }, [combinedAvailableDays]);
   const orderedIngestVelocity = useMemo(() => (dashboard?.insights.ingestVelocity ?? []).slice().reverse(), [dashboard]);
   const orderedGroqSpend = useMemo(() => (dashboard?.insights.groqSpend.daily ?? []).slice().reverse(), [dashboard]);
   const maxIngestCount = useMemo(() => Math.max(1, ...orderedIngestVelocity.map((item) => item.count)), [orderedIngestVelocity]);
   const maxGroqCount = useMemo(() => Math.max(1, ...orderedGroqSpend.map((item) => item.classified + item.errors)), [orderedGroqSpend]);
   const mergedChartRows = useMemo(() => {
-    const analyticsByDay = new Map(
-      orderedAnalyticsDaily.map((item) => [item.day, item]),
-    );
-    const authByDay = new Map(orderedTraffic.map((item) => [item.day, item.count]));
-    const mergedDays = Array.from(new Set([...analyticsByDay.keys(), ...authByDay.keys()])).sort();
-
-    const rows = mergedDays.map((day) => {
-      const analytics = analyticsByDay.get(day);
+    return (dashboard?.analytics.hourly ?? []).map((item) => {
       return {
-        day,
-        pageViews: analytics?.pageViews ?? 0,
-        videoViews: analytics?.videoViews ?? 0,
-        uniqueVisitors: analytics?.uniqueVisitors ?? 0,
-        authEvents: authByDay.get(day) ?? 0,
+        bucketStart: item.bucketStart,
+        pageViews: item.pageViews,
+        videoViews: item.videoViews,
+        uniqueVisitors: item.uniqueVisitors,
+        authEvents: item.authEvents,
       };
     });
-
-    if (!trafficRangeDays || trafficRangeDays <= 0) {
-      return rows;
-    }
-
-    return rows.slice(-trafficRangeDays);
-  }, [orderedAnalyticsDaily, orderedTraffic, trafficRangeDays]);
+  }, [dashboard]);
 
   const [analyticsSeriesOn, setAnalyticsSeriesOn] = useState({ pageViews: true, videoViews: true, visitors: true, authEvents: true });
   const analyticsGraph = useMemo(() => {
@@ -304,7 +280,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         yVideoViews: paddingTop + chartHeight - (item.videoViews / maxVal) * chartHeight,
         yVisitors: paddingTop + chartHeight - (item.uniqueVisitors / maxVal) * chartHeight,
         yAuthEvents: paddingTop + chartHeight - (item.authEvents / maxVal) * chartHeight,
-        day: item.day,
+        bucketStart: item.bucketStart,
         pageViews: item.pageViews,
         videoViews: item.videoViews,
         uniqueVisitors: item.uniqueVisitors,
@@ -320,10 +296,17 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       value: Math.round(maxVal * ratio),
     }));
 
-    const xTicks = points.map((p) => ({
-      x: p.x,
-      label: p.day.includes("-") ? p.day.slice(5) : p.day,
-    }));
+    const tickCount = Math.min(6, points.length);
+    const xTicks = Array.from({ length: tickCount }, (_, index) => {
+      const pointIndex = tickCount === 1 ? 0 : Math.round((index / (tickCount - 1)) * (points.length - 1));
+      const point = points[pointIndex];
+      const bucketDate = new Date(point.bucketStart);
+
+      return {
+        x: point.x,
+        label: bucketDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      };
+    });
 
     return {
       width,
@@ -430,18 +413,12 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     };
   }, [hostMetricRows]);
 
-  useEffect(() => {
-    if (!trafficRangeDays || trafficRangeDays <= 0) {
-      return;
-    }
-
-    if (trafficRangeDays > mergedChartRows.length) {
-      setTrafficRangeDays(0);
-    }
-  }, [mergedChartRows.length, trafficRangeDays]);
-
-  async function loadOverview() {
-    const dashboardPayload = await readJson<DashboardPayload>("/api/admin/dashboard");
+  async function loadOverview(forceRefresh = false) {
+    const query = forceRefresh ? `?refresh=1&t=${Date.now()}` : "";
+    const url = `/api/admin/dashboard${query}`;
+    const dashboardPayload = forceRefresh
+      ? await readNoStoreJson<DashboardPayload>(url)
+      : await readJson<DashboardPayload>(url);
     setDashboard(dashboardPayload);
   }
 
@@ -801,8 +778,30 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
 
           {/* Analytics Chart */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-            <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }}>User analytics · last 30 days</span>
+            <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }}>User analytics · rolling last 24 hours</span>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  setRefreshingAnalytics(true);
+                  try {
+                    await loadOverview(true);
+                  } finally {
+                    setRefreshingAnalytics(false);
+                  }
+                }}
+                disabled={refreshingAnalytics}
+                style={{
+                  borderRadius: 999,
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  background: "rgba(255,255,255,0.04)",
+                  color: "rgba(255,255,255,0.9)",
+                  padding: "7px 12px",
+                  cursor: refreshingAnalytics ? "wait" : "pointer",
+                }}
+              >
+                {refreshingAnalytics ? "Refreshing..." : "Refresh"}
+              </button>
               {(([
                 { key: "pageViews", label: "Page Views", color: "#ff9d5c" },
                 { key: "videoViews", label: "Video Views", color: "#5fc1ff" },
@@ -830,32 +829,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                   {label}
                 </button>
               ))}
-              {trafficRangeOptions.length > 1 ? (
-                <>
-                  <label className="authMessage" htmlFor="trafficRangeSelect" style={{ margin: 0 }}>Date range</label>
-                  <select
-                    id="trafficRangeSelect"
-                    value={String(trafficRangeDays)}
-                    onChange={(event) => {
-                      const parsed = Number(event.target.value);
-                      setTrafficRangeDays(Number.isFinite(parsed) ? parsed : 0);
-                    }}
-                    style={{
-                      borderRadius: 8,
-                      border: "1px solid rgba(255,255,255,0.2)",
-                      background: "rgba(8,8,8,0.82)",
-                      color: "#fff",
-                      padding: "6px 10px",
-                    }}
-                  >
-                    {trafficRangeOptions.map((value) => (
-                      <option key={`traffic-range-${value}`} value={String(value)}>
-                        {value === 0 ? `All (${combinedAvailableDays} days)` : `Last ${value} days`}
-                      </option>
-                    ))}
-                  </select>
-                </>
-              ) : null}
             </div>
           </div>
 
@@ -888,12 +861,12 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                 {analyticsSeriesOn.visitors && <path d={analyticsGraph.visitorsPath} fill="none" stroke="#7ce0a3" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
                 {analyticsSeriesOn.authEvents && <path d={analyticsGraph.authEventsPath} fill="none" stroke="#ffd1c4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
                 {analyticsGraph.points.map((point) => (
-                  <g key={point.day}>
+                  <g key={point.bucketStart}>
                     {analyticsSeriesOn.pageViews && <circle cx={point.x} cy={point.yPageViews} r="3" fill="#ff9d5c" />}
                     {analyticsSeriesOn.videoViews && <circle cx={point.x} cy={point.yVideoViews} r="3" fill="#5fc1ff" />}
                     {analyticsSeriesOn.visitors && <circle cx={point.x} cy={point.yVisitors} r="3" fill="#7ce0a3" />}
                     {analyticsSeriesOn.authEvents && <circle cx={point.x} cy={point.yAuthEvents} r="3" fill="#ffd1c4" />}
-                    <title>{`${point.day} — Page views: ${point.pageViews}, Video views: ${point.videoViews}, Visitors: ${point.uniqueVisitors}, Auth events: ${point.authEvents}`}</title>
+                    <title>{`${new Date(point.bucketStart).toLocaleString()} — Page views: ${point.pageViews}, Video views: ${point.videoViews}, Visitors: ${point.uniqueVisitors}, Auth events: ${point.authEvents}`}</title>
                   </g>
                 ))}
               </>
