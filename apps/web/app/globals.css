@@ -1276,10 +1276,39 @@ h1 {
 }
 
 .userProfileBar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas: "profile tabs close";
   align-items: flex-start;
+  column-gap: 12px;
+}
+
+.userProfileHeaderTabsSlot {
+  grid-area: tabs;
+  justify-self: center;
+  display: grid;
+}
+
+.userProfileBar > .favouritesBlindClose {
+  grid-area: close;
+  justify-self: end;
+}
+
+.userProfileHeaderTabsSlot .userProfileTabs {
+  margin: 0;
+  padding: 0;
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, auto));
+  gap: 8px;
+}
+
+.userProfileHeaderTabsSlot .userProfileTabs button {
+  min-height: 38px;
+  padding: 10px 14px;
 }
 
 .userProfileHeaderWrap {
+  grid-area: profile;
   display: flex;
   gap: 12px;
   align-items: flex-start;
@@ -6199,6 +6228,20 @@ h1 {
   margin-bottom: 20px;
 }
 
+@media (max-width: 880px) {
+  .userProfileBar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "profile close"
+      "tabs tabs";
+    row-gap: 10px;
+  }
+
+  .userProfileHeaderTabsSlot .userProfileTabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .userProfileMeta {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -6271,7 +6314,31 @@ h1 {
 }
 
 .userProfileVideoGrid {
-  grid-template-columns: repeat(auto-fill, minmax(220px, 320px));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@media (max-width: 1400px) {
+  .userProfileVideoGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1120px) {
+  .userProfileVideoGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .userProfileVideoGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .userProfileVideoGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .userProfileEmptyState {

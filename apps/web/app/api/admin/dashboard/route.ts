@@ -16,6 +16,16 @@ function toNumber(value: bigint | number | null | undefined) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function toIsoBucketStart(value: Date | string) {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  const normalized = String(value).replace(" ", "T");
+  const withZone = normalized.endsWith("Z") ? normalized : `${normalized}Z`;
+  return new Date(withZone).toISOString();
+}
+
 const ADMIN_DASHBOARD_CACHE_TTL_MS = 30_000;
 let adminDashboardCache: {
   expiresAt: number;
@@ -31,7 +41,9 @@ export async function GET(request: NextRequest) {
   }
 
   const now = Date.now();
-  if (adminDashboardCache && adminDashboardCache.expiresAt > now) {
+  const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
+
+  if (!forceRefresh && adminDashboardCache && adminDashboardCache.expiresAt > now) {
     return NextResponse.json(adminDashboardCache.payload);
   }
 
@@ -131,7 +143,7 @@ export async function GET(request: NextRequest) {
     `.catch(() => []),
   ]);
 
-  const [analyticsDaily, analyticsNewVsRepeat, registrationsPerDay, analyticsTotals, hostMetricHistory] = await Promise.all([
+  const [analyticsDaily, analyticsHourly, analyticsNewVsRepeat, registrationsPerDay, analyticsTotals, hostMetricHistory] = await Promise.all([
     prisma.$queryRaw<Array<{
       day: Date;
       pageViews: bigint | number;
@@ -148,6 +160,51 @@ export async function GET(request: NextRequest) {
       GROUP BY DATE(created_at)
       ORDER BY day DESC
       LIMIT 30
+    `.catch(() => []),
+    prisma.$queryRaw<Array<{
+      bucketStart: Date | string;
+      pageViews: bigint | number;
+      videoViews: bigint | number;
+      uniqueVisitors: bigint | number;
+      authEvents: bigint | number;
+    }>>`
+      WITH RECURSIVE hour_buckets AS (
+        SELECT
+          DATE_FORMAT(DATE_SUB(DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-%d %H:00:00'), INTERVAL 23 HOUR), '%Y-%m-%d %H:00:00') AS bucket_start,
+          0 AS step
+        UNION ALL
+        SELECT
+          DATE_FORMAT(DATE_ADD(bucket_start, INTERVAL 1 HOUR), '%Y-%m-%d %H:00:00') AS bucket_start,
+          step + 1
+        FROM hour_buckets
+        WHERE step < 23
+      )
+      SELECT
+        hb.bucket_start AS bucketStart,
+        COALESCE(a.pageViews, 0) AS pageViews,
+        COALESCE(a.videoViews, 0) AS videoViews,
+        COALESCE(a.uniqueVisitors, 0) AS uniqueVisitors,
+        COALESCE(t.authEvents, 0) AS authEvents
+      FROM hour_buckets hb
+      LEFT JOIN (
+        SELECT
+          DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') AS bucket_start,
+          SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS pageViews,
+          SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS videoViews,
+          COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS uniqueVisitors
+        FROM analytics_events
+        WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)
+        GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
+      ) a ON a.bucket_start = hb.bucket_start
+      LEFT JOIN (
+        SELECT
+          DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') AS bucket_start,
+          COUNT(*) AS authEvents
+        FROM auth_audit_logs
+        WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)
+        GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
+      ) t ON t.bucket_start = hb.bucket_start
+      ORDER BY hb.bucket_start ASC
     `.catch(() => []),
     prisma.$queryRaw<Array<{ newVisitors: bigint | number; repeatVisitors: bigint | number }>>`
       SELECT
@@ -222,6 +279,13 @@ export async function GET(request: NextRequest) {
         pageViews: toNumber(row.pageViews),
         videoViews: toNumber(row.videoViews),
         uniqueVisitors: toNumber(row.uniqueVisitors),
+      })),
+      hourly: analyticsHourly.map((row) => ({
+        bucketStart: toIsoBucketStart(row.bucketStart),
+        pageViews: toNumber(row.pageViews),
+        videoViews: toNumber(row.videoViews),
+        uniqueVisitors: toNumber(row.uniqueVisitors),
+        authEvents: toNumber(row.authEvents),
       })),
       newVsRepeat: {
         newVisitors: toNumber(analyticsNewVsRepeat[0]?.newVisitors),
