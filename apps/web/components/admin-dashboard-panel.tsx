@@ -8,6 +8,18 @@ function finiteOrNull(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+type AnalyticsBucket = {
+  bucketStart: string;
+  bucketEnd: string;
+  label: string;
+  pageViews: number;
+  videoViews: number;
+  uniqueVisitors: number;
+  authEvents: number;
+};
+
+type AnalyticsZoomLevel = "allTime" | "monthly" | "weekly" | "daily";
+
 type DashboardPayload = {
   meta: { durationMs: number; generatedAt: string };
   health: {
@@ -32,13 +44,19 @@ type DashboardPayload = {
   traffic: Array<{ day: string; count: number }>;
   analytics: {
     daily: Array<{ day: string; pageViews: number; videoViews: number; uniqueVisitors: number }>;
-    hourly: Array<{
+    hourlyRecent: Array<{
       bucketStart: string;
       pageViews: number;
       videoViews: number;
       uniqueVisitors: number;
       authEvents: number;
     }>;
+    series: {
+      allTime: AnalyticsBucket[];
+      monthly: AnalyticsBucket[];
+      weekly: AnalyticsBucket[];
+      daily: AnalyticsBucket[];
+    };
     newVsRepeat: { newVisitors: number; repeatVisitors: number };
     registrationsPerDay: Array<{ day: string; count: number }>;
     totals: { pageViews: number; videoViews: number; uniqueVisitors: number; sessions: number };
@@ -202,6 +220,11 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [moderatingVideoId, setModeratingVideoId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [refreshingAnalytics, setRefreshingAnalytics] = useState(false);
+  const [analyticsZoomLevel, setAnalyticsZoomLevel] = useState<AnalyticsZoomLevel>("allTime");
+  const [selectedAllTimeBucket, setSelectedAllTimeBucket] = useState<AnalyticsBucket | null>(null);
+  const [selectedMonthlyBucket, setSelectedMonthlyBucket] = useState<AnalyticsBucket | null>(null);
+  const [selectedWeeklyBucket, setSelectedWeeklyBucket] = useState<AnalyticsBucket | null>(null);
+  const [selectedDailyBucket, setSelectedDailyBucket] = useState<AnalyticsBucket | null>(null);
   const [showHostMetricsGraph, setShowHostMetricsGraph] = useState(false);
   const [hostMetricSeriesOn, setHostMetricSeriesOn] = useState({
     cpu: true,
@@ -221,17 +244,67 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const orderedGroqSpend = useMemo(() => (dashboard?.insights.groqSpend.daily ?? []).slice().reverse(), [dashboard]);
   const maxIngestCount = useMemo(() => Math.max(1, ...orderedIngestVelocity.map((item) => item.count)), [orderedIngestVelocity]);
   const maxGroqCount = useMemo(() => Math.max(1, ...orderedGroqSpend.map((item) => item.classified + item.errors)), [orderedGroqSpend]);
-  const mergedChartRows = useMemo(() => {
-    return (dashboard?.analytics.hourly ?? []).map((item) => {
+  const filterBucketsWithinRange = (rows: AnalyticsBucket[], range: AnalyticsBucket | null) => {
+    if (!range) {
+      return rows;
+    }
+
+    const filtered = rows.filter((row) => row.bucketStart >= range.bucketStart && row.bucketEnd <= range.bucketEnd);
+    return filtered.length > 0 ? filtered : rows;
+  };
+
+  const analyticsSeries = dashboard?.analytics.series;
+  const displayedAnalyticsRows = useMemo(() => {
+    if (!analyticsSeries) {
+      return [] as AnalyticsBucket[];
+    }
+
+    if (analyticsZoomLevel === "allTime") {
+      return analyticsSeries.allTime;
+    }
+
+    if (analyticsZoomLevel === "monthly") {
+      return filterBucketsWithinRange(analyticsSeries.monthly, selectedAllTimeBucket);
+    }
+
+    if (analyticsZoomLevel === "weekly") {
+      return filterBucketsWithinRange(analyticsSeries.weekly, selectedMonthlyBucket);
+    }
+
+    return filterBucketsWithinRange(analyticsSeries.daily, selectedWeeklyBucket);
+  }, [analyticsSeries, analyticsZoomLevel, selectedAllTimeBucket, selectedMonthlyBucket, selectedWeeklyBucket]);
+
+  const activeDailyBucket = analyticsZoomLevel === "daily" ? selectedDailyBucket : null;
+  const analyticsHourlyDetailRows = useMemo(() => {
+    if (!activeDailyBucket) {
+      return [] as Array<{
+        bucketStart: string;
+        label: string;
+        pageViews: number;
+        videoViews: number;
+        uniqueVisitors: number;
+        authEvents: number;
+      }>;
+    }
+
+    const hourlyMap = new Map((dashboard?.analytics.hourlyRecent ?? []).map((row) => [row.bucketStart, row]));
+    const bucketStart = new Date(activeDailyBucket.bucketStart);
+
+    return Array.from({ length: 24 }, (_, index) => {
+      const pointStart = new Date(bucketStart.getTime() + index * 60 * 60 * 1000);
+      const iso = pointStart.toISOString();
+      const row = hourlyMap.get(iso);
+
       return {
-        bucketStart: item.bucketStart,
-        pageViews: item.pageViews,
-        videoViews: item.videoViews,
-        uniqueVisitors: item.uniqueVisitors,
-        authEvents: item.authEvents,
+        bucketStart: iso,
+        label: pointStart.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        pageViews: row?.pageViews ?? 0,
+        videoViews: row?.videoViews ?? 0,
+        uniqueVisitors: row?.uniqueVisitors ?? 0,
+        authEvents: row?.authEvents ?? 0,
       };
     });
-  }, [dashboard]);
+  }, [activeDailyBucket, dashboard]);
 
   const [analyticsSeriesOn, setAnalyticsSeriesOn] = useState({ pageViews: true, videoViews: true, visitors: true, authEvents: true });
   const analyticsGraph = useMemo(() => {
@@ -242,7 +315,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     const paddingTop = 14;
     const paddingBottom = 46;
 
-    if (mergedChartRows.length === 0) {
+    if (displayedAnalyticsRows.length === 0) {
       return {
         width,
         height,
@@ -266,13 +339,13 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
 
     const maxVal = Math.max(
       1,
-      ...mergedChartRows.map((d) => enabledSeriesMaxPerDay(d)),
+      ...displayedAnalyticsRows.map((d) => enabledSeriesMaxPerDay(d)),
     );
     const chartWidth = width - paddingLeft - paddingRight;
     const chartHeight = height - paddingTop - paddingBottom;
-    const step = mergedChartRows.length > 1 ? chartWidth / (mergedChartRows.length - 1) : 0;
+    const step = displayedAnalyticsRows.length > 1 ? chartWidth / (displayedAnalyticsRows.length - 1) : 0;
 
-    const points = mergedChartRows.map((item, index) => {
+    const points = displayedAnalyticsRows.map((item, index) => {
       const x = paddingLeft + index * step;
       return {
         x,
@@ -281,6 +354,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         yVisitors: paddingTop + chartHeight - (item.uniqueVisitors / maxVal) * chartHeight,
         yAuthEvents: paddingTop + chartHeight - (item.authEvents / maxVal) * chartHeight,
         bucketStart: item.bucketStart,
+        bucketEnd: item.bucketEnd,
+        label: item.label,
         pageViews: item.pageViews,
         videoViews: item.videoViews,
         uniqueVisitors: item.uniqueVisitors,
@@ -300,11 +375,10 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     const xTicks = Array.from({ length: tickCount }, (_, index) => {
       const pointIndex = tickCount === 1 ? 0 : Math.round((index / (tickCount - 1)) * (points.length - 1));
       const point = points[pointIndex];
-      const bucketDate = new Date(point.bucketStart);
 
       return {
         x: point.x,
-        label: bucketDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        label: point.label,
       };
     });
 
@@ -320,7 +394,87 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       visitorsPath: makePath(points.map((p) => p.yVisitors)),
       authEventsPath: makePath(points.map((p) => p.yAuthEvents)),
     };
-  }, [analyticsSeriesOn, mergedChartRows]);
+  }, [analyticsSeriesOn, displayedAnalyticsRows]);
+
+  const analyticsDetailGraph = useMemo(() => {
+    const width = 680;
+    const height = 220;
+    const paddingLeft = 46;
+    const paddingRight = 20;
+    const paddingTop = 14;
+    const paddingBottom = 38;
+
+    if (analyticsHourlyDetailRows.length === 0) {
+      return {
+        width,
+        height,
+        pageViewsPath: "",
+        videoViewsPath: "",
+        visitorsPath: "",
+        authEventsPath: "",
+        yTicks: [] as Array<{ y: number; value: number }>,
+        xTicks: [] as Array<{ x: number; label: string }>,
+        points: [] as Array<{
+          x: number;
+          bucketStart: string;
+          label: string;
+          pageViews: number;
+          videoViews: number;
+          uniqueVisitors: number;
+          authEvents: number;
+          yPageViews: number;
+          yVideoViews: number;
+          yVisitors: number;
+          yAuthEvents: number;
+        }>,
+      };
+    }
+
+    const enabledSeriesMaxPerHour = (row: { pageViews: number; videoViews: number; uniqueVisitors: number; authEvents: number }) => Math.max(
+      analyticsSeriesOn.pageViews ? row.pageViews : 0,
+      analyticsSeriesOn.videoViews ? row.videoViews : 0,
+      analyticsSeriesOn.visitors ? row.uniqueVisitors : 0,
+      analyticsSeriesOn.authEvents ? row.authEvents : 0,
+    );
+
+    const maxVal = Math.max(1, ...analyticsHourlyDetailRows.map((row) => enabledSeriesMaxPerHour(row)));
+    const chartWidth = width - paddingLeft - paddingRight;
+    const chartHeight = height - paddingTop - paddingBottom;
+    const step = analyticsHourlyDetailRows.length > 1 ? chartWidth / (analyticsHourlyDetailRows.length - 1) : 0;
+
+    const points = analyticsHourlyDetailRows.map((item, index) => ({
+      x: paddingLeft + index * step,
+      bucketStart: item.bucketStart,
+      label: item.label,
+      pageViews: item.pageViews,
+      videoViews: item.videoViews,
+      uniqueVisitors: item.uniqueVisitors,
+      authEvents: item.authEvents,
+      yPageViews: paddingTop + chartHeight - (item.pageViews / maxVal) * chartHeight,
+      yVideoViews: paddingTop + chartHeight - (item.videoViews / maxVal) * chartHeight,
+      yVisitors: paddingTop + chartHeight - (item.uniqueVisitors / maxVal) * chartHeight,
+      yAuthEvents: paddingTop + chartHeight - (item.authEvents / maxVal) * chartHeight,
+    }));
+
+    const makePath = (ys: number[]) => ys.map((y, i) => `${i === 0 ? "M" : "L"} ${(paddingLeft + i * step).toFixed(2)} ${y.toFixed(2)}`).join(" ");
+    const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
+      y: paddingTop + chartHeight - ratio * chartHeight,
+      value: Math.round(maxVal * ratio),
+    }));
+    const xTicks = points.filter((_, index) => index % 4 === 0 || index === points.length - 1).map((point) => ({ x: point.x, label: point.label }));
+
+    return {
+      width,
+      height,
+      yTicks,
+      xTicks,
+      points,
+      pageViewsPath: makePath(points.map((point) => point.yPageViews)),
+      videoViewsPath: makePath(points.map((point) => point.yVideoViews)),
+      visitorsPath: makePath(points.map((point) => point.yVisitors)),
+      authEventsPath: makePath(points.map((point) => point.yAuthEvents)),
+    };
+  }, [analyticsHourlyDetailRows, analyticsSeriesOn]);
 
   const hostMetricsGraph = useMemo(() => {
     const width = 680;
@@ -778,8 +932,45 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
 
           {/* Analytics Chart */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-            <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }}>User analytics · rolling last 24 hours</span>
+            <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+              {analyticsZoomLevel === "allTime"
+                ? "User analytics · all time overview"
+                : analyticsZoomLevel === "monthly"
+                  ? "User analytics · rolling monthly buckets"
+                  : analyticsZoomLevel === "weekly"
+                    ? "User analytics · rolling weekly buckets"
+                    : "User analytics · rolling daily buckets"}
+            </span>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {([
+                { key: "allTime", label: "All time" },
+                { key: "monthly", label: "Monthly" },
+                { key: "weekly", label: "Weekly" },
+                { key: "daily", label: "Daily" },
+              ] as Array<{ key: AnalyticsZoomLevel; label: string }>).map(({ key, label }) => (
+                <button
+                  key={`analytics-zoom-${key}`}
+                  type="button"
+                  onClick={() => {
+                    setAnalyticsZoomLevel(key);
+                    setSelectedAllTimeBucket(null);
+                    setSelectedMonthlyBucket(null);
+                    setSelectedWeeklyBucket(null);
+                    setSelectedDailyBucket(null);
+                  }}
+                  style={{
+                    borderRadius: 999,
+                    border: `1px solid ${analyticsZoomLevel === key ? "rgba(255,157,92,0.6)" : "rgba(255,255,255,0.12)"}`,
+                    background: analyticsZoomLevel === key ? "rgba(255,157,92,0.16)" : "transparent",
+                    color: analyticsZoomLevel === key ? "#ff9d5c" : "rgba(255,255,255,0.78)",
+                    padding: "6px 11px",
+                    cursor: "pointer",
+                    fontSize: 11,
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
               <button
                 type="button"
                 onClick={async () => {
@@ -832,6 +1023,16 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
             </div>
           </div>
 
+          <p className="authMessage" style={{ margin: 0 }}>
+            {analyticsZoomLevel === "allTime"
+              ? "Click a bucket to zoom into monthly traffic."
+              : analyticsZoomLevel === "monthly"
+                ? "Click a bucket to zoom into weekly traffic for that month window."
+                : analyticsZoomLevel === "weekly"
+                  ? "Click a bucket to zoom into daily traffic for that week window."
+                  : "Click a daily bucket to view the hourly 24h breakdown below."}
+          </p>
+
           <svg
             viewBox={analyticsGraph.points.length > 0 ? `0 0 ${analyticsGraph.width} ${analyticsGraph.height}` : "0 0 680 250"}
             role="img"
@@ -861,17 +1062,148 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                 {analyticsSeriesOn.visitors && <path d={analyticsGraph.visitorsPath} fill="none" stroke="#7ce0a3" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
                 {analyticsSeriesOn.authEvents && <path d={analyticsGraph.authEventsPath} fill="none" stroke="#ffd1c4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
                 {analyticsGraph.points.map((point) => (
-                  <g key={point.bucketStart}>
-                    {analyticsSeriesOn.pageViews && <circle cx={point.x} cy={point.yPageViews} r="3" fill="#ff9d5c" />}
-                    {analyticsSeriesOn.videoViews && <circle cx={point.x} cy={point.yVideoViews} r="3" fill="#5fc1ff" />}
-                    {analyticsSeriesOn.visitors && <circle cx={point.x} cy={point.yVisitors} r="3" fill="#7ce0a3" />}
-                    {analyticsSeriesOn.authEvents && <circle cx={point.x} cy={point.yAuthEvents} r="3" fill="#ffd1c4" />}
-                    <title>{`${new Date(point.bucketStart).toLocaleString()} — Page views: ${point.pageViews}, Video views: ${point.videoViews}, Visitors: ${point.uniqueVisitors}, Auth events: ${point.authEvents}`}</title>
+                  <g
+                    key={`${point.bucketStart}-${point.bucketEnd}`}
+                    onClick={() => {
+                      if (analyticsZoomLevel === "allTime") {
+                        setSelectedAllTimeBucket({
+                          bucketStart: point.bucketStart,
+                          bucketEnd: point.bucketEnd,
+                          label: point.label,
+                          pageViews: point.pageViews,
+                          videoViews: point.videoViews,
+                          uniqueVisitors: point.uniqueVisitors,
+                          authEvents: point.authEvents,
+                        });
+                        setSelectedMonthlyBucket(null);
+                        setSelectedWeeklyBucket(null);
+                        setSelectedDailyBucket(null);
+                        setAnalyticsZoomLevel("monthly");
+                        return;
+                      }
+
+                      if (analyticsZoomLevel === "monthly") {
+                        setSelectedMonthlyBucket({
+                          bucketStart: point.bucketStart,
+                          bucketEnd: point.bucketEnd,
+                          label: point.label,
+                          pageViews: point.pageViews,
+                          videoViews: point.videoViews,
+                          uniqueVisitors: point.uniqueVisitors,
+                          authEvents: point.authEvents,
+                        });
+                        setSelectedWeeklyBucket(null);
+                        setSelectedDailyBucket(null);
+                        setAnalyticsZoomLevel("weekly");
+                        return;
+                      }
+
+                      if (analyticsZoomLevel === "weekly") {
+                        setSelectedWeeklyBucket({
+                          bucketStart: point.bucketStart,
+                          bucketEnd: point.bucketEnd,
+                          label: point.label,
+                          pageViews: point.pageViews,
+                          videoViews: point.videoViews,
+                          uniqueVisitors: point.uniqueVisitors,
+                          authEvents: point.authEvents,
+                        });
+                        setSelectedDailyBucket(null);
+                        setAnalyticsZoomLevel("daily");
+                        return;
+                      }
+
+                      setSelectedDailyBucket({
+                        bucketStart: point.bucketStart,
+                        bucketEnd: point.bucketEnd,
+                        label: point.label,
+                        pageViews: point.pageViews,
+                        videoViews: point.videoViews,
+                        uniqueVisitors: point.uniqueVisitors,
+                        authEvents: point.authEvents,
+                      });
+                    }}
+                    style={{ cursor: "pointer" }}
+                  >
+                    {analyticsSeriesOn.pageViews && <circle cx={point.x} cy={point.yPageViews} r="3.5" fill="#ff9d5c" />}
+                    {analyticsSeriesOn.videoViews && <circle cx={point.x} cy={point.yVideoViews} r="3.5" fill="#5fc1ff" />}
+                    {analyticsSeriesOn.visitors && <circle cx={point.x} cy={point.yVisitors} r="3.5" fill="#7ce0a3" />}
+                    {analyticsSeriesOn.authEvents && <circle cx={point.x} cy={point.yAuthEvents} r="3.5" fill="#ffd1c4" />}
+                    <title>{`${point.label} (${new Date(point.bucketStart).toLocaleString()} - ${new Date(point.bucketEnd).toLocaleString()}) — Page views: ${point.pageViews}, Video views: ${point.videoViews}, Visitors: ${point.uniqueVisitors}, Auth events: ${point.authEvents}`}</title>
                   </g>
                 ))}
               </>
             )}
           </svg>
+
+          {analyticsZoomLevel === "daily" ? (
+            selectedDailyBucket ? (
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                  <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                    Hourly detail · {selectedDailyBucket.label}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDailyBucket(null)}
+                    style={{
+                      borderRadius: 999,
+                      border: "1px solid rgba(255,255,255,0.18)",
+                      background: "rgba(255,255,255,0.04)",
+                      color: "rgba(255,255,255,0.86)",
+                      padding: "6px 11px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Hide 24h detail
+                  </button>
+                </div>
+
+                <svg
+                  viewBox={analyticsDetailGraph.points.length > 0 ? `0 0 ${analyticsDetailGraph.width} ${analyticsDetailGraph.height}` : "0 0 680 220"}
+                  role="img"
+                  aria-label="Hourly analytics chart for selected 24-hour period"
+                  style={{ width: "100%", height: "auto", borderRadius: 10, background: "rgba(255,255,255,0.04)" }}
+                >
+                  {analyticsDetailGraph.points.length === 0 ? (
+                    <text x="340" y="110" textAnchor="middle" fill="rgba(255,255,255,0.2)" style={{ fontSize: 13 }}>No hourly detail available</text>
+                  ) : (
+                    <>
+                      {analyticsDetailGraph.yTicks.map((tick) => (
+                        <g key={`dy-${tick.value}-${tick.y.toFixed(1)}`}>
+                          <line x1="46" y1={String(tick.y)} x2="660" y2={String(tick.y)} stroke="rgba(255,255,255,0.14)" strokeWidth="1" />
+                          <text x="40" y={String(tick.y + 3)} textAnchor="end" fill="rgba(255,255,255,0.78)" style={{ fontSize: 10, fontVariantNumeric: "tabular-nums" }}>{tick.value}</text>
+                        </g>
+                      ))}
+                      {analyticsDetailGraph.xTicks.map((tick) => (
+                        <g key={`dx-${tick.label}-${tick.x.toFixed(1)}`}>
+                          <line x1={String(tick.x)} y1="14" x2={String(tick.x)} y2="182" stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
+                          <text x={String(tick.x)} y="208" textAnchor="middle" fill="rgba(255,255,255,0.78)" style={{ fontSize: 10 }}>{tick.label}</text>
+                        </g>
+                      ))}
+                      <line x1="46" y1="14" x2="46" y2="182" stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
+                      <line x1="46" y1="182" x2="660" y2="182" stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
+                      {analyticsSeriesOn.pageViews && <path d={analyticsDetailGraph.pageViewsPath} fill="none" stroke="#ff9d5c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+                      {analyticsSeriesOn.videoViews && <path d={analyticsDetailGraph.videoViewsPath} fill="none" stroke="#5fc1ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+                      {analyticsSeriesOn.visitors && <path d={analyticsDetailGraph.visitorsPath} fill="none" stroke="#7ce0a3" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+                      {analyticsSeriesOn.authEvents && <path d={analyticsDetailGraph.authEventsPath} fill="none" stroke="#ffd1c4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+                      {analyticsDetailGraph.points.map((point) => (
+                        <g key={`detail-${point.bucketStart}`}>
+                          {analyticsSeriesOn.pageViews && <circle cx={point.x} cy={point.yPageViews} r="3" fill="#ff9d5c" />}
+                          {analyticsSeriesOn.videoViews && <circle cx={point.x} cy={point.yVideoViews} r="3" fill="#5fc1ff" />}
+                          {analyticsSeriesOn.visitors && <circle cx={point.x} cy={point.yVisitors} r="3" fill="#7ce0a3" />}
+                          {analyticsSeriesOn.authEvents && <circle cx={point.x} cy={point.yAuthEvents} r="3" fill="#ffd1c4" />}
+                          <title>{`${new Date(point.bucketStart).toLocaleString()} — Page views: ${point.pageViews}, Video views: ${point.videoViews}, Visitors: ${point.uniqueVisitors}, Auth events: ${point.authEvents}`}</title>
+                        </g>
+                      ))}
+                    </>
+                  )}
+                </svg>
+              </div>
+            ) : (
+              <p className="authMessage">Select a daily bucket above to see the 24-hour hourly breakdown.</p>
+            )
+          ) : null}
         </div>
       ) : null}
 
