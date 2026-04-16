@@ -26,6 +26,123 @@ function toIsoBucketStart(value: Date | string) {
   return new Date(withZone).toISOString();
 }
 
+type AnalyticsSeriesBucket = {
+  bucketStart: string;
+  bucketEnd: string;
+  label: string;
+  pageViews: number;
+  videoViews: number;
+  uniqueVisitors: number;
+  authEvents: number;
+};
+
+function addUtcMonths(date: Date, months: number) {
+  const next = new Date(date);
+  next.setUTCMonth(next.getUTCMonth() + months);
+  return next;
+}
+
+function countMonthsInclusive(start: Date, end: Date) {
+  return Math.max(1, ((end.getUTCFullYear() - start.getUTCFullYear()) * 12) + (end.getUTCMonth() - start.getUTCMonth()) + 1);
+}
+
+function formatDateLabel(date: Date) {
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function formatMonthLabel(date: Date) {
+  return date.toLocaleDateString([], { month: "short", year: "numeric" });
+}
+
+function buildRangeLabel(start: Date, end: Date, mode: "daily" | "weekly" | "monthly" | "allTime", bucketMonths = 1) {
+  if (mode === "daily") {
+    return formatDateLabel(end);
+  }
+
+  if (mode === "weekly") {
+    return `${formatDateLabel(start)} - ${formatDateLabel(end)}`;
+  }
+
+  if (mode === "monthly") {
+    return formatMonthLabel(end);
+  }
+
+  if (bucketMonths <= 1) {
+    return formatMonthLabel(end);
+  }
+
+  return `${formatMonthLabel(start)} - ${formatMonthLabel(end)}`;
+}
+
+async function readAnalyticsBucketMetrics(bucketStart: Date, bucketEnd: Date) {
+  const [analyticsRows, authRows] = await Promise.all([
+    prisma.$queryRaw<Array<{
+      pageViews: bigint | number;
+      videoViews: bigint | number;
+      uniqueVisitors: bigint | number;
+    }>>`
+      SELECT
+        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS pageViews,
+        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS videoViews,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS uniqueVisitors
+      FROM analytics_events
+      WHERE created_at >= ${bucketStart}
+        AND created_at < ${bucketEnd}
+    `.catch(() => []),
+    prisma.$queryRaw<Array<{ authEvents: bigint | number }>>`
+      SELECT COUNT(*) AS authEvents
+      FROM auth_audit_logs
+      WHERE created_at >= ${bucketStart}
+        AND created_at < ${bucketEnd}
+    `.catch(() => []),
+  ]);
+
+  return {
+    pageViews: toNumber(analyticsRows[0]?.pageViews),
+    videoViews: toNumber(analyticsRows[0]?.videoViews),
+    uniqueVisitors: toNumber(analyticsRows[0]?.uniqueVisitors),
+    authEvents: toNumber(authRows[0]?.authEvents),
+  };
+}
+
+async function buildRollingAnalyticsSeries(
+  nowDate: Date,
+  mode: "daily" | "weekly" | "monthly" | "allTime",
+  options?: { bucketCount?: number; bucketMonths?: number },
+): Promise<AnalyticsSeriesBucket[]> {
+  const bucketCount = options?.bucketCount ?? 12;
+  const bucketMonths = options?.bucketMonths ?? 1;
+
+  const bucketDefs = Array.from({ length: bucketCount }, (_, index) => {
+    const reverseIndex = bucketCount - index - 1;
+
+    if (mode === "daily") {
+      const bucketEnd = new Date(nowDate.getTime() - reverseIndex * 24 * 60 * 60 * 1000);
+      const bucketStart = new Date(bucketEnd.getTime() - 24 * 60 * 60 * 1000);
+      return { bucketStart, bucketEnd };
+    }
+
+    if (mode === "weekly") {
+      const bucketEnd = new Date(nowDate.getTime() - reverseIndex * 7 * 24 * 60 * 60 * 1000);
+      const bucketStart = new Date(bucketEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
+      return { bucketStart, bucketEnd };
+    }
+
+    const bucketEnd = addUtcMonths(nowDate, -(reverseIndex * bucketMonths));
+    const bucketStart = addUtcMonths(bucketEnd, -bucketMonths);
+    return { bucketStart, bucketEnd };
+  });
+
+  const metrics = await Promise.all(bucketDefs.map((bucket) => readAnalyticsBucketMetrics(bucket.bucketStart, bucket.bucketEnd)));
+
+  return bucketDefs.map((bucket, index) => ({
+    bucketStart: bucket.bucketStart.toISOString(),
+    bucketEnd: bucket.bucketEnd.toISOString(),
+    label: buildRangeLabel(bucket.bucketStart, bucket.bucketEnd, mode, bucketMonths),
+    ...metrics[index],
+  }));
+}
+
 const ADMIN_DASHBOARD_CACHE_TTL_MS = 30_000;
 let adminDashboardCache: {
   expiresAt: number;
@@ -143,7 +260,7 @@ export async function GET(request: NextRequest) {
     `.catch(() => []),
   ]);
 
-  const [analyticsDaily, analyticsHourly, analyticsNewVsRepeat, registrationsPerDay, analyticsTotals, hostMetricHistory] = await Promise.all([
+  const [analyticsDaily, hourlyRecentAnalytics, hourlyRecentAuth, analyticsNewVsRepeat, registrationsPerDay, analyticsTotals, hostMetricHistory, earliestAnalyticsAt, earliestAuthAt] = await Promise.all([
     prisma.$queryRaw<Array<{
       day: Date;
       pageViews: bigint | number;
@@ -166,45 +283,25 @@ export async function GET(request: NextRequest) {
       pageViews: bigint | number;
       videoViews: bigint | number;
       uniqueVisitors: bigint | number;
-      authEvents: bigint | number;
     }>>`
-      WITH RECURSIVE hour_buckets AS (
-        SELECT
-          DATE_FORMAT(DATE_SUB(DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-%d %H:00:00'), INTERVAL 23 HOUR), '%Y-%m-%d %H:00:00') AS bucket_start,
-          0 AS step
-        UNION ALL
-        SELECT
-          DATE_FORMAT(DATE_ADD(bucket_start, INTERVAL 1 HOUR), '%Y-%m-%d %H:00:00') AS bucket_start,
-          step + 1
-        FROM hour_buckets
-        WHERE step < 23
-      )
       SELECT
-        hb.bucket_start AS bucketStart,
-        COALESCE(a.pageViews, 0) AS pageViews,
-        COALESCE(a.videoViews, 0) AS videoViews,
-        COALESCE(a.uniqueVisitors, 0) AS uniqueVisitors,
-        COALESCE(t.authEvents, 0) AS authEvents
-      FROM hour_buckets hb
-      LEFT JOIN (
-        SELECT
-          DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') AS bucket_start,
-          SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS pageViews,
-          SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS videoViews,
-          COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS uniqueVisitors
-        FROM analytics_events
-        WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)
-        GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
-      ) a ON a.bucket_start = hb.bucket_start
-      LEFT JOIN (
-        SELECT
-          DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') AS bucket_start,
-          COUNT(*) AS authEvents
-        FROM auth_audit_logs
-        WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)
-        GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
-      ) t ON t.bucket_start = hb.bucket_start
-      ORDER BY hb.bucket_start ASC
+        DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') AS bucketStart,
+        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS pageViews,
+        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS videoViews,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS uniqueVisitors
+      FROM analytics_events
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
+      GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
+      ORDER BY bucketStart ASC
+    `.catch(() => []),
+    prisma.$queryRaw<Array<{ bucketStart: Date | string; authEvents: bigint | number }>>`
+      SELECT
+        DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') AS bucketStart,
+        COUNT(*) AS authEvents
+      FROM auth_audit_logs
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
+      GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
+      ORDER BY bucketStart ASC
     `.catch(() => []),
     prisma.$queryRaw<Array<{ newVisitors: bigint | number; repeatVisitors: bigint | number }>>`
       SELECT
@@ -237,7 +334,45 @@ export async function GET(request: NextRequest) {
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
     `.catch(() => []),
     readAdminHostMetricHistory(),
+    prisma.$queryRaw<Array<{ earliestAt: Date | null }>>`
+      SELECT MIN(created_at) AS earliestAt
+      FROM analytics_events
+    `.catch(() => []),
+    prisma.$queryRaw<Array<{ earliestAt: Date | null }>>`
+      SELECT MIN(created_at) AS earliestAt
+      FROM auth_audit_logs
+    `.catch(() => []),
   ]);
+
+  const nowDate = new Date();
+  const earliestCandidates = [earliestAnalyticsAt[0]?.earliestAt, earliestAuthAt[0]?.earliestAt].filter(
+    (value): value is Date => value instanceof Date,
+  );
+  const earliestRecordAt = earliestCandidates.length > 0
+    ? new Date(Math.min(...earliestCandidates.map((value) => value.getTime())))
+    : null;
+  const allTimeMonthSpan = earliestRecordAt ? countMonthsInclusive(earliestRecordAt, nowDate) : 1;
+  const allTimeBucketMonths = Math.max(1, Math.ceil(allTimeMonthSpan / 12));
+  const allTimeBucketCount = Math.min(12, Math.max(1, Math.ceil(allTimeMonthSpan / allTimeBucketMonths)));
+
+  const [allTimeSeries, monthlySeries, weeklySeries, dailySeries] = await Promise.all([
+    buildRollingAnalyticsSeries(nowDate, "allTime", { bucketCount: allTimeBucketCount, bucketMonths: allTimeBucketMonths }),
+    buildRollingAnalyticsSeries(nowDate, "monthly", { bucketCount: 12, bucketMonths: 1 }),
+    buildRollingAnalyticsSeries(nowDate, "weekly", { bucketCount: 12 }),
+    buildRollingAnalyticsSeries(nowDate, "daily", { bucketCount: 12 }),
+  ]);
+
+  const authByHour = new Map(hourlyRecentAuth.map((row) => [toIsoBucketStart(row.bucketStart), toNumber(row.authEvents)]));
+  const hourlyRecent = hourlyRecentAnalytics.map((row) => {
+    const bucketStart = toIsoBucketStart(row.bucketStart);
+    return {
+      bucketStart,
+      pageViews: toNumber(row.pageViews),
+      videoViews: toNumber(row.videoViews),
+      uniqueVisitors: toNumber(row.uniqueVisitors),
+      authEvents: authByHour.get(bucketStart) ?? 0,
+    };
+  });
 
   const wikiCacheCount = await (async () => {
     try {
@@ -280,13 +415,13 @@ export async function GET(request: NextRequest) {
         videoViews: toNumber(row.videoViews),
         uniqueVisitors: toNumber(row.uniqueVisitors),
       })),
-      hourly: analyticsHourly.map((row) => ({
-        bucketStart: toIsoBucketStart(row.bucketStart),
-        pageViews: toNumber(row.pageViews),
-        videoViews: toNumber(row.videoViews),
-        uniqueVisitors: toNumber(row.uniqueVisitors),
-        authEvents: toNumber(row.authEvents),
-      })),
+      hourlyRecent,
+      series: {
+        allTime: allTimeSeries,
+        monthly: monthlySeries,
+        weekly: weeklySeries,
+        daily: dailySeries,
+      },
       newVsRepeat: {
         newVisitors: toNumber(analyticsNewVsRepeat[0]?.newVisitors),
         repeatVisitors: toNumber(analyticsNewVsRepeat[0]?.repeatVisitors),
