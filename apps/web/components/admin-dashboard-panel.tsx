@@ -36,6 +36,16 @@ type DashboardPayload = {
     registrationsPerDay: Array<{ day: string; count: number }>;
     totals: { pageViews: number; videoViews: number; uniqueVisitors: number; sessions: number };
   };
+  hostMetrics: {
+    minute: Array<{
+      bucketStart: string;
+      cpuUsagePercent: number | null;
+      memoryUsagePercent: number | null;
+      swapUsagePercent: number | null;
+      diskUsagePercent: number | null;
+      networkUsagePercent: number | null;
+    }>;
+  };
   insights: {
     auth24h: {
       total: number;
@@ -185,6 +195,14 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [moderatingVideoId, setModeratingVideoId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [trafficRangeDays, setTrafficRangeDays] = useState<number>(0);
+  const [showHostMetricsGraph, setShowHostMetricsGraph] = useState(false);
+  const [hostMetricSeriesOn, setHostMetricSeriesOn] = useState({
+    cpu: true,
+    memory: true,
+    swap: true,
+    disk: true,
+    network: true,
+  });
   const cpuAvgPeakText =
     finiteOrNull(dashboard?.health.host.cpuAverageUsagePercent) === null ||
     finiteOrNull(dashboard?.health.host.cpuPeakCoreUsagePercent) === null
@@ -193,6 +211,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
 
   const orderedTraffic = useMemo(() => (dashboard?.traffic ?? []).slice().reverse(), [dashboard]);
   const orderedAnalyticsDaily = useMemo(() => (dashboard?.analytics.daily ?? []).slice().reverse(), [dashboard]);
+  const hostMetricRows = useMemo(() => (dashboard?.hostMetrics.minute ?? []).slice(), [dashboard]);
   const combinedAvailableDays = useMemo(() => {
     return new Set([
       ...orderedAnalyticsDaily.map((item) => item.day),
@@ -319,6 +338,97 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       authEventsPath: makePath(points.map((p) => p.yAuthEvents)),
     };
   }, [analyticsSeriesOn, mergedChartRows]);
+
+  const hostMetricsGraph = useMemo(() => {
+    const width = 680;
+    const height = 220;
+    const paddingLeft = 46;
+    const paddingRight = 20;
+    const paddingTop = 14;
+    const paddingBottom = 38;
+
+    if (hostMetricRows.length === 0) {
+      return {
+        width,
+        height,
+        cpuPath: "",
+        memoryPath: "",
+        swapPath: "",
+        diskPath: "",
+        networkPath: "",
+        xTicks: [] as Array<{ x: number; label: string }>,
+        yTicks: [] as Array<{ y: number; value: number }>,
+      };
+    }
+
+    const chartWidth = width - paddingLeft - paddingRight;
+    const chartHeight = height - paddingTop - paddingBottom;
+    const percentToY = (value: number) => paddingTop + chartHeight - (Math.max(0, Math.min(100, value)) / 100) * chartHeight;
+    const xForIndex = (index: number) => {
+      if (hostMetricRows.length === 1) {
+        return paddingLeft + chartWidth / 2;
+      }
+
+      return paddingLeft + (index / (hostMetricRows.length - 1)) * chartWidth;
+    };
+
+    const points = hostMetricRows.map((row, index) => ({
+      x: xForIndex(index),
+      cpu: finiteOrNull(row.cpuUsagePercent),
+      memory: finiteOrNull(row.memoryUsagePercent),
+      swap: finiteOrNull(row.swapUsagePercent),
+      disk: finiteOrNull(row.diskUsagePercent),
+      network: finiteOrNull(row.networkUsagePercent),
+      bucketStart: row.bucketStart,
+    }));
+
+    const makePath = (values: Array<number | null>) => {
+      let path = "";
+
+      values.forEach((value, index) => {
+        if (value === null) {
+          return;
+        }
+
+        const command = path === "" || values[index - 1] === null ? "M" : "L";
+        path += `${command}${points[index].x.toFixed(1)},${percentToY(value).toFixed(1)}`;
+      });
+
+      return path;
+    };
+
+    const tickCount = Math.min(6, hostMetricRows.length);
+    const xTicks = Array.from({ length: tickCount }, (_, tickIndex) => {
+      const rowIndex = tickCount === 1
+        ? 0
+        : Math.round((tickIndex / (tickCount - 1)) * (hostMetricRows.length - 1));
+      const row = hostMetricRows[rowIndex];
+      const date = new Date(row.bucketStart);
+      const label = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+      return {
+        x: xForIndex(rowIndex),
+        label,
+      };
+    });
+
+    const yTicks = [0, 25, 50, 75, 100].map((value) => ({
+      value,
+      y: percentToY(value),
+    }));
+
+    return {
+      width,
+      height,
+      cpuPath: makePath(points.map((point) => point.cpu)),
+      memoryPath: makePath(points.map((point) => point.memory)),
+      swapPath: makePath(points.map((point) => point.swap)),
+      diskPath: makePath(points.map((point) => point.disk)),
+      networkPath: makePath(points.map((point) => point.network)),
+      xTicks,
+      yTicks,
+    };
+  }, [hostMetricRows]);
 
   useEffect(() => {
     if (!trafficRangeDays || trafficRangeDays <= 0) {
@@ -585,6 +695,23 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
 
       {activeTab === "overview" ? (
         <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }}>Host health · live dials + 24h history</span>
+            <button
+              type="button"
+              onClick={() => setShowHostMetricsGraph((previous) => !previous)}
+              style={{
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,0.18)",
+                background: showHostMetricsGraph ? "rgba(95,193,255,0.14)" : "rgba(255,255,255,0.04)",
+                color: showHostMetricsGraph ? "#5fc1ff" : "rgba(255,255,255,0.82)",
+                padding: "7px 12px",
+                cursor: "pointer",
+              }}
+            >
+              {showHostMetricsGraph ? "Hide 24h graph" : "View 24h graph"}
+            </button>
+          </div>
           <div className="adminOverviewHealthLayout">
             <div className="adminOverviewDials">
               <Dial label="Memory" value={dashboard?.health.host.memoryUsagePercent ?? null} color="#ffc14d" />
@@ -599,6 +726,78 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
               <div><strong>Artists</strong><p>{dashboard?.counts.artists ?? 0}</p></div>
             </div>
           </div>
+
+          {showHostMetricsGraph ? (
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }}>Host metrics · last 24 hours · 1 minute buckets</span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  {([
+                    { key: "cpu", label: "CPU", color: "#ff6f43" },
+                    { key: "memory", label: "Memory", color: "#ffc14d" },
+                    { key: "swap", label: "Swap", color: "#f5d96b" },
+                    { key: "disk", label: "Disk", color: "#7ce0a3" },
+                    { key: "network", label: "Network", color: "#5fc1ff" },
+                  ] as Array<{ key: keyof typeof hostMetricSeriesOn; label: string; color: string }>).map(({ key, label, color }) => (
+                    <button
+                      key={`host-metric-${key}`}
+                      type="button"
+                      onClick={() => setHostMetricSeriesOn((previous) => ({ ...previous, [key]: !previous[key] }))}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 5,
+                        padding: "3px 8px",
+                        borderRadius: 20,
+                        border: `1px solid ${hostMetricSeriesOn[key] ? color : "rgba(255,255,255,0.12)"}`,
+                        background: hostMetricSeriesOn[key] ? `${color}22` : "transparent",
+                        color: hostMetricSeriesOn[key] ? color : "rgba(255,255,255,0.35)",
+                        fontSize: 11,
+                        cursor: "pointer",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke={hostMetricSeriesOn[key] ? color : "rgba(255,255,255,0.25)"} strokeWidth="2" strokeDasharray={hostMetricSeriesOn[key] ? undefined : "3 2"} /></svg>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <svg
+                viewBox={hostMetricRows.length > 0 ? `0 0 ${hostMetricsGraph.width} ${hostMetricsGraph.height}` : "0 0 680 220"}
+                role="img"
+                aria-label="Host metrics chart — CPU, memory, swap, disk, network over the last 24 hours"
+                style={{ width: "100%", height: "auto", borderRadius: 10, background: "rgba(255,255,255,0.04)" }}
+              >
+                {hostMetricRows.length === 0 ? (
+                  <text x="340" y="110" textAnchor="middle" fill="rgba(255,255,255,0.2)" style={{ fontSize: 13 }}>Collecting host metric history...</text>
+                ) : (
+                  <>
+                    {hostMetricsGraph.yTicks.map((tick) => (
+                      <g key={`hy-${tick.value}-${tick.y.toFixed(1)}`}>
+                        <line x1="46" y1={String(tick.y)} x2="660" y2={String(tick.y)} stroke="rgba(255,255,255,0.14)" strokeWidth="1" />
+                        <text x="40" y={String(tick.y + 3)} textAnchor="end" fill="rgba(255,255,255,0.78)" style={{ fontSize: 10, fontVariantNumeric: "tabular-nums" }}>{tick.value}%</text>
+                      </g>
+                    ))}
+                    {hostMetricsGraph.xTicks.map((tick) => (
+                      <g key={`hx-${tick.label}-${tick.x.toFixed(1)}`}>
+                        <line x1={String(tick.x)} y1="14" x2={String(tick.x)} y2="182" stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
+                        <text x={String(tick.x)} y="208" textAnchor="middle" fill="rgba(255,255,255,0.78)" style={{ fontSize: 10 }}>{tick.label}</text>
+                      </g>
+                    ))}
+                    <line x1="46" y1="14" x2="46" y2="182" stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
+                    <line x1="46" y1="182" x2="660" y2="182" stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
+                    {hostMetricSeriesOn.cpu && <path d={hostMetricsGraph.cpuPath} fill="none" stroke="#ff6f43" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />}
+                    {hostMetricSeriesOn.memory && <path d={hostMetricsGraph.memoryPath} fill="none" stroke="#ffc14d" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />}
+                    {hostMetricSeriesOn.swap && <path d={hostMetricsGraph.swapPath} fill="none" stroke="#f5d96b" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />}
+                    {hostMetricSeriesOn.disk && <path d={hostMetricsGraph.diskPath} fill="none" stroke="#7ce0a3" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />}
+                    {hostMetricSeriesOn.network && <path d={hostMetricsGraph.networkPath} fill="none" stroke="#5fc1ff" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />}
+                  </>
+                )}
+              </svg>
+            </div>
+          ) : null}
 
           {/* Analytics Chart */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
