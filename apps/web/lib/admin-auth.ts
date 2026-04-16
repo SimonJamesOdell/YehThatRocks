@@ -8,16 +8,19 @@ const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "simonjamesodell@live.co.uk").tr
 const ADMIN_USER_ID = Number(process.env.ADMIN_USER_ID ?? "");
 const ENFORCE_ADMIN_USER_ID = Number.isInteger(ADMIN_USER_ID) && ADMIN_USER_ID > 0;
 
-// Security warning: If ADMIN_EMAIL is not explicitly set, the default hardcoded email is used.
-// This is acceptable for development but production should set ADMIN_EMAIL env var.
-if (!process.env.ADMIN_EMAIL && process.env.NODE_ENV === "production") {
-  console.warn(
-    "⚠️  SECURITY WARNING: ADMIN_EMAIL is not set in production. Using hardcoded default. " +
-    "Set ADMIN_EMAIL env var or ADMIN_USER_ID for production deployments."
-  );
+let _adminEmailWarned = false;
+function warnAdminEmailIfNeeded() {
+  if (!_adminEmailWarned && !process.env.ADMIN_EMAIL && process.env.NODE_ENV === "production") {
+    _adminEmailWarned = true;
+    console.warn(
+      "⚠️  SECURITY WARNING: ADMIN_EMAIL is not set in production. Using hardcoded default. " +
+      "Set ADMIN_EMAIL env var or ADMIN_USER_ID for production deployments."
+    );
+  }
 }
 
 export function isAdminIdentity(userId: number, email: string) {
+  warnAdminEmailIfNeeded();
   if (ENFORCE_ADMIN_USER_ID) {
     return userId === ADMIN_USER_ID;
   }
