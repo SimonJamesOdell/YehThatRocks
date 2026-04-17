@@ -916,6 +916,7 @@ export function PlayerExperience({
 
     if (!autoplayEnabledRef.current) {
       setEndedChoiceFromUnavailable(true);
+      setEndedChoiceLoading(true);
       setShowEndedChoiceOverlay(true);
       setShowControls(true);
       setShowShareMenu(false);
@@ -2053,6 +2054,7 @@ export function PlayerExperience({
         }
 
         if (!recoveredVideoId) {
+          setEndedChoiceLoading(true);
           setShowEndedChoiceOverlay(true);
           setShowControls(true);
           setShowShareMenu(false);
@@ -2075,17 +2077,22 @@ export function PlayerExperience({
 
     // When autoplay is off and player is in docked position, close the player instead of showing overlay
     if (!autoplayEnabledRef.current) {
-      setPlayerClosedByEndOfVideo(true);
+      const shouldCloseDockedSurface = isDockedDesktop && pathname !== "/";
 
-      if (pathname === "/") {
-        setShowEndedChoiceOverlay(true);
-        setShowControls(true);
-        setShowShareMenu(false);
+      if (shouldCloseDockedSurface) {
+        setPlayerClosedByEndOfVideo(true);
+        return;
       }
 
+      setPlayerClosedByEndOfVideo(false);
+      setEndedChoiceLoading(true);
+      setShowEndedChoiceOverlay(true);
+      setShowControls(true);
+      setShowShareMenu(false);
       return;
     }
 
+    setEndedChoiceLoading(true);
     setShowEndedChoiceOverlay(true);
     setShowControls(true);
     setShowShareMenu(false);
@@ -3772,7 +3779,7 @@ export function PlayerExperience({
             </div>
           ) : null}
 
-          {showEndedChoiceOverlay && (endedChoiceVideos.length > 0 || endedChoiceLoading) ? (
+          {showEndedChoiceOverlay ? (
             <div
               className="playerEndedChoiceOverlay"
               role="dialog"
