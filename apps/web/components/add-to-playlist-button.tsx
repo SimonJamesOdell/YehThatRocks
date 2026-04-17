@@ -50,10 +50,6 @@ export function AddToPlaylistButton({
   const triggerButtonRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  if (!isAuthenticated) {
-    return null;
-  }
-
   const updateMenuPosition = useCallback(() => {
     const trigger = triggerButtonRef.current;
     if (!trigger) {
@@ -86,6 +82,39 @@ export function AddToPlaylistButton({
       top,
     });
   }, []);
+
+  async function loadPlaylists() {
+    const playlistsResponse = await fetch("/api/playlists", {
+      cache: "no-store",
+    });
+
+    if (playlistsResponse.status === 401 || playlistsResponse.status === 403) {
+      return [] as PlaylistSummary[];
+    }
+
+    if (!playlistsResponse.ok) {
+      throw new Error("playlists-load-failed");
+    }
+
+    const payload = (await playlistsResponse.json().catch(() => null)) as
+      | {
+          playlists?: PlaylistSummary[];
+        }
+      | null;
+
+    return Array.isArray(payload?.playlists) ? payload.playlists : [];
+  }
+
+  const ensurePlaylistsLoaded = useCallback(async () => {
+    if (playlistsLoaded) {
+      return playlists;
+    }
+
+    const loaded = await loadPlaylists();
+    setPlaylists(loaded);
+    setPlaylistsLoaded(true);
+    return loaded;
+  }, [playlists, playlistsLoaded]);
 
   useEffect(() => {
     if (!menuOpen) {
@@ -155,8 +184,14 @@ export function AddToPlaylistButton({
       return;
     }
 
-    void ensurePlaylistsLoaded().catch(() => undefined);
-  }, [menuOpen, playlistsLoaded]);
+    const timeoutId = window.setTimeout(() => {
+      void ensurePlaylistsLoaded().catch(() => undefined);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [ensurePlaylistsLoaded, menuOpen, playlistsLoaded]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !playlistsLoaded) {
@@ -175,8 +210,14 @@ export function AddToPlaylistButton({
   }, [playlists, playlistsLoaded]);
 
   useEffect(() => {
-    setMenuOpen(false);
-    setChooserOpen(false);
+    const timeoutId = window.setTimeout(() => {
+      setMenuOpen(false);
+      setChooserOpen(false);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
   }, [searchParamsKey]);
 
   useEffect(() => {
@@ -189,39 +230,6 @@ export function AddToPlaylistButton({
     });
     window.dispatchEvent(event);
   }, [chooserOpen]);
-
-  async function loadPlaylists() {
-    const playlistsResponse = await fetch("/api/playlists", {
-      cache: "no-store",
-    });
-
-    if (playlistsResponse.status === 401 || playlistsResponse.status === 403) {
-      return [] as PlaylistSummary[];
-    }
-
-    if (!playlistsResponse.ok) {
-      throw new Error("playlists-load-failed");
-    }
-
-    const payload = (await playlistsResponse.json().catch(() => null)) as
-      | {
-          playlists?: PlaylistSummary[];
-        }
-      | null;
-
-    return Array.isArray(payload?.playlists) ? payload.playlists : [];
-  }
-
-  async function ensurePlaylistsLoaded() {
-    if (playlistsLoaded) {
-      return playlists;
-    }
-
-    const loaded = await loadPlaylists();
-    setPlaylists(loaded);
-    setPlaylistsLoaded(true);
-    return loaded;
-  }
 
   async function addVideoToPlaylist(playlistId: string) {
     const addResponse = await fetch(
@@ -536,6 +544,10 @@ export function AddToPlaylistButton({
 
     return left.name.localeCompare(right.name);
   });
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
     <div className="playlistQuickAddWrap" ref={wrapRef}>
