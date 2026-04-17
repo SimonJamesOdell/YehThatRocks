@@ -369,6 +369,7 @@ export function PlayerExperience({
   const endedChoiceFetchingRef = useRef(false);
   const endedChoiceHasMoreRef = useRef(true);
   const endedChoiceSkipRef = useRef(0);
+  const pointerPositionRef = useRef<{ x: number; y: number } | null>(null);
   const currentVideoRef = useRef(currentVideo);
   const autoplayEnabledRef = useRef(autoplayEnabled);
   const hasActivePlaylistSequenceRef = useRef(false);
@@ -424,6 +425,17 @@ export function PlayerExperience({
     }
     window.addEventListener("ytr:playlist-chooser-state", handlePlaylistChooserStateChange);
     return () => window.removeEventListener("ytr:playlist-chooser-state", handlePlaylistChooserStateChange);
+  }, []);
+
+  useEffect(() => {
+    function handlePointerMove(event: MouseEvent) {
+      pointerPositionRef.current = { x: event.clientX, y: event.clientY };
+    }
+
+    window.addEventListener("mousemove", handlePointerMove);
+    return () => {
+      window.removeEventListener("mousemove", handlePointerMove);
+    };
   }, []);
 
   useEffect(() => {
@@ -3404,7 +3416,23 @@ export function PlayerExperience({
         }
 
         window.requestAnimationFrame(() => {
-          if (playerFrameRef.current?.matches(":hover")) {
+          const frame = playerFrameRef.current;
+          if (!frame) {
+            return;
+          }
+
+          const isHoveringFrame = frame.matches(":hover");
+          const pointer = pointerPositionRef.current;
+          const frameRect = frame.getBoundingClientRect();
+          const pointerInsideFrame = Boolean(
+            pointer
+            && pointer.x >= frameRect.left
+            && pointer.x <= frameRect.right
+            && pointer.y >= frameRect.top
+            && pointer.y <= frameRect.bottom,
+          );
+
+          if (isHoveringFrame || pointerInsideFrame) {
             setShowControls(true);
           }
         });
