@@ -2217,26 +2217,46 @@ async function refreshArtistProjectionForName(artistName: string) {
   const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
   const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
 
-  const statsRows = await prisma.$queryRawUnsafe<Array<{ videoCount: number | null; thumbnailVideoId: string | null }>>(
-    `
-      SELECT
-        COUNT(DISTINCT v.videoId) AS videoCount,
-        SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.id ASC), ',', 1) AS thumbnailVideoId
-      FROM videos v
-      WHERE ${videoArtistNormExpr} = ?
-        AND v.videoId IS NOT NULL
-        AND CHAR_LENGTH(v.videoId) = 11
-        AND EXISTS (
-          SELECT 1
-          FROM site_videos sv
-          WHERE sv.video_id = v.id
-            AND sv.status = 'available'
-        )
-    `,
-    normalizedArtist,
-  );
+  const [countRows, thumbnailRows] = await Promise.all([
+    prisma.$queryRawUnsafe<Array<{ videoCount: number | null }>>(
+      `
+        SELECT
+          COUNT(DISTINCT v.videoId) AS videoCount
+        FROM videos v
+        WHERE ${videoArtistNormExpr} = ?
+          AND v.videoId IS NOT NULL
+          AND CHAR_LENGTH(v.videoId) = 11
+          AND EXISTS (
+            SELECT 1
+            FROM site_videos sv
+            WHERE sv.video_id = v.id
+              AND sv.status = 'available'
+          )
+      `,
+      normalizedArtist,
+    ),
+    prisma.$queryRawUnsafe<Array<{ thumbnailVideoId: string | null }>>(
+      `
+        SELECT
+          v.videoId AS thumbnailVideoId
+        FROM videos v
+        WHERE ${videoArtistNormExpr} = ?
+          AND v.videoId IS NOT NULL
+          AND CHAR_LENGTH(v.videoId) = 11
+          AND EXISTS (
+            SELECT 1
+            FROM site_videos sv
+            WHERE sv.video_id = v.id
+              AND sv.status = 'available'
+          )
+        ORDER BY v.id ASC
+        LIMIT 1
+      `,
+      normalizedArtist,
+    ),
+  ]);
 
-  const videoCount = Number(statsRows[0]?.videoCount ?? 0);
+  const videoCount = Number(countRows[0]?.videoCount ?? 0);
   if (videoCount <= 0) {
     await prisma.$executeRawUnsafe(
       "DELETE FROM artist_stats WHERE normalized_artist = ?",
@@ -2267,7 +2287,7 @@ async function refreshArtistProjectionForName(artistName: string) {
 
   const country = artistMetaRows[0]?.country ?? null;
   const genre = artistMetaRows[0]?.genre ?? null;
-  const thumbnailVideoId = statsRows[0]?.thumbnailVideoId ?? null;
+  const thumbnailVideoId = thumbnailRows[0]?.thumbnailVideoId ?? null;
   await upsertArtistStatsRow({
     name: displayName,
     country,
@@ -2319,7 +2339,7 @@ export async function refreshArtistThumbnailForName(artistName: string, badVideo
   const candidateRows = await prisma.$queryRawUnsafe<Array<{ thumbnailVideoId: string | null }>>(
     `
       SELECT
-        SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.id ASC), ',', 1) AS thumbnailVideoId
+        v.videoId AS thumbnailVideoId
       FROM videos v
       WHERE ${videoArtistNormExpr} = ?
         AND v.videoId IS NOT NULL
@@ -2331,6 +2351,8 @@ export async function refreshArtistThumbnailForName(artistName: string, badVideo
           WHERE sv.video_id = v.id
             AND sv.status = 'available'
         )
+      ORDER BY v.id ASC
+      LIMIT 1
     `,
     ...(bad ? [normalizedArtist, bad] : [normalizedArtist]),
   );
