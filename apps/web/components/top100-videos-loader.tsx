@@ -89,8 +89,8 @@ export function Top100VideosLoader({
   });
   const seenVideoIdSet = useMemo(() => new Set(seenVideoIds), [seenVideoIds]);
   const visibleVideos = useMemo(
-    () => (hideSeen ? videos.filter((video) => !seenVideoIdSet.has(video.id)) : videos),
-    [hideSeen, seenVideoIdSet, videos],
+    () => (isAuthenticated && hideSeen ? videos.filter((video) => !seenVideoIdSet.has(video.id)) : videos),
+    [hideSeen, isAuthenticated, seenVideoIdSet, videos],
   );
   const videoRankById = useMemo(() => {
     const rankMap = new Map<string, number>();
@@ -398,24 +398,28 @@ export function Top100VideosLoader({
       <div className="favouritesBlindBar">
         <div className="newPageHeaderLeft">
           <strong>Top 100</strong>
-          <button
-            type="button"
-            className={`newPageSeenToggle${hideSeen ? " newPageSeenToggleActive" : ""}`}
-            onClick={() => setHideSeen((value) => !value)}
-            aria-pressed={hideSeen}
-          >
-            {hideSeen ? "Showing unseen only" : "Show unseen only"}
-          </button>
-          <button
-            type="button"
-            className="newPageSeenToggle top100CreatePlaylistButton"
-            onClick={() => {
-              void createPlaylistFromTop100();
-            }}
-            disabled={!isAuthenticated || visibleVideos.length === 0 || isCreatingPlaylistFromTop100}
-          >
-            {isCreatingPlaylistFromTop100 ? "+ Creating..." : "+ New Playlist"}
-          </button>
+          {isAuthenticated ? (
+            <button
+              type="button"
+              className={`newPageSeenToggle${hideSeen ? " newPageSeenToggleActive" : ""}`}
+              onClick={() => setHideSeen((value) => !value)}
+              aria-pressed={hideSeen}
+            >
+              {hideSeen ? "Showing unseen only" : "Show unseen only"}
+            </button>
+          ) : null}
+          {isAuthenticated ? (
+            <button
+              type="button"
+              className="newPageSeenToggle top100CreatePlaylistButton"
+              onClick={() => {
+                void createPlaylistFromTop100();
+              }}
+              disabled={visibleVideos.length === 0 || isCreatingPlaylistFromTop100}
+            >
+              {isCreatingPlaylistFromTop100 ? "+ Creating..." : "+ New Playlist"}
+            </button>
+          ) : null}
         </div>
         <CloseLink />
       </div>

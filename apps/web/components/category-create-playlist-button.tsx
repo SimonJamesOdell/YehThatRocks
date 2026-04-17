@@ -32,6 +32,10 @@ export function CategoryCreatePlaylistButton({
     [videos],
   );
 
+  if (!isAuthenticated) {
+    return null;
+  }
+
   const collectAllCategoryVideos = async () => {
     const all = new Map<string, VideoRecord>();
 
@@ -210,7 +214,7 @@ export function CategoryCreatePlaylistButton({
       onClick={() => {
         void createPlaylistFromCategory();
       }}
-      disabled={!isAuthenticated || videoIds.length === 0 || isCreatingPlaylistFromCategory}
+      disabled={videoIds.length === 0 || isCreatingPlaylistFromCategory}
     >
       {isCreatingPlaylistFromCategory ? "+ Creating..." : "+ New Playlist"}
     </button>

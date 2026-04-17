@@ -302,7 +302,7 @@ export function CategoryVideosInfinite({
   }, [hidingVideoIds, isAuthenticated]);
 
   const visibleOrderedVideos = hideSeen
-    ? orderedVideos.filter((video) => !seenVideoIdSet.has(video.id))
+    ? (isAuthenticated ? orderedVideos.filter((video) => !seenVideoIdSet.has(video.id)) : orderedVideos)
     : orderedVideos;
   const chunkTriggerIndex = visibleOrderedVideos.length > pageSize
     ? Math.max(0, visibleOrderedVideos.length - pageSize * SCROLL_BUFFER_PAGES)
@@ -345,14 +345,16 @@ export function CategoryVideosInfinite({
               <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{genre}</span>
             </span>
           </strong>
-          <button
-            type="button"
-            className={`newPageSeenToggle${hideSeen ? " newPageSeenToggleActive" : ""}`}
-            onClick={() => setHideSeen((value) => !value)}
-            aria-pressed={hideSeen}
-          >
-            {hideSeen ? "Showing unseen only" : "Show unseen only"}
-          </button>
+          {isAuthenticated ? (
+            <button
+              type="button"
+              className={`newPageSeenToggle${hideSeen ? " newPageSeenToggleActive" : ""}`}
+              onClick={() => setHideSeen((value) => !value)}
+              aria-pressed={hideSeen}
+            >
+              {hideSeen ? "Showing unseen only" : "Show unseen only"}
+            </button>
+          ) : null}
           <CategoryCreatePlaylistButton
             isAuthenticated={isAuthenticated}
             slug={slug}

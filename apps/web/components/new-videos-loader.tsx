@@ -67,8 +67,8 @@ export function NewVideosLoader({
   });
   const seenVideoIdSet = useMemo(() => new Set(seenVideoIds), [seenVideoIds]);
   const visibleVideos = useMemo(
-    () => hideSeen ? allVideos.filter((v) => !seenVideoIdSet.has(v.id)) : allVideos,
-    [allVideos, hideSeen, seenVideoIdSet],
+    () => (isAuthenticated && hideSeen ? allVideos.filter((v) => !seenVideoIdSet.has(v.id)) : allVideos),
+    [allVideos, hideSeen, isAuthenticated, seenVideoIdSet],
   );
 
   const handleOpenFlagDialog = (track: VideoRecord) => {
@@ -317,24 +317,28 @@ export function NewVideosLoader({
       <div className="favouritesBlindBar">
         <div className="newPageHeaderLeft">
           <strong><span style={{filter: "brightness(0) invert(1)"}}>⭐</span> New</strong>
-          <button
-            type="button"
-            className={`newPageSeenToggle${hideSeen ? " newPageSeenToggleActive" : ""}`}
-            onClick={() => setHideSeen((v) => !v)}
-            aria-pressed={hideSeen}
-          >
-            {hideSeen ? "Showing unseen only" : "Show unseen only"}
-          </button>
-          <button
-            type="button"
-            className="newPageSeenToggle top100CreatePlaylistButton"
-            onClick={() => {
-              void createPlaylistFromNew();
-            }}
-            disabled={!isAuthenticated || visibleVideos.length === 0 || isCreatingPlaylistFromNew}
-          >
-            {isCreatingPlaylistFromNew ? "+ Creating..." : "+ New Playlist"}
-          </button>
+          {isAuthenticated ? (
+            <button
+              type="button"
+              className={`newPageSeenToggle${hideSeen ? " newPageSeenToggleActive" : ""}`}
+              onClick={() => setHideSeen((v) => !v)}
+              aria-pressed={hideSeen}
+            >
+              {hideSeen ? "Showing unseen only" : "Show unseen only"}
+            </button>
+          ) : null}
+          {isAuthenticated ? (
+            <button
+              type="button"
+              className="newPageSeenToggle top100CreatePlaylistButton"
+              onClick={() => {
+                void createPlaylistFromNew();
+              }}
+              disabled={visibleVideos.length === 0 || isCreatingPlaylistFromNew}
+            >
+              {isCreatingPlaylistFromNew ? "+ Creating..." : "+ New Playlist"}
+            </button>
+          ) : null}
         </div>
         <CloseLink />
       </div>

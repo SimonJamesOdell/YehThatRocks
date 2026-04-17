@@ -15,15 +15,19 @@ export function useSeenTogglePreference({
   isAuthenticated,
   defaultValue = false,
 }: UseSeenTogglePreferenceInput) {
-  const [value, setValue] = useState(() => readPersistedBoolean(key, defaultValue));
+  const [value, setValue] = useState(() => (isAuthenticated ? readPersistedBoolean(key, defaultValue) : false));
   const [isServerHydrated, setIsServerHydrated] = useState(() => !isAuthenticated);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
     writePersistedBoolean(key, value);
-  }, [key, value]);
+  }, [isAuthenticated, key, value]);
 
   useEffect(() => {
     if (!isAuthenticated) {
+      setValue(false);
       setIsServerHydrated(true);
       return;
     }

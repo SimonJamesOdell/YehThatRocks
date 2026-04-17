@@ -336,16 +336,18 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
             />
           </div>
           <div className="categoriesHeaderActions">
-            <button
-              type="button"
-              className="newPageSeenToggle favouritesCreatePlaylistButton"
-              onClick={() => {
-                void createPlaylistFromFavourites();
-              }}
-              disabled={!isAuthenticated || favourites.length === 0 || isCreatingPlaylistFromFavourites}
-            >
-                {isCreatingPlaylistFromFavourites ? "+ Creating..." : "+ New Playlist"}
-            </button>
+            {isAuthenticated ? (
+              <button
+                type="button"
+                className="newPageSeenToggle favouritesCreatePlaylistButton"
+                onClick={() => {
+                  void createPlaylistFromFavourites();
+                }}
+                disabled={favourites.length === 0 || isCreatingPlaylistFromFavourites}
+              >
+                  {isCreatingPlaylistFromFavourites ? "+ Creating..." : "+ New Playlist"}
+              </button>
+            ) : null}
           </div>
         </div>
         <CloseLink />
