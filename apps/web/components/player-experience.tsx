@@ -754,6 +754,9 @@ export function PlayerExperience({
     const fullRowCount = Math.floor(visibleEndedChoiceVideos.length / 4) * 4;
     return visibleEndedChoiceVideos.slice(0, fullRowCount);
   }, [endedChoiceHideSeen, visibleEndedChoiceVideos]);
+  const shouldShowEndedChoiceEmptyState = endedChoiceGridVideos.length === 0
+    && !endedChoiceLoading
+    && (!endedChoiceHideSeen || !endedChoiceHasMoreRef.current);
   const footerActionsBlocked = Boolean(unavailableOverlayMessage) || showEndedChoiceOverlay || playlistChooserOpen;
   const isUpstreamConnectivityOverlay = unavailableOverlayMessage === UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE;
   const footerSelectablePlaylists = activePlaylistId
@@ -3877,7 +3880,7 @@ export function PlayerExperience({
                     <span className="playerEndedChoiceLoadingLabel">Loading more choices...</span>
                   </div>
                 ) : null}
-                {endedChoiceGridVideos.length === 0 ? (
+                {shouldShowEndedChoiceEmptyState ? (
                   <div className="playerEndedChoiceEmptyState">
                     No unseen choices right now. Try more choices or watch again.
                   </div>
