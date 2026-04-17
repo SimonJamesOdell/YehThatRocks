@@ -631,7 +631,7 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
 
     if (hasSufficientMetadata) {
       if (existingMeta?.parsedArtist?.trim()) {
-        await refreshArtistProjectionForName(existingMeta.parsedArtist);
+        scheduleArtistProjectionRefreshForName(existingMeta.parsedArtist);
       }
       return;
     }
@@ -696,7 +696,7 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
     });
 
     if (correctedArtist) {
-      await refreshArtistProjectionForName(correctedArtist);
+      scheduleArtistProjectionRefreshForName(correctedArtist);
     }
   } catch (error) {
     debugCatalog("maybePersistRuntimeMetadata:error", {
@@ -841,6 +841,12 @@ let topPoolCache:
       rows: RankedVideoRow[];
     }
   | undefined;
+let topPoolInFlight:
+  | {
+      limit: number;
+      promise: Promise<RankedVideoRow[]>;
+    }
+  | undefined;
 const NEWEST_CACHE_TTL_MS = 15_000;
 let newestVideosCache:
   | {
@@ -849,6 +855,7 @@ let newestVideosCache:
       rows: RankedVideoRow[];
     }
   | undefined;
+const newestVideosInFlight = new Map<string, Promise<VideoRecord[]>>();
 
 const GENRE_RESULTS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const GENRE_CARDS_CACHE_TTL_MS = 30 * 1000; // 30 seconds
@@ -869,9 +876,16 @@ const hiddenVideoIdsInFlight = new Map<number, Promise<Set<string>>>();
 const ENABLE_SAME_GENRE_RELATED = process.env.RELATED_ENABLE_SAME_GENRE === "1";
 const ARTIST_LETTER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const artistLetterCache = new Map<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>();
+const artistLetterInFlight = new Map<string, Promise<Array<ArtistRecord & { videoCount: number }>>>();
 const ARTIST_LETTER_PAGE_CACHE_TTL_MS = 60_000; // 1 minute
 const artistLetterPageCache = new Map<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>();
 const artistLetterPageInFlight = new Map<string, Promise<Array<ArtistRecord & { videoCount: number }>>>();
+const ARTIST_SEARCH_CACHE_TTL_MS = 10_000;
+const artistSearchCache = new Map<string, {
+  expiresAt: number;
+  rows: Array<{ name: string; country: string | null; genre1: string | null }>;
+}>();
+const artistSearchInFlight = new Map<string, Promise<Array<{ name: string; country: string | null; genre1: string | null }>>>();
 const ARTIST_STATS_TABLE_CACHE_TTL_MS = 60_000;
 const ARTIST_PROJECTION_REFRESH_TTL_MS = 30_000;
 const artistProjectionRefreshCache = new Map<string, { expiresAt: number }>();
@@ -1027,66 +1041,87 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
     return topPoolCache.rows.slice(0, limit);
   }
 
-  let rows: RankedVideoRow[] = [];
-
-  try {
-    rows = await prisma.$queryRaw<RankedVideoRow[]>`
-      SELECT
-        v.videoId,
-        v.title,
-        NULL AS channelTitle,
-        COALESCE(v.favourited, 0) AS favourited,
-        v.description
-      FROM videos v
-      WHERE v.videoId IS NOT NULL
-        AND CHAR_LENGTH(v.videoId) = 11
-        AND EXISTS (
-          SELECT 1
-          FROM site_videos sv
-          WHERE sv.video_id = v.id
-            AND sv.status = 'available'
-        )
-      ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
-      LIMIT ${limit}
-    `;
-  } catch {
-    rows = await prisma.$queryRaw<RankedVideoRow[]>`
-      SELECT
-        v.videoId,
-        v.title,
-        NULL AS channelTitle,
-        COALESCE(fv.favouriteCount, 0) AS favourited,
-        v.description
-      FROM videos v
-      LEFT JOIN (
-        SELECT
-          f.videoId,
-          COUNT(DISTINCT f.userid) AS favouriteCount
-        FROM favourites f
-        WHERE f.videoId IS NOT NULL
-        GROUP BY f.videoId
-      ) fv ON fv.videoId = v.videoId
-      WHERE v.videoId IS NOT NULL
-        AND CHAR_LENGTH(v.videoId) = 11
-        AND EXISTS (
-          SELECT 1
-          FROM site_videos sv
-          WHERE sv.video_id = v.id
-            AND sv.status = 'available'
-        )
-      ORDER BY COALESCE(fv.favouriteCount, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
-      LIMIT ${limit}
-    `;
+  if (topPoolInFlight && topPoolInFlight.limit >= limit) {
+    const rows = await topPoolInFlight.promise;
+    return rows.slice(0, limit);
   }
 
-  const dedupedRows = dedupeRankedRows(rows);
+  const fetchPromise = (async () => {
+    let rows: RankedVideoRow[] = [];
 
-  topPoolCache = {
-    expiresAt: now + TOP_POOL_CACHE_TTL_MS,
-    rows: dedupedRows,
+    try {
+      rows = await prisma.$queryRaw<RankedVideoRow[]>`
+        SELECT
+          v.videoId,
+          v.title,
+          NULL AS channelTitle,
+          COALESCE(v.favourited, 0) AS favourited,
+          v.description
+        FROM videos v
+        WHERE v.videoId IS NOT NULL
+          AND CHAR_LENGTH(v.videoId) = 11
+          AND EXISTS (
+            SELECT 1
+            FROM site_videos sv
+            WHERE sv.video_id = v.id
+              AND sv.status = 'available'
+          )
+        ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
+        LIMIT ${limit}
+      `;
+    } catch {
+      rows = await prisma.$queryRaw<RankedVideoRow[]>`
+        SELECT
+          v.videoId,
+          v.title,
+          NULL AS channelTitle,
+          COALESCE(fv.favouriteCount, 0) AS favourited,
+          v.description
+        FROM videos v
+        LEFT JOIN (
+          SELECT
+            f.videoId,
+            COUNT(DISTINCT f.userid) AS favouriteCount
+          FROM favourites f
+          WHERE f.videoId IS NOT NULL
+          GROUP BY f.videoId
+        ) fv ON fv.videoId = v.videoId
+        WHERE v.videoId IS NOT NULL
+          AND CHAR_LENGTH(v.videoId) = 11
+          AND EXISTS (
+            SELECT 1
+            FROM site_videos sv
+            WHERE sv.video_id = v.id
+              AND sv.status = 'available'
+          )
+        ORDER BY COALESCE(fv.favouriteCount, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
+        LIMIT ${limit}
+      `;
+    }
+
+    const dedupedRows = dedupeRankedRows(rows);
+
+    topPoolCache = {
+      expiresAt: Date.now() + TOP_POOL_CACHE_TTL_MS,
+      rows: dedupedRows,
+    };
+
+    return dedupedRows;
+  })();
+
+  topPoolInFlight = {
+    limit,
+    promise: fetchPromise,
   };
 
-  return dedupedRows;
+  try {
+    const rows = await fetchPromise;
+    return rows.slice(0, limit);
+  } finally {
+    if (topPoolInFlight?.promise === fetchPromise) {
+      topPoolInFlight = undefined;
+    }
+  }
 }
 
 function mapVideo(video: {
@@ -1128,12 +1163,15 @@ function mapStoredVideoToPersistable(video: StoredVideoRow): PersistableVideoRec
 
 export function clearCatalogVideoCaches() {
   topPoolCache = undefined;
+  topPoolInFlight = undefined;
   newestVideosCache = undefined;
+  newestVideosInFlight.clear();
   artistsListCache = undefined;
   artistsListInFlight = undefined;
   relatedVideosCache.clear();
   artistVideosCache.clear();
   artistLetterCache.clear();
+  artistLetterInFlight.clear();
   artistLetterPageCache.clear();
   artistLetterPageInFlight.clear();
   genreArtistsCache.clear();
@@ -1692,7 +1730,7 @@ export async function importVideoFromDirectSource(source: string) {
         WHERE id = ${fallbackRow.id}
       `;
 
-      await refreshArtistProjectionForName(fallbackMeta.artist);
+      scheduleArtistProjectionRefreshForName(fallbackMeta.artist);
       playbackDecisionCache.delete(normalizedVideoId);
       decision = await getVideoPlaybackDecision(normalizedVideoId);
     }
@@ -2130,6 +2168,10 @@ async function refreshArtistProjectionForName(artistName: string) {
   await refreshPromise;
 }
 
+function scheduleArtistProjectionRefreshForName(artistName: string) {
+  void refreshArtistProjectionForName(artistName).catch(() => undefined);
+}
+
 export async function refreshArtistThumbnailForName(artistName: string, badVideoId?: string) {
   const displayName = artistName.trim();
   if (!displayName || !hasDatabaseUrl()) {
@@ -2512,7 +2554,7 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
   });
 
   for (const artistName of parsedArtistsToRefresh) {
-    await refreshArtistProjectionForName(artistName).catch(() => undefined);
+    scheduleArtistProjectionRefreshForName(artistName);
   }
 
   return { pruned: true, deletedVideoRows: ids.length, reason };
@@ -2545,6 +2587,7 @@ async function findArtistsInDatabase(options: {
 }) {
   const { limit, search, orderByName, prefixOnly, nameOnly } = options;
   const columns = await getArtistColumnMap();
+  const normalizedSearch = search?.trim() ?? "";
 
   const nameCol = escapeSqlIdentifier(columns.name);
   const countrySelect = columns.country ? `a.${escapeSqlIdentifier(columns.country)} AS country` : "NULL AS country";
@@ -2556,8 +2599,8 @@ async function findArtistsInDatabase(options: {
   const whereParts: string[] = [];
   const params: string[] = [];
 
-  if (search && search.trim()) {
-    const needle = prefixOnly ? `${search.trim()}%` : `%${search.trim()}%`;
+  if (normalizedSearch) {
+    const needle = prefixOnly ? `${normalizedSearch}%` : `%${normalizedSearch}%`;
     whereParts.push(`a.${nameCol} LIKE ?`);
     params.push(needle);
 
@@ -2577,20 +2620,53 @@ async function findArtistsInDatabase(options: {
   const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(" OR ")}` : "";
   const orderSql = orderByName ? `ORDER BY a.${nameCol} ASC` : "";
   const cappedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+  const searchCacheKey = `s:${normalizedSearch}|l:${cappedLimit}|o:${orderByName ? 1 : 0}|p:${prefixOnly ? 1 : 0}|n:${nameOnly ? 1 : 0}`;
 
-  return prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
-    `
-      SELECT
-        a.${nameCol} AS name,
-        ${countrySelect},
-        ${genreExpr} AS genre1
-      FROM artists a
-      ${whereSql}
-      ${orderSql}
-      LIMIT ${cappedLimit}
-    `,
-    ...params,
-  );
+  const executeQuery = () => prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+      `
+        SELECT
+          a.${nameCol} AS name,
+          ${countrySelect},
+          ${genreExpr} AS genre1
+        FROM artists a
+        ${whereSql}
+        ${orderSql}
+        LIMIT ${cappedLimit}
+      `,
+      ...params,
+    );
+
+  if (!normalizedSearch) {
+    return executeQuery();
+  }
+
+  const now = Date.now();
+  const cached = artistSearchCache.get(searchCacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.rows.map((row) => ({ ...row }));
+  }
+
+  const inFlight = artistSearchInFlight.get(searchCacheKey);
+  if (inFlight) {
+    const rows = await inFlight;
+    return rows.map((row) => ({ ...row }));
+  }
+
+  const pending = executeQuery();
+  artistSearchInFlight.set(searchCacheKey, pending);
+
+  try {
+    const rows = await pending;
+    artistSearchCache.set(searchCacheKey, {
+      expiresAt: Date.now() + ARTIST_SEARCH_CACHE_TTL_MS,
+      rows,
+    });
+    return rows;
+  } finally {
+    if (artistSearchInFlight.get(searchCacheKey) === pending) {
+      artistSearchInFlight.delete(searchCacheKey);
+    }
+  }
 }
 
 export async function getCurrentVideo(videoId?: string, options?: { skipPlaybackDecision?: boolean }) {
@@ -3318,144 +3394,160 @@ export async function getNewestVideos(
     return newestVideosCache.rows.slice(0, safeCount).map(mapVideo);
   }
 
-  try {
-    const videos = await prisma.$queryRaw<RankedVideoRow[]>`
-      SELECT
-        v.videoId,
-        v.title,
-        NULL AS channelTitle,
-        v.parsedArtist,
-        v.favourited,
-        v.description
-      FROM videos v
-      WHERE v.videoId IS NOT NULL
-        AND CHAR_LENGTH(v.videoId) = 11
-        AND EXISTS (
-        SELECT 1
-        FROM site_videos sv
-        WHERE sv.video_id = v.id
-          AND sv.status = 'available'
-      )
-      ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
-      LIMIT ${safeCount}
-      OFFSET ${safeOffset}
-    `;
+  const newestRequestKey = `${safeCount}:${safeOffset}:${options?.enforcePlaybackAvailability ? "1" : "0"}`;
+  const inFlightNewest = newestVideosInFlight.get(newestRequestKey);
+  if (inFlightNewest) {
+    return inFlightNewest;
+  }
 
-    if (videos.length > 0) {
-      const effectiveRows = options?.enforcePlaybackAvailability
-        ? await filterPlayableNewestRows(videos, safeCount)
-        : videos;
-
-      if (safeOffset === 0) {
-        newestVideosCache = {
-          expiresAt: now + NEWEST_CACHE_TTL_MS,
-          count: effectiveRows.length,
-          rows: effectiveRows,
-        };
-      }
-
-      return effectiveRows.map(mapVideo);
-    }
-
-    // Fallback: if availability/status linkage has drifted on a restored DB,
-    // still surface newest videos instead of returning an empty New page.
-    const fallbackByMappedTimestamps = await prisma.$queryRaw<RankedVideoRow[]>`
-      SELECT
-        v.videoId,
-        v.title,
-        NULL AS channelTitle,
-        v.parsedArtist,
-        v.favourited,
-        v.description
-      FROM videos v
-      WHERE v.videoId IS NOT NULL
-        AND CHAR_LENGTH(v.videoId) = 11
-      ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
-      LIMIT ${safeCount}
-      OFFSET ${safeOffset}
-    `;
-
-    if (fallbackByMappedTimestamps.length > 0) {
-      const effectiveRows = options?.enforcePlaybackAvailability
-        ? await filterPlayableNewestRows(fallbackByMappedTimestamps, safeCount)
-        : fallbackByMappedTimestamps;
-
-      if (safeOffset === 0) {
-        newestVideosCache = {
-          expiresAt: now + NEWEST_CACHE_TTL_MS,
-          count: effectiveRows.length,
-          rows: effectiveRows,
-        };
-      }
-
-      return effectiveRows.map(mapVideo);
-    }
-
-    const fallbackByLegacyTimestamps = await prisma.$queryRaw<RankedVideoRow[]>`
-      SELECT
-        v.videoId,
-        v.title,
-        NULL AS channelTitle,
-        v.favourited,
-        v.description
-      FROM videos v
-      WHERE v.videoId IS NOT NULL
-        AND CHAR_LENGTH(v.videoId) = 11
-      ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC
-      LIMIT ${safeCount}
-      OFFSET ${safeOffset}
-    `;
-
-    const effectiveLegacyRows = options?.enforcePlaybackAvailability
-      ? await filterPlayableNewestRows(fallbackByLegacyTimestamps, safeCount)
-      : fallbackByLegacyTimestamps;
-
-    if (safeOffset === 0 && effectiveLegacyRows.length > 0) {
-      newestVideosCache = {
-        expiresAt: now + NEWEST_CACHE_TTL_MS,
-        count: effectiveLegacyRows.length,
-        rows: effectiveLegacyRows,
-      };
-    }
-
-    return effectiveLegacyRows.map(mapVideo);
-  } catch {
-    // Final fallback for partially migrated DBs where SQL above errors.
+  const resolveNewestVideos = async () => {
     try {
-      const fallbackRows = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
-        `
-          SELECT
-            videoId,
-            title,
-            NULL AS channelTitle,
-            favourited,
-            description
-          FROM videos
-          WHERE videoId IS NOT NULL
-            AND CHAR_LENGTH(videoId) = 11
-          ORDER BY id DESC
-          LIMIT ?
-          OFFSET ?
-        `,
-        safeCount,
-        safeOffset,
-      );
+      const videos = await prisma.$queryRaw<RankedVideoRow[]>`
+        SELECT
+          v.videoId,
+          v.title,
+          NULL AS channelTitle,
+          v.parsedArtist,
+          v.favourited,
+          v.description
+        FROM videos v
+        WHERE v.videoId IS NOT NULL
+          AND CHAR_LENGTH(v.videoId) = 11
+          AND EXISTS (
+          SELECT 1
+          FROM site_videos sv
+          WHERE sv.video_id = v.id
+            AND sv.status = 'available'
+        )
+        ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
+        LIMIT ${safeCount}
+        OFFSET ${safeOffset}
+      `;
 
-      const effectiveRows = options?.enforcePlaybackAvailability
-        ? await filterPlayableNewestRows(fallbackRows, safeCount)
-        : fallbackRows;
+      if (videos.length > 0) {
+        const effectiveRows = options?.enforcePlaybackAvailability
+          ? await filterPlayableNewestRows(videos, safeCount)
+          : videos;
 
-      if (safeOffset === 0 && effectiveRows.length > 0) {
+        if (safeOffset === 0) {
+          newestVideosCache = {
+            expiresAt: now + NEWEST_CACHE_TTL_MS,
+            count: effectiveRows.length,
+            rows: effectiveRows,
+          };
+        }
+
+        return effectiveRows.map(mapVideo);
+      }
+
+      const fallbackByMappedTimestamps = await prisma.$queryRaw<RankedVideoRow[]>`
+        SELECT
+          v.videoId,
+          v.title,
+          NULL AS channelTitle,
+          v.parsedArtist,
+          v.favourited,
+          v.description
+        FROM videos v
+        WHERE v.videoId IS NOT NULL
+          AND CHAR_LENGTH(v.videoId) = 11
+        ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
+        LIMIT ${safeCount}
+        OFFSET ${safeOffset}
+      `;
+
+      if (fallbackByMappedTimestamps.length > 0) {
+        const effectiveRows = options?.enforcePlaybackAvailability
+          ? await filterPlayableNewestRows(fallbackByMappedTimestamps, safeCount)
+          : fallbackByMappedTimestamps;
+
+        if (safeOffset === 0) {
+          newestVideosCache = {
+            expiresAt: now + NEWEST_CACHE_TTL_MS,
+            count: effectiveRows.length,
+            rows: effectiveRows,
+          };
+        }
+
+        return effectiveRows.map(mapVideo);
+      }
+
+      const fallbackByLegacyTimestamps = await prisma.$queryRaw<RankedVideoRow[]>`
+        SELECT
+          v.videoId,
+          v.title,
+          NULL AS channelTitle,
+          v.favourited,
+          v.description
+        FROM videos v
+        WHERE v.videoId IS NOT NULL
+          AND CHAR_LENGTH(v.videoId) = 11
+        ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC
+        LIMIT ${safeCount}
+        OFFSET ${safeOffset}
+      `;
+
+      const effectiveLegacyRows = options?.enforcePlaybackAvailability
+        ? await filterPlayableNewestRows(fallbackByLegacyTimestamps, safeCount)
+        : fallbackByLegacyTimestamps;
+
+      if (safeOffset === 0 && effectiveLegacyRows.length > 0) {
         newestVideosCache = {
           expiresAt: now + NEWEST_CACHE_TTL_MS,
-          count: effectiveRows.length,
-          rows: effectiveRows,
+          count: effectiveLegacyRows.length,
+          rows: effectiveLegacyRows,
         };
       }
 
-      return effectiveRows.map(mapVideo);
+      return effectiveLegacyRows.map(mapVideo);
     } catch {
-      return [];
+      try {
+        const fallbackRows = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
+          `
+            SELECT
+              videoId,
+              title,
+              NULL AS channelTitle,
+              favourited,
+              description
+            FROM videos
+            WHERE videoId IS NOT NULL
+              AND CHAR_LENGTH(videoId) = 11
+            ORDER BY id DESC
+            LIMIT ?
+            OFFSET ?
+          `,
+          safeCount,
+          safeOffset,
+        );
+
+        const effectiveRows = options?.enforcePlaybackAvailability
+          ? await filterPlayableNewestRows(fallbackRows, safeCount)
+          : fallbackRows;
+
+        if (safeOffset === 0 && effectiveRows.length > 0) {
+          newestVideosCache = {
+            expiresAt: now + NEWEST_CACHE_TTL_MS,
+            count: effectiveRows.length,
+            rows: effectiveRows,
+          };
+        }
+
+        return effectiveRows.map(mapVideo);
+      } catch {
+        return [];
+      }
+    }
+  };
+
+  const pendingNewest = resolveNewestVideos();
+  newestVideosInFlight.set(newestRequestKey, pendingNewest);
+
+  try {
+    return await pendingNewest;
+  } finally {
+    if (newestVideosInFlight.get(newestRequestKey) === pendingNewest) {
+      newestVideosInFlight.delete(newestRequestKey);
     }
   }
 }
@@ -3741,6 +3833,12 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
       if (cachedRows) {
         return cachedRows.slice(safeOffset, safeOffset + safeLimit);
       }
+
+      const inFlightRows = artistLetterInFlight.get(letterCacheKey);
+      if (inFlightRows) {
+        const sharedRows = await inFlightRows;
+        return sharedRows.slice(safeOffset, safeOffset + safeLimit);
+      }
     }
 
     const nameCol = escapeSqlIdentifier(columns.name);
@@ -3755,72 +3853,85 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
         : "NULL";
 
     if (statsSource === "parsedArtist") {
-      const artists = await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
-        `
-          SELECT
-            a.${nameCol} AS name,
-            ${countrySelect},
-            ${genreExpr} AS genre1
-          FROM artists a
-          WHERE a.${nameCol} IS NOT NULL
-            AND TRIM(a.${nameCol}) <> ''
-            AND LEFT(${artistNameNormExpr}, 1) = ?
-          ORDER BY a.${nameCol} ASC
-        `,
-        normalizedLetterKey,
-      );
+      const buildRowsPromise = (async () => {
+        const artists = await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+          `
+            SELECT
+              a.${nameCol} AS name,
+              ${countrySelect},
+              ${genreExpr} AS genre1
+            FROM artists a
+            WHERE a.${nameCol} IS NOT NULL
+              AND TRIM(a.${nameCol}) <> ''
+              AND LEFT(${artistNameNormExpr}, 1) = ?
+            ORDER BY a.${nameCol} ASC
+          `,
+          normalizedLetterKey,
+        );
 
-      const parsedArtistCounts = await prisma.$queryRawUnsafe<Array<{ artistKey: string | null; videoCount: number | null; thumbnailVideoId: string | null }>>(
-        `
-          SELECT
-            ${videoArtistNormExpr} AS artistKey,
-            COUNT(DISTINCT v.videoId) AS videoCount,
-            SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.id ASC), ',', 1) AS thumbnailVideoId
-          FROM videos v
-          WHERE ${videoArtistNormExpr} <> ''
-            AND v.videoId IS NOT NULL
-            AND CHAR_LENGTH(v.videoId) = 11
-            AND EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND sv.status = 'available'
-            )
-            AND ${videoArtistNormExpr} LIKE ?
-          GROUP BY ${videoArtistNormExpr}
-        `,
-        `${normalizedLetterKey}%`,
-      );
+        const parsedArtistCounts = await prisma.$queryRawUnsafe<Array<{ artistKey: string | null; videoCount: number | null; thumbnailVideoId: string | null }>>(
+          `
+            SELECT
+              ${videoArtistNormExpr} AS artistKey,
+              COUNT(DISTINCT v.videoId) AS videoCount,
+              SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.id ASC), ',', 1) AS thumbnailVideoId
+            FROM videos v
+            WHERE ${videoArtistNormExpr} <> ''
+              AND v.videoId IS NOT NULL
+              AND CHAR_LENGTH(v.videoId) = 11
+              AND EXISTS (
+                SELECT 1
+                FROM site_videos sv
+                WHERE sv.video_id = v.id
+                  AND sv.status = 'available'
+              )
+              AND ${videoArtistNormExpr} LIKE ?
+            GROUP BY ${videoArtistNormExpr}
+          `,
+          `${normalizedLetterKey}%`,
+        );
 
-      const countByArtist = new Map<string, number>();
-      const thumbnailByArtist = new Map<string, string>();
-      for (const row of parsedArtistCounts) {
-        const key = row.artistKey?.trim();
-        if (!key) {
-          continue;
+        const countByArtist = new Map<string, number>();
+        const thumbnailByArtist = new Map<string, string>();
+        for (const row of parsedArtistCounts) {
+          const key = row.artistKey?.trim();
+          if (!key) {
+            continue;
+          }
+
+          const nextCount = Number(row.videoCount ?? 0);
+          countByArtist.set(key, (countByArtist.get(key) ?? 0) + nextCount);
+          if (row.thumbnailVideoId) {
+            thumbnailByArtist.set(key, row.thumbnailVideoId);
+          }
         }
 
-        const nextCount = Number(row.videoCount ?? 0);
-        countByArtist.set(key, (countByArtist.get(key) ?? 0) + nextCount);
-        if (row.thumbnailVideoId) {
-          thumbnailByArtist.set(key, row.thumbnailVideoId);
+        const rows = artists
+          .map((row) => {
+            const key = normalizeArtistKey(row.name);
+            return {
+              ...mapArtist(row),
+              videoCount: countByArtist.get(key) ?? 0,
+              thumbnailVideoId: thumbnailByArtist.get(key),
+            };
+          })
+          .filter((artist) => artist.videoCount > 0);
+
+        setArtistLetterCache(letterCacheKey, rows);
+        scheduleArtistStatsLetterBackfill(normalizedLetter, rows);
+        return rows;
+      })();
+
+      artistLetterInFlight.set(letterCacheKey, buildRowsPromise);
+
+      try {
+        const rows = await buildRowsPromise;
+        return rows.slice(safeOffset, safeOffset + safeLimit);
+      } finally {
+        if (artistLetterInFlight.get(letterCacheKey) === buildRowsPromise) {
+          artistLetterInFlight.delete(letterCacheKey);
         }
       }
-
-      const rows = artists
-        .map((row) => {
-          const key = normalizeArtistKey(row.name);
-          return {
-            ...mapArtist(row),
-            videoCount: countByArtist.get(key) ?? 0,
-            thumbnailVideoId: thumbnailByArtist.get(key),
-          };
-        })
-        .filter((artist) => artist.videoCount > 0);
-
-      setArtistLetterCache(letterCacheKey, rows);
-      scheduleArtistStatsLetterBackfill(normalizedLetter, rows);
-      return rows.slice(safeOffset, safeOffset + safeLimit);
     }
 
     let videoCountSubquery = `

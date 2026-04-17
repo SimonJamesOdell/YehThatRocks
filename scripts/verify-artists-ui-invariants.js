@@ -9,6 +9,7 @@ const files = {
   nav: path.join(ROOT, "apps/web/components/artists-letter-nav.tsx"),
   results: path.join(ROOT, "apps/web/components/artists-letter-results.tsx"),
   events: path.join(ROOT, "apps/web/lib/artists-letter-events.ts"),
+  catalogData: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
   artistPage: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/page.tsx"),
   artistWikiPage: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/wiki/page.tsx"),
   artistLoading: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/loading.tsx"),
@@ -47,6 +48,7 @@ function main() {
   const navSource = read(files.nav);
   const resultsSource = read(files.results);
   const eventsSource = read(files.events);
+  const catalogDataSource = read(files.catalogData);
   const artistPageSource = read(files.artistPage);
   const artistWikiPageSource = read(files.artistWikiPage);
   const artistLoadingSource = read(files.artistLoading);
@@ -85,6 +87,12 @@ function main() {
     failures,
   );
   assertContains(resultsSource, "<Fragment key={artist.slug}>", "Artist list rendering remains keyed and stable", failures);
+
+  // Catalog fallback performance guardrails for A-Z lists.
+  assertContains(catalogDataSource, "const artistLetterInFlight = new Map", "Catalog data tracks in-flight parsed-artist letter builds", failures);
+  assertContains(catalogDataSource, "const inFlightRows = artistLetterInFlight.get(letterCacheKey);", "Catalog data reuses in-flight parsed-artist letter queries", failures);
+  assertContains(catalogDataSource, "artistLetterInFlight.set(letterCacheKey, buildRowsPromise);", "Catalog data stores parsed-artist letter in-flight promise", failures);
+  assertContains(catalogDataSource, "if (artistLetterInFlight.get(letterCacheKey) === buildRowsPromise)", "Catalog data clears parsed-artist in-flight entry after completion", failures);
 
   // Artist detail and wiki route invariants.
   assertNotContains(artistPageSource, 'className="categoryHeaderWikiLink"', "Artist detail page no longer exposes a wiki header link", failures);

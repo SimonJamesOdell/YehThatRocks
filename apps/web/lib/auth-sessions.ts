@@ -104,15 +104,29 @@ export async function rotateRefreshSession(userId: number, currentToken: string,
       throw new Error("Refresh token reuse detected");
     }
 
-    await authTx.authSession.update({
+    const conditionalRotateResult = await authTx.authSession.updateMany({
       where: {
         id: session.id,
+        revokedAt: null,
+        replacedByHash: null,
       },
       data: {
         revokedAt: new Date(),
         replacedByHash: nextHash,
       },
-    });
+    }) as { count: number };
+
+    if (conditionalRotateResult.count !== 1) {
+      await authTx.authSession.updateMany({
+        where: {
+          familyId: session.familyId,
+        },
+        data: {
+          revokedAt: new Date(),
+        },
+      });
+      throw new Error("Refresh token reuse detected");
+    }
 
     await authTx.authSession.create({
       data: {
@@ -130,6 +144,27 @@ export async function revokeRefreshSession(refreshToken: string) {
   await getAuthPrisma().authSession.updateMany({
     where: {
       tokenHash: hashToken(refreshToken),
+    },
+    data: {
+      revokedAt: new Date(),
+    },
+  });
+}
+
+export async function revokeRefreshSessionFamily(refreshToken: string) {
+  const session = await getAuthPrisma().authSession.findUnique({
+    where: {
+      tokenHash: hashToken(refreshToken),
+    },
+  });
+
+  if (!session) {
+    return;
+  }
+
+  await getAuthPrisma().authSession.updateMany({
+    where: {
+      familyId: session.familyId,
     },
     data: {
       revokedAt: new Date(),
