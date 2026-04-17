@@ -1559,7 +1559,7 @@ h1 {
   }
 
   .playerChromeDockedArtists .primaryActions {
-    top: calc(var(--player-dock-artists-offset, 0px) + var(--player-dock-height, 0px) + 6px);
+    top: calc(var(--player-dock-artists-offset, 0px) + var(--player-dock-height, 0px) + 1px);
     padding: 6px;
     gap: 6px;
   }
@@ -7096,5 +7096,29 @@ h1 {
 @media (max-width: 760px) {
   .artistsLetterPanel {
     display: none;
+  }
+}
+
+/* Ultrawide (21:9+): spread letter buttons into 4 columns to reduce panel height and
+   leave room for the docked player and footer controls below the overlay.
+   Uses aspect-ratio so it fires correctly regardless of OS DPI scaling. */
+@media (min-aspect-ratio: 21/9) and (min-width: 1400px) {
+  .artistsLetterPanelGrid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+  }
+
+  .artistAlphabetButton {
+    min-height: 30px;
+    font-size: 0.82rem;
+  }
+
+  .artistsLetterPanel {
+    padding: 12px;
+  }
+
+  /* Ultrawide: footer sits lower to clear the taller height-driven player */
+  .playerChromeDockedArtists .primaryActions {
+    top: calc(var(--player-dock-artists-offset, 0px) + var(--player-dock-height, 0px) + 12px);
   }
 }
