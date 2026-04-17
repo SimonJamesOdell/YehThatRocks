@@ -2062,7 +2062,7 @@ function ShellDynamicInner({
     dedupeRelatedRailVideos(displayedRelatedVideos, currentVideo.id),
     hiddenVideoIdsRef.current,
   );
-  const visibleWatchNextVideos = watchNextHideSeen
+  const visibleWatchNextVideos = isAuthenticated && watchNextHideSeen
     ? displayedRenderableRelatedVideos.filter((video) => !seenVideoIdsRef.current.has(video.id))
     : displayedRenderableRelatedVideos;
   const hasSeenWatchNextVideos = displayedRenderableRelatedVideos.some((video) => seenVideoIdsRef.current.has(video.id));
@@ -3935,7 +3935,7 @@ function ShellDynamicInner({
             ) : null}
           </div>
 
-          {rightRailMode === "watch-next" ? (
+          {rightRailMode === "watch-next" && isAuthenticated ? (
             <div className="rightRailWatchNextHeader">
               <button
                 type="button"

@@ -27,7 +27,7 @@ export function SearchSeenToggle({ trackStackId, hasSeen, isAuthenticated }: Sea
     }
   }, [hideSeen, trackStackId]);
 
-  if (!hasSeen) {
+  if (!isAuthenticated || !hasSeen) {
     return null;
   }
 

@@ -27,6 +27,10 @@ export function ArtistCreatePlaylistButton({
     [videos],
   );
 
+  if (!isAuthenticated) {
+    return null;
+  }
+
   const createPlaylistFromArtist = async () => {
     if (!isAuthenticated || isCreatingPlaylistFromArtist || videoIds.length === 0) {
       return;
@@ -132,7 +136,7 @@ export function ArtistCreatePlaylistButton({
       onClick={() => {
         void createPlaylistFromArtist();
       }}
-      disabled={!isAuthenticated || videoIds.length === 0 || isCreatingPlaylistFromArtist}
+      disabled={videoIds.length === 0 || isCreatingPlaylistFromArtist}
     >
       {isCreatingPlaylistFromArtist ? "+ Creating..." : "+ New Playlist"}
     </button>

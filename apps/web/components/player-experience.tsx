@@ -743,7 +743,7 @@ export function PlayerExperience({
   }, [endedChoiceSeedVideos, endedChoiceRemoteVideos, currentVideo.id, endedChoiceDismissedIds]);
 
   const hasSeenEndedChoiceVideos = endedChoiceVideos.some((video) => seenVideoIds?.has(video.id));
-  const visibleEndedChoiceVideos = endedChoiceHideSeen
+  const visibleEndedChoiceVideos = isLoggedIn && endedChoiceHideSeen
     ? endedChoiceVideos.filter((video) => !(seenVideoIds?.has(video.id) ?? false))
     : endedChoiceVideos;
   const endedChoiceGridVideos = useMemo(() => {
@@ -3891,7 +3891,7 @@ export function PlayerExperience({
                 >
                   {"<- watch again"}
                 </button>
-                {hasSeenEndedChoiceVideos ? (
+                {isLoggedIn && hasSeenEndedChoiceVideos ? (
                   <button
                     type="button"
                     className={`newPageSeenToggle playerEndedChoiceSeenToggle${endedChoiceHideSeen ? " newPageSeenToggleActive" : ""}`}

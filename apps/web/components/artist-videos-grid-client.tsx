@@ -34,8 +34,8 @@ export function ArtistVideosGridClient({
   });
   const seenVideoIdSet = useMemo(() => new Set(seenVideoIds), [seenVideoIds]);
   const visibleVideos = useMemo(
-    () => (hideSeen ? videos.filter((video) => !seenVideoIdSet.has(video.id)) : videos),
-    [hideSeen, seenVideoIdSet, videos],
+    () => (isAuthenticated && hideSeen ? videos.filter((video) => !seenVideoIdSet.has(video.id)) : videos),
+    [hideSeen, isAuthenticated, seenVideoIdSet, videos],
   );
 
   const handleHideVideo = useCallback(async (video: VideoRecord) => {
@@ -75,14 +75,16 @@ export function ArtistVideosGridClient({
               <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{artistName}</span>
             </span>
           </strong>
-          <button
-            type="button"
-            className={`newPageSeenToggle${hideSeen ? " newPageSeenToggleActive" : ""}`}
-            onClick={() => setHideSeen((value) => !value)}
-            aria-pressed={hideSeen}
-          >
-            {hideSeen ? "Showing unseen only" : "Show unseen only"}
-          </button>
+          {isAuthenticated ? (
+            <button
+              type="button"
+              className={`newPageSeenToggle${hideSeen ? " newPageSeenToggleActive" : ""}`}
+              onClick={() => setHideSeen((value) => !value)}
+              aria-pressed={hideSeen}
+            >
+              {hideSeen ? "Showing unseen only" : "Show unseen only"}
+            </button>
+          ) : null}
           <ArtistCreatePlaylistButton
             isAuthenticated={isAuthenticated}
             artistName={artistName}
