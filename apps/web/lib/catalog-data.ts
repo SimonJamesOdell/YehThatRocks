@@ -1082,39 +1082,58 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
         LIMIT ${fetchLimit}
       `;
     } catch {
-      rows = await prisma.$queryRaw<RankedVideoRow[]>`
-        WITH eligible_videos AS (
-          SELECT
-            v.id,
-            v.videoId,
-            v.title,
-            v.description,
-            COALESCE(v.viewCount, 0) AS viewCount
-          FROM videos v
-          INNER JOIN site_videos sv ON sv.video_id = v.id
-          WHERE sv.status = 'available'
-            AND v.videoId IS NOT NULL
-            AND CHAR_LENGTH(v.videoId) = 11
-        )
-        SELECT
-          ev.videoId,
-          ev.title,
-          NULL AS channelTitle,
-          COALESCE(fv.favouriteCount, 0) AS favourited,
-          ev.description
-        FROM eligible_videos ev
-        LEFT JOIN (
-          SELECT
-            f.videoId,
-            COUNT(DISTINCT f.userid) AS favouriteCount
-          FROM favourites f
-          INNER JOIN eligible_videos ev2 ON ev2.videoId = f.videoId
-          WHERE f.videoId IS NOT NULL
-          GROUP BY f.videoId
-        ) fv ON fv.videoId = ev.videoId
-        ORDER BY COALESCE(fv.favouriteCount, 0) DESC, ev.viewCount DESC, ev.videoId ASC
-        LIMIT ${fetchLimit}
-      `;
+      const [videoColumns, siteVideoColumns] = await Promise.all([
+        loadTableColumns("videos"),
+        loadTableColumns("site_videos"),
+      ]);
+
+      const videoIdRef = pickColumn(videoColumns, ["videoId", "video_id", "videoid"]);
+      const videoTitleRef = pickColumn(videoColumns, ["title"]);
+      const videoDescriptionRef = pickColumn(videoColumns, ["description", "desc"]);
+      const videoFavouritedRef = pickColumn(videoColumns, ["favourited", "favorite", "is_favourited"]);
+      const videoViewRef = pickColumn(videoColumns, ["viewCount", "view_count", "views"]);
+      const videoPkRef = pickColumn(videoColumns, ["id"]);
+      const siteVideoIdRef = pickColumn(siteVideoColumns, ["video_id", "videoId", "videoid"]);
+      const siteStatusRef = pickColumn(siteVideoColumns, ["status"]);
+
+      if (videoIdRef && videoTitleRef && videoPkRef && siteVideoIdRef && siteStatusRef) {
+        const externalVideoCol = escapeSqlIdentifier(videoIdRef.Field);
+        const titleCol = escapeSqlIdentifier(videoTitleRef.Field);
+        const descriptionExpr = videoDescriptionRef
+          ? `v.${escapeSqlIdentifier(videoDescriptionRef.Field)}`
+          : "NULL";
+        const favouritedExpr = videoFavouritedRef
+          ? `COALESCE(v.${escapeSqlIdentifier(videoFavouritedRef.Field)}, 0)`
+          : "0";
+        const viewExpr = videoViewRef
+          ? `COALESCE(v.${escapeSqlIdentifier(videoViewRef.Field)}, 0)`
+          : "0";
+        const videoPkCol = escapeSqlIdentifier(videoPkRef.Field);
+        const siteVideoIdCol = escapeSqlIdentifier(siteVideoIdRef.Field);
+        const siteStatusCol = escapeSqlIdentifier(siteStatusRef.Field);
+
+        rows = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
+          `
+            SELECT
+              v.${externalVideoCol} AS videoId,
+              v.${titleCol} AS title,
+              NULL AS channelTitle,
+              ${favouritedExpr} AS favourited,
+              ${descriptionExpr} AS description
+            FROM videos v
+            WHERE v.${externalVideoCol} IS NOT NULL
+              AND CHAR_LENGTH(v.${externalVideoCol}) = 11
+              AND EXISTS (
+                SELECT 1
+                FROM site_videos sv
+                WHERE sv.${siteVideoIdCol} = v.${videoPkCol}
+                  AND sv.${siteStatusCol} = 'available'
+              )
+            ORDER BY ${favouritedExpr} DESC, ${viewExpr} DESC, v.${externalVideoCol} ASC
+            LIMIT ${fetchLimit}
+          `,
+        );
+      }
     }
 
     const dedupedRows = dedupeRankedRows(rows);

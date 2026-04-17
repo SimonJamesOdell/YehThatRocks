@@ -58,9 +58,9 @@ DDL_OUTPUT="$("${COMPOSE[@]}" exec -T db sh -lc 'mysql -u"$MYSQL_USER" -p"$MYSQL
 echo "$DDL_OUTPUT"
 
 for required in \
-  "UNIQUE KEY `hidden_videos_user_id_video_id_key` (`user_id`,`video_id`)" \
-  "KEY `hidden_videos_user_id_created_at_idx` (`user_id`,`created_at`)" \
-  "KEY `hidden_videos_video_id_idx` (`video_id`)"
+  'UNIQUE KEY `hidden_videos_user_id_video_id_key` (`user_id`,`video_id`)' \
+  'KEY `hidden_videos_user_id_created_at_idx` (`user_id`,`created_at`)' \
+  'KEY `hidden_videos_video_id_idx` (`video_id`)'
 do
   if ! grep -Fq "$required" <<<"$DDL_OUTPUT"; then
     echo "[schema-verify] Missing expected hidden_videos index: $required" >&2
@@ -73,9 +73,9 @@ WATCH_DDL_OUTPUT="$("${COMPOSE[@]}" exec -T db sh -lc 'mysql -u"$MYSQL_USER" -p"
 echo "$WATCH_DDL_OUTPUT"
 
 for required in \
-  "UNIQUE KEY `watch_history_user_video_unique` (`user_id`,`video_id`)" \
-  "KEY `watch_history_user_last_watched_idx` (`user_id`,`last_watched_at`)" \
-  "KEY `watch_history_video_idx` (`video_id`)"
+  'UNIQUE KEY `watch_history_user_video_unique` (`user_id`,`video_id`)' \
+  'KEY `watch_history_user_last_watched_idx` (`user_id`,`last_watched_at`)' \
+  'KEY `watch_history_video_idx` (`video_id`)'
 do
   if ! grep -Fq "$required" <<<"$WATCH_DDL_OUTPUT"; then
     echo "[schema-verify] Missing expected watch_history index: $required" >&2
