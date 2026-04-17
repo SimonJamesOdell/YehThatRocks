@@ -870,7 +870,7 @@ const ARTIST_VIDEOS_CACHE_TTL_MS = 60_000;
 const artistVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
 const RELATED_VIDEOS_CACHE_TTL_MS = 20_000;
 const relatedVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
-const relatedVideosInFlight = new Map<string, Promise<VideoRecord[]>>();
+const relatedVideosInFlight = new Map<string, { count: number; promise: Promise<VideoRecord[]> }>();
 const HIDDEN_VIDEO_IDS_CACHE_TTL_MS = 20_000;
 const hiddenVideoIdsCache = new Map<number, { expiresAt: number; ids: Set<string> }>();
 const hiddenVideoIdsInFlight = new Map<number, Promise<Set<string>>>();
@@ -1189,6 +1189,17 @@ function mapVideo(video: {
     genre: "Rock / Metal",
     favourited: Number.isFinite(favouritedValue) ? favouritedValue : 0,
     description: video.description ?? "Legacy video entry from the retained Yeh database.",
+  };
+}
+
+function mapVideoRecordToRankedRow(video: VideoRecord): RankedVideoRow {
+  return {
+    videoId: video.id,
+    title: video.title,
+    channelTitle: video.channelTitle || null,
+    parsedArtist: video.channelTitle || null,
+    favourited: video.favourited,
+    description: video.description,
   };
 }
 
@@ -3031,7 +3042,7 @@ export async function getRelatedVideos(
       .filter((id): id is string => Boolean(id)),
   );
   const baseBlockedIds = new Set<string>([videoId, ...excludedIds]);
-  const useCachedDefaultQuery = excludedIds.size === 0 && requestedCount === 10;
+  const useSharedRelatedCache = excludedIds.size === 0;
 
   if (!hasDatabaseUrl()) {
     const seen = new Set<string>();
@@ -3051,15 +3062,16 @@ export async function getRelatedVideos(
   baseBlockedIds.add(normalizedVideoId);
   const now = Date.now();
   const cacheKey = options?.userId ? `${normalizedVideoId}:u:${options.userId}` : normalizedVideoId;
-  if (useCachedDefaultQuery) {
+  if (useSharedRelatedCache) {
     const cached = relatedVideosCache.get(cacheKey);
-    if (cached && cached.expiresAt > now) {
-      return cached.videos;
+    if (cached && cached.expiresAt > now && cached.videos.length >= requestedCount) {
+      return cached.videos.slice(0, requestedCount);
     }
 
     const inFlight = relatedVideosInFlight.get(cacheKey);
-    if (inFlight) {
-      return inFlight;
+    if (inFlight && inFlight.count >= requestedCount) {
+      const resolvedVideos = await inFlight.promise;
+      return resolvedVideos.slice(0, requestedCount);
     }
   }
 
@@ -3151,29 +3163,11 @@ export async function getRelatedVideos(
             )
           : Promise.resolve([] as RankedVideoRow[]);
 
-        const newestPromise =
-          newestVideosCache && newestVideosCache.expiresAt > now && newestVideosCache.rows.length >= 50
-            ? Promise.resolve(newestVideosCache.rows.slice(0, 50))
-            : prisma.$queryRaw<RankedVideoRow[]>`
-                SELECT
-                  v.videoId,
-                  v.title,
-                  COALESCE(v.parsedArtist, NULL) AS channelTitle,
-                  v.favourited,
-                  v.description
-                FROM videos v
-                WHERE v.videoId <> ${normalizedVideoId}
-                  AND v.videoId IS NOT NULL
-                  AND CHAR_LENGTH(v.videoId) = 11
-                  AND EXISTS (
-                    SELECT 1
-                    FROM site_videos sv
-                    WHERE sv.video_id = v.id
-                      AND sv.status = 'available'
-                  )
-                ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
-                LIMIT 50
-              `;
+        const newestPromise = getNewestVideos(50).then((videos) =>
+          videos
+            .map(mapVideoRecordToRankedRow)
+            .filter((row) => row.videoId !== normalizedVideoId),
+        );
 
         const sameGenrePromise = (async () => {
           if (!ENABLE_SAME_GENRE_RELATED) {
@@ -3310,25 +3304,9 @@ export async function getRelatedVideos(
 
     if (assembledRows.length < targetCount) {
       const remaining = targetCount - assembledRows.length;
-      const backfillPool = await prisma.$queryRaw<RankedVideoRow[]>`
-        SELECT
-          v.videoId,
-          v.title,
-          COALESCE(v.parsedArtist, NULL) AS channelTitle,
-          v.favourited,
-          v.description
-        FROM videos v
-        WHERE v.videoId IS NOT NULL
-          AND CHAR_LENGTH(v.videoId) = 11
-          AND EXISTS (
-            SELECT 1
-            FROM site_videos sv
-            WHERE sv.video_id = v.id
-              AND sv.status = 'available'
-          )
-        ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
-        LIMIT ${Math.max(remaining * 6, 300)}
-      `;
+      const backfillPool = (await getNewestVideos(Math.max(remaining * 6, 300)))
+        .map(mapVideoRecordToRankedRow)
+        .filter((row) => row.videoId !== normalizedVideoId);
 
       const backfillBlockedIds = new Set<string>([
         normalizedVideoId,
@@ -3339,11 +3317,14 @@ export async function getRelatedVideos(
     }
 
     const mapped = assembledRows.slice(0, targetCount).map(mapVideo);
-    if (useCachedDefaultQuery) {
-      relatedVideosCache.set(cacheKey, {
-        expiresAt: now + RELATED_VIDEOS_CACHE_TTL_MS,
-        videos: mapped,
-      });
+    if (useSharedRelatedCache) {
+      const existingCached = relatedVideosCache.get(cacheKey);
+      if (!existingCached || existingCached.expiresAt <= now || existingCached.videos.length <= mapped.length) {
+        relatedVideosCache.set(cacheKey, {
+          expiresAt: now + RELATED_VIDEOS_CACHE_TTL_MS,
+          videos: mapped,
+        });
+      }
     }
 
     return mapped;
@@ -3360,17 +3341,21 @@ export async function getRelatedVideos(
   }
   };
 
-  if (!useCachedDefaultQuery) {
+  if (!useSharedRelatedCache) {
     return resolveRelatedVideos();
   }
 
   const pending = resolveRelatedVideos();
-  relatedVideosInFlight.set(cacheKey, pending);
+  relatedVideosInFlight.set(cacheKey, {
+    count: requestedCount,
+    promise: pending,
+  });
 
   try {
-    return await pending;
+    const resolvedVideos = await pending;
+    return resolvedVideos.slice(0, requestedCount);
   } finally {
-    if (relatedVideosInFlight.get(cacheKey) === pending) {
+    if (relatedVideosInFlight.get(cacheKey)?.promise === pending) {
       relatedVideosInFlight.delete(cacheKey);
     }
   }
