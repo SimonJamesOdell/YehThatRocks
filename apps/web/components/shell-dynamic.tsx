@@ -2365,13 +2365,22 @@ function ShellDynamicInner({
       return;
     }
 
+    if (isResolvingRequestedVideo || requestedVideoId !== currentVideo.id) {
+      return;
+    }
+
     if (!requestedVideoId || requestedVideoId === prevFadeVideoIdRef.current) return;
     prevFadeVideoIdRef.current = requestedVideoId;
     setRelatedTransitionPhase((prev) => (prev === "idle" ? "fading-out" : prev));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedVideoId, shouldDisableRelatedRailTransition]);
+  }, [currentVideo.id, isResolvingRequestedVideo, requestedVideoId, shouldDisableRelatedRailTransition]);
 
   useEffect(() => {
+    if (requestedVideoId && isResolvingRequestedVideo && currentVideo.id === requestedVideoId) {
+      pendingRelatedVideosRef.current = null;
+      return;
+    }
+
     const currentSignature = displayedRelatedVideos.map((video) => video.id).join("|");
     const nextSignature = sourceRelatedVideos.map((video) => video.id).join("|");
 
@@ -2387,6 +2396,19 @@ function ShellDynamicInner({
     }
 
     if (currentSignature === nextSignature) {
+      return;
+    }
+
+    if (relatedTransitionPhase === "loading") {
+      // During loading phase, only display new videos if we don't already have ones displayed.
+      // This prevents rehydrating stale cards while waiting for fresh data.
+      if (displayedRelatedVideos.length === 0 && sourceRelatedVideos.length > 0) {
+        // New videos have arrived; prepare to fade them in.
+        setDisplayedRelatedVideos(sourceRelatedVideos);
+        pendingRelatedVideosRef.current = null;
+        setRelatedTransitionPhase("fading-in");
+      }
+      // Do not proceed with other logic while in loading phase; stay put.
       return;
     }
 
@@ -2408,17 +2430,19 @@ function ShellDynamicInner({
 
     pendingRelatedVideosRef.current = sourceRelatedVideos;
 
-    if (relatedTransitionPhase === "loading") {
-      setDisplayedRelatedVideos(sourceRelatedVideos);
-      pendingRelatedVideosRef.current = null;
-      setRelatedTransitionPhase("fading-in");
-      return;
-    }
-
     if (relatedTransitionPhase === "idle") {
       setRelatedTransitionPhase("fading-out");
     }
-  }, [displayedRelatedVideos, sourceRelatedVideos, relatedTransitionPhase, shouldDisableRelatedRailTransition]);
+  }, [
+    currentVideo.id,
+    displayedRelatedVideos,
+    isWatchNextVideoSelectionPending,
+    isResolvingRequestedVideo,
+    relatedTransitionPhase,
+    requestedVideoId,
+    shouldDisableRelatedRailTransition,
+    sourceRelatedVideos,
+  ]);
 
   useEffect(() => {
     if (shouldDisableRelatedRailTransition) {

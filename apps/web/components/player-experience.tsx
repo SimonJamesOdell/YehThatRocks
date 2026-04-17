@@ -3923,7 +3923,7 @@ export function PlayerExperience({
                 >
                   {"<- watch again"}
                 </button>
-                {isLoggedIn && hasSeenEndedChoiceVideos ? (
+                {isLoggedIn ? (
                   <button
                     type="button"
                     className={`newPageSeenToggle playerEndedChoiceSeenToggle${endedChoiceHideSeen ? " newPageSeenToggleActive" : ""}`}
