@@ -45,4 +45,14 @@ SET @stmt = IF(@col_exists = 0, 'ALTER TABLE videos ADD COLUMN views INT DEFAULT
 PREPARE alter_stmt FROM @stmt;
 EXECUTE alter_stmt;
 DEALLOCATE PREPARE alter_stmt;
-UPDATE videos SET views = COALESCE(viewCount, 0) WHERE views = 0 OR views IS NULL;
+
+-- Backfill legacy views from viewCount only on first-time column creation.
+-- This avoids repeating a large write/update scan on every container restart.
+SET @backfill_stmt = IF(
+  @col_exists = 0,
+  'UPDATE videos SET views = COALESCE(viewCount, 0) WHERE views = 0 OR views IS NULL',
+  'SELECT 1'
+);
+PREPARE backfill_stmt FROM @backfill_stmt;
+EXECUTE backfill_stmt;
+DEALLOCATE PREPARE backfill_stmt;
