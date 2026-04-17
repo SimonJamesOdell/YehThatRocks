@@ -4928,6 +4928,8 @@ export async function getVideosByGenre(
       considerRows(keywordVideos);
 
       const artistColumns = await getArtistColumnMap();
+      const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
+      const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
       if (artistColumns.genreColumns.length > 0) {
         const artistNameColumn = escapeSqlIdentifier(artistColumns.name);
         const genrePredicates = artistColumns.genreColumns
@@ -4935,38 +4937,56 @@ export async function getVideosByGenre(
           .join(" OR ");
         const genreParams = artistColumns.genreColumns.map(() => genre);
 
-        const artistGenreMatchedVideos = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
+        const artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
           `
             SELECT
-              v.videoId,
-              v.title,
-              NULL AS channelTitle,
-              v.favourited,
-              v.description
+              a.${artistNameColumn} AS artistName
             FROM artists a
-            INNER JOIN videos v ON LOWER(TRIM(v.parsedArtist)) = LOWER(TRIM(a.${artistNameColumn}))
             WHERE (${genrePredicates})
-              AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
-              AND EXISTS (
-                SELECT 1
-                FROM site_videos sv
-                WHERE sv.video_id = v.id
-                  AND sv.status = 'available'
-              )
-              AND NOT EXISTS (
-                SELECT 1
-                FROM site_videos sv
-                WHERE sv.video_id = v.id
-                  AND (sv.status IS NULL OR sv.status <> 'available')
-              )
-            GROUP BY v.videoId, v.title, v.favourited, v.description
-            ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
-            LIMIT ${fetchQueryLimit}
+            LIMIT 64
           `,
           ...genreParams,
         );
 
-        considerRows(artistGenreMatchedVideos);
+        const normalizedGenreArtistNames = [...new Set(
+          artistGenreRows
+            .map((row) => normalizeArtistKey(row.artistName ?? ""))
+            .filter((name) => name.length > 0),
+        )];
+
+        if (normalizedGenreArtistNames.length > 0) {
+          const placeholders = normalizedGenreArtistNames.map(() => "?").join(", ");
+          const artistGenreMatchedVideos = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
+            `
+              SELECT
+                v.videoId,
+                v.title,
+                NULL AS channelTitle,
+                v.favourited,
+                v.description
+              FROM videos v
+              WHERE ${videoArtistNormExpr} IN (${placeholders})
+                AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+                AND EXISTS (
+                  SELECT 1
+                  FROM site_videos sv
+                  WHERE sv.video_id = v.id
+                    AND sv.status = 'available'
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM site_videos sv
+                  WHERE sv.video_id = v.id
+                    AND (sv.status IS NULL OR sv.status <> 'available')
+                )
+              ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
+              LIMIT ${fetchQueryLimit}
+            `,
+            ...normalizedGenreArtistNames,
+          );
+
+          considerRows(artistGenreMatchedVideos);
+        }
       }
 
     if (canResolveWindow()) {
@@ -5029,7 +5049,7 @@ export async function getVideosByGenre(
     }
 
     const normalizedArtistNames = artistNames
-      .map((name) => name.trim().toLowerCase())
+      .map((name) => normalizeArtistKey(name))
       .filter((name) => name.length > 0)
       .slice(0, 32);
 
@@ -5044,7 +5064,7 @@ export async function getVideosByGenre(
             v.favourited,
             v.description
           FROM videos v
-          WHERE LOWER(TRIM(v.parsedArtist)) IN (${placeholders})
+          WHERE ${videoArtistNormExpr} IN (${placeholders})
             AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
             AND EXISTS (
               SELECT 1
