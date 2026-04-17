@@ -93,6 +93,11 @@ function main() {
   assertContains(catalogDataSource, "const inFlightRows = artistLetterInFlight.get(letterCacheKey);", "Catalog data reuses in-flight parsed-artist letter queries", failures);
   assertContains(catalogDataSource, "artistLetterInFlight.set(letterCacheKey, buildRowsPromise);", "Catalog data stores parsed-artist letter in-flight promise", failures);
   assertContains(catalogDataSource, "if (artistLetterInFlight.get(letterCacheKey) === buildRowsPromise)", "Catalog data clears parsed-artist in-flight entry after completion", failures);
+  assertContains(catalogDataSource, "const ARTIST_SLUG_LOOKUP_CACHE_TTL_MS = 5 * 60 * 1000;", "Catalog data defines slug lookup cache TTL", failures);
+  assertContains(catalogDataSource, "const ARTIST_SINGLE_SLUG_CACHE_TTL_MS = 5 * 60 * 1000;", "Catalog data defines single-slug cache TTL", failures);
+  assertContains(catalogDataSource, "if (artistSlugLookupCache && artistSlugLookupCache.expiresAt > now)", "Catalog data reuses cached slug lookup map", failures);
+  assertContains(catalogDataSource, "const fastMatch = narrowed.find((artist) => slugify(artist.name) === slug);", "Catalog data keeps exact slugify match check in slug fast path", failures);
+  assertContains(catalogDataSource, "if (!artistSlugLookupInFlight)", "Catalog data deduplicates concurrent fallback slug-map rebuilds", failures);
 
   // Artist detail and wiki route invariants.
   assertNotContains(artistPageSource, 'className="categoryHeaderWikiLink"', "Artist detail page no longer exposes a wiki header link", failures);

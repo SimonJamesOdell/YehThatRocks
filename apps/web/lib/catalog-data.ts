@@ -898,6 +898,16 @@ let artistsListCache:
     }
   | undefined;
 let artistsListInFlight: Promise<ArtistRecord[]> | undefined;
+const ARTIST_SLUG_LOOKUP_CACHE_TTL_MS = 5 * 60 * 1000;
+let artistSlugLookupCache:
+  | {
+      expiresAt: number;
+      rowsBySlug: Map<string, ArtistRecord>;
+    }
+  | undefined;
+let artistSlugLookupInFlight: Promise<Map<string, ArtistRecord>> | undefined;
+const ARTIST_SINGLE_SLUG_CACHE_TTL_MS = 5 * 60 * 1000;
+const artistSingleSlugCache = new Map<string, { expiresAt: number; artist: ArtistRecord }>();
 const ARTIST_STATS_LETTER_BACKFILL_TTL_MS = 10 * 60 * 1000;
 const artistStatsLetterBackfillCache = new Map<string, { expiresAt: number }>();
 const artistStatsLetterBackfillInFlight = new Map<string, Promise<void>>();
@@ -4046,29 +4056,109 @@ export async function getArtistBySlug(slug: string) {
       }
     }
 
-    const columns = await getArtistColumnMap();
-    const nameCol = escapeSqlIdentifier(columns.name);
-    const countrySelect = columns.country ? `a.${escapeSqlIdentifier(columns.country)} AS country` : "NULL AS country";
-    const genreExpr =
-      columns.genreColumns.length > 0
-        ? `COALESCE(${columns.genreColumns.map((column) => `a.${escapeSqlIdentifier(column)}`).join(", ")})`
-        : "NULL";
+    const now = Date.now();
+    if (artistSlugLookupCache && artistSlugLookupCache.expiresAt > now) {
+      return artistSlugLookupCache.rowsBySlug.get(slug) ?? getSeedArtistBySlug(slug);
+    }
 
-    const artists = await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
-      `
-        SELECT
-          a.${nameCol} AS name,
-          ${countrySelect},
-          ${genreExpr} AS genre1
-        FROM artists a
-        WHERE a.${nameCol} IS NOT NULL
-          AND TRIM(a.${nameCol}) <> ''
-        ORDER BY a.${nameCol} ASC
-      `,
-    );
+    const singleCached = artistSingleSlugCache.get(slug);
+    if (singleCached && singleCached.expiresAt > now) {
+      return singleCached.artist;
+    }
 
-    const match = artists.find((artist) => slugify(artist.name) === slug);
-    return match ? mapArtist(match) : getSeedArtistBySlug(slug);
+    const slugTerms = slug
+      .trim()
+      .toLowerCase()
+      .split("-")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0)
+      .slice(0, 8);
+
+    if (slugTerms.length > 0) {
+      const columns = await getArtistColumnMap();
+      const nameCol = escapeSqlIdentifier(columns.name);
+      const countrySelect = columns.country ? `a.${escapeSqlIdentifier(columns.country)} AS country` : "NULL AS country";
+      const genreExpr =
+        columns.genreColumns.length > 0
+          ? `COALESCE(${columns.genreColumns.map((column) => `a.${escapeSqlIdentifier(column)}`).join(", ")})`
+          : "NULL";
+
+      const termPredicates = slugTerms.map(() => `LOWER(a.${nameCol}) LIKE ?`).join(" AND ");
+      const termParams = slugTerms.map((term) => `%${term}%`);
+
+      const narrowed = await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+        `
+          SELECT
+            a.${nameCol} AS name,
+            ${countrySelect},
+            ${genreExpr} AS genre1
+          FROM artists a
+          WHERE a.${nameCol} IS NOT NULL
+            AND TRIM(a.${nameCol}) <> ''
+            AND ${termPredicates}
+          ORDER BY a.${nameCol} ASC
+          LIMIT 400
+        `,
+        ...termParams,
+      );
+
+      const fastMatch = narrowed.find((artist) => slugify(artist.name) === slug);
+      if (fastMatch) {
+        const mapped = mapArtist(fastMatch);
+        artistSingleSlugCache.set(slug, {
+          expiresAt: Date.now() + ARTIST_SINGLE_SLUG_CACHE_TTL_MS,
+          artist: mapped,
+        });
+        return mapped;
+      }
+    }
+
+    if (!artistSlugLookupInFlight) {
+      artistSlugLookupInFlight = (async () => {
+        const columns = await getArtistColumnMap();
+        const nameCol = escapeSqlIdentifier(columns.name);
+        const countrySelect = columns.country ? `a.${escapeSqlIdentifier(columns.country)} AS country` : "NULL AS country";
+        const genreExpr =
+          columns.genreColumns.length > 0
+            ? `COALESCE(${columns.genreColumns.map((column) => `a.${escapeSqlIdentifier(column)}`).join(", ")})`
+            : "NULL";
+
+        const artists = await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+          `
+            SELECT
+              a.${nameCol} AS name,
+              ${countrySelect},
+              ${genreExpr} AS genre1
+            FROM artists a
+            WHERE a.${nameCol} IS NOT NULL
+              AND TRIM(a.${nameCol}) <> ''
+            ORDER BY a.${nameCol} ASC
+          `,
+        );
+
+        const rowsBySlug = new Map<string, ArtistRecord>();
+        for (const row of artists) {
+          const mapped = mapArtist(row);
+          // Preserve existing behavior by keeping the first row encountered
+          // for any slug collision in name-ordered results.
+          if (!rowsBySlug.has(mapped.slug)) {
+            rowsBySlug.set(mapped.slug, mapped);
+          }
+        }
+
+        artistSlugLookupCache = {
+          expiresAt: Date.now() + ARTIST_SLUG_LOOKUP_CACHE_TTL_MS,
+          rowsBySlug,
+        };
+
+        return rowsBySlug;
+      })().finally(() => {
+        artistSlugLookupInFlight = undefined;
+      });
+    }
+
+    const rowsBySlug = await artistSlugLookupInFlight;
+    return rowsBySlug.get(slug) ?? getSeedArtistBySlug(slug);
   } catch {
     return getSeedArtistBySlug(slug);
   }
