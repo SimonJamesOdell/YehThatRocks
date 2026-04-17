@@ -834,7 +834,8 @@ export function resolveSelectedVideoId(
   return selectedVideoId ?? fallbackVideoId;
 }
 
-const TOP_POOL_CACHE_TTL_MS = 60_000;
+const TOP_POOL_CACHE_TTL_MS = 5 * 60 * 1000;
+const MIN_RANKED_TOP_POOL_FETCH = 200;
 let topPoolCache:
   | {
       expiresAt: number;
@@ -1045,13 +1046,14 @@ async function clearGenreCardThumbnailForVideo(videoId: string) {
 }
 
 async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
+  const fetchLimit = Math.max(limit, MIN_RANKED_TOP_POOL_FETCH);
   const now = Date.now();
 
   if (topPoolCache && topPoolCache.expiresAt > now && topPoolCache.rows.length >= limit) {
     return topPoolCache.rows.slice(0, limit);
   }
 
-  if (topPoolInFlight && topPoolInFlight.limit >= limit) {
+  if (topPoolInFlight && topPoolInFlight.limit >= fetchLimit) {
     const rows = await topPoolInFlight.promise;
     return rows.slice(0, limit);
   }
@@ -1077,35 +1079,41 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
               AND sv.status = 'available'
           )
         ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
-        LIMIT ${limit}
+        LIMIT ${fetchLimit}
       `;
     } catch {
       rows = await prisma.$queryRaw<RankedVideoRow[]>`
+        WITH eligible_videos AS (
+          SELECT
+            v.id,
+            v.videoId,
+            v.title,
+            v.description,
+            COALESCE(v.viewCount, 0) AS viewCount
+          FROM videos v
+          INNER JOIN site_videos sv ON sv.video_id = v.id
+          WHERE sv.status = 'available'
+            AND v.videoId IS NOT NULL
+            AND CHAR_LENGTH(v.videoId) = 11
+        )
         SELECT
-          v.videoId,
-          v.title,
+          ev.videoId,
+          ev.title,
           NULL AS channelTitle,
           COALESCE(fv.favouriteCount, 0) AS favourited,
-          v.description
-        FROM videos v
+          ev.description
+        FROM eligible_videos ev
         LEFT JOIN (
           SELECT
             f.videoId,
             COUNT(DISTINCT f.userid) AS favouriteCount
           FROM favourites f
+          INNER JOIN eligible_videos ev2 ON ev2.videoId = f.videoId
           WHERE f.videoId IS NOT NULL
           GROUP BY f.videoId
-        ) fv ON fv.videoId = v.videoId
-        WHERE v.videoId IS NOT NULL
-          AND CHAR_LENGTH(v.videoId) = 11
-          AND EXISTS (
-            SELECT 1
-            FROM site_videos sv
-            WHERE sv.video_id = v.id
-              AND sv.status = 'available'
-          )
-        ORDER BY COALESCE(fv.favouriteCount, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
-        LIMIT ${limit}
+        ) fv ON fv.videoId = ev.videoId
+        ORDER BY COALESCE(fv.favouriteCount, 0) DESC, ev.viewCount DESC, ev.videoId ASC
+        LIMIT ${fetchLimit}
       `;
     }
 
@@ -1120,7 +1128,7 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
   })();
 
   topPoolInFlight = {
-    limit,
+    limit: fetchLimit,
     promise: fetchPromise,
   };
 
