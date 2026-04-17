@@ -357,7 +357,15 @@ export function NewVideosLoader({
         />
       ))}
       {loading && allVideos.length === 0 && (
-        <div style={{ padding: "20px", textAlign: "center", color: "#999" }}>Loading more videos...</div>
+        <div className="relatedLoadingState" aria-live="polite" aria-busy="true">
+          <span className="playerBootBars" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </span>
+          <span>Loading new videos...</span>
+        </div>
       )}
 
       {flaggingVideo ? (
