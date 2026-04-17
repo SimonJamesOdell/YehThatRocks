@@ -868,6 +868,9 @@ let genreCardsCache: { expiresAt: number; cards: GenreCard[] } | undefined;
 let genreCardsInFlight: Promise<GenreCard[]> | undefined;
 const ARTIST_VIDEOS_CACHE_TTL_MS = 60_000;
 const artistVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
+const ARTIST_NORM_VIDEO_POOL_CACHE_TTL_MS = 60_000;
+const artistNormVideoPoolCache = new Map<string, { expiresAt: number; rows: RankedVideoRow[] }>();
+const artistNormVideoPoolInFlight = new Map<string, { limit: number; promise: Promise<RankedVideoRow[]> }>();
 const RELATED_VIDEOS_CACHE_TTL_MS = 20_000;
 const relatedVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
 const relatedVideosInFlight = new Map<string, { count: number; promise: Promise<VideoRecord[]> }>();
@@ -1218,12 +1221,82 @@ export function clearCatalogVideoCaches() {
   artistsListInFlight = undefined;
   relatedVideosCache.clear();
   artistVideosCache.clear();
+  artistNormVideoPoolCache.clear();
+  artistNormVideoPoolInFlight.clear();
   artistLetterCache.clear();
   artistLetterInFlight.clear();
   artistLetterPageCache.clear();
   artistLetterPageInFlight.clear();
   genreArtistsCache.clear();
   genreVideosCache.clear();
+}
+
+async function getArtistVideoPoolByNormalizedName(normalizedArtist: string, limit: number): Promise<RankedVideoRow[]> {
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+  const cacheKey = normalizedArtist;
+  const now = Date.now();
+
+  const cached = artistNormVideoPoolCache.get(cacheKey);
+  if (cached && cached.expiresAt > now && cached.rows.length >= safeLimit) {
+    return cached.rows.slice(0, safeLimit);
+  }
+
+  const inFlight = artistNormVideoPoolInFlight.get(cacheKey);
+  if (inFlight && inFlight.limit >= safeLimit) {
+    const rows = await inFlight.promise;
+    return rows.slice(0, safeLimit);
+  }
+
+  const resolvePool = async () => {
+    const materializedLimit = Math.max(120, safeLimit);
+    const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
+    const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
+    const rows = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
+      `
+        SELECT
+          v.videoId,
+          v.title,
+          COALESCE(v.parsedArtist, NULL) AS channelTitle,
+          v.favourited,
+          v.description
+        FROM videos v
+        WHERE ${videoArtistNormExpr} = ?
+          AND v.videoId IS NOT NULL
+          AND CHAR_LENGTH(v.videoId) = 11
+          AND EXISTS (
+            SELECT 1
+            FROM site_videos sv
+            WHERE sv.video_id = v.id
+              AND sv.status = 'available'
+          )
+        ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id DESC
+        LIMIT ${materializedLimit}
+      `,
+      normalizedArtist,
+    );
+
+    artistNormVideoPoolCache.set(cacheKey, {
+      expiresAt: Date.now() + ARTIST_NORM_VIDEO_POOL_CACHE_TTL_MS,
+      rows,
+    });
+
+    return rows;
+  };
+
+  const pending = resolvePool();
+  artistNormVideoPoolInFlight.set(cacheKey, {
+    limit: safeLimit,
+    promise: pending,
+  });
+
+  try {
+    const rows = await pending;
+    return rows.slice(0, safeLimit);
+  } finally {
+    if (artistNormVideoPoolInFlight.get(cacheKey)?.promise === pending) {
+      artistNormVideoPoolInFlight.delete(cacheKey);
+    }
+  }
 }
 
 function mapPlaylistVideo(video: {
@@ -3092,8 +3165,6 @@ export async function getRelatedVideos(
 
     const currentArtist = currentRows[0]?.parsedArtist?.trim() || null;
     const currentArtistNormalized = currentArtist ? normalizeArtistKey(currentArtist) : null;
-    const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
-    const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
 
     // Fetch watch history and favourites in parallel with candidate queries.
     // Seen videos are excluded unless they are in the user's favourites.
@@ -3136,30 +3207,8 @@ export async function getRelatedVideos(
         `;
 
         const sameArtistPromise = currentArtistNormalized
-          ? prisma.$queryRawUnsafe<RankedVideoRow[]>(
-              `
-                SELECT
-                  v.videoId,
-                  v.title,
-                  COALESCE(v.parsedArtist, NULL) AS channelTitle,
-                  v.favourited,
-                  v.description
-                FROM videos v
-                WHERE ${videoArtistNormExpr} = ?
-                  AND v.videoId <> ?
-                  AND v.videoId IS NOT NULL
-                  AND CHAR_LENGTH(v.videoId) = 11
-                  AND EXISTS (
-                    SELECT 1
-                    FROM site_videos sv
-                    WHERE sv.video_id = v.id
-                      AND sv.status = 'available'
-                  )
-                ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id DESC
-                LIMIT 36
-              `,
-              currentArtistNormalized,
-              normalizedVideoId,
+          ? getArtistVideoPoolByNormalizedName(currentArtistNormalized, 40).then((rows) =>
+              rows.filter((row) => row.videoId !== normalizedVideoId).slice(0, 36),
             )
           : Promise.resolve([] as RankedVideoRow[]);
 
@@ -3184,6 +3233,8 @@ export async function getRelatedVideos(
           }
 
           const artistNameNormExpr = getArtistNameNormalizationExpr("a", artistColumns);
+          const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
+          const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
           const videoArtistNormExprNullable = getVideoArtistNormalizationExpr("v", videoArtistNormColumn, { nullToEmpty: false });
           const genreExpr = `COALESCE(${artistColumns.genreColumns.map((column) => `a.${escapeSqlIdentifier(column)}`).join(", ")})`;
 
