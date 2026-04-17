@@ -309,7 +309,26 @@ export function CategoryVideosInfinite({
     : -1;
 
   if (videos.length === 0) {
-    return <p className="categoryNoVideos">No videos found for this category yet.</p>;
+    return (
+      <>
+        <div className="favouritesBlindBar">
+          <div className="newPageHeaderLeft">
+            <strong>
+              <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
+                <span className="categoryHeaderIcon" aria-hidden="true">☣</span>
+                <Link href="/categories" className="categoryHeaderBreadcrumbLink">
+                  Categories
+                </Link>
+                <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">&gt;</span>
+                <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{genre}</span>
+              </span>
+            </strong>
+          </div>
+          <CloseLink />
+        </div>
+        <p className="categoryNoVideos">No videos found for this category yet.</p>
+      </>
+    );
   }
 
   return (

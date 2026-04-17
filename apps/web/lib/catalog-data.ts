@@ -4447,6 +4447,11 @@ export async function getGenreCards() {
           AND gc.thumbnail_video_id <> ''
           AND gc.genre IS NOT NULL
           AND TRIM(gc.genre) <> ''
+          AND EXISTS (
+            SELECT 1 FROM site_videos sv
+            WHERE sv.genre = gc.genre
+              AND sv.status = 'available'
+          )
         GROUP BY gc.genre
         ORDER BY genre ASC
         LIMIT 1000
