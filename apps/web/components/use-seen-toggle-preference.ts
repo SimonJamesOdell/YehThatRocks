@@ -15,15 +15,16 @@ export function useSeenTogglePreference({
   isAuthenticated,
   defaultValue = false,
 }: UseSeenTogglePreferenceInput) {
-  const [value, setValue] = useState(() => (isAuthenticated ? readPersistedBoolean(key, defaultValue) : false));
+  // Keep first render SSR/client deterministic; hydrate persisted value after mount.
+  const [value, setValue] = useState(() => (isAuthenticated ? defaultValue : false));
   const [isServerHydrated, setIsServerHydrated] = useState(() => !isAuthenticated);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !isServerHydrated) {
       return;
     }
     writePersistedBoolean(key, value);
-  }, [isAuthenticated, key, value]);
+  }, [isAuthenticated, isServerHydrated, key, value]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -34,6 +35,7 @@ export function useSeenTogglePreference({
 
     let cancelled = false;
     setIsServerHydrated(false);
+    setValue(readPersistedBoolean(key, defaultValue));
 
     const loadServerValue = async () => {
       try {

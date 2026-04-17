@@ -18,6 +18,16 @@ apps/web/.env.local
 !.env.example
 .env.production.example
 
+# Keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+id_rsa
+id_ed25519
+
 # Local database dumps/exports (keep migration/admin SQL tracked)
 *.sql.gz
 *.sql.zip

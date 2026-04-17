@@ -85,7 +85,7 @@ Or via PowerShell:
 $body = @{
     email = "test@example.com"
     screenName = "testuser"
-    password = "TestPassword123!"
+  password = "CHANGE_ME_STRONG_PASSWORD"
     remember = $true
 } | ConvertTo-Json
 

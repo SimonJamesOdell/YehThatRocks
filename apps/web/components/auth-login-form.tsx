@@ -17,6 +17,8 @@ function getBrowserCredentialsContainer() {
   return (navigator as Navigator & { credentials?: CredentialsContainerLike }).credentials;
 }
 
+const INTRO_SKIP_ONCE_AFTER_LOGIN_KEY = "ytr:intro-skip-once";
+
 export function AuthLoginForm() {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -64,6 +66,7 @@ export function AuthLoginForm() {
 
       const videoParam = new URLSearchParams(window.location.search).get("v");
       const target = videoParam ? `/?v=${encodeURIComponent(videoParam)}` : "/";
+      window.sessionStorage.setItem(INTRO_SKIP_ONCE_AFTER_LOGIN_KEY, "1");
       router.push(target);
       router.refresh();
       return true;
