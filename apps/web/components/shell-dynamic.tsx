@@ -249,6 +249,7 @@ const DESKTOP_INTRO_MOVE_MS = 760;
 const DESKTOP_INTRO_REVEAL_MS = 820;
 const DESKTOP_INTRO_MAX_LOGO_WIDTH_PX = 1128;
 const DESKTOP_INTRO_VIEWPORT_WIDTH_RATIO = 1.128;
+const INTRO_SKIP_ONCE_AFTER_LOGIN_KEY = "ytr:intro-skip-once";
 
 function dedupeVideoList(videos: VideoRecord[]) {
   return videos.filter(
@@ -417,12 +418,16 @@ function ShellDynamicInner({
   const [isMobileCommunityOpen, setIsMobileCommunityOpen] = useState(false);
   const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(true);
   const [desktopIntroPhase, setDesktopIntroPhase] = useState<"disabled" | "hold" | "moving" | "revealing" | "done">("disabled");
+  const [hasClientMounted, setHasClientMounted] = useState(false);
+  const [hasBootstrappedWatchNext, setHasBootstrappedWatchNext] = useState(false);
   const [desktopIntroDeltaX, setDesktopIntroDeltaX] = useState(0);
   const [desktopIntroDeltaY, setDesktopIntroDeltaY] = useState(0);
   const [desktopIntroScale, setDesktopIntroScale] = useState(1);
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
   const authProbeFailureCountRef = useRef(0);
-  const lastVideoIdRef = useRef<string | null>(null);
+  const lastVideoIdRef = useRef<string | null>(
+    requestedVideoId && requestedVideoId === initialVideo.id ? requestedVideoId : null,
+  );
   const deniedRequestedVideoIdRef = useRef<string | null>(null);
   const hasResolvedInitialVideoRef = useRef(Boolean(requestedVideoId));
   const startupHydratedVideoIdRef = useRef<string | null>(null);
@@ -497,11 +502,17 @@ function ShellDynamicInner({
   const activeSuggestionIdxRef = useRef(-1);
 
   const isCategoriesRoute = pathname === "/categories" || pathname.startsWith("/categories/");
+  const isArtistsRoute = pathname === "/artists" || pathname.startsWith("/artist/") || pathname.startsWith("/artists/");
   const previousPathname = previousPathnameRef.current;
   const previousWasCategoriesRoute = previousPathname === "/categories" || previousPathname?.startsWith("/categories/") === true;
+  const previousWasArtistsRoute = previousPathname === "/artists"
+    || previousPathname?.startsWith("/artist/") === true
+    || previousPathname?.startsWith("/artists/") === true;
   const isOverlayRoute = pathname !== "/";
   const shouldShowOverlayPanel = isOverlayRoute || pendingOverlayOpenKind !== null;
-  const disableOverlayDropAnimation = isCategoriesRoute && previousWasCategoriesRoute;
+  const disableOverlayDropAnimation =
+    (isCategoriesRoute && previousWasCategoriesRoute)
+    || (isArtistsRoute && previousWasArtistsRoute);
   const isPlayerWidthOverlayRoute =
     pathname === "/new"
     || pathname === "/top100"
@@ -515,10 +526,21 @@ function ShellDynamicInner({
   ].filter(Boolean).join(" ");
   const shouldRunChat = isAuthenticated && !shouldShowOverlayPanel;
   const shouldDisableRelatedRailTransition = pathname === "/new";
+  const isWaitingForClientHydration = !hasClientMounted;
   const isDesktopIntroActive =
     desktopIntroPhase === "hold"
     || desktopIntroPhase === "moving"
     || desktopIntroPhase === "revealing";
+  const isWaitingForStartupVideoUrlSync =
+    !requestedVideoId
+    && startupHydratedVideoIdRef.current !== null;
+  const isWatchNextVideoSelectionPending =
+    isWaitingForClientHydration
+    || isWaitingForStartupVideoUrlSync
+    || isResolvingInitialVideo
+    || isResolvingRequestedVideo
+    || Boolean(requestedVideoId && startupHydratedVideoIdRef.current === requestedVideoId)
+    || Boolean(requestedVideoId && requestedVideoId !== currentVideo.id);
   const isArtistsIndexRoute = pathname === "/artists";
   const shouldDockDesktopPlayer = shouldShowOverlayPanel;
   const shouldDockUnderArtistsAlphabet = shouldDockDesktopPlayer && isArtistsIndexRoute;
@@ -540,6 +562,10 @@ function ShellDynamicInner({
     } as CSSProperties)
     : undefined;
   const isMobileCommunityCollapsed = isMobileViewport && !isMobileCommunityOpen;
+
+  useEffect(() => {
+    setHasClientMounted(true);
+  }, []);
 
   useEffect(() => {
     previousPathnameRef.current = pathname;
@@ -983,11 +1009,11 @@ function ShellDynamicInner({
       return;
     }
 
-    if (sessionStorage.getItem("ytr-intro-played")) {
+    if (sessionStorage.getItem(INTRO_SKIP_ONCE_AFTER_LOGIN_KEY) === "1") {
+      sessionStorage.removeItem(INTRO_SKIP_ONCE_AFTER_LOGIN_KEY);
       setDesktopIntroPhase("disabled");
       setIsDesktopIntroPreload(false);
     } else {
-      sessionStorage.setItem("ytr-intro-played", "1");
       startDesktopIntroSequence();
     }
 
@@ -1293,77 +1319,25 @@ function ShellDynamicInner({
       setIsResolvingInitialVideo(false);
       hasResolvedInitialVideoRef.current = true;
       startupHydratedVideoIdRef.current = selectedVideo.id;
+      // Pre-populate the prefetch cache so the requestedVideoId effect can
+      // short-circuit after the URL syncs instead of issuing a redundant fetch.
+      lastVideoIdRef.current = selectedVideo.id;
+      prefetchedCurrentVideoPayloadRef.current.set(selectedVideo.id, {
+        expiresAt: Date.now() + CURRENT_VIDEO_PREFETCH_TTL_MS,
+        payload: { currentVideo: selectedVideo, relatedVideos },
+      });
 
       navigateToVideo(selectedVideo.id, source);
       return true;
     };
-
-    let retryTimeoutId: number | null = null;
-    let activeController: AbortController | null = null;
-
-    const tryResolveStartupVideo = async (attempt = 1): Promise<void> => {
-      try {
-        const controller = new AbortController();
-        activeController = controller;
-        const timeoutId = window.setTimeout(() => controller.abort(), 4000);
-        const response = await fetch(`/api/videos/top/random${previousVideoId ? `?exclude=${encodeURIComponent(previousVideoId)}` : ""}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        window.clearTimeout(timeoutId);
-        activeController = null;
-
-        if (!response.ok || cancelled) {
-          throw new Error("Failed to load startup random video");
-        }
-
-        const data = (await response.json()) as {
-          video?: VideoRecord;
-          relatedVideos?: VideoRecord[];
-        };
-
-        if (data.video && typeof data.video.id === "string") {
-          const related = Array.isArray(data.relatedVideos) ? data.relatedVideos : [];
-          logFlow("startup-selection:api-success", {
-            selectedVideoId: data.video.id,
-            relatedCount: related.length,
-            attempt,
-          });
-          resolveStartupCandidate(data.video, related, "api-random");
-          return;
-        }
-        logFlow("startup-selection:server-fallback", {
-          selectedVideoId: initialVideo.id,
-          relatedCount: initialHydratedRelatedVideos.length,
-          attempt,
-        });
-        resolveStartupCandidate(initialVideo, initialHydratedRelatedVideos, "server-initial");
-        return;
-      } catch (error) {
-        activeController = null;
-        if (cancelled) {
-          return;
-        }
-
-        logFlow("startup-selection:server-fallback-after-error", {
-          selectedVideoId: initialVideo.id,
-          relatedCount: initialHydratedRelatedVideos.length,
-          attempt,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        resolveStartupCandidate(initialVideo, initialHydratedRelatedVideos, "server-initial-fallback");
-        return;
-      }
-    };
-
-    void tryResolveStartupVideo();
+    logFlow("startup-selection:server-initial", {
+      selectedVideoId: initialVideo.id,
+      relatedCount: initialHydratedRelatedVideos.length,
+    });
+    resolveStartupCandidate(initialVideo, initialHydratedRelatedVideos, "server-initial");
 
     return () => {
       cancelled = true;
-      activeController?.abort();
-      if (retryTimeoutId !== null) {
-        window.clearTimeout(retryTimeoutId);
-      }
     };
   }, [initialHydratedRelatedVideos, initialVideo, pathname, requestedVideoId, router, searchParamsKey, startupSelectionRefreshTick]);
 
@@ -1396,15 +1370,11 @@ function ShellDynamicInner({
       currentVideo.id === requestedVideoId &&
       !isResolvingRequestedVideo
     ) {
-      return;
-    }
-
-    // Startup already hydrated this selected ID from /api/videos/top payload.
-    // Skip one redundant /api/current-video resolve request.
-    if (startupHydratedVideoIdRef.current === requestedVideoId) {
-      startupHydratedVideoIdRef.current = null;
-      lastVideoIdRef.current = requestedVideoId;
-      setIsResolvingRequestedVideo(false);
+      // Data is already correct (populated by startup resolver or previous fetch).
+      // Clear the startup-hydration sentinel so the rail stops showing a loader.
+      if (startupHydratedVideoIdRef.current === requestedVideoId) {
+        startupHydratedVideoIdRef.current = null;
+      }
       return;
     }
 
@@ -1441,7 +1411,6 @@ function ShellDynamicInner({
                   : previousVideo.description,
             }));
             hasOptimisticVideo = true;
-            setIsResolvingRequestedVideo(false);
             window.sessionStorage.removeItem(PENDING_VIDEO_SELECTION_KEY);
           }
         } catch {
@@ -1455,7 +1424,6 @@ function ShellDynamicInner({
       if (relatedMatch) {
         setCurrentVideo(relatedMatch);
         hasOptimisticVideo = true;
-        setIsResolvingRequestedVideo(false);
       }
     }
 
@@ -1464,8 +1432,15 @@ function ShellDynamicInner({
       if (cached && cached.expiresAt > Date.now() && cached.payload.currentVideo?.id === requestedVideoId) {
         setCurrentVideo(cached.payload.currentVideo);
         setRelatedVideos(cached.payload.relatedVideos ?? []);
-        hasOptimisticVideo = true;
+        if (startupHydratedVideoIdRef.current === requestedVideoId) {
+          startupHydratedVideoIdRef.current = null;
+        }
         setIsResolvingRequestedVideo(false);
+        if (!hasResolvedInitialVideoRef.current) {
+          hasResolvedInitialVideoRef.current = true;
+          setIsResolvingInitialVideo(false);
+        }
+        return;
       }
     }
 
@@ -1494,6 +1469,9 @@ function ShellDynamicInner({
           } else {
             setDeniedPlaybackMessage(String(data.denied.message));
           }
+          if (startupHydratedVideoIdRef.current === requestedVideoId) {
+            startupHydratedVideoIdRef.current = null;
+          }
           deniedRequestedVideoIdRef.current = requestedVideoId;
           setIsResolvingRequestedVideo(false);
           if (!hasResolvedInitialVideoRef.current) {
@@ -1505,6 +1483,9 @@ function ShellDynamicInner({
         }
 
         if (data?.currentVideo?.id) {
+          if (startupHydratedVideoIdRef.current === requestedVideoId) {
+            startupHydratedVideoIdRef.current = null;
+          }
           prefetchedCurrentVideoPayloadRef.current.set(requestedVideoId, {
             expiresAt: Date.now() + CURRENT_VIDEO_PREFETCH_TTL_MS,
             payload: data,
@@ -1547,6 +1528,9 @@ function ShellDynamicInner({
           requestedVideoId,
           attempt,
         });
+        if (startupHydratedVideoIdRef.current === requestedVideoId) {
+          startupHydratedVideoIdRef.current = null;
+        }
         setIsResolvingRequestedVideo(false);
         return;
       }
@@ -2066,6 +2050,44 @@ function ShellDynamicInner({
     ? displayedRenderableRelatedVideos.filter((video) => !seenVideoIdsRef.current.has(video.id))
     : displayedRenderableRelatedVideos;
   const hasSeenWatchNextVideos = displayedRenderableRelatedVideos.some((video) => seenVideoIdsRef.current.has(video.id));
+
+  useEffect(() => {
+    if (hasBootstrappedWatchNext) {
+      return;
+    }
+
+    if (rightRailMode !== "watch-next") {
+      return;
+    }
+
+    if (isWatchNextVideoSelectionPending || relatedTransitionPhase !== "idle") {
+      return;
+    }
+
+    const currentSignature = displayedRelatedVideos.map((video) => video.id).join("|");
+    const nextSignature = sourceRelatedVideos.map((video) => video.id).join("|");
+    if (currentSignature !== nextSignature) {
+      return;
+    }
+
+    if (!shouldDisableRelatedRailTransition && displayedRelatedVideos.length > 0) {
+      setRelatedTransitionPhase("fading-in");
+    }
+
+    setHasBootstrappedWatchNext(true);
+  }, [
+    displayedRelatedVideos,
+    hasBootstrappedWatchNext,
+    isWatchNextVideoSelectionPending,
+    relatedTransitionPhase,
+    rightRailMode,
+    shouldDisableRelatedRailTransition,
+    sourceRelatedVideos,
+  ]);
+
+  const shouldShowWatchNextBootstrapLoader = rightRailMode === "watch-next"
+    && (!hasBootstrappedWatchNext || isWatchNextVideoSelectionPending);
+
   useEffect(() => {
     relatedVideosRef.current = relatedVideos;
   }, [relatedVideos]);
@@ -2106,7 +2128,12 @@ function ShellDynamicInner({
   );
 
   const loadMoreRelatedVideos = useCallback(async () => {
-    if (relatedLoadInFlightRef.current || !hasMoreRelated || rightRailMode !== "watch-next") {
+    if (
+      relatedLoadInFlightRef.current
+      || !hasMoreRelated
+      || rightRailMode !== "watch-next"
+      || isWatchNextVideoSelectionPending
+    ) {
       return;
     }
 
@@ -2163,10 +2190,16 @@ function ShellDynamicInner({
       relatedLoadInFlightRef.current = false;
       setIsLoadingMoreRelated(false);
     }
-  }, [currentVideo.id, hasMoreRelated, rightRailMode]);
+  }, [currentVideo.id, hasMoreRelated, isWatchNextVideoSelectionPending, rightRailMode]);
 
   const maybeLoadMoreIfNearEnd = useCallback(() => {
-    if (relatedLoadInFlightRef.current || !hasMoreRelated || rightRailMode !== "watch-next" || relatedTransitionPhase !== "idle") {
+    if (
+      relatedLoadInFlightRef.current
+      || !hasMoreRelated
+      || rightRailMode !== "watch-next"
+      || relatedTransitionPhase !== "idle"
+      || isWatchNextVideoSelectionPending
+    ) {
       return;
     }
 
@@ -2179,7 +2212,7 @@ function ShellDynamicInner({
     if (remainingPx <= RELATED_LOAD_AHEAD_PX) {
       void loadMoreRelatedVideos();
     }
-  }, [hasMoreRelated, loadMoreRelatedVideos, relatedTransitionPhase, rightRailMode]);
+  }, [hasMoreRelated, isWatchNextVideoSelectionPending, loadMoreRelatedVideos, relatedTransitionPhase, rightRailMode]);
 
   const handleRelatedScroll = useCallback(() => {
     if (relatedScrollRafRef.current !== null) {
@@ -2219,6 +2252,7 @@ function ShellDynamicInner({
       || relatedTransitionPhase !== "idle"
       || !hasMoreRelated
       || isLoadingMoreRelated
+      || isWatchNextVideoSelectionPending
     ) {
       return;
     }
@@ -2243,6 +2277,7 @@ function ShellDynamicInner({
     hasMoreRelated,
     isLoadingMoreRelated,
     isOverlayRoute,
+    isWatchNextVideoSelectionPending,
     loadMoreRelatedVideos,
     relatedTransitionPhase,
     rightRailMode,
@@ -2255,6 +2290,7 @@ function ShellDynamicInner({
       || relatedTransitionPhase !== "idle"
       || !hasMoreRelated
       || isLoadingMoreRelated
+      || isWatchNextVideoSelectionPending
       || visibleWatchNextVideos.length > 0
     ) {
       return;
@@ -2270,6 +2306,7 @@ function ShellDynamicInner({
   }, [
     hasMoreRelated,
     isLoadingMoreRelated,
+    isWatchNextVideoSelectionPending,
     loadMoreRelatedVideos,
     relatedTransitionPhase,
     rightRailMode,
@@ -2278,7 +2315,13 @@ function ShellDynamicInner({
   ]);
 
   useEffect(() => {
-    if (rightRailMode !== "watch-next" || !hasMoreRelated || isLoadingMoreRelated || relatedTransitionPhase !== "idle") {
+    if (
+      rightRailMode !== "watch-next"
+      || !hasMoreRelated
+      || isLoadingMoreRelated
+      || relatedTransitionPhase !== "idle"
+      || isWatchNextVideoSelectionPending
+    ) {
       return;
     }
 
@@ -2305,7 +2348,15 @@ function ShellDynamicInner({
     return () => {
       observer.disconnect();
     };
-  }, [displayedRenderableRelatedVideos.length, hasMoreRelated, isLoadingMoreRelated, loadMoreRelatedVideos, relatedTransitionPhase, rightRailMode]);
+  }, [
+    displayedRenderableRelatedVideos.length,
+    hasMoreRelated,
+    isLoadingMoreRelated,
+    isWatchNextVideoSelectionPending,
+    loadMoreRelatedVideos,
+    relatedTransitionPhase,
+    rightRailMode,
+  ]);
 
   // Kick off the fade-out as soon as the user selects a new video so the
   // animation overlaps the API round-trip rather than adding to it.
@@ -3966,7 +4017,7 @@ function ShellDynamicInner({
                 </p>
               ) : null}
 
-              {relatedTransitionPhase === "loading" ? (
+              {shouldShowWatchNextBootstrapLoader ? (
                 <div className="relatedLoadingState" role="status" aria-live="polite" aria-busy="true">
                   <span className="playerBootBars" aria-hidden="true">
                     <span />
@@ -3974,89 +4025,103 @@ function ShellDynamicInner({
                     <span />
                     <span />
                   </span>
-                  <span>Loading related videos...</span>
+                  <span>Loading Watch Next videos...</span>
                 </div>
-              ) : null}
+              ) : (
+                <>
+                  {relatedTransitionPhase === "loading" ? (
+                    <div className="relatedLoadingState" role="status" aria-live="polite" aria-busy="true">
+                      <span className="playerBootBars" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                      <span>Loading Watch Next videos...</span>
+                    </div>
+                  ) : null}
 
-              {visibleWatchNextVideos.map((track, index) => (
-                <div
-                  key={track.id}
-                  className={hidingRelatedVideoIds.includes(track.id) ? "relatedCardSlot relatedCardSlotExiting" : "relatedCardSlot"}
-                  style={{ "--related-index": index } as CSSProperties}
-                >
-                  {isAuthenticated ? (
-                    <button
-                      type="button"
-                      className="relatedCardHideButton"
-                      aria-label={`Hide ${track.title} from Watch Next`}
-                      title="Hide from Watch Next"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        void handleHideFromWatchNext(track);
-                      }}
-                      disabled={hidingRelatedVideoIds.includes(track.id) || hiddenMutationPendingVideoIds.includes(track.id)}
+                  {visibleWatchNextVideos.map((track, index) => (
+                    <div
+                      key={track.id}
+                      className={hidingRelatedVideoIds.includes(track.id) ? "relatedCardSlot relatedCardSlotExiting" : "relatedCardSlot"}
+                      style={{ "--related-index": index } as CSSProperties}
                     >
-                      ×
-                    </button>
-                  ) : null}
-                  <Link
-                    href={`/?v=${track.id}`}
-                    className={`relatedCard linkedCard relatedCardTransition${clickedRelatedVideoId === track.id ? " relatedCardClickFlash" : ""}`}
-                    onClick={() => {
-                      setClickedRelatedVideoId(track.id);
-                      if (relatedClickFlashTimeoutRef.current !== null) {
-                        window.clearTimeout(relatedClickFlashTimeoutRef.current);
-                      }
-                      relatedClickFlashTimeoutRef.current = window.setTimeout(() => {
-                        setClickedRelatedVideoId((activeId) => (activeId === track.id ? null : activeId));
-                        relatedClickFlashTimeoutRef.current = null;
-                      }, 240);
-                    }}
-                    onMouseEnter={() => prefetchRelatedSelection(track)}
-                    onFocus={() => prefetchRelatedSelection(track)}
-                    onPointerDown={() => prefetchRelatedSelection(track)}
-                  >
-                    <div className="thumbGlow">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={getRelatedThumbnail(track.id)}
-                        alt={track.title}
-                        loading={index < 3 ? "eager" : "lazy"}
-                        fetchPriority={index < 2 ? "high" : "auto"}
-                        className="relatedThumb"
-                      />
-                      {seenVideoIdsRef.current.has(track.id) ? <span className="videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay">Seen</span> : null}
+                      {isAuthenticated ? (
+                        <button
+                          type="button"
+                          className="relatedCardHideButton"
+                          aria-label={`Hide ${track.title} from Watch Next`}
+                          title="Hide from Watch Next"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void handleHideFromWatchNext(track);
+                          }}
+                          disabled={hidingRelatedVideoIds.includes(track.id) || hiddenMutationPendingVideoIds.includes(track.id)}
+                        >
+                          ×
+                        </button>
+                      ) : null}
+                      <Link
+                        href={`/?v=${track.id}`}
+                        className={`relatedCard linkedCard relatedCardTransition${clickedRelatedVideoId === track.id ? " relatedCardClickFlash" : ""}`}
+                        onClick={() => {
+                          setClickedRelatedVideoId(track.id);
+                          if (relatedClickFlashTimeoutRef.current !== null) {
+                            window.clearTimeout(relatedClickFlashTimeoutRef.current);
+                          }
+                          relatedClickFlashTimeoutRef.current = window.setTimeout(() => {
+                            setClickedRelatedVideoId((activeId) => (activeId === track.id ? null : activeId));
+                            relatedClickFlashTimeoutRef.current = null;
+                          }, 240);
+                        }}
+                        onMouseEnter={() => prefetchRelatedSelection(track)}
+                        onFocus={() => prefetchRelatedSelection(track)}
+                        onPointerDown={() => prefetchRelatedSelection(track)}
+                      >
+                        <div className="thumbGlow">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={getRelatedThumbnail(track.id)}
+                            alt={track.title}
+                            loading={index < 3 ? "eager" : "lazy"}
+                            fetchPriority={index < 2 ? "high" : "auto"}
+                            className="relatedThumb"
+                          />
+                          {seenVideoIdsRef.current.has(track.id) ? <span className="videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay">Seen</span> : null}
+                        </div>
+                        <div>
+                          <h3>
+                            {track.title}
+                          </h3>
+                          <p>
+                            <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
+                              {track.channelTitle}
+                            </ArtistWikiLink>
+                          </p>
+                        </div>
+                      </Link>
+                      {isAuthenticated ? (
+                        <AddToPlaylistButton
+                          videoId={track.id}
+                          isAuthenticated={isAuthenticated}
+                          className="relatedCardPlaylistAdd"
+                          compact
+                        />
+                      ) : null}
                     </div>
-                    <div>
-                      <h3>
-                        {track.title}
-                      </h3>
-                      <p>
-                        <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
-                          {track.channelTitle}
-                        </ArtistWikiLink>
-                      </p>
-                    </div>
-                  </Link>
-                  {isAuthenticated ? (
-                    <AddToPlaylistButton
-                      videoId={track.id}
-                      isAuthenticated={isAuthenticated}
-                      className="relatedCardPlaylistAdd"
-                      compact
-                    />
+                  ))}
+
+                  {watchNextHideSeen && hasSeenWatchNextVideos && visibleWatchNextVideos.length === 0 ? (
+                    <p className="rightRailStatus">No unseen videos in Watch Next right now.</p>
                   ) : null}
-                </div>
-              ))}
 
-              {watchNextHideSeen && hasSeenWatchNextVideos && visibleWatchNextVideos.length === 0 ? (
-                <p className="rightRailStatus">No unseen videos in Watch Next right now.</p>
-              ) : null}
+                  <div ref={relatedLoadMoreSentinelRef} className="relatedLoadMoreSentinel" aria-hidden="true" />
 
-              <div ref={relatedLoadMoreSentinelRef} className="relatedLoadMoreSentinel" aria-hidden="true" />
-
-              {isLoadingMoreRelated ? <p className="rightRailStatus">Loading more suggestions...</p> : null}
+                  {isLoadingMoreRelated ? <p className="rightRailStatus">Loading more suggestions...</p> : null}
+                </>
+              )}
             </div>
           ) : (
             <div className="relatedStack relatedStackPlaylist">

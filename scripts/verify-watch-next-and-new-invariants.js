@@ -69,6 +69,23 @@ function main() {
   assertContains(shellDynamicSource, "filterHiddenRelatedVideos", "Watch Next shell filters hidden videos from rail", failures);
   assertNotContains(shellDynamicSource, "params.set(\"exclude\"", "Watch Next no longer sends giant exclude id lists in URL", failures);
 
+  // Watch Next startup consistency invariants.
+  assertContains(shellDynamicSource, "const [hasBootstrappedWatchNext, setHasBootstrappedWatchNext] = useState(false);", "Watch Next tracks a bootstrap gate before first rail render", failures);
+  assertContains(shellDynamicSource, "const isWaitingForClientHydration = !hasClientMounted;", "Watch Next blocks bootstrap until client hydration completes", failures);
+  assertContains(shellDynamicSource, "const shouldShowWatchNextBootstrapLoader = rightRailMode === \"watch-next\"", "Watch Next computes a dedicated bootstrap loader condition", failures);
+  assertContains(shellDynamicSource, "&& (!hasBootstrappedWatchNext || isWatchNextVideoSelectionPending);", "Watch Next keeps bootstrap loader visible until synchronization is complete", failures);
+  assertContains(shellDynamicSource, "const currentSignature = displayedRelatedVideos.map((video) => video.id).join(\"|\");", "Watch Next bootstrap compares displayed rail signature", failures);
+  assertContains(shellDynamicSource, "const nextSignature = sourceRelatedVideos.map((video) => video.id).join(\"|\");", "Watch Next bootstrap compares source rail signature", failures);
+  assertContains(shellDynamicSource, "if (!shouldDisableRelatedRailTransition && displayedRelatedVideos.length > 0) {", "Watch Next bootstrap keeps initial reveal transition when animations are enabled", failures);
+  assertContains(shellDynamicSource, "setRelatedTransitionPhase(\"fading-in\");", "Watch Next bootstrap triggers one-time fade-in on first synchronized render", failures);
+  assertContains(shellDynamicSource, "setHasBootstrappedWatchNext(true);", "Watch Next only unlocks first render after signatures match", failures);
+
+  // Startup source-of-truth invariants.
+  assertContains(shellDynamicSource, "resolveStartupCandidate(initialVideo, initialHydratedRelatedVideos, \"server-initial\");", "Startup selection reuses server-provided initial video and related list", failures);
+  assertNotContains(shellDynamicSource, "fetch(`/api/videos/top/random", "Startup no longer performs a second random-fetch path from the shell", failures);
+  assertContains(shellDynamicSource, "if (startupHydratedVideoIdRef.current === requestedVideoId) {", "Requested-video guard clears startup hydration sentinel", failures);
+  assertContains(shellDynamicSource, "startupHydratedVideoIdRef.current = null;", "Requested-video flow resets startup hydration sentinel to avoid sticky loading state", failures);
+
   // Current-video related pool invariants.
   assertContains(currentVideoRouteSource, "const CURRENT_VIDEO_RELATED_POOL_SIZE = 100;", "Current-video route targets a 100-item related pool", failures);
   assertContains(currentVideoRouteSource, "getTopVideos(300)", "Current-video route widens fallback with Top candidates", failures);

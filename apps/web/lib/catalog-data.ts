@@ -461,6 +461,38 @@ function deriveAdminImportFallbackMetadata(title: string, channelTitle?: string 
   } as const;
 }
 
+function buildAugmentedTitleFromParsedMetadata(
+  title: string,
+  parsedTrack: string | null,
+  parsedArtist: string | null,
+  confidence: number | null,
+) {
+  const normalizedTitle = normalizeLooseToken(title);
+  const normalizedTrack = normalizeLooseToken(parsedTrack);
+  const normalizedArtist = normalizeLooseToken(parsedArtist);
+  const numericConfidence = Number(confidence ?? NaN);
+
+  if (!normalizedTitle || !normalizedTrack || !normalizedArtist) {
+    return null;
+  }
+
+  if (normalizedTitle !== normalizedTrack) {
+    return null;
+  }
+
+  if (!Number.isFinite(numericConfidence) || numericConfidence < PLAYBACK_MIN_CONFIDENCE) {
+    return null;
+  }
+
+  const normalizedTitleWithBoundaries = ` ${normalizedTitle} `;
+  const normalizedArtistWithBoundaries = ` ${normalizedArtist} `;
+  if (normalizedTitleWithBoundaries.includes(normalizedArtistWithBoundaries)) {
+    return null;
+  }
+
+  return truncate(`${title} - ${parsedArtist}`, 255);
+}
+
 function extractJsonObject(content: unknown) {
   if (typeof content !== "string") {
     throw new Error("Groq returned non-string message content");
@@ -605,6 +637,7 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
   try {
     const existing = await prisma.$queryRaw<
       Array<{
+        title: string | null;
         parsedArtist: string | null;
         parsedTrack: string | null;
         parsedVideoType: string | null;
@@ -613,7 +646,7 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
         parsedAt: Date | null;
       }>
     >`
-      SELECT parsedArtist, parsedTrack, parsedVideoType, parseConfidence, parseMethod, parsedAt
+      SELECT title, parsedArtist, parsedTrack, parsedVideoType, parseConfidence, parseMethod, parsedAt
       FROM videos
       WHERE id = ${videoRowId}
       LIMIT 1
@@ -672,10 +705,18 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
     const correctedReason = artistKnown
       ? `${correctedReasonBase ?? ""}${correctedReasonBase ? " | " : ""}Artist matched known artists catalog.`
       : correctedReasonBase;
+    const existingTitle = normalizeParsedString(existingMeta?.title, 255) ?? truncate(video.title, 255);
+    const nextPersistedTitle = buildAugmentedTitleFromParsedMetadata(
+      existingTitle,
+      correctedTrack,
+      correctedArtist,
+      adjustedConfidence,
+    ) ?? existingTitle;
 
     await prisma.$executeRaw`
       UPDATE videos
       SET
+        title = ${nextPersistedTitle},
         parsedArtist = ${correctedArtist},
         parsedTrack = ${correctedTrack},
         parsedVideoType = ${parsed.videoType},
@@ -689,6 +730,7 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
     debugCatalog("maybePersistRuntimeMetadata:updated", {
       videoId: video.id,
       rowId: videoRowId,
+      title: nextPersistedTitle,
       artist: correctedArtist,
       track: correctedTrack,
       confidence: adjustedConfidence,

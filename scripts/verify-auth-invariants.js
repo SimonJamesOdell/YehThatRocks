@@ -86,6 +86,8 @@ function main() {
   assertContains(loginFormSource, 'className="authMessage"', "Login form renders errors with authMessage class", failures);
   assertContains(loginFormSource, "disabled={isSubmitting}", "Login form disables submit button during submission", failures);
   assertContains(loginFormSource, '"/api/auth/login"', "Login form posts to /api/auth/login", failures);
+  assertContains(loginFormSource, 'const INTRO_SKIP_ONCE_AFTER_LOGIN_KEY = "ytr:intro-skip-once";', "Login form defines one-shot intro skip key for post-auth transition", failures);
+  assertContains(loginFormSource, 'window.sessionStorage.setItem(INTRO_SKIP_ONCE_AFTER_LOGIN_KEY, "1");', "Login form sets one-shot intro skip marker on successful login", failures);
   assertContains(loginFormSource, 'router.push(target)', "Login form redirects on success via router.push", failures);
   assertContains(loginFormSource, "`/?v=${encodeURIComponent(videoParam)}`", "Login redirects back to video param when present", failures);
 
