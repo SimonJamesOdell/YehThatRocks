@@ -1123,6 +1123,8 @@ function ShellDynamicInner({
       return;
     }
 
+    let rafId: number | null = null;
+
     const syncPlayerDockScale = () => {
       if (!shouldDockDesktopPlayer || window.innerWidth < 1181) {
         setPlayerDockScaleX(1);
@@ -1145,25 +1147,111 @@ function ShellDynamicInner({
       const baseFrameWidth = frame.offsetWidth;
       const baseFrameHeight = frame.offsetHeight;
       const railRect = leftRail.getBoundingClientRect();
-      if (baseFrameWidth <= 0 || railRect.width <= 0) {
+      if (baseFrameWidth <= 0 || baseFrameHeight <= 0 || railRect.width <= 0) {
+        // Frame not yet laid out — retry after next paint.
+        rafId = window.requestAnimationFrame(syncPlayerDockScale);
         return;
       }
 
       const targetWidth = railRect.width;
       // Lock scaling to final rail width while preserving aspect ratio via uniform scale.
-      const uniformScale = Math.max(0.2, Math.min(1, targetWidth / baseFrameWidth));
+      let uniformScale = Math.max(0.2, Math.min(1, targetWidth / baseFrameWidth));
+
+      // On ultrawide (21:9+) with the artists alphabet panel visible, drive scale by
+      // available vertical height instead of rail width — the rail is too narrow on
+      // ultrawide which produces a tiny player. The player may be wider than the rail
+      // but that is acceptable on a screen this wide.
+      const isUltrawide = window.innerWidth / window.innerHeight > 21 / 9;
+      if (isUltrawide && shouldDockUnderArtistsAlphabet) {
+        const panel = document.querySelector(".artistsLetterPanel") as HTMLElement | null;
+        if (!panel || panel.offsetHeight === 0) {
+          // Panel not yet rendered — retry after next paint so we measure the real height.
+          rafId = window.requestAnimationFrame(syncPlayerDockScale);
+          return;
+        }
+        const panelHeight = panel.offsetHeight + 8;
+        const footerReserve = 220; // px: space for footer controls row below player
+        const availableHeight = window.innerHeight - panelHeight - footerReserve;
+        if (availableHeight > 0 && availableHeight < baseFrameHeight) {
+          // Scale so player height fills available space; cap at 1× (never upscale).
+          const scaleByHeight = availableHeight / baseFrameHeight;
+          uniformScale = Math.max(0.15, Math.min(1, scaleByHeight));
+        } else if (availableHeight <= 0) {
+          // Panel + reserve already fills viewport — use minimum readable scale.
+          uniformScale = 0.15;
+        }
+        // If availableHeight >= baseFrameHeight the width-based scale from above is fine.
+      }
 
       setPlayerDockScaleX(uniformScale);
       setPlayerDockScaleY(uniformScale);
       setPlayerDockHeightPx(baseFrameHeight * uniformScale);
+      if (process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line no-console
+        console.log("[dockScale]", { uniformScale, baseFrameWidth, baseFrameHeight, railWidth: railRect.width, windowW: window.innerWidth, windowH: window.innerHeight, isUltrawide: window.innerWidth / window.innerHeight > 21 / 9, shouldDockUnderArtistsAlphabet });
+      }
     };
 
     syncPlayerDockScale();
     window.addEventListener("resize", syncPlayerDockScale);
     return () => {
       window.removeEventListener("resize", syncPlayerDockScale);
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
     };
-  }, [shouldDockDesktopPlayer, pathname]);
+  }, [shouldDockDesktopPlayer, shouldDockUnderArtistsAlphabet, pathname]);
+
+  // Separate effect: on ultrawide when artists alphabet panel becomes visible,
+  // re-run the scale calculation after the DOM has fully settled.
+  // The main syncPlayerDockScale may fire before the panel is rendered and produce
+  // an unconstrained (full-size) result; this corrects it after layout stabilises.
+  useEffect(() => {
+    if (!shouldDockUnderArtistsAlphabet || typeof window === "undefined") {
+      return;
+    }
+    const isUltrawide = window.innerWidth / window.innerHeight > 21 / 9;
+    if (!isUltrawide) {
+      return;
+    }
+
+    let rafId: number | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const applyUltrawideArtistsScale = () => {
+      const chrome = playerChromeRef.current;
+      if (!chrome) return;
+      const frame = chrome.querySelector(".playerFrame, .playerLoadingFallback") as HTMLElement | null;
+      const panel = document.querySelector(".artistsLetterPanel") as HTMLElement | null;
+      if (!frame || !panel) {
+        rafId = window.requestAnimationFrame(applyUltrawideArtistsScale);
+        return;
+      }
+      const baseFrameWidth = frame.offsetWidth;
+      const baseFrameHeight = frame.offsetHeight;
+      const panelH = panel.offsetHeight;
+      if (baseFrameWidth <= 0 || baseFrameHeight <= 0 || panelH === 0) {
+        rafId = window.requestAnimationFrame(applyUltrawideArtistsScale);
+        return;
+      }
+      const footerReserve = 220;
+      const availableHeight = window.innerHeight - panelH - footerReserve;
+      if (availableHeight > 0 && availableHeight < baseFrameHeight) {
+        const scale = Math.max(0.15, Math.min(1, availableHeight / baseFrameHeight));
+        setPlayerDockScaleX(scale);
+        setPlayerDockScaleY(scale);
+        setPlayerDockHeightPx(baseFrameHeight * scale);
+      }
+    };
+
+    // Run immediately (catches cases where panel is already present), then again
+    // after a short delay to cover slow page renders and CSS transitions.
+    rafId = window.requestAnimationFrame(applyUltrawideArtistsScale);
+    timeoutId = setTimeout(applyUltrawideArtistsScale, 300);
+
+    return () => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+      if (timeoutId !== null) clearTimeout(timeoutId);
+    };
+  }, [shouldDockUnderArtistsAlphabet, pathname]);
 
   useEffect(() => {
     if (requestedVideoId) {

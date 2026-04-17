@@ -2736,7 +2736,14 @@ export async function getCurrentVideo(videoId?: string, options?: { skipPlayback
           ORDER BY updated_at DESC, id DESC
           LIMIT 1
         `
-      : await getRankedTopPool(1);
+      : await (async () => {
+          // Pick randomly from the top-50 most-favourited videos so the initial
+          // load varies rather than always landing on the single highest-ranked video.
+          const pool = await getRankedTopPool(50);
+          if (pool.length === 0) return pool;
+          const randomIndex = Math.floor(Math.random() * pool.length);
+          return [pool[randomIndex]];
+        })();
 
     const video = videos[0];
 
@@ -4430,17 +4437,24 @@ export async function getGenreCards() {
   }
 
   const now = Date.now();
-  if (genreCardsCache && genreCardsCache.expiresAt > now) {
+  if (
+    genreCardsCache
+    && genreCardsCache.expiresAt > now
+    && genreCardsCache.cards.length > 0
+    && genreCardsCache.cards.some((card) => !!card.previewVideoId)
+  ) {
     return genreCardsCache.cards;
   }
 
   if (genreCardsInFlight) {
-    return genreCardsCache?.cards ?? [];
+    // Await the in-flight request so concurrent callers don't receive an empty list
+    // while the first request is still resolving.
+    return genreCardsInFlight;
   }
 
   genreCardsInFlight = (async () => {
     try {
-      const rows = await prisma.$queryRaw<Array<{ genre: string; thumbnailVideoId: string | null }>>`
+      const rows = await prisma.$queryRaw<Array<{ genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }>>`
         SELECT gc.genre, MAX(gc.thumbnail_video_id) AS thumbnailVideoId
         FROM genre_cards gc
         WHERE gc.thumbnail_video_id IS NOT NULL
@@ -4448,8 +4462,9 @@ export async function getGenreCards() {
           AND gc.genre IS NOT NULL
           AND TRIM(gc.genre) <> ''
           AND EXISTS (
-            SELECT 1 FROM site_videos sv
-            WHERE sv.genre = gc.genre
+            SELECT 1 FROM videos v
+            INNER JOIN site_videos sv ON sv.video_id = v.id
+            WHERE v.genre = gc.genre
               AND sv.status = 'available'
           )
         GROUP BY gc.genre
@@ -4457,19 +4472,185 @@ export async function getGenreCards() {
         LIMIT 1000
       `;
 
-      const cards: GenreCard[] = rows.map((row) => ({
-        genre: row.genre,
-        previewVideoId: row.thumbnailVideoId ?? null,
-      }));
+      let cards: GenreCard[] = rows.map((row) => {
+        const thumbnailVideoId = row.thumbnailVideoId ?? row.thumbnail_video_id ?? null;
+        return {
+          genre: row.genre,
+          previewVideoId: thumbnailVideoId,
+        };
+      });
+
+      // Fallback: if the strict availability query is empty, read directly from genre_cards
+      // so categories can still render their stored thumbnail previews.
+      if (cards.length === 0) {
+        const fallbackRows = await prisma.$queryRaw<Array<{ genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }>>`
+          SELECT gc.genre, MAX(gc.thumbnail_video_id) AS thumbnailVideoId
+          FROM genre_cards gc
+          WHERE gc.genre IS NOT NULL
+            AND TRIM(gc.genre) <> ''
+          GROUP BY gc.genre
+          ORDER BY gc.genre ASC
+          LIMIT 1000
+        `;
+        if (fallbackRows.length > 0) {
+          cards = fallbackRows.map((r) => ({
+            genre: r.genre,
+            previewVideoId: r.thumbnailVideoId ?? r.thumbnail_video_id ?? null,
+          }));
+        } else {
+          // genre_cards table empty — fall back to genres table
+          const genreRows = await prisma.$queryRaw<Array<{ genre: string }>>`
+            SELECT name AS genre FROM genres WHERE name IS NOT NULL AND TRIM(name) <> '' ORDER BY name ASC LIMIT 1000
+          `;
+          cards = genreRows.map((r) => ({ genre: r.genre, previewVideoId: null }));
+        }
+      }
+
+      if (cards.length === 0) {
+        cards = (await getGenres()).map((genre) => ({ genre, previewVideoId: null }));
+      }
+
+      if (cards.some((card) => !card.previewVideoId)) {
+        const thumbnailRows = await prisma.$queryRaw<Array<{ genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }>>`
+          SELECT
+            v.genre AS genre,
+            SUBSTRING_INDEX(
+              GROUP_CONCAT(v.videoId ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC),
+              ',',
+              1
+            ) AS thumbnailVideoId
+          FROM videos v
+          INNER JOIN site_videos sv
+            ON sv.video_id = v.id
+           AND sv.status = 'available'
+          WHERE v.genre IS NOT NULL
+            AND TRIM(v.genre) <> ''
+            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+          GROUP BY v.genre
+          ORDER BY v.genre ASC
+          LIMIT 1000
+        `;
+
+        if (thumbnailRows.length > 0) {
+          const thumbnailByGenre = new Map<string, string>();
+          for (const row of thumbnailRows) {
+            const genreKey = row.genre.trim().toLowerCase();
+            const videoId = (row.thumbnailVideoId ?? row.thumbnail_video_id ?? "").trim();
+            if (!genreKey || !videoId) continue;
+            thumbnailByGenre.set(genreKey, videoId);
+          }
+
+          cards = cards.map((card) => {
+            if (card.previewVideoId) return card;
+            const derived = thumbnailByGenre.get(card.genre.trim().toLowerCase()) ?? null;
+            return derived ? { ...card, previewVideoId: derived } : card;
+          });
+        }
+
+        if (cards.some((card) => !card.previewVideoId)) {
+          const looseThumbnailRows = await prisma.$queryRaw<Array<{ genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }>>`
+            SELECT
+              v.genre AS genre,
+              SUBSTRING_INDEX(
+                GROUP_CONCAT(v.videoId ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC),
+                ',',
+                1
+              ) AS thumbnailVideoId
+            FROM videos v
+            WHERE v.genre IS NOT NULL
+              AND TRIM(v.genre) <> ''
+              AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            GROUP BY v.genre
+            ORDER BY v.genre ASC
+            LIMIT 1000
+          `;
+
+          if (looseThumbnailRows.length > 0) {
+            const looseThumbnailByGenre = new Map<string, string>();
+            for (const row of looseThumbnailRows) {
+              const genreKey = row.genre.trim().toLowerCase();
+              const videoId = (row.thumbnailVideoId ?? row.thumbnail_video_id ?? "").trim();
+              if (!genreKey || !videoId) continue;
+              looseThumbnailByGenre.set(genreKey, videoId);
+            }
+
+            cards = cards.map((card) => {
+              if (card.previewVideoId) return card;
+              const derived = looseThumbnailByGenre.get(card.genre.trim().toLowerCase()) ?? null;
+              return derived ? { ...card, previewVideoId: derived } : card;
+            });
+          }
+        }
+
+        if (cards.some((card) => !card.previewVideoId)) {
+          const fuzzyRows = await prisma.$queryRaw<Array<{ genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }>>`
+            SELECT
+              gc.genre AS genre,
+              SUBSTRING_INDEX(
+                GROUP_CONCAT(v.videoId ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC),
+                ',',
+                1
+              ) AS thumbnailVideoId
+            FROM genre_cards gc
+            LEFT JOIN videos v
+              ON v.genre IS NOT NULL
+             AND TRIM(v.genre) <> ''
+             AND LOWER(v.genre) LIKE CONCAT('%', LOWER(gc.genre), '%')
+             AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            WHERE gc.genre IS NOT NULL
+              AND TRIM(gc.genre) <> ''
+            GROUP BY gc.genre
+            ORDER BY gc.genre ASC
+            LIMIT 1000
+          `;
+
+          if (fuzzyRows.length > 0) {
+            const fuzzyByGenre = new Map<string, string>();
+            for (const row of fuzzyRows) {
+              const genreKey = row.genre.trim().toLowerCase();
+              const videoId = (row.thumbnailVideoId ?? row.thumbnail_video_id ?? "").trim();
+              if (!genreKey || !videoId) continue;
+              fuzzyByGenre.set(genreKey, videoId);
+            }
+
+            cards = cards.map((card) => {
+              if (card.previewVideoId) return card;
+              const derived = fuzzyByGenre.get(card.genre.trim().toLowerCase()) ?? null;
+              return derived ? { ...card, previewVideoId: derived } : card;
+            });
+          }
+        }
+      }
 
       genreCardsCache = { expiresAt: now + GENRE_CARDS_CACHE_TTL_MS, cards };
       // Keep genre list in sync
       genreListCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, genres: cards.map((c) => c.genre) };
       return cards;
     } catch {
-      const stale = genreCardsCache?.cards ?? [];
-      genreCardsCache = { expiresAt: now + 30_000, cards: stale };
-      return stale;
+      try {
+        const rawFallbackRows = await prisma.$queryRaw<Array<{ genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }>>`
+          SELECT genre, thumbnail_video_id AS thumbnailVideoId
+          FROM genre_cards
+          WHERE genre IS NOT NULL
+            AND TRIM(genre) <> ''
+          ORDER BY genre ASC
+          LIMIT 1000
+        `;
+        if (rawFallbackRows.length > 0) {
+          const fallbackCards = rawFallbackRows.map((row) => ({
+            genre: row.genre,
+            previewVideoId: row.thumbnailVideoId ?? row.thumbnail_video_id ?? null,
+          }));
+          genreCardsCache = { expiresAt: now + 30_000, cards: fallbackCards };
+          return fallbackCards;
+        }
+      } catch {
+        // Fall through to genre-only fallback when genre_cards cannot be read.
+      }
+
+      const fallbackCards = (await getGenres()).map((genre) => ({ genre, previewVideoId: null }));
+      genreCardsCache = { expiresAt: now + 30_000, cards: fallbackCards };
+      return fallbackCards;
     }
   })().finally(() => {
     genreCardsInFlight = undefined;

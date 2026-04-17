@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { CloseLink } from "@/components/close-link";
 import type { GenreCard } from "@/lib/catalog-data";
@@ -14,15 +14,52 @@ type CategoriesFilterGridProps = {
 
 export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) {
   const [filterValue, setFilterValue] = useState("");
+  const [cards, setCards] = useState<GenreCard[]>(genreCards);
+
+  useEffect(() => {
+    setCards(genreCards);
+  }, [genreCards]);
+
+  useEffect(() => {
+    if (genreCards.length > 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadCards = async () => {
+      try {
+        const response = await fetch("/api/categories", { cache: "no-store" });
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as { categories?: GenreCard[] };
+        const nextCards = Array.isArray(payload.categories) ? payload.categories : [];
+        if (!cancelled && nextCards.length > 0) {
+          setCards(nextCards);
+        }
+      } catch {
+        // Keep server-provided cards when client fallback fetch fails.
+      }
+    };
+
+    void loadCards();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [genreCards]);
 
   const filteredCards = useMemo(() => {
     const needle = filterValue.trim().toLowerCase();
     if (!needle) {
-      return genreCards;
+      return cards;
     }
 
-    return genreCards.filter(({ genre }) => genre.toLowerCase().startsWith(needle));
-  }, [filterValue, genreCards]);
+    return cards.filter(({ genre }) => genre.toLowerCase().startsWith(needle));
+  }, [filterValue, cards]);
+
+  const hasActiveFilter = filterValue.trim().length > 0;
 
   return (
     <div className="categoriesFilterSection">
@@ -72,12 +109,18 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
               <h3>{genre}</h3>
             </Link>
           ))
-        ) : (
+          ) : hasActiveFilter ? (
           <article className="catalogCard categoriesFilterEmptyState">
             <p className="statusLabel">Category filter</p>
             <h3>No categories match that prefix</h3>
             <p>Try a shorter starting string.</p>
           </article>
+          ) : (
+            <article className="catalogCard categoriesFilterEmptyState">
+              <p className="statusLabel">Category list</p>
+              <h3>Loading categories...</h3>
+              <p>Please wait a moment.</p>
+            </article>
         )}
       </div>
     </div>
