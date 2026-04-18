@@ -15,6 +15,7 @@ type CpuSnapshot = {
 };
 
 type CpuUsageMetrics = {
+  currentPercent: number | null;
   averagePercent: number | null;
   pressurePercent: number | null;
   peakCorePercent: number | null;
@@ -111,12 +112,22 @@ function buildCpuUsageMetrics(start: CpuSnapshot, end: CpuSnapshot): CpuUsageMet
   const busyDiff = totalDiff - idleDiff;
 
   if (totalDiff <= 0) {
-    return { averagePercent: null, pressurePercent: null, peakCorePercent: null };
+    return {
+      currentPercent: null,
+      averagePercent: null,
+      pressurePercent: null,
+      peakCorePercent: null,
+    };
   }
 
   const averagePercent = (busyDiff / totalDiff) * 100;
   if (!Number.isFinite(averagePercent)) {
-    return { averagePercent: null, pressurePercent: null, peakCorePercent: null };
+    return {
+      currentPercent: null,
+      averagePercent: null,
+      pressurePercent: null,
+      peakCorePercent: null,
+    };
   }
 
   const corePercents = end.coreSamples
@@ -181,6 +192,7 @@ function buildCpuUsageMetrics(start: CpuSnapshot, end: CpuSnapshot): CpuUsageMet
     : clampedSampleAverage;
 
   return {
+    currentPercent: clampPercent(averagePercent),
     averagePercent: clampPercent(rollingAveragePercent),
     pressurePercent: clampPercent(pressurePercent),
     peakCorePercent: clampPercent(peakCorePercent),
@@ -364,7 +376,7 @@ async function computeCpuUsagePercent() {
     }
   }
 
-  return { averagePercent: 0, pressurePercent: 0, peakCorePercent: 0 };
+  return { currentPercent: 0, averagePercent: 0, pressurePercent: 0, peakCorePercent: 0 };
 }
 
 async function collectHostHealthMetrics() {
@@ -380,7 +392,7 @@ async function collectHostHealthMetrics() {
     const memoryUsagePercent = clampPercent(
       ((os.totalmem() - os.freemem()) / Math.max(1, os.totalmem())) * 100,
     );
-    const cpuUsagePercent = Math.max(cpuMetrics.averagePercent ?? 0, cpuMetrics.pressurePercent ?? 0);
+    const cpuUsagePercent = cpuMetrics.currentPercent ?? 0;
 
     return {
       platform: process.platform,
