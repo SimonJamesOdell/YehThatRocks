@@ -113,6 +113,34 @@ Required in `apps/web/.env.local` (see `.env.example` at root):
 - `AUTH_JWT_SECRET` — 32+ character random secret
 - `APP_URL`, `YOUTUBE_DATA_API_KEY`, `GROQ_API_KEY`, SMTP settings are optional/feature-dependent.
 
+## Release preparation
+
+When the user says "prepare to ship", "prepare for release", "get ready to ship", or similar, execute every step of this gate in order and do not declare completion until all steps pass. The user invokes the `ship` command themselves — never run it.
+
+### Mandatory gate (non-negotiable order)
+
+1. **Run all invariants** — `npm run verify:invariants`. Every suite must pass. Fix failures before proceeding.
+2. **Security scan** — Scan all tracked files for real credential patterns:
+   - High-confidence token formats: `AIza…`, `AKIA…`, `sk-…`, `ghp_…`, `ghs_…`, `-----BEGIN PRIVATE KEY`
+   - Run: `git ls-files | ForEach-Object { $c = git show ":$_"; if ($c -match 'AIza[0-9A-Za-z_-]{35}|AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{32,}|ghp_[a-zA-Z0-9]{36}|-----BEGIN (RSA |EC )?PRIVATE KEY') { "$_`: MATCH" } }`
+   - Check tracked files with secret extensions: `git ls-files | Where-Object { $_ -match '\.(env|pem|key|p12|pfx|cer|crt)$' }`
+   - Report findings. Placeholder/example values (clearly labelled `change-me`, `__SET_…`) are acceptable. Real values are blockers.
+3. **Dependency CVEs** — Run `npm audit --audit-level=high`. Fix all `high` and `critical` findings. Document any accepted `moderate` findings with justification.
+4. **`.gitignore` audit** — Verify env files, keys/certs, SQL dumps, build artifacts, and local debug files are all covered. Add missing rules if needed.
+5. **Commit everything** — Stage and commit all pending tracked changes. The commit must include all modified files — check `git diff --cached --name-only` vs `git diff --name-only` to ensure nothing is left unstaged. Use a clear conventional commit message.
+6. **Push** — `git push origin main`.
+7. **Final clean-tree gate** — Run `git status --short --untracked-files=no`. The output MUST be empty. If it is not empty, fix the cause and repeat from step 5.
+
+### Completion evidence required
+
+The final response must include:
+- Pushed commit SHA and branch
+- Confirmation that all invariant suites passed
+- CVE status (zero high/critical, any accepted moderate noted)
+- The exact output of the final `git status --short --untracked-files=no` (must be blank)
+
+Only after all of the above is satisfied should you call `task_complete`.
+
 ## Important notes
 
 - The YouTube IFrame API script is loaded globally at the root layout level — do not lazy-load or duplicate it.
