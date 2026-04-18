@@ -208,7 +208,7 @@ export async function AppShell({
 
           <div className="relatedStack">
             {uniqueRelatedVideos.map((track) => (
-              <Link key={track.id} href={`/?v=${track.id}`} className="relatedCard linkedCard">
+              <Link key={track.id} href={`/?v=${track.id}`} className="relatedCard linkedCard" prefetch={false}>
                 <div className="thumbGlow">
                   <Image
                     src={getRelatedThumbnail(track.id)}
@@ -216,6 +216,7 @@ export async function AppShell({
                     width={128}
                     height={72}
                     loading="lazy"
+                    sizes="128px"
                     className="relatedThumb"
                   />
                 </div>

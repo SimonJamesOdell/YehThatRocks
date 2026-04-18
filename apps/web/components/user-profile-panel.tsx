@@ -97,6 +97,8 @@ export function UserProfilePanel({ user, favourites, playlists }: UserProfilePan
               width={56}
               height={56}
               className="userProfileHeaderAvatar"
+              loading="lazy"
+              sizes="56px"
             />
           ) : (
             <div className="userProfileHeaderAvatarFallback" aria-hidden="true">👤</div>
@@ -121,7 +123,7 @@ export function UserProfilePanel({ user, favourites, playlists }: UserProfilePan
             <div className="catalogGrid userProfileVideoGrid">
               {favourites.map((track) => (
                 <article key={track.id} className="categoryVideoCard">
-                  <Link href={`/?v=${track.id}`} className="linkedCard categoryVideoPrimaryLink">
+                  <Link href={`/?v=${track.id}`} className="linkedCard categoryVideoPrimaryLink" prefetch={false}>
                     <div className="categoryThumbWrap">
                       <Image
                         src={`https://i.ytimg.com/vi/${track.id}/mqdefault.jpg`}
@@ -130,6 +132,7 @@ export function UserProfilePanel({ user, favourites, playlists }: UserProfilePan
                         height={180}
                         className="categoryThumb"
                         loading="lazy"
+                        sizes="(max-width: 768px) 92vw, (max-width: 1200px) 44vw, 320px"
                       />
                     </div>
                     <h3 className="categoryVideoTitle">{track.title}</h3>
@@ -171,6 +174,7 @@ export function UserProfilePanel({ user, favourites, playlists }: UserProfilePan
                         height={180}
                         className="userProfilePlaylistThumb"
                         loading="lazy"
+                        sizes="(max-width: 768px) 92vw, (max-width: 1200px) 44vw, 320px"
                       />
                     ) : (
                       <div className="userProfilePlaylistThumbFallback" aria-hidden="true">♪</div>
@@ -197,7 +201,7 @@ export function UserProfilePanel({ user, favourites, playlists }: UserProfilePan
             <div className="catalogGrid userProfileVideoGrid">
               {selectedPlaylist.videos.map((track) => (
                 <article key={track.id} className="categoryVideoCard">
-                  <Link href={`/?v=${track.id}`} className="linkedCard categoryVideoPrimaryLink">
+                  <Link href={`/?v=${track.id}`} className="linkedCard categoryVideoPrimaryLink" prefetch={false}>
                     <div className="categoryThumbWrap">
                       <Image
                         src={`https://i.ytimg.com/vi/${track.id}/mqdefault.jpg`}
@@ -206,6 +210,7 @@ export function UserProfilePanel({ user, favourites, playlists }: UserProfilePan
                         height={180}
                         className="categoryThumb"
                         loading="lazy"
+                        sizes="(max-width: 768px) 92vw, (max-width: 1200px) 44vw, 320px"
                       />
                     </div>
                     <h3 className="categoryVideoTitle">{track.title}</h3>

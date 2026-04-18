@@ -681,6 +681,7 @@ export function AddToPlaylistButton({
                                 height={180}
                                 className="categoryThumb"
                                 loading="lazy"
+                                sizes="(max-width: 768px) 92vw, (max-width: 1200px) 44vw, 320px"
                               />
                             </div>
                           ) : (

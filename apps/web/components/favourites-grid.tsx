@@ -361,7 +361,7 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
             return (
               <article key={track.id} className="catalogCard categoryCard favouritesCardCompact">
                 <div className="favouritesThumbOverlayWrap">
-                  <Link href={`/?v=${track.id}`} className="linkedCard">
+                  <Link href={`/?v=${track.id}`} className="linkedCard" prefetch={false}>
                     <div className="categoryThumbWrap">
                       <Image
                         src={`https://i.ytimg.com/vi/${track.id}/mqdefault.jpg`}
@@ -370,6 +370,7 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
                         height={180}
                         className="categoryThumb"
                         loading="lazy"
+                        sizes="(max-width: 768px) 92vw, (max-width: 1200px) 44vw, 320px"
                       />
                     </div>
                   </Link>
@@ -385,7 +386,7 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
                   </button>
                 </div>
                 <h3>
-                  <Link href={`/?v=${track.id}`} className="cardTitleLink">
+                  <Link href={`/?v=${track.id}`} className="cardTitleLink" prefetch={false}>
                     {track.title}
                   </Link>
                 </h3>
