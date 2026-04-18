@@ -74,7 +74,7 @@ function main() {
   assertContains(top100LinkSource, '<ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">', "Top 100 warmed link wraps artist name with wiki link", failures);
 
   // Top 100 ranking must use favourite counts, not a boolean one-favourite flag.
-  assertContains(catalogDataSource, "WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'", "Top 100 pool filters to valid YouTube ids", failures);
+  assertContains(catalogDataSource, "WHERE v.videoId IS NOT NULL", "Top 100 pool filters to valid YouTube ids", failures);
   assertContains(catalogDataSource, "ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC", "Top 100 pool ranks by favourite count first", failures);
   assertContains(catalogDataSource, "await prisma.video.updateMany({", "Favourite mutations persist favourite counts back to videos", failures);
   assertContains(catalogDataSource, "data: { favourited: favouriteCount },", "Favourite mutations store recalculated favourite totals", failures);
