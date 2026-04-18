@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Metal_Mania, Rajdhani } from "next/font/google";
+import { Metal_Mania } from "next/font/google";
 import Script from "next/script";
 
 import { startAdminHostMetricSampling } from "@/lib/admin-dashboard-health";
@@ -9,12 +9,6 @@ const metalMania = Metal_Mania({
   subsets: ["latin"],
   weight: "400",
   variable: "--font-display"
-});
-
-const rajdhani = Rajdhani({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-body"
 });
 
 export const metadata: Metadata = {
@@ -40,7 +34,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://www.youtube-nocookie.com" />
         <link rel="preconnect" href="https://i.ytimg.com" />
       </head>
-      <body className={`${metalMania.variable} ${rajdhani.variable}`}>
+      <body className={metalMania.variable}>
         <Script
           id="youtube-iframe-api"
           src="https://www.youtube.com/iframe_api"
