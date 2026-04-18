@@ -65,6 +65,12 @@ function main() {
   assertContains(shellDynamicSource, "params.set(\"offset\", String(relatedFetchOffsetRef.current));", "Watch Next sends offset-based pagination requests", failures);
   assertContains(shellDynamicSource, "relatedFetchOffsetRef.current = (relatedFetchOffsetRef.current ?? existing.length) + nextVideos.length;", "Watch Next advances offset by server batch size", failures);
   assertContains(shellDynamicSource, "relatedFetchOffsetRef.current = null;", "Watch Next resets offset when the current video changes", failures);
+  assertContains(shellDynamicSource, "const loadMoreRelatedVideos = useCallback(async (requestedCount = RELATED_LOAD_BATCH_SIZE) => {", "Watch Next load-more accepts caller-provided batch size", failures);
+  assertContains(shellDynamicSource, "const batchCount = Math.max(1, Math.min(30, Math.floor(requestedCount)));", "Watch Next clamps requested load-more batch size", failures);
+  assertContains(shellDynamicSource, "params.set(\"count\", String(batchCount));", "Watch Next sends adaptive batch size to current-video API", failures);
+  assertContains(shellDynamicSource, "const remainingForTarget = RELATED_BACKGROUND_PREFETCH_TARGET - displayedRenderableRelatedVideos.length;", "Watch Next computes remaining background prefetch distance", failures);
+  assertContains(shellDynamicSource, "void loadMoreRelatedVideos(prefetchCount);", "Watch Next background prefetch requests the computed target batch", failures);
+  assertContains(shellDynamicSource, "void loadMoreRelatedVideos(30);", "Watch Next hide-seen recovery uses an eager refill batch", failures);
   assertContains(shellDynamicSource, "initialHiddenVideoIds", "Watch Next shell accepts hidden video ids", failures);
   assertContains(shellDynamicSource, "filterHiddenRelatedVideos", "Watch Next shell filters hidden videos from rail", failures);
   assertNotContains(shellDynamicSource, "params.set(\"exclude\"", "Watch Next no longer sends giant exclude id lists in URL", failures);
@@ -79,6 +85,15 @@ function main() {
   assertContains(shellDynamicSource, "if (!shouldDisableRelatedRailTransition && displayedRelatedVideos.length > 0) {", "Watch Next bootstrap keeps initial reveal transition when animations are enabled", failures);
   assertContains(shellDynamicSource, "setRelatedTransitionPhase(\"fading-in\");", "Watch Next bootstrap triggers one-time fade-in on first synchronized render", failures);
   assertContains(shellDynamicSource, "setHasBootstrappedWatchNext(true);", "Watch Next only unlocks first render after signatures match", failures);
+
+  // Watch Next redraw-loop regression invariants.
+  assertContains(shellDynamicSource, "const currentIds = displayedRelatedVideos.map((video) => video.id);", "Watch Next transition effect snapshots currently displayed ids", failures);
+  assertContains(shellDynamicSource, "const nextIds = sourceRelatedVideos.map((video) => video.id);", "Watch Next transition effect snapshots incoming ids", failures);
+  assertContains(shellDynamicSource, "const isAppendOnlyUpdate = currentIds.length > 0", "Watch Next detects append-only rail growth", failures);
+  assertContains(shellDynamicSource, "&& currentIds.every((id, index) => nextIds[index] === id);", "Watch Next verifies append-only prefix alignment", failures);
+  assertContains(shellDynamicSource, "if (isAppendOnlyUpdate) {", "Watch Next branches append-only updates away from fade-in transitions", failures);
+  assertContains(shellDynamicSource, "if (relatedTransitionPhase !== \"idle\") {", "Watch Next append-only branch normalizes transition phase", failures);
+  assertNotContains(shellDynamicSource, "setRelatedTransitionPhase(\"fading-out\")", "Watch Next no longer re-enters fading-out transition loops", failures);
 
   // Startup source-of-truth invariants.
   assertContains(shellDynamicSource, "resolveStartupCandidate(initialVideo, initialHydratedRelatedVideos, \"server-initial\");", "Startup selection reuses server-provided initial video and related list", failures);
