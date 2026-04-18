@@ -6,7 +6,7 @@ A music video discovery and curation platform built as a proof of concept demons
 
 YehThatRocks is a complex, production-grade web application featuring a full authentication system, a YouTube-backed video player with queue and playlist management, Top 100 leaderboard, per-artist catalogs, genre browsing, AI-powered recommendations, favourites, global chat, and more.
 
-The entire codebase was developed with **VSCode + GitHub Copilot** at a total AI spend of **less than $30**, in **less than 5 days of work**.
+The MVP was developed with **VSCode + GitHub Copilot** in **5 days for $30 in AI costs**. The site entered public beta on 06/04/2026 and has been in active refinement and compounding improvement since, now at **12+ days of public beta and ~$70 in cumulative AI spend** (as of 18/04/2026). Development is continuing.
 
 ## How it was built
 
@@ -38,3 +38,7 @@ For VPS deployment with Docker Compose and `systemd`, see [DEPLOY_VPS.md](DEPLOY
 This repository is provided for intellectual and educational purposes only, as a proof of concept. You are welcome to read the code, learn from it, and reference it. You may not use it, in whole or in part, in any commercial product or service without explicit written permission from the author.
 
 &copy; Simon, 2026. All rights reserved.
+
+---
+
+*Costs and timelines stated above were correct at time of writing: 18 April 2026.*
