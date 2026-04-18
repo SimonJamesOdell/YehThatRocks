@@ -1116,7 +1116,6 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
           v.description
         FROM videos v
         WHERE v.videoId IS NOT NULL
-          AND CHAR_LENGTH(v.videoId) = 11
           AND EXISTS (
             SELECT 1
             FROM site_videos sv
@@ -1167,7 +1166,6 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
               ${descriptionExpr} AS description
             FROM videos v
             WHERE v.${externalVideoCol} IS NOT NULL
-              AND CHAR_LENGTH(v.${externalVideoCol}) = 11
               AND EXISTS (
                 SELECT 1
                 FROM site_videos sv
@@ -1304,7 +1302,6 @@ async function getArtistVideoPoolByNormalizedName(normalizedArtist: string, limi
         FROM videos v
         WHERE ${videoArtistNormExpr} = ?
           AND v.videoId IS NOT NULL
-          AND CHAR_LENGTH(v.videoId) = 11
           AND EXISTS (
             SELECT 1
             FROM site_videos sv
@@ -1376,7 +1373,6 @@ async function getStoredVideoById(videoId: string): Promise<StoredVideoRow | nul
       description
     FROM videos
     WHERE videoId = ${normalizedVideoId}
-      AND videoId REGEXP '^[A-Za-z0-9_-]{11}$'
     ORDER BY updated_at DESC, id DESC
     LIMIT 1
   `;
@@ -2267,7 +2263,6 @@ async function refreshArtistProjectionForName(artistName: string) {
         FROM videos v
         WHERE ${videoArtistNormExpr} = ?
           AND v.videoId IS NOT NULL
-          AND CHAR_LENGTH(v.videoId) = 11
           AND EXISTS (
             SELECT 1
             FROM site_videos sv
@@ -2284,7 +2279,6 @@ async function refreshArtistProjectionForName(artistName: string) {
         FROM videos v
         WHERE ${videoArtistNormExpr} = ?
           AND v.videoId IS NOT NULL
-          AND CHAR_LENGTH(v.videoId) = 11
           AND EXISTS (
             SELECT 1
             FROM site_videos sv
@@ -2385,7 +2379,6 @@ export async function refreshArtistThumbnailForName(artistName: string, badVideo
       FROM videos v
       WHERE ${videoArtistNormExpr} = ?
         AND v.videoId IS NOT NULL
-        AND CHAR_LENGTH(v.videoId) = 11
         ${bad ? "AND v.videoId <> ?" : ""}
         AND EXISTS (
           SELECT 1
@@ -2465,8 +2458,9 @@ function getVideoArtistNormalizationExpr(alias: string, normalizedColumn: string
   const nullToEmpty = options?.nullToEmpty ?? true;
 
   if (normalizedColumn) {
-    const normalizedRef = `${alias}.${escapeSqlIdentifier(normalizedColumn)}`;
-    return nullToEmpty ? `COALESCE(${normalizedRef}, '')` : normalizedRef;
+    // Indexed norm column — no COALESCE wrapper keeps it sargable.
+    // NULL values won't match any non-empty comparison so nullToEmpty is moot here.
+    return `${alias}.${escapeSqlIdentifier(normalizedColumn)}`;
   }
 
   const parsedArtistRef = `${alias}.parsedArtist`;
@@ -2479,8 +2473,8 @@ function getArtistNameNormalizationExpr(alias: string, columns: { name: string; 
   const nullToEmpty = options?.nullToEmpty ?? true;
 
   if (columns.normalizedName) {
-    const normalizedRef = `${alias}.${escapeSqlIdentifier(columns.normalizedName)}`;
-    return nullToEmpty ? `COALESCE(${normalizedRef}, '')` : normalizedRef;
+    // Indexed norm column — no COALESCE wrapper keeps it sargable.
+    return `${alias}.${escapeSqlIdentifier(columns.normalizedName)}`;
   }
 
   const nameRef = `${alias}.${escapeSqlIdentifier(columns.name)}`;
@@ -2905,7 +2899,6 @@ export async function getCurrentVideo(videoId?: string, options?: { skipPlayback
             description
           FROM videos
           WHERE videoId = ${normalizedVideoId}
-            AND videoId REGEXP '^[A-Za-z0-9_-]{11}$'
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
@@ -2977,7 +2970,6 @@ export async function getVideoForSharing(videoId?: string) {
         description
       FROM videos
       WHERE videoId = ${normalizedVideoId}
-        AND videoId REGEXP '^[A-Za-z0-9_-]{11}$'
       ORDER BY
         CASE
           WHEN parsedArtist IS NULL OR TRIM(parsedArtist) = '' THEN 1
@@ -3258,7 +3250,6 @@ export async function getRelatedVideos(
           WHERE r.videoId = ${normalizedVideoId}
             AND r.related <> ${normalizedVideoId}
             AND v.videoId IS NOT NULL
-            AND CHAR_LENGTH(v.videoId) = 11
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
@@ -3333,7 +3324,6 @@ export async function getRelatedVideos(
               FROM videos v
               WHERE v.videoId <> ?
                 AND v.videoId IS NOT NULL
-                AND CHAR_LENGTH(v.videoId) = 11
                 AND ${videoArtistNormExpr} <> ?
                 AND EXISTS (
                   SELECT 1
@@ -3556,7 +3546,6 @@ export async function getNewestVideos(
           v.description
         FROM videos v
         WHERE v.videoId IS NOT NULL
-          AND CHAR_LENGTH(v.videoId) = 11
           AND EXISTS (
           SELECT 1
           FROM site_videos sv
@@ -3594,7 +3583,6 @@ export async function getNewestVideos(
           v.description
         FROM videos v
         WHERE v.videoId IS NOT NULL
-          AND CHAR_LENGTH(v.videoId) = 11
         ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
         LIMIT ${safeCount}
         OFFSET ${safeOffset}
@@ -3625,7 +3613,6 @@ export async function getNewestVideos(
           v.description
         FROM videos v
         WHERE v.videoId IS NOT NULL
-          AND CHAR_LENGTH(v.videoId) = 11
         ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC
         LIMIT ${safeCount}
         OFFSET ${safeOffset}
@@ -3656,7 +3643,6 @@ export async function getNewestVideos(
               description
             FROM videos
             WHERE videoId IS NOT NULL
-              AND CHAR_LENGTH(videoId) = 11
             ORDER BY id DESC
             LIMIT ?
             OFFSET ?
@@ -3723,7 +3709,7 @@ export async function getUnseenCatalogVideos(options?: {
             v.favourited,
             v.description
           FROM videos v
-          WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+          WHERE v.videoId IS NOT NULL
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
@@ -3747,7 +3733,7 @@ export async function getUnseenCatalogVideos(options?: {
             v.favourited,
             v.description
           FROM videos v
-          WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+          WHERE v.videoId IS NOT NULL
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
@@ -3814,7 +3800,7 @@ export async function getArtists() {
                   FROM videos v2
                   INNER JOIN site_videos sv2 ON sv2.video_id = v2.id
                   WHERE LOWER(TRIM(v2.parsedArtist)) = s.normalized_artist
-                    AND v2.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+                    AND v2.videoId IS NOT NULL
                     AND sv2.status = 'available'
                 )
               ) AS thumbnailVideoId
@@ -4006,7 +3992,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
               ${genreExpr} AS genre1
             FROM artists a
             WHERE a.${nameCol} IS NOT NULL
-              AND TRIM(a.${nameCol}) <> ''
+              AND a.${nameCol} <> ''
               AND LEFT(${artistNameNormExpr}, 1) = ?
             ORDER BY a.${nameCol} ASC
           `,
@@ -4022,7 +4008,6 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
             FROM videos v
             WHERE ${videoArtistNormExpr} <> ''
               AND v.videoId IS NOT NULL
-              AND CHAR_LENGTH(v.videoId) = 11
               AND EXISTS (
                 SELECT 1
                 FROM site_videos sv
@@ -4086,7 +4071,6 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
       FROM videos v
       WHERE ${videoArtistNormExpr} <> ''
         AND v.videoId IS NOT NULL
-        AND CHAR_LENGTH(v.videoId) = 11
         AND LEFT(${videoArtistNormExpr}, 1) = ?
       GROUP BY ${videoArtistNormExpr}
     `;
@@ -4110,7 +4094,6 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
         WHERE ${vaArtistNormExpr} <> ''
           AND LEFT(${vaArtistNormExpr}, 1) = ?
           AND v.videoId IS NOT NULL
-          AND CHAR_LENGTH(v.videoId) = 11
         GROUP BY ${vaArtistNormExpr}
       `;
     }
@@ -4127,7 +4110,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
         INNER JOIN (${videoCountSubquery}) vc ON vc.artistKey = ${artistNameNormExpr}
         WHERE vc.videoCount > 0
           AND a.${nameCol} IS NOT NULL
-          AND TRIM(a.${nameCol}) <> ''
+          AND a.${nameCol} <> ''
           AND LEFT(${artistNameNormExpr}, 1) = ?
         ORDER BY a.${nameCol} ASC
         LIMIT ${safeLimit}
@@ -4221,7 +4204,7 @@ export async function getArtistBySlug(slug: string) {
             ${genreExpr} AS genre1
           FROM artists a
           WHERE a.${nameCol} IS NOT NULL
-            AND TRIM(a.${nameCol}) <> ''
+            AND a.${nameCol} <> ''
             AND ${termPredicates}
           ORDER BY a.${nameCol} ASC
           LIMIT 400
@@ -4258,7 +4241,7 @@ export async function getArtistBySlug(slug: string) {
               ${genreExpr} AS genre1
             FROM artists a
             WHERE a.${nameCol} IS NOT NULL
-              AND TRIM(a.${nameCol}) <> ''
+              AND a.${nameCol} <> ''
             ORDER BY a.${nameCol} ASC
           `,
         );
@@ -4335,7 +4318,6 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
       FROM videos v
       WHERE ${videoArtistNormExpr} = ?
         AND v.videoId IS NOT NULL
-        AND CHAR_LENGTH(v.videoId) = 11
         AND EXISTS (
           SELECT 1
           FROM site_videos sv
@@ -4347,7 +4329,6 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
           FROM videos v_conflict
           WHERE v_conflict.videoId = v.videoId
             AND v_conflict.videoId IS NOT NULL
-            AND CHAR_LENGTH(v_conflict.videoId) = 11
             AND ${conflictingArtistNormExpr} <> ''
             AND ${conflictingArtistNormExpr} <> ?
         )
@@ -4742,7 +4723,6 @@ export async function getGenreCards() {
            AND sv.status = 'available'
           WHERE v.genre IS NOT NULL
             AND TRIM(v.genre) <> ''
-            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
           GROUP BY v.genre
           ORDER BY v.genre ASC
           LIMIT 1000
@@ -4776,7 +4756,6 @@ export async function getGenreCards() {
             FROM videos v
             WHERE v.genre IS NOT NULL
               AND TRIM(v.genre) <> ''
-              AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
             GROUP BY v.genre
             ORDER BY v.genre ASC
             LIMIT 1000
@@ -4813,7 +4792,6 @@ export async function getGenreCards() {
               ON v.genre IS NOT NULL
              AND TRIM(v.genre) <> ''
              AND LOWER(v.genre) LIKE CONCAT('%', LOWER(gc.genre), '%')
-             AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
             WHERE gc.genre IS NOT NULL
               AND TRIM(gc.genre) <> ''
             GROUP BY gc.genre
@@ -5013,7 +4991,7 @@ export async function getVideosByGenre(
         v.description
       FROM videos v
       WHERE MATCH(v.title, v.parsedArtist, v.parsedTrack) AGAINST (${genre} IN NATURAL LANGUAGE MODE)
-        AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+        AND v.videoId IS NOT NULL
         AND EXISTS (
           SELECT 1
           FROM site_videos sv
@@ -5081,7 +5059,7 @@ export async function getVideosByGenre(
                 v.description
               FROM videos v
               WHERE ${videoArtistNormExpr} IN (${placeholders})
-                AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+                AND v.videoId IS NOT NULL
                 AND EXISTS (
                   SELECT 1
                   FROM site_videos sv
@@ -5138,7 +5116,7 @@ export async function getVideosByGenre(
         v.description
       FROM videos v
       WHERE MATCH(v.title, v.parsedArtist, v.parsedTrack) AGAINST (${fulltextTerm} IN BOOLEAN MODE)
-        AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+        AND v.videoId IS NOT NULL
         AND EXISTS (
           SELECT 1
           FROM site_videos sv
@@ -5180,7 +5158,7 @@ export async function getVideosByGenre(
             v.description
           FROM videos v
           WHERE ${videoArtistNormExpr} IN (${placeholders})
-            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND v.videoId IS NOT NULL
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
@@ -5217,7 +5195,7 @@ export async function getVideosByGenre(
         v.favourited,
         v.description
       FROM videos v
-      WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+      WHERE v.videoId IS NOT NULL
         AND (
           LOWER(v.title) LIKE ${normalizedGenreNeedle}
           OR LOWER(COALESCE(v.description, '')) LIKE ${normalizedGenreNeedle}
