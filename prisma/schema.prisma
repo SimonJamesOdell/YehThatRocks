@@ -299,6 +299,9 @@ model AnalyticsEvent {
   isNewVisitor Boolean  @default(false) @map("is_new_visitor")
   userId       Int?     @map("user_id")
   videoId      String?  @db.VarChar(32) @map("video_id")
+  geoLat       Decimal? @db.Decimal(9, 6) @map("geo_lat")
+  geoLng       Decimal? @db.Decimal(9, 6) @map("geo_lng")
+  geoAccuracyM Float?   @map("geo_accuracy_m")
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@index([createdAt])

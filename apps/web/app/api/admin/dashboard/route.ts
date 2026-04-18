@@ -37,6 +37,14 @@ type AnalyticsSeriesBucket = {
   authEvents: number;
 };
 
+type VisitorGeoPoint = {
+  visitorId: string;
+  lat: number;
+  lng: number;
+  eventCount: number;
+  lastSeenAt: string;
+};
+
 function addUtcMonths(date: Date, months: number) {
   const next = new Date(date);
   next.setUTCMonth(next.getUTCMonth() + months);
@@ -264,7 +272,7 @@ export async function GET(request: NextRequest) {
     `.catch(() => []),
   ]);
 
-  const [analyticsDaily, hourlyRecentAnalytics, hourlyRecentAuth, analyticsNewVsRepeat, registrationsPerDay, analyticsTotals, hostMetricHistory, earliestAnalyticsAt, earliestAuthAt] = await Promise.all([
+  const [analyticsDaily, hourlyRecentAnalytics, hourlyRecentAuth, analyticsNewVsRepeat, registrationsPerDay, analyticsTotals, geoVisitorsRaw, hostMetricHistory, earliestAnalyticsAt, earliestAuthAt] = await Promise.all([
     prisma.$queryRaw<Array<{
       day: Date;
       pageViews: bigint | number;
@@ -339,6 +347,26 @@ export async function GET(request: NextRequest) {
       FROM analytics_events
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
     `.catch(() => []),
+    prisma.$queryRaw<Array<{
+      visitorId: string;
+      lat: bigint | number | string;
+      lng: bigint | number | string;
+      eventCount: bigint | number;
+      lastSeenAt: Date;
+    }>>`
+      SELECT
+        visitor_id AS visitorId,
+        AVG(geo_lat) AS lat,
+        AVG(geo_lng) AS lng,
+        COUNT(*) AS eventCount,
+        MAX(created_at) AS lastSeenAt
+      FROM analytics_events
+      WHERE geo_lat IS NOT NULL
+        AND geo_lng IS NOT NULL
+      GROUP BY visitor_id
+      ORDER BY lastSeenAt DESC
+      LIMIT 1000
+    `.catch(() => []),
     readAdminHostMetricHistory(),
     prisma.$queryRaw<Array<{ earliestAt: Date | null }>>`
       SELECT MIN(created_at) AS earliestAt
@@ -393,6 +421,23 @@ export async function GET(request: NextRequest) {
 
   const auth24hRow = auth24h[0];
   const metadataRow = metadataQuality[0];
+  const geoVisitors: VisitorGeoPoint[] = geoVisitorsRaw
+    .map((row) => {
+      const lat = toNumber(row.lat);
+      const lng = toNumber(row.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return null;
+      }
+
+      return {
+        visitorId: row.visitorId,
+        lat,
+        lng,
+        eventCount: toNumber(row.eventCount),
+        lastSeenAt: row.lastSeenAt instanceof Date ? row.lastSeenAt.toISOString() : new Date(row.lastSeenAt).toISOString(),
+      };
+    })
+    .filter((row): row is VisitorGeoPoint => Boolean(row));
 
   const payload = {
     ok: true,
@@ -443,6 +488,7 @@ export async function GET(request: NextRequest) {
         uniqueVisitors: toNumber(analyticsTotals[0]?.uniqueVisitors),
         sessions: toNumber(analyticsTotals[0]?.totalSessions),
       },
+      geoVisitors,
     },
     hostMetrics: {
       minute: hostMetricHistory,

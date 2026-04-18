@@ -1,6 +1,9 @@
 "use client";
 
+import { geoContains, geoNaturalEarth1, geoPath } from "d3-geo";
+import { feature } from "topojson-client";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import worldAtlasCountries from "world-atlas/countries-110m.json";
 
 const HEALTH_FALLBACK_POLL_MS = 2_000;
 const ANALYTICS_AUTO_REFRESH_MS = 5 * 60 * 1000;
@@ -21,6 +24,22 @@ type AnalyticsBucket = {
 };
 
 type AnalyticsZoomLevel = "allTime" | "monthly" | "weekly" | "daily" | "hourly";
+
+type GeoVisitorPoint = {
+  visitorId: string;
+  lat: number;
+  lng: number;
+  eventCount: number;
+  lastSeenAt: string;
+};
+
+type MapDateRange = "allTime" | "today" | "thisWeek" | "thisMonth" | "thisYear";
+
+type WorldAtlasCountryFeature = {
+  id: string | number;
+  properties?: { name?: string };
+  geometry: unknown;
+};
 
 type DashboardPayload = {
   meta: { durationMs: number; generatedAt: string };
@@ -63,6 +82,7 @@ type DashboardPayload = {
     newVsRepeat: { newVisitors: number; repeatVisitors: number };
     registrationsPerDay: Array<{ day: string; count: number }>;
     totals: { pageViews: number; videoViews: number; uniqueVisitors: number; sessions: number };
+    geoVisitors: GeoVisitorPoint[];
   };
   hostMetrics: {
     minute: Array<{
@@ -142,7 +162,7 @@ type AmbiguousVideoRow = {
   updatedAt: string | null;
 };
 
-export type AdminTab = "overview" | "categories" | "videos" | "artists" | "ambiguous";
+export type AdminTab = "overview" | "worldmap" | "categories" | "videos" | "artists" | "ambiguous";
 
 async function readJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
@@ -228,6 +248,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [selectedMonthlyBucket, setSelectedMonthlyBucket] = useState<AnalyticsBucket | null>(null);
   const [selectedWeeklyBucket, setSelectedWeeklyBucket] = useState<AnalyticsBucket | null>(null);
   const [showHostMetricsGraph, setShowHostMetricsGraph] = useState(false);
+  const [mapDateRange, setMapDateRange] = useState<MapDateRange>("allTime");
   const [hostMetricSeriesOn, setHostMetricSeriesOn] = useState({
     cpu: true,
     memory: true,
@@ -246,6 +267,121 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const orderedGroqSpend = useMemo(() => (dashboard?.insights.groqSpend.daily ?? []).slice().reverse(), [dashboard]);
   const maxIngestCount = useMemo(() => Math.max(1, ...orderedIngestVelocity.map((item) => item.count)), [orderedIngestVelocity]);
   const maxGroqCount = useMemo(() => Math.max(1, ...orderedGroqSpend.map((item) => item.classified + item.errors)), [orderedGroqSpend]);
+  const worldMapVisitors = useMemo(() => (dashboard?.analytics.geoVisitors ?? []).slice(), [dashboard]);
+  const filteredWorldMapVisitors = useMemo(() => {
+    if (mapDateRange === "allTime") {
+      return worldMapVisitors;
+    }
+
+    const now = new Date();
+    const since = new Date(now);
+    if (mapDateRange === "today") {
+      since.setHours(0, 0, 0, 0);
+    } else if (mapDateRange === "thisWeek") {
+      const day = since.getDay();
+      const daysSinceMonday = (day + 6) % 7;
+      since.setDate(since.getDate() - daysSinceMonday);
+      since.setHours(0, 0, 0, 0);
+    } else if (mapDateRange === "thisMonth") {
+      since.setDate(1);
+      since.setHours(0, 0, 0, 0);
+    } else {
+      since.setMonth(0, 1);
+      since.setHours(0, 0, 0, 0);
+    }
+
+    return worldMapVisitors.filter((visitor) => {
+      const seenAt = new Date(visitor.lastSeenAt);
+      return Number.isFinite(seenAt.getTime()) && seenAt >= since;
+    });
+  }, [mapDateRange, worldMapVisitors]);
+  const worldCountryFeatures = useMemo(() => {
+    try {
+      const topo = worldAtlasCountries as {
+        objects?: { countries?: unknown };
+      };
+      if (!topo.objects?.countries) {
+        return [] as WorldAtlasCountryFeature[];
+      }
+
+      const collection = feature(topo as never, topo.objects.countries as never) as {
+        features?: WorldAtlasCountryFeature[];
+      };
+      return collection.features ?? [];
+    } catch {
+      return [] as WorldAtlasCountryFeature[];
+    }
+  }, []);
+  const worldMap = useMemo(() => {
+    const width = 880;
+    const height = 340;
+    const projection = geoNaturalEarth1().fitExtent(
+      [[10, 10], [width - 10, height - 10]],
+      { type: "Sphere" } as never,
+    );
+    const pathGenerator = geoPath(projection);
+
+    const countries = worldCountryFeatures
+      .map((country, index) => {
+        const path = pathGenerator(country as never);
+        if (!path) {
+          return null;
+        }
+
+        const normalizedId = String(country.id ?? "unknown");
+        const countryName = String(country.properties?.name ?? country.id ?? "Unknown");
+        const renderKey = `${normalizedId}-${countryName}-${index}`;
+
+        return {
+          id: normalizedId,
+          name: countryName,
+          renderKey,
+          geometry: country,
+          path,
+        };
+      })
+      .filter((country): country is { id: string; name: string; renderKey: string; geometry: WorldAtlasCountryFeature; path: string } => Boolean(country));
+
+    const countryVisitorCount = new Map<string, number>();
+    for (const point of filteredWorldMapVisitors) {
+      if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) {
+        continue;
+      }
+
+      const containingCountry = countries.find((country) => geoContains(country.geometry as never, [point.lng, point.lat]));
+      if (!containingCountry) {
+        continue;
+      }
+
+      countryVisitorCount.set(
+        containingCountry.id,
+        (countryVisitorCount.get(containingCountry.id) ?? 0) + 1,
+      );
+    }
+
+    const maxCountryVisitors = Math.max(1, ...Array.from(countryVisitorCount.values()));
+
+    const getCountryFill = (countryId: string) => {
+      const visitorCount = countryVisitorCount.get(countryId) ?? 0;
+      const ratio = visitorCount <= 0 ? 0 : visitorCount / maxCountryVisitors;
+      const red = Math.round(255 * ratio);
+      return `rgb(${red},0,0)`;
+    };
+
+    const meridians = Array.from({ length: 11 }, (_, index) => (index * width) / 10);
+    const parallels = Array.from({ length: 7 }, (_, index) => (index * height) / 6);
+
+    return {
+      width,
+      height,
+      meridians,
+      parallels,
+      countries,
+      countryVisitorCount,
+      getCountryFill,
+      maxCountryVisitors,
+    };
+  }, [filteredWorldMapVisitors, worldCountryFeatures]);
   const filterBucketsWithinRange = (rows: AnalyticsBucket[], range: AnalyticsBucket | null) => {
     if (!range) {
       return rows;
@@ -537,6 +673,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
 
     try {
       if (activeTab === "overview") {
+        await loadOverview();
+      } else if (activeTab === "worldmap") {
         await loadOverview();
       } else if (activeTab === "categories") {
         await loadCategories();
@@ -1089,6 +1227,81 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
             )}
           </svg>
 
+        </div>
+      ) : null}
+
+      {activeTab === "worldmap" ? (
+        <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ display: "flex", justifyContent: "flex-start", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              {([
+                { key: "allTime", label: "All time" },
+                { key: "today", label: "Today" },
+                { key: "thisWeek", label: "This week" },
+                { key: "thisMonth", label: "This month" },
+                { key: "thisYear", label: "This year" },
+              ] as Array<{ key: MapDateRange; label: string }>).map(({ key, label }) => (
+                <button
+                  key={`map-range-${key}`}
+                  type="button"
+                  onClick={() => setMapDateRange(key)}
+                  style={{
+                    borderRadius: 999,
+                    border: `1px solid ${mapDateRange === key ? "rgba(255,77,77,0.8)" : "rgba(255,255,255,0.2)"}`,
+                    background: mapDateRange === key ? "rgba(255,0,0,0.16)" : "rgba(0,0,0,0.35)",
+                    color: mapDateRange === key ? "#ff5a5a" : "rgba(255,255,255,0.82)",
+                    padding: "6px 11px",
+                    cursor: "pointer",
+                    fontSize: 11,
+                    letterSpacing: "0.03em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <svg
+              viewBox={`0 0 ${worldMap.width} ${worldMap.height}`}
+              role="img"
+              aria-label="World map of visitor geolocation points"
+              style={{
+                width: "100%",
+                height: "auto",
+                borderRadius: 10,
+                background: "radial-gradient(circle at 20% 10%, rgba(95,193,255,0.2), rgba(7,16,25,0.96))",
+              }}
+            >
+              <defs>
+                <linearGradient id="map-grid" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor="rgba(255,255,255,0.12)" />
+                  <stop offset="100%" stopColor="rgba(255,255,255,0.04)" />
+                </linearGradient>
+              </defs>
+              {worldMap.parallels.map((y) => (
+                <line key={`parallel-${y.toFixed(2)}`} x1="0" y1={String(y)} x2={String(worldMap.width)} y2={String(y)} stroke="url(#map-grid)" strokeWidth="1" />
+              ))}
+              {worldMap.meridians.map((x) => (
+                <line key={`meridian-${x.toFixed(2)}`} x1={String(x)} y1="0" x2={String(x)} y2={String(worldMap.height)} stroke="url(#map-grid)" strokeWidth="1" />
+              ))}
+              {worldMap.countries.map((country) => (
+                <path
+                  key={`country-${country.renderKey}`}
+                  d={country.path}
+                  fill={worldMap.getCountryFill(country.id)}
+                  stroke="rgba(255,255,255,0.34)"
+                  strokeWidth="0.85"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                >
+                  <title>{`${country.name}: ${worldMap.countryVisitorCount.get(country.id) ?? 0} visitors`}</title>
+                </path>
+              ))}
+            </svg>
+            <div className="statusMetrics">
+              <div><strong>Tracked Visitors</strong><p>{filteredWorldMapVisitors.length}</p></div>
+              <div><strong>Regions With Traffic</strong><p>{Array.from(worldMap.countryVisitorCount.values()).filter((count) => count > 0).length}</p></div>
+              <div><strong>Max Visitors / Region</strong><p>{worldMap.maxCountryVisitors}</p></div>
+            </div>
         </div>
       ) : null}
 

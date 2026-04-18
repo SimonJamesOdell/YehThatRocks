@@ -13,7 +13,7 @@ import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { PlayerExperience } from "@/components/player-experience";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { navItems, type VideoRecord } from "@/lib/catalog";
-import { trackVideoView } from "@/lib/analytics-client";
+import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
 
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
@@ -570,6 +570,17 @@ function ShellDynamicInner({
 
   useEffect(() => {
     previousPathnameRef.current = pathname;
+  }, [pathname]);
+
+  // Analytics: fire page_view on initial load and every route path change.
+  const analyticsLastPathnameRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pathname || analyticsLastPathnameRef.current === pathname) {
+      return;
+    }
+
+    analyticsLastPathnameRef.current = pathname;
+    void trackPageView();
   }, [pathname]);
 
   // Analytics: fire video_view each time the active video changes

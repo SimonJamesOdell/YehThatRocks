@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState, type CSSProperties, type UIEvent } from "react";
+import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import type { VideoRecord } from "@/lib/catalog";
@@ -361,6 +362,7 @@ export function PlayerExperience({
   const [isAdminEditLoading, setIsAdminEditLoading] = useState(false);
   const [isAdminEditSaving, setIsAdminEditSaving] = useState(false);
   const [isAdminDeleting, setIsAdminDeleting] = useState(false);
+  const [showAdminDeleteConfirmModal, setShowAdminDeleteConfirmModal] = useState(false);
   const [adminEditError, setAdminEditError] = useState<string | null>(null);
   const [adminEditStatus, setAdminEditStatus] = useState<string | null>(null);
   const endedChoiceOverlayRef = useRef<HTMLDivElement | null>(null);
@@ -3448,6 +3450,7 @@ export function PlayerExperience({
 
         const deletingVideoId = currentVideo.id;
         setIsAdminDeleting(true);
+        setShowAdminDeleteConfirmModal(false);
         setShowShareMenu(false);
         setAdminEditError(null);
         setAdminEditStatus(null);
@@ -3602,7 +3605,10 @@ export function PlayerExperience({
                         type="button"
                         className="overlayIconBtn overlayAdminDeleteBtn"
                         onClick={() => {
-                          void handleAdminDeleteCurrentVideo();
+                          setAdminEditError(null);
+                          setAdminEditStatus(null);
+                          setShowShareMenu(false);
+                          setShowAdminDeleteConfirmModal(true);
                         }}
                         aria-label="Remove video from site"
                         title="Remove video from site"
@@ -4118,6 +4124,56 @@ export function PlayerExperience({
               </div>
             </div>
           ) : null}
+
+          {showAdminDeleteConfirmModal && typeof document !== "undefined"
+            ? createPortal(
+                <div
+                  className="shareModalBackdrop"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Confirm permanent video deletion"
+                  onClick={() => {
+                    if (!isAdminDeleting) {
+                      setShowAdminDeleteConfirmModal(false);
+                    }
+                  }}
+                >
+                  <div className="shareModal adminVideoEditModal" onClick={(event) => event.stopPropagation()}>
+                    <div className="shareModalHeader">
+                      <strong>Delete Video Permanently</strong>
+                    </div>
+
+                    <p className="authMessage">
+                      This will remove this video from all related tables and cannot be undone.
+                    </p>
+                    <p className="authMessage">{displayTitle}</p>
+                    {adminEditError ? <p className="authMessage">{adminEditError}</p> : null}
+
+                    <div className="adminVideoEditActions">
+                      <button
+                        type="button"
+                        className="adminVideoEditButton adminVideoEditButtonSecondary"
+                        onClick={() => setShowAdminDeleteConfirmModal(false)}
+                        disabled={isAdminDeleting}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="adminVideoEditButton adminVideoEditButtonPrimary"
+                        onClick={() => {
+                          void handleAdminDeleteCurrentVideo();
+                        }}
+                        disabled={isAdminDeleting}
+                      >
+                        {isAdminDeleting ? "Deleting..." : "Delete permanently"}
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body,
+              )
+            : null}
 
           {!suppressUnavailablePlaybackSurface ? (
             <div
