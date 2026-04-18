@@ -437,7 +437,6 @@ function ShellDynamicInner({
   const prefetchBlockedUntilRef = useRef(0);
   const prefetchFailureCountRef = useRef(0);
   const prewarmedThumbnailIdsRef = useRef<Set<string>>(new Set());
-  const pendingRelatedVideosRef = useRef<VideoRecord[] | null>(null);
   const relatedTransitionTimeoutRef = useRef<number | null>(null);
   const relatedClickFlashTimeoutRef = useRef<number | null>(null);
   const relatedHideTimeoutsRef = useRef<Map<string, number>>(new Map());
@@ -448,11 +447,9 @@ function ShellDynamicInner({
   const relatedFetchOffsetRef = useRef<number | null>(null);
   const relatedScrollRafRef = useRef<number | null>(null);
   const relatedVideosRef = useRef<VideoRecord[]>([]);
-  const transitionFromVideoIdRef = useRef<string | null>(null);
   const watchNextRailRef = useRef<HTMLElement | null>(null);
   const playerChromeRef = useRef<HTMLDivElement | null>(null);
   const brandLogoTargetRef = useRef<HTMLAnchorElement | null>(null);
-  const prevFadeVideoIdRef = useRef<string | null>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const favouritesBlindInnerRef = useRef<HTMLDivElement | null>(null);
   const previousPathnameRef = useRef<string | null>(null);
@@ -2089,6 +2086,7 @@ function ShellDynamicInner({
   const shouldShowWatchNextBootstrapLoader = rightRailMode === "watch-next"
     && (!hasBootstrappedWatchNext || isWatchNextVideoSelectionPending);
 
+
   useEffect(() => {
     relatedVideosRef.current = relatedVideos;
   }, [relatedVideos]);
@@ -2128,7 +2126,7 @@ function ShellDynamicInner({
     && isPlaylistRailLoading,
   );
 
-  const loadMoreRelatedVideos = useCallback(async () => {
+  const loadMoreRelatedVideos = useCallback(async (requestedCount = RELATED_LOAD_BATCH_SIZE) => {
     if (
       relatedLoadInFlightRef.current
       || !hasMoreRelated
@@ -2151,9 +2149,11 @@ function ShellDynamicInner({
       if (relatedFetchOffsetRef.current === null || relatedFetchOffsetRef.current < existing.length) {
         relatedFetchOffsetRef.current = existing.length;
       }
+      const batchCount = Math.max(1, Math.min(30, Math.floor(requestedCount)));
+
       const params = new URLSearchParams();
       params.set("v", currentVideo.id);
-      params.set("count", String(RELATED_LOAD_BATCH_SIZE));
+      params.set("count", String(batchCount));
       params.set("offset", String(relatedFetchOffsetRef.current));
 
       const response = await fetch(`/api/current-video?${params.toString()}`, {
@@ -2267,7 +2267,12 @@ function ShellDynamicInner({
     }
 
     const timeoutId = window.setTimeout(() => {
-      void loadMoreRelatedVideos();
+      const remainingForTarget = RELATED_BACKGROUND_PREFETCH_TARGET - displayedRenderableRelatedVideos.length;
+      const prefetchCount = Math.max(
+        RELATED_LOAD_BATCH_SIZE,
+        Math.min(30, remainingForTarget),
+      );
+      void loadMoreRelatedVideos(prefetchCount);
     }, RELATED_BACKGROUND_PREFETCH_DELAY_MS);
 
     return () => {
@@ -2298,7 +2303,8 @@ function ShellDynamicInner({
     }
 
     const timeoutId = window.setTimeout(() => {
-      void loadMoreRelatedVideos();
+      // Hide-seen can temporarily leave the rail empty; recover quickly in one request.
+      void loadMoreRelatedVideos(30);
     }, 160);
 
     return () => {
@@ -2359,43 +2365,18 @@ function ShellDynamicInner({
     rightRailMode,
   ]);
 
-  // Kick off the fade-out as soon as the user selects a new video so the
-  // animation overlaps the API round-trip rather than adding to it.
-  // IMPORTANT: Do NOT clear displayedRelatedVideos here - let it fade out naturally,
-  // then the timeout will clear it to prevent stale rehydration.
   useEffect(() => {
+    // Straightforward flow:
+    // 1) Wait for requested video id to settle
+    // 2) While waiting (or while related videos are empty), clear list and show loader
+    // 3) Once related videos are ready, display them and fade in
+    const currentIds = displayedRelatedVideos.map((video) => video.id);
+    const nextIds = sourceRelatedVideos.map((video) => video.id);
+    const currentSignature = currentIds.join("|");
+    const nextSignature = nextIds.join("|");
+
+    // Disabled transitions: immediately apply new videos with no transition state.
     if (shouldDisableRelatedRailTransition) {
-      return;
-    }
-
-    if (isResolvingRequestedVideo || requestedVideoId !== currentVideo.id) {
-      return;
-    }
-
-    if (!requestedVideoId || requestedVideoId === prevFadeVideoIdRef.current) return;
-    prevFadeVideoIdRef.current = requestedVideoId;
-    
-    // Save the video ID we're transitioning FROM so loading phase knows we've moved to new video.
-    transitionFromVideoIdRef.current = currentVideo.id;
-    
-    // Trigger fade-out. Do NOT clear videos or pending refs yet.
-    // The timeout after fade-out will handle discarding stale cards.
-    setRelatedTransitionPhase((prev) => (prev === "idle" ? "fading-out" : prev));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentVideo.id, isResolvingRequestedVideo, requestedVideoId, shouldDisableRelatedRailTransition]);
-
-  useEffect(() => {
-    // If we're still resolving the requested video, wait.
-    if (requestedVideoId && isResolvingRequestedVideo && currentVideo.id === requestedVideoId) {
-      return;
-    }
-
-    const currentSignature = displayedRelatedVideos.map((video) => video.id).join("|");
-    const nextSignature = sourceRelatedVideos.map((video) => video.id).join("|");
-
-    // Disabled transitions: immediately apply new videos.
-    if (shouldDisableRelatedRailTransition) {
-      pendingRelatedVideosRef.current = null;
       if (currentSignature !== nextSignature) {
         setDisplayedRelatedVideos(sourceRelatedVideos);
       }
@@ -2405,56 +2386,68 @@ function ShellDynamicInner({
       return;
     }
 
-    // No change to videos: nothing to do.
-    if (currentSignature === nextSignature) {
-      return;
-    }
+    const hasFinalizedVideoSelection = !requestedVideoId || requestedVideoId === currentVideo.id;
+    const shouldShowLoadingState = isWatchNextVideoSelectionPending || !hasFinalizedVideoSelection;
 
-    // LOADING PHASE: waiting for new videos after video selection.
-    // Once they arrive (displayedRelatedVideos empty, sourceRelatedVideos not empty),
-    // immediately display them and transition to fading-in.
-    if (relatedTransitionPhase === "loading") {
-      if (displayedRelatedVideos.length === 0 && sourceRelatedVideos.length > 0) {
-        // New videos candidates exist. But only display if:
-        // 1. We've definitely moved to a new video (currentVideo.id changed from when we started fading-out)
-        // 2. Video selection is complete (either no pending request, or currentVideo matches requested)
-        const hasMovedToNewVideo = transitionFromVideoIdRef.current !== null && currentVideo.id !== transitionFromVideoIdRef.current;
-        const isSelectionComplete = !requestedVideoId || currentVideo.id === requestedVideoId;
-        
-        if (hasMovedToNewVideo && isSelectionComplete) {
-          // Definitely new videos from a new video: display and transition to fade-in.
-          setDisplayedRelatedVideos(sourceRelatedVideos);
-          pendingRelatedVideosRef.current = null;
-          transitionFromVideoIdRef.current = null;
-          setRelatedTransitionPhase("fading-in");
-        }
+    // During selection/URL resolution: clear stale cards and keep loader visible.
+    if (shouldShowLoadingState) {
+      if (relatedStackRef.current) {
+        relatedStackRef.current.scrollTop = 0;
       }
-      // Stay in loading until confirmed new videos arrive.
+      if (watchNextRailRef.current) {
+        watchNextRailRef.current.scrollTop = 0;
+      }
+      if (displayedRelatedVideos.length > 0) {
+        setDisplayedRelatedVideos([]);
+      }
+      if (relatedTransitionPhase !== "loading") {
+        setRelatedTransitionPhase("loading");
+      }
       return;
     }
 
-    // FADING-OUT or FADING-IN: block all signature-sync updates to prevent interference.
-    // The timeout effects handle all state changes during animations.
-    if (relatedTransitionPhase === "fading-out" || relatedTransitionPhase === "fading-in") {
-      // Do NOT process video changes during animations.
-      // Let the timeout handle all transitions.
+    // Video is finalized but data is still not ready: stay in loading state.
+    if (sourceRelatedVideos.length === 0) {
+      if (displayedRelatedVideos.length > 0) {
+        setDisplayedRelatedVideos([]);
+      }
+      if (relatedTransitionPhase !== "loading") {
+        setRelatedTransitionPhase("loading");
+      }
       return;
     }
 
-    // IDLE PHASE: videos have changed, need to transition.
-    if (displayedRelatedVideos.length === 0) {
-      // No videos shown currently: just display the new ones.
+    // Fresh data arrived for a finalized video: render it.
+    if (currentSignature !== nextSignature) {
+      const isAppendOnlyUpdate = currentIds.length > 0
+        && nextIds.length > currentIds.length
+        && currentIds.every((id, index) => nextIds[index] === id);
+
       setDisplayedRelatedVideos(sourceRelatedVideos);
+
+      if (isAppendOnlyUpdate) {
+        if (relatedTransitionPhase !== "idle") {
+          setRelatedTransitionPhase("idle");
+        }
+        return;
+      }
+
+      if (!hasBootstrappedWatchNext) {
+        setHasBootstrappedWatchNext(true);
+      }
+      setRelatedTransitionPhase("fading-in");
       return;
     }
 
-    // Videos differ and we're idle: start transition sequence.
-    pendingRelatedVideosRef.current = sourceRelatedVideos;
-    setRelatedTransitionPhase("fading-out");
+    // If data is already shown, ensure we end up idle.
+    if (relatedTransitionPhase === "loading" || relatedTransitionPhase === "fading-out") {
+      setRelatedTransitionPhase("idle");
+    }
   }, [
     currentVideo.id,
     displayedRelatedVideos,
-    isResolvingRequestedVideo,
+    hasBootstrappedWatchNext,
+    isWatchNextVideoSelectionPending,
     relatedTransitionPhase,
     requestedVideoId,
     shouldDisableRelatedRailTransition,
@@ -2472,25 +2465,7 @@ function ShellDynamicInner({
       relatedTransitionTimeoutRef.current = null;
     }
 
-    if (relatedTransitionPhase === "fading-out") {
-      if (relatedStackRef.current) {
-        relatedStackRef.current.scrollTop = 0;
-      }
-      if (watchNextRailRef.current) {
-        watchNextRailRef.current.scrollTop = 0;
-      }
-      const delayMs = RELATED_FADE_OUT_BASE_MS + RELATED_FADE_STAGGER_MS * Math.max(0, displayedRelatedVideos.length - 1);
-      relatedTransitionTimeoutRef.current = window.setTimeout(() => {
-        // After fade-out completes, clear stale cards and go to loading state.
-        setDisplayedRelatedVideos([]);
-        setRelatedTransitionPhase("loading");
-      }, delayMs);
-      return;
-    }
-
     if (relatedTransitionPhase === "fading-in") {
-      // Videos should already be displayed by the time we enter fading-in.
-      // Just set up the timeout to end the animation and return to idle.
       const delayMs = RELATED_FADE_IN_BASE_MS + RELATED_FADE_STAGGER_MS * Math.max(0, displayedRelatedVideos.length - 1);
       relatedTransitionTimeoutRef.current = window.setTimeout(() => {
         setRelatedTransitionPhase("idle");
