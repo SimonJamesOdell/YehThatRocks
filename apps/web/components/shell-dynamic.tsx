@@ -2408,43 +2408,29 @@ function ShellDynamicInner({
 
     // LOADING PHASE: waiting for new videos after video selection.
     // Once they arrive (displayedRelatedVideos empty, sourceRelatedVideos not empty),
-    // transition directly to fading-in. Do NOT use pending ref in this case.
+    // store them in pending ref and transition to fading-in.
+    // The timeout will then display them after the loading animation completes.
     if (relatedTransitionPhase === "loading") {
       if (displayedRelatedVideos.length === 0 && sourceRelatedVideos.length > 0) {
-        // New videos arrived: show them via fade-in animation.
-        setDisplayedRelatedVideos(sourceRelatedVideos);
-        pendingRelatedVideosRef.current = null;
-        setRelatedTransitionPhase("fading-in");
+        // New videos have arrived. But be careful: if video selection is still pending,
+        // sourceRelatedVideos might still be old. Only transition if videos are truly new.
+        // Check: is video selection complete? (currentVideo matches requested, or no pending request)
+        if (!requestedVideoId || currentVideo.id === requestedVideoId) {
+          // Video selection is complete, sourceRelatedVideos are definitely new.
+          // Store them and prepare to display.
+          pendingRelatedVideosRef.current = sourceRelatedVideos;
+          setRelatedTransitionPhase("fading-in");
+        }
       }
-      // Stay in loading until new videos arrive.
+      // Stay in loading until new videos are confirmed to have arrived.
       return;
     }
 
-    // FADING-OUT OR FADING-IN: might be in a video selection transition.
-    // During video selection, don't store pending videos yet - they'd be stale.
+    // FADING-OUT or FADING-IN: block all signature-sync updates to prevent interference.
+    // The timeout effects handle all state changes during animations.
     if (relatedTransitionPhase === "fading-out" || relatedTransitionPhase === "fading-in") {
-      // Check if video selection is in progress: if requestedVideoId differs from currentVideo.id,
-      // the new video's data hasn't arrived yet, so sourceRelatedVideos are still stale.
-      if (requestedVideoId && requestedVideoId !== currentVideo.id && isWatchNextVideoSelectionPending) {
-        // Video selection transition in progress: don't store pending videos.
-        // The loading phase will handle display once new videos arrive.
-        return;
-      }
-
-      // Not in a video selection transition - safe to process normally.
-      const isAppendOnlyUpdate = displayedRelatedVideos.length > 0
-        && sourceRelatedVideos.length > displayedRelatedVideos.length
-        && displayedRelatedVideos.every((video, index) => sourceRelatedVideos[index]?.id === video.id);
-
-      if (isAppendOnlyUpdate) {
-        // More videos loaded at the bottom: just add them without transitioning.
-        setDisplayedRelatedVideos(sourceRelatedVideos);
-        setRelatedTransitionPhase("idle");
-        pendingRelatedVideosRef.current = null;
-      } else {
-        // Different videos: store and wait for timeout to handle transition.
-        pendingRelatedVideosRef.current = sourceRelatedVideos;
-      }
+      // Do NOT process video changes during animations.
+      // Let the timeout handle all transitions.
       return;
     }
 
@@ -2462,7 +2448,6 @@ function ShellDynamicInner({
     currentVideo.id,
     displayedRelatedVideos,
     isResolvingRequestedVideo,
-    isWatchNextVideoSelectionPending,
     relatedTransitionPhase,
     requestedVideoId,
     shouldDisableRelatedRailTransition,
@@ -2489,18 +2474,7 @@ function ShellDynamicInner({
       }
       const delayMs = RELATED_FADE_OUT_BASE_MS + RELATED_FADE_STAGGER_MS * Math.max(0, displayedRelatedVideos.length - 1);
       relatedTransitionTimeoutRef.current = window.setTimeout(() => {
-        // After fade-out completes, check for pending videos (used only for non-selection transitions).
-        const next = pendingRelatedVideosRef.current;
-        if (next && next.length > 0) {
-          // Pending videos from a non-selection transition: display them and fade in.
-          setDisplayedRelatedVideos(next);
-          pendingRelatedVideosRef.current = null;
-          setRelatedTransitionPhase("fading-in");
-          return;
-        }
-
-        // No pending videos: must be waiting for new video's data after selection.
-        // Discard stale cards and show loading animation.
+        // After fade-out completes, clear stale cards and go to loading state.
         setDisplayedRelatedVideos([]);
         setRelatedTransitionPhase("loading");
       }, delayMs);
@@ -2508,6 +2482,18 @@ function ShellDynamicInner({
     }
 
     if (relatedTransitionPhase === "fading-in") {
+      // At the start of fading-in, ensure pending videos are displayed.
+      // This must happen synchronously before the animation to avoid flicker.
+      const next = pendingRelatedVideosRef.current;
+      if (next && next.length > 0 && displayedRelatedVideos.length === 0) {
+        // Display pending videos immediately (they'll animate in via CSS).
+        setDisplayedRelatedVideos(next);
+        pendingRelatedVideosRef.current = null;
+        // Don't set up timeout yet; let effect run again with new displayedRelatedVideos.
+        return;
+      }
+
+      // Videos are now displayed (or already were). Set up timeout for end of fade-in.
       const delayMs = RELATED_FADE_IN_BASE_MS + RELATED_FADE_STAGGER_MS * Math.max(0, displayedRelatedVideos.length - 1);
       relatedTransitionTimeoutRef.current = window.setTimeout(() => {
         setRelatedTransitionPhase("idle");
