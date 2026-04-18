@@ -3993,10 +3993,10 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
             FROM artists a
             WHERE a.${nameCol} IS NOT NULL
               AND a.${nameCol} <> ''
-              AND LEFT(${artistNameNormExpr}, 1) = ?
+              AND ${artistNameNormExpr} LIKE ?
             ORDER BY a.${nameCol} ASC
           `,
-          normalizedLetterKey,
+          `${normalizedLetterKey}%`,
         );
 
         const parsedArtistCounts = await prisma.$queryRawUnsafe<Array<{ artistKey: string | null; videoCount: number | null; thumbnailVideoId: string | null }>>(
@@ -4071,7 +4071,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
       FROM videos v
       WHERE ${videoArtistNormExpr} <> ''
         AND v.videoId IS NOT NULL
-        AND LEFT(${videoArtistNormExpr}, 1) = ?
+        AND ${videoArtistNormExpr} LIKE ?
       GROUP BY ${videoArtistNormExpr}
     `;
 
@@ -4079,7 +4079,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
       const artistVideoColumns = await getArtistVideoColumnMap();
       const vaArtistCol = escapeSqlIdentifier(artistVideoColumns.artistName);
       const vaArtistNormExpr = artistVideoColumns.normalizedArtistName
-        ? `COALESCE(va.${escapeSqlIdentifier(artistVideoColumns.normalizedArtistName)}, '')`
+        ? `va.${escapeSqlIdentifier(artistVideoColumns.normalizedArtistName)}`
         : `LOWER(TRIM(COALESCE(va.${vaArtistCol}, '')))`;
       const vaVideoRefCol = escapeSqlIdentifier(artistVideoColumns.videoRef);
       const joinVideoExpr = artistVideoColumns.joinsOnVideoPrimaryId ? "v.id" : "v.videoId";
@@ -4092,7 +4092,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
         FROM videosbyartist va
         INNER JOIN videos v ON ${joinVideoExpr} = va.${vaVideoRefCol}
         WHERE ${vaArtistNormExpr} <> ''
-          AND LEFT(${vaArtistNormExpr}, 1) = ?
+          AND ${vaArtistNormExpr} LIKE ?
           AND v.videoId IS NOT NULL
         GROUP BY ${vaArtistNormExpr}
       `;
@@ -4111,13 +4111,13 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
         WHERE vc.videoCount > 0
           AND a.${nameCol} IS NOT NULL
           AND a.${nameCol} <> ''
-          AND LEFT(${artistNameNormExpr}, 1) = ?
+          AND ${artistNameNormExpr} LIKE ?
         ORDER BY a.${nameCol} ASC
         LIMIT ${safeLimit}
         OFFSET ${safeOffset}
       `,
-      normalizedLetterKey,
-      normalizedLetterKey,
+      `${normalizedLetterKey}%`,
+      `${normalizedLetterKey}%`,
     );
 
     const mappedRows = rows.map((row) => ({
