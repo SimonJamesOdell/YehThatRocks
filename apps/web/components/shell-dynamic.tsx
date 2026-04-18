@@ -173,6 +173,7 @@ function SharedVideoMessageCard({ videoId }: { videoId: string }) {
     <Link
       href={`/?v=${encodeURIComponent(resolvedId)}`}
       className="chatSharedVideoCard"
+      prefetch={false}
       onClick={(event) => {
         event.stopPropagation();
         window.dispatchEvent(new CustomEvent(REQUEST_VIDEO_REPLAY_EVENT, {
@@ -187,6 +188,8 @@ function SharedVideoMessageCard({ videoId }: { videoId: string }) {
         width={84}
         height={48}
         className="chatSharedVideoThumb"
+        loading="lazy"
+        sizes="84px"
       />
       <span className="chatSharedVideoMeta">
         <strong>{preview?.title ?? "Shared video"}</strong>
@@ -3799,7 +3802,7 @@ function ShellDynamicInner({
                         onClick={() => router.push(`/u/${encodeURIComponent(user.name)}`)}
                       >
                         {user.avatarUrl ? (
-                          <Image src={user.avatarUrl} alt="" width={88} height={88} className="chatAvatar" />
+                          <Image src={user.avatarUrl} alt="" width={88} height={88} className="chatAvatar" loading="lazy" sizes="44px" />
                         ) : (
                           <div className="avatar">{user.name.slice(0, 1)}</div>
                         )}
@@ -3825,7 +3828,7 @@ function ShellDynamicInner({
                         onClick={() => router.push(`/u/${encodeURIComponent(message.user.name)}`)}
                       >
                         {message.user.avatarUrl ? (
-                          <Image src={message.user.avatarUrl} alt="" width={88} height={88} className="chatAvatar" />
+                          <Image src={message.user.avatarUrl} alt="" width={88} height={88} className="chatAvatar" loading="lazy" sizes="44px" />
                         ) : (
                           <div className="avatar">{message.user.name.slice(0, 1)}</div>
                         )}
@@ -4289,6 +4292,7 @@ function ShellDynamicInner({
                         key={playlist.id}
                         href={getActivatePlaylistHref(playlist.id)}
                         className="relatedCard linkedCard rightRailPlaylistCard"
+                        prefetch={false}
                       >
                         <button
                           type="button"
@@ -4313,6 +4317,7 @@ function ShellDynamicInner({
                               height={72}
                               unoptimized
                               loading="lazy"
+                              sizes="128px"
                               className="relatedThumb"
                             />
                           ) : (
@@ -4446,6 +4451,7 @@ function ShellDynamicInner({
                       <Link
                         href={`/?v=${track.id}&pl=${encodeURIComponent(playlistRailData.id)}&pli=${index}`}
                         className={`relatedCard linkedCard rightRailPlaylistTrackCard${isCurrentPlaylistTrack ? " relatedCardActive" : ""}`}
+                        prefetch={false}
                         draggable={false}
                       >
                         <div className="thumbGlow">
@@ -4457,6 +4463,7 @@ function ShellDynamicInner({
                             unoptimized
                             loading={index < 3 ? "eager" : "lazy"}
                             fetchPriority={index < 2 ? "high" : "auto"}
+                            sizes="128px"
                             className="relatedThumb"
                           />
                         </div>

@@ -62,7 +62,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
               {isAuthenticated ? <SearchFlagButton videoId={video.id} title={video.title} searchQuery={query} /> : null}
               <AdminVideoEditButton videoId={video.id} isAdmin={isAdminUser} />
               <AdminVideoDeleteButton videoId={video.id} title={video.title} isAdmin={isAdminUser} />
-              <Link href={`/?v=${video.id}&resume=1`} className="linkedCard leaderboardTrackLink">
+              <Link href={`/?v=${video.id}&resume=1`} className="linkedCard leaderboardTrackLink" prefetch={false}>
                 <div className="queueBadge">Result</div>
                 <div className="leaderboardThumbWrap">
                   <Image
@@ -72,6 +72,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                     height={90}
                     className="leaderboardThumb"
                     loading="lazy"
+                    sizes="(max-width: 768px) 42vw, 160px"
                   />
                   {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay">Seen</span> : null}
                 </div>

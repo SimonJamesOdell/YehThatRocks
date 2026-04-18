@@ -177,6 +177,7 @@ export function Top100VideoLink({
             height={90}
             className="leaderboardThumb"
             loading="lazy"
+            sizes="(max-width: 768px) 42vw, 160px"
           />
           {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay">Seen</span> : null}
         </div>

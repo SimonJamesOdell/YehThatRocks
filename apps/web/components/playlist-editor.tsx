@@ -355,6 +355,7 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
                 <Link
                   href={`/?v=${video.id}&pl=${encodeURIComponent(playlist.id)}&pli=${index}`}
                   className="leaderboardTrackLink"
+                  prefetch={false}
                 >
                   <div className="leaderboardRank">#{index + 1}</div>
                   <div className="leaderboardThumbWrap">
@@ -365,6 +366,7 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
                       height={90}
                       className="leaderboardThumb"
                       loading="lazy"
+                      sizes="(max-width: 768px) 42vw, 160px"
                     />
                   </div>
                   <div className="leaderboardMeta">

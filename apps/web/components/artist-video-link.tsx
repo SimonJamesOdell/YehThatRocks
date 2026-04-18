@@ -74,6 +74,7 @@ export function ArtistVideoLink({
       <Link
         href={`/?v=${video.id}&resume=1`}
         className="linkedCard categoryVideoPrimaryLink"
+        prefetch={false}
         onMouseEnter={warmSelection}
         onFocus={warmSelection}
         onPointerDown={warmSelection}
@@ -87,6 +88,7 @@ export function ArtistVideoLink({
             height={180}
             className="categoryThumb"
             loading="lazy"
+            sizes="(max-width: 768px) 92vw, (max-width: 1200px) 44vw, 320px"
           />
           {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay categorySeenBadgeOverlay">Seen</span> : null}
         </div>

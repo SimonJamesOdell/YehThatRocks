@@ -547,6 +547,8 @@ export function ArtistsLetterResults({
                       alt=""
                       className="categoryThumb"
                       loading="lazy"
+                      decoding="async"
+                      fetchPriority="low"
                       ref={(element) => {
                         handleThumbnailElement(element, artist.name, artist.slug, artist.thumbnailVideoId);
                       }}
