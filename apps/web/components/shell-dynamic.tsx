@@ -448,6 +448,7 @@ function ShellDynamicInner({
   const relatedFetchOffsetRef = useRef<number | null>(null);
   const relatedScrollRafRef = useRef<number | null>(null);
   const relatedVideosRef = useRef<VideoRecord[]>([]);
+  const transitionFromVideoIdRef = useRef<string | null>(null);
   const watchNextRailRef = useRef<HTMLElement | null>(null);
   const playerChromeRef = useRef<HTMLDivElement | null>(null);
   const brandLogoTargetRef = useRef<HTMLAnchorElement | null>(null);
@@ -2374,6 +2375,9 @@ function ShellDynamicInner({
     if (!requestedVideoId || requestedVideoId === prevFadeVideoIdRef.current) return;
     prevFadeVideoIdRef.current = requestedVideoId;
     
+    // Save the video ID we're transitioning FROM so loading phase knows we've moved to new video.
+    transitionFromVideoIdRef.current = currentVideo.id;
+    
     // Trigger fade-out. Do NOT clear videos or pending refs yet.
     // The timeout after fade-out will handle discarding stale cards.
     setRelatedTransitionPhase((prev) => (prev === "idle" ? "fading-out" : prev));
@@ -2408,21 +2412,24 @@ function ShellDynamicInner({
 
     // LOADING PHASE: waiting for new videos after video selection.
     // Once they arrive (displayedRelatedVideos empty, sourceRelatedVideos not empty),
-    // store them in pending ref and transition to fading-in.
-    // The timeout will then display them after the loading animation completes.
+    // immediately display them and transition to fading-in.
     if (relatedTransitionPhase === "loading") {
       if (displayedRelatedVideos.length === 0 && sourceRelatedVideos.length > 0) {
-        // New videos have arrived. But be careful: if video selection is still pending,
-        // sourceRelatedVideos might still be old. Only transition if videos are truly new.
-        // Check: is video selection complete? (currentVideo matches requested, or no pending request)
-        if (!requestedVideoId || currentVideo.id === requestedVideoId) {
-          // Video selection is complete, sourceRelatedVideos are definitely new.
-          // Store them and prepare to display.
-          pendingRelatedVideosRef.current = sourceRelatedVideos;
+        // New videos candidates exist. But only display if:
+        // 1. We've definitely moved to a new video (currentVideo.id changed from when we started fading-out)
+        // 2. Video selection is complete (either no pending request, or currentVideo matches requested)
+        const hasMovedToNewVideo = transitionFromVideoIdRef.current !== null && currentVideo.id !== transitionFromVideoIdRef.current;
+        const isSelectionComplete = !requestedVideoId || currentVideo.id === requestedVideoId;
+        
+        if (hasMovedToNewVideo && isSelectionComplete) {
+          // Definitely new videos from a new video: display and transition to fade-in.
+          setDisplayedRelatedVideos(sourceRelatedVideos);
+          pendingRelatedVideosRef.current = null;
+          transitionFromVideoIdRef.current = null;
           setRelatedTransitionPhase("fading-in");
         }
       }
-      // Stay in loading until new videos are confirmed to have arrived.
+      // Stay in loading until confirmed new videos arrive.
       return;
     }
 
@@ -2482,18 +2489,8 @@ function ShellDynamicInner({
     }
 
     if (relatedTransitionPhase === "fading-in") {
-      // At the start of fading-in, ensure pending videos are displayed.
-      // This must happen synchronously before the animation to avoid flicker.
-      const next = pendingRelatedVideosRef.current;
-      if (next && next.length > 0 && displayedRelatedVideos.length === 0) {
-        // Display pending videos immediately (they'll animate in via CSS).
-        setDisplayedRelatedVideos(next);
-        pendingRelatedVideosRef.current = null;
-        // Don't set up timeout yet; let effect run again with new displayedRelatedVideos.
-        return;
-      }
-
-      // Videos are now displayed (or already were). Set up timeout for end of fade-in.
+      // Videos should already be displayed by the time we enter fading-in.
+      // Just set up the timeout to end the animation and return to idle.
       const delayMs = RELATED_FADE_IN_BASE_MS + RELATED_FADE_STAGGER_MS * Math.max(0, displayedRelatedVideos.length - 1);
       relatedTransitionTimeoutRef.current = window.setTimeout(() => {
         setRelatedTransitionPhase("idle");
