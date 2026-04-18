@@ -2036,16 +2036,13 @@ export function PlayerExperience({
     router.push(`${pathname}?${params.toString()}`);
   }
 
-  function triggerEndOfVideoAction() {
-    const isInitialDeepLinkedVideo = Boolean(
-      initialRequestedVideoIdRef.current &&
-        !hasLeftInitialRequestedVideoRef.current &&
-        currentVideo.id === initialRequestedVideoIdRef.current,
-    );
+  function triggerEndOfVideoAction(options?: { forceAutoplayAdvance?: boolean }) {
+    const forceAutoplayAdvance = options?.forceAutoplayAdvance === true;
+    // Always honor autoplay once enabled, even for the initial deep-linked track.
+    const autoplayEnabledForCurrentTrack = autoplayEnabledRef.current && currentVideo.id.length > 0;
 
     const shouldAutoAdvance =
-      autoplayEnabledRef.current &&
-      (hasActivePlaylistIntent || !isInitialDeepLinkedVideo);
+      autoplayEnabledForCurrentTrack || forceAutoplayAdvance;
 
     if (shouldAutoAdvance && nextVideoIdRef.current) {
       navigateToVideo(nextVideoIdRef.current, {
@@ -2442,7 +2439,9 @@ export function PlayerExperience({
       // Keep skip flow responsive even if hide persistence fails.
     } finally {
       setHideCurrentVideoState("idle");
-      triggerEndOfVideoAction();
+      triggerEndOfVideoAction({
+        forceAutoplayAdvance: autoplayEnabledRef.current,
+      });
     }
   }
 
@@ -4126,19 +4125,37 @@ export function PlayerExperience({
               aria-disabled={footerActionsBlocked ? true : undefined}
             >
             <div className="shareUrlField">
-              <label htmlFor="share-url" className="shareUrlLabel">Share URL</label>
-              <input
-                id="share-url"
-                type="text"
-                className="shareUrlInput"
-                size={Math.min(Math.max(shareUrl.length, 24), 48)}
-                style={{ width: `calc(${Math.min(Math.max(shareUrl.length, 24), 48)}ch - 7px)` }}
-                readOnly
-                value={shareUrl}
-                onFocus={(event) => event.currentTarget.select()}
-                onClick={(event) => event.currentTarget.select()}
-                aria-label="Share URL"
-              />
+              <label htmlFor="share-url" className="shareUrlLabel">SHARE URL</label>
+              <div className="shareUrlInputWrap">
+                <input
+                  id="share-url"
+                  type="text"
+                  className="shareUrlInput"
+                  size={Math.min(Math.max(shareUrl.length, 24), 48)}
+                  style={{ width: `calc(${Math.min(Math.max(shareUrl.length, 24), 48)}ch - 7px)` }}
+                  readOnly
+                  value={shareUrl}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onClick={(event) => event.currentTarget.select()}
+                  aria-label="Share URL"
+                />
+                <button
+                  type="button"
+                  className="shareUrlCopyButton"
+                  onClick={() => {
+                    void handleCopyShareLink();
+                  }}
+                  disabled={footerActionsBlocked}
+                  aria-label={copied ? "Share URL copied" : "Copy share URL"}
+                  title={copied ? "Copied" : "Copy share URL"}
+                >
+                  <span
+                    className="shareUrlCopyIcon"
+                    aria-hidden="true"
+                    dangerouslySetInnerHTML={{ __html: "&#128203;" }}
+                  />
+                </button>
+              </div>
             </div>
             {isLoggedIn && (
               <div className="primaryActionIconButtonWrap">

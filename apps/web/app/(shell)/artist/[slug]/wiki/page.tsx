@@ -122,6 +122,7 @@ export default async function ArtistWikiPage({ params, searchParams }: ArtistWik
                   src={wiki.images[0].url}
                   alt={`${wiki.artistName} photo`}
                   loading="eager"
+                  fetchPriority="high"
                   className="artistWikiLeadImage"
                 />
               </figure>

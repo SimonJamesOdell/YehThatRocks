@@ -1215,9 +1215,14 @@ function ShellDynamicInner({
     };
 
     syncPlayerDockScale();
+    // Safety-net: if the synchronous call above scheduled a RAF that gets cancelled
+    // by a dep change (e.g. mid-navigation state flush), a delayed retry ensures the
+    // scale is always corrected even when the frame dims weren't ready immediately.
+    const timeoutId = setTimeout(syncPlayerDockScale, 200);
     window.addEventListener("resize", syncPlayerDockScale);
     return () => {
       window.removeEventListener("resize", syncPlayerDockScale);
+      clearTimeout(timeoutId);
       if (rafId !== null) window.cancelAnimationFrame(rafId);
     };
   }, [shouldDockDesktopPlayer, shouldDockUnderArtistsAlphabet, pathname]);

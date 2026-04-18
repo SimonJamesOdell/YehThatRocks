@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { filterHiddenVideos, getCurrentVideo, getNewestVideos, getRelatedVideos, getTopVideos, getUnseenCatalogVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { filterHiddenVideos, getCurrentVideo, getFavouriteVideos, getNewestVideos, getRelatedVideos, getTopVideos, getUnseenCatalogVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { getOptionalApiAuth } from "@/lib/auth-request";
 import {
   currentVideoCache,
@@ -20,6 +20,8 @@ const CURRENT_VIDEO_RELATED_POOL_CACHE_TTL_MS = 30_000;
 const CURRENT_VIDEO_RELATED_POOL_SIZE = 100;
 const CURRENT_VIDEO_RELATED_POOL_BASE_SIZE = CURRENT_VIDEO_RELATED_POOL_SIZE;
 const CURRENT_VIDEO_RELATED_POOL_MAX_SIZE = 300_000;
+const WATCH_NEXT_FAVOURITE_BLEND_RATIO = 0.3;
+const ENDED_CHOICE_FAVOURITE_BLEND_RATIO = 0.45;
 
 type CurrentVideoPayload = {
   currentVideo: Awaited<ReturnType<typeof getCurrentVideo>>;
@@ -65,6 +67,70 @@ function uniqueVideosById<T extends { id: string }>(rows: T[]) {
   return unique;
 }
 
+function blendRelatedWithFavourites<T extends { id: string }>(
+  baseVideos: T[],
+  favouriteVideos: T[],
+  currentVideoId: string,
+  favouriteRatio: number,
+) {
+  if (favouriteVideos.length === 0 || favouriteRatio <= 0) {
+    return uniqueVideosById(baseVideos).filter((video) => video.id !== currentVideoId);
+  }
+
+  const preferred = uniqueVideosById(favouriteVideos).filter((video) => video.id !== currentVideoId);
+  if (preferred.length === 0) {
+    return uniqueVideosById(baseVideos).filter((video) => video.id !== currentVideoId);
+  }
+
+  const preferredIds = new Set(preferred.map((video) => video.id));
+  const discovery = uniqueVideosById(baseVideos).filter(
+    (video) => video.id !== currentVideoId && !preferredIds.has(video.id),
+  );
+
+  const blend = Math.max(0.05, Math.min(0.95, favouriteRatio));
+  const nonPreferredPerPreferred = Math.max(1, Math.round((1 - blend) / blend));
+  let nonPreferredSincePreferred = Math.max(0, nonPreferredPerPreferred - 1);
+  let preferredIndex = 0;
+  let discoveryIndex = 0;
+  const mixed: T[] = [];
+
+  while (preferredIndex < preferred.length || discoveryIndex < discovery.length) {
+    const shouldTakePreferred =
+      preferredIndex < preferred.length
+      && (nonPreferredSincePreferred >= nonPreferredPerPreferred || discoveryIndex >= discovery.length);
+
+    if (shouldTakePreferred) {
+      mixed.push(preferred[preferredIndex]);
+      preferredIndex += 1;
+      nonPreferredSincePreferred = 0;
+      continue;
+    }
+
+    if (discoveryIndex < discovery.length) {
+      mixed.push(discovery[discoveryIndex]);
+      discoveryIndex += 1;
+      nonPreferredSincePreferred += 1;
+      continue;
+    }
+
+    if (preferredIndex < preferred.length) {
+      mixed.push(preferred[preferredIndex]);
+      preferredIndex += 1;
+      nonPreferredSincePreferred = 0;
+    }
+  }
+
+  return mixed;
+}
+
+function sliceMergedRelatedPool<T extends { id: string }>(deduped: T[], merged: T[], targetSize: number) {
+  if (targetSize <= CURRENT_VIDEO_RELATED_POOL_SIZE) {
+    return [...deduped, ...merged].slice(0, CURRENT_VIDEO_RELATED_POOL_SIZE);
+  }
+
+  return [...deduped, ...merged].slice(0, targetSize);
+}
+
 function logCurrentVideoRoute(event: string, detail?: Record<string, unknown>) {
   if (!CURRENT_VIDEO_DEBUG_ENABLED) {
     return;
@@ -107,7 +173,7 @@ async function getRelatedPoolForCurrentVideo(currentVideoId: string, userId: num
       return deduped.slice(0, targetSize);
     }
 
-    const [baselineTopCandidates, baselineNewestCandidates, unseenCandidates] = await Promise.all([
+    const [baselineTopCandidates, baselineNewestCandidates, unseenCandidates, favouriteCandidates] = await Promise.all([
       getTopVideos(300),
       getNewestVideos(200, 0),
       getUnseenCatalogVideos({
@@ -115,6 +181,7 @@ async function getRelatedPoolForCurrentVideo(currentVideoId: string, userId: num
         count: Math.min(500, Math.max(200, Math.floor(targetSize / 2))),
         excludeVideoIds: Array.from(blockedIds),
       }),
+      userId ? getFavouriteVideos(userId) : Promise.resolve([]),
     ]);
 
     let topCandidates = baselineTopCandidates;
@@ -136,11 +203,14 @@ async function getRelatedPoolForCurrentVideo(currentVideoId: string, userId: num
       ...newestCandidates,
     ]).filter((video) => !blockedIds.has(video.id));
 
-    if (targetSize <= CURRENT_VIDEO_RELATED_POOL_SIZE) {
-      return [...deduped, ...merged].slice(0, CURRENT_VIDEO_RELATED_POOL_SIZE);
-    }
-
-    return [...deduped, ...merged].slice(0, targetSize);
+    const slicedMergedPool = sliceMergedRelatedPool(deduped, merged, targetSize);
+    const blended = blendRelatedWithFavourites(
+      slicedMergedPool,
+      favouriteCandidates,
+      currentVideoId,
+      WATCH_NEXT_FAVOURITE_BLEND_RATIO,
+    );
+    return blended.slice(0, slicedMergedPool.length);
   })();
   currentVideoRelatedPoolInflight.set(cacheKey, pending);
 
@@ -182,6 +252,9 @@ export async function GET(request: NextRequest) {
   const isCustomRelatedRequest = requestedRelatedCount !== 10 || excludedRelatedIds.length > 0 || requestedRelatedOffset > 0;
   const usePagedRelatedPool = isCustomRelatedRequest;
   const optionalAuth = await getOptionalApiAuth(request);
+  const favouriteBlendRatio = requestMode === "ended-choice"
+    ? ENDED_CHOICE_FAVOURITE_BLEND_RATIO
+    : WATCH_NEXT_FAVOURITE_BLEND_RATIO;
   const preferUnseenForEndedChoice = requestMode === "ended-choice" && hideSeenOnly && Boolean(optionalAuth?.userId);
   const cacheKey = `${v ?? "__default__"}:u:${optionalAuth?.userId ?? 0}`;
   const now = Date.now();
@@ -278,6 +351,9 @@ export async function GET(request: NextRequest) {
 
     let relatedVideos: Awaited<ReturnType<typeof getRelatedVideos>> = [];
     let hasMoreForCustomRequest: boolean | undefined;
+    const favouriteVideos = optionalAuth?.userId
+      ? await getFavouriteVideos(optionalAuth.userId)
+      : [];
 
     if (usePagedRelatedPool) {
       const poolSizeTarget = preferUnseenForEndedChoice
@@ -301,6 +377,13 @@ export async function GET(request: NextRequest) {
         ]);
       }
 
+      filteredPool = blendRelatedWithFavourites(
+        filteredPool,
+        favouriteVideos,
+        currentVideo.id,
+        favouriteBlendRatio,
+      );
+
       const start = Math.min(requestedRelatedOffset, filteredPool.length);
       const end = Math.min(filteredPool.length, start + requestedRelatedCount);
       relatedVideos = filteredPool.slice(start, end);
@@ -312,8 +395,14 @@ export async function GET(request: NextRequest) {
         count: requestedWithProbe,
         excludeVideoIds: excludedRelatedIds,
       });
-      hasMoreForCustomRequest = fetchedRelatedVideos.length > requestedRelatedCount;
-      relatedVideos = fetchedRelatedVideos.slice(0, requestedRelatedCount);
+      const blendedRelatedVideos = blendRelatedWithFavourites(
+        fetchedRelatedVideos,
+        favouriteVideos,
+        currentVideo.id,
+        favouriteBlendRatio,
+      );
+      hasMoreForCustomRequest = blendedRelatedVideos.length > requestedRelatedCount;
+      relatedVideos = blendedRelatedVideos.slice(0, requestedRelatedCount);
     }
 
     const targetRelatedCount = 10;
