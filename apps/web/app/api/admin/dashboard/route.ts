@@ -7,7 +7,7 @@ import { requireAdminApiAuth } from "@/lib/admin-auth";
 import { buildAdminHealthPayload, readAdminHostMetricHistory } from "@/lib/admin-dashboard-health";
 import { prisma } from "@/lib/db";
 
-function toNumber(value: bigint | number | null | undefined) {
+function toNumber(value: bigint | number | string | null | undefined) {
   if (typeof value === "bigint") {
     return Number(value);
   }
