@@ -525,6 +525,10 @@ export function PlayerExperience({
   hasActivePlaylistSequenceRef.current = hasActivePlaylistSequence;
 
   useEffect(() => {
+    if (!autoplayEnabled) {
+      return;
+    }
+
     let cancelled = false;
 
     async function loadTopFallbackPool() {
@@ -560,7 +564,7 @@ export function PlayerExperience({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [autoplayEnabled]);
 
   function getRandomWatchNextId() {
     const queueIds = Array.from(new Set(queue.map((video) => video.id))).filter((videoId) => videoId !== currentVideo.id);
