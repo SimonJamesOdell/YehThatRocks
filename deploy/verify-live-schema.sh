@@ -72,13 +72,15 @@ echo "[schema-verify] Checking watch_history DDL"
 WATCH_DDL_OUTPUT="$("${COMPOSE[@]}" exec -T db sh -lc 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" -e "SHOW CREATE TABLE watch_history\\G"')"
 echo "$WATCH_DDL_OUTPUT"
 
-for required in \
-  'UNIQUE KEY `watch_history_user_video_unique` (`user_id`,`video_id`)' \
-  'KEY `watch_history_user_last_watched_idx` (`user_id`,`last_watched_at`)' \
-  'KEY `watch_history_video_idx` (`video_id`)'
+# Validate key definitions by key type + indexed columns rather than exact key names,
+# so harmless key renames do not fail deploy while still enforcing required indexes.
+for required_regex in \
+  'UNIQUE KEY `[^`]+` \(`user_id`,`video_id`\)' \
+  'KEY `[^`]+` \(`user_id`,`last_watched_at`\)' \
+  'KEY `[^`]+` \(`video_id`\)'
 do
-  if ! grep -Fq "$required" <<<"$WATCH_DDL_OUTPUT"; then
-    echo "[schema-verify] Missing expected watch_history index: $required" >&2
+  if ! grep -Eq "$required_regex" <<<"$WATCH_DDL_OUTPUT"; then
+    echo "[schema-verify] Missing expected watch_history index pattern: $required_regex" >&2
     exit 4
   fi
 done
