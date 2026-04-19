@@ -957,21 +957,9 @@ export function PlayerExperience({
 
     setUnavailableOverlayMessage(message?.trim() || UNAVAILABLE_OVERLAY_MESSAGE);
     setShowEndedChoiceOverlay(false);
-    const shouldAutoAdvance = autoplayEnabledRef.current;
-    setUnavailableOverlayRequiresOk(!shouldAutoAdvance);
-
-    if (shouldAutoAdvance) {
-      unavailableOverlayTimeoutRef.current = window.setTimeout(() => {
-        clearUnavailableOverlayMessage();
-      }, 5200);
-
-      unavailableAutoActionTimeoutRef.current = window.setTimeout(() => {
-        clearUnavailableOverlayMessage();
-        triggerEndOfVideoAction();
-      }, 2800);
-      return;
-    }
-
+    // Never auto-advance away from an unavailable-track error.
+    // Keep message centered on the player and require explicit user choice.
+    setUnavailableOverlayRequiresOk(true);
     unavailableOverlayTimeoutRef.current = null;
   }
 
@@ -1466,9 +1454,32 @@ export function PlayerExperience({
       return;
     }
 
+    const runtimePlayer = playerRef.current;
+    const runtimeState =
+      runtimePlayer && typeof runtimePlayer.getPlayerState === "function"
+        ? runtimePlayer.getPlayerState()
+        : -1;
+    const runtimeTime =
+      runtimePlayer && typeof runtimePlayer.getCurrentTime === "function"
+        ? toSafeNumber(runtimePlayer.getCurrentTime(), 0)
+        : 0;
+    const playbackAlreadyEstablished =
+      runtimeState === window.YT?.PlayerState.PLAYING
+      || hasPlaybackStartedRef.current
+      || runtimeTime > 1;
+
+    if (playbackAlreadyEstablished) {
+      logPlayerDebug("forced-unavailable:ignored-due-to-active-playback", {
+        videoId: currentVideo.id,
+        runtimeState,
+        runtimeTime,
+      });
+      return;
+    }
+
     pauseActivePlayback();
     showUnavailableOverlayMessage(forcedUnavailableMessage);
-  }, [forcedUnavailableMessage, forcedUnavailableSignal]);
+  }, [currentVideo.id, forcedUnavailableMessage, forcedUnavailableSignal]);
 
   useEffect(() => {
     // When an overlay page closes, the pointer may already be over the player.
@@ -1902,11 +1913,32 @@ export function PlayerExperience({
 
             const shouldSkip = await reportUnavailableFromPlayer(reason);
 
+            const postReportPlayer = playerRef.current;
+            const postReportState =
+              postReportPlayer && typeof postReportPlayer.getPlayerState === "function"
+                ? postReportPlayer.getPlayerState()
+                : -1;
+            const postReportTime =
+              postReportPlayer && typeof postReportPlayer.getCurrentTime === "function"
+                ? toSafeNumber(postReportPlayer.getCurrentTime(), 0)
+                : 0;
+            const playbackEstablishedAfterReport =
+              postReportState === window.YT?.PlayerState.PLAYING
+              || hasPlaybackStartedRef.current
+              || postReportTime > 1;
+
             logPlayerDebug("onError:shouldSkip", {
               videoId: currentVideo.id,
               reason,
               shouldSkip,
+              postReportState,
+              postReportTime,
+              playbackEstablishedAfterReport,
             });
+
+            if (playbackEstablishedAfterReport) {
+              return;
+            }
 
             if (shouldSkip) {
               autoplaySuppressedVideoIdRef.current = currentVideo.id;
