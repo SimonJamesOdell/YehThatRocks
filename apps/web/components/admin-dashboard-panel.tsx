@@ -115,6 +115,29 @@ type DashboardPayload = {
       wikiCacheCount: number;
       daily: Array<{ day: string; classified: number; errors: number }>;
     };
+    apiUsage: {
+      daily: Array<{
+        day: string;
+        youtubeCalls: number;
+        youtubeUnits: number;
+        youtubeErrors: number;
+        groqCalls: number;
+        groqUnits: number;
+        groqErrors: number;
+        groqClassified: number;
+      }>;
+      totals7d: {
+        youtubeCalls: number;
+        youtubeUnits: number;
+        youtubeErrors: number;
+        groqCalls: number;
+        groqUnits: number;
+        groqErrors: number;
+        groqClassified: number;
+        youtubeSuccessRate: number;
+        groqSuccessRate: number;
+      };
+    };
   };
 };
 
@@ -162,7 +185,7 @@ type AmbiguousVideoRow = {
   updatedAt: string | null;
 };
 
-export type AdminTab = "overview" | "worldmap" | "categories" | "videos" | "artists" | "ambiguous";
+export type AdminTab = "overview" | "worldmap" | "api" | "categories" | "videos" | "artists" | "ambiguous";
 
 async function readJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
@@ -268,6 +291,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const maxIngestCount = useMemo(() => Math.max(1, ...orderedIngestVelocity.map((item) => item.count)), [orderedIngestVelocity]);
   const maxGroqCount = useMemo(() => Math.max(1, ...orderedGroqSpend.map((item) => item.classified + item.errors)), [orderedGroqSpend]);
   const worldMapVisitors = useMemo(() => (dashboard?.analytics.geoVisitors ?? []).slice(), [dashboard]);
+  const apiUsageRows = useMemo(() => (dashboard?.insights.apiUsage.daily ?? []).slice(), [dashboard]);
+  const apiUsageTotals7d = dashboard?.insights.apiUsage.totals7d;
   const filteredWorldMapVisitors = useMemo(() => {
     if (mapDateRange === "allTime") {
       return worldMapVisitors;
@@ -392,6 +417,63 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   };
 
   const analyticsSeries = dashboard?.analytics.series;
+  const apiUsageGraph = useMemo(() => {
+    const width = 760;
+    const height = 240;
+    const paddingLeft = 52;
+    const paddingRight = 24;
+    const paddingTop = 14;
+    const paddingBottom = 46;
+    const rows = apiUsageRows.slice(-14);
+
+    if (rows.length === 0) {
+      return {
+        width,
+        height,
+        bars: [] as Array<{ x: number; youtubeHeight: number; groqHeight: number; groqClassifiedHeight: number; label: string; youtubeUnits: number; groqCalls: number; groqClassified: number }> ,
+        yTicks: [] as Array<{ y: number; value: number }>,
+        axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
+        barWidth: 8,
+        chartHeight: height - paddingTop - paddingBottom,
+      };
+    }
+
+    const chartWidth = width - paddingLeft - paddingRight;
+    const chartHeight = height - paddingTop - paddingBottom;
+    const maxValue = Math.max(1, ...rows.map((row) => Math.max(row.youtubeUnits, row.groqCalls, row.groqClassified)));
+    const groupWidth = chartWidth / rows.length;
+    const barWidth = Math.max(6, Math.min(18, (groupWidth - 8) / 3));
+    const scaleHeight = (value: number) => (value / maxValue) * chartHeight;
+
+    const bars = rows.map((row, index) => {
+      const x = paddingLeft + index * groupWidth + (groupWidth - (barWidth * 3 + 4)) / 2;
+      return {
+        x,
+        youtubeHeight: scaleHeight(row.youtubeUnits),
+        groqHeight: scaleHeight(row.groqCalls),
+        groqClassifiedHeight: scaleHeight(row.groqClassified),
+        label: row.day.slice(5),
+        youtubeUnits: row.youtubeUnits,
+        groqCalls: row.groqCalls,
+        groqClassified: row.groqClassified,
+      };
+    });
+
+    const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
+      y: paddingTop + chartHeight - ratio * chartHeight,
+      value: Math.round(maxValue * ratio),
+    }));
+
+    return {
+      width,
+      height,
+      bars,
+      yTicks,
+      axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
+      barWidth,
+      chartHeight,
+    };
+  }, [apiUsageRows]);
   const hourlySeries = useMemo(() => {
     const recent = (dashboard?.analytics.hourlyRecent ?? []).slice(-24);
 
@@ -675,6 +757,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       if (activeTab === "overview") {
         await loadOverview();
       } else if (activeTab === "worldmap") {
+        await loadOverview();
+      } else if (activeTab === "api") {
         await loadOverview();
       } else if (activeTab === "categories") {
         await loadCategories();
@@ -1302,6 +1386,75 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
               <div><strong>Regions With Traffic</strong><p>{Array.from(worldMap.countryVisitorCount.values()).filter((count) => count > 0).length}</p></div>
               <div><strong>Max Visitors / Region</strong><p>{worldMap.maxCountryVisitors}</p></div>
             </div>
+        </div>
+      ) : null}
+
+      {activeTab === "api" ? (
+        <div style={{ display: "grid", gap: 10 }}>
+          <div className="statusMetrics">
+            <div><strong>YouTube units (7d)</strong><p>{apiUsageTotals7d?.youtubeUnits ?? 0}</p></div>
+            <div><strong>YouTube errors (7d)</strong><p>{apiUsageTotals7d?.youtubeErrors ?? 0}</p></div>
+            <div><strong>Groq calls (7d)</strong><p>{apiUsageTotals7d?.groqCalls ?? 0}</p></div>
+            <div><strong>Groq classified (7d)</strong><p>{apiUsageTotals7d?.groqClassified ?? 0}</p></div>
+            <div><strong>YouTube success</strong><p>{apiUsageTotals7d?.youtubeSuccessRate ?? 100}%</p></div>
+            <div><strong>Groq success</strong><p>{apiUsageTotals7d?.groqSuccessRate ?? 100}%</p></div>
+          </div>
+
+          {apiUsageGraph.bars.length > 0 ? (
+            <div style={{ overflowX: "auto" }}>
+              <svg
+                viewBox={`0 0 ${apiUsageGraph.width} ${apiUsageGraph.height}`}
+                style={{ width: "100%", minWidth: 680, height: "auto", borderRadius: 10, background: "rgba(0,0,0,0.32)" }}
+                role="img"
+                aria-label="API usage chart for YouTube and Groq"
+              >
+                {apiUsageGraph.yTicks.map((tick) => (
+                  <g key={`api-y-${tick.value}`}>
+                    <line
+                      x1={apiUsageGraph.axis.paddingLeft}
+                      x2={apiUsageGraph.width - apiUsageGraph.axis.paddingRight}
+                      y1={tick.y}
+                      y2={tick.y}
+                      stroke="rgba(255,255,255,0.12)"
+                    />
+                    <text x={apiUsageGraph.axis.paddingLeft - 8} y={tick.y + 4} textAnchor="end" fill="rgba(255,255,255,0.62)" style={{ fontSize: 11 }}>
+                      {tick.value}
+                    </text>
+                  </g>
+                ))}
+
+                {apiUsageGraph.bars.map((bar, index) => {
+                  const yBase = apiUsageGraph.axis.paddingTop + apiUsageGraph.chartHeight;
+                  const bw = apiUsageGraph.barWidth;
+
+                  return (
+                    <g key={`api-bar-${bar.label}-${index}`}>
+                      <rect x={bar.x} y={yBase - bar.youtubeHeight} width={bw} height={bar.youtubeHeight} fill="#ff6f43">
+                        <title>{`${bar.label} YouTube units: ${bar.youtubeUnits}`}</title>
+                      </rect>
+                      <rect x={bar.x + bw + 2} y={yBase - bar.groqHeight} width={bw} height={bar.groqHeight} fill="#5fc1ff">
+                        <title>{`${bar.label} Groq calls: ${bar.groqCalls}`}</title>
+                      </rect>
+                      <rect x={bar.x + (bw + 2) * 2} y={yBase - bar.groqClassifiedHeight} width={bw} height={bar.groqClassifiedHeight} fill="#7ce0a3">
+                        <title>{`${bar.label} Groq classified: ${bar.groqClassified}`}</title>
+                      </rect>
+                      <text x={bar.x + ((bw * 3 + 4) / 2)} y={apiUsageGraph.height - 14} textAnchor="middle" fill="rgba(255,255,255,0.62)" style={{ fontSize: 10 }}>
+                        {bar.label}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 8 }}>
+                <span className="authMessage" style={{ margin: 0 }}><span style={{ color: "#ff6f43" }}>■</span> YouTube units/day</span>
+                <span className="authMessage" style={{ margin: 0 }}><span style={{ color: "#5fc1ff" }}>■</span> Groq calls/day</span>
+                <span className="authMessage" style={{ margin: 0 }}><span style={{ color: "#7ce0a3" }}>■</span> Groq classified/day</span>
+              </div>
+            </div>
+          ) : (
+            <p className="authMessage">No API usage telemetry yet. Activity appears after YouTube or Groq calls occur.</p>
+          )}
         </div>
       ) : null}
 

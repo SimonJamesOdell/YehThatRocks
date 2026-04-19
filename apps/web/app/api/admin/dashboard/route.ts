@@ -206,7 +206,7 @@ export async function GET(request: NextRequest) {
     LIMIT 14
   `.catch(() => []);
 
-  const [auth24h, actionBreakdown, metadataQuality, ingestVelocity, groqDailySpend] = await Promise.all([
+  const [auth24h, actionBreakdown, metadataQuality, ingestVelocity, groqDailySpend, apiUsageDaily] = await Promise.all([
     prisma.$queryRaw<Array<{
       total: bigint | number;
       success: bigint | number;
@@ -267,6 +267,29 @@ export async function GET(request: NextRequest) {
       WHERE parseMethod LIKE 'groq%'
         AND parsedAt >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
       GROUP BY DATE(parsedAt)
+      ORDER BY day DESC
+      LIMIT 14
+    `.catch(() => []),
+    prisma.$queryRaw<Array<{
+      day: Date;
+      youtubeCalls: bigint | number;
+      youtubeUnits: bigint | number;
+      youtubeErrors: bigint | number;
+      groqCalls: bigint | number;
+      groqUnits: bigint | number;
+      groqErrors: bigint | number;
+    }>>`
+      SELECT
+        DATE(created_at) AS day,
+        SUM(CASE WHEN provider = 'youtube' THEN 1 ELSE 0 END) AS youtubeCalls,
+        SUM(CASE WHEN provider = 'youtube' THEN units ELSE 0 END) AS youtubeUnits,
+        SUM(CASE WHEN provider = 'youtube' AND success = 0 THEN 1 ELSE 0 END) AS youtubeErrors,
+        SUM(CASE WHEN provider = 'groq' THEN 1 ELSE 0 END) AS groqCalls,
+        SUM(CASE WHEN provider = 'groq' THEN units ELSE 0 END) AS groqUnits,
+        SUM(CASE WHEN provider = 'groq' AND success = 0 THEN 1 ELSE 0 END) AS groqErrors
+      FROM external_api_usage_events
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
+      GROUP BY DATE(created_at)
       ORDER BY day DESC
       LIMIT 14
     `.catch(() => []),
@@ -525,6 +548,66 @@ export async function GET(request: NextRequest) {
           errors: toNumber(row.errors),
         })),
       },
+      apiUsage: (() => {
+        const groqClassifiedByDay = new Map(
+          groqDailySpend.map((row) => [
+            row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
+            toNumber(row.classified),
+          ]),
+        );
+
+        const daily = apiUsageDaily
+          .map((row) => {
+            const day = row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day);
+            return {
+              day,
+              youtubeCalls: toNumber(row.youtubeCalls),
+              youtubeUnits: toNumber(row.youtubeUnits),
+              youtubeErrors: toNumber(row.youtubeErrors),
+              groqCalls: toNumber(row.groqCalls),
+              groqUnits: toNumber(row.groqUnits),
+              groqErrors: toNumber(row.groqErrors),
+              groqClassified: groqClassifiedByDay.get(day) ?? 0,
+            };
+          })
+          .sort((a, b) => a.day.localeCompare(b.day));
+
+        const totals7dRows = daily.slice(-7);
+        const totals7d = totals7dRows.reduce(
+          (acc, row) => {
+            acc.youtubeCalls += row.youtubeCalls;
+            acc.youtubeUnits += row.youtubeUnits;
+            acc.youtubeErrors += row.youtubeErrors;
+            acc.groqCalls += row.groqCalls;
+            acc.groqUnits += row.groqUnits;
+            acc.groqErrors += row.groqErrors;
+            acc.groqClassified += row.groqClassified;
+            return acc;
+          },
+          {
+            youtubeCalls: 0,
+            youtubeUnits: 0,
+            youtubeErrors: 0,
+            groqCalls: 0,
+            groqUnits: 0,
+            groqErrors: 0,
+            groqClassified: 0,
+          },
+        );
+
+        return {
+          daily,
+          totals7d: {
+            ...totals7d,
+            youtubeSuccessRate: totals7d.youtubeCalls > 0
+              ? Number((((totals7d.youtubeCalls - totals7d.youtubeErrors) / totals7d.youtubeCalls) * 100).toFixed(1))
+              : 100,
+            groqSuccessRate: totals7d.groqCalls > 0
+              ? Number((((totals7d.groqCalls - totals7d.groqErrors) / totals7d.groqCalls) * 100).toFixed(1))
+              : 100,
+          },
+        };
+      })(),
     },
   };
 
