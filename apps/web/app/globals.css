@@ -4635,7 +4635,7 @@ h1 {
   border: 1px solid rgba(255, 188, 170, 0.42);
   color: #fff;
   gap: 6px;
-  min-width: 162px;
+  min-width: 44px;
   justify-content: center;
   transition: filter 160ms ease, opacity 160ms ease;
 }
