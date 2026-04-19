@@ -4002,6 +4002,7 @@ function ShellDynamicInner({
                     seenVideoIds={seenVideoIdsRef.current}
                     onHideVideo={handleHideFromWatchNext}
                     onAddVideoToPlaylist={handleAddToPlaylistFromWatchNext}
+                    onDockHideRequest={() => setIsDockHidden(true)}
                     forcedUnavailableSignal={forcedUnavailableSignal}
                     forcedUnavailableMessage={forcedUnavailableMessage}
                   />
