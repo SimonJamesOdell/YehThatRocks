@@ -1111,7 +1111,8 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
         SELECT
           v.videoId,
           v.title,
-          NULL AS channelTitle,
+          COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
+          NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
           COALESCE(v.favourited, 0) AS favourited,
           v.description
         FROM videos v
@@ -1136,6 +1137,8 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
       const videoDescriptionRef = pickColumn(videoColumns, ["description", "desc"]);
       const videoFavouritedRef = pickColumn(videoColumns, ["favourited", "favorite", "is_favourited"]);
       const videoViewRef = pickColumn(videoColumns, ["viewCount", "view_count", "views"]);
+      const videoParsedArtistRef = pickColumn(videoColumns, ["parsedArtist", "parsed_artist"]);
+      const videoChannelTitleRef = pickColumn(videoColumns, ["channelTitle", "channel_title"]);
       const videoPkRef = pickColumn(videoColumns, ["id"]);
       const siteVideoIdRef = pickColumn(siteVideoColumns, ["video_id", "videoId", "videoid"]);
       const siteStatusRef = pickColumn(siteVideoColumns, ["status"]);
@@ -1152,6 +1155,13 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
         const viewExpr = videoViewRef
           ? `COALESCE(v.${escapeSqlIdentifier(videoViewRef.Field)}, 0)`
           : "0";
+        const parsedArtistExpr = videoParsedArtistRef
+          ? `NULLIF(TRIM(v.${escapeSqlIdentifier(videoParsedArtistRef.Field)}), '')`
+          : "NULL";
+        const channelTitleExpr = videoChannelTitleRef
+          ? `NULLIF(TRIM(v.${escapeSqlIdentifier(videoChannelTitleRef.Field)}), '')`
+          : "NULL";
+        const displayArtistExpr = `COALESCE(${parsedArtistExpr}, ${channelTitleExpr}, NULL)`;
         const videoPkCol = escapeSqlIdentifier(videoPkRef.Field);
         const siteVideoIdCol = escapeSqlIdentifier(siteVideoIdRef.Field);
         const siteStatusCol = escapeSqlIdentifier(siteStatusRef.Field);
@@ -1161,7 +1171,8 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
             SELECT
               v.${externalVideoCol} AS videoId,
               v.${titleCol} AS title,
-              NULL AS channelTitle,
+              ${displayArtistExpr} AS channelTitle,
+              ${parsedArtistExpr} AS parsedArtist,
               ${favouritedExpr} AS favourited,
               ${descriptionExpr} AS description
             FROM videos v
@@ -2848,6 +2859,42 @@ async function findArtistsInDatabase(options: {
   }
 }
 
+async function findArtistsFromVideoMetadata(search: string, limit: number) {
+  const normalizedSearch = search.trim();
+  if (!normalizedSearch || !hasDatabaseUrl()) {
+    return [] as Array<{ name: string; country: string | null; genre1: string | null }>;
+  }
+
+  const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+  const likePattern = `%${normalizedSearch}%`;
+
+  return prisma.$queryRaw<Array<{ name: string; country: string | null; genre1: string | null }>>`
+    SELECT
+      artist_name AS name,
+      NULL AS country,
+      NULL AS genre1
+    FROM (
+      SELECT
+        COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) AS artist_name,
+        SUM(COALESCE(v.favourited, 0)) AS artist_score,
+        COUNT(*) AS artist_count
+      FROM videos v
+      WHERE v.videoId IS NOT NULL
+        AND COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM site_videos sv
+          WHERE sv.video_id = v.id
+            AND sv.status = 'available'
+        )
+      GROUP BY artist_name
+    ) ranked
+    WHERE ranked.artist_name LIKE ${likePattern}
+    ORDER BY ranked.artist_score DESC, ranked.artist_count DESC, ranked.artist_name ASC
+    LIMIT ${safeLimit}
+  `.catch(() => []);
+}
+
 export async function getCurrentVideo(videoId?: string, options?: { skipPlaybackDecision?: boolean }) {
   const normalizedVideoId = normalizeYouTubeVideoId(videoId);
 
@@ -4427,7 +4474,7 @@ export async function searchCatalog(query: string) {
     // Requiring all tokens with + breaks multi-word artist names that include stop words.
     const booleanQuery = ftWords.map((w) => `${w}*`).join(" ");
 
-    const [ftVideos, artists] = await Promise.all([
+    const [ftVideos, artistsFromTable, artistsFromVideos] = await Promise.all([
       ftWords.length > 0
         ? prisma.$queryRaw<Array<{ videoId: string; title: string; channelTitle: string | null; favourited: number; description: string | null }>>`
             SELECT videoId, title, NULL AS channelTitle, favourited, description,
@@ -4442,7 +4489,31 @@ export async function searchCatalog(query: string) {
         limit: 12,
         search: normalized,
       }),
+      findArtistsFromVideoMetadata(normalized, 12),
     ]);
+
+    const artists = (() => {
+      const merged = new Map<string, { name: string; country: string | null; genre1: string | null }>();
+
+      // Prefer canonical artist table metadata when available.
+      for (const artist of artistsFromTable) {
+        const key = normalizeArtistKey(artist.name);
+        if (!key) {
+          continue;
+        }
+        merged.set(key, artist);
+      }
+
+      for (const artist of artistsFromVideos) {
+        const key = normalizeArtistKey(artist.name);
+        if (!key || merged.has(key)) {
+          continue;
+        }
+        merged.set(key, artist);
+      }
+
+      return Array.from(merged.values()).slice(0, 12);
+    })();
 
     // LIKE fallback: when fulltext returns no results (all short words, or no indexed terms)
     // try a phrase-level LIKE across all searchable text columns.
