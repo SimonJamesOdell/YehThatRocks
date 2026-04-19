@@ -11,6 +11,7 @@ import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { PlayerExperience } from "@/components/player-experience";
+import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { navItems, type VideoRecord } from "@/lib/catalog";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
@@ -4125,6 +4126,7 @@ function ShellDynamicInner({
                   {visibleWatchNextVideos.map((track, index) => (
                     <div
                       key={track.id}
+                      data-video-id={track.id}
                       className={hidingRelatedVideoIds.includes(track.id) ? "relatedCardSlot relatedCardSlotExiting" : "relatedCardSlot"}
                       style={{ "--related-index": index } as CSSProperties}
                     >
@@ -4162,13 +4164,14 @@ function ShellDynamicInner({
                         onPointerDown={() => prefetchRelatedSelection(track)}
                       >
                         <div className="thumbGlow">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={getRelatedThumbnail(track.id)}
+                          <YouTubeThumbnailImage
+                            videoId={track.id}
                             alt={track.title}
+                            className="relatedThumb"
                             loading={index < 3 ? "eager" : "lazy"}
                             fetchPriority={index < 2 ? "high" : "auto"}
-                            className="relatedThumb"
+                            reportReason="thumbnail-load-error:watch-next"
+                            hideClosestSelector=".relatedCardSlot"
                           />
                           {seenVideoIdsRef.current.has(track.id) ? <span className="videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay">Seen</span> : null}
                         </div>
@@ -4359,6 +4362,7 @@ function ShellDynamicInner({
                         key={playlist.id}
                         href={getActivatePlaylistHref(playlist.id)}
                         className="relatedCard linkedCard rightRailPlaylistCard"
+                        data-video-id={hasLeadThumbnail ? playlist.leadVideoId : undefined}
                         prefetch={false}
                       >
                         <button
@@ -4377,15 +4381,13 @@ function ShellDynamicInner({
                         </button>
                         <div className="thumbGlow">
                           {hasLeadThumbnail ? (
-                            <Image
-                              src={getRelatedThumbnail(playlist.leadVideoId)}
+                            <YouTubeThumbnailImage
+                              videoId={playlist.leadVideoId}
                               alt=""
-                              width={128}
-                              height={72}
-                              unoptimized
                               loading="lazy"
-                              sizes="128px"
                               className="relatedThumb"
+                              reportReason="thumbnail-load-error:playlist-summary"
+                              hideClosestSelector=".rightRailPlaylistCard"
                             />
                           ) : (
                             <div className="playlistRailThumbPlaceholder" aria-hidden="true">♬</div>
@@ -4497,6 +4499,7 @@ function ShellDynamicInner({
                           "playlistRailTrackDraggable",
                           isTrackRemoving ? "relatedCardSlotExiting" : "",
                         ].filter(Boolean).join(" ")}
+                        data-video-id={track.id}
                         draggable={!isTrackRemoving && !isTrackMutating}
                         onDragStart={(event) => handlePlaylistTrackDragStart(event, index)}
                         onDragEnd={handlePlaylistTrackDragEnd}
@@ -4522,16 +4525,14 @@ function ShellDynamicInner({
                         draggable={false}
                       >
                         <div className="thumbGlow">
-                          <Image
-                            src={getRelatedThumbnail(track.id)}
+                          <YouTubeThumbnailImage
+                            videoId={track.id}
                             alt={track.title}
-                            width={128}
-                            height={72}
-                            unoptimized
                             loading={index < 3 ? "eager" : "lazy"}
                             fetchPriority={index < 2 ? "high" : "auto"}
-                            sizes="128px"
                             className="relatedThumb"
+                            reportReason="thumbnail-load-error:playlist-track"
+                            hideClosestSelector=".relatedCardSlot"
                           />
                         </div>
                         <div>

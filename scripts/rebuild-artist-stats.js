@@ -186,7 +186,8 @@ async function main() {
           INNER JOIN videos v ON ${joinVideoExpr} = va.${videoRefCol}
           WHERE va.${artistNameCol} IS NOT NULL
             AND TRIM(va.${artistNameCol}) <> ''
-            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND v.videoId IS NOT NULL
+            AND CHAR_LENGTH(v.videoId) = 11
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
@@ -216,7 +217,8 @@ async function main() {
           INNER JOIN videos v ON ${joinVideoExpr} = va.${videoRefCol}
           WHERE va.${artistNameCol} IS NOT NULL
             AND TRIM(va.${artistNameCol}) <> ''
-            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND v.videoId IS NOT NULL
+            AND CHAR_LENGTH(v.videoId) = 11
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
@@ -247,7 +249,8 @@ async function main() {
           FROM videos v
           WHERE v.parsedArtist IS NOT NULL
             AND TRIM(v.parsedArtist) <> ''
-            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND v.videoId IS NOT NULL
+            AND CHAR_LENGTH(v.videoId) = 11
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
@@ -276,7 +279,8 @@ async function main() {
           FROM videos v
           WHERE parsedArtist IS NOT NULL
             AND TRIM(parsedArtist) <> ''
-            AND videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND videoId IS NOT NULL
+            AND CHAR_LENGTH(videoId) = 11
             AND EXISTS (
               SELECT 1
               FROM site_videos sv

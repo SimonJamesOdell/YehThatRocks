@@ -83,6 +83,17 @@ input {
   font: inherit;
 }
 
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid rgba(255, 220, 180, 0.96);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.7), 0 0 0 4px rgba(255, 92, 48, 0.42);
+}
+
 button {
   border: 0;
   cursor: pointer;
@@ -1912,12 +1923,16 @@ h1 {
 .overlayCenter,
 .overlayBottom {
   opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
   transition: opacity 0.22s ease;
 }
 
 .playerOverlayVisible .overlayCenter,
 .playerOverlayVisible .overlayBottom {
   opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .overlayTop {
@@ -2135,12 +2150,14 @@ h1 {
 .shareMenuWrap {
   position: relative;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
   transition: opacity 0.22s ease;
 }
 
 .playerOverlayVisible .shareMenuWrap {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 

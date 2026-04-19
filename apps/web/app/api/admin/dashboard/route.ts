@@ -161,6 +161,16 @@ let adminDashboardCache: {
   payload: Record<string, unknown>;
 } | null = null;
 
+const METADATA_QUALITY_CACHE_TTL_MS = 5 * 60 * 1000;
+let metadataQualityCache: {
+  expiresAt: number;
+  availableVideos: number;
+  checkFailedEntries: number;
+  missingMetadata: number;
+  lowConfidence: number;
+  unknownType: number;
+} | null = null;
+
 
 export async function GET(request: NextRequest) {
   const auth = await requireAdminApiAuth(request);
@@ -234,22 +244,48 @@ export async function GET(request: NextRequest) {
       ORDER BY total DESC
       LIMIT 8
     `.catch(() => []),
-    prisma.$queryRaw<Array<{
-      availableVideos: bigint | number;
-      checkFailedEntries: bigint | number;
-      missingMetadata: bigint | number;
-      lowConfidence: bigint | number;
-      unknownType: bigint | number;
-    }>>`
-      SELECT
-        COUNT(DISTINCT CASE WHEN sv.status = 'available' THEN v.id END) AS availableVideos,
-        COUNT(DISTINCT CASE WHEN sv.status = 'check-failed' THEN v.id END) AS checkFailedEntries,
-        SUM(CASE WHEN v.parsedArtist IS NULL OR TRIM(v.parsedArtist) = '' OR v.parsedTrack IS NULL OR TRIM(v.parsedTrack) = '' THEN 1 ELSE 0 END) AS missingMetadata,
-        SUM(CASE WHEN v.parseConfidence IS NULL OR v.parseConfidence < 0.80 THEN 1 ELSE 0 END) AS lowConfidence,
-        SUM(CASE WHEN v.parsedVideoType IS NULL OR v.parsedVideoType = '' OR v.parsedVideoType = 'unknown' THEN 1 ELSE 0 END) AS unknownType
-      FROM videos v
-      LEFT JOIN site_videos sv ON sv.video_id = v.id
-    `.catch(() => []),
+    (async () => {
+      const cached = metadataQualityCache;
+      if (cached && cached.expiresAt > Date.now()) {
+        return [cached];
+      }
+
+      // Split into two single-table queries — no join needed.
+      // site_videos holds status; videos holds metadata columns.
+      const [statusCounts, metaCounts] = await Promise.all([
+        prisma.$queryRaw<Array<{
+          availableVideos: bigint | number;
+          checkFailedEntries: bigint | number;
+        }>>`
+          SELECT
+            SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) AS availableVideos,
+            SUM(CASE WHEN status = 'check-failed' THEN 1 ELSE 0 END) AS checkFailedEntries
+          FROM site_videos
+        `.catch(() => []),
+        prisma.$queryRaw<Array<{
+          missingMetadata: bigint | number;
+          lowConfidence: bigint | number;
+          unknownType: bigint | number;
+        }>>`
+          SELECT
+            SUM(CASE WHEN parsedArtist IS NULL OR TRIM(parsedArtist) = '' OR parsedTrack IS NULL OR TRIM(parsedTrack) = '' THEN 1 ELSE 0 END) AS missingMetadata,
+            SUM(CASE WHEN parseConfidence IS NULL OR parseConfidence < 0.80 THEN 1 ELSE 0 END) AS lowConfidence,
+            SUM(CASE WHEN parsedVideoType IS NULL OR parsedVideoType = '' OR parsedVideoType = 'unknown' THEN 1 ELSE 0 END) AS unknownType
+          FROM videos
+        `.catch(() => []),
+      ]);
+
+      const result = {
+        expiresAt: Date.now() + METADATA_QUALITY_CACHE_TTL_MS,
+        availableVideos: toNumber(statusCounts[0]?.availableVideos),
+        checkFailedEntries: toNumber(statusCounts[0]?.checkFailedEntries),
+        missingMetadata: toNumber(metaCounts[0]?.missingMetadata),
+        lowConfidence: toNumber(metaCounts[0]?.lowConfidence),
+        unknownType: toNumber(metaCounts[0]?.unknownType),
+      };
+      metadataQualityCache = result;
+      return [result];
+    })(),
     prisma.$queryRaw<Array<{ day: Date; count: bigint | number }>>`
       SELECT DATE(createdAt) AS day, COUNT(*) AS count
       FROM videos

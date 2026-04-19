@@ -258,6 +258,8 @@ model RelatedCache {
   createdAt DateTime?
   updatedAt DateTime?
 
+  @@index([videoId, related])
+  @@index([related, videoId])
   @@map("related")
 }
 

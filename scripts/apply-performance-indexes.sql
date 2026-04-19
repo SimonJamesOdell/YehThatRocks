@@ -62,6 +62,23 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
+-- videos: supports legacy WHERE views = 0 OR views IS NULL maintenance updates.
+SET @idx_exists := (
+  SELECT COUNT(*)
+  FROM information_schema.statistics
+  WHERE table_schema = @schema_name
+    AND table_name = 'videos'
+    AND index_name = 'idx_videos_views'
+);
+SET @sql := IF(
+  @idx_exists = 0 AND @videos_views_col IS NOT NULL,
+  CONCAT('CREATE INDEX idx_videos_views ON videos (`', @videos_views_col, '`)'),
+  'SELECT ''idx_videos_views already exists'' AS info'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
 -- site_videos: supports joins and status filtering in availability checks.
 SET @idx_exists := (
   SELECT COUNT(*)

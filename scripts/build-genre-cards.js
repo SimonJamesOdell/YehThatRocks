@@ -152,7 +152,8 @@ async function main() {
     FROM artist_stats ast
     JOIN videos v
       ON v.videoId = ast.thumbnail_video_id
-      AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+      AND v.videoId IS NOT NULL
+      AND CHAR_LENGTH(v.videoId) = 11
     JOIN site_videos sv
       ON sv.video_id = v.id AND sv.status = 'available'
     WHERE ast.genre IS NOT NULL AND TRIM(ast.genre) <> ''
@@ -249,7 +250,8 @@ async function main() {
       SELECT LOWER(TRIM(v.parsedArtist)) AS artistLow, v.videoId
       FROM videos v
       JOIN site_videos sv ON sv.video_id = v.id AND sv.status = 'available'
-      WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+      WHERE v.videoId IS NOT NULL
+        AND CHAR_LENGTH(v.videoId) = 11
         AND v.parsedArtist IS NOT NULL AND v.parsedArtist <> ''
       ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC
     `;
@@ -295,7 +297,8 @@ async function main() {
       SELECT v.videoId, v.title, v.description, v.favourited, COALESCE(v.viewCount, 0) AS viewCount
       FROM videos v
       JOIN site_videos sv ON sv.video_id = v.id AND sv.status = 'available'
-      WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+      WHERE v.videoId IS NOT NULL
+        AND CHAR_LENGTH(v.videoId) = 11
         AND v.title IS NOT NULL
       ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC
       LIMIT 25000

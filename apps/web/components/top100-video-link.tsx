@@ -1,11 +1,11 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 
 type Top100VideoLinkProps = {
   track: {
@@ -46,10 +46,6 @@ function canWarmTop100Selection() {
 
   top100WarmCountInWindow += 1;
   return true;
-}
-
-function getLeaderboardThumbnail(track: { id: string; thumbnail?: string | null }) {
-  return `https://i.ytimg.com/vi/${encodeURIComponent(track.id)}/mqdefault.jpg`;
 }
 
 export function Top100VideoLink({
@@ -169,15 +165,14 @@ export function Top100VideoLink({
         onClick={warmSelection}
       >
         <div className="leaderboardRank">#{index + 1}</div>
-        <div className="leaderboardThumbWrap">
-          <Image
-            src={getLeaderboardThumbnail(track)}
+        <div className="leaderboardThumbWrap" data-video-id={track.id}>
+          <YouTubeThumbnailImage
+            videoId={track.id}
             alt=""
-            width={160}
-            height={90}
             className="leaderboardThumb"
             loading="lazy"
-            sizes="(max-width: 768px) 42vw, 160px"
+            fetchPriority="auto"
+            reportReason="thumbnail-load-error:top100"
           />
           {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay">Seen</span> : null}
         </div>

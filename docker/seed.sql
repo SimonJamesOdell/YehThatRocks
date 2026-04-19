@@ -46,13 +46,39 @@ PREPARE alter_stmt FROM @stmt;
 EXECUTE alter_stmt;
 DEALLOCATE PREPARE alter_stmt;
 
--- Backfill legacy views from viewCount only on first-time column creation.
--- This avoids repeating a large write/update scan on every container restart.
-SET @backfill_stmt = IF(
-  @col_exists = 0,
-  'UPDATE videos SET views = COALESCE(viewCount, 0) WHERE views = 0 OR views IS NULL',
+-- Add an index for legacy views backfills/maintenance lookups.
+SET @views_idx_exists = (
+  SELECT COUNT(*)
+  FROM information_schema.statistics
+  WHERE table_schema = DATABASE()
+    AND table_name = 'videos'
+    AND index_name = 'idx_videos_views'
+);
+SET @views_idx_stmt = IF(
+  @views_idx_exists = 0,
+  'CREATE INDEX idx_videos_views ON videos (views)',
   'SELECT 1'
 );
-PREPARE backfill_stmt FROM @backfill_stmt;
-EXECUTE backfill_stmt;
-DEALLOCATE PREPARE backfill_stmt;
+PREPARE views_idx_stmt FROM @views_idx_stmt;
+EXECUTE views_idx_stmt;
+DEALLOCATE PREPARE views_idx_stmt;
+
+-- Backfill legacy views from viewCount only on first-time column creation.
+-- This avoids repeating a large write/update scan on every container restart.
+SET @backfill_null_stmt = IF(
+  @col_exists = 0,
+  'UPDATE videos SET views = COALESCE(viewCount, 0) WHERE views IS NULL',
+  'SELECT 1'
+);
+PREPARE backfill_null_stmt FROM @backfill_null_stmt;
+EXECUTE backfill_null_stmt;
+DEALLOCATE PREPARE backfill_null_stmt;
+
+SET @backfill_zero_stmt = IF(
+  @col_exists = 0,
+  'UPDATE videos SET views = viewCount WHERE views = 0 AND viewCount IS NOT NULL AND viewCount <> 0',
+  'SELECT 1'
+);
+PREPARE backfill_zero_stmt FROM @backfill_zero_stmt;
+EXECUTE backfill_zero_stmt;
+DEALLOCATE PREPARE backfill_zero_stmt;
