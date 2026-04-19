@@ -1548,9 +1548,24 @@ h1 {
   .playerChromeDockedDesktop .overlayTop,
   .playerChromeDockedDesktop.playerOverlayVisible .overlayTop,
   .playerChromeDockedDesktop .playerOverlayVisible .overlayTop {
+    position: relative;
+    z-index: 12;
     padding-top: 0;
     padding-bottom: 0;
     background: transparent;
+    pointer-events: auto;
+  }
+
+  .playerChromeDockedDesktop .shareMenuWrap {
+    position: relative;
+    z-index: 13;
+    pointer-events: auto;
+  }
+
+  .playerChromeDockedDesktop .overlayDockCloseBtn {
+    position: relative;
+    z-index: 14;
+    pointer-events: auto;
   }
 
   .playerChromeDockedDesktop .overlayCenter {
@@ -1621,6 +1636,13 @@ h1 {
     transform-origin: center;
     opacity: 0;
     pointer-events: none;
+  }
+
+  .playerChromeDockedDesktop.playerChromeUndocking .overlayDockCloseBtn,
+  .playerChromeDockedDesktop.playerChromeUndocking .overlayAdminDeleteBtn {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0ms;
   }
 
   .playerChromeDockedDesktop .primaryActions > * {
@@ -1999,6 +2021,16 @@ h1 {
 }
 
 .playerChromeDockedHidden .playerDockLayer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.playerChromeDockedHidden .playerOverlay,
+.playerChromeDockedHidden .overlayTop,
+.playerChromeDockedHidden .shareMenuWrap,
+.playerChromeDockedHidden .overlayDockCloseBtn,
+.playerChromeDockedHidden .overlayAdminDeleteBtn {
+  opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }
