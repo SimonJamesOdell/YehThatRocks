@@ -67,8 +67,8 @@ export function AuthLoginForm() {
       const videoParam = new URLSearchParams(window.location.search).get("v");
       const target = videoParam ? `/?v=${encodeURIComponent(videoParam)}` : "/";
       window.sessionStorage.setItem(INTRO_SKIP_ONCE_AFTER_LOGIN_KEY, "1");
-      router.push(target);
-      router.refresh();
+      // Use full page reload to ensure cookies are persisted before server components read them
+      window.location.href = target;
       return true;
     } catch {
       setError("Unable to reach login service. Please try again.");
