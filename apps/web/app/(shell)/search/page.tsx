@@ -10,6 +10,7 @@ import { AdminVideoDeleteButton } from "@/components/admin-video-delete-button";
 import { AdminVideoEditButton } from "@/components/admin-video-edit-button";
 import { CloseLink } from "@/components/close-link";
 import { NewScrollReset } from "@/components/new-scroll-reset";
+import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { SearchResultBlockButton } from "@/components/search-result-block-button";
 import { SearchFlagButton } from "@/components/search-flag-button";
 import { SearchSeenToggle } from "@/components/search-seen-toggle";
@@ -62,8 +63,12 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
               {isAuthenticated ? <SearchFlagButton videoId={video.id} title={video.title} searchQuery={query} /> : null}
               <AdminVideoEditButton videoId={video.id} isAdmin={isAdminUser} />
               <AdminVideoDeleteButton videoId={video.id} title={video.title} isAdmin={isAdminUser} />
+              <SearchResultFavouriteButton
+                videoId={video.id}
+                title={video.title}
+                isAuthenticated={isAuthenticated}
+              />
               <Link href={`/?v=${video.id}&resume=1`} className="linkedCard leaderboardTrackLink" prefetch={false}>
-                <div className="queueBadge">Result</div>
                 <div className="leaderboardThumbWrap">
                   <Image
                     src={`https://i.ytimg.com/vi/${encodeURIComponent(video.id)}/mqdefault.jpg`}
