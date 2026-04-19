@@ -6,6 +6,7 @@ import { hasDatabaseUrl, importVideoFromDirectSource, normalizeYouTubeVideoId } 
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
 import { parseRequestJson } from "@/lib/request-json";
+import { recordExternalApiUsage } from "@/lib/api-usage-telemetry";
 
 const suggestSchema = z.object({
   source: z.string().trim().min(1).max(2048),
@@ -124,8 +125,23 @@ async function fetchPlaylistVideoIds(playlistId: string) {
     }).catch(() => null);
 
     if (!response?.ok) {
+      void recordExternalApiUsage({
+        provider: "youtube",
+        endpoint: "playlistItems.list",
+        units: 1,
+        success: false,
+        statusCode: response?.status ?? null,
+      });
       return { ok: false as const, error: "Could not read playlist from YouTube." };
     }
+
+    void recordExternalApiUsage({
+      provider: "youtube",
+      endpoint: "playlistItems.list",
+      units: 1,
+      success: true,
+      statusCode: response.status,
+    });
 
     const payload = (await response.json().catch(() => null)) as
       | {
@@ -232,7 +248,7 @@ function startPlaylistBatchIngestion(args: {
   const job = (async () => {
     for (const videoId of videoIds) {
       try {
-        const result = await importVideoFromDirectSource(videoId);
+        const result = await importVideoFromDirectSource(videoId, { discoverRelated: false });
         if (result.videoId) {
           await applyMetadataHints(result.videoId, { artist, track }, false);
         }

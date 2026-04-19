@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { recordExternalApiUsage } from "@/lib/api-usage-telemetry";
 import { getSearchRankingSignals } from "@/lib/search-flag-data";
 import {
   artists as seedArtists,
@@ -157,6 +158,10 @@ const AGE_RESTRICTED_PATTERNS = [
   /"status"\s*:\s*"LOGIN_REQUIRED"[\s\S]{0,240}"reason"\s*:\s*"[^"]*age/i,
 ];
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || undefined;
+const ENABLE_YOUTUBE_RELATED_DISCOVERY = process.env.ENABLE_YOUTUBE_RELATED_DISCOVERY !== "0";
+const RELATED_DISCOVERY_MAX_DEPTH = Math.max(1, Math.min(4, Number(process.env.RELATED_DISCOVERY_MAX_DEPTH || "2")));
+const RELATED_DISCOVERY_MAX_NEW_VIDEOS = Math.max(1, Math.min(400, Number(process.env.RELATED_DISCOVERY_MAX_NEW_VIDEOS || "40")));
+const RELATED_DISCOVERY_SEED_FANOUT = Math.max(1, Math.min(8, Number(process.env.RELATED_DISCOVERY_SEED_FANOUT || "8")));
 const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim() || undefined;
 const GROQ_MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-120b";
 const GROQ_RETRY_COOLDOWN_MS = Math.max(
@@ -600,8 +605,24 @@ async function classifyVideoMetadataWithGroq(video: PersistableVideoRecord): Pro
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
+      void recordExternalApiUsage({
+        provider: "groq",
+        endpoint: "chat/completions",
+        units: 1,
+        success: false,
+        statusCode: response.status,
+        note: body.slice(0, 120) || null,
+      });
       throw new Error(`Groq API error ${response.status}: ${body.slice(0, 260)}`);
     }
+
+    void recordExternalApiUsage({
+      provider: "groq",
+      endpoint: "chat/completions",
+      units: 1,
+      success: true,
+      statusCode: response.status,
+    });
 
     const payload = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
@@ -616,6 +637,14 @@ async function classifyVideoMetadataWithGroq(video: PersistableVideoRecord): Pro
       reason: normalizeParsedString(parsed.reason, 500),
     };
   } catch (error) {
+    void recordExternalApiUsage({
+      provider: "groq",
+      endpoint: "chat/completions",
+      units: 1,
+      success: false,
+      statusCode: null,
+      note: error instanceof Error ? error.message.slice(0, 120) : "request-error",
+    });
     debugCatalog("classifyVideoMetadataWithGroq:error", {
       videoId: video.id,
       message: error instanceof Error ? error.message : String(error),
@@ -1709,6 +1738,11 @@ async function persistRelatedVideoCache(videoId: string, relatedIds: string[]) {
 }
 
 async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVideoRecord[]> {
+  if (!ENABLE_YOUTUBE_RELATED_DISCOVERY) {
+    debugCatalog("fetchRelatedYouTubeVideos:disabled", { videoId });
+    return [];
+  }
+
   if (!YOUTUBE_DATA_API_KEY) {
     debugCatalog("fetchRelatedYouTubeVideos:skipped-missing-api-key", { videoId });
     return [];
@@ -1729,12 +1763,27 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
     });
 
     if (!response.ok) {
+      void recordExternalApiUsage({
+        provider: "youtube",
+        endpoint: "search.list.relatedToVideoId",
+        units: 100,
+        success: false,
+        statusCode: response.status,
+      });
       debugCatalog("fetchRelatedYouTubeVideos:response-not-ok", {
         videoId,
         status: response.status,
       });
       return [];
     }
+
+    void recordExternalApiUsage({
+      provider: "youtube",
+      endpoint: "search.list.relatedToVideoId",
+      units: 100,
+      success: true,
+      statusCode: response.status,
+    });
 
     const data = (await response.json()) as YouTubeRelatedSearchResponse;
 
@@ -1772,15 +1821,135 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
 
     return mapped;
   } catch {
+    void recordExternalApiUsage({
+      provider: "youtube",
+      endpoint: "search.list.relatedToVideoId",
+      units: 100,
+      success: false,
+      statusCode: null,
+      note: "request-error",
+    });
     debugCatalog("fetchRelatedYouTubeVideos:error", { videoId });
     return [];
   }
 }
 
+async function getExistingCatalogVideoIdSet(videoIds: string[]) {
+  const normalizedIds = Array.from(new Set(videoIds.map((id) => normalizeYouTubeVideoId(id)).filter((id): id is string => Boolean(id))));
+
+  if (normalizedIds.length === 0 || !hasDatabaseUrl()) {
+    return new Set<string>();
+  }
+
+  const rows = await prisma.video.findMany({
+    where: {
+      videoId: {
+        in: normalizedIds,
+      },
+    },
+    select: {
+      videoId: true,
+    },
+  });
+
+  return new Set(rows.map((row) => row.videoId).filter((id): id is string => Boolean(id)));
+}
+
+function getRelatedFanoutForDepth(depth: number) {
+  const value = Math.floor(RELATED_DISCOVERY_SEED_FANOUT * Math.pow(0.5, depth));
+  return Math.max(1, Math.min(8, value));
+}
+
+async function discoverRelatedVideosCascade(seedVideoId: string, options?: { maxDepth?: number; maxNewVideos?: number }) {
+  if (!ENABLE_YOUTUBE_RELATED_DISCOVERY || !hasDatabaseUrl()) {
+    return { fetchedNodes: 0, discoveredNewVideos: 0 };
+  }
+
+  const maxDepth = Math.max(1, Math.min(4, Math.floor(options?.maxDepth ?? RELATED_DISCOVERY_MAX_DEPTH)));
+  const maxNewVideos = Math.max(1, Math.min(800, Math.floor(options?.maxNewVideos ?? RELATED_DISCOVERY_MAX_NEW_VIDEOS)));
+  const queue: Array<{ videoId: string; depth: number }> = [{ videoId: seedVideoId, depth: 0 }];
+  const visited = new Set<string>([seedVideoId]);
+  let fetchedNodes = 0;
+  let discoveredNewVideos = 0;
+
+  while (queue.length > 0 && discoveredNewVideos < maxNewVideos) {
+    const current = queue.shift();
+    if (!current) {
+      break;
+    }
+
+    if (current.depth >= maxDepth) {
+      continue;
+    }
+
+    if (await hasStoredRelatedCache(current.videoId)) {
+      continue;
+    }
+
+    const fanout = getRelatedFanoutForDepth(current.depth);
+    const relatedVideos = (await fetchRelatedYouTubeVideos(current.videoId)).slice(0, fanout);
+    fetchedNodes += 1;
+
+    const uniqueCandidates: PersistableVideoRecord[] = [];
+    for (const candidate of relatedVideos) {
+      const normalizedCandidateId = normalizeYouTubeVideoId(candidate.id);
+      if (!normalizedCandidateId || visited.has(normalizedCandidateId)) {
+        continue;
+      }
+
+      visited.add(normalizedCandidateId);
+      uniqueCandidates.push({
+        ...candidate,
+        id: normalizedCandidateId,
+      });
+    }
+
+    await persistRelatedVideoCache(current.videoId, uniqueCandidates.map((candidate) => candidate.id));
+
+    if (uniqueCandidates.length === 0) {
+      continue;
+    }
+
+    const existingIds = await getExistingCatalogVideoIdSet(uniqueCandidates.map((candidate) => candidate.id));
+    const newCandidates = uniqueCandidates.filter((candidate) => !existingIds.has(candidate.id));
+
+    for (const candidate of newCandidates) {
+      if (discoveredNewVideos >= maxNewVideos) {
+        break;
+      }
+
+      const hydrated = await hydrateAndPersistVideo(candidate.id, candidate, {
+        forceAvailabilityRefresh: true,
+        skipRelatedDiscovery: true,
+      });
+
+      if (!hydrated) {
+        continue;
+      }
+
+      discoveredNewVideos += 1;
+
+      if (current.depth + 1 < maxDepth) {
+        queue.push({ videoId: candidate.id, depth: current.depth + 1 });
+      }
+    }
+  }
+
+  debugCatalog("discoverRelatedVideosCascade:complete", {
+    seedVideoId,
+    maxDepth,
+    maxNewVideos,
+    fetchedNodes,
+    discoveredNewVideos,
+  });
+
+  return { fetchedNodes, discoveredNewVideos };
+}
+
 async function hydrateAndPersistVideo(
   videoId: string,
   providedVideo?: PersistableVideoRecord,
-  options?: { forceAvailabilityRefresh?: boolean },
+  options?: { forceAvailabilityRefresh?: boolean; skipRelatedDiscovery?: boolean },
 ): Promise<PersistableVideoRecord | null> {
   if (!hasDatabaseUrl()) {
     return providedVideo ?? (await fetchOEmbedVideo(videoId));
@@ -1821,7 +1990,12 @@ async function hydrateAndPersistVideo(
   });
   await persistVideoAvailability(video, availability);
 
-  if (availability.status !== "unavailable" && !(await hasStoredRelatedCache(normalizedVideoId))) {
+  if (
+    availability.status !== "unavailable"
+    && ENABLE_YOUTUBE_RELATED_DISCOVERY
+    && !options?.skipRelatedDiscovery
+    && !(await hasStoredRelatedCache(normalizedVideoId))
+  ) {
     const relatedVideos = await fetchRelatedYouTubeVideos(normalizedVideoId);
     const availableRelatedIds: string[] = [];
 
@@ -1845,7 +2019,7 @@ async function getExternalVideoById(videoId: string): Promise<VideoRecord | null
   return video;
 }
 
-export async function importVideoFromDirectSource(source: string) {
+export async function importVideoFromDirectSource(source: string, options?: { discoverRelated?: boolean }) {
   const normalizedVideoId = normalizeYouTubeVideoId(source);
 
   if (!normalizedVideoId) {
@@ -1859,7 +2033,13 @@ export async function importVideoFromDirectSource(source: string) {
     };
   }
 
-  await hydrateAndPersistVideo(normalizedVideoId, undefined, { forceAvailabilityRefresh: true });
+  const existedBeforeImport = hasDatabaseUrl() ? Boolean(await getStoredVideoById(normalizedVideoId)) : false;
+
+  // Direct ingestion persists the seed video first, then runs a bounded related cascade.
+  await hydrateAndPersistVideo(normalizedVideoId, undefined, {
+    forceAvailabilityRefresh: true,
+    skipRelatedDiscovery: true,
+  });
   let decision = await getVideoPlaybackDecision(normalizedVideoId);
 
   // Apply the title-parsing heuristic fallback whenever parsedArtist is absent in the DB.
@@ -1904,6 +2084,11 @@ export async function importVideoFromDirectSource(source: string) {
       playbackDecisionCache.delete(normalizedVideoId);
       decision = await getVideoPlaybackDecision(normalizedVideoId);
     }
+  }
+
+  const shouldDiscoverRelated = (options?.discoverRelated ?? true) && !existedBeforeImport;
+  if (shouldDiscoverRelated) {
+    await discoverRelatedVideosCascade(normalizedVideoId);
   }
 
   return { videoId: normalizedVideoId, decision };
