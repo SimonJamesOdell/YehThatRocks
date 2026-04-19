@@ -4613,6 +4613,30 @@ h1 {
   cursor: not-allowed;
 }
 
+.trackCard.leaderboardCard .searchResultFavouriteBadgeButton {
+  appearance: none;
+  border: 1px solid rgba(255, 188, 170, 0.42);
+  color: #fff;
+  gap: 6px;
+  min-width: 162px;
+  justify-content: center;
+  transition: filter 160ms ease, opacity 160ms ease;
+}
+
+.searchResultFavouriteBadgeButton:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.searchResultFavouriteBadgeButton:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.searchResultFavouriteBadgeButton .navFavouritesGlyph {
+  margin-right: 0;
+  font-size: 1.06rem;
+}
+
 .searchResultsHideSeen .top100CardSeen {
   display: none;
 }
@@ -4939,6 +4963,198 @@ h1 {
 .newFlagModalActions button:last-child:hover:not(:disabled) {
   background: rgba(160, 30, 30, 0.8);
   border-color: rgba(226, 81, 81, 0.8);
+}
+
+.suggestNewModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 155;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(190, 32, 22, 0.16), transparent 44%),
+    rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.suggestNewModalPanel {
+  width: min(94vw, 560px);
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 170, 154, 0.34);
+  background:
+    linear-gradient(180deg, rgba(28, 11, 12, 0.98), rgba(12, 6, 7, 0.98));
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.48),
+    0 0 0 1px rgba(180, 28, 20, 0.18) inset;
+}
+
+.suggestNewModalHeader {
+  display: grid;
+  gap: 6px;
+}
+
+.suggestNewModalHeader h3 {
+  margin: 0;
+  font-family: var(--font-display), cursive;
+  line-height: 0.95;
+  text-shadow: 0 0 18px rgba(255, 255, 255, 0.08), 0 0 20px rgba(255, 52, 0, 0.34);
+  font-size: 1.52rem;
+  color: #fff3ec;
+}
+
+.suggestNewModalMeta {
+  margin: 0;
+  color: rgba(255, 220, 210, 0.88);
+  line-height: 1.35;
+}
+
+.suggestNewModalHints {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 155, 138, 0.26);
+  background: linear-gradient(180deg, rgba(82, 22, 20, 0.34), rgba(38, 10, 11, 0.32));
+  color: rgba(255, 218, 207, 0.9);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.suggestNewModalHints strong {
+  color: #fff;
+  font-weight: 700;
+}
+
+.suggestNewModalField {
+  margin-top: 2px;
+}
+
+.suggestNewModalInput {
+  width: 100%;
+  min-height: 46px;
+  padding: 11px 13px;
+  border: 1px solid rgba(255, 176, 163, 0.22);
+  background:
+    linear-gradient(180deg, rgba(20, 10, 11, 0.96), rgba(8, 5, 6, 0.98));
+  color: #fff1eb;
+  border-radius: 12px;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.97rem;
+  letter-spacing: 0.01em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.suggestNewModalInput::placeholder {
+  color: rgba(255, 205, 192, 0.45);
+}
+
+.suggestNewModalInput:hover:not(:disabled) {
+  border-color: rgba(255, 187, 173, 0.35);
+}
+
+.suggestNewModalInput:focus {
+  outline: none;
+  border-color: rgba(231, 74, 74, 0.74);
+  box-shadow: 0 0 0 3px rgba(170, 28, 28, 0.22);
+}
+
+.suggestNewModalInput:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+  background: rgba(20, 10, 10, 0.78);
+}
+
+.suggestNewModalOptionalGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px 12px;
+  align-items: end;
+}
+
+.suggestNewModalStatus {
+  margin-top: 2px;
+  color: #ffd0c8;
+}
+
+.suggestNewModalResult {
+  margin-top: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.04);
+  display: grid;
+  gap: 4px;
+}
+
+.suggestNewModalResultTitle {
+  margin: 0;
+  font-family: var(--font-display), cursive;
+  letter-spacing: 0.02em;
+  color: #fff4ee;
+}
+
+.suggestNewModalResultDetail {
+  margin: 0;
+  color: rgba(255, 225, 216, 0.9);
+  line-height: 1.35;
+}
+
+.suggestNewModalResultMeta {
+  margin-top: 4px;
+  display: grid;
+  gap: 2px;
+}
+
+.suggestNewModalResultMeta p {
+  margin: 0;
+  color: rgba(255, 236, 230, 0.92);
+  font-size: 0.9rem;
+}
+
+.suggestNewModalResultMeta strong {
+  color: #fff;
+}
+
+.suggestNewModalResult-ingested,
+.suggestNewModalResult-already-in-catalog,
+.suggestNewModalResult-queued {
+  border-color: rgba(126, 219, 174, 0.4);
+  background: linear-gradient(180deg, rgba(18, 58, 35, 0.34), rgba(10, 24, 17, 0.36));
+}
+
+.suggestNewModalResult-rejected {
+  border-color: rgba(255, 120, 120, 0.48);
+  background: linear-gradient(180deg, rgba(88, 18, 18, 0.34), rgba(34, 8, 8, 0.4));
+}
+
+.suggestNewModalActions {
+  margin-top: 4px;
+}
+
+.suggestNewModalActions button:last-child {
+  background: linear-gradient(180deg, rgba(164, 34, 34, 0.92), rgba(86, 12, 12, 0.94));
+  border-color: rgba(255, 149, 134, 0.74);
+  color: #ffe8e3;
+}
+
+.suggestNewModalActions button:last-child:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(191, 40, 40, 0.94), rgba(102, 15, 15, 0.96));
+  border-color: rgba(255, 175, 162, 0.8);
+}
+
+@media (max-width: 680px) {
+  .suggestNewModalPanel {
+    padding: 18px;
+    width: min(96vw, 560px);
+  }
+
+  .suggestNewModalOptionalGrid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
 }
 
 .leaderboardTrackLink {

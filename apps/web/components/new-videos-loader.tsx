@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { Top100VideoLink } from "@/components/top100-video-link";
@@ -15,6 +16,16 @@ import {
 } from "@/lib/video-quality-flags";
 
 const NEW_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-new";
+
+type SuggestOutcome = {
+  kind: "video" | "playlist";
+  status: "ingested" | "already-in-catalog" | "rejected" | "queued";
+  title: string;
+  detail: string;
+  videoId?: string;
+  artist?: string | null;
+  track?: string | null;
+};
 
 function dedupeVideos(videos: VideoRecord[]) {
   const seen = new Set<string>();
@@ -59,6 +70,13 @@ export function NewVideosLoader({
   const [flagPendingVideoId, setFlagPendingVideoId] = useState<string | null>(null);
   const [flagStatus, setFlagStatus] = useState<string | null>(null);
   const [playlistStatus, setPlaylistStatus] = useState<string | null>(null);
+  const [isSuggestModalOpen, setIsSuggestModalOpen] = useState(false);
+  const [suggestSource, setSuggestSource] = useState("");
+  const [suggestArtist, setSuggestArtist] = useState("");
+  const [suggestTrack, setSuggestTrack] = useState("");
+  const [suggestPending, setSuggestPending] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
+  const [suggestOutcome, setSuggestOutcome] = useState<SuggestOutcome | null>(null);
   const [isCreatingPlaylistFromNew, setIsCreatingPlaylistFromNew] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hideSeen, setHideSeen] = useSeenTogglePreference({
@@ -268,6 +286,131 @@ export function NewVideosLoader({
     }
   };
 
+  const closeSuggestModal = () => {
+    if (suggestPending) {
+      return;
+    }
+
+    setIsSuggestModalOpen(false);
+    setSuggestError(null);
+    setSuggestOutcome(null);
+  };
+
+  const resetSuggestForAnother = () => {
+    setSuggestSource("");
+    setSuggestArtist("");
+    setSuggestTrack("");
+    setSuggestError(null);
+    setSuggestOutcome(null);
+  };
+
+  const watchSuggestedVideoNow = () => {
+    if (!suggestOutcome?.videoId) {
+      return;
+    }
+
+    const href = `/?v=${encodeURIComponent(suggestOutcome.videoId)}&resume=1`;
+    window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", {
+      detail: { href },
+    }));
+    router.push(href);
+    closeSuggestModal();
+  };
+
+  const submitSuggestNew = async () => {
+    if (!isAuthenticated) {
+      setSuggestError("Sign in to suggest new videos.");
+      return;
+    }
+
+    const source = suggestSource.trim();
+    if (!source) {
+      setSuggestError("Paste a YouTube URL, playlist URL, or video id.");
+      return;
+    }
+
+    setSuggestPending(true);
+    setSuggestError(null);
+    setSuggestOutcome(null);
+
+    try {
+      const response = await fetch("/api/videos/suggest", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          source,
+          artist: suggestArtist.trim() || undefined,
+          track: suggestTrack.trim() || undefined,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            ok?: boolean;
+            error?: string;
+            kind?: "video" | "playlist";
+            videoId?: string;
+            submissionStatus?: "ingested" | "already-in-catalog" | "rejected";
+            rejectionReason?: string | null;
+            artist?: string | null;
+            track?: string | null;
+            queuedVideoCount?: number;
+            decision?: { message?: string };
+          }
+        | null;
+
+      if (!response.ok || !payload?.ok) {
+        setSuggestError(payload?.error || "Could not submit suggestion. Please try again.");
+        return;
+      }
+
+      if (payload.kind === "playlist") {
+        setSuggestOutcome({
+          kind: "playlist",
+          status: "queued",
+          title: "Playlist queued",
+          detail: `Queued ${payload.queuedVideoCount ?? 0} videos for background ingestion.`,
+        });
+      } else {
+        if (payload.submissionStatus === "already-in-catalog") {
+          setSuggestOutcome({
+            kind: "video",
+            status: "already-in-catalog",
+            title: "Already in catalog",
+            detail: "This video already exists in the catalog and is available now.",
+            videoId: payload.videoId,
+            artist: payload.artist,
+            track: payload.track,
+          });
+        } else if (payload.submissionStatus === "rejected") {
+          setSuggestOutcome({
+            kind: "video",
+            status: "rejected",
+            title: "Suggestion rejected",
+            detail: payload.rejectionReason || payload.decision?.message || "Rejected during ingestion/classification.",
+            videoId: payload.videoId,
+          });
+        } else {
+          setSuggestOutcome({
+            kind: "video",
+            status: "ingested",
+            title: "Ingestion succeeded",
+            detail: "Video ingested and classified successfully.",
+            videoId: payload.videoId,
+            artist: payload.artist,
+            track: payload.track,
+          });
+        }
+      }
+    } catch {
+      setSuggestError("Could not submit suggestion. Please try again.");
+    } finally {
+      setSuggestPending(false);
+    }
+  };
+
   useEffect(() => {
     const loadVideos = async () => {
       try {
@@ -325,6 +468,22 @@ export function NewVideosLoader({
               aria-pressed={hideSeen}
             >
               {hideSeen ? "Showing unseen only" : "Show unseen only"}
+            </button>
+          ) : null}
+          {isAuthenticated ? (
+            <button
+              type="button"
+              className="newPageSeenToggle top100CreatePlaylistButton"
+              onClick={() => {
+                setSuggestSource("");
+                setSuggestArtist("");
+                setSuggestTrack("");
+                setSuggestOutcome(null);
+                setSuggestError(null);
+                setIsSuggestModalOpen(true);
+              }}
+            >
+              + Suggest New
             </button>
           ) : null}
           {isAuthenticated ? (
@@ -409,6 +568,120 @@ export function NewVideosLoader({
         </div>
       ) : null}
     </div>
+    {isSuggestModalOpen && typeof document !== "undefined"
+      ? createPortal(
+        <div
+          className="suggestNewModalBackdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Suggest new YouTube videos"
+          onClick={closeSuggestModal}
+        >
+          <div className="suggestNewModalPanel" onClick={(event) => event.stopPropagation()}>
+            <div className="suggestNewModalHeader">
+              <h3>Suggest New</h3>
+              <p className="suggestNewModalMeta">Paste a YouTube video or playlist. We will ingest and classify it.</p>
+            </div>
+
+            <p className="suggestNewModalHints">
+              Accepted formats: <strong>watch URLs</strong>, <strong>short URLs</strong>, <strong>video IDs</strong>, and <strong>playlist URLs</strong>.
+            </p>
+
+            <label className="newFlagModalField suggestNewModalField" htmlFor="suggest-new-source">
+              YouTube URL or Video ID
+            </label>
+            <input
+              className="suggestNewModalInput"
+              id="suggest-new-source"
+              value={suggestSource}
+              onChange={(event) => setSuggestSource(event.currentTarget.value)}
+              placeholder="https://youtube.com/watch?v=... or https://youtube.com/playlist?list=..."
+              disabled={suggestPending}
+              maxLength={2048}
+            />
+
+            <div className="suggestNewModalOptionalGrid">
+            <label className="newFlagModalField suggestNewModalField" htmlFor="suggest-new-artist">
+              Artist (optional)
+            </label>
+            <input
+              className="suggestNewModalInput"
+              id="suggest-new-artist"
+              value={suggestArtist}
+              onChange={(event) => setSuggestArtist(event.currentTarget.value)}
+              placeholder="Artist name"
+              disabled={suggestPending}
+              maxLength={255}
+            />
+
+            <label className="newFlagModalField suggestNewModalField" htmlFor="suggest-new-track">
+              Track name (optional)
+            </label>
+            <input
+              className="suggestNewModalInput"
+              id="suggest-new-track"
+              value={suggestTrack}
+              onChange={(event) => setSuggestTrack(event.currentTarget.value)}
+              placeholder="Track title"
+              disabled={suggestPending}
+              maxLength={255}
+            />
+            </div>
+
+            {suggestError ? <p className="newFlagModalStatus suggestNewModalStatus">{suggestError}</p> : null}
+
+            {suggestOutcome ? (
+              <div className={`suggestNewModalResult suggestNewModalResult-${suggestOutcome.status}`}>
+                <p className="suggestNewModalResultTitle">{suggestOutcome.title}</p>
+                <p className="suggestNewModalResultDetail">{suggestOutcome.detail}</p>
+                {suggestOutcome.kind === "video" && suggestOutcome.status !== "rejected" ? (
+                  <div className="suggestNewModalResultMeta">
+                    <p><strong>Artist:</strong> {suggestOutcome.artist?.trim() || "Unknown"}</p>
+                    <p><strong>Track:</strong> {suggestOutcome.track?.trim() || "Unknown"}</p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {suggestOutcome && suggestOutcome.kind === "video" && suggestOutcome.status !== "rejected" ? (
+              <div className="newFlagModalActions suggestNewModalActions">
+                <button type="button" onClick={resetSuggestForAnother} disabled={suggestPending}>
+                  Suggest another
+                </button>
+                <button type="button" onClick={watchSuggestedVideoNow} disabled={suggestPending || !suggestOutcome.videoId}>
+                  Watch now
+                </button>
+              </div>
+            ) : suggestOutcome ? (
+              <div className="newFlagModalActions suggestNewModalActions">
+                <button type="button" onClick={closeSuggestModal} disabled={suggestPending}>
+                  Close
+                </button>
+                <button type="button" onClick={resetSuggestForAnother} disabled={suggestPending}>
+                  Suggest another
+                </button>
+              </div>
+            ) : (
+              <div className="newFlagModalActions suggestNewModalActions">
+                <button type="button" onClick={closeSuggestModal} disabled={suggestPending}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void submitSuggestNew();
+                  }}
+                  disabled={suggestPending}
+                >
+                  {suggestPending ? "Submitting..." : "Submit"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body,
+      )
+      : null}
     </>
   );
 }
