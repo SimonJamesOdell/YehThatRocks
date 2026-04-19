@@ -52,11 +52,13 @@
     "verify:watch-next-and-new": "node scripts/verify-watch-next-and-new-invariants.js",
     "verify:hidden-videos": "node scripts/verify-hidden-videos-invariants.js",
     "verify:search": "node scripts/verify-search-invariants.js",
+    "verify:compile": "npm run build",
+    "verify:auth:api": "node scripts/verify-auth-api-smoke.js",
     "facebook:group-share": "node scripts/facebook-group-autoshare.js",
     "facebook:group-share:dry-run": "node scripts/facebook-group-autoshare.js --dry-run",
     "verify:ui-regressions": "npm run verify:artists-ui && npm run verify:top100-ui && npm run verify:playlists-ui && npm run verify:core-experience && npm run verify:categories && npm run verify:auth && npm run verify:admin && npm run verify:favourites && npm run verify:history-ui && npm run verify:watch-next-and-new && npm run verify:hidden-videos && npm run verify:search",
-    "verify:invariants": "npm run verify:ui-regressions",
-    "verify:invariants:api": "npm run verify:core-experience:api && npm run verify:playlists:api && npm run verify:categories:api"
+    "verify:invariants": "npm run verify:compile && npm run verify:ui-regressions",
+    "verify:invariants:api": "npm run verify:core-experience:api && npm run verify:playlists:api && npm run verify:categories:api && npm run verify:auth:api"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",
