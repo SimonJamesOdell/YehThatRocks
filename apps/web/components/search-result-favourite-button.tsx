@@ -73,7 +73,6 @@ export function SearchResultFavouriteButton({ videoId, title, isAuthenticated }:
       }}
     >
       <span className="navFavouritesGlyph" aria-hidden="true">❤️</span>
-      <span>{label}</span>
     </button>
   );
 }
