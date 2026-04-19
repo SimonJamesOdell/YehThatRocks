@@ -1498,11 +1498,32 @@ async function hasStoredRelatedCache(videoId: string) {
   const rows = await prisma.$queryRaw<Array<{ count: bigint | number }>>`
     SELECT COUNT(*) AS count
     FROM related
-    const videos = normalizedVideoId
-      ? await getFastVideoByVideoIdRows(normalizedVideoId, {
-          requireAvailable: true,
-        })
-      : await (async () => {
+    WHERE videoId = ${normalizedVideoId}
+  `;
+
+  const countValue = rows[0]?.count;
+  const count = typeof countValue === "bigint" ? Number(countValue) : Number(countValue ?? 0);
+  return count > 0;
+}
+
+async function checkEmbedPlayability(videoId: string): Promise<VideoAvailability> {
+  try {
+    const response = await fetch(`https://www.youtube.com/embed/${encodeURIComponent(videoId)}?enablejsapi=1`, {
+      headers: {
+        "User-Agent": "YehThatRocks/1.0",
+      },
+    });
+
+    if (!response.ok) {
+      if ([401, 403, 404, 410].includes(response.status)) {
+        return { status: "unavailable", reason: `embed:${response.status}` };
+      }
+
+      return { status: "check-failed", reason: `embed:${response.status}` };
+    }
+
+    const html = await response.text();
+
     if (containsAgeRestrictionMarker(html)) {
       return { status: "unavailable", reason: "embed:age-restricted" };
     }
@@ -4352,6 +4373,9 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
 
     const nameCol = escapeSqlIdentifier(columns.name);
     const artistNameNormExpr = getArtistNameNormalizationExpr("a", columns);
+    const countrySelect = columns.country
+      ? `a.${escapeSqlIdentifier(columns.country)} AS country`
+      : "NULL AS country";
     const normalizedLetterKey = normalizedLetter.toLowerCase();
     const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
     const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
