@@ -13,7 +13,7 @@ function readPositiveNumberEnv(name: string, defaultValue: number, minValue: num
   return Math.max(minValue, parsed);
 }
 
-const STREAM_INTERVAL_MS = readPositiveNumberEnv("ADMIN_DASHBOARD_STREAM_MS", 3000, 500);
+const STREAM_INTERVAL_MS = readPositiveNumberEnv("ADMIN_DASHBOARD_STREAM_MS", 125, 125);
 
 export async function GET(request: NextRequest) {
   const auth = await requireAdminApiAuth(request);

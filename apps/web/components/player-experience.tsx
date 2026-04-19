@@ -20,6 +20,7 @@ type PlayerExperienceProps = {
   seenVideoIds?: Set<string>;
   onHideVideo?: (track: VideoRecord) => void | Promise<void>;
   onAddVideoToPlaylist?: (track: VideoRecord) => void | Promise<void>;
+  onDockHideRequest?: () => void;
   forcedUnavailableSignal?: number;
   forcedUnavailableMessage?: string | null;
 };
@@ -139,6 +140,7 @@ const maxEndedChoiceVideos = 12;
 const ENDED_CHOICE_SET_SIZE = maxEndedChoiceVideos;
 const ENDED_CHOICE_INITIAL_PREFETCH_SETS = 2;
 const ENDED_CHOICE_SCROLL_PREFETCH_BUFFER_SETS = 3;
+const ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS = 8;
 const ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-ended-choice";
 
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
@@ -253,6 +255,7 @@ export function PlayerExperience({
   seenVideoIds,
   onHideVideo,
   onAddVideoToPlaylist,
+  onDockHideRequest,
   forcedUnavailableSignal = 0,
   forcedUnavailableMessage = null,
 }: PlayerExperienceProps) {
@@ -375,6 +378,8 @@ export function PlayerExperience({
   const endedChoiceFetchingRef = useRef(false);
   const endedChoiceHasMoreRef = useRef(true);
   const endedChoiceSkipRef = useRef(0);
+  const endedChoiceOverlayVisibleRef = useRef(false);
+  const endedChoicePrewarmVideoIdRef = useRef<string | null>(null);
   const pointerPositionRef = useRef<{ x: number; y: number } | null>(null);
   const currentVideoRef = useRef(currentVideo);
   const autoplayEnabledRef = useRef(autoplayEnabled);
@@ -395,7 +400,12 @@ export function PlayerExperience({
     endedChoiceFetchingRef.current = false;
     endedChoiceHasMoreRef.current = true;
     endedChoiceSkipRef.current = 0;
+    endedChoicePrewarmVideoIdRef.current = null;
   }, [currentVideo]);
+
+  useEffect(() => {
+    endedChoiceOverlayVisibleRef.current = showEndedChoiceOverlay;
+  }, [showEndedChoiceOverlay]);
 
   useEffect(() => {
     return () => {
@@ -1815,6 +1825,23 @@ export function PlayerExperience({
                   setDuration(liveDuration);
                   persistResumeSnapshot(true, liveTime);
 
+                  const activeVideoId = currentVideoRef.current.id;
+                  const shouldPrewarmEndedChoice =
+                    liveDuration > 0
+                    && (liveDuration - liveTime) <= ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS
+                    && endedChoicePrewarmVideoIdRef.current !== activeVideoId
+                    && !endedChoiceOverlayVisibleRef.current
+                    && !endedChoiceFetchingRef.current;
+
+                  if (shouldPrewarmEndedChoice) {
+                    endedChoicePrewarmVideoIdRef.current = activeVideoId;
+                    endedChoiceUserScrolledRef.current = false;
+                    endedChoiceHasMoreRef.current = true;
+                    endedChoiceSkipRef.current = 0;
+                    setEndedChoiceRemoteVideos([]);
+                    void fetchEndedChoiceSets(ENDED_CHOICE_INITIAL_PREFETCH_SETS);
+                  }
+
                   const progressPercent = liveDuration > 0 ? (liveTime / liveDuration) * 100 : 0;
                   if (liveTime >= 3 || progressPercent >= 8) {
                     void reportWatchEvent(1, "qualified", liveTime, liveDuration);
@@ -2366,11 +2393,22 @@ export function PlayerExperience({
     }
 
     endedChoiceUserScrolledRef.current = false;
+
+    const hasPrewarmedChoices =
+      endedChoiceReshuffleKey === 0
+      && endedChoicePrewarmVideoIdRef.current === currentVideo.id
+      && endedChoiceRemoteVideos.length > 0;
+
+    if (hasPrewarmedChoices) {
+      setEndedChoiceLoading(false);
+      return;
+    }
+
     endedChoiceHasMoreRef.current = true;
     endedChoiceSkipRef.current = 0;
     setEndedChoiceRemoteVideos([]);
     void fetchEndedChoiceSets(ENDED_CHOICE_INITIAL_PREFETCH_SETS);
-  }, [showEndedChoiceOverlay, currentVideo.id, endedChoiceReshuffleKey]);
+  }, [showEndedChoiceOverlay, currentVideo.id, endedChoiceRemoteVideos.length, endedChoiceReshuffleKey]);
 
   useEffect(() => {
     if (!showEndedChoiceOverlay || !endedChoiceUserScrolledRef.current) {
@@ -2415,6 +2453,7 @@ export function PlayerExperience({
       endedChoiceUserScrolledRef.current = false;
       endedChoiceHasMoreRef.current = true;
       endedChoiceSkipRef.current = 0;
+      endedChoicePrewarmVideoIdRef.current = null;
       setEndedChoiceRemoteVideos([]);
       setEndedChoiceReshuffleKey((k) => k + 1);
       setEndedChoiceGridExiting(false);
@@ -3276,6 +3315,7 @@ export function PlayerExperience({
   function handleDockClose() {
     setShowShareMenu(false);
     pauseActivePlayback();
+    onDockHideRequest?.();
     if (typeof window === "undefined") return;
     window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));
   }
