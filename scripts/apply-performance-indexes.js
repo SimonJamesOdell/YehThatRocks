@@ -96,6 +96,12 @@ async function main() {
     );
 
     await ensureIndex(
+      "videos",
+      "idx_videos_views",
+      `CREATE INDEX idx_videos_views ON videos (${viewsColumn})`,
+    );
+
+    await ensureIndex(
       "site_videos",
       "idx_site_videos_video_id_status",
       "CREATE INDEX idx_site_videos_video_id_status ON site_videos (video_id, status)",

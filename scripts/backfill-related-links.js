@@ -191,7 +191,8 @@ async function getCandidateVideos(limit) {
           AND r.videoId <> r.related
         GROUP BY r.videoId
       ) rc ON rc.videoId = v.videoId
-      WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+      WHERE v.videoId IS NOT NULL
+        AND CHAR_LENGTH(v.videoId) = 11
         AND ${playableClause}
         AND COALESCE(rc.relatedCount, 0) < ?
       ORDER BY relatedCount ASC, v.id ASC

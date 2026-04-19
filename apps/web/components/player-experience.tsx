@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState, type CSSProperties, type UIEvent } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type UIEvent } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
@@ -130,6 +130,7 @@ const STUCK_PLAYBACK_RETRY_DELAYS_MS = [600, 1400, 2600] as const;
 const MID_PLAYBACK_BUFFERING_CHECK_MS = 1000;
 const MID_PLAYBACK_BUFFERING_THRESHOLD_MS = 8000;
 const PLAYER_LOAD_REFRESH_HINT_DELAY_MS = 2000;
+const PLAYER_AUTO_RECONNECT_DELAY_MS = 2000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
 const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
@@ -272,6 +273,9 @@ export function PlayerExperience({
   const unavailableOverlayTimeoutRef = useRef<number | null>(null);
   const unavailableAutoActionTimeoutRef = useRef<number | null>(null);
   const playerLoadRefreshHintTimeoutRef = useRef<number | null>(null);
+  const playerAutoReconnectTimeoutRef = useRef<number | null>(null);
+  const hasAutoReconnectAttemptedRef = useRef(false);
+  const isPlayerReadyRef = useRef(false);
   const initialRequestedVideoIdRef = useRef<string | null>(requestedVideoId);
   const hasLeftInitialRequestedVideoRef = useRef(false);
   const isBootstrappingHistoryRef = useRef(true);
@@ -1015,6 +1019,13 @@ export function PlayerExperience({
     }
   }
 
+  function clearPlayerAutoReconnectTimer() {
+    if (playerAutoReconnectTimeoutRef.current !== null) {
+      window.clearTimeout(playerAutoReconnectTimeoutRef.current);
+      playerAutoReconnectTimeoutRef.current = null;
+    }
+  }
+
   function scheduleStuckPlaybackWatchdog(trigger: string) {
     clearStuckPlaybackWatchdogTimer();
 
@@ -1568,6 +1579,7 @@ export function PlayerExperience({
     clearStuckPlaybackWatchdogTimer();
     clearMidPlaybackBufferingCheck();
     clearPlayerLoadRefreshHintTimer();
+    clearPlayerAutoReconnectTimer();
     setShowPlayerRefreshHint(false);
 
     if (playerRef.current && typeof playerRef.current.destroy === "function") {
@@ -1936,20 +1948,60 @@ export function PlayerExperience({
 
   useEffect(() => {
     clearPlayerLoadRefreshHintTimer();
+    clearPlayerAutoReconnectTimer();
 
     if (!isPlayerReady) {
       playerLoadRefreshHintTimeoutRef.current = window.setTimeout(() => {
         playerLoadRefreshHintTimeoutRef.current = null;
         setShowPlayerRefreshHint(true);
       }, PLAYER_LOAD_REFRESH_HINT_DELAY_MS);
+
+      if (!hasAutoReconnectAttemptedRef.current) {
+        const targetVideoId = currentVideo.id;
+
+        playerAutoReconnectTimeoutRef.current = window.setTimeout(() => {
+          playerAutoReconnectTimeoutRef.current = null;
+
+          if (hasAutoReconnectAttemptedRef.current) {
+            return;
+          }
+
+          if (isPlayerReadyRef.current) {
+            return;
+          }
+
+          if (currentVideoRef.current.id !== targetVideoId) {
+            return;
+          }
+
+          hasAutoReconnectAttemptedRef.current = true;
+
+          logPlayerDebug("player:auto-reconnect", {
+            videoId: targetVideoId,
+            delayMs: PLAYER_AUTO_RECONNECT_DELAY_MS,
+          });
+
+          handleReloadPlayerIframe();
+        }, PLAYER_AUTO_RECONNECT_DELAY_MS);
+      }
     } else {
       setShowPlayerRefreshHint(false);
     }
 
     return () => {
       clearPlayerLoadRefreshHintTimer();
+      clearPlayerAutoReconnectTimer();
     };
   }, [isPlayerReady, currentVideo.id, playerReloadNonce]);
+
+  useEffect(() => {
+    isPlayerReadyRef.current = isPlayerReady;
+  }, [isPlayerReady]);
+
+  useEffect(() => {
+    hasAutoReconnectAttemptedRef.current = false;
+    clearPlayerAutoReconnectTimer();
+  }, [currentVideo.id]);
 
   useEffect(() => {
     // Reset the end-of-video closure state when a new video is selected
@@ -2093,9 +2145,9 @@ export function PlayerExperience({
       return;
     }
 
-    // When autoplay is off and player is in docked position, close the player instead of showing overlay
     if (!autoplayEnabledRef.current) {
-      const shouldCloseDockedSurface = isDockedDesktop && pathname !== "/";
+      // When autoplay is off and player is in docked position, close the player instead of showing overlay
+      const shouldCloseDockedSurface = false && isDockedDesktop && pathname !== "/";
 
       if (shouldCloseDockedSurface) {
         setPlayerClosedByEndOfVideo(true);
@@ -3528,6 +3580,21 @@ export function PlayerExperience({
         }
       }
 
+      function handlePlayerFrameFocusCapture() {
+        setShowControls(true);
+      }
+
+      function handlePlayerFrameBlurCapture(event: FocusEvent<HTMLDivElement>) {
+        const nextFocusedNode = event.relatedTarget;
+
+        if (!(nextFocusedNode instanceof Node) || !event.currentTarget.contains(nextFocusedNode)) {
+          if (isPlaying) {
+            setShowControls(false);
+            setShowShareMenu(false);
+          }
+        }
+      }
+
       return (
         <>
           {!suppressUnavailablePlaybackSurface ? (
@@ -3541,6 +3608,8 @@ export function PlayerExperience({
                   setShowShareMenu(false);
                 }
               }}
+              onFocusCapture={handlePlayerFrameFocusCapture}
+              onBlurCapture={handlePlayerFrameBlurCapture}
             >
               <div ref={playerElementRef} className="playerMount" />
 

@@ -197,7 +197,8 @@ async function getTopPlayableCandidates(prisma, poolSize) {
         ${favouritedExpr} AS favourited,
         v.id AS internalId
       FROM videos v
-      WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+      WHERE v.videoId IS NOT NULL
+        AND CHAR_LENGTH(v.videoId) = 11
         AND EXISTS (
           SELECT 1
           FROM site_videos sv

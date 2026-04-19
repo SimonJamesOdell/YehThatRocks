@@ -556,7 +556,6 @@ export function ArtistsLetterResults({
                     />
                   </div>
                 ) : null}
-                <p className="statusLabel">{artist.country}</p>
                 <h3>{artist.name}</h3>
                 <p>{artist.genre}</p>
                 <p>{artist.videoCount} videos on file</p>

@@ -1,5 +1,4 @@
 import { cookies } from "next/headers";
-import Image from "next/image";
 import Link from "next/link";
 
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
@@ -14,6 +13,7 @@ import { SearchResultFavouriteButton } from "@/components/search-result-favourit
 import { SearchResultBlockButton } from "@/components/search-result-block-button";
 import { SearchFlagButton } from "@/components/search-flag-button";
 import { SearchSeenToggle } from "@/components/search-seen-toggle";
+import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { getGenreSlug, getSeenVideoIdsForUser, searchCatalog } from "@/lib/catalog-data";
 import { getSuppressedSearchVideoIds } from "@/lib/search-flag-data";
 import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
@@ -69,15 +69,13 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                 isAuthenticated={isAuthenticated}
               />
               <Link href={`/?v=${video.id}&resume=1`} className="linkedCard leaderboardTrackLink" prefetch={false}>
-                <div className="leaderboardThumbWrap">
-                  <Image
-                    src={`https://i.ytimg.com/vi/${encodeURIComponent(video.id)}/mqdefault.jpg`}
+                <div className="leaderboardThumbWrap" data-video-id={video.id}>
+                  <YouTubeThumbnailImage
+                    videoId={video.id}
                     alt=""
-                    width={160}
-                    height={90}
                     className="leaderboardThumb"
                     loading="lazy"
-                    sizes="(max-width: 768px) 42vw, 160px"
+                    reportReason="thumbnail-load-error:search"
                   />
                   {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay">Seen</span> : null}
                 </div>
