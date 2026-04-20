@@ -2828,6 +2828,12 @@ h1 {
   animation-delay: calc(var(--ended-choice-row) * 120ms);
 }
 
+.endedChoiceCardSlotStatic {
+  opacity: 1;
+  clip-path: inset(0 0 0 0 round 12px);
+  animation: none;
+}
+
 .endedChoiceCardSlotExiting {
   animation: none;
   clip-path: inset(0 0 0 0 round 12px);

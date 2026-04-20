@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { FormEvent, Suspense, useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { FormEvent, Suspense, memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { CSSProperties } from "react";
 
@@ -205,6 +205,109 @@ function SharedVideoMessageCard({ videoId }: { videoId: string }) {
     </Link>
   );
 }
+
+type WatchNextCardProps = {
+  track: VideoRecord;
+  index: number;
+  isAuthenticated: boolean;
+  isSeen: boolean;
+  isHiding: boolean;
+  isHiddenMutationPending: boolean;
+  isClicked: boolean;
+  onHide: (track: VideoRecord) => void;
+  onPrefetch: (track: VideoRecord) => void;
+  onTrackClick: (trackId: string) => void;
+};
+
+const WatchNextCard = memo(function WatchNextCard({
+  track,
+  index,
+  isAuthenticated,
+  isSeen,
+  isHiding,
+  isHiddenMutationPending,
+  isClicked,
+  onHide,
+  onPrefetch,
+  onTrackClick,
+}: WatchNextCardProps) {
+  return (
+    <div
+      data-video-id={track.id}
+      className={isHiding ? "relatedCardSlot relatedCardSlotExiting" : "relatedCardSlot"}
+      style={{ "--related-index": index } as CSSProperties}
+    >
+      {isAuthenticated ? (
+        <button
+          type="button"
+          className="relatedCardHideButton"
+          aria-label={`Hide ${track.title} from Watch Next`}
+          title="Hide from Watch Next"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onHide(track);
+          }}
+          disabled={isHiding || isHiddenMutationPending}
+        >
+          ×
+        </button>
+      ) : null}
+      <Link
+        href={`/?v=${track.id}`}
+        className={`relatedCard linkedCard relatedCardTransition${isClicked ? " relatedCardClickFlash" : ""}`}
+        onClick={() => onTrackClick(track.id)}
+        onMouseEnter={() => onPrefetch(track)}
+        onFocus={() => onPrefetch(track)}
+        onPointerDown={() => onPrefetch(track)}
+      >
+        <div className="thumbGlow">
+          <YouTubeThumbnailImage
+            videoId={track.id}
+            alt={track.title}
+            className="relatedThumb"
+            loading={index < 3 ? "eager" : "lazy"}
+            fetchPriority={index < 2 ? "high" : "auto"}
+            reportReason="thumbnail-load-error:watch-next"
+            hideClosestSelector=".relatedCardSlot"
+          />
+          {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay">Seen</span> : null}
+        </div>
+        <div>
+          <h3>
+            {track.title}
+          </h3>
+          <p>
+            <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
+              {track.channelTitle}
+            </ArtistWikiLink>
+          </p>
+        </div>
+      </Link>
+      {isAuthenticated ? (
+        <AddToPlaylistButton
+          videoId={track.id}
+          isAuthenticated={isAuthenticated}
+          className="relatedCardPlaylistAdd"
+          compact
+        />
+      ) : null}
+    </div>
+  );
+}, (prev, next) => {
+  return prev.track.id === next.track.id
+    && prev.track.title === next.track.title
+    && prev.track.channelTitle === next.track.channelTitle
+    && prev.index === next.index
+    && prev.isAuthenticated === next.isAuthenticated
+    && prev.isSeen === next.isSeen
+    && prev.isHiding === next.isHiding
+    && prev.isHiddenMutationPending === next.isHiddenMutationPending
+    && prev.isClicked === next.isClicked
+    && prev.onHide === next.onHide
+    && prev.onPrefetch === next.onPrefetch
+    && prev.onTrackClick === next.onTrackClick;
+});
 
 type ShellDynamicProps = {
   initialVideo: VideoRecord;
@@ -2050,19 +2153,26 @@ function ShellDynamicInner({
     node.scrollTop = node.scrollHeight;
   }, [chatMessages]);
 
-  const sourceRelatedVideos = dedupeVideoList(relatedVideos);
-  const uniqueRelatedVideos = filterHiddenRelatedVideos(
+  const sourceRelatedVideos = useMemo(() => dedupeVideoList(relatedVideos), [relatedVideos]);
+  const uniqueRelatedVideos = useMemo(() => filterHiddenRelatedVideos(
     dedupeRelatedRailVideos(sourceRelatedVideos, currentVideo.id),
     hiddenVideoIdsRef.current,
-  );
-  const displayedRenderableRelatedVideos = filterHiddenRelatedVideos(
+  ), [currentVideo.id, sourceRelatedVideos]);
+  const displayedRenderableRelatedVideos = useMemo(() => filterHiddenRelatedVideos(
     dedupeRelatedRailVideos(displayedRelatedVideos, currentVideo.id),
     hiddenVideoIdsRef.current,
+  ), [currentVideo.id, displayedRelatedVideos]);
+  const visibleWatchNextVideos = useMemo(() => (
+    isAuthenticated && watchNextHideSeen
+      ? displayedRenderableRelatedVideos.filter((video) => !seenVideoIdsRef.current.has(video.id))
+      : displayedRenderableRelatedVideos
+  ), [displayedRenderableRelatedVideos, isAuthenticated, watchNextHideSeen]);
+  const hasSeenWatchNextVideos = useMemo(
+    () => displayedRenderableRelatedVideos.some((video) => seenVideoIdsRef.current.has(video.id)),
+    [displayedRenderableRelatedVideos],
   );
-  const visibleWatchNextVideos = isAuthenticated && watchNextHideSeen
-    ? displayedRenderableRelatedVideos.filter((video) => !seenVideoIdsRef.current.has(video.id))
-    : displayedRenderableRelatedVideos;
-  const hasSeenWatchNextVideos = displayedRenderableRelatedVideos.some((video) => seenVideoIdsRef.current.has(video.id));
+  const hidingRelatedVideoIdSet = useMemo(() => new Set(hidingRelatedVideoIds), [hidingRelatedVideoIds]);
+  const hiddenMutationPendingVideoIdSet = useMemo(() => new Set(hiddenMutationPendingVideoIds), [hiddenMutationPendingVideoIds]);
 
   useEffect(() => {
     if (hasBootstrappedWatchNext) {
@@ -2189,10 +2299,12 @@ function ShellDynamicInner({
         return;
       }
 
-      setRelatedVideos((previous) => {
-        const merged = dedupeRelatedRailVideos(dedupeVideoList([...previous, ...nextVideos]), currentVideo.id)
-          .slice(0, RELATED_MAX_VIDEOS);
-        return merged;
+      startTransition(() => {
+        setRelatedVideos((previous) => {
+          const merged = dedupeRelatedRailVideos(dedupeVideoList([...previous, ...nextVideos]), currentVideo.id)
+            .slice(0, RELATED_MAX_VIDEOS);
+          return merged;
+        });
       });
 
       if (!payloadHasMore) {
@@ -2207,6 +2319,18 @@ function ShellDynamicInner({
       setIsLoadingMoreRelated(false);
     }
   }, [currentVideo.id, hasMoreRelated, isWatchNextVideoSelectionPending, rightRailMode]);
+
+  const handleWatchNextTrackClick = useCallback((trackId: string) => {
+    setClickedRelatedVideoId(trackId);
+    if (relatedClickFlashTimeoutRef.current !== null) {
+      window.clearTimeout(relatedClickFlashTimeoutRef.current);
+    }
+
+    relatedClickFlashTimeoutRef.current = window.setTimeout(() => {
+      setClickedRelatedVideoId((activeId) => (activeId === trackId ? null : activeId));
+      relatedClickFlashTimeoutRef.current = null;
+    }, 240);
+  }, []);
 
   const maybeLoadMoreIfNearEnd = useCallback(() => {
     if (
@@ -3053,7 +3177,7 @@ function ShellDynamicInner({
     }
   }
 
-  function prewarmRelatedThumbnail(videoId: string) {
+  const prewarmRelatedThumbnail = useCallback((videoId: string) => {
     if (typeof window === "undefined") {
       return;
     }
@@ -3066,9 +3190,9 @@ function ShellDynamicInner({
     const img = new window.Image();
     img.decoding = "async";
     img.src = getRelatedThumbnail(videoId);
-  }
+  }, []);
 
-  function prefetchCurrentVideoPayload(videoId: string) {
+  const prefetchCurrentVideoPayload = useCallback((videoId: string) => {
     if (Date.now() < prefetchBlockedUntilRef.current) {
       return;
     }
@@ -3132,9 +3256,9 @@ function ShellDynamicInner({
       .finally(() => {
         inFlightCurrentVideoPrefetchRef.current.delete(videoId);
       });
-  }
+  }, [prewarmRelatedThumbnail]);
 
-  function prefetchRelatedSelection(video: VideoRecord) {
+  const prefetchRelatedSelection = useCallback((video: VideoRecord) => {
     prewarmRelatedThumbnail(video.id);
 
     if (!prefetchedRelatedIdsRef.current.has(video.id)) {
@@ -3155,7 +3279,7 @@ function ShellDynamicInner({
         }),
       );
     }
-  }
+  }, [prefetchCurrentVideoPayload, prewarmRelatedThumbnail]);
 
   function buildGeneratedPlaylistName() {
     const now = new Date();
@@ -4125,77 +4249,19 @@ function ShellDynamicInner({
                   ) : null}
 
                   {visibleWatchNextVideos.map((track, index) => (
-                    <div
+                    <WatchNextCard
                       key={track.id}
-                      data-video-id={track.id}
-                      className={hidingRelatedVideoIds.includes(track.id) ? "relatedCardSlot relatedCardSlotExiting" : "relatedCardSlot"}
-                      style={{ "--related-index": index } as CSSProperties}
-                    >
-                      {isAuthenticated ? (
-                        <button
-                          type="button"
-                          className="relatedCardHideButton"
-                          aria-label={`Hide ${track.title} from Watch Next`}
-                          title="Hide from Watch Next"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            void handleHideFromWatchNext(track);
-                          }}
-                          disabled={hidingRelatedVideoIds.includes(track.id) || hiddenMutationPendingVideoIds.includes(track.id)}
-                        >
-                          ×
-                        </button>
-                      ) : null}
-                      <Link
-                        href={`/?v=${track.id}`}
-                        className={`relatedCard linkedCard relatedCardTransition${clickedRelatedVideoId === track.id ? " relatedCardClickFlash" : ""}`}
-                        onClick={() => {
-                          setClickedRelatedVideoId(track.id);
-                          if (relatedClickFlashTimeoutRef.current !== null) {
-                            window.clearTimeout(relatedClickFlashTimeoutRef.current);
-                          }
-                          relatedClickFlashTimeoutRef.current = window.setTimeout(() => {
-                            setClickedRelatedVideoId((activeId) => (activeId === track.id ? null : activeId));
-                            relatedClickFlashTimeoutRef.current = null;
-                          }, 240);
-                        }}
-                        onMouseEnter={() => prefetchRelatedSelection(track)}
-                        onFocus={() => prefetchRelatedSelection(track)}
-                        onPointerDown={() => prefetchRelatedSelection(track)}
-                      >
-                        <div className="thumbGlow">
-                          <YouTubeThumbnailImage
-                            videoId={track.id}
-                            alt={track.title}
-                            className="relatedThumb"
-                            loading={index < 3 ? "eager" : "lazy"}
-                            fetchPriority={index < 2 ? "high" : "auto"}
-                            reportReason="thumbnail-load-error:watch-next"
-                            hideClosestSelector=".relatedCardSlot"
-                          />
-                          {seenVideoIdsRef.current.has(track.id) ? <span className="videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay">Seen</span> : null}
-                        </div>
-                        <div>
-                          <h3>
-                            {track.title}
-                          </h3>
-                          <p>
-                            <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
-                              {track.channelTitle}
-                            </ArtistWikiLink>
-                          </p>
-                        </div>
-                      </Link>
-                      {isAuthenticated ? (
-                        <AddToPlaylistButton
-                          videoId={track.id}
-                          isAuthenticated={isAuthenticated}
-                          className="relatedCardPlaylistAdd"
-                          compact
-                        />
-                      ) : null}
-                    </div>
+                      track={track}
+                      index={index}
+                      isAuthenticated={isAuthenticated}
+                      isSeen={seenVideoIdsRef.current.has(track.id)}
+                      isHiding={hidingRelatedVideoIdSet.has(track.id)}
+                      isHiddenMutationPending={hiddenMutationPendingVideoIdSet.has(track.id)}
+                      isClicked={clickedRelatedVideoId === track.id}
+                      onHide={handleHideFromWatchNext}
+                      onPrefetch={prefetchRelatedSelection}
+                      onTrackClick={handleWatchNextTrackClick}
+                    />
                   ))}
 
                   {watchNextHideSeen && hasSeenWatchNextVideos && visibleWatchNextVideos.length === 0 ? (

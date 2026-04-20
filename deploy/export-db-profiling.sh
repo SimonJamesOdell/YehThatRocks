@@ -6,6 +6,10 @@ ENV_FILE="${ENV_FILE:-$REPO_DIR/.env.production}"
 COMPOSE_FILE="${COMPOSE_FILE:-$REPO_DIR/docker-compose.prod.yml}"
 DISABLE_SLOW_LOG_AFTER_EXPORT="${DISABLE_SLOW_LOG_AFTER_EXPORT:-1}"
 TOP_N="${TOP_N:-80}"
+OUTLIER_MIN_TOTAL_S="${OUTLIER_MIN_TOTAL_S:-8}"
+OUTLIER_MIN_AVG_S="${OUTLIER_MIN_AVG_S:-0.8}"
+OUTLIER_MIN_ROWS_EXAMINED="${OUTLIER_MIN_ROWS_EXAMINED:-1000000}"
+OUTLIER_MIN_CALLS="${OUTLIER_MIN_CALLS:-3}"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "[profiling] env file not found at $ENV_FILE" >&2
@@ -66,6 +70,7 @@ OUT_FILE="$OUT_DIR/db-profiling-report-$STAMP.txt"
   echo "[profiling] report generated UTC: $(date -u +"%Y-%m-%d %H:%M:%S")"
   echo "[profiling] sample started UTC: $STARTED_AT_UTC"
   echo "[profiling] top rows: $TOP_N"
+  echo "[profiling] outlier thresholds: total_query_s>=$OUTLIER_MIN_TOTAL_S, avg_query_s>=$OUTLIER_MIN_AVG_S, rows_examined_total>=$OUTLIER_MIN_ROWS_EXAMINED, calls>=$OUTLIER_MIN_CALLS"
   echo
 
   echo "=== MySQL slow query runtime settings ==="
@@ -87,6 +92,55 @@ FROM mysql.slow_log
 WHERE start_time >= '$STARTED_AT_UTC'
 GROUP BY sample_sql
 ORDER BY total_query_s DESC
+LIMIT $TOP_N;
+"
+
+  echo
+  echo "=== Priority outliers first (high confidence) ==="
+  run_mysql_query "
+SELECT
+  COUNT(*) AS calls,
+  ROUND(SUM(TIME_TO_SEC(query_time)), 3) AS total_query_s,
+  ROUND(AVG(TIME_TO_SEC(query_time)), 4) AS avg_query_s,
+  SUM(rows_examined) AS rows_examined_total,
+  SUM(rows_sent) AS rows_sent_total,
+  ROUND(
+    (SUM(TIME_TO_SEC(query_time)) * 2.0)
+    + (AVG(TIME_TO_SEC(query_time)) * 25.0)
+    + (LEAST(SUM(rows_examined), 2000000000) / 2000000.0)
+    + (COUNT(*) * 0.15),
+    3
+  ) AS priority_score,
+  LEFT(REPLACE(REPLACE(sql_text, CHAR(10), ' '), CHAR(13), ' '), 280) AS sample_sql
+FROM mysql.slow_log
+WHERE start_time >= '$STARTED_AT_UTC'
+GROUP BY sample_sql
+HAVING COUNT(*) >= $OUTLIER_MIN_CALLS
+   AND (
+        SUM(TIME_TO_SEC(query_time)) >= $OUTLIER_MIN_TOTAL_S
+        OR AVG(TIME_TO_SEC(query_time)) >= $OUTLIER_MIN_AVG_S
+        OR SUM(rows_examined) >= $OUTLIER_MIN_ROWS_EXAMINED
+   )
+ORDER BY priority_score DESC, total_query_s DESC, rows_examined_total DESC
+LIMIT $TOP_N;
+"
+
+  echo
+  echo "=== Priority outliers by single-statement tail latency ==="
+  run_mysql_query "
+SELECT
+  DATE_FORMAT(start_time, '%Y-%m-%d %H:%i:%s') AS started,
+  ROUND(TIME_TO_SEC(query_time), 4) AS query_s,
+  rows_examined,
+  rows_sent,
+  LEFT(REPLACE(REPLACE(sql_text, CHAR(10), ' '), CHAR(13), ' '), 280) AS sample_sql
+FROM mysql.slow_log
+WHERE start_time >= '$STARTED_AT_UTC'
+  AND (
+    TIME_TO_SEC(query_time) >= $OUTLIER_MIN_AVG_S
+    OR rows_examined >= $OUTLIER_MIN_ROWS_EXAMINED
+  )
+ORDER BY query_time DESC, rows_examined DESC
 LIMIT $TOP_N;
 "
 
