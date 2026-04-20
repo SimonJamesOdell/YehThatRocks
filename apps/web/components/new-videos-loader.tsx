@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { VideoRecord } from "@/lib/catalog";
@@ -27,6 +27,25 @@ type SuggestOutcome = {
   track?: string | null;
 };
 
+type NewVideosApiPayload = {
+  videos?: VideoRecord[];
+  hasMore?: boolean;
+  nextOffset?: number;
+};
+
+const NEW_INITIAL_BATCH_SIZE = 12;
+const NEW_STARTUP_PREFETCH_TARGET = 100;
+const NEW_SCROLL_BATCH_SIZE = 10;
+const NEW_SCROLL_PREFETCH_THRESHOLD_PX = 1400;
+const NEW_SCROLL_START_RATIO = 0.5;
+const NEW_PLAYLIST_MAX_ITEMS = 100;
+
+type ScrollMetrics = {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+};
+
 function dedupeVideos(videos: VideoRecord[]) {
   const seen = new Set<string>();
 
@@ -47,6 +66,47 @@ function filterHiddenVideos(videos: VideoRecord[], hiddenVideoIdSet: Set<string>
 
   return videos.filter((video) => !hiddenVideoIdSet.has(video.id));
 }
+
+type NewVideoRowProps = {
+  track: VideoRecord;
+  index: number;
+  isAuthenticated: boolean;
+  isSeen: boolean;
+  onFlagVideo?: (track: VideoRecord) => void;
+  isFlagPending: boolean;
+};
+
+const NewVideoRow = memo(function NewVideoRow({
+  track,
+  index,
+  isAuthenticated,
+  isSeen,
+  onFlagVideo,
+  isFlagPending,
+}: NewVideoRowProps) {
+  return (
+    <Top100VideoLink
+      key={track.id}
+      track={track}
+      index={index}
+      isAuthenticated={isAuthenticated}
+      isSeen={isSeen}
+      rowVariant="new"
+      onFlagVideo={onFlagVideo}
+      isFlagPending={isFlagPending}
+    />
+  );
+}, (prev, next) => {
+  return prev.track.id === next.track.id
+    && prev.track.title === next.track.title
+    && prev.track.channelTitle === next.track.channelTitle
+    && prev.track.favourited === next.track.favourited
+    && prev.index === next.index
+    && prev.isAuthenticated === next.isAuthenticated
+    && prev.isSeen === next.isSeen
+    && prev.isFlagPending === next.isFlagPending
+    && prev.onFlagVideo === next.onFlagVideo;
+});
 
 export function NewVideosLoader({
   initialVideos,
@@ -79,21 +139,224 @@ export function NewVideosLoader({
   const [suggestOutcome, setSuggestOutcome] = useState<SuggestOutcome | null>(null);
   const [isCreatingPlaylistFromNew, setIsCreatingPlaylistFromNew] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [hideSeen, setHideSeen] = useSeenTogglePreference({
     key: NEW_HIDE_SEEN_TOGGLE_KEY,
     isAuthenticated,
   });
+  const nextOffsetRef = useRef(initialVideos.length);
+  const requestedOffsetsRef = useRef(new Set<number>());
+  const emptyBatchStreakRef = useRef(0);
+  const hasMoreRef = useRef(true);
+  const isLoadingMoreRef = useRef(false);
+  const prefetchInFlightRef = useRef(false);
+  const lastPrefetchAtRef = useRef(0);
+  const allVideoIdsRef = useRef(new Set<string>());
   const seenVideoIdSet = useMemo(() => new Set(seenVideoIds), [seenVideoIds]);
   const visibleVideos = useMemo(
     () => (isAuthenticated && hideSeen ? allVideos.filter((v) => !seenVideoIdSet.has(v.id)) : allVideos),
     [allVideos, hideSeen, isAuthenticated, seenVideoIdSet],
   );
 
-  const handleOpenFlagDialog = (track: VideoRecord) => {
+  useEffect(() => {
+    allVideoIdsRef.current = new Set(allVideos.map((video) => video.id));
+  }, [allVideos]);
+
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
+
+  useEffect(() => {
+    isLoadingMoreRef.current = isLoadingMore;
+  }, [isLoadingMore]);
+
+  const handleOpenFlagDialog = useCallback((track: VideoRecord) => {
     setFlaggingVideo(track);
     setFlagReason("broken-playback");
     setFlagStatus(null);
-  };
+  }, []);
+
+  const appendFetchedVideos = useCallback((videos: VideoRecord[]) => {
+    if (videos.length === 0) {
+      return 0;
+    }
+
+    const filteredIncoming = filterHiddenVideos(videos, hiddenVideoIdSet);
+    const uniqueIncoming = filteredIncoming.filter((video) => {
+      if (!video?.id || allVideoIdsRef.current.has(video.id)) {
+        return false;
+      }
+
+      allVideoIdsRef.current.add(video.id);
+      return true;
+    });
+
+    if (uniqueIncoming.length > 0) {
+      startTransition(() => {
+        setAllVideos((prev) => [...prev, ...uniqueIncoming]);
+      });
+    }
+
+    return uniqueIncoming.length;
+  }, [hiddenVideoIdSet]);
+
+  const loadBatch = useCallback(async (skip: number, take: number, options?: { initial?: boolean }) => {
+    if (requestedOffsetsRef.current.has(skip)) {
+      return { received: 0, added: 0 };
+    }
+
+    requestedOffsetsRef.current.add(skip);
+
+    if (options?.initial) {
+      setLoadMoreError(null);
+    } else {
+      setIsLoadingMore(true);
+      setLoadMoreError(null);
+    }
+
+    try {
+      const response = await fetch(`/api/videos/newest?skip=${skip}&take=${take}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("new-videos-load-failed");
+      }
+
+      const payload = (await response.json()) as NewVideosApiPayload;
+      const videos = Array.isArray(payload.videos) ? payload.videos : [];
+      const received = videos.length;
+      const added = appendFetchedVideos(videos);
+
+      const nextOffset = Number(payload.nextOffset);
+      nextOffsetRef.current = Number.isFinite(nextOffset) ? nextOffset : skip + received;
+
+      if (received === 0) {
+        emptyBatchStreakRef.current += 1;
+      } else {
+        emptyBatchStreakRef.current = 0;
+      }
+
+      if (received === 0 && (payload.hasMore === false || emptyBatchStreakRef.current >= 2)) {
+        setHasMore(false);
+      } else if (received > 0) {
+        // Keep advancing while server still yields rows, even if hasMore is conservative.
+        setHasMore(true);
+      }
+
+      return { received, added };
+    } catch {
+      requestedOffsetsRef.current.delete(skip);
+      if (!options?.initial) {
+        setLoadMoreError("Could not load more new videos. Scroll again to retry.");
+      }
+      return { received: 0, added: 0 };
+    } finally {
+      requestedOffsetsRef.current.delete(skip);
+      if (!options?.initial) {
+        setIsLoadingMore(false);
+      }
+    }
+  }, [appendFetchedVideos]);
+
+  const readActiveScrollMetrics = useCallback((metrics?: ScrollMetrics): ScrollMetrics => {
+    if (metrics) {
+      return metrics;
+    }
+
+    const overlay = document.querySelector<HTMLElement>(".favouritesBlindInner");
+    if (overlay && overlay.scrollHeight > overlay.clientHeight) {
+      return {
+        scrollTop: overlay.scrollTop,
+        scrollHeight: overlay.scrollHeight,
+        clientHeight: overlay.clientHeight,
+      };
+    }
+
+    return {
+      scrollTop: window.scrollY,
+      scrollHeight: document.documentElement.scrollHeight,
+      clientHeight: window.innerHeight,
+    };
+  }, []);
+
+  const maybeLoadMoreFromScroll = useCallback(async (metrics?: ScrollMetrics) => {
+    if (prefetchInFlightRef.current || loading || isLoadingMoreRef.current || !hasMoreRef.current) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastPrefetchAtRef.current < 120) {
+      return;
+    }
+    lastPrefetchAtRef.current = now;
+
+    prefetchInFlightRef.current = true;
+
+    try {
+      const activeMetrics = readActiveScrollMetrics(metrics);
+      const maxScrollablePx = Math.max(0, activeMetrics.scrollHeight - activeMetrics.clientHeight);
+      if (maxScrollablePx <= 0) {
+        return;
+      }
+
+      const scrollProgress = activeMetrics.scrollTop / maxScrollablePx;
+      if (scrollProgress < NEW_SCROLL_START_RATIO) {
+        return;
+      }
+
+      const remainingScrollablePx = Math.max(0, maxScrollablePx - activeMetrics.scrollTop);
+      if (remainingScrollablePx > NEW_SCROLL_PREFETCH_THRESHOLD_PX) {
+        return;
+      }
+
+      await loadBatch(nextOffsetRef.current, NEW_SCROLL_BATCH_SIZE);
+    } finally {
+      prefetchInFlightRef.current = false;
+    }
+  }, [loadBatch, loading, readActiveScrollMetrics]);
+
+  useEffect(() => {
+    if (loading || !hasMore) {
+      return;
+    }
+
+    const overlay = document.querySelector<HTMLElement>(".favouritesBlindInner");
+
+    const onWindowScroll = () => {
+      void maybeLoadMoreFromScroll();
+    };
+
+    const onOverlayScroll = (event: Event) => {
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        void maybeLoadMoreFromScroll();
+        return;
+      }
+
+      void maybeLoadMoreFromScroll({
+        scrollTop: target.scrollTop,
+        scrollHeight: target.scrollHeight,
+        clientHeight: target.clientHeight,
+      });
+    };
+
+    window.addEventListener("scroll", onWindowScroll, { passive: true });
+    if (overlay) {
+      overlay.addEventListener("scroll", onOverlayScroll, { passive: true });
+    }
+
+    return () => {
+      window.removeEventListener("scroll", onWindowScroll);
+      if (overlay) {
+        overlay.removeEventListener("scroll", onOverlayScroll);
+      }
+    };
+  }, [hasMore, loading, maybeLoadMoreFromScroll]);
 
   const handleCloseFlagDialog = () => {
     if (flagPendingVideoId) {
@@ -173,7 +436,7 @@ export function NewVideosLoader({
       return;
     }
 
-    const sourceVideos = visibleVideos;
+    const sourceVideos = visibleVideos.slice(0, NEW_PLAYLIST_MAX_ITEMS);
     const videoIds = sourceVideos.map((video) => video.id).filter(Boolean);
 
     if (videoIds.length === 0) {
@@ -414,33 +677,25 @@ export function NewVideosLoader({
   useEffect(() => {
     const loadVideos = async () => {
       try {
-        let working = dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet));
+        const working = dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet));
+        allVideoIdsRef.current = new Set(working.map((video) => video.id));
+        setAllVideos(working);
+        nextOffsetRef.current = working.length;
+        requestedOffsetsRef.current.clear();
+        emptyBatchStreakRef.current = 0;
+        setHasMore(true);
+        setLoadMoreError(null);
 
         if (working.length === 0) {
-          const initialResponse = await fetch(`/api/videos/newest?skip=0&take=10`, {
-            method: "GET",
-            headers: { "Content-Type": "application/json" },
-            cache: "no-store",
-          });
-
-          if (initialResponse.ok) {
-            const { videos } = (await initialResponse.json()) as { videos: VideoRecord[] };
-            working = dedupeVideos(filterHiddenVideos(videos, hiddenVideoIdSet));
-            setAllVideos(working);
-          }
+          await loadBatch(0, NEW_INITIAL_BATCH_SIZE, { initial: true });
         }
 
-        const remainingTake = Math.max(0, 100 - working.length);
-        if (remainingTake > 0) {
-          const response = await fetch(`/api/videos/newest?skip=${working.length}&take=${remainingTake}`, {
-            method: "GET",
-            headers: { "Content-Type": "application/json" },
-            cache: "no-store",
-          });
-
-          if (response.ok) {
-            const { videos } = (await response.json()) as { videos: VideoRecord[] };
-            setAllVideos((prev) => dedupeVideos([...prev, ...filterHiddenVideos(videos, hiddenVideoIdSet)]));
+        while (nextOffsetRef.current < NEW_STARTUP_PREFETCH_TARGET && hasMoreRef.current) {
+          const remaining = NEW_STARTUP_PREFETCH_TARGET - nextOffsetRef.current;
+          const take = Math.max(1, Math.min(NEW_INITIAL_BATCH_SIZE, remaining));
+          const result = await loadBatch(nextOffsetRef.current, take, { initial: true });
+          if (result.received === 0) {
+            break;
           }
         }
 
@@ -452,7 +707,7 @@ export function NewVideosLoader({
     };
 
     void loadVideos();
-  }, [hiddenVideoIdSet, initialVideos, isAuthenticated]);
+  }, [hiddenVideoIdSet, initialVideos, isAuthenticated, loadBatch]);
 
   return (
     <>
@@ -504,13 +759,12 @@ export function NewVideosLoader({
       {playlistStatus ? <p className="rightRailStatus">{playlistStatus}</p> : null}
       <div className="trackStack spanTwoColumns">
       {visibleVideos.map((track, index) => (
-        <Top100VideoLink
+        <NewVideoRow
           key={track.id}
           track={track}
           index={index}
           isAuthenticated={isAuthenticated}
           isSeen={seenVideoIdSet.has(track.id)}
-          rowVariant="new"
           onFlagVideo={isAuthenticated ? handleOpenFlagDialog : undefined}
           isFlagPending={flagPendingVideoId === track.id}
         />
@@ -526,6 +780,9 @@ export function NewVideosLoader({
           <span>Loading new videos...</span>
         </div>
       )}
+      {!loading && isLoadingMore ? <p className="rightRailStatus">Loading more new videos...</p> : null}
+      {!loading && loadMoreError ? <p className="rightRailStatus rightRailStatusError">{loadMoreError}</p> : null}
+      {!loading && !hasMore && allVideos.length > 0 ? <p className="rightRailStatus">End of new videos.</p> : null}
 
       {flaggingVideo ? (
         <div

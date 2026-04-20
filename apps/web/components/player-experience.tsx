@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type UIEvent } from "react";
+import { ChangeEvent, memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent as ReactMouseEvent, type UIEvent } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
@@ -214,6 +214,117 @@ function buildGeneratedPlaylistName() {
   return `Playlist ${datePart} ${timePart}`;
 }
 
+type EndedChoiceCardProps = {
+  video: VideoRecord;
+  index: number;
+  isSeen: boolean;
+  isHiding: boolean;
+  shouldAnimateCard: boolean;
+  isLoggedIn: boolean;
+  onSelect: (videoId: string) => void;
+  onHide: (video: VideoRecord) => void;
+  onMeasure?: (node: HTMLDivElement | null) => void;
+};
+
+const EndedChoiceCard = memo(function EndedChoiceCard({
+  video,
+  index,
+  isSeen,
+  isHiding,
+  shouldAnimateCard,
+  isLoggedIn,
+  onSelect,
+  onHide,
+  onMeasure,
+}: EndedChoiceCardProps) {
+  const cardClassName = isHiding
+    ? "endedChoiceCardSlot endedChoiceCardSlotExiting"
+    : shouldAnimateCard
+      ? "endedChoiceCardSlot"
+      : "endedChoiceCardSlot endedChoiceCardSlotStatic";
+
+  const cardStyle = shouldAnimateCard
+    ? {
+        "--ended-choice-row-4": Math.min(3, Math.floor(index / 4)),
+        "--ended-choice-row-2": Math.min(5, Math.floor(index / 2)),
+        "--ended-choice-row-1": Math.min(7, index),
+      } as CSSProperties
+    : undefined;
+
+  const handleHide = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    onHide(video);
+  }, [onHide, video]);
+
+  const handleSelect = useCallback(() => {
+    onSelect(video.id);
+  }, [onSelect, video.id]);
+
+  return (
+    <div
+      ref={onMeasure}
+      className={cardClassName}
+      style={cardStyle}
+    >
+      {isLoggedIn ? (
+        <button
+          type="button"
+          className="endedChoiceCardHideBtn"
+          aria-label={`Hide ${video.title} from suggestions`}
+          title="Hide from suggestions"
+          onClick={handleHide}
+          disabled={isHiding}
+        >×</button>
+      ) : null}
+      <button
+        type="button"
+        className={isSeen ? "playerEndedChoiceCard playerEndedChoiceCardSeen" : "playerEndedChoiceCard"}
+        onClick={handleSelect}
+      >
+        <div className="playerEndedChoiceThumbWrap">
+          <img
+            src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
+            alt=""
+            className="playerEndedChoiceThumb"
+            loading="lazy"
+          />
+          {isSeen ? <span className="playerEndedChoiceSeenBadge">Seen</span> : null}
+        </div>
+        <span className="playerEndedChoiceMeta">
+          <span className="playerEndedChoiceTitle">
+            {video.title}
+          </span>
+          <span className="playerEndedChoiceChannel">
+            <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
+              {video.channelTitle}
+            </ArtistWikiLink>
+          </span>
+        </span>
+      </button>
+      {isLoggedIn ? (
+        <AddToPlaylistButton
+          videoId={video.id}
+          isAuthenticated={isLoggedIn}
+          className="endedChoiceCardPlaylistBtn"
+          compact
+        />
+      ) : null}
+    </div>
+  );
+}, (prev, next) => {
+  return prev.video.id === next.video.id
+    && prev.video.title === next.video.title
+    && prev.video.channelTitle === next.video.channelTitle
+    && prev.index === next.index
+    && prev.isSeen === next.isSeen
+    && prev.isHiding === next.isHiding
+    && prev.shouldAnimateCard === next.shouldAnimateCard
+    && prev.isLoggedIn === next.isLoggedIn
+    && prev.onSelect === next.onSelect
+    && prev.onHide === next.onHide
+    && prev.onMeasure === next.onMeasure;
+});
+
 function switchPlayerVideo(player: YouTubePlayer, videoId: string) {
   const playerWithFallbacks = player as YouTubePlayer & {
     cueVideoById?: (id: string) => void;
@@ -307,12 +418,14 @@ export function PlayerExperience({
   const [endedChoiceGridExiting, setEndedChoiceGridExiting] = useState(false);
   const [endedChoiceHidingIds, setEndedChoiceHidingIds] = useState<string[]>([]);
   const [endedChoiceDismissedIds, setEndedChoiceDismissedIds] = useState<string[]>([]);
+  const [endedChoiceAnimateCards, setEndedChoiceAnimateCards] = useState(true);
   const [endedChoiceHideSeen, setEndedChoiceHideSeen] = useSeenTogglePreference({
     key: ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY,
     isAuthenticated: isLoggedIn,
   });
   const [endedChoiceLoading, setEndedChoiceLoading] = useState(false);
   const [endedChoiceRemoteVideos, setEndedChoiceRemoteVideos] = useState<VideoRecord[]>([]);
+  const endedChoiceRemoteVideosRef = useRef<VideoRecord[]>([]);
   const [playerClosedByEndOfVideo, setPlayerClosedByEndOfVideo] = useState(false);
   const [playlistChooserOpen, setPlaylistChooserOpen] = useState(false);
   const [overlayInstance, setOverlayInstance] = useState(0);
@@ -374,10 +487,14 @@ export function PlayerExperience({
   const [adminEditStatus, setAdminEditStatus] = useState<string | null>(null);
   const endedChoiceOverlayRef = useRef<HTMLDivElement | null>(null);
   const endedChoicePrefetchRafRef = useRef<number | null>(null);
+  const endedChoiceRowHeightRef = useRef(220);
   const endedChoiceUserScrolledRef = useRef(false);
   const endedChoiceFetchingRef = useRef(false);
   const endedChoiceHasMoreRef = useRef(true);
   const endedChoiceSkipRef = useRef(0);
+  const endedChoiceAutoRetryBlockedUntilRef = useRef(0);
+  const endedChoiceNoProgressStreakRef = useRef(0);
+  const endedChoiceFailureStreakRef = useRef(0);
   const endedChoiceOverlayVisibleRef = useRef(false);
   const endedChoicePrewarmVideoIdRef = useRef<string | null>(null);
   const pointerPositionRef = useRef<{ x: number; y: number } | null>(null);
@@ -396,12 +513,20 @@ export function PlayerExperience({
     setLocalChannelTitleOverride(null);
     setEndedChoiceLoading(false);
     setEndedChoiceRemoteVideos([]);
+    setEndedChoiceAnimateCards(true);
     endedChoiceUserScrolledRef.current = false;
     endedChoiceFetchingRef.current = false;
     endedChoiceHasMoreRef.current = true;
     endedChoiceSkipRef.current = 0;
+    endedChoiceAutoRetryBlockedUntilRef.current = 0;
+    endedChoiceNoProgressStreakRef.current = 0;
+    endedChoiceFailureStreakRef.current = 0;
     endedChoicePrewarmVideoIdRef.current = null;
   }, [currentVideo]);
+
+  useEffect(() => {
+    endedChoiceRemoteVideosRef.current = endedChoiceRemoteVideos;
+  }, [endedChoiceRemoteVideos]);
 
   useEffect(() => {
     endedChoiceOverlayVisibleRef.current = showEndedChoiceOverlay;
@@ -1839,7 +1964,7 @@ export function PlayerExperience({
                     endedChoiceHasMoreRef.current = true;
                     endedChoiceSkipRef.current = 0;
                     setEndedChoiceRemoteVideos([]);
-                    void fetchEndedChoiceSets(ENDED_CHOICE_INITIAL_PREFETCH_SETS);
+                    void fetchEndedChoiceSets(ENDED_CHOICE_INITIAL_PREFETCH_SETS, { background: true });
                   }
 
                   const progressPercent = liveDuration > 0 ? (liveTime / liveDuration) * 100 : 0;
@@ -2227,7 +2352,7 @@ export function PlayerExperience({
     setShowShareMenu(false);
   }
 
-  function handleEndedChoiceSelect(videoId: string) {
+  const handleEndedChoiceSelect = useCallback((videoId: string) => {
     const playlistIndex = playlistQueueIds.findIndex((candidateId) => candidateId === videoId);
 
     setShowEndedChoiceOverlay(false);
@@ -2237,9 +2362,24 @@ export function PlayerExperience({
       playlistId: playlistIndex >= 0 ? activePlaylistId : null,
       playlistItemIndex: playlistIndex >= 0 ? playlistIndex : null,
     });
-  }
+  }, [activePlaylistId, navigateToVideo, playlistQueueIds]);
 
-  async function fetchEndedChoiceSets(setCount: number) {
+  async function fetchEndedChoiceSets(setCount: number, options?: { background?: boolean }) {
+    const isBackground = options?.background === true;
+    const applyRetryBackoff = (baseMs: number) => {
+      if (!isBackground) {
+        return;
+      }
+
+      const failureStreak = Math.max(1, endedChoiceFailureStreakRef.current);
+      const cappedBackoff = Math.min(15_000, baseMs * Math.min(8, failureStreak));
+      endedChoiceAutoRetryBlockedUntilRef.current = Date.now() + cappedBackoff;
+    };
+
+    if (isBackground && Date.now() < endedChoiceAutoRetryBlockedUntilRef.current) {
+      return;
+    }
+
     if (setCount <= 0 || endedChoiceFetchingRef.current || !endedChoiceHasMoreRef.current) {
       return;
     }
@@ -2247,7 +2387,9 @@ export function PlayerExperience({
     const take = Math.max(1, setCount) * ENDED_CHOICE_SET_SIZE;
     const skip = endedChoiceSkipRef.current;
     endedChoiceFetchingRef.current = true;
-    setEndedChoiceLoading(true);
+    if (!isBackground) {
+      setEndedChoiceLoading(true);
+    }
 
     try {
       const params = new URLSearchParams();
@@ -2264,8 +2406,12 @@ export function PlayerExperience({
       });
 
       if (!response.ok) {
+        endedChoiceFailureStreakRef.current += 1;
+        applyRetryBackoff(1_200);
         return;
       }
+
+      endedChoiceFailureStreakRef.current = 0;
 
       const payload = (await response.json().catch(() => null)) as
         | {
@@ -2286,6 +2432,7 @@ export function PlayerExperience({
 
       if (fetchedVideos.length === 0 && !payloadHasMore) {
         endedChoiceHasMoreRef.current = false;
+        endedChoiceNoProgressStreakRef.current = 0;
         return;
       }
 
@@ -2294,28 +2441,64 @@ export function PlayerExperience({
       }
 
       if (fetchedVideos.length === 0) {
+        endedChoiceNoProgressStreakRef.current += 1;
+        if (endedChoiceNoProgressStreakRef.current >= 3) {
+          // Repeated empty windows are a strong signal this pagination branch is exhausted.
+          endedChoiceHasMoreRef.current = false;
+        } else {
+          applyRetryBackoff(1_500);
+        }
         return;
       }
 
-      setEndedChoiceRemoteVideos((previous) => {
-        const existing = new Set(previous.map((video) => video.id));
-        const merged = [...previous];
+      const existingIds = new Set(endedChoiceRemoteVideosRef.current.map((video) => video.id));
+      const uniqueToAdd = fetchedVideos.filter((video) => !existingIds.has(video.id));
+      const addedCount = uniqueToAdd.length;
 
-        for (const video of fetchedVideos) {
-          if (existing.has(video.id)) {
-            continue;
-          }
+      if (addedCount > 0) {
+        startTransition(() => {
+          setEndedChoiceRemoteVideos((previous) => {
+            const previousIds = new Set(previous.map((video) => video.id));
+            const next = [...previous];
 
-          existing.add(video.id);
-          merged.push(video);
+            for (const video of uniqueToAdd) {
+              if (previousIds.has(video.id)) {
+                continue;
+              }
+
+              previousIds.add(video.id);
+              next.push(video);
+            }
+
+            return next;
+          });
+        });
+      }
+
+      if (addedCount <= 0) {
+        endedChoiceNoProgressStreakRef.current += 1;
+        if (endedChoiceNoProgressStreakRef.current >= 3) {
+          endedChoiceHasMoreRef.current = false;
+        } else {
+          applyRetryBackoff(1_200);
         }
+        return;
+      }
 
-        return merged;
-      });
+      endedChoiceNoProgressStreakRef.current = 0;
+      endedChoiceAutoRetryBlockedUntilRef.current = 0;
+
+      if (skip > 0 || endedChoiceUserScrolledRef.current) {
+        setEndedChoiceAnimateCards(false);
+      }
     } catch {
+      endedChoiceFailureStreakRef.current += 1;
+      applyRetryBackoff(1_500);
       // Ignore transient failures; next scroll/prefetch will retry.
     } finally {
-      setEndedChoiceLoading(false);
+      if (!isBackground) {
+        setEndedChoiceLoading(false);
+      }
       endedChoiceFetchingRef.current = false;
     }
   }
@@ -2333,19 +2516,25 @@ export function PlayerExperience({
     return 4;
   }
 
+  const measureEndedChoiceCard = useCallback((node: HTMLDivElement | null) => {
+    if (!node) {
+      return;
+    }
+
+    const next = node.offsetHeight + 12;
+    if (next > 0) {
+      endedChoiceRowHeightRef.current = next;
+    }
+  }, []);
+
   function computeCurrentEndedChoiceSetIndex() {
     const overlay = endedChoiceOverlayRef.current;
     if (!overlay) {
       return 0;
     }
 
-    const firstCard = overlay.querySelector(".endedChoiceCardSlot") as HTMLElement | null;
-    if (!firstCard) {
-      return 0;
-    }
-
     const columns = Math.max(1, getEndedChoiceColumns());
-    const rowHeight = Math.max(1, firstCard.offsetHeight + 12);
+    const rowHeight = Math.max(1, endedChoiceRowHeightRef.current);
     const rowsScrolled = Math.max(0, Math.floor(overlay.scrollTop / rowHeight));
     const estimatedFirstVisibleIndex = rowsScrolled * columns;
     return Math.max(0, Math.floor(estimatedFirstVisibleIndex / ENDED_CHOICE_SET_SIZE));
@@ -2374,7 +2563,7 @@ export function PlayerExperience({
       const missingSets = Math.max(0, targetLoadedSets - loadedSets);
 
       if (missingSets > 0) {
-        void fetchEndedChoiceSets(missingSets);
+        void fetchEndedChoiceSets(missingSets, { background: true });
       }
     });
   }
@@ -2382,6 +2571,7 @@ export function PlayerExperience({
   function handleEndedChoiceOverlayScroll(event: UIEvent<HTMLDivElement>) {
     if (!endedChoiceUserScrolledRef.current && event.currentTarget.scrollTop > 0) {
       endedChoiceUserScrolledRef.current = true;
+      setEndedChoiceAnimateCards(false);
     }
 
     scheduleEndedChoicePrefetchCheck();
@@ -2404,11 +2594,15 @@ export function PlayerExperience({
       return;
     }
 
+    setEndedChoiceAnimateCards(true);
     endedChoiceHasMoreRef.current = true;
     endedChoiceSkipRef.current = 0;
+    endedChoiceNoProgressStreakRef.current = 0;
+    endedChoiceFailureStreakRef.current = 0;
+    endedChoiceAutoRetryBlockedUntilRef.current = 0;
     setEndedChoiceRemoteVideos([]);
     void fetchEndedChoiceSets(ENDED_CHOICE_INITIAL_PREFETCH_SETS);
-  }, [showEndedChoiceOverlay, currentVideo.id, endedChoiceRemoteVideos.length, endedChoiceReshuffleKey]);
+  }, [showEndedChoiceOverlay, currentVideo.id, endedChoiceReshuffleKey]);
 
   useEffect(() => {
     if (!showEndedChoiceOverlay || !endedChoiceUserScrolledRef.current) {
@@ -2433,7 +2627,7 @@ export function PlayerExperience({
     }
 
     const timeoutId = window.setTimeout(() => {
-      void fetchEndedChoiceSets(1);
+      void fetchEndedChoiceSets(1, { background: true });
     }, 140);
 
     return () => {
@@ -2451,8 +2645,12 @@ export function PlayerExperience({
     setEndedChoiceGridExiting(true);
     setTimeout(() => {
       endedChoiceUserScrolledRef.current = false;
+      setEndedChoiceAnimateCards(true);
       endedChoiceHasMoreRef.current = true;
       endedChoiceSkipRef.current = 0;
+      endedChoiceNoProgressStreakRef.current = 0;
+      endedChoiceFailureStreakRef.current = 0;
+      endedChoiceAutoRetryBlockedUntilRef.current = 0;
       endedChoicePrewarmVideoIdRef.current = null;
       setEndedChoiceRemoteVideos([]);
       setEndedChoiceReshuffleKey((k) => k + 1);
@@ -2460,14 +2658,14 @@ export function PlayerExperience({
     }, 280);
   }
 
-  function handleEndedChoiceHide(track: VideoRecord) {
+  const handleEndedChoiceHide = useCallback((track: VideoRecord) => {
     setEndedChoiceHidingIds((prev) => [...prev, track.id]);
     void onHideVideo?.(track);
     setTimeout(() => {
       setEndedChoiceHidingIds((prev) => prev.filter((id) => id !== track.id));
       setEndedChoiceDismissedIds((prev) => (prev.includes(track.id) ? prev : [...prev, track.id]));
     }, 400);
-  }
+  }, [onHideVideo]);
 
   function handleEndedChoiceWatchAgain() {
     setShowEndedChoiceOverlay(false);
@@ -3991,60 +4189,21 @@ export function PlayerExperience({
                 {endedChoiceGridVideos.map((video, index) => {
                   const isSeen = seenVideoIds?.has(video.id) ?? false;
                   const isHiding = endedChoiceHidingIds.includes(video.id);
+                  const shouldAnimateCard = endedChoiceAnimateCards && !isHiding;
+
                   return (
-                    <div
+                    <EndedChoiceCard
                       key={video.id}
-                      className={isHiding ? "endedChoiceCardSlot endedChoiceCardSlotExiting" : "endedChoiceCardSlot"}
-                      style={{
-                        "--ended-choice-row-4": Math.min(3, Math.floor(index / 4)),
-                        "--ended-choice-row-2": Math.min(5, Math.floor(index / 2)),
-                        "--ended-choice-row-1": Math.min(7, index),
-                      } as CSSProperties}
-                    >
-                      {isLoggedIn ? (
-                        <button
-                          type="button"
-                          className="endedChoiceCardHideBtn"
-                          aria-label={`Hide ${video.title} from suggestions`}
-                          title="Hide from suggestions"
-                          onClick={(e) => { e.stopPropagation(); handleEndedChoiceHide(video); }}
-                          disabled={isHiding}
-                        >×</button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className={isSeen ? "playerEndedChoiceCard playerEndedChoiceCardSeen" : "playerEndedChoiceCard"}
-                        onClick={() => handleEndedChoiceSelect(video.id)}
-                      >
-                        <div className="playerEndedChoiceThumbWrap">
-                          <img
-                            src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
-                            alt=""
-                            className="playerEndedChoiceThumb"
-                            loading="lazy"
-                          />
-                          {isSeen ? <span className="playerEndedChoiceSeenBadge">Seen</span> : null}
-                        </div>
-                        <span className="playerEndedChoiceMeta">
-                          <span className="playerEndedChoiceTitle">
-                            {video.title}
-                          </span>
-                          <span className="playerEndedChoiceChannel">
-                            <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
-                              {video.channelTitle}
-                            </ArtistWikiLink>
-                          </span>
-                        </span>
-                      </button>
-                      {isLoggedIn ? (
-                        <AddToPlaylistButton
-                          videoId={video.id}
-                          isAuthenticated={isLoggedIn}
-                          className="endedChoiceCardPlaylistBtn"
-                          compact
-                        />
-                      ) : null}
-                    </div>
+                      video={video}
+                      index={index}
+                      isSeen={isSeen}
+                      isHiding={isHiding}
+                      shouldAnimateCard={shouldAnimateCard}
+                      isLoggedIn={isLoggedIn}
+                      onSelect={handleEndedChoiceSelect}
+                      onHide={handleEndedChoiceHide}
+                      onMeasure={index === 0 ? measureEndedChoiceCard : undefined}
+                    />
                   );
                 })}
                 {endedChoiceLoading && endedChoiceGridVideos.length > 0 ? (
