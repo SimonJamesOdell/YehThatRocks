@@ -555,6 +555,7 @@ function ShellDynamicInner({
   );
   const [isAuthUnavailableDialogDismissed, setIsAuthUnavailableDialogDismissed] = useState(false);
   const [isRetryingAuthStatus, setIsRetryingAuthStatus] = useState(false);
+  const [isPerformanceQuickLaunchVisible, setIsPerformanceQuickLaunchVisible] = useState(false);
   const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);
   const [performanceMetrics, setPerformanceMetrics] = useState<PublicPerformancePayload["host"] | null>(null);
   const [performanceMetricsGeneratedAt, setPerformanceMetricsGeneratedAt] = useState<string | null>(null);
@@ -763,10 +764,25 @@ function ShellDynamicInner({
     } as CSSProperties)
     : undefined;
   const isMobileCommunityCollapsed = isMobileViewport && !isMobileCommunityOpen;
+  const isShellInitialUiSettled =
+    !isDesktopIntroActive
+    && !isWatchNextVideoSelectionPending
+    && hasBootstrappedWatchNext
+    && relatedTransitionPhase === "idle";
 
   useEffect(() => {
     setHasClientMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (isPerformanceQuickLaunchVisible) {
+      return;
+    }
+
+    if (isShellInitialUiSettled) {
+      setIsPerformanceQuickLaunchVisible(true);
+    }
+  }, [isPerformanceQuickLaunchVisible, isShellInitialUiSettled]);
 
   useEffect(() => {
     previousPathnameRef.current = pathname;
@@ -4163,15 +4179,17 @@ function ShellDynamicInner({
         </div>
       </header>
 
-      <button
-        type="button"
-        className="performanceQuickLaunch"
-        onClick={() => setIsPerformanceModalOpen(true)}
-        aria-label="Open server performance metrics"
-        title="Server performance"
-      >
-        <span aria-hidden="true">💻</span>
-      </button>
+      {isPerformanceQuickLaunchVisible ? (
+        <button
+          type="button"
+          className="performanceQuickLaunch"
+          onClick={() => setIsPerformanceModalOpen(true)}
+          aria-label="Open server performance metrics"
+          title="Server performance"
+        >
+          <span aria-hidden="true">💻</span>
+        </button>
+      ) : null}
 
       {isPerformanceModalOpen ? (
         <div

@@ -517,6 +517,7 @@ export function PlayerExperience({
   const autoplayEnabledRef = useRef(autoplayEnabled);
   const volumeRef = useRef(volume);
   const isMutedRef = useRef(isMuted);
+  const persistMutedPreferenceOnNextSyncRef = useRef(false);
   const hasActivePlaylistSequenceRef = useRef(false);
   const hasPlaybackStartedRef = useRef(false);
   const previousActivePlaylistIdRef = useRef<string | null>(activePlaylistId);
@@ -1606,7 +1607,11 @@ export function PlayerExperience({
     }
 
     window.localStorage.setItem(PLAYER_VOLUME_KEY, String(normalizePlayerVolume(volume, 100)));
-    window.localStorage.setItem(PLAYER_MUTED_KEY, String(isMuted));
+
+    if (persistMutedPreferenceOnNextSyncRef.current) {
+      window.localStorage.setItem(PLAYER_MUTED_KEY, String(isMuted));
+      persistMutedPreferenceOnNextSyncRef.current = false;
+    }
   }, [volume, isMuted]);
 
   useEffect(() => {
@@ -2854,6 +2859,7 @@ export function PlayerExperience({
       const previousId = playlistQueueIds[previousIndex] ?? null;
 
       if (previousId) {
+        pendingAutoAdvanceVideoIdRef.current = previousId;
         navigateToVideo(previousId, {
           playlistId: activePlaylistId,
           playlistItemIndex: previousIndex,
@@ -2872,6 +2878,7 @@ export function PlayerExperience({
     const trimmedHistory = historyStack.slice(0, -1);
     setHistoryStack(trimmedHistory);
     window.sessionStorage.setItem(HISTORY_KEY, JSON.stringify(trimmedHistory));
+    pendingAutoAdvanceVideoIdRef.current = previousId;
     router.push(
       `${pathname}?${new URLSearchParams({ ...Object.fromEntries(searchParams.entries()), v: previousId }).toString()}`,
     );
@@ -2884,6 +2891,7 @@ export function PlayerExperience({
       return;
     }
 
+    pendingAutoAdvanceVideoIdRef.current = nextTarget.videoId;
     navigateToVideo(nextTarget.videoId, {
       clearPlaylist: nextTarget.clearPlaylist,
       playlistId: activePlaylistId,
@@ -3777,12 +3785,6 @@ export function PlayerExperience({
         if (isPlaying) {
           playerRef.current.pauseVideo();
         } else {
-          // Some browsers/embeds can remain muted after reload until we explicitly unmute
-          // during a user-initiated play gesture.
-          if (!hasPlaybackStarted && isMuted && volume > 0) {
-            playerRef.current.unMute();
-            setIsMuted(false);
-          }
           notePlayAttempt();
           playerRef.current.playVideo();
         }
@@ -3796,18 +3798,32 @@ export function PlayerExperience({
       }
 
       function handleVolumeChange(e: ChangeEvent<HTMLInputElement>) {
-        if (!playerRef.current) return;
         const vol = toSafeNumber(Number(e.target.value), 0);
-        playerRef.current.setVolume(vol);
+
+        persistMutedPreferenceOnNextSyncRef.current = true;
         setVolume(vol);
+
+        if (vol > 0) {
+          setIsMuted(false);
+        }
+
+        if (!playerRef.current) {
+          return;
+        }
+
+        playerRef.current.setVolume(vol);
+
         if (vol > 0) {
           playerRef.current.unMute();
-          setIsMuted(false);
+        } else {
+          playerRef.current.mute();
+          setIsMuted(true);
         }
       }
 
       function handleMuteToggle() {
         if (!playerRef.current) return;
+        persistMutedPreferenceOnNextSyncRef.current = true;
         if (isMuted) {
           playerRef.current.unMute();
           setIsMuted(false);
@@ -3816,6 +3832,10 @@ export function PlayerExperience({
           setIsMuted(true);
         }
       }
+
+      const overlayVolumeValue = isMuted
+        ? 0
+        : Math.max(0, Math.min(100, toSafeNumber(volume, 100)));
 
       async function handleOpenAdminVideoEdit() {
         if (!isAdmin) {
@@ -4274,7 +4294,7 @@ export function PlayerExperience({
                       className="overlayVolumeSlider"
                       min={0}
                       max={100}
-                      value={isMuted ? 0 : Math.max(0, Math.min(100, toSafeNumber(volume, 100)))}
+                      value={overlayVolumeValue}
                       onChange={handleVolumeChange}
                       aria-label="Volume"
                     />

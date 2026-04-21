@@ -79,6 +79,7 @@ function main() {
   assertContains(playerExperienceSource, "window.localStorage.setItem(AUTOPLAY_KEY, ", "Player writes autoplay preference to localStorage", failures);
   assertContains(playerExperienceSource, "window.localStorage.setItem(PLAYER_VOLUME_KEY, String(normalizePlayerVolume(volume, 100)));", "Player writes volume preference to localStorage", failures);
   assertContains(playerExperienceSource, "window.localStorage.setItem(PLAYER_MUTED_KEY, String(isMuted));", "Player writes mute preference to localStorage", failures);
+  assertContains(playerExperienceSource, "persistMutedPreferenceOnNextSyncRef.current = true;", "Player only persists mute preference when the user explicitly changes mute state", failures);
   assertContains(playerExperienceSource, "const activePlaylistId = searchParams.get(\"pl\");", "Player reads playlist context from query params", failures);
   assertContains(playerExperienceSource, "const playlistId = activePlaylistId;", "Player snapshots active playlist id before async loading", failures);
   assertContains(playerExperienceSource, "const response = await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {", "Player loads playlist sequence for ordered playback", failures);
@@ -93,6 +94,10 @@ function main() {
   assertContains(playerExperienceSource, "const shouldSuppress = Boolean(initialPageLoadVideoId && videoId === initialPageLoadVideoId);", "Player suppresses autoplay only for initial page-load video", failures);
   assertContains(playerExperienceSource, "window.__ytrInitialPageLoadAutoplaySuppressed = true;", "Player marks first-load autoplay suppression as handled", failures);
   assertNotContains(playerExperienceSource, "ytr:initial-page-autoplay-suppressed", "Player should not persist first-load suppression in session storage", failures);
+  assertContains(playerExperienceSource, "notePlayAttempt();", "Player marks a play attempt before triggering custom playback", failures);
+  assertContains(playerExperienceSource, "playerRef.current.playVideo();", "Player custom play path delegates directly to iframe playback", failures);
+  assertNotContains(playerExperienceSource, "Some browsers/embeds can remain muted after reload until we explicitly unmute", "Player custom play path should not force an explicit unmute on first play", failures);
+  assertNotContains(playerExperienceSource, "if (!hasPlaybackStarted && volume > 0)", "Player custom play path should not special-case first-play unmute", failures);
 
   // End-of-video docked player close behaviour invariants.
   // When autoplay is off and the video ends in the docked position the player
@@ -183,12 +188,17 @@ function main() {
   // Public performance modal invariants.
   assertContains(shellDynamicSource, 'className="performanceQuickLaunch"', "Shell renders top-right performance launcher button", failures);
   assertContains(shellDynamicSource, 'aria-label="Open server performance metrics"', "Performance launcher includes accessible label", failures);
+  assertContains(shellDynamicSource, 'const [isPerformanceQuickLaunchVisible, setIsPerformanceQuickLaunchVisible] = useState(false);', "Shell tracks deferred visibility for the performance launcher", failures);
+  assertContains(shellDynamicSource, 'const isShellInitialUiSettled =', "Shell derives a settled-initial-UI gate before showing the performance launcher", failures);
+  assertContains(shellDynamicSource, 'if (isShellInitialUiSettled) {', "Shell waits for initial UI settling before showing the performance launcher", failures);
+  assertContains(shellDynamicSource, 'setIsPerformanceQuickLaunchVisible(true);', "Shell reveals the performance launcher only after initial UI settles", failures);
   assertContains(shellDynamicSource, 'const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);', "Shell tracks performance modal open state", failures);
   assertContains(shellDynamicSource, 'const PUBLIC_PERFORMANCE_POLL_MS = 2_500;', "Shell defines periodic polling interval for performance modal", failures);
   assertContains(shellDynamicSource, 'await fetch("/api/status/performance"', "Shell loads metrics from public performance status endpoint", failures);
   assertContains(shellDynamicSource, 'className="performanceModalOverlay"', "Shell renders performance modal backdrop overlay", failures);
   assertContains(shellDynamicSource, 'className="performanceModalDialog"', "Shell renders performance modal dialog container", failures);
   assertContains(shellDynamicSource, 'aria-labelledby="performance-modal-title"', "Performance modal exposes labelled dialog semantics", failures);
+  assertContains(shellDynamicSource, '{isPerformanceQuickLaunchVisible ? (', "Shell conditionally renders the performance launcher only when its deferred gate is open", failures);
   assertContains(shellDynamicSource, '<PerformanceDial label="Memory"', "Performance modal renders memory dial", failures);
   assertContains(shellDynamicSource, 'label="CPU"', "Performance modal renders CPU dial", failures);
   assertContains(shellDynamicSource, '<PerformanceDial label="Disk"', "Performance modal renders disk dial", failures);
