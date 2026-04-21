@@ -112,6 +112,8 @@ declare global {
   interface Window {
     YT?: YouTubeNamespace;
     onYouTubeIframeAPIReady?: () => void;
+    __ytrInitialPageLoadAutoplaySuppressed?: boolean;
+    __ytrInitialPageLoadVideoId?: string | null;
   }
 }
 
@@ -517,8 +519,6 @@ export function PlayerExperience({
   const hasActivePlaylistSequenceRef = useRef(false);
   const hasPlaybackStartedRef = useRef(false);
   const previousActivePlaylistIdRef = useRef<string | null>(activePlaylistId);
-  const initialPageLoadVideoIdRef = useRef(currentVideo.id);
-  const initialPageLoadAutoplayHandledRef = useRef(false);
   autoplayEnabledRef.current = autoplayEnabled;
   volumeRef.current = volume;
   isMutedRef.current = isMuted;
@@ -540,11 +540,6 @@ export function PlayerExperience({
     endedChoiceNoProgressStreakRef.current = 0;
     endedChoiceFailureStreakRef.current = 0;
     endedChoicePrewarmVideoIdRef.current = null;
-
-    if (currentVideo.id !== initialPageLoadVideoIdRef.current) {
-      // Once the user leaves the initial page-load video, never suppress autoplay again.
-      initialPageLoadAutoplayHandledRef.current = true;
-    }
   }, [currentVideo]);
 
   useEffect(() => {
@@ -902,11 +897,6 @@ export function PlayerExperience({
       && requestedVideoId === initialRequestedVideoIdRef.current
       && !hasLeftInitialRequestedVideoRef.current
       && !hasPlaybackStartedRef.current,
-  );
-  const shouldAutoplaySelection = Boolean(
-    requestedVideoId
-      && requestedVideoId === currentVideo.id
-      && !isInitialDeepLinkedSelection,
   );
   const endedChoiceSeedVideos = useMemo(() => {
     const deduped = new Map<string, NextChoiceVideo>();
@@ -1266,15 +1256,26 @@ export function PlayerExperience({
   }
 
   function shouldSuppressAutoplayForInitialPageLoad(videoId: string) {
-    if (initialPageLoadAutoplayHandledRef.current) {
+    if (typeof window === "undefined") {
       return false;
     }
 
-    if (videoId !== initialPageLoadVideoIdRef.current) {
+    if (window.__ytrInitialPageLoadAutoplaySuppressed) {
       return false;
     }
 
-    initialPageLoadAutoplayHandledRef.current = true;
+    if (window.__ytrInitialPageLoadVideoId === undefined) {
+      window.__ytrInitialPageLoadVideoId = currentVideoRef.current.id;
+    }
+
+    const initialPageLoadVideoId = window.__ytrInitialPageLoadVideoId;
+    const shouldSuppress = Boolean(initialPageLoadVideoId && videoId === initialPageLoadVideoId);
+
+    if (!shouldSuppress) {
+      return false;
+    }
+
+    window.__ytrInitialPageLoadAutoplaySuppressed = true;
     return true;
   }
 
@@ -1780,14 +1781,10 @@ export function PlayerExperience({
       return;
     }
 
-    if (!autoplayEnabled || autoplayRouteTransitionRef.current) {
-      return;
-    }
-
-    // Temporarily disable autoplay on route transition, but don't persist to localStorage.
-    // The user's preference is preserved; we just pause autoplay during navigation.
-    setAutoplayEnabled(false);
-  }, [pathname, autoplayEnabled]);
+    // Pause auto-advance logic while browsing overlay routes without changing
+    // the user's autoplay preference. Clicking a track should still start playback.
+    autoplayRouteTransitionRef.current = true;
+  }, [pathname]);
 
   useEffect(() => {
     function handleAdminOverlayEnter() {
@@ -1944,7 +1941,7 @@ export function PlayerExperience({
             setIsMuted(Boolean(playerRef.current.isMuted()));
           }
 
-          if (shouldAutoplaySelection && autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
+          if (autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
             const suppressForInitialPageLoad = shouldSuppressAutoplayForInitialPageLoad(currentVideo.id);
 
             if (!suppressForInitialPageLoad) {
@@ -2045,7 +2042,7 @@ export function PlayerExperience({
               router.replace(`${pathname}?${params.toString()}`);
             }
 
-            if (shouldAutoplaySelection && autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
+            if (autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
               const suppressForInitialPageLoad = shouldSuppressAutoplayForInitialPageLoad(currentVideo.id);
 
               if (!suppressForInitialPageLoad) {
@@ -2437,8 +2434,8 @@ export function PlayerExperience({
 
   function triggerEndOfVideoAction(options?: { forceAutoplayAdvance?: boolean }) {
     const forceAutoplayAdvance = options?.forceAutoplayAdvance === true;
-    // Always honor autoplay once enabled, even for the initial deep-linked track.
-    const autoplayEnabledForCurrentTrack = autoplayEnabledRef.current && currentVideo.id.length > 0;
+    // Keep autoplay preference intact, but suspend auto-advance while on overlay routes.
+    const autoplayEnabledForCurrentTrack = autoplayEnabledRef.current && !autoplayRouteTransitionRef.current && currentVideo.id.length > 0;
 
     const shouldAutoAdvance =
       autoplayEnabledForCurrentTrack || forceAutoplayAdvance;

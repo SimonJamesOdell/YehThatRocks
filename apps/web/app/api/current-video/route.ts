@@ -356,7 +356,7 @@ export async function GET(request: NextRequest) {
       : [];
 
     if (usePagedRelatedPool) {
-      const poolSizeTarget = preferUnseenForEndedChoice
+      const poolSizeTarget = requestMode === "ended-choice"
         ? Math.max(1000, requestedRelatedOffset + requestedRelatedCount + 1)
         : requestedRelatedOffset + requestedRelatedCount + 1;
       const relatedPool = await getRelatedPoolForCurrentVideo(currentVideo.id, optionalAuth?.userId, poolSizeTarget);

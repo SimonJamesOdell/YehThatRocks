@@ -84,6 +84,13 @@ function main() {
   assertContains(playerExperienceSource, "const shouldAutoAdvance =", "Player computes auto-advance using playlist/deep-link/autoplay guard", failures);
   assertContains(playerExperienceSource, "const [showEndedChoiceOverlay, setShowEndedChoiceOverlay] = useState(false);", "Player tracks autoplay-off end chooser overlay state", failures);
   assertContains(playerExperienceSource, "setShowEndedChoiceOverlay(true);", "Player opens chooser overlay when autoplay-off playback ends", failures);
+  assertContains(playerExperienceSource, "__ytrInitialPageLoadAutoplaySuppressed?: boolean;", "Player tracks first-load autoplay suppression flag on window runtime", failures);
+  assertContains(playerExperienceSource, "__ytrInitialPageLoadVideoId?: string | null;", "Player tracks first-load video id on window runtime", failures);
+  assertContains(playerExperienceSource, "if (window.__ytrInitialPageLoadVideoId === undefined)", "Player initializes initial-load video id once per page lifecycle", failures);
+  assertContains(playerExperienceSource, "window.__ytrInitialPageLoadVideoId = currentVideoRef.current.id;", "Player snapshots initial page-load video id from current runtime video", failures);
+  assertContains(playerExperienceSource, "const shouldSuppress = Boolean(initialPageLoadVideoId && videoId === initialPageLoadVideoId);", "Player suppresses autoplay only for initial page-load video", failures);
+  assertContains(playerExperienceSource, "window.__ytrInitialPageLoadAutoplaySuppressed = true;", "Player marks first-load autoplay suppression as handled", failures);
+  assertNotContains(playerExperienceSource, "ytr:initial-page-autoplay-suppressed", "Player should not persist first-load suppression in session storage", failures);
 
   // End-of-video docked player close behaviour invariants.
   // When autoplay is off and the video ends in the docked position the player
