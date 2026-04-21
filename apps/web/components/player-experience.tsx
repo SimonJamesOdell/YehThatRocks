@@ -1621,13 +1621,7 @@ export function PlayerExperience({
 
     const nextVolume = normalizePlayerVolume(volume, 100);
     playerRef.current.setVolume(nextVolume);
-
-    if (isMuted) {
-      playerRef.current.mute();
-    } else {
-      playerRef.current.unMute();
-    }
-  }, [isMuted, isPlayerReady, volume]);
+  }, [isPlayerReady, volume]);
 
   useEffect(() => {
     if (!isLoggedIn || !isPlayerPreferencesServerHydrated || typeof window === "undefined") {
@@ -1997,14 +1991,6 @@ export function PlayerExperience({
             setDuration(toSafeNumber(event.target.getDuration(), 0));
 
             event.target.setVolume(normalizePlayerVolume(volumeRef.current, currentPlayerVolume));
-
-            if (isMutedRef.current) {
-              event.target.mute();
-              setIsMuted(true);
-            } else {
-              event.target.unMute();
-              setIsMuted(false);
-            }
 
             logPlayerDebug("onReady", {
               videoId: currentVideo.id,
@@ -3812,13 +3798,6 @@ export function PlayerExperience({
         }
 
         playerRef.current.setVolume(vol);
-
-        if (vol > 0) {
-          playerRef.current.unMute();
-        } else {
-          playerRef.current.mute();
-          setIsMuted(true);
-        }
       }
 
       function handleMuteToggle() {
