@@ -4,7 +4,7 @@ import { filterHiddenVideos } from "@/lib/catalog-data";
 import { getOptionalApiAuth } from "@/lib/auth-request";
 import { getTopVideosFast, warmTopVideos } from "@/lib/top-videos-cache";
 
-const TOP_VIDEOS_WAIT_MS = 800;
+const TOP_VIDEOS_WAIT_MS = 2_000;
 
 export async function GET(request: NextRequest) {
   const countParam = request.nextUrl.searchParams.get("count") ?? "100";
