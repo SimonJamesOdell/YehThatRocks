@@ -6843,6 +6843,175 @@ h1 {
   min-width: 160px;
 }
 
+.authStatusModalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(6, 2, 2, 0.6);
+  backdrop-filter: blur(7px) saturate(0.8);
+}
+
+.authStatusModalDialog {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 194, 168, 0.28);
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 84, 45, 0.2), transparent 44%),
+    linear-gradient(160deg, rgba(34, 8, 6, 0.96), rgba(11, 4, 4, 0.96));
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 126, 96, 0.16) inset;
+}
+
+.authStatusModalCopy {
+  display: grid;
+  gap: 8px;
+}
+
+.authStatusModalCopy strong {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.9rem;
+  color: #ffddd4;
+}
+
+.authStatusModalCopy p {
+  margin: 0;
+  color: rgba(255, 225, 218, 0.94);
+  line-height: 1.55;
+}
+
+.authStatusModalActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.authStatusModalActions button {
+  min-width: 160px;
+}
+
+.authStatusModalDismiss {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: none !important;
+}
+
+.performanceQuickLaunch {
+  position: fixed;
+  top: 6px;
+  right: 16px;
+  z-index: 1240;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  box-shadow: none;
+  color: #ffe7df;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  line-height: 1;
+  font-size: 0.95rem;
+}
+
+.performanceQuickLaunch:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.performanceModalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1255;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(6, 2, 2, 0.62);
+  backdrop-filter: blur(8px) saturate(0.82);
+}
+
+.performanceModalDialog {
+  width: min(760px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 194, 168, 0.28);
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 84, 45, 0.2), transparent 44%),
+    linear-gradient(160deg, rgba(34, 8, 6, 0.96), rgba(11, 4, 4, 0.96));
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 126, 96, 0.16) inset;
+}
+
+.performanceModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.performanceModalHeader h2 {
+  margin: 0;
+  font-size: clamp(1.2rem, 2vw, 1.6rem);
+}
+
+.performanceModalClose {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.performanceDialGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+  gap: 12px;
+}
+
+.performanceDialCard {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.performanceDialCard strong {
+  font-size: 0.84rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.performanceDialCard small {
+  text-align: center;
+  color: rgba(255, 225, 218, 0.86);
+  white-space: pre-line;
+  font-variant-numeric: tabular-nums;
+}
+
+.performanceModalMeta {
+  min-height: 1.4em;
+}
+
+.performanceModalMeta p {
+  margin: 0;
+  color: rgba(255, 225, 218, 0.9);
+  font-size: 0.88rem;
+}
+
 .anonymousAuthForm {
   padding: 0;
 }
@@ -7069,6 +7238,45 @@ h1 {
 
   .authStatusBannerActions button {
     width: 100%;
+  }
+
+  .authStatusModalOverlay {
+    padding: 14px;
+    align-items: end;
+  }
+
+  .authStatusModalDialog {
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+    padding: 18px;
+  }
+
+  .authStatusModalActions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .authStatusModalActions button {
+    width: 100%;
+  }
+
+  .performanceQuickLaunch {
+    top: 12px;
+    right: 12px;
+    width: 28px;
+    height: 28px;
+    font-size: 0.9rem;
+  }
+
+  .performanceModalOverlay {
+    padding: 12px;
+    align-items: end;
+  }
+
+  .performanceModalDialog {
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+    padding: 16px;
   }
 
   .authModalOverlay {

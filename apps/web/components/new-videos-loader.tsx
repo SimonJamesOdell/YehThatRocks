@@ -38,6 +38,10 @@ const NEW_STARTUP_PREFETCH_TARGET = 100;
 const NEW_SCROLL_BATCH_SIZE = 10;
 const NEW_SCROLL_PREFETCH_THRESHOLD_PX = 1400;
 const NEW_SCROLL_START_RATIO = 0.5;
+const NEW_SCROLL_AGGRESSIVE_START_RATIO = 0.35;
+const NEW_SCROLL_PREFETCH_EARLY_THRESHOLD_PX = 2200;
+const NEW_SCROLL_TARGET_RUNWAY_PX = 2600;
+const NEW_SCROLL_MAX_PREFETCH_BATCHES = 2;
 const NEW_PLAYLIST_MAX_ITEMS = 100;
 
 type ScrollMetrics = {
@@ -305,16 +309,44 @@ export function NewVideosLoader({
       }
 
       const scrollProgress = activeMetrics.scrollTop / maxScrollablePx;
-      if (scrollProgress < NEW_SCROLL_START_RATIO) {
-        return;
-      }
-
       const remainingScrollablePx = Math.max(0, maxScrollablePx - activeMetrics.scrollTop);
-      if (remainingScrollablePx > NEW_SCROLL_PREFETCH_THRESHOLD_PX) {
-        return;
+      const canUseAggressivePrefetch =
+        scrollProgress >= NEW_SCROLL_AGGRESSIVE_START_RATIO
+        && remainingScrollablePx <= NEW_SCROLL_PREFETCH_EARLY_THRESHOLD_PX;
+
+      if (scrollProgress < NEW_SCROLL_START_RATIO) {
+        if (!canUseAggressivePrefetch) {
+          return;
+        }
       }
 
-      await loadBatch(nextOffsetRef.current, NEW_SCROLL_BATCH_SIZE);
+      if (remainingScrollablePx > NEW_SCROLL_PREFETCH_THRESHOLD_PX) {
+        if (!canUseAggressivePrefetch) {
+          return;
+        }
+      }
+
+      let batchesLoaded = 0;
+
+      while (hasMoreRef.current && batchesLoaded < NEW_SCROLL_MAX_PREFETCH_BATCHES) {
+        const batchResult = await loadBatch(nextOffsetRef.current, NEW_SCROLL_BATCH_SIZE);
+        batchesLoaded += 1;
+
+        if (batchResult.received === 0 || batchResult.added === 0) {
+          break;
+        }
+
+        const refreshedMetrics = readActiveScrollMetrics();
+        const refreshedMaxScrollablePx = Math.max(0, refreshedMetrics.scrollHeight - refreshedMetrics.clientHeight);
+        if (refreshedMaxScrollablePx <= 0) {
+          break;
+        }
+
+        const refreshedRemainingScrollablePx = Math.max(0, refreshedMaxScrollablePx - refreshedMetrics.scrollTop);
+        if (refreshedRemainingScrollablePx >= NEW_SCROLL_TARGET_RUNWAY_PX) {
+          break;
+        }
+      }
     } finally {
       prefetchInFlightRef.current = false;
     }
