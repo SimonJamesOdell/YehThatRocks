@@ -942,7 +942,7 @@ const PARSED_ARTIST_NORM_INDEX = "idx_videos_parsed_artist_norm_fav_view_videoid
 let parsedArtistNormIndexAvailableCache: boolean | undefined;
 const ARTIST_VIDEOS_CACHE_TTL_MS = 60_000;
 const artistVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
-const ARTIST_NORM_VIDEO_POOL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min — artist pools change only on ingest
+const ARTIST_NORM_VIDEO_POOL_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min — artist pools change only on ingest; increased from 5 min to reduce query burden
 const artistNormVideoPoolCache = new Map<string, { expiresAt: number; rows: RankedVideoRow[] }>();
 const artistNormVideoPoolInFlight = new Map<string, { limit: number; promise: Promise<RankedVideoRow[]> }>();
 const RELATED_VIDEOS_CACHE_TTL_MS = 20_000;
@@ -1366,6 +1366,11 @@ async function getArtistVideoPoolByNormalizedName(normalizedArtist: string, limi
     const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
     const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
     const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
+    
+    // Optimization: Add IS NOT NULL check to make WHERE clause more selective with index.
+    // This further constrains the result set before the expensive EXISTS check.
+    const nullCheck = videoArtistNormColumn ? `AND v.${escapeSqlIdentifier(videoArtistNormColumn)} IS NOT NULL` : '';
+    
     const rows = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
       `
         SELECT
@@ -1377,6 +1382,7 @@ async function getArtistVideoPoolByNormalizedName(normalizedArtist: string, limi
         FROM videos v${videoArtistIndexHint}
         WHERE ${videoArtistNormExpr} = ?
           AND v.videoId IS NOT NULL
+          ${nullCheck}
           AND EXISTS (
             SELECT 1
             FROM site_videos sv

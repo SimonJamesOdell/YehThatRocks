@@ -14,8 +14,26 @@ const PROTECTED_API_PREFIXES = [
   "/api/auth/send-verification",
 ];
 
+const MOBILE_OR_TABLET_USER_AGENT_PATTERN = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Windows Phone|Opera Mini|Mobile|Tablet|Kindle|Silk|PlayBook/i;
+
 function isProtectedApi(pathname: string) {
   return PROTECTED_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+function isMobileOrTabletRequest(request: NextRequest) {
+  const userAgent = request.headers.get("user-agent") ?? "";
+  const secChUaMobile = request.headers.get("sec-ch-ua-mobile");
+  const secChUaPlatform = request.headers.get("sec-ch-ua-platform") ?? "";
+
+  if (secChUaMobile === "?1") {
+    return true;
+  }
+
+  if (/Android|iOS/i.test(secChUaPlatform)) {
+    return true;
+  }
+
+  return MOBILE_OR_TABLET_USER_AGENT_PATTERN.test(userAgent);
 }
 
 function sanitizedAuthHeaders(request: NextRequest) {
@@ -46,6 +64,20 @@ function withSecurityHeaders(response: NextResponse) {
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const requestHeaders = sanitizedAuthHeaders(request);
+
+  const isBrowserPageRequest = request.method === "GET" || request.method === "HEAD";
+  const shouldRedirectToDesktopOnly =
+    isBrowserPageRequest
+    && !pathname.startsWith("/api")
+    && pathname !== "/desktop-only"
+    && isMobileOrTabletRequest(request);
+
+  if (shouldRedirectToDesktopOnly) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/desktop-only";
+    redirectUrl.search = "";
+    return withSecurityHeaders(NextResponse.redirect(redirectUrl));
+  }
 
   if (!isProtectedApi(pathname)) {
     return withSecurityHeaders(
