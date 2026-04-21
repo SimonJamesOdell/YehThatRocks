@@ -190,12 +190,26 @@ export async function GET(request: NextRequest) {
 
   const { health } = await buildAdminHealthPayload();
 
-  const [users, videos, artists, categories] = await Promise.all([
-    prisma.user.count().catch(() => 0),
+  const [userCounts, videos, artists, categories] = await Promise.all([
+    prisma.$queryRaw<Array<{
+      users: bigint | number;
+      registeredUsers: bigint | number;
+      anonymousUsers: bigint | number;
+    }>>`
+      SELECT
+        COUNT(*) AS users,
+        SUM(CASE WHEN email IS NOT NULL AND TRIM(email) <> '' THEN 1 ELSE 0 END) AS registeredUsers,
+        SUM(CASE WHEN email IS NULL OR TRIM(email) = '' THEN 1 ELSE 0 END) AS anonymousUsers
+      FROM users
+    `.catch(() => []),
     prisma.video.count().catch(() => 0),
     prisma.artist.count().catch(() => 0),
     prisma.genreCard.count().catch(() => 0),
   ]);
+
+  const users = toNumber(userCounts[0]?.users);
+  const registeredUsers = toNumber(userCounts[0]?.registeredUsers);
+  const anonymousUsers = toNumber(userCounts[0]?.anonymousUsers);
 
   const locations = await prisma.$queryRaw<Array<{ location: string; count: bigint | number }>>`
     SELECT location, COUNT(*) AS count
@@ -507,6 +521,8 @@ export async function GET(request: NextRequest) {
     health,
     counts: {
       users,
+      registeredUsers,
+      anonymousUsers,
       videos,
       artists,
       categories,

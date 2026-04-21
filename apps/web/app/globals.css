@@ -712,6 +712,10 @@ h1 {
   align-items: stretch;
 }
 
+.heroGridAdminOverlayRoute {
+  grid-template-columns: var(--left-rail-width) minmax(0, 1fr);
+}
+
 .panel {
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -770,6 +774,10 @@ h1 {
   margin-bottom: 18px;
 }
 
+.railTabs.railTabsAdminOverlay {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .rightRailTabs {
   grid-template-columns: repeat(2, 1fr);
   margin-bottom: 12px;
@@ -807,6 +815,18 @@ h1 {
 .railTabs button {
   background: linear-gradient(180deg, rgba(108, 14, 16, 0.62), rgba(42, 7, 8, 0.7));
   box-shadow: none;
+}
+
+.railTabs .tabLabel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 18px;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.8rem;
+  letter-spacing: 0.01em;
+  user-select: none;
 }
 
 .railTabs .activeTab {
@@ -1276,6 +1296,13 @@ h1 {
     overflow: visible;
   }
 
+  .heroGridAdminOverlayRoute .playerChrome {
+    overflow: hidden;
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+
   .heroGridOverlayRoute .favouritesBlind {
     right: calc(-1 * (var(--right-rail-width) + 12px));
   }
@@ -1284,6 +1311,50 @@ h1 {
     right: 0;
     border-top-right-radius: 10px;
   }
+
+  .heroGridAdminOverlayRoute .favouritesBlind.favouritesBlindPlayerWidth {
+    right: 0;
+    border-top-right-radius: 10px;
+  }
+}
+
+.heroGridAdminOverlayRoute .playerDockLayer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
+.heroGridAdminOverlayRoute .favouritesBlind {
+  right: 0;
+  border-top-right-radius: 10px;
+}
+
+.heroGridAdminOverlayRoute .favouritesBlindInner {
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.heroGridAdminOverlayRoute .adminOverlayPage {
+  display: grid;
+  gap: 8px;
+  min-height: 100%;
+}
+
+.heroGridAdminOverlayRoute .adminOverlayPage .favouritesBlindBar {
+  margin-bottom: 0;
+  padding-top: 14px;
+  padding-bottom: 8px;
+}
+
+.heroGridAdminOverlayRoute .adminOverlayPage .featurePanel {
+  padding: 14px;
 }
 
 .favouritesBlindNoDrop {
@@ -6360,6 +6431,7 @@ h1 {
   text-decoration: underline;
   text-decoration-color: rgba(255, 115, 85, 0.55);
   text-underline-offset: 2px;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
@@ -6692,6 +6764,325 @@ h1 {
 .authMessage {
   margin: 4px 0 0;
   color: #ffd7cf;
+}
+
+.authChoiceStack {
+  display: grid;
+  gap: 10px;
+  max-width: 520px;
+  padding: 18px 18px 0;
+}
+
+.authSecondaryAction {
+  padding: 14px 18px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.authSupportCopy {
+  margin: 0;
+  color: rgba(255, 215, 207, 0.78);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.authStatusBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 12px 0 0;
+  padding: 14px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 194, 168, 0.24);
+  background:
+    linear-gradient(135deg, rgba(85, 22, 16, 0.92), rgba(33, 10, 8, 0.92)),
+    rgba(18, 8, 7, 0.94);
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.22);
+}
+
+.authStatusBannerCopy {
+  display: grid;
+  gap: 4px;
+}
+
+.authStatusBannerCopy strong {
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.authStatusBannerCopy p {
+  margin: 0;
+  color: rgba(255, 225, 218, 0.9);
+  line-height: 1.5;
+}
+
+.authStatusBannerActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.authStatusBannerActions button {
+  min-width: 160px;
+}
+
+.anonymousAuthForm {
+  padding: 0;
+}
+
+.authModalOverlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8, 3, 2, 0.82);
+  backdrop-filter: blur(6px);
+  z-index: 1000;
+}
+
+.authModalCard {
+  width: min(100%, 560px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top left, rgba(205, 58, 31, 0.18), transparent 34%),
+    linear-gradient(180deg, rgba(41, 10, 9, 0.98), rgba(17, 5, 4, 0.98)),
+    rgba(20, 8, 7, 0.98);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.authModalHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+  padding: 24px 24px 0;
+}
+
+.authModalHeaderCopy {
+  display: grid;
+  gap: 6px;
+}
+
+.authModalEyebrow {
+  margin: 0 0 4px;
+  color: rgba(255, 215, 207, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.72rem;
+}
+
+.authModalTitle {
+  margin: 0;
+  font-size: clamp(1.3rem, 2vw, 1.7rem);
+}
+
+.authModalLead {
+  margin: 0;
+  max-width: 42ch;
+  color: rgba(255, 226, 219, 0.8);
+  line-height: 1.5;
+}
+
+.authModalClose {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.authModalClose:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.authModalCopy {
+  font-size: 0.88rem;
+}
+
+.authModalFeatureBand {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+}
+
+.authModalFeatureGlyph {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #d44724, #75130d);
+  color: #fff4ef;
+  font-family: var(--font-display), cursive;
+  font-size: 1.35rem;
+  box-shadow: 0 10px 24px rgba(120, 22, 13, 0.35);
+}
+
+.authModalFeatureTitle {
+  display: block;
+  margin-bottom: 4px;
+  color: #fff4ef;
+}
+
+.authModalFeatureText {
+  margin: 0;
+  color: rgba(255, 226, 219, 0.72);
+  line-height: 1.45;
+}
+
+.authModalMetaRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.authModalLengthHint {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 226, 219, 0.72);
+  font-size: 0.77rem;
+  white-space: nowrap;
+}
+
+.authModalActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.authModalNotes {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 226, 219, 0.74);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.authModalNotes span::before {
+  content: "• ";
+  color: rgba(255, 132, 101, 0.88);
+}
+
+.authModalSecondary {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: none !important;
+}
+
+.anonymousAuthForm {
+  gap: 16px;
+  padding: 18px 24px 24px;
+}
+
+.anonymousAuthForm label > span {
+  color: rgba(255, 233, 227, 0.88);
+  font-size: 0.9rem;
+}
+
+.anonymousAuthForm input {
+  font-size: 1rem;
+}
+
+.authDivider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 520px;
+  padding: 8px 18px 0;
+  color: rgba(255, 215, 207, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.72rem;
+}
+
+.authDivider::before,
+.authDivider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.authAvailability {
+  margin: -2px 0 0;
+  min-height: 1.3em;
+  font-size: 0.88rem;
+  color: rgba(255, 215, 207, 0.68);
+}
+
+.authAvailabilityAvailable {
+  color: #a7f3be;
+}
+
+.authAvailabilityTaken,
+.authAvailabilityInvalid {
+  color: #ffb4aa;
+}
+
+.authAvailabilityChecking {
+  color: rgba(255, 215, 207, 0.82);
+}
+
+@media (max-width: 640px) {
+  .authStatusBanner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .authStatusBannerActions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .authStatusBannerActions button {
+    width: 100%;
+  }
+
+  .authModalOverlay {
+    padding: 16px;
+    align-items: end;
+  }
+
+  .authModalCard {
+    width: 100%;
+    border-radius: 20px 20px 0 0;
+  }
+
+  .authModalHeader,
+  .anonymousAuthForm {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .authModalMetaRow,
+  .authModalActions {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .authModalLengthHint {
+    justify-self: start;
+  }
 }
 
 .accountDetailsForm {
@@ -7175,8 +7566,25 @@ h1 {
 
 .adminOverviewHealthLayout {
   display: grid;
-  grid-template-columns: minmax(0, 4fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(0, 3.25fr) minmax(420px, 1.85fr);
   gap: 12px;
+}
+
+.adminOverviewStack {
+  display: grid;
+  gap: 8px;
+}
+
+.adminOverviewGraphToggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.adminOverviewDialsColumn {
+  display: grid;
+  gap: 8px;
+  align-content: start;
 }
 
 .adminOverviewDials {
@@ -7185,12 +7593,12 @@ h1 {
   flex-wrap: nowrap;
   align-items: flex-start;
   overflow-x: auto;
-  padding-bottom: 4px;
+  padding-bottom: 2px;
 }
 
 .adminOverviewHealthLayout .statusMetrics {
   margin-top: 0;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -7199,8 +7607,9 @@ h1 {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 8px 10px;
+  gap: 1px;
+  min-height: 56px;
+  padding: 6px 8px;
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
@@ -7208,17 +7617,18 @@ h1 {
 
 .adminOverviewHealthLayout .statusMetrics strong {
   display: block;
-  font-size: 0.66rem;
+  font-size: 0.6rem;
   font-weight: 500;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   opacity: 0.5;
   line-height: 1;
+  text-align: center;
 }
 
 .adminOverviewHealthLayout .statusMetrics p {
-  margin: 0;
-  font-size: 1.35rem;
+  margin: 8px 0 0;
+  font-size: 1.2rem;
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -7467,6 +7877,16 @@ h1 {
   }
 
   .heroGridOverlayRoute .favouritesBlind {
+    border-radius: 10px;
+  }
+
+  .heroGridAdminOverlayRoute .playerStage,
+  .heroGridAdminOverlayRoute .playerChrome,
+  .heroGridAdminOverlayRoute .favouritesBlind {
+    min-height: calc(100dvh - 132px);
+  }
+
+  .heroGridAdminOverlayRoute .favouritesBlind {
     border-radius: 10px;
   }
 }

@@ -62,7 +62,8 @@ function main() {
   assertContains(accountPageSource, "className=\"accountTopBarActions\"", "Account page keeps grouped top bar actions", failures);
 
   // Admin page and API security invariants.
-  assertContains(adminPageSource, "const adminUser = await requireAdminUser();", "Admin page enforces server-side admin session checks", failures);
+  assertContains(adminPageSource, "const adminAuthState = await requireAdminUserAuthState();", "Admin page enforces server-side admin auth-state checks", failures);
+  assertContains(adminPageSource, "adminAuthState.status === \"authorized\"", "Admin page gates dashboard rendering on authorized admin status", failures);
   assertContains(adminPageSource, "<AdminDashboardPanel activeTab={activeTab} />", "Admin page renders dashboard for authorized user", failures);
   assertContains(adminPageSource, "Admin access required", "Admin page shows explicit denial state for unauthorized users", failures);
 

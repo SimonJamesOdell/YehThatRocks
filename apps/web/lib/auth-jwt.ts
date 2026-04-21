@@ -19,6 +19,14 @@ type AuthTokenPayload = {
 };
 
 const encoder = new TextEncoder();
+const TOKEN_VALIDATION_ERROR_NAMES = new Set([
+  "JWTExpired",
+  "JWTClaimValidationFailed",
+  "JWSSignatureVerificationFailed",
+  "JWSInvalid",
+  "JWTInvalid",
+  "JOSEError",
+]);
 
 function getSecretKey() {
   return encoder.encode(getJwtSecret());
@@ -64,4 +72,14 @@ export async function verifyToken(token: string, expectedType: TokenType) {
   }
 
   return { uid, email, remember: Boolean(payload.remember) };
+}
+
+export function isTokenValidationError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.message === "Unexpected token type"
+    || error.message === "Invalid token payload"
+    || TOKEN_VALIDATION_ERROR_NAMES.has(error.name);
 }

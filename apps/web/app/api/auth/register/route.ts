@@ -6,6 +6,7 @@ import { sendVerificationEmail } from "@/lib/auth-email";
 import { setAuthCookies } from "@/lib/auth-cookies";
 import { signAccessToken, signRefreshToken } from "@/lib/auth-jwt";
 import { hashPassword } from "@/lib/auth-password";
+import { isScreenNameTaken, normalizeScreenName } from "@/lib/auth-screen-name";
 import { createRefreshSession } from "@/lib/auth-sessions";
 import { createEmailVerificationToken } from "@/lib/auth-token-records";
 import { verifySameOrigin } from "@/lib/csrf";
@@ -84,12 +85,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Email is already registered" }, { status: 409 });
     }
 
+    const screenName = normalizeScreenName(parsed.data.screenName);
+
+    if (await isScreenNameTaken(screenName)) {
+      await recordAuthAudit({
+        action: "register",
+        success: false,
+        email,
+        detail: `Screen name already registered: ${screenName}`,
+        ...requestMeta,
+      });
+      return NextResponse.json({ error: "Screen name is already taken" }, { status: 409 });
+    }
+
     const passwordHash = await hashPassword(parsed.data.password);
 
     const user = await prisma.user.create({
       data: {
         email,
-        screenName: parsed.data.screenName.trim(),
+        screenName,
         passwordHash,
       },
       select: {

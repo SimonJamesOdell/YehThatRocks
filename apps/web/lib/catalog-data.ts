@@ -919,7 +919,7 @@ let topPoolInFlight:
       promise: Promise<RankedVideoRow[]>;
     }
   | undefined;
-const NEWEST_CACHE_TTL_MS = 15_000;
+const NEWEST_CACHE_TTL_MS = 60_000; // 60s — 4× fewer DB hits vs 15s; newest list changes infrequently
 let newestVideosCache:
   | {
       expiresAt: number;
@@ -942,7 +942,7 @@ const PARSED_ARTIST_NORM_INDEX = "idx_videos_parsed_artist_norm_fav_view_videoid
 let parsedArtistNormIndexAvailableCache: boolean | undefined;
 const ARTIST_VIDEOS_CACHE_TTL_MS = 60_000;
 const artistVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
-const ARTIST_NORM_VIDEO_POOL_CACHE_TTL_MS = 60_000;
+const ARTIST_NORM_VIDEO_POOL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min — artist pools change only on ingest
 const artistNormVideoPoolCache = new Map<string, { expiresAt: number; rows: RankedVideoRow[] }>();
 const artistNormVideoPoolInFlight = new Map<string, { limit: number; promise: Promise<RankedVideoRow[]> }>();
 const RELATED_VIDEOS_CACHE_TTL_MS = 20_000;
@@ -971,7 +971,7 @@ const artistLetterInFlight = new Map<string, Promise<Array<ArtistRecord & { vide
 const ARTIST_LETTER_PAGE_CACHE_TTL_MS = 60_000; // 1 minute
 const artistLetterPageCache = new Map<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>();
 const artistLetterPageInFlight = new Map<string, Promise<Array<ArtistRecord & { videoCount: number }>>>();
-const ARTIST_SEARCH_CACHE_TTL_MS = 10_000;
+const ARTIST_SEARCH_CACHE_TTL_MS = 60_000;
 const artistSearchCache = new Map<string, {
   expiresAt: number;
   rows: Array<{ name: string; country: string | null; genre1: string | null }>;
@@ -1158,7 +1158,7 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
           v.title,
           COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
           NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
-          COALESCE(v.favourited, 0) AS favourited,
+          COUNT(DISTINCT f.userid) AS favourited,
           v.description
         FROM videos v
         INNER JOIN (
@@ -1166,14 +1166,17 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
           FROM site_videos sv
           WHERE sv.status = 'available'
         ) available_sv ON available_sv.video_id = v.id
+        LEFT JOIN favourites f ON CONVERT(f.videoId USING utf8mb4) = CONVERT(v.videoId USING utf8mb4)
         WHERE v.videoId IS NOT NULL
-        ORDER BY v.favourited DESC, v.viewCount DESC, v.videoId ASC
+        GROUP BY v.id, v.videoId, v.title, v.parsedArtist, v.channelTitle, v.description, v.viewCount
+        ORDER BY COUNT(DISTINCT f.userid) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
         LIMIT ${fetchLimit}
       `;
     } catch {
-      const [videoColumns, siteVideoColumns] = await Promise.all([
+      const [videoColumns, siteVideoColumns, favouriteColumns] = await Promise.all([
         loadTableColumns("videos"),
         loadTableColumns("site_videos"),
+        loadTableColumns("favourites"),
       ]);
 
       const videoIdRef = pickColumn(videoColumns, ["videoId", "video_id", "videoid"]);
@@ -1186,6 +1189,8 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
       const videoPkRef = pickColumn(videoColumns, ["id"]);
       const siteVideoIdRef = pickColumn(siteVideoColumns, ["video_id", "videoId", "videoid"]);
       const siteStatusRef = pickColumn(siteVideoColumns, ["status"]);
+      const favouriteVideoIdRef = pickColumn(favouriteColumns, ["videoId", "video_id", "videoid"]);
+      const favouriteUserIdRef = pickColumn(favouriteColumns, ["userid", "userId", "user_id"]);
 
       if (videoIdRef && videoTitleRef && videoPkRef && siteVideoIdRef && siteStatusRef) {
         const externalVideoCol = escapeSqlIdentifier(videoIdRef.Field);
@@ -1193,9 +1198,16 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
         const descriptionExpr = videoDescriptionRef
           ? `v.${escapeSqlIdentifier(videoDescriptionRef.Field)}`
           : "NULL";
-        const favouritedExpr = videoFavouritedRef
-          ? `COALESCE(v.${escapeSqlIdentifier(videoFavouritedRef.Field)}, 0)`
-          : "0";
+        const favouriteVideoIdCol = favouriteVideoIdRef ? escapeSqlIdentifier(favouriteVideoIdRef.Field) : null;
+        const favouriteUserIdCol = favouriteUserIdRef ? escapeSqlIdentifier(favouriteUserIdRef.Field) : null;
+        const favouritesJoin = favouriteVideoIdCol
+          ? `LEFT JOIN favourites f ON CONVERT(f.${favouriteVideoIdCol} USING utf8mb4) = CONVERT(v.${externalVideoCol} USING utf8mb4)`
+          : "";
+        const favouritedExpr = favouriteUserIdCol
+          ? `COUNT(DISTINCT f.${favouriteUserIdCol})`
+          : videoFavouritedRef
+            ? `COALESCE(v.${escapeSqlIdentifier(videoFavouritedRef.Field)}, 0)`
+            : "0";
         const viewExpr = videoViewRef
           ? `COALESCE(v.${escapeSqlIdentifier(videoViewRef.Field)}, 0)`
           : "0";
@@ -1225,8 +1237,10 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
               FROM site_videos sv
               WHERE sv.${siteStatusCol} = 'available'
             ) available_sv ON available_sv.available_video_id = v.${videoPkCol}
+            ${favouritesJoin}
             WHERE v.${externalVideoCol} IS NOT NULL
-            ORDER BY ${videoFavouritedRef ? `v.${escapeSqlIdentifier(videoFavouritedRef.Field)}` : "0"} DESC, ${videoViewRef ? `v.${escapeSqlIdentifier(videoViewRef.Field)}` : "0"} DESC, v.${externalVideoCol} ASC
+            GROUP BY v.${videoPkCol}, v.${externalVideoCol}, v.${titleCol}, ${parsedArtistExpr}, ${channelTitleExpr}, ${descriptionExpr}, ${viewExpr}
+            ORDER BY ${favouriteUserIdCol ? `COUNT(DISTINCT f.${favouriteUserIdCol})` : (videoFavouritedRef ? `v.${escapeSqlIdentifier(videoFavouritedRef.Field)}` : "0")} DESC, ${viewExpr} DESC, v.${externalVideoCol} ASC
             LIMIT ${fetchLimit}
           `,
         );
@@ -4104,13 +4118,12 @@ export async function getNewestVideos(
           v.favourited,
           v.description
         FROM videos v
-        WHERE v.videoId IS NOT NULL
-          AND EXISTS (
-          SELECT 1
+        INNER JOIN (
+          SELECT DISTINCT sv.video_id
           FROM site_videos sv
-          WHERE sv.video_id = v.id
-            AND sv.status = 'available'
-        )
+          WHERE sv.status = 'available'
+        ) available_sv ON available_sv.video_id = v.id
+        WHERE v.videoId IS NOT NULL
         ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
         LIMIT ${safeCount}
         OFFSET ${safeOffset}
@@ -5897,14 +5910,15 @@ export async function getDataSourceStatus(): Promise<DataSourceStatus> {
       genreCount,
       detail: "Connected to the retained Yeh MySQL dataset.",
     };
-  } catch {
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
     return {
       mode: "database-error",
       envConfigured: true,
       videoCount: seedVideos.length,
       artistCount: seedArtists.length,
       genreCount: seedGenres.length,
-      detail: "DATABASE_URL is set, but the live database is not reachable yet. Falling back to seeded preview data.",
+      detail: `⚠️ Database unreachable (${errorMsg}) - Limited to 5-video demo catalog. Check that Docker containers are running: docker-compose up -d db`,
     };
   }
 }

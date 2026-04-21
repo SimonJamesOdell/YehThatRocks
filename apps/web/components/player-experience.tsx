@@ -49,6 +49,11 @@ type PlaylistSummary = {
   itemCount?: number;
 };
 
+type PlayerPreferencesResponse = {
+  autoplayEnabled?: boolean | null;
+  volume?: number | null;
+};
+
 type NextChoiceVideo = VideoRecord;
 
 type YouTubePlayerStateChangeEvent = {
@@ -136,6 +141,7 @@ const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
 const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
 const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
+const ADMIN_OVERLAY_ENTER_EVENT = "ytr:admin-overlay-enter";
 const maxEndedChoiceVideos = 12;
 const ENDED_CHOICE_SET_SIZE = maxEndedChoiceVideos;
 const ENDED_CHOICE_INITIAL_PREFETCH_SETS = 2;
@@ -186,6 +192,10 @@ function logFlow(event: string, detail?: Record<string, unknown>) {
 
 function toSafeNumber(value: unknown, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function normalizePlayerVolume(value: unknown, fallback = 100) {
+  return Math.max(0, Math.min(100, Math.round(toSafeNumber(value, fallback))));
 }
 
 function formatPlaybackTime(value: number) {
@@ -397,7 +407,9 @@ export function PlayerExperience({
   const favouriteSaveTimeoutRef = useRef<number | null>(null);
   const footerPlaylistMenuRef = useRef<HTMLDivElement | null>(null);
   const shareToChatResetTimeoutRef = useRef<number | null>(null);
+  const playerPreferencesSaveTimeoutRef = useRef<number | null>(null);
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
+  const [isPlayerPreferencesServerHydrated, setIsPlayerPreferencesServerHydrated] = useState(() => !isLoggedIn);
   const [copied, setCopied] = useState(false);
   const [shareToChatState, setShareToChatState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [favouriteSaveState, setFavouriteSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -500,10 +512,14 @@ export function PlayerExperience({
   const pointerPositionRef = useRef<{ x: number; y: number } | null>(null);
   const currentVideoRef = useRef(currentVideo);
   const autoplayEnabledRef = useRef(autoplayEnabled);
+  const volumeRef = useRef(volume);
+  const isMutedRef = useRef(isMuted);
   const hasActivePlaylistSequenceRef = useRef(false);
   const hasPlaybackStartedRef = useRef(false);
   const previousActivePlaylistIdRef = useRef<string | null>(activePlaylistId);
   autoplayEnabledRef.current = autoplayEnabled;
+  volumeRef.current = volume;
+  isMutedRef.current = isMuted;
   activePlaylistIdRef.current = activePlaylistId;
   hasPlaybackStartedRef.current = hasPlaybackStarted;
 
@@ -584,6 +600,11 @@ export function PlayerExperience({
       if (shareToChatResetTimeoutRef.current !== null) {
         window.clearTimeout(shareToChatResetTimeoutRef.current);
         shareToChatResetTimeoutRef.current = null;
+      }
+
+      if (playerPreferencesSaveTimeoutRef.current !== null) {
+        window.clearTimeout(playerPreferencesSaveTimeoutRef.current);
+        playerPreferencesSaveTimeoutRef.current = null;
       }
     };
   }, []);
@@ -868,7 +889,18 @@ export function PlayerExperience({
       href: `mailto:?subject=${encodeURIComponent(displayTitle)}&body=${encodeURIComponent(`Check this out: ${shareUrl}`)}`,
     },
   ] as const;
-  const shouldAutoplaySelection = Boolean(requestedVideoId && requestedVideoId === currentVideo.id);
+  const isInitialDeepLinkedSelection = Boolean(
+    requestedVideoId
+      && requestedVideoId === currentVideo.id
+      && requestedVideoId === initialRequestedVideoIdRef.current
+      && !hasLeftInitialRequestedVideoRef.current
+      && !hasPlaybackStartedRef.current,
+  );
+  const shouldAutoplaySelection = Boolean(
+    requestedVideoId
+      && requestedVideoId === currentVideo.id
+      && !isInitialDeepLinkedSelection,
+  );
   const endedChoiceSeedVideos = useMemo(() => {
     const deduped = new Map<string, NextChoiceVideo>();
 
@@ -899,7 +931,7 @@ export function PlayerExperience({
     return [...deduped.values()];
   }, [endedChoiceSeedVideos, endedChoiceRemoteVideos, currentVideo.id, endedChoiceDismissedIds]);
 
-  const hasSeenEndedChoiceVideos = endedChoiceVideos.some((video) => seenVideoIds?.has(video.id));
+  const hasSeenEndedChoiceVideos = isLoggedIn && endedChoiceVideos.some((video) => seenVideoIds?.has(video.id));
   const visibleEndedChoiceVideos = isLoggedIn && endedChoiceHideSeen
     ? endedChoiceVideos.filter((video) => !(seenVideoIds?.has(video.id) ?? false))
     : endedChoiceVideos;
@@ -1076,11 +1108,12 @@ export function PlayerExperience({
 
     if (!autoplayEnabledRef.current) {
       setEndedChoiceFromUnavailable(true);
-      setEndedChoiceLoading(true);
-      setShowEndedChoiceOverlay(true);
-      setShowControls(true);
-      setShowShareMenu(false);
+      triggerEndOfVideoAction();
+      return;
     }
+
+    setEndedChoiceFromUnavailable(false);
+    triggerEndOfVideoAction({ forceAutoplayAdvance: true });
   }
 
   function showUnavailableOverlayMessage(message?: string | null) {
@@ -1497,13 +1530,104 @@ export function PlayerExperience({
   }, []);
 
   useEffect(() => {
+    if (!isLoggedIn) {
+      setIsPlayerPreferencesServerHydrated(true);
+      return;
+    }
+
+    let cancelled = false;
+    setIsPlayerPreferencesServerHydrated(false);
+
+    const loadServerPlayerPreferences = async () => {
+      try {
+        const response = await fetch("/api/player-preferences", {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json().catch(() => null)) as PlayerPreferencesResponse | null;
+
+        if (cancelled || !payload) {
+          return;
+        }
+
+        if (typeof payload.autoplayEnabled === "boolean") {
+          setAutoplayEnabled(payload.autoplayEnabled);
+        }
+
+        if (typeof payload.volume === "number" && Number.isFinite(payload.volume)) {
+          setVolume(normalizePlayerVolume(payload.volume, 100));
+        }
+      } catch {
+        // Keep local fallback values when server preference loading fails.
+      } finally {
+        if (!cancelled) {
+          setIsPlayerPreferencesServerHydrated(true);
+        }
+      }
+    };
+
+    void loadServerPlayerPreferences();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn]);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
-    window.localStorage.setItem(PLAYER_VOLUME_KEY, String(Math.max(0, Math.min(100, volume))));
+    window.localStorage.setItem(PLAYER_VOLUME_KEY, String(normalizePlayerVolume(volume, 100)));
     window.localStorage.setItem(PLAYER_MUTED_KEY, String(isMuted));
   }, [volume, isMuted]);
+
+  useEffect(() => {
+    if (!playerRef.current || !isPlayerReady) {
+      return;
+    }
+
+    const nextVolume = normalizePlayerVolume(volume, 100);
+    playerRef.current.setVolume(nextVolume);
+
+    if (isMuted) {
+      playerRef.current.mute();
+    } else {
+      playerRef.current.unMute();
+    }
+  }, [isMuted, isPlayerReady, volume]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !isPlayerPreferencesServerHydrated || typeof window === "undefined") {
+      return;
+    }
+
+    if (playerPreferencesSaveTimeoutRef.current !== null) {
+      window.clearTimeout(playerPreferencesSaveTimeoutRef.current);
+      playerPreferencesSaveTimeoutRef.current = null;
+    }
+
+    playerPreferencesSaveTimeoutRef.current = window.setTimeout(() => {
+      playerPreferencesSaveTimeoutRef.current = null;
+
+      void fetch("/api/player-preferences", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          volume: normalizePlayerVolume(volume, 100),
+        }),
+      }).catch(() => {
+        // Keep UI responsive when background preference persistence fails.
+      });
+    }, 250);
+  }, [isLoggedIn, isPlayerPreferencesServerHydrated, volume]);
 
   useEffect(() => {
     if (isBootstrappingHistoryRef.current) {
@@ -1640,9 +1764,19 @@ export function PlayerExperience({
       return;
     }
 
+    // Temporarily disable autoplay on route transition, but don't persist to localStorage.
+    // The user's preference is preserved; we just pause autoplay during navigation.
     setAutoplayEnabled(false);
-    window.localStorage.setItem(AUTOPLAY_KEY, "false");
   }, [pathname, autoplayEnabled]);
+
+  useEffect(() => {
+    function handleAdminOverlayEnter() {
+      pauseActivePlayback();
+    }
+
+    window.addEventListener(ADMIN_OVERLAY_ENTER_EVENT, handleAdminOverlayEnter);
+    return () => window.removeEventListener(ADMIN_OVERLAY_ENTER_EVENT, handleAdminOverlayEnter);
+  }, []);
 
   useEffect(() => {
     function handleReplayRequest(event: Event) {
@@ -1830,25 +1964,18 @@ export function PlayerExperience({
               currentVideoId: currentVideo.id,
             });
             setIsPlayerReady(true);
-            setVolume(toSafeNumber(event.target.getVolume(), 100));
+            const currentPlayerVolume = normalizePlayerVolume(event.target.getVolume(), 100);
+            setVolume(currentPlayerVolume);
             setDuration(toSafeNumber(event.target.getDuration(), 0));
 
-            const savedVolume = Number(window.localStorage.getItem(PLAYER_VOLUME_KEY));
-            if (Number.isFinite(savedVolume)) {
-              const normalizedVolume = Math.max(0, Math.min(100, savedVolume));
-              event.target.setVolume(normalizedVolume);
-              setVolume(normalizedVolume);
-            }
+            event.target.setVolume(normalizePlayerVolume(volumeRef.current, currentPlayerVolume));
 
-            const savedMuted = window.localStorage.getItem(PLAYER_MUTED_KEY);
-            if (savedMuted === "true") {
+            if (isMutedRef.current) {
               event.target.mute();
               setIsMuted(true);
-            } else if (savedMuted === "false") {
+            } else {
               event.target.unMute();
               setIsMuted(false);
-            } else {
-              setIsMuted(Boolean(event.target.isMuted()));
             }
 
             logPlayerDebug("onReady", {
@@ -1880,7 +2007,7 @@ export function PlayerExperience({
                       setCurrentTime(safeTime);
                     }
 
-                    if (parsed.wasPlaying) {
+                    if (parsed.wasPlaying && !isInitialDeepLinkedSelection) {
                       event.target.playVideo();
                     }
                   }
@@ -1946,6 +2073,12 @@ export function PlayerExperience({
                 if (playerRef.current) {
                   const liveTime = toSafeNumber(playerRef.current.getCurrentTime(), 0);
                   const liveDuration = toSafeNumber(playerRef.current.getDuration(), 0);
+                  const runtimeMuted = typeof playerRef.current.isMuted === "function"
+                    ? Boolean(playerRef.current.isMuted())
+                    : false;
+                  if (runtimeMuted !== isMutedRef.current) {
+                    setIsMuted(runtimeMuted);
+                  }
                   setCurrentTime(liveTime);
                   setDuration(liveDuration);
                   persistResumeSnapshot(true, liveTime);
@@ -3366,14 +3499,36 @@ export function PlayerExperience({
   async function handleToggleAutoplay() {
     const enablingAutoplay = !autoplayEnabled;
 
+    const persistAutoplayPreference = async (value: boolean) => {
+      if (!isLoggedIn || !isPlayerPreferencesServerHydrated) {
+        return;
+      }
+
+      try {
+        await fetch("/api/player-preferences", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            autoplayEnabled: value,
+          }),
+        });
+      } catch {
+        // Preserve immediate toggle behavior even if background persistence fails.
+      }
+    };
+
     if (!enablingAutoplay) {
       setAutoplayEnabled(false);
       window.localStorage.setItem(AUTOPLAY_KEY, "false");
+      void persistAutoplayPreference(false);
       return;
     }
 
     setAutoplayEnabled(true);
     window.localStorage.setItem(AUTOPLAY_KEY, "true");
+    void persistAutoplayPreference(true);
 
     if (pathname === "/new") {
       autoplayRouteTransitionRef.current = true;
@@ -3611,7 +3766,7 @@ export function PlayerExperience({
         const vol = toSafeNumber(Number(e.target.value), 0);
         playerRef.current.setVolume(vol);
         setVolume(vol);
-        if (vol > 0 && isMuted) {
+        if (vol > 0) {
           playerRef.current.unMute();
           setIsMuted(false);
         }
@@ -4187,7 +4342,7 @@ export function PlayerExperience({
                   </div>
                 ) : null}
                 {endedChoiceGridVideos.map((video, index) => {
-                  const isSeen = seenVideoIds?.has(video.id) ?? false;
+                  const isSeen = isLoggedIn && (seenVideoIds?.has(video.id) ?? false);
                   const isHiding = endedChoiceHidingIds.includes(video.id);
                   const shouldAnimateCard = endedChoiceAnimateCards && !isHiding;
 

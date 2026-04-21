@@ -4,16 +4,17 @@ import { ShellDynamic } from "@/components/shell-dynamic";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { getCurrentVideo, getHiddenVideoIdsForUser, getRelatedVideos, getSeenVideoIdsForUser } from "@/lib/catalog-data";
 import { isAdminIdentity } from "@/lib/admin-auth";
-import { getCurrentAuthenticatedUserByAccessToken } from "@/lib/server-auth";
+import { getCurrentAuthenticatedUserAuthStateByAccessToken } from "@/lib/server-auth";
 
 export default async function ShellLayout({ children }: { children: ReactNode }) {
   const cookieStore = await cookies();
   const accessToken = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value;
   const hasAccessToken = Boolean(accessToken);
-  const [user, initialVideo] = await Promise.all([
-    getCurrentAuthenticatedUserByAccessToken(accessToken),
+  const [authState, initialVideo] = await Promise.all([
+    getCurrentAuthenticatedUserAuthStateByAccessToken(accessToken),
     getCurrentVideo(),
   ]);
+  const user = authState.status === "authenticated" ? authState.user : null;
   const isAdmin = Boolean(user && isAdminIdentity(user.id, user.email ?? ""));
 
   if (!initialVideo) {
@@ -44,7 +45,8 @@ export default async function ShellLayout({ children }: { children: ReactNode })
       initialRelatedVideos={initialRelatedVideos}
       initialSeenVideoIds={Array.from(seenVideoIds)}
       initialHiddenVideoIds={Array.from(hiddenVideoIds)}
-      isLoggedIn={hasAccessToken}
+      isLoggedIn={authState.status === "authenticated" || (authState.status === "unavailable" && hasAccessToken)}
+      initialAuthStatus={authState.status === "unavailable" ? "unavailable" : "clear"}
       isAdmin={isAdmin}
     >
       {children}

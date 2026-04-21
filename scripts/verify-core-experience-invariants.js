@@ -61,6 +61,9 @@ function main() {
   assertContains(shellDynamicSource, "Watch Next", "Shell labels a right rail tab as Watch Next", failures);
   assertContains(shellDynamicSource, "Playlist", "Shell labels a right rail tab as Playlist", failures);
   assertContains(shellDynamicSource, "const [relatedTransitionPhase, setRelatedTransitionPhase] = useState<\"idle\" | \"fading-out\" | \"loading\" | \"fading-in\">(\"idle\");", "Watch Next uses explicit transition phases", failures);
+  assertContains(shellDynamicSource, "seenVideoIdsRef.current = new Set<string>();", "Shell clears stale seen ids when auth is lost", failures);
+  assertContains(shellDynamicSource, "if (!isAuthenticated) {", "Shell ignores watch-history seen updates while logged out", failures);
+  assertContains(shellDynamicSource, "isSeen={isAuthenticated && seenVideoIdsRef.current.has(track.id)}", "Shell only renders watch-next seen badges for authenticated users", failures);
   assertContains(shellDynamicSource, "watchNextRailRef.current.scrollTop = 0;", "Watch Next resets scroll top during transition", failures);
   assertContains(currentVideoRouteSource, "const targetRelatedCount = 10;", "Current-video API targets 10 Watch Next items", failures);
   assertContains(currentVideoRouteSource, "const topVideos = await getTopVideos(30);", "Current-video API fetches bounded filler pool", failures);
@@ -72,7 +75,7 @@ function main() {
   assertContains(playerExperienceSource, "const PLAYER_MUTED_KEY = \"yeh-player-muted\";", "Player defines persisted mute preference key", failures);
   assertContains(playerExperienceSource, "const RESUME_KEY = \"yeh-player-resume\";", "Player defines resume snapshot key", failures);
   assertContains(playerExperienceSource, "window.localStorage.setItem(AUTOPLAY_KEY, ", "Player writes autoplay preference to localStorage", failures);
-  assertContains(playerExperienceSource, "window.localStorage.setItem(PLAYER_VOLUME_KEY, String(Math.max(0, Math.min(100, volume))));", "Player writes volume preference to localStorage", failures);
+  assertContains(playerExperienceSource, "window.localStorage.setItem(PLAYER_VOLUME_KEY, String(normalizePlayerVolume(volume, 100)));", "Player writes volume preference to localStorage", failures);
   assertContains(playerExperienceSource, "window.localStorage.setItem(PLAYER_MUTED_KEY, String(isMuted));", "Player writes mute preference to localStorage", failures);
   assertContains(playerExperienceSource, "const activePlaylistId = searchParams.get(\"pl\");", "Player reads playlist context from query params", failures);
   assertContains(playerExperienceSource, "const playlistId = activePlaylistId;", "Player snapshots active playlist id before async loading", failures);
@@ -103,7 +106,8 @@ function main() {
   assertContains(playerExperienceSource, "const [endedChoiceHideSeen, setEndedChoiceHideSeen] = useSeenTogglePreference({", "Player tracks end chooser seen-filter with shared persisted preference hook", failures);
   assertContains(playerExperienceSource, "key: ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY", "Player stores end chooser seen-filter under dedicated key", failures);
   assertContains(playerExperienceSource, "isAuthenticated: isLoggedIn,", "Player binds seen-toggle persistence to auth state", failures);
-  assertContains(playerExperienceSource, "const hasSeenEndedChoiceVideos = endedChoiceVideos.some((video) => seenVideoIds?.has(video.id));", "Player detects when the end chooser includes seen videos", failures);
+  assertContains(playerExperienceSource, "const hasSeenEndedChoiceVideos = isLoggedIn && endedChoiceVideos.some((video) => seenVideoIds?.has(video.id));", "Player detects end chooser seen state only for authenticated users", failures);
+  assertContains(playerExperienceSource, "const isSeen = isLoggedIn && (seenVideoIds?.has(video.id) ?? false);", "Player only renders ended-choice seen badges for authenticated users", failures);
   assertContains(playerExperienceSource, "const endedChoiceGridVideos = useMemo(() => {", "Player derives a rendered end-choice grid list from filter state", failures);
   assertContains(playerExperienceSource, "const EndedChoiceCard = memo(function EndedChoiceCard({", "Ended-choice cards are memoized to reduce append-time re-render pressure", failures);
   assertContains(playerExperienceSource, "startTransition(() => {", "Ended-choice remote append updates are scheduled as transitions", failures);
@@ -131,7 +135,8 @@ function main() {
   assertContains(cssSource, ".playerEndedChoiceGridExiting", "Chooser overlay grid exit animation is defined", failures);
   assertContains(cssSource, "@media (min-width: 2200px)", "Chooser overlay defines ultrawide breakpoint", failures);
   assertContains(cssSource, "grid-template-columns: repeat(6, minmax(0, 1fr));", "Chooser overlay uses 6 columns on ultrawide for two rows", failures);
-  assertContains(playerExperienceSource, "const shouldAutoplaySelection = Boolean(requestedVideoId && requestedVideoId === currentVideo.id);", "Player only autoplays when requested id matches loaded video", failures);
+  assertContains(playerExperienceSource, "const isInitialDeepLinkedSelection = Boolean(", "Player detects first-load deep-linked selections", failures);
+  assertContains(playerExperienceSource, "&& !isInitialDeepLinkedSelection", "Player suppresses autoplay on initial deep-link until user interaction", failures);
   assertContains(playerExperienceSource, "showUnavailableOverlayMessage();", "Player shows unavailable apology overlay when runtime checks fail", failures);
   assertContains(playerExperienceSource, "const response = await fetch(\"/api/videos/unavailable\", {", "Player reports unavailable videos to API", failures);
   assertContains(playerExperienceSource, "const activeVideoId = currentVideoRef.current.id;", "Player evaluates errors against active runtime video id", failures);
@@ -193,6 +198,9 @@ function main() {
   assertContains(shellDynamicSource, "const response = await fetchWithAuthRetry(`/api/chat?${params.toString()}`);", "Shell loads chat via authenticated API call", failures);
   assertContains(shellDynamicSource, "const response = await fetchWithAuthRetry(\"/api/chat\", {", "Shell posts chat messages via authenticated API call", failures);
   assertContains(shellDynamicSource, "videoId: chatMode === \"video\" ? currentVideo.id : undefined,", "Shell sends video chat context when posting", failures);
+  assertContains(shellDynamicSource, 'className={isAdminOverlayRoute ? "railTabs railTabsAdminOverlay" : "railTabs"}', "Shell uses dedicated admin overlay rail tab layout class", failures);
+  assertContains(shellDynamicSource, "onClick={() => setChatMode(\"online\")}", "Shell keeps Who's Online tab selectable in chat rail", failures);
+  assertNotContains(shellDynamicSource, '<span className="tabLabel activeTab">Global Chat</span>', "Shell no longer hard-locks admin rail to a non-interactive Global Chat label", failures);
   assertContains(shellDynamicSource, "node.scrollTop = node.scrollHeight;", "Shell auto-scrolls chat list to latest message", failures);
   assertContains(shellDynamicSource, 'fetch(`/api/videos/share-preview?v=${encodeURIComponent(videoId)}`)', "Shared chat cards resolve preview metadata via share-preview API", failures);
   assertContains(shellDynamicSource, "const REQUEST_VIDEO_REPLAY_EVENT = \"ytr:request-video-replay\";", "Shell defines replay-request event constant for shared chat cards", failures);
@@ -236,6 +244,7 @@ function main() {
   assertContains(artistWikiLinkSource, 'window.dispatchEvent(new CustomEvent("ytr:overlay-open-request", {', "Artist wiki link triggers immediate overlay-open requests", failures);
   assertContains(cssSource, '.shareModalBackdrop', "Share modal backdrop styles are defined", failures);
   assertContains(cssSource, '.shareModalGrid', "Share modal platform grid styles are defined", failures);
+  assertContains(cssSource, '.railTabs.railTabsAdminOverlay', "Admin overlay rail tabs define two-column layout override", failures);
   assertContains(cssSource, '.primaryActionPlaylistMenu', "Footer playlist quick-add menu styles are defined", failures);
   assertContains(cssSource, '.primaryActionPlaylistMenuAction:hover:not(:disabled)', "Footer playlist menu keeps explicit hover accent styles", failures);
   assertContains(cssSource, '.categoryHeaderWikiLink', "Artist wiki header link styles are defined", failures);

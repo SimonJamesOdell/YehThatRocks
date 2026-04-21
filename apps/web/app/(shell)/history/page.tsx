@@ -1,15 +1,15 @@
 import { cookies } from "next/headers";
-import Link from "next/link";
 
-import { AuthRefreshReload } from "@/components/auth-refresh-reload";
 import { CloseLink } from "@/components/close-link";
 import { HistoryInfiniteList } from "@/components/history-infinite-list";
+import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
 import { REFRESH_TOKEN_COOKIE } from "@/lib/auth-config";
 import { getWatchHistory } from "@/lib/catalog-data";
-import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
+import { getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
 
 export default async function HistoryPage() {
-  const user = await getCurrentAuthenticatedUser();
+  const authState = await getCurrentAuthenticatedUserAuthState();
+  const user = authState.status === "authenticated" ? authState.user : null;
   const pageSize = 40;
   const historyWindow = user ? await getWatchHistory(user.id, { limit: pageSize + 1, offset: 0 }) : [];
   const hasMore = historyWindow.length > pageSize;
@@ -28,20 +28,14 @@ export default async function HistoryPage() {
       </div>
 
       {!user ? (
-        <section className="panel featurePanel">
-          {hasRefreshToken && <AuthRefreshReload />}
-          <div className="panelHeading">
-            <span><span className="whiteHistoryGlyph" aria-hidden="true">🕘</span> Watch history</span>
-            <strong>Login required</strong>
-          </div>
-          <div className="interactiveStack">
-            <p className="authMessage">Sign in to view your watch history.</p>
-            <div className="primaryActions compactActions">
-              <Link href="/login" className="navLink navLinkActive">Login</Link>
-              <Link href="/register" className="navLink">Register</Link>
-            </div>
-          </div>
-        </section>
+        <ProtectedAuthGatePanel
+            status={authState.status === "unavailable" ? "unavailable" : "unauthenticated"}
+          heading="🕘 Watch history"
+          headingDetail="Login required"
+          unauthenticatedMessage="Sign in to view your watch history."
+          hasRefreshToken={hasRefreshToken}
+          unavailableMessage={authState.status === "unavailable" ? authState.message : undefined}
+        />
       ) : initialHistory.length === 0 ? (
         <section className="accountHistoryPanel historyPagePanel">
           <p className="authMessage">Play a few tracks and your history will appear here.</p>

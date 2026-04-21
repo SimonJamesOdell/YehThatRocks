@@ -1,12 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { readAuthCookies } from "@/lib/auth-cookies";
-import { verifyToken } from "@/lib/auth-jwt";
+import { isTokenValidationError, verifyToken } from "@/lib/auth-jwt";
 
 export type AuthContext = {
   userId: number;
   email: string;
 };
+
+function createUnauthorizedResponse() {
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+function createAuthUnavailableResponse() {
+  return NextResponse.json(
+    {
+      error: "Auth verification unavailable",
+      code: "AUTH_UNAVAILABLE",
+    },
+    { status: 503 },
+  );
+}
 
 export async function requireApiAuth(request: NextRequest): Promise<
   | { ok: true; auth: AuthContext }
@@ -17,7 +31,7 @@ export async function requireApiAuth(request: NextRequest): Promise<
   if (!accessToken) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      response: createUnauthorizedResponse(),
     };
   }
 
@@ -31,10 +45,12 @@ export async function requireApiAuth(request: NextRequest): Promise<
         email: payload.email,
       },
     };
-  } catch {
+  } catch (error) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      response: isTokenValidationError(error)
+        ? createUnauthorizedResponse()
+        : createAuthUnavailableResponse(),
     };
   }
 }

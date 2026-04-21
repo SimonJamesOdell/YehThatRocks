@@ -19,7 +19,7 @@ type PrismaWithAuthAudit = typeof prisma & {
 };
 
 type AuthAuditInput = {
-  action: "register" | "login" | "refresh" | "logout" | "forgot-password" | "reset-password" | "verify-email";
+  action: "register" | "login" | "refresh" | "logout" | "forgot-password" | "reset-password" | "verify-email" | "upgrade";
   success: boolean;
   email?: string | null;
   userId?: number | null;

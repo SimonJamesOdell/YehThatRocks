@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireApiAuth } from "@/lib/auth-request";
-import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
+import { getCurrentAuthenticatedUser, getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
 import { prisma } from "@/lib/db";
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "simonjamesodell@live.co.uk").trim().toLowerCase();
@@ -65,4 +65,34 @@ export async function requireAdminUser() {
   }
 
   return user;
+}
+
+export type AdminUserAuthState =
+  | { status: "authorized"; user: NonNullable<Awaited<ReturnType<typeof getCurrentAuthenticatedUser>>> }
+  | { status: "unauthenticated" }
+  | { status: "forbidden" }
+  | { status: "unavailable"; message: string };
+
+export async function requireAdminUserAuthState(): Promise<AdminUserAuthState> {
+  const authState = await getCurrentAuthenticatedUserAuthState();
+
+  if (authState.status === "unavailable") {
+    return {
+      status: "unavailable",
+      message: authState.message,
+    };
+  }
+
+  if (authState.status === "unauthenticated") {
+    return { status: "unauthenticated" };
+  }
+
+  if (!isAdminIdentity(authState.user.id, authState.user.email ?? "")) {
+    return { status: "forbidden" };
+  }
+
+  return {
+    status: "authorized",
+    user: authState.user,
+  };
 }

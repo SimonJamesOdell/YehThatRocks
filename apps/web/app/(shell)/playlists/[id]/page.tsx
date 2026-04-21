@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cookies } from "next/headers";
 
 import { CloseLink } from "@/components/close-link";
 import { PlaylistEditor } from "@/components/playlist-editor";
+import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
+import { REFRESH_TOKEN_COOKIE } from "@/lib/auth-config";
 import { getPlaylistById } from "@/lib/catalog-data";
-import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
+import { getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
 
 type PlaylistDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -12,10 +15,13 @@ type PlaylistDetailPageProps = {
 };
 
 export default async function PlaylistDetailPage({ params, searchParams }: PlaylistDetailPageProps) {
+  const cookieStore = await cookies();
+  const hasRefreshToken = Boolean(cookieStore.get(REFRESH_TOKEN_COOKIE)?.value);
   const { id } = await params;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const fallbackName = typeof resolvedSearchParams?.name === "string" ? resolvedSearchParams.name.trim() : "";
-  const user = await getCurrentAuthenticatedUser();
+  const authState = await getCurrentAuthenticatedUserAuthState();
+  const user = authState.status === "authenticated" ? authState.user : null;
   const loadedPlaylist = user ? await getPlaylistById(id, user.id) : null;
   const playlist = loadedPlaylist ?? (user && fallbackName
     ? {
@@ -37,17 +43,15 @@ export default async function PlaylistDetailPage({ params, searchParams }: Playl
           </div>
           <CloseLink />
         </div>
-        <section className="panel featurePanel spanTwoColumns">
-          <div className="panelHeading">
-            <span>Playlist access</span>
-            <strong>Login required</strong>
-          </div>
-          <p className="authMessage">You need an authenticated session to open saved playlists.</p>
-          <div className="primaryActions compactActions">
-            <Link href="/login" className="navLink navLinkActive">Login</Link>
-            <Link href="/register" className="navLink">Register</Link>
-          </div>
-        </section>
+            <ProtectedAuthGatePanel
+              status={authState.status === "unavailable" ? "unavailable" : "unauthenticated"}
+          heading="Playlist access"
+          headingDetail="Login required"
+          unauthenticatedMessage="You need an authenticated session to open saved playlists."
+          className="panel featurePanel spanTwoColumns"
+          hasRefreshToken={hasRefreshToken}
+          unavailableMessage={authState.status === "unavailable" ? authState.message : undefined}
+        />
       </>
     );
   }

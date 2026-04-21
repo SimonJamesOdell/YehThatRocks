@@ -138,7 +138,7 @@ function main() {
   assertContains(catalogDataSource, "rankingSignals.penaltyByVideoId.get(video.videoId)", "searchCatalog demotes repeatedly-flagged videos in ranking", failures);
 
   // Artist search efficiency guardrails (safe short-lived cache + in-flight dedupe).
-  assertContains(catalogDataSource, "const ARTIST_SEARCH_CACHE_TTL_MS = 10_000;", "Catalog data defines short-lived artist search cache TTL", failures);
+  assertContains(catalogDataSource, "const ARTIST_SEARCH_CACHE_TTL_MS = 60_000;", "Catalog data defines artist search cache TTL", failures);
   assertContains(catalogDataSource, "const artistSearchCache = new Map", "Catalog data stores artist search cache entries", failures);
   assertContains(catalogDataSource, "const artistSearchInFlight = new Map", "Catalog data tracks in-flight artist search requests", failures);
   assertContains(catalogDataSource, "const searchCacheKey = `s:${normalizedSearch}|l:${cappedLimit}|o:${orderByName ? 1 : 0}|p:${prefixOnly ? 1 : 0}|n:${nameOnly ? 1 : 0}`;", "Catalog data keys artist search cache by normalized query and mode", failures);
