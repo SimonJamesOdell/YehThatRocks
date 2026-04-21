@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 
@@ -125,6 +124,10 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
         setPendingVideoId(null);
       }
     });
+  }
+
+  function openVideo(videoId: string) {
+    router.push(`/?v=${encodeURIComponent(videoId)}&resume=1`);
   }
 
   async function createPlaylistFromFavourites() {
@@ -359,25 +362,39 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
             const isRemoving = pendingVideoId === track.id;
 
             return (
-              <article key={track.id} className="catalogCard categoryCard favouritesCardCompact">
+              <article
+                key={track.id}
+                className="catalogCard categoryCard favouritesCardCompact playlistCardInteractive"
+                role="link"
+                tabIndex={0}
+                aria-label={`Play ${track.title}`}
+                onClick={() => openVideo(track.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openVideo(track.id);
+                  }
+                }}
+              >
                 <div className="favouritesThumbOverlayWrap">
-                  <Link href={`/?v=${track.id}`} className="linkedCard" prefetch={false}>
-                    <div className="categoryThumbWrap">
-                      <Image
-                        src={`https://i.ytimg.com/vi/${track.id}/mqdefault.jpg`}
-                        alt=""
-                        width={320}
-                        height={180}
-                        className="categoryThumb"
-                        loading="lazy"
-                        sizes="(max-width: 768px) 92vw, (max-width: 1200px) 44vw, 320px"
-                      />
-                    </div>
-                  </Link>
+                  <div className="categoryThumbWrap">
+                    <Image
+                      src={`https://i.ytimg.com/vi/${track.id}/mqdefault.jpg`}
+                      alt=""
+                      width={320}
+                      height={180}
+                      className="categoryThumb"
+                      loading="lazy"
+                      sizes="(max-width: 768px) 92vw, (max-width: 1200px) 44vw, 320px"
+                    />
+                  </div>
                   <button
                     type="button"
                     className="favouritesDeleteButton favouritesDeleteOverlayButton"
-                    onClick={() => removeFavourite(track.id)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      removeFavourite(track.id);
+                    }}
                     disabled={!isAuthenticated || isPending || isRemoving || isCreatingPlaylistFromFavourites}
                     aria-label={`Remove ${track.title} from favourites`}
                     title="Remove from favourites"
@@ -386,9 +403,9 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
                   </button>
                 </div>
                 <h3>
-                  <Link href={`/?v=${track.id}`} className="cardTitleLink" prefetch={false}>
+                  <span className="cardTitleLink playlistCardTitleStatic">
                     {track.title}
-                  </Link>
+                  </span>
                 </h3>
                 <p>
                   <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
@@ -396,12 +413,17 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
                   </ArtistWikiLink>
                 </p>
                 <div className="actionRow favouritesCardActionsRow">
-                  <AddToPlaylistButton
-                    videoId={track.id}
-                    isAuthenticated={isAuthenticated}
-                    compact
-                    className="favouritesPlaylistCircleButton"
-                  />
+                  <div
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    <AddToPlaylistButton
+                      videoId={track.id}
+                      isAuthenticated={isAuthenticated}
+                      compact
+                      className="favouritesPlaylistCircleButton"
+                    />
+                  </div>
                 </div>
               </article>
             );

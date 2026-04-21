@@ -464,6 +464,7 @@ export function PlayerExperience({
     const reportedUnavailableVideoIdRef = useRef<string | null>(null);
     const autoplaySuppressedVideoIdRef = useRef<string | null>(null);
     const autoplayRouteTransitionRef = useRef(false);
+    const pendingAutoAdvanceVideoIdRef = useRef<string | null>(null);
     const autoplayRecoveryRequestIdRef = useRef(0);
     const playAttemptedAtRef = useRef<number | null>(null);
     const stuckPlaybackRetryCountRef = useRef(0);
@@ -1942,9 +1943,10 @@ export function PlayerExperience({
           }
 
           if (autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
+            const forceAutoAdvancePlayback = pendingAutoAdvanceVideoIdRef.current === currentVideo.id;
             const suppressForInitialPageLoad = shouldSuppressAutoplayForInitialPageLoad(currentVideo.id);
 
-            if (!suppressForInitialPageLoad) {
+            if (!suppressForInitialPageLoad || forceAutoAdvancePlayback) {
               notePlayAttempt();
               window.setTimeout(() => {
                 if (!cancelled && playerRef.current) {
@@ -2043,9 +2045,10 @@ export function PlayerExperience({
             }
 
             if (autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
+              const forceAutoAdvancePlayback = pendingAutoAdvanceVideoIdRef.current === currentVideo.id;
               const suppressForInitialPageLoad = shouldSuppressAutoplayForInitialPageLoad(currentVideo.id);
 
-              if (!suppressForInitialPageLoad) {
+              if (!suppressForInitialPageLoad || forceAutoAdvancePlayback) {
                 notePlayAttempt();
                 event.target.playVideo();
               }
@@ -2072,6 +2075,10 @@ export function PlayerExperience({
             }
 
             if (playing) {
+              if (pendingAutoAdvanceVideoIdRef.current === currentVideo.id) {
+                pendingAutoAdvanceVideoIdRef.current = null;
+              }
+
               clearUnavailableOverlayMessage();
               clearStuckPlaybackRetryTimer();
               clearStuckPlaybackWatchdogTimer();
@@ -2441,6 +2448,7 @@ export function PlayerExperience({
       autoplayEnabledForCurrentTrack || forceAutoplayAdvance;
 
     if (shouldAutoAdvance && nextVideoIdRef.current) {
+      pendingAutoAdvanceVideoIdRef.current = nextVideoIdRef.current;
       navigateToVideo(nextVideoIdRef.current, {
         clearPlaylist: nextClearPlaylistRef.current,
         playlistId: activePlaylistIdRef.current,
@@ -2477,6 +2485,7 @@ export function PlayerExperience({
           return;
         }
 
+        pendingAutoAdvanceVideoIdRef.current = recoveredVideoId;
         navigateToVideo(recoveredVideoId, {
           clearPlaylist: true,
           playlistId: null,

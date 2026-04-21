@@ -44,6 +44,7 @@ function canStoreBrowserCredential() {
 }
 
 const INTRO_SKIP_ONCE_AFTER_LOGIN_KEY = "ytr:intro-skip-once";
+const AUTO_LOGIN_SUPPRESS_ONCE_KEY = "ytr:auto-login-suppress-once";
 const ANONYMOUS_SCREEN_NAME_MIN_LENGTH = 2;
 const ANONYMOUS_SCREEN_NAME_MAX_LENGTH = 40;
 const ANONYMOUS_SUGGESTION_TIMEOUT_MS = 4000;
@@ -56,6 +57,20 @@ function buildFallbackAnonymousSuggestion() {
   const suffix = ANONYMOUS_SUGGESTION_SUFFIXES[Math.floor(Math.random() * ANONYMOUS_SUGGESTION_SUFFIXES.length)] ?? "Wolf";
   const num = Math.floor(100 + Math.random() * 900);
   return `${prefix}${suffix}${num}`;
+}
+
+function consumeAutoLoginSuppressionOnce() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const shouldSuppress = window.sessionStorage.getItem(AUTO_LOGIN_SUPPRESS_ONCE_KEY) === "1";
+
+  if (shouldSuppress) {
+    window.sessionStorage.removeItem(AUTO_LOGIN_SUPPRESS_ONCE_KEY);
+  }
+
+  return shouldSuppress;
 }
 
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
@@ -314,6 +329,24 @@ export function AuthLoginForm() {
     setAnonymousError(null);
     setIsAnonymousPreparing(true);
 
+    const skipAutoLogin = consumeAutoLoginSuppressionOnce();
+
+    if (skipAutoLogin) {
+      setAnonymousScreenName("");
+      setAnonymousSuggestedScreenName("");
+      setShouldClearAnonymousSuggestion(false);
+      setAnonymousAvailability("idle");
+
+      try {
+        await assignAvailableAnonymousSuggestion();
+      } finally {
+        setIsAnonymousFlowOpen(true);
+      }
+
+      setIsAnonymousPreparing(false);
+      return;
+    }
+
     const loggedIn = await Promise.race([
       trySavedCredentialLogin(),
       new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), ANONYMOUS_AUTO_LOGIN_TIMEOUT_MS)),
@@ -388,6 +421,11 @@ export function AuthLoginForm() {
     }
 
     hasAttemptedAutoLoginRef.current = true;
+
+    const skipAutoLogin = consumeAutoLoginSuppressionOnce();
+    if (skipAutoLogin) {
+      return;
+    }
 
     const credentials = getBrowserCredentialsContainer();
     if (!credentials?.get) {
