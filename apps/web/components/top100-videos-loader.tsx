@@ -16,7 +16,7 @@ const TOP100_SESSION_CACHE_KEY = "ytr:top100-cache-v1";
 const TOP100_SESSION_CACHE_TTL_MS = 60_000;
 const TOP100_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-top100";
 const TOP100_TARGET_COUNT = 100;
-const TOP100_FETCH_SOURCE_COUNT = 300;
+const TOP100_FETCH_SOURCE_COUNT = 180;
 
 function dedupeVideos(videos: VideoRecord[]) {
   const seen = new Set<string>();
@@ -56,6 +56,28 @@ function readTop100SessionCache() {
     }
 
     if (Date.now() - Number(parsed.cachedAt) > TOP100_SESSION_CACHE_TTL_MS) {
+      return null;
+    }
+
+    return dedupeVideos(parsed.videos).slice(0, TOP100_TARGET_COUNT);
+  } catch {
+    return null;
+  }
+}
+
+function readTop100SessionCacheStale() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(TOP100_SESSION_CACHE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as { videos?: VideoRecord[] };
+    if (!Array.isArray(parsed.videos)) {
       return null;
     }
 
@@ -347,6 +369,11 @@ export function Top100VideosLoader({
           received = await tryFetch();
         }
 
+        if (received.length === 0) {
+          await new Promise((resolve) => window.setTimeout(resolve, 1800));
+          received = await tryFetch();
+        }
+
         if (received.length > 0) {
           if (!cancelled) {
             setVideos(received);
@@ -358,6 +385,15 @@ export function Top100VideosLoader({
         }
       } catch {
         // Fall through to friendly error state.
+      }
+
+      const staleCache = filterHiddenVideos(readTop100SessionCacheStale() ?? [], hiddenVideoIdSet);
+      if (!cancelled && staleCache.length > 0) {
+        setVideos(staleCache);
+        setMessage("Top 100 is still warming up on the server. Showing recent cached results.");
+        setError(null);
+        setIsLoading(false);
+        return;
       }
 
       if (!cancelled) {
