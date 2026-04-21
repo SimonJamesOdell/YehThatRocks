@@ -300,7 +300,9 @@ export async function POST(request: NextRequest) {
       : [];
     const alreadyInCatalog = existingRows.length > 0;
 
-    const result = await importVideoFromDirectSource(source.videoId);
+    // Disable cascade discovery for user suggestions to avoid excessive YouTube API usage.
+    // Related videos can be backfilled separately via admin tools or the backfill script.
+    const result = await importVideoFromDirectSource(source.videoId, { discoverRelated: false });
     if (!result.videoId) {
       return NextResponse.json({ ok: false, error: "Invalid YouTube URL or video id." }, { status: 400 });
     }
