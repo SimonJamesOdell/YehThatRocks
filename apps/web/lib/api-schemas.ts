@@ -70,6 +70,10 @@ export const verifyEmailSchema = z.object({
   token: z.string().min(20).max(512),
 });
 
+export const upgradeToEmailSchema = z.object({
+  email: z.email().max(255),
+});
+
 export const watchHistoryEventSchema = z.object({
   videoId: z.string().trim().regex(/^[A-Za-z0-9_-]{11}$/),
   reason: z.enum(["qualified", "ended"]).default("qualified"),
@@ -111,4 +115,11 @@ export const seenTogglePreferenceKeySchema = z.string()
 export const seenTogglePreferenceMutationSchema = z.object({
   key: seenTogglePreferenceKeySchema,
   value: z.boolean(),
+});
+
+export const playerPreferenceMutationSchema = z.object({
+  autoplayEnabled: z.boolean().optional(),
+  volume: z.number().int().min(0).max(100).optional(),
+}).refine((value) => value.autoplayEnabled !== undefined || value.volume !== undefined, {
+  message: "autoplayEnabled or volume is required",
 });

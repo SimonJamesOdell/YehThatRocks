@@ -2,7 +2,8 @@ import Link from "next/link";
 
 import { CloseLink } from "@/components/close-link";
 import { AdminDashboardPanel, type AdminTab } from "@/components/admin-dashboard-panel";
-import { requireAdminUser } from "@/lib/admin-auth";
+import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
+import { requireAdminUserAuthState } from "@/lib/admin-auth";
 
 const ADMIN_TABS: AdminTab[] = ["overview", "worldmap", "api", "categories", "videos", "artists", "ambiguous"];
 
@@ -17,14 +18,14 @@ function resolveAdminTab(tab: string | null | undefined): AdminTab {
 export default async function AdminPage(props: {
   searchParams?: Promise<{ tab?: string | string[] | undefined }> | { tab?: string | string[] | undefined };
 }) {
-  const adminUser = await requireAdminUser();
+  const adminAuthState = await requireAdminUserAuthState();
   const searchParams = await Promise.resolve(props.searchParams ?? {});
   const rawTab = Array.isArray(searchParams.tab) ? searchParams.tab[0] : searchParams.tab;
   const activeTab = resolveAdminTab(rawTab ?? undefined);
   const tabClass = (tab: AdminTab) => (activeTab === tab ? "navLink navLinkActive" : "navLink");
 
   return (
-    <>
+    <div className="adminOverlayPage">
       <div className="favouritesBlindBar">
         <strong><span className="whiteAccountGlyph" aria-hidden="true">🛠</span> Admin</strong>
         <div className="accountTopBarActions">
@@ -39,8 +40,25 @@ export default async function AdminPage(props: {
         </div>
       </div>
 
-      {adminUser ? (
+      {adminAuthState.status === "authorized" ? (
         <AdminDashboardPanel activeTab={activeTab} />
+      ) : adminAuthState.status === "unavailable" ? (
+        <ProtectedAuthGatePanel
+          status="unavailable"
+          heading="🛠 Session"
+          headingDetail="Admin auth unavailable"
+          unauthenticatedMessage=""
+          unavailableMessage={adminAuthState.message}
+          showRegisterAction={false}
+        />
+      ) : adminAuthState.status === "unauthenticated" ? (
+        <ProtectedAuthGatePanel
+          status="unauthenticated"
+          heading="🛠 Session"
+          headingDetail="Admin access required"
+          unauthenticatedMessage="Sign in with the administrator account to access this area."
+          showRegisterAction={false}
+        />
       ) : (
         <section className="panel featurePanel">
           <div className="panelHeading">
@@ -55,6 +73,6 @@ export default async function AdminPage(props: {
           </div>
         </section>
       )}
-    </>
+    </div>
   );
 }

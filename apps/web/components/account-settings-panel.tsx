@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AuthAccountActions } from "@/components/auth-account-actions";
 import { AuthChangePasswordForm } from "@/components/auth-change-password-form";
 import { BlockedVideosInfiniteList } from "@/components/blocked-videos-infinite-list";
+import { UpgradeToEmailForm } from "@/components/upgrade-to-email-form";
 import type { HiddenVideoEntry } from "@/lib/catalog-data";
 
 type AccountUser = {
@@ -240,6 +241,12 @@ export function AccountSettingsPanel({
             <h3 className="accountSecurityHeading">Change password</h3>
             <AuthChangePasswordForm />
           </div>
+          {!user.email ? (
+            <div className="accountSecurityColumn">
+              <h3 className="accountSecurityHeading">Add recovery email</h3>
+              <UpgradeToEmailForm onSuccess={() => window.location.reload()} />
+            </div>
+          ) : null}
           {!user.emailVerifiedAt ? (
             <div className="accountSecurityColumn">
               <AuthAccountActions emailVerified={false} showLogout={false} />

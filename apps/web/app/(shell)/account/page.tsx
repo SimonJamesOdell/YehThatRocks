@@ -3,12 +3,14 @@ import Link from "next/link";
 import { CloseLink } from "@/components/close-link";
 import { AccountSettingsPanel } from "@/components/account-settings-panel";
 import { AuthLogoutButton } from "@/components/auth-logout-button";
+import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
 import { isAdminIdentity } from "@/lib/admin-auth";
 import { getHiddenVideosForUser } from "@/lib/catalog-data";
-import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
+import { getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
 
 export default async function AccountPage() {
-  const user = await getCurrentAuthenticatedUser();
+  const authState = await getCurrentAuthenticatedUserAuthState();
+  const user = authState.status === "authenticated" ? authState.user : null;
   const isAdminUser = Boolean(user && isAdminIdentity(user.id, user.email ?? ""));
   const blockedPageSize = 24;
   const blockedWindow = user
@@ -46,19 +48,13 @@ export default async function AccountPage() {
           blockedPageSize={blockedPageSize}
         />
       ) : (
-        <section className="panel featurePanel">
-          <div className="panelHeading">
-            <span><span className="whiteAccountGlyph" aria-hidden="true">👤</span> Session</span>
-            <strong>Login required</strong>
-          </div>
-          <div className="interactiveStack">
-            <p className="authMessage">You are not currently signed in.</p>
-            <div className="primaryActions compactActions">
-              <Link href="/login" className="navLink navLinkActive">Login</Link>
-              <Link href="/register" className="navLink">Register</Link>
-            </div>
-          </div>
-        </section>
+          <ProtectedAuthGatePanel
+            status={authState.status === "unavailable" ? "unavailable" : "unauthenticated"}
+          heading="👤 Session"
+          headingDetail="Login required"
+          unauthenticatedMessage="You are not currently signed in."
+          unavailableMessage={authState.status === "unavailable" ? authState.message : undefined}
+        />
       )}
     </>
   );

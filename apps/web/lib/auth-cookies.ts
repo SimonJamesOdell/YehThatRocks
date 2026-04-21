@@ -49,6 +49,16 @@ function getAuthCookieOptions(maxAge: number) {
   };
 }
 
+function getAuthCookieOptionsWithoutDomain(maxAge: number) {
+  return {
+    httpOnly: true as const,
+    sameSite: "strict" as const,
+    secure: isSecureCookie(),
+    path: "/",
+    maxAge,
+  };
+}
+
 export function setAuthCookies(response: NextResponse, accessToken: string, refreshToken: string, remember: boolean) {
   response.cookies.set(ACCESS_TOKEN_COOKIE, accessToken, getAuthCookieOptions(ACCESS_TOKEN_TTL_SECONDS));
 
@@ -60,9 +70,12 @@ export function setAuthCookies(response: NextResponse, accessToken: string, refr
 }
 
 export function clearAuthCookies(response: NextResponse) {
+  // Clear both domain-scoped and host-only variants to prevent stale-cookie
+  // shadowing across APP_URL/domain config changes.
   response.cookies.set(ACCESS_TOKEN_COOKIE, "", getAuthCookieOptions(0));
-
   response.cookies.set(REFRESH_TOKEN_COOKIE, "", getAuthCookieOptions(0));
+  response.cookies.set(ACCESS_TOKEN_COOKIE, "", getAuthCookieOptionsWithoutDomain(0));
+  response.cookies.set(REFRESH_TOKEN_COOKIE, "", getAuthCookieOptionsWithoutDomain(0));
 }
 
 export function readAuthCookies(request: NextRequest) {

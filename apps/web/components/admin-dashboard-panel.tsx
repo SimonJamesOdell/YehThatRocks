@@ -60,7 +60,14 @@ type DashboardPayload = {
       networkUsagePercent: number | null;
     };
   };
-  counts: { users: number; videos: number; artists: number; categories: number };
+  counts: {
+    users: number;
+    registeredUsers: number;
+    anonymousUsers: number;
+    videos: number;
+    artists: number;
+    categories: number;
+  };
   locations: Array<{ location: string; count: number }>;
   traffic: Array<{ day: string; count: number }>;
   analytics: {
@@ -619,12 +626,13 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     const paddingLeft = 46;
     const paddingRight = 20;
     const paddingTop = 14;
-    const paddingBottom = 38;
+    const paddingBottom = 28;
 
     if (hostMetricRows.length === 0) {
       return {
         width,
         height,
+        axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
         cpuPath: "",
         memoryPath: "",
         swapPath: "",
@@ -694,6 +702,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     return {
       width,
       height,
+      axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
       cpuPath: makePath(points.map((point) => point.cpu)),
       memoryPath: makePath(points.map((point) => point.memory)),
       swapPath: makePath(points.map((point) => point.swap)),
@@ -1009,34 +1018,36 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       {saveMessage ? <p className="authMessage">{saveMessage}</p> : null}
 
       {activeTab === "overview" ? (
-        <div style={{ display: "grid", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-            <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }}></span>
-            <button
-              type="button"
-              onClick={() => setShowHostMetricsGraph((previous) => !previous)}
-              style={{
-                borderRadius: 999,
-                border: "1px solid rgba(255,255,255,0.18)",
-                background: showHostMetricsGraph ? "rgba(95,193,255,0.14)" : "rgba(255,255,255,0.04)",
-                color: showHostMetricsGraph ? "#5fc1ff" : "rgba(255,255,255,0.82)",
-                padding: "7px 12px",
-                cursor: "pointer",
-              }}
-            >
-              {showHostMetricsGraph ? "Hide 24h graph" : "View 24h graph"}
-            </button>
-          </div>
+        <div className="adminOverviewStack">
           <div className="adminOverviewHealthLayout">
-            <div className="adminOverviewDials">
-              <Dial label="Memory" value={dashboard?.health.host.memoryUsagePercent ?? null} color="#ffc14d" />
-              <Dial label="Swap" value={dashboard?.health.host.swapUsagePercent ?? null} color="#f5d96b" />
-              <Dial label="CPU" value={finiteOrNull(dashboard?.health.host.cpuUsagePercent)} color="#ff6f43" detail={cpuAvgPeakText} />
-              <Dial label="Disk" value={dashboard?.health.host.diskUsagePercent ?? null} color="#7ce0a3" />
-              <Dial label="Network" value={dashboard?.health.host.networkUsagePercent ?? null} color="#5fc1ff" />
+            <div className="adminOverviewDialsColumn">
+              <div className="adminOverviewDials">
+                <Dial label="Memory" value={dashboard?.health.host.memoryUsagePercent ?? null} color="#ffc14d" />
+                <Dial label="Swap" value={dashboard?.health.host.swapUsagePercent ?? null} color="#f5d96b" />
+                <Dial label="CPU" value={finiteOrNull(dashboard?.health.host.cpuUsagePercent)} color="#ff6f43" detail={cpuAvgPeakText} />
+                <Dial label="Disk" value={dashboard?.health.host.diskUsagePercent ?? null} color="#7ce0a3" />
+                <Dial label="Network" value={dashboard?.health.host.networkUsagePercent ?? null} color="#5fc1ff" />
+              </div>
+              <div className="adminOverviewGraphToggleRow">
+                <button
+                  type="button"
+                  onClick={() => setShowHostMetricsGraph((previous) => !previous)}
+                  style={{
+                    borderRadius: 999,
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    background: showHostMetricsGraph ? "rgba(95,193,255,0.14)" : "rgba(255,255,255,0.04)",
+                    color: showHostMetricsGraph ? "#5fc1ff" : "rgba(255,255,255,0.82)",
+                    padding: "7px 12px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {showHostMetricsGraph ? "Hide 24h graph" : "View 24h graph"}
+                </button>
+              </div>
             </div>
             <div className="statusMetrics">
-              <div><strong>Users</strong><p>{dashboard?.counts.users ?? 0}</p></div>
+              <div><strong>Registered Users</strong><p>{dashboard?.counts.registeredUsers ?? 0}</p></div>
+              <div><strong>Anonymous Users</strong><p>{dashboard?.counts.anonymousUsers ?? 0}</p></div>
               <div><strong>Videos</strong><p>{dashboard?.counts.videos ?? 0}</p></div>
               <div><strong>Artists</strong><p>{dashboard?.counts.artists ?? 0}</p></div>
             </div>
@@ -1091,18 +1102,18 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                   <>
                     {hostMetricsGraph.yTicks.map((tick) => (
                       <g key={`hy-${tick.value}-${tick.y.toFixed(1)}`}>
-                        <line x1="46" y1={String(tick.y)} x2="660" y2={String(tick.y)} stroke="rgba(255,255,255,0.14)" strokeWidth="1" />
-                        <text x="40" y={String(tick.y + 3)} textAnchor="end" fill="rgba(255,255,255,0.78)" style={{ fontSize: 10, fontVariantNumeric: "tabular-nums" }}>{tick.value}%</text>
+                        <line x1={String(hostMetricsGraph.axis.paddingLeft)} y1={String(tick.y)} x2={String(hostMetricsGraph.width - hostMetricsGraph.axis.paddingRight)} y2={String(tick.y)} stroke="rgba(255,255,255,0.14)" strokeWidth="1" />
+                        <text x={String(hostMetricsGraph.axis.paddingLeft - 6)} y={String(tick.y + 3)} textAnchor="end" fill="rgba(255,255,255,0.78)" style={{ fontSize: 10, fontVariantNumeric: "tabular-nums" }}>{tick.value}%</text>
                       </g>
                     ))}
                     {hostMetricsGraph.xTicks.map((tick) => (
                       <g key={`hx-${tick.label}-${tick.x.toFixed(1)}`}>
-                        <line x1={String(tick.x)} y1="14" x2={String(tick.x)} y2="182" stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
-                        <text x={String(tick.x)} y="208" textAnchor="middle" fill="rgba(255,255,255,0.78)" style={{ fontSize: 10 }}>{tick.label}</text>
+                        <line x1={String(tick.x)} y1={String(hostMetricsGraph.axis.paddingTop)} x2={String(tick.x)} y2={String(hostMetricsGraph.height - hostMetricsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
+                        <text x={String(tick.x)} y={String(hostMetricsGraph.height - 13)} textAnchor="middle" fill="rgba(255,255,255,0.72)" fontSize="5" fontWeight="500">{tick.label}</text>
                       </g>
                     ))}
-                    <line x1="46" y1="14" x2="46" y2="182" stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
-                    <line x1="46" y1="182" x2="660" y2="182" stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
+                    <line x1={String(hostMetricsGraph.axis.paddingLeft)} y1={String(hostMetricsGraph.axis.paddingTop)} x2={String(hostMetricsGraph.axis.paddingLeft)} y2={String(hostMetricsGraph.height - hostMetricsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
+                    <line x1={String(hostMetricsGraph.axis.paddingLeft)} y1={String(hostMetricsGraph.height - hostMetricsGraph.axis.paddingBottom)} x2={String(hostMetricsGraph.width - hostMetricsGraph.axis.paddingRight)} y2={String(hostMetricsGraph.height - hostMetricsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
                     {hostMetricSeriesOn.cpu && <path d={hostMetricsGraph.cpuPath} fill="none" stroke="#ff6f43" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />}
                     {hostMetricSeriesOn.memory && <path d={hostMetricsGraph.memoryPath} fill="none" stroke="#ffc14d" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />}
                     {hostMetricSeriesOn.swap && <path d={hostMetricsGraph.swapPath} fill="none" stroke="#f5d96b" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />}
@@ -1236,7 +1247,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                 {analyticsGraph.xTicks.map((tick) => (
                   <g key={`ax-${tick.label}-${tick.x.toFixed(1)}`}>
                     <line x1={String(tick.x)} y1={String(analyticsGraph.axis.paddingTop)} x2={String(tick.x)} y2={String(analyticsGraph.height - analyticsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
-                    <text x={String(tick.x)} y={String(analyticsGraph.height - 12)} textAnchor="end" fill="rgba(255,255,255,0.78)" transform={`rotate(-45 ${tick.x} ${analyticsGraph.height - 12})`} style={{ fontSize: 10 }}>{tick.label}</text>
+                    <text x={String(tick.x)} y={String(analyticsGraph.height - 34)} textAnchor="end" fill="rgba(255,255,255,0.72)" transform={`rotate(-45 ${tick.x} ${analyticsGraph.height - 34})`} fontSize="7" fontWeight="500">{tick.label}</text>
                   </g>
                 ))}
                 <line x1={String(analyticsGraph.axis.paddingLeft)} y1={String(analyticsGraph.axis.paddingTop)} x2={String(analyticsGraph.axis.paddingLeft)} y2={String(analyticsGraph.height - analyticsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.24)" strokeWidth="1" />

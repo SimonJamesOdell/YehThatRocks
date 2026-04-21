@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireApiAuth } from "@/lib/auth-request";
+import { isScreenNameTaken, normalizeScreenName } from "@/lib/auth-screen-name";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
 import { parseRequestJson } from "@/lib/request-json";
@@ -130,11 +131,16 @@ export async function PATCH(request: NextRequest) {
   }
 
   const avatarUrl = parsed.data.avatarUrl.trim();
+  const screenName = normalizeScreenName(parsed.data.screenName);
+
+  if (await isScreenNameTaken(screenName, authResult.auth.userId)) {
+    return NextResponse.json({ error: "Screen name is already taken" }, { status: 409 });
+  }
 
   const refreshedUser = await (prisma as PrismaWithProfileUser).user.update({
     where: { id: authResult.auth.userId },
     data: {
-      screenName: parsed.data.screenName,
+      screenName,
       avatarUrl: avatarUrl.length > 0 ? avatarUrl : null,
       bio: parsed.data.bio.length > 0 ? parsed.data.bio : null,
       location: parsed.data.location.length > 0 ? parsed.data.location : null,

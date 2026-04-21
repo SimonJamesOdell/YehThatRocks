@@ -107,6 +107,11 @@ function cookieHeader(cookieJar) {
   return values.join("; ");
 }
 
+function buildAnonymousScreenName() {
+  const suffix = Math.random().toString(36).slice(2, 10);
+  return `smokeanon${suffix}`;
+}
+
 async function fetchJson(url, init, timeoutMs) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -151,6 +156,56 @@ async function main() {
       unauthMe.response.status === 401 || unauthMe.response.status === 403,
       "Unauthenticated /api/auth/me is rejected",
       `status=${unauthMe.response.status}`,
+      failures,
+    );
+  }
+
+  const invalidTokenMe = await fetchJson(
+    `${baseUrl}/api/auth/me`,
+    {
+      method: "GET",
+      headers: {
+        Cookie: "ytr_access=not-a-real-jwt-token",
+      },
+    },
+    timeoutMs,
+  ).catch((error) => ({ error }));
+
+  if (invalidTokenMe?.error) {
+    assertInvariant(false, "Invalid-token /api/auth/me endpoint reachable", String(invalidTokenMe.error), failures);
+  } else {
+    assertInvariant(
+      invalidTokenMe.response.status === 401 || invalidTokenMe.response.status === 403,
+      "Invalid-token /api/auth/me is rejected as unauthenticated",
+      `status=${invalidTokenMe.response.status}`,
+      failures,
+    );
+  }
+
+  const optionalAuthInvalidTokenSearch = await fetchJson(
+    `${baseUrl}/api/search?q=metal`,
+    {
+      method: "GET",
+      headers: {
+        Cookie: "ytr_access=not-a-real-jwt-token",
+      },
+    },
+    timeoutMs,
+  ).catch((error) => ({ error }));
+
+  if (optionalAuthInvalidTokenSearch?.error) {
+    assertInvariant(false, "Invalid-token optional-auth /api/search endpoint reachable", String(optionalAuthInvalidTokenSearch.error), failures);
+  } else {
+    assertInvariant(
+      optionalAuthInvalidTokenSearch.response.ok,
+      "Invalid-token optional-auth /api/search still returns success",
+      `status=${optionalAuthInvalidTokenSearch.response.status}`,
+      failures,
+    );
+    assertInvariant(
+      typeof optionalAuthInvalidTokenSearch.payload?.query === "string",
+      "Invalid-token optional-auth /api/search still returns payload",
+      `query=${String(optionalAuthInvalidTokenSearch.payload?.query)}`,
       failures,
     );
   }
@@ -310,6 +365,173 @@ async function main() {
         failures,
       );
     }
+  }
+
+  const anonymousCookieJar = new Map();
+  const anonymousScreenName = buildAnonymousScreenName();
+  const anonymousCreate = await fetchJson(
+    `${baseUrl}/api/auth/anonymous`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: baseUrl,
+      },
+      body: JSON.stringify({ screenName: anonymousScreenName }),
+    },
+    timeoutMs,
+  ).catch((error) => ({ error }));
+
+  if (anonymousCreate?.error) {
+    assertInvariant(false, "Anonymous account create endpoint reachable", String(anonymousCreate.error), failures);
+  } else {
+    assertInvariant(
+      anonymousCreate.response.status === 201,
+      "Anonymous account create returns 201",
+      `status=${anonymousCreate.response.status}`,
+      failures,
+    );
+
+    const setCookie = anonymousCreate.setCookies.join("\n");
+    assertInvariant(
+      setCookie.includes("ytr_access=") && setCookie.includes("ytr_refresh="),
+      "Anonymous account create sets access and refresh cookies",
+      "expected ytr_access and ytr_refresh in set-cookie",
+      failures,
+    );
+
+    assertInvariant(
+      typeof anonymousCreate.payload?.credentials?.username === "string" && anonymousCreate.payload.credentials.username.length > 0,
+      "Anonymous account create returns credentials.username",
+      `credentials.username=${String(anonymousCreate.payload?.credentials?.username)}`,
+      failures,
+    );
+
+    assertInvariant(
+      typeof anonymousCreate.payload?.credentials?.password === "string" && anonymousCreate.payload.credentials.password.length >= 12,
+      "Anonymous account create returns credentials.password",
+      `credentials.password.length=${String(anonymousCreate.payload?.credentials?.password?.length)}`,
+      failures,
+    );
+
+    updateCookieJar(anonymousCookieJar, anonymousCreate.setCookies);
+  }
+
+  let anonymousAuthenticated = false;
+  const anonymousMe = await fetchJson(
+    `${baseUrl}/api/auth/me`,
+    {
+      method: "GET",
+      headers: {
+        Cookie: cookieHeader(anonymousCookieJar),
+      },
+    },
+    timeoutMs,
+  ).catch((error) => ({ error }));
+
+  if (anonymousMe?.error) {
+    assertInvariant(false, "Anonymous /api/auth/me endpoint reachable", String(anonymousMe.error), failures);
+  } else if (anonymousMe.response.ok) {
+    anonymousAuthenticated = true;
+    assertInvariant(true, "Anonymous /api/auth/me returns 2xx", undefined, failures);
+  } else {
+    const anonymousUsername = anonymousCreate?.payload?.credentials?.username;
+    const anonymousPassword = anonymousCreate?.payload?.credentials?.password;
+
+    if (!anonymousUsername || !anonymousPassword) {
+      assertInvariant(
+        false,
+        "Anonymous flow can establish authenticated session",
+        `status=${anonymousMe.response.status}; missing returned credentials for fallback login`,
+        failures,
+      );
+    } else {
+      const anonymousLogin = await fetchJson(
+        `${baseUrl}/api/auth/login`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Origin: baseUrl,
+          },
+          body: JSON.stringify({ email: anonymousUsername, password: anonymousPassword, remember: true }),
+        },
+        timeoutMs,
+      ).catch((error) => ({ error }));
+
+      if (anonymousLogin?.error) {
+        assertInvariant(false, "Anonymous fallback login endpoint reachable", String(anonymousLogin.error), failures);
+      } else {
+        assertInvariant(
+          anonymousLogin.response.ok,
+          "Anonymous fallback login returns 2xx",
+          `status=${anonymousLogin.response.status}`,
+          failures,
+        );
+        updateCookieJar(anonymousCookieJar, anonymousLogin.setCookies);
+
+        const anonymousMeAfterLogin = await fetchJson(
+          `${baseUrl}/api/auth/me`,
+          {
+            method: "GET",
+            headers: {
+              Cookie: cookieHeader(anonymousCookieJar),
+            },
+          },
+          timeoutMs,
+        ).catch((error) => ({ error }));
+
+        if (anonymousMeAfterLogin?.error) {
+          assertInvariant(false, "Anonymous post-login /api/auth/me endpoint reachable", String(anonymousMeAfterLogin.error), failures);
+        } else {
+          anonymousAuthenticated = anonymousMeAfterLogin.response.ok;
+          assertInvariant(
+            anonymousMeAfterLogin.response.ok,
+            "Anonymous flow establishes authenticated session",
+            `status=${anonymousMeAfterLogin.response.status}`,
+            failures,
+          );
+        }
+      }
+    }
+  }
+
+  if (!anonymousAuthenticated) {
+    assertInvariant(
+      false,
+      "Anonymous flow authenticated before logout",
+      "Anonymous user could not establish authenticated session prior to logout check",
+      failures,
+    );
+  }
+
+  const anonymousLogout = await fetchJson(
+    `${baseUrl}/api/auth/logout`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: baseUrl,
+        Cookie: cookieHeader(anonymousCookieJar),
+      },
+      body: JSON.stringify({}),
+    },
+    timeoutMs,
+  ).catch((error) => ({ error }));
+
+  if (anonymousLogout?.error) {
+    assertInvariant(false, "Anonymous logout endpoint reachable", String(anonymousLogout.error), failures);
+  } else {
+    assertInvariant(anonymousLogout.response.ok, "Anonymous logout returns 2xx", `status=${anonymousLogout.response.status}`, failures);
+    updateCookieJar(anonymousCookieJar, anonymousLogout.setCookies);
+
+    const cookieHeaderAfterAnonymousLogout = cookieHeader(anonymousCookieJar);
+    assertInvariant(
+      !cookieHeaderAfterAnonymousLogout.includes("ytr_access=") && !cookieHeaderAfterAnonymousLogout.includes("ytr_refresh="),
+      "Anonymous logout clears auth cookies from client jar",
+      `remainingCookieHeader=${cookieHeaderAfterAnonymousLogout || "<empty>"}`,
+      failures,
+    );
   }
 
   if (failures.length > 0) {

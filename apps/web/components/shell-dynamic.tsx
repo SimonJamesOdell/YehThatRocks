@@ -315,6 +315,7 @@ type ShellDynamicProps = {
   initialSeenVideoIds?: string[];
   initialHiddenVideoIds?: string[];
   isLoggedIn: boolean;
+  initialAuthStatus?: "clear" | "unavailable";
   isAdmin: boolean;
   children: ReactNode;
 };
@@ -347,6 +348,7 @@ const PLAYLIST_RAIL_SYNC_EVENT = "ytr:playlist-rail-sync";
 const PLAYLIST_CREATION_PROGRESS_EVENT = "ytr:playlist-creation-progress";
 const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
 const OVERLAY_OPEN_REQUEST_EVENT = "ytr:overlay-open-request";
+const ADMIN_OVERLAY_ENTER_EVENT = "ytr:admin-overlay-enter";
 const DOCK_MOVE_DURATION_MS = 520;
 const DOCK_CONTROLS_FADE_DURATION_MS = 220;
 const DOCK_CONTROLS_FADE_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - DOCK_CONTROLS_FADE_DURATION_MS);
@@ -435,14 +437,13 @@ function isProtectedOverlayPath(pathname: string) {
     || pathname.startsWith("/playlists/");
 }
 
-const AUTH_PROBE_FAILURE_THRESHOLD = 2;
-
 function ShellDynamicInner({
   initialVideo,
   initialRelatedVideos,
   initialSeenVideoIds = [],
   initialHiddenVideoIds = [],
   isLoggedIn,
+  initialAuthStatus = "clear",
   isAdmin,
   children,
 }: ShellDynamicProps) {
@@ -464,6 +465,13 @@ function ShellDynamicInner({
   const hiddenVideoIdsRef = useRef<Set<string>>(new Set(initialHiddenVideoIds));
   const activeVideoId = requestedVideoId ?? currentVideo.id;
   const [isAuthenticated, setIsAuthenticated] = useState(isLoggedIn);
+  const [authStatus, setAuthStatus] = useState<"clear" | "unavailable">(initialAuthStatus);
+  const [authStatusMessage, setAuthStatusMessage] = useState<string | null>(
+    initialAuthStatus === "unavailable"
+      ? "The auth server is not responding, so your authorization status cannot currently be confirmed. Try again later or reconnect now."
+      : null,
+  );
+  const [isRetryingAuthStatus, setIsRetryingAuthStatus] = useState(false);
   const [deniedPlaybackMessage, setDeniedPlaybackMessage] = useState<string | null>(null);
   const [chatMode, setChatMode] = useState<ChatMode>("global");
   const [rightRailMode, setRightRailMode] = useState<RightRailMode>("watch-next");
@@ -531,7 +539,6 @@ function ShellDynamicInner({
   const [desktopIntroDeltaY, setDesktopIntroDeltaY] = useState(0);
   const [desktopIntroScale, setDesktopIntroScale] = useState(1);
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
-  const authProbeFailureCountRef = useRef(0);
   const lastVideoIdRef = useRef<string | null>(
     requestedVideoId && requestedVideoId === initialVideo.id ? requestedVideoId : null,
   );
@@ -613,13 +620,14 @@ function ShellDynamicInner({
   const previousWasArtistsRoute = previousPathname === "/artists"
     || previousPathname?.startsWith("/artist/") === true
     || previousPathname?.startsWith("/artists/") === true;
+  const isAdminOverlayRoute = pathname === "/admin";
   const isOverlayRoute = pathname !== "/";
-  const shouldShowOverlayPanel = isOverlayRoute || pendingOverlayOpenKind !== null;
+  const shouldShowOverlayPanel = (isOverlayRoute && !isAdminOverlayRoute) || pendingOverlayOpenKind !== null;
   const disableOverlayDropAnimation =
     (isCategoriesRoute && previousWasCategoriesRoute)
     || (isArtistsRoute && previousWasArtistsRoute);
   const isPlayerWidthOverlayRoute =
-    pathname === "/new"
+  pathname === "/new"
     || pathname === "/top100"
     || pathname === "/history"
     || pathname === "/search";
@@ -966,6 +974,22 @@ function ShellDynamicInner({
   }, []);
 
   useEffect(() => {
+    if (!isAdminOverlayRoute) {
+      return;
+    }
+
+    setChatMode("global");
+  }, [isAdminOverlayRoute]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !isAdminOverlayRoute) {
+      return;
+    }
+
+    window.dispatchEvent(new Event(ADMIN_OVERLAY_ENTER_EVENT));
+  }, [isAdminOverlayRoute]);
+
+  useEffect(() => {
     if (shouldShowOverlayPanel) {
       setIsMobileCommunityOpen(false);
       return;
@@ -1067,7 +1091,9 @@ function ShellDynamicInner({
         ? `${closeUrl.pathname}${closeUrl.search}${closeUrl.hash}`
         : fallbackHomeHref;
 
-      if (!isOverlayRoute) {
+      if (!shouldShowOverlayPanel) {
+        setIsOverlayClosing(false);
+        shouldRunFooterRevealRef.current = false;
         router.push(nextHref);
         return;
       }
@@ -1107,7 +1133,7 @@ function ShellDynamicInner({
       setIsFooterRevealActive(false);
       shouldRunFooterRevealRef.current = false;
     };
-  }, [currentVideo.id, isOverlayRoute, router]);
+  }, [currentVideo.id, router, shouldShowOverlayPanel]);
 
   useEffect(() => {
     if (requestedVideoId) {
@@ -1185,8 +1211,30 @@ function ShellDynamicInner({
 
   useEffect(() => {
     setIsAuthenticated(isLoggedIn);
-    authProbeFailureCountRef.current = 0;
-  }, [isLoggedIn]);
+    if (!isLoggedIn) {
+      setAuthStatus("clear");
+      setAuthStatusMessage(null);
+      return;
+    }
+
+    if (initialAuthStatus === "unavailable") {
+      setAuthStatus("unavailable");
+      setAuthStatusMessage("The auth server is not responding, so your authorization status cannot currently be confirmed. Try again later or reconnect now.");
+      return;
+    }
+
+    setAuthStatus("clear");
+    setAuthStatusMessage(null);
+  }, [initialAuthStatus, isLoggedIn]);
+
+  useEffect(() => {
+    if (isAuthenticated || seenVideoIdsRef.current.size === 0) {
+      return;
+    }
+
+    seenVideoIdsRef.current = new Set<string>();
+    setSeenVideoRefreshTick((value) => value + 1);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (pathname !== "/top100" && pathname !== "/history") {
@@ -1743,6 +1791,52 @@ function ShellDynamicInner({
     [refreshAuthSession],
   );
 
+  const checkAuthState = useCallback(async () => {
+    try {
+      const response = await fetchWithAuthRetry("/api/auth/me");
+
+      if (response.status === 401 || response.status === 403) {
+        setAuthStatus("clear");
+        setAuthStatusMessage(null);
+        setIsAuthenticated(false);
+        setChatError(null);
+        return "unauthenticated" as const;
+      }
+
+      if (!response.ok) {
+        setAuthStatus("unavailable");
+        setAuthStatusMessage("The auth server is not responding, so your authorization status cannot currently be confirmed. Try again later or reconnect now.");
+        return "unavailable" as const;
+      }
+
+      setAuthStatus("clear");
+      setAuthStatusMessage(null);
+      return "authenticated" as const;
+    } catch {
+      setAuthStatus("unavailable");
+      setAuthStatusMessage("The auth server is not responding, so your authorization status cannot currently be confirmed. Try again later or reconnect now.");
+      return "unavailable" as const;
+    }
+  }, [fetchWithAuthRetry]);
+
+  const retryAuthStateCheck = useCallback(async () => {
+    if (isRetryingAuthStatus) {
+      return;
+    }
+
+    setIsRetryingAuthStatus(true);
+
+    try {
+      const result = await checkAuthState();
+
+      if (result === "authenticated") {
+        router.refresh();
+      }
+    } finally {
+      setIsRetryingAuthStatus(false);
+    }
+  }, [checkAuthState, isRetryingAuthStatus, router]);
+
   useEffect(() => {
     const handlePlaylistsUpdated = () => {
       setPlaylistRefreshTick((current) => current + 1);
@@ -2168,8 +2262,8 @@ function ShellDynamicInner({
       : displayedRenderableRelatedVideos
   ), [displayedRenderableRelatedVideos, isAuthenticated, watchNextHideSeen]);
   const hasSeenWatchNextVideos = useMemo(
-    () => displayedRenderableRelatedVideos.some((video) => seenVideoIdsRef.current.has(video.id)),
-    [displayedRenderableRelatedVideos],
+    () => isAuthenticated && displayedRenderableRelatedVideos.some((video) => seenVideoIdsRef.current.has(video.id)),
+    [displayedRenderableRelatedVideos, isAuthenticated],
   );
   const hidingRelatedVideoIdSet = useMemo(() => new Set(hidingRelatedVideoIds), [hidingRelatedVideoIds]);
   const hiddenMutationPendingVideoIdSet = useMemo(() => new Set(hiddenMutationPendingVideoIds), [hiddenMutationPendingVideoIds]);
@@ -2218,6 +2312,10 @@ function ShellDynamicInner({
 
   useEffect(() => {
     const handleWatchHistoryUpdated = (event: Event) => {
+      if (!isAuthenticated) {
+        return;
+      }
+
       const customEvent = event as CustomEvent<{ videoId?: string }>;
       const payloadVideoId = customEvent.detail?.videoId;
       const fallbackVideoId = currentVideo.id;
@@ -2237,7 +2335,7 @@ function ShellDynamicInner({
     return () => {
       window.removeEventListener(WATCH_HISTORY_UPDATED_EVENT, handleWatchHistoryUpdated as EventListener);
     };
-  }, [currentVideo.id]);
+  }, [currentVideo.id, isAuthenticated]);
 
   const activePlaylistSummary = activePlaylistId
     ? playlistRailSummaries.find((playlist) => playlist.id === activePlaylistId) ?? null
@@ -3532,39 +3630,25 @@ function ShellDynamicInner({
 
     let cancelled = false;
 
-    const checkAuthState = async () => {
-      try {
-        const response = await fetchWithAuthRetry("/api/auth/me");
+    const runCheckAuthState = async () => {
+      const result = await checkAuthState();
 
-        if (cancelled) {
-          return;
-        }
-
-        if (response.status === 401 || response.status === 403) {
-          authProbeFailureCountRef.current += 1;
-
-          if (authProbeFailureCountRef.current >= AUTH_PROBE_FAILURE_THRESHOLD) {
-            setIsAuthenticated(false);
-            setChatError(null);
-          }
-
-          return;
-        }
-
-        authProbeFailureCountRef.current = 0;
-      } catch {
-        // Ignore transient network errors and keep current UI state.
+      if (cancelled || result !== "authenticated") {
+        return;
       }
+
+      setAuthStatus("clear");
+      setAuthStatusMessage(null);
     };
 
-    void checkAuthState();
+    void runCheckAuthState();
     const intervalId = window.setInterval(() => {
-      void checkAuthState();
+      void runCheckAuthState();
     }, 60_000);
 
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        void checkAuthState();
+        void runCheckAuthState();
       }
     };
 
@@ -3575,7 +3659,7 @@ function ShellDynamicInner({
       window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [fetchWithAuthRetry, isAuthenticated]);
+  }, [checkAuthState, isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -3921,10 +4005,25 @@ function ShellDynamicInner({
         </div>
       </header>
 
+      {authStatus === "unavailable" && authStatusMessage ? (
+        <section className="authStatusBanner" role="status" aria-live="polite">
+          <div className="authStatusBannerCopy">
+            <strong>Auth server unavailable</strong>
+            <p>{authStatusMessage}</p>
+          </div>
+          <div className="authStatusBannerActions">
+            <button type="button" onClick={() => void retryAuthStateCheck()} disabled={isRetryingAuthStatus}>
+              {isRetryingAuthStatus ? "Retrying..." : "Retry auth now"}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       <section
         className={[
           "heroGrid",
           shouldShowOverlayPanel ? "heroGridOverlayRoute" : "",
+          isAdminOverlayRoute ? "heroGridAdminOverlayRoute" : "",
           isOverlayClosing ? "heroGridOverlayClosing" : "",
         ].filter(Boolean).join(" ")}
         onClickCapture={handleOverlayVideoLinkClickCapture}
@@ -3950,28 +4049,49 @@ function ShellDynamicInner({
         >
           {isAuthenticated ? (
             <>
-              <div className="railTabs">
-                <button
-                  type="button"
-                  className={`${chatMode === "global" ? "activeTab" : ""} ${flashingChatTabs.global ? "attentionPulse" : ""}`.trim() || undefined}
-                  onClick={() => setChatMode("global")}
-                >
-                  Global Chat
-                </button>
-                <button
-                  type="button"
-                  className={`${chatMode === "video" ? "activeTab" : ""} ${flashingChatTabs.video ? "attentionPulse" : ""}`.trim() || undefined}
-                  onClick={() => setChatMode("video")}
-                >
-                  Video Chat
-                </button>
-                <button
-                  type="button"
-                  className={chatMode === "online" ? "activeTab" : undefined}
-                  onClick={() => setChatMode("online")}
-                >
-                  Who&apos;s Online
-                </button>
+              <div className={isAdminOverlayRoute ? "railTabs railTabsAdminOverlay" : "railTabs"}>
+                {isAdminOverlayRoute ? (
+                  <>
+                    <button
+                      type="button"
+                      className={`${chatMode === "global" ? "activeTab" : ""} ${flashingChatTabs.global ? "attentionPulse" : ""}`.trim() || undefined}
+                      onClick={() => setChatMode("global")}
+                    >
+                      Global Chat
+                    </button>
+                    <button
+                      type="button"
+                      className={chatMode === "online" ? "activeTab" : undefined}
+                      onClick={() => setChatMode("online")}
+                    >
+                      Who&apos;s Online
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className={`${chatMode === "global" ? "activeTab" : ""} ${flashingChatTabs.global ? "attentionPulse" : ""}`.trim() || undefined}
+                      onClick={() => setChatMode("global")}
+                    >
+                      Global Chat
+                    </button>
+                    <button
+                      type="button"
+                      className={`${chatMode === "video" ? "activeTab" : ""} ${flashingChatTabs.video ? "attentionPulse" : ""}`.trim() || undefined}
+                      onClick={() => setChatMode("video")}
+                    >
+                      Video Chat
+                    </button>
+                    <button
+                      type="button"
+                      className={chatMode === "online" ? "activeTab" : undefined}
+                      onClick={() => setChatMode("online")}
+                    >
+                      Who&apos;s Online
+                    </button>
+                  </>
+                )}
               </div>
 
               <div className="chatList" ref={chatListRef}>
@@ -4134,7 +4254,7 @@ function ShellDynamicInner({
               </Suspense>
             </div>
 
-            {shouldShowOverlayPanel ? (
+            {shouldShowOverlayPanel || isAdminOverlayRoute ? (
               <section
                 key={overlayRouteKey}
                 className={overlayPanelClassName}
@@ -4160,38 +4280,39 @@ function ShellDynamicInner({
           </div>
         </section>
 
-        <aside
-          ref={watchNextRailRef}
-          className={
-            shouldShowOverlayPanel
-              ? "rightRail panel translucent railOccluded"
-              : "rightRail panel translucent"
-          }
-          aria-hidden={shouldShowOverlayPanel}
-          inert={shouldShowOverlayPanel ? true : undefined}
-        >
-          <div className="railTabs rightRailTabs">
-            {isAuthenticated ? (
-              <button
-                type="button"
-                className={rightRailMode === "watch-next" ? "activeTab" : undefined}
-                onClick={handleSwitchToWatchNextRail}
-              >
-                Watch Next
-              </button>
-            ) : (
-              <span className={rightRailMode === "watch-next" ? "tabLabel activeTab" : "tabLabel"}>Watch Next</span>
-            )}
-            {isAuthenticated ? (
-              <button
-                type="button"
-                className={rightRailMode === "playlist" ? "activeTab" : undefined}
-                onClick={() => setRightRailMode("playlist")}
-              >
-                {activePlaylistTrackCount > 0 ? `Playlist (${activePlaylistTrackCount})` : "Playlist"}
-              </button>
-            ) : null}
-          </div>
+        {isAdminOverlayRoute ? null : (
+          <aside
+            ref={watchNextRailRef}
+            className={
+              shouldShowOverlayPanel
+                ? "rightRail panel translucent railOccluded"
+                : "rightRail panel translucent"
+            }
+            aria-hidden={shouldShowOverlayPanel}
+            inert={shouldShowOverlayPanel ? true : undefined}
+          >
+            <div className="railTabs rightRailTabs">
+              {isAuthenticated ? (
+                <button
+                  type="button"
+                  className={rightRailMode === "watch-next" ? "activeTab" : undefined}
+                  onClick={handleSwitchToWatchNextRail}
+                >
+                  Watch Next
+                </button>
+              ) : (
+                <span className={rightRailMode === "watch-next" ? "tabLabel activeTab" : "tabLabel"}>Watch Next</span>
+              )}
+              {isAuthenticated ? (
+                <button
+                  type="button"
+                  className={rightRailMode === "playlist" ? "activeTab" : undefined}
+                  onClick={() => setRightRailMode("playlist")}
+                >
+                  {activePlaylistTrackCount > 0 ? `Playlist (${activePlaylistTrackCount})` : "Playlist"}
+                </button>
+              ) : null}
+            </div>
 
           {rightRailMode === "watch-next" && isAuthenticated ? (
             <div className="rightRailWatchNextHeader">
@@ -4254,7 +4375,7 @@ function ShellDynamicInner({
                       track={track}
                       index={index}
                       isAuthenticated={isAuthenticated}
-                      isSeen={seenVideoIdsRef.current.has(track.id)}
+                      isSeen={isAuthenticated && seenVideoIdsRef.current.has(track.id)}
                       isHiding={hidingRelatedVideoIdSet.has(track.id)}
                       isHiddenMutationPending={hiddenMutationPendingVideoIdSet.has(track.id)}
                       isClicked={clickedRelatedVideoId === track.id}
@@ -4622,7 +4743,8 @@ function ShellDynamicInner({
               </div>
             </div>
           )}
-        </aside>
+          </aside>
+        )}
       </section>
     </main>
   );
