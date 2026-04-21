@@ -518,12 +518,17 @@ export function PlayerExperience({
   const volumeRef = useRef(volume);
   const isMutedRef = useRef(isMuted);
   const persistMutedPreferenceOnNextSyncRef = useRef(false);
+  const hasUserGesturePlaybackUnlockRef = useRef(false);
+  const lastNonZeroVolumeRef = useRef(100);
   const hasActivePlaylistSequenceRef = useRef(false);
   const hasPlaybackStartedRef = useRef(false);
   const previousActivePlaylistIdRef = useRef<string | null>(activePlaylistId);
   autoplayEnabledRef.current = autoplayEnabled;
   volumeRef.current = volume;
   isMutedRef.current = isMuted;
+  if (volume > 0) {
+    lastNonZeroVolumeRef.current = volume;
+  }
   activePlaylistIdRef.current = activePlaylistId;
   hasPlaybackStartedRef.current = hasPlaybackStarted;
 
@@ -1257,6 +1262,10 @@ export function PlayerExperience({
     scheduleStuckPlaybackWatchdog("play-attempt");
   }
 
+  function canProgrammaticPlaybackStart() {
+    return hasUserGesturePlaybackUnlockRef.current;
+  }
+
   function shouldSuppressAutoplayForInitialPageLoad(videoId: string) {
     if (typeof window === "undefined") {
       return false;
@@ -1317,6 +1326,15 @@ export function PlayerExperience({
 
       const didSwitch = switchPlayerVideo(runtimePlayer, targetVideoId);
       if (!didSwitch) {
+        return;
+      }
+
+      if (!canProgrammaticPlaybackStart()) {
+        logPlayerDebug("stuck-playback:retry-skipped-until-user-gesture", {
+          videoId: targetVideoId,
+          trigger,
+          attempt: nextAttempt,
+        });
         return;
       }
 
@@ -1937,15 +1955,13 @@ export function PlayerExperience({
             setVolume(toSafeNumber(playerRef.current.getVolume(), 100));
           }
 
-          if (typeof playerRef.current.isMuted === "function") {
-            setIsMuted(Boolean(playerRef.current.isMuted()));
-          }
+          setIsMuted(toSafeNumber(playerRef.current.getVolume(), 100) <= 0);
 
           if (autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
             const forceAutoAdvancePlayback = pendingAutoAdvanceVideoIdRef.current === currentVideo.id;
             const suppressForInitialPageLoad = shouldSuppressAutoplayForInitialPageLoad(currentVideo.id);
 
-            if (!suppressForInitialPageLoad || forceAutoAdvancePlayback) {
+            if ((!suppressForInitialPageLoad || forceAutoAdvancePlayback) && canProgrammaticPlaybackStart()) {
               notePlayAttempt();
               window.setTimeout(() => {
                 if (!cancelled && playerRef.current) {
@@ -2021,7 +2037,7 @@ export function PlayerExperience({
                       setCurrentTime(safeTime);
                     }
 
-                    if (parsed.wasPlaying && !isInitialDeepLinkedSelection) {
+                    if (parsed.wasPlaying && !isInitialDeepLinkedSelection && canProgrammaticPlaybackStart()) {
                       event.target.playVideo();
                     }
                   }
@@ -2039,7 +2055,7 @@ export function PlayerExperience({
               const forceAutoAdvancePlayback = pendingAutoAdvanceVideoIdRef.current === currentVideo.id;
               const suppressForInitialPageLoad = shouldSuppressAutoplayForInitialPageLoad(currentVideo.id);
 
-              if (!suppressForInitialPageLoad || forceAutoAdvancePlayback) {
+              if ((!suppressForInitialPageLoad || forceAutoAdvancePlayback) && canProgrammaticPlaybackStart()) {
                 notePlayAttempt();
                 event.target.playVideo();
               }
@@ -2059,8 +2075,8 @@ export function PlayerExperience({
               if (typeof playerRef.current.getVolume === "function") {
                 setVolume(toSafeNumber(playerRef.current.getVolume(), 100));
               }
-              if (typeof playerRef.current.isMuted === "function") {
-                setIsMuted(Boolean(playerRef.current.isMuted()));
+              if (typeof playerRef.current.getVolume === "function") {
+                setIsMuted(toSafeNumber(playerRef.current.getVolume(), 100) <= 0);
               }
               persistResumeSnapshot(playing, latestTime);
             }
@@ -2513,6 +2529,7 @@ export function PlayerExperience({
   const handleEndedChoiceSelect = useCallback((videoId: string) => {
     const playlistIndex = playlistQueueIds.findIndex((candidateId) => candidateId === videoId);
 
+    hasUserGesturePlaybackUnlockRef.current = true;
     setShowEndedChoiceOverlay(false);
     setEndedChoiceFromUnavailable(false);
     navigateToVideo(videoId, {
@@ -2835,6 +2852,7 @@ export function PlayerExperience({
     }
 
     playerRef.current.seekTo(0, true);
+    hasUserGesturePlaybackUnlockRef.current = true;
     notePlayAttempt();
     playerRef.current.playVideo();
   }
@@ -2845,6 +2863,7 @@ export function PlayerExperience({
       const previousId = playlistQueueIds[previousIndex] ?? null;
 
       if (previousId) {
+        hasUserGesturePlaybackUnlockRef.current = true;
         pendingAutoAdvanceVideoIdRef.current = previousId;
         navigateToVideo(previousId, {
           playlistId: activePlaylistId,
@@ -2864,6 +2883,7 @@ export function PlayerExperience({
     const trimmedHistory = historyStack.slice(0, -1);
     setHistoryStack(trimmedHistory);
     window.sessionStorage.setItem(HISTORY_KEY, JSON.stringify(trimmedHistory));
+    hasUserGesturePlaybackUnlockRef.current = true;
     pendingAutoAdvanceVideoIdRef.current = previousId;
     router.push(
       `${pathname}?${new URLSearchParams({ ...Object.fromEntries(searchParams.entries()), v: previousId }).toString()}`,
@@ -2877,6 +2897,7 @@ export function PlayerExperience({
       return;
     }
 
+    hasUserGesturePlaybackUnlockRef.current = true;
     pendingAutoAdvanceVideoIdRef.current = nextTarget.videoId;
     navigateToVideo(nextTarget.videoId, {
       clearPlaylist: nextTarget.clearPlaylist,
@@ -3771,6 +3792,7 @@ export function PlayerExperience({
         if (isPlaying) {
           playerRef.current.pauseVideo();
         } else {
+          hasUserGesturePlaybackUnlockRef.current = true;
           notePlayAttempt();
           playerRef.current.playVideo();
         }
@@ -3788,10 +3810,7 @@ export function PlayerExperience({
 
         persistMutedPreferenceOnNextSyncRef.current = true;
         setVolume(vol);
-
-        if (vol > 0) {
-          setIsMuted(false);
-        }
+        setIsMuted(vol <= 0);
 
         if (!playerRef.current) {
           return;
@@ -3804,10 +3823,17 @@ export function PlayerExperience({
         if (!playerRef.current) return;
         persistMutedPreferenceOnNextSyncRef.current = true;
         if (isMuted) {
-          playerRef.current.unMute();
+          const restoredVolume = Math.max(1, toSafeNumber(lastNonZeroVolumeRef.current, 100));
+          playerRef.current.setVolume(restoredVolume);
+          setVolume(restoredVolume);
           setIsMuted(false);
         } else {
-          playerRef.current.mute();
+          const currentVolume = Math.max(0, toSafeNumber(volumeRef.current, 100));
+          if (currentVolume > 0) {
+            lastNonZeroVolumeRef.current = currentVolume;
+          }
+          playerRef.current.setVolume(0);
+          setVolume(0);
           setIsMuted(true);
         }
       }
