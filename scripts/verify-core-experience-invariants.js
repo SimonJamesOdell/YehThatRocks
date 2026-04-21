@@ -17,6 +17,7 @@ const files = {
   chatSharedVideo: path.join(ROOT, "apps/web/lib/chat-shared-video.ts"),
   artistWikiLink: path.join(ROOT, "apps/web/components/artist-wiki-link.tsx"),
   seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
+  statusPerformanceRoute: path.join(ROOT, "apps/web/app/api/status/performance/route.ts"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
@@ -54,6 +55,7 @@ function main() {
   const chatSharedVideoSource = read(files.chatSharedVideo);
   const artistWikiLinkSource = read(files.artistWikiLink);
   const seenToggleRouteSource = read(files.seenToggleRoute);
+  const statusPerformanceRouteSource = read(files.statusPerformanceRoute);
   const cssSource = read(files.css);
 
   // Watch Next and current-video resolver invariants.
@@ -177,6 +179,36 @@ function main() {
   assertContains(cssSource, ".playerDockLayer", "CSS defines dedicated dock layer sizing", failures);
   assertContains(cssSource, ".playerChromeDockedHidden .playerDockLayer", "Dock-hide class only hides player layer, not overlay page", failures);
   assertContains(cssSource, ".overlayIconBtn.overlayDockCloseBtn", "Dock close button keeps explicit red styling with high specificity", failures);
+
+  // Public performance modal invariants.
+  assertContains(shellDynamicSource, 'className="performanceQuickLaunch"', "Shell renders top-right performance launcher button", failures);
+  assertContains(shellDynamicSource, 'aria-label="Open server performance metrics"', "Performance launcher includes accessible label", failures);
+  assertContains(shellDynamicSource, 'const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);', "Shell tracks performance modal open state", failures);
+  assertContains(shellDynamicSource, 'const PUBLIC_PERFORMANCE_POLL_MS = 2_500;', "Shell defines periodic polling interval for performance modal", failures);
+  assertContains(shellDynamicSource, 'await fetch("/api/status/performance"', "Shell loads metrics from public performance status endpoint", failures);
+  assertContains(shellDynamicSource, 'className="performanceModalOverlay"', "Shell renders performance modal backdrop overlay", failures);
+  assertContains(shellDynamicSource, 'className="performanceModalDialog"', "Shell renders performance modal dialog container", failures);
+  assertContains(shellDynamicSource, 'aria-labelledby="performance-modal-title"', "Performance modal exposes labelled dialog semantics", failures);
+  assertContains(shellDynamicSource, '<PerformanceDial label="Memory"', "Performance modal renders memory dial", failures);
+  assertContains(shellDynamicSource, 'label="CPU"', "Performance modal renders CPU dial", failures);
+  assertContains(shellDynamicSource, '<PerformanceDial label="Disk"', "Performance modal renders disk dial", failures);
+  assertContains(shellDynamicSource, '<PerformanceDial label="Network"', "Performance modal renders network dial", failures);
+  assertContains(cssSource, ".performanceQuickLaunch", "CSS defines top-right performance launcher styles", failures);
+  assertContains(cssSource, ".performanceModalOverlay", "CSS defines darkened/blurred performance modal backdrop", failures);
+  assertContains(cssSource, "backdrop-filter: blur(8px) saturate(0.82);", "Performance modal backdrop keeps blur treatment", failures);
+  assertContains(cssSource, ".performanceModalDialog", "CSS defines centered performance modal dialog styles", failures);
+  assertContains(cssSource, ".performanceDialGrid", "CSS defines dial grid layout for performance modal", failures);
+
+  // Public status performance API invariants.
+  assertContains(statusPerformanceRouteSource, 'import { buildAdminHealthPayload } from "@/lib/admin-dashboard-health";', "Public performance API reuses host metric builder", failures);
+  assertContains(statusPerformanceRouteSource, "const payload = await buildAdminHealthPayload();", "Public performance API builds fresh health payload", failures);
+  assertContains(statusPerformanceRouteSource, "host: {", "Public performance API returns host metrics payload", failures);
+  assertContains(statusPerformanceRouteSource, "cpuUsagePercent: payload.health.host.cpuUsagePercent", "Public performance API exposes CPU dial metric", failures);
+  assertContains(statusPerformanceRouteSource, "memoryUsagePercent: payload.health.host.memoryUsagePercent", "Public performance API exposes memory dial metric", failures);
+  assertContains(statusPerformanceRouteSource, "networkUsagePercent: payload.health.host.networkUsagePercent", "Public performance API exposes network dial metric", failures);
+  assertContains(statusPerformanceRouteSource, '"Cache-Control": "no-store, no-cache, must-revalidate"', "Public performance API disables cache for live metrics", failures);
+  assertNotContains(statusPerformanceRouteSource, "requireAdminApiAuth", "Public performance API is intentionally not admin-gated", failures);
+  assertNotContains(statusPerformanceRouteSource, "requireApiAuth", "Public performance API is intentionally accessible without auth", failures);
 
   // API invariants for shared seen-toggle persistence used by player surfaces.
   assertContains(seenToggleRouteSource, "requireApiAuth", "Seen-toggle API requires auth before reading persisted player preferences", failures);

@@ -72,6 +72,19 @@ type CurrentVideoResolvePayload = {
   denied?: { message?: string; reason?: string; videoId?: string };
 };
 
+type PublicPerformancePayload = {
+  meta?: { generatedAt?: string };
+  host?: {
+    cpuUsagePercent?: number | null;
+    cpuAverageUsagePercent?: number | null;
+    cpuPeakCoreUsagePercent?: number | null;
+    memoryUsagePercent?: number | null;
+    diskUsagePercent?: number | null;
+    swapUsagePercent?: number | null;
+    networkUsagePercent?: number | null;
+  };
+};
+
 type RightRailMode = "watch-next" | "playlist";
 
 type PlaylistRailVideo = {
@@ -338,6 +351,10 @@ const RELATED_LOAD_AHEAD_PX = 560;
 const RELATED_MAX_VIDEOS = Number.MAX_SAFE_INTEGER;
 const RELATED_BACKGROUND_PREFETCH_TARGET = 35;
 const RELATED_BACKGROUND_PREFETCH_DELAY_MS = 650;
+const RELATED_LOAD_AHEAD_AGGRESSIVE_PX = 920;
+const RELATED_SCROLL_PREFETCH_BATCHES = 2;
+const RELATED_BACKGROUND_PREFETCH_TARGET_AGGRESSIVE = 45;
+const RELATED_BACKGROUND_PREFETCH_DELAY_FAST_MS = 280;
 const WATCH_NEXT_HIDE_ANIMATION_MS = 240;
 const WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-watch-next";
 const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
@@ -359,6 +376,7 @@ const DESKTOP_INTRO_REVEAL_MS = 820;
 const DESKTOP_INTRO_MAX_LOGO_WIDTH_PX = 1128;
 const DESKTOP_INTRO_VIEWPORT_WIDTH_RATIO = 1.128;
 const INTRO_SKIP_ONCE_AFTER_LOGIN_KEY = "ytr:intro-skip-once";
+const PUBLIC_PERFORMANCE_POLL_MS = 2_500;
 
 function dedupeVideoList(videos: VideoRecord[]) {
   return videos.filter(
@@ -420,6 +438,70 @@ function logFlow(event: string, detail?: Record<string, unknown>) {
   console.log(`[flow/shell] ${event}${payload}`);
 }
 
+function finitePercentOrNull(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(100, value))
+    : null;
+}
+
+function PerformanceDial({
+  label,
+  value,
+  color,
+  detail,
+}: {
+  label: string;
+  value: number | null | undefined;
+  color: string;
+  detail?: string;
+}) {
+  const radius = 34;
+  const stroke = 8;
+  const size = 90;
+  const circumference = 2 * Math.PI * radius;
+  const safeValue = finitePercentOrNull(value);
+  const normalizedValue = safeValue ?? 0;
+  const offset = circumference * (1 - normalizedValue / 100);
+
+  return (
+    <div className="performanceDialCard">
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        role="img"
+        aria-label={`${label} ${safeValue === null ? "n/a" : `${Math.round(normalizedValue)} percent`}`}
+      >
+        <circle cx={size / 2} cy={size / 2} r={radius} stroke="rgba(255,255,255,0.14)" strokeWidth={stroke} fill="none" />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={color}
+          strokeWidth={stroke}
+          fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+        <text
+          x="50%"
+          y="50%"
+          dominantBaseline="middle"
+          textAnchor="middle"
+          fill="#fff"
+          style={{ fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}
+        >
+          {safeValue === null ? "n/a" : `${Math.round(normalizedValue)}%`}
+        </text>
+      </svg>
+      <strong>{label}</strong>
+      {detail ? <small>{detail}</small> : null}
+    </div>
+  );
+}
+
 function isRouteActive(href: string, pathname: string) {
   if (href === pathname) return true;
   // /artists nav item should also highlight for /artist/[slug]
@@ -471,7 +553,13 @@ function ShellDynamicInner({
       ? "The auth server is not responding, so your authorization status cannot currently be confirmed. Try again later or reconnect now."
       : null,
   );
+  const [isAuthUnavailableDialogDismissed, setIsAuthUnavailableDialogDismissed] = useState(false);
   const [isRetryingAuthStatus, setIsRetryingAuthStatus] = useState(false);
+  const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);
+  const [performanceMetrics, setPerformanceMetrics] = useState<PublicPerformancePayload["host"] | null>(null);
+  const [performanceMetricsGeneratedAt, setPerformanceMetricsGeneratedAt] = useState<string | null>(null);
+  const [isLoadingPerformanceMetrics, setIsLoadingPerformanceMetrics] = useState(false);
+  const [performanceMetricsError, setPerformanceMetricsError] = useState<string | null>(null);
   const [deniedPlaybackMessage, setDeniedPlaybackMessage] = useState<string | null>(null);
   const [chatMode, setChatMode] = useState<ChatMode>("global");
   const [rightRailMode, setRightRailMode] = useState<RightRailMode>("watch-next");
@@ -1228,6 +1316,12 @@ function ShellDynamicInner({
   }, [initialAuthStatus, isLoggedIn]);
 
   useEffect(() => {
+    if (authStatus !== "unavailable" || !authStatusMessage) {
+      setIsAuthUnavailableDialogDismissed(false);
+    }
+  }, [authStatus, authStatusMessage]);
+
+  useEffect(() => {
     if (isAuthenticated || seenVideoIdsRef.current.size === 0) {
       return;
     }
@@ -1836,6 +1930,61 @@ function ShellDynamicInner({
       setIsRetryingAuthStatus(false);
     }
   }, [checkAuthState, isRetryingAuthStatus, router]);
+
+  const loadPublicPerformanceMetrics = useCallback(async () => {
+    setIsLoadingPerformanceMetrics(true);
+
+    try {
+      const response = await fetch("/api/status/performance", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("performance-metrics-load-failed");
+      }
+
+      const payload = (await response.json()) as PublicPerformancePayload;
+      setPerformanceMetrics(payload.host ?? null);
+      setPerformanceMetricsGeneratedAt(payload.meta?.generatedAt ?? null);
+      setPerformanceMetricsError(null);
+    } catch {
+      setPerformanceMetricsError("Performance metrics are temporarily unavailable.");
+    } finally {
+      setIsLoadingPerformanceMetrics(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isPerformanceModalOpen) {
+      return;
+    }
+
+    void loadPublicPerformanceMetrics();
+    const intervalId = window.setInterval(() => {
+      void loadPublicPerformanceMetrics();
+    }, PUBLIC_PERFORMANCE_POLL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isPerformanceModalOpen, loadPublicPerformanceMetrics]);
+
+  useEffect(() => {
+    if (!isPerformanceModalOpen) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsPerformanceModalOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isPerformanceModalOpen]);
 
   useEffect(() => {
     const handlePlaylistsUpdated = () => {
@@ -2447,8 +2596,13 @@ function ShellDynamicInner({
     }
 
     const remainingPx = node.scrollHeight - (node.scrollTop + node.clientHeight);
-    if (remainingPx <= RELATED_LOAD_AHEAD_PX) {
-      void loadMoreRelatedVideos();
+    const loadAheadPx = Math.max(RELATED_LOAD_AHEAD_PX, RELATED_LOAD_AHEAD_AGGRESSIVE_PX);
+    if (remainingPx <= loadAheadPx) {
+      const nearBottom = remainingPx <= Math.max(240, node.clientHeight * 0.4);
+      const requestedCount = nearBottom
+        ? RELATED_LOAD_BATCH_SIZE * RELATED_SCROLL_PREFETCH_BATCHES
+        : RELATED_LOAD_BATCH_SIZE;
+      void loadMoreRelatedVideos(requestedCount);
     }
   }, [hasMoreRelated, isWatchNextVideoSelectionPending, loadMoreRelatedVideos, relatedTransitionPhase, rightRailMode]);
 
@@ -2495,9 +2649,12 @@ function ShellDynamicInner({
       return;
     }
 
+    const targetRunway = Math.min(RELATED_BACKGROUND_PREFETCH_TARGET_AGGRESSIVE, RELATED_MAX_VIDEOS);
+    const hasReachedBaselineRunway = displayedRenderableRelatedVideos.length >= RELATED_BACKGROUND_PREFETCH_TARGET;
+
     if (
       displayedRenderableRelatedVideos.length === 0
-      || displayedRenderableRelatedVideos.length >= RELATED_BACKGROUND_PREFETCH_TARGET
+      || (displayedRenderableRelatedVideos.length >= targetRunway && hasReachedBaselineRunway)
       || displayedRenderableRelatedVideos.length >= RELATED_MAX_VIDEOS
     ) {
       return;
@@ -2505,12 +2662,13 @@ function ShellDynamicInner({
 
     const timeoutId = window.setTimeout(() => {
       const remainingForTarget = RELATED_BACKGROUND_PREFETCH_TARGET - displayedRenderableRelatedVideos.length;
+      const remainingForAggressiveTarget = targetRunway - displayedRenderableRelatedVideos.length;
       const prefetchCount = Math.max(
         RELATED_LOAD_BATCH_SIZE,
-        Math.min(30, remainingForTarget),
+        Math.min(30, Math.max(remainingForTarget, remainingForAggressiveTarget)),
       );
       void loadMoreRelatedVideos(prefetchCount);
-    }, RELATED_BACKGROUND_PREFETCH_DELAY_MS);
+    }, Math.min(RELATED_BACKGROUND_PREFETCH_DELAY_MS, RELATED_BACKGROUND_PREFETCH_DELAY_FAST_MS));
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -4005,18 +4163,99 @@ function ShellDynamicInner({
         </div>
       </header>
 
-      {authStatus === "unavailable" && authStatusMessage ? (
-        <section className="authStatusBanner" role="status" aria-live="polite">
-          <div className="authStatusBannerCopy">
-            <strong>Auth server unavailable</strong>
-            <p>{authStatusMessage}</p>
-          </div>
-          <div className="authStatusBannerActions">
-            <button type="button" onClick={() => void retryAuthStateCheck()} disabled={isRetryingAuthStatus}>
-              {isRetryingAuthStatus ? "Retrying..." : "Retry auth now"}
-            </button>
-          </div>
-        </section>
+      <button
+        type="button"
+        className="performanceQuickLaunch"
+        onClick={() => setIsPerformanceModalOpen(true)}
+        aria-label="Open server performance metrics"
+        title="Server performance"
+      >
+        <span aria-hidden="true">💻</span>
+      </button>
+
+      {isPerformanceModalOpen ? (
+        <div
+          className="performanceModalOverlay"
+          onClick={() => setIsPerformanceModalOpen(false)}
+        >
+          <section
+            className="performanceModalDialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="performance-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="performanceModalHeader">
+              <h2 id="performance-modal-title">Server Performance</h2>
+              <button
+                type="button"
+                className="performanceModalClose"
+                onClick={() => setIsPerformanceModalOpen(false)}
+                aria-label="Close performance metrics"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="performanceDialGrid">
+              <PerformanceDial label="Memory" value={performanceMetrics?.memoryUsagePercent} color="#ffc14d" />
+              <PerformanceDial label="Swap" value={performanceMetrics?.swapUsagePercent} color="#f5d96b" />
+              <PerformanceDial
+                label="CPU"
+                value={performanceMetrics?.cpuUsagePercent}
+                color="#ff6f43"
+                detail={
+                  finitePercentOrNull(performanceMetrics?.cpuAverageUsagePercent) === null
+                  || finitePercentOrNull(performanceMetrics?.cpuPeakCoreUsagePercent) === null
+                    ? undefined
+                    : `avg ${Math.round(finitePercentOrNull(performanceMetrics?.cpuAverageUsagePercent) ?? 0)}%\npeak ${Math.round(finitePercentOrNull(performanceMetrics?.cpuPeakCoreUsagePercent) ?? 0)}%`
+                }
+              />
+              <PerformanceDial label="Disk" value={performanceMetrics?.diskUsagePercent} color="#7ce0a3" />
+              <PerformanceDial label="Network" value={performanceMetrics?.networkUsagePercent} color="#5fc1ff" />
+            </div>
+
+            <div className="performanceModalMeta">
+              {isLoadingPerformanceMetrics ? <p>Refreshing metrics...</p> : null}
+              {!isLoadingPerformanceMetrics && performanceMetricsGeneratedAt ? <p>Updated {new Date(performanceMetricsGeneratedAt).toLocaleTimeString()}</p> : null}
+              {performanceMetricsError ? <p>{performanceMetricsError}</p> : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {authStatus === "unavailable" && authStatusMessage && !isAuthUnavailableDialogDismissed ? (
+        <div
+          className="authStatusModalOverlay"
+          onClick={() => setIsAuthUnavailableDialogDismissed(true)}
+        >
+          <section
+            className="authStatusModalDialog"
+            role="dialog"
+            aria-modal="true"
+            aria-live="polite"
+            aria-labelledby="auth-unavailable-title"
+            aria-describedby="auth-unavailable-message"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="authStatusModalCopy">
+              <strong id="auth-unavailable-title">Auth server unavailable</strong>
+              <p id="auth-unavailable-message">{authStatusMessage}</p>
+            </div>
+            <div className="authStatusModalActions">
+              <button type="button" onClick={() => void retryAuthStateCheck()} disabled={isRetryingAuthStatus}>
+                {isRetryingAuthStatus ? "Retrying..." : "Retry auth now"}
+              </button>
+              <button
+                type="button"
+                className="authStatusModalDismiss"
+                onClick={() => setIsAuthUnavailableDialogDismissed(true)}
+              >
+                Close
+              </button>
+            </div>
+          </section>
+        </div>
       ) : null}
 
       <section
