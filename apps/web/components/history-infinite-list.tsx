@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
@@ -98,6 +99,7 @@ export function HistoryInfiniteList({
   pageSize = 40,
   isAuthenticated = false,
 }: HistoryInfiniteListProps) {
+  const router = useRouter();
   const [history, setHistory] = useState<WatchHistoryEntry[]>(initialHistory);
   const [filterValue, setFilterValue] = useState("");
   const [hasMore, setHasMore] = useState(initialHasMore);
@@ -304,7 +306,32 @@ export function HistoryInfiniteList({
             <ul className="accountHistoryList historyGroupList">
               {group.entries.map((entry) => (
                 <li key={`${entry.video.id}:${entry.lastWatchedAt}`}>
-                  <article className="trackCard leaderboardCard historyCard">
+                  <article
+                    className="trackCard leaderboardCard historyCard"
+                    role="link"
+                    tabIndex={0}
+                    aria-label={`Play ${entry.video.title}`}
+                    onClick={(event) => {
+                      if (event.defaultPrevented) {
+                        return;
+                      }
+
+                      const target = event.target;
+                      if (target instanceof Element && target.closest("a")) {
+                        return;
+                      }
+
+                      router.push(`/?v=${encodeURIComponent(entry.video.id)}&resume=1`);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") {
+                        return;
+                      }
+
+                      event.preventDefault();
+                      router.push(`/?v=${encodeURIComponent(entry.video.id)}&resume=1`);
+                    }}
+                  >
                     <Link
                       href={`/?v=${encodeURIComponent(entry.video.id)}&resume=1`}
                       className="linkedCard leaderboardTrackLink historyTrackLink"
@@ -335,7 +362,11 @@ export function HistoryInfiniteList({
                       </div>
                     </Link>
                     {isAuthenticated ? (
-                      <div className="historyCardAction">
+                      <div
+                        className="historyCardAction"
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
                         <AddToPlaylistButton
                           videoId={entry.video.id}
                           isAuthenticated={isAuthenticated}

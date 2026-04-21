@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useRef } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
@@ -26,6 +27,7 @@ export function ArtistVideoLink({
   onHideVideo,
   isHidePending = false,
 }: ArtistVideoLinkProps) {
+  const router = useRouter();
   const hasWarmedRef = useRef(false);
 
   const warmSelection = useCallback(() => {
@@ -53,8 +55,38 @@ export function ArtistVideoLink({
     }).catch(() => undefined);
   }, [video]);
 
+  const openVideoFromCard = useCallback(() => {
+    warmSelection();
+    router.push(`/?v=${encodeURIComponent(video.id)}&resume=1`);
+  }, [router, video.id, warmSelection]);
+
   return (
-    <article className={`categoryVideoCard${isSeen ? " categoryVideoCardSeen artistVideoCardSeen" : ""}${useCornerActions ? " categoryVideoCardCornerActions" : ""}`}>
+    <article
+      className={`categoryVideoCard${isSeen ? " categoryVideoCardSeen artistVideoCardSeen" : ""}${useCornerActions ? " categoryVideoCardCornerActions" : ""}`}
+      role="link"
+      tabIndex={0}
+      aria-label={`Play ${video.title}`}
+      onClick={(event) => {
+        if (event.defaultPrevented) {
+          return;
+        }
+
+        const target = event.target;
+        if (target instanceof Element && target.closest("a")) {
+          return;
+        }
+
+        openVideoFromCard();
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+
+        event.preventDefault();
+        openVideoFromCard();
+      }}
+    >
       {isAuthenticated && useCornerActions && onHideVideo ? (
         <button
           type="button"
@@ -95,12 +127,17 @@ export function ArtistVideoLink({
         <h3 className="categoryVideoTitle">{video.title}</h3>
       </Link>
       <div className="actionRow categoryVideoActions">
-        <AddToPlaylistButton
-          videoId={video.id}
-          isAuthenticated={isAuthenticated}
-          compact={useCornerActions}
-          className={useCornerActions ? "categoryVideoPlaylistAddButton" : undefined}
-        />
+        <div
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <AddToPlaylistButton
+            videoId={video.id}
+            isAuthenticated={isAuthenticated}
+            compact={useCornerActions}
+            className={useCornerActions ? "categoryVideoPlaylistAddButton" : undefined}
+          />
+        </div>
       </div>
     </article>
   );

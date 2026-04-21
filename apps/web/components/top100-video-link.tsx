@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
@@ -59,6 +60,7 @@ export function Top100VideoLink({
   onFlagVideo,
   isFlagPending = false,
 }: Top100VideoLinkProps) {
+  const router = useRouter();
   const hasWarmedRef = useRef(false);
   const clickFlashTimeoutRef = useRef<number | null>(null);
   const [isClickFlashing, setIsClickFlashing] = useState(false);
@@ -119,9 +121,37 @@ export function Top100VideoLink({
     }).catch(() => undefined);
   }, [stagePendingSelection, track.id, triggerClickFlash]);
 
+  const openVideoFromCard = useCallback(() => {
+    warmSelection();
+    router.push(`/?v=${encodeURIComponent(track.id)}&resume=1`);
+  }, [router, track.id, warmSelection]);
+
   return (
     <article
       className={`trackCard leaderboardCard top100CardWithPlaylistAction${isSeen ? " top100CardSeen" : ""}${isSeen && rowVariant === "new" ? " top100CardSeenNew" : ""}${isClickFlashing ? " top100CardClickFlash" : ""}${isAuthenticated ? " top100CardCornerActions" : ""}${rowVariant === "new" ? " top100CardNewPersistentActions" : ""}`}
+      role="link"
+      tabIndex={0}
+      aria-label={`Play ${track.title}`}
+      onClick={(event) => {
+        if (event.defaultPrevented) {
+          return;
+        }
+
+        const target = event.target;
+        if (target instanceof Element && target.closest("a")) {
+          return;
+        }
+
+        openVideoFromCard();
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+
+        event.preventDefault();
+        openVideoFromCard();
+      }}
     >
       {isAuthenticated && onHideVideo ? (
         <button
@@ -187,12 +217,17 @@ export function Top100VideoLink({
         </div>
       </Link>
       <div className="top100CardAction">
-        <AddToPlaylistButton
-          videoId={track.id}
-          isAuthenticated={isAuthenticated}
-          compact
-          className="top100CardPlaylistAddButton"
-        />
+        <div
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <AddToPlaylistButton
+            videoId={track.id}
+            isAuthenticated={isAuthenticated}
+            compact
+            className="top100CardPlaylistAddButton"
+          />
+        </div>
       </div>
     </article>
   );

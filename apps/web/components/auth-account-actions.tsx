@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+const AUTO_LOGIN_SUPPRESS_ONCE_KEY = "ytr:auto-login-suppress-once";
+
 type AuthAccountActionsProps = {
   emailVerified: boolean;
   showLogout?: boolean;
@@ -16,9 +18,17 @@ export function AuthAccountActions({ emailVerified, showLogout = true }: AuthAcc
   function handleLogout() {
     startTransition(async () => {
       setMessage(null);
+
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem(AUTO_LOGIN_SUPPRESS_ONCE_KEY, "1");
+      }
+
       const response = await fetch("/api/auth/logout", { method: "POST" });
 
       if (!response.ok) {
+        if (typeof window !== "undefined") {
+          window.sessionStorage.removeItem(AUTO_LOGIN_SUPPRESS_ONCE_KEY);
+        }
         setMessage("Logout failed.");
         return;
       }
