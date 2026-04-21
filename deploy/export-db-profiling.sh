@@ -81,6 +81,9 @@ SHOW VARIABLES WHERE Variable_name IN ('slow_query_log','long_query_time','min_e
   echo
   echo "=== Top slow query patterns by total time (since start) ==="
   run_mysql_query "
+DROP TEMPORARY TABLE IF EXISTS ytr_slow_agg;
+
+CREATE TEMPORARY TABLE ytr_slow_agg AS
 SELECT
   COUNT(*) AS calls,
   ROUND(SUM(TIME_TO_SEC(query_time)), 3) AS total_query_s,
@@ -90,39 +93,59 @@ SELECT
   LEFT(REPLACE(REPLACE(sql_text, CHAR(10), ' '), CHAR(13), ' '), 280) AS sample_sql
 FROM mysql.slow_log
 WHERE start_time >= '$STARTED_AT_UTC'
-GROUP BY sample_sql
+  AND sql_text NOT LIKE '%FROM mysql.slow_log%'
+GROUP BY sample_sql;
+
+SELECT
+  calls,
+  total_query_s,
+  avg_query_s,
+  rows_examined_total,
+  rows_sent_total,
+  sample_sql
+FROM ytr_slow_agg
 ORDER BY total_query_s DESC
 LIMIT $TOP_N;
-"
 
-  echo
-  echo "=== Priority outliers first (high confidence) ==="
-  run_mysql_query "
+SELECT '=== Priority outliers first (high confidence) ===';
+
 SELECT
-  COUNT(*) AS calls,
-  ROUND(SUM(TIME_TO_SEC(query_time)), 3) AS total_query_s,
-  ROUND(AVG(TIME_TO_SEC(query_time)), 4) AS avg_query_s,
-  SUM(rows_examined) AS rows_examined_total,
-  SUM(rows_sent) AS rows_sent_total,
+  calls,
+  total_query_s,
+  avg_query_s,
+  rows_examined_total,
+  rows_sent_total,
   ROUND(
-    (SUM(TIME_TO_SEC(query_time)) * 2.0)
-    + (AVG(TIME_TO_SEC(query_time)) * 25.0)
-    + (LEAST(SUM(rows_examined), 2000000000) / 2000000.0)
-    + (COUNT(*) * 0.15),
+    (total_query_s * 2.0)
+    + (avg_query_s * 25.0)
+    + (LEAST(rows_examined_total, 2000000000) / 2000000.0)
+    + (calls * 0.15),
     3
   ) AS priority_score,
-  LEFT(REPLACE(REPLACE(sql_text, CHAR(10), ' '), CHAR(13), ' '), 280) AS sample_sql
-FROM mysql.slow_log
-WHERE start_time >= '$STARTED_AT_UTC'
-GROUP BY sample_sql
-HAVING COUNT(*) >= $OUTLIER_MIN_CALLS
-   AND (
-        SUM(TIME_TO_SEC(query_time)) >= $OUTLIER_MIN_TOTAL_S
-        OR AVG(TIME_TO_SEC(query_time)) >= $OUTLIER_MIN_AVG_S
-        OR SUM(rows_examined) >= $OUTLIER_MIN_ROWS_EXAMINED
-   )
+  sample_sql
+FROM ytr_slow_agg
+WHERE calls >= $OUTLIER_MIN_CALLS
+  AND (
+    total_query_s >= $OUTLIER_MIN_TOTAL_S
+    OR avg_query_s >= $OUTLIER_MIN_AVG_S
+    OR rows_examined_total >= $OUTLIER_MIN_ROWS_EXAMINED
+  )
 ORDER BY priority_score DESC, total_query_s DESC, rows_examined_total DESC
 LIMIT $TOP_N;
+
+SELECT '=== Top slow query patterns by call count (since start) ===';
+
+SELECT
+  calls,
+  total_query_s,
+  avg_query_s,
+  rows_examined_total,
+  sample_sql
+FROM ytr_slow_agg
+ORDER BY calls DESC
+LIMIT $TOP_N;
+
+DROP TEMPORARY TABLE ytr_slow_agg;
 "
 
   echo
@@ -141,22 +164,6 @@ WHERE start_time >= '$STARTED_AT_UTC'
     OR rows_examined >= $OUTLIER_MIN_ROWS_EXAMINED
   )
 ORDER BY query_time DESC, rows_examined DESC
-LIMIT $TOP_N;
-"
-
-  echo
-  echo "=== Top slow query patterns by call count (since start) ==="
-  run_mysql_query "
-SELECT
-  COUNT(*) AS calls,
-  ROUND(SUM(TIME_TO_SEC(query_time)), 3) AS total_query_s,
-  ROUND(AVG(TIME_TO_SEC(query_time)), 4) AS avg_query_s,
-  SUM(rows_examined) AS rows_examined_total,
-  LEFT(REPLACE(REPLACE(sql_text, CHAR(10), ' '), CHAR(13), ' '), 280) AS sample_sql
-FROM mysql.slow_log
-WHERE start_time >= '$STARTED_AT_UTC'
-GROUP BY sample_sql
-ORDER BY calls DESC
 LIMIT $TOP_N;
 "
 
