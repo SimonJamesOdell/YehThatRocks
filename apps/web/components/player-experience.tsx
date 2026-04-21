@@ -517,6 +517,8 @@ export function PlayerExperience({
   const hasActivePlaylistSequenceRef = useRef(false);
   const hasPlaybackStartedRef = useRef(false);
   const previousActivePlaylistIdRef = useRef<string | null>(activePlaylistId);
+  const initialPageLoadVideoIdRef = useRef(currentVideo.id);
+  const initialPageLoadAutoplayHandledRef = useRef(false);
   autoplayEnabledRef.current = autoplayEnabled;
   volumeRef.current = volume;
   isMutedRef.current = isMuted;
@@ -538,6 +540,11 @@ export function PlayerExperience({
     endedChoiceNoProgressStreakRef.current = 0;
     endedChoiceFailureStreakRef.current = 0;
     endedChoicePrewarmVideoIdRef.current = null;
+
+    if (currentVideo.id !== initialPageLoadVideoIdRef.current) {
+      // Once the user leaves the initial page-load video, never suppress autoplay again.
+      initialPageLoadAutoplayHandledRef.current = true;
+    }
   }, [currentVideo]);
 
   useEffect(() => {
@@ -1258,6 +1265,19 @@ export function PlayerExperience({
     scheduleStuckPlaybackWatchdog("play-attempt");
   }
 
+  function shouldSuppressAutoplayForInitialPageLoad(videoId: string) {
+    if (initialPageLoadAutoplayHandledRef.current) {
+      return false;
+    }
+
+    if (videoId !== initialPageLoadVideoIdRef.current) {
+      return false;
+    }
+
+    initialPageLoadAutoplayHandledRef.current = true;
+    return true;
+  }
+
   function scheduleStuckPlaybackRetry(trigger: string) {
     const attempt = stuckPlaybackRetryCountRef.current;
 
@@ -1925,12 +1945,16 @@ export function PlayerExperience({
           }
 
           if (shouldAutoplaySelection && autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
-            notePlayAttempt();
-            window.setTimeout(() => {
-              if (!cancelled && playerRef.current) {
-                playerRef.current.playVideo();
-              }
-            }, 0);
+            const suppressForInitialPageLoad = shouldSuppressAutoplayForInitialPageLoad(currentVideo.id);
+
+            if (!suppressForInitialPageLoad) {
+              notePlayAttempt();
+              window.setTimeout(() => {
+                if (!cancelled && playerRef.current) {
+                  playerRef.current.playVideo();
+                }
+              }, 0);
+            }
           }
 
           return;
@@ -2022,8 +2046,12 @@ export function PlayerExperience({
             }
 
             if (shouldAutoplaySelection && autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
-              notePlayAttempt();
-              event.target.playVideo();
+              const suppressForInitialPageLoad = shouldSuppressAutoplayForInitialPageLoad(currentVideo.id);
+
+              if (!suppressForInitialPageLoad) {
+                notePlayAttempt();
+                event.target.playVideo();
+              }
             }
           },
           onStateChange: (event) => {
