@@ -1039,6 +1039,14 @@ let genreListCache: { expiresAt: number; genres: string[] } | undefined;
 
 const PREVIEW_DEFAULT_USER_ID = 1;
 
+const AVAILABLE_SITE_VIDEOS_JOIN = `
+        INNER JOIN (
+          SELECT DISTINCT sv.video_id
+          FROM site_videos sv
+          WHERE sv.status = 'available'
+        ) available_sv ON available_sv.video_id = v.id
+`;
+
 const seedPlaylists: PlaylistDetail[] = [
   {
     id: "1",
@@ -1380,15 +1388,10 @@ async function getArtistVideoPoolByNormalizedName(normalizedArtist: string, limi
           v.favourited,
           v.description
         FROM videos v${videoArtistIndexHint}
+        ${AVAILABLE_SITE_VIDEOS_JOIN}
         WHERE ${videoArtistNormExpr} = ?
           AND v.videoId IS NOT NULL
           ${nullCheck}
-          AND EXISTS (
-            SELECT 1
-            FROM site_videos sv
-            WHERE sv.video_id = v.id
-              AND sv.status = 'available'
-          )
         ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id DESC
         LIMIT ${materializedLimit}
       `,
@@ -1502,14 +1505,9 @@ async function getSameGenreRelatedPoolByArtist(normalizedArtist: string, limit: 
           v.favourited,
           v.description
         FROM videos v
+        ${AVAILABLE_SITE_VIDEOS_JOIN}
         WHERE v.videoId IS NOT NULL
           AND ${videoArtistNormExpr} IN (${placeholders})
-          AND EXISTS (
-            SELECT 1
-            FROM site_videos sv
-            WHERE sv.video_id = v.id
-              AND sv.status = 'available'
-          )
         ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id DESC
         LIMIT ${materializedLimit}
       `,
@@ -1564,7 +1562,7 @@ async function getRelatedBaseRows(params: {
     async () => {
       const topPromise = getRankedTopPool(200);
 
-      const directRelatedPromise = prisma.$queryRaw<RankedVideoRow[]>`
+      const directRelatedPromise = prisma.$queryRawUnsafe<RankedVideoRow[]>(`
         SELECT
           v.videoId,
           v.title,
@@ -1573,18 +1571,13 @@ async function getRelatedBaseRows(params: {
           v.description
         FROM related r
         INNER JOIN videos v ON v.videoId = r.related
-        WHERE r.videoId = ${normalizedVideoId}
+        ${AVAILABLE_SITE_VIDEOS_JOIN}
+        WHERE r.videoId = ?
           AND v.videoId IS NOT NULL
-          AND EXISTS (
-            SELECT 1
-            FROM site_videos sv
-            WHERE sv.video_id = v.id
-              AND sv.status = 'available'
-          )
         GROUP BY v.videoId, v.title, v.parsedArtist, v.favourited, v.description
         ORDER BY v.favourited DESC, MAX(COALESCE(v.viewCount, 0)) DESC, v.videoId ASC
         LIMIT 36
-      `;
+      `, normalizedVideoId);
 
       const sameArtistPromise = currentArtistNormalized
         ? getArtistVideoPoolByNormalizedName(currentArtistNormalized, 40).then((rows) =>
@@ -2900,14 +2893,9 @@ async function refreshArtistProjectionForName(artistName: string) {
         SELECT
           COUNT(DISTINCT v.videoId) AS videoCount
         FROM videos v${videoArtistIndexHint}
+        ${AVAILABLE_SITE_VIDEOS_JOIN}
         WHERE ${videoArtistNormExpr} = ?
           AND v.videoId IS NOT NULL
-          AND EXISTS (
-            SELECT 1
-            FROM site_videos sv
-            WHERE sv.video_id = v.id
-              AND sv.status = 'available'
-          )
       `,
       normalizedArtist,
     ),
@@ -2916,14 +2904,9 @@ async function refreshArtistProjectionForName(artistName: string) {
         SELECT
           v.videoId AS thumbnailVideoId
         FROM videos v${videoArtistIndexHint}
+        ${AVAILABLE_SITE_VIDEOS_JOIN}
         WHERE ${videoArtistNormExpr} = ?
           AND v.videoId IS NOT NULL
-          AND EXISTS (
-            SELECT 1
-            FROM site_videos sv
-            WHERE sv.video_id = v.id
-              AND sv.status = 'available'
-          )
         ORDER BY v.id ASC
         LIMIT 1
       `,
@@ -3017,15 +3000,10 @@ export async function refreshArtistThumbnailForName(artistName: string, badVideo
       SELECT
         v.videoId AS thumbnailVideoId
       FROM videos v${videoArtistIndexHint}
+      ${AVAILABLE_SITE_VIDEOS_JOIN}
       WHERE ${videoArtistNormExpr} = ?
         AND v.videoId IS NOT NULL
         ${bad ? "AND v.videoId <> ?" : ""}
-        AND EXISTS (
-          SELECT 1
-          FROM site_videos sv
-          WHERE sv.video_id = v.id
-            AND sv.status = 'available'
-        )
       ORDER BY v.id ASC
       LIMIT 1
     `,
@@ -3465,19 +3443,62 @@ async function findArtistsInDatabase(options: {
   const cappedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
   const searchCacheKey = `s:${normalizedSearch}|l:${cappedLimit}|o:${orderByName ? 1 : 0}|p:${prefixOnly ? 1 : 0}|n:${nameOnly ? 1 : 0}`;
 
-  const executeQuery = () => prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
-      `
-        SELECT
-          a.${nameCol} AS name,
-          ${countrySelect},
-          ${genreExpr} AS genre1
-        FROM artists a
-        ${whereSql}
-        ${orderSql}
-        LIMIT ${cappedLimit}
-      `,
-      ...params,
-    );
+  const executeQuery = async () => {
+    if (await hasArtistStatsProjection()) {
+      const statNeedle = normalizedSearch
+        ? (prefixOnly ? `${normalizedSearch}%` : `%${normalizedSearch}%`)
+        : null;
+
+      const statWhereParts: string[] = [];
+      const statParams: string[] = [];
+
+      if (statNeedle) {
+        statWhereParts.push("s.display_name LIKE ?");
+        statParams.push(statNeedle);
+
+        if (!nameOnly) {
+          statWhereParts.push("s.country LIKE ?");
+          statWhereParts.push("s.genre LIKE ?");
+          statParams.push(statNeedle, statNeedle);
+        }
+      }
+
+      const statWhereSql = statWhereParts.length > 0 ? `WHERE ${statWhereParts.join(" OR ")}` : "";
+      const statOrderSql = orderByName ? "ORDER BY s.display_name ASC" : "";
+
+      const projectedRows = await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+        `
+          SELECT
+            s.display_name AS name,
+            s.country AS country,
+            s.genre AS genre1
+          FROM artist_stats s
+          ${statWhereSql}
+          ${statOrderSql}
+          LIMIT ${cappedLimit}
+        `,
+        ...statParams,
+      );
+
+      if (projectedRows.length > 0 || normalizedSearch.length > 0) {
+        return projectedRows;
+      }
+    }
+
+    return prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+        `
+          SELECT
+            a.${nameCol} AS name,
+            ${countrySelect},
+            ${genreExpr} AS genre1
+          FROM artists a
+          ${whereSql}
+          ${orderSql}
+          LIMIT ${cappedLimit}
+        `,
+        ...params,
+      );
+  };
 
   const now = Date.now();
   const cached = artistSearchCache.get(searchCacheKey);
@@ -3517,31 +3538,29 @@ async function findArtistsFromVideoMetadata(search: string, limit: number) {
   const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
   const likePattern = `%${normalizedSearch}%`;
 
-  return prisma.$queryRaw<Array<{ name: string; country: string | null; genre1: string | null }>>`
-    SELECT
-      artist_name AS name,
-      NULL AS country,
-      NULL AS genre1
-    FROM (
+  return prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+    `
       SELECT
-        COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) AS artist_name,
-        SUM(COALESCE(v.favourited, 0)) AS artist_score,
-        COUNT(*) AS artist_count
-      FROM videos v
-      WHERE v.videoId IS NOT NULL
-        AND COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) IS NOT NULL
-        AND EXISTS (
-          SELECT 1
-          FROM site_videos sv
-          WHERE sv.video_id = v.id
-            AND sv.status = 'available'
-        )
-      GROUP BY artist_name
-    ) ranked
-    WHERE ranked.artist_name LIKE ${likePattern}
-    ORDER BY ranked.artist_score DESC, ranked.artist_count DESC, ranked.artist_name ASC
-    LIMIT ${safeLimit}
-  `.catch(() => []);
+        artist_name AS name,
+        NULL AS country,
+        NULL AS genre1
+      FROM (
+        SELECT
+          COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) AS artist_name,
+          SUM(COALESCE(v.favourited, 0)) AS artist_score,
+          COUNT(*) AS artist_count
+        FROM videos v
+        ${AVAILABLE_SITE_VIDEOS_JOIN}
+        WHERE v.videoId IS NOT NULL
+          AND COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) IS NOT NULL
+        GROUP BY artist_name
+      ) ranked
+      WHERE ranked.artist_name LIKE ?
+      ORDER BY ranked.artist_score DESC, ranked.artist_count DESC, ranked.artist_name ASC
+      LIMIT ${safeLimit}
+    `,
+    likePattern,
+  ).catch(() => []);
 }
 
 export async function getCurrentVideo(videoId?: string, options?: { skipPlaybackDecision?: boolean }) {
@@ -4321,44 +4340,36 @@ export async function getUnseenCatalogVideos(options?: {
         .slice(0, requested);
     }
 
-    const rows = await prisma.$queryRaw<RankedVideoRow[]>`
-          SELECT
-            v.videoId,
-            v.title,
-            COALESCE(v.parsedArtist, NULL) AS channelTitle,
-            v.favourited,
-            v.description
-          FROM videos v
-          WHERE v.videoId IS NOT NULL
-            AND EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND sv.status = 'available'
-            )
-            AND NOT EXISTS (
-              SELECT 1
-              FROM watch_history wh
-              WHERE wh.user_id = ${options.userId}
-                AND wh.video_id = v.videoId
-            )
-          ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
-          LIMIT ${fetchLimit}
-        `;
+    const seenVideoIds = await getSeenVideoIdsForUser(options.userId);
+    const candidates: VideoRecord[] = [];
+    const maxWindows = 8;
+    const windowSize = 500;
+
+    for (let windowIndex = 0; windowIndex < maxWindows && candidates.length < fetchLimit; windowIndex += 1) {
+      const offset = windowIndex * windowSize;
+      const chunk = await getNewestVideos(windowSize, offset);
+      if (chunk.length === 0) {
+        break;
+      }
+
+      candidates.push(...chunk);
+      if (chunk.length < windowSize) {
+        break;
+      }
+    }
 
     const seen = new Set<string>();
-    const result = rows
-      .filter((row) => {
-        if (!row.videoId || excluded.has(row.videoId) || seen.has(row.videoId)) {
+    return candidates
+      .filter((video) => {
+        const videoId = video.id;
+        if (!videoId || excluded.has(videoId) || seenVideoIds.has(videoId) || seen.has(videoId)) {
           return false;
         }
-        seen.add(row.videoId);
+
+        seen.add(videoId);
         return true;
       })
-      .slice(0, requested)
-      .map(mapVideo);
-
-    return result;
+      .slice(0, requested);
   } catch {
     return [];
   }
@@ -4811,34 +4822,43 @@ export async function getArtistBySlug(slug: string) {
           columns.genreColumns.length > 0
             ? `COALESCE(${columns.genreColumns.map((column) => `a.${escapeSqlIdentifier(column)}`).join(", ")})`
             : "NULL";
+        const slugStart = slug.match(/[a-z0-9]/i)?.[0]?.toLowerCase() ?? "";
+        const slugPrefix = slugStart ? `${slugStart}%` : "%";
 
-        const artists = await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
-          `
-            SELECT
-              a.${nameCol} AS name,
-              NULL AS country,
-              ${genreExpr} AS genre1
-            FROM artists a
-            WHERE a.${nameCol} IS NOT NULL
-              AND a.${nameCol} <> ''
-            ORDER BY a.${nameCol} ASC
-          `,
-        );
+        const pageSize = 2000;
+        let offset = 0;
+        let matchedCandidate: { name: string; country: string | null; genre1: string | null } | undefined;
 
-        const rowsBySlug = new Map<string, ArtistRecord>();
-        for (const row of artists) {
-          const mapped = mapArtist(row);
-          // Preserve existing behavior by keeping the first row encountered
-          // for any slug collision in name-ordered results.
-          if (!rowsBySlug.has(mapped.slug)) {
-            rowsBySlug.set(mapped.slug, mapped);
+        while (!matchedCandidate) {
+          const candidates = await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+            `
+              SELECT
+                a.${nameCol} AS name,
+                NULL AS country,
+                ${genreExpr} AS genre1
+              FROM artists a
+              WHERE a.${nameCol} IS NOT NULL
+                AND a.${nameCol} <> ''
+                AND LOWER(a.${nameCol}) LIKE ?
+              ORDER BY a.${nameCol} ASC
+              LIMIT ${pageSize}
+              OFFSET ${offset}
+            `,
+            slugPrefix,
+          );
+
+          matchedCandidate = candidates.find((artist) => slugify(artist.name) === slug);
+          if (matchedCandidate || candidates.length < pageSize) {
+            break;
           }
+
+          offset += pageSize;
         }
 
-        artistSlugLookupCache = {
-          expiresAt: Date.now() + ARTIST_SLUG_LOOKUP_CACHE_TTL_MS,
-          rowsBySlug,
-        };
+        const rowsBySlug = new Map<string, ArtistRecord>();
+        if (matchedCandidate) {
+          rowsBySlug.set(slug, mapArtist(matchedCandidate));
+        }
 
         return rowsBySlug;
       })().finally(() => {
@@ -4853,12 +4873,10 @@ export async function getArtistBySlug(slug: string) {
     }
 
     const hydrated = await hydrateArtistCountryByName(matched);
-    if (hydrated.country !== matched.country) {
-      artistSingleSlugCache.set(slug, {
-        expiresAt: Date.now() + ARTIST_SINGLE_SLUG_CACHE_TTL_MS,
-        artist: hydrated,
-      });
-    }
+    artistSingleSlugCache.set(slug, {
+      expiresAt: Date.now() + ARTIST_SINGLE_SLUG_CACHE_TTL_MS,
+      artist: hydrated,
+    });
 
     return hydrated;
   } catch {
@@ -4909,14 +4927,9 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
         v.favourited,
         v.description
       FROM videos v${videoArtistIndexHint}
+      ${AVAILABLE_SITE_VIDEOS_JOIN}
       WHERE ${videoArtistNormExpr} = ?
         AND v.videoId IS NOT NULL
-        AND EXISTS (
-          SELECT 1
-          FROM site_videos sv
-          WHERE sv.video_id = v.id
-            AND sv.status = 'available'
-        )
         AND NOT EXISTS (
           SELECT 1
           FROM videos v_conflict
