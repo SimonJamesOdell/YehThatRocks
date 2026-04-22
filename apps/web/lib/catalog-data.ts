@@ -4647,14 +4647,9 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
               COUNT(DISTINCT v.videoId) AS videoCount,
               SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.id ASC), ',', 1) AS thumbnailVideoId
             FROM videos v
+            ${AVAILABLE_SITE_VIDEOS_JOIN}
             WHERE ${videoArtistNormExpr} <> ''
               AND v.videoId IS NOT NULL
-              AND EXISTS (
-                SELECT 1
-                FROM site_videos sv
-                WHERE sv.video_id = v.id
-                  AND sv.status = 'available'
-              )
               AND ${videoArtistNormExpr} LIKE ?
             GROUP BY ${videoArtistNormExpr}
           `,
@@ -4732,6 +4727,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
           SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.id ASC), ',', 1) AS thumbnailVideoId
         FROM videosbyartist va
         INNER JOIN videos v ON ${joinVideoExpr} = va.${vaVideoRefCol}
+        INNER JOIN (SELECT DISTINCT sv.video_id FROM site_videos sv WHERE sv.status = 'available') sv_avail ON sv_avail.video_id = v.id
         WHERE ${vaArtistNormExpr} <> ''
           AND ${vaArtistNormExpr} LIKE ?
           AND v.videoId IS NOT NULL

@@ -89,6 +89,7 @@ async function getArtistColumnMap(prisma) {
 
   return {
     name: available.has("artist") ? "artist" : available.has("name") ? "name" : "artist",
+    normalizedName: ["artist_name_norm", "artist_norm", "normalized_artist", "name_normalized"].find((column) => available.has(column)) ?? null,
     country: available.has("country") ? "country" : available.has("origin") ? "origin" : null,
     genreColumns: ["genre1", "genre2", "genre3", "genre4", "genre5", "genre6"].filter((column) => available.has(column)),
   };
@@ -117,6 +118,7 @@ async function getArtistVideoColumnMap(prisma) {
 
   return {
     artistName: available.has("artist") ? "artist" : available.has("artistname") ? "artistname" : available.has("artist_name") ? "artist_name" : "artist",
+    normalizedArtistName: ["artist_name_norm", "artist_norm", "normalized_artist"].find((column) => available.has(column)) ?? null,
     videoRef,
     joinsOnVideoPrimaryId: videoRef === "video_id" || videoRef === "id",
   };
@@ -144,11 +146,18 @@ async function main() {
     const source = await getArtistVideoSource(prisma);
     console.log(`Using source=${source}.`);
     const nameCol = escapeSqlIdentifier(artistColumns.name);
+    const normalizedNameCol = artistColumns.normalizedName ? escapeSqlIdentifier(artistColumns.normalizedName) : null;
     const countryExpr = artistColumns.country ? escapeSqlIdentifier(artistColumns.country) : "NULL";
     const genreExpr = artistColumns.genreColumns.length > 0
       ? `COALESCE(${artistColumns.genreColumns.map(escapeSqlIdentifier).join(", ")})`
       : "NULL";
-    const whereLetter = /^[A-Z]$/.test(letter) ? `AND UPPER(LEFT(TRIM(${nameCol}), 1)) = ?` : "";
+    const hasLetter = /^[A-Z]$/.test(letter);
+    const letterNeedle = hasLetter ? `${letter.toLowerCase()}%` : null;
+    const whereLetter = hasLetter
+      ? normalizedNameCol
+        ? `AND ${normalizedNameCol} LIKE ?`
+        : `AND ${nameCol} LIKE ?`
+      : "";
 
     console.log("Loading artists dimension rows...");
     const artistRows = await prisma.$queryRawUnsafe(
@@ -159,11 +168,11 @@ async function main() {
           ${genreExpr} AS genre
         FROM artists
         WHERE ${nameCol} IS NOT NULL
-          AND TRIM(${nameCol}) <> ''
+          AND ${nameCol} <> ''
           ${whereLetter}
         ORDER BY ${nameCol} ASC
       `,
-      ...(/^[A-Z]$/.test(letter) ? [letter] : []),
+      ...(letterNeedle ? [letterNeedle] : []),
     );
     console.log(`Loaded ${artistRows.length} artist rows.`);
 
@@ -173,9 +182,14 @@ async function main() {
       console.log("Computing playable video counts from videosbyartist...");
       const artistVideoColumns = await getArtistVideoColumnMap(prisma);
       const artistNameCol = escapeSqlIdentifier(artistVideoColumns.artistName);
+      const artistNormCol = artistVideoColumns.normalizedArtistName ? escapeSqlIdentifier(artistVideoColumns.normalizedArtistName) : null;
       const videoRefCol = escapeSqlIdentifier(artistVideoColumns.videoRef);
       const joinVideoExpr = artistVideoColumns.joinsOnVideoPrimaryId ? "v.id" : "v.videoId";
-      const countWhereLetter = /^[A-Z]$/.test(letter) ? `AND UPPER(LEFT(TRIM(${artistNameCol}), 1)) = ?` : "";
+      const countWhereLetter = letterNeedle
+        ? artistNormCol
+          ? `AND va.${artistNormCol} LIKE ?`
+          : `AND va.${artistNameCol} LIKE ?`
+        : "";
       countRows = await prisma.$queryRawUnsafe(
         `
           SELECT
@@ -191,7 +205,7 @@ async function main() {
             ${countWhereLetter}
           GROUP BY LOWER(TRIM(va.${artistNameCol}))
         `,
-        ...(/^[A-Z]$/.test(letter) ? [letter] : []),
+        ...(letterNeedle ? [letterNeedle] : []),
       );
       console.log(`Computed ${countRows.length} count groups.`);
 
@@ -210,12 +224,12 @@ async function main() {
             ${countWhereLetter}
           GROUP BY LOWER(TRIM(va.${artistNameCol}))
         `,
-        ...(/^[A-Z]$/.test(letter) ? [letter] : []),
+        ...(letterNeedle ? [letterNeedle] : []),
       );
       console.log(`Computed ${thumbnailRows.length} thumbnail groups.`);
     } else {
       console.log("Computing playable video counts from parsedArtist...");
-      const countWhereLetter = /^[A-Z]$/.test(letter) ? "AND parsedArtist LIKE ?" : "";
+      const countWhereLetter = letterNeedle ? "AND parsedArtist LIKE ?" : "";
       countRows = await prisma.$queryRawUnsafe(
         `
           SELECT
@@ -230,7 +244,7 @@ async function main() {
             ${countWhereLetter}
           GROUP BY LOWER(TRIM(v.parsedArtist))
         `,
-        ...(/^[A-Z]$/.test(letter) ? [`${letter}%`] : []),
+        ...(letterNeedle ? [letterNeedle] : []),
       );
       console.log(`Computed ${countRows.length} count groups.`);
 
@@ -248,7 +262,7 @@ async function main() {
             ${countWhereLetter}
           GROUP BY LOWER(TRIM(v.parsedArtist))
         `,
-        ...(/^[A-Z]$/.test(letter) ? [`${letter}%`] : []),
+        ...(letterNeedle ? [letterNeedle] : []),
       );
       console.log(`Computed ${thumbnailRows.length} thumbnail groups.`);
     }
