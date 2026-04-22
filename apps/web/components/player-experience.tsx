@@ -2052,6 +2052,7 @@ export function PlayerExperience({
         videoId: currentVideo.id,
         playerVars: {
           autoplay: 0,
+          cc_load_policy: 0,
           controls: 0,
           disablekb: 1,
           enablejsapi: 1,
@@ -2061,6 +2062,8 @@ export function PlayerExperience({
           origin: embedOrigin,
           playsinline: 1,
           rel: 0,
+          // Deprecated but still accepted by some clients; keep as best-effort UI suppression.
+          showinfo: 0,
         },
         events: {
           onReady: (event) => {

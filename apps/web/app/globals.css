@@ -1714,14 +1714,14 @@ h1 {
     position: absolute;
     inset: 0;
     z-index: 10;
-    pointer-events: auto;
+    pointer-events: none;
   }
 
   .playerChrome:not(.playerChromeDockedDesktop) .overlayCenter {
     position: absolute;
     inset: 0;
     z-index: 6;
-    pointer-events: auto;
+    pointer-events: none;
   }
 
   .playerChromeDockedDesktop.playerChromeUndocking .overlayCenter,
@@ -1729,7 +1729,7 @@ h1 {
     position: absolute;
     inset: 0;
     z-index: 6;
-    pointer-events: auto;
+    pointer-events: none;
   }
 
   .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayPlayBtn {

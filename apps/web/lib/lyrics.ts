@@ -36,6 +36,11 @@ export type LyricsLookupResult = {
   message?: string;
 };
 
+type LyricsCandidate = {
+  artistName: string;
+  trackName: string;
+};
+
 function normalizeSignatureToken(value: string) {
   return value
     .toLowerCase()
@@ -87,6 +92,47 @@ function deriveArtistTrackFromTitle(title: string, channelTitle: string | null |
   }
 
   return null;
+}
+
+function buildLyricsCandidates(
+  parsedArtist: string | null,
+  parsedTrack: string | null,
+  title: string,
+  channelTitle: string | null,
+) {
+  const candidates: LyricsCandidate[] = [];
+  const signatures = new Set<string>();
+
+  const addCandidate = (artistName: string | null, trackName: string | null) => {
+    if (!artistName || !trackName) {
+      return;
+    }
+
+    const artist = sanitizeMetadataToken(artistName);
+    const track = sanitizeMetadataToken(trackName);
+
+    if (!artist || !track) {
+      return;
+    }
+
+    const signature = `${normalizeSignatureToken(artist)}::${normalizeSignatureToken(track)}`;
+    if (signatures.has(signature)) {
+      return;
+    }
+
+    signatures.add(signature);
+    candidates.push({ artistName: artist, trackName: track });
+  };
+
+  addCandidate(parsedArtist, parsedTrack);
+
+  const fromTitle = deriveArtistTrackFromTitle(title, channelTitle);
+  addCandidate(fromTitle?.artistName ?? null, fromTitle?.trackName ?? null);
+
+  // Parsed metadata can be reversed in some catalog rows.
+  addCandidate(parsedTrack, parsedArtist);
+
+  return candidates;
 }
 
 function pickBestLyricsRecord(records: LyricsSearchRecord[], artistName: string, trackName: string) {
@@ -184,11 +230,9 @@ export async function getLyricsForVideo(videoId?: string | null): Promise<Lyrics
   const parsedArtist = sanitizeMetadataToken(dbVideo?.parsedArtist ?? null);
   const parsedTrack = sanitizeMetadataToken(dbVideo?.parsedTrack ?? null);
 
-  const derived = parsedArtist && parsedTrack
-    ? { artistName: parsedArtist, trackName: parsedTrack }
-    : deriveArtistTrackFromTitle(title, channelTitle);
+  const candidates = buildLyricsCandidates(parsedArtist, parsedTrack, title, channelTitle);
 
-  if (!derived) {
+  if (candidates.length === 0) {
     return {
       ok: true,
       status: 200,
@@ -200,60 +244,78 @@ export async function getLyricsForVideo(videoId?: string | null): Promise<Lyrics
     };
   }
 
-  const normalizedArtist = normalizeSignatureToken(derived.artistName);
-  const normalizedTrack = normalizeSignatureToken(derived.trackName);
+  let sawProviderError = false;
 
-  const cached = await prisma.lyricsCache.findUnique({
-    where: {
-      normalizedArtist_normalizedTrack: {
-        normalizedArtist,
-        normalizedTrack,
+  for (const candidate of candidates) {
+    const normalizedArtist = normalizeSignatureToken(candidate.artistName);
+    const normalizedTrack = normalizeSignatureToken(candidate.trackName);
+
+    const cached = await prisma.lyricsCache.findUnique({
+      where: {
+        normalizedArtist_normalizedTrack: {
+          normalizedArtist,
+          normalizedTrack,
+        },
       },
-    },
-  }).catch(() => null);
+    }).catch(() => null);
 
-  if (cached) {
-    if (cached.isUnavailable || !cached.lyrics) {
+    if (cached) {
+      if (cached.isUnavailable || !cached.lyrics) {
+        continue;
+      }
+
       return {
         ok: true,
         status: 200,
         videoId: normalizedVideoId,
         artistName: cached.artistName,
         trackName: cached.trackName,
+        plainLyrics: cached.lyrics,
         source: cached.source ?? "cache",
         cached: true,
-        message: "No lyrics available for this track.",
       };
     }
 
-    return {
-      ok: true,
-      status: 200,
-      videoId: normalizedVideoId,
-      artistName: cached.artistName,
-      trackName: cached.trackName,
-      plainLyrics: cached.lyrics,
-      source: cached.source ?? "cache",
-      cached: true,
-    };
-  }
+    const fetched = await fetchLyricsFromLrclib(candidate.artistName, candidate.trackName).catch(() => ({ state: "fetch-error" as const }));
 
-  const fetched = await fetchLyricsFromLrclib(derived.artistName, derived.trackName).catch(() => ({ state: "fetch-error" as const }));
+    if (fetched.state === "fetch-error") {
+      sawProviderError = true;
+      continue;
+    }
 
-  if (fetched.state === "fetch-error") {
-    return {
-      ok: false,
-      status: 502,
-      videoId: normalizedVideoId,
-      artistName: derived.artistName,
-      trackName: derived.trackName,
-      message: "Could not fetch lyrics from the provider right now. Please try again shortly.",
-      source: "lrclib",
-      cached: false,
-    };
-  }
+    if (fetched.state === "not-found") {
+      await prisma.lyricsCache.upsert({
+        where: {
+          normalizedArtist_normalizedTrack: {
+            normalizedArtist,
+            normalizedTrack,
+          },
+        },
+        create: {
+          artistName: candidate.artistName,
+          trackName: candidate.trackName,
+          normalizedArtist,
+          normalizedTrack,
+          lyrics: null,
+          source: "lrclib",
+          sourceRecordId: null,
+          isInstrumental: false,
+          isUnavailable: true,
+        },
+        update: {
+          artistName: candidate.artistName,
+          trackName: candidate.trackName,
+          lyrics: null,
+          source: "lrclib",
+          sourceRecordId: null,
+          isInstrumental: false,
+          isUnavailable: true,
+        },
+      }).catch(() => undefined);
 
-  if (fetched.state === "not-found") {
+      continue;
+    }
+
     await prisma.lyricsCache.upsert({
       where: {
         normalizedArtist_normalizedTrack: {
@@ -262,24 +324,24 @@ export async function getLyricsForVideo(videoId?: string | null): Promise<Lyrics
         },
       },
       create: {
-        artistName: derived.artistName,
-        trackName: derived.trackName,
+        artistName: candidate.artistName,
+        trackName: candidate.trackName,
         normalizedArtist,
         normalizedTrack,
-        lyrics: null,
-        source: "lrclib",
-        sourceRecordId: null,
+        lyrics: fetched.plainLyrics,
+        source: fetched.source,
+        sourceRecordId: fetched.sourceRecordId,
         isInstrumental: false,
-        isUnavailable: true,
+        isUnavailable: false,
       },
       update: {
-        artistName: derived.artistName,
-        trackName: derived.trackName,
-        lyrics: null,
-        source: "lrclib",
-        sourceRecordId: null,
+        artistName: candidate.artistName,
+        trackName: candidate.trackName,
+        lyrics: fetched.plainLyrics,
+        source: fetched.source,
+        sourceRecordId: fetched.sourceRecordId,
         isInstrumental: false,
-        isUnavailable: true,
+        isUnavailable: false,
       },
     }).catch(() => undefined);
 
@@ -287,51 +349,37 @@ export async function getLyricsForVideo(videoId?: string | null): Promise<Lyrics
       ok: true,
       status: 200,
       videoId: normalizedVideoId,
-      artistName: derived.artistName,
-      trackName: derived.trackName,
-      source: "lrclib",
+      artistName: candidate.artistName,
+      trackName: candidate.trackName,
+      plainLyrics: fetched.plainLyrics,
+      source: fetched.source,
       cached: false,
-      message: "No lyrics available for this track.",
     };
   }
 
-  await prisma.lyricsCache.upsert({
-    where: {
-      normalizedArtist_normalizedTrack: {
-        normalizedArtist,
-        normalizedTrack,
-      },
-    },
-    create: {
-      artistName: derived.artistName,
-      trackName: derived.trackName,
-      normalizedArtist,
-      normalizedTrack,
-      lyrics: fetched.plainLyrics,
-      source: fetched.source,
-      sourceRecordId: fetched.sourceRecordId,
-      isInstrumental: false,
-      isUnavailable: false,
-    },
-    update: {
-      artistName: derived.artistName,
-      trackName: derived.trackName,
-      lyrics: fetched.plainLyrics,
-      source: fetched.source,
-      sourceRecordId: fetched.sourceRecordId,
-      isInstrumental: false,
-      isUnavailable: false,
-    },
-  }).catch(() => undefined);
+  const primaryCandidate = candidates[0];
+
+  if (sawProviderError) {
+    return {
+      ok: false,
+      status: 502,
+      videoId: normalizedVideoId,
+      artistName: primaryCandidate?.artistName,
+      trackName: primaryCandidate?.trackName,
+      message: "Could not fetch lyrics from the provider right now. Please try again shortly.",
+      source: "lrclib",
+      cached: false,
+    };
+  }
 
   return {
     ok: true,
     status: 200,
     videoId: normalizedVideoId,
-    artistName: derived.artistName,
-    trackName: derived.trackName,
-    plainLyrics: fetched.plainLyrics,
-    source: fetched.source,
+    artistName: primaryCandidate?.artistName,
+    trackName: primaryCandidate?.trackName,
+    source: "lrclib",
     cached: false,
+    message: "No lyrics available for this track.",
   };
 }
