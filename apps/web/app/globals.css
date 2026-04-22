@@ -7180,56 +7180,116 @@ h1 {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(6, 2, 2, 0.6);
-  backdrop-filter: blur(7px) saturate(0.8);
+  background:
+    radial-gradient(circle at 20% 8%, rgba(255, 124, 88, 0.13), transparent 42%),
+    rgba(6, 2, 2, 0.64);
+  backdrop-filter: blur(9px) saturate(0.84);
 }
 
 .authStatusModalDialog {
-  width: min(560px, 100%);
+  position: relative;
+  width: min(580px, 100%);
   display: grid;
-  gap: 16px;
-  padding: 20px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 194, 168, 0.28);
+  gap: 18px;
+  padding: 22px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 194, 168, 0.36);
   background:
-    radial-gradient(circle at 12% 8%, rgba(255, 84, 45, 0.2), transparent 44%),
-    linear-gradient(160deg, rgba(34, 8, 6, 0.96), rgba(11, 4, 4, 0.96));
-  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 126, 96, 0.16) inset;
+    radial-gradient(circle at 10% 6%, rgba(255, 94, 56, 0.28), transparent 38%),
+    linear-gradient(158deg, rgba(38, 9, 7, 0.97), rgba(11, 4, 4, 0.98));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.56), 0 0 0 1px rgba(255, 126, 96, 0.2) inset;
+}
+
+.authStatusModalDialog::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 3px;
+  border-radius: 16px 16px 0 0;
+  background: linear-gradient(90deg, rgba(255, 88, 48, 0.75), rgba(255, 180, 150, 0.46));
 }
 
 .authStatusModalCopy {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .authStatusModalCopy strong {
   margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.9rem;
-  color: #ffddd4;
+  letter-spacing: 0.09em;
+  font-family: var(--font-display), cursive;
+  font-size: 1.02rem;
+  color: #ffe3d7;
+}
+
+.authStatusModalCopy strong::before {
+  content: "!";
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(33, 9, 7, 0.98);
+  background: linear-gradient(180deg, rgba(255, 175, 146, 0.95), rgba(255, 124, 95, 0.95));
+  box-shadow: 0 0 0 1px rgba(255, 202, 182, 0.36) inset;
 }
 
 .authStatusModalCopy p {
   margin: 0;
-  color: rgba(255, 225, 218, 0.94);
-  line-height: 1.55;
+  color: rgba(255, 230, 223, 0.95);
+  line-height: 1.6;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 194, 168, 0.16);
+  border-radius: 10px;
+  padding: 10px 12px;
 }
 
 .authStatusModalActions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  justify-content: flex-end;
 }
 
 .authStatusModalActions button {
-  min-width: 160px;
+  flex: 1 1 180px;
+  min-width: 180px;
+  min-height: 46px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: transform 150ms ease, filter 150ms ease, border-color 150ms ease;
+}
+
+.authStatusModalActions button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+
+.authStatusModalActions button:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
 }
 
 .authStatusModalDismiss {
-  background: rgba(255, 255, 255, 0.08) !important;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 238, 233, 0.96) !important;
+  background: rgba(255, 255, 255, 0.11) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: none !important;
+}
+
+.authStatusModalDismiss:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16) !important;
+  border-color: rgba(255, 255, 255, 0.28);
 }
 
 .performanceQuickLaunch {
@@ -7577,8 +7637,12 @@ h1 {
 
   .authStatusModalDialog {
     width: 100%;
-    border-radius: 16px 16px 0 0;
+    border-radius: 18px 18px 0 0;
     padding: 18px;
+  }
+
+  .authStatusModalDialog::before {
+    border-radius: 18px 18px 0 0;
   }
 
   .authStatusModalActions {

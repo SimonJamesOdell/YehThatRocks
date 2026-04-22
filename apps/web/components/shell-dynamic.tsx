@@ -1950,32 +1950,55 @@ function ShellDynamicInner({
   );
 
   const checkAuthState = useCallback(async () => {
-    try {
-      const response = await fetchWithAuthRetry("/api/auth/me");
+    const resolveAuthState = async () => {
+      try {
+        const response = await fetchWithAuthRetry("/api/auth/me");
 
-      if (response.status === 401 || response.status === 403) {
-        setAuthStatus("clear");
-        setAuthStatusMessage(null);
-        setIsAuthenticated(false);
-        setChatError(null);
-        return "unauthenticated" as const;
-      }
+        if (response.status === 401 || response.status === 403) {
+          return "unauthenticated" as const;
+        }
 
-      if (!response.ok) {
-        setAuthStatus("unavailable");
-        setAuthStatusMessage("The auth server is not responding, so your authorization status cannot currently be confirmed. Try again later or reconnect now.");
+        if (!response.ok) {
+          return "unavailable" as const;
+        }
+
+        return "authenticated" as const;
+      } catch {
         return "unavailable" as const;
       }
+    };
 
+    let resolvedState = await resolveAuthState();
+
+    // Tabs resuming from sleep can produce one-off network/auth hiccups.
+    // Retry once before showing a blocking auth-unavailable modal.
+    if (resolvedState === "unavailable" && isAuthenticated) {
+      await new Promise<void>((resolve) => {
+        window.setTimeout(() => {
+          resolve();
+        }, 900);
+      });
+      resolvedState = await resolveAuthState();
+    }
+
+    if (resolvedState === "unauthenticated") {
       setAuthStatus("clear");
       setAuthStatusMessage(null);
-      return "authenticated" as const;
-    } catch {
+      setIsAuthenticated(false);
+      setChatError(null);
+      return "unauthenticated" as const;
+    }
+
+    if (resolvedState === "unavailable") {
       setAuthStatus("unavailable");
       setAuthStatusMessage("The auth server is not responding, so your authorization status cannot currently be confirmed. Try again later or reconnect now.");
       return "unavailable" as const;
     }
-  }, [fetchWithAuthRetry]);
+
+    setAuthStatus("clear");
+    setAuthStatusMessage(null);
+    return "authenticated" as const;
+  }, [fetchWithAuthRetry, isAuthenticated]);
 
   const retryAuthStateCheck = useCallback(async () => {
     if (isRetryingAuthStatus) {
@@ -2279,6 +2302,11 @@ function ShellDynamicInner({
       const detail = (event as CustomEvent<{ videoId?: string }>).detail;
       const targetVideoId = detail?.videoId || activeVideoId;
 
+      if (isLyricsOverlayOpen && lyricsOverlayVideoId === targetVideoId) {
+        setIsLyricsOverlayOpen(false);
+        return;
+      }
+
       setLyricsOverlayVideoId(targetVideoId);
       setLyricsOverlayError(null);
       setLyricsOverlayData(null);
@@ -2289,7 +2317,7 @@ function ShellDynamicInner({
     return () => {
       window.removeEventListener(RIGHT_RAIL_LYRICS_OPEN_EVENT, handleLyricsOverlayOpen);
     };
-  }, [activeVideoId]);
+  }, [activeVideoId, isLyricsOverlayOpen, lyricsOverlayVideoId]);
 
   useEffect(() => {
     if (!isLyricsOverlayOpen) {

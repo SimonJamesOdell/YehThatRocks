@@ -1033,7 +1033,8 @@ export function PlayerExperience({
   // (video ended with autoplay off). On "/", the choice overlay is shown instead.
   const suppressUnavailablePlaybackSurface = endedChoiceFromUnavailable || Boolean(unavailableOverlayMessage) || playerClosedByEndOfVideo || (showEndedChoiceOverlay && pathname !== "/");
   const showDockCloseButton = isDockedDesktop && pathname !== "/";
-  const showPlayerLoadingOverlay = !isPlayerReady || isRouteResolving;
+  const hasActivePlayback = isPlaying || safeCurrentTime > 0;
+  const showPlayerLoadingOverlay = (!isPlayerReady || isRouteResolving) && !hasActivePlayback;
 
   useEffect(() => {
     const initialRequestedVideoId = initialRequestedVideoIdRef.current;
