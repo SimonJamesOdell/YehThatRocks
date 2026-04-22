@@ -90,7 +90,15 @@ SELECT
   ROUND(AVG(TIME_TO_SEC(query_time)), 4) AS avg_query_s,
   SUM(rows_examined) AS rows_examined_total,
   SUM(rows_sent) AS rows_sent_total,
-  LEFT(REPLACE(REPLACE(sql_text, CHAR(10), ' '), CHAR(13), ' '), 280) AS sample_sql
+  MIN(LEFT(REPLACE(REPLACE(sql_text, CHAR(10), ' '), CHAR(13), ' '), 280)) AS sample_sql_example,
+  LEFT(
+    REGEXP_REPLACE(
+      REPLACE(REPLACE(sql_text, CHAR(10), ' '), CHAR(13), ' '),
+      '''[^'']*''|[0-9]+',
+      '?'
+    ),
+    280
+  ) AS sample_sql
 FROM mysql.slow_log
 WHERE start_time >= '$STARTED_AT_UTC'
   AND sql_text NOT LIKE '%FROM mysql.slow_log%'
@@ -102,6 +110,7 @@ SELECT
   avg_query_s,
   rows_examined_total,
   rows_sent_total,
+  sample_sql_example,
   sample_sql
 FROM ytr_slow_agg
 ORDER BY total_query_s DESC
@@ -122,6 +131,7 @@ SELECT
     + (calls * 0.15),
     3
   ) AS priority_score,
+  sample_sql_example,
   sample_sql
 FROM ytr_slow_agg
 WHERE calls >= $OUTLIER_MIN_CALLS
@@ -140,6 +150,7 @@ SELECT
   total_query_s,
   avg_query_s,
   rows_examined_total,
+  sample_sql_example,
   sample_sql
 FROM ytr_slow_agg
 ORDER BY calls DESC
