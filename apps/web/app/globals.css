@@ -1691,7 +1691,7 @@ h1 {
   .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling).playerOverlayVisible .overlayTop,
   .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerOverlayVisible .overlayTop {
     position: relative;
-    z-index: 12;
+    z-index: 24;
     padding-top: 0;
     padding-bottom: 0;
     background: transparent;
@@ -1700,36 +1700,36 @@ h1 {
 
   .playerChromeDockedDesktop .shareMenuWrap {
     position: relative;
-    z-index: 13;
+    z-index: 29;
     pointer-events: auto;
   }
 
   .playerChromeDockedDesktop .overlayDockCloseBtn {
     position: relative;
-    z-index: 14;
+    z-index: 30;
     pointer-events: auto;
   }
 
   .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayCenter {
     position: absolute;
     inset: 0;
-    z-index: 10;
-    pointer-events: none;
+    z-index: 20;
+    pointer-events: auto;
   }
 
   .playerChrome:not(.playerChromeDockedDesktop) .overlayCenter {
     position: absolute;
     inset: 0;
-    z-index: 6;
-    pointer-events: none;
+    z-index: 20;
+    pointer-events: auto;
   }
 
   .playerChromeDockedDesktop.playerChromeUndocking .overlayCenter,
   .playerChromeDockedDesktop.playerChromeUndockSettling .overlayCenter {
     position: absolute;
     inset: 0;
-    z-index: 6;
-    pointer-events: none;
+    z-index: 20;
+    pointer-events: auto;
   }
 
   .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayPlayBtn {
@@ -1918,6 +1918,8 @@ h1 {
   }
 
   .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayBottom {
+    z-index: 26;
+    pointer-events: auto;
     gap: 16px;
     padding: 46px 12px 14px;
   }
@@ -2194,7 +2196,14 @@ h1 {
   inset: 0;
   width: 100%;
   height: 100%;
+  opacity: 1;
+  transition: opacity 140ms ease;
   pointer-events: none;
+}
+
+.playerFrame.playerFrameLoading > iframe,
+.playerFrame.playerFrameLoading .playerMount iframe {
+  opacity: 0;
 }
 
 @keyframes playerBootPulse {
@@ -2218,6 +2227,7 @@ h1 {
   position: absolute;
   inset: 0;
   z-index: 5;
+  isolation: isolate;
   pointer-events: none;
   display: flex;
   flex-direction: column;
@@ -2241,11 +2251,17 @@ h1 {
   pointer-events: auto;
 }
 
+.playerOverlayVisible .overlayCenter {
+  pointer-events: auto;
+}
+
 .playerOverlayVisible .overlayTop {
   pointer-events: auto;
 }
 
 .overlayTop {
+  position: relative;
+  z-index: 24;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -2329,6 +2345,8 @@ h1 {
 }
 
 .overlayCenter {
+  position: relative;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2340,6 +2358,7 @@ h1 {
   bottom: 0;
   left: 0;
   right: 0;
+  z-index: 26;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -2352,7 +2371,6 @@ h1 {
     opacity 0.22s ease,
     gap 520ms cubic-bezier(0.2, 0.92, 0.34, 1),
     padding 520ms cubic-bezier(0.2, 0.92, 0.34, 1);
-  z-index: 5;
 }
 
 .overlayBottomVisible {
@@ -2381,10 +2399,12 @@ h1 {
   visibility: hidden;
   pointer-events: none;
   transition: opacity 0.22s ease;
-  z-index: 5;
+  z-index: 26;
 }
 
 .overlayPlayBtn {
+  position: relative;
+  z-index: 28;
   width: 92px;
   height: 92px;
   margin-top: -44px;
@@ -2444,6 +2464,8 @@ h1 {
 }
 
 .overlayIconBtn {
+  position: relative;
+  z-index: 28;
   background: none;
   border: none;
   color: #fff;
@@ -2477,6 +2499,8 @@ h1 {
 }
 
 .overlayProgress {
+  position: relative;
+  z-index: 28;
   width: 100%;
   height: 4px;
   accent-color: #e00;
@@ -2521,6 +2545,8 @@ h1 {
 }
 
 .overlayVolumeSlider {
+  position: relative;
+  z-index: 28;
   width: 88px;
   height: 4px;
   accent-color: #fff;
@@ -2545,6 +2571,7 @@ h1 {
 
 .shareMenuWrap {
   position: relative;
+  z-index: 29;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
