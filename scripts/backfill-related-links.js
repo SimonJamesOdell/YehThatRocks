@@ -154,21 +154,10 @@ async function fetchRelatedFromYouTube(videoId) {
 }
 
 async function getCandidateVideos(limit) {
-  const playableClause = includeNonPlayable
-    ? "1 = 1"
+  const playableJoin = includeNonPlayable
+    ? ""
     : `
-      EXISTS (
-        SELECT 1
-        FROM site_videos sv
-        WHERE sv.video_id = v.id
-          AND sv.status = 'available'
-      )
-      AND NOT EXISTS (
-        SELECT 1
-        FROM site_videos sv
-        WHERE sv.video_id = v.id
-          AND (sv.status IS NULL OR sv.status <> 'available')
-      )
+      INNER JOIN (SELECT DISTINCT sv.video_id FROM site_videos sv WHERE sv.status = 'available') sv_avail ON sv_avail.video_id = v.id
     `;
 
   return prisma.$queryRawUnsafe(
@@ -191,9 +180,8 @@ async function getCandidateVideos(limit) {
           AND r.videoId <> r.related
         GROUP BY r.videoId
       ) rc ON rc.videoId = v.videoId
+      ${playableJoin}
       WHERE v.videoId IS NOT NULL
-        AND CHAR_LENGTH(v.videoId) = 11
-        AND ${playableClause}
         AND COALESCE(rc.relatedCount, 0) < ?
       ORDER BY relatedCount ASC, v.id ASC
       LIMIT ${Math.max(1, limit)}

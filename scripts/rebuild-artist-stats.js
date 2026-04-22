@@ -184,22 +184,10 @@ async function main() {
             COUNT(DISTINCT v.videoId) AS videoCount
           FROM videosbyartist va
           INNER JOIN videos v ON ${joinVideoExpr} = va.${videoRefCol}
+          INNER JOIN (SELECT DISTINCT sv.video_id FROM site_videos sv WHERE sv.status = 'available') sv_avail ON sv_avail.video_id = v.id
           WHERE va.${artistNameCol} IS NOT NULL
             AND TRIM(va.${artistNameCol}) <> ''
             AND v.videoId IS NOT NULL
-            AND CHAR_LENGTH(v.videoId) = 11
-            AND EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND sv.status = 'available'
-            )
-            AND NOT EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND (sv.status IS NULL OR sv.status <> 'available')
-            )
             ${countWhereLetter}
           GROUP BY LOWER(TRIM(va.${artistNameCol}))
         `,
@@ -215,22 +203,10 @@ async function main() {
             SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.id ASC), ',', ${MAX_THUMBNAIL_CANDIDATES}) AS thumbnailVideoIds
           FROM videosbyartist va
           INNER JOIN videos v ON ${joinVideoExpr} = va.${videoRefCol}
+          INNER JOIN (SELECT DISTINCT sv.video_id FROM site_videos sv WHERE sv.status = 'available') sv_avail ON sv_avail.video_id = v.id
           WHERE va.${artistNameCol} IS NOT NULL
             AND TRIM(va.${artistNameCol}) <> ''
             AND v.videoId IS NOT NULL
-            AND CHAR_LENGTH(v.videoId) = 11
-            AND EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND sv.status = 'available'
-            )
-            AND NOT EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND (sv.status IS NULL OR sv.status <> 'available')
-            )
             ${countWhereLetter}
           GROUP BY LOWER(TRIM(va.${artistNameCol}))
         `,
@@ -247,22 +223,10 @@ async function main() {
             MIN(TRIM(v.parsedArtist)) AS displayName,
             COUNT(DISTINCT v.videoId) AS videoCount
           FROM videos v
+          INNER JOIN (SELECT DISTINCT sv.video_id FROM site_videos sv WHERE sv.status = 'available') sv_avail ON sv_avail.video_id = v.id
           WHERE v.parsedArtist IS NOT NULL
             AND TRIM(v.parsedArtist) <> ''
             AND v.videoId IS NOT NULL
-            AND CHAR_LENGTH(v.videoId) = 11
-            AND EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND sv.status = 'available'
-            )
-            AND NOT EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND (sv.status IS NULL OR sv.status <> 'available')
-            )
             ${countWhereLetter}
           GROUP BY LOWER(TRIM(v.parsedArtist))
         `,
@@ -277,22 +241,10 @@ async function main() {
             LOWER(TRIM(parsedArtist)) AS artistKey,
             SUBSTRING_INDEX(GROUP_CONCAT(videoId ORDER BY id ASC), ',', ${MAX_THUMBNAIL_CANDIDATES}) AS thumbnailVideoIds
           FROM videos v
+          INNER JOIN (SELECT DISTINCT sv.video_id FROM site_videos sv WHERE sv.status = 'available') sv_avail ON sv_avail.video_id = v.id
           WHERE parsedArtist IS NOT NULL
             AND TRIM(parsedArtist) <> ''
             AND videoId IS NOT NULL
-            AND CHAR_LENGTH(videoId) = 11
-            AND EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND sv.status = 'available'
-            )
-            AND NOT EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND (sv.status IS NULL OR sv.status <> 'available')
-            )
             ${countWhereLetter}
           GROUP BY LOWER(TRIM(v.parsedArtist))
         `,
