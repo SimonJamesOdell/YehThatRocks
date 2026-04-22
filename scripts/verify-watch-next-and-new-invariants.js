@@ -9,6 +9,7 @@ const files = {
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic.tsx"),
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
+  playerExperience: path.join(ROOT, "apps/web/components/player-experience.tsx"),
   newPage: path.join(ROOT, "apps/web/app/(shell)/new/page.tsx"),
   newLoading: path.join(ROOT, "apps/web/app/(shell)/new/loading.tsx"),
   newVideosLoader: path.join(ROOT, "apps/web/components/new-videos-loader.tsx"),
@@ -46,6 +47,7 @@ function main() {
   const shellDynamicSource = read(files.shellDynamic);
   const currentVideoRouteSource = read(files.currentVideoRoute);
   const catalogDataSource = read(files.catalogData);
+  const playerExperienceSource = read(files.playerExperience);
   const newPageSource = read(files.newPage);
   const newLoadingSource = read(files.newLoading);
   const newVideosLoaderSource = read(files.newVideosLoader);
@@ -114,6 +116,19 @@ function main() {
   assertContains(catalogDataSource, "const useSharedRelatedCache = excludedIds.size === 0;", "Related videos cache is reused for any exclude-free request size", failures);
   assertContains(catalogDataSource, "if (cached && cached.expiresAt > now && cached.videos.length >= requestedCount)", "Related videos cache serves larger pooled recommendation requests", failures);
   assertContains(catalogDataSource, "const newestPromise = getNewestVideos(50).then((videos) =>", "Related videos reuse newest helper instead of issuing a duplicate newest scan", failures);
+
+  // Docked autoplay route-queue invariants.
+  assertContains(playerExperienceSource, "const [routeAutoplayQueueIds, setRouteAutoplayQueueIds] = useState<string[]>([]);", "Player tracks route-scoped autoplay queue ids", failures);
+  assertContains(playerExperienceSource, "if (!isDockedDesktop || !autoplayEnabled || Boolean(activePlaylistId))", "Route autoplay queue activates only while docked autoplay is enabled and no playlist is active", failures);
+  assertContains(playerExperienceSource, "const onNewRoute = pathname === \"/new\";", "Docked autoplay recognizes New page list route", failures);
+  assertContains(playerExperienceSource, "const onTop100Route = pathname === \"/top100\";", "Docked autoplay recognizes Top100 list route", failures);
+  assertContains(playerExperienceSource, "const onFavouritesRoute = pathname === \"/favourites\";", "Docked autoplay recognizes Favourites list route", failures);
+  assertContains(playerExperienceSource, "const onCategoryRoute = pathname.startsWith(\"/categories/\");", "Docked autoplay recognizes Category detail list route", failures);
+  assertContains(playerExperienceSource, "const onArtistRoute = pathname.startsWith(\"/artist/\");", "Docked autoplay recognizes Artist detail list route", failures);
+  assertContains(playerExperienceSource, "if (isDockedDesktop && autoplayEnabled && routeAutoplayQueueIds.length > 0)", "Autoplay next target prioritizes route queue when docked on list pages", failures);
+  assertContains(playerExperienceSource, "const currentIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId === currentVideo.id);", "Route queue next selection is based on current video position", failures);
+  assertContains(playerExperienceSource, "const nextIndex = currentIndex >= 0", "Route queue next selection advances in list order", failures);
+  assertContains(playerExperienceSource, "const randomWatchNextId = getRandomWatchNextId();", "Random watch-next fallback still exists when no route queue target is available", failures);
 
   // New route non-blocking and staged loading invariants.
   assertContains(newPageSource, 'import { NewVideosLoader } from "@/components/new-videos-loader";', "New page uses client loader for staged fetches", failures);
