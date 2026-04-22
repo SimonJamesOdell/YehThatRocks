@@ -85,7 +85,6 @@ const prisma = new PrismaClient();
 async function main() {
   const playableFilter = `
     v.videoId IS NOT NULL
-    AND CHAR_LENGTH(v.videoId) = 11
     AND EXISTS (
       SELECT 1
       FROM site_videos sv
@@ -132,7 +131,6 @@ async function main() {
           v.title
         FROM videos v
         WHERE v.videoId IS NOT NULL
-          AND CHAR_LENGTH(v.videoId) = 11
           AND NOT EXISTS (
             SELECT 1
             FROM site_videos sv
@@ -152,7 +150,6 @@ async function main() {
         FROM videos v
         INNER JOIN site_videos sv ON sv.video_id = v.id
         WHERE v.videoId IS NOT NULL
-          AND CHAR_LENGTH(v.videoId) = 11
         GROUP BY v.id, v.videoId, v.title
         HAVING SUM(CASE WHEN sv.status = 'available' THEN 1 ELSE 0 END) > 0
            AND SUM(CASE WHEN sv.status IS NULL OR sv.status <> 'available' THEN 1 ELSE 0 END) > 0

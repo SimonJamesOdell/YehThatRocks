@@ -197,20 +197,8 @@ async function getTopPlayableCandidates(prisma, poolSize) {
         ${favouritedExpr} AS favourited,
         v.id AS internalId
       FROM videos v
+      INNER JOIN (SELECT DISTINCT sv.video_id FROM site_videos sv WHERE sv.status = 'available') sv_avail ON sv_avail.video_id = v.id
       WHERE v.videoId IS NOT NULL
-        AND CHAR_LENGTH(v.videoId) = 11
-        AND EXISTS (
-          SELECT 1
-          FROM site_videos sv
-          WHERE sv.video_id = v.id
-            AND sv.status = 'available'
-        )
-        AND NOT EXISTS (
-          SELECT 1
-          FROM site_videos sv
-          WHERE sv.video_id = v.id
-            AND (sv.status IS NULL OR sv.status <> 'available')
-        )
       ORDER BY ${favouritedExpr} DESC, v.id DESC
       LIMIT ?
     `,
