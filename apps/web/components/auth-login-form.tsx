@@ -48,7 +48,6 @@ const AUTO_LOGIN_SUPPRESS_ONCE_KEY = "ytr:auto-login-suppress-once";
 const ANONYMOUS_SCREEN_NAME_MIN_LENGTH = 2;
 const ANONYMOUS_SCREEN_NAME_MAX_LENGTH = 40;
 const ANONYMOUS_SUGGESTION_TIMEOUT_MS = 4000;
-const ANONYMOUS_AUTO_LOGIN_TIMEOUT_MS = 2000;
 const ANONYMOUS_SUGGESTION_PREFIXES = ["Metal", "Riff", "Iron", "Neon", "Storm", "Night", "Echo", "Steel"];
 const ANONYMOUS_SUGGESTION_SUFFIXES = ["Wolf", "Rider", "Fury", "Howl", "Blade", "Pulse", "Flame", "Static"];
 
@@ -162,36 +161,6 @@ export function AuthLoginForm() {
       } catch {
         // Ignore browser credential storage failures; auth already succeeded.
       }
-    }
-  }
-
-  async function trySavedCredentialLogin() {
-    const credentials = getBrowserCredentialsContainer();
-    if (!credentials?.get) {
-      return false;
-    }
-
-    try {
-      const credential = await credentials.get({
-        password: true,
-        mediation: "optional",
-      });
-
-      if (!credential || typeof credential !== "object") {
-        return false;
-      }
-
-      const candidate = credential as Partial<BrowserPasswordCredential>;
-      const username = typeof candidate.id === "string" ? candidate.id.trim() : "";
-      const password = typeof candidate.password === "string" ? candidate.password : "";
-
-      if (!username || !password) {
-        return false;
-      }
-
-      return submitLogin(username, password);
-    } catch {
-      return false;
     }
   }
 
@@ -347,25 +316,15 @@ export function AuthLoginForm() {
       return;
     }
 
-    const loggedIn = await Promise.race([
-      trySavedCredentialLogin(),
-      new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), ANONYMOUS_AUTO_LOGIN_TIMEOUT_MS)),
-    ]);
+    setAnonymousScreenName("");
+    setAnonymousSuggestedScreenName("");
+    setShouldClearAnonymousSuggestion(false);
+    setAnonymousAvailability("idle");
 
-    if (!loggedIn) {
-      setAnonymousScreenName("");
-      setAnonymousSuggestedScreenName("");
-      setShouldClearAnonymousSuggestion(false);
-      setAnonymousAvailability("idle");
-
-      try {
-        await assignAvailableAnonymousSuggestion();
-      } finally {
-        setIsAnonymousFlowOpen(true);
-      }
-
-      setIsAnonymousPreparing(false);
-      return;
+    try {
+      await assignAvailableAnonymousSuggestion();
+    } finally {
+      setIsAnonymousFlowOpen(true);
     }
 
     setIsAnonymousPreparing(false);
