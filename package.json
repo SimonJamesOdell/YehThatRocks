@@ -34,6 +34,8 @@
     "scan:non-music:every-row": "node scripts/scan-non-music-candidates.js --scan-all=1 --scope=all-videos --max-candidates=0 --batch-size=3000",
     "scan:non-music:every-row:apply-local": "node scripts/scan-non-music-candidates.js --scan-all=1 --scope=all-videos --max-candidates=0 --batch-size=3000 --apply-local=1 --confirm-delete=YES",
     "scan:non-music:build-delete-sql": "node scripts/build-non-music-delete-sql.js",
+    "fix:reversed-artist-track": "node scripts/fix-reversed-artist-track.js",
+    "fix:reversed-artist-track:apply": "node scripts/fix-reversed-artist-track.js --apply --confirm=SWAP_ARTIST_TRACK",
     "prune:unavailable:all": "node scripts/audit-video-embedability.js --all --limit=1000 --concurrency=8 --exhaustive --prune-unavailable",
     "rebuild:artist-stats": "node scripts/rebuild-artist-stats.js",
     "backfill:related": "node scripts/backfill-related-links.js",

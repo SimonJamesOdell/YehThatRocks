@@ -52,24 +52,31 @@ export function verifySameOrigin(request: NextRequest): NextResponse | null {
     return null;
   }
 
-  const origin = request.headers.get("origin");
+  const origin = request.headers.get("origin")?.trim();
+  const referer = request.headers.get("referer")?.trim();
 
-  if (!origin) {
-    return NextResponse.json({ error: "Missing origin header" }, { status: 403 });
-  }
+  let sourceUrl: URL | null = null;
 
-  let originUrl: URL;
-
-  try {
-    originUrl = new URL(origin);
-  } catch {
-    return NextResponse.json({ error: "Invalid origin header" }, { status: 403 });
+  if (origin) {
+    try {
+      sourceUrl = new URL(origin);
+    } catch {
+      return NextResponse.json({ error: "Invalid origin header" }, { status: 403 });
+    }
+  } else if (referer) {
+    try {
+      sourceUrl = new URL(referer);
+    } catch {
+      return NextResponse.json({ error: "Invalid referer header" }, { status: 403 });
+    }
+  } else {
+    return NextResponse.json({ error: "Missing origin and referer headers" }, { status: 403 });
   }
 
   const allowedOrigins = buildAllowedOrigins(request);
 
   if (process.env.NODE_ENV === "production") {
-    const isStrictSameOrigin = allowedOrigins.some((candidate) => originUrl.origin === candidate.origin);
+    const isStrictSameOrigin = allowedOrigins.some((candidate) => sourceUrl.origin === candidate.origin);
 
     if (!isStrictSameOrigin) {
       return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
@@ -78,7 +85,7 @@ export function verifySameOrigin(request: NextRequest): NextResponse | null {
     return null;
   }
 
-  const isAllowed = allowedOrigins.some((candidate) => sameOriginOrLoopbackEquivalent(originUrl, candidate));
+  const isAllowed = allowedOrigins.some((candidate) => sameOriginOrLoopbackEquivalent(sourceUrl, candidate));
 
   if (!isAllowed) {
     return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
