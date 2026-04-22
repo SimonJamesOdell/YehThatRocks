@@ -127,6 +127,8 @@ export function NewVideosLoader({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const hiddenVideoIdsKey = useMemo(() => [...hiddenVideoIds].sort().join("|"), [hiddenVideoIds]);
+  const initialVideoIdsKey = useMemo(() => initialVideos.map((video) => video.id).join("|"), [initialVideos]);
   const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
   const [allVideos, setAllVideos] = useState(() => dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet)));
   const [flaggingVideo, setFlaggingVideo] = useState<VideoRecord | null>(null);
@@ -739,7 +741,7 @@ export function NewVideosLoader({
     };
 
     void loadVideos();
-  }, [hiddenVideoIdSet, initialVideos, isAuthenticated, loadBatch]);
+  }, [hiddenVideoIdsKey, initialVideoIdsKey, loadBatch]);
 
   return (
     <>

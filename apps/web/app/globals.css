@@ -1889,10 +1889,10 @@ h1 {
   .playerChromeDockedDesktop .primaryActions .primaryActionToggleButtonTrash,
   .playerChromeDockedArtists .primaryActions .primaryActionToggleButtonTrash {
     width: auto;
-    min-width: 132px;
+    min-width: 182px;
     height: 42px;
     min-height: 42px;
-    flex: 1 1 132px;
+    flex: 1 1 182px;
   }
 
   .playerChromeDockedDesktop .primaryActions .primaryActionToggleButtonTrash .primaryActionTrashLabel,
@@ -3368,6 +3368,10 @@ h1 {
   transition: opacity 220ms ease;
 }
 
+.primaryActionsMainRow {
+  display: contents;
+}
+
 .primaryActionsUnavailable {
   pointer-events: none;
   opacity: 0.45;
@@ -3507,6 +3511,88 @@ h1 {
   transform: rotate(90deg);
   transform-origin: center;
   flex: 0 0 auto;
+}
+
+.dockedAdminShareUrlRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 0 100%;
+  width: min(100%, 44rem);
+  margin: 4px auto 0;
+}
+
+.playerChromeDockedDesktop .primaryActions > .dockedAdminShareUrlRow,
+.playerChromeDockedArtists .primaryActions > .dockedAdminShareUrlRow {
+  flex: 1 0 100%;
+  margin-top: 14px;
+  transform: translateX(0px);
+}
+
+.playerChromeDockedDesktop .primaryActionsMainRow,
+.playerChromeDockedArtists .primaryActionsMainRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  width: 100%;
+}
+
+.playerChromeDockedDesktop .primaryActions.primaryActionsDockedAdmin,
+.playerChromeDockedArtists .primaryActions.primaryActionsDockedAdmin {
+  flex-wrap: wrap;
+  overflow: visible;
+  align-content: flex-start;
+  transform: translateX(calc(-1 * (var(--left-rail-width) + 12px))) translateY(-10px);
+}
+
+.playerChromeDockedDesktop .primaryActionsMainRow > *,
+.playerChromeDockedArtists .primaryActionsMainRow > * {
+  flex: 0 0 auto;
+}
+
+.playerChromeDockedDesktop .primaryActionsMainRow .shareUrlField,
+.playerChromeDockedArtists .primaryActionsMainRow .shareUrlField {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dockedAdminShareUrlInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(9, 7, 7, 0.92);
+  color: #fff2ed;
+  font-size: 0.8rem;
+}
+
+.dockedAdminShareUrlInput:focus {
+  outline: 2px solid rgba(255, 103, 74, 0.42);
+  outline-offset: 1px;
+}
+
+.dockedAdminShareUrlCopyButton {
+  height: 38px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: linear-gradient(180deg, rgba(62, 62, 62, 0.95), rgba(34, 34, 34, 0.95));
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.dockedAdminShareUrlCopyButton:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.dockedAdminShareUrlCopyButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .primaryActionWikiLabel {

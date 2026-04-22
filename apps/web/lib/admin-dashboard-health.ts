@@ -42,6 +42,33 @@ type HostHealthMetrics = {
   networkUsagePercent: number | null;
 };
 
+type AdminHealthPayload = {
+  meta: {
+    generatedAt: string;
+  };
+  health: {
+    nodeUptimeSec: number;
+    memory: {
+      rssMb: number;
+      heapUsedMb: number;
+      heapTotalMb: number;
+    };
+    host: {
+      platform: string;
+      loadAvg: number[];
+      totalMemMb: number;
+      freeMemMb: number;
+      cpuUsagePercent: number | null;
+      cpuAverageUsagePercent: number | null;
+      cpuPeakCoreUsagePercent: number | null;
+      memoryUsagePercent: number;
+      diskUsagePercent: number | null;
+      swapUsagePercent: number | null;
+      networkUsagePercent: number | null;
+    };
+  };
+};
+
 type AdminHostMetricHistoryRow = {
   bucketStart: Date;
   cpuUsagePercent: number | null;
@@ -57,10 +84,20 @@ let adminHostMetricSamplingStarted = false;
 let adminHostMetricPersistInFlight: Promise<void> | null = null;
 let hostHealthCollectionInFlight: Promise<HostHealthMetrics> | null = null;
 let lastPersistedAdminHostMetricBucketStartMs: number | null = null;
+let liveCpuSamplingStarted = false;
+let previousLiveCpuSnapshot: CpuSnapshot | null = null;
+let latestLiveCpuMetrics: CpuUsageMetrics | null = null;
 
 const CPU_24H_WINDOW_MS = 24 * 60 * 60 * 1000;
 const CPU_BUCKET_MS = 60 * 1000;
 const ADMIN_HOST_METRIC_SAMPLE_MS = readPositiveNumberEnv("ADMIN_HOST_METRIC_SAMPLE_INTERVAL_MS", CPU_BUCKET_MS, CPU_BUCKET_MS);
+const ADMIN_CPU_LIVE_SAMPLE_MS = readPositiveNumberEnv("ADMIN_CPU_LIVE_SAMPLE_MS", 250, 100);
+const ADMIN_HEALTH_CACHE_MS = readPositiveNumberEnv("ADMIN_HEALTH_CACHE_MS", 1000, 100);
+
+let adminHealthPayloadCache: {
+  expiresAt: number;
+  payload: AdminHealthPayload;
+} | null = null;
 
 function readPositiveNumberEnv(name: string, defaultValue: number, minValue: number) {
   const raw = process.env[name];
@@ -88,6 +125,42 @@ function getCurrentBucketStartMs(now = Date.now()) {
 
 function finitePercentOrNull(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? clampPercent(value) : null;
+}
+
+function getLiveCpuHostFields() {
+  if (!latestLiveCpuMetrics) {
+    return null;
+  }
+
+  return {
+    cpuUsagePercent: finitePercentOrNull(latestLiveCpuMetrics.currentPercent),
+    cpuAverageUsagePercent: finitePercentOrNull(latestLiveCpuMetrics.averagePercent),
+    cpuPeakCoreUsagePercent: finitePercentOrNull(latestLiveCpuMetrics.peakCorePercent),
+  };
+}
+
+function startLiveCpuSampling() {
+  if (liveCpuSamplingStarted) {
+    return;
+  }
+
+  liveCpuSamplingStarted = true;
+  previousLiveCpuSnapshot = getCpuSnapshot();
+
+  const timer = setInterval(() => {
+    const nextSnapshot = getCpuSnapshot();
+
+    if (previousLiveCpuSnapshot) {
+      const metrics = buildCpuUsageMetrics(previousLiveCpuSnapshot, nextSnapshot);
+      if (metrics.currentPercent !== null) {
+        latestLiveCpuMetrics = metrics;
+      }
+    }
+
+    previousLiveCpuSnapshot = nextSnapshot;
+  }, ADMIN_CPU_LIVE_SAMPLE_MS);
+
+  timer.unref?.();
 }
 
 function getCpuSnapshot(): CpuSnapshot {
@@ -384,8 +457,18 @@ async function collectHostHealthMetrics() {
     return hostHealthCollectionInFlight;
   }
 
+  startLiveCpuSampling();
+
   const collectionPromise = (async (): Promise<HostHealthMetrics> => {
-    const cpuMetrics = await computeCpuUsagePercent();
+    const sampledCpuMetrics = latestLiveCpuMetrics;
+    const cpuMetrics = sampledCpuMetrics && sampledCpuMetrics.currentPercent !== null
+      ? sampledCpuMetrics
+      : await computeCpuUsagePercent();
+
+    if (!sampledCpuMetrics && cpuMetrics.currentPercent !== null) {
+      latestLiveCpuMetrics = cpuMetrics;
+    }
+
     const networkUsagePercent = await computeNetworkUsagePercent();
     const diskUsagePercent = await computeDiskUsagePercent();
     const swapUsagePercent = await computeSwapUsagePercent();
@@ -545,9 +628,34 @@ export async function readAdminHostMetricHistory() {
 
 export async function buildAdminHealthPayload() {
   startAdminHostMetricSampling();
+  startLiveCpuSampling();
+
+  const now = Date.now();
+  if (adminHealthPayloadCache && adminHealthPayloadCache.expiresAt > now) {
+    const liveCpuHostFields = getLiveCpuHostFields();
+
+    if (!liveCpuHostFields) {
+      return adminHealthPayloadCache.payload;
+    }
+
+    return {
+      ...adminHealthPayloadCache.payload,
+      meta: {
+        generatedAt: new Date().toISOString(),
+      },
+      health: {
+        ...adminHealthPayloadCache.payload.health,
+        host: {
+          ...adminHealthPayloadCache.payload.health.host,
+          ...liveCpuHostFields,
+        },
+      },
+    };
+  }
+
   const hostMetrics = await collectHostHealthMetrics();
 
-  return {
+  const payload: AdminHealthPayload = {
     meta: {
       generatedAt: new Date().toISOString(),
     },
@@ -573,4 +681,11 @@ export async function buildAdminHealthPayload() {
       },
     },
   };
+
+  adminHealthPayloadCache = {
+    payload,
+    expiresAt: Date.now() + ADMIN_HEALTH_CACHE_MS,
+  };
+
+  return payload;
 }

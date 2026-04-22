@@ -498,6 +498,7 @@ export function PlayerExperience({
   const [playlistQueueIds, setPlaylistQueueIds] = useState<string[]>([]);
   const [playlistQueueOwnerId, setPlaylistQueueOwnerId] = useState<string | null>(null);
   const [playlistRefreshTick, setPlaylistRefreshTick] = useState(0);
+  const [routeAutoplayQueueIds, setRouteAutoplayQueueIds] = useState<string[]>([]);
   const [topFallbackVideos, setTopFallbackVideos] = useState<VideoRecord[]>([]);
   const [showAdminVideoEditModal, setShowAdminVideoEditModal] = useState(false);
   const [adminEditVideoRowId, setAdminEditVideoRowId] = useState<number | null>(null);
@@ -802,6 +803,145 @@ export function PlayerExperience({
     };
   }, [autoplayEnabled]);
 
+  useEffect(() => {
+    if (!isDockedDesktop || !autoplayEnabled || Boolean(activePlaylistId)) {
+      setRouteAutoplayQueueIds([]);
+      return;
+    }
+
+    const onNewRoute = pathname === "/new";
+    const onTop100Route = pathname === "/top100";
+    const onFavouritesRoute = pathname === "/favourites";
+    const onCategoryRoute = pathname.startsWith("/categories/");
+    const onArtistRoute = pathname.startsWith("/artist/");
+
+    if (!onNewRoute && !onTop100Route && !onFavouritesRoute && !onCategoryRoute && !onArtistRoute) {
+      setRouteAutoplayQueueIds([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const extractVideoIds = (videos: VideoRecord[] | undefined) => (
+      Array.isArray(videos)
+        ? videos.map((video) => video?.id).filter((id): id is string => Boolean(id))
+        : []
+    );
+
+    async function fetchHiddenVideoIdSet() {
+      if (!isLoggedIn) {
+        return new Set<string>();
+      }
+
+      try {
+        const hiddenResponse = await fetchWithAuthRetry("/api/hidden-videos", { cache: "no-store" });
+        if (!hiddenResponse.ok) {
+          return new Set<string>();
+        }
+
+        const hiddenPayload = (await hiddenResponse.json().catch(() => null)) as { hiddenVideoIds?: string[] } | null;
+        return new Set(Array.isArray(hiddenPayload?.hiddenVideoIds) ? hiddenPayload.hiddenVideoIds : []);
+      } catch {
+        return new Set<string>();
+      }
+    }
+
+    async function loadRouteAutoplayQueue() {
+      try {
+        const hiddenSet = await fetchHiddenVideoIdSet();
+        let rawIds: string[] = [];
+
+        if (onNewRoute) {
+          const response = await fetch(`/api/videos/newest?skip=0&take=${NEW_AUTOPLAY_PLAYLIST_SIZE}`, {
+            cache: "no-store",
+          });
+
+          if (!response.ok) {
+            return;
+          }
+
+          const payload = (await response.json().catch(() => null)) as { videos?: VideoRecord[] } | null;
+          rawIds = extractVideoIds(payload?.videos);
+        } else if (onTop100Route) {
+          const response = await fetch(`/api/videos/top?count=${NEW_AUTOPLAY_PLAYLIST_SIZE}`, {
+            cache: "no-store",
+          });
+
+          if (!response.ok) {
+            return;
+          }
+
+          const payload = (await response.json().catch(() => null)) as { videos?: VideoRecord[] } | null;
+          rawIds = extractVideoIds(payload?.videos);
+        } else if (onFavouritesRoute) {
+          const response = await fetchWithAuthRetry("/api/favourites", {
+            cache: "no-store",
+          });
+
+          if (!response.ok) {
+            return;
+          }
+
+          const payload = (await response.json().catch(() => null)) as { favourites?: VideoRecord[] } | null;
+          rawIds = Array.isArray(payload?.favourites)
+            ? payload.favourites.map((video) => video?.id).filter((id): id is string => Boolean(id))
+            : [];
+        } else if (onCategoryRoute) {
+          const categorySlug = pathname.slice("/categories/".length).split("/")[0] ?? "";
+          if (!categorySlug) {
+            return;
+          }
+
+          const response = await fetch(
+            `/api/categories/${encodeURIComponent(categorySlug)}?limit=${NEW_AUTOPLAY_PLAYLIST_SIZE}&offset=0`,
+            {
+              cache: "no-store",
+            },
+          );
+
+          if (!response.ok) {
+            return;
+          }
+
+          const payload = (await response.json().catch(() => null)) as { videos?: VideoRecord[] } | null;
+          rawIds = extractVideoIds(payload?.videos);
+        } else if (onArtistRoute) {
+          const artistSlug = pathname.slice("/artist/".length).split("/")[0] ?? "";
+          if (!artistSlug) {
+            return;
+          }
+
+          const response = await fetch(`/api/artists/${encodeURIComponent(artistSlug)}`, {
+            cache: "no-store",
+          });
+
+          if (!response.ok) {
+            return;
+          }
+
+          const payload = (await response.json().catch(() => null)) as { videos?: VideoRecord[] } | null;
+          rawIds = extractVideoIds(payload?.videos);
+        }
+
+        const dedupedVisibleIds = Array.from(new Set(rawIds.filter((videoId) => !hiddenSet.has(videoId))));
+
+        if (!cancelled) {
+          setRouteAutoplayQueueIds(dedupedVisibleIds);
+        }
+      } catch {
+        if (!cancelled) {
+          setRouteAutoplayQueueIds([]);
+        }
+      }
+    }
+
+    void loadRouteAutoplayQueue();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePlaylistId, autoplayEnabled, isDockedDesktop, isLoggedIn, pathname]);
+
   function getRandomWatchNextId() {
     const queueIds = Array.from(new Set(queue.map((video) => video.id))).filter((videoId) => videoId !== currentVideo.id);
     const topFallbackVideoIds = Array.from(new Set(topFallbackVideos.map((video) => video.id))).filter(
@@ -855,6 +995,23 @@ export function PlayerExperience({
 
       // A playlist is selected but not ready yet; do not switch to random Watch Next.
       return null;
+    }
+
+    if (isDockedDesktop && autoplayEnabled && routeAutoplayQueueIds.length > 0) {
+      const currentIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId === currentVideo.id);
+      const fallbackIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId !== currentVideo.id);
+      const nextIndex = currentIndex >= 0
+        ? (currentIndex + 1) % routeAutoplayQueueIds.length
+        : fallbackIndex;
+      const nextId = nextIndex >= 0 ? routeAutoplayQueueIds[nextIndex] ?? null : null;
+
+      if (nextId) {
+        return {
+          videoId: nextId,
+          playlistItemIndex: null,
+          clearPlaylist: true,
+        };
+      }
     }
 
     const randomWatchNextId = getRandomWatchNextId();
@@ -4266,7 +4423,7 @@ export function PlayerExperience({
                 </div>
               ) : null}
 
-              {isPlayerReady && !isRouteResolving && (
+              {isPlayerReady && (
                 <div className={!hasPlaybackStarted || !isPlaying || showControls ? "playerOverlay playerOverlayVisible" : "playerOverlay"}>
                 <div className="overlayTop">
                   {!isFullscreen ? (
@@ -4829,44 +4986,50 @@ export function PlayerExperience({
 
           {!suppressUnavailablePlaybackSurface ? (
             <div
-              className={footerActionsBlocked ? "primaryActions primaryActionsUnavailable" : "primaryActions"}
+              className={[
+                footerActionsBlocked ? "primaryActions primaryActionsUnavailable" : "primaryActions",
+                showDockCloseButton && isAdmin ? "primaryActionsDockedAdmin" : "",
+              ].filter(Boolean).join(" ")}
               aria-disabled={footerActionsBlocked ? true : undefined}
             >
-            <div className="shareUrlField">
-              <label htmlFor="share-url" className="shareUrlLabel">SHARE URL</label>
-              <div className="shareUrlInputWrap">
-                <input
-                  id="share-url"
-                  type="text"
-                  className="shareUrlInput"
-                  size={Math.min(Math.max(shareUrl.length, 24), 48)}
-                  style={{ width: `calc(${Math.min(Math.max(shareUrl.length, 24), 48)}ch + 53px)` }}
-                  readOnly
-                  value={shareUrl}
-                  onFocus={(event) => event.currentTarget.select()}
-                  onClick={(event) => event.currentTarget.select()}
-                  aria-label="Share URL"
-                />
-                <button
-                  type="button"
-                  className="shareUrlCopyButton"
-                  onClick={() => {
-                    void handleCopyShareLink();
-                  }}
-                  disabled={footerActionsBlocked}
-                  aria-label={copied ? "Share URL copied" : "Copy share URL"}
-                  title={copied ? "Copied" : "Copy share URL"}
-                >
-                  <span
-                    className="shareUrlCopyIcon"
-                    aria-hidden="true"
-                    dangerouslySetInnerHTML={{ __html: "&#128203;" }}
+            <div className="primaryActionsMainRow">
+            {!(showDockCloseButton && isAdmin) ? (
+              <div className="shareUrlField">
+                <label htmlFor="share-url" className="shareUrlLabel">SHARE URL</label>
+                <div className="shareUrlInputWrap">
+                  <input
+                    id="share-url"
+                    type="text"
+                    className="shareUrlInput"
+                    size={Math.min(Math.max(shareUrl.length, 24), 48)}
+                    style={{ width: `calc(${Math.min(Math.max(shareUrl.length, 24), 48)}ch + 53px)` }}
+                    readOnly
+                    value={shareUrl}
+                    onFocus={(event) => event.currentTarget.select()}
+                    onClick={(event) => event.currentTarget.select()}
+                    aria-label="Share URL"
                   />
-                </button>
+                  <button
+                    type="button"
+                    className="shareUrlCopyButton"
+                    onClick={() => {
+                      void handleCopyShareLink();
+                    }}
+                    disabled={footerActionsBlocked}
+                    aria-label={copied ? "Share URL copied" : "Copy share URL"}
+                    title={copied ? "Copied" : "Copy share URL"}
+                  >
+                    <span
+                      className="shareUrlCopyIcon"
+                      aria-hidden="true"
+                      dangerouslySetInnerHTML={{ __html: "&#128203;" }}
+                    />
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : null}
             {isLoggedIn && (
-              <div className="primaryActionIconButtonWrap">
+              <div className="primaryActionIconButtonWrap primaryActionFavouriteWrap">
                 {favouriteSaveState === "saved" && (
                   <div className="favouriteSavedToast" role="status" aria-live="polite">Favourite Saved!</div>
                 )}
@@ -5068,6 +5231,31 @@ export function PlayerExperience({
                 <span className="primaryActionThumbsDownGlyph" aria-hidden="true">👎</span>
                 <span className="primaryActionTrashLabel">No That SUCKS!</span>
               </button>
+            ) : null}
+            </div>
+            {showDockCloseButton && isAdmin ? (
+              <div className="dockedAdminShareUrlRow">
+                <input
+                  type="text"
+                  className="dockedAdminShareUrlInput"
+                  value={shareUrl}
+                  readOnly
+                  aria-label="Share URL"
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+                <button
+                  type="button"
+                  className="dockedAdminShareUrlCopyButton"
+                  onClick={() => {
+                    void handleCopyShareLink();
+                  }}
+                  disabled={footerActionsBlocked}
+                  aria-label="Copy share URL"
+                  title="Copy share URL"
+                >
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
             ) : null}
             </div>
           ) : null}

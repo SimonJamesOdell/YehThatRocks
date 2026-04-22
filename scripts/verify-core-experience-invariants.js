@@ -179,6 +179,9 @@ function main() {
   assertContains(playerExperienceSource, "void loadFooterPlaylistMenu();", "Player loads playlist menu options on quick-add open", failures);
   assertContains(playerExperienceSource, "handleFooterCreatePlaylist", "Player supports create-playlist flow from footer menu", failures);
   assertContains(playerExperienceSource, "handleFooterPlaylistSelect", "Player supports selecting an existing playlist from footer menu", failures);
+  assertContains(playerExperienceSource, 'showDockCloseButton && isAdmin ? "primaryActionsDockedAdmin" : "",', "Player applies admin-docked footer class only for docked admin state", failures);
+  assertContains(playerExperienceSource, "!(showDockCloseButton && isAdmin) ? (", "Player suppresses inline share field in docked admin state", failures);
+  assertContains(playerExperienceSource, "showDockCloseButton && isAdmin ? (", "Player renders dedicated docked admin share row", failures);
   assertContains(playerExperienceSource, 'className="shareModalBackdrop"', "Player renders share modal backdrop", failures);
   assertContains(playerExperienceSource, 'buildCanonicalShareUrl(currentVideo.id)', "Player uses canonical short share URLs", failures);
   assertContains(playerExperienceSource, '<ArtistWikiLink', "Player renders artist wiki links in player surfaces", failures);
@@ -207,6 +210,14 @@ function main() {
   assertContains(cssSource, ".playerFrame.playerFrameLoading > iframe,", "Loading mask hides direct iframe while player loader is active", failures);
   assertContains(cssSource, ".playerFrame.playerFrameLoading .playerMount iframe {", "Loading mask hides mounted iframe while player loader is active", failures);
   assertContains(cssSource, "opacity: 0;", "Loading mask applies full iframe opacity suppression", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop .primaryActions.primaryActionsDockedAdmin,", "CSS defines admin-only docked footer layout mode", failures);
+  assertContains(cssSource, "flex-wrap: wrap;", "Admin docked footer layout allows wrapped rows", failures);
+  assertContains(cssSource, "overflow: visible;", "Admin docked footer layout keeps secondary share row visible", failures);
+  assertContains(cssSource, "align-content: flex-start;", "Admin docked footer layout pins wrapped rows to top", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop .primaryActionsMainRow,", "CSS defines shared docked controls row container", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop .primaryActionsMainRow > *,", "CSS defines stable child sizing for docked controls row", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop .primaryActionsMainRow .shareUrlField,", "CSS keeps share URL field as the flexible slot in docked controls row", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop .primaryActions > .dockedAdminShareUrlRow,", "CSS positions dedicated docked admin share URL row", failures);
   assertContains(cssSource, ".playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayVolumeSlider {", "Docked-only volume scaling is scoped away from undock/settle states", failures);
   assertContains(cssSource, ".playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayProgress {", "Docked-only scrub scaling is scoped away from undock/settle states", failures);
   assertContains(cssSource, "transition: width 520ms cubic-bezier(0.2, 0.92, 0.34, 1), height 520ms cubic-bezier(0.2, 0.92, 0.34, 1);", "Overlay controls animate size transitions during undock", failures);
