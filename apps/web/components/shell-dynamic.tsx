@@ -1950,6 +1950,7 @@ function ShellDynamicInner({
   );
 
   const checkAuthState = useCallback(async () => {
+    const isDocumentVisible = typeof document === "undefined" || document.visibilityState === "visible";
     const resolveAuthState = async () => {
       try {
         const response = await fetchWithAuthRetry("/api/auth/me");
@@ -1981,6 +1982,13 @@ function ShellDynamicInner({
       resolvedState = await resolveAuthState();
     }
 
+    // Background tabs and wake-from-sleep transitions can briefly fail auth probes
+    // without any real server outage. Avoid showing a blocking modal until the page
+    // is foregrounded again and another visible check can confirm the failure.
+    if (resolvedState === "unavailable" && isAuthenticated && !isDocumentVisible) {
+      return "authenticated" as const;
+    }
+
     if (resolvedState === "unauthenticated") {
       setAuthStatus("clear");
       setAuthStatusMessage(null);
@@ -1997,6 +2005,7 @@ function ShellDynamicInner({
 
     setAuthStatus("clear");
     setAuthStatusMessage(null);
+    setIsAuthenticated(true);
     return "authenticated" as const;
   }, [fetchWithAuthRetry, isAuthenticated]);
 
@@ -2008,15 +2017,11 @@ function ShellDynamicInner({
     setIsRetryingAuthStatus(true);
 
     try {
-      const result = await checkAuthState();
-
-      if (result === "authenticated") {
-        router.refresh();
-      }
+      await checkAuthState();
     } finally {
       setIsRetryingAuthStatus(false);
     }
-  }, [checkAuthState, isRetryingAuthStatus, router]);
+  }, [checkAuthState, isRetryingAuthStatus]);
 
   const loadPublicPerformanceMetrics = useCallback(async () => {
     setIsLoadingPerformanceMetrics(true);
@@ -3992,6 +3997,10 @@ function ShellDynamicInner({
 
     void runCheckAuthState();
     const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
       void runCheckAuthState();
     }, 60_000);
 
@@ -4001,12 +4010,18 @@ function ShellDynamicInner({
       }
     };
 
+    const onWindowOnline = () => {
+      void runCheckAuthState();
+    };
+
     document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("online", onWindowOnline);
 
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("online", onWindowOnline);
     };
   }, [checkAuthState, isAuthenticated]);
 

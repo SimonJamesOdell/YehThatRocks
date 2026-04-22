@@ -33,6 +33,7 @@ const files = {
   adminAuth: path.join(ROOT, "apps/web/lib/admin-auth.ts"),
   authRequest: path.join(ROOT, "apps/web/lib/auth-request.ts"),
   serverAuth: path.join(ROOT, "apps/web/lib/server-auth.ts"),
+  authCookies: path.join(ROOT, "apps/web/lib/auth-cookies.ts"),
   globalCss: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
@@ -52,6 +53,12 @@ function assertContains(source, needle, description, failures) {
 function assertContainsEither(source, needles, description, failures) {
   if (!needles.some(needle => source.includes(needle))) {
     failures.push(`${description} (missing any of: ${needles.join(", ")})`);
+  }
+}
+
+function assertNotContains(source, needle, description, failures) {
+  if (source.includes(needle)) {
+    failures.push(`${description} (unexpected: ${needle})`);
   }
 }
 
@@ -80,6 +87,7 @@ function main() {
   const adminAuthSource = read(files.adminAuth);
   const authRequestSource = read(files.authRequest);
   const serverAuthSource = read(files.serverAuth);
+  const authCookiesSource = read(files.authCookies);
   const globalCssSource = read(files.globalCss);
 
   // --- Account page tabs and top-bar actions ---
@@ -149,6 +157,11 @@ function main() {
   assertContains(loginFormSource, '"/api/auth/me"', "Login form checks /api/auth/me during anonymous continue flow", failures);
   assertContains(loginFormSource, "redirectOnSuccess: false", "Anonymous continue flow uses explicit login fallback without double redirect", failures);
   assertContains(loginFormSource, "onContinue={handleAnonymousCredentialsContinue}", "Anonymous credentials modal continue action is wired to auth finalization handler", failures);
+  assertNotContains(loginFormSource, "ANONYMOUS_AUTO_LOGIN_TIMEOUT_MS", "Anonymous CTA does not race against saved-credential auto-login timeout", failures);
+  assertNotContains(loginFormSource, "trySavedCredentialLogin(", "Anonymous CTA no longer uses saved browser credentials for immediate login", failures);
+  assertContains(loginFormSource, "async function handleAnonymousEntry()", "Login form exposes anonymous-entry handler", failures);
+  assertContains(loginFormSource, "await assignAvailableAnonymousSuggestion();", "Anonymous CTA always prepares anonymous screen name suggestions", failures);
+  assertContains(loginFormSource, "setIsAnonymousFlowOpen(true);", "Anonymous CTA always opens anonymous account creation flow", failures);
 
   // --- Shared auth state handling ---
   assertContains(authRequestSource, 'code: "AUTH_UNAVAILABLE"', "API auth helper returns dedicated auth-unavailable code", failures);
@@ -161,7 +174,16 @@ function main() {
   assertContains(shellDynamicSource, 'setIsAuthenticated(false);', "Shell drops global auth state on confirmed auth failure", failures);
   assertContains(shellDynamicSource, 'setAuthStatus("unavailable")', "Shell marks auth unavailable when probes cannot confirm session", failures);
   assertContains(shellDynamicSource, 'Retry auth now', "Shell exposes auth retry action during auth outages", failures);
-  assertContains(shellDynamicSource, 'router.refresh();', "Shell refreshes the route after successful auth reconnection", failures);
+  assertContains(shellDynamicSource, 'document.visibilityState !== "visible"', "Shell skips background auth polling while the tab is hidden", failures);
+  assertContains(shellDynamicSource, 'window.addEventListener("online", onWindowOnline);', "Shell rechecks auth when connectivity returns", failures);
+
+  // --- Auth cookie lifecycle ---
+  assertContains(authCookiesSource, "export function clearAuthCookies(response: NextResponse)", "Auth cookies module exposes clearAuthCookies", failures);
+  assertContains(authCookiesSource, "response.cookies.set(ACCESS_TOKEN_COOKIE, \"\", getAuthCookieOptions(0));", "Logout clears domain-scoped access cookie", failures);
+  assertContains(authCookiesSource, "response.cookies.set(REFRESH_TOKEN_COOKIE, \"\", getAuthCookieOptions(0));", "Logout clears domain-scoped refresh cookie", failures);
+  assertContains(authCookiesSource, "response.headers.append(\"Set-Cookie\", accessExpiry);", "Logout appends host-only access cookie expiry header", failures);
+  assertContains(authCookiesSource, "response.headers.append(\"Set-Cookie\", refreshExpiry);", "Logout appends host-only refresh cookie expiry header", failures);
+  assertContains(authCookiesSource, "ResponseCookies is keyed by name", "Auth cookie clear logic documents duplicate-name overwrite protection", failures);
 
   // --- Anonymous credentials modal ---
   assertContains(anonymousCredentialsModalSource, 'isContinuing ? "Continuing..." : "Continue"', "Anonymous credentials modal CTA is Continue with pending state", failures);
