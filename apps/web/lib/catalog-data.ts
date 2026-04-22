@@ -943,6 +943,9 @@ let parsedArtistNormIndexAvailableCache: boolean | undefined;
 const ARTIST_VIDEOS_CACHE_TTL_MS = 60_000;
 const artistVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
 const ARTIST_NORM_VIDEO_POOL_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min — artist pools change only on ingest; increased from 5 min to reduce query burden
+const ARTIST_NORM_VIDEO_POOL_MIN_ROWS = 72;
+const ARTIST_NORM_VIDEO_POOL_HEADROOM_ROWS = 18;
+const ARTIST_NORM_VIDEO_POOL_MAX_ROWS = 180;
 const artistNormVideoPoolCache = new Map<string, { expiresAt: number; rows: RankedVideoRow[] }>();
 const artistNormVideoPoolInFlight = new Map<string, { limit: number; promise: Promise<RankedVideoRow[]> }>();
 const RELATED_VIDEOS_CACHE_TTL_MS = 20_000;
@@ -1370,7 +1373,10 @@ async function getArtistVideoPoolByNormalizedName(normalizedArtist: string, limi
   }
 
   const resolvePool = async () => {
-    const materializedLimit = Math.max(120, safeLimit);
+    const materializedLimit = Math.max(
+      ARTIST_NORM_VIDEO_POOL_MIN_ROWS,
+      Math.min(ARTIST_NORM_VIDEO_POOL_MAX_ROWS, safeLimit + ARTIST_NORM_VIDEO_POOL_HEADROOM_ROWS),
+    );
     const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
     const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
     const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
@@ -1580,7 +1586,7 @@ async function getRelatedBaseRows(params: {
       `, normalizedVideoId);
 
       const sameArtistPromise = currentArtistNormalized
-        ? getArtistVideoPoolByNormalizedName(currentArtistNormalized, 40).then((rows) =>
+        ? getArtistVideoPoolByNormalizedName(currentArtistNormalized, 37).then((rows) =>
             rows.filter((row) => row.videoId !== normalizedVideoId).slice(0, 36),
           )
         : Promise.resolve([] as RankedVideoRow[]);
