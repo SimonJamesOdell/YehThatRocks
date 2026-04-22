@@ -475,6 +475,8 @@ export function PlayerExperience({
     const [isScrubbing, setIsScrubbing] = useState(false);
     const progressIntervalRef = useRef<number | null>(null);
     const nowPlayingShownForVideoRef = useRef<string | null>(null);
+    const nowPlayingLastVideoIdRef = useRef<string | null>(null);
+    const nowPlayingLastTriggeredAtRef = useRef<number>(0);
     const reportedUnavailableVideoIdRef = useRef<string | null>(null);
     const autoplaySuppressedVideoIdRef = useRef<string | null>(null);
     const autoplayRouteTransitionRef = useRef(false);
@@ -1035,6 +1037,11 @@ export function PlayerExperience({
   const showDockCloseButton = isDockedDesktop && pathname !== "/";
   const hasActivePlayback = isPlaying || safeCurrentTime > 0;
   const showPlayerLoadingOverlay = (!isPlayerReady || isRouteResolving) && !hasActivePlayback;
+  const playerFrameClassName = [
+    "playerFrame",
+    isPlayerReady ? "playerFrameLoaded" : "",
+    showPlayerLoadingOverlay ? "playerFrameLoading" : "",
+  ].filter(Boolean).join(" ");
 
   useEffect(() => {
     const initialRequestedVideoId = initialRequestedVideoIdRef.current;
@@ -1754,7 +1761,15 @@ export function PlayerExperience({
   }, [currentVideo.id]);
 
   useEffect(() => {
+    if (overlayTimeoutRef.current) {
+      window.clearTimeout(overlayTimeoutRef.current);
+      overlayTimeoutRef.current = null;
+    }
+
+    setShowNowPlayingOverlay(false);
     nowPlayingShownForVideoRef.current = null;
+    nowPlayingLastVideoIdRef.current = null;
+    nowPlayingLastTriggeredAtRef.current = 0;
     reportedUnavailableVideoIdRef.current = null;
     autoplaySuppressedVideoIdRef.current = null;
     playAttemptedAtRef.current = null;
@@ -2152,8 +2167,25 @@ export function PlayerExperience({
             }
 
             if (playing) {
-              if (pendingAutoAdvanceVideoIdRef.current === currentVideo.id) {
+              const activeVideoId = currentVideoRef.current.id;
+
+              if (pendingAutoAdvanceVideoIdRef.current === activeVideoId) {
                 pendingAutoAdvanceVideoIdRef.current = null;
+              }
+
+              const runtimePlayerWithVideoData = playerRef.current as (YouTubePlayer & {
+                getVideoData?: () => { video_id?: string | null };
+              }) | null;
+              const runtimeVideoId = runtimePlayerWithVideoData && typeof runtimePlayerWithVideoData.getVideoData === "function"
+                ? (runtimePlayerWithVideoData.getVideoData()?.video_id ?? null)
+                : null;
+
+              if (runtimeVideoId && runtimeVideoId !== activeVideoId) {
+                logPlayerDebug("onStateChange:ignore-stale-playing-event", {
+                  activeVideoId,
+                  runtimeVideoId,
+                });
+                return;
               }
 
               clearUnavailableOverlayMessage();
@@ -2173,9 +2205,19 @@ export function PlayerExperience({
                 : duration;
               void reportWatchEvent(1, "qualified", startedTime, startedDuration);
 
-              if (nowPlayingShownForVideoRef.current !== currentVideo.id) {
+              const now = Date.now();
+              const duplicateNowPlayingPulse =
+                nowPlayingShownForVideoRef.current === activeVideoId
+                || (
+                  nowPlayingLastVideoIdRef.current === activeVideoId
+                  && (now - nowPlayingLastTriggeredAtRef.current) < 1800
+                );
+
+              if (!duplicateNowPlayingPulse) {
                 triggerNowPlayingOverlay();
-                nowPlayingShownForVideoRef.current = currentVideo.id;
+                nowPlayingShownForVideoRef.current = activeVideoId;
+                nowPlayingLastVideoIdRef.current = activeVideoId;
+                nowPlayingLastTriggeredAtRef.current = now;
               }
               if (progressIntervalRef.current) window.clearInterval(progressIntervalRef.current);
               progressIntervalRef.current = window.setInterval(() => {
@@ -4164,7 +4206,7 @@ export function PlayerExperience({
           {!suppressUnavailablePlaybackSurface ? (
             <div
               ref={playerFrameRef}
-              className={isPlayerReady ? "playerFrame playerFrameLoaded" : "playerFrame"}
+              className={playerFrameClassName}
               onMouseEnter={() => setShowControls(true)}
               onMouseLeave={() => {
                 if (isPlaying) {
