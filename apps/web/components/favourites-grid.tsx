@@ -8,6 +8,7 @@ import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { CloseLink } from "@/components/close-link";
 import type { VideoRecord } from "@/lib/catalog";
+import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 
 type FavouritesGridProps = {
   initialFavourites: VideoRecord[];
@@ -47,7 +48,7 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
 
     async function refreshFavourites() {
       try {
-        const response = await fetch("/api/favourites", {
+        const response = await fetchWithAuthRetry("/api/favourites", {
           method: "GET",
           cache: "no-store",
         });
@@ -95,7 +96,7 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
       setMessage(null);
 
       try {
-        const response = await fetch("/api/favourites", {
+        const response = await fetchWithAuthRetry("/api/favourites", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

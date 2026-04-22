@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+
 type SearchResultFavouriteButtonProps = {
   videoId: string;
   title: string;
@@ -39,7 +41,7 @@ export function SearchResultFavouriteButton({ videoId, title, isAuthenticated }:
     setState("saving");
 
     try {
-      const response = await fetch("/api/favourites", {
+      const response = await fetchWithAuthRetry("/api/favourites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ videoId, action: "add" }),

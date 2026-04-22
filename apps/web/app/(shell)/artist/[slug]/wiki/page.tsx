@@ -2,8 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CloseLink } from "@/components/close-link";
-import { getArtistBySlug } from "@/lib/catalog-data";
-import { getOrCreateArtistWiki } from "@/lib/artist-wiki";
+import { getArtistBySlug, upsertVerifiedExternalArtistCandidate } from "@/lib/catalog-data";
+import { getOrCreateArtistWiki, verifyExternalArtistBySlug } from "@/lib/artist-wiki";
 import { getArtistPagePath, withVideoContext } from "@/lib/artist-routing";
 
 type ArtistWikiPageProps = {
@@ -64,7 +64,20 @@ export default async function ArtistWikiPage({ params, searchParams }: ArtistWik
   const videoId = typeof resolvedSearchParams?.v === "string" ? resolvedSearchParams.v : undefined;
   const resume = typeof resolvedSearchParams?.resume === "string" ? resolvedSearchParams.resume : undefined;
 
-  const artist = await getArtistBySlug(slug);
+  let artist = await getArtistBySlug(slug);
+
+  if (!artist) {
+    const verifiedExternal = await verifyExternalArtistBySlug(slug);
+    if (verifiedExternal) {
+      await upsertVerifiedExternalArtistCandidate({
+        name: verifiedExternal.artistName,
+        country: verifiedExternal.country,
+        genre: verifiedExternal.genre,
+        thumbnailVideoId: videoId,
+      });
+      artist = await getArtistBySlug(slug);
+    }
+  }
 
   if (!artist) {
     notFound();

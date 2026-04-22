@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import type { VideoRecord } from "@/lib/catalog";
+import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 
 type FavouritesManagerProps = {
   favourites: VideoRecord[];
@@ -23,7 +24,7 @@ export function FavouritesManager({ favourites, candidates, isAuthenticated }: F
     startTransition(async () => {
       setMessage(null);
 
-      const response = await fetch("/api/favourites", {
+      const response = await fetchWithAuthRetry("/api/favourites", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

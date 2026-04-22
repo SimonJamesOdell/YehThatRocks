@@ -12,9 +12,10 @@ type ArtistWikiLinkProps = {
   children?: ReactNode;
   title?: string;
   asButton?: boolean;
+  disabled?: boolean;
 };
 
-export function ArtistWikiLink({ artistName, videoId, className, children, title, asButton = false }: ArtistWikiLinkProps) {
+export function ArtistWikiLink({ artistName, videoId, className, children, title, asButton = false, disabled = false }: ArtistWikiLinkProps) {
   const router = useRouter();
   const href = getArtistWikiPath(artistName);
 
@@ -25,6 +26,10 @@ export function ArtistWikiLink({ artistName, videoId, className, children, title
   const targetHref = withVideoContext(href, videoId, true);
 
   const openWiki = () => {
+    if (disabled) {
+      return;
+    }
+
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("ytr:overlay-open-request", {
         detail: { href: targetHref, kind: "wiki" },
@@ -40,6 +45,7 @@ export function ArtistWikiLink({ artistName, videoId, className, children, title
         type="button"
         className={className}
         title={title ?? `Open ${artistName} wiki`}
+        disabled={disabled}
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();

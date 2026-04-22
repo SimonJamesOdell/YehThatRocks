@@ -181,9 +181,19 @@ function main() {
   assertContains(shellDynamicSource, 'window.addEventListener("ytr:dock-hide-request", handleDockHideRequest);', "Shell subscribes to dock-hide requests", failures);
   assertContains(shellDynamicSource, 'window.removeEventListener("ytr:dock-hide-request", handleDockHideRequest);', "Shell cleans up dock-hide listener", failures);
   assertContains(shellDynamicSource, '<div className="playerDockLayer">', "Shell keeps player content in a dedicated dock layer", failures);
+  assertContains(shellDynamicSource, "const UNDOCK_SETTLE_DURATION_MS = 220;", "Shell defines an undock-settle duration", failures);
+  assertContains(shellDynamicSource, "const [isUndockSettling, setIsUndockSettling] = useState(false);", "Shell tracks undock settle state", failures);
+  assertContains(shellDynamicSource, 'isUndockSettling ? "playerChromeUndockSettling" : "",', "Shell applies undock-settle class to player chrome", failures);
   assertContains(cssSource, ".playerDockLayer", "CSS defines dedicated dock layer sizing", failures);
   assertContains(cssSource, ".playerChromeDockedHidden .playerDockLayer", "Dock-hide class only hides player layer, not overlay page", failures);
   assertContains(cssSource, ".overlayIconBtn.overlayDockCloseBtn", "Dock close button keeps explicit red styling with high specificity", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .overlayCenter,", "Undocking keeps overlay center pinned to avoid play-button reflow", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndockSettling .overlayCenter {", "Undock settling keeps overlay center pinned", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayVolumeSlider {", "Docked-only volume scaling is scoped away from undock/settle states", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayProgress {", "Docked-only scrub scaling is scoped away from undock/settle states", failures);
+  assertContains(cssSource, "transition: width 520ms cubic-bezier(0.2, 0.92, 0.34, 1), height 520ms cubic-bezier(0.2, 0.92, 0.34, 1);", "Overlay controls animate size transitions during undock", failures);
+  assertContains(cssSource, "gap 520ms cubic-bezier(0.2, 0.92, 0.34, 1),", "Overlay bottom animates gap to final geometry", failures);
+  assertContains(cssSource, "padding 520ms cubic-bezier(0.2, 0.92, 0.34, 1);", "Overlay bottom animates padding to final geometry", failures);
 
   // Public performance modal invariants.
   assertContains(shellDynamicSource, 'className="performanceQuickLaunch"', "Shell renders top-right performance launcher button", failures);
