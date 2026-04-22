@@ -79,6 +79,14 @@ export type ArtistWikiDocument = {
   sources: Array<{ title: string; url: string }>;
 };
 
+export type ExternalArtistVerification = {
+  artistName: string;
+  slug: string;
+  country: string | null;
+  genre: string | null;
+  sources: Array<{ title: string; url: string }>;
+};
+
 function normalizeImageUrl(value: unknown) {
   const candidate = trimText(value);
   if (!candidate) {
@@ -101,6 +109,43 @@ function buildYouTubeThumbnail(videoId: string) {
   return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
 }
 
+function isPlausibleArtistName(value: string) {
+  const normalized = value.trim().toLowerCase();
+
+  if (!normalized) {
+    return false;
+  }
+
+  const blocked = new Set([
+    "unknown",
+    "unknown artist",
+    "youtube",
+    "n/a",
+    "na",
+    "none",
+    "null",
+    "undefined",
+    "test",
+  ]);
+
+  if (blocked.has(normalized)) {
+    return false;
+  }
+
+  // Common YouTube video id shape; not a real artist identity.
+  if (/^[a-z0-9_-]{11}$/i.test(normalized)) {
+    return false;
+  }
+
+  const alphaNumericChars = normalized.replace(/[^a-z0-9]/g, "");
+
+  if (alphaNumericChars.length < 2 || alphaNumericChars.length > 80) {
+    return false;
+  }
+
+  return true;
+}
+
 function isLikelyWikipediaMatch(artistName: string, pageTitle: string) {
   const artistSlug = slugifyArtistName(artistName);
   const titleSlug = slugifyArtistName(pageTitle);
@@ -112,8 +157,33 @@ function isLikelyWikipediaMatch(artistName: string, pageTitle: string) {
   return titleSlug.includes(artistSlug) || artistSlug.includes(titleSlug);
 }
 
+function isLikelyMusicBrainzMatch(artistName: string, candidateName: string) {
+  const artistSlug = slugifyArtistName(artistName);
+  const candidateSlug = slugifyArtistName(candidateName);
+
+  if (!artistSlug || !candidateSlug) {
+    return false;
+  }
+
+  if (artistSlug === candidateSlug) {
+    return true;
+  }
+
+  // Keep this permissive for aliases/diacritics while rejecting unrelated top hits.
+  return artistSlug.includes(candidateSlug) || candidateSlug.includes(artistSlug);
+}
+
 function trimText(value: unknown, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
+}
+
+function deriveArtistNameFromSlug(slug: string) {
+  return slug
+    .split("-")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }
 
 function normalizeList(value: unknown, maxItems = 12) {
@@ -361,6 +431,11 @@ async function fetchMusicBrainzSource(artistName: string): Promise<ExternalSourc
       return null;
     }
 
+    const matchedName = trimText(artist.name, "");
+    if (!matchedName || !isLikelyMusicBrainzMatch(artistName, matchedName)) {
+      return null;
+    }
+
     const years = [artist["life-span"]?.begin, artist["life-span"]?.end].filter(Boolean).join(" - ");
     const snippetParts = [
       trimText(artist.name, artistName),
@@ -409,8 +484,62 @@ async function collectSources(artistName: string) {
   return [catalog, wikipedia, musicBrainz].filter((item): item is ExternalSource => Boolean(item));
 }
 
+export async function verifyExternalArtistBySlug(slugHint: string): Promise<ExternalArtistVerification | null> {
+  const slug = slugifyArtistName(slugHint);
+  if (!slug) {
+    return null;
+  }
+
+  const derivedName = deriveArtistNameFromSlug(slug);
+  if (!isPlausibleArtistName(derivedName)) {
+    return null;
+  }
+
+  const [wikipedia, musicBrainz] = await Promise.all([
+    fetchWikipediaSource(derivedName),
+    fetchMusicBrainzSource(derivedName),
+  ]);
+
+  const trustedSources = [wikipedia, musicBrainz].filter((item): item is ExternalSource => Boolean(item));
+  if (!hasTrustedExternalSource(trustedSources)) {
+    return null;
+  }
+
+  const musicBrainzName = musicBrainz ? trimText(musicBrainz.title.replace(/^MusicBrainz:\s*/i, "")) : "";
+  const wikipediaName = wikipedia ? trimText(wikipedia.title.replace(/^Wikipedia:\s*/i, "")) : "";
+  const verifiedName = musicBrainzName || wikipediaName || derivedName;
+  const verifiedSlug = slugifyArtistName(verifiedName);
+
+  if (!verifiedSlug || verifiedSlug !== slug) {
+    return null;
+  }
+
+  return {
+    artistName: verifiedName,
+    slug: verifiedSlug,
+    country: null,
+    genre: "Rock / Metal",
+    sources: trustedSources.slice(0, 2).map((source) => ({
+      title: source.title,
+      url: source.url,
+    })),
+  };
+}
+
+function hasTrustedExternalSource(sources: ExternalSource[]) {
+  return sources.some((source) => source.title.startsWith("Wikipedia:") || source.title.startsWith("MusicBrainz:"));
+}
+
 async function generateWikiDocument(artistName: string, slug: string): Promise<ArtistWikiDocument> {
+  if (!isPlausibleArtistName(artistName)) {
+    throw new Error("WIKI_ARTIST_NAME_REJECTED");
+  }
+
   const sources = await collectSources(artistName);
+
+  if (!hasTrustedExternalSource(sources)) {
+    throw new Error("WIKI_TRUSTED_SOURCE_REQUIRED");
+  }
 
   const sourceDigest = sources.length > 0
     ? sources
@@ -547,13 +676,21 @@ export async function getOrCreateArtistWiki(artistName: string, slugHint?: strin
     return null;
   }
 
+  if (!isPlausibleArtistName(artistName)) {
+    return null;
+  }
+
   const cached = await readCachedWiki(slug);
 
   if (cached) {
     return cached;
   }
 
-  const generated = await generateWikiDocument(artistName, slug);
-  await writeCachedWiki(slug, generated);
-  return generated;
+  try {
+    const generated = await generateWikiDocument(artistName, slug);
+    await writeCachedWiki(slug, generated);
+    return generated;
+  } catch {
+    return null;
+  }
 }

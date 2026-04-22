@@ -2673,9 +2673,11 @@ async function upsertArtistStatsRow(row: {
           genre,
           thumbnail_video_id,
           video_count,
-          source
+          source,
+          created_at,
+          updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))
         ON DUPLICATE KEY UPDATE
           display_name = VALUES(display_name),
           slug = VALUES(slug),
@@ -2684,7 +2686,8 @@ async function upsertArtistStatsRow(row: {
           genre = VALUES(genre),
           thumbnail_video_id = VALUES(thumbnail_video_id),
           video_count = VALUES(video_count),
-          source = VALUES(source)
+          source = VALUES(source),
+          updated_at = NOW(3)
       `,
       normalizedArtist,
       displayName,
@@ -2709,9 +2712,11 @@ async function upsertArtistStatsRow(row: {
         country,
         genre,
         video_count,
-        source
+        source,
+        created_at,
+        updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))
       ON DUPLICATE KEY UPDATE
         display_name = VALUES(display_name),
         slug = VALUES(slug),
@@ -2719,7 +2724,8 @@ async function upsertArtistStatsRow(row: {
         country = VALUES(country),
         genre = VALUES(genre),
         video_count = VALUES(video_count),
-        source = VALUES(source)
+        source = VALUES(source),
+        updated_at = NOW(3)
     `,
     normalizedArtist,
     displayName,
@@ -2969,6 +2975,49 @@ async function refreshArtistProjectionForName(artistName: string) {
 
 function scheduleArtistProjectionRefreshForName(artistName: string) {
   void refreshArtistProjectionForName(artistName).catch(() => undefined);
+}
+
+function invalidateArtistLookupCaches() {
+  artistsListCache = undefined;
+  artistsListInFlight = undefined;
+  artistSlugLookupCache = undefined;
+  artistSlugLookupInFlight = undefined;
+  artistSingleSlugCache.clear();
+}
+
+export async function upsertVerifiedExternalArtistCandidate(candidate: {
+  name: string;
+  country?: string | null;
+  genre?: string | null;
+  thumbnailVideoId?: string | null;
+}) {
+  const displayName = candidate.name.trim();
+  if (!displayName || !hasDatabaseUrl()) {
+    return false;
+  }
+
+  if (!(await hasArtistStatsProjection())) {
+    return false;
+  }
+
+  await refreshArtistProjectionForName(displayName).catch(() => undefined);
+
+  const normalizedArtist = normalizeArtistKey(displayName);
+  const existingStat = await getArtistStatRow(normalizedArtist).catch(() => null);
+  const existingVideoCount = Number(existingStat?.videoCount ?? 0);
+
+  if (existingVideoCount <= 0) {
+    await upsertArtistStatsRow({
+      name: displayName,
+      country: candidate.country ?? existingStat?.country ?? null,
+      genre: candidate.genre ?? existingStat?.genre ?? "Rock / Metal",
+      videoCount: 1,
+      thumbnailVideoId: candidate.thumbnailVideoId ?? existingStat?.thumbnailVideoId ?? null,
+    }, "external-verified");
+  }
+
+  invalidateArtistLookupCaches();
+  return true;
 }
 
 export async function refreshArtistThumbnailForName(artistName: string, badVideoId?: string) {

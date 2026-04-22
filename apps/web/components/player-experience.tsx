@@ -9,6 +9,7 @@ import { buildSharedVideoMessage } from "@/lib/chat-shared-video";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
+import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 
 type PlayerExperienceProps = {
@@ -23,6 +24,9 @@ type PlayerExperienceProps = {
   onDockHideRequest?: () => void;
   forcedUnavailableSignal?: number;
   forcedUnavailableMessage?: string | null;
+  isRouteResolving?: boolean;
+  routeLoadingLabel?: string;
+  routeLoadingMessage?: string;
 };
 
 type AdminEditableVideo = {
@@ -52,6 +56,10 @@ type PlaylistSummary = {
 type PlayerPreferencesResponse = {
   autoplayEnabled?: boolean | null;
   volume?: number | null;
+};
+
+type LyricsAvailabilityResponse = {
+  available?: boolean;
 };
 
 type NextChoiceVideo = VideoRecord;
@@ -142,6 +150,7 @@ const PLAYER_AUTO_RECONNECT_DELAY_MS = 2000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
 const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
+const RIGHT_RAIL_LYRICS_OPEN_EVENT = "ytr:right-rail-lyrics-open";
 const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
 const ADMIN_OVERLAY_ENTER_EVENT = "ytr:admin-overlay-enter";
 const maxEndedChoiceVideos = 12;
@@ -381,6 +390,9 @@ export function PlayerExperience({
   onDockHideRequest,
   forcedUnavailableSignal = 0,
   forcedUnavailableMessage = null,
+  isRouteResolving = false,
+  routeLoadingLabel = "Loading video",
+  routeLoadingMessage = "Loading video...",
 }: PlayerExperienceProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -410,6 +422,7 @@ export function PlayerExperience({
   const footerPlaylistMenuRef = useRef<HTMLDivElement | null>(null);
   const shareToChatResetTimeoutRef = useRef<number | null>(null);
   const playerPreferencesSaveTimeoutRef = useRef<number | null>(null);
+  const lyricsAvailabilityByVideoRef = useRef<Map<string, boolean>>(new Map());
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
   const [isPlayerPreferencesServerHydrated, setIsPlayerPreferencesServerHydrated] = useState(() => !isLoggedIn);
   const [copied, setCopied] = useState(false);
@@ -457,6 +470,7 @@ export function PlayerExperience({
     const [showShareMenu, setShowShareMenu] = useState(false);
     const [showShareModal, setShowShareModal] = useState(false);
     const [shareModalCopied, setShareModalCopied] = useState(false);
+    const [lyricsAvailableForCurrentVideo, setLyricsAvailableForCurrentVideo] = useState<boolean | null>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isScrubbing, setIsScrubbing] = useState(false);
     const progressIntervalRef = useRef<number | null>(null);
@@ -672,6 +686,55 @@ export function PlayerExperience({
 
     void loadFooterPlaylistMenu();
   }, [showFooterPlaylistMenu]);
+
+  useEffect(() => {
+    const videoId = currentVideo.id;
+
+    if (!videoId) {
+      setLyricsAvailableForCurrentVideo(null);
+      return;
+    }
+
+    const cachedAvailability = lyricsAvailabilityByVideoRef.current.get(videoId);
+    if (cachedAvailability !== undefined) {
+      setLyricsAvailableForCurrentVideo(cachedAvailability);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    setLyricsAvailableForCurrentVideo(null);
+
+    async function loadLyricsAvailability() {
+      try {
+        const response = await fetch(`/api/lyrics?v=${encodeURIComponent(videoId)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json().catch(() => null)) as LyricsAvailabilityResponse | null;
+        const isAvailable = Boolean(payload?.available);
+        lyricsAvailabilityByVideoRef.current.set(videoId, isAvailable);
+
+        if (!cancelled) {
+          setLyricsAvailableForCurrentVideo(isAvailable);
+        }
+      } catch {
+        // Keep button available when availability cannot be determined due to transient errors.
+      }
+    }
+
+    void loadLyricsAvailability();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [currentVideo.id]);
 
   const playlistCurrentIndex = playlistQueueIds.findIndex((videoId) => videoId === currentVideo.id);
   const effectivePlaylistIndex =
@@ -950,7 +1013,9 @@ export function PlayerExperience({
   const shouldShowEndedChoiceEmptyState = endedChoiceGridVideos.length === 0
     && !endedChoiceLoading
     && (!endedChoiceHideSeen || !endedChoiceHasMoreRef.current);
-  const footerActionsBlocked = Boolean(unavailableOverlayMessage) || showEndedChoiceOverlay || playlistChooserOpen;
+  const footerActionsBlocked = Boolean(unavailableOverlayMessage) || showEndedChoiceOverlay || playlistChooserOpen || isRouteResolving;
+  const lyricsUnavailableForCurrentVideo = lyricsAvailableForCurrentVideo === false;
+  const lyricsButtonDisabled = footerActionsBlocked || lyricsUnavailableForCurrentVideo;
   const isUpstreamConnectivityOverlay = unavailableOverlayMessage === UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE;
   const footerSelectablePlaylists = activePlaylistId
     ? footerPlaylistMenuPlaylists.filter((playlist) => playlist.id !== activePlaylistId)
@@ -968,6 +1033,7 @@ export function PlayerExperience({
   // (video ended with autoplay off). On "/", the choice overlay is shown instead.
   const suppressUnavailablePlaybackSurface = endedChoiceFromUnavailable || Boolean(unavailableOverlayMessage) || playerClosedByEndOfVideo || (showEndedChoiceOverlay && pathname !== "/");
   const showDockCloseButton = isDockedDesktop && pathname !== "/";
+  const showPlayerLoadingOverlay = !isPlayerReady || isRouteResolving;
 
   useEffect(() => {
     const initialRequestedVideoId = initialRequestedVideoIdRef.current;
@@ -3484,7 +3550,7 @@ export function PlayerExperience({
     }
 
     try {
-      const favouritesResponse = await fetch("/api/favourites", {
+      const favouritesResponse = await fetchWithAuthRetry("/api/favourites", {
         cache: "no-store",
       });
 
@@ -3677,7 +3743,7 @@ export function PlayerExperience({
   async function handleAddFavourite() {
     setFavouriteSaveState("saving");
     try {
-      const response = await fetch("/api/favourites", {
+      const response = await fetchWithAuthRetry("/api/favourites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ videoId: currentVideo.id, action: "add" }),
@@ -3698,6 +3764,16 @@ export function PlayerExperience({
       setFavouriteSaveState("idle");
       favouriteSaveTimeoutRef.current = null;
     }, 2000);
+  }
+
+  function handleOpenLyrics() {
+    if (lyricsUnavailableForCurrentVideo) {
+      return;
+    }
+
+    window.dispatchEvent(new CustomEvent(RIGHT_RAIL_LYRICS_OPEN_EVENT, {
+      detail: { videoId: currentVideo.id },
+    }));
   }
 
   async function handleCopyShareLink() {
@@ -4097,16 +4173,16 @@ export function PlayerExperience({
             >
               <div ref={playerElementRef} className="playerMount" />
 
-              {!isPlayerReady ? (
-                <div className="playerBootLoader" role="status" aria-live="polite" aria-label="Loading video player">
+              {showPlayerLoadingOverlay ? (
+                <div className="playerBootLoader" role="status" aria-live="polite" aria-label={isRouteResolving ? routeLoadingLabel : "Loading video player"}>
                   <div className="playerBootBars" aria-hidden="true">
                     <span />
                     <span />
                     <span />
                     <span />
                   </div>
-                  <p>connecting to upstream video provider...</p>
-                  {showPlayerRefreshHint ? (
+                  <p>{isRouteResolving ? routeLoadingMessage : "connecting to upstream video provider..."}</p>
+                  {!isRouteResolving && showPlayerRefreshHint ? (
                     <div className="playerBootRefreshWrap">
                       <button
                         type="button"
@@ -4123,12 +4199,28 @@ export function PlayerExperience({
                         </svg>
                       </button>
                       <span className="playerBootRefreshLabel">Try connecting again</span>
+                                  {!isPlayerReady ? (
+                                    <div className="overlayBottom" style={{ opacity: 1, visibility: "visible", pointerEvents: "auto" }}>
+                                      <div className="overlayProgressWrap">
+                                        <input
+                                          type="range"
+                                          className="overlayProgress"
+                                          min={0}
+                                          max={1}
+                                          value={0}
+                                          disabled
+                                          aria-label="Progress bar unavailable during load"
+                                        />
+                                      </div>
+                                    </div>
+                                  ) : null}
+
                     </div>
                   ) : null}
                 </div>
               ) : null}
 
-              {isPlayerReady && (
+              {isPlayerReady && !isRouteResolving && (
                 <div className={!hasPlaybackStarted || !isPlaying || showControls ? "playerOverlay playerOverlayVisible" : "playerOverlay"}>
                 <div className="overlayTop">
                   {!isFullscreen ? (
@@ -4702,7 +4794,7 @@ export function PlayerExperience({
                   type="text"
                   className="shareUrlInput"
                   size={Math.min(Math.max(shareUrl.length, 24), 48)}
-                  style={{ width: `calc(${Math.min(Math.max(shareUrl.length, 24), 48)}ch - 7px)` }}
+                  style={{ width: `calc(${Math.min(Math.max(shareUrl.length, 24), 48)}ch + 53px)` }}
                   readOnly
                   value={shareUrl}
                   onFocus={(event) => event.currentTarget.select()}
@@ -4881,17 +4973,29 @@ export function PlayerExperience({
             >
               <span className="primaryNavGlyph" aria-hidden="true">⇥</span>
             </button>
-            {hasArtistName ? (
+            {!showDockCloseButton && hasArtistName ? (
               <ArtistWikiLink
                 artistName={displayChannelTitle}
                 videoId={currentVideo.id}
                 asButton
                 className="primaryActionToggleButton primaryActionWikiButton"
                 title={`Open ${displayChannelTitle} wiki`}
+                disabled={footerActionsBlocked}
               >
-                <span className="primaryActionGlyph" aria-hidden="true">📖</span>
                 <span className="primaryActionWikiLabel">wiki</span>
               </ArtistWikiLink>
+            ) : null}
+            {!showDockCloseButton ? (
+              <button
+                type="button"
+                className="primaryActionToggleButton primaryActionWikiButton"
+                onClick={handleOpenLyrics}
+                disabled={lyricsButtonDisabled}
+                aria-label={lyricsUnavailableForCurrentVideo ? "Lyrics unavailable for this track" : "Open lyrics"}
+                title={lyricsUnavailableForCurrentVideo ? "No lyrics available for this track" : "Open lyrics"}
+              >
+                <span className="primaryActionWikiLabel">lyrics</span>
+              </button>
             ) : null}
             <button
               type="button"

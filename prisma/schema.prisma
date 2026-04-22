@@ -329,3 +329,22 @@ model AdminHostMetricSample {
   @@index([createdAt])
   @@map("admin_host_metric_samples")
 }
+
+model LyricsCache {
+  id               Int      @id @default(autoincrement())
+  artistName       String   @map("artist_name") @db.VarChar(255)
+  trackName        String   @map("track_name") @db.VarChar(255)
+  normalizedArtist String   @map("normalized_artist") @db.VarChar(255)
+  normalizedTrack  String   @map("normalized_track") @db.VarChar(255)
+  lyrics           String?  @db.LongText
+  source           String?  @db.VarChar(50)
+  sourceRecordId   Int?     @map("source_record_id")
+  isInstrumental   Boolean  @default(false) @map("is_instrumental")
+  isUnavailable    Boolean  @default(false) @map("is_unavailable")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([normalizedArtist, normalizedTrack], map: "lyrics_cache_signature_key")
+  @@index([updatedAt])
+  @@map("lyrics_cache")
+}

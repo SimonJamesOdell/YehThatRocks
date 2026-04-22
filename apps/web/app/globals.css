@@ -740,6 +740,77 @@ h1 {
 
 .rightRail {
   padding: 12px;
+  position: relative;
+}
+
+.rightRailLyricsOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  background: linear-gradient(180deg, rgba(16, 5, 4, 0.96), rgba(10, 2, 2, 0.98));
+  border-radius: 10px;
+}
+
+.rightRailLyricsOverlayHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.rightRailLyricsOverlayHeader strong {
+  font-family: var(--font-display), cursive;
+  font-size: 1.2rem;
+  letter-spacing: 0.04em;
+}
+
+.rightRailLyricsOverlayClose {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 210, 199, 0.6);
+  border-radius: 6px;
+  background: rgba(144, 22, 10, 0.55);
+  color: #ffeae2;
+  font-size: 1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.rightRailLyricsOverlayBody {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 10px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.rightRailLyricsOverlayMeta {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 219, 209, 0.88);
+}
+
+.rightRailLyricsOverlayText {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: rgba(255, 241, 236, 0.95);
 }
 
 .leftRail.panel.translucent,
@@ -1610,15 +1681,15 @@ h1 {
     transform: translateX(0) translateY(0) scale(1, 1);
   }
 
-  .playerChromeDockedDesktop .overlayTitleRow {
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayTitleRow {
     opacity: 0;
     transform: translateY(-6px);
     pointer-events: none;
   }
 
-  .playerChromeDockedDesktop .overlayTop,
-  .playerChromeDockedDesktop.playerOverlayVisible .overlayTop,
-  .playerChromeDockedDesktop .playerOverlayVisible .overlayTop {
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayTop,
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling).playerOverlayVisible .overlayTop,
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerOverlayVisible .overlayTop {
     position: relative;
     z-index: 12;
     padding-top: 0;
@@ -1639,26 +1710,66 @@ h1 {
     pointer-events: auto;
   }
 
-  .playerChromeDockedDesktop .overlayCenter {
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayCenter {
     position: absolute;
     inset: 0;
-    z-index: 6;
-    pointer-events: none;
-  }
-
-  .playerChromeDockedDesktop .overlayPlayBtn {
-    width: 74px;
-    height: 74px;
+    z-index: 10;
     pointer-events: auto;
   }
 
-  .playerChromeDockedDesktop .overlayPlayBtn svg {
-    width: 28px;
-    height: 28px;
+  .playerChrome:not(.playerChromeDockedDesktop) .overlayCenter {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    pointer-events: auto;
   }
 
-  .playerChromeDockedDesktop .overlayPlayIcon {
+  .playerChromeDockedDesktop.playerChromeUndocking .overlayCenter,
+  .playerChromeDockedDesktop.playerChromeUndockSettling .overlayCenter {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    pointer-events: auto;
+  }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayPlayBtn {
+    width: 111px;
+    height: 111px;
+    margin-top: -54px;
+    pointer-events: auto;
+  }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayPlayBtn svg {
+    width: 42px;
+    height: 42px;
+  }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayPlayIcon {
     transform: translateX(2px);
+  }
+
+  .playerChromeDockedDesktop.playerChromeUndocking .overlayPlayBtn,
+  .playerChromeDockedDesktop.playerChromeUndockSettling .overlayPlayBtn {
+    width: 111px;
+    height: 111px;
+    margin-top: -44px;
+  }
+
+  .playerChromeDockedDesktop.playerChromeUndocking .overlayPlayBtn svg,
+  .playerChromeDockedDesktop.playerChromeUndockSettling .overlayPlayBtn svg {
+    width: 42px;
+    height: 42px;
+  }
+
+  .playerChrome:not(.playerChromeDockedDesktop) .overlayPlayBtn {
+    width: 111px;
+    height: 111px;
+    margin-top: -44px;
+  }
+
+  .playerChrome:not(.playerChromeDockedDesktop) .overlayPlayBtn svg {
+    width: 42px;
+    height: 42px;
   }
 
   .playerChromeDockedDesktop .primaryActions {
@@ -1756,24 +1867,37 @@ h1 {
     gap: 6px;
   }
 
-  .playerChromeDockedDesktop .primaryActions .primaryActionWikiButton,
-  .playerChromeDockedDesktop .primaryActions .primaryActionAutoplayButton {
+  .playerChromeDockedDesktop .primaryActions .primaryActionWikiButton {
     width: auto;
     min-width: 86px;
     flex: 1 1 86px;
   }
 
-  .playerChromeDockedDesktop .primaryActions .primaryActionToggleButtonTrash {
+  .playerChromeDockedDesktop .primaryActions .primaryActionAutoplayButton {
     width: 56px;
     min-width: 56px;
+    flex: 0 0 56px;
+    padding: 0;
+    gap: 0;
+  }
+
+  .playerChromeDockedDesktop .primaryActionAutoplayButton > span:not(.primaryActionGlyph),
+  .playerChromeDockedArtists .primaryActionAutoplayButton > span:not(.primaryActionGlyph) {
+    display: none;
+  }
+
+  .playerChromeDockedDesktop .primaryActions .primaryActionToggleButtonTrash,
+  .playerChromeDockedArtists .primaryActions .primaryActionToggleButtonTrash {
+    width: auto;
+    min-width: 132px;
     height: 42px;
     min-height: 42px;
-    flex: 0 0 56px;
+    flex: 1 1 132px;
   }
 
   .playerChromeDockedDesktop .primaryActions .primaryActionToggleButtonTrash .primaryActionTrashLabel,
   .playerChromeDockedArtists .primaryActions .primaryActionToggleButtonTrash .primaryActionTrashLabel {
-    display: none;
+    display: inline;
   }
 
   .playerChromeDockedArtists .primaryActionWikiLabel {
@@ -1793,34 +1917,34 @@ h1 {
     font-size: 1.2rem;
   }
 
-  .playerChromeDockedDesktop .overlayBottom {
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayBottom {
     gap: 16px;
     padding: 46px 12px 14px;
   }
 
-  .playerChromeDockedDesktop .overlayProgress {
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayProgress {
     height: 16px;
     margin: 12px 0;
   }
 
-  .playerChromeDockedDesktop .overlayProgressWrap {
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayProgressWrap {
     gap: 12px;
   }
 
-  .playerChromeDockedDesktop .overlayVolume {
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayVolume {
     gap: 20px;
   }
 
-  .playerChromeDockedDesktop .overlayVolumeSlider {
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayVolumeSlider {
     width: 264px;
     height: 16px;
   }
 
-  .playerChromeDockedDesktop .overlayIconBtn {
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayIconBtn {
     padding: 18px;
   }
 
-  .playerChromeDockedDesktop .overlayIconBtn svg {
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayIconBtn svg {
     width: 44px;
     height: 44px;
   }
@@ -1836,7 +1960,7 @@ h1 {
     height: 18px;
   }
 
-  .playerChromeDockedDesktop .overlayTimeMeta {
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayTimeMeta {
     margin-left: 16px;
     font-size: 2.2rem;
     font-weight: 700;
@@ -1894,7 +2018,7 @@ h1 {
 
 .playerBootLoader {
   position: absolute;
-  inset: 0;
+  inset: 0 0 90px 0;
   z-index: 4;
   display: grid;
   place-items: center;
@@ -1910,6 +2034,94 @@ h1 {
   font-size: 0.95rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.audioPolicyNotice {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  right: auto;
+  width: min(360px, calc(100% - 24px));
+  z-index: 6;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  padding-top: 14px;
+  border: 1px solid rgba(255, 185, 168, 0.5);
+  border-radius: 4px;
+  background: rgba(20, 5, 3, 0.86);
+  color: rgba(255, 236, 228, 0.96);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(8px);
+}
+
+.audioPolicyNoticeClose {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(255, 205, 193, 0.55);
+  border-radius: 4px;
+  background: rgba(130, 18, 8, 0.52);
+  color: #ffe8e0;
+  font-size: 1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.audioPolicyNoticeClose:hover {
+  background: rgba(176, 32, 14, 0.66);
+  border-color: rgba(255, 226, 216, 0.9);
+}
+
+.audioPolicyNoticeClose:focus-visible {
+  outline: 2px solid rgba(255, 228, 218, 0.95);
+  outline-offset: 1px;
+}
+
+.audioPolicyNotice p {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.32;
+}
+
+.audioPolicyNoticeTitle {
+  margin: 0;
+  font-family: var(--font-display), cursive;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: #fff2ec;
+  letter-spacing: 0.03em;
+}
+
+.audioPolicyNoticeDismiss {
+  border: 1px solid rgba(255, 200, 188, 0.62);
+  border-radius: 4px;
+  background: rgba(146, 25, 12, 0.55);
+  color: #ffeae2;
+  padding: 7px 12px;
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  justify-self: end;
+  transition: transform 0.16s ease, background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.audioPolicyNoticeDismiss:hover {
+  transform: translateY(-1px);
+  background: rgba(182, 36, 16, 0.65);
+  border-color: rgba(255, 225, 216, 0.9);
+}
+
+.audioPolicyNoticeDismiss:focus-visible {
+  outline: 2px solid rgba(255, 228, 218, 0.95);
+  outline-offset: 2px;
 }
 
 .playerBootRefreshBtn {
@@ -2006,6 +2218,7 @@ h1 {
   position: absolute;
   inset: 0;
   z-index: 5;
+  pointer-events: none;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -2025,6 +2238,10 @@ h1 {
 .playerOverlayVisible .overlayBottom {
   opacity: 1;
   visibility: visible;
+  pointer-events: auto;
+}
+
+.playerOverlayVisible .overlayTop {
   pointer-events: auto;
 }
 
@@ -2119,17 +2336,58 @@ h1 {
 }
 
 .overlayBottom {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 40px 12px 12px;
   background: linear-gradient(to top, rgba(0, 0, 0, 1) 0px, rgba(0, 0, 0, 1) 40px, transparent 80px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.22s ease,
+    gap 520ms cubic-bezier(0.2, 0.92, 0.34, 1),
+    padding 520ms cubic-bezier(0.2, 0.92, 0.34, 1);
+  z-index: 5;
+}
+
+.overlayBottomVisible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.overlayBottomVisible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.overlayBottom {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 40px 12px 12px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 1) 0px, rgba(0, 0, 0, 1) 40px, transparent 80px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+  z-index: 5;
 }
 
 .overlayPlayBtn {
   width: 92px;
   height: 92px;
-  margin-top: -4px;
+  margin-top: -44px;
   border-radius: 50%;
   background: linear-gradient(180deg, var(--btn-blood-start), var(--btn-blood-end));
   border: 1px solid var(--border);
@@ -2139,7 +2397,25 @@ h1 {
   justify-content: center;
   cursor: pointer;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45), var(--glow);
-  transition: filter 0.18s, transform 0.12s, box-shadow 0.18s;
+  transition:
+    filter 0.18s,
+    transform 0.12s,
+    box-shadow 0.18s,
+    margin-top 520ms cubic-bezier(0.2, 0.92, 0.34, 1),
+    width 520ms cubic-bezier(0.2, 0.92, 0.34, 1),
+    height 520ms cubic-bezier(0.2, 0.92, 0.34, 1);
+}
+
+.overlayPlayBtn,
+.overlayPlayBtn *,
+.overlayIconBtn,
+.overlayIconBtn *,
+.overlayProgress,
+.overlayVolumeSlider,
+.primaryActions button,
+.primaryActions button * {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .overlayPlayBtn:hover {
@@ -2148,9 +2424,14 @@ h1 {
   transform: scale(1.06);
 }
 
+.playerChromeDockedDesktop .overlayPlayBtn:hover {
+  transform: scale(1.06);
+}
+
 .overlayPlayBtn svg {
   width: 36px;
   height: 36px;
+  transition: width 520ms cubic-bezier(0.2, 0.92, 0.34, 1), height 520ms cubic-bezier(0.2, 0.92, 0.34, 1);
 }
 
 .overlayPlayBtn:focus-visible {
@@ -2172,7 +2453,11 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s;
+  transition: background 0.15s, padding 520ms cubic-bezier(0.2, 0.92, 0.34, 1);
+}
+
+.overlayIconBtn svg {
+  transition: width 520ms cubic-bezier(0.2, 0.92, 0.34, 1), height 520ms cubic-bezier(0.2, 0.92, 0.34, 1);
 }
 
 .overlayIconBtn:hover {
@@ -2197,12 +2482,14 @@ h1 {
   accent-color: #e00;
   cursor: pointer;
   margin: 4px 0;
+  transition: height 520ms cubic-bezier(0.2, 0.92, 0.34, 1), margin 520ms cubic-bezier(0.2, 0.92, 0.34, 1);
 }
 
 .overlayProgressWrap {
   position: relative;
   display: grid;
   gap: 4px;
+  transition: gap 520ms cubic-bezier(0.2, 0.92, 0.34, 1);
 }
 
 .overlayProgressIndicator {
@@ -2226,6 +2513,7 @@ h1 {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  transition: gap 520ms cubic-bezier(0.2, 0.92, 0.34, 1);
 }
 
 .overlayFullscreenBtn {
@@ -2237,6 +2525,7 @@ h1 {
   height: 4px;
   accent-color: #fff;
   cursor: pointer;
+  transition: width 520ms cubic-bezier(0.2, 0.92, 0.34, 1), height 520ms cubic-bezier(0.2, 0.92, 0.34, 1);
 }
 
 .overlayTimeMeta {
@@ -2248,6 +2537,10 @@ h1 {
   color: rgba(255, 229, 222, 0.92);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  transition:
+    margin-left 520ms cubic-bezier(0.2, 0.92, 0.34, 1),
+    font-size 520ms cubic-bezier(0.2, 0.92, 0.34, 1),
+    gap 520ms cubic-bezier(0.2, 0.92, 0.34, 1);
 }
 
 .shareMenuWrap {
@@ -3372,6 +3665,43 @@ h1 {
   opacity: 0.45;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+@media (min-width: 1200px) {
+  .primaryActions {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .shareUrlField {
+    margin-left: 0;
+    gap: 8px;
+    flex: 0 1 calc(26ch + 110px);
+  }
+
+  .shareUrlInputWrap,
+  .shareUrlInput {
+    max-width: calc(26ch + 110px);
+  }
+
+  .primaryActions .primaryActionToggleButton {
+    height: 50px;
+    min-height: 50px;
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .primaryActionIconButton,
+  .primaryActionNavIconButton {
+    width: 52px;
+    min-width: 52px;
+    min-height: 50px;
+  }
+
+  .primaryActions .primaryActionToggleButtonTrash {
+    min-width: 110px;
+    min-height: 50px;
+  }
 }
 
 .lowerDeck {

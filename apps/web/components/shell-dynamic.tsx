@@ -117,6 +117,16 @@ type SharedVideoPreview = {
   channelTitle: string;
 };
 
+type LyricsRailPayload = {
+  artistName: string | null;
+  trackName: string | null;
+  lyrics: string | null;
+  available: boolean;
+  message: string | null;
+  source: string | null;
+  cached: boolean;
+};
+
 const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
 
 function formatChatTimestamp(value: string | null) {
@@ -364,11 +374,13 @@ const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
 const PLAYLIST_RAIL_SYNC_EVENT = "ytr:playlist-rail-sync";
 const PLAYLIST_CREATION_PROGRESS_EVENT = "ytr:playlist-creation-progress";
 const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
+const RIGHT_RAIL_LYRICS_OPEN_EVENT = "ytr:right-rail-lyrics-open";
 const OVERLAY_OPEN_REQUEST_EVENT = "ytr:overlay-open-request";
 const ADMIN_OVERLAY_ENTER_EVENT = "ytr:admin-overlay-enter";
 const DOCK_MOVE_DURATION_MS = 520;
 const DOCK_CONTROLS_FADE_DURATION_MS = 220;
 const DOCK_CONTROLS_FADE_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - DOCK_CONTROLS_FADE_DURATION_MS);
+const UNDOCK_SETTLE_DURATION_MS = 220;
 const FOOTER_REVEAL_DURATION_MS = 240;
 const DESKTOP_INTRO_HOLD_MS = 1300;
 const DESKTOP_INTRO_MOVE_MS = 760;
@@ -601,6 +613,11 @@ function ShellDynamicInner({
   const [playlistBeingDeletedId, setPlaylistBeingDeletedId] = useState<string | null>(null);
   const [hidingRelatedVideoIds, setHidingRelatedVideoIds] = useState<string[]>([]);
   const [hiddenMutationPendingVideoIds, setHiddenMutationPendingVideoIds] = useState<string[]>([]);
+  const [isLyricsOverlayOpen, setIsLyricsOverlayOpen] = useState(false);
+  const [lyricsOverlayVideoId, setLyricsOverlayVideoId] = useState<string | null>(null);
+  const [isLyricsOverlayLoading, setIsLyricsOverlayLoading] = useState(false);
+  const [lyricsOverlayError, setLyricsOverlayError] = useState<string | null>(null);
+  const [lyricsOverlayData, setLyricsOverlayData] = useState<LyricsRailPayload | null>(null);
   const [watchNextHideSeen, setWatchNextHideSeen] = useSeenTogglePreference({
     key: WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY,
     isAuthenticated,
@@ -677,6 +694,7 @@ function ShellDynamicInner({
   const [playerDockScaleY, setPlayerDockScaleY] = useState(1);
   const [playerDockHeightPx, setPlayerDockHeightPx] = useState(0);
   const [isOverlayClosing, setIsOverlayClosing] = useState(false);
+  const [isUndockSettling, setIsUndockSettling] = useState(false);
   const [isFooterRevealActive, setIsFooterRevealActive] = useState(false);
   const [isDockTransitioning, setIsDockTransitioning] = useState(false);
   const [isDockHidden, setIsDockHidden] = useState(false);
@@ -685,6 +703,7 @@ function ShellDynamicInner({
   const overlayCloseTimeoutRef = useRef<number | null>(null);
   const overlayOpenTimeoutRef = useRef<number | null>(null);
   const footerRevealTimeoutRef = useRef<number | null>(null);
+  const undockSettleTimeoutRef = useRef<number | null>(null);
   const shouldRunFooterRevealRef = useRef(false);
   const dockTransitionTimeoutRef = useRef<number | null>(null);
   const desktopIntroHoldTimeoutRef = useRef<number | null>(null);
@@ -752,6 +771,7 @@ function ShellDynamicInner({
     shouldDockUnderArtistsAlphabet ? "playerChromeDockedArtists" : "",
     shouldDockDesktopPlayer && isDockTransitioning ? "playerChromeDockTransitioning" : "",
     isOverlayClosing ? "playerChromeUndocking" : "",
+    isUndockSettling ? "playerChromeUndockSettling" : "",
     !shouldShowOverlayPanel && isFooterRevealActive ? "playerChromeFooterReveal" : "",
     shouldDockDesktopPlayer && isDockHidden ? "playerChromeDockedHidden" : "",
   ].filter(Boolean).join(" ");
@@ -1095,11 +1115,33 @@ function ShellDynamicInner({
 
   useEffect(() => {
     if (shouldShowOverlayPanel) {
+      if (typeof window !== "undefined" && undockSettleTimeoutRef.current !== null) {
+        window.clearTimeout(undockSettleTimeoutRef.current);
+        undockSettleTimeoutRef.current = null;
+      }
+      setIsUndockSettling(false);
       setIsMobileCommunityOpen(false);
       return;
     }
 
     setIsOverlayClosing(false);
+
+    if (shouldRunFooterRevealRef.current) {
+      setIsUndockSettling(true);
+
+      if (typeof window !== "undefined") {
+        if (undockSettleTimeoutRef.current !== null) {
+          window.clearTimeout(undockSettleTimeoutRef.current);
+        }
+
+        undockSettleTimeoutRef.current = window.setTimeout(() => {
+          setIsUndockSettling(false);
+          undockSettleTimeoutRef.current = null;
+        }, UNDOCK_SETTLE_DURATION_MS);
+      }
+    } else {
+      setIsUndockSettling(false);
+    }
 
     if (!shouldRunFooterRevealRef.current) {
       setIsFooterRevealActive(false);
@@ -1234,7 +1276,13 @@ function ShellDynamicInner({
         footerRevealTimeoutRef.current = null;
       }
 
+      if (undockSettleTimeoutRef.current !== null) {
+        window.clearTimeout(undockSettleTimeoutRef.current);
+        undockSettleTimeoutRef.current = null;
+      }
+
       setIsFooterRevealActive(false);
+      setIsUndockSettling(false);
       shouldRunFooterRevealRef.current = false;
     };
   }, [currentVideo.id, router, shouldShowOverlayPanel]);
@@ -2221,6 +2269,105 @@ function ShellDynamicInner({
       cancelled = true;
     };
   }, [activePlaylistId, fetchWithAuthRetry, playlistRefreshTick, rightRailMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleLyricsOverlayOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ videoId?: string }>).detail;
+      const targetVideoId = detail?.videoId || activeVideoId;
+
+      setLyricsOverlayVideoId(targetVideoId);
+      setLyricsOverlayError(null);
+      setLyricsOverlayData(null);
+      setIsLyricsOverlayOpen(true);
+    };
+
+    window.addEventListener(RIGHT_RAIL_LYRICS_OPEN_EVENT, handleLyricsOverlayOpen);
+    return () => {
+      window.removeEventListener(RIGHT_RAIL_LYRICS_OPEN_EVENT, handleLyricsOverlayOpen);
+    };
+  }, [activeVideoId]);
+
+  useEffect(() => {
+    if (!isLyricsOverlayOpen) {
+      return;
+    }
+
+    setLyricsOverlayVideoId(activeVideoId);
+  }, [activeVideoId, isLyricsOverlayOpen]);
+
+  useEffect(() => {
+    if (!isLyricsOverlayOpen || !lyricsOverlayVideoId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadLyrics = async () => {
+      setIsLyricsOverlayLoading(true);
+      setLyricsOverlayError(null);
+
+      try {
+        const response = await fetch(`/api/lyrics?v=${encodeURIComponent(lyricsOverlayVideoId)}`, {
+          cache: "no-store",
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.ok) {
+          const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null;
+          setLyricsOverlayData(null);
+          setLyricsOverlayError(errorPayload?.error ?? `Could not fetch lyrics right now (HTTP ${response.status}).`);
+          return;
+        }
+
+        const payload = (await response.json().catch(() => null)) as LyricsRailPayload | null;
+
+        if (!payload) {
+          setLyricsOverlayData(null);
+          setLyricsOverlayError("Lyrics were fetched but the response could not be read.");
+          return;
+        }
+
+        if (typeof payload.available !== "boolean") {
+          setLyricsOverlayData(null);
+          setLyricsOverlayError("Lyrics were fetched but the response format was invalid.");
+          return;
+        }
+
+        if (payload.available && (!payload.lyrics || payload.lyrics.trim().length === 0)) {
+          setLyricsOverlayData(null);
+          setLyricsOverlayError("Lyrics were fetched but could not be displayed.");
+          return;
+        }
+
+        if (!cancelled) {
+          setLyricsOverlayData(payload);
+          setLyricsOverlayError(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setLyricsOverlayData(null);
+          setLyricsOverlayError("Could not reach the lyrics service. Please try again.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLyricsOverlayLoading(false);
+        }
+      }
+    };
+
+    void loadLyrics();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLyricsOverlayOpen, lyricsOverlayVideoId]);
 
   function triggerChatTabFlash(mode: FlashableChatMode) {
     const existingTimeoutId = flashTimeoutRef.current[mode];
@@ -4481,33 +4628,22 @@ function ShellDynamicInner({
               ) : null}
 
               <Suspense fallback={<div className="playerLoadingFallback" />}>
-                {isResolvingInitialVideo || isResolvingRequestedVideo ? (
-                  <div className="playerLoadingFallback" role="status" aria-live="polite" aria-label={routeLoadingLabel}>
-                    <div className="playerBootLoader">
-                      <div className="playerBootBars" aria-hidden="true">
-                        <span />
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-                      <p>{routeLoadingMessage}</p>
-                    </div>
-                  </div>
-                ) : (
-                  <PlayerExperience
-                    currentVideo={currentVideo}
-                    queue={[currentVideo, ...uniqueRelatedVideos]}
-                    isLoggedIn={isAuthenticated}
-                    isAdmin={isAdmin}
-                    isDockedDesktop={shouldDockDesktopPlayer}
-                    seenVideoIds={seenVideoIdsRef.current}
-                    onHideVideo={handleHideFromWatchNext}
-                    onAddVideoToPlaylist={handleAddToPlaylistFromWatchNext}
-                    onDockHideRequest={() => setIsDockHidden(true)}
-                    forcedUnavailableSignal={forcedUnavailableSignal}
-                    forcedUnavailableMessage={forcedUnavailableMessage}
-                  />
-                )}
+                <PlayerExperience
+                  currentVideo={currentVideo}
+                  queue={[currentVideo, ...uniqueRelatedVideos]}
+                  isLoggedIn={isAuthenticated}
+                  isAdmin={isAdmin}
+                  isDockedDesktop={shouldDockDesktopPlayer}
+                  seenVideoIds={seenVideoIdsRef.current}
+                  onHideVideo={handleHideFromWatchNext}
+                  onAddVideoToPlaylist={handleAddToPlaylistFromWatchNext}
+                  onDockHideRequest={() => setIsDockHidden(true)}
+                  forcedUnavailableSignal={forcedUnavailableSignal}
+                  forcedUnavailableMessage={forcedUnavailableMessage}
+                  isRouteResolving={isResolvingInitialVideo || isResolvingRequestedVideo}
+                  routeLoadingLabel={routeLoadingLabel}
+                  routeLoadingMessage={routeLoadingMessage}
+                />
               </Suspense>
             </div>
 
@@ -4548,6 +4684,46 @@ function ShellDynamicInner({
             aria-hidden={shouldShowOverlayPanel}
             inert={shouldShowOverlayPanel ? true : undefined}
           >
+            {isLyricsOverlayOpen ? (
+              <section
+                className="rightRailLyricsOverlay"
+                role="dialog"
+                aria-modal="false"
+                aria-label="Lyrics"
+              >
+                <div className="rightRailLyricsOverlayHeader">
+                  <strong>Lyrics</strong>
+                  <button
+                    type="button"
+                    className="rightRailLyricsOverlayClose"
+                    aria-label="Close lyrics overlay"
+                    onClick={() => setIsLyricsOverlayOpen(false)}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="rightRailLyricsOverlayBody">
+                  {isLyricsOverlayLoading ? (
+                    <p className="rightRailStatus">Loading lyrics...</p>
+                  ) : lyricsOverlayError ? (
+                    <p className="rightRailStatus rightRailStatusError">{lyricsOverlayError}</p>
+                  ) : lyricsOverlayData?.available && lyricsOverlayData.lyrics ? (
+                    <>
+                      {lyricsOverlayData.artistName || lyricsOverlayData.trackName ? (
+                        <p className="rightRailLyricsOverlayMeta">
+                          {lyricsOverlayData.artistName ? lyricsOverlayData.artistName : "Unknown artist"}
+                          {lyricsOverlayData.trackName ? ` - ${lyricsOverlayData.trackName}` : ""}
+                        </p>
+                      ) : null}
+                      <pre className="rightRailLyricsOverlayText">{lyricsOverlayData.lyrics}</pre>
+                    </>
+                  ) : (
+                    <p className="rightRailStatus">{lyricsOverlayData?.message ?? "No lyrics available for this track."}</p>
+                  )}
+                </div>
+              </section>
+            ) : null}
             <div className="railTabs rightRailTabs">
               {isAuthenticated ? (
                 <button

@@ -8,6 +8,10 @@ const ROOT = process.cwd();
 const files = {
   favouritesPage: path.join(ROOT, "apps/web/app/(shell)/favourites/page.tsx"),
   favouritesGrid: path.join(ROOT, "apps/web/components/favourites-grid.tsx"),
+  favouritesManager: path.join(ROOT, "apps/web/components/favourites-manager.tsx"),
+  searchResultFavouriteButton: path.join(ROOT, "apps/web/components/search-result-favourite-button.tsx"),
+  playerExperience: path.join(ROOT, "apps/web/components/player-experience.tsx"),
+  clientAuthFetch: path.join(ROOT, "apps/web/lib/client-auth-fetch.ts"),
   favouritesRoute: path.join(ROOT, "apps/web/app/api/favourites/route.ts"),
   apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
   globalCss: path.join(ROOT, "apps/web/app/globals.css"),
@@ -31,6 +35,10 @@ function main() {
 
   const favouritesPageSource = read(files.favouritesPage);
   const favouritesGridSource = read(files.favouritesGrid);
+  const favouritesManagerSource = read(files.favouritesManager);
+  const searchResultFavouriteButtonSource = read(files.searchResultFavouriteButton);
+  const playerExperienceSource = read(files.playerExperience);
+  const clientAuthFetchSource = read(files.clientAuthFetch);
   const favouritesRouteSource = read(files.favouritesRoute);
   const apiSchemasSource = read(files.apiSchemas);
   const globalCssSource = read(files.globalCss);
@@ -59,6 +67,22 @@ function main() {
   // --- FavouritesGrid: auth-gated error handling ---
   assertContains(favouritesGridSource, "response.status === 401 || response.status === 403", "FavouritesGrid handles 401/403 from favourites API gracefully", failures);
   assertContains(favouritesGridSource, "Sign in to manage favourites", "FavouritesGrid shows sign-in prompt for unauthenticated actions", failures);
+
+  // --- Client auth retry for favourites mutations ---
+  assertContains(clientAuthFetchSource, "export async function fetchWithAuthRetry", "Client auth helper exports fetchWithAuthRetry", failures);
+  assertContains(clientAuthFetchSource, "const response = await fetch(\"/api/auth/refresh\"", "Client auth helper calls refresh endpoint when needed", failures);
+  assertContains(clientAuthFetchSource, "if (response.status !== 401 && response.status !== 403)", "Client auth helper only retries on 401/403", failures);
+  assertContains(clientAuthFetchSource, "if (isRefreshEndpoint(input))", "Client auth helper avoids retry loops on refresh endpoint", failures);
+  assertContains(clientAuthFetchSource, "response = await fetch(input, requestInit);", "Client auth helper retries original request after refresh", failures);
+  assertContains(favouritesGridSource, 'import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";', "FavouritesGrid uses auth-retry helper", failures);
+  assertContains(favouritesGridSource, 'await fetchWithAuthRetry("/api/favourites"', "FavouritesGrid favourites fetches use auth-retry helper", failures);
+  assertContains(favouritesManagerSource, 'import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";', "FavouritesManager uses auth-retry helper", failures);
+  assertContains(favouritesManagerSource, 'await fetchWithAuthRetry("/api/favourites"', "FavouritesManager favourite updates use auth-retry helper", failures);
+  assertContains(searchResultFavouriteButtonSource, 'import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";', "Search result favourite button uses auth-retry helper", failures);
+  assertContains(searchResultFavouriteButtonSource, 'await fetchWithAuthRetry("/api/favourites"', "Search result favourite add uses auth-retry helper", failures);
+  assertContains(playerExperienceSource, 'import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";', "PlayerExperience uses auth-retry helper for favourites", failures);
+  assertContains(playerExperienceSource, 'const favouritesResponse = await fetchWithAuthRetry("/api/favourites"', "PlayerExperience favourites autoplay fetch uses auth-retry helper", failures);
+  assertContains(playerExperienceSource, 'const response = await fetchWithAuthRetry("/api/favourites"', "PlayerExperience add favourite uses auth-retry helper", failures);
 
   // --- FavouritesGrid: accessibility ---
   assertContains(favouritesGridSource, "aria-label={`Remove ${track.title} from favourites`}", "FavouritesGrid remove button has descriptive aria-label", failures);
