@@ -20,6 +20,8 @@ const CURRENT_VIDEO_RELATED_POOL_CACHE_TTL_MS = 30_000;
 const CURRENT_VIDEO_RELATED_POOL_SIZE = 100;
 const CURRENT_VIDEO_RELATED_POOL_BASE_SIZE = CURRENT_VIDEO_RELATED_POOL_SIZE;
 const CURRENT_VIDEO_RELATED_POOL_MAX_SIZE = 300_000;
+const CURRENT_VIDEO_RELATED_POOL_QUERY_EXPANSION_CAP = 5_000;
+const CURRENT_VIDEO_RELATED_OFFSET_MAX = 5_000;
 const WATCH_NEXT_FAVOURITE_BLEND_RATIO = 0.3;
 const ENDED_CHOICE_FAVOURITE_BLEND_RATIO = 0.45;
 
@@ -161,7 +163,8 @@ async function getRelatedPoolForCurrentVideo(currentVideoId: string, userId: num
   }
 
   const pending = (async () => {
-    const discoveryCount = Math.max(300, Math.min(CURRENT_VIDEO_RELATED_POOL_MAX_SIZE, targetSize * 2));
+    // Keep expansion bounded so pathological deep offsets do not trigger massive DB reads.
+    const discoveryCount = Math.max(300, Math.min(CURRENT_VIDEO_RELATED_POOL_QUERY_EXPANSION_CAP, targetSize * 2));
     const baseRelated = await getRelatedVideos(currentVideoId, {
       userId,
       count: 120,
@@ -238,7 +241,10 @@ export async function GET(request: NextRequest) {
   );
   const requestedRelatedOffset = Math.max(
     0,
-    Number.parseInt(request.nextUrl.searchParams.get("offset") ?? "0", 10) || 0,
+    Math.min(
+      CURRENT_VIDEO_RELATED_OFFSET_MAX,
+      Number.parseInt(request.nextUrl.searchParams.get("offset") ?? "0", 10) || 0,
+    ),
   );
   const excludedRelatedIds = Array.from(
     new Set(
@@ -367,7 +373,7 @@ export async function GET(request: NextRequest) {
       if (preferUnseenForEndedChoice && optionalAuth?.userId) {
         const unseenBoost = await getUnseenCatalogVideos({
           userId: optionalAuth.userId,
-          count: Math.max(300, Math.min(CURRENT_VIDEO_RELATED_POOL_MAX_SIZE, poolSizeTarget)),
+          count: Math.max(300, Math.min(CURRENT_VIDEO_RELATED_POOL_QUERY_EXPANSION_CAP, poolSizeTarget)),
           excludeVideoIds: [currentVideo.id, ...excludedRelatedIds],
         });
 
