@@ -9,8 +9,12 @@ type ExternalApiUsageInput = {
   note?: string | null;
 };
 
+const API_USAGE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const API_USAGE_PRUNE_INTERVAL_MS = 60 * 60 * 1000; // prune once per hour
+
 let hasEnsuredApiUsageTable = false;
 let ensureApiUsageTablePromise: Promise<void> | null = null;
+let lastPrunedApiUsageAtMs = 0;
 
 async function ensureApiUsageTable() {
   if (hasEnsuredApiUsageTable) {
@@ -68,6 +72,19 @@ export async function recordExternalApiUsage(input: ExternalApiUsageInput) {
         ${new Date()}
       )
     `;
+
+    // Best-effort rolling 24h pruning — runs at most once per hour.
+    const now = Date.now();
+    if (now - lastPrunedApiUsageAtMs > API_USAGE_PRUNE_INTERVAL_MS) {
+      lastPrunedApiUsageAtMs = now;
+      const cutoff = new Date(now - API_USAGE_WINDOW_MS);
+      void prisma.$executeRaw`
+        DELETE FROM external_api_usage_events
+        WHERE created_at < ${cutoff}
+      `.catch(() => {
+        // Best-effort — never fail a record call due to pruning.
+      });
+    }
   } catch {
     // Best-effort telemetry only: never block product behavior.
   }
