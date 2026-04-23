@@ -239,7 +239,7 @@ export function Top100VideoLink({
             <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
               {track.channelTitle}
             </ArtistWikiLink>
-            {" "}· {track.favourited.toLocaleString()} favourites
+            {rowVariant !== "new" ? ` · ${track.favourited.toLocaleString()} favourites` : ""}
           </p>
         </div>
       </Link>
