@@ -391,6 +391,7 @@ const RELATED_LOAD_AHEAD_AGGRESSIVE_PX = 920;
 const RELATED_SCROLL_PREFETCH_BATCHES = 2;
 const RELATED_BACKGROUND_PREFETCH_TARGET_AGGRESSIVE = 45;
 const RELATED_BACKGROUND_PREFETCH_DELAY_FAST_MS = 280;
+const RELATED_BOOTSTRAP_MIN_VISIBLE = 4;
 const RELATED_LOADING_HINT_SHOW_DELAY_MS = 220;
 const RELATED_LOADING_HINT_HIDE_DELAY_MS = 320;
 const WATCH_NEXT_HIDE_ANIMATION_MS = 240;
@@ -2981,7 +2982,8 @@ function ShellDynamicInner({
     }
 
     const remainingPx = node.scrollHeight - (node.scrollTop + node.clientHeight);
-    const loadAheadPx = Math.max(RELATED_LOAD_AHEAD_PX, RELATED_LOAD_AHEAD_AGGRESSIVE_PX);
+    const oneSectionAheadPx = Math.ceil(node.clientHeight * 1.1);
+    const loadAheadPx = Math.max(RELATED_LOAD_AHEAD_PX, RELATED_LOAD_AHEAD_AGGRESSIVE_PX, oneSectionAheadPx);
     if (remainingPx <= loadAheadPx) {
       const nearBottom = remainingPx <= Math.max(240, node.clientHeight * 0.4);
       const requestedCount = nearBottom
@@ -3158,7 +3160,7 @@ function ShellDynamicInner({
       },
       {
         root,
-        rootMargin: `0px 0px ${RELATED_LOAD_AHEAD_PX}px 0px`,
+        rootMargin: `0px 0px ${Math.max(RELATED_LOAD_AHEAD_PX, RELATED_LOAD_AHEAD_AGGRESSIVE_PX)}px 0px`,
         threshold: 0.01,
       },
     );
@@ -3229,6 +3231,25 @@ function ShellDynamicInner({
       return;
     }
 
+    // Avoid flashing a single card on startup. Keep loading until a usable
+    // minimum is ready, or until the server indicates there is no more data.
+    if (
+      !hasBootstrappedWatchNext
+      && sourceRelatedVideos.length < RELATED_BOOTSTRAP_MIN_VISIBLE
+      && hasMoreRelated
+    ) {
+      if (displayedRelatedVideos.length > 0) {
+        setDisplayedRelatedVideos([]);
+      }
+      if (relatedTransitionPhase !== "loading") {
+        setRelatedTransitionPhase("loading");
+      }
+      if (!isLoadingMoreRelated) {
+        void loadMoreRelatedVideos(30);
+      }
+      return;
+    }
+
     // Fresh data arrived for a finalized video: render it.
     if (currentSignature !== nextSignature) {
       const isAppendOnlyUpdate = currentIds.length > 0
@@ -3259,7 +3280,10 @@ function ShellDynamicInner({
     currentVideo.id,
     displayedRelatedVideos,
     hasBootstrappedWatchNext,
+    hasMoreRelated,
+    isLoadingMoreRelated,
     isWatchNextVideoSelectionPending,
+    loadMoreRelatedVideos,
     relatedTransitionPhase,
     requestedVideoId,
     shouldDisableRelatedRailTransition,
