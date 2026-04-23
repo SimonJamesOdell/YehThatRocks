@@ -4353,7 +4353,8 @@ export function PlayerExperience({
           });
 
           if (!response.ok) {
-            showUnavailableOverlayMessage("Could not remove this video from the site.");
+            const payload = (await response.json().catch(() => null)) as { error?: string; reason?: string } | null;
+            showUnavailableOverlayMessage(payload?.error || "Could not remove this video from the site.");
             return;
           }
 
