@@ -34,9 +34,9 @@ export function ProtectedAuthGatePanel({
         <div className="interactiveStack">
           <p className="authMessage">
             {unavailableMessage
-              ?? "The auth server is not responding, so your authorization status cannot currently be confirmed."}
+              ?? "The auth server is probably being updated. Please wait a moment and try again."}
           </p>
-          <p className="authSupportCopy">Try again later, or attempt to reconnect now.</p>
+          <p className="authSupportCopy">Please wait a moment, then try again.</p>
           <div className="primaryActions compactActions">
             <AuthStatusRetryButton label="Retry auth now" />
           </div>
