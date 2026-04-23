@@ -131,7 +131,7 @@ function createPrismaClient() {
 
 export const prisma = global.__yehPrisma__ ?? createPrismaClient();
 
-if (!global.__yehPrismaProfilingHookInstalled__) {
+if (process.env.DATABASE_URL && !global.__yehPrismaProfilingHookInstalled__) {
   const prismaWithProfilingHooks = prisma as PrismaClient & {
     $use?: (middleware: (params: { model?: string; action: string }, next: (params: { model?: string; action: string }) => Promise<unknown>) => Promise<unknown>) => void;
     $on?: (eventType: "query", callback: (event: PrismaQueryEvent) => void) => void;
