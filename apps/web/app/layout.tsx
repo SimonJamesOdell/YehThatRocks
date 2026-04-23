@@ -3,6 +3,7 @@ import { Metal_Mania } from "next/font/google";
 import Script from "next/script";
 
 import { startAdminHostMetricSampling } from "@/lib/admin-dashboard-health";
+import { startPerfSampling } from "@/lib/perf-sample-persistence";
 import "./globals.css";
 
 const metalMania = Metal_Mania({
@@ -23,6 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   startAdminHostMetricSampling();
+  startPerfSampling();
 
   return (
     <html lang="en">
