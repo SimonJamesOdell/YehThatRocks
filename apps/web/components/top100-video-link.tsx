@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
@@ -74,10 +74,19 @@ export function Top100VideoLink({
   onFlagVideo,
   isFlagPending = false,
 }: Top100VideoLinkProps) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const hasWarmedRef = useRef(false);
   const clickFlashTimeoutRef = useRef<number | null>(null);
   const [isClickFlashing, setIsClickFlashing] = useState(false);
+
+  const videoHref = useMemo(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("v", track.id);
+    params.set("resume", "1");
+    return `${pathname}?${params.toString()}`;
+  }, [pathname, searchParams, track.id]);
 
   useEffect(() => {
     return () => {
@@ -141,8 +150,8 @@ export function Top100VideoLink({
 
   const openVideoFromCard = useCallback(() => {
     warmSelection();
-    router.push(`/?v=${encodeURIComponent(track.id)}&resume=1`);
-  }, [router, track.id, warmSelection]);
+    router.push(videoHref);
+  }, [router, videoHref, warmSelection]);
 
   return (
     <article
@@ -204,7 +213,7 @@ export function Top100VideoLink({
         </button>
       ) : null}
       <Link
-        href={`/?v=${track.id}&resume=1`}
+        href={videoHref}
         className="linkedCard leaderboardTrackLink"
         prefetch={false}
         onMouseEnter={stagePendingSelection}
