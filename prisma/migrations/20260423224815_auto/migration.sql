@@ -1,2 +1,0 @@
--- AlterTable
-ALTER TABLE `rejected_videos` MODIFY `rejected_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP(3);
