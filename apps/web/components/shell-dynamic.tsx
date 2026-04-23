@@ -1344,6 +1344,14 @@ function ShellDynamicInner({
   }, [requestedVideoId]);
 
   useEffect(() => {
+    // If the user moves between overlay routes (e.g. /new -> /top100),
+    // ensure a previously hidden docked player becomes visible again.
+    if (shouldDockDesktopPlayer) {
+      setIsDockHidden(false);
+    }
+  }, [pathname, shouldDockDesktopPlayer]);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
