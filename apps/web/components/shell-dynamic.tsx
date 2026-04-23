@@ -668,6 +668,7 @@ function ShellDynamicInner({
   const relatedScrollRafRef = useRef<number | null>(null);
   const relatedVideosRef = useRef<VideoRecord[]>([]);
   const watchNextRailRef = useRef<HTMLElement | null>(null);
+  const playlistAutoScrollAppliedKeyRef = useRef<string | null>(null);
   const playerChromeRef = useRef<HTMLDivElement | null>(null);
   const brandLogoTargetRef = useRef<HTMLAnchorElement | null>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
@@ -2693,6 +2694,35 @@ function ShellDynamicInner({
     && playlistCreationPendingId === activePlaylistId
     && isPlaylistRailLoading,
   );
+
+  useEffect(() => {
+    if (rightRailMode !== "playlist" || !activePlaylistId || isPlaylistRailLoading) {
+      return;
+    }
+
+    const container = document.querySelector(".relatedStackPlaylistBody") as HTMLDivElement | null;
+    if (!container) {
+      return;
+    }
+
+    const key = `${activePlaylistId}:${currentVideo.id}`;
+    if (playlistAutoScrollAppliedKeyRef.current === key) {
+      return;
+    }
+
+    const activeTrackCard = container.querySelector(".rightRailPlaylistTrackCard.relatedCardActive") as HTMLElement | null;
+    if (!activeTrackCard) {
+      return;
+    }
+
+    // Keep the active track anchored near the top so users can see upcoming items.
+    const targetTop = Math.max(0, activeTrackCard.offsetTop - 4);
+    if (Math.abs(container.scrollTop - targetTop) > 2) {
+      container.scrollTo({ top: targetTop, behavior: "auto" });
+    }
+
+    playlistAutoScrollAppliedKeyRef.current = key;
+  }, [activePlaylistId, currentVideo.id, isPlaylistRailLoading, playlistRailData, rightRailMode]);
 
   const loadMoreRelatedVideos = useCallback(async (requestedCount = RELATED_LOAD_BATCH_SIZE) => {
     if (
