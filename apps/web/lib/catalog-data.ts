@@ -2759,9 +2759,11 @@ function escapeSqlIdentifier(identifier: string) {
 }
 
 type TableColumnInfo = { Field: string; Type: string };
+type VideoForeignKeyRef = { tableName: string; columnName: string };
 
 const tableColumnsCache = new Map<string, TableColumnInfo[]>();
 const tableColumnsInFlight = new Map<string, Promise<TableColumnInfo[]>>();
+let videoForeignKeyRefsCache: VideoForeignKeyRef[] | undefined;
 
 async function loadTableColumns(tableName: string): Promise<TableColumnInfo[]> {
   const cached = tableColumnsCache.get(tableName);
@@ -2803,6 +2805,33 @@ function pickColumn(columns: TableColumnInfo[], names: string[]) {
     if (match) return match;
   }
   return undefined;
+}
+
+async function loadVideoForeignKeyRefs(): Promise<VideoForeignKeyRef[]> {
+  if (videoForeignKeyRefsCache) {
+    return videoForeignKeyRefsCache;
+  }
+
+  try {
+    const refs = await prisma.$queryRawUnsafe<Array<{ tableName: string; columnName: string }>>(
+      `
+        SELECT
+          kcu.TABLE_NAME AS tableName,
+          kcu.COLUMN_NAME AS columnName
+        FROM information_schema.KEY_COLUMN_USAGE kcu
+        WHERE kcu.TABLE_SCHEMA = DATABASE()
+          AND kcu.REFERENCED_TABLE_SCHEMA = DATABASE()
+          AND kcu.REFERENCED_TABLE_NAME = 'videos'
+          AND kcu.REFERENCED_COLUMN_NAME = 'id'
+      `,
+    );
+
+    videoForeignKeyRefsCache = refs.filter((row) => row.tableName && row.columnName);
+    return videoForeignKeyRefsCache;
+  } catch {
+    videoForeignKeyRefsCache = [];
+    return videoForeignKeyRefsCache;
+  }
 }
 
 function mapArtistProjectionRow(row: {
@@ -3610,13 +3639,14 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
     ),
   );
 
-  const [siteVideoColumns, playlistColumns, favouriteColumns, artistVideoColumns, messageColumns, relatedColumns] = await Promise.all([
+  const [siteVideoColumns, playlistColumns, favouriteColumns, artistVideoColumns, messageColumns, relatedColumns, videoFkRefs] = await Promise.all([
     loadTableColumns("site_videos"),
     loadTableColumns("playlistitems"),
     loadTableColumns("favourites"),
     loadTableColumns("videosbyartist"),
     loadTableColumns("messages"),
     loadTableColumns("related"),
+    loadVideoForeignKeyRefs(),
   ]);
 
   const executeWithRetry = async (query: string, params: unknown[]) => {
@@ -3729,11 +3759,32 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
       );
     }
 
+    // Defensive FK cleanup: if additional tables reference videos.id, clear them before
+    // deleting parent video rows so admin hard-delete keeps working across schema drift.
+    for (const fkRef of videoFkRefs) {
+      if (!fkRef.tableName || fkRef.tableName === "videos" || !fkRef.columnName) {
+        continue;
+      }
+
+      await executeWithRetry(
+        `DELETE FROM ${escapeSqlIdentifier(fkRef.tableName)} WHERE ${escapeSqlIdentifier(fkRef.columnName)} IN (${ids.map(() => "?").join(",")})`,
+        ids,
+      );
+    }
+
     await executeWithRetry(
       `DELETE FROM videos WHERE id IN (${ids.map(() => "?").join(",")})`,
       ids,
     );
-  } catch {
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code ?? "")
+        : "";
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    const lockError = code === "P2010" && (message.includes("1205") || message.includes("1213"));
+    const fkError = code === "P2010" && message.includes("1451");
+
     const siteVideoRef = pickColumn(siteVideoColumns, ["video_id", "videoId"]);
     if (siteVideoRef) {
       try {
@@ -3746,7 +3797,11 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
       }
     }
 
-    return { pruned: false, deletedVideoRows: 0, reason: "lock-timeout-marked-unavailable" };
+    return {
+      pruned: false,
+      deletedVideoRows: 0,
+      reason: lockError ? "lock-timeout-marked-unavailable" : fkError ? "fk-constraint-delete-failed" : "delete-failed",
+    };
   }
 
   await clearGenreCardThumbnailForVideo(normalizedVideoId);
