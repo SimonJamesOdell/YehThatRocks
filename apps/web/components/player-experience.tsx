@@ -147,6 +147,7 @@ const MID_PLAYBACK_BUFFERING_CHECK_MS = 1000;
 const MID_PLAYBACK_BUFFERING_THRESHOLD_MS = 8000;
 const PLAYER_LOAD_REFRESH_HINT_DELAY_MS = 2000;
 const PLAYER_AUTO_RECONNECT_DELAY_MS = 2000;
+const MANUAL_TRANSITION_MASK_TIMEOUT_MS = 8000;
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
 const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
@@ -412,6 +413,7 @@ export function PlayerExperience({
   const unavailableAutoActionTimeoutRef = useRef<number | null>(null);
   const playerLoadRefreshHintTimeoutRef = useRef<number | null>(null);
   const playerAutoReconnectTimeoutRef = useRef<number | null>(null);
+  const manualTransitionMaskTimeoutRef = useRef<number | null>(null);
   const hasAutoReconnectAttemptedRef = useRef(false);
   const isPlayerReadyRef = useRef(false);
   const initialRequestedVideoIdRef = useRef<string | null>(requestedVideoId);
@@ -457,6 +459,7 @@ export function PlayerExperience({
   const [playlistChooserOpen, setPlaylistChooserOpen] = useState(false);
   const [overlayInstance, setOverlayInstance] = useState(0);
   const [playerHostMode, setPlayerHostMode] = useState<"nocookie" | "youtube">("nocookie");
+  const [isManualTransitionMaskVisible, setIsManualTransitionMaskVisible] = useState(false);
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [showPlayerRefreshHint, setShowPlayerRefreshHint] = useState(false);
   const [playerReloadNonce, setPlayerReloadNonce] = useState(0);
@@ -1207,7 +1210,9 @@ export function PlayerExperience({
   const suppressUnavailablePlaybackSurface = endedChoiceFromUnavailable || Boolean(unavailableOverlayMessage) || playerClosedByEndOfVideo || (showEndedChoiceOverlay && pathname !== "/");
   const showDockCloseButton = isDockedDesktop && pathname !== "/";
   const hasActivePlayback = isPlaying || safeCurrentTime > 0;
-  const showPlayerLoadingOverlay = (!isPlayerReady || isRouteResolving) && !hasActivePlayback;
+  const showRouteLikeLoadingCopy = isRouteResolving || isManualTransitionMaskVisible;
+  const showPlayerLoadingOverlay = isManualTransitionMaskVisible
+    || ((!isPlayerReady || isRouteResolving) && !hasActivePlayback);
   const playerFrameClassName = [
     "playerFrame",
     isPlayerReady ? "playerFrameLoaded" : "",
@@ -1393,6 +1398,22 @@ export function PlayerExperience({
     }
 
     setIsPlaying(false);
+  }
+
+  function showManualTransitionMask() {
+    pauseActivePlayback();
+    setCurrentTime(0);
+    setIsManualTransitionMaskVisible(true);
+
+    if (manualTransitionMaskTimeoutRef.current !== null) {
+      window.clearTimeout(manualTransitionMaskTimeoutRef.current);
+      manualTransitionMaskTimeoutRef.current = null;
+    }
+
+    manualTransitionMaskTimeoutRef.current = window.setTimeout(() => {
+      manualTransitionMaskTimeoutRef.current = null;
+      setIsManualTransitionMaskVisible(false);
+    }, MANUAL_TRANSITION_MASK_TIMEOUT_MS);
   }
 
   function clearStuckPlaybackRetryTimer() {
@@ -1953,6 +1974,11 @@ export function PlayerExperience({
     setHasPlaybackStarted(false);
     hasPlaybackStartedRef.current = false;
     setShowControls(false);
+    setIsManualTransitionMaskVisible(false);
+    if (manualTransitionMaskTimeoutRef.current !== null) {
+      window.clearTimeout(manualTransitionMaskTimeoutRef.current);
+      manualTransitionMaskTimeoutRef.current = null;
+    }
     logFlow("current-video:changed", {
       currentVideoId: currentVideo.id,
       queueSize: queue.length,
@@ -2687,6 +2713,11 @@ export function PlayerExperience({
         window.clearTimeout(unavailableAutoActionTimeoutRef.current);
       }
 
+      if (manualTransitionMaskTimeoutRef.current !== null) {
+        window.clearTimeout(manualTransitionMaskTimeoutRef.current);
+        manualTransitionMaskTimeoutRef.current = null;
+      }
+
       clearStuckPlaybackRetryTimer();
       clearStuckPlaybackWatchdogTimer();
 
@@ -3145,6 +3176,7 @@ export function PlayerExperience({
       const previousPlaylistTarget = resolvePlaylistStepTarget(-1);
 
       if (previousPlaylistTarget) {
+        showManualTransitionMask();
         hasUserGesturePlaybackUnlockRef.current = true;
         pendingAutoAdvanceVideoIdRef.current = previousPlaylistTarget.videoId;
         navigateToVideo(previousPlaylistTarget.videoId, {
@@ -3167,6 +3199,7 @@ export function PlayerExperience({
     const trimmedHistory = historyStack.slice(0, -1);
     setHistoryStack(trimmedHistory);
     window.sessionStorage.setItem(HISTORY_KEY, JSON.stringify(trimmedHistory));
+    showManualTransitionMask();
     hasUserGesturePlaybackUnlockRef.current = true;
     pendingAutoAdvanceVideoIdRef.current = previousId;
     router.push(
@@ -3181,6 +3214,7 @@ export function PlayerExperience({
       return;
     }
 
+    showManualTransitionMask();
     hasUserGesturePlaybackUnlockRef.current = true;
     pendingAutoAdvanceVideoIdRef.current = nextTarget.videoId;
     navigateToVideo(nextTarget.videoId, {
@@ -3196,7 +3230,7 @@ export function PlayerExperience({
     }
 
     setHideCurrentVideoState("saving");
-    pauseActivePlayback();
+    showManualTransitionMask();
 
     try {
       const activePlaylistQuery = activePlaylistId ? `?activePlaylistId=${encodeURIComponent(activePlaylistId)}` : "";
@@ -4418,15 +4452,15 @@ export function PlayerExperience({
               <div ref={playerElementRef} className="playerMount" />
 
               {showPlayerLoadingOverlay ? (
-                <div className="playerBootLoader" role="status" aria-live="polite" aria-label={isRouteResolving ? routeLoadingLabel : "Loading video player"}>
+                <div className="playerBootLoader" role="status" aria-live="polite" aria-label={showRouteLikeLoadingCopy ? routeLoadingLabel : "Loading video player"}>
                   <div className="playerBootBars" aria-hidden="true">
                     <span />
                     <span />
                     <span />
                     <span />
                   </div>
-                  <p>{isRouteResolving ? routeLoadingMessage : "connecting to upstream video provider..."}</p>
-                  {!isRouteResolving && showPlayerRefreshHint ? (
+                  <p>{showRouteLikeLoadingCopy ? routeLoadingMessage : "connecting to upstream video provider..."}</p>
+                  {!showRouteLikeLoadingCopy && showPlayerRefreshHint ? (
                     <div className="playerBootRefreshWrap">
                       <button
                         type="button"

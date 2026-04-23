@@ -547,6 +547,19 @@ function ShellDynamicInner({
   const searchParamsKey = searchParams.toString();
   const requestedVideoId = searchParams.get("v") || null;
   const activePlaylistId = searchParams.get("pl");
+  const requestedPlaylistItemIndex = (() => {
+    const rawIndex = searchParams.get("pli");
+    if (!rawIndex) {
+      return null;
+    }
+
+    const parsedIndex = Number.parseInt(rawIndex, 10);
+    if (!Number.isFinite(parsedIndex) || parsedIndex < 0) {
+      return null;
+    }
+
+    return parsedIndex;
+  })();
   const initialHydratedRelatedVideos = dedupeRelatedRailVideos(dedupeVideoList(initialRelatedVideos), initialVideo.id);
 
   const [currentVideo, setCurrentVideo] = useState(initialVideo);
@@ -662,13 +675,14 @@ function ShellDynamicInner({
   const relatedHideTimeoutsRef = useRef<Map<string, number>>(new Map());
   const playlistItemHideTimeoutsRef = useRef<Map<string, number>>(new Map());
   const relatedStackRef = useRef<HTMLDivElement | null>(null);
+  const playlistStackBodyRef = useRef<HTMLDivElement | null>(null);
+  const playlistAutoScrollRafRef = useRef<number | null>(null);
   const relatedLoadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadInFlightRef = useRef(false);
   const relatedFetchOffsetRef = useRef<number | null>(null);
   const relatedScrollRafRef = useRef<number | null>(null);
   const relatedVideosRef = useRef<VideoRecord[]>([]);
   const watchNextRailRef = useRef<HTMLElement | null>(null);
-  const playlistAutoScrollAppliedKeyRef = useRef<string | null>(null);
   const playerChromeRef = useRef<HTMLDivElement | null>(null);
   const brandLogoTargetRef = useRef<HTMLAnchorElement | null>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
@@ -2689,6 +2703,17 @@ function ShellDynamicInner({
   const activePlaylistTrackCount = playlistRailData
     ? Math.max(playlistRailData.videos.length, playlistRailData.itemCount ?? activePlaylistSummary?.itemCount ?? 0)
     : (activePlaylistSummary?.itemCount ?? 0);
+  const matchedPlaylistVideoIndex = playlistRailData
+    ? playlistRailData.videos.findIndex((track) => track.id === currentVideo.id)
+    : -1;
+  const hasTrustedRequestedPlaylistItemIndex = requestedPlaylistItemIndex !== null
+    && playlistRailData !== null
+    && requestedPlaylistItemIndex >= 0
+    && requestedPlaylistItemIndex < playlistRailData.videos.length
+    && playlistRailData.videos[requestedPlaylistItemIndex]?.id === currentVideo.id;
+  const activePlaylistTrackIndex = hasTrustedRequestedPlaylistItemIndex
+    ? requestedPlaylistItemIndex
+    : (matchedPlaylistVideoIndex >= 0 ? matchedPlaylistVideoIndex : null);
   const isCreatingActivePlaylist = Boolean(
     activePlaylistId
     && playlistCreationPendingId === activePlaylistId
@@ -2700,29 +2725,77 @@ function ShellDynamicInner({
       return;
     }
 
-    const container = document.querySelector(".relatedStackPlaylistBody") as HTMLDivElement | null;
-    if (!container) {
-      return;
-    }
+    // Delay slightly so class updates/render settle before measuring.
+    const timeoutId = window.setTimeout(() => {
+      const container = playlistStackBodyRef.current;
+      if (!container) {
+        return;
+      }
 
-    const key = `${activePlaylistId}:${currentVideo.id}`;
-    if (playlistAutoScrollAppliedKeyRef.current === key) {
-      return;
-    }
+      const indexedActiveRow = activePlaylistTrackIndex !== null
+        ? container.querySelector(`.playlistRailTrackRow[data-playlist-index="${activePlaylistTrackIndex}"]`) as HTMLElement | null
+        : null;
+      const fallbackActiveRow = container
+        .querySelector(".rightRailPlaylistTrackCard.relatedCardActive")
+        ?.closest(".playlistRailTrackRow") as HTMLElement | null;
+      const activeRow = indexedActiveRow ?? fallbackActiveRow;
 
-    const activeTrackCard = container.querySelector(".rightRailPlaylistTrackCard.relatedCardActive") as HTMLElement | null;
-    if (!activeTrackCard) {
-      return;
-    }
+      if (!activeRow) {
+        return;
+      }
 
-    // Keep the active track anchored near the top so users can see upcoming items.
-    const targetTop = Math.max(0, activeTrackCard.offsetTop - 4);
-    if (Math.abs(container.scrollTop - targetTop) > 2) {
-      container.scrollTo({ top: targetTop, behavior: "auto" });
-    }
+      const topGutterPx = 8;
+      const containerRect = container.getBoundingClientRect();
+      const rowRect = activeRow.getBoundingClientRect();
+      const rowTopInViewport = rowRect.top - containerRect.top;
 
-    playlistAutoScrollAppliedKeyRef.current = key;
-  }, [activePlaylistId, currentVideo.id, isPlaylistRailLoading, playlistRailData, rightRailMode]);
+      const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+      const desiredTop = container.scrollTop + rowTopInViewport - topGutterPx;
+      const targetTop = Math.min(maxScrollTop, Math.max(0, desiredTop));
+
+      if (Math.abs(container.scrollTop - targetTop) > 1) {
+        if (playlistAutoScrollRafRef.current !== null) {
+          window.cancelAnimationFrame(playlistAutoScrollRafRef.current);
+          playlistAutoScrollRafRef.current = null;
+        }
+
+        const startTop = container.scrollTop;
+        const scrollDelta = targetTop - startTop;
+        const durationMs = 320;
+        const startTime = performance.now();
+
+        const animateScroll = (now: number) => {
+          const progress = Math.min(1, (now - startTime) / durationMs);
+          const eased = 1 - ((1 - progress) ** 3);
+          container.scrollTop = startTop + (scrollDelta * eased);
+
+          if (progress < 1) {
+            playlistAutoScrollRafRef.current = window.requestAnimationFrame(animateScroll);
+            return;
+          }
+
+          playlistAutoScrollRafRef.current = null;
+        };
+
+        playlistAutoScrollRafRef.current = window.requestAnimationFrame(animateScroll);
+      }
+    }, 50);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (playlistAutoScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(playlistAutoScrollRafRef.current);
+        playlistAutoScrollRafRef.current = null;
+      }
+    };
+  }, [
+    activePlaylistId,
+    activePlaylistTrackIndex,
+    currentVideo.id,
+    isPlaylistRailLoading,
+    rightRailMode,
+    playlistRailData?.videos.length,
+  ]);
 
   const loadMoreRelatedVideos = useCallback(async (requestedCount = RELATED_LOAD_BATCH_SIZE) => {
     if (
@@ -5031,7 +5104,7 @@ function ShellDynamicInner({
                 </div>
               ) : null}
 
-              <div className="relatedStackPlaylistBody">
+              <div className="relatedStackPlaylistBody" ref={playlistStackBodyRef}>
 
               {!activePlaylistId ? (
                 isPlaylistSummaryLoading ? (
@@ -5123,7 +5196,7 @@ function ShellDynamicInner({
                 <p className="rightRailStatus">{playlistRailError}</p>
               ) : playlistRailData && playlistRailData.videos.length > 0 ? (
                 playlistRailData.videos.flatMap((track, index) => {
-                  const isCurrentPlaylistTrack = currentVideo.id === track.id;
+                  const isCurrentPlaylistTrack = activePlaylistTrackIndex === index;
                   const isRecentlyAddedTrack =
                     recentlyAddedPlaylistTrack?.playlistId === playlistRailData.id
                     && recentlyAddedPlaylistTrack?.trackId === track.id;
@@ -5147,6 +5220,7 @@ function ShellDynamicInner({
                     ...(showPlaceholderAbove ? [placeholder(`rph-above-${index}`)] : []),
                     <div
                       key={track.playlistItemId ?? `${track.id}-${index}`}
+                      data-playlist-index={index}
                       className={[
                         "playlistRailTrackRow",
                         isRecentlyAddedTrack ? "playlistRailTrackRowAdded" : "",
