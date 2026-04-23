@@ -2884,6 +2884,7 @@ function ShellDynamicInner({
 
     try {
       const existing = dedupeRelatedRailVideos(dedupeVideoList(relatedVideosRef.current), currentVideo.id);
+      const isFirstColdFetch = relatedFetchOffsetRef.current === null && existing.length === 0;
       if (relatedFetchOffsetRef.current === null || relatedFetchOffsetRef.current < existing.length) {
         relatedFetchOffsetRef.current = existing.length;
       }
@@ -2891,8 +2892,10 @@ function ShellDynamicInner({
 
       const params = new URLSearchParams();
       params.set("v", currentVideo.id);
-      params.set("count", String(batchCount));
-      params.set("offset", String(relatedFetchOffsetRef.current));
+      if (!isFirstColdFetch) {
+        params.set("count", String(batchCount));
+        params.set("offset", String(relatedFetchOffsetRef.current));
+      }
 
       const response = await fetch(`/api/current-video?${params.toString()}`, {
         cache: "no-store",
@@ -2932,6 +2935,22 @@ function ShellDynamicInner({
       setIsLoadingMoreRelated(false);
     }
   }, [currentVideo.id, hasMoreRelated, isWatchNextVideoSelectionPending, rightRailMode]);
+
+  useEffect(() => {
+    // Cold-start trigger: fire the first Watch Next fetch as soon as selection is
+    // settled and the rail is still empty. Other triggers guard on idle phase,
+    // while an empty rail is often in "loading" phase.
+    if (
+      isWatchNextVideoSelectionPending
+      || rightRailMode !== "watch-next"
+      || !hasMoreRelated
+      || relatedVideos.length > 0
+    ) {
+      return;
+    }
+
+    void loadMoreRelatedVideos();
+  }, [hasMoreRelated, isWatchNextVideoSelectionPending, loadMoreRelatedVideos, relatedVideos.length, rightRailMode]);
 
   const handleWatchNextTrackClick = useCallback((trackId: string) => {
     setClickedRelatedVideoId(trackId);
