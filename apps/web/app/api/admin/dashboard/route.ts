@@ -170,6 +170,14 @@ let metadataQualityCache: {
   lowConfidence: number;
   unknownType: number;
 } | null = null;
+let metadataQualityCachePromise: Promise<{
+  expiresAt: number;
+  availableVideos: number;
+  checkFailedEntries: number;
+  missingMetadata: number;
+  lowConfidence: number;
+  unknownType: number;
+}> | null = null;
 
 
 export async function GET(request: NextRequest) {
@@ -264,41 +272,49 @@ export async function GET(request: NextRequest) {
         return [cached];
       }
 
-      // Split into two single-table queries — no join needed.
-      // site_videos holds status; videos holds metadata columns.
-      const [statusCounts, metaCounts] = await Promise.all([
-        prisma.$queryRaw<Array<{
-          availableVideos: bigint | number;
-          checkFailedEntries: bigint | number;
-        }>>`
-          SELECT
-            SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) AS availableVideos,
-            SUM(CASE WHEN status = 'check-failed' THEN 1 ELSE 0 END) AS checkFailedEntries
-          FROM site_videos
-        `.catch(() => []),
-        prisma.$queryRaw<Array<{
-          missingMetadata: bigint | number;
-          lowConfidence: bigint | number;
-          unknownType: bigint | number;
-        }>>`
-          SELECT
-            SUM(CASE WHEN parsedArtist IS NULL OR TRIM(parsedArtist) = '' OR parsedTrack IS NULL OR TRIM(parsedTrack) = '' THEN 1 ELSE 0 END) AS missingMetadata,
-            SUM(CASE WHEN parseConfidence IS NULL OR parseConfidence < 0.80 THEN 1 ELSE 0 END) AS lowConfidence,
-            SUM(CASE WHEN parsedVideoType IS NULL OR parsedVideoType = '' OR parsedVideoType = 'unknown' THEN 1 ELSE 0 END) AS unknownType
-          FROM videos
-        `.catch(() => []),
-      ]);
+      if (!metadataQualityCachePromise) {
+        metadataQualityCachePromise = (async () => {
+          // Split into two single-table queries — no join needed.
+          // site_videos holds status; videos holds metadata columns.
+          const [statusCounts, metaCounts] = await Promise.all([
+            prisma.$queryRaw<Array<{
+              availableVideos: bigint | number;
+              checkFailedEntries: bigint | number;
+            }>>`
+              SELECT
+                SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) AS availableVideos,
+                SUM(CASE WHEN status = 'check-failed' THEN 1 ELSE 0 END) AS checkFailedEntries
+              FROM site_videos
+            `.catch(() => []),
+            prisma.$queryRaw<Array<{
+              missingMetadata: bigint | number;
+              lowConfidence: bigint | number;
+              unknownType: bigint | number;
+            }>>`
+              SELECT
+                SUM(CASE WHEN parsedArtist IS NULL OR TRIM(parsedArtist) = '' OR parsedTrack IS NULL OR TRIM(parsedTrack) = '' THEN 1 ELSE 0 END) AS missingMetadata,
+                SUM(CASE WHEN parseConfidence IS NULL OR parseConfidence < 0.80 THEN 1 ELSE 0 END) AS lowConfidence,
+                SUM(CASE WHEN parsedVideoType IS NULL OR parsedVideoType = '' OR parsedVideoType = 'unknown' THEN 1 ELSE 0 END) AS unknownType
+              FROM videos
+            `.catch(() => []),
+          ]);
 
-      const result = {
-        expiresAt: Date.now() + METADATA_QUALITY_CACHE_TTL_MS,
-        availableVideos: toNumber(statusCounts[0]?.availableVideos),
-        checkFailedEntries: toNumber(statusCounts[0]?.checkFailedEntries),
-        missingMetadata: toNumber(metaCounts[0]?.missingMetadata),
-        lowConfidence: toNumber(metaCounts[0]?.lowConfidence),
-        unknownType: toNumber(metaCounts[0]?.unknownType),
-      };
-      metadataQualityCache = result;
-      return [result];
+          const result = {
+            expiresAt: Date.now() + METADATA_QUALITY_CACHE_TTL_MS,
+            availableVideos: toNumber(statusCounts[0]?.availableVideos),
+            checkFailedEntries: toNumber(statusCounts[0]?.checkFailedEntries),
+            missingMetadata: toNumber(metaCounts[0]?.missingMetadata),
+            lowConfidence: toNumber(metaCounts[0]?.lowConfidence),
+            unknownType: toNumber(metaCounts[0]?.unknownType),
+          };
+          metadataQualityCache = result;
+          return result;
+        })().finally(() => {
+          metadataQualityCachePromise = null;
+        });
+      }
+
+      return [await metadataQualityCachePromise];
     })(),
     prisma.$queryRaw<Array<{ day: Date; count: bigint | number }>>`
       SELECT DATE(createdAt) AS day, COUNT(*) AS count
