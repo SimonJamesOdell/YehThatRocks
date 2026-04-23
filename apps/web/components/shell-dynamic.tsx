@@ -356,7 +356,7 @@ const STARTUP_RETRY_MAX_ATTEMPTS = 8;
 const REQUESTED_VIDEO_RETRY_FAST_ATTEMPTS = 4;
 const REQUESTED_VIDEO_RETRY_SLOW_DELAY_MS = 8_000;
 const REQUESTED_VIDEO_RETRY_MAX_ATTEMPTS = 8;
-const RELATED_LOAD_BATCH_SIZE = 5;
+const RELATED_LOAD_BATCH_SIZE = 8;
 const RELATED_LOAD_AHEAD_PX = 560;
 const RELATED_MAX_VIDEOS = Number.MAX_SAFE_INTEGER;
 const RELATED_BACKGROUND_PREFETCH_TARGET = 35;
@@ -365,6 +365,8 @@ const RELATED_LOAD_AHEAD_AGGRESSIVE_PX = 920;
 const RELATED_SCROLL_PREFETCH_BATCHES = 2;
 const RELATED_BACKGROUND_PREFETCH_TARGET_AGGRESSIVE = 45;
 const RELATED_BACKGROUND_PREFETCH_DELAY_FAST_MS = 280;
+const RELATED_LOADING_HINT_SHOW_DELAY_MS = 220;
+const RELATED_LOADING_HINT_HIDE_DELAY_MS = 320;
 const WATCH_NEXT_HIDE_ANIMATION_MS = 240;
 const WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-watch-next";
 const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
@@ -567,6 +569,7 @@ function ShellDynamicInner({
   const [displayedRelatedVideos, setDisplayedRelatedVideos] = useState<VideoRecord[]>(initialHydratedRelatedVideos);
   const [relatedTransitionPhase, setRelatedTransitionPhase] = useState<"idle" | "fading-out" | "loading" | "fading-in">("idle");
   const [isLoadingMoreRelated, setIsLoadingMoreRelated] = useState(false);
+  const [showLoadingMoreRelatedHint, setShowLoadingMoreRelatedHint] = useState(false);
   const [hasMoreRelated, setHasMoreRelated] = useState(true);
   const seenVideoIdsRef = useRef<Set<string>>(new Set(initialSeenVideoIds));
   const hiddenVideoIdsRef = useRef<Set<string>>(new Set(initialHiddenVideoIds));
@@ -2929,8 +2932,35 @@ function ShellDynamicInner({
     relatedLoadInFlightRef.current = false;
     relatedFetchOffsetRef.current = null;
     setIsLoadingMoreRelated(false);
+    setShowLoadingMoreRelatedHint(false);
     setHasMoreRelated(true);
   }, [currentVideo.id]);
+
+  useEffect(() => {
+    if (rightRailMode !== "watch-next") {
+      setShowLoadingMoreRelatedHint(false);
+      return;
+    }
+
+    let timeoutId: number | null = null;
+    if (isLoadingMoreRelated) {
+      if (!showLoadingMoreRelatedHint) {
+        timeoutId = window.setTimeout(() => {
+          setShowLoadingMoreRelatedHint(true);
+        }, RELATED_LOADING_HINT_SHOW_DELAY_MS);
+      }
+    } else if (showLoadingMoreRelatedHint) {
+      timeoutId = window.setTimeout(() => {
+        setShowLoadingMoreRelatedHint(false);
+      }, RELATED_LOADING_HINT_HIDE_DELAY_MS);
+    }
+
+    return () => {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [isLoadingMoreRelated, rightRailMode, showLoadingMoreRelatedHint]);
 
   useEffect(() => {
     maybeLoadMoreIfNearEnd();
@@ -4970,7 +5000,7 @@ function ShellDynamicInner({
 
                   <div ref={relatedLoadMoreSentinelRef} className="relatedLoadMoreSentinel" aria-hidden="true" />
 
-                  {isLoadingMoreRelated ? <p className="rightRailStatus">Loading more suggestions...</p> : null}
+                  {showLoadingMoreRelatedHint ? <p className="rightRailStatus">Loading more suggestions...</p> : null}
                 </>
               )}
             </div>

@@ -431,7 +431,7 @@ export async function GET(request: NextRequest) {
       relatedVideos = blendedRelatedVideos.slice(0, requestedRelatedCount);
     }
 
-    const targetRelatedCount = 10;
+    const targetRelatedCount = 8;
     let paddedRelatedVideos = relatedVideos;
 
     if (!isCustomRelatedRequest && relatedVideos.length < targetRelatedCount) {
