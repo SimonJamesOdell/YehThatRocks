@@ -976,21 +976,35 @@ export function PlayerExperience({
     return selectionPool[randomIndex] ?? null;
   }
 
+  function resolvePlaylistStepTarget(step: 1 | -1) {
+    if (!hasActivePlaylistContext || playlistQueueIds.length === 0) {
+      return null;
+    }
+
+    const fallbackIndex = step > 0 ? 0 : Math.max(0, playlistQueueIds.length - 1);
+    const baseIndex = effectivePlaylistIndex ?? fallbackIndex;
+    const wrappedIndex =
+      step > 0
+        ? (baseIndex + 1) % playlistQueueIds.length
+        : (baseIndex - 1 + playlistQueueIds.length) % playlistQueueIds.length;
+    const videoId = playlistQueueIds[wrappedIndex] ?? null;
+
+    if (!videoId) {
+      return null;
+    }
+
+    return {
+      videoId,
+      playlistItemIndex: wrappedIndex,
+      clearPlaylist: false,
+    };
+  }
+
   function resolveNextTarget() {
     if (activePlaylistId) {
-      if (hasActivePlaylistContext) {
-        const nextIndex = effectivePlaylistIndex !== null
-          ? (effectivePlaylistIndex + 1) % playlistQueueIds.length
-          : 0;
-        const nextId = playlistQueueIds[nextIndex] ?? null;
-
-        if (nextId) {
-          return {
-            videoId: nextId,
-            playlistItemIndex: nextIndex,
-            clearPlaylist: false,
-          };
-        }
+      const nextPlaylistTarget = resolvePlaylistStepTarget(1);
+      if (nextPlaylistTarget) {
+        return nextPlaylistTarget;
       }
 
       // A playlist is selected but not ready yet; do not switch to random Watch Next.
@@ -1172,7 +1186,7 @@ export function PlayerExperience({
   const shouldShowEndedChoiceEmptyState = endedChoiceGridVideos.length === 0
     && !endedChoiceLoading
     && (!endedChoiceHideSeen || !endedChoiceHasMoreRef.current);
-  const footerActionsBlocked = Boolean(unavailableOverlayMessage) || showEndedChoiceOverlay || playlistChooserOpen || isRouteResolving;
+  const footerActionsBlocked = Boolean(unavailableOverlayMessage) || showEndedChoiceOverlay || playlistChooserOpen;
   const lyricsUnavailableForCurrentVideo = lyricsAvailableForCurrentVideo === false;
   const lyricsButtonDisabled = footerActionsBlocked || lyricsUnavailableForCurrentVideo;
   const isUpstreamConnectivityOverlay = unavailableOverlayMessage === UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE;
@@ -3127,19 +3141,20 @@ export function PlayerExperience({
   }
 
   function handlePrevious() {
-    if (hasActivePlaylistSequence && effectivePlaylistIndex !== null) {
-      const previousIndex = (effectivePlaylistIndex - 1 + playlistQueueIds.length) % playlistQueueIds.length;
-      const previousId = playlistQueueIds[previousIndex] ?? null;
+    if (activePlaylistId) {
+      const previousPlaylistTarget = resolvePlaylistStepTarget(-1);
 
-      if (previousId) {
+      if (previousPlaylistTarget) {
         hasUserGesturePlaybackUnlockRef.current = true;
-        pendingAutoAdvanceVideoIdRef.current = previousId;
-        navigateToVideo(previousId, {
+        pendingAutoAdvanceVideoIdRef.current = previousPlaylistTarget.videoId;
+        navigateToVideo(previousPlaylistTarget.videoId, {
           playlistId: activePlaylistId,
-          playlistItemIndex: previousIndex,
+          playlistItemIndex: previousPlaylistTarget.playlistItemIndex,
         });
+        return;
       }
 
+      // A playlist is selected but not ready yet; do not fall back to history.
       return;
     }
 

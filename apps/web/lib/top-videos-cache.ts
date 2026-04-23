@@ -6,11 +6,13 @@ const TOP_VIDEOS_CACHE_TTL_MS = 60_000;
 let cachedTopVideos: VideoRecord[] | null = null;
 let cachedTopVideosExpiresAt = 0;
 let topVideosRefreshPromise: Promise<VideoRecord[]> | null = null;
+let topVideosRefreshCount = 0;
 
 export function invalidateTopVideosCache() {
   cachedTopVideos = null;
   cachedTopVideosExpiresAt = 0;
   topVideosRefreshPromise = null;
+  topVideosRefreshCount = 0;
 }
 
 function uniqueVideosById(videos: VideoRecord[]) {
@@ -30,18 +32,32 @@ function uniqueVideosById(videos: VideoRecord[]) {
 }
 
 function getRefreshPromise(count: number) {
-  if (!topVideosRefreshPromise) {
-    topVideosRefreshPromise = getTopVideos(Math.max(count, 100))
+  const safeCount = Math.max(count, 100);
+  const cached = getCachedTopVideos(safeCount);
+
+  if (cached) {
+    return Promise.resolve(cached);
+  }
+
+  if (topVideosRefreshPromise && topVideosRefreshCount >= safeCount) {
+    return topVideosRefreshPromise;
+  }
+
+  const refreshCount = Math.max(count, 100);
+  const refreshPromise = topVideosRefreshPromise = getTopVideos(Math.max(count, 100))
       .then((videos) => {
         cachedTopVideos = videos;
         cachedTopVideosExpiresAt = Date.now() + TOP_VIDEOS_CACHE_TTL_MS;
         return videos;
       })
       .finally(() => {
-        topVideosRefreshPromise = null;
+        if (topVideosRefreshPromise === refreshPromise) {
+          topVideosRefreshPromise = null;
+          topVideosRefreshCount = 0;
+        }
       });
-  }
 
+  topVideosRefreshCount = refreshCount;
   return topVideosRefreshPromise;
 }
 

@@ -9,6 +9,7 @@ import {
   currentVideoRelatedPoolCache,
   currentVideoRelatedPoolInflight,
 } from "@/lib/current-video-cache";
+import { getTopVideosFast, warmTopVideos } from "@/lib/top-videos-cache";
 
 const CURRENT_VIDEO_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_CATALOG === "1";
 const CURRENT_VIDEO_CACHE_TTL_MS = 20_000;
@@ -24,6 +25,7 @@ const CURRENT_VIDEO_RELATED_POOL_QUERY_EXPANSION_CAP = 5_000;
 const CURRENT_VIDEO_RELATED_OFFSET_MAX = 5_000;
 const WATCH_NEXT_FAVOURITE_BLEND_RATIO = 0.3;
 const ENDED_CHOICE_FAVOURITE_BLEND_RATIO = 0.45;
+const CURRENT_VIDEO_TOP_CACHE_WAIT_MS = 1_200;
 
 type CurrentVideoPayload = {
   currentVideo: Awaited<ReturnType<typeof getCurrentVideo>>;
@@ -142,7 +144,24 @@ function logCurrentVideoRoute(event: string, detail?: Record<string, unknown>) {
   console.log(`[current-video-route] ${event}${payload}`);
 }
 
-async function getRelatedPoolForCurrentVideo(currentVideoId: string, userId: number | undefined, minimumSize: number) {
+async function getCachedTopVideosForCurrentVideo(count: number) {
+  const safeCount = Math.max(1, Math.min(1000, Math.floor(count)));
+  warmTopVideos(safeCount);
+
+  const cached = await getTopVideosFast(safeCount, CURRENT_VIDEO_TOP_CACHE_WAIT_MS);
+  if (cached.length > 0) {
+    return cached;
+  }
+
+  return getTopVideos(safeCount);
+}
+
+async function getRelatedPoolForCurrentVideo(
+  currentVideoId: string,
+  userId: number | undefined,
+  minimumSize: number,
+  favouriteVideos?: Awaited<ReturnType<typeof getFavouriteVideos>>,
+) {
   const targetSize = Math.max(
     CURRENT_VIDEO_RELATED_POOL_BASE_SIZE,
     Math.min(CURRENT_VIDEO_RELATED_POOL_MAX_SIZE, Math.floor(minimumSize)),
@@ -176,28 +195,23 @@ async function getRelatedPoolForCurrentVideo(currentVideoId: string, userId: num
       return deduped.slice(0, targetSize);
     }
 
-    const [baselineTopCandidates, baselineNewestCandidates, unseenCandidates, favouriteCandidates] = await Promise.all([
-      getTopVideos(300),
-      getNewestVideos(200, 0),
+    const topPromise = discoveryCount > 300
+      ? getCachedTopVideosForCurrentVideo(discoveryCount)
+      : getTopVideos(300);
+    const newestPromise = discoveryCount > 300
+      ? getNewestVideos(discoveryCount, 0)
+      : getNewestVideos(200, 0);
+
+    const [topCandidates, newestCandidates, unseenCandidates, favouriteCandidates] = await Promise.all([
+      topPromise,
+      newestPromise,
       getUnseenCatalogVideos({
         userId,
         count: Math.min(500, Math.max(200, Math.floor(targetSize / 2))),
         excludeVideoIds: Array.from(blockedIds),
       }),
-      userId ? getFavouriteVideos(userId) : Promise.resolve([]),
+      favouriteVideos ? Promise.resolve(favouriteVideos) : userId ? getFavouriteVideos(userId) : Promise.resolve([]),
     ]);
-
-    let topCandidates = baselineTopCandidates;
-    let newestCandidates = baselineNewestCandidates;
-
-    if (discoveryCount > 300) {
-      const [expandedTopCandidates, expandedNewestCandidates] = await Promise.all([
-        getTopVideos(discoveryCount),
-        getNewestVideos(discoveryCount, 0),
-      ]);
-      topCandidates = uniqueVideosById([...baselineTopCandidates, ...expandedTopCandidates]);
-      newestCandidates = uniqueVideosById([...baselineNewestCandidates, ...expandedNewestCandidates]);
-    }
 
     const merged = uniqueVideosById([
       ...deduped,
@@ -262,6 +276,9 @@ export async function GET(request: NextRequest) {
     ? ENDED_CHOICE_FAVOURITE_BLEND_RATIO
     : WATCH_NEXT_FAVOURITE_BLEND_RATIO;
   const preferUnseenForEndedChoice = requestMode === "ended-choice" && hideSeenOnly && Boolean(optionalAuth?.userId);
+  const favouriteVideosPromise = optionalAuth?.userId
+    ? getFavouriteVideos(optionalAuth.userId)
+    : Promise.resolve([] as Awaited<ReturnType<typeof getFavouriteVideos>>);
   const cacheKey = `${v ?? "__default__"}:u:${optionalAuth?.userId ?? 0}`;
   const now = Date.now();
 
@@ -357,15 +374,18 @@ export async function GET(request: NextRequest) {
 
     let relatedVideos: Awaited<ReturnType<typeof getRelatedVideos>> = [];
     let hasMoreForCustomRequest: boolean | undefined;
-    const favouriteVideos = optionalAuth?.userId
-      ? await getFavouriteVideos(optionalAuth.userId)
-      : [];
+    const favouriteVideos = await favouriteVideosPromise;
 
     if (usePagedRelatedPool) {
       const poolSizeTarget = requestMode === "ended-choice"
         ? Math.max(1000, requestedRelatedOffset + requestedRelatedCount + 1)
         : requestedRelatedOffset + requestedRelatedCount + 1;
-      const relatedPool = await getRelatedPoolForCurrentVideo(currentVideo.id, optionalAuth?.userId, poolSizeTarget);
+      const relatedPool = await getRelatedPoolForCurrentVideo(
+        currentVideo.id,
+        optionalAuth?.userId,
+        poolSizeTarget,
+        favouriteVideos,
+      );
       let filteredPool = excludedRelatedIds.length > 0
         ? relatedPool.filter((video) => !excludedRelatedIds.includes(video.id))
         : relatedPool;
