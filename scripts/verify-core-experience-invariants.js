@@ -219,6 +219,13 @@ function main() {
   assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .overlayCenter,", "Undocking keeps overlay center pinned to avoid play-button reflow", failures);
   assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndockSettling .overlayCenter {", "Undock settling keeps overlay center pinned", failures);
   assertContains(cssSource, ".playerOverlayVisible .overlayCenter {", "Overlay center visible-state rules are explicitly defined", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop .playerDockLayer {", "Docked desktop player keeps a dedicated dock layer rule", failures);
+  assertContains(cssSource, "position: relative;", "Docked desktop player dock layer preserves relative positioning for transformed frame anchoring", failures);
+  assertContains(cssSource, "overflow: visible;", "Docked desktop player dock layer must remain unclipped so transformed frame can escape parent bounds", failures);
+  assertNotContains(cssSource, "  .playerChromeDockedDesktop .playerDockLayer {\n    position: relative;\n    overflow: hidden;", "Docked desktop player dock layer must never clip transformed frame", failures);
+  assertContains(cssSource, ".heroGridOverlayRoute .playerChrome {", "Overlay route defines dedicated player chrome stacking context", failures);
+  assertContains(cssSource, "overflow: visible;", "Overlay route keeps player chrome overflow visible while docked", failures);
+  assertContains(cssSource, "z-index: 25;", "Overlay route player chrome keeps docked player above occluded rail layers", failures);
   assertContains(cssSource, "pointer-events: auto;", "Overlay controls remain interactive in CSS", failures);
   assertContains(cssSource, ".playerFrame.playerFrameLoading > iframe,", "Loading mask hides direct iframe while player loader is active", failures);
   assertContains(cssSource, ".playerFrame.playerFrameLoading .playerMount iframe {", "Loading mask hides mounted iframe while player loader is active", failures);
