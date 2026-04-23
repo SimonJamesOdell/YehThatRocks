@@ -87,6 +87,7 @@ function main() {
   assertContains(adminVideosRouteSource, "clearCurrentVideoRouteCaches();", "Admin videos PATCH clears current-video route caches after metadata edits", failures);
   assertContains(adminVideosRouteSource, "const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.data.videoId, \"admin-hard-delete\");", "Admin videos DELETE prunes catalog data via shared hard-delete helper", failures);
   assertContains(adminVideosRouteSource, "if (!pruneResult.pruned)", "Admin videos DELETE handles prune failures explicitly", failures);
+  assertContains(adminVideosRouteSource, "return NextResponse.json({ error: \"Could not delete video\", reason: pruneResult.reason }, { status: 409 });", "Admin videos DELETE returns structured prune failure reason payload", failures);
   assertContains(adminVideosRouteSource, "clearCurrentVideoRouteCaches();", "Admin videos DELETE clears current-video route caches after successful deletion", failures);
   assertContains(adminVideosRouteSource, "return NextResponse.json({ ok: true, deletedVideoRows: pruneResult.deletedVideoRows });", "Admin videos DELETE returns deleted row count on success", failures);
   assertContains(adminArtistsRouteSource, "const artists = await prisma.artist.findMany({", "Admin artists API reads via Prisma artist model", failures);
@@ -104,6 +105,8 @@ function main() {
   // Shared cache helpers must exist so admin edit invalidation is centralized.
   assertContains(catalogDataSource, "export function clearCatalogVideoCaches()", "Catalog data exposes shared video cache clear helper", failures);
   assertContains(catalogDataSource, "relatedVideosCache.clear();", "Catalog cache helper clears related video cache", failures);
+  assertContains(catalogDataSource, "if (reason === \"admin-hard-delete\") {", "Catalog prune helper handles admin hard-delete reason", failures);
+  assertContains(catalogDataSource, "${\"admin-deleted\"}", "Catalog prune helper writes admin-deleted rejection reason", failures);
   assertContains(currentVideoCacheSource, "export function clearCurrentVideoRouteCaches()", "Current-video cache module exposes shared route cache clear helper", failures);
   assertContains(currentVideoCacheSource, "currentVideoRelatedPoolCache.clear();", "Current-video cache helper clears related pool cache", failures);
 

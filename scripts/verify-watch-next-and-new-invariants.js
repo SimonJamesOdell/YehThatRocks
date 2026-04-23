@@ -18,6 +18,8 @@ const files = {
   seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
   seenToggleData: path.join(ROOT, "apps/web/lib/seen-toggle-preference-data.ts"),
   apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
+  newestRoute: path.join(ROOT, "apps/web/app/api/videos/newest/route.ts"),
+  schema: path.join(ROOT, "prisma/schema.prisma"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
@@ -56,6 +58,8 @@ function main() {
   const seenToggleRouteSource = read(files.seenToggleRoute);
   const seenToggleDataSource = read(files.seenToggleData);
   const apiSchemasSource = read(files.apiSchemas);
+  const newestRouteSource = read(files.newestRoute);
+  const schemaSource = read(files.schema);
   const cssSource = read(files.css);
 
   // Watch Next load-more invariants.
@@ -116,6 +120,13 @@ function main() {
   assertContains(catalogDataSource, "const useSharedRelatedCache = excludedIds.size === 0;", "Related videos cache is reused for any exclude-free request size", failures);
   assertContains(catalogDataSource, "if (cached && cached.expiresAt > now && cached.videos.length >= requestedCount)", "Related videos cache serves larger pooled recommendation requests", failures);
   assertContains(catalogDataSource, "const newestPromise = getNewestVideos(50).then((videos) =>", "Related videos reuse newest helper instead of issuing a duplicate newest scan", failures);
+  assertContains(catalogDataSource, "if (await isRejectedVideo(normalizedVideoId)) {", "Hydration path fast-exits for rejected videos before external API calls", failures);
+  assertContains(catalogDataSource, "await persistRejectedVideo(video.id, availability.reason || \"unavailable\");", "Unavailable videos are persisted into rejected video blocklist", failures);
+  assertContains(catalogDataSource, "SELECT video_id FROM rejected_videos WHERE video_id IN", "Existing-catalog check includes rejected video ids", failures);
+  assertContains(catalogDataSource, "if (reason === \"admin-hard-delete\") {", "Hard-delete path applies admin-specific reject blocklist handling", failures);
+  assertContains(catalogDataSource, "VALUES (${normalizedVideoId}, ${\"admin-deleted\"}, ${new Date()})", "Admin hard-delete writes admin-deleted reason to rejected table", failures);
+  assertContains(catalogDataSource, "ORDER BY v.created_at DESC, v.id DESC", "Newest ranking is anchored on created_at then id", failures);
+  assertContains(catalogDataSource, "ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC", "Newest logic retains explicit legacy timestamp fallback path", failures);
   assertContains(catalogDataSource, "const admissionDecision = admissionRow ? evaluatePlaybackMetadataEligibility(admissionRow) : null;", "Related cascade evaluates metadata eligibility before admitting discovered videos", failures);
   assertContains(catalogDataSource, "!admissionRow || !Boolean(admissionRow.hasAvailable) || !admissionDecision?.allowed", "Related cascade requires available embed + metadata eligibility", failures);
   assertContains(catalogDataSource, "await pruneVideoAndAssociationsByVideoId(candidate.id, \"related-cascade-strict-admission\").catch(() => undefined);", "Related cascade prunes candidates that fail strict admission", failures);
@@ -152,6 +163,11 @@ function main() {
   assertContains(newLoadingSource, "Loading new videos...", "New route exposes a dedicated loading state", failures);
   assertContains(newVideosLoaderSource, "fetch(`/api/videos/newest?skip=${skip}&take=${take}`", "New videos loader uses offset/take pagination for batch fetches", failures);
   assertContains(newVideosLoaderSource, "const payload = (await response.json()) as NewVideosApiPayload;", "New videos loader parses newest API pagination metadata", failures);
+  assertContains(newestRouteSource, "const probedVideos = await getNewestVideos(probeTake, skip, {", "Newest API probes one extra row to calculate hasMore", failures);
+  assertContains(newestRouteSource, "enforcePlaybackAvailability: true,", "Newest API enforces playback availability", failures);
+  assertContains(newestRouteSource, "const hasMore = probedVideos.length > take;", "Newest API derives hasMore from probed count", failures);
+  assertContains(newestRouteSource, "const nextOffset = skip + videos.length;", "Newest API returns nextOffset derived from emitted rows", failures);
+  assertContains(newestRouteSource, "nextOffset,", "Newest API response includes nextOffset", failures);
   assertContains(newVideosLoaderSource, "nextOffsetRef.current = Number.isFinite(nextOffset) ? nextOffset : skip + received;", "New videos loader advances offset using API-provided nextOffset when available", failures);
   assertContains(newVideosLoaderSource, "const NEW_INITIAL_BATCH_SIZE = 12;", "New videos loader uses smaller initial lazy-load batches", failures);
   assertContains(newVideosLoaderSource, "const NEW_STARTUP_PREFETCH_TARGET = 100;", "New videos loader preloads a 100-video startup runway", failures);
@@ -213,6 +229,11 @@ function main() {
   // so that the card height stays consistent and the thumbnail column is not pushed wider.
   assertContains(cssSource, "-webkit-line-clamp: 2;", "Watch Next card title clamped to 2 lines", failures);
   assertContains(cssSource, ".relatedCardSlot .relatedCard h3", "Watch Next card h3 has its own CSS rule", failures);
+
+  // Data-model invariants for New ordering and rejected table support.
+  assertContains(schemaSource, "@@index([createdAt(sort: Desc), id(sort: Desc)], map: \"idx_videos_created_at_id\")", "Schema keeps deterministic videos created_at/id index for New ordering", failures);
+  assertContains(schemaSource, "model RejectedVideo {", "Schema defines rejected video blocklist table", failures);
+  assertContains(schemaSource, "@@map(\"rejected_videos\")", "Rejected video model maps to rejected_videos table", failures);
 
   if (failures.length > 0) {
     console.error("Watch Next + New invariant check failed.");
