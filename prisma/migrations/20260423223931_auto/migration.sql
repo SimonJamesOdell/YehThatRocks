@@ -1,2 +1,2 @@
--- CreateIndex
-CREATE INDEX `idx_videos_created_at_id` ON `videos`(`created_at` DESC, `id` DESC);
+-- No-op: index already created by 20260423000000_add_videos_created_at_index
+-- This migration file was auto-generated as a duplicate and has been emptied.
