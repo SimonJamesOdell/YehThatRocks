@@ -298,7 +298,7 @@ model RejectedVideo {
   id         Int      @id @default(autoincrement())
   videoId    String   @unique @map("video_id") @db.VarChar(32)
   reason     String   @db.VarChar(100)
-  rejectedAt DateTime @default(now()) @map("rejected_at") @db.DateTime
+  rejectedAt DateTime @default(now()) @map("rejected_at") @db.Timestamp
 
   @@index([videoId], map: "idx_rejected_videos_video_id")
   @@map("rejected_videos")
