@@ -1365,6 +1365,7 @@ h1 {
 @media (min-width: 1181px) {
   .heroGridOverlayRoute .playerChrome {
     overflow: visible;
+    z-index: 25;
   }
 
   .heroGridAdminOverlayRoute .playerChrome {
