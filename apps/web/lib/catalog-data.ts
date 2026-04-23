@@ -3806,6 +3806,22 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
 
   await clearGenreCardThumbnailForVideo(normalizedVideoId);
 
+  if (reason === "admin-hard-delete") {
+    try {
+      await prisma.$executeRaw`
+        INSERT INTO rejected_videos (video_id, reason, rejected_at)
+        VALUES (${normalizedVideoId}, ${"admin-deleted"}, ${new Date()})
+        ON DUPLICATE KEY UPDATE reason = VALUES(reason), rejected_at = VALUES(rejected_at)
+      `;
+      rejectedVideoCache.set(normalizedVideoId, {
+        expiresAt: Date.now() + REJECTED_VIDEO_CACHE_TTL_MS,
+        rejected: true,
+      });
+    } catch {
+      // Best-effort only; hard-delete should not fail if rejected_videos write fails.
+    }
+  }
+
   // Reset hot caches so lists immediately reflect the prune.
   clearCatalogVideoCaches();
 
