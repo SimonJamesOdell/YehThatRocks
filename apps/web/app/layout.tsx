@@ -12,10 +12,35 @@ const metalMania = Metal_Mania({
   variable: "--font-display"
 });
 
+const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
+const DEFAULT_SHARE_IMAGE = "/images/guitar_back.png";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_ORIGIN),
   title: "YehThatRocks | The World's LOUDEST Website",
   description:
-    "Community-driven rock and metal streaming, discovery, chat, and catalogue depth rebuilt for the modern web."
+    "Community-driven rock and metal streaming, discovery, chat, and catalogue depth rebuilt for the modern web.",
+  openGraph: {
+    title: "YehThatRocks | The World's LOUDEST Website",
+    description:
+      "Community-driven rock and metal streaming, discovery, chat, and catalogue depth rebuilt for the modern web.",
+    url: "/",
+    siteName: "YehThatRocks",
+    type: "website",
+    images: [
+      {
+        url: DEFAULT_SHARE_IMAGE,
+        alt: "YehThatRocks background artwork",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "YehThatRocks | The World's LOUDEST Website",
+    description:
+      "Community-driven rock and metal streaming, discovery, chat, and catalogue depth rebuilt for the modern web.",
+    images: [DEFAULT_SHARE_IMAGE],
+  },
 };
 
 export default function RootLayout({
