@@ -173,7 +173,8 @@ const CATALOG_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.
 const PLAYBACK_DECISION_CACHE_TTL_MS = 15_000;
 const playbackDecisionCache = new Map<string, CachedPlaybackDecision>();
 const ALLOWED_VIDEO_TYPES = new Set(["official", "lyric", "live", "cover", "remix", "fan"]);
-const NON_MUSIC_SIGNAL_PATTERN = /\b(instagram|tiktok|facebook|whatsapp|snapchat|podcast|interview|prank|challenge|reaction|vlog|tutorial|gameplay|livestream|stream highlights?|shorts?)\b/i;
+const NON_MUSIC_SIGNAL_PATTERN = /\b(instagram|tiktok|facebook|whatsapp|snapchat|podcast|interview|prank|challenge|reaction|vlog|tutorial|gameplay|livestream|stream highlights?|shorts?|sermon|khutbah|tafsir|quran|qur'an|recitation|dua|nasheed|bhajan|kirtan|pravachan|speech|lecture|talk show|news bulletin)\b/i;
+const ROCK_METAL_GENRE_PATTERN = /\b(rock|metal|hard rock|heavy metal|thrash|death metal|black metal|doom metal|metalcore|deathcore|nu metal|alternative rock|alt rock|progressive rock|progressive metal|punk rock|post[- ]?hardcore|grunge)\b/i;
 
 let hasCheckedVideoMetadataColumns = false;
 let videoMetadataColumnsAvailable = false;
@@ -194,7 +195,11 @@ function containsAgeRestrictionMarker(html: string) {
 }
 
 function isLikelyNonMusicSignal(row: PlaybackDecisionRow) {
-  const haystack = `${row.title}\n${row.description ?? ""}`;
+  return isLikelyNonMusicText(row.title, row.description ?? "");
+}
+
+function isLikelyNonMusicText(title: string, description: string) {
+  const haystack = `${title}\n${description}`;
   return NON_MUSIC_SIGNAL_PATTERN.test(haystack);
 }
 
@@ -332,6 +337,35 @@ function normalizeLooseToken(value: string | null | undefined) {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function computeArtistChannelConfidenceDelta(artist: string | null | undefined, channelTitle: string | null | undefined) {
+  const normalizedArtist = normalizeLooseToken(artist);
+  const normalizedChannel = normalizeLooseToken(channelTitle);
+
+  if (!normalizedArtist || !normalizedChannel) {
+    return 0;
+  }
+
+  if (["youtube", "unknown artist", "unknown"].includes(normalizedChannel)) {
+    return 0;
+  }
+
+  const artistNeedle = ` ${normalizedArtist} `;
+  const channelHaystack = ` ${normalizedChannel} `;
+  if (channelHaystack.includes(artistNeedle)) {
+    return 0.05;
+  }
+
+  const artistTerms = normalizedArtist.split(" ").filter(Boolean);
+  if (artistTerms.length >= 2) {
+    const overlap = artistTerms.filter((term) => channelHaystack.includes(` ${term} `)).length;
+    if (overlap >= Math.max(1, Math.floor(artistTerms.length / 2))) {
+      return 0.03;
+    }
+  }
+
+  return -0.05;
 }
 
 function parseSimpleTitleSides(title: string) {
@@ -562,6 +596,7 @@ function buildGroqMetadataPrompt(video: PersistableVideoRecord) {
     "Return JSON only with keys:",
     '{"artist":string|null,"track":string|null,"videoType":"official"|"lyric"|"live"|"cover"|"remix"|"fan"|"unknown","confidence":number,"reason":string}',
     "Rules:",
+    "- YehThatRocks is a rock/metal catalog. If this is clearly non-rock/non-metal or non-music, return artist=null, track=null, confidence<=0.4 and explain why.",
     "- artist must be the performing artist/band.",
     "- track must be song title only.",
     "- Do not include venue, city, date, official video, remaster, lyrics, HD in artist or track.",
@@ -726,14 +761,45 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
 
     const correctedArtist = parsed.artist;
     const correctedTrack = parsed.track;
-    const artistKnown = correctedArtist ? await isKnownArtistName(correctedArtist) : false;
-    const adjustedConfidence = artistKnown
-      ? Math.max(parsed.confidence ?? 0, 0.9)
-      : parsed.confidence;
+    const artistEvidence = correctedArtist
+      ? await getArtistCatalogEvidence(correctedArtist)
+      : { known: false, rockOrMetalGenreMatch: false };
+    const confidenceNotes: string[] = [];
+    let adjustedConfidence = Number(parsed.confidence ?? 0);
+
+    if (artistEvidence.known) {
+      adjustedConfidence = Math.max(adjustedConfidence, 0.88);
+      confidenceNotes.push("Artist matched known artists catalog.");
+
+      if (!artistEvidence.rockOrMetalGenreMatch) {
+        adjustedConfidence = Math.min(adjustedConfidence, 0.74);
+        confidenceNotes.push("Known artist lacks strong rock/metal genre evidence.");
+      }
+    }
+
+    const channelDelta = computeArtistChannelConfidenceDelta(correctedArtist, video.channelTitle);
+    if (channelDelta > 0) {
+      adjustedConfidence += channelDelta;
+      confidenceNotes.push("Artist token matched channel title.");
+    } else if (channelDelta < 0) {
+      adjustedConfidence += channelDelta;
+      confidenceNotes.push("Channel title did not match parsed artist.");
+    }
+
+    if (isLikelyNonMusicText(video.title, video.description ?? "")) {
+      adjustedConfidence = Math.min(adjustedConfidence, 0.72);
+      confidenceNotes.push("Title/description include non-music indicators.");
+    }
+
+    const mojibakeScore = scoreLikelyMojibake(video.title);
+    if (mojibakeScore >= 8) {
+      adjustedConfidence = Math.min(adjustedConfidence, 0.76);
+      confidenceNotes.push("Title appears strongly mojibake-corrupted.");
+    }
+
+    adjustedConfidence = Math.max(0, Math.min(1, adjustedConfidence));
     const correctedReasonBase = parsed.reason;
-    const correctedReason = artistKnown
-      ? `${correctedReasonBase ?? ""}${correctedReasonBase ? " | " : ""}Artist matched known artists catalog.`
-      : correctedReasonBase;
+    const correctedReason = [correctedReasonBase, ...confidenceNotes].filter(Boolean).join(" | ");
     const existingTitle = normalizeParsedString(existingMeta?.title, 255) ?? truncate(video.title, 255);
     const nextPersistedTitle = buildAugmentedTitleFromParsedMetadata(
       existingTitle,
@@ -763,7 +829,9 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
       artist: correctedArtist,
       track: correctedTrack,
       confidence: adjustedConfidence,
-      artistKnown,
+      artistKnown: artistEvidence.known,
+      artistRockMetal: artistEvidence.rockOrMetalGenreMatch,
+      channelDelta,
     });
 
     if (correctedArtist) {
@@ -1025,6 +1093,8 @@ let videoArtistNormalizationColumnCache: string | null | undefined;
 let artistVideoStatsSourceCache: "videosbyartist" | "parsedArtist" | undefined;
 const KNOWN_ARTIST_MATCH_CACHE_TTL_MS = 10 * 60 * 1000;
 const knownArtistMatchCache = new Map<string, { expiresAt: number; known: boolean }>();
+const ARTIST_CATALOG_EVIDENCE_CACHE_TTL_MS = 10 * 60 * 1000;
+const artistCatalogEvidenceCache = new Map<string, { expiresAt: number; known: boolean; rockOrMetalGenreMatch: boolean }>();
 let artistStatsProjectionAvailabilityCache:
   | {
       checkedAt: number;
@@ -2183,7 +2253,7 @@ function getRelatedFanoutForDepth(depth: number) {
   return Math.max(1, Math.min(8, value));
 }
 
-async function discoverRelatedVideosCascade(seedVideoId: string, options?: { maxDepth?: number; maxNewVideos?: number }) {
+export async function discoverRelatedVideosCascade(seedVideoId: string, options?: { maxDepth?: number; maxNewVideos?: number }) {
   if (!ENABLE_YOUTUBE_RELATED_DISCOVERY || !hasDatabaseUrl()) {
     return { fetchedNodes: 0, discoveredNewVideos: 0 };
   }
@@ -2250,6 +2320,42 @@ async function discoverRelatedVideosCascade(seedVideoId: string, options?: { max
         continue;
       }
 
+      const admissionRows = await prisma.$queryRaw<Array<PlaybackDecisionRow>>`
+        SELECT
+          v.id,
+          v.title,
+          v.description,
+          v.parsedArtist,
+          v.parsedTrack,
+          v.parsedVideoType,
+          v.parseConfidence,
+          EXISTS (
+            SELECT 1
+            FROM site_videos sv
+            WHERE sv.video_id = v.id
+              AND sv.status = 'available'
+          ) AS hasAvailable,
+          EXISTS (
+            SELECT 1
+            FROM site_videos sv
+            WHERE sv.video_id = v.id
+              AND (sv.status IS NULL OR sv.status <> 'available')
+          ) AS hasBlocked
+        FROM videos v
+        WHERE v.videoId = ${candidate.id}
+        ORDER BY v.updated_at DESC, v.id DESC
+        LIMIT 1
+      `;
+
+      const admissionRow = admissionRows[0];
+      const admissionDecision = admissionRow ? evaluatePlaybackMetadataEligibility(admissionRow) : null;
+
+      // Keep related-discovery admissions strict so cascade matches direct playback standards.
+      if (!admissionRow || !Boolean(admissionRow.hasAvailable) || !admissionDecision?.allowed) {
+        await pruneVideoAndAssociationsByVideoId(candidate.id, "related-cascade-strict-admission").catch(() => undefined);
+        continue;
+      }
+
       discoveredNewVideos += 1;
 
       if (current.depth + 1 < maxDepth) {
@@ -2267,6 +2373,64 @@ async function discoverRelatedVideosCascade(seedVideoId: string, options?: { max
   });
 
   return { fetchedNodes, discoveredNewVideos };
+}
+
+/**
+ * Runs a batch of shallow related-video backfills within a given API unit budget.
+ * Each seed consumes ~100 units (one search.list relatedToVideoId call).
+ * Seeds are videos in the catalog that have no related cache entry yet.
+ * Up to `BACKFILL_CONCURRENCY` seeds are processed in parallel.
+ */
+const BACKFILL_CONCURRENCY = 5;
+
+export async function runQuotaBackfill(budgetUnits: number): Promise<{
+  seedsAttempted: number;
+  fetchedNodes: number;
+  discoveredNewVideos: number;
+  unitsEstimated: number;
+}> {
+  const empty = { seedsAttempted: 0, fetchedNodes: 0, discoveredNewVideos: 0, unitsEstimated: 0 };
+
+  if (!hasDatabaseUrl() || !ENABLE_YOUTUBE_RELATED_DISCOVERY) {
+    return empty;
+  }
+
+  const maxSeeds = Math.max(0, Math.floor(budgetUnits / 100));
+  if (maxSeeds === 0) {
+    return empty;
+  }
+
+  const seeds = await prisma.$queryRaw<Array<{ videoId: string }>>`
+    SELECT v.videoId FROM videos v
+    WHERE NOT EXISTS (SELECT 1 FROM related r WHERE r.videoId = v.videoId)
+    LIMIT ${maxSeeds}
+  `;
+
+  if (seeds.length === 0) {
+    return empty;
+  }
+
+  let totalFetchedNodes = 0;
+  let totalDiscoveredNewVideos = 0;
+
+  for (let i = 0; i < seeds.length; i += BACKFILL_CONCURRENCY) {
+    const chunk = seeds.slice(i, i + BACKFILL_CONCURRENCY);
+    const results = await Promise.all(
+      chunk.map(({ videoId }) => discoverRelatedVideosCascade(videoId, { maxDepth: 1 })),
+    );
+
+    for (const result of results) {
+      totalFetchedNodes += result.fetchedNodes;
+      totalDiscoveredNewVideos += result.discoveredNewVideos;
+    }
+  }
+
+  return {
+    seedsAttempted: seeds.length,
+    fetchedNodes: totalFetchedNodes,
+    discoveredNewVideos: totalDiscoveredNewVideos,
+    unitsEstimated: totalFetchedNodes * 100,
+  };
 }
 
 async function hydrateAndPersistVideo(
@@ -3181,23 +3345,37 @@ function getArtistNameNormalizationExpr(alias: string, columns: { name: string; 
 }
 
 async function isKnownArtistName(artistName: string) {
+  const evidence = await getArtistCatalogEvidence(artistName);
+  return evidence.known;
+}
+
+async function getArtistCatalogEvidence(artistName: string) {
   const normalized = artistName.trim().toLowerCase();
   if (!normalized || !hasDatabaseUrl()) {
-    return false;
+    return { known: false, rockOrMetalGenreMatch: false };
   }
 
   const now = Date.now();
+  const evidenceCached = artistCatalogEvidenceCache.get(normalized);
+  if (evidenceCached && evidenceCached.expiresAt > now) {
+    return { known: evidenceCached.known, rockOrMetalGenreMatch: evidenceCached.rockOrMetalGenreMatch };
+  }
+
   const cached = knownArtistMatchCache.get(normalized);
   if (cached && cached.expiresAt > now) {
-    return cached.known;
+    return { known: cached.known, rockOrMetalGenreMatch: false };
   }
 
   try {
     const columns = await getArtistColumnMap();
     const artistNameNormExpr = getArtistNameNormalizationExpr("a", columns);
-    const rows = await prisma.$queryRawUnsafe<Array<{ matchCount: number }>>(
+    const genreExpr = columns.genreColumns.length > 0
+      ? `CONCAT_WS(' ', ${columns.genreColumns.map((column) => `a.${escapeSqlIdentifier(column)}`).join(", ")})`
+      : "''";
+    const rows = await prisma.$queryRawUnsafe<Array<{ matchCount: number; genreBlob: string | null }>>(
       `
-        SELECT COUNT(*) AS matchCount
+        SELECT COUNT(*) AS matchCount,
+               ${genreExpr} AS genreBlob
         FROM artists a
         WHERE ${artistNameNormExpr} = ?
         LIMIT 1
@@ -3206,13 +3384,23 @@ async function isKnownArtistName(artistName: string) {
     );
 
     const known = Number(rows[0]?.matchCount ?? 0) > 0;
+    const genreBlob = (rows[0]?.genreBlob ?? "").trim();
+    const rockOrMetalGenreMatch = known && ROCK_METAL_GENRE_PATTERN.test(genreBlob);
+
     knownArtistMatchCache.set(normalized, {
       expiresAt: now + KNOWN_ARTIST_MATCH_CACHE_TTL_MS,
       known,
     });
-    return known;
+
+    artistCatalogEvidenceCache.set(normalized, {
+      expiresAt: now + ARTIST_CATALOG_EVIDENCE_CACHE_TTL_MS,
+      known,
+      rockOrMetalGenreMatch,
+    });
+
+    return { known, rockOrMetalGenreMatch };
   } catch {
-    return false;
+    return { known: false, rockOrMetalGenreMatch: false };
   }
 }
 

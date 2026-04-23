@@ -116,6 +116,17 @@ function main() {
   assertContains(catalogDataSource, "const useSharedRelatedCache = excludedIds.size === 0;", "Related videos cache is reused for any exclude-free request size", failures);
   assertContains(catalogDataSource, "if (cached && cached.expiresAt > now && cached.videos.length >= requestedCount)", "Related videos cache serves larger pooled recommendation requests", failures);
   assertContains(catalogDataSource, "const newestPromise = getNewestVideos(50).then((videos) =>", "Related videos reuse newest helper instead of issuing a duplicate newest scan", failures);
+  assertContains(catalogDataSource, "const admissionDecision = admissionRow ? evaluatePlaybackMetadataEligibility(admissionRow) : null;", "Related cascade evaluates metadata eligibility before admitting discovered videos", failures);
+  assertContains(catalogDataSource, "!admissionRow || !Boolean(admissionRow.hasAvailable) || !admissionDecision?.allowed", "Related cascade requires available embed + metadata eligibility", failures);
+  assertContains(catalogDataSource, "await pruneVideoAndAssociationsByVideoId(candidate.id, \"related-cascade-strict-admission\").catch(() => undefined);", "Related cascade prunes candidates that fail strict admission", failures);
+  assertContains(catalogDataSource, "const ROCK_METAL_GENRE_PATTERN =", "Catalog classifier defines explicit rock/metal genre evidence pattern", failures);
+  assertContains(catalogDataSource, "function computeArtistChannelConfidenceDelta", "Catalog classifier computes artist/channel consistency confidence delta", failures);
+  assertContains(catalogDataSource, "const artistEvidence = correctedArtist", "Runtime metadata persistence derives internal artist evidence for confidence tuning", failures);
+  assertContains(catalogDataSource, "Known artist lacks strong rock/metal genre evidence.", "Runtime metadata persistence penalizes known artists without rock/metal evidence", failures);
+  assertContains(catalogDataSource, "Artist token matched channel title.", "Runtime metadata persistence boosts confidence when channel and artist align", failures);
+  assertContains(catalogDataSource, "if (isLikelyNonMusicText(video.title, video.description ?? \"\"))", "Runtime metadata persistence applies non-music confidence dampening", failures);
+  assertContains(catalogDataSource, "const mojibakeScore = scoreLikelyMojibake(video.title);", "Runtime metadata persistence uses mojibake score to dampen confidence", failures);
+  assertContains(catalogDataSource, "YehThatRocks is a rock/metal catalog.", "Groq metadata prompt encodes rock/metal-only extraction intent", failures);
 
   // Docked autoplay route-queue invariants.
   assertContains(playerExperienceSource, "const [routeAutoplayQueueIds, setRouteAutoplayQueueIds] = useState<string[]>([]);", "Player tracks route-scoped autoplay queue ids", failures);
@@ -174,6 +185,9 @@ function main() {
   assertContains(newVideosLoaderSource, "if (received === 0 && (payload.hasMore === false || emptyBatchStreakRef.current >= 2)) {", "New videos loader only stops after explicit exhaustion or repeated empty batches", failures);
   assertContains(newVideosLoaderSource, "const NewVideoRow = memo(function NewVideoRow", "New videos loader memoizes row wrapper to reduce append-time rerenders", failures);
   assertContains(newVideosLoaderSource, "filterHiddenVideos", "New videos loader filters hidden videos", failures);
+  assertContains(newVideosLoaderSource, 'window.addEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);', "New videos loader subscribes to catalog-deleted event for live removals", failures);
+  assertContains(newVideosLoaderSource, 'return () => window.removeEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);', "New videos loader unsubscribes from catalog-deleted event", failures);
+  assertContains(newVideosLoaderSource, "allVideoIdsRef.current.delete(deletedId);", "New videos loader updates id index after catalog-deleted event", failures);
   assertNotContains(newVideosLoaderSource, "sortVideosBySeen(", "New videos loader does not reorder rows by seen state", failures);
   assertNotContains(newVideosLoaderSource, "/api/watch-history", "New videos loader does not pad with watch-history rows", failures);
 

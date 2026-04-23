@@ -85,6 +85,10 @@ function main() {
   assertContains(adminVideosRouteSource, 'import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";', "Admin videos API imports shared current-video cache invalidation helper", failures);
   assertContains(adminVideosRouteSource, "clearCatalogVideoCaches();", "Admin videos PATCH clears catalog-side video caches after metadata edits", failures);
   assertContains(adminVideosRouteSource, "clearCurrentVideoRouteCaches();", "Admin videos PATCH clears current-video route caches after metadata edits", failures);
+  assertContains(adminVideosRouteSource, "const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.data.videoId, \"admin-hard-delete\");", "Admin videos DELETE prunes catalog data via shared hard-delete helper", failures);
+  assertContains(adminVideosRouteSource, "if (!pruneResult.pruned)", "Admin videos DELETE handles prune failures explicitly", failures);
+  assertContains(adminVideosRouteSource, "clearCurrentVideoRouteCaches();", "Admin videos DELETE clears current-video route caches after successful deletion", failures);
+  assertContains(adminVideosRouteSource, "return NextResponse.json({ ok: true, deletedVideoRows: pruneResult.deletedVideoRows });", "Admin videos DELETE returns deleted row count on success", failures);
   assertContains(adminArtistsRouteSource, "const artists = await prisma.artist.findMany({", "Admin artists API reads via Prisma artist model", failures);
   assertContains(adminArtistsRouteSource, "orderBy: { name: \"asc\" }", "Admin artists API keeps alphabetical ordering", failures);
 

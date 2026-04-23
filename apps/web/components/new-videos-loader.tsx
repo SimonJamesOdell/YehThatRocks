@@ -141,6 +141,8 @@ export function NewVideosLoader({
   const [suggestArtist, setSuggestArtist] = useState("");
   const [suggestTrack, setSuggestTrack] = useState("");
   const [suggestPending, setSuggestPending] = useState(false);
+  const [suggestQuotaStatusPending, setSuggestQuotaStatusPending] = useState(false);
+  const [suggestQuotaExhausted, setSuggestQuotaExhausted] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
   const [suggestOutcome, setSuggestOutcome] = useState<SuggestOutcome | null>(null);
   const [isCreatingPlaylistFromNew, setIsCreatingPlaylistFromNew] = useState(false);
@@ -169,6 +171,21 @@ export function NewVideosLoader({
   useEffect(() => {
     allVideoIdsRef.current = new Set(allVideos.map((video) => video.id));
   }, [allVideos]);
+
+  useEffect(() => {
+    function handleCatalogDeleted(event: Event) {
+      const deletedId = (event as CustomEvent<{ videoId: string }>).detail?.videoId;
+      if (!deletedId) {
+        return;
+      }
+
+      setAllVideos((current) => current.filter((v) => v.id !== deletedId));
+      allVideoIdsRef.current.delete(deletedId);
+    }
+
+    window.addEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);
+    return () => window.removeEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);
+  }, []);
 
   useEffect(() => {
     hasMoreRef.current = hasMore;
@@ -593,12 +610,48 @@ export function NewVideosLoader({
     setSuggestOutcome(null);
   };
 
+  const refreshSuggestQuotaStatus = async () => {
+    if (!isAuthenticated) {
+      setSuggestQuotaExhausted(false);
+      return;
+    }
+
+    setSuggestQuotaStatusPending(true);
+
+    try {
+      const response = await fetch("/api/videos/suggest", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            ok?: boolean;
+            quotaExhausted?: boolean;
+          }
+        | null;
+
+      if (response.ok && payload?.ok) {
+        setSuggestQuotaExhausted(Boolean(payload.quotaExhausted));
+      }
+    } catch {
+      // Best effort status check only.
+    } finally {
+      setSuggestQuotaStatusPending(false);
+    }
+  };
+
   const resetSuggestForAnother = () => {
     setSuggestSource("");
     setSuggestArtist("");
     setSuggestTrack("");
     setSuggestError(null);
     setSuggestOutcome(null);
+
+    if (suggestQuotaExhausted) {
+      return;
+    }
   };
 
   const watchSuggestedVideoNow = () => {
@@ -654,11 +707,15 @@ export function NewVideosLoader({
             artist?: string | null;
             track?: string | null;
             queuedVideoCount?: number;
+            errorCode?: string;
             decision?: { message?: string };
           }
         | null;
 
       if (!response.ok || !payload?.ok) {
+        if (payload?.errorCode === "youtube-quota-exhausted") {
+          setSuggestQuotaExhausted(true);
+        }
         setSuggestError(payload?.error || "Could not submit suggestion. Please try again.");
         return;
       }
@@ -769,7 +826,9 @@ export function NewVideosLoader({
                 setSuggestTrack("");
                 setSuggestOutcome(null);
                 setSuggestError(null);
+                setSuggestQuotaExhausted(false);
                 setIsSuggestModalOpen(true);
+                void refreshSuggestQuotaStatus();
               }}
             >
               + Suggest New
@@ -878,6 +937,17 @@ export function NewVideosLoader({
               Accepted formats: <strong>watch URLs</strong>, <strong>short URLs</strong>, <strong>video IDs</strong>, and <strong>playlist URLs</strong>.
             </p>
 
+            {suggestQuotaExhausted ? (
+              <div className="suggestNewModalResult suggestNewModalResult-rejected" role="status" aria-live="polite">
+                <p className="suggestNewModalResultTitle">YouTube API credits exhausted</p>
+                <p className="suggestNewModalResultDetail">
+                  Suggest New is temporarily unavailable because the YouTube API daily quota is exhausted. Please try again later.
+                </p>
+              </div>
+            ) : null}
+
+            {!suggestQuotaExhausted ? (
+              <>
             <label className="newFlagModalField suggestNewModalField" htmlFor="suggest-new-source">
               YouTube URL or Video ID
             </label>
@@ -918,6 +988,8 @@ export function NewVideosLoader({
               maxLength={255}
             />
             </div>
+              </>
+            ) : null}
 
             {suggestError ? <p className="newFlagModalStatus suggestNewModalStatus">{suggestError}</p> : null}
 
@@ -950,6 +1022,21 @@ export function NewVideosLoader({
                 </button>
                 <button type="button" onClick={resetSuggestForAnother} disabled={suggestPending}>
                   Suggest another
+                </button>
+              </div>
+            ) : suggestQuotaExhausted ? (
+              <div className="newFlagModalActions suggestNewModalActions">
+                <button type="button" onClick={closeSuggestModal} disabled={suggestPending || suggestQuotaStatusPending}>
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void refreshSuggestQuotaStatus();
+                  }}
+                  disabled={suggestPending || suggestQuotaStatusPending}
+                >
+                  {suggestQuotaStatusPending ? "Checking..." : "Check again"}
                 </button>
               </div>
             ) : (

@@ -16,6 +16,7 @@ const files = {
   shareMetadata: path.join(ROOT, "apps/web/lib/share-metadata.ts"),
   chatSharedVideo: path.join(ROOT, "apps/web/lib/chat-shared-video.ts"),
   artistWikiLink: path.join(ROOT, "apps/web/components/artist-wiki-link.tsx"),
+  adminVideoDeleteButton: path.join(ROOT, "apps/web/components/admin-video-delete-button.tsx"),
   seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
   statusPerformanceRoute: path.join(ROOT, "apps/web/app/api/status/performance/route.ts"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
@@ -54,6 +55,7 @@ function main() {
   const shareMetadataSource = read(files.shareMetadata);
   const chatSharedVideoSource = read(files.chatSharedVideo);
   const artistWikiLinkSource = read(files.artistWikiLink);
+  const adminVideoDeleteButtonSource = read(files.adminVideoDeleteButton);
   const seenToggleRouteSource = read(files.seenToggleRoute);
   const statusPerformanceRouteSource = read(files.statusPerformanceRoute);
   const cssSource = read(files.css);
@@ -189,6 +191,12 @@ function main() {
   assertContains(playerExperienceSource, "const [localTitleOverride, setLocalTitleOverride] = useState<string | null>(null);", "Player keeps a local title override for immediate admin edit feedback", failures);
   assertContains(playerExperienceSource, "const displayTitle = localTitleOverride ?? currentVideo.title;", "Player uses title override for immediate UI updates", failures);
   assertContains(playerExperienceSource, "setLocalTitleOverride(adminEditTitle);", "Player applies admin title update locally immediately after save", failures);
+  assertContains(playerExperienceSource, "const clearedParams = new URLSearchParams(searchParams.toString());", "Admin delete flow derives cleared params from current URL state", failures);
+  assertContains(playerExperienceSource, "if (selectedVideoId === deletingVideoId) {", "Admin delete flow only clears query when current selection matches deleted id", failures);
+  assertContains(playerExperienceSource, "clearedParams.delete(\"v\");", "Admin delete flow removes deleted video id from URL immediately", failures);
+  assertContains(playerExperienceSource, "router.replace(clearedQuery ? `${pathname}?${clearedQuery}` : pathname);", "Admin delete flow updates URL immediately after successful deletion", failures);
+  assertContains(playerExperienceSource, 'window.dispatchEvent(new CustomEvent("ytr:video-catalog-deleted", { detail: { videoId: deletingVideoId } }));', "Main player delete dispatches catalog-deleted event", failures);
+  assertContains(adminVideoDeleteButtonSource, 'window.dispatchEvent(new CustomEvent("ytr:video-catalog-deleted", { detail: { videoId } }));', "Admin search-card delete dispatches catalog-deleted event", failures);
 
   // Dock-hide interaction invariants.
   assertContains(playerExperienceSource, 'window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));', "Dock close control dispatches hide-only event instead of navigating away", failures);
@@ -220,6 +228,14 @@ function main() {
   assertContains(cssSource, ".playerChromeDockedDesktop .primaryActions > .dockedAdminShareUrlRow,", "CSS positions dedicated docked admin share URL row", failures);
   assertContains(cssSource, ".playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayVolumeSlider {", "Docked-only volume scaling is scoped away from undock/settle states", failures);
   assertContains(cssSource, ".playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayProgress {", "Docked-only scrub scaling is scoped away from undock/settle states", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerBootBars {", "Docked loading animation receives dedicated sizing rule", failures);
+  assertContains(cssSource, "height: 56px;", "Docked loading bars are scaled to 2x height", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerBootLoader p {", "Docked loading text has a dedicated sizing rule", failures);
+  assertContains(cssSource, "font-size: 1.9rem;", "Docked loading text scales to 2x size", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerBootRefreshBtn {", "Docked retry button has dedicated sizing rule", failures);
+  assertContains(cssSource, "width: 88px;", "Docked retry button scales to 2x width", failures);
+  assertContains(cssSource, "@keyframes playerBootPulseDocked {", "Docked loading bars use dedicated 2x animation keyframes", failures);
+  assertContains(cssSource, "height: 52px;", "Docked loading pulse reaches 2x peak height", failures);
   assertContains(cssSource, "transition: width 520ms cubic-bezier(0.2, 0.92, 0.34, 1), height 520ms cubic-bezier(0.2, 0.92, 0.34, 1);", "Overlay controls animate size transitions during undock", failures);
   assertContains(cssSource, "gap 520ms cubic-bezier(0.2, 0.92, 0.34, 1),", "Overlay bottom animates gap to final geometry", failures);
   assertContains(cssSource, "padding 520ms cubic-bezier(0.2, 0.92, 0.34, 1);", "Overlay bottom animates padding to final geometry", failures);

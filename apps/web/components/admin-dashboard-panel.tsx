@@ -279,6 +279,19 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [selectedWeeklyBucket, setSelectedWeeklyBucket] = useState<AnalyticsBucket | null>(null);
   const [showHostMetricsGraph, setShowHostMetricsGraph] = useState(false);
   const [mapDateRange, setMapDateRange] = useState<MapDateRange>("allTime");
+
+  type QuotaBackfillStatus = {
+    todayUsageUnits: number;
+    remainingUnits: number;
+    recommendedBudget: number;
+    availableSeedCount: number;
+    quotaResetAt: string;
+    msUntilReset: number;
+  };
+  const [quotaStatus, setQuotaStatus] = useState<QuotaBackfillStatus | null>(null);
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<string | null>(null);
+  const [msUntilReset, setMsUntilReset] = useState<number | null>(null);
   const [hostMetricSeriesOn, setHostMetricSeriesOn] = useState({
     cpu: true,
     memory: true,
@@ -758,6 +771,44 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     setAmbiguousVideos(ambiguousPayload.ambiguousVideos);
   }
 
+  async function loadQuotaStatus() {
+    try {
+      const status = await readJson<QuotaBackfillStatus & { ok: boolean }>("/api/admin/videos/backfill-quota");
+      setQuotaStatus(status);
+      setMsUntilReset(status.msUntilReset);
+    } catch {
+      // non-fatal
+    }
+  }
+
+  async function triggerBackfill(budgetUnits: number) {
+    if (backfillRunning || budgetUnits < 100) {
+      return;
+    }
+
+    setBackfillRunning(true);
+    setBackfillResult(null);
+
+    try {
+      const result = await postJson<{
+        ok: boolean;
+        seedsAttempted: number;
+        fetchedNodes: number;
+        discoveredNewVideos: number;
+        unitsEstimated: number;
+      }>("/api/admin/videos/backfill-quota", { budgetUnits });
+
+      setBackfillResult(
+        `Backfill complete — ${result.seedsAttempted} seeds, ${result.discoveredNewVideos} new videos found, ~${result.unitsEstimated} units used.`,
+      );
+    } catch (backfillError) {
+      setBackfillResult(backfillError instanceof Error ? backfillError.message : "Backfill failed.");
+    } finally {
+      setBackfillRunning(false);
+      void loadQuotaStatus();
+    }
+  }
+
   async function loadActiveTab() {
     setLoading(true);
     setError(null);
@@ -768,7 +819,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       } else if (activeTab === "worldmap") {
         await loadOverview();
       } else if (activeTab === "api") {
-        await loadOverview();
+        await Promise.all([loadOverview(), loadQuotaStatus()]);
       } else if (activeTab === "categories") {
         await loadCategories();
       } else if (activeTab === "videos") {
@@ -790,10 +841,56 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, refreshOverviewAnalytics]);
 
+  // Countdown ticker and auto-trigger for pre-reset backfill
+  useEffect(() => {
+    if (activeTab !== "api") {
+      return;
+    }
+
+    const POLL_INTERVAL_MS = 60_000;
+    const AUTO_TRIGGER_MS = 120_000; // 2 minutes before reset
+    let autoTriggered = false;
+
+    const tick = () => {
+      setMsUntilReset((prev) => (prev !== null ? Math.max(0, prev - 1000) : prev));
+    };
+
+    const tickInterval = window.setInterval(tick, 1_000);
+
+    const pollInterval = window.setInterval(() => {
+      void loadQuotaStatus();
+    }, POLL_INTERVAL_MS);
+
+    // Auto-trigger check
+    const autoCheckInterval = window.setInterval(() => {
+      setQuotaStatus((currentStatus) => {
+        if (
+          !autoTriggered &&
+          currentStatus &&
+          currentStatus.msUntilReset <= AUTO_TRIGGER_MS &&
+          currentStatus.recommendedBudget >= 500
+        ) {
+          autoTriggered = true;
+          void triggerBackfill(currentStatus.recommendedBudget);
+        }
+
+        return currentStatus;
+      });
+    }, 5_000);
+
+    return () => {
+      window.clearInterval(tickInterval);
+      window.clearInterval(pollInterval);
+      window.clearInterval(autoCheckInterval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
   useEffect(() => {
     if (activeTab !== "overview") {
       return;
     }
+
 
     let cancelled = false;
     let lastStreamMessageAt = 0;
@@ -1466,6 +1563,102 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
           ) : (
             <p className="authMessage">No API usage telemetry yet. Activity appears after YouTube or Groq calls occur.</p>
           )}
+
+          {/* YouTube Quota Backfill */}
+          {(() => {
+            const DAILY_QUOTA = 10_000;
+            const AUTO_TRIGGER_MS = 120_000;
+            const BACKFILL_WINDOW_MS = 5 * 60 * 1000;
+            const liveMs = msUntilReset ?? quotaStatus?.msUntilReset ?? null;
+            const inWindow = liveMs !== null && liveMs <= BACKFILL_WINDOW_MS;
+            const willAutoTrigger = liveMs !== null && liveMs <= AUTO_TRIGGER_MS;
+
+            const formatCountdown = (ms: number) => {
+              const totalSec = Math.max(0, Math.floor(ms / 1000));
+              const h = Math.floor(totalSec / 3600);
+              const m = Math.floor((totalSec % 3600) / 60);
+              const s = totalSec % 60;
+              return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+            };
+
+            const usagePct = quotaStatus ? Math.min(100, Math.round((quotaStatus.todayUsageUnits / DAILY_QUOTA) * 100)) : null;
+
+            return (
+              <section className="panel featurePanel" style={{ marginTop: 10, border: inWindow ? "1px solid #ff6f43" : undefined }}>
+                <div className="panelHeading">
+                  <span>YouTube Quota Backfill</span>
+                  {liveMs !== null ? (
+                    <strong style={{ color: inWindow ? "#ff6f43" : undefined }}>
+                      Reset in {formatCountdown(liveMs)}
+                    </strong>
+                  ) : null}
+                </div>
+                <div className="interactiveStack">
+                  {quotaStatus ? (
+                    <div className="statusMetrics">
+                      <div>
+                        <strong>Used today</strong>
+                        <p style={{ color: usagePct !== null && usagePct >= 90 ? "#ff6f43" : undefined }}>
+                          {quotaStatus.todayUsageUnits.toLocaleString()} / {DAILY_QUOTA.toLocaleString()}
+                          {usagePct !== null ? ` (${usagePct}%)` : ""}
+                        </p>
+                      </div>
+                      <div>
+                        <strong>Remaining</strong>
+                        <p>{quotaStatus.remainingUnits.toLocaleString()} units</p>
+                      </div>
+                      <div>
+                        <strong>Backfill budget</strong>
+                        <p>{quotaStatus.recommendedBudget.toLocaleString()} units ({Math.floor(quotaStatus.recommendedBudget / 100)} seeds)</p>
+                      </div>
+                      <div>
+                        <strong>Seeds available</strong>
+                        <p>{quotaStatus.availableSeedCount.toLocaleString()} videos</p>
+                      </div>
+                      <div>
+                        <strong>Resets at</strong>
+                        <p>{new Date(quotaStatus.quotaResetAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZoneName: "short" })}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="authMessage">Loading quota status…</p>
+                  )}
+
+                  {willAutoTrigger && !backfillRunning ? (
+                    <p className="authMessage" style={{ color: "#ff6f43" }}>
+                      ⚡ Auto-backfill will trigger in {liveMs !== null ? formatCountdown(liveMs - AUTO_TRIGGER_MS < 0 ? 0 : liveMs) : "…"}
+                    </p>
+                  ) : null}
+
+                  {backfillRunning ? (
+                    <p className="authMessage">Running backfill… this may take a minute.</p>
+                  ) : null}
+
+                  {backfillResult ? (
+                    <p className="authMessage" style={{ color: "#7ce0a3" }}>{backfillResult}</p>
+                  ) : null}
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => void triggerBackfill(quotaStatus?.recommendedBudget ?? 0)}
+                      disabled={backfillRunning || !quotaStatus || quotaStatus.recommendedBudget < 100}
+                    >
+                      {backfillRunning ? "Running…" : "Run Backfill Now"}
+                    </button>
+                    <button type="button" onClick={() => void loadQuotaStatus()} disabled={backfillRunning}>
+                      Refresh Status
+                    </button>
+                  </div>
+
+                  <p className="authMessage" style={{ opacity: 0.6 }}>
+                    Backfill runs shallow (depth 1) related discovery for catalog videos that have no cached related data.
+                    Each seed uses ~100 YouTube API units. Auto-triggers 2 minutes before daily quota reset if ≥500 units remain.
+                  </p>
+                </div>
+              </section>
+            );
+          })()}
         </div>
       ) : null}
 
