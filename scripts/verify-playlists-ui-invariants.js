@@ -148,9 +148,22 @@ function main() {
 
   // Player playlist rail fixed-header invariants.
   assertContains(shellSource, "<div className=\"rightRailPlaylistBar\">", "Player rail playlist header exists", failures);
-  assertContains(shellSource, "<div className=\"relatedStackPlaylistBody\">", "Player rail has dedicated scroll body", failures);
+  assertContains(shellSource, "<div className=\"relatedStackPlaylistBody\" ref={playlistStackBodyRef}>", "Player rail has dedicated scroll body", failures);
   assertContains(cssSource, ".relatedStackPlaylistBody", "CSS defines dedicated scroll body class", failures);
   assertContains(cssSource, "overflow-y: auto;", "Playlist rail body scrolls independently", failures);
+  assertContains(shellSource, "const requestedPlaylistItemIndex = (() => {", "Playlist rail derives requested playlist item index from URL", failures);
+  assertContains(shellSource, "const matchedPlaylistVideoIndex = playlistRailData", "Playlist rail derives active index from current playback", failures);
+  assertContains(shellSource, "const hasTrustedRequestedPlaylistItemIndex = requestedPlaylistItemIndex !== null", "Playlist rail only trusts URL item index when valid", failures);
+  assertContains(shellSource, "playlistRailData.videos[requestedPlaylistItemIndex]?.id === currentVideo.id", "Playlist rail validates URL index against currently playing video", failures);
+  assertContains(shellSource, "const activePlaylistTrackIndex = hasTrustedRequestedPlaylistItemIndex", "Playlist rail computes a single active track index source of truth", failures);
+  assertContains(shellSource, "const playlistStackBodyRef = useRef<HTMLDivElement | null>(null);", "Playlist rail keeps a dedicated scroll-body ref", failures);
+  assertContains(shellSource, "const playlistAutoScrollRafRef = useRef<number | null>(null);", "Playlist rail tracks animation frame id for smooth auto-scroll", failures);
+  assertContains(shellSource, "data-playlist-index={index}", "Playlist rail rows expose playlist index data attribute", failures);
+  assertContains(shellSource, ".playlistRailTrackRow[data-playlist-index=\"${activePlaylistTrackIndex}\"]", "Playlist rail scroll targets indexed active row", failures);
+  assertContains(shellSource, "const topGutterPx = 8;", "Playlist rail keeps active row aligned near top gutter", failures);
+  assertContains(shellSource, "const durationMs = 320;", "Playlist rail auto-scroll uses slowed smooth animation duration", failures);
+  assertContains(shellSource, "const eased = 1 - ((1 - progress) ** 3);", "Playlist rail auto-scroll uses easing for smooth settle", failures);
+  assertContains(shellSource, "window.cancelAnimationFrame(playlistAutoScrollRafRef.current);", "Playlist rail cancels stale auto-scroll animation before starting a new one", failures);
   assertContains(playerSource, "PLAYLISTS_UPDATED_EVENT = \"ytr:playlists-updated\"", "Player listens to playlist update event", failures);
   assertMatches(playerSource, /\[activePlaylistId, isLoggedIn, playlistRefreshTick\]/, "Player reload effect depends on playlist refresh tick", failures);
 

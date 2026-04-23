@@ -126,6 +126,11 @@ function main() {
   assertContains(playerExperienceSource, "setShowNowPlayingOverlay(false);", "Player clears now-playing overlay during active video reset", failures);
   assertContains(playerExperienceSource, "window.clearTimeout(overlayTimeoutRef.current);", "Player clears in-flight now-playing timeout before video switch reset", failures);
   assertContains(playerExperienceSource, "const playerFrameClassName = [", "Player derives loading-aware frame class list", failures);
+  assertContains(playerExperienceSource, "const [isManualTransitionMaskVisible, setIsManualTransitionMaskVisible] = useState(false);", "Player tracks immediate manual-transition loading mask state", failures);
+  assertContains(playerExperienceSource, "function showManualTransitionMask() {", "Player exposes a helper that instantly masks playback during manual skips", failures);
+  assertContains(playerExperienceSource, "const showRouteLikeLoadingCopy = isRouteResolving || isManualTransitionMaskVisible;", "Player reuses route-loading copy while manual transition mask is active", failures);
+  assertContains(playerExperienceSource, "const showPlayerLoadingOverlay = isManualTransitionMaskVisible", "Player allows manual transition mask to force the loading overlay", failures);
+  assertContains(playerExperienceSource, "showManualTransitionMask();", "Player immediately triggers the loading mask on manual next/previous/hide actions", failures);
   assertContains(playerExperienceSource, 'showPlayerLoadingOverlay ? "playerFrameLoading" : "",', "Player applies playerFrameLoading class while loading overlay is active", failures);
   assertContains(playerExperienceSource, "className={playerFrameClassName}", "Player frame uses computed loading-aware className", failures);
   assertContains(playerExperienceSource, "className=\"playerEndedChoiceOverlay\"", "Player renders chooser overlay container", failures);
