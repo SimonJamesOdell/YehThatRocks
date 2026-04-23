@@ -67,7 +67,10 @@ function main() {
   assertContains(top100LinkSource, "const PENDING_VIDEO_SELECTION_KEY = \"ytr:pending-video-selection\";", "Top 100 warmed link uses pending selection cache key", failures);
   assertContains(top100LinkSource, "window.sessionStorage.setItem(", "Top 100 warmed link writes optimistic pending selection", failures);
   assertContains(top100LinkSource, "void fetch(`/api/current-video?v=${encodeURIComponent(track.id)}`", "Top 100 warmed link prefetches current-video payload", failures);
-  assertContains(top100LinkSource, "href={`/?v=${track.id}&resume=1`}", "Top 100 warmed link navigates with v+resume query", failures);
+  assertContains(top100LinkSource, "const videoHref = useMemo(() => {", "Top 100 warmed link derives a route-preserving href", failures);
+  assertContains(top100LinkSource, "params.set(\"v\", track.id);", "Top 100 warmed link sets selected video query param", failures);
+  assertContains(top100LinkSource, "params.set(\"resume\", \"1\");", "Top 100 warmed link sets resume query param", failures);
+  assertContains(top100LinkSource, "href={videoHref}", "Top 100 warmed link uses route-preserving href", failures);
   assertContains(top100LinkSource, "onMouseEnter={stagePendingSelection}", "Top 100 warmed link stages pending selection on hover", failures);
   assertContains(top100LinkSource, "onFocus={stagePendingSelection}", "Top 100 warmed link stages pending selection on focus", failures);
   assertContains(top100LinkSource, "onPointerDown={warmSelection}", "Top 100 warmed link warms on pointer-down", failures);
