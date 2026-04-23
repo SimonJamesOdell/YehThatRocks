@@ -42,6 +42,46 @@ function assertNotContains(source, needle, description, failures) {
   }
 }
 
+function assertCssRuleContains(source, selector, needle, description, failures) {
+  const selectorIndex = source.indexOf(selector);
+  if (selectorIndex === -1) {
+    failures.push(`${description} (missing selector: ${selector})`);
+    return;
+  }
+
+  const blockStart = source.indexOf("{", selectorIndex);
+  const blockEnd = blockStart === -1 ? -1 : source.indexOf("}", blockStart + 1);
+  if (blockStart === -1 || blockEnd === -1) {
+    failures.push(`${description} (invalid css block for selector: ${selector})`);
+    return;
+  }
+
+  const block = source.slice(blockStart + 1, blockEnd);
+  if (!block.includes(needle)) {
+    failures.push(`${description} (missing in ${selector}: ${needle})`);
+  }
+}
+
+function assertCssRuleNotContains(source, selector, needle, description, failures) {
+  const selectorIndex = source.indexOf(selector);
+  if (selectorIndex === -1) {
+    failures.push(`${description} (missing selector: ${selector})`);
+    return;
+  }
+
+  const blockStart = source.indexOf("{", selectorIndex);
+  const blockEnd = blockStart === -1 ? -1 : source.indexOf("}", blockStart + 1);
+  if (blockStart === -1 || blockEnd === -1) {
+    failures.push(`${description} (invalid css block for selector: ${selector})`);
+    return;
+  }
+
+  const block = source.slice(blockStart + 1, blockEnd);
+  if (block.includes(needle)) {
+    failures.push(`${description} (unexpected in ${selector}: ${needle})`);
+  }
+}
+
 function main() {
   const failures = [];
 
@@ -200,6 +240,8 @@ function main() {
   assertContains(playerExperienceSource, "if (selectedVideoId === deletingVideoId) {", "Admin delete flow only clears query when current selection matches deleted id", failures);
   assertContains(playerExperienceSource, "clearedParams.delete(\"v\");", "Admin delete flow removes deleted video id from URL immediately", failures);
   assertContains(playerExperienceSource, "router.replace(clearedQuery ? `${pathname}?${clearedQuery}` : pathname);", "Admin delete flow updates URL immediately after successful deletion", failures);
+  assertContains(playerExperienceSource, "const payload = (await response.json().catch(() => null)) as { error?: string; reason?: string } | null;", "Admin delete flow parses structured API delete failure payload", failures);
+  assertContains(playerExperienceSource, "showUnavailableOverlayMessage(payload?.error || \"Could not remove this video from the site.\");", "Admin delete flow surfaces API-provided delete failure error", failures);
   assertContains(playerExperienceSource, 'window.dispatchEvent(new CustomEvent("ytr:video-catalog-deleted", { detail: { videoId: deletingVideoId } }));', "Main player delete dispatches catalog-deleted event", failures);
   assertContains(adminVideoDeleteButtonSource, 'window.dispatchEvent(new CustomEvent("ytr:video-catalog-deleted", { detail: { videoId } }));', "Admin search-card delete dispatches catalog-deleted event", failures);
 
@@ -209,6 +251,8 @@ function main() {
   assertContains(shellDynamicSource, "setIsDockHidden(true);", "Shell hides docked player in response to dock-hide event", failures);
   assertContains(shellDynamicSource, 'window.addEventListener("ytr:dock-hide-request", handleDockHideRequest);', "Shell subscribes to dock-hide requests", failures);
   assertContains(shellDynamicSource, 'window.removeEventListener("ytr:dock-hide-request", handleDockHideRequest);', "Shell cleans up dock-hide listener", failures);
+  assertContains(shellDynamicSource, "if (shouldDockDesktopPlayer) {", "Shell restores hidden dock when entering docked overlay routes", failures);
+  assertContains(shellDynamicSource, "}, [pathname, shouldDockDesktopPlayer]);", "Shell re-evaluates dock visibility on overlay route changes", failures);
   assertContains(shellDynamicSource, '<div className="playerDockLayer">', "Shell keeps player content in a dedicated dock layer", failures);
   assertContains(shellDynamicSource, "const UNDOCK_SETTLE_DURATION_MS = 220;", "Shell defines an undock-settle duration", failures);
   assertContains(shellDynamicSource, "const [isUndockSettling, setIsUndockSettling] = useState(false);", "Shell tracks undock settle state", failures);
@@ -220,12 +264,12 @@ function main() {
   assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndockSettling .overlayCenter {", "Undock settling keeps overlay center pinned", failures);
   assertContains(cssSource, ".playerOverlayVisible .overlayCenter {", "Overlay center visible-state rules are explicitly defined", failures);
   assertContains(cssSource, ".playerChromeDockedDesktop .playerDockLayer {", "Docked desktop player keeps a dedicated dock layer rule", failures);
-  assertContains(cssSource, "position: relative;", "Docked desktop player dock layer preserves relative positioning for transformed frame anchoring", failures);
-  assertContains(cssSource, "overflow: visible;", "Docked desktop player dock layer must remain unclipped so transformed frame can escape parent bounds", failures);
-  assertNotContains(cssSource, "  .playerChromeDockedDesktop .playerDockLayer {\n    position: relative;\n    overflow: hidden;", "Docked desktop player dock layer must never clip transformed frame", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop .playerDockLayer", "position: relative;", "Docked desktop player dock layer preserves relative positioning for transformed frame anchoring", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop .playerDockLayer", "overflow: visible;", "Docked desktop player dock layer must remain unclipped so transformed frame can escape parent bounds", failures);
+  assertCssRuleNotContains(cssSource, ".playerChromeDockedDesktop .playerDockLayer", "overflow: hidden;", "Docked desktop player dock layer must never clip transformed frame", failures);
   assertContains(cssSource, ".heroGridOverlayRoute .playerChrome {", "Overlay route defines dedicated player chrome stacking context", failures);
-  assertContains(cssSource, "overflow: visible;", "Overlay route keeps player chrome overflow visible while docked", failures);
-  assertContains(cssSource, "z-index: 25;", "Overlay route player chrome keeps docked player above occluded rail layers", failures);
+  assertCssRuleContains(cssSource, ".heroGridOverlayRoute .playerChrome", "overflow: visible;", "Overlay route keeps player chrome overflow visible while docked", failures);
+  assertCssRuleContains(cssSource, ".heroGridOverlayRoute .playerChrome", "z-index: 25;", "Overlay route player chrome keeps docked player above occluded rail layers", failures);
   assertContains(cssSource, "pointer-events: auto;", "Overlay controls remain interactive in CSS", failures);
   assertContains(cssSource, ".playerFrame.playerFrameLoading > iframe,", "Loading mask hides direct iframe while player loader is active", failures);
   assertContains(cssSource, ".playerFrame.playerFrameLoading .playerMount iframe {", "Loading mask hides mounted iframe while player loader is active", failures);

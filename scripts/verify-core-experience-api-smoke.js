@@ -211,6 +211,46 @@ async function main() {
     }
   }
 
+  // 4b) Newest endpoint should return stable pagination metadata and valid ids.
+  const newestPage1Url = `${baseUrl}/api/videos/newest?skip=0&take=12`;
+  const newestPage1Result = await fetchJson(newestPage1Url, { method: "GET" }, timeoutMs).catch((error) => ({ error }));
+
+  let newestPage1Ids = [];
+  let newestPage1NextOffset = 0;
+
+  if (newestPage1Result?.error) {
+    assertInvariant(false, "Newest endpoint reachable", String(newestPage1Result.error), failures);
+  } else {
+    const { response, payload } = newestPage1Result;
+    const videos = Array.isArray(payload?.videos) ? payload.videos : [];
+    newestPage1Ids = uniqueById(videos).map((video) => video.id);
+    newestPage1NextOffset = asNumber(payload?.nextOffset, videos.length);
+
+    assertInvariant(response.ok, "Newest endpoint returns 2xx", `status=${response.status}`, failures);
+    assertInvariant(payload?.ok === true, "Newest endpoint sets ok=true on success", `ok=${String(payload?.ok)}`, failures);
+    assertInvariant(videos.length <= 12, "Newest endpoint respects take upper bound", `count=${videos.length}`, failures);
+    assertInvariant(videos.every((video) => isYouTubeId(video?.id)), "Newest endpoint returns valid YouTube IDs", "invalid video.id values found", failures);
+    assertInvariant(typeof payload?.hasMore === "boolean", "Newest endpoint returns boolean hasMore", `hasMore=${String(payload?.hasMore)}`, failures);
+    assertInvariant(Number.isFinite(newestPage1NextOffset), "Newest endpoint returns numeric nextOffset", `nextOffset=${String(payload?.nextOffset)}`, failures);
+    assertInvariant(newestPage1NextOffset >= videos.length, "Newest nextOffset is not behind returned count", `nextOffset=${newestPage1NextOffset} count=${videos.length}`, failures);
+  }
+
+  const newestPage2Url = `${baseUrl}/api/videos/newest?skip=${Math.max(0, newestPage1NextOffset)}&take=12`;
+  const newestPage2Result = await fetchJson(newestPage2Url, { method: "GET" }, timeoutMs).catch((error) => ({ error }));
+
+  if (newestPage2Result?.error) {
+    assertInvariant(false, "Newest endpoint second page reachable", String(newestPage2Result.error), failures);
+  } else {
+    const { response, payload } = newestPage2Result;
+    const videos = Array.isArray(payload?.videos) ? payload.videos : [];
+    const secondIds = uniqueById(videos).map((video) => video.id);
+    const overlap = secondIds.filter((id) => newestPage1Ids.includes(id));
+
+    assertInvariant(response.ok, "Newest endpoint second page returns 2xx", `status=${response.status}`, failures);
+    assertInvariant(videos.length <= 12, "Newest endpoint second page respects take upper bound", `count=${videos.length}`, failures);
+    assertInvariant(overlap.length === 0, "Newest endpoint consecutive pages avoid duplicate ids", `duplicates=${overlap.join(",") || "none"}`, failures);
+  }
+
   // 5) Chat endpoints must reject unauthenticated requests.
   const chatGetUrl = `${baseUrl}/api/chat?mode=global`;
   const chatPostUrl = `${baseUrl}/api/chat`;
