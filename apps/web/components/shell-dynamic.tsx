@@ -1420,7 +1420,7 @@ function ShellDynamicInner({
 
     if (initialAuthStatus === "unavailable") {
       setAuthStatus("unavailable");
-      setAuthStatusMessage("The auth server is not responding, so your authorization status cannot currently be confirmed. Try again later or reconnect now.");
+      setAuthStatusMessage("The auth server is probably being updated. Please wait a moment and try again.");
       return;
     }
 
@@ -2048,7 +2048,7 @@ function ShellDynamicInner({
 
     if (resolvedState === "unavailable") {
       setAuthStatus("unavailable");
-      setAuthStatusMessage("The auth server is not responding, so your authorization status cannot currently be confirmed. Try again later or reconnect now.");
+      setAuthStatusMessage("The auth server is probably being updated. Please wait a moment and try again.");
       return "unavailable" as const;
     }
 
@@ -2071,6 +2071,20 @@ function ShellDynamicInner({
       setIsRetryingAuthStatus(false);
     }
   }, [checkAuthState, isRetryingAuthStatus]);
+
+  useEffect(() => {
+    if (authStatus !== "unavailable" || !authStatusMessage) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void retryAuthStateCheck();
+    }, 4000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [authStatus, authStatusMessage, retryAuthStateCheck]);
 
   const loadPublicPerformanceMetrics = useCallback(async () => {
     setIsLoadingPerformanceMetrics(true);
@@ -4699,10 +4713,7 @@ function ShellDynamicInner({
       ) : null}
 
       {authStatus === "unavailable" && authStatusMessage && !isAuthUnavailableDialogDismissed ? (
-        <div
-          className="authStatusModalOverlay"
-          onClick={() => setIsAuthUnavailableDialogDismissed(true)}
-        >
+        <div className="authStatusModalOverlay">
           <section
             className="authStatusModalDialog"
             role="dialog"
@@ -4717,15 +4728,14 @@ function ShellDynamicInner({
               <p id="auth-unavailable-message">{authStatusMessage}</p>
             </div>
             <div className="authStatusModalActions">
-              <button type="button" onClick={() => void retryAuthStateCheck()} disabled={isRetryingAuthStatus}>
-                {isRetryingAuthStatus ? "Retrying..." : "Retry auth now"}
-              </button>
               <button
                 type="button"
-                className="authStatusModalDismiss"
-                onClick={() => setIsAuthUnavailableDialogDismissed(true)}
+                aria-label="Retry auth now"
+                title="Retry auth now"
+                onClick={() => void retryAuthStateCheck()}
+                disabled={isRetryingAuthStatus}
               >
-                Close
+                {isRetryingAuthStatus ? "Trying again..." : "Try again"}
               </button>
             </div>
           </section>
