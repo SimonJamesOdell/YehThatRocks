@@ -18,6 +18,48 @@ const YOUTUBE_PLAYLIST_ID_PATTERN = /^[A-Za-z0-9_-]{10,}$/;
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || "";
 const PLAYBACK_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.PLAYBACK_MIN_CONFIDENCE || "0.8")));
 const playlistBatchJobs = new Map<string, Promise<void>>();
+const YOUTUBE_QUOTA_EXHAUSTED_TTL_MS = 26 * 60 * 60 * 1000;
+let youtubeQuotaExhaustedUntilMs = 0;
+
+type YouTubePlaylistFetchErrorCode = "youtube-read-failed" | "youtube-quota-exhausted";
+
+function isYouTubeQuotaExhausted() {
+  return youtubeQuotaExhaustedUntilMs > Date.now();
+}
+
+function markYouTubeQuotaExhaustedNow() {
+  youtubeQuotaExhaustedUntilMs = Date.now() + YOUTUBE_QUOTA_EXHAUSTED_TTL_MS;
+}
+
+function isYouTubeQuotaErrorPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  const root = payload as {
+    error?: {
+      errors?: Array<{ reason?: string }>;
+      status?: string;
+      message?: string;
+    };
+  };
+
+  const status = (root.error?.status ?? "").toString().toUpperCase();
+  if (status === "RESOURCE_EXHAUSTED") {
+    return true;
+  }
+
+  const message = (root.error?.message ?? "").toLowerCase();
+  if (message.includes("quota") || message.includes("daily limit")) {
+    return true;
+  }
+
+  const reasons = root.error?.errors ?? [];
+  return reasons.some((entry) => {
+    const reason = (entry.reason ?? "").toLowerCase();
+    return reason === "quotaexceeded" || reason === "dailylimitexceeded" || reason === "ratelimitexceeded";
+  });
+}
 
 function getRejectionReason(decision: { reason: string; message?: string }) {
   if (decision.message?.trim()) {
@@ -101,7 +143,15 @@ function parseYouTubeSource(source: string):
 
 async function fetchPlaylistVideoIds(playlistId: string) {
   if (!YOUTUBE_DATA_API_KEY) {
-    return { ok: false as const, error: "YouTube Data API key is not configured on the server." };
+    return { ok: false as const, error: "YouTube Data API key is not configured on the server.", code: "youtube-read-failed" as YouTubePlaylistFetchErrorCode };
+  }
+
+  if (isYouTubeQuotaExhausted()) {
+    return {
+      ok: false as const,
+      error: "YouTube API credits are currently exhausted. Please try again later.",
+      code: "youtube-quota-exhausted" as YouTubePlaylistFetchErrorCode,
+    };
   }
 
   const collected = new Set<string>();
@@ -125,14 +175,27 @@ async function fetchPlaylistVideoIds(playlistId: string) {
     }).catch(() => null);
 
     if (!response?.ok) {
+      const errorPayload = await response?.json().catch(() => null);
+      const quotaExhausted = isYouTubeQuotaErrorPayload(errorPayload);
+      if (quotaExhausted) {
+        markYouTubeQuotaExhaustedNow();
+      }
+
       void recordExternalApiUsage({
         provider: "youtube",
         endpoint: "playlistItems.list",
         units: 1,
         success: false,
         statusCode: response?.status ?? null,
+        note: quotaExhausted ? "quota-exhausted" : "playlist-read-failed",
       });
-      return { ok: false as const, error: "Could not read playlist from YouTube." };
+      return {
+        ok: false as const,
+        error: quotaExhausted
+          ? "YouTube API credits are currently exhausted. Please try again later."
+          : "Could not read playlist from YouTube.",
+        code: (quotaExhausted ? "youtube-quota-exhausted" : "youtube-read-failed") as YouTubePlaylistFetchErrorCode,
+      };
     }
 
     void recordExternalApiUsage({
@@ -165,6 +228,50 @@ async function fetchPlaylistVideoIds(playlistId: string) {
   }
 
   return { ok: true as const, videoIds: [...collected] };
+}
+
+function getNextYouTubeQuotaResetMs(): number {
+  // YouTube quota resets at midnight Pacific Time (America/Los_Angeles)
+  const now = new Date();
+  const pacificNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+  pacificNow.setDate(pacificNow.getDate() + 1);
+  pacificNow.setHours(0, 0, 0, 0);
+  const offsetMs = now.getTime() - new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" })).getTime();
+  return pacificNow.getTime() + offsetMs;
+}
+
+export async function GET(request: NextRequest) {
+  const authResult = await requireApiAuth(request);
+  if (!authResult.ok) {
+    return authResult.response;
+  }
+
+  const quotaResetAtMs = getNextYouTubeQuotaResetMs();
+  const msUntilReset = Math.max(0, quotaResetAtMs - Date.now());
+
+  let todayUsageUnits: number | null = null;
+  if (hasDatabaseUrl()) {
+    try {
+      const pacificDayStart = new Date(quotaResetAtMs - 24 * 60 * 60 * 1000);
+      const rows = await prisma.$queryRaw<Array<{ total: bigint }>>`
+        SELECT COALESCE(SUM(units), 0) AS total
+        FROM external_api_usage_events
+        WHERE provider = 'youtube'
+          AND created_at >= ${pacificDayStart}
+      `;
+      todayUsageUnits = Number(rows[0]?.total ?? 0);
+    } catch {
+      // telemetry table may not exist yet — non-fatal
+    }
+  }
+
+  return NextResponse.json({
+    ok: true,
+    quotaExhausted: isYouTubeQuotaExhausted(),
+    quotaResetAt: new Date(quotaResetAtMs).toISOString(),
+    msUntilReset,
+    todayUsageUnits,
+  });
 }
 
 async function applyMetadataHints(videoId: string, hints: { artist?: string; track?: string }, includeTrack = true) {
@@ -357,7 +464,14 @@ export async function POST(request: NextRequest) {
 
   const playlist = await fetchPlaylistVideoIds(source.playlistId);
   if (!playlist.ok) {
-    return NextResponse.json({ ok: false, error: playlist.error }, { status: 400 });
+    return NextResponse.json(
+      {
+        ok: false,
+        error: playlist.error,
+        errorCode: playlist.code,
+      },
+      { status: playlist.code === "youtube-quota-exhausted" ? 429 : 400 },
+    );
   }
 
   if (playlist.videoIds.length === 0) {

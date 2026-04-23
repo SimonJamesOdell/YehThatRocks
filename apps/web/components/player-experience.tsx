@@ -4289,7 +4289,33 @@ export function PlayerExperience({
 
           window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
           window.dispatchEvent(new Event("ytr:favourites-updated"));
+          window.dispatchEvent(new CustomEvent("ytr:video-catalog-deleted", { detail: { videoId: deletingVideoId } }));
           setPlaylistQueueIds((currentIds) => currentIds.filter((id) => id !== deletingVideoId));
+
+          // Clear the deleted selection from the URL immediately so the resolver
+          // cannot briefly re-request the just-deleted video during transition.
+          const clearedParams = new URLSearchParams(searchParams.toString());
+          const selectedVideoId = clearedParams.get("v");
+          if (selectedVideoId === deletingVideoId) {
+            clearedParams.delete("v");
+            clearedParams.delete("pl");
+            clearedParams.delete("pli");
+            const clearedQuery = clearedParams.toString();
+            router.replace(clearedQuery ? `${pathname}?${clearedQuery}` : pathname);
+          }
+
+          // When in docked mode (player is a sidebar alongside a list page), close the
+          // player immediately rather than navigating to the next video — the list page
+          // handles its own removal animation via the ytr:video-catalog-deleted event.
+          if (isDockedDesktop) {
+            const params = new URLSearchParams(searchParams.toString());
+            params.delete("v");
+            params.delete("pl");
+            params.delete("pli");
+            const query = params.toString();
+            router.replace(query ? `${pathname}?${query}` : pathname);
+            return;
+          }
 
           if (activePlaylistId) {
             const remainingPlaylistIds = playlistQueueIds.filter((id) => id !== deletingVideoId);

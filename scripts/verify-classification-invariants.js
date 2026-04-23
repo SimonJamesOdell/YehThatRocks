@@ -1,0 +1,60 @@
+#!/usr/bin/env node
+
+const fs = require("node:fs");
+const path = require("node:path");
+
+const ROOT = process.cwd();
+
+const files = {
+  catalogData: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
+};
+
+function read(filePath) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
+  }
+
+  return fs.readFileSync(filePath, "utf8");
+}
+
+function assertContains(source, needle, description, failures) {
+  if (!source.includes(needle)) {
+    failures.push(`${description} (missing: ${needle})`);
+  }
+}
+
+function main() {
+  const failures = [];
+  const catalogDataSource = read(files.catalogData);
+
+  // Strict related-cascade admission invariants.
+  assertContains(catalogDataSource, "const admissionDecision = admissionRow ? evaluatePlaybackMetadataEligibility(admissionRow) : null;", "Related cascade computes metadata admission decision", failures);
+  assertContains(catalogDataSource, "!admissionRow || !Boolean(admissionRow.hasAvailable) || !admissionDecision?.allowed", "Related cascade requires available embed and metadata eligibility", failures);
+  assertContains(catalogDataSource, "await pruneVideoAndAssociationsByVideoId(candidate.id, \"related-cascade-strict-admission\").catch(() => undefined);", "Related cascade prunes rejected candidates", failures);
+
+  // Classification confidence-signal invariants.
+  assertContains(catalogDataSource, "const ROCK_METAL_GENRE_PATTERN =", "Classifier defines rock/metal genre pattern", failures);
+  assertContains(catalogDataSource, "function computeArtistChannelConfidenceDelta", "Classifier defines artist/channel consistency signal", failures);
+  assertContains(catalogDataSource, "const ARTIST_CATALOG_EVIDENCE_CACHE_TTL_MS =", "Classifier caches artist evidence lookups", failures);
+  assertContains(catalogDataSource, "const artistCatalogEvidenceCache = new Map", "Classifier keeps artist evidence cache", failures);
+  assertContains(catalogDataSource, "async function getArtistCatalogEvidence(artistName: string)", "Classifier exposes artist catalog evidence helper", failures);
+  assertContains(catalogDataSource, "Known artist lacks strong rock/metal genre evidence.", "Classifier penalizes known artists lacking rock/metal evidence", failures);
+  assertContains(catalogDataSource, "Artist token matched channel title.", "Classifier boosts confidence for artist/channel match", failures);
+  assertContains(catalogDataSource, "if (isLikelyNonMusicText(video.title, video.description ?? \"\"))", "Classifier applies non-music dampening during persistence", failures);
+  assertContains(catalogDataSource, "const mojibakeScore = scoreLikelyMojibake(video.title);", "Classifier applies mojibake dampening", failures);
+
+  // Prompt intent invariant.
+  assertContains(catalogDataSource, "YehThatRocks is a rock/metal catalog.", "Groq prompt encodes rock/metal-only extraction intent", failures);
+
+  if (failures.length > 0) {
+    console.error("Classification invariant check failed.");
+    for (const failure of failures) {
+      console.error(`- ${failure}`);
+    }
+    process.exit(1);
+  }
+
+  console.log("Classification invariant check passed.");
+}
+
+main();

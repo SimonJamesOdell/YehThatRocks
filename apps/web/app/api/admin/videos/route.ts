@@ -185,5 +185,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Could not delete video", reason: pruneResult.reason }, { status: 409 });
   }
 
+  clearCurrentVideoRouteCaches();
+
   return NextResponse.json({ ok: true, deletedVideoRows: pruneResult.deletedVideoRows });
 }

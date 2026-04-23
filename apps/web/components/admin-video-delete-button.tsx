@@ -45,6 +45,7 @@ export function AdminVideoDeleteButton({ videoId, title, isAdmin }: AdminVideoDe
       }
 
       card.classList.add("searchResultCardRemoving");
+      window.dispatchEvent(new CustomEvent("ytr:video-catalog-deleted", { detail: { videoId } }));
       window.setTimeout(() => {
         card.remove();
       }, REMOVE_ANIMATION_MS);

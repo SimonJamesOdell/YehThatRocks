@@ -2002,6 +2002,38 @@ h1 {
     padding: 8px 9px;
     font-size: 0.8rem;
   }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerBootBars {
+    gap: 12px;
+    height: 56px;
+  }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerBootBars span {
+    width: 10px;
+    box-shadow: 0 0 20px rgba(222, 22, 5, 0.35);
+    animation-name: playerBootPulseDocked;
+    animation-duration: 920ms;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+  }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerBootLoader p {
+    font-size: 1.9rem;
+  }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerBootRefreshBtn {
+    width: 88px;
+    height: 88px;
+  }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerBootRefreshBtn svg {
+    width: 40px;
+    height: 40px;
+  }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerBootRefreshLabel {
+    font-size: 1.44rem;
+  }
 }
 
 .playerLoadingFallback {
@@ -2217,6 +2249,21 @@ h1 {
   50% {
     transform: translateY(-1px);
     height: 26px;
+    opacity: 1;
+  }
+}
+
+@keyframes playerBootPulseDocked {
+  0%,
+  100% {
+    transform: translateY(0);
+    height: 16px;
+    opacity: 0.55;
+  }
+
+  50% {
+    transform: translateY(-2px);
+    height: 52px;
     opacity: 1;
   }
 }
