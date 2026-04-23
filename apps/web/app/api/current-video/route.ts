@@ -374,6 +374,7 @@ export async function GET(request: NextRequest) {
 
     let relatedVideos: Awaited<ReturnType<typeof getRelatedVideos>> = [];
     let hasMoreForCustomRequest: boolean | undefined;
+    let earlyTopVideosForPadding: Awaited<ReturnType<typeof getCachedTopVideosForCurrentVideo>> | undefined;
     const favouriteVideos = await favouriteVideosPromise;
 
     if (usePagedRelatedPool) {
@@ -416,11 +417,15 @@ export async function GET(request: NextRequest) {
       hasMoreForCustomRequest = end < filteredPool.length;
     } else {
       const requestedWithProbe = Math.min(30, requestedRelatedCount + 1);
+      // Start top-video prefetch in parallel so padding is zero-cost if the
+      // related set comes back smaller than the target batch size.
+      const paddingTopVideosPromise = getCachedTopVideosForCurrentVideo(30);
       const fetchedRelatedVideos = await getRelatedVideos(currentVideo.id, {
         userId: optionalAuth?.userId,
         count: requestedWithProbe,
         excludeVideoIds: excludedRelatedIds,
       });
+      earlyTopVideosForPadding = await paddingTopVideosPromise;
       const blendedRelatedVideos = blendRelatedWithFavourites(
         fetchedRelatedVideos,
         favouriteVideos,
@@ -435,7 +440,7 @@ export async function GET(request: NextRequest) {
     let paddedRelatedVideos = relatedVideos;
 
     if (!isCustomRelatedRequest && relatedVideos.length < targetRelatedCount) {
-      const topVideos = await getTopVideos(30);
+      const topVideos = earlyTopVideosForPadding ?? await getCachedTopVideosForCurrentVideo(30);
       const blockedIds = new Set([currentVideo.id, ...relatedVideos.map((video) => video.id)]);
       const fillerPool = uniqueVideosById(topVideos.filter((video) => !blockedIds.has(video.id)));
       const filler = shuffleVideos(fillerPool).slice(0, targetRelatedCount - relatedVideos.length);
@@ -462,6 +467,17 @@ export async function GET(request: NextRequest) {
 
     if (!isCustomRelatedRequest) {
       currentVideoResolverBlockedUntil = 0;
+    }
+
+    // Pre-warm the related pool for this video so the client's first background
+    // prefetch joins an in-flight pool build rather than cold-starting it
+    // (cuts Watch Next fill latency from several seconds to near-zero on warm cache).
+    if (!isCustomRelatedRequest) {
+      getRelatedPoolForCurrentVideo(
+        currentVideo.id,
+        optionalAuth?.userId,
+        CURRENT_VIDEO_RELATED_POOL_SIZE,
+      ).catch(() => undefined);
     }
 
     logCurrentVideoRoute("request:success", {

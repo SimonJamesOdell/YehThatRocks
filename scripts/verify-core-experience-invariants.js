@@ -70,7 +70,7 @@ function main() {
   assertContains(shellDynamicSource, "isSeen={isAuthenticated && seenVideoIdsRef.current.has(track.id)}", "Shell only renders watch-next seen badges for authenticated users", failures);
   assertContains(shellDynamicSource, "watchNextRailRef.current.scrollTop = 0;", "Watch Next resets scroll top during transition", failures);
   assertContains(currentVideoRouteSource, "const targetRelatedCount = 8;", "Current-video API targets 8 Watch Next items", failures);
-  assertContains(currentVideoRouteSource, "const topVideos = await getTopVideos(30);", "Current-video API fetches bounded filler pool", failures);
+  assertContains(currentVideoRouteSource, "earlyTopVideosForPadding ?? await getCachedTopVideosForCurrentVideo(30)", "Current-video API fetches bounded filler pool (parallel-prefetched or direct)", failures);
   assertContains(currentVideoRouteSource, "const filler = shuffleVideos(fillerPool).slice(0, targetRelatedCount - relatedVideos.length);", "Current-video API randomizes sparse filler selection", failures);
 
   // Player invariants.
