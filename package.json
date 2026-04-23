@@ -57,6 +57,7 @@
     "verify:classification": "node scripts/verify-classification-invariants.js",
     "verify:compile": "npm run build",
     "verify:auth:api": "node scripts/verify-auth-api-smoke.js",
+    "monitor:performance": "node scripts/monitor-performance.js",
     "facebook:group-share": "node scripts/facebook-group-autoshare.js",
     "facebook:group-share:dry-run": "node scripts/facebook-group-autoshare.js --dry-run",
     "verify:ui-regressions": "npm run verify:artists-ui && npm run verify:top100-ui && npm run verify:playlists-ui && npm run verify:core-experience && npm run verify:categories && npm run verify:auth && npm run verify:admin && npm run verify:favourites && npm run verify:history-ui && npm run verify:watch-next-and-new && npm run verify:hidden-videos && npm run verify:search && npm run verify:classification",
