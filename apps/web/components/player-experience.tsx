@@ -4620,22 +4620,24 @@ export function PlayerExperience({
                 </div>
 
                 <div className="overlayCenter">
-                  <button
-                    type="button"
-                    className="overlayPlayBtn"
-                    onClick={handlePlayPause}
-                    aria-label={isPlaying ? "Pause" : "Play"}
-                  >
-                    {isPlaying ? (
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                        <rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" />
-                      </svg>
-                    ) : (
-                      <svg className="overlayPlayIcon" width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                        <polygon points="5,3 19,12 5,21" />
-                      </svg>
-                    )}
-                  </button>
+                  {!showPlayerLoadingOverlay && (
+                    <button
+                      type="button"
+                      className="overlayPlayBtn"
+                      onClick={handlePlayPause}
+                      aria-label={isPlaying ? "Pause" : "Play"}
+                    >
+                      {isPlaying ? (
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                          <rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" />
+                        </svg>
+                      ) : (
+                        <svg className="overlayPlayIcon" width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                          <polygon points="5,3 19,12 5,21" />
+                        </svg>
+                      )}
+                    </button>
+                  )}
                 </div>
 
                 <div className="overlayBottom">

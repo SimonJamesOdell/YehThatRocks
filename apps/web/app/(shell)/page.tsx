@@ -17,6 +17,7 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
   const host = requestHeaders.get("x-forwarded-host") || requestHeaders.get("host") || "yehthatrocks.com";
   const proto = requestHeaders.get("x-forwarded-proto") || "https";
   const siteOrigin = `${proto}://${host}`;
+  const fallbackShareImage = `${siteOrigin}/images/guitar_back.png`;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const rawVideoId = typeof resolvedSearchParams?.v === "string" ? resolvedSearchParams.v : undefined;
   const selectedVideo = rawVideoId ? await getCurrentVideo(rawVideoId) : null;
@@ -25,6 +26,25 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
     return {
       title: DEFAULT_TITLE,
       description: DEFAULT_DESCRIPTION,
+      openGraph: {
+        title: DEFAULT_TITLE,
+        description: DEFAULT_DESCRIPTION,
+        url: siteOrigin,
+        siteName: SITE_NAME,
+        type: "website",
+        images: [
+          {
+            url: fallbackShareImage,
+            alt: "YehThatRocks background artwork",
+          },
+        ],
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: DEFAULT_TITLE,
+        description: DEFAULT_DESCRIPTION,
+        images: [fallbackShareImage],
+      },
     };
   }
 
