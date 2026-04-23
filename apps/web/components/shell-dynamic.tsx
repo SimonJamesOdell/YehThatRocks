@@ -83,6 +83,32 @@ type PublicPerformancePayload = {
     swapUsagePercent?: number | null;
     networkUsagePercent?: number | null;
   };
+  runtime?: {
+    node?: {
+      uptimeSec?: number;
+      rssMb?: number;
+      heapUsedMb?: number;
+      heapTotalMb?: number;
+    };
+    prisma?: {
+      windowSec?: number;
+      totalQueries?: number;
+      queriesPerSec?: number;
+      avgDurationMs?: number;
+      p95DurationMs?: number;
+      totalsSinceBoot?: {
+        totalQueries?: number;
+        totalDurationMs?: number;
+      };
+      topOperations?: Array<{
+        operation: string;
+        count: number;
+        totalDurationMs: number;
+        avgDurationMs: number;
+        p95DurationMs: number;
+      }>;
+    };
+  };
 };
 
 type RightRailMode = "watch-next" | "playlist";
@@ -458,6 +484,10 @@ function finitePercentOrNull(value: number | null | undefined) {
     : null;
 }
 
+function finiteNumberOrNull(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function PerformanceDial({
   label,
   value,
@@ -586,6 +616,7 @@ function ShellDynamicInner({
   const [isPerformanceQuickLaunchVisible, setIsPerformanceQuickLaunchVisible] = useState(false);
   const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);
   const [performanceMetrics, setPerformanceMetrics] = useState<PublicPerformancePayload["host"] | null>(null);
+  const [performanceRuntime, setPerformanceRuntime] = useState<PublicPerformancePayload["runtime"] | null>(null);
   const [performanceMetricsGeneratedAt, setPerformanceMetricsGeneratedAt] = useState<string | null>(null);
   const [isLoadingPerformanceMetrics, setIsLoadingPerformanceMetrics] = useState(false);
   const [performanceMetricsError, setPerformanceMetricsError] = useState<string | null>(null);
@@ -2055,10 +2086,12 @@ function ShellDynamicInner({
 
       const payload = (await response.json()) as PublicPerformancePayload;
       setPerformanceMetrics(payload.host ?? null);
+      setPerformanceRuntime(payload.runtime ?? null);
       setPerformanceMetricsGeneratedAt(payload.meta?.generatedAt ?? null);
       setPerformanceMetricsError(null);
     } catch {
       setPerformanceMetricsError("Performance metrics are temporarily unavailable.");
+      setPerformanceRuntime(null);
     } finally {
       setIsLoadingPerformanceMetrics(false);
     }
@@ -2069,13 +2102,30 @@ function ShellDynamicInner({
       return;
     }
 
-    void loadPublicPerformanceMetrics();
-    const intervalId = window.setInterval(() => {
+    const pollPerformanceMetrics = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
       void loadPublicPerformanceMetrics();
+    };
+
+    pollPerformanceMetrics();
+    const intervalId = window.setInterval(() => {
+      pollPerformanceMetrics();
     }, PUBLIC_PERFORMANCE_POLL_MS);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void loadPublicPerformanceMetrics();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [isPerformanceModalOpen, loadPublicPerformanceMetrics]);
 
@@ -2974,6 +3024,7 @@ function ShellDynamicInner({
       || !hasMoreRelated
       || isLoadingMoreRelated
       || isWatchNextVideoSelectionPending
+      || document.visibilityState !== "visible"
     ) {
       return;
     }
@@ -2990,6 +3041,10 @@ function ShellDynamicInner({
     }
 
     const timeoutId = window.setTimeout(() => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
       const remainingForTarget = RELATED_BACKGROUND_PREFETCH_TARGET - displayedRenderableRelatedVideos.length;
       const remainingForAggressiveTarget = targetRunway - displayedRenderableRelatedVideos.length;
       const prefetchCount = Math.max(
@@ -4555,6 +4610,84 @@ function ShellDynamicInner({
               <PerformanceDial label="Disk" value={performanceMetrics?.diskUsagePercent} color="#7ce0a3" />
               <PerformanceDial label="Network" value={performanceMetrics?.networkUsagePercent} color="#5fc1ff" />
             </div>
+
+            {performanceRuntime ? (
+              <div className="performanceProfileGrid">
+                <section className="performanceProfileCard">
+                  <h3>Node Runtime</h3>
+                  <dl>
+                    <div>
+                      <dt>Uptime</dt>
+                      <dd>{Math.round(finiteNumberOrNull(performanceRuntime.node?.uptimeSec) ?? 0)}s</dd>
+                    </div>
+                    <div>
+                      <dt>RSS</dt>
+                      <dd>{(finiteNumberOrNull(performanceRuntime.node?.rssMb) ?? 0).toFixed(1)} MB</dd>
+                    </div>
+                    <div>
+                      <dt>Heap used</dt>
+                      <dd>{(finiteNumberOrNull(performanceRuntime.node?.heapUsedMb) ?? 0).toFixed(1)} MB</dd>
+                    </div>
+                    <div>
+                      <dt>Heap total</dt>
+                      <dd>{(finiteNumberOrNull(performanceRuntime.node?.heapTotalMb) ?? 0).toFixed(1)} MB</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section className="performanceProfileCard">
+                  <h3>Prisma (rolling window)</h3>
+                  <dl>
+                    <div>
+                      <dt>Window</dt>
+                      <dd>{Math.round(finiteNumberOrNull(performanceRuntime.prisma?.windowSec) ?? 0)}s</dd>
+                    </div>
+                    <div>
+                      <dt>Queries</dt>
+                      <dd>{Math.round(finiteNumberOrNull(performanceRuntime.prisma?.totalQueries) ?? 0)}</dd>
+                    </div>
+                    <div>
+                      <dt>QPS</dt>
+                      <dd>{(finiteNumberOrNull(performanceRuntime.prisma?.queriesPerSec) ?? 0).toFixed(2)}</dd>
+                    </div>
+                    <div>
+                      <dt>Avg query</dt>
+                      <dd>{(finiteNumberOrNull(performanceRuntime.prisma?.avgDurationMs) ?? 0).toFixed(1)} ms</dd>
+                    </div>
+                    <div>
+                      <dt>P95 query</dt>
+                      <dd>{(finiteNumberOrNull(performanceRuntime.prisma?.p95DurationMs) ?? 0).toFixed(1)} ms</dd>
+                    </div>
+                    <div>
+                      <dt>Total since boot</dt>
+                      <dd>{Math.round(finiteNumberOrNull(performanceRuntime.prisma?.totalsSinceBoot?.totalQueries) ?? 0)}</dd>
+                    </div>
+                  </dl>
+
+                  {Array.isArray(performanceRuntime.prisma?.topOperations) && performanceRuntime.prisma.topOperations.length > 0 ? (
+                    <div className="performanceTopOperations">
+                      <strong>Top DB operations by total time</strong>
+                      <div className="performanceTopOperationsTable" role="table" aria-label="Top database operations">
+                        <div className="performanceTopOperationsRow performanceTopOperationsHeader" role="row">
+                          <span role="columnheader">Operation</span>
+                          <span role="columnheader">Count</span>
+                          <span role="columnheader">Avg</span>
+                          <span role="columnheader">P95</span>
+                        </div>
+                        {performanceRuntime.prisma.topOperations.map((operation) => (
+                          <div key={operation.operation} className="performanceTopOperationsRow" role="row">
+                            <span role="cell">{operation.operation}</span>
+                            <span role="cell">{operation.count}</span>
+                            <span role="cell">{operation.avgDurationMs.toFixed(1)} ms</span>
+                            <span role="cell">{operation.p95DurationMs.toFixed(1)} ms</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
+              </div>
+            ) : null}
 
             <div className="performanceModalMeta">
               {isLoadingPerformanceMetrics ? <p>Refreshing metrics...</p> : null}
