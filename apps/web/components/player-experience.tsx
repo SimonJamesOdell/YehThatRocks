@@ -2462,6 +2462,22 @@ export function PlayerExperience({
             }
 
             if (event.data === window.YT?.PlayerState.ENDED) {
+              const activeVideoId = currentVideoRef.current.id;
+              const runtimePlayerWithVideoData = playerRef.current as (YouTubePlayer & {
+                getVideoData?: () => { video_id?: string | null };
+              }) | null;
+              const runtimeVideoId = runtimePlayerWithVideoData && typeof runtimePlayerWithVideoData.getVideoData === "function"
+                ? (runtimePlayerWithVideoData.getVideoData()?.video_id ?? null)
+                : null;
+
+              if (runtimeVideoId && runtimeVideoId !== activeVideoId) {
+                logPlayerDebug("onStateChange:ignore-stale-ended-event", {
+                  activeVideoId,
+                  runtimeVideoId,
+                });
+                return;
+              }
+
               const endedTime = playerRef.current && typeof playerRef.current.getCurrentTime === "function"
                 ? toSafeNumber(playerRef.current.getCurrentTime(), 0)
                 : currentTime;
@@ -2752,9 +2768,14 @@ export function PlayerExperience({
     if (options?.clearPlaylist) {
       params.delete("pl");
       params.delete("pli");
-    } else if (options?.playlistId && options.playlistItemIndex !== null && options.playlistItemIndex !== undefined) {
+    } else if (options?.playlistId) {
       params.set("pl", options.playlistId);
-      params.set("pli", String(options.playlistItemIndex));
+
+      if (options.playlistItemIndex !== null && options.playlistItemIndex !== undefined) {
+        params.set("pli", String(options.playlistItemIndex));
+      } else {
+        params.delete("pli");
+      }
     }
 
     router.push(`${pathname}?${params.toString()}`);
