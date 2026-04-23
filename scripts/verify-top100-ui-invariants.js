@@ -103,7 +103,7 @@ function main() {
   assertContains(shellDynamicSource, "Watch Next", "Player shell labels related rail as Watch Next", failures);
   assertContains(currentVideoRouteSource, "getTopVideos", "Current video route imports top videos for related fallback", failures);
   assertContains(currentVideoRouteSource, "relatedVideos.length < targetRelatedCount", "Current video route pads sparse related list", failures);
-  assertContains(currentVideoRouteSource, "const targetRelatedCount = 10;", "Current video route pads Watch Next up to 10 items", failures);
+  assertContains(currentVideoRouteSource, "const targetRelatedCount = 8;", "Current video route pads Watch Next up to 8 items", failures);
   assertContains(currentVideoRouteSource, "new Set([currentVideo.id, ...relatedVideos.map((video) => video.id)])", "Current video route excludes current and existing related ids from filler", failures);
   assertContains(currentVideoRouteSource, "paddedRelatedVideos = [...relatedVideos, ...filler];", "Current video route appends randomized filler items", failures);
   assertContains(shellDynamicSource, "const watchNextRailRef = useRef<HTMLElement | null>(null);", "Watch Next rail has a dedicated ref for scroll control", failures);
