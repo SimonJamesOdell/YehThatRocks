@@ -7642,6 +7642,96 @@ h1 {
   min-height: 1.4em;
 }
 
+.performanceProfileGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.performanceProfileCard {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.performanceProfileCard h3 {
+  margin: 0;
+  font-size: 0.86rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 230, 214, 0.94);
+}
+
+.performanceProfileCard dl {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.performanceProfileCard dl div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.performanceProfileCard dt,
+.performanceProfileCard dd {
+  margin: 0;
+}
+
+.performanceProfileCard dt {
+  color: rgba(255, 220, 206, 0.78);
+  font-size: 0.81rem;
+}
+
+.performanceProfileCard dd {
+  color: rgba(255, 242, 236, 0.98);
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.performanceTopOperations {
+  display: grid;
+  gap: 8px;
+}
+
+.performanceTopOperations strong {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 222, 208, 0.86);
+}
+
+.performanceTopOperationsTable {
+  display: grid;
+  gap: 4px;
+}
+
+.performanceTopOperationsRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 56px 64px 64px;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.77rem;
+  color: rgba(255, 241, 235, 0.92);
+}
+
+.performanceTopOperationsHeader {
+  color: rgba(255, 224, 210, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.performanceTopOperationsRow span:first-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .performanceModalMeta p {
   margin: 0;
   color: rgba(255, 225, 218, 0.9);

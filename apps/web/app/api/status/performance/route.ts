@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { buildAdminHealthPayload } from "@/lib/admin-dashboard-health";
+import { getRuntimeProfilingSnapshot } from "@/lib/runtime-profiler";
 
 export async function GET() {
   const payload = await buildAdminHealthPayload();
+  const runtime = getRuntimeProfilingSnapshot();
 
   return NextResponse.json({
     meta: payload.meta,
@@ -16,6 +18,7 @@ export async function GET() {
       swapUsagePercent: payload.health.host.swapUsagePercent,
       networkUsagePercent: payload.health.host.networkUsagePercent,
     },
+    runtime,
   }, {
     headers: {
       "Cache-Control": "no-store, no-cache, must-revalidate",

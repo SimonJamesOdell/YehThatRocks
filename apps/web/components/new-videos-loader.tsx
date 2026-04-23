@@ -312,6 +312,10 @@ export function NewVideosLoader({
       return;
     }
 
+    if (document.visibilityState !== "visible") {
+      return;
+    }
+
     const now = Date.now();
     if (now - lastPrefetchAtRef.current < 120) {
       return;
@@ -348,6 +352,10 @@ export function NewVideosLoader({
       let batchesLoaded = 0;
 
       while (hasMoreRef.current && batchesLoaded < NEW_SCROLL_MAX_PREFETCH_BATCHES) {
+        if (document.visibilityState !== "visible") {
+          break;
+        }
+
         const batchResult = await loadBatch(nextOffsetRef.current, NEW_SCROLL_BATCH_SIZE);
         batchesLoaded += 1;
 
@@ -379,10 +387,18 @@ export function NewVideosLoader({
     const overlay = document.querySelector<HTMLElement>(".favouritesBlindInner");
 
     const onWindowScroll = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
       void maybeLoadMoreFromScroll();
     };
 
     const onOverlayScroll = (event: Event) => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
       const target = event.currentTarget;
       if (!(target instanceof HTMLElement)) {
         void maybeLoadMoreFromScroll();
@@ -406,6 +422,23 @@ export function NewVideosLoader({
       if (overlay) {
         overlay.removeEventListener("scroll", onOverlayScroll);
       }
+    };
+  }, [hasMore, loading, maybeLoadMoreFromScroll]);
+
+  useEffect(() => {
+    if (loading || !hasMore) {
+      return;
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void maybeLoadMoreFromScroll();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [hasMore, loading, maybeLoadMoreFromScroll]);
 
@@ -782,6 +815,10 @@ export function NewVideosLoader({
         }
 
         while (nextOffsetRef.current < NEW_STARTUP_PREFETCH_TARGET && hasMoreRef.current) {
+          if (document.visibilityState !== "visible") {
+            break;
+          }
+
           const remaining = NEW_STARTUP_PREFETCH_TARGET - nextOffsetRef.current;
           const take = Math.max(1, Math.min(NEW_INITIAL_BATCH_SIZE, remaining));
           const result = await loadBatch(nextOffsetRef.current, take, { initial: true });

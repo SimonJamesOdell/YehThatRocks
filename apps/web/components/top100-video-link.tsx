@@ -31,8 +31,10 @@ type Top100VideoLinkProps = {
 const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
 const TOP100_WARM_WINDOW_MS = 12_000;
 const TOP100_WARM_LIMIT_PER_WINDOW = 6;
+const TOP100_VIDEO_WARM_TTL_MS = 25_000;
 let top100WarmWindowStartedAt = 0;
 let top100WarmCountInWindow = 0;
+const top100WarmByVideoId = new Map<string, number>();
 
 function canWarmTop100Selection() {
   const now = Date.now();
@@ -46,6 +48,18 @@ function canWarmTop100Selection() {
   }
 
   top100WarmCountInWindow += 1;
+  return true;
+}
+
+function canWarmTop100Video(videoId: string) {
+  const now = Date.now();
+  const warmExpiresAt = top100WarmByVideoId.get(videoId) ?? 0;
+
+  if (warmExpiresAt > now) {
+    return false;
+  }
+
+  top100WarmByVideoId.set(videoId, now + TOP100_VIDEO_WARM_TTL_MS);
   return true;
 }
 
@@ -112,6 +126,10 @@ export function Top100VideoLink({
     }
 
     if (!canWarmTop100Selection()) {
+      return;
+    }
+
+    if (!canWarmTop100Video(track.id)) {
       return;
     }
 

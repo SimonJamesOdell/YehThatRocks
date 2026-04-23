@@ -1,8 +1,41 @@
 import { PrismaClient } from "@prisma/client";
 
+import { recordPrismaOperation } from "@/lib/runtime-profiler";
+
 declare global {
   var __yehPrisma__: PrismaClient | undefined;
   var __yehPrismaShutdownHooks__: boolean | undefined;
+  var __yehPrismaProfilingHookInstalled__: boolean | undefined;
+}
+
+type PrismaQueryEvent = {
+  query: string;
+  duration: number;
+};
+
+function normalizeQueryOperation(query: string) {
+  const normalized = query.trim().toUpperCase();
+  if (!normalized) {
+    return "SQL.UNKNOWN";
+  }
+
+  if (normalized.startsWith("SELECT")) {
+    return "SQL.SELECT";
+  }
+
+  if (normalized.startsWith("INSERT")) {
+    return "SQL.INSERT";
+  }
+
+  if (normalized.startsWith("UPDATE")) {
+    return "SQL.UPDATE";
+  }
+
+  if (normalized.startsWith("DELETE")) {
+    return "SQL.DELETE";
+  }
+
+  return "SQL.OTHER";
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -87,10 +120,44 @@ function createPrismaClient() {
     datasources: {
       db: { url },
     },
+    log: [
+      {
+        emit: "event",
+        level: "query",
+      },
+    ],
   });
 }
 
 export const prisma = global.__yehPrisma__ ?? createPrismaClient();
+
+if (!global.__yehPrismaProfilingHookInstalled__) {
+  const prismaWithProfilingHooks = prisma as PrismaClient & {
+    $use?: (middleware: (params: { model?: string; action: string }, next: (params: { model?: string; action: string }) => Promise<unknown>) => Promise<unknown>) => void;
+    $on?: (eventType: "query", callback: (event: PrismaQueryEvent) => void) => void;
+  };
+
+  if (typeof prismaWithProfilingHooks.$use === "function") {
+    prismaWithProfilingHooks.$use(async (params, next) => {
+      const startedAt = performance.now();
+
+      try {
+        return await next(params);
+      } finally {
+        const durationMs = performance.now() - startedAt;
+        const model = params.model ?? "$raw";
+        const operation = `${model}.${params.action}`;
+        recordPrismaOperation(operation, durationMs);
+      }
+    });
+  } else if (typeof prismaWithProfilingHooks.$on === "function") {
+    prismaWithProfilingHooks.$on("query", (event) => {
+      recordPrismaOperation(normalizeQueryOperation(event.query), event.duration);
+    });
+  }
+
+  global.__yehPrismaProfilingHookInstalled__ = true;
+}
 
 if (!global.__yehPrismaShutdownHooks__) {
   const shutdown = async () => {
