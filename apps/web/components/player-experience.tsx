@@ -4378,12 +4378,18 @@ export function PlayerExperience({
           // player immediately rather than navigating to the next video — the list page
           // handles its own removal animation via the ytr:video-catalog-deleted event.
           if (isDockedDesktop) {
-            const params = new URLSearchParams(searchParams.toString());
+            const params = typeof window !== "undefined"
+              ? new URLSearchParams(window.location.search)
+              : new URLSearchParams(searchParams.toString());
             params.delete("v");
             params.delete("pl");
             params.delete("pli");
             const query = params.toString();
             router.replace(query ? `${pathname}?${query}` : pathname);
+            onDockHideRequest?.();
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));
+            }
             return;
           }
 

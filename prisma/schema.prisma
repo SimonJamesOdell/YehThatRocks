@@ -33,6 +33,7 @@ model Video {
 
   @@fulltext([title, parsedArtist, parsedTrack])
   @@index([parsedArtistNorm], map: "idx_videos_parsed_artist_norm")
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "idx_videos_created_at_id")
   @@map("videos")
 }
 
@@ -291,6 +292,16 @@ model SiteVideo {
 
   @@index([videoId, status])
   @@map("site_videos")
+}
+
+model RejectedVideo {
+  id         Int      @id @default(autoincrement())
+  videoId    String   @unique @map("video_id") @db.VarChar(32)
+  reason     String   @db.VarChar(100)
+  rejectedAt DateTime @default(now()) @map("rejected_at") @db.DateTime
+
+  @@index([videoId], map: "idx_rejected_videos_video_id")
+  @@map("rejected_videos")
 }
 
 model AnalyticsEvent {

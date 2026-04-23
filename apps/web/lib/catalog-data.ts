@@ -998,6 +998,10 @@ let newestVideosCache:
 const newestVideosRequestCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
 const newestVideosInFlight = new Map<string, Promise<VideoRecord[]>>();
 
+// Short-lived in-process cache for rejected video IDs — checked before every YouTube API call.
+const REJECTED_VIDEO_CACHE_TTL_MS = 5 * 60_000; // 5 minutes
+const rejectedVideoCache = new Map<string, { expiresAt: number; rejected: boolean }>();
+
 const GENRE_RESULTS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const GENRE_CARDS_CACHE_TTL_MS = 30 * 1000; // 30 seconds
 const CATEGORY_QUERY_TIMEOUT_MS = 2_500;
@@ -1790,6 +1794,46 @@ async function getStoredVideoById(videoId: string): Promise<StoredVideoRow | nul
   return rows[0] ?? null;
 }
 
+async function isRejectedVideo(videoId: string): Promise<boolean> {
+  if (!hasDatabaseUrl()) {
+    return false;
+  }
+
+  const cached = rejectedVideoCache.get(videoId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.rejected;
+  }
+
+  try {
+    const rows = await prisma.$queryRaw<Array<{ video_id: string }>>`
+      SELECT video_id FROM rejected_videos WHERE video_id = ${videoId} LIMIT 1
+    `;
+    const rejected = rows.length > 0;
+    rejectedVideoCache.set(videoId, { expiresAt: Date.now() + REJECTED_VIDEO_CACHE_TTL_MS, rejected });
+    return rejected;
+  } catch {
+    // Table may not exist yet during migration — treat as not rejected.
+    return false;
+  }
+}
+
+async function persistRejectedVideo(videoId: string, reason: string): Promise<void> {
+  if (!hasDatabaseUrl()) {
+    return;
+  }
+
+  try {
+    await prisma.$executeRaw`
+      INSERT INTO rejected_videos (video_id, reason, rejected_at)
+      VALUES (${videoId}, ${reason}, ${new Date()})
+      ON DUPLICATE KEY UPDATE reason = VALUES(reason), rejected_at = VALUES(rejected_at)
+    `;
+    rejectedVideoCache.set(videoId, { expiresAt: Date.now() + REJECTED_VIDEO_CACHE_TTL_MS, rejected: true });
+  } catch {
+    // Best-effort — if the table doesn't exist yet, skip silently.
+  }
+}
+
 async function getFastVideoByVideoIdRows(
   normalizedVideoId: string,
   options?: { requireAvailable?: boolean; preferParsedArtist?: boolean },
@@ -1989,6 +2033,17 @@ async function fetchOEmbedVideo(videoId: string): Promise<PersistableVideoRecord
 async function persistVideoAvailability(video: PersistableVideoRecord, availability: VideoAvailability) {
   const persistedTitle = truncate(normalizePossiblyMojibakeText(video.title), 255);
   const persistedDescription = video.description;
+
+  // Definitively unavailable videos go to the rejected_videos blocklist and are not written
+  // to the main videos table, keeping it lean and only containing accepted catalog entries.
+  if (availability.status === "unavailable") {
+    await persistRejectedVideo(video.id, availability.reason || "unavailable");
+    debugCatalog("persistVideoAvailability:rejected", {
+      videoId: video.id,
+      reason: availability.reason,
+    });
+    return null;
+  }
   const GENERIC_CHANNEL_FALLBACKS = new Set(["unknown artist", "youtube", "unknown"]);
   const rawChannelTitle = normalizePossiblyMojibakeText(video.channelTitle?.trim() ?? "");
   const persistedChannelTitle =
@@ -2277,18 +2332,31 @@ async function getExistingCatalogVideoIdSet(videoIds: string[]) {
     return new Set<string>();
   }
 
-  const rows = await prisma.video.findMany({
-    where: {
-      videoId: {
-        in: normalizedIds,
-      },
-    },
-    select: {
-      videoId: true,
-    },
-  });
+  const [videoRows, rejectedRows] = await Promise.all([
+    prisma.video.findMany({
+      where: { videoId: { in: normalizedIds } },
+      select: { videoId: true },
+    }),
+    (async () => {
+      try {
+        const placeholders = normalizedIds.map(() => "?").join(", ");
+        return await prisma.$queryRawUnsafe<Array<{ video_id: string }>>(
+          `SELECT video_id FROM rejected_videos WHERE video_id IN (${placeholders})`,
+          ...normalizedIds,
+        );
+      } catch {
+        return [] as Array<{ video_id: string }>;
+      }
+    })(),
+  ]);
 
-  return new Set(rows.map((row) => row.videoId).filter((id): id is string => Boolean(id)));
+  const known = new Set<string>(
+    [
+      ...videoRows.map((row) => row.videoId).filter((id): id is string => Boolean(id)),
+      ...rejectedRows.map((row) => row.video_id),
+    ],
+  );
+  return known;
 }
 
 function getRelatedFanoutForDepth(depth: number) {
@@ -2492,6 +2560,12 @@ async function hydrateAndPersistVideo(
     return null;
   }
 
+  // Fast-exit: skip all API calls for videos already confirmed unavailable.
+  if (await isRejectedVideo(normalizedVideoId)) {
+    debugCatalog("hydrateAndPersistVideo:rejected-skip", { videoId: normalizedVideoId });
+    return null;
+  }
+
   const existingVideo = await getStoredVideoById(normalizedVideoId);
 
   if (existingVideo && !options?.forceAvailabilityRefresh) {
@@ -2518,7 +2592,12 @@ async function hydrateAndPersistVideo(
     status: availability.status,
     reason: availability.reason,
   });
-  await persistVideoAvailability(video, availability);
+  const persisted = await persistVideoAvailability(video, availability);
+
+  // unavailable → written to rejected_videos, not to videos table
+  if (!persisted) {
+    return null;
+  }
 
   if (
     availability.status !== "unavailable"
@@ -4469,7 +4548,7 @@ export async function getNewestVideos(
             v.description
           FROM videos v
           WHERE v.videoId IS NOT NULL
-          ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
+          ORDER BY v.created_at DESC, v.id DESC
           LIMIT ${batchSize}
           OFFSET ${rawOffset}
         `;
@@ -4551,7 +4630,7 @@ export async function getNewestVideos(
           WHERE sv.status = 'available'
         ) available_sv ON available_sv.video_id = v.id
         WHERE v.videoId IS NOT NULL
-        ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
+        ORDER BY v.created_at DESC, v.id DESC
         LIMIT ${safeCount}
         OFFSET ${safeOffset}
       `;
@@ -4582,7 +4661,7 @@ export async function getNewestVideos(
           v.description
         FROM videos v
         WHERE v.videoId IS NOT NULL
-        ORDER BY v.updated_at DESC, v.created_at DESC, v.id DESC
+        ORDER BY v.created_at DESC, v.id DESC
         LIMIT ${safeCount}
         OFFSET ${safeOffset}
       `;
