@@ -50,7 +50,34 @@ DELETE sv
 FROM site_videos sv
 WHERE sv.video_id NOT IN (SELECT id FROM videos);
 
--- Step 5: Delete from videos all rows that now have NO available site_videos entry.
+-- Step 5: Delete playlist items that still point at videos with no available site_videos row.
+-- These rows would otherwise block the videos delete because playlistitems.video_id
+-- has an ON DELETE RESTRICT foreign key to videos.id.
+
+DELETE pi
+FROM playlistitems pi
+INNER JOIN videos v ON v.id = pi.video_id
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM site_videos sv
+  WHERE sv.video_id = v.id
+    AND sv.status = 'available'
+);
+
+-- Step 6: Delete artist-video links that still point at videos with no available site_videos row.
+-- This keeps videosbyartist consistent before the parent videos rows are removed.
+
+DELETE va
+FROM videosbyartist va
+INNER JOIN videos v ON v.id = va.video_id
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM site_videos sv
+  WHERE sv.video_id = v.id
+    AND sv.status = 'available'
+);
+
+-- Step 7: Delete from videos all rows that now have NO available site_videos entry.
 -- This removes: unavailable, check-failed, and orphaned rows captured above.
 -- Videos with status='available' in site_videos are NOT touched.
 
