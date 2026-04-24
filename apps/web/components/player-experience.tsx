@@ -156,10 +156,10 @@ const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
 const ADMIN_OVERLAY_ENTER_EVENT = "ytr:admin-overlay-enter";
 const ADMIN_SESSION_REVALIDATE_INTERVAL_MS = 30_000;
 const maxEndedChoiceVideos = 12;
-const ENDED_CHOICE_SET_SIZE = maxEndedChoiceVideos;
-const ENDED_CHOICE_INITIAL_PREFETCH_SETS = 2;
-const ENDED_CHOICE_SCROLL_PREFETCH_BUFFER_SETS = 3;
-const ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS = 8;
+const ENDED_CHOICE_BATCH_SIZE = maxEndedChoiceVideos;
+const ENDED_CHOICE_INITIAL_PREFETCH_COUNT = 24;
+const ENDED_CHOICE_SCROLL_RUNWAY_COUNT = 24;
+const ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS = 3;
 const ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-ended-choice";
 
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
@@ -599,6 +599,7 @@ export function PlayerExperience({
   const endedChoiceFailureStreakRef = useRef(0);
   const endedChoiceOverlayVisibleRef = useRef(false);
   const endedChoicePrewarmVideoIdRef = useRef<string | null>(null);
+  const endedChoicePostPrimeQueuedRef = useRef(false);
   const pointerPositionRef = useRef<{ x: number; y: number } | null>(null);
   const currentVideoRef = useRef(currentVideo);
   const autoplayEnabledRef = useRef(autoplayEnabled);
@@ -634,6 +635,7 @@ export function PlayerExperience({
     endedChoiceNoProgressStreakRef.current = 0;
     endedChoiceFailureStreakRef.current = 0;
     endedChoicePrewarmVideoIdRef.current = null;
+    endedChoicePostPrimeQueuedRef.current = false;
   }, [currentVideo]);
 
   useEffect(() => {
@@ -1223,14 +1225,14 @@ export function PlayerExperience({
     }
 
     const all = [...deduped.values()].filter((video) => !endedChoiceDismissedIds.includes(video.id));
-    const offset = (endedChoiceReshuffleKey * ENDED_CHOICE_SET_SIZE) % Math.max(all.length, 1);
+    const offset = (endedChoiceReshuffleKey * ENDED_CHOICE_BATCH_SIZE) % Math.max(all.length, 1);
     return [...all.slice(offset), ...all.slice(0, offset)];
   }, [queue, topFallbackVideos, currentVideo.id, endedChoiceReshuffleKey, endedChoiceDismissedIds]);
 
   const endedChoiceVideos = useMemo(() => {
     const deduped = new Map<string, NextChoiceVideo>();
 
-    for (const video of [...endedChoiceSeedVideos.slice(0, ENDED_CHOICE_SET_SIZE), ...endedChoiceRemoteVideos]) {
+    for (const video of [...endedChoiceSeedVideos.slice(0, ENDED_CHOICE_BATCH_SIZE), ...endedChoiceRemoteVideos]) {
       if (!video?.id || video.id === currentVideo.id || endedChoiceDismissedIds.includes(video.id) || deduped.has(video.id)) {
         continue;
       }
@@ -2502,6 +2504,7 @@ export function PlayerExperience({
                   const shouldPrewarmEndedChoice =
                     liveDuration > 0
                     && (liveDuration - liveTime) <= ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS
+                    && !autoplayEnabledRef.current
                     && endedChoicePrewarmVideoIdRef.current !== activeVideoId
                     && !endedChoiceOverlayVisibleRef.current
                     && !endedChoiceFetchingRef.current;
@@ -2511,8 +2514,12 @@ export function PlayerExperience({
                     endedChoiceUserScrolledRef.current = false;
                     endedChoiceHasMoreRef.current = true;
                     endedChoiceSkipRef.current = 0;
+                    endedChoicePostPrimeQueuedRef.current = false;
                     setEndedChoiceRemoteVideos([]);
-                    void fetchEndedChoiceSets(ENDED_CHOICE_INITIAL_PREFETCH_SETS, { background: true });
+                    void fetchEndedChoiceSets(ENDED_CHOICE_INITIAL_PREFETCH_COUNT, {
+                      background: true,
+                      schedulePostPrimeBatch: true,
+                    });
                   }
 
                   const progressPercent = liveDuration > 0 ? (liveTime / liveDuration) * 100 : 0;
@@ -2941,8 +2948,12 @@ export function PlayerExperience({
     });
   }, [activePlaylistId, navigateToVideo, playlistQueueIds]);
 
-  async function fetchEndedChoiceSets(setCount: number, options?: { background?: boolean }) {
+  async function fetchEndedChoiceSets(
+    requestedCount: number,
+    options?: { background?: boolean; schedulePostPrimeBatch?: boolean },
+  ) {
     const isBackground = options?.background === true;
+    const shouldSchedulePostPrimeBatch = options?.schedulePostPrimeBatch === true;
     const applyRetryBackoff = (baseMs: number) => {
       if (!isBackground) {
         return;
@@ -2957,11 +2968,11 @@ export function PlayerExperience({
       return;
     }
 
-    if (setCount <= 0 || endedChoiceFetchingRef.current || !endedChoiceHasMoreRef.current) {
+    if (requestedCount <= 0 || endedChoiceFetchingRef.current || !endedChoiceHasMoreRef.current) {
       return;
     }
 
-    const take = Math.max(1, setCount) * ENDED_CHOICE_SET_SIZE;
+    const take = Math.max(1, Math.min(60, Math.floor(requestedCount)));
     const skip = endedChoiceSkipRef.current;
     endedChoiceFetchingRef.current = true;
     if (!isBackground) {
@@ -2974,9 +2985,7 @@ export function PlayerExperience({
       params.set("count", String(take));
       params.set("offset", String(skip));
       params.set("mode", "ended-choice");
-      if (endedChoiceHideSeen) {
-        params.set("hideSeen", "1");
-      }
+      params.set("hideSeen", endedChoiceHideSeen ? "1" : "0");
 
       const response = await fetch(`/api/current-video?${params.toString()}`, {
         cache: "no-store",
@@ -3065,6 +3074,18 @@ export function PlayerExperience({
       endedChoiceNoProgressStreakRef.current = 0;
       endedChoiceAutoRetryBlockedUntilRef.current = 0;
 
+      if (
+        shouldSchedulePostPrimeBatch
+        && !endedChoicePostPrimeQueuedRef.current
+        && endedChoiceHasMoreRef.current
+        && !endedChoiceUserScrolledRef.current
+      ) {
+        endedChoicePostPrimeQueuedRef.current = true;
+        window.setTimeout(() => {
+          void fetchEndedChoiceSets(ENDED_CHOICE_BATCH_SIZE, { background: true });
+        }, 90);
+      }
+
       if (skip > 0 || endedChoiceUserScrolledRef.current) {
         setEndedChoiceAnimateCards(false);
       }
@@ -3093,6 +3114,19 @@ export function PlayerExperience({
     return 4;
   }
 
+  function estimateEndedChoiceVisibleCount() {
+    const overlay = endedChoiceOverlayRef.current;
+    const columns = Math.max(1, getEndedChoiceColumns());
+
+    if (!overlay) {
+      return columns * 2;
+    }
+
+    const rowHeight = Math.max(1, endedChoiceRowHeightRef.current);
+    const rowsVisible = Math.max(1, Math.ceil(overlay.clientHeight / rowHeight) + 1);
+    return rowsVisible * columns;
+  }
+
   const measureEndedChoiceCard = useCallback((node: HTMLDivElement | null) => {
     if (!node) {
       return;
@@ -3104,7 +3138,7 @@ export function PlayerExperience({
     }
   }, []);
 
-  function computeCurrentEndedChoiceSetIndex() {
+  function computeCurrentEndedChoiceFirstVisibleIndex() {
     const overlay = endedChoiceOverlayRef.current;
     if (!overlay) {
       return 0;
@@ -3113,8 +3147,7 @@ export function PlayerExperience({
     const columns = Math.max(1, getEndedChoiceColumns());
     const rowHeight = Math.max(1, endedChoiceRowHeightRef.current);
     const rowsScrolled = Math.max(0, Math.floor(overlay.scrollTop / rowHeight));
-    const estimatedFirstVisibleIndex = rowsScrolled * columns;
-    return Math.max(0, Math.floor(estimatedFirstVisibleIndex / ENDED_CHOICE_SET_SIZE));
+    return Math.max(0, rowsScrolled * columns);
   }
 
   function scheduleEndedChoicePrefetchCheck() {
@@ -3129,18 +3162,16 @@ export function PlayerExperience({
         return;
       }
 
-      const loadedSets = Math.ceil(Math.max(endedChoiceVideos.length, ENDED_CHOICE_SET_SIZE) / ENDED_CHOICE_SET_SIZE);
-
       if (!endedChoiceUserScrolledRef.current) {
         return;
       }
 
-      const currentSetIndex = computeCurrentEndedChoiceSetIndex();
-      const targetLoadedSets = currentSetIndex + ENDED_CHOICE_SCROLL_PREFETCH_BUFFER_SETS + 1;
-      const missingSets = Math.max(0, targetLoadedSets - loadedSets);
+      const firstVisibleIndex = computeCurrentEndedChoiceFirstVisibleIndex();
+      const visibleCount = estimateEndedChoiceVisibleCount();
+      const currentRunway = endedChoiceGridVideos.length - (firstVisibleIndex + visibleCount);
 
-      if (missingSets > 0) {
-        void fetchEndedChoiceSets(missingSets, { background: true });
+      if (currentRunway < ENDED_CHOICE_SCROLL_RUNWAY_COUNT) {
+        void fetchEndedChoiceSets(ENDED_CHOICE_BATCH_SIZE, { background: true });
       }
     });
   }
@@ -3168,6 +3199,12 @@ export function PlayerExperience({
 
     if (hasPrewarmedChoices) {
       setEndedChoiceLoading(false);
+
+      if (!endedChoicePostPrimeQueuedRef.current && endedChoiceHasMoreRef.current) {
+        endedChoicePostPrimeQueuedRef.current = true;
+        void fetchEndedChoiceSets(ENDED_CHOICE_BATCH_SIZE, { background: true });
+      }
+
       return;
     }
 
@@ -3177,17 +3214,12 @@ export function PlayerExperience({
     endedChoiceNoProgressStreakRef.current = 0;
     endedChoiceFailureStreakRef.current = 0;
     endedChoiceAutoRetryBlockedUntilRef.current = 0;
+    endedChoicePostPrimeQueuedRef.current = false;
     setEndedChoiceRemoteVideos([]);
-    void fetchEndedChoiceSets(ENDED_CHOICE_INITIAL_PREFETCH_SETS);
+    void fetchEndedChoiceSets(ENDED_CHOICE_INITIAL_PREFETCH_COUNT, {
+      schedulePostPrimeBatch: true,
+    });
   }, [showEndedChoiceOverlay, currentVideo.id, endedChoiceReshuffleKey]);
-
-  useEffect(() => {
-    if (!showEndedChoiceOverlay || !endedChoiceUserScrolledRef.current) {
-      return;
-    }
-
-    scheduleEndedChoicePrefetchCheck();
-  }, [showEndedChoiceOverlay, endedChoiceVideos.length]);
 
   useEffect(() => {
     const needsSeenRowFill =
@@ -3196,6 +3228,7 @@ export function PlayerExperience({
 
     if (
       !showEndedChoiceOverlay
+      || !endedChoiceUserScrolledRef.current
       || !needsSeenRowFill
       || endedChoiceFetchingRef.current
       || !endedChoiceHasMoreRef.current
@@ -3203,17 +3236,24 @@ export function PlayerExperience({
       return;
     }
 
+    scheduleEndedChoicePrefetchCheck();
+  }, [showEndedChoiceOverlay, endedChoiceVideos.length]);
+
+  useEffect(() => {
+    if (!showEndedChoiceOverlay || !endedChoiceUserScrolledRef.current) {
+      return;
+    }
+
     const timeoutId = window.setTimeout(() => {
-      void fetchEndedChoiceSets(1, { background: true });
-    }, 140);
+      scheduleEndedChoicePrefetchCheck();
+    }, 80);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
   }, [
-    currentVideo.id,
+    endedChoiceGridVideos.length,
     endedChoiceHideSeen,
-    endedChoiceVideos.length,
     showEndedChoiceOverlay,
     visibleEndedChoiceVideos.length,
   ]);
@@ -3229,6 +3269,7 @@ export function PlayerExperience({
       endedChoiceFailureStreakRef.current = 0;
       endedChoiceAutoRetryBlockedUntilRef.current = 0;
       endedChoicePrewarmVideoIdRef.current = null;
+      endedChoicePostPrimeQueuedRef.current = false;
       setEndedChoiceRemoteVideos([]);
       setEndedChoiceReshuffleKey((k) => k + 1);
       setEndedChoiceGridExiting(false);

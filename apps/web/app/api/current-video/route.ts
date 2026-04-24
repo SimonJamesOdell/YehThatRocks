@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { filterHiddenVideos, getCurrentVideo, getFavouriteVideos, getNewestVideos, getRelatedVideos, getTopVideos, getUnseenCatalogVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { filterHiddenVideos, getCurrentVideo, getFavouriteVideos, getNewestVideos, getRelatedVideos, getSeenVideoIdsForUser, getTopVideos, getUnseenCatalogVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { getOptionalApiAuth } from "@/lib/auth-request";
 import {
   currentVideoCache,
@@ -183,7 +183,7 @@ async function getRelatedPoolForCurrentVideo(
 
   const pending = (async () => {
     // Keep expansion bounded so pathological deep offsets do not trigger massive DB reads.
-    const discoveryCount = Math.max(300, Math.min(CURRENT_VIDEO_RELATED_POOL_QUERY_EXPANSION_CAP, targetSize * 2));
+    const discoveryCount = Math.max(120, Math.min(CURRENT_VIDEO_RELATED_POOL_QUERY_EXPANSION_CAP, targetSize * 2));
     const baseRelated = await getRelatedVideos(currentVideoId, {
       userId,
       count: 120,
@@ -379,7 +379,7 @@ export async function GET(request: NextRequest) {
 
     if (usePagedRelatedPool) {
       const poolSizeTarget = requestMode === "ended-choice"
-        ? Math.max(1000, requestedRelatedOffset + requestedRelatedCount + 1)
+        ? Math.max(48, requestedRelatedOffset + requestedRelatedCount + 24)
         : requestedRelatedOffset + requestedRelatedCount + 1;
       const relatedPool = await getRelatedPoolForCurrentVideo(
         currentVideo.id,
@@ -410,6 +410,11 @@ export async function GET(request: NextRequest) {
         currentVideo.id,
         favouriteBlendRatio,
       );
+
+      if (preferUnseenForEndedChoice && optionalAuth?.userId) {
+        const seenVideoIds = await getSeenVideoIdsForUser(optionalAuth.userId);
+        filteredPool = filteredPool.filter((video) => !seenVideoIds.has(video.id));
+      }
 
       const start = Math.min(requestedRelatedOffset, filteredPool.length);
       const end = Math.min(filteredPool.length, start + requestedRelatedCount);
