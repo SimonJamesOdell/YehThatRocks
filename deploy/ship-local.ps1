@@ -11,6 +11,9 @@ param(
   [switch]$SkipLocalCleanup,
   # Skip Docker cache pruning after shipping.
   [switch]$SkipDockerPrune
+  ,
+  # Resume a previously failed ship run from persisted checkpoint state.
+  [switch]$Resume
 )
 
 Set-StrictMode -Version Latest
@@ -72,6 +75,92 @@ function ExecNativeWithRetry(
     $delaySeconds = [Math]::Min(30, $delaySeconds * 2)
     $attempt += 1
   }
+}
+
+function Get-ShipStatePaths([string]$RepoRoot) {
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($RepoRoot)
+  $hasher = [System.Security.Cryptography.SHA256]::Create()
+  try {
+    $hashBytes = $hasher.ComputeHash($bytes)
+  } finally {
+    $hasher.Dispose()
+  }
+
+  $hashHex = ([System.BitConverter]::ToString($hashBytes)).Replace("-", "").ToLowerInvariant()
+  $repoKey = $hashHex.Substring(0, 12)
+  $baseDir = Join-Path $env:LOCALAPPDATA ("YTR\ship-state\{0}" -f $repoKey)
+
+  return @{
+    BaseDir = $baseDir
+    StateFile = (Join-Path $baseDir "state.json")
+    TarFile = (Join-Path $baseDir "image.tar")
+  }
+}
+
+function Ensure-Directory([string]$DirPath) {
+  if (-not (Test-Path -LiteralPath $DirPath)) {
+    New-Item -ItemType Directory -Path $DirPath -Force | Out-Null
+  }
+}
+
+function Read-ShipState([string]$StateFilePath) {
+  if (-not (Test-Path -LiteralPath $StateFilePath)) {
+    return $null
+  }
+
+  try {
+    return Get-Content -LiteralPath $StateFilePath -Raw | ConvertFrom-Json
+  } catch {
+    throw "Ship state file is unreadable or invalid JSON: $StateFilePath"
+  }
+}
+
+function Write-ShipState([string]$StateFilePath, [hashtable]$State) {
+  $parent = Split-Path -Parent $StateFilePath
+  Ensure-Directory -DirPath $parent
+  $json = $State | ConvertTo-Json -Depth 12
+  Set-Content -LiteralPath $StateFilePath -Value $json -Encoding UTF8
+}
+
+function Clear-ShipState([string]$StateFilePath) {
+  if (Test-Path -LiteralPath $StateFilePath) {
+    Remove-Item -LiteralPath $StateFilePath -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Get-ShipStageRank([string]$Stage) {
+  switch ($Stage) {
+    "init" { return 0 }
+    "image-built" { return 1 }
+    "tar-saved" { return 2 }
+    "tar-uploaded" { return 3 }
+    "image-loaded" { return 4 }
+    "deployed" { return 5 }
+    default { return -1 }
+  }
+}
+
+function Test-LocalDockerImage([string]$ImageTag) {
+  & docker image inspect $ImageTag *> $null
+  return ($LASTEXITCODE -eq 0)
+}
+
+function Ensure-ImagePresentFromTar([string]$ImageTag, [string]$LocalTarPath) {
+  if (Test-LocalDockerImage -ImageTag $ImageTag) {
+    return
+  }
+
+  if (-not (Test-Path -LiteralPath $LocalTarPath)) {
+    throw "Local image '$ImageTag' is missing and no resume tar is available at '$LocalTarPath'. Run ship without -Resume."
+  }
+
+  Write-Host "Rehydrating local Docker image from resume tar..." -ForegroundColor Yellow
+  ExecNative -Program "docker" -CommandArgs @("load", "-i", $LocalTarPath)
+}
+
+function Test-RemoteFileExists([string]$VpsHost, [string]$RemotePath) {
+  & ssh $VpsHost "test -s '$RemotePath'" *> $null
+  return ($LASTEXITCODE -eq 0)
 }
 
 function Ensure-DockerDaemon {
@@ -238,27 +327,44 @@ function Try-PruneDockerCaches {
   & docker container prune -f | Out-Null
 }
 
-function Transfer-ImageToVps([string]$ImageTag, [string]$VpsHost) {
-  $tempDir = [System.IO.Path]::GetTempPath()
-  $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-  $safeTag = ($ImageTag -replace "[^a-zA-Z0-9_.-]", "_")
-  $localTarPath = Join-Path $tempDir ("ytr-{0}-{1}.tar" -f $safeTag, $timestamp)
-  $remoteTarPath = "/tmp/yehthatrocks-image-{0}.tar" -f $timestamp
+function Transfer-ImageToVps(
+  [string]$ImageTag,
+  [string]$VpsHost,
+  [hashtable]$ShipState,
+  [string]$ShipStatePath
+) {
+  $currentStageRank = Get-ShipStageRank -Stage ([string]$ShipState.Stage)
 
-  try {
+  if ($currentStageRank -lt (Get-ShipStageRank -Stage "tar-saved")) {
     Write-Host "Saving local image tar archive..." -ForegroundColor Yellow
-    ExecNative -Program "docker" -CommandArgs @("save", "-o", $localTarPath, $ImageTag)
+    Ensure-Directory -DirPath (Split-Path -Parent $ShipState.LocalTarPath)
+    ExecNative -Program "docker" -CommandArgs @("save", "-o", $ShipState.LocalTarPath, $ImageTag)
+    $ShipState.Stage = "tar-saved"
+    Write-ShipState -StateFilePath $ShipStatePath -State $ShipState
+    $currentStageRank = Get-ShipStageRank -Stage ([string]$ShipState.Stage)
+  }
 
+  if ($currentStageRank -lt (Get-ShipStageRank -Stage "tar-uploaded")) {
     Write-Host "Uploading image archive to VPS..." -ForegroundColor Yellow
-    ExecNativeWithRetry -Program "scp" -CommandArgs @($localTarPath, "$VpsHost`:$remoteTarPath")
+    ExecNativeWithRetry -Program "scp" -CommandArgs @($ShipState.LocalTarPath, "$VpsHost`:$($ShipState.RemoteTarPath)")
+    $ShipState.Stage = "tar-uploaded"
+    Write-ShipState -StateFilePath $ShipStatePath -State $ShipState
+    $currentStageRank = Get-ShipStageRank -Stage ([string]$ShipState.Stage)
+  }
+
+  if ($currentStageRank -lt (Get-ShipStageRank -Stage "image-loaded")) {
+    if (-not (Test-RemoteFileExists -VpsHost $VpsHost -RemotePath $ShipState.RemoteTarPath)) {
+      Write-Warning "Resume checkpoint expected remote tar, but it is missing. Re-uploading tar..."
+      ExecNativeWithRetry -Program "scp" -CommandArgs @($ShipState.LocalTarPath, "$VpsHost`:$($ShipState.RemoteTarPath)")
+      $ShipState.Stage = "tar-uploaded"
+      Write-ShipState -StateFilePath $ShipStatePath -State $ShipState
+    }
 
     Write-Host "Loading uploaded image on VPS..." -ForegroundColor Yellow
-    $remoteLoad = "set -e; trap 'rm -f $remoteTarPath' EXIT; docker load -i $remoteTarPath"
+    $remoteLoad = "set -e; trap 'rm -f $($ShipState.RemoteTarPath)' EXIT; docker load -i $($ShipState.RemoteTarPath)"
     ExecNativeWithRetry -Program "ssh" -CommandArgs @($VpsHost, $remoteLoad)
-  } finally {
-    if (Test-Path $localTarPath) {
-      Remove-Item -Force $localTarPath -ErrorAction SilentlyContinue
-    }
+    $ShipState.Stage = "image-loaded"
+    Write-ShipState -StateFilePath $ShipStatePath -State $ShipState
   }
 }
 
@@ -298,6 +404,9 @@ if (-not (Get-Command scp -ErrorAction SilentlyContinue)) {
 
 Push-Location $RepoDir
 $devServerWasRunning = $false
+$shipStatePaths = Get-ShipStatePaths -RepoRoot $RepoDir
+$shipStatePath = [string]$shipStatePaths.StateFile
+$shipTarPath = [string]$shipStatePaths.TarFile
 try {
   if (-not $SkipLocalCleanup) {
     $devServerWasRunning = Stop-DevServer
@@ -313,19 +422,79 @@ try {
     Exec "git push origin $Branch"
   }
 
-  $sha = (git rev-parse --short HEAD).Trim()
-  if ([string]::IsNullOrWhiteSpace($sha)) {
+  $currentSha = (git rev-parse --short HEAD).Trim()
+  if ([string]::IsNullOrWhiteSpace($currentSha)) {
     throw "Could not determine git commit SHA"
   }
 
-  $imageTag = "$ImageBase`:$sha"
-  $latestTag = "$ImageBase`:latest"
+  $shipState = $null
+  if ($Resume) {
+    $loadedState = Read-ShipState -StateFilePath $shipStatePath
+    if (-not $loadedState) {
+      throw "-Resume requested but no ship checkpoint state was found at $shipStatePath"
+    }
 
-  Write-Host "Building image locally with full progress output..." -ForegroundColor Yellow
-  Exec "docker build --progress=plain -t $imageTag -t $latestTag ."
+    $resumeBranch = [string]$loadedState.Branch
+    $resumeSha = [string]$loadedState.CommitSha
+
+    if ($resumeBranch -ne $Branch) {
+      throw "Checkpoint branch '$resumeBranch' does not match requested branch '$Branch'."
+    }
+
+    if ($resumeSha -ne $currentSha) {
+      throw "Checkpoint commit '$resumeSha' does not match current HEAD '$currentSha'. Run fresh ship without -Resume."
+    }
+
+    $shipState = @{
+      SchemaVersion = [int]$loadedState.SchemaVersion
+      Branch = $resumeBranch
+      CommitSha = $resumeSha
+      ImageTag = [string]$loadedState.ImageTag
+      LatestTag = [string]$loadedState.LatestTag
+      LocalTarPath = [string]$loadedState.LocalTarPath
+      RemoteTarPath = [string]$loadedState.RemoteTarPath
+      Stage = [string]$loadedState.Stage
+      CreatedAt = [string]$loadedState.CreatedAt
+      UpdatedAt = (Get-Date).ToString("o")
+    }
+
+    Ensure-ImagePresentFromTar -ImageTag $shipState.ImageTag -LocalTarPath $shipState.LocalTarPath
+    Write-Host ("Resuming ship from stage '{0}' for {1}" -f $shipState.Stage, $shipState.ImageTag) -ForegroundColor Yellow
+  } else {
+    if (Test-Path -LiteralPath $shipStatePath) {
+      Write-Warning "Found stale ship checkpoint state. Starting fresh run and replacing it."
+      Clear-ShipState -StateFilePath $shipStatePath
+    }
+
+    $imageTag = "$ImageBase`:$currentSha"
+    $latestTag = "$ImageBase`:latest"
+    $remoteTarPath = "/tmp/yehthatrocks-image-$currentSha.tar"
+
+    $shipState = @{
+      SchemaVersion = 1
+      Branch = $Branch
+      CommitSha = $currentSha
+      ImageTag = $imageTag
+      LatestTag = $latestTag
+      LocalTarPath = $shipTarPath
+      RemoteTarPath = $remoteTarPath
+      Stage = "init"
+      CreatedAt = (Get-Date).ToString("o")
+      UpdatedAt = (Get-Date).ToString("o")
+    }
+    Write-ShipState -StateFilePath $shipStatePath -State $shipState
+  }
+
+  if ((Get-ShipStageRank -Stage ([string]$shipState.Stage)) -lt (Get-ShipStageRank -Stage "image-built")) {
+    Write-Host "Building image locally with full progress output..." -ForegroundColor Yellow
+    Exec "docker build --progress=plain -t $($shipState.ImageTag) -t $($shipState.LatestTag) ."
+    $shipState.Stage = "image-built"
+    $shipState.UpdatedAt = (Get-Date).ToString("o")
+    Write-ShipState -StateFilePath $shipStatePath -State $shipState
+  }
 
   Write-Host "Transferring image to VPS (no registry)..." -ForegroundColor Yellow
-  Transfer-ImageToVps -ImageTag $imageTag -VpsHost $VpsHost
+  Transfer-ImageToVps -ImageTag $shipState.ImageTag -VpsHost $VpsHost -ShipState $shipState -ShipStatePath $shipStatePath
 
   if ($RestoreDb) {
     Write-Host "=== DB RESTORE: Dumping local database from Docker ===" -ForegroundColor Magenta
@@ -389,11 +558,21 @@ try {
     Write-Host "=== DB RESTORE complete ===" -ForegroundColor Magenta
   }
 
-  $remoteDeploy = "cd $VpsRepoDir && git pull --ff-only origin $Branch && WEB_IMAGE=$imageTag SKIP_PULL=1 ./deploy/deploy-prod-hot-swap.sh"
-  Write-Host "Triggering VPS hot-swap deploy..." -ForegroundColor Yellow
-  Exec "ssh $VpsHost '$remoteDeploy'"
+  if ((Get-ShipStageRank -Stage ([string]$shipState.Stage)) -lt (Get-ShipStageRank -Stage "deployed")) {
+    $remoteDeploy = "cd $VpsRepoDir && git pull --ff-only origin $Branch && WEB_IMAGE=$($shipState.ImageTag) SKIP_PULL=1 ./deploy/deploy-prod-hot-swap.sh"
+    Write-Host "Triggering VPS hot-swap deploy..." -ForegroundColor Yellow
+    Exec "ssh $VpsHost '$remoteDeploy'"
+    $shipState.Stage = "deployed"
+    $shipState.UpdatedAt = (Get-Date).ToString("o")
+    Write-ShipState -StateFilePath $shipStatePath -State $shipState
+  }
 
-  Write-Host "Deploy complete: $imageTag" -ForegroundColor Green
+  if (Test-Path -LiteralPath $shipState.LocalTarPath) {
+    Remove-Item -LiteralPath $shipState.LocalTarPath -Force -ErrorAction SilentlyContinue
+  }
+  Clear-ShipState -StateFilePath $shipStatePath
+
+  Write-Host "Deploy complete: $($shipState.ImageTag)" -ForegroundColor Green
 
   if ((-not $SkipLocalCleanup) -and (-not $SkipDockerPrune)) {
     Try-PruneDockerCaches
