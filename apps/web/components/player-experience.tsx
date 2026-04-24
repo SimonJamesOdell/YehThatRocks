@@ -154,6 +154,7 @@ const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
 const RIGHT_RAIL_LYRICS_OPEN_EVENT = "ytr:right-rail-lyrics-open";
 const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
 const ADMIN_OVERLAY_ENTER_EVENT = "ytr:admin-overlay-enter";
+const ADMIN_SESSION_REVALIDATE_INTERVAL_MS = 30_000;
 const maxEndedChoiceVideos = 12;
 const ENDED_CHOICE_SET_SIZE = maxEndedChoiceVideos;
 const ENDED_CHOICE_INITIAL_PREFETCH_SETS = 2;
@@ -383,7 +384,7 @@ export function PlayerExperience({
   currentVideo,
   queue,
   isLoggedIn,
-  isAdmin = false,
+  isAdmin: initialIsAdmin = false,
   isDockedDesktop = false,
   seenVideoIds,
   onHideVideo,
@@ -503,6 +504,8 @@ export function PlayerExperience({
   const [playlistRefreshTick, setPlaylistRefreshTick] = useState(0);
   const [routeAutoplayQueueIds, setRouteAutoplayQueueIds] = useState<string[]>([]);
   const [topFallbackVideos, setTopFallbackVideos] = useState<VideoRecord[]>([]);
+  const [isAdminSessionActive, setIsAdminSessionActive] = useState(initialIsAdmin);
+  const isAdmin = isLoggedIn && isAdminSessionActive;
   const [showAdminVideoEditModal, setShowAdminVideoEditModal] = useState(false);
   const [adminEditVideoRowId, setAdminEditVideoRowId] = useState<number | null>(null);
   const [adminEditTitle, setAdminEditTitle] = useState("");
@@ -518,6 +521,70 @@ export function PlayerExperience({
   const [isAdminEditSaving, setIsAdminEditSaving] = useState(false);
   const [isAdminDeleting, setIsAdminDeleting] = useState(false);
   const [showAdminDeleteConfirmModal, setShowAdminDeleteConfirmModal] = useState(false);
+
+  useEffect(() => {
+    setIsAdminSessionActive(initialIsAdmin);
+  }, [initialIsAdmin]);
+
+  const revalidateAdminSession = useCallback(async () => {
+    if (!isLoggedIn) {
+      setIsAdminSessionActive(false);
+      return;
+    }
+
+    try {
+      const response = await fetchWithAuthRetry("/api/admin/dashboard", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      if (response.ok) {
+        setIsAdminSessionActive(true);
+        return;
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        setIsAdminSessionActive(false);
+      }
+    } catch {
+      // Keep current capability state on transient network failures.
+    }
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    void revalidateAdminSession();
+  }, [revalidateAdminSession]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleFocus = () => {
+      void revalidateAdminSession();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void revalidateAdminSession();
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void revalidateAdminSession();
+      }
+    }, ADMIN_SESSION_REVALIDATE_INTERVAL_MS);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.clearInterval(intervalId);
+    };
+  }, [revalidateAdminSession]);
   const [adminEditError, setAdminEditError] = useState<string | null>(null);
   const [adminEditStatus, setAdminEditStatus] = useState<string | null>(null);
   const endedChoiceOverlayRef = useRef<HTMLDivElement | null>(null);
@@ -4202,12 +4269,16 @@ export function PlayerExperience({
         setAdminEditStatus(null);
 
         try {
-          const response = await fetch(`/api/admin/videos?q=${encodeURIComponent(currentVideo.id)}`, {
+          const response = await fetchWithAuthRetry(`/api/admin/videos?q=${encodeURIComponent(currentVideo.id)}`, {
             method: "GET",
             cache: "no-store",
           });
 
           if (!response.ok) {
+            if (response.status === 401 || response.status === 403) {
+              setAdminEditError("Admin session expired. Please sign in again.");
+              return;
+            }
             setAdminEditError("Could not load video details.");
             return;
           }
@@ -4264,7 +4335,7 @@ export function PlayerExperience({
         }
 
         try {
-          const response = await fetch("/api/admin/videos", {
+          const response = await fetchWithAuthRetry("/api/admin/videos", {
             method: "PATCH",
             headers: {
               "Content-Type": "application/json",
@@ -4282,6 +4353,10 @@ export function PlayerExperience({
           });
 
           if (!response.ok) {
+            if (response.status === 401 || response.status === 403) {
+              setAdminEditError("Admin session expired. Please sign in again.");
+              return;
+            }
             setAdminEditError("Could not save video changes.");
             return;
           }
@@ -4342,7 +4417,7 @@ export function PlayerExperience({
         pauseActivePlayback();
 
         try {
-          const response = await fetch("/api/admin/videos", {
+          const response = await fetchWithAuthRetry("/api/admin/videos", {
             method: "DELETE",
             headers: {
               "Content-Type": "application/json",
@@ -4354,6 +4429,10 @@ export function PlayerExperience({
 
           if (!response.ok) {
             const payload = (await response.json().catch(() => null)) as { error?: string; reason?: string } | null;
+            if (response.status === 401 || response.status === 403) {
+              showUnavailableOverlayMessage("Admin session expired. Please sign in again.");
+              return;
+            }
             showUnavailableOverlayMessage(payload?.error || "Could not remove this video from the site.");
             return;
           }

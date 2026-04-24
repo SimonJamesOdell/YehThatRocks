@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 
+import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+
 type AdminVideoDeleteButtonProps = {
   videoId: string;
   title: string;
@@ -31,7 +33,7 @@ export function AdminVideoDeleteButton({ videoId, title, isAdmin }: AdminVideoDe
     setDeleteError(null);
 
     try {
-      const response = await fetch("/api/admin/videos", {
+      const response = await fetchWithAuthRetry("/api/admin/videos", {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
@@ -40,6 +42,10 @@ export function AdminVideoDeleteButton({ videoId, title, isAdmin }: AdminVideoDe
       });
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          setDeleteError("Admin session expired. Please sign in again.");
+          return;
+        }
         setDeleteError("Could not delete this video. Please try again.");
         return;
       }

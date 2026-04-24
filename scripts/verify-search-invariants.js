@@ -190,12 +190,12 @@ function main() {
   assertContains(adminVideoEditModalSource, '"use client"', "Admin video edit modal is a client component", failures);
   assertContains(adminVideoEditModalSource, "isOpen", "Admin edit modal controls visibility via isOpen prop", failures);
   assertContains(adminVideoEditModalSource, "videoId", "Admin edit modal receives videoId prop", failures);
-  assertContains(adminVideoEditModalSource, 'fetch(`/api/admin/videos?q=${encodeURIComponent(videoId)}`', "Admin edit modal fetches video details from admin API", failures);
+  assertContains(adminVideoEditModalSource, 'fetchWithAuthRetry(`/api/admin/videos?q=${encodeURIComponent(videoId)}`', "Admin edit modal fetches video details from admin API with auth retry", failures);
   assertContains(adminVideoEditModalSource, 'method: "PATCH"', "Admin edit modal saves through PATCH /api/admin/videos", failures);
   assertContains(adminVideoEditModalSource, "adminEditTitle", "Admin edit modal allows editing title", failures);
   assertContains(adminVideoEditModalSource, "adminEditParsedArtist", "Admin edit modal allows editing parsed artist", failures);
   assertContains(adminVideoEditModalSource, "parsedTrack", "Admin edit modal allows editing parsed track", failures);
-  assertContains(adminVideoEditModalSource, 'fetch("/api/admin/videos"', "Admin edit modal posts changes to admin videos API", failures);
+  assertContains(adminVideoEditModalSource, 'fetchWithAuthRetry("/api/admin/videos"', "Admin edit modal posts changes to admin videos API with auth retry", failures);
   assertContains(adminVideoEditModalSource, "createPortal", "Admin edit modal renders as portal to body", failures);
 
   assertContains(adminVideoDeleteButtonSource, '"use client"', "Admin video delete button is a client component", failures);

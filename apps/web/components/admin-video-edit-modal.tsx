@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 
+import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+
 type AdminEditableVideo = {
   id: number;
   videoId: string;
@@ -43,12 +45,16 @@ export function AdminVideoEditModal({ isOpen, videoId, onClose, onSaveComplete }
     setAdminEditStatus(null);
 
     try {
-      const response = await fetch(`/api/admin/videos?q=${encodeURIComponent(videoId)}`, {
+      const response = await fetchWithAuthRetry(`/api/admin/videos?q=${encodeURIComponent(videoId)}`, {
         method: "GET",
         cache: "no-store",
       });
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          setAdminEditError("Admin session expired. Please sign in again.");
+          return;
+        }
         setAdminEditError("Could not load video details.");
         return;
       }
@@ -101,7 +107,7 @@ export function AdminVideoEditModal({ isOpen, videoId, onClose, onSaveComplete }
     }
 
     try {
-      const response = await fetch("/api/admin/videos", {
+      const response = await fetchWithAuthRetry("/api/admin/videos", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -117,6 +123,10 @@ export function AdminVideoEditModal({ isOpen, videoId, onClose, onSaveComplete }
       });
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          setAdminEditError("Admin session expired. Please sign in again.");
+          return;
+        }
         setAdminEditError("Could not save changes.");
         return;
       }

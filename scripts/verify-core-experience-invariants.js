@@ -229,6 +229,15 @@ function main() {
   assertContains(playerExperienceSource, 'showDockCloseButton && isAdmin ? "primaryActionsDockedAdmin" : "",', "Player applies admin-docked footer class only for docked admin state", failures);
   assertContains(playerExperienceSource, "!(showDockCloseButton && isAdmin) ? (", "Player suppresses inline share field in docked admin state", failures);
   assertContains(playerExperienceSource, "showDockCloseButton && isAdmin ? (", "Player renders dedicated docked admin share row", failures);
+  assertContains(playerExperienceSource, "const ADMIN_SESSION_REVALIDATE_INTERVAL_MS = 30_000;", "Player defines a periodic admin-session revalidation cadence", failures);
+  assertContains(playerExperienceSource, "const [isAdminSessionActive, setIsAdminSessionActive] = useState(initialIsAdmin);", "Player tracks runtime admin-session capability state", failures);
+  assertContains(playerExperienceSource, "const isAdmin = isLoggedIn && isAdminSessionActive;", "Player gates admin controls on active session capability", failures);
+  assertContains(playerExperienceSource, "const revalidateAdminSession = useCallback(async () => {", "Player defines shared admin-session revalidation helper", failures);
+  assertContains(playerExperienceSource, "await fetchWithAuthRetry(\"/api/admin/dashboard\"", "Player revalidates admin capability against admin API guard", failures);
+  assertContains(playerExperienceSource, "window.addEventListener(\"focus\", handleFocus);", "Player revalidates admin capability when tab gains focus", failures);
+  assertContains(playerExperienceSource, "document.addEventListener(\"visibilitychange\", handleVisibilityChange);", "Player revalidates admin capability when tab becomes visible", failures);
+  assertContains(playerExperienceSource, "window.setInterval(() => {", "Player periodically revalidates admin capability while visible", failures);
+  assertContains(playerExperienceSource, "ADMIN_SESSION_REVALIDATE_INTERVAL_MS", "Player uses the admin-session revalidation interval constant", failures);
   assertContains(playerExperienceSource, 'className="shareModalBackdrop"', "Player renders share modal backdrop", failures);
   assertContains(playerExperienceSource, 'buildCanonicalShareUrl(currentVideo.id)', "Player uses canonical short share URLs", failures);
   assertContains(playerExperienceSource, '<ArtistWikiLink', "Player renders artist wiki links in player surfaces", failures);
