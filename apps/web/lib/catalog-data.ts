@@ -1274,12 +1274,13 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
           COALESCE(v.favourited, 0) AS favourited,
           v.description
         FROM videos v
-        INNER JOIN (
-          SELECT DISTINCT sv.video_id
-          FROM site_videos sv
-          WHERE sv.status = 'available'
-        ) available_sv ON available_sv.video_id = v.id
         WHERE v.videoId IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM site_videos sv
+            WHERE sv.video_id = v.id
+              AND sv.status = 'available'
+          )
         ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
         LIMIT ${fetchLimit}
       `;
@@ -1333,12 +1334,13 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
               ${favouritedExpr} AS favourited,
               ${descriptionExpr} AS description
             FROM videos v
-            INNER JOIN (
-              SELECT DISTINCT sv.${siteVideoIdCol} AS available_video_id
-              FROM site_videos sv
-              WHERE sv.${siteStatusCol} = 'available'
-            ) available_sv ON available_sv.available_video_id = v.${videoPkCol}
             WHERE v.${externalVideoCol} IS NOT NULL
+              AND EXISTS (
+                SELECT 1
+                FROM site_videos sv
+                WHERE sv.${siteVideoIdCol} = v.${videoPkCol}
+                  AND sv.${siteStatusCol} = 'available'
+              )
             ORDER BY ${favouritedExpr} DESC, ${viewExpr} DESC, v.${externalVideoCol} ASC
             LIMIT ${fetchLimit}
           `,
@@ -4708,12 +4710,13 @@ export async function getNewestVideos(
           v.favourited,
           v.description
         FROM videos v
-        INNER JOIN (
-          SELECT DISTINCT sv.video_id
-          FROM site_videos sv
-          WHERE sv.status = 'available'
-        ) available_sv ON available_sv.video_id = v.id
         WHERE v.videoId IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM site_videos sv
+            WHERE sv.video_id = v.id
+              AND sv.status = 'available'
+          )
         ORDER BY v.created_at DESC, v.id DESC
         LIMIT ${safeCount}
         OFFSET ${safeOffset}
@@ -5243,9 +5246,14 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
           SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.id ASC), ',', 1) AS thumbnailVideoId
         FROM videosbyartist va
         INNER JOIN videos v ON ${joinVideoExpr} = va.${vaVideoRefCol}
-        INNER JOIN (SELECT DISTINCT sv.video_id FROM site_videos sv WHERE sv.status = 'available') sv_avail ON sv_avail.video_id = v.id
         WHERE ${vaArtistNormExpr} <> ''
           AND ${vaArtistNormExpr} LIKE ?
+          AND EXISTS (
+            SELECT 1
+            FROM site_videos sv
+            WHERE sv.video_id = v.id
+              AND sv.status = 'available'
+          )
           AND v.videoId IS NOT NULL
         GROUP BY ${vaArtistNormExpr}
       `;
