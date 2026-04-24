@@ -3881,6 +3881,7 @@ async function findArtistsInDatabase(options: {
   const { limit, search, orderByName, prefixOnly, nameOnly } = options;
   const columns = await getArtistColumnMap();
   const normalizedSearch = search?.trim() ?? "";
+  const normalizedArtistSearch = normalizedSearch ? normalizeArtistKey(normalizedSearch) : "";
 
   const nameCol = escapeSqlIdentifier(columns.name);
   const countrySelect = columns.country ? `a.${escapeSqlIdentifier(columns.country)} AS country` : "NULL AS country";
@@ -3920,13 +3921,30 @@ async function findArtistsInDatabase(options: {
       const statNeedle = normalizedSearch
         ? (prefixOnly ? `${normalizedSearch}%` : `%${normalizedSearch}%`)
         : null;
+      const statNormalizedNeedle = normalizedArtistSearch
+        ? (prefixOnly ? `${normalizedArtistSearch}%` : `%${normalizedArtistSearch}%`)
+        : null;
 
       const statWhereParts: string[] = [];
       const statParams: string[] = [];
 
       if (statNeedle) {
-        statWhereParts.push("s.display_name LIKE ?");
-        statParams.push(statNeedle);
+        if (prefixOnly && statNormalizedNeedle) {
+          // Prefix suggestion flows can use the normalized projection key first,
+          // which is the most index-friendly path while preserving visible ordering.
+          statWhereParts.push("s.normalized_artist LIKE ?");
+          statParams.push(statNormalizedNeedle);
+
+          // Keep broad text matches for non-name-only prefix searches so results
+          // remain compatible with current country/genre suggestion semantics.
+          if (!nameOnly) {
+            statWhereParts.push("s.display_name LIKE ?");
+            statParams.push(statNeedle);
+          }
+        } else {
+          statWhereParts.push("s.display_name LIKE ?");
+          statParams.push(statNeedle);
+        }
 
         if (!nameOnly) {
           statWhereParts.push("s.country LIKE ?");

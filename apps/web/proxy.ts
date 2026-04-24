@@ -9,6 +9,7 @@ const PROTECTED_API_PREFIXES = [
   "/api/favourites",
   "/api/watch-history",
   "/api/playlists",
+  "/api/videos/unavailable",
   "/api/auth/change-password",
   "/api/auth/me",
   "/api/auth/send-verification",

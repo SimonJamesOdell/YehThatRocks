@@ -1676,7 +1676,7 @@ function ShellDynamicInner({
       clearTimeout(timeoutId);
       if (rafId !== null) window.cancelAnimationFrame(rafId);
     };
-  }, [shouldDockDesktopPlayer, shouldDockUnderArtistsAlphabet, pathname]);
+  }, [activeVideoId, isResolvingInitialVideo, isResolvingRequestedVideo, pathname, shouldDockDesktopPlayer, shouldDockUnderArtistsAlphabet]);
 
   // Separate effect: on ultrawide when artists alphabet panel becomes visible,
   // re-run the scale calculation after the DOM has fully settled.
