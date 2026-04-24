@@ -2040,6 +2040,17 @@ function ShellDynamicInner({
       resolvedState = await resolveAuthState();
     }
 
+    // When refresh rotates in a parallel request, one /api/auth/me probe can briefly
+    // read stale cookies and report 401. Retry once before forcing a sign-out.
+    if (resolvedState === "unauthenticated" && isAuthenticated) {
+      await new Promise<void>((resolve) => {
+        window.setTimeout(() => {
+          resolve();
+        }, 450);
+      });
+      resolvedState = await resolveAuthState();
+    }
+
     // Background tabs and wake-from-sleep transitions can briefly fail auth probes
     // without any real server outage. Avoid showing a blocking modal until the page
     // is foregrounded again and another visible check can confirm the failure.
