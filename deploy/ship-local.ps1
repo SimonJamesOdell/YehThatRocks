@@ -33,6 +33,47 @@ function ExecNative([string]$Program, [string[]]$CommandArgs) {
   }
 }
 
+function ExecNativeWithRetry(
+  [string]$Program,
+  [string[]]$CommandArgs,
+  [int]$MaxAttempts = 5,
+  [int]$InitialDelaySeconds = 4
+) {
+  $display = "$Program " + ($CommandArgs -join " ")
+  $delaySeconds = [Math]::Max(1, $InitialDelaySeconds)
+  $attempt = 1
+
+  while ($attempt -le $MaxAttempts) {
+    Write-Host "> $display" -ForegroundColor Cyan
+    $output = & $Program @CommandArgs 2>&1 | Out-String
+    $exitCode = $LASTEXITCODE
+
+    if (-not [string]::IsNullOrWhiteSpace($output)) {
+      Write-Host $output.TrimEnd()
+    }
+
+    if ($exitCode -eq 0) {
+      return
+    }
+
+    $retryable =
+      ($output -match "Exceeded MaxStartups") -or
+      ($output -match "Connection closed by .* port 22") -or
+      ($output -match "kex_exchange_identification") -or
+      ($output -match "Connection reset") -or
+      ($output -match "Connection timed out")
+
+    if (-not $retryable -or $attempt -ge $MaxAttempts) {
+      throw ("Command failed with exit code {0}; command {1}" -f $exitCode, $display)
+    }
+
+    Write-Warning ("Transient SSH/SCP failure detected. Retrying in {0}s (attempt {1}/{2})..." -f $delaySeconds, $attempt, $MaxAttempts)
+    Start-Sleep -Seconds $delaySeconds
+    $delaySeconds = [Math]::Min(30, $delaySeconds * 2)
+    $attempt += 1
+  }
+}
+
 function Ensure-DockerDaemon {
   $dockerInfoOutput = & docker info 2>&1 | Out-String
   if ($LASTEXITCODE -eq 0) {
@@ -209,11 +250,11 @@ function Transfer-ImageToVps([string]$ImageTag, [string]$VpsHost) {
     ExecNative -Program "docker" -CommandArgs @("save", "-o", $localTarPath, $ImageTag)
 
     Write-Host "Uploading image archive to VPS..." -ForegroundColor Yellow
-    ExecNative -Program "scp" -CommandArgs @($localTarPath, "$VpsHost`:$remoteTarPath")
+    ExecNativeWithRetry -Program "scp" -CommandArgs @($localTarPath, "$VpsHost`:$remoteTarPath")
 
     Write-Host "Loading uploaded image on VPS..." -ForegroundColor Yellow
     $remoteLoad = "set -e; trap 'rm -f $remoteTarPath' EXIT; docker load -i $remoteTarPath"
-    ExecNative -Program "ssh" -CommandArgs @($VpsHost, $remoteLoad)
+    ExecNativeWithRetry -Program "ssh" -CommandArgs @($VpsHost, $remoteLoad)
   } finally {
     if (Test-Path $localTarPath) {
       Remove-Item -Force $localTarPath -ErrorAction SilentlyContinue
@@ -309,7 +350,7 @@ try {
       Write-Host "Dump size: $([math]::Round($dumpBytes / 1MB, 1)) MB" -ForegroundColor Green
 
       Write-Host "Uploading dump to VPS..." -ForegroundColor Yellow
-      ExecNative -Program "scp" -CommandArgs @($localDumpPath, "${VpsHost}:${remoteDumpPath}")
+      ExecNativeWithRetry -Program "scp" -CommandArgs @($localDumpPath, "${VpsHost}:${remoteDumpPath}")
 
       Write-Host "Restoring database on VPS..." -ForegroundColor Yellow
       $localScriptPath = Join-Path $tempDir "ytr-restore-$timestamp.sh"
