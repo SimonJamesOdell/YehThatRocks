@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getRequestMetadata, recordAuthAudit } from "@/lib/auth-audit";
-import { clearAuthCookies, readAuthCookies, setAuthCookies } from "@/lib/auth-cookies";
+import { clearAuthCookies, readAuthCookies, setAccessAuthCookie, setAuthCookies } from "@/lib/auth-cookies";
 import { verifySameOrigin } from "@/lib/csrf";
-import { signAccessToken, signRefreshToken, verifyToken } from "@/lib/auth-jwt";
+import { isTokenValidationError, signAccessToken, signRefreshToken, verifyToken } from "@/lib/auth-jwt";
 import { rotateRefreshSession } from "@/lib/auth-sessions";
 
 function shouldClearCookiesOnRefreshFailure(error: unknown) {
+  if (isTokenValidationError(error)) {
+    return true;
+  }
+
   if (!(error instanceof Error)) {
     return false;
   }
@@ -31,6 +35,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { refreshToken } = readAuthCookies(request);
+  let payload: Awaited<ReturnType<typeof verifyToken>> | null = null;
 
   if (!refreshToken) {
     await recordAuthAudit({
@@ -43,7 +48,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const payload = await verifyToken(refreshToken, "refresh");
+    payload = await verifyToken(refreshToken, "refresh");
     const accessToken = await signAccessToken(payload.uid, payload.email);
     const rotatedRefreshToken = await signRefreshToken(payload.uid, payload.email, payload.remember);
     await rotateRefreshSession(payload.uid, refreshToken, rotatedRefreshToken, payload.remember);
@@ -61,13 +66,21 @@ export async function POST(request: NextRequest) {
     return response;
   } catch (error) {
     if (error instanceof Error && error.message === "Session already rotated") {
+      const response = NextResponse.json({ ok: true, raced: true });
+
+      if (payload) {
+        // Preserve auth for the in-flight request while another tab/request finishes rotation.
+        const racedAccessToken = await signAccessToken(payload.uid, payload.email);
+        setAccessAuthCookie(response, racedAccessToken);
+      }
+
       await recordAuthAudit({
         action: "refresh",
         success: true,
         detail: "Refresh already rotated by a parallel request",
         ...requestMeta,
       });
-      return NextResponse.json({ ok: true, raced: true });
+      return response;
     }
 
     const shouldClearCookies = shouldClearCookiesOnRefreshFailure(error);
