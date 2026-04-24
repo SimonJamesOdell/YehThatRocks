@@ -102,13 +102,17 @@ function serializeExpiryCookie(name: string, options: CookieClearOptions): strin
 }
 
 export function setAuthCookies(response: NextResponse, accessToken: string, refreshToken: string, remember: boolean) {
-  response.cookies.set(ACCESS_TOKEN_COOKIE, accessToken, getAuthCookieOptions(ACCESS_TOKEN_TTL_SECONDS));
+  setAccessAuthCookie(response, accessToken);
 
   response.cookies.set(
     REFRESH_TOKEN_COOKIE,
     refreshToken,
     getAuthCookieOptions(remember ? REFRESH_TOKEN_TTL_REMEMBER_SECONDS : REFRESH_TOKEN_TTL_SECONDS),
   );
+}
+
+export function setAccessAuthCookie(response: NextResponse, accessToken: string) {
+  response.cookies.set(ACCESS_TOKEN_COOKIE, accessToken, getAuthCookieOptions(ACCESS_TOKEN_TTL_SECONDS));
 }
 
 export function clearAuthCookies(response: NextResponse) {

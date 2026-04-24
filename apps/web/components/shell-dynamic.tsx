@@ -2304,7 +2304,7 @@ function ShellDynamicInner({
         }
 
         if (response.status === 401 || response.status === 403) {
-          setIsAuthenticated(false);
+          void checkAuthState();
           setPlaylistRailData(null);
           setPlaylistRailError("Sign in to view playlist tracks.");
           return;
@@ -2365,7 +2365,7 @@ function ShellDynamicInner({
         }
 
         if (response.status === 401 || response.status === 403) {
-          setIsAuthenticated(false);
+          void checkAuthState();
           setPlaylistRailSummaries([]);
           setPlaylistSummaryError("Sign in to view playlists.");
           return;
@@ -2559,7 +2559,7 @@ function ShellDynamicInner({
 
         if (response.status === 401 || response.status === 403) {
           if (!cancelled) {
-            setIsAuthenticated(false);
+            void checkAuthState();
             setChatError(null);
           }
           return;
@@ -3442,7 +3442,7 @@ function ShellDynamicInner({
       });
 
       if (response.status === 401 || response.status === 403) {
-        setIsAuthenticated(false);
+        void checkAuthState();
         setPlaylistMutationTone("error");
         setPlaylistMutationMessage("Sign in to hide tracks from Watch Next.");
         return;
@@ -3484,7 +3484,7 @@ function ShellDynamicInner({
       });
 
       if (response.status === 401 || response.status === 403) {
-        setIsAuthenticated(false);
+        void checkAuthState();
         setPlaylistMutationTone("error");
         setPlaylistMutationMessage("Sign in to edit playlists.");
         return;
@@ -3580,7 +3580,7 @@ function ShellDynamicInner({
       }
 
       if (response.status === 401 || response.status === 403) {
-        setIsAuthenticated(false);
+        void checkAuthState();
         setPlaylistRailData(currentPlaylist);
         setPlaylistMutationTone("error");
         setPlaylistMutationMessage("Sign in to edit playlists.");
@@ -3863,7 +3863,7 @@ function ShellDynamicInner({
       });
 
       if (response.status === 401 || response.status === 403) {
-        setIsAuthenticated(false);
+        void checkAuthState();
         setPlaylistMutationTone("error");
         setPlaylistMutationMessage("Sign in to create playlists.");
         return;
@@ -4032,7 +4032,7 @@ function ShellDynamicInner({
         });
 
         if (addResponse.status === 401 || addResponse.status === 403) {
-          setIsAuthenticated(false);
+          void checkAuthState();
           setPlaylistMutationTone("error");
           setPlaylistMutationMessage("Sign in to save tracks to playlists.");
           return;
@@ -4063,7 +4063,7 @@ function ShellDynamicInner({
       });
 
       if (createResponse.status === 401 || createResponse.status === 403) {
-        setIsAuthenticated(false);
+        void checkAuthState();
         setPlaylistMutationTone("error");
         setPlaylistMutationMessage("Sign in to create playlists.");
         return;
@@ -4092,7 +4092,7 @@ function ShellDynamicInner({
       });
 
       if (addResponse.status === 401 || addResponse.status === 403) {
-        setIsAuthenticated(false);
+        void checkAuthState();
         setPlaylistMutationTone("error");
         setPlaylistMutationMessage("Sign in to save tracks to playlists.");
         return;
@@ -4178,7 +4178,7 @@ function ShellDynamicInner({
       });
 
       if (response.status === 401 || response.status === 403) {
-        setIsAuthenticated(false);
+        void checkAuthState();
         setChatError(null);
         return;
       }
