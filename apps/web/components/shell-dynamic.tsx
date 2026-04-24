@@ -154,6 +154,7 @@ type LyricsRailPayload = {
 };
 
 const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
+const DESKTOP_INTRO_LOGO_SRC = "/assets/images/yeh_main_logo.png?v=20260424-4";
 
 function formatChatTimestamp(value: string | null) {
   if (!value) {
@@ -686,6 +687,7 @@ function ShellDynamicInner({
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isMobileCommunityOpen, setIsMobileCommunityOpen] = useState(false);
   const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(true);
+  const [isDesktopIntroLogoReady, setIsDesktopIntroLogoReady] = useState(false);
   const [desktopIntroPhase, setDesktopIntroPhase] = useState<"disabled" | "hold" | "moving" | "revealing" | "done">("disabled");
   const [hasClientMounted, setHasClientMounted] = useState(false);
   const [hasBootstrappedWatchNext, setHasBootstrappedWatchNext] = useState(false);
@@ -762,6 +764,7 @@ function ShellDynamicInner({
   const desktopIntroMeasureRafRef = useRef<number | null>(null);
   const shouldReplayDesktopIntroOnHomeRef = useRef(false);
   const desktopIntroPhaseRef = useRef<"disabled" | "hold" | "moving" | "revealing" | "done">("disabled");
+  const desktopIntroLogoLoadIdRef = useRef(0);
   const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestAbortRef = useRef<AbortController | null>(null);
   const latestSuggestQueryRef = useRef("");
@@ -970,6 +973,74 @@ function ShellDynamicInner({
     }, DESKTOP_INTRO_HOLD_MS);
   }, [clearDesktopIntroTimers, syncDesktopIntroTarget]);
 
+  const prepareDesktopIntroLogo = useCallback(async () => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    const loadId = desktopIntroLogoLoadIdRef.current + 1;
+    desktopIntroLogoLoadIdRef.current = loadId;
+    setIsDesktopIntroLogoReady(false);
+
+    const image = new window.Image();
+    image.decoding = "async";
+    image.src = DESKTOP_INTRO_LOGO_SRC;
+
+    const finalizeReady = () => {
+      if (desktopIntroLogoLoadIdRef.current !== loadId) {
+        return false;
+      }
+
+      setIsDesktopIntroLogoReady(true);
+      return true;
+    };
+
+    if (image.complete) {
+      if (typeof image.decode === "function") {
+        try {
+          await image.decode();
+        } catch {
+          // Fall back to the completed image state if decode rejects.
+        }
+      }
+
+      return finalizeReady();
+    }
+
+    return await new Promise<boolean>((resolve) => {
+      const handleLoad = () => {
+        cleanup();
+        finalizeReady();
+        resolve(true);
+      };
+
+      const handleError = () => {
+        cleanup();
+        finalizeReady();
+        resolve(false);
+      };
+
+      const cleanup = () => {
+        image.removeEventListener("load", handleLoad);
+        image.removeEventListener("error", handleError);
+      };
+
+      image.addEventListener("load", handleLoad, { once: true });
+      image.addEventListener("error", handleError, { once: true });
+    });
+  }, []);
+
+  const startPreparedDesktopIntroSequence = useCallback(async () => {
+    setIsDesktopIntroPreload(true);
+    const ready = await prepareDesktopIntroLogo();
+
+    if (!ready) {
+      setIsDesktopIntroPreload(false);
+    }
+
+    startDesktopIntroSequence();
+  }, [prepareDesktopIntroLogo, startDesktopIntroSequence]);
+
   const handleBrandLogoClick = useCallback(() => {
     // Force startup resolver to run again after logo navigation clears ?v.
     hasResolvedInitialVideoRef.current = false;
@@ -982,9 +1053,9 @@ function ShellDynamicInner({
 
     if (pathname === "/") {
       shouldReplayDesktopIntroOnHomeRef.current = false;
-      startDesktopIntroSequence();
+      void startPreparedDesktopIntroSequence();
     }
-  }, [pathname, requestedVideoId, startDesktopIntroSequence]);
+  }, [pathname, requestedVideoId, startPreparedDesktopIntroSequence]);
   const isLeftRailSuppressed = shouldShowOverlayPanel || isMobileCommunityCollapsed;
   const artistLetterParam = searchParams.get("letter");
   const activeArtistLetter =
@@ -1360,8 +1431,9 @@ function ShellDynamicInner({
       sessionStorage.removeItem(INTRO_SKIP_ONCE_AFTER_LOGIN_KEY);
       setDesktopIntroPhase("disabled");
       setIsDesktopIntroPreload(false);
+      setIsDesktopIntroLogoReady(true);
     } else {
-      startDesktopIntroSequence();
+      void startPreparedDesktopIntroSequence();
     }
 
     const handleResize = () => {
@@ -1378,7 +1450,7 @@ function ShellDynamicInner({
 
       clearDesktopIntroTimers();
     };
-  }, [clearDesktopIntroTimers, startDesktopIntroSequence, syncDesktopIntroTarget]);
+  }, [clearDesktopIntroTimers, startPreparedDesktopIntroSequence, syncDesktopIntroTarget]);
 
   useEffect(() => {
     if (pathname !== "/" || !shouldReplayDesktopIntroOnHomeRef.current) {
@@ -1386,8 +1458,8 @@ function ShellDynamicInner({
     }
 
     shouldReplayDesktopIntroOnHomeRef.current = false;
-    startDesktopIntroSequence();
-  }, [pathname, startDesktopIntroSequence]);
+    void startPreparedDesktopIntroSequence();
+  }, [pathname, startPreparedDesktopIntroSequence]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2751,6 +2823,16 @@ function ShellDynamicInner({
 
   const shouldShowWatchNextBootstrapLoader = rightRailMode === "watch-next"
     && (!hasBootstrappedWatchNext || isWatchNextVideoSelectionPending);
+  const shouldShowWatchNextRailLoader = shouldShowWatchNextBootstrapLoader
+    || relatedTransitionPhase === "loading"
+    || (visibleWatchNextVideos.length === 0 && (isLoadingMoreRelated || hasMoreRelated));
+  const shouldShowWatchNextUnseenEmptyState = watchNextHideSeen
+    && hasSeenWatchNextVideos
+    && visibleWatchNextVideos.length === 0
+    && !shouldShowWatchNextRailLoader;
+  const shouldShowWatchNextEmptyState = visibleWatchNextVideos.length === 0
+    && !shouldShowWatchNextRailLoader
+    && !shouldShowWatchNextUnseenEmptyState;
 
 
   useEffect(() => {
@@ -4454,16 +4536,29 @@ function ShellDynamicInner({
     <main className={shellClassName} style={shellStyle}>
       <div className="backdrop" />
 
-      {isDesktopIntroActive ? (
+      {isDesktopIntroPreload || isDesktopIntroActive ? (
         <div className="desktopIntroOverlay" aria-hidden="true">
-          <Image
-            src="/assets/images/yeh4.png"
-            alt=""
-            width={306}
-            height={102}
-            priority
-            className="desktopIntroLogo"
-          />
+          {isDesktopIntroLogoReady ? (
+            <Image
+              src={DESKTOP_INTRO_LOGO_SRC}
+              alt=""
+              width={306}
+              height={93}
+              priority
+              unoptimized
+              className="desktopIntroLogo"
+            />
+          ) : (
+            <div className="playerBootLoader desktopIntroLoader" role="status" aria-live="polite" aria-label="Loading logo animation">
+              <div className="playerBootBars" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+                <span />
+              </div>
+              <p>Loading...</p>
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -4471,11 +4566,12 @@ function ShellDynamicInner({
         <div className="brandLockup">
           <Link href="/" aria-label="Yeh That Rocks home" ref={brandLogoTargetRef} onClick={handleBrandLogoClick}>
             <Image
-              src="/assets/images/yeh4.png"
+              src="/assets/images/yeh_main_logo.png?v=20260424-4"
               alt="Yeh That Rocks"
               width={306}
-              height={102}
+              height={93}
               priority
+              unoptimized
               className="brandLogo"
             />
           </Link>
@@ -5159,30 +5255,18 @@ function ShellDynamicInner({
                 </p>
               ) : null}
 
-              {shouldShowWatchNextBootstrapLoader ? (
+              {shouldShowWatchNextRailLoader ? (
                 <div className="relatedLoadingState" role="status" aria-live="polite" aria-busy="true">
-                  <span className="playerBootBars" aria-hidden="true">
+                  <div className="playerBootBars" aria-hidden="true">
                     <span />
                     <span />
                     <span />
                     <span />
-                  </span>
-                  <span>Loading Watch Next videos...</span>
+                  </div>
+                  <span>Loading videos...</span>
                 </div>
               ) : (
                 <>
-                  {relatedTransitionPhase === "loading" ? (
-                    <div className="relatedLoadingState" role="status" aria-live="polite" aria-busy="true">
-                      <span className="playerBootBars" aria-hidden="true">
-                        <span />
-                        <span />
-                        <span />
-                        <span />
-                      </span>
-                      <span>Loading Watch Next videos...</span>
-                    </div>
-                  ) : null}
-
                   {visibleWatchNextVideos.map((track, index) => (
                     <WatchNextCard
                       key={track.id}
@@ -5199,13 +5283,17 @@ function ShellDynamicInner({
                     />
                   ))}
 
-                  {watchNextHideSeen && hasSeenWatchNextVideos && visibleWatchNextVideos.length === 0 ? (
+                  {shouldShowWatchNextUnseenEmptyState ? (
                     <p className="rightRailStatus">No unseen videos in Watch Next right now.</p>
+                  ) : null}
+
+                  {shouldShowWatchNextEmptyState ? (
+                    <p className="rightRailStatus">No Watch Next videos available right now.</p>
                   ) : null}
 
                   <div ref={relatedLoadMoreSentinelRef} className="relatedLoadMoreSentinel" aria-hidden="true" />
 
-                  {showLoadingMoreRelatedHint ? <p className="rightRailStatus">Loading more suggestions...</p> : null}
+                  {showLoadingMoreRelatedHint && visibleWatchNextVideos.length > 0 ? <p className="rightRailStatus">Loading more suggestions...</p> : null}
                 </>
               )}
             </div>
