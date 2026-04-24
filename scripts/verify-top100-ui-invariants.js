@@ -82,17 +82,18 @@ function main() {
 
   // Top 100 ranking must use favourite counts, not a boolean one-favourite flag.
   assertContains(catalogDataSource, "WHERE v.videoId IS NOT NULL", "Top 100 pool filters to valid YouTube ids", failures);
-  assertContains(catalogDataSource, "COUNT(DISTINCT f.userid) AS favourited", "Top 100 pool derives favourite totals from canonical favourites rows", failures);
-  assertContains(catalogDataSource, "LEFT JOIN favourites f ON CONVERT(f.videoId USING utf8mb4) = CONVERT(v.videoId USING utf8mb4)", "Top 100 pool joins canonical favourites table", failures);
-  assertContains(catalogDataSource, "ORDER BY COUNT(DISTINCT f.userid) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC", "Top 100 pool ranks by canonical favourite count first", failures);
+  assertContains(catalogDataSource, "COALESCE(v.favourited, 0) AS favourited", "Top 100 pool reads persisted favourite counters", failures);
+  assertContains(catalogDataSource, "ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC", "Top 100 pool ranks by persisted favourite counters first", failures);
+  assertNotContains(catalogDataSource, "LEFT JOIN favourites f ON CONVERT(f.videoId USING utf8mb4) = CONVERT(v.videoId USING utf8mb4)", "Top 100 pool no longer joins favourites for ranking", failures);
   assertContains(catalogDataSource, "export async function getTopVideos(count = 100)", "Top videos helper is exposed for API/cache path", failures);
   assertContains(catalogDataSource, "const videos = await getRankedTopPool(Math.max(count, 1));", "Top videos helper resolves from ranked DB pool", failures);
   assertContains(catalogDataSource, "return videos.length > 0 ? videos.slice(0, count).map(mapVideo) : [];", "Top videos helper returns canonical mapped rows only", failures);
   assertContains(topVideosCacheSource, "topVideosRefreshPromise = getTopVideos(Math.max(count, 100))", "Top videos cache refreshes from canonical top-videos helper", failures);
   assertContains(topVideosRouteSource, 'import { getTopVideosFast, warmTopVideos } from "@/lib/top-videos-cache";', "Top videos API route uses cache-backed canonical source", failures);
   assertContains(topVideosRouteSource, "let videos = await getTopVideosFast(sourceCount, TOP_VIDEOS_WAIT_MS);", "Top videos API reads canonical pool via fast cache helper", failures);
-  assertContains(catalogDataSource, "await prisma.video.updateMany({", "Favourite mutations persist favourite counts back to videos", failures);
-  assertContains(catalogDataSource, "data: { favourited: favouriteCount },", "Favourite mutations store recalculated favourite totals", failures);
+  assertContains(catalogDataSource, "SELECT COUNT(DISTINCT userid) AS cnt", "Favourite mutations recalculate exact distinct-user totals", failures);
+  assertContains(catalogDataSource, "await tx.video.updateMany({", "Favourite mutations persist favourite counts back to videos", failures);
+  assertContains(catalogDataSource, "data: { favourited: Number.isFinite(favouriteCount) ? Math.max(0, favouriteCount) : 0 },", "Favourite mutations store normalized recalculated favourite totals", failures);
   assertContains(catalogDataSource, 'const { invalidateTopVideosCache } = await import("@/lib/top-videos-cache");', "Favourite mutations can invalidate Top 100 API cache", failures);
   assertContains(catalogDataSource, "invalidateTopVideosCache();", "Favourite mutations invalidate Top 100 API cache after updates", failures);
 

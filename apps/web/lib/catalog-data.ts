@@ -1271,7 +1271,7 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
           v.title,
           COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
           NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
-          COUNT(DISTINCT f.userid) AS favourited,
+          COALESCE(v.favourited, 0) AS favourited,
           v.description
         FROM videos v
         INNER JOIN (
@@ -1279,17 +1279,14 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
           FROM site_videos sv
           WHERE sv.status = 'available'
         ) available_sv ON available_sv.video_id = v.id
-        LEFT JOIN favourites f ON CONVERT(f.videoId USING utf8mb4) = CONVERT(v.videoId USING utf8mb4)
         WHERE v.videoId IS NOT NULL
-        GROUP BY v.id, v.videoId, v.title, v.parsedArtist, v.channelTitle, v.description, v.viewCount
-        ORDER BY COUNT(DISTINCT f.userid) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
+        ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
         LIMIT ${fetchLimit}
       `;
     } catch {
-      const [videoColumns, siteVideoColumns, favouriteColumns] = await Promise.all([
+      const [videoColumns, siteVideoColumns] = await Promise.all([
         loadTableColumns("videos"),
         loadTableColumns("site_videos"),
-        loadTableColumns("favourites"),
       ]);
 
       const videoIdRef = pickColumn(videoColumns, ["videoId", "video_id", "videoid"]);
@@ -1302,8 +1299,6 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
       const videoPkRef = pickColumn(videoColumns, ["id"]);
       const siteVideoIdRef = pickColumn(siteVideoColumns, ["video_id", "videoId", "videoid"]);
       const siteStatusRef = pickColumn(siteVideoColumns, ["status"]);
-      const favouriteVideoIdRef = pickColumn(favouriteColumns, ["videoId", "video_id", "videoid"]);
-      const favouriteUserIdRef = pickColumn(favouriteColumns, ["userid", "userId", "user_id"]);
 
       if (videoIdRef && videoTitleRef && videoPkRef && siteVideoIdRef && siteStatusRef) {
         const externalVideoCol = escapeSqlIdentifier(videoIdRef.Field);
@@ -1311,16 +1306,9 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
         const descriptionExpr = videoDescriptionRef
           ? `v.${escapeSqlIdentifier(videoDescriptionRef.Field)}`
           : "NULL";
-        const favouriteVideoIdCol = favouriteVideoIdRef ? escapeSqlIdentifier(favouriteVideoIdRef.Field) : null;
-        const favouriteUserIdCol = favouriteUserIdRef ? escapeSqlIdentifier(favouriteUserIdRef.Field) : null;
-        const favouritesJoin = favouriteVideoIdCol
-          ? `LEFT JOIN favourites f ON CONVERT(f.${favouriteVideoIdCol} USING utf8mb4) = CONVERT(v.${externalVideoCol} USING utf8mb4)`
-          : "";
-        const favouritedExpr = favouriteUserIdCol
-          ? `COUNT(DISTINCT f.${favouriteUserIdCol})`
-          : videoFavouritedRef
-            ? `COALESCE(v.${escapeSqlIdentifier(videoFavouritedRef.Field)}, 0)`
-            : "0";
+        const favouritedExpr = videoFavouritedRef
+          ? `COALESCE(v.${escapeSqlIdentifier(videoFavouritedRef.Field)}, 0)`
+          : "0";
         const viewExpr = videoViewRef
           ? `COALESCE(v.${escapeSqlIdentifier(videoViewRef.Field)}, 0)`
           : "0";
@@ -1350,10 +1338,8 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
               FROM site_videos sv
               WHERE sv.${siteStatusCol} = 'available'
             ) available_sv ON available_sv.available_video_id = v.${videoPkCol}
-            ${favouritesJoin}
             WHERE v.${externalVideoCol} IS NOT NULL
-            GROUP BY v.${videoPkCol}, v.${externalVideoCol}, v.${titleCol}, ${parsedArtistExpr}, ${channelTitleExpr}, ${descriptionExpr}, ${viewExpr}
-            ORDER BY ${favouriteUserIdCol ? `COUNT(DISTINCT f.${favouriteUserIdCol})` : (videoFavouritedRef ? `v.${escapeSqlIdentifier(videoFavouritedRef.Field)}` : "0")} DESC, ${viewExpr} DESC, v.${externalVideoCol} ASC
+            ORDER BY ${favouritedExpr} DESC, ${viewExpr} DESC, v.${externalVideoCol} ASC
             LIMIT ${fetchLimit}
           `,
         );
@@ -7536,31 +7522,36 @@ export async function getWatchHistory(userId: number, options?: { limit?: number
 export async function updateFavourite(videoId: string, action: "add" | "remove", userId?: number) {
   if (hasDatabaseUrl() && userId) {
     const normalizedVideoId = normalizeYouTubeVideoId(videoId) ?? videoId;
+    await prisma.$transaction(async (tx) => {
+      if (action === "add") {
+        const existing = await tx.favourite.findFirst({
+          where: { userid: userId, videoId: normalizedVideoId },
+          select: { id: true },
+        });
 
-    if (action === "add") {
-      const existing = await prisma.favourite.findFirst({
-        where: { userid: userId, videoId: normalizedVideoId },
-        select: { id: true },
-      });
-
-      if (!existing) {
-        await prisma.favourite.create({
-          data: { userid: userId, videoId: normalizedVideoId },
+        if (!existing) {
+          await tx.favourite.create({
+            data: { userid: userId, videoId: normalizedVideoId },
+          });
+        }
+      } else {
+        await tx.favourite.deleteMany({
+          where: { userid: userId, videoId: normalizedVideoId },
         });
       }
-    } else {
-      await prisma.favourite.deleteMany({
-        where: { userid: userId, videoId: normalizedVideoId },
+
+      const distinctRows = await tx.$queryRaw<Array<{ cnt: bigint | number }>>`
+        SELECT COUNT(DISTINCT userid) AS cnt
+        FROM favourites
+        WHERE videoId = ${normalizedVideoId}
+      `;
+      const rawCount = distinctRows[0]?.cnt ?? 0;
+      const favouriteCount = typeof rawCount === "bigint" ? Number(rawCount) : Number(rawCount);
+
+      await tx.video.updateMany({
+        where: { videoId: normalizedVideoId },
+        data: { favourited: Number.isFinite(favouriteCount) ? Math.max(0, favouriteCount) : 0 },
       });
-    }
-
-    const favouriteCount = await prisma.favourite.count({
-      where: { videoId: normalizedVideoId },
-    });
-
-    await prisma.video.updateMany({
-      where: { videoId: normalizedVideoId },
-      data: { favourited: favouriteCount },
     });
 
     topPoolCache = undefined;
