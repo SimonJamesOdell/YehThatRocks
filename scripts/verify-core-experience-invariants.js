@@ -177,6 +177,16 @@ function main() {
   assertContains(playerExperienceSource, "playerEndedChoiceGrid", "Player renders chooser overlay grid", failures);
   assertContains(playerExperienceSource, "playerEndedChoiceGridExiting", "Player defines exit animation for chooser overlay grid reshuffle", failures);
   assertContains(playerExperienceSource, "const maxEndedChoiceVideos = 12;", "Player caps chooser cards to 12 for larger screens", failures);
+  assertContains(playerExperienceSource, "const ENDED_CHOICE_INITIAL_PREFETCH_COUNT = 24;", "Player primes exactly 24 chooser items for first batch", failures);
+  assertContains(playerExperienceSource, "const ENDED_CHOICE_BATCH_SIZE = maxEndedChoiceVideos;", "Player keeps incremental chooser fetches aligned to 12-item batches", failures);
+  assertContains(playerExperienceSource, "const ENDED_CHOICE_SCROLL_RUNWAY_COUNT = 24;", "Player maintains a 24-item scroll runway for chooser prefetch", failures);
+  assertContains(playerExperienceSource, "const ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS = 3;", "Player prewarms chooser fetches 3 seconds before track end", failures);
+  assertContains(playerExperienceSource, "&& !autoplayEnabledRef.current", "Player only prewarms chooser when autoplay is disabled", failures);
+  assertContains(playerExperienceSource, "void fetchEndedChoiceSets(ENDED_CHOICE_INITIAL_PREFETCH_COUNT, {", "Player requests the 24-item chooser prime batch", failures);
+  assertContains(playerExperienceSource, "schedulePostPrimeBatch: true,", "Player schedules a one-time post-prime incremental chooser batch", failures);
+  assertContains(playerExperienceSource, "params.set(\"hideSeen\", endedChoiceHideSeen ? \"1\" : \"0\");", "Player always sends chooser hide-seen toggle value to server", failures);
+  assertContains(playerExperienceSource, "if (currentRunway < ENDED_CHOICE_SCROLL_RUNWAY_COUNT) {", "Player only fetches more chooser items when runway falls below 24", failures);
+  assertContains(playerExperienceSource, "void fetchEndedChoiceSets(ENDED_CHOICE_BATCH_SIZE, { background: true });", "Player loads chooser increments in 12-item background batches", failures);
   assertContains(playerExperienceSource, "const [endedChoiceHideSeen, setEndedChoiceHideSeen] = useSeenTogglePreference({", "Player tracks end chooser seen-filter with shared persisted preference hook", failures);
   assertContains(playerExperienceSource, "key: ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY", "Player stores end chooser seen-filter under dedicated key", failures);
   assertContains(playerExperienceSource, "isAuthenticated: isLoggedIn,", "Player binds seen-toggle persistence to auth state", failures);

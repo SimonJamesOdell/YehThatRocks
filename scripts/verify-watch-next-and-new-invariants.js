@@ -109,6 +109,10 @@ function main() {
 
   // Current-video related pool invariants.
   assertContains(currentVideoRouteSource, "const CURRENT_VIDEO_RELATED_POOL_SIZE = 100;", "Current-video route targets a 100-item related pool", failures);
+  assertContains(currentVideoRouteSource, '? Math.max(48, requestedRelatedOffset + requestedRelatedCount + 24)', "Current-video route uses bounded ended-choice pool sizing instead of 1000+ overfetch", failures);
+  assertContains(currentVideoRouteSource, "const preferUnseenForEndedChoice = requestMode === \"ended-choice\" && hideSeenOnly && Boolean(optionalAuth?.userId);", "Current-video route derives ended-choice unseen preference from hideSeen toggle", failures);
+  assertContains(currentVideoRouteSource, "const seenVideoIds = await getSeenVideoIdsForUser(optionalAuth.userId);", "Current-video route fetches seen ids for ended-choice hide-seen requests", failures);
+  assertContains(currentVideoRouteSource, "filteredPool = filteredPool.filter((video) => !seenVideoIds.has(video.id));", "Current-video route enforces server-side displayable unseen filtering for ended-choice batches", failures);
   assertContains(currentVideoRouteSource, "getTopVideos(300)", "Current-video route widens fallback with Top candidates", failures);
   assertContains(currentVideoRouteSource, "getNewestVideos(200, 0)", "Current-video route widens fallback with New candidates", failures);
   assertContains(currentVideoRouteSource, "getUnseenCatalogVideos({", "Current-video route widens fallback with unseen catalog candidates", failures);
