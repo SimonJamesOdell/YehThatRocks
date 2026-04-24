@@ -461,27 +461,54 @@ function deriveArtistFromChannelTitle(channelTitle: string | null | undefined, t
   return candidate;
 }
 
-function deriveAdminImportFallbackMetadata(title: string, channelTitle?: string | null) {
-  const sides = parseSimpleTitleSides(title);
-
-  const inferredArtist = inferArtistFromTitle(title);
-  const channelArtist = deriveArtistFromChannelTitle(channelTitle, title);
-  const selectedArtist = inferredArtist ?? channelArtist;
-  if (!selectedArtist) {
+function pickArtistAndTrackFromTitleSides(
+  sides: { left: string; right: string },
+  channelArtist: string,
+) {
+  const channelArtistToken = normalizeLooseToken(channelArtist);
+  if (!channelArtistToken) {
     return null;
   }
 
-  const fallbackSourceTrack = sides
-    ? (() => {
-        const inferredArtistToken = normalizeLooseToken(selectedArtist);
-        const leftToken = normalizeLooseToken(sides.left);
-        return inferredArtistToken === leftToken ? sides.right : sides.left;
-      })()
-    : title;
+  const leftToken = normalizeLooseToken(sides.left);
+  const rightToken = normalizeLooseToken(sides.right);
+  if (!leftToken || !rightToken) {
+    return null;
+  }
 
-  const fallbackArtist = sanitizeFallbackMetadataToken(selectedArtist, 255);
+  const channelWithBoundaries = ` ${channelArtistToken} `;
+  const leftWithBoundaries = ` ${leftToken} `;
+  const rightWithBoundaries = ` ${rightToken} `;
+
+  const leftMatches =
+    channelWithBoundaries.includes(leftWithBoundaries) || leftWithBoundaries.includes(channelWithBoundaries);
+  const rightMatches =
+    channelWithBoundaries.includes(rightWithBoundaries) || rightWithBoundaries.includes(channelWithBoundaries);
+
+  if (leftMatches === rightMatches) {
+    return null;
+  }
+
+  return leftMatches
+    ? { artist: sides.left, track: sides.right }
+    : { artist: sides.right, track: sides.left };
+}
+
+function deriveAdminImportFallbackMetadata(title: string, channelTitle?: string | null) {
+  const sides = parseSimpleTitleSides(title);
+  const channelArtist = deriveArtistFromChannelTitle(channelTitle, title);
+
+  const matchedSideMetadata = sides && channelArtist ? pickArtistAndTrackFromTitleSides(sides, channelArtist) : null;
+  const selectedArtistSource = matchedSideMetadata?.artist ?? channelArtist;
+  const selectedTrackSource = matchedSideMetadata?.track ?? title;
+
+  if (!selectedArtistSource) {
+    return null;
+  }
+
+  const fallbackArtist = sanitizeFallbackMetadataToken(selectedArtistSource, 255);
   const fallbackTrack = sanitizeFallbackMetadataToken(
-    fallbackSourceTrack,
+    selectedTrackSource,
     255,
   );
 
@@ -494,8 +521,8 @@ function deriveAdminImportFallbackMetadata(title: string, channelTitle?: string 
     track: fallbackTrack,
     videoType: "official",
     confidence: Math.max(PLAYBACK_MIN_CONFIDENCE, 0.82),
-    reason: inferredArtist
-      ? "Admin direct import heuristic fallback from title parsing."
+    reason: matchedSideMetadata
+      ? "Admin direct import fallback from channel/title side matching."
       : "Admin direct import fallback from channel title.",
   } as const;
 }
