@@ -291,6 +291,7 @@ model SiteVideo {
   video     Video?    @relation(fields: [videoId], references: [id])
 
   @@index([videoId, status])
+  @@index([status, videoId], map: "idx_site_videos_status_video_id")
   @@map("site_videos")
 }
 
