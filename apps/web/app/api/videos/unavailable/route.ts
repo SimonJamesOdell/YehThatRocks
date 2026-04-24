@@ -4,6 +4,7 @@ import { isAdminIdentity } from "@/lib/admin-auth";
 import { requireApiAuth } from "@/lib/auth-request";
 import { prisma } from "@/lib/db";
 import { pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { isObviousCrawlerRequest } from "@/lib/crawler-guard";
 import { verifySameOrigin } from "@/lib/csrf";
 import { rateLimitOrResponse } from "@/lib/rate-limit";
 import { parseRequestJson } from "@/lib/request-json";
@@ -109,6 +110,10 @@ async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityC
 }
 
 export async function POST(request: NextRequest) {
+  if (isObviousCrawlerRequest(request)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const authResult = await requireApiAuth(request);
   if (!authResult.ok) {
     return authResult.response;

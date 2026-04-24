@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { verifySameOrigin } from "@/lib/csrf";
+import { isObviousCrawlerRequest } from "@/lib/crawler-guard";
 import { prisma } from "@/lib/db";
 import { readAuthCookies } from "@/lib/auth-cookies";
 import { verifyToken } from "@/lib/auth-jwt";
@@ -127,6 +128,10 @@ async function inferGeoFromRequest(request: NextRequest): Promise<{ lat: number;
 }
 
 export async function POST(request: NextRequest) {
+  if (isObviousCrawlerRequest(request)) {
+    return new NextResponse(null, { status: 204 });
+  }
+
   const csrfError = verifySameOrigin(request);
   if (csrfError) return csrfError;
 
