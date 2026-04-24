@@ -43,6 +43,11 @@ function main() {
   assertContains(catalogDataSource, "if (isLikelyNonMusicText(video.title, video.description ?? \"\"))", "Classifier applies non-music dampening during persistence", failures);
   assertContains(catalogDataSource, "const mojibakeScore = scoreLikelyMojibake(video.title);", "Classifier applies mojibake dampening", failures);
 
+  // Admin direct import fallback must avoid artist/track reversal guesses.
+  assertContains(catalogDataSource, "function pickArtistAndTrackFromTitleSides", "Admin fallback defines channel/title side matcher", failures);
+  assertContains(catalogDataSource, "const matchedSideMetadata = sides && channelArtist ? pickArtistAndTrackFromTitleSides(sides, channelArtist) : null;", "Admin fallback only infers title-side artist when channel evidence matches", failures);
+  assertContains(catalogDataSource, "Admin direct import fallback from channel/title side matching.", "Admin fallback records channel/title side matching reason", failures);
+
   // Prompt intent invariant.
   assertContains(catalogDataSource, "YehThatRocks is a rock/metal catalog.", "Groq prompt encodes rock/metal-only extraction intent", failures);
 
