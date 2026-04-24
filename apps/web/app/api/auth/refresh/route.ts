@@ -18,6 +18,7 @@ function shouldClearCookiesOnRefreshFailure(error: unknown) {
     || message === "Session not found"
     || message === "Session expired"
     || message === "Refresh token reuse detected"
+    || message === "Session revoked"
   );
 }
 
@@ -59,6 +60,16 @@ export async function POST(request: NextRequest) {
     });
     return response;
   } catch (error) {
+    if (error instanceof Error && error.message === "Session already rotated") {
+      await recordAuthAudit({
+        action: "refresh",
+        success: true,
+        detail: "Refresh already rotated by a parallel request",
+        ...requestMeta,
+      });
+      return NextResponse.json({ ok: true, raced: true });
+    }
+
     const shouldClearCookies = shouldClearCookiesOnRefreshFailure(error);
 
     await recordAuthAudit({

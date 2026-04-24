@@ -355,6 +355,14 @@ Behavior:
 `);
 }
 
+function chunkArray(items, size) {
+  const out = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+}
+
 async function main() {
   if (hasFlag("help") || hasFlag("h")) {
     usage();
@@ -482,25 +490,28 @@ async function main() {
 
     const now = new Date();
     let updated = 0;
+    const updateBatches = chunkArray(planned, 500);
 
-    await prisma.$transaction(async (tx) => {
-      for (const item of planned) {
-        await tx.$executeRaw`
-          UPDATE videos
-          SET
-            parsedArtist = ${item.newArtist},
-            parsedTrack = ${item.newTrack},
-            title = ${item.newTitle},
-            parseMethod = ${"metadata-repair-script"},
-            parseReason = ${item.swapped
-              ? "Artist/track repaired from artists-table evidence and title normalized."
-              : "Title normalized from parsed metadata with qualifier preservation."},
-            parsedAt = ${now}
-          WHERE id = ${item.id}
-        `;
-        updated += 1;
-      }
-    });
+    for (const batch of updateBatches) {
+      await prisma.$transaction(async (tx) => {
+        for (const item of batch) {
+          await tx.$executeRaw`
+            UPDATE videos
+            SET
+              parsedArtist = ${item.newArtist},
+              parsedTrack = ${item.newTrack},
+              title = ${item.newTitle},
+              parseMethod = ${"metadata-repair-script"},
+              parseReason = ${item.swapped
+                ? "Artist/track repaired from artists-table evidence and title normalized."
+                : "Title normalized from parsed metadata with qualifier preservation."},
+              parsedAt = ${now}
+            WHERE id = ${item.id}
+          `;
+          updated += 1;
+        }
+      }, { maxWait: 60000, timeout: 600000 });
+    }
 
     console.log(`\nUpdated rows: ${updated}`);
   } finally {

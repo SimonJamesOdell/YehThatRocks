@@ -93,15 +93,9 @@ export async function rotateRefreshSession(userId: number, currentToken: string,
     }
 
     if (session.revokedAt || session.replacedByHash) {
-      await authTx.authSession.updateMany({
-        where: {
-          familyId: session.familyId,
-        },
-        data: {
-          revokedAt: new Date(),
-        },
-      });
-      throw new Error("Refresh token reuse detected");
+      // Parallel tabs can race refresh with the same cookie; treat this as an
+      // already-rotated session instead of a family-wide compromise.
+      throw new Error("Session already rotated");
     }
 
     const conditionalRotateResult = await authTx.authSession.updateMany({
@@ -117,15 +111,8 @@ export async function rotateRefreshSession(userId: number, currentToken: string,
     }) as { count: number };
 
     if (conditionalRotateResult.count !== 1) {
-      await authTx.authSession.updateMany({
-        where: {
-          familyId: session.familyId,
-        },
-        data: {
-          revokedAt: new Date(),
-        },
-      });
-      throw new Error("Refresh token reuse detected");
+      // Another request likely won the rotate race.
+      throw new Error("Session already rotated");
     }
 
     await authTx.authSession.create({
