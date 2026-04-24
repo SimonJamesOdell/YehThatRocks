@@ -234,8 +234,19 @@ function Remove-PathIfPresent([string]$TargetPath) {
 }
 
 function Clean-RepoTransientCaches([string]$RepoRoot) {
-  Remove-PathIfPresent (Join-Path $RepoRoot ".turbo\cache")
-  Remove-PathIfPresent (Join-Path $RepoRoot "apps\web\.next")
+  $targets = @(
+    ".turbo\cache",
+    ".next",
+    "apps\web\.next",
+    "apps\web\.cache",
+    "playwright-report",
+    "test-results",
+    "logs"
+  )
+
+  foreach ($target in $targets) {
+    Remove-PathIfPresent (Join-Path $RepoRoot $target)
+  }
 }
 
 # Returns the PID of the process listening on port 3000, or $null.
@@ -321,9 +332,9 @@ function Try-PruneDockerCaches {
     return
   }
 
-  Write-Host "Pruning local Docker build/image cache older than 7 days..." -ForegroundColor DarkYellow
-  & docker builder prune -af --filter "until=168h" | Out-Null
-  & docker image prune -af --filter "until=168h" | Out-Null
+  Write-Host "Pruning all unused local Docker build/image cache..." -ForegroundColor DarkYellow
+  & docker builder prune -af | Out-Null
+  & docker image prune -af | Out-Null
   & docker container prune -f | Out-Null
 }
 

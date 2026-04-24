@@ -65,11 +65,12 @@ export async function AppShell({
         <div className="brandLockup">
           <Link href="/" aria-label="Yeh That Rocks home">
             <Image
-              src="/assets/images/yeh4.png"
+              src="/assets/images/yeh_main_logo.png?v=20260424-4"
               alt="Yeh That Rocks"
               width={306}
-              height={102}
+              height={93}
               priority
+              unoptimized
               className="brandLogo"
             />
           </Link>
