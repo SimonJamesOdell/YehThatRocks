@@ -1,4 +1,3 @@
-import { prisma } from "@/lib/db";
 import { getRuntimeProfilingSnapshot } from "@/lib/runtime-profiler";
 
 const PERF_SAMPLE_INTERVAL_MS = 30_000; // sample every 30 seconds
@@ -7,8 +6,16 @@ const PERF_PRUNE_EVERY_N_SAMPLES = 20; // prune once per ~10 minutes
 
 let perfSamplingStarted = false;
 let samplesSinceLastPrune = 0;
+let lastSampledAtMs: number | null = null;
+let lastSampleTotalQueries: number | null = null;
+
+async function getPrismaClient() {
+  const { prisma } = await import("@/lib/db");
+  return prisma;
+}
 
 async function ensurePerfTelemetryTable() {
+  const prisma = await getPrismaClient();
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS performance_telemetry_samples (
       id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -44,11 +51,22 @@ async function recordPerfSample() {
   if (!process.env.DATABASE_URL) return;
 
   try {
+    const prisma = await getPrismaClient();
     await ensureTable();
     if (!tableEnsured) return;
 
     const snap = getRuntimeProfilingSnapshot();
-    const now = new Date();
+    const nowMs = Date.now();
+    const now = new Date(nowMs);
+    const intervalSec = lastSampledAtMs === null
+      ? PERF_SAMPLE_INTERVAL_MS / 1000
+      : Math.max(1, (nowMs - lastSampledAtMs) / 1000);
+    const deltaQueries = lastSampleTotalQueries === null
+      ? snap.prisma.totalsSinceBoot.totalQueries
+      : Math.max(0, snap.prisma.totalsSinceBoot.totalQueries - lastSampleTotalQueries);
+
+    lastSampledAtMs = nowMs;
+    lastSampleTotalQueries = snap.prisma.totalsSinceBoot.totalQueries;
 
     await prisma.$executeRaw`
       INSERT INTO performance_telemetry_samples (
@@ -68,8 +86,8 @@ async function recordPerfSample() {
         ${snap.node.heapUsedMb},
         ${snap.node.heapTotalMb},
         ${snap.node.rssMb},
-        ${snap.prisma.totalQueries},
-        ${snap.prisma.queriesPerSec},
+        ${deltaQueries},
+        ${deltaQueries / intervalSec},
         ${snap.prisma.avgDurationMs},
         ${snap.prisma.p95DurationMs},
         ${snap.prisma.totalsSinceBoot.totalQueries}
