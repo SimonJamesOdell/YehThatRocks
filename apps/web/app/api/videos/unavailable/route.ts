@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { isAdminIdentity } from "@/lib/admin-auth";
-import { requireApiAuth } from "@/lib/auth-request";
+import { getOptionalApiAuth } from "@/lib/auth-request";
 import { prisma } from "@/lib/db";
 import { pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { isObviousCrawlerRequest } from "@/lib/crawler-guard";
@@ -114,14 +114,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const authResult = await requireApiAuth(request);
-  if (!authResult.ok) {
-    return authResult.response;
-  }
+  const optionalAuth = await getOptionalApiAuth(request);
 
   const rateLimited = rateLimitOrResponse(
     request,
-    `videos:unavailable:${authResult.auth.userId}`,
+    `videos:unavailable:${optionalAuth?.userId ?? "anonymous"}`,
     20,
     10 * 60 * 1000,
   );
@@ -148,7 +145,7 @@ export async function POST(request: NextRequest) {
   }
 
   const reason = parsed.data.reason?.trim() ?? "runtime-player-error";
-  const adminReporter = isAdminIdentity(authResult.auth.userId, authResult.auth.email);
+  const adminReporter = optionalAuth ? isAdminIdentity(optionalAuth.userId, optionalAuth.email) : false;
   const forcePrune = adminReporter && shouldForcePruneFromRuntimeReason(reason);
 
   debugUnavailable("incoming-report", {

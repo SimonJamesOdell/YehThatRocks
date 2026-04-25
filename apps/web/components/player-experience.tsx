@@ -1439,18 +1439,28 @@ export function PlayerExperience({
     triggerEndOfVideoAction({ forceAutoplayAdvance: true });
   }
 
-  function showUnavailableOverlayMessage(message?: string | null) {
+  function showUnavailableOverlayMessage(
+    message?: string | null,
+    options?: { requiresOk?: boolean; autoAdvanceWhenAutoplay?: boolean },
+  ) {
     clearUnavailableOverlayMessage();
     clearStuckPlaybackRetryTimer();
     clearStuckPlaybackWatchdogTimer();
     clearMidPlaybackBufferingCheck();
     clearMidPlaybackBufferingCheck();
 
+    const requiresOk = options?.requiresOk ?? !autoplayEnabledRef.current;
     setUnavailableOverlayMessage(message?.trim() || UNAVAILABLE_OVERLAY_MESSAGE);
     setShowEndedChoiceOverlay(false);
-    // Never auto-advance away from an unavailable-track error.
-    // Keep message centered on the player and require explicit user choice.
-    setUnavailableOverlayRequiresOk(true);
+    setUnavailableOverlayRequiresOk(requiresOk);
+
+    if (!requiresOk && options?.autoAdvanceWhenAutoplay) {
+      unavailableAutoActionTimeoutRef.current = window.setTimeout(() => {
+        unavailableAutoActionTimeoutRef.current = null;
+        acknowledgeUnavailableOverlay();
+      }, 1400);
+    }
+
     unavailableOverlayTimeoutRef.current = null;
   }
 
@@ -1587,7 +1597,9 @@ export function PlayerExperience({
 
         playAttemptedAtRef.current = null;
         pauseActivePlayback();
-        showUnavailableOverlayMessage(UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE);
+        showUnavailableOverlayMessage(UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE, {
+          requiresOk: true,
+        });
       })();
     }, STUCK_PLAYBACK_CHECK_MS);
   }
@@ -2123,8 +2135,11 @@ export function PlayerExperience({
       return;
     }
 
+    autoplaySuppressedVideoIdRef.current = currentVideo.id;
     pauseActivePlayback();
-    showUnavailableOverlayMessage(forcedUnavailableMessage);
+    showUnavailableOverlayMessage(forcedUnavailableMessage, {
+      autoAdvanceWhenAutoplay: true,
+    });
   }, [currentVideo.id, forcedUnavailableMessage, forcedUnavailableSignal]);
 
   useEffect(() => {
@@ -2667,7 +2682,9 @@ export function PlayerExperience({
               autoplaySuppressedVideoIdRef.current = currentVideo.id;
               playAttemptedAtRef.current = null;
               pauseActivePlayback();
-              showUnavailableOverlayMessage();
+              showUnavailableOverlayMessage(undefined, {
+                autoAdvanceWhenAutoplay: true,
+              });
             }
           },
         },
