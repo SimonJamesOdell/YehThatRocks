@@ -3010,20 +3010,39 @@ h1 {
   display: grid;
   place-content: center;
   justify-items: center;
-  gap: 12px;
-  padding: 22px;
+  gap: 14px;
+  padding: 26px;
   border-radius: inherit;
   text-align: center;
   background:
-    radial-gradient(circle at 50% 30%, rgba(205, 46, 26, 0.16), rgba(0, 0, 0, 0.92) 58%),
-    linear-gradient(180deg, rgba(16, 4, 3, 0.94), rgba(8, 2, 2, 0.98));
+    radial-gradient(circle at 50% 22%, rgba(215, 62, 36, 0.26), rgba(0, 0, 0, 0.9) 55%),
+    linear-gradient(180deg, rgba(28, 6, 4, 0.94), rgba(6, 1, 1, 0.98));
+}
+
+.playerPolicyBlocker::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 172, 148, 0.2);
+  pointer-events: none;
+}
+
+.playerPolicyBlockerHeader {
+  margin: 0;
+  font-family: var(--font-display), "Metal Mania", cursive;
+  font-size: clamp(1.9rem, 4.8vw, 3.25rem);
+  line-height: 0.92;
+  letter-spacing: 0.01em;
+  color: #ffd2c8;
+  text-shadow: 0 3px 14px rgba(0, 0, 0, 0.55);
 }
 
 .playerPolicyBlockerEyebrow {
   margin: 0;
-  color: rgba(255, 185, 170, 0.95);
+  color: rgba(255, 194, 176, 0.96);
   font-size: 0.76rem;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   font-weight: 700;
 }
@@ -3031,34 +3050,41 @@ h1 {
 .playerPolicyBlockerTitle {
   margin: 0;
   color: #fff3ef;
-  font-size: clamp(1.2rem, 2.4vw, 1.75rem);
-  line-height: 1.25;
-  max-width: 760px;
+  font-size: clamp(1.2rem, 2.35vw, 1.7rem);
+  line-height: 1.26;
+  max-width: 720px;
 }
 
 .playerPolicyBlockerBody {
   margin: 0;
-  color: rgba(255, 226, 220, 0.95);
-  font-size: 0.95rem;
-  line-height: 1.48;
-  max-width: 760px;
+  color: rgba(255, 232, 226, 0.95);
+  font-size: 0.97rem;
+  line-height: 1.5;
+  max-width: 680px;
 }
 
 .playerPolicyBlockerButton {
-  min-height: 42px;
+  min-height: 44px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 194, 180, 0.56);
-  background: linear-gradient(180deg, rgba(175, 33, 16, 0.95), rgba(92, 12, 8, 0.96));
+  border: 1px solid rgba(255, 198, 184, 0.58);
+  background: linear-gradient(180deg, rgba(187, 42, 22, 0.96), rgba(92, 12, 8, 0.98));
   color: #fff4f1;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  padding: 0 18px;
+  padding: 0 20px;
   cursor: pointer;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.38);
+  transition: transform 130ms ease, filter 130ms ease;
 }
 
 .playerPolicyBlockerButton:hover {
+  transform: translateY(-1px);
   filter: brightness(1.08);
+}
+
+.playerPolicyBlockerButton:active {
+  transform: translateY(0);
 }
 
 @media (max-width: 760px) {
@@ -3081,6 +3107,10 @@ h1 {
 
   .playerPolicyBlockerButton {
     width: 100%;
+  }
+
+  .playerPolicyBlockerHeader {
+    font-size: clamp(1.8rem, 10vw, 2.7rem);
   }
 }
 

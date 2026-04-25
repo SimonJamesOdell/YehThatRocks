@@ -5023,11 +5023,15 @@ export function PlayerExperience({
 
               {allowDirectIframeInteraction ? (
                 <div className="playerPolicyBlocker" role="alert" aria-live="polite">
+                  <h2 className="playerPolicyBlockerHeader">Well hot-damn...</h2>
                   <p className="playerPolicyBlockerEyebrow">Playback blocked by upstream policy</p>
                   <strong className="playerPolicyBlockerTitle">This video cannot play inside the embedded player right now</strong>
                   <p className="playerPolicyBlockerBody">
-                    Sorry. This is caused by YouTube policy controls, not a YehThatRocks platform failure.
-                    Continue on YouTube to watch this video.
+                    Sorry, this is caused by YouTube policy controls, not a YehThatRocks platform failure.
+                    Watching on YouTube for a moment often lifts the block entirely, so normal embedded playback will
+                    probably be back when you return. If not, please try again later. In the meantime you can still
+                    browse our catalog and your favourites to find tracks you want to watch, you will just have to
+                    watch them through YouTube directly instead of in our awesome player.
                   </p>
                   <button
                     type="button"
