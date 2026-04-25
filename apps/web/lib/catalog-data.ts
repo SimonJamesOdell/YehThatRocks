@@ -2121,7 +2121,15 @@ async function checkEmbedPlayability(videoId: string): Promise<VideoAvailability
     }
 
     if (
-      /"playabilityStatus"\s*:\s*\{\s*"status"\s*:\s*"(ERROR|UNPLAYABLE|LOGIN_REQUIRED|CONTENT_CHECK_REQUIRED|AGE_CHECK_REQUIRED)"/i.test(
+      /"playabilityStatus"\s*:\s*\{\s*"status"\s*:\s*"(LOGIN_REQUIRED|CONTENT_CHECK_REQUIRED)"/i.test(
+        html,
+      )
+    ) {
+      return { status: "check-failed", reason: "embed:interactive-login-check" };
+    }
+
+    if (
+      /"playabilityStatus"\s*:\s*\{\s*"status"\s*:\s*"(ERROR|UNPLAYABLE|AGE_CHECK_REQUIRED)"/i.test(
         html,
       )
     ) {
