@@ -145,6 +145,8 @@ const STUCK_PLAYBACK_MAX_RETRIES = 3;
 const STUCK_PLAYBACK_RETRY_DELAYS_MS = [600, 1400, 2600] as const;
 const MID_PLAYBACK_BUFFERING_CHECK_MS = 1000;
 const MID_PLAYBACK_BUFFERING_THRESHOLD_MS = 8000;
+const PLAYBACK_STALL_DIRECT_IFRAME_THRESHOLD_MS = 4500;
+const PLAYBACK_STALL_PROGRESS_EPSILON_SECONDS = 0.2;
 const PLAYER_LOAD_REFRESH_HINT_DELAY_MS = 2000;
 const PLAYER_AUTO_RECONNECT_DELAY_MS = 2000;
 const MANUAL_TRANSITION_MASK_TIMEOUT_MS = 8000;
@@ -489,6 +491,11 @@ export function PlayerExperience({
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isScrubbing, setIsScrubbing] = useState(false);
     const progressIntervalRef = useRef<number | null>(null);
+    const isScrubbingRef = useRef(isScrubbing);
+    const allowDirectIframeInteractionRef = useRef(allowDirectIframeInteraction);
+    const playbackStallStartedAtRef = useRef<number | null>(null);
+    const playbackStallLastTimeRef = useRef<number | null>(null);
+    const playbackStallLastObservedAtRef = useRef<number | null>(null);
     const nowPlayingShownForVideoRef = useRef<string | null>(null);
     const nowPlayingLastVideoIdRef = useRef<string | null>(null);
     const nowPlayingLastTriggeredAtRef = useRef<number>(0);
@@ -626,6 +633,8 @@ export function PlayerExperience({
   autoplayEnabledRef.current = autoplayEnabled;
   volumeRef.current = volume;
   isMutedRef.current = isMuted;
+  isScrubbingRef.current = isScrubbing;
+  allowDirectIframeInteractionRef.current = allowDirectIframeInteraction;
   if (volume > 0) {
     lastNonZeroVolumeRef.current = volume;
   }
@@ -1489,6 +1498,10 @@ export function PlayerExperience({
     setShowControls(false);
     setShowShareMenu(false);
     setShowPlayerRefreshHint(false);
+    playbackStallStartedAtRef.current = null;
+    playbackStallLastTimeRef.current = null;
+    playbackStallLastObservedAtRef.current = null;
+    allowDirectIframeInteractionRef.current = true;
     setAllowDirectIframeInteraction(true);
 
     logPlayerDebug("bot-challenge:direct-iframe-mode", {
@@ -1496,6 +1509,12 @@ export function PlayerExperience({
       trigger,
       verificationReason,
     });
+  }
+
+  function resetPlaybackStallWatchdog(lastTime?: number | null) {
+    playbackStallStartedAtRef.current = null;
+    playbackStallLastTimeRef.current = typeof lastTime === "number" ? lastTime : null;
+    playbackStallLastObservedAtRef.current = Date.now();
   }
 
   function pauseActivePlayback() {
@@ -1633,23 +1652,13 @@ export function PlayerExperience({
           return;
         }
 
-        if (!shouldSkip) {
-          // If runtime playback remains blocked but backend verification did not classify the
-          // track as definitively unavailable, expose the raw iframe so the user can satisfy
-          // upstream interstitials (e.g., sign-in/bot challenge) directly.
-          enableDirectIframeInteractionMode(trigger, reportResult.verificationReason);
-          return;
-        }
-
         if (shouldSkip) {
           autoplaySuppressedVideoIdRef.current = currentVideoRef.current.id;
         }
 
-        playAttemptedAtRef.current = null;
-        pauseActivePlayback();
-        showUnavailableOverlayMessage(UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE, {
-          requiresOk: true,
-        });
+        // When runtime playback remains blocked after retries, always expose the raw iframe
+        // so users can satisfy upstream interstitials directly.
+        enableDirectIframeInteractionMode(trigger, reportResult.verificationReason);
       })();
     }, STUCK_PLAYBACK_CHECK_MS);
   }
@@ -2106,6 +2115,7 @@ export function PlayerExperience({
     setHasPlaybackStarted(false);
     hasPlaybackStartedRef.current = false;
     setShowControls(false);
+    resetPlaybackStallWatchdog();
     setAllowDirectIframeInteraction(false);
     setIsManualTransitionMaskVisible(false);
     if (manualTransitionMaskTimeoutRef.current !== null) {
@@ -2560,6 +2570,7 @@ export function PlayerExperience({
               const startedTime = playerRef.current && typeof playerRef.current.getCurrentTime === "function"
                 ? toSafeNumber(playerRef.current.getCurrentTime(), 0)
                 : currentTime;
+              resetPlaybackStallWatchdog(startedTime);
               const startedDuration = playerRef.current && typeof playerRef.current.getDuration === "function"
                 ? toSafeNumber(playerRef.current.getDuration(), 0)
                 : duration;
@@ -2582,6 +2593,7 @@ export function PlayerExperience({
               if (progressIntervalRef.current) window.clearInterval(progressIntervalRef.current);
               progressIntervalRef.current = window.setInterval(() => {
                 if (playerRef.current) {
+                  const now = Date.now();
                   const liveTime = toSafeNumber(playerRef.current.getCurrentTime(), 0);
                   const liveDuration = toSafeNumber(playerRef.current.getDuration(), 0);
                   const runtimeMuted = typeof playerRef.current.isMuted === "function"
@@ -2593,6 +2605,33 @@ export function PlayerExperience({
                   setCurrentTime(liveTime);
                   setDuration(liveDuration);
                   persistResumeSnapshot(true, liveTime);
+
+                  const previousTime = playbackStallLastTimeRef.current;
+                  const previousObservedAt = playbackStallLastObservedAtRef.current;
+                  const nearEnd = liveDuration > 0 && (liveDuration - liveTime) <= 1.5;
+                  const hasProgressed =
+                    previousTime === null
+                    || liveTime > (previousTime + PLAYBACK_STALL_PROGRESS_EPSILON_SECONDS);
+
+                  if (!allowDirectIframeInteractionRef.current && !isScrubbingRef.current && !nearEnd) {
+                    if (hasProgressed) {
+                      playbackStallStartedAtRef.current = null;
+                    } else if (previousObservedAt !== null && (now - previousObservedAt) >= 400) {
+                      if (playbackStallStartedAtRef.current === null) {
+                        playbackStallStartedAtRef.current = now;
+                      } else if ((now - playbackStallStartedAtRef.current) >= PLAYBACK_STALL_DIRECT_IFRAME_THRESHOLD_MS) {
+                        enableDirectIframeInteractionMode("progress-stall", reportedUnavailableVerificationReasonRef.current);
+                        if (progressIntervalRef.current) {
+                          window.clearInterval(progressIntervalRef.current);
+                          progressIntervalRef.current = null;
+                        }
+                        return;
+                      }
+                    }
+                  }
+
+                  playbackStallLastTimeRef.current = liveTime;
+                  playbackStallLastObservedAtRef.current = now;
 
                   const activeVideoId = currentVideoRef.current.id;
                   const shouldPrewarmEndedChoice =
@@ -2627,6 +2666,7 @@ export function PlayerExperience({
                 window.clearInterval(progressIntervalRef.current);
                 progressIntervalRef.current = null;
               }
+              resetPlaybackStallWatchdog();
             }
 
             if (event.data === window.YT?.PlayerState.ENDED) {
@@ -2758,6 +2798,11 @@ export function PlayerExperience({
             });
 
             if (playbackEstablishedAfterReport) {
+              return;
+            }
+
+            if (event.data === 5) {
+              enableDirectIframeInteractionMode("on-error-code-5", reportResult.verificationReason);
               return;
             }
 
@@ -4370,6 +4415,7 @@ export function PlayerExperience({
         const seconds = toSafeNumber(Number(e.target.value), 0);
         playerRef.current.seekTo(seconds, true);
         setCurrentTime(seconds);
+        resetPlaybackStallWatchdog(seconds);
       }
 
       function handleVolumeChange(e: ChangeEvent<HTMLInputElement>) {
