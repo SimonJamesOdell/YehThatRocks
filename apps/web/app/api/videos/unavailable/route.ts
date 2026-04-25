@@ -28,6 +28,11 @@ const AGE_RESTRICTED_PATTERNS = [
   /"status"\s*:\s*"AGE_CHECK_REQUIRED"/i,
   /"status"\s*:\s*"LOGIN_REQUIRED"[\s\S]{0,240}"reason"\s*:\s*"[^"]*age/i,
 ];
+const BOT_CHALLENGE_PATTERNS = [
+  /Sign in to (?:confirm|prove) you(?:'|\u2019)re not a bot/i,
+  /prove you(?:'|\u2019)re not a bot/i,
+  /"status"\s*:\s*"BOT_CHECK_REQUIRED"/i,
+];
 const UNAVAILABLE_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_UNAVAILABLE === "1";
 
 function debugUnavailable(event: string, detail?: Record<string, unknown>) {
@@ -45,6 +50,10 @@ function truncate(value: string, maxLength: number) {
 
 function containsAgeRestrictionMarker(html: string) {
   return AGE_RESTRICTED_PATTERNS.some((pattern) => pattern.test(html));
+}
+
+function containsBotChallengeMarker(html: string) {
+  return BOT_CHALLENGE_PATTERNS.some((pattern) => pattern.test(html));
 }
 
 function shouldForcePruneFromRuntimeReason(reason: string) {
@@ -79,6 +88,10 @@ async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityC
 
       if (embedResponse.ok) {
         const html = await embedResponse.text();
+
+        if (containsBotChallengeMarker(html)) {
+          return { status: "check-failed", reason: "embed:bot-check" };
+        }
 
         if (containsAgeRestrictionMarker(html)) {
           return { status: "unavailable", reason: "embed:age-restricted" };
@@ -146,12 +159,12 @@ export async function POST(request: NextRequest) {
 
   const reason = parsed.data.reason?.trim() ?? "runtime-player-error";
   const adminReporter = optionalAuth ? isAdminIdentity(optionalAuth.userId, optionalAuth.email) : false;
-  const forcePrune = adminReporter && shouldForcePruneFromRuntimeReason(reason);
+  const forcePruneCandidate = adminReporter && shouldForcePruneFromRuntimeReason(reason);
 
   debugUnavailable("incoming-report", {
     videoId,
     reason,
-    forcePrune,
+    forcePruneCandidate,
   });
 
   const videos = await prisma.video.findMany({
@@ -164,21 +177,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, skipped: true, reason: "unknown-video-id" }, { status: 202 });
   }
 
-  if (forcePrune) {
-    debugUnavailable("force-prune-from-runtime-reason", {
-      videoId,
-      reason,
-      matchedVideoRows: videos.length,
-    });
-
-    const pruneResult = await pruneVideoAndAssociationsByVideoId(
-      videoId,
-      `runtime-force-prune:${reason}`,
-    ).catch(() => ({ pruned: false, deletedVideoRows: 0, reason: "prune-failed" }));
-
-    return NextResponse.json({ ok: true, pruned: pruneResult.pruned, deletedVideoRows: pruneResult.deletedVideoRows });
-  }
-
   const verification = await verifyYouTubeAvailability(videoId);
   debugUnavailable("verification-result", {
     videoId,
@@ -188,6 +186,23 @@ export async function POST(request: NextRequest) {
   });
   const ids = videos.map((v) => v.id);
   const videoTitle = videos[0]?.title ?? "Unknown";
+  const forcePrune = forcePruneCandidate && verification.status === "unavailable";
+
+  if (forcePrune) {
+    debugUnavailable("force-prune-from-runtime-reason", {
+      videoId,
+      reason,
+      verificationReason: verification.reason,
+      matchedVideoRows: videos.length,
+    });
+
+    const pruneResult = await pruneVideoAndAssociationsByVideoId(
+      videoId,
+      `runtime-force-prune:${reason}|${verification.reason}`,
+    ).catch(() => ({ pruned: false, deletedVideoRows: 0, reason: "prune-failed" }));
+
+    return NextResponse.json({ ok: true, pruned: pruneResult.pruned, deletedVideoRows: pruneResult.deletedVideoRows });
+  }
 
   if (verification.status !== "unavailable") {
     await prisma.siteVideo.updateMany({
