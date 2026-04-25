@@ -2268,9 +2268,10 @@ h1 {
   pointer-events: none;
 }
 
-.playerFrame.playerFrameDirectIframe > iframe,
-.playerFrame.playerFrameDirectIframe .playerMount iframe {
-  pointer-events: auto;
+.playerMount.playerMountHidden,
+.playerFrame.playerFramePolicyBlocked > iframe,
+.playerFrame.playerFramePolicyBlocked .playerMount iframe {
+  display: none;
 }
 
 .playerFrame.playerFrameLoading > iframe,
@@ -3002,32 +3003,49 @@ h1 {
   filter: brightness(1.08);
 }
 
-.directIframeAssist {
-  margin-top: 12px;
+.playerPolicyBlocker {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
   display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid rgba(255, 186, 172, 0.38);
-  border-radius: 10px;
-  background: rgba(18, 6, 5, 0.88);
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 22px;
+  border-radius: inherit;
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(205, 46, 26, 0.16), rgba(0, 0, 0, 0.92) 58%),
+    linear-gradient(180deg, rgba(16, 4, 3, 0.94), rgba(8, 2, 2, 0.98));
 }
 
-.directIframeAssistText {
+.playerPolicyBlockerEyebrow {
   margin: 0;
-  color: rgba(255, 230, 224, 0.95);
-  font-size: 0.84rem;
-  line-height: 1.35;
-  letter-spacing: 0.02em;
+  color: rgba(255, 185, 170, 0.95);
+  font-size: 0.76rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
 }
 
-.directIframeAssistActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.playerPolicyBlockerTitle {
+  margin: 0;
+  color: #fff3ef;
+  font-size: clamp(1.2rem, 2.4vw, 1.75rem);
+  line-height: 1.25;
+  max-width: 760px;
 }
 
-.directIframeAssistButton {
-  min-height: 38px;
+.playerPolicyBlockerBody {
+  margin: 0;
+  color: rgba(255, 226, 220, 0.95);
+  font-size: 0.95rem;
+  line-height: 1.48;
+  max-width: 760px;
+}
+
+.playerPolicyBlockerButton {
+  min-height: 42px;
   border-radius: 999px;
   border: 1px solid rgba(255, 194, 180, 0.56);
   background: linear-gradient(180deg, rgba(175, 33, 16, 0.95), rgba(92, 12, 8, 0.96));
@@ -3035,11 +3053,11 @@ h1 {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  padding: 0 14px;
+  padding: 0 18px;
   cursor: pointer;
 }
 
-.directIframeAssistButton:hover {
+.playerPolicyBlockerButton:hover {
   filter: brightness(1.08);
 }
 
@@ -3061,7 +3079,7 @@ h1 {
     min-width: 0;
   }
 
-  .directIframeAssistButton {
+  .playerPolicyBlockerButton {
     width: 100%;
   }
 }

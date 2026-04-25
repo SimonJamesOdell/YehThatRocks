@@ -1308,7 +1308,7 @@ export function PlayerExperience({
     "playerFrame",
     isPlayerReady ? "playerFrameLoaded" : "",
     showPlayerLoadingOverlay ? "playerFrameLoading" : "",
-    allowDirectIframeInteraction ? "playerFrameDirectIframe" : "",
+    allowDirectIframeInteraction ? "playerFramePolicyBlocked" : "",
   ].filter(Boolean).join(" ");
 
   useEffect(() => {
@@ -4385,11 +4385,6 @@ export function PlayerExperience({
         setShowShareMenu(false);
       }
 
-      function handleOpenYouTubeSignIn() {
-        const signInUrl = `https://accounts.google.com/ServiceLogin?service=youtube&continue=${encodeURIComponent(currentTrackYouTubeUrl)}`;
-        window.open(signInUrl, "_blank", "noopener,noreferrer");
-      }
-
       function handleShareTargetOpen(targetUrl: string) {
         window.open(targetUrl, "_blank", "noopener,noreferrer");
       }
@@ -4762,7 +4757,10 @@ export function PlayerExperience({
               onFocusCapture={handlePlayerFrameFocusCapture}
               onBlurCapture={handlePlayerFrameBlurCapture}
             >
-              <div ref={playerElementRef} className="playerMount" />
+              <div
+                ref={playerElementRef}
+                className={allowDirectIframeInteraction ? "playerMount playerMountHidden" : "playerMount"}
+              />
 
               {showPlayerLoadingOverlay && !allowDirectIframeInteraction ? (
                 <div className="playerBootLoader" role="status" aria-live="polite" aria-label={showRouteLikeLoadingCopy ? routeLoadingLabel : "Loading video player"}>
@@ -5023,30 +5021,24 @@ export function PlayerExperience({
                 </div>
               ) : null}
 
-            </div>
-          ) : null}
+              {allowDirectIframeInteraction ? (
+                <div className="playerPolicyBlocker" role="alert" aria-live="polite">
+                  <p className="playerPolicyBlockerEyebrow">Playback blocked by upstream policy</p>
+                  <strong className="playerPolicyBlockerTitle">This video cannot play inside the embedded player right now</strong>
+                  <p className="playerPolicyBlockerBody">
+                    Sorry. This is caused by YouTube policy controls, not a YehThatRocks platform failure.
+                    Continue on YouTube to watch this video.
+                  </p>
+                  <button
+                    type="button"
+                    className="playerPolicyBlockerButton"
+                    onClick={handleOpenCurrentTrackOnYouTube}
+                  >
+                    Watch on YouTube
+                  </button>
+                </div>
+              ) : null}
 
-          {allowDirectIframeInteraction ? (
-            <div className="directIframeAssist" role="status" aria-live="polite">
-              <p className="directIframeAssistText">
-                YouTube sign-in challenge detected. If the in-player Sign in link does nothing, use one of these:
-              </p>
-              <div className="directIframeAssistActions">
-                <button
-                  type="button"
-                  className="directIframeAssistButton"
-                  onClick={handleOpenYouTubeSignIn}
-                >
-                  Open YouTube Sign in
-                </button>
-                <button
-                  type="button"
-                  className="directIframeAssistButton"
-                  onClick={handleOpenCurrentTrackOnYouTube}
-                >
-                  Open this video on YouTube
-                </button>
-              </div>
             </div>
           ) : null}
 
