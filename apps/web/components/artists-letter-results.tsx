@@ -69,6 +69,8 @@ export function ArtistsLetterResults({
   const prefetchedArtistSlugsRef = useRef<Set<string>>(new Set());
   const nextOffsetRef = useRef<number>(initialArtists.length);
   const backgroundLoadCountRef = useRef(0);
+  const filterEffectReadyRef = useRef(false);
+  const reloadRequestIdRef = useRef(0);
 
   useEffect(() => {
     setCurrentLetter(letter);
@@ -98,53 +100,9 @@ export function ArtistsLetterResults({
       }
 
       switchingLetterRef.current = true;
-      setIsLoading(true);
-      setLoadError(null);
-      setPendingArtistSlug(null);
-
-      void (async () => {
-        try {
-          const params = new URLSearchParams();
-          params.set("letter", nextLetter);
-          params.set("offset", "0");
-          params.set("limit", String(pageSize));
-
-          const response = await fetch(`/api/artists?${params.toString()}`, {
-            method: "GET",
-            cache: "no-store",
-          });
-
-          if (!response.ok) {
-            throw new Error("Failed to switch artist letter");
-          }
-
-          const payload = (await response.json()) as {
-            artists: ArtistWithCount[];
-            hasMore: boolean;
-          };
-
-          const deduped = dedupeArtistsBySlug(payload.artists);
-
-          nextOffsetRef.current = deduped.length;
-          requestedOffsetsRef.current = new Set();
-          seenArtistSlugsRef.current = new Set(deduped.map((artist) => artist.slug));
-          reportedBrokenThumbnailsRef.current = new Set();
-
-          startTransition(() => {
-            setCurrentLetter(nextLetter);
-            setArtists(deduped);
-            setHasMore(Boolean(payload.hasMore));
-            setFailedThumbnails({});
-          });
-
-          scrollResultsToTop();
-        } catch {
-          setLoadError("Could not switch artists letter. Please try again.");
-        } finally {
-          switchingLetterRef.current = false;
-          setIsLoading(false);
-        }
-      })();
+      void reloadArtists(nextLetter).finally(() => {
+        switchingLetterRef.current = false;
+      });
     };
 
     window.addEventListener(ARTISTS_LETTER_CHANGE_EVENT, handler);
@@ -251,6 +209,72 @@ export function ArtistsLetterResults({
 
   const normalizedFilterValue = useMemo(() => normalizeArtistFilterValue(filterValue), [filterValue]);
 
+  function buildArtistParams(nextLetter: string, offset: number) {
+    const params = new URLSearchParams();
+    params.set("letter", nextLetter);
+    params.set("offset", String(offset));
+    params.set("limit", String(pageSize));
+    if (normalizedFilterValue) {
+      params.set("filter", normalizedFilterValue);
+    }
+    return params;
+  }
+
+  async function reloadArtists(nextLetter: string) {
+    const requestId = reloadRequestIdRef.current + 1;
+    reloadRequestIdRef.current = requestId;
+
+    setIsLoading(true);
+    setLoadError(null);
+    setPendingArtistSlug(null);
+
+    try {
+      const response = await fetch(`/api/artists?${buildArtistParams(nextLetter, 0).toString()}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to load artists");
+      }
+
+      const payload = (await response.json()) as {
+        artists: ArtistWithCount[];
+        hasMore: boolean;
+      };
+
+      if (reloadRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      const deduped = dedupeArtistsBySlug(payload.artists);
+
+      nextOffsetRef.current = payload.artists.length;
+      requestedOffsetsRef.current = new Set();
+      seenArtistSlugsRef.current = new Set(deduped.map((artist) => artist.slug));
+      reportedBrokenThumbnailsRef.current = new Set();
+      backgroundLoadCountRef.current = 0;
+
+      startTransition(() => {
+        setCurrentLetter(nextLetter);
+        setArtists(deduped);
+        setHasMore(Boolean(payload.hasMore));
+        setFailedThumbnails({});
+        setIsBackgroundLoading(false);
+      });
+
+      scrollResultsToTop();
+    } catch {
+      if (reloadRequestIdRef.current === requestId) {
+        setLoadError("Could not load artists. Please try again.");
+      }
+    } finally {
+      if (reloadRequestIdRef.current === requestId) {
+        setIsLoading(false);
+      }
+    }
+  }
+
   const filteredArtists = useMemo(() => {
     if (!normalizedFilterValue) {
       return artists;
@@ -270,6 +294,20 @@ export function ArtistsLetterResults({
       window.removeEventListener(ARTISTS_FILTER_CHANGE_EVENT, handler);
     };
   }, []);
+
+  useEffect(() => {
+    if (!filterEffectReadyRef.current) {
+      filterEffectReadyRef.current = true;
+      return;
+    }
+
+    const requestedLetter = normalizeArtistLetter(normalizedFilterValue.charAt(0));
+    if (normalizedFilterValue && isValidArtistLetter(requestedLetter) && requestedLetter !== currentLetter) {
+      return;
+    }
+
+    void reloadArtists(currentLetter);
+  }, [normalizedFilterValue]);
 
   function artistHref(slug: string) {
     return `/artist/${slug}?${baseParams.toString()}`;
@@ -377,10 +415,7 @@ export function ArtistsLetterResults({
     }
 
     try {
-      const params = new URLSearchParams();
-      params.set("letter", currentLetter);
-      params.set("offset", String(offset));
-      params.set("limit", String(pageSize));
+      const params = buildArtistParams(currentLetter, offset);
 
       const response = await fetch(`/api/artists?${params.toString()}`, {
         method: "GET",
@@ -523,6 +558,7 @@ export function ArtistsLetterResults({
     && filteredArtists.length === 0
     && !loadError
     && (isLoading || isBackgroundLoading || hasMore);
+  const shouldShowLoadingBars = isLoading || isBackgroundLoading;
 
   return (
     <>
@@ -604,9 +640,16 @@ export function ArtistsLetterResults({
               <span>Opening artist...</span>
             </>
           ) : null}
-          {isLoading || isBackgroundLoading ? <span>Loading more artists...</span> : null}
+          {!pendingArtistSlug && shouldShowLoadingBars ? (
+            <span className="playerBootBars" role="status" aria-label="Loading more artists">
+              <span />
+              <span />
+              <span />
+              <span />
+            </span>
+          ) : null}
           {loadError ? <span>{loadError}</span> : null}
-          {!pendingArtistSlug && !isLoading && !isBackgroundLoading && !hasMore && !loadError ? <span>End of {currentLetter} artists.</span> : null}
+          {!pendingArtistSlug && !shouldShowLoadingBars && !hasMore && !loadError ? <span>End of {currentLetter} artists.</span> : null}
         </div>
       ) : null}
 
