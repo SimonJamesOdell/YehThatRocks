@@ -1588,10 +1588,9 @@ export function PlayerExperience({
         const state = typeof player.getPlayerState === "function" ? player.getPlayerState() : -1;
         const durationValue = typeof player.getDuration === "function" ? toSafeNumber(player.getDuration(), 0) : 0;
         const currentPosition = typeof player.getCurrentTime === "function" ? toSafeNumber(player.getCurrentTime(), 0) : 0;
-        const bufferingState = 3;
         const stillBlocked =
           state !== window.YT?.PlayerState.PLAYING
-          && (durationValue <= 0 || (state === bufferingState && currentPosition < 1.5));
+          && (durationValue <= 0 || currentPosition < 1.5);
 
         if (!stillBlocked) {
           return;
@@ -1630,6 +1629,14 @@ export function PlayerExperience({
         });
 
         if (botChallengeDetected) {
+          enableDirectIframeInteractionMode(trigger, reportResult.verificationReason);
+          return;
+        }
+
+        if (!shouldSkip) {
+          // If runtime playback remains blocked but backend verification did not classify the
+          // track as definitively unavailable, expose the raw iframe so the user can satisfy
+          // upstream interstitials (e.g., sign-in/bot challenge) directly.
           enableDirectIframeInteractionMode(trigger, reportResult.verificationReason);
           return;
         }
@@ -2756,6 +2763,11 @@ export function PlayerExperience({
 
             if (botChallengeDetected) {
               enableDirectIframeInteractionMode("on-error", reportResult.verificationReason);
+              return;
+            }
+
+            if (!shouldSkip) {
+              enableDirectIframeInteractionMode("on-error-fallback", reportResult.verificationReason);
               return;
             }
 
