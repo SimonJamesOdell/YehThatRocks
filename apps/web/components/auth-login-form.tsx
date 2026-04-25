@@ -489,6 +489,12 @@ export function AuthLoginForm() {
     };
   }, [anonymousScreenName, isAnonymousFlowOpen]);
 
+  useEffect(() => {
+    if (anonymousCredentials) {
+      setIsAnonymousFlowOpen(false);
+    }
+  }, [anonymousCredentials]);
+
   const isBusy = isSubmitting || isAnonymousSubmitting || isAnonymousPreparing;
   const canBrowserSaveAnonymousCredentials = canStoreBrowserCredential();
 
@@ -543,7 +549,7 @@ export function AuthLoginForm() {
     <>
       <div className="authChoiceStack">
         <button type="button" className="authSecondaryAction" onClick={handleAnonymousEntry} disabled={isBusy}>
-          {isAnonymousPreparing ? "Preparing anonymous login..." : "Login Anonymously"}
+          {isAnonymousPreparing ? "Preparing anonymous login..." : "Login Anonymously ( 2 clicks... )"}
         </button>
         <p className="authSupportCopy">
           Anonymous accounts get the same site access, but password recovery stays disabled until you attach an email later.
@@ -572,7 +578,7 @@ export function AuthLoginForm() {
                 <p className="authModalEyebrow">Anonymous login</p>
                 <h2 id="anonymous-screen-name-title" className="authModalTitle">Choose your screen name</h2>
                 <p className="authModalLead">
-                  Jump straight in now, keep all member features, and add recovery later only if you want it.
+                  Jump straight in now, with full member features, add recovery later only if you want it.
                 </p>
               </div>
               <button
@@ -587,14 +593,6 @@ export function AuthLoginForm() {
             </div>
 
             <form className="authForm anonymousAuthForm" onSubmit={handleAnonymousCreate}>
-              <div className="authModalFeatureBand" aria-hidden="true">
-                <div className="authModalFeatureGlyph">A</div>
-                <div>
-                  <strong className="authModalFeatureTitle">Anonymous account</strong>
-                  <p className="authModalFeatureText">Chat, favourites, playlists, history, all unlocked immediately.</p>
-                </div>
-              </div>
-
               <label>
                 <span>Screen name</span>
                 <input

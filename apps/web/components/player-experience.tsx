@@ -2644,9 +2644,6 @@ export function PlayerExperience({
 
                   const activeVideoId = currentVideoRef.current.id;
                   const secondsRemaining = liveDuration > 0 ? liveDuration - liveTime : Infinity;
-                  if (liveDuration > 0 && secondsRemaining <= YOUTUBE_END_SCREEN_COVER_SECONDS) {
-                    setShowEndScreenCover(true);
-                  }
 
                   const shouldPrewarmEndedChoice =
                     liveDuration > 0
@@ -4796,10 +4793,6 @@ export function PlayerExperience({
                 ref={playerElementRef}
                 className={allowDirectIframeInteraction ? "playerMount playerMountHidden" : "playerMount"}
               />
-
-              {showEndScreenCover && !showEndedChoiceOverlay && (
-                <div className="playerEndScreenCover" aria-hidden="true" />
-              )}
 
               {showPlayerLoadingOverlay && !allowDirectIframeInteraction ? (
                 <div className="playerBootLoader" role="status" aria-live="polite" aria-label={showRouteLikeLoadingCopy ? routeLoadingLabel : "Loading video player"}>
