@@ -162,6 +162,12 @@ const ENDED_CHOICE_SCROLL_RUNWAY_COUNT = 24;
 const ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS = 3;
 const ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-ended-choice";
 
+type ReportUnavailableResult = {
+  shouldSkip: boolean;
+  verificationReason: string | null;
+  skipped: boolean;
+};
+
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
   const consoleWithPatchState = console as typeof console & {
     __ytrWarnPatched?: boolean;
@@ -209,6 +215,10 @@ function toSafeNumber(value: unknown, fallback = 0) {
 
 function normalizePlayerVolume(value: unknown, fallback = 100) {
   return Math.max(0, Math.min(100, Math.round(toSafeNumber(value, fallback))));
+}
+
+function isBotChallengeVerificationReason(reason: string | null | undefined) {
+  return typeof reason === "string" && /bot-check/i.test(reason);
 }
 
 function formatPlaybackTime(value: number) {
@@ -464,6 +474,7 @@ export function PlayerExperience({
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [showPlayerRefreshHint, setShowPlayerRefreshHint] = useState(false);
   const [playerReloadNonce, setPlayerReloadNonce] = useState(0);
+  const [allowDirectIframeInteraction, setAllowDirectIframeInteraction] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
@@ -482,6 +493,7 @@ export function PlayerExperience({
     const nowPlayingLastVideoIdRef = useRef<string | null>(null);
     const nowPlayingLastTriggeredAtRef = useRef<number>(0);
     const reportedUnavailableVideoIdRef = useRef<string | null>(null);
+    const reportedUnavailableVerificationReasonRef = useRef<string | null>(null);
     const autoplaySuppressedVideoIdRef = useRef<string | null>(null);
     const autoplayRouteTransitionRef = useRef(false);
     const pendingAutoAdvanceVideoIdRef = useRef<string | null>(null);
@@ -1287,6 +1299,7 @@ export function PlayerExperience({
     "playerFrame",
     isPlayerReady ? "playerFrameLoaded" : "",
     showPlayerLoadingOverlay ? "playerFrameLoading" : "",
+    allowDirectIframeInteraction ? "playerFrameDirectIframe" : "",
   ].filter(Boolean).join(" ");
 
   useEffect(() => {
@@ -1465,6 +1478,26 @@ export function PlayerExperience({
     unavailableOverlayTimeoutRef.current = null;
   }
 
+  function enableDirectIframeInteractionMode(trigger: string, verificationReason: string | null) {
+    if (overlayTimeoutRef.current) {
+      window.clearTimeout(overlayTimeoutRef.current);
+      overlayTimeoutRef.current = null;
+    }
+
+    clearUnavailableOverlayMessage();
+    setShowNowPlayingOverlay(false);
+    setShowControls(false);
+    setShowShareMenu(false);
+    setShowPlayerRefreshHint(false);
+    setAllowDirectIframeInteraction(true);
+
+    logPlayerDebug("bot-challenge:direct-iframe-mode", {
+      videoId: currentVideoRef.current.id,
+      trigger,
+      verificationReason,
+    });
+  }
+
   function pauseActivePlayback() {
     if (progressIntervalRef.current) {
       window.clearInterval(progressIntervalRef.current);
@@ -1579,18 +1612,27 @@ export function PlayerExperience({
           return;
         }
 
-        const shouldSkip = await reportUnavailableFromPlayer("yt-player-upstream-connect-timeout");
+        const reportResult = await reportUnavailableFromPlayer("yt-player-upstream-connect-timeout");
+        const shouldSkip = reportResult.shouldSkip;
+        const botChallengeDetected = isBotChallengeVerificationReason(reportResult.verificationReason);
 
         logPlayerDebug("runtime-block-check", {
           videoId: currentVideoRef.current.id,
           playerHostMode,
           shouldSkip,
+          verificationReason: reportResult.verificationReason,
+          botChallengeDetected,
           durationValue,
           currentPosition,
           state,
           retryAttempt: stuckPlaybackRetryCountRef.current,
           trigger,
         });
+
+        if (botChallengeDetected) {
+          enableDirectIframeInteractionMode(trigger, reportResult.verificationReason);
+          return;
+        }
 
         if (shouldSkip) {
           autoplaySuppressedVideoIdRef.current = currentVideoRef.current.id;
@@ -2045,6 +2087,7 @@ export function PlayerExperience({
     nowPlayingLastVideoIdRef.current = null;
     nowPlayingLastTriggeredAtRef.current = 0;
     reportedUnavailableVideoIdRef.current = null;
+    reportedUnavailableVerificationReasonRef.current = null;
     autoplaySuppressedVideoIdRef.current = null;
     playAttemptedAtRef.current = null;
     stuckPlaybackRetryCountRef.current = 0;
@@ -2056,6 +2099,7 @@ export function PlayerExperience({
     setHasPlaybackStarted(false);
     hasPlaybackStartedRef.current = false;
     setShowControls(false);
+    setAllowDirectIframeInteraction(false);
     setIsManualTransitionMaskVisible(false);
     if (manualTransitionMaskTimeoutRef.current !== null) {
       window.clearTimeout(manualTransitionMaskTimeoutRef.current);
@@ -2202,13 +2246,17 @@ export function PlayerExperience({
     return () => window.removeEventListener(REQUEST_VIDEO_REPLAY_EVENT, handleReplayRequest);
   }, [showEndedChoiceOverlay]);
 
-  async function reportUnavailableFromPlayer(reason: string) {
+  async function reportUnavailableFromPlayer(reason: string): Promise<ReportUnavailableResult> {
     if (reportedUnavailableVideoIdRef.current === currentVideo.id) {
       logPlayerDebug("report-unavailable:already-reported", {
         videoId: currentVideo.id,
         reason,
       });
-      return false;
+      return {
+        shouldSkip: false,
+        verificationReason: reportedUnavailableVerificationReasonRef.current,
+        skipped: true,
+      };
     }
 
     reportedUnavailableVideoIdRef.current = currentVideo.id;
@@ -2241,14 +2289,26 @@ export function PlayerExperience({
         payload,
       });
 
-      return Boolean(response.ok && payload?.ok && payload?.skipped !== true);
+      const verificationReason = typeof payload?.reason === "string" ? payload.reason : null;
+      const skipped = payload?.skipped === true;
+      reportedUnavailableVerificationReasonRef.current = verificationReason;
+
+      return {
+        shouldSkip: Boolean(response.ok && payload?.ok && !skipped),
+        verificationReason,
+        skipped,
+      };
     } catch {
       // best-effort runtime reporting
       logPlayerDebug("report-unavailable:network-error", {
         videoId: currentVideo.id,
         reason,
       });
-      return false;
+      return {
+        shouldSkip: false,
+        verificationReason: null,
+        skipped: false,
+      };
     }
   }
 
@@ -2270,7 +2330,9 @@ export function PlayerExperience({
     setIsPlaying(false);
     setHasPlaybackStarted(false);
     hasPlaybackStartedRef.current = false;
+    setAllowDirectIframeInteraction(false);
     reportedUnavailableVideoIdRef.current = null;
+    reportedUnavailableVerificationReasonRef.current = null;
     autoplaySuppressedVideoIdRef.current = null;
     playAttemptedAtRef.current = null;
     stuckPlaybackRetryCountRef.current = 0;
@@ -2478,6 +2540,7 @@ export function PlayerExperience({
                 return;
               }
 
+              setAllowDirectIframeInteraction(false);
               clearUnavailableOverlayMessage();
               clearStuckPlaybackRetryTimer();
               clearStuckPlaybackWatchdogTimer();
@@ -2658,7 +2721,9 @@ export function PlayerExperience({
                 ? `yt-player-age-or-owner-restricted-${event.data}`
                 : `yt-player-error-${event.data}`;
 
-            const shouldSkip = await reportUnavailableFromPlayer(reason);
+            const reportResult = await reportUnavailableFromPlayer(reason);
+            const shouldSkip = reportResult.shouldSkip;
+            const botChallengeDetected = isBotChallengeVerificationReason(reportResult.verificationReason);
 
             const postReportPlayer = playerRef.current;
             const postReportState =
@@ -2678,12 +2743,19 @@ export function PlayerExperience({
               videoId: currentVideo.id,
               reason,
               shouldSkip,
+              verificationReason: reportResult.verificationReason,
+              botChallengeDetected,
               postReportState,
               postReportTime,
               playbackEstablishedAfterReport,
             });
 
             if (playbackEstablishedAfterReport) {
+              return;
+            }
+
+            if (botChallengeDetected) {
+              enableDirectIframeInteractionMode("on-error", reportResult.verificationReason);
               return;
             }
 
@@ -4613,9 +4685,13 @@ export function PlayerExperience({
             <div
               ref={playerFrameRef}
               className={playerFrameClassName}
-              onMouseEnter={() => setShowControls(true)}
+              onMouseEnter={() => {
+                if (!allowDirectIframeInteraction) {
+                  setShowControls(true);
+                }
+              }}
               onMouseLeave={() => {
-                if (isPlaying) {
+                if (isPlaying && !allowDirectIframeInteraction) {
                   setShowControls(false);
                   setShowShareMenu(false);
                 }
@@ -4625,7 +4701,7 @@ export function PlayerExperience({
             >
               <div ref={playerElementRef} className="playerMount" />
 
-              {showPlayerLoadingOverlay ? (
+              {showPlayerLoadingOverlay && !allowDirectIframeInteraction ? (
                 <div className="playerBootLoader" role="status" aria-live="polite" aria-label={showRouteLikeLoadingCopy ? routeLoadingLabel : "Loading video player"}>
                   <div className="playerBootBars" aria-hidden="true">
                     <span />
@@ -4672,7 +4748,7 @@ export function PlayerExperience({
                 </div>
               ) : null}
 
-              {isPlayerReady && (
+              {isPlayerReady && !allowDirectIframeInteraction && (
                 <div className={!hasPlaybackStarted || !isPlaying || showControls ? "playerOverlay playerOverlayVisible" : "playerOverlay"}>
                 <div className="overlayTop">
                   {!isFullscreen ? (
@@ -4877,7 +4953,7 @@ export function PlayerExperience({
                 </div>
               )}
 
-              {showNowPlayingOverlay ? (
+              {showNowPlayingOverlay && !allowDirectIframeInteraction ? (
                 <div key={`${currentVideo.id}-${overlayInstance}`} className="nowPlayingOverlay nowPlayingOverlayAnimate">
                   <p className="statusLabel">Now playing</p>
                   <strong>{displayTitle}</strong>
@@ -4887,7 +4963,7 @@ export function PlayerExperience({
             </div>
           ) : null}
 
-          {unavailableOverlayMessage ? (
+          {unavailableOverlayMessage && !allowDirectIframeInteraction ? (
             <div className="videoUnavailableOverlay" role="alertdialog" aria-modal="true" aria-label="Video unavailable">
               <p className="videoUnavailableOverlayEyebrow">
                 {isUpstreamConnectivityOverlay ? "Provider connection timeout" : "Playback issue"}

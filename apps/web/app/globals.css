@@ -2268,6 +2268,11 @@ h1 {
   pointer-events: none;
 }
 
+.playerFrame.playerFrameDirectIframe > iframe,
+.playerFrame.playerFrameDirectIframe .playerMount iframe {
+  pointer-events: auto;
+}
+
 .playerFrame.playerFrameLoading > iframe,
 .playerFrame.playerFrameLoading .playerMount iframe {
   opacity: 0;
