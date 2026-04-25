@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireApiAuth } from "@/lib/auth-request";
-import { hasDatabaseUrl, importVideoFromDirectSource, normalizeYouTubeVideoId } from "@/lib/catalog-data";
+import {
+  buildNormalizedVideoTitleFromMetadata,
+  hasDatabaseUrl,
+  importVideoFromDirectSource,
+  normalizeYouTubeVideoId,
+} from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
 import { parseRequestJson } from "@/lib/request-json";
@@ -295,6 +300,35 @@ async function applyMetadataHints(videoId: string, hints: { artist?: string; tra
       parseReason = ${"new-page-suggestion"},
       parseConfidence = ${1},
       parsedAt = ${new Date()}
+    WHERE videoId = ${videoId}
+  `;
+
+  // Keep ingestion titles aligned with the normalized metadata naming convention.
+  const rows = await prisma.$queryRaw<Array<{ title: string | null; parsedArtist: string | null; parsedTrack: string | null }>>`
+    SELECT title, parsedArtist, parsedTrack
+    FROM videos
+    WHERE videoId = ${videoId}
+    LIMIT 1
+  `;
+
+  const row = rows[0];
+  if (!row) {
+    return;
+  }
+
+  const normalizedTitle = buildNormalizedVideoTitleFromMetadata(
+    row.title,
+    row.parsedArtist,
+    row.parsedTrack,
+  );
+
+  if (!normalizedTitle) {
+    return;
+  }
+
+  await prisma.$executeRaw`
+    UPDATE videos
+    SET title = ${normalizedTitle}
     WHERE videoId = ${videoId}
   `;
 }

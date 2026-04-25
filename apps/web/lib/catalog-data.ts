@@ -322,6 +322,110 @@ function normalizeParsedString(value: unknown, maxLength: number) {
   return truncate(trimmed, maxLength);
 }
 
+function collapseWhitespace(value: string | null | undefined) {
+  return (value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeLooseMetadataToken(value: string | null | undefined) {
+  return collapseWhitespace(value)
+    .toLowerCase()
+    .replace(/[\u2012\u2013\u2014\u2015]/g, "-")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'");
+}
+
+function splitTitleForNormalization(title: string) {
+  const raw = collapseWhitespace(title);
+  if (!raw) {
+    return null;
+  }
+
+  const separators = [" - ", " – ", " — ", " | "];
+  let best: { idx: number; separator: string } | null = null;
+
+  for (const separator of separators) {
+    const idx = raw.indexOf(separator);
+    if (idx <= 0) {
+      continue;
+    }
+
+    if (!best || idx < best.idx) {
+      best = { idx, separator };
+    }
+  }
+
+  if (!best) {
+    return null;
+  }
+
+  const left = raw.slice(0, best.idx).trim();
+  const right = raw.slice(best.idx + best.separator.length).trim();
+  if (!left || !right) {
+    return null;
+  }
+
+  return { left, right };
+}
+
+function stripKnownTrackPrefix(text: string, token: string) {
+  if (!text || !token) {
+    return text;
+  }
+
+  const textNorm = normalizeLooseMetadataToken(text);
+  const tokenNorm = normalizeLooseMetadataToken(token);
+  if (!tokenNorm || !textNorm.startsWith(tokenNorm)) {
+    return text;
+  }
+
+  const consumed = text.slice(0, token.length);
+  if (normalizeLooseMetadataToken(consumed) !== tokenNorm) {
+    return text;
+  }
+
+  return text.slice(consumed.length).trim();
+}
+
+function collectBracketMetadataTags(text: string) {
+  const tags: string[] = [];
+  const tagRegex = /(\([^)]*(?:live|official|video|lyrics?|lyric\s+video|remaster(?:ed)?|feat\.?|ft\.?|featuring|cover|remix|acoustic|session|version|edit)[^)]*\)|\[[^\]]*(?:live|official|video|lyrics?|lyric\s+video|remaster(?:ed)?|feat\.?|ft\.?|featuring|cover|remix|acoustic|session|version|edit)[^\]]*\])/gi;
+
+  for (const match of text.matchAll(tagRegex)) {
+    const value = collapseWhitespace(match[0]);
+    if (value) {
+      tags.push(value);
+    }
+  }
+
+  return tags;
+}
+
+function collectInlineFeatureMetadataTag(text: string) {
+  const featureRegex = /(?:^|\s)(feat\.?|ft\.?|featuring)\s+[^\[\]()]+$/i;
+  const hit = text.match(featureRegex);
+  if (!hit) {
+    return null;
+  }
+
+  return collapseWhitespace(hit[0]);
+}
+
+function sanitizeMetadataTitleToken(value: string | null | undefined, maxLength = 255) {
+  const normalized = normalizePossiblyMojibakeText(value ?? "");
+  if (!normalized) {
+    return null;
+  }
+
+  const cleaned = collapseWhitespace(normalized);
+  if (!cleaned) {
+    return null;
+  }
+
+  return truncate(cleaned, maxLength);
+}
+
 function normalizeParsedConfidence(value: unknown) {
   const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric)) {
@@ -527,36 +631,76 @@ function deriveAdminImportFallbackMetadata(title: string, channelTitle?: string 
   } as const;
 }
 
-function buildAugmentedTitleFromParsedMetadata(
-  title: string,
-  parsedTrack: string | null,
-  parsedArtist: string | null,
-  confidence: number | null,
+export function buildNormalizedVideoTitleFromMetadata(
+  originalTitle: string | null | undefined,
+  artist: string | null | undefined,
+  track: string | null | undefined,
 ) {
-  const normalizedTitle = normalizeLooseToken(title);
-  const normalizedTrack = normalizeLooseToken(parsedTrack);
-  const normalizedArtist = normalizeLooseToken(parsedArtist);
-  const numericConfidence = Number(confidence ?? NaN);
+  const safeArtist = sanitizeMetadataTitleToken(artist);
+  const safeTrack = sanitizeMetadataTitleToken(track);
 
-  if (!normalizedTitle || !normalizedTrack || !normalizedArtist) {
+  if (!safeArtist || !safeTrack) {
     return null;
   }
 
-  if (normalizedTitle !== normalizedTrack) {
-    return null;
+  const repairedTitle = normalizePossiblyMojibakeText(originalTitle ?? "");
+  const split = splitTitleForNormalization(repairedTitle);
+
+  let trackSide = split
+    ? (() => {
+        const leftNorm = normalizeLooseMetadataToken(split.left);
+        const rightNorm = normalizeLooseMetadataToken(split.right);
+        const artistNorm = normalizeLooseMetadataToken(safeArtist);
+
+        if (leftNorm.includes(artistNorm) && !rightNorm.includes(artistNorm)) {
+          return split.right;
+        }
+        if (rightNorm.includes(artistNorm) && !leftNorm.includes(artistNorm)) {
+          return split.left;
+        }
+        return split.right;
+      })()
+    : repairedTitle;
+
+  trackSide = collapseWhitespace(trackSide);
+  const tagParts: string[] = [];
+  const bracketTags = collectBracketMetadataTags(trackSide).concat(collectBracketMetadataTags(repairedTitle));
+  for (const tag of bracketTags) {
+    tagParts.push(tag);
   }
 
-  if (!Number.isFinite(numericConfidence) || numericConfidence < PLAYBACK_MIN_CONFIDENCE) {
-    return null;
+  const inlineFeature = collectInlineFeatureMetadataTag(trackSide);
+  if (inlineFeature) {
+    tagParts.push(inlineFeature);
   }
 
-  const normalizedTitleWithBoundaries = ` ${normalizedTitle} `;
-  const normalizedArtistWithBoundaries = ` ${normalizedArtist} `;
-  if (normalizedTitleWithBoundaries.includes(normalizedArtistWithBoundaries)) {
-    return null;
+  const remainder = stripKnownTrackPrefix(trackSide, safeTrack);
+  if (remainder && /(?:^|\s)(live|official|video|lyrics?|remaster(?:ed)?|feat\.?|ft\.?|featuring|cover|remix|acoustic|session|version|edit)\b/i.test(remainder)) {
+    tagParts.push(remainder);
   }
 
-  return truncate(`${title} - ${parsedArtist}`, 255);
+  const dedupedTags: string[] = [];
+  const seen = new Set<string>();
+  for (const rawTag of tagParts) {
+    const repairedTag = sanitizeMetadataTitleToken(rawTag, 200);
+    if (!repairedTag) {
+      continue;
+    }
+
+    const key = normalizeLooseMetadataToken(repairedTag);
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    dedupedTags.push(repairedTag);
+  }
+
+  const fullTrack = dedupedTags.length > 0
+    ? `${safeTrack} ${dedupedTags.join(" ")}`
+    : safeTrack;
+
+  return truncate(`${safeArtist} - ${collapseWhitespace(fullTrack)}`, 255);
 }
 
 function extractJsonObject(content: unknown) {
@@ -828,12 +972,10 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
     const correctedReasonBase = parsed.reason;
     const correctedReason = [correctedReasonBase, ...confidenceNotes].filter(Boolean).join(" | ");
     const existingTitle = normalizeParsedString(existingMeta?.title, 255) ?? truncate(video.title, 255);
-    const nextPersistedTitle = buildAugmentedTitleFromParsedMetadata(
-      existingTitle,
-      correctedTrack,
-      correctedArtist,
-      adjustedConfidence,
-    ) ?? existingTitle;
+    const nextPersistedTitle =
+      Number.isFinite(adjustedConfidence) && adjustedConfidence >= PLAYBACK_MIN_CONFIDENCE
+        ? (buildNormalizedVideoTitleFromMetadata(existingTitle, correctedArtist, correctedTrack) ?? existingTitle)
+        : existingTitle;
 
     await prisma.$executeRaw`
       UPDATE videos
@@ -2691,9 +2833,16 @@ export async function importVideoFromDirectSource(source: string, options?: { di
         : null;
 
     if (fallbackRow && fallbackMeta) {
+      const normalizedFallbackTitle = buildNormalizedVideoTitleFromMetadata(
+        fallbackRow.title,
+        fallbackMeta.artist,
+        fallbackMeta.track,
+      ) ?? fallbackRow.title;
+
       await prisma.$executeRaw`
         UPDATE videos
         SET
+          title = ${normalizedFallbackTitle},
           parsedArtist = ${fallbackMeta.artist},
           parsedTrack = ${fallbackMeta.track},
           parsedVideoType = ${fallbackMeta.videoType},
