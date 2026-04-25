@@ -162,6 +162,7 @@ const ENDED_CHOICE_BATCH_SIZE = maxEndedChoiceVideos;
 const ENDED_CHOICE_INITIAL_PREFETCH_COUNT = 24;
 const ENDED_CHOICE_SCROLL_RUNWAY_COUNT = 24;
 const ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS = 3;
+const YOUTUBE_END_SCREEN_COVER_SECONDS = 21;
 const ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-ended-choice";
 
 type ReportUnavailableResult = {
@@ -460,6 +461,7 @@ export function PlayerExperience({
   const [unavailableOverlayMessage, setUnavailableOverlayMessage] = useState<string | null>(null);
   const [unavailableOverlayRequiresOk, setUnavailableOverlayRequiresOk] = useState(false);
   const [showEndedChoiceOverlay, setShowEndedChoiceOverlay] = useState(false);
+  const [showEndScreenCover, setShowEndScreenCover] = useState(false);
   const [endedChoiceFromUnavailable, setEndedChoiceFromUnavailable] = useState(false);
   const [endedChoiceReshuffleKey, setEndedChoiceReshuffleKey] = useState(0);
   const [endedChoiceGridExiting, setEndedChoiceGridExiting] = useState(false);
@@ -1480,6 +1482,7 @@ export function PlayerExperience({
     const requiresOk = options?.requiresOk ?? !autoplayEnabledRef.current;
     setUnavailableOverlayMessage(message?.trim() || UNAVAILABLE_OVERLAY_MESSAGE);
     setShowEndedChoiceOverlay(false);
+    setShowEndScreenCover(false);
     setUnavailableOverlayRequiresOk(requiresOk);
 
     if (!requiresOk && options?.autoAdvanceWhenAutoplay) {
@@ -2116,6 +2119,7 @@ export function PlayerExperience({
     clearStuckPlaybackWatchdogTimer();
     clearUnavailableOverlayMessage();
     setShowEndedChoiceOverlay(false);
+    setShowEndScreenCover(false);
     setEndedChoiceFromUnavailable(false);
     setHasPlaybackStarted(false);
     hasPlaybackStartedRef.current = false;
@@ -2639,9 +2643,14 @@ export function PlayerExperience({
                   playbackStallLastObservedAtRef.current = now;
 
                   const activeVideoId = currentVideoRef.current.id;
+                  const secondsRemaining = liveDuration > 0 ? liveDuration - liveTime : Infinity;
+                  if (liveDuration > 0 && secondsRemaining <= YOUTUBE_END_SCREEN_COVER_SECONDS) {
+                    setShowEndScreenCover(true);
+                  }
+
                   const shouldPrewarmEndedChoice =
                     liveDuration > 0
-                    && (liveDuration - liveTime) <= ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS
+                    && secondsRemaining <= ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS
                     && !autoplayEnabledRef.current
                     && endedChoicePrewarmVideoIdRef.current !== activeVideoId
                     && !endedChoiceOverlayVisibleRef.current
@@ -4787,6 +4796,10 @@ export function PlayerExperience({
                 ref={playerElementRef}
                 className={allowDirectIframeInteraction ? "playerMount playerMountHidden" : "playerMount"}
               />
+
+              {showEndScreenCover && !showEndedChoiceOverlay && (
+                <div className="playerEndScreenCover" aria-hidden="true" />
+              )}
 
               {showPlayerLoadingOverlay && !allowDirectIframeInteraction ? (
                 <div className="playerBootLoader" role="status" aria-live="polite" aria-label={showRouteLikeLoadingCopy ? routeLoadingLabel : "Loading video player"}>

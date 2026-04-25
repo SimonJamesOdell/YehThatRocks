@@ -80,6 +80,34 @@ export async function proxy(request: NextRequest) {
     return withSecurityHeaders(NextResponse.redirect(redirectUrl));
   }
 
+  // For browser page navigations (non-API), silently refresh when the access
+  // token is absent/expired but a refresh token is present, so returning users
+  // are transparently re-authenticated instead of hitting the auth gate.
+  const isBrowserPageNav =
+    isBrowserPageRequest
+    && !pathname.startsWith("/api")
+    && pathname !== "/desktop-only";
+
+  if (isBrowserPageNav) {
+    const { accessToken: maybeAccess, refreshToken } = readAuthCookies(request);
+    let accessTokenValid = false;
+    if (maybeAccess) {
+      try {
+        await verifyToken(maybeAccess, "access");
+        accessTokenValid = true;
+      } catch {
+        // expired or invalid — fall through
+      }
+    }
+    if (!accessTokenValid && refreshToken) {
+      const silentRefreshUrl = request.nextUrl.clone();
+      silentRefreshUrl.pathname = "/api/auth/silent-refresh";
+      const next = pathname + (request.nextUrl.search ?? "");
+      silentRefreshUrl.search = `?next=${encodeURIComponent(next)}`;
+      return withSecurityHeaders(NextResponse.redirect(silentRefreshUrl));
+    }
+  }
+
   if (!isProtectedApi(pathname)) {
     return withSecurityHeaders(
       NextResponse.next({

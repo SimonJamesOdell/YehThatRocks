@@ -1373,6 +1373,22 @@ h1 {
   max-width: 640px;
 }
 
+.authGatePanelWide {
+  max-width: 820px;
+}
+
+.authGateFormColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (max-width: 640px) {
+  .authGateBody.authGateBodySplit {
+    grid-template-columns: 1fr;
+  }
+}
+
 .authGateBrand {
   display: flex;
   flex-direction: column;
@@ -1404,6 +1420,56 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.authGateBody.authGateBodySplit {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  align-items: start;
+}
+
+.authGateVideoPreview {
+  display: grid;
+  gap: 14px;
+}
+
+.authGateVideoTitle {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(1.05rem, 2.2vw, 1.4rem);
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  text-align: center;
+  color: rgba(255, 244, 240, 0.96);
+  text-wrap: balance;
+}
+
+.authGateVideoPreviewImage {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.authGateVideoPreviewCopy {
+  display: grid;
+  gap: 6px;
+  text-align: center;
+}
+
+.authGateVideoPreviewCopy strong {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.authGateVideoPreviewCopy p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.66);
+  line-height: 1.5;
 }
 
 .authGateLead {
@@ -1854,6 +1920,20 @@ h1 {
 
 .playerFrame.playerFrameLoaded {
   background: #000;
+}
+
+.playerEndScreenCover {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: #000;
+  pointer-events: none;
+  animation: playerEndScreenCoverFadeIn 0.4s ease forwards;
+}
+
+@keyframes playerEndScreenCoverFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 @media (min-width: 1181px) {
