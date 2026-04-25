@@ -4,9 +4,9 @@ import { requireAdminApiAuth } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
+const SAMPLE_BUCKET_SECONDS = 30;
 
 type PerfSampleRow = {
-  id: bigint;
   sampled_at: Date;
   node_uptime_sec: number | null;
   heap_used_mb: number | null;
@@ -40,19 +40,23 @@ export async function GET(request: NextRequest) {
 
   const rows = await prisma.$queryRaw<PerfSampleRow[]>`
     SELECT
-      id,
-      sampled_at,
-      node_uptime_sec,
-      heap_used_mb,
-      heap_total_mb,
-      rss_mb,
-      prisma_query_count,
-      prisma_qps,
-      prisma_avg_ms,
-      prisma_p95_ms,
-      prisma_total_since_boot
+      FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(sampled_at) / ${SAMPLE_BUCKET_SECONDS}) * ${SAMPLE_BUCKET_SECONDS}) AS sampled_at,
+      AVG(node_uptime_sec) AS node_uptime_sec,
+      AVG(heap_used_mb) AS heap_used_mb,
+      AVG(heap_total_mb) AS heap_total_mb,
+      AVG(rss_mb) AS rss_mb,
+      SUM(prisma_query_count) AS prisma_query_count,
+      SUM(prisma_qps) AS prisma_qps,
+      CASE
+        WHEN SUM(COALESCE(prisma_query_count, 0)) > 0
+          THEN SUM(COALESCE(prisma_avg_ms, 0) * COALESCE(prisma_query_count, 0)) / SUM(COALESCE(prisma_query_count, 0))
+        ELSE AVG(prisma_avg_ms)
+      END AS prisma_avg_ms,
+      MAX(prisma_p95_ms) AS prisma_p95_ms,
+      SUM(prisma_total_since_boot) AS prisma_total_since_boot
     FROM performance_telemetry_samples
     WHERE sampled_at >= ${cutoff}
+    GROUP BY FLOOR(UNIX_TIMESTAMP(sampled_at) / ${SAMPLE_BUCKET_SECONDS})
     ORDER BY sampled_at ASC
   `.catch(() => [] as PerfSampleRow[]);
 

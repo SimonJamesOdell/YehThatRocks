@@ -157,6 +157,16 @@ if (process.env.DATABASE_URL && !global.__yehPrismaProfilingHookInstalled__) {
   }
 
   global.__yehPrismaProfilingHookInstalled__ = true;
+
+  setImmediate(() => {
+    void import("@/lib/perf-sample-persistence")
+      .then(({ startPerfSampling }) => {
+        startPerfSampling();
+      })
+      .catch(() => {
+        // Best-effort telemetry startup.
+      });
+  });
 }
 
 if (!global.__yehPrismaShutdownHooks__) {
