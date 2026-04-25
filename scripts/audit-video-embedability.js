@@ -46,9 +46,18 @@ const AGE_RESTRICTED_PATTERNS = [
   /"status"\s*:\s*"AGE_CHECK_REQUIRED"/i,
   /"status"\s*:\s*"LOGIN_REQUIRED"[\s\S]{0,240}"reason"\s*:\s*"[^"]*age/i,
 ];
+const BOT_CHALLENGE_PATTERNS = [
+  /Sign in to (?:confirm|prove) you(?:'|\u2019)re not a bot/i,
+  /prove you(?:'|\u2019)re not a bot/i,
+  /"status"\s*:\s*"BOT_CHECK_REQUIRED"/i,
+];
 
 function containsAgeRestrictionMarker(html) {
   return AGE_RESTRICTED_PATTERNS.some((pattern) => pattern.test(html));
+}
+
+function containsBotChallengeMarker(html) {
+  return BOT_CHALLENGE_PATTERNS.some((pattern) => pattern.test(html));
 }
 
 function sleep(ms) {
@@ -309,6 +318,10 @@ async function checkEmbedPlayability(videoId) {
     }
 
     const html = await response.text();
+
+    if (containsBotChallengeMarker(html)) {
+      return { status: "check-failed", reason: "embed:bot-check" };
+    }
 
     if (containsAgeRestrictionMarker(html)) {
       return { status: "unavailable", reason: "embed:age-restricted" };

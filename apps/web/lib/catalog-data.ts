@@ -157,6 +157,11 @@ const AGE_RESTRICTED_PATTERNS = [
   /"status"\s*:\s*"AGE_CHECK_REQUIRED"/i,
   /"status"\s*:\s*"LOGIN_REQUIRED"[\s\S]{0,240}"reason"\s*:\s*"[^"]*age/i,
 ];
+const BOT_CHALLENGE_PATTERNS = [
+  /Sign in to (?:confirm|prove) you(?:'|\u2019)re not a bot/i,
+  /prove you(?:'|\u2019)re not a bot/i,
+  /"status"\s*:\s*"BOT_CHECK_REQUIRED"/i,
+];
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || undefined;
 const ENABLE_YOUTUBE_RELATED_DISCOVERY = process.env.ENABLE_YOUTUBE_RELATED_DISCOVERY !== "0";
 const RELATED_DISCOVERY_MAX_DEPTH = Math.max(1, Math.min(4, Number(process.env.RELATED_DISCOVERY_MAX_DEPTH || "2")));
@@ -192,6 +197,10 @@ function debugCatalog(event: string, detail?: Record<string, unknown>) {
 
 function containsAgeRestrictionMarker(html: string) {
   return AGE_RESTRICTED_PATTERNS.some((pattern) => pattern.test(html));
+}
+
+function containsBotChallengeMarker(html: string) {
+  return BOT_CHALLENGE_PATTERNS.some((pattern) => pattern.test(html));
 }
 
 function isLikelyNonMusicSignal(row: PlaybackDecisionRow) {
@@ -2102,6 +2111,10 @@ async function checkEmbedPlayability(videoId: string): Promise<VideoAvailability
     }
 
     const html = await response.text();
+
+    if (containsBotChallengeMarker(html)) {
+      return { status: "check-failed", reason: "embed:bot-check" };
+    }
 
     if (containsAgeRestrictionMarker(html)) {
       return { status: "unavailable", reason: "embed:age-restricted" };

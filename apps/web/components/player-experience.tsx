@@ -1262,6 +1262,7 @@ export function PlayerExperience({
   const lyricsUnavailableForCurrentVideo = lyricsAvailableForCurrentVideo === false;
   const lyricsButtonDisabled = footerActionsBlocked || lyricsUnavailableForCurrentVideo;
   const isUpstreamConnectivityOverlay = unavailableOverlayMessage === UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE;
+  const currentTrackYouTubeUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(currentVideo.id)}`;
   const footerSelectablePlaylists = activePlaylistId
     ? footerPlaylistMenuPlaylists.filter((playlist) => playlist.id !== activePlaylistId)
     : footerPlaylistMenuPlaylists;
@@ -2274,6 +2275,14 @@ export function PlayerExperience({
     playAttemptedAtRef.current = null;
     stuckPlaybackRetryCountRef.current = 0;
     setPlayerReloadNonce((currentNonce) => currentNonce + 1);
+  }
+
+  function handleOpenCurrentTrackOnYouTube() {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.open(currentTrackYouTubeUrl, "_blank", "noopener,noreferrer");
   }
 
   useEffect(() => {
@@ -4897,6 +4906,13 @@ export function PlayerExperience({
                     Retry connection
                   </button>
                 ) : null}
+                <button
+                  type="button"
+                  className="videoUnavailableOverlayAcknowledge"
+                  onClick={handleOpenCurrentTrackOnYouTube}
+                >
+                  Watch on YouTube
+                </button>
                 {unavailableOverlayRequiresOk ? (
                   <button
                     type="button"
