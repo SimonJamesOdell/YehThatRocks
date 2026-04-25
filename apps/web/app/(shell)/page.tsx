@@ -26,6 +26,7 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
     return {
       title: DEFAULT_TITLE,
       description: DEFAULT_DESCRIPTION,
+      robots: { index: false, follow: false },
       openGraph: {
         title: DEFAULT_TITLE,
         description: DEFAULT_DESCRIPTION,
@@ -56,6 +57,7 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
   return {
     title: shareTitle,
     description: shareDescription,
+    robots: { index: false, follow: false },
     alternates: {
       canonical: shareUrl,
     },
