@@ -392,6 +392,11 @@ function switchPlayerVideo(player: YouTubePlayer, videoId: string) {
   return false;
 }
 
+// One-way flag: set the first time a genuine user input event fires in this
+// browser session. Subsequent player instantiations (video changes) bypass the
+// interaction gate because the same session has already proven itself human.
+let didPageHaveUserInteraction = false;
+
 export function PlayerExperience({
   currentVideo,
   queue,
@@ -2829,27 +2834,48 @@ export function PlayerExperience({
       });
     };
 
-    if (window.YT?.Player) {
-      createPlayer();
-    } else {
-      const existingScript = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
+    const INTERACTION_EVENTS = ["mousemove", "touchstart", "pointerdown", "keydown", "scroll"] as const;
+    let removeInteractionListeners: (() => void) | null = null;
 
-      if (!existingScript) {
-        const script = document.createElement("script");
-        script.src = "https://www.youtube.com/iframe_api";
-        document.body.appendChild(script);
-      }
-
-      const previousReady = window.onYouTubeIframeAPIReady;
-
-      window.onYouTubeIframeAPIReady = () => {
-        previousReady?.();
+    const launchPlayer = () => {
+      if (window.YT?.Player) {
         createPlayer();
+      } else {
+        const existingScript = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
+
+        if (!existingScript) {
+          const script = document.createElement("script");
+          script.src = "https://www.youtube.com/iframe_api";
+          document.body.appendChild(script);
+        }
+
+        const previousReady = window.onYouTubeIframeAPIReady;
+
+        window.onYouTubeIframeAPIReady = () => {
+          previousReady?.();
+          createPlayer();
+        };
+      }
+    };
+
+    if (didPageHaveUserInteraction) {
+      launchPlayer();
+    } else {
+      const onFirstInteraction = () => {
+        removeInteractionListeners?.();
+        removeInteractionListeners = null;
+        didPageHaveUserInteraction = true;
+        launchPlayer();
+      };
+      INTERACTION_EVENTS.forEach((e) => window.addEventListener(e, onFirstInteraction, { passive: true }));
+      removeInteractionListeners = () => {
+        INTERACTION_EVENTS.forEach((e) => window.removeEventListener(e, onFirstInteraction));
       };
     }
 
     return () => {
       cancelled = true;
+      removeInteractionListeners?.();
       clearStuckPlaybackRetryTimer();
       clearStuckPlaybackWatchdogTimer();
       clearMidPlaybackBufferingCheck();
