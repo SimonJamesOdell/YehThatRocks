@@ -1329,6 +1329,207 @@ h1 {
   }
 }
 
+/* ─── Auth gate (full-screen sign-in wall) ───────────────────────────────── */
+
+.authGateScreen {
+  position: relative;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px 18px 40px;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.authGateBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image: url('/assets/images/guitarists.jpg');
+  background-size: cover;
+  background-position: center 30%;
+  background-repeat: no-repeat;
+}
+
+.authGateBackdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(165deg, rgba(18, 4, 4, 0.78), rgba(5, 1, 1, 0.84));
+}
+
+.authGatePanel {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.authGatePanelExpanded {
+  max-width: 640px;
+}
+
+.authGateBrand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.authGateLogo {
+  width: clamp(240px, 62vw, 420px);
+  height: auto;
+}
+
+.authGateTagline {
+  position: relative;
+  top: -38px;
+  left: 35px;
+  font-size: 1.5rem;
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  color: #ffffff;
+  margin: 0 0 -18px;
+}
+
+.authGateBody {
+  background: rgba(18, 18, 18, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 28px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.authGateLead {
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.58);
+  margin: 0;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.authGateCount {
+  color: #ffd2c8;
+  font-weight: 700;
+}
+
+.authGateLinks {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding-top: 4px;
+  flex-wrap: wrap;
+}
+
+.authGateLink {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.42);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.authGateLink:hover {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.authGateLinkButton {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.authGateSubpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.authGateSubpanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.authGateSubpanelHeaderStacked {
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.authGateSubpanelHeader strong {
+  font-size: 1rem;
+}
+
+.authGateBackButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.84);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.authGateBackButton:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: #ffffff;
+}
+
+.authGateSubpanel .authForm {
+  max-width: none;
+  padding: 0;
+}
+
+.authGateSubpanel .authFormWide {
+  gap: 12px 14px;
+  align-items: start;
+}
+
+.authGateSubpanel .authForm label {
+  gap: 6px;
+}
+
+.authGateSubpanel .authMessage {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .authGatePanelExpanded {
+    max-width: 480px;
+  }
+
+  .authGateSubpanel .authFormWide {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .authGateBody {
+    padding: 22px 16px 20px;
+  }
+}
+
+/* ─── end auth gate ──────────────────────────────────────────────────────── */
+
 .railOccluded {
   position: relative;
   pointer-events: none;

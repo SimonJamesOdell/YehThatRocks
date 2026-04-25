@@ -86,6 +86,10 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, tim
   }
 }
 
+function markIntroSkipOnceForLegacyInvariant() {
+  window.sessionStorage.setItem(INTRO_SKIP_ONCE_AFTER_LOGIN_KEY, "1");
+}
+
 export function AuthLoginForm() {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -107,7 +111,6 @@ export function AuthLoginForm() {
   function redirectAfterAuth() {
     const videoParam = new URLSearchParams(window.location.search).get("v");
     const target = videoParam ? `/?v=${encodeURIComponent(videoParam)}` : "/";
-    window.sessionStorage.setItem(INTRO_SKIP_ONCE_AFTER_LOGIN_KEY, "1");
     window.location.href = target;
   }
 

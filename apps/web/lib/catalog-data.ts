@@ -6696,6 +6696,17 @@ export async function getVideosByGenre(
   }
 }
 
+export async function getActiveVideoCount(): Promise<number> {
+  if (!hasDatabaseUrl()) {
+    return seedVideos.length;
+  }
+  try {
+    return await prisma.video.count();
+  } catch {
+    return seedVideos.length;
+  }
+}
+
 export async function getDataSourceStatus(): Promise<DataSourceStatus> {
   const envConfigured = hasDatabaseUrl();
 
