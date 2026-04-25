@@ -1216,7 +1216,7 @@ const artistLetterInFlight = new Map<string, Promise<Array<ArtistRecord & { vide
 const ARTIST_LETTER_PAGE_CACHE_TTL_MS = 60_000; // 1 minute
 const artistLetterPageCache = new Map<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>();
 const artistLetterPageInFlight = new Map<string, Promise<Array<ArtistRecord & { videoCount: number }>>>();
-const ARTIST_SEARCH_CACHE_TTL_MS = 60_000;
+const ARTIST_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const artistSearchCache = new Map<string, {
   expiresAt: number;
   rows: Array<{ name: string; country: string | null; genre1: string | null }>;
@@ -1585,6 +1585,10 @@ export function clearCatalogVideoCaches() {
   artistLetterInFlight.clear();
   artistLetterPageCache.clear();
   artistLetterPageInFlight.clear();
+  artistSearchCache.clear();
+  artistSearchInFlight.clear();
+  suggestCacheMap.clear();
+  suggestInFlightMap.clear();
   genreArtistsCache.clear();
   genreVideosCache.clear();
 }
