@@ -5,7 +5,7 @@ import { AdminDashboardPanel, type AdminTab } from "@/components/admin-dashboard
 import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
 import { requireAdminUserAuthState } from "@/lib/admin-auth";
 
-const ADMIN_TABS: AdminTab[] = ["overview", "worldmap", "api", "categories", "videos", "artists", "ambiguous"];
+const ADMIN_TABS: AdminTab[] = ["overview", "performance", "worldmap", "api", "categories", "videos", "artists", "ambiguous"];
 
 function resolveAdminTab(tab: string | null | undefined): AdminTab {
   if (tab && ADMIN_TABS.includes(tab as AdminTab)) {
@@ -30,6 +30,7 @@ export default async function AdminPage(props: {
         <strong><span className="whiteAccountGlyph" aria-hidden="true">🛠</span> Admin</strong>
         <div className="accountTopBarActions">
           <Link href="/admin?tab=overview" className={tabClass("overview")}>Overview</Link>
+          <Link href="/admin?tab=performance" className={tabClass("performance")}>Performance</Link>
           <Link href="/admin?tab=worldmap" className={tabClass("worldmap")}>Visitor Map</Link>
           <Link href="/admin?tab=api" className={tabClass("api")}>API Usage</Link>
           <Link href="/admin?tab=categories" className={tabClass("categories")}>Categories</Link>

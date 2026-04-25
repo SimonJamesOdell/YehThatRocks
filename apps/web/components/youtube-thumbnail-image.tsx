@@ -58,13 +58,16 @@ export function YouTubeThumbnailImage({
   reportReason = "thumbnail-load-error",
 }: YouTubeThumbnailImageProps) {
   const src = useMemo(() => buildThumbUrl(videoId, format), [videoId, format]);
-  const [state, setState] = useState<ThumbState>(() => thumbnailHealthCache.get(src) ?? "unknown");
+  const [thumbState, setThumbState] = useState<{ src: string; state: ThumbState }>(() => ({
+    src,
+    state: thumbnailHealthCache.get(src) ?? "unknown",
+  }));
   const elementRef = useRef<HTMLImageElement | null>(null);
+  const state = thumbState.src === src ? thumbState.state : thumbnailHealthCache.get(src) ?? "unknown";
 
   useEffect(() => {
     const cached = thumbnailHealthCache.get(src);
     if (cached && cached !== "unknown") {
-      setState(cached);
       return;
     }
 
@@ -76,7 +79,7 @@ export function YouTubeThumbnailImage({
         return;
       }
       thumbnailHealthCache.set(src, "ready");
-      setState("ready");
+      setThumbState({ src, state: "ready" });
     };
 
     probe.onerror = () => {
@@ -84,7 +87,7 @@ export function YouTubeThumbnailImage({
         return;
       }
       thumbnailHealthCache.set(src, "broken");
-      setState("broken");
+      setThumbState({ src, state: "broken" });
     };
 
     probe.src = src;
@@ -126,7 +129,7 @@ export function YouTubeThumbnailImage({
       fetchPriority={fetchPriority}
       onError={() => {
         thumbnailHealthCache.set(src, "broken");
-        setState("broken");
+        setThumbState({ src, state: "broken" });
       }}
     />
   );

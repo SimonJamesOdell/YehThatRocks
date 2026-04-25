@@ -192,7 +192,18 @@ type AmbiguousVideoRow = {
   updatedAt: string | null;
 };
 
-export type AdminTab = "overview" | "worldmap" | "api" | "categories" | "videos" | "artists" | "ambiguous";
+type PerfWindowResetResponse = {
+  ok: boolean;
+  startedAt: string;
+  deletedSamples: number;
+  sampleIntervalSeconds: number;
+  slowLog: {
+    enabled: boolean;
+    warning: string | null;
+  };
+};
+
+export type AdminTab = "overview" | "performance" | "worldmap" | "api" | "categories" | "videos" | "artists" | "ambiguous";
 
 async function readJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
@@ -273,6 +284,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [moderatingVideoId, setModeratingVideoId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [refreshingAnalytics, setRefreshingAnalytics] = useState(false);
+  const [resettingPerfWindow, setResettingPerfWindow] = useState(false);
   const [analyticsZoomLevel, setAnalyticsZoomLevel] = useState<AnalyticsZoomLevel>("daily");
   const [selectedAllTimeBucket, setSelectedAllTimeBucket] = useState<AnalyticsBucket | null>(null);
   const [selectedMonthlyBucket, setSelectedMonthlyBucket] = useState<AnalyticsBucket | null>(null);
@@ -816,6 +828,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     try {
       if (activeTab === "overview") {
         await loadOverview();
+      } else if (activeTab === "performance") {
+        await loadOverview();
       } else if (activeTab === "worldmap") {
         await loadOverview();
       } else if (activeTab === "api") {
@@ -1099,6 +1113,27 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       setSaveMessage(moderationError instanceof Error ? moderationError.message : "Moderation action failed.");
     } finally {
       setModeratingVideoId(null);
+    }
+  }
+
+  async function resetPerfWindow() {
+    if (resettingPerfWindow) {
+      return;
+    }
+
+    setResettingPerfWindow(true);
+    setSaveMessage(null);
+
+    try {
+      const result = await postJson<PerfWindowResetResponse>("/api/admin/performance-samples", {});
+      if (!result.slowLog.enabled) {
+        setSaveMessage(`MySQL slow-log start could not be verified from the app: ${result.slowLog.warning ?? "unknown error"}`);
+      }
+      await refreshOverviewAnalytics();
+    } catch (resetError) {
+      setSaveMessage(resetError instanceof Error ? resetError.message : "Could not reset performance window.");
+    } finally {
+      setResettingPerfWindow(false);
     }
   }
 
@@ -1420,6 +1455,31 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
           </svg>
 
         </div>
+      ) : null}
+
+      {activeTab === "performance" ? (
+        <section className="panel featurePanel">
+          <div className="interactiveStack">
+            <div className="primaryActions compactActions" style={{ justifyContent: "center" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  void resetPerfWindow();
+                }}
+                disabled={resettingPerfWindow}
+                className="navLink navLinkActive"
+                style={{
+                  borderColor: "rgba(255,111,67,0.45)",
+                  background: "rgba(255,111,67,0.12)",
+                  color: "#ffb08f",
+                  cursor: resettingPerfWindow ? "wait" : "pointer",
+                }}
+              >
+                {resettingPerfWindow ? "Resetting..." : "Start fresh capture"}
+              </button>
+            </div>
+          </div>
+        </section>
       ) : null}
 
       {activeTab === "worldmap" ? (

@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 
 import { requireAdminApiAuth } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
+import { resetPerfSamplingWindow } from "@/lib/perf-sample-persistence";
+import { verifySameOrigin } from "@/lib/csrf";
+import { parseRequestJson } from "@/lib/request-json";
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 const SAMPLE_BUCKET_SECONDS = 30;
+const resetSchema = z.object({});
+const PERFORMANCE_CAPTURE_WINDOW_KEY = "hotspot-analysis";
+const SLOW_LOG_OUTPUT = "TABLE";
+const SLOW_LOG_LONG_QUERY_TIME = 0.2;
+const SLOW_LOG_MIN_EXAMINED_ROW_LIMIT = 0;
 
 type PerfSampleRow = {
   sampled_at: Date;
@@ -23,6 +32,55 @@ function toNum(v: bigint | number | null | undefined): number | null {
   if (v === null || v === undefined) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+async function ensurePerformanceCaptureWindowTable() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS performance_capture_windows (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      window_key VARCHAR(64) NOT NULL,
+      started_at DATETIME(3) NOT NULL,
+      source VARCHAR(64) NOT NULL DEFAULT 'admin',
+      notes VARCHAR(255) NULL,
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+      UNIQUE KEY uq_perf_capture_window_key (window_key),
+      KEY idx_perf_capture_started_at (started_at)
+    )
+  `);
+}
+
+async function recordPerformanceCaptureWindow(startedAt: Date) {
+  await ensurePerformanceCaptureWindowTable();
+  await prisma.$executeRaw`
+    INSERT INTO performance_capture_windows (window_key, started_at, source, notes)
+    VALUES (${PERFORMANCE_CAPTURE_WINDOW_KEY}, ${startedAt}, ${"admin"}, ${"Fresh performance capture requested from admin dashboard"})
+    ON DUPLICATE KEY UPDATE
+      started_at = VALUES(started_at),
+      source = VALUES(source),
+      notes = VALUES(notes),
+      updated_at = CURRENT_TIMESTAMP(3)
+  `;
+}
+
+async function tryStartMysqlSlowLogCapture() {
+  try {
+    await prisma.$executeRawUnsafe(`SET GLOBAL log_output = '${SLOW_LOG_OUTPUT}'`);
+    await prisma.$executeRawUnsafe(`SET GLOBAL long_query_time = ${SLOW_LOG_LONG_QUERY_TIME}`);
+    await prisma.$executeRawUnsafe(`SET GLOBAL min_examined_row_limit = ${SLOW_LOG_MIN_EXAMINED_ROW_LIMIT}`);
+    await prisma.$executeRawUnsafe("SET GLOBAL slow_query_log = ON");
+
+    return {
+      enabled: true,
+      warning: null,
+    };
+  } catch (error) {
+    return {
+      enabled: false,
+      warning: error instanceof Error
+        ? error.message
+        : "Could not enable MySQL slow query logging with the app database user.",
+    };
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -118,5 +176,44 @@ export async function GET(request: NextRequest) {
     sampleCount: mapped.length,
     sampledEverySeconds: 30,
     samples: mapped,
+  });
+}
+
+export async function POST(request: NextRequest) {
+  const authResult = await requireAdminApiAuth(request);
+  if (!authResult.ok) return authResult.response;
+
+  const csrf = verifySameOrigin(request);
+  if (csrf) {
+    return csrf;
+  }
+
+  if (!process.env.DATABASE_URL) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+
+  const body = await parseRequestJson(request);
+  if (!body.ok) {
+    return body.response;
+  }
+
+  const parsed = resetSchema.safeParse(body.data);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const startedAt = new Date();
+  const [result, slowLog] = await Promise.all([
+    resetPerfSamplingWindow(),
+    tryStartMysqlSlowLogCapture(),
+    recordPerformanceCaptureWindow(startedAt),
+  ]);
+
+  return NextResponse.json({
+    ok: true,
+    startedAt: startedAt.toISOString(),
+    deletedSamples: result.deletedSamples,
+    sampleIntervalSeconds: result.sampleIntervalSeconds,
+    slowLog,
   });
 }

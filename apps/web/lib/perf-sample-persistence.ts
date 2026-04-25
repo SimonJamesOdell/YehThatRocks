@@ -1,4 +1,4 @@
-import { getRuntimeProfilingSnapshot } from "@/lib/runtime-profiler";
+import { getRuntimeProfilingSnapshot, resetRuntimeProfiling } from "@/lib/runtime-profiler";
 
 const PERF_SAMPLE_INTERVAL_MS = 30_000; // sample every 30 seconds
 const PERF_SAMPLE_WINDOW_MS = 24 * 60 * 60 * 1000; // keep 24 hours
@@ -106,6 +106,50 @@ async function recordPerfSample() {
   } catch {
     // Best-effort — never crash the app due to telemetry
   }
+}
+
+export async function resetPerfSamplingWindow() {
+  if (!process.env.DATABASE_URL) {
+    return {
+      startedAt: new Date().toISOString(),
+      deletedSamples: 0,
+      sampleIntervalSeconds: PERF_SAMPLE_INTERVAL_MS / 1000,
+    };
+  }
+
+  const prisma = await getPrismaClient();
+  await ensureTable();
+
+  let deletedSamples = 0;
+
+  try {
+    const rows = await prisma.$queryRaw<Array<{ count: bigint | number }>>`
+      SELECT COUNT(*) AS count
+      FROM performance_telemetry_samples
+    `;
+    deletedSamples = Number(rows[0]?.count ?? 0);
+  } catch {
+    deletedSamples = 0;
+  }
+
+  try {
+    await prisma.$executeRawUnsafe("TRUNCATE TABLE performance_telemetry_samples");
+  } catch {
+    await prisma.$executeRaw`DELETE FROM performance_telemetry_samples`;
+  }
+
+  samplesSinceLastPrune = 0;
+  lastSampledAtMs = null;
+  lastSampleTotalQueries = null;
+  resetRuntimeProfiling();
+
+  await recordPerfSample();
+
+  return {
+    startedAt: new Date().toISOString(),
+    deletedSamples,
+    sampleIntervalSeconds: PERF_SAMPLE_INTERVAL_MS / 1000,
+  };
 }
 
 export function startPerfSampling() {
