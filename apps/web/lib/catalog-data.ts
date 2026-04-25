@@ -6273,21 +6273,34 @@ export async function getArtistsByGenre(genre: string) {
   }
 
   try {
-    const artists = await prisma.$queryRaw<Array<{ name: string; country: string | null; genre1: string | null }>>`
-      SELECT
-        a.name,
-        a.origin AS country,
-        COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
-      FROM artists a
-      WHERE (
-        a.genre1 LIKE CONCAT('%', ${genre}, '%')
-        OR a.genre2 LIKE CONCAT('%', ${genre}, '%')
-        OR a.genre3 LIKE CONCAT('%', ${genre}, '%')
-        OR a.genre4 LIKE CONCAT('%', ${genre}, '%')
-        OR a.genre5 LIKE CONCAT('%', ${genre}, '%')
-        OR a.genre6 LIKE CONCAT('%', ${genre}, '%')
-      )
-    `;
+    // InnoDB FULLTEXT minimum token size is 3. All canonical genre keywords are >=3 chars.
+    // For very short tokens (should not occur in practice) fall back to the OR-LIKE path.
+    const useFulltext = genre.trim().length >= 3;
+
+    const artists = useFulltext
+      ? await prisma.$queryRaw<Array<{ name: string; country: string | null; genre1: string | null }>>`
+          SELECT
+            a.artist AS name,
+            a.country,
+            COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
+          FROM artists a
+          WHERE MATCH(a.genre_all) AGAINST (${genre} IN BOOLEAN MODE)
+        `
+      : await prisma.$queryRaw<Array<{ name: string; country: string | null; genre1: string | null }>>`
+          SELECT
+            a.artist AS name,
+            a.country,
+            COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
+          FROM artists a
+          WHERE (
+            a.genre1 LIKE CONCAT('%', ${genre}, '%')
+            OR a.genre2 LIKE CONCAT('%', ${genre}, '%')
+            OR a.genre3 LIKE CONCAT('%', ${genre}, '%')
+            OR a.genre4 LIKE CONCAT('%', ${genre}, '%')
+            OR a.genre5 LIKE CONCAT('%', ${genre}, '%')
+            OR a.genre6 LIKE CONCAT('%', ${genre}, '%')
+          )
+        `;
 
     const mappedArtists = artists.length > 0
       ? artists.map(mapArtist).sort((a, b) => a.name.localeCompare(b.name))
