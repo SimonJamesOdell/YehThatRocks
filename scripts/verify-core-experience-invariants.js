@@ -19,6 +19,7 @@ const files = {
   adminVideoDeleteButton: path.join(ROOT, "apps/web/components/admin-video-delete-button.tsx"),
   seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
   statusPerformanceRoute: path.join(ROOT, "apps/web/app/api/status/performance/route.ts"),
+  videosUnavailableRoute: path.join(ROOT, "apps/web/app/api/videos/unavailable/route.ts"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
@@ -98,6 +99,7 @@ function main() {
   const adminVideoDeleteButtonSource = read(files.adminVideoDeleteButton);
   const seenToggleRouteSource = read(files.seenToggleRoute);
   const statusPerformanceRouteSource = read(files.statusPerformanceRoute);
+  const videosUnavailableRouteSource = read(files.videosUnavailableRoute);
   const cssSource = read(files.css);
 
   // Watch Next and current-video resolver invariants.
@@ -221,8 +223,9 @@ function main() {
   assertContains(cssSource, "grid-template-columns: repeat(6, minmax(0, 1fr));", "Chooser overlay uses 6 columns on ultrawide for two rows", failures);
   assertContains(playerExperienceSource, "const isInitialDeepLinkedSelection = Boolean(", "Player detects first-load deep-linked selections", failures);
   assertContains(playerExperienceSource, "&& !isInitialDeepLinkedSelection", "Player suppresses autoplay on initial deep-link until user interaction", failures);
-  assertContains(playerExperienceSource, "showUnavailableOverlayMessage();", "Player shows unavailable apology overlay when runtime checks fail", failures);
+  assertContains(playerExperienceSource, "autoAdvanceWhenAutoplay: true", "Player auto-advances unavailable tracks when autoplay is enabled", failures);
   assertContains(playerExperienceSource, "const response = await fetch(\"/api/videos/unavailable\", {", "Player reports unavailable videos to API", failures);
+  assertContains(videosUnavailableRouteSource, "const optionalAuth = await getOptionalApiAuth(request);", "Unavailable-video API accepts optional auth for anonymous playback recovery", failures);
   assertContains(playerExperienceSource, "const activeVideoId = currentVideoRef.current.id;", "Player evaluates errors against active runtime video id", failures);
   assertContains(playerExperienceSource, "if (activeVideoId !== currentVideo.id) {", "Player ignores stale unavailable callbacks from replaced instances", failures);
   assertContains(playerExperienceSource, "const playbackAlreadyEstablished =", "Player skips unavailable handling once playback is established", failures);
