@@ -20,6 +20,7 @@ function parsePositiveInt(value: string | null, fallback: number) {
 
 export async function GET(request: NextRequest) {
   const letterParam = (request.nextUrl.searchParams.get("letter") ?? "").trim().toUpperCase();
+  const filterParam = (request.nextUrl.searchParams.get("filter") ?? "").trim();
 
   if (!/^[A-Z]$/.test(letterParam)) {
     return NextResponse.json({ error: "Invalid letter" }, { status: 400 });
@@ -29,12 +30,13 @@ export async function GET(request: NextRequest) {
   const requestedLimit = parsePositiveInt(request.nextUrl.searchParams.get("limit"), DEFAULT_LIMIT);
   const limit = Math.max(1, Math.min(requestedLimit, MAX_LIMIT));
 
-  const rows = await getArtistsByLetter(letterParam, limit + 1, offset);
+  const rows = await getArtistsByLetter(letterParam, limit + 1, offset, filterParam);
   const hasMore = rows.length > limit;
   const artists = hasMore ? rows.slice(0, limit) : rows;
 
   return NextResponse.json({
     letter: letterParam,
+    filter: filterParam,
     offset,
     limit,
     hasMore,

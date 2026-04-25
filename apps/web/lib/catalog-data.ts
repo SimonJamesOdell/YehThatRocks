@@ -5184,11 +5184,13 @@ export async function getArtists() {
   }
 }
 
-export async function getArtistsByLetter(letter: string, limit = 120, offset = 0): Promise<Array<ArtistRecord & { videoCount: number }>> {
+export async function getArtistsByLetter(letter: string, limit = 120, offset = 0, filterPrefix = ""): Promise<Array<ArtistRecord & { videoCount: number }>> {
   const normalizedLetter = letter.trim().toUpperCase();
+  const normalizedFilterPrefix = filterPrefix.trim().toLowerCase();
   const safeLimit = Math.max(1, Math.min(limit, 300));
   const safeOffset = Math.max(0, Math.floor(offset));
-  const projectionPageCacheKey = `${normalizedLetter}:${safeOffset}:${safeLimit}`;
+  const letterFilterPrefix = normalizedFilterPrefix || normalizedLetter.toLowerCase();
+  const projectionPageCacheKey = `${normalizedLetter}:${letterFilterPrefix}:${safeOffset}:${safeLimit}`;
   const countFromSeed = (artistName: string) => {
     const normalizedName = artistName.trim().toLowerCase();
     return seedVideos.filter((video) => {
@@ -5205,7 +5207,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
 
   if (!hasDatabaseUrl()) {
     return seedArtists
-      .filter((artist) => artist.name.trim().toUpperCase().startsWith(normalizedLetter))
+      .filter((artist) => artist.name.trim().toLowerCase().startsWith(letterFilterPrefix))
       .slice(safeOffset, safeOffset + safeLimit)
       .map((artist) => ({
         ...artist,
@@ -5247,12 +5249,14 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
               ${hasThumbnailColumn ? "s.thumbnail_video_id" : "NULL"} AS thumbnailVideoId
             FROM artist_stats s
             WHERE s.first_letter = ?
+              AND LOWER(s.display_name) LIKE ?
               AND s.video_count > 0
             ORDER BY s.display_name ASC
             LIMIT ${safeLimit}
             OFFSET ${safeOffset}
           `,
           normalizedLetter,
+          `${letterFilterPrefix}%`,
         );
 
         if (projectedRows.length > 0 || safeOffset > 0) {
@@ -5285,7 +5289,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
 
     const columns = await getArtistColumnMap();
     const statsSource = await getArtistVideoStatsSource();
-    const letterCacheKey = `${statsSource}:${normalizedLetter}`;
+    const letterCacheKey = `${statsSource}:${normalizedLetter}:${letterFilterPrefix}`;
 
     if (statsSource === "parsedArtist") {
       const cachedRows = getArtistLetterCache(letterCacheKey);
@@ -5327,7 +5331,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
               AND ${artistNameNormExpr} LIKE ?
             ORDER BY a.${nameCol} ASC
           `,
-          `${normalizedLetterKey}%`,
+          `${letterFilterPrefix}%`,
         );
 
         const parsedArtistCounts = await prisma.$queryRawUnsafe<Array<{ artistKey: string | null; videoCount: number | null; thumbnailVideoId: string | null }>>(
@@ -5343,7 +5347,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
               AND ${videoArtistNormExpr} LIKE ?
             GROUP BY ${videoArtistNormExpr}
           `,
-          `${normalizedLetterKey}%`,
+          `${letterFilterPrefix}%`,
         );
 
         const countByArtist = new Map<string, number>();
@@ -5448,8 +5452,8 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
         LIMIT ${safeLimit}
         OFFSET ${safeOffset}
       `,
-      `${normalizedLetterKey}%`,
-      `${normalizedLetterKey}%`,
+      `${letterFilterPrefix}%`,
+      `${letterFilterPrefix}%`,
     );
 
     const mappedRows = rows.map((row) => ({
@@ -5461,7 +5465,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
     return mappedRows;
   } catch {
     return seedArtists
-      .filter((artist) => artist.name.trim().toUpperCase().startsWith(normalizedLetter))
+      .filter((artist) => artist.name.trim().toLowerCase().startsWith(letterFilterPrefix))
       .slice(safeOffset, safeOffset + safeLimit)
       .map((artist) => ({
         ...artist,
