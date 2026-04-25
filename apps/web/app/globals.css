@@ -8163,21 +8163,28 @@ h1 {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(8, 3, 2, 0.82);
+  background: rgba(8, 9, 11, 0.78);
   backdrop-filter: blur(6px);
   z-index: 1000;
 }
 
 .authModalCard {
-  width: min(100%, 560px);
+  width: min(100%, 620px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 22px;
   background:
-    radial-gradient(circle at top left, rgba(205, 58, 31, 0.18), transparent 34%),
-    linear-gradient(180deg, rgba(41, 10, 9, 0.98), rgba(17, 5, 4, 0.98)),
-    rgba(20, 8, 7, 0.98);
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.08), transparent 36%),
+    linear-gradient(180deg, rgba(21, 23, 27, 0.98), rgba(12, 14, 18, 0.98)),
+    rgba(13, 15, 19, 0.98);
   box-shadow: 0 32px 80px rgba(0, 0, 0, 0.45);
   overflow: hidden;
+}
+
+.authModalCard::before {
+  content: "";
+  display: block;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.18));
 }
 
 .authModalHeader {
@@ -8195,7 +8202,7 @@ h1 {
 
 .authModalEyebrow {
   margin: 0 0 4px;
-  color: rgba(255, 215, 207, 0.6);
+  color: rgba(220, 232, 245, 0.62);
   text-transform: uppercase;
   letter-spacing: 0.16em;
   font-size: 0.72rem;
@@ -8204,12 +8211,15 @@ h1 {
 .authModalTitle {
   margin: 0;
   font-size: clamp(1.3rem, 2vw, 1.7rem);
+  line-height: 1.15;
+  font-family: var(--font-display), cursive;
+  letter-spacing: 0.02em;
 }
 
 .authModalLead {
   margin: 0;
   max-width: 42ch;
-  color: rgba(255, 226, 219, 0.8);
+  color: rgba(225, 235, 246, 0.84);
   line-height: 1.5;
 }
 
@@ -8239,7 +8249,9 @@ h1 {
   padding: 16px 18px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+  background:
+    radial-gradient(circle at 10% 8%, rgba(255, 255, 255, 0.14), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
 }
 
 .authModalFeatureGlyph {
@@ -8248,22 +8260,22 @@ h1 {
   border-radius: 14px;
   display: grid;
   place-items: center;
-  background: linear-gradient(180deg, #d44724, #75130d);
-  color: #fff4ef;
+  background: linear-gradient(180deg, rgba(250, 250, 252, 0.2), rgba(172, 187, 205, 0.18));
+  color: #f3f8ff;
   font-family: var(--font-display), cursive;
   font-size: 1.35rem;
-  box-shadow: 0 10px 24px rgba(120, 22, 13, 0.35);
+  box-shadow: 0 10px 24px rgba(8, 12, 20, 0.35);
 }
 
 .authModalFeatureTitle {
   display: block;
   margin-bottom: 4px;
-  color: #fff4ef;
+  color: #f4f8ff;
 }
 
 .authModalFeatureText {
   margin: 0;
-  color: rgba(255, 226, 219, 0.72);
+  color: rgba(220, 232, 244, 0.78);
   line-height: 1.45;
 }
 
@@ -8278,7 +8290,7 @@ h1 {
   padding: 6px 10px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 226, 219, 0.72);
+  color: rgba(221, 234, 246, 0.74);
   font-size: 0.77rem;
   white-space: nowrap;
 }
@@ -8287,6 +8299,7 @@ h1 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+  width: 100%;
 }
 
 .authModalNotes {
@@ -8295,14 +8308,14 @@ h1 {
   padding: 14px 16px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 226, 219, 0.74);
+  color: rgba(223, 236, 248, 0.76);
   font-size: 0.85rem;
   line-height: 1.45;
 }
 
 .authModalNotes span::before {
   content: "• ";
-  color: rgba(255, 132, 101, 0.88);
+  color: rgba(198, 215, 234, 0.9);
 }
 
 .authModalSecondary {
@@ -8314,10 +8327,12 @@ h1 {
 .anonymousAuthForm {
   gap: 16px;
   padding: 18px 24px 24px;
+  width: 100%;
+  max-width: none;
 }
 
 .anonymousAuthForm label > span {
-  color: rgba(255, 233, 227, 0.88);
+  color: rgba(230, 240, 250, 0.88);
   font-size: 0.9rem;
 }
 

@@ -9,6 +9,9 @@ param(
   [switch]$RestoreDb,
   # Skip local transient cache cleanup before/after shipping.
   [switch]$SkipLocalCleanup,
+  # Force full local cleanup by stopping dev server first (includes .next/logs).
+  # By default, if dev server is running, ship keeps it alive and runs safe cleanup.
+  [switch]$ForceFullCleanupStopDevServer,
   # Skip Docker cache pruning after shipping.
   [switch]$SkipDockerPrune
   ,
@@ -233,16 +236,25 @@ function Remove-PathIfPresent([string]$TargetPath) {
   Remove-Item -LiteralPath $TargetPath -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-function Clean-RepoTransientCaches([string]$RepoRoot) {
-  $targets = @(
-    ".turbo\cache",
-    ".next",
-    "apps\web\.next",
-    "apps\web\.cache",
-    "playwright-report",
-    "test-results",
-    "logs"
-  )
+function Clean-RepoTransientCaches([string]$RepoRoot, [switch]$SafeMode) {
+  $targets = if ($SafeMode) {
+    @(
+      ".turbo\cache",
+      "apps\web\.cache",
+      "playwright-report",
+      "test-results"
+    )
+  } else {
+    @(
+      ".turbo\cache",
+      ".next",
+      "apps\web\.next",
+      "apps\web\.cache",
+      "playwright-report",
+      "test-results",
+      "logs"
+    )
+  }
 
   foreach ($target in $targets) {
     Remove-PathIfPresent (Join-Path $RepoRoot $target)
@@ -420,8 +432,19 @@ $shipStatePath = [string]$shipStatePaths.StateFile
 $shipTarPath = [string]$shipStatePaths.TarFile
 try {
   if (-not $SkipLocalCleanup) {
-    $devServerWasRunning = Stop-DevServer
-    Clean-RepoTransientCaches -RepoRoot $RepoDir
+    $initialDevPid = Get-DevServerPid
+    $devServerWasRunning = [bool]$initialDevPid
+
+    if ($devServerWasRunning -and -not $ForceFullCleanupStopDevServer) {
+      Write-Host "Dev server detected on port 3000 (PID $initialDevPid). Keeping it online and running safe cache cleanup..." -ForegroundColor DarkYellow
+      Clean-RepoTransientCaches -RepoRoot $RepoDir -SafeMode
+    } else {
+      if ($devServerWasRunning -and $ForceFullCleanupStopDevServer) {
+        Write-Host "Force full cleanup requested; stopping dev server before cleanup..." -ForegroundColor DarkYellow
+      }
+      $devServerWasRunning = Stop-DevServer
+      Clean-RepoTransientCaches -RepoRoot $RepoDir
+    }
   }
 
   Ensure-CleanGitWorktree
@@ -589,7 +612,7 @@ try {
     Try-PruneDockerCaches
   }
 } finally {
-  if ($devServerWasRunning) {
+  if ($devServerWasRunning -and $ForceFullCleanupStopDevServer) {
     Start-DevServer -RepoRoot $RepoDir
   }
   Pop-Location

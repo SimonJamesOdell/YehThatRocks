@@ -1191,7 +1191,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                 viewBox={hostMetricRows.length > 0 ? `0 0 ${hostMetricsGraph.width} ${hostMetricsGraph.height}` : "0 0 680 220"}
                 role="img"
                 aria-label="Host metrics chart — CPU, memory, swap, disk, network over the last 24 hours"
-                style={{ width: "100%", height: "auto", borderRadius: 10, background: "rgba(255,255,255,0.04)" }}
+                style={{ width: "100%", height: "clamp(250px, 42vh, 560px)", borderRadius: 10, background: "rgba(255,255,255,0.04)" }}
               >
                 {hostMetricRows.length === 0 ? (
                   <text x="340" y="110" textAnchor="middle" fill="rgba(255,255,255,0.2)" style={{ fontSize: 13 }}>Collecting host metric history...</text>
@@ -1329,7 +1329,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
             viewBox={analyticsGraph.points.length > 0 ? `0 0 ${analyticsGraph.width} ${analyticsGraph.height}` : "0 0 680 250"}
             role="img"
             aria-label="Analytics chart — page views, video views, unique visitors, return visits, auth events"
-            style={{ width: "100%", height: "auto", borderRadius: 10, background: "rgba(255,255,255,0.04)" }}
+            style={{ width: "100%", height: "clamp(260px, 46vh, 620px)", borderRadius: 10, background: "rgba(255,255,255,0.04)" }}
           >
             {analyticsGraph.points.length === 0 ? (
               <text x="340" y="130" textAnchor="middle" fill="rgba(255,255,255,0.2)" style={{ fontSize: 13 }}>No data yet</text>
