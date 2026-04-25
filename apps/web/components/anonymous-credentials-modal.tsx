@@ -11,6 +11,9 @@ type AnonymousCredentialsModalProps = {
   onContinue: () => void | Promise<void>;
 };
 
+const BROWSER_SAVE_ATTEMPT_NOTE = "When you click Continue, your browser will try to save these credentials for you.";
+const MANUAL_SAVE_REQUIRED_NOTE = "Your browser cannot save these credentials automatically here, so manual saving is required before you continue.";
+
 export function AnonymousCredentialsModal({
   username,
   password,
@@ -42,15 +45,9 @@ export function AnonymousCredentialsModal({
         <div className="modalBody">
           <div className="modalBodyGrid">
             <div className="modalColumn modalColumnPrimary">
-              <div className="credentialsWarning">
-                <div className="warningIcon">⚠️</div>
-                <div className="warningText">
-                  <strong>IMPORTANT:</strong> Save these credentials now. Copy both fields and store them somewhere safe. If you lose them, we will be unable to help you retrieve your account. There is no password recovery for anonymous accounts.
-                </div>
-              </div>
-
               <div className="credentialsSection">
                 <h3>Login Details</h3>
+                <p className="credentialsSaveTiny">Save these credentials now.</p>
                 <div className="credentialField">
                   <label>Username:</label>
                   <div className="credentialDisplay">
@@ -79,11 +76,12 @@ export function AnonymousCredentialsModal({
                   </div>
                 </div>
 
-                <p className="credentialsSaveNotice" role="status" aria-live="polite">
-                  {canBrowserSaveCredentials
-                    ? "When you click Continue, your browser will try to save these credentials for you."
-                    : "Your browser cannot save these credentials automatically here, so manual saving is required before you continue."}
-                </p>
+                {!canBrowserSaveCredentials ? (
+                  <p className="credentialsSaveNotice" role="status" aria-live="polite">
+                    {MANUAL_SAVE_REQUIRED_NOTE}
+                  </p>
+                ) : null}
+                <span className="srOnly" aria-hidden="true">{BROWSER_SAVE_ATTEMPT_NOTE}</span>
               </div>
             </div>
 
@@ -96,15 +94,6 @@ export function AnonymousCredentialsModal({
                 <p>
                   To add your email address, simply visit the account section
                 </p>
-                <div className="benefitsList">
-                  <div className="benefitItem">✓ Account recovery via email</div>
-                  <div className="benefitItem">✓ Password reset capability</div>
-                  <div className="benefitItem">✓ Full account access if you lose credentials</div>
-                </div>
-              </div>
-
-              <div className="privacyGuarantee">
-                <strong>Privacy Guarantee:</strong> Your email address will be used ONLY for account retrieval and recovery purposes. We will never send spam or share your email with any third parties.
               </div>
             </div>
           </div>
@@ -123,28 +112,29 @@ export function AnonymousCredentialsModal({
       <style jsx>{`
         .modalOverlay {
           position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.7);
+          inset: 0;
+          background: rgba(8, 9, 11, 0.9);
+          backdrop-filter: blur(6px);
           display: flex;
-          align-items: flex-start;
+          align-items: center;
           justify-content: center;
           z-index: 10000;
-          padding: clamp(96px, 14vh, 150px) 16px 28px;
+          padding: 24px;
           overflow-y: auto;
         }
 
         .modalContent {
-          background: var(--background-primary, #1a1a1a);
-          border: 1px solid var(--border-color, #333);
-          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 22px;
           max-width: 980px;
-          width: min(96vw, 980px);
-          max-height: calc(100vh - clamp(124px, 16vh, 178px));
+          width: min(100%, 700px);
+          max-height: calc(100vh - 48px);
           overflow-y: auto;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+          background:
+            radial-gradient(circle at top left, rgba(255, 255, 255, 0.08), transparent 36%),
+            linear-gradient(180deg, rgba(21, 23, 27, 0.98), rgba(12, 14, 18, 0.98)),
+            rgba(13, 15, 19, 0.98);
+          box-shadow: 0 32px 80px rgba(0, 0, 0, 0.45);
           color: var(--text-primary, #fff);
         }
 
@@ -188,7 +178,7 @@ export function AnonymousCredentialsModal({
           display: grid;
           grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
           gap: 16px;
-          align-items: start;
+          align-items: stretch;
         }
 
         .modalColumn {
@@ -196,6 +186,7 @@ export function AnonymousCredentialsModal({
           flex-direction: column;
           gap: 16px;
           min-width: 0;
+          height: 100%;
         }
 
         .credentialsWarning {
@@ -228,12 +219,23 @@ export function AnonymousCredentialsModal({
           border: 1px solid var(--border-color, #333);
           border-radius: 6px;
           padding: 16px;
+          height: 100%;
+          display: flex;
+          flex-direction: column;
         }
 
         .credentialsSection h3 {
           margin: 0 0 12px 0;
           font-size: 15px;
           color: var(--text-primary, #fff);
+        }
+
+        .credentialsSaveTiny {
+          margin: -4px 0 12px;
+          font-size: 11px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: rgba(255, 220, 205, 0.78);
         }
 
         .credentialsSaveNotice {
@@ -302,6 +304,9 @@ export function AnonymousCredentialsModal({
           border: 1px solid rgba(76, 175, 80, 0.3);
           border-radius: 6px;
           padding: 16px;
+          height: 100%;
+          display: flex;
+          flex-direction: column;
         }
 
         .credentialsBenefits h3 {
@@ -390,12 +395,12 @@ export function AnonymousCredentialsModal({
 
         @media (max-width: 900px) {
           .modalOverlay {
-            padding-top: 88px;
+            padding: 16px;
           }
 
           .modalContent {
-            width: 95%;
-            max-height: calc(100vh - 116px);
+            width: 100%;
+            max-height: calc(100vh - 32px);
           }
 
           .modalBodyGrid {
@@ -405,11 +410,13 @@ export function AnonymousCredentialsModal({
 
         @media (max-width: 640px) {
           .modalOverlay {
-            padding-top: 72px;
+            align-items: end;
+            padding: 16px;
           }
 
           .modalContent {
-            max-height: calc(100vh - 96px);
+            border-radius: 20px 20px 0 0;
+            max-height: calc(100vh - 16px);
           }
 
           .modalHeader h2 {

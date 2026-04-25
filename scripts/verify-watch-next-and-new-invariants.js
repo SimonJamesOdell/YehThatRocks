@@ -66,6 +66,11 @@ function main() {
   assertContains(shellDynamicSource, "const relatedFetchOffsetRef = useRef<number | null>(null);", "Watch Next tracks a dedicated offset for paged fetches", failures);
   assertContains(shellDynamicSource, "const RELATED_BACKGROUND_PREFETCH_TARGET = 35;", "Watch Next defines a background prefetch target buffer", failures);
   assertContains(shellDynamicSource, "const RELATED_BACKGROUND_PREFETCH_DELAY_MS = 650;", "Watch Next defines a quiet delay before background prefetch", failures);
+  assertContains(shellDynamicSource, "const RELATED_BOOTSTRAP_MIN_VISIBLE = 8;", "Watch Next waits for at least 8 videos before first visible rail render", failures);
+  assertContains(shellDynamicSource, "const hasUserScrolledWatchNextRef = useRef(false);", "Watch Next tracks whether the user has actively scrolled", failures);
+  assertContains(shellDynamicSource, "hasUserScrolledWatchNextRef.current = true;", "Watch Next marks user-driven scroll activity", failures);
+  assertContains(shellDynamicSource, "hasUserScrolledWatchNextRef.current = false;", "Watch Next resets user scroll activity when the active video changes", failures);
+  assertContains(shellDynamicSource, "|| !hasUserScrolledWatchNextRef.current", "Watch Next blocks background prefetch before user scroll interaction", failures);
   assertContains(shellDynamicSource, "displayedRenderableRelatedVideos.length >= RELATED_BACKGROUND_PREFETCH_TARGET", "Watch Next background prefetch stops once the ahead buffer is filled", failures);
   assertContains(shellDynamicSource, "void loadMoreRelatedVideos();", "Watch Next background prefetch triggers additional loads", failures);
   assertContains(shellDynamicSource, "params.set(\"offset\", String(relatedFetchOffsetRef.current));", "Watch Next sends offset-based pagination requests", failures);
@@ -77,6 +82,8 @@ function main() {
   assertContains(shellDynamicSource, "const remainingForTarget = RELATED_BACKGROUND_PREFETCH_TARGET - displayedRenderableRelatedVideos.length;", "Watch Next computes remaining background prefetch distance", failures);
   assertContains(shellDynamicSource, "void loadMoreRelatedVideos(prefetchCount);", "Watch Next background prefetch requests the computed target batch", failures);
   assertContains(shellDynamicSource, "void loadMoreRelatedVideos(30);", "Watch Next hide-seen recovery uses an eager refill batch", failures);
+  assertContains(shellDynamicSource, "aria-label=\"Loading more suggestions\"", "Watch Next load-more hint uses loader bars with an accessible status label", failures);
+  assertNotContains(shellDynamicSource, "<p className=\"rightRailStatus\">Loading more suggestions...</p>", "Watch Next no longer shows repetitive loading text between appended batches", failures);
   assertContains(shellDynamicSource, "initialHiddenVideoIds", "Watch Next shell accepts hidden video ids", failures);
   assertContains(shellDynamicSource, "filterHiddenRelatedVideos", "Watch Next shell filters hidden videos from rail", failures);
   assertNotContains(shellDynamicSource, "params.set(\"exclude\"", "Watch Next no longer sends giant exclude id lists in URL", failures);

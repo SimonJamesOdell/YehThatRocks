@@ -183,6 +183,8 @@ function main() {
   assertContains(playerExperienceSource, "const ENDED_CHOICE_BATCH_SIZE = maxEndedChoiceVideos;", "Player keeps incremental chooser fetches aligned to 12-item batches", failures);
   assertContains(playerExperienceSource, "const ENDED_CHOICE_SCROLL_RUNWAY_COUNT = 24;", "Player maintains a 24-item scroll runway for chooser prefetch", failures);
   assertContains(playerExperienceSource, "const ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS = 3;", "Player prewarms chooser fetches 3 seconds before track end", failures);
+  assertContains(playerExperienceSource, "const YOUTUBE_END_SCREEN_COVER_SECONDS = 0;", "Player no longer fades video early to mask YouTube end cards", failures);
+  assertNotContains(playerExperienceSource, "const YOUTUBE_END_SCREEN_COVER_SECONDS = 21;", "Player must not restore the old 21-second early fade threshold", failures);
   assertContains(playerExperienceSource, "&& !autoplayEnabledRef.current", "Player only prewarms chooser when autoplay is disabled", failures);
   assertContains(playerExperienceSource, "void fetchEndedChoiceSets(ENDED_CHOICE_INITIAL_PREFETCH_COUNT, {", "Player requests the 24-item chooser prime batch", failures);
   assertContains(playerExperienceSource, "schedulePostPrimeBatch: true,", "Player schedules a one-time post-prime incremental chooser batch", failures);
