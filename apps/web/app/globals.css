@@ -3002,6 +3002,47 @@ h1 {
   filter: brightness(1.08);
 }
 
+.directIframeAssist {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255, 186, 172, 0.38);
+  border-radius: 10px;
+  background: rgba(18, 6, 5, 0.88);
+}
+
+.directIframeAssistText {
+  margin: 0;
+  color: rgba(255, 230, 224, 0.95);
+  font-size: 0.84rem;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+}
+
+.directIframeAssistActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.directIframeAssistButton {
+  min-height: 38px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 194, 180, 0.56);
+  background: linear-gradient(180deg, rgba(175, 33, 16, 0.95), rgba(92, 12, 8, 0.96));
+  color: #fff4f1;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.directIframeAssistButton:hover {
+  filter: brightness(1.08);
+}
+
 @media (max-width: 760px) {
   .videoUnavailableOverlay {
     width: min(94%, 640px);
@@ -3018,6 +3059,10 @@ h1 {
   .videoUnavailableOverlayRefresh {
     width: 100%;
     min-width: 0;
+  }
+
+  .directIframeAssistButton {
+    width: 100%;
   }
 }
 

@@ -4385,6 +4385,11 @@ export function PlayerExperience({
         setShowShareMenu(false);
       }
 
+      function handleOpenYouTubeSignIn() {
+        const signInUrl = `https://accounts.google.com/ServiceLogin?service=youtube&continue=${encodeURIComponent(currentTrackYouTubeUrl)}`;
+        window.open(signInUrl, "_blank", "noopener,noreferrer");
+      }
+
       function handleShareTargetOpen(targetUrl: string) {
         window.open(targetUrl, "_blank", "noopener,noreferrer");
       }
@@ -5018,6 +5023,30 @@ export function PlayerExperience({
                 </div>
               ) : null}
 
+            </div>
+          ) : null}
+
+          {allowDirectIframeInteraction ? (
+            <div className="directIframeAssist" role="status" aria-live="polite">
+              <p className="directIframeAssistText">
+                YouTube sign-in challenge detected. If the in-player Sign in link does nothing, use one of these:
+              </p>
+              <div className="directIframeAssistActions">
+                <button
+                  type="button"
+                  className="directIframeAssistButton"
+                  onClick={handleOpenYouTubeSignIn}
+                >
+                  Open YouTube Sign in
+                </button>
+                <button
+                  type="button"
+                  className="directIframeAssistButton"
+                  onClick={handleOpenCurrentTrackOnYouTube}
+                >
+                  Open this video on YouTube
+                </button>
+              </div>
             </div>
           ) : null}
 
