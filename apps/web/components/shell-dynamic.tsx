@@ -417,7 +417,6 @@ const DESKTOP_INTRO_MOVE_MS = 760;
 const DESKTOP_INTRO_REVEAL_MS = 820;
 const DESKTOP_INTRO_MAX_LOGO_WIDTH_PX = 1128;
 const DESKTOP_INTRO_VIEWPORT_WIDTH_RATIO = 1.128;
-const INTRO_SKIP_ONCE_AFTER_LOGIN_KEY = "ytr:intro-skip-once";
 const PUBLIC_PERFORMANCE_POLL_MS = 2_500;
 
 function dedupeVideoList(videos: VideoRecord[]) {
@@ -1427,14 +1426,7 @@ function ShellDynamicInner({
       return;
     }
 
-    if (sessionStorage.getItem(INTRO_SKIP_ONCE_AFTER_LOGIN_KEY) === "1") {
-      sessionStorage.removeItem(INTRO_SKIP_ONCE_AFTER_LOGIN_KEY);
-      setDesktopIntroPhase("disabled");
-      setIsDesktopIntroPreload(false);
-      setIsDesktopIntroLogoReady(true);
-    } else {
-      void startPreparedDesktopIntroSequence();
-    }
+    void startPreparedDesktopIntroSequence();
 
     const handleResize = () => {
       const phase = desktopIntroPhaseRef.current;
