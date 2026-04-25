@@ -16,6 +16,7 @@ const PROTECTED_API_PREFIXES = [
 ];
 
 const MOBILE_OR_TABLET_USER_AGENT_PATTERN = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Windows Phone|Opera Mini|Mobile|Tablet|Kindle|Silk|PlayBook/i;
+const METADATA_CRAWLER_USER_AGENT_PATTERN = /facebookexternalhit|facebot|twitterbot|linkedinbot|slackbot|discordbot|whatsapp|telegrambot|googlebot|bingbot|duckduckbot|applebot/i;
 
 function isProtectedApi(pathname: string) {
   return PROTECTED_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
@@ -35,6 +36,11 @@ function isMobileOrTabletRequest(request: NextRequest) {
   }
 
   return MOBILE_OR_TABLET_USER_AGENT_PATTERN.test(userAgent);
+}
+
+function isMetadataCrawlerRequest(request: NextRequest) {
+  const userAgent = request.headers.get("user-agent") ?? "";
+  return METADATA_CRAWLER_USER_AGENT_PATTERN.test(userAgent);
 }
 
 function sanitizedAuthHeaders(request: NextRequest) {
@@ -67,10 +73,14 @@ export async function proxy(request: NextRequest) {
   const requestHeaders = sanitizedAuthHeaders(request);
 
   const isBrowserPageRequest = request.method === "GET" || request.method === "HEAD";
+  const isShareRoute = pathname.startsWith("/s/") || pathname.startsWith("/share/");
+  const isMetadataCrawler = isMetadataCrawlerRequest(request);
   const shouldRedirectToDesktopOnly =
     isBrowserPageRequest
     && !pathname.startsWith("/api")
     && pathname !== "/desktop-only"
+    && !isShareRoute
+    && !isMetadataCrawler
     && isMobileOrTabletRequest(request);
 
   if (shouldRedirectToDesktopOnly) {

@@ -392,7 +392,7 @@ const RELATED_LOAD_AHEAD_AGGRESSIVE_PX = 920;
 const RELATED_SCROLL_PREFETCH_BATCHES = 2;
 const RELATED_BACKGROUND_PREFETCH_TARGET_AGGRESSIVE = 45;
 const RELATED_BACKGROUND_PREFETCH_DELAY_FAST_MS = 280;
-const RELATED_BOOTSTRAP_MIN_VISIBLE = 4;
+const RELATED_BOOTSTRAP_MIN_VISIBLE = 8;
 const RELATED_LOADING_HINT_SHOW_DELAY_MS = 220;
 const RELATED_LOADING_HINT_HIDE_DELAY_MS = 320;
 const WATCH_NEXT_HIDE_ANIMATION_MS = 240;
@@ -717,6 +717,7 @@ function ShellDynamicInner({
   const relatedLoadInFlightRef = useRef(false);
   const relatedFetchOffsetRef = useRef<number | null>(null);
   const relatedScrollRafRef = useRef<number | null>(null);
+  const hasUserScrolledWatchNextRef = useRef(false);
   const relatedVideosRef = useRef<VideoRecord[]>([]);
   const watchNextRailRef = useRef<HTMLElement | null>(null);
   const playerChromeRef = useRef<HTMLDivElement | null>(null);
@@ -3087,6 +3088,8 @@ function ShellDynamicInner({
   }, [hasMoreRelated, isWatchNextVideoSelectionPending, loadMoreRelatedVideos, relatedTransitionPhase, rightRailMode]);
 
   const handleRelatedScroll = useCallback(() => {
+    hasUserScrolledWatchNextRef.current = true;
+
     if (relatedScrollRafRef.current !== null) {
       return;
     }
@@ -3109,6 +3112,7 @@ function ShellDynamicInner({
   useEffect(() => {
     relatedLoadInFlightRef.current = false;
     relatedFetchOffsetRef.current = null;
+    hasUserScrolledWatchNextRef.current = false;
     setIsLoadingMoreRelated(false);
     setShowLoadingMoreRelatedHint(false);
     setHasMoreRelated(true);
@@ -3141,10 +3145,6 @@ function ShellDynamicInner({
   }, [isLoadingMoreRelated, rightRailMode, showLoadingMoreRelatedHint]);
 
   useEffect(() => {
-    maybeLoadMoreIfNearEnd();
-  }, [displayedRenderableRelatedVideos.length, maybeLoadMoreIfNearEnd]);
-
-  useEffect(() => {
     if (
       isOverlayRoute
       || rightRailMode !== "watch-next"
@@ -3153,6 +3153,7 @@ function ShellDynamicInner({
       || isLoadingMoreRelated
       || isWatchNextVideoSelectionPending
       || document.visibilityState !== "visible"
+      || !hasUserScrolledWatchNextRef.current
     ) {
       return;
     }
@@ -3169,7 +3170,7 @@ function ShellDynamicInner({
     }
 
     const timeoutId = window.setTimeout(() => {
-      if (document.visibilityState !== "visible") {
+      if (document.visibilityState !== "visible" || !hasUserScrolledWatchNextRef.current) {
         return;
       }
 
@@ -3190,82 +3191,6 @@ function ShellDynamicInner({
     hasMoreRelated,
     isLoadingMoreRelated,
     isOverlayRoute,
-    isWatchNextVideoSelectionPending,
-    loadMoreRelatedVideos,
-    relatedTransitionPhase,
-    rightRailMode,
-  ]);
-
-  useEffect(() => {
-    if (
-      !watchNextHideSeen
-      || rightRailMode !== "watch-next"
-      || relatedTransitionPhase !== "idle"
-      || !hasMoreRelated
-      || isLoadingMoreRelated
-      || isWatchNextVideoSelectionPending
-      || visibleWatchNextVideos.length > 0
-    ) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      // Hide-seen can temporarily leave the rail empty; recover quickly in one request.
-      void loadMoreRelatedVideos(30);
-    }, 160);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [
-    hasMoreRelated,
-    isLoadingMoreRelated,
-    isWatchNextVideoSelectionPending,
-    loadMoreRelatedVideos,
-    relatedTransitionPhase,
-    rightRailMode,
-    visibleWatchNextVideos.length,
-    watchNextHideSeen,
-  ]);
-
-  useEffect(() => {
-    if (
-      rightRailMode !== "watch-next"
-      || !hasMoreRelated
-      || isLoadingMoreRelated
-      || relatedTransitionPhase !== "idle"
-      || isWatchNextVideoSelectionPending
-    ) {
-      return;
-    }
-
-    const root = relatedStackRef.current;
-    const sentinel = relatedLoadMoreSentinelRef.current;
-    if (!root || !sentinel) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          void loadMoreRelatedVideos();
-        }
-      },
-      {
-        root,
-        rootMargin: `0px 0px ${Math.max(RELATED_LOAD_AHEAD_PX, RELATED_LOAD_AHEAD_AGGRESSIVE_PX)}px 0px`,
-        threshold: 0.01,
-      },
-    );
-
-    observer.observe(sentinel);
-    return () => {
-      observer.disconnect();
-    };
-  }, [
-    displayedRenderableRelatedVideos.length,
-    hasMoreRelated,
-    isLoadingMoreRelated,
     isWatchNextVideoSelectionPending,
     loadMoreRelatedVideos,
     relatedTransitionPhase,
@@ -5285,7 +5210,16 @@ function ShellDynamicInner({
 
                   <div ref={relatedLoadMoreSentinelRef} className="relatedLoadMoreSentinel" aria-hidden="true" />
 
-                  {showLoadingMoreRelatedHint && visibleWatchNextVideos.length > 0 ? <p className="rightRailStatus">Loading more suggestions...</p> : null}
+                  {showLoadingMoreRelatedHint && visibleWatchNextVideos.length > 0 ? (
+                    <div className="relatedLoadingState" role="status" aria-live="polite" aria-label="Loading more suggestions">
+                      <div className="playerBootBars" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               )}
             </div>
