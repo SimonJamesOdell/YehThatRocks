@@ -68,7 +68,7 @@ export function UpgradeToEmailForm({ onSuccess, onCancel }: UpgradeToEmailFormPr
           </div>
 
           <div className="privacyNotice">
-            We guarantee we will never send spam or misuse your email. It's purely for account
+            We guarantee we will never send spam or misuse your email. It&apos;s purely for account
             retrieval and recovery purposes.
           </div>
 

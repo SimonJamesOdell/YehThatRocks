@@ -122,6 +122,12 @@ export function recordPrismaOperation(operation: string, durationMs: number) {
   pruneEvents(prismaEvents, event.atMs);
 }
 
+export function resetRuntimeProfiling() {
+  prismaEvents.length = 0;
+  totalPrismaQueriesSinceBoot = 0;
+  totalPrismaDurationMsSinceBoot = 0;
+}
+
 export function getRuntimeProfilingSnapshot(): RuntimeProfilingSnapshot {
   const now = Date.now();
   pruneEvents(prismaEvents, now);

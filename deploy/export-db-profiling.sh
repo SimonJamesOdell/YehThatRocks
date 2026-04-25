@@ -46,18 +46,38 @@ exit 1
 }
 
 STATE_FILE="$REPO_DIR/logs/db-profiling-state.env"
-if [ ! -f "$STATE_FILE" ]; then
-  echo "[profiling] state file not found at $STATE_FILE" >&2
-  echo "[profiling] run: bash deploy/start-db-profiling.sh" >&2
-  exit 1
+STARTED_AT_UTC=""
+
+if [ -f "$STATE_FILE" ]; then
+  STARTED_AT_UTC="$(grep -E '^STARTED_AT_UTC=' "$STATE_FILE" | head -n 1 | cut -d'=' -f2- || true)"
+  STARTED_AT_UTC="${STARTED_AT_UTC#\"}"
+  STARTED_AT_UTC="${STARTED_AT_UTC%\"}"
 fi
 
-STARTED_AT_UTC="$(grep -E '^STARTED_AT_UTC=' "$STATE_FILE" | head -n 1 | cut -d'=' -f2- || true)"
-STARTED_AT_UTC="${STARTED_AT_UTC#\"}"
-STARTED_AT_UTC="${STARTED_AT_UTC%\"}"
+DB_STARTED_AT_UTC="$(run_mysql_query "
+SELECT COALESCE(
+  (
+    SELECT DATE_FORMAT(started_at, '%Y-%m-%d %H:%i:%s')
+    FROM performance_capture_windows
+    WHERE window_key = 'hotspot-analysis'
+    ORDER BY started_at DESC
+    LIMIT 1
+  ),
+  ''
+)
+FROM information_schema.tables
+WHERE table_schema = DATABASE()
+  AND table_name = 'performance_capture_windows'
+LIMIT 1;
+" 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
+
+if [ -n "$DB_STARTED_AT_UTC" ] && { [ -z "$STARTED_AT_UTC" ] || [[ "$DB_STARTED_AT_UTC" > "$STARTED_AT_UTC" ]]; }; then
+  STARTED_AT_UTC="$DB_STARTED_AT_UTC"
+fi
 
 if [ -z "$STARTED_AT_UTC" ]; then
-  echo "[profiling] STARTED_AT_UTC missing in $STATE_FILE" >&2
+  echo "[profiling] no capture start time found in $STATE_FILE or performance_capture_windows" >&2
+  echo "[profiling] run: bash deploy/start-db-profiling.sh or use the admin dashboard fresh capture button" >&2
   exit 1
 fi
 

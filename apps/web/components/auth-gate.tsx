@@ -39,9 +39,13 @@ function resolveArticleBackHref(source: string | null, backTo: string | null) {
 export function AuthGate({ videoCount }: AuthGateProps) {
   const searchParams = useSearchParams();
   const [view, setView] = useState<"login" | "register" | "forgot-password">("login");
-  const [sharedVideoTitle, setSharedVideoTitle] = useState<string | null>(null);
+  const [sharedVideoPreview, setSharedVideoPreview] = useState<{ videoId: string | null; title: string | null }>({
+    videoId: null,
+    title: null,
+  });
   const formattedCount = videoCount.toLocaleString("en-US");
   const sharedVideoId = resolveSharedVideoId(searchParams.get("v"));
+  const sharedVideoTitle = sharedVideoPreview.videoId === sharedVideoId ? sharedVideoPreview.title : null;
   const articleBackHref = resolveArticleBackHref(searchParams.get("from"), searchParams.get("backTo"));
   const panelClassName = [
     "authGatePanel",
@@ -51,7 +55,6 @@ export function AuthGate({ videoCount }: AuthGateProps) {
 
   useEffect(() => {
     if (!sharedVideoId) {
-      setSharedVideoTitle(null);
       return;
     }
 
@@ -69,12 +72,12 @@ export function AuthGate({ videoCount }: AuthGateProps) {
       .then((payload) => {
         const rawTitle = typeof payload.title === "string" ? payload.title.trim() : "";
         if (!cancelled) {
-          setSharedVideoTitle(rawTitle || null);
+          setSharedVideoPreview({ videoId: sharedVideoId, title: rawTitle || null });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setSharedVideoTitle(null);
+          setSharedVideoPreview({ videoId: sharedVideoId, title: null });
         }
       });
 
