@@ -212,6 +212,24 @@ function collectInlineFeatureTag(text) {
   return collapseWhitespace(hit[0]);
 }
 
+/**
+ * Returns true when the meaningful inner content of a bracket/paren tag is already
+ * present in the track name — prevents re-appending feat. artists or other tokens
+ * that are already baked into parsedTrack.
+ */
+function tagContentAlreadyInTrack(tag, trackName) {
+  const inner = collapseWhitespace(tag.replace(/^[\[(]|[\])]$/g, ""));
+  if (!inner) {
+    return false;
+  }
+  // Strip the feat./ft./featuring keyword itself so we compare the artist name
+  const coreContent = inner.replace(/^(?:feat\.?|ft\.?|featuring)\s*/i, "").trim();
+  if (!coreContent) {
+    return false;
+  }
+  return normalizeLoose(trackName).includes(normalizeLoose(coreContent));
+}
+
 function buildNormalizedTitle(originalTitle, artist, track) {
   const safeArtist = sanitizeMetadataToken(artist);
   const safeTrack = sanitizeMetadataToken(track);
@@ -223,6 +241,7 @@ function buildNormalizedTitle(originalTitle, artist, track) {
   const repairedTitle = normalizePossiblyMojibakeText(originalTitle || "");
   const split = splitTitle(repairedTitle);
 
+  // Identify which side of the primary separator is the track portion.
   let trackSide = split
     ? (() => {
         const leftNorm = normalizeLoose(split.left);
@@ -241,25 +260,39 @@ function buildNormalizedTitle(originalTitle, artist, track) {
 
   trackSide = collapseWhitespace(trackSide);
 
-  const tagParts = [];
-  const bracketTags = collectBracketTags(trackSide).concat(collectBracketTags(repairedTitle));
-  for (const tag of bracketTags) {
-    tagParts.push(tag);
+  // Repair mojibake in the track side independently before comparison, otherwise
+  // a repaired safeTrack won't match an unrepaired trackSide and stripKnownPrefix fails.
+  const repairedTrackSide = normalizePossiblyMojibakeText(trackSide);
+
+  // Isolate everything AFTER the bare track name — this is the qualifier suffix.
+  const afterTrack = collapseWhitespace(stripKnownPrefix(repairedTrackSide, safeTrack));
+
+  // Collect individual bracket/paren qualifier tags from the suffix only.
+  // Do NOT re-scan the full title — that causes double-collection of tags that
+  // already appear in the track side.
+  const rawTags = [];
+
+  for (const tag of collectBracketTags(afterTrack)) {
+    // Skip tags whose core content is already embedded in the track name.
+    if (!tagContentAlreadyInTrack(tag, safeTrack)) {
+      rawTags.push(tag);
+    }
   }
 
-  const inlineFeature = collectInlineFeatureTag(trackSide);
+  // Capture trailing inline feat. only when not already part of the track name.
+  const inlineFeature = collectInlineFeatureTag(afterTrack);
   if (inlineFeature) {
-    tagParts.push(inlineFeature);
+    const featureArtist = inlineFeature.replace(/^(?:feat\.?|ft\.?|featuring)\s*/i, "").trim();
+    if (!normalizeLoose(safeTrack).includes(normalizeLoose(featureArtist))) {
+      rawTags.push(inlineFeature);
+    }
   }
 
-  const remainder = stripKnownPrefix(trackSide, safeTrack);
-  if (remainder && /(?:^|\s)(live|official|video|lyrics?|remaster(?:ed)?|feat\.?|ft\.?|featuring|cover|remix|acoustic|session|version|edit)\b/i.test(remainder)) {
-    tagParts.push(remainder);
-  }
-
+  // Deduplicate by normalised key — guards against the same tag appearing multiple
+  // times in the original title (e.g. "(Official Video) (Official Video)").
   const dedupedTags = [];
   const seen = new Set();
-  for (const rawTag of tagParts) {
+  for (const rawTag of rawTags) {
     const repairedTag = sanitizeMetadataToken(rawTag, 200);
     if (!repairedTag) {
       continue;
