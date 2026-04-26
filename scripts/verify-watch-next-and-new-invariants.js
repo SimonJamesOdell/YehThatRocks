@@ -19,6 +19,7 @@ const files = {
   seenToggleData: path.join(ROOT, "apps/web/lib/seen-toggle-preference-data.ts"),
   apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
   newestRoute: path.join(ROOT, "apps/web/app/api/videos/newest/route.ts"),
+  hideVideoConfirmModal: path.join(ROOT, "apps/web/components/hide-video-confirm-modal.tsx"),
   schema: path.join(ROOT, "prisma/schema.prisma"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
 };
@@ -59,6 +60,7 @@ function main() {
   const seenToggleDataSource = read(files.seenToggleData);
   const apiSchemasSource = read(files.apiSchemas);
   const newestRouteSource = read(files.newestRoute);
+  const hideVideoConfirmModalSource = read(files.hideVideoConfirmModal);
   const schemaSource = read(files.schema);
   const cssSource = read(files.css);
 
@@ -215,6 +217,10 @@ function main() {
   assertContains(newVideosLoaderSource, "if (received === 0 && (payload.hasMore === false || emptyBatchStreakRef.current >= 2)) {", "New videos loader only stops after explicit exhaustion or repeated empty batches", failures);
   assertContains(newVideosLoaderSource, "const NewVideoRow = memo(function NewVideoRow", "New videos loader memoizes row wrapper to reduce append-time rerenders", failures);
   assertContains(newVideosLoaderSource, "filterHiddenVideos", "New videos loader filters hidden videos", failures);
+  assertContains(newVideosLoaderSource, "const [videoPendingHideConfirm, setVideoPendingHideConfirm] = useState<VideoRecord | null>(null);", "New videos loader tracks hide-confirm modal target video", failures);
+  assertContains(newVideosLoaderSource, "setVideoPendingHideConfirm(track);", "New videos loader opens hide-confirm modal from card actions", failures);
+  assertContains(newVideosLoaderSource, "<HideVideoConfirmModal", "New videos loader renders hide-confirm modal", failures);
+  assertContains(newVideosLoaderSource, "void confirmHideVideo();", "New videos loader confirms exclusion via shared modal callback", failures);
   assertContains(newVideosLoaderSource, 'window.addEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);', "New videos loader subscribes to catalog-deleted event for live removals", failures);
   assertContains(newVideosLoaderSource, 'return () => window.removeEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);', "New videos loader unsubscribes from catalog-deleted event", failures);
   assertContains(newVideosLoaderSource, "allVideoIdsRef.current.delete(deletedId);", "New videos loader updates id index after catalog-deleted event", failures);
@@ -227,8 +233,24 @@ function main() {
   assertContains(newVideosLoaderSource, "isAuthenticated,", "New videos loader passes auth state into seen-toggle hook", failures);
   assertContains(top100VideosLoaderSource, "useSeenTogglePreference", "Top 100 loader uses shared seen-toggle persistence hook", failures);
   assertContains(top100VideosLoaderSource, "key: TOP100_HIDE_SEEN_TOGGLE_KEY", "Top 100 loader stores preference under Top 100 key", failures);
+  assertContains(top100VideosLoaderSource, "const [videoPendingHideConfirm, setVideoPendingHideConfirm] = useState<VideoRecord | null>(null);", "Top 100 loader tracks hide-confirm modal target video", failures);
+  assertContains(top100VideosLoaderSource, "setVideoPendingHideConfirm(track);", "Top 100 loader opens hide-confirm modal from card actions", failures);
+  assertContains(top100VideosLoaderSource, "<HideVideoConfirmModal", "Top 100 loader renders hide-confirm modal", failures);
+  assertContains(top100VideosLoaderSource, "void confirmHideVideo();", "Top 100 loader confirms exclusion via shared modal callback", failures);
   assertContains(shellDynamicSource, "useSeenTogglePreference", "Watch Next shell uses shared seen-toggle persistence hook", failures);
   assertContains(shellDynamicSource, "key: WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY", "Watch Next shell stores preference under Watch Next key", failures);
+  assertContains(shellDynamicSource, "const [watchNextHideConfirmTrack, setWatchNextHideConfirmTrack] = useState<VideoRecord | null>(null);", "Watch Next shell tracks hide-confirm modal target video", failures);
+  assertContains(shellDynamicSource, "<HideVideoConfirmModal", "Watch Next shell renders hide-confirm modal", failures);
+  assertContains(shellDynamicSource, "void confirmHideFromWatchNext();", "Watch Next shell confirms exclusion via shared modal callback", failures);
+  assertContains(playerExperienceSource, "const [endedChoiceHideConfirmVideo, setEndedChoiceHideConfirmVideo] = useState<VideoRecord | null>(null);", "Ended-choice overlay tracks hide-confirm modal target video", failures);
+  assertContains(playerExperienceSource, "<HideVideoConfirmModal", "Ended-choice overlay renders hide-confirm modal", failures);
+  assertContains(playerExperienceSource, "onConfirm={confirmEndedChoiceHide}", "Ended-choice overlay confirms exclusion via shared modal callback", failures);
+
+  // Shared hide-confirm modal copy/style invariants.
+  assertContains(hideVideoConfirmModalSource, "Will be added to blocked videos", "Hide-confirm modal keeps blocked-videos eyebrow copy", failures);
+  assertContains(hideVideoConfirmModalSource, "Confirm exclusion", "Hide-confirm modal keeps confirm exclusion action label", failures);
+  assertContains(hideVideoConfirmModalSource, "hideVideoConfirmBackdrop", "Hide-confirm modal uses dedicated backdrop class", failures);
+  assertContains(hideVideoConfirmModalSource, "hideVideoConfirmModal", "Hide-confirm modal uses dedicated modal class", failures);
 
   assertContains(seenToggleHookSource, 'fetch(`/api/seen-toggle-preferences?key=${encodeURIComponent(key)}`', "Seen-toggle hook fetches authenticated preference values from API", failures);
   assertContains(seenToggleHookSource, "void fetch(\"/api/seen-toggle-preferences\"", "Seen-toggle hook posts updated preference values to API", failures);

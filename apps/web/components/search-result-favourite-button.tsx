@@ -8,9 +8,11 @@ type SearchResultFavouriteButtonProps = {
   videoId: string;
   title: string;
   isAuthenticated: boolean;
+  className?: string;
+  onSaved?: () => void;
 };
 
-export function SearchResultFavouriteButton({ videoId, title, isAuthenticated }: SearchResultFavouriteButtonProps) {
+export function SearchResultFavouriteButton({ videoId, title, isAuthenticated, className, onSaved }: SearchResultFavouriteButtonProps) {
   const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const resetTimeoutRef = useRef<number | null>(null);
 
@@ -49,6 +51,7 @@ export function SearchResultFavouriteButton({ videoId, title, isAuthenticated }:
 
       if (response.ok) {
         window.dispatchEvent(new Event("ytr:favourites-updated"));
+        onSaved?.();
       }
 
       setState(response.ok ? "saved" : "error");
@@ -64,7 +67,7 @@ export function SearchResultFavouriteButton({ videoId, title, isAuthenticated }:
   return (
     <button
       type="button"
-      className="queueBadge searchResultFavouriteBadgeButton"
+      className={`queueBadge searchResultFavouriteBadgeButton searchResultFavouriteBadgeButtonState${state}${className ? ` ${className}` : ""}`}
       aria-label={`${label}: ${title}`}
       title={isAuthenticated ? "Add to favourites" : "Sign in to add favourites"}
       disabled={!isAuthenticated || state === "saving"}
@@ -74,7 +77,7 @@ export function SearchResultFavouriteButton({ videoId, title, isAuthenticated }:
         void handleAdd();
       }}
     >
-      <span className="navFavouritesGlyph" aria-hidden="true">❤️</span>
+      <span className="navFavouritesGlyph" aria-hidden="true">♥</span>
     </button>
   );
 }

@@ -223,6 +223,12 @@ function main() {
   assertContains(cssSource, ".playerEndedChoiceGrid", "Chooser overlay grid styles are defined", failures);
   assertContains(cssSource, ".playerEndedChoiceEmptyState", "Chooser overlay defines an empty state for unseen-only filtering", failures);
   assertContains(cssSource, ".playerEndedChoiceGridExiting", "Chooser overlay grid exit animation is defined", failures);
+  assertContains(cssSource, ".artistVideoFavouriteBadgeButton:hover,", "Favourite badge defines explicit hover state selector", failures);
+  assertContains(cssSource, ".artistVideoFavouriteBadgeButton:hover .artistVideoFavouriteBadgeHeart,", "Favourite badge hover keeps heart glyph styling rule", failures);
+  assertContains(cssSource, "color: #000;", "Favourite badge hover turns heart glyph black", failures);
+  assertContains(cssSource, ".artistVideoFavouriteBadgeButton:hover .artistVideoFavouriteBadgeRemoveGlyph,", "Favourite badge hover reveals remove glyph", failures);
+  assertContains(cssSource, "background: transparent;", "Favourite badge hover keeps transparent background without circular fill", failures);
+  assertNotContains(cssSource, ".artistVideoFavouriteBadgeButton:hover .artistVideoFavouriteBadgeHeart {\n  transform: translate", "Favourite badge heart must not shift position on hover", failures);
   assertContains(cssSource, "@media (min-width: 2200px)", "Chooser overlay defines ultrawide breakpoint", failures);
   assertContains(cssSource, "grid-template-columns: repeat(6, minmax(0, 1fr));", "Chooser overlay uses 6 columns on ultrawide for two rows", failures);
   assertContains(playerExperienceSource, "const isInitialDeepLinkedSelection = Boolean(", "Player detects first-load deep-linked selections", failures);

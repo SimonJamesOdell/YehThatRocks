@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState } from "react";
 import { ArtistVideoLink } from "@/components/artist-video-link";
 import { ArtistCreatePlaylistButton } from "@/components/artist-create-playlist-button";
 import { CloseLink } from "@/components/close-link";
+import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import type { VideoRecord } from "@/lib/catalog";
 
@@ -28,6 +29,7 @@ export function ArtistVideosGridClient({
 }: ArtistVideosGridClientProps) {
   const [videos, setVideos] = useState<VideoRecord[]>(initialVideos);
   const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
+  const [videoPendingHideConfirm, setVideoPendingHideConfirm] = useState<VideoRecord | null>(null);
   const [hideSeen, setHideSeen] = useSeenTogglePreference({
     key: ARTIST_HIDE_SEEN_TOGGLE_KEY,
     isAuthenticated,
@@ -38,10 +40,22 @@ export function ArtistVideosGridClient({
     [hideSeen, isAuthenticated, seenVideoIdSet, videos],
   );
 
-  const handleHideVideo = useCallback(async (video: VideoRecord) => {
+  const handleHideVideo = useCallback((video: VideoRecord) => {
     if (!isAuthenticated || hidingVideoIds.includes(video.id)) {
       return;
     }
+
+    setVideoPendingHideConfirm(video);
+  }, [hidingVideoIds, isAuthenticated]);
+
+  const confirmHideVideo = useCallback(async () => {
+    const video = videoPendingHideConfirm;
+
+    if (!video || !isAuthenticated || hidingVideoIds.includes(video.id)) {
+      return;
+    }
+
+    setVideoPendingHideConfirm(null);
 
     setHidingVideoIds((current) => [...current, video.id]);
     setVideos((current) => current.filter((candidate) => candidate.id !== video.id));
@@ -59,7 +73,7 @@ export function ArtistVideosGridClient({
     } finally {
       setHidingVideoIds((current) => current.filter((id) => id !== video.id));
     }
-  }, [hidingVideoIds, isAuthenticated]);
+  }, [hidingVideoIds, isAuthenticated, videoPendingHideConfirm]);
 
   return (
     <>
@@ -108,6 +122,16 @@ export function ArtistVideosGridClient({
           />
         ))}
       </div>
+
+      <HideVideoConfirmModal
+        isOpen={videoPendingHideConfirm !== null}
+        video={videoPendingHideConfirm}
+        isPending={videoPendingHideConfirm ? hidingVideoIds.includes(videoPendingHideConfirm.id) : false}
+        onCancel={() => setVideoPendingHideConfirm(null)}
+        onConfirm={() => {
+          void confirmHideVideo();
+        }}
+      />
     </>
   );
 }

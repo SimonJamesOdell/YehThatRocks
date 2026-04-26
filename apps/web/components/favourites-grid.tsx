@@ -403,6 +403,11 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
                     {isRemoving ? "…" : "🗑"}
                   </button>
                 </div>
+                <div className="relatedCardSourceBadges artistVideoSourceBadges">
+                  {track.isFavouriteSource ? <span className="relatedSourceBadge relatedSourceBadgeFavourite">Favourite</span> : null}
+                  {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
+                  {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
+                </div>
                 <h3>
                   <span className="cardTitleLink playlistCardTitleStatic">
                     {track.title}

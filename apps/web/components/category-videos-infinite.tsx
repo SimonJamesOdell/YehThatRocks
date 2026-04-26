@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArtistVideoLink } from "@/components/artist-video-link";
 import { CategoryCreatePlaylistButton } from "@/components/category-create-playlist-button";
 import { CloseLink } from "@/components/close-link";
+import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import type { VideoRecord } from "@/lib/catalog";
 
@@ -91,6 +92,7 @@ export function CategoryVideosInfinite({
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
+  const [videoPendingHideConfirm, setVideoPendingHideConfirm] = useState<VideoRecord | null>(null);
   const [hideSeen, setHideSeen] = useSeenTogglePreference({
     key: CATEGORY_HIDE_SEEN_TOGGLE_KEY,
     isAuthenticated,
@@ -278,10 +280,22 @@ export function CategoryVideosInfinite({
 
   const orderedVideos = sortVideosBySeen(videos, seenVideoIdSet);
 
-  const handleHideVideo = useCallback(async (video: VideoRecord) => {
+  const handleHideVideo = useCallback((video: VideoRecord) => {
     if (!isAuthenticated || hidingVideoIds.includes(video.id)) {
       return;
     }
+
+    setVideoPendingHideConfirm(video);
+  }, [hidingVideoIds, isAuthenticated]);
+
+  const confirmHideVideo = useCallback(async () => {
+    const video = videoPendingHideConfirm;
+
+    if (!video || !isAuthenticated || hidingVideoIds.includes(video.id)) {
+      return;
+    }
+
+    setVideoPendingHideConfirm(null);
 
     setHidingVideoIds((current) => [...current, video.id]);
     setVideos((current) => current.filter((candidate) => candidate.id !== video.id));
@@ -299,7 +313,7 @@ export function CategoryVideosInfinite({
     } finally {
       setHidingVideoIds((current) => current.filter((id) => id !== video.id));
     }
-  }, [hidingVideoIds, isAuthenticated]);
+  }, [hidingVideoIds, isAuthenticated, videoPendingHideConfirm]);
 
   const visibleOrderedVideos = hideSeen
     ? (isAuthenticated ? orderedVideos.filter((video) => !seenVideoIdSet.has(video.id)) : orderedVideos)
@@ -393,6 +407,16 @@ export function CategoryVideosInfinite({
       </div>
 
       <div ref={sentinelRef} aria-hidden="true" style={{ height: 1 }} />
+
+      <HideVideoConfirmModal
+        isOpen={videoPendingHideConfirm !== null}
+        video={videoPendingHideConfirm}
+        isPending={videoPendingHideConfirm ? hidingVideoIds.includes(videoPendingHideConfirm.id) : false}
+        onCancel={() => setVideoPendingHideConfirm(null)}
+        onConfirm={() => {
+          void confirmHideVideo();
+        }}
+      />
     </>
   );
 }

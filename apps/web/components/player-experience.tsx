@@ -9,6 +9,8 @@ import { buildSharedVideoMessage } from "@/lib/chat-shared-video";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
+import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
+import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 
@@ -273,6 +275,13 @@ const EndedChoiceCard = memo(function EndedChoiceCard({
   onHide,
   onMeasure,
 }: EndedChoiceCardProps) {
+  const [isFavourited, setIsFavourited] = useState(Number(video.favourited ?? 0) > 0);
+  const [isRemovingFavourite, setIsRemovingFavourite] = useState(false);
+
+  useEffect(() => {
+    setIsFavourited(Number(video.favourited ?? 0) > 0);
+  }, [video.id, video.favourited]);
+
   const cardClassName = isHiding
     ? "endedChoiceCardSlot endedChoiceCardSlotExiting"
     : shouldAnimateCard
@@ -295,6 +304,34 @@ const EndedChoiceCard = memo(function EndedChoiceCard({
   const handleSelect = useCallback(() => {
     onSelect(video.id);
   }, [onSelect, video.id]);
+
+  const handleRemoveFavourite = useCallback(async (event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!isLoggedIn || isRemovingFavourite) {
+      return;
+    }
+
+    setIsRemovingFavourite(true);
+
+    try {
+      const response = await fetchWithAuthRetry("/api/favourites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId: video.id, action: "remove" }),
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      setIsFavourited(false);
+      window.dispatchEvent(new Event("ytr:favourites-updated"));
+    } finally {
+      setIsRemovingFavourite(false);
+    }
+  }, [isLoggedIn, isRemovingFavourite, video.id]);
 
   return (
     <div
@@ -324,7 +361,24 @@ const EndedChoiceCard = memo(function EndedChoiceCard({
             className="playerEndedChoiceThumb"
             loading="lazy"
           />
-          {isSeen ? <span className="playerEndedChoiceSeenBadge">Seen</span> : null}
+          {isSeen && !isFavourited ? <span className="playerEndedChoiceSeenBadge">Seen</span> : null}
+          {isFavourited ? (
+            <button
+              type="button"
+              className="relatedFavouriteBadgeOverlay endedChoiceFavouriteBadgeOverlay artistVideoFavouriteBadgeButton"
+              aria-label={`Remove ${video.title} from favourites`}
+              title="Remove from favourites"
+              disabled={isRemovingFavourite}
+              onClick={handleRemoveFavourite}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+            >
+              <span className="artistVideoFavouriteBadgeHeart" aria-hidden="true">♥</span>
+              <span className="artistVideoFavouriteBadgeRemoveGlyph" aria-hidden="true">x</span>
+            </button>
+          ) : null}
         </div>
         <span className="playerEndedChoiceMeta">
           <span className="playerEndedChoiceTitle">
@@ -338,12 +392,23 @@ const EndedChoiceCard = memo(function EndedChoiceCard({
         </span>
       </button>
       {isLoggedIn ? (
-        <AddToPlaylistButton
-          videoId={video.id}
-          isAuthenticated={isLoggedIn}
-          className="endedChoiceCardPlaylistBtn"
-          compact
-        />
+        <div className="endedChoiceCardActions">
+          {!isFavourited ? (
+            <SearchResultFavouriteButton
+              videoId={video.id}
+              title={video.title}
+              isAuthenticated={isLoggedIn}
+              className="endedChoiceCardFavouriteBtn"
+              onSaved={() => setIsFavourited(true)}
+            />
+          ) : null}
+          <AddToPlaylistButton
+            videoId={video.id}
+            isAuthenticated={isLoggedIn}
+            className="endedChoiceCardPlaylistBtn"
+            compact
+          />
+        </div>
       ) : null}
     </div>
   );
@@ -467,6 +532,7 @@ export function PlayerExperience({
   const [endedChoiceGridExiting, setEndedChoiceGridExiting] = useState(false);
   const [endedChoiceHidingIds, setEndedChoiceHidingIds] = useState<string[]>([]);
   const [endedChoiceDismissedIds, setEndedChoiceDismissedIds] = useState<string[]>([]);
+  const [endedChoiceHideConfirmVideo, setEndedChoiceHideConfirmVideo] = useState<VideoRecord | null>(null);
   const [endedChoiceAnimateCards, setEndedChoiceAnimateCards] = useState(true);
   const [endedChoiceHideSeen, setEndedChoiceHideSeen] = useSeenTogglePreference({
     key: ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY,
@@ -3464,13 +3530,28 @@ export function PlayerExperience({
   }
 
   const handleEndedChoiceHide = useCallback((track: VideoRecord) => {
+    if (endedChoiceHidingIds.includes(track.id)) {
+      return;
+    }
+
+    setEndedChoiceHideConfirmVideo(track);
+  }, [endedChoiceHidingIds]);
+
+  const confirmEndedChoiceHide = useCallback(() => {
+    const track = endedChoiceHideConfirmVideo;
+
+    if (!track || endedChoiceHidingIds.includes(track.id)) {
+      return;
+    }
+
+    setEndedChoiceHideConfirmVideo(null);
     setEndedChoiceHidingIds((prev) => [...prev, track.id]);
     void onHideVideo?.(track);
     setTimeout(() => {
       setEndedChoiceHidingIds((prev) => prev.filter((id) => id !== track.id));
       setEndedChoiceDismissedIds((prev) => (prev.includes(track.id) ? prev : [...prev, track.id]));
     }, 400);
-  }, [onHideVideo]);
+  }, [endedChoiceHideConfirmVideo, endedChoiceHidingIds, onHideVideo]);
 
   function handleEndedChoiceWatchAgain() {
     setShowEndedChoiceOverlay(false);
@@ -5432,6 +5513,14 @@ export function PlayerExperience({
                 document.body,
               )
             : null}
+
+          <HideVideoConfirmModal
+            isOpen={endedChoiceHideConfirmVideo !== null}
+            video={endedChoiceHideConfirmVideo}
+            isPending={endedChoiceHideConfirmVideo ? endedChoiceHidingIds.includes(endedChoiceHideConfirmVideo.id) : false}
+            onCancel={() => setEndedChoiceHideConfirmVideo(null)}
+            onConfirm={confirmEndedChoiceHide}
+          />
 
           {!suppressUnavailablePlaybackSurface ? (
             <div
