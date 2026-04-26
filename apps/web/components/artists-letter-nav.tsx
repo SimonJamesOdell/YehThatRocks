@@ -11,6 +11,7 @@ import {
   normalizeArtistLetter,
   type ArtistsLetterChangeDetail,
 } from "@/lib/artists-letter-events";
+import { EVENT_NAMES, listenToAppEvent } from "@/lib/events-contract";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
@@ -52,17 +53,16 @@ export function ArtistsLetterNav({ activeLetter, v, resume, variant = "panel" }:
   }, [initialLetter]);
 
   useEffect(() => {
-    const handler = (event: Event) => {
-      const custom = event as CustomEvent<ArtistsLetterChangeDetail>;
-      const nextLetter = custom.detail?.letter;
+    const handler = (payload: { letter: string }) => {
+      const nextLetter = payload.letter;
       if (nextLetter && isValidArtistLetter(nextLetter)) {
         setSelectedLetter(nextLetter);
       }
     };
 
-    window.addEventListener(ARTISTS_LETTER_CHANGE_EVENT, handler);
+    const unsubscribe = listenToAppEvent(EVENT_NAMES.ARTISTS_LETTER_CHANGE, handler);
     return () => {
-      window.removeEventListener(ARTISTS_LETTER_CHANGE_EVENT, handler);
+      unsubscribe();
     };
   }, []);
 
