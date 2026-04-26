@@ -90,7 +90,68 @@ async function executeRawUnsafeWithReconnect(sql: string) {
 
   // Reconnect once when MySQL closed the underlying connection unexpectedly.
   await prisma.$disconnect().catch(() => undefined);
+  await prisma.$connect().catch(() => undefined);
   await prisma.$executeRawUnsafe(sql);
+}
+
+type MysqlGlobalVariableRow = {
+  Variable_name: string;
+  Value: string | number | null;
+};
+
+async function queryRawUnsafeWithReconnect<T>(sql: string): Promise<T> {
+  try {
+    return await prisma.$queryRawUnsafe<T>(sql);
+  } catch (error) {
+    if (!isTransientDbConnectionError(error)) {
+      throw error;
+    }
+  }
+
+  await prisma.$disconnect().catch(() => undefined);
+  await prisma.$connect().catch(() => undefined);
+  return prisma.$queryRawUnsafe<T>(sql);
+}
+
+function toLooseNumber(value: string | number | null | undefined) {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+async function readMysqlGlobalVariable(name: string) {
+  const rows = await queryRawUnsafeWithReconnect<MysqlGlobalVariableRow[]>(`SHOW GLOBAL VARIABLES LIKE '${name}'`);
+  const row = rows[0];
+  return row?.Value ?? null;
+}
+
+async function verifyMysqlSlowLogCaptureSettings() {
+  try {
+    const [slowLogEnabled, logOutput, longQueryTime, minExaminedRowLimit] = await Promise.all([
+      readMysqlGlobalVariable("slow_query_log"),
+      readMysqlGlobalVariable("log_output"),
+      readMysqlGlobalVariable("long_query_time"),
+      readMysqlGlobalVariable("min_examined_row_limit"),
+    ]);
+
+    const slowLogOn = String(slowLogEnabled ?? "").toUpperCase() === "ON";
+    const outputIncludesTable = String(logOutput ?? "").toUpperCase().split(",").map((part) => part.trim()).includes(SLOW_LOG_OUTPUT);
+    const longQueryTimeNumber = toLooseNumber(longQueryTime);
+    const minExaminedRowLimitNumber = toLooseNumber(minExaminedRowLimit);
+    const longQueryTimeOk = longQueryTimeNumber !== null && longQueryTimeNumber <= SLOW_LOG_LONG_QUERY_TIME;
+    const minExaminedRowLimitOk = minExaminedRowLimitNumber !== null && minExaminedRowLimitNumber <= SLOW_LOG_MIN_EXAMINED_ROW_LIMIT;
+
+    return slowLogOn && outputIncludesTable && longQueryTimeOk && minExaminedRowLimitOk;
+  } catch {
+    return false;
+  }
 }
 
 async function tryStartMysqlSlowLogCapture() {
@@ -100,11 +161,27 @@ async function tryStartMysqlSlowLogCapture() {
     await executeRawUnsafeWithReconnect(`SET GLOBAL min_examined_row_limit = ${SLOW_LOG_MIN_EXAMINED_ROW_LIMIT}`);
     await executeRawUnsafeWithReconnect("SET GLOBAL slow_query_log = ON");
 
+    const verified = await verifyMysqlSlowLogCaptureSettings();
+    if (!verified) {
+      return {
+        enabled: false,
+        warning: "MySQL slow query log settings could not be verified after update.",
+      };
+    }
+
     return {
       enabled: true,
       warning: null,
     };
   } catch (error) {
+    const verifiedAfterError = await verifyMysqlSlowLogCaptureSettings();
+    if (verifiedAfterError) {
+      return {
+        enabled: true,
+        warning: null,
+      };
+    }
+
     return {
       enabled: false,
       warning: error instanceof Error
