@@ -6,9 +6,8 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 
 import { CloseLink } from "@/components/close-link";
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import type { PlaylistSummary } from "@/lib/catalog-data";
-
-const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 
 type PlaylistsGridProps = {
   initialPlaylists: PlaylistSummary[];
@@ -165,7 +164,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
 
           if (Array.isArray(payload?.playlists)) {
             setPlaylists(payload.playlists);
-            window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+            dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
           }
         }
       } catch {
@@ -206,7 +205,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
         }
 
         setPlaylists((current) => current.filter((playlist) => playlist.id !== playlistId));
-        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
       } catch {
         setMessage("Could not delete playlist. Please try again.");
       } finally {

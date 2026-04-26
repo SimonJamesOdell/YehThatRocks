@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 
 type SearchResultFavouriteButtonProps = {
   videoId: string;
@@ -50,7 +51,7 @@ export function SearchResultFavouriteButton({ videoId, title, isAuthenticated, c
       });
 
       if (response.ok) {
-        window.dispatchEvent(new Event("ytr:favourites-updated"));
+        dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
         onSaved?.();
       }
 
