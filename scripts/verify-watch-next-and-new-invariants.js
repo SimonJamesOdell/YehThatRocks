@@ -130,7 +130,7 @@ function main() {
   assertContains(shellDynamicSource, "temporaryQueue={temporaryQueueVideos}", "Shell passes temporary queue into player experience", failures);
 
   assertContains(playerExperienceSource, "import { useNextTrackDecision } from \"@/components/use-next-track-decision\";", "Player uses extracted next-track decision hook", failures);
-  assertContains(playerExperienceSource, "import { TEMP_QUEUE_DEQUEUE_EVENT, VIDEO_ENDED_EVENT } from \"@/lib/events-contract\";", "Player consumes centralized typed events module", failures);
+  assertContains(playerExperienceSource, "import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent", "Player consumes centralized typed events module", failures);
   assertContains(playerExperienceSource, "const { resolvePlaylistStepTarget, resolveNextTarget, resolvedNextTarget } = useNextTrackDecision({", "Player delegates next-target orchestration to extracted hook", failures);
   assertContains(nextTrackDecisionHookSource, "export function useNextTrackDecision", "Next-track orchestration is extracted into dedicated hook", failures);
   assertContains(nextTrackDecisionHookSource, "const currentQueueIndex = temporaryQueue.findIndex((video) => video.id === currentVideoId);", "Next-track hook calculates queue progression from current queue index", failures);

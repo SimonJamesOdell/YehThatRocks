@@ -10,6 +10,7 @@ import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
+import { RemoveFavouriteConfirmModal } from "@/components/remove-favourite-confirm-modal";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { useNextTrackDecision } from "@/components/use-next-track-decision";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
@@ -144,6 +145,7 @@ const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.e
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
 const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. Please choose another track.";
 const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstream video provider for this track. This is not a YehThatRocks failure. Please try the refresh button and if that does not work, choose another track.";
+const EARLY_PLAYBACK_VERIFICATION_MS = 1200;
 const STUCK_PLAYBACK_CHECK_MS = 5000;
 const STUCK_PLAYBACK_MAX_RETRIES = 3;
 const STUCK_PLAYBACK_RETRY_DELAYS_MS = [600, 1400, 2600] as const;
@@ -496,6 +498,7 @@ export function PlayerExperience({
   const playerLoadRefreshHintTimeoutRef = useRef<number | null>(null);
   const playerAutoReconnectTimeoutRef = useRef<number | null>(null);
   const manualTransitionMaskTimeoutRef = useRef<number | null>(null);
+  const playlistDropAnimationTimeoutRef = useRef<number | null>(null);
   const hasAutoReconnectAttemptedRef = useRef(false);
   const isPlayerReadyRef = useRef(false);
   const initialRequestedVideoIdRef = useRef<string | null>(requestedVideoId);
@@ -512,6 +515,20 @@ export function PlayerExperience({
   const [copied, setCopied] = useState(false);
   const [shareToChatState, setShareToChatState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [favouriteSaveState, setFavouriteSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [isCurrentVideoFavourited, setIsCurrentVideoFavourited] = useState(Number(currentVideo.favourited ?? 0) > 0);
+  const [removeFavouriteState, setRemoveFavouriteState] = useState<"idle" | "removing">("idle");
+  const [showRemoveFavouriteConfirm, setShowRemoveFavouriteConfirm] = useState(false);
+  const [playlistDropAnimation, setPlaylistDropAnimation] = useState<{
+    key: number;
+    thumbnailUrl: string;
+    fromX: number;
+    fromY: number;
+    deltaX: number;
+    deltaY: number;
+    fromWidth: number;
+    fromHeight: number;
+    scale: number;
+  } | null>(null);
   const [footerPlaylistAddState, setFooterPlaylistAddState] = useState<"idle" | "saving" | "added" | "error">("idle");
   const [showFooterPlaylistMenu, setShowFooterPlaylistMenu] = useState(false);
   const [footerPlaylistMenuLoading, setFooterPlaylistMenuLoading] = useState(false);
@@ -580,6 +597,7 @@ export function PlayerExperience({
     const stuckPlaybackRetryCountRef = useRef(0);
     const stuckPlaybackRetryTimeoutRef = useRef<number | null>(null);
     const stuckPlaybackWatchdogTimeoutRef = useRef<number | null>(null);
+    const earlyPlaybackVerificationTimeoutRef = useRef<number | null>(null);
     const midPlaybackBufferingStartedAtRef = useRef<number | null>(null);
     const midPlaybackBufferingCheckTimeoutRef = useRef<number | null>(null);
     const nextVideoIdRef = useRef<string | null>(currentVideo.id);
@@ -714,6 +732,9 @@ export function PlayerExperience({
 
   useEffect(() => {
     currentVideoRef.current = currentVideo;
+    setIsCurrentVideoFavourited(Number(currentVideo.favourited ?? 0) > 0);
+    setRemoveFavouriteState("idle");
+    setShowRemoveFavouriteConfirm(false);
     setLocalTitleOverride(null);
     setLocalChannelTitleOverride(null);
     setEndedChoiceLoading(false);
@@ -729,6 +750,15 @@ export function PlayerExperience({
     endedChoicePrewarmVideoIdRef.current = null;
     endedChoicePostPrimeQueuedRef.current = false;
   }, [currentVideo]);
+
+  useEffect(() => {
+    return () => {
+      if (playlistDropAnimationTimeoutRef.current !== null) {
+        window.clearTimeout(playlistDropAnimationTimeoutRef.current);
+        playlistDropAnimationTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     endedChoiceRemoteVideosRef.current = endedChoiceRemoteVideos;
@@ -1581,6 +1611,13 @@ export function PlayerExperience({
     }
   }
 
+  function clearEarlyPlaybackVerificationTimer() {
+    if (earlyPlaybackVerificationTimeoutRef.current !== null) {
+      window.clearTimeout(earlyPlaybackVerificationTimeoutRef.current);
+      earlyPlaybackVerificationTimeoutRef.current = null;
+    }
+  }
+
   function clearMidPlaybackBufferingCheck() {
     if (midPlaybackBufferingCheckTimeoutRef.current !== null) {
       window.clearTimeout(midPlaybackBufferingCheckTimeoutRef.current);
@@ -1684,6 +1721,57 @@ export function PlayerExperience({
 
   function notePlayAttempt() {
     playAttemptedAtRef.current = Date.now();
+    clearEarlyPlaybackVerificationTimer();
+
+    const targetVideoId = currentVideoRef.current.id;
+    earlyPlaybackVerificationTimeoutRef.current = window.setTimeout(() => {
+      earlyPlaybackVerificationTimeoutRef.current = null;
+
+      void (async () => {
+        if (currentVideoRef.current.id !== targetVideoId) {
+          return;
+        }
+
+        const player = playerRef.current;
+        if (!player || !playAttemptedAtRef.current) {
+          return;
+        }
+
+        const state = typeof player.getPlayerState === "function" ? player.getPlayerState() : -1;
+        const durationValue = typeof player.getDuration === "function" ? toSafeNumber(player.getDuration(), 0) : 0;
+        const currentPosition = typeof player.getCurrentTime === "function" ? toSafeNumber(player.getCurrentTime(), 0) : 0;
+        const stillUnstarted =
+          state !== window.YT?.PlayerState.PLAYING
+          && (durationValue <= 0 || currentPosition < 0.25);
+
+        if (!stillUnstarted) {
+          return;
+        }
+
+        const reportResult = await reportUnavailableFromPlayer("yt-player-early-refusal-check");
+        const botChallengeDetected = isBotChallengeVerificationReason(reportResult.verificationReason);
+
+        logPlayerDebug("early-playback-verification", {
+          videoId: currentVideoRef.current.id,
+          playerHostMode,
+          verificationReason: reportResult.verificationReason,
+          botChallengeDetected,
+          durationValue,
+          currentPosition,
+          state,
+        });
+
+        if (!botChallengeDetected) {
+          return;
+        }
+
+        clearStuckPlaybackRetryTimer();
+        clearStuckPlaybackWatchdogTimer();
+        clearMidPlaybackBufferingCheck();
+        enableDirectIframeInteractionMode("early-playback-verification", reportResult.verificationReason);
+      })();
+    }, EARLY_PLAYBACK_VERIFICATION_MS);
+
     scheduleStuckPlaybackWatchdog("play-attempt");
   }
 
@@ -2126,6 +2214,7 @@ export function PlayerExperience({
     stuckPlaybackRetryCountRef.current = 0;
     clearStuckPlaybackRetryTimer();
     clearStuckPlaybackWatchdogTimer();
+    clearEarlyPlaybackVerificationTimer();
     clearUnavailableOverlayMessage();
     setShowEndedChoiceOverlay(false);
     setShowEndScreenCover(false);
@@ -2573,6 +2662,7 @@ export function PlayerExperience({
               clearUnavailableOverlayMessage();
               clearStuckPlaybackRetryTimer();
               clearStuckPlaybackWatchdogTimer();
+              clearEarlyPlaybackVerificationTimer();
               clearMidPlaybackBufferingCheck();
               stuckPlaybackRetryCountRef.current = 0;
               playAttemptedAtRef.current = null;
@@ -3003,6 +3093,7 @@ export function PlayerExperience({
 
       clearStuckPlaybackRetryTimer();
       clearStuckPlaybackWatchdogTimer();
+      clearEarlyPlaybackVerificationTimer();
 
       if (progressIntervalRef.current) {
         window.clearInterval(progressIntervalRef.current);
@@ -3651,11 +3742,69 @@ export function PlayerExperience({
     }
   }
 
+  function triggerPlaylistDropAnimation() {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const sourceRect = playerFrameRef.current?.getBoundingClientRect();
+    const sourceWidth = sourceRect?.width ?? window.innerWidth * 0.56;
+    const sourceHeight = sourceRect?.height ?? window.innerHeight * 0.4;
+    const fromX = sourceRect ? sourceRect.left + sourceRect.width * 0.5 : window.innerWidth * 0.5;
+    const fromY = sourceRect ? sourceRect.top + sourceRect.height * 0.5 : window.innerHeight * 0.45;
+
+    const playlistTarget = document.querySelector(
+      ".relatedStackPlaylistBody, .rightRailPlaylistBar, .rightRailTabs .activeTab, .rightRailTabs button:nth-child(2), .rightRail",
+    ) as HTMLElement | null;
+    const targetRect = playlistTarget?.getBoundingClientRect();
+    const toX = targetRect ? targetRect.left + Math.min(120, Math.max(42, targetRect.width * 0.28)) : window.innerWidth * 0.84;
+    const toY = targetRect ? targetRect.top + Math.min(84, Math.max(34, targetRect.height * 0.24)) : window.innerHeight * 0.24;
+
+    const maxStartHeight = sourceRect ? sourceRect.height * 0.92 : window.innerHeight * 0.54;
+    let fromWidth = sourceRect ? sourceRect.width * 0.9 : window.innerWidth * 0.68;
+    let fromHeight = (fromWidth * 9) / 16;
+    if (fromHeight > maxStartHeight) {
+      fromHeight = maxStartHeight;
+      fromWidth = (fromHeight * 16) / 9;
+    }
+    fromWidth = Math.max(320, Math.min(fromWidth, window.innerWidth * 0.9));
+    fromHeight = Math.round((fromWidth * 9) / 16);
+    const targetWidth = 76;
+    const scale = targetWidth / fromWidth;
+
+    setPlaylistDropAnimation({
+      key: Date.now(),
+      thumbnailUrl: `https://i.ytimg.com/vi/${encodeURIComponent(currentVideo.id)}/mqdefault.jpg`,
+      fromX,
+      fromY,
+      deltaX: toX - fromX,
+      deltaY: toY - fromY,
+      fromWidth,
+      fromHeight,
+      scale,
+    });
+
+    if (playlistDropAnimationTimeoutRef.current !== null) {
+      window.clearTimeout(playlistDropAnimationTimeoutRef.current);
+    }
+    playlistDropAnimationTimeoutRef.current = window.setTimeout(() => {
+      setPlaylistDropAnimation(null);
+      playlistDropAnimationTimeoutRef.current = null;
+    }, 620);
+  }
+
   function markFooterPlaylistAdded() {
     setFooterPlaylistAddState("added");
     window.setTimeout(() => {
       setFooterPlaylistAddState((current) => (current === "added" ? "idle" : current));
     }, 1800);
+  }
+
+  function markFooterPlaylistError() {
+    setFooterPlaylistAddState("error");
+    window.setTimeout(() => {
+      setFooterPlaylistAddState((current) => (current === "error" ? "idle" : current));
+    }, 2200);
   }
 
   async function handleFooterPlaylistButtonClick() {
@@ -3675,7 +3824,16 @@ export function PlayerExperience({
       return;
     }
 
+    setShowFooterPlaylistMenu(false);
+    setFooterShowExistingList(false);
     setFooterPlaylistAddState("saving");
+    triggerPlaylistDropAnimation();
+
+    dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
+      mode: "playlist",
+      playlistId,
+      trackId: currentVideo.id,
+    });
 
     try {
       const ok = await addCurrentTrackToPlaylist(playlistId);
@@ -3684,14 +3842,6 @@ export function PlayerExperience({
           window.localStorage.setItem(LAST_PLAYLIST_ID_KEY, playlistId);
         }
         markFooterPlaylistAdded();
-        setShowFooterPlaylistMenu(false);
-        setFooterShowExistingList(false);
-
-        dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
-          mode: "playlist",
-          playlistId,
-          trackId: currentVideo.id,
-        });
 
         if (footerOpenAfterSelect) {
           const params = new URLSearchParams(searchParams.toString());
@@ -3703,9 +3853,9 @@ export function PlayerExperience({
         }
         return;
       }
-      setFooterPlaylistAddState("error");
+      markFooterPlaylistError();
     } catch {
-      setFooterPlaylistAddState("error");
+      markFooterPlaylistError();
     }
   }
 
@@ -3714,7 +3864,10 @@ export function PlayerExperience({
       return;
     }
 
+    setShowFooterPlaylistMenu(false);
+    setFooterShowExistingList(false);
     setFooterPlaylistAddState("saving");
+    triggerPlaylistDropAnimation();
 
     try {
       const createResponse = await fetch("/api/playlists", {
@@ -3724,19 +3877,25 @@ export function PlayerExperience({
       });
 
       if (!createResponse.ok) {
-        setFooterPlaylistAddState("error");
+        markFooterPlaylistError();
         return;
       }
 
       const created = (await createResponse.json().catch(() => null)) as { id?: string } | null;
       if (!created?.id) {
-        setFooterPlaylistAddState("error");
+        markFooterPlaylistError();
         return;
       }
 
+      dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
+        mode: "playlist",
+        playlistId: created.id,
+        trackId: currentVideo.id,
+      });
+
       const added = await addCurrentTrackToPlaylist(created.id);
       if (!added) {
-        setFooterPlaylistAddState("error");
+        markFooterPlaylistError();
         return;
       }
 
@@ -3745,12 +3904,8 @@ export function PlayerExperience({
       }
 
       markFooterPlaylistAdded();
-      setShowFooterPlaylistMenu(false);
-      setFooterShowExistingList(false);
-
-      dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, { mode: "playlist", playlistId: created.id, trackId: currentVideo.id });
     } catch {
-      setFooterPlaylistAddState("error");
+      markFooterPlaylistError();
     }
   }
 
@@ -3759,7 +3914,10 @@ export function PlayerExperience({
       return;
     }
 
+    setShowFooterPlaylistMenu(false);
+    setFooterShowExistingList(false);
     setFooterPlaylistAddState("saving");
+    triggerPlaylistDropAnimation();
 
     try {
       const createResponse = await fetch("/api/playlists", {
@@ -3774,19 +3932,25 @@ export function PlayerExperience({
       });
 
       if (!createResponse.ok) {
-        setFooterPlaylistAddState("error");
+        markFooterPlaylistError();
         return;
       }
 
       const created = (await createResponse.json().catch(() => null)) as { id?: string } | null;
       if (!created?.id) {
-        setFooterPlaylistAddState("error");
+        markFooterPlaylistError();
         return;
       }
 
+      dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
+        mode: "playlist",
+        playlistId: created.id,
+        trackId: currentVideo.id,
+      });
+
       const added = await addCurrentTrackToPlaylist(created.id);
       if (!added) {
-        setFooterPlaylistAddState("error");
+        markFooterPlaylistError();
         return;
       }
 
@@ -3795,13 +3959,6 @@ export function PlayerExperience({
       }
 
       markFooterPlaylistAdded();
-      setShowFooterPlaylistMenu(false);
-
-      dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
-        mode: "playlist",
-        playlistId: created.id,
-        trackId: currentVideo.id,
-      });
 
       const params = new URLSearchParams(searchParams.toString());
       params.set("v", currentVideo.id);
@@ -3810,7 +3967,7 @@ export function PlayerExperience({
       params.delete("pli");
       router.replace(`${pathname}?${params.toString()}`);
     } catch {
-      setFooterPlaylistAddState("error");
+      markFooterPlaylistError();
     }
   }
 
@@ -4340,7 +4497,8 @@ export function PlayerExperience({
       });
 
       if (response.ok) {
-        window.dispatchEvent(new Event("ytr:favourites-updated"));
+        setIsCurrentVideoFavourited(true);
+        dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
       }
 
       setFavouriteSaveState(response.ok ? "saved" : "error");
@@ -4354,6 +4512,33 @@ export function PlayerExperience({
       setFavouriteSaveState("idle");
       favouriteSaveTimeoutRef.current = null;
     }, 2000);
+  }
+
+  async function handleRemoveFavourite() {
+    if (!isLoggedIn || removeFavouriteState === "removing") {
+      return;
+    }
+
+    setRemoveFavouriteState("removing");
+
+    try {
+      const response = await fetchWithAuthRetry("/api/favourites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId: currentVideo.id, action: "remove" }),
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      setIsCurrentVideoFavourited(false);
+      setShowRemoveFavouriteConfirm(false);
+      setFavouriteSaveState("idle");
+      dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
+    } finally {
+      setRemoveFavouriteState("idle");
+    }
   }
 
   function handleOpenLyrics() {
@@ -4791,6 +4976,25 @@ export function PlayerExperience({
 
       return (
         <>
+          {playlistDropAnimation ? (
+            <div
+              key={playlistDropAnimation.key}
+              className="playlistDropGhost"
+              aria-hidden="true"
+              style={{
+                left: `${playlistDropAnimation.fromX - playlistDropAnimation.fromWidth * 0.5}px`,
+                top: `${playlistDropAnimation.fromY - playlistDropAnimation.fromHeight * 0.5}px`,
+                width: `${playlistDropAnimation.fromWidth}px`,
+                height: `${playlistDropAnimation.fromHeight}px`,
+                "--playlist-drop-dx": `${playlistDropAnimation.deltaX}px`,
+                "--playlist-drop-dy": `${playlistDropAnimation.deltaY}px`,
+                "--playlist-drop-scale": String(playlistDropAnimation.scale),
+              } as CSSProperties}
+            >
+              <img src={playlistDropAnimation.thumbnailUrl} alt="" loading="eager" className="playlistDropGhostImage" />
+            </div>
+          ) : null}
+
           {!suppressUnavailablePlaybackSurface ? (
             <div
               ref={playerFrameRef}
@@ -5445,6 +5649,16 @@ export function PlayerExperience({
             onConfirm={confirmEndedChoiceHide}
           />
 
+          <RemoveFavouriteConfirmModal
+            isOpen={showRemoveFavouriteConfirm}
+            video={showRemoveFavouriteConfirm ? { id: currentVideo.id, title: displayTitle } : null}
+            isPending={removeFavouriteState === "removing"}
+            onCancel={() => setShowRemoveFavouriteConfirm(false)}
+            onConfirm={() => {
+              void handleRemoveFavourite();
+            }}
+          />
+
           {!suppressUnavailablePlaybackSurface ? (
             <div
               className={[
@@ -5499,11 +5713,18 @@ export function PlayerExperience({
                 )}
                 <button
                   type="button"
-                  className="primaryActionIconButton"
-                  aria-label="Add to favourites"
-                  title="Add to favourites"
-                  disabled={favouriteSaveState === "saving" || footerActionsBlocked}
-                  onClick={handleAddFavourite}
+                  className={isCurrentVideoFavourited ? "primaryActionIconButton primaryActionIconButtonFavourited" : "primaryActionIconButton"}
+                  aria-label={isCurrentVideoFavourited ? "Remove from favourites" : "Add to favourites"}
+                  title={isCurrentVideoFavourited ? "Remove from favourites" : "Add to favourites"}
+                  disabled={favouriteSaveState === "saving" || removeFavouriteState === "removing" || footerActionsBlocked}
+                  onClick={() => {
+                    if (isCurrentVideoFavourited) {
+                      setShowRemoveFavouriteConfirm(true);
+                      return;
+                    }
+
+                    void handleAddFavourite();
+                  }}
                 >
                   <span className="navFavouritesGlyph" aria-hidden="true">❤️</span>
                 </button>
@@ -5511,6 +5732,18 @@ export function PlayerExperience({
             )}
             {isLoggedIn && !showEndedChoiceOverlay ? (
               <div className="primaryActionIconButtonWrap primaryActionPlaylistWrap" ref={footerPlaylistMenuRef}>
+                {footerPlaylistAddState === "saving" ? (
+                  <div className="favouriteSavedToast playlistActionToast" role="status" aria-live="polite">
+                    <span className="playlistActionToastSpinner" aria-hidden="true" />
+                    <span>Adding...</span>
+                  </div>
+                ) : null}
+                {footerPlaylistAddState === "added" ? (
+                  <div className="favouriteSavedToast playlistActionToast" role="status" aria-live="polite">Added to playlist</div>
+                ) : null}
+                {footerPlaylistAddState === "error" ? (
+                  <div className="favouriteSavedToast favouriteSavedToastError playlistActionToast" role="status" aria-live="polite">Could not add</div>
+                ) : null}
                 <button
                   type="button"
                   className="primaryActionIconButton primaryActionPlaylistButton"

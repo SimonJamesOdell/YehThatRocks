@@ -22,6 +22,8 @@ const files = {
   videosUnavailableRoute: path.join(ROOT, "apps/web/app/api/videos/unavailable/route.ts"),
   nextTrackDecisionHook: path.join(ROOT, "apps/web/components/use-next-track-decision.ts"),
   temporaryQueueControllerHook: path.join(ROOT, "apps/web/components/use-temporary-queue-controller.ts"),
+  categoriesFilterGrid: path.join(ROOT, "apps/web/components/categories-filter-grid.tsx"),
+  categoriesLoading: path.join(ROOT, "apps/web/app/(shell)/categories/loading.tsx"),
   playerEvents: path.join(ROOT, "apps/web/lib/player-events.ts"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
 };
@@ -105,6 +107,8 @@ function main() {
   const videosUnavailableRouteSource = read(files.videosUnavailableRoute);
   const nextTrackDecisionHookSource = read(files.nextTrackDecisionHook);
   const temporaryQueueControllerHookSource = read(files.temporaryQueueControllerHook);
+  const categoriesFilterGridSource = read(files.categoriesFilterGrid);
+  const categoriesLoadingSource = read(files.categoriesLoading);
   const playerEventsSource = read(files.playerEvents);
   const cssSource = read(files.css);
 
@@ -135,7 +139,7 @@ function main() {
   assertContains(playerExperienceSource, "temporaryQueue?: VideoRecord[];", "Player props accept temporary queue feed", failures);
   assertContains(playerExperienceSource, "temporaryQueue = [],", "Player defaults temporary queue to an empty list", failures);
   assertContains(playerExperienceSource, "import { useNextTrackDecision } from \"@/components/use-next-track-decision\";", "Player delegates next-target orchestration into dedicated hook", failures);
-  assertContains(playerExperienceSource, "import { TEMP_QUEUE_DEQUEUE_EVENT, VIDEO_ENDED_EVENT } from \"@/lib/events-contract\";", "Player consumes centralized typed events module", failures);
+  assertContains(playerExperienceSource, "import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent", "Player consumes centralized typed events module", failures);
   assertContains(playerExperienceSource, "const { resolvePlaylistStepTarget, resolveNextTarget, resolvedNextTarget } = useNextTrackDecision({", "Player invokes extracted next-track decision hook", failures);
   assertContains(nextTrackDecisionHookSource, "export function useNextTrackDecision", "Next-track decision hook exists", failures);
   assertContains(nextTrackDecisionHookSource, "const currentQueueIndex = temporaryQueue.findIndex((video) => video.id === currentVideoId);", "Next-track hook resolves queue index using current video id", failures);
@@ -297,7 +301,7 @@ function main() {
   assertContains(playerExperienceSource, "router.replace(clearedQuery ? `${pathname}?${clearedQuery}` : pathname);", "Admin delete flow updates URL immediately after successful deletion", failures);
   assertContains(playerExperienceSource, "const payload = (await response.json().catch(() => null)) as { error?: string; reason?: string } | null;", "Admin delete flow parses structured API delete failure payload", failures);
   assertContains(playerExperienceSource, "showUnavailableOverlayMessage(payload?.error || \"Could not remove this video from the site.\");", "Admin delete flow surfaces API-provided delete failure error", failures);
-  assertContains(playerExperienceSource, 'window.dispatchEvent(new CustomEvent("ytr:video-catalog-deleted", { detail: { videoId: deletingVideoId } }));', "Main player delete dispatches catalog-deleted event", failures);
+  assertContains(playerExperienceSource, 'dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId: deletingVideoId })', "Main player delete dispatches catalog-deleted event", failures);
   assertContains(adminVideoDeleteButtonSource, 'dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId });', "Admin search-card delete dispatches catalog-deleted event using typed dispatch", failures);
 
   // Dock-hide interaction invariants.
@@ -350,6 +354,21 @@ function main() {
   assertContains(cssSource, "transition: width 520ms cubic-bezier(0.2, 0.92, 0.34, 1), height 520ms cubic-bezier(0.2, 0.92, 0.34, 1);", "Overlay controls animate size transitions during undock", failures);
   assertContains(cssSource, "gap 520ms cubic-bezier(0.2, 0.92, 0.34, 1),", "Overlay bottom animates gap to final geometry", failures);
   assertContains(cssSource, "padding 520ms cubic-bezier(0.2, 0.92, 0.34, 1);", "Overlay bottom animates padding to final geometry", failures);
+  assertContains(cssSource, ".favouritesBlindInner {", "Overlay scroll container keeps a dedicated favouritesBlindInner rule", failures);
+  assertContains(cssSource, "scrollbar-gutter: stable;", "Overlay scroll container reserves scrollbar gutter to avoid header reflow when content loads", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions {", "Undocking footer actions keep a dedicated rule", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions", "position: relative;", "Undocking footer actions use in-flow relative positioning to avoid handoff reflow", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions", "padding: 2px 0;", "Undocking footer actions retain the tuned vertical padding", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions", "visibility: hidden;", "Undocking footer actions stay hidden while preserving geometry", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActionsMainRow {", "Undocking footer main row has dedicated layout override", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActionsMainRow", "display: contents;", "Undocking footer main row uses contents layout to match final geometry", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions button,", "Undocking footer control sizing has dedicated overrides", failures);
+  assertContains(cssSource, "height: 10px;", "Undocking footer control height remains tuned to the current lock-in value", failures);
+  assertContains(cssSource, "min-height: 10px;", "Undocking footer control min-height remains tuned to the current lock-in value", failures);
+  assertContains(cssSource, ".playerChrome:not(.playerChromeDockedDesktop) .primaryActions {", "Non-docked footer geometry has dedicated stable sizing rule", failures);
+  assertCssRuleContains(cssSource, ".playerChrome:not(.playerChromeDockedDesktop) .primaryActions", "min-height: 74px;", "Non-docked footer preserves stable min-height during undock handoff", failures);
+  assertContains(cssSource, ".playerChromeFooterReveal .primaryActions {", "Footer reveal keeps a dedicated animation rule", failures);
+  assertCssRuleNotContains(cssSource, ".playerChromeFooterReveal .primaryActions", "transform:", "Footer reveal animation must avoid transform to prevent vertical flicker", failures);
 
   // Public performance modal invariants.
   assertContains(shellDynamicSource, 'className="performanceQuickLaunch"', "Shell renders top-right performance launcher button", failures);
@@ -423,10 +442,44 @@ function main() {
   assertContains(shellDynamicSource, 'const routeLoadingLabel = pathname.endsWith("/wiki") || pendingOverlayOpenKind === "wiki" ? "Loading wiki" : "Loading video";', "Shell loading fallback derives wiki-aware copy including optimistic wiki opens", failures);
   assertContains(shellDynamicSource, 'const OVERLAY_OPEN_REQUEST_EVENT = "ytr:overlay-open-request";', "Shell defines an optimistic overlay-open request event constant", failures);
   assertContains(shellDynamicSource, 'window.addEventListener(OVERLAY_OPEN_REQUEST_EVENT, handleOverlayOpenRequest);', "Shell listens for optimistic overlay-open requests", failures);
+  assertContains(shellDynamicSource, 'const isCategoriesOverlayPendingOrActive = isCategoriesRoute', "Shell tracks when categories overlay is pending or active", failures);
+  assertContains(shellDynamicSource, 'const isArtistsOverlayPendingOrActive = isArtistsOverlayPath(pathname)', "Shell tracks when artists overlay is pending or active", failures);
+  assertContains(shellDynamicSource, 'isCategoriesOverlayPendingOrActive ? (', "Shell uses categories-specific optimistic fallback while route content resolves", failures);
+  assertContains(shellDynamicSource, ') : isArtistsOverlayPendingOrActive ? (', "Shell uses artists-specific optimistic fallback while route content resolves", failures);
+  assertContains(shellDynamicSource, 'className="categoriesFilterSection" aria-busy="true"', "Shell categories fallback renders full categories header skeleton immediately", failures);
+  assertContains(shellDynamicSource, 'className="categoriesLoaderOverlay" role="status" aria-live="polite" aria-label="Loading categories"', "Shell categories fallback keeps dedicated loader overlay visible", failures);
+  assertContains(shellDynamicSource, 'if (item.href === "/categories" || item.href === "/artists") {', "Shell dispatches optimistic overlay-open request for artists and categories nav buttons", failures);
+  assertContains(shellDynamicSource, 'className="routeContractRow artistLoadingCenter" role="status" aria-live="polite" aria-label="Loading artists"', "Shell artists fallback renders loading animation after overlay opens", failures);
+  assertContains(shellDynamicSource, '<span>Loading artists...</span>', "Shell artists fallback renders loading label", failures);
+  assertNotContains(shellDynamicSource, 'key={overlayRouteKey}', "Shell overlay suspense no longer keys on route key to avoid remount animation replay", failures);
+
+  // Categories open/loading/reveal contract invariants.
+  assertContains(categoriesLoadingSource, 'className="categoriesFilterSection" aria-busy="true"', "Categories route loading screen renders immediate shell section", failures);
+  assertContains(categoriesLoadingSource, 'className="favouritesBlindBar categoriesHeaderBar"', "Categories route loading screen renders header row immediately", failures);
+  assertContains(categoriesLoadingSource, 'className="categoriesFilterInput"', "Categories route loading screen renders filter input immediately", failures);
+  assertContains(categoriesLoadingSource, 'className="playerBootBars" aria-hidden="true"', "Categories route loading screen renders animated loading bars", failures);
+  assertContains(categoriesFilterGridSource, 'const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);', "Categories grid tracks explicit loader visibility state", failures);
+  assertContains(categoriesFilterGridSource, 'const [isLoaderFadingOut, setIsLoaderFadingOut] = useState(false);', "Categories grid tracks loader fade-out phase", failures);
+  assertContains(categoriesFilterGridSource, 'const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0);', "Categories grid initializes reveal state from hydrated cards", failures);
+  assertContains(categoriesFilterGridSource, 'setIsLoaderFadingOut(true);', "Categories grid starts loader fade before showing cards", failures);
+  assertContains(categoriesFilterGridSource, 'setHasRevealedCards(true);', "Categories grid enables card reveal class as part of loader handoff", failures);
+  assertContains(categoriesFilterGridSource, '}, 190);', "Categories grid keeps short overlap window between loader fade and card reveal", failures);
+  assertContains(categoriesFilterGridSource, 'className={`catalogGrid categoriesCatalogGrid categoriesCards${hasRevealedCards ? " categoriesCardsRevealed" : ""}`}', "Categories grid toggles reveal class for cascade animation", failures);
+  assertContains(categoriesFilterGridSource, 'className="catalogCard categoryCard linkedCard categoryCardCascade"', "Categories cards opt into cascade animation class", failures);
+  assertContains(categoriesFilterGridSource, 'style={{ "--category-cascade-index": index } as CSSProperties}', "Categories cards provide per-card cascade index variable", failures);
+  assertContains(categoriesFilterGridSource, 'className={`categoriesLoaderOverlay${isLoaderFadingOut ? " categoriesLoaderOverlayFading" : ""}`}', "Categories loader overlay supports fade-out class state", failures);
+  assertContains(cssSource, '.categoriesLoaderOverlay {', "Categories loader overlay styles are defined", failures);
+  assertContains(cssSource, 'inset: -16px 0 0 0;', "Categories loader overlay closes header-to-loader seam", failures);
+  assertContains(cssSource, '.categoriesLoaderBootLoader .playerBootBars {', "Categories loader bars have dedicated size overrides", failures);
+  assertContains(cssSource, '.categoriesLoaderBootLoader .playerBootBars span {', "Categories loader bar segments have dedicated animation overrides", failures);
+  assertNotContains(cssSource, 'height: 8px !important;', "Categories loader bars must not force fixed bar height that flattens pulse animation", failures);
+  assertContains(cssSource, '.categoriesCards.categoriesCardsRevealed .categoryCardCascade {', "Categories cards use revealed-state animation selector", failures);
+  assertContains(cssSource, 'animation: categoryCardCascadeIn 240ms ease-out both;', "Categories cards animate in with cascade keyframes", failures);
+  assertContains(cssSource, 'animation-delay: calc(var(--category-cascade-index, 0) * 24ms);', "Categories card cascade delay uses index variable", failures);
 
   // Shared-chat same-video replay invariants.
-  assertContains(playerExperienceSource, "const REQUEST_VIDEO_REPLAY_EVENT = \"ytr:request-video-replay\";", "Player defines replay-request event constant", failures);
-  assertContains(playerExperienceSource, "window.addEventListener(REQUEST_VIDEO_REPLAY_EVENT, handleReplayRequest);", "Player subscribes to shared replay requests", failures);
+  assertContains(playerExperienceSource, "listenToAppEvent(EVENT_NAMES.REQUEST_VIDEO_REPLAY", "Player defines replay-request event constant", failures);
+  assertContains(playerExperienceSource, "listenToAppEvent(EVENT_NAMES.REQUEST_VIDEO_REPLAY, handleReplayRequest);", "Player subscribes to shared replay requests", failures);
   assertContains(playerExperienceSource, "if (!requestedVideoId || requestedVideoId !== currentVideoRef.current.id) {", "Player ignores replay requests for non-current videos", failures);
   assertContains(playerExperienceSource, "if (!showEndedChoiceOverlay) {", "Player only handles same-video replay while ended chooser is visible", failures);
   assertContains(playerExperienceSource, "handleEndedChoiceWatchAgain();", "Player reuses watch-again flow for replay requests", failures);

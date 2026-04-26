@@ -530,6 +530,14 @@ const DESKTOP_INTRO_MAX_LOGO_WIDTH_PX = 1128;
 const DESKTOP_INTRO_VIEWPORT_WIDTH_RATIO = 1.128;
 const PUBLIC_PERFORMANCE_POLL_MS = 2_500;
 
+function isCategoriesOverlayPath(pathname: string) {
+  return pathname === "/categories" || pathname.startsWith("/categories/");
+}
+
+function isArtistsOverlayPath(pathname: string) {
+  return pathname === "/artists" || pathname.startsWith("/artists/");
+}
+
 function dedupeVideoList(videos: VideoRecord[]) {
   return videos.filter(
     (video, index, all) => all.findIndex((candidate) => candidate.id === video.id) === index,
@@ -869,6 +877,7 @@ function ShellDynamicInner({
   const [isDockTransitioning, setIsDockTransitioning] = useState(false);
   const [isDockHidden, setIsDockHidden] = useState(false);
   const [pendingOverlayOpenKind, setPendingOverlayOpenKind] = useState<"wiki" | "video" | null>(null);
+  const [pendingOverlayRouteKey, setPendingOverlayRouteKey] = useState<string | null>(null);
   const [startupSelectionRefreshTick, setStartupSelectionRefreshTick] = useState(0);
   const overlayCloseTimeoutRef = useRef<number | null>(null);
   const overlayOpenTimeoutRef = useRef<number | null>(null);
@@ -900,7 +909,7 @@ function ShellDynamicInner({
     handleClearTemporaryQueue,
   } = useTemporaryQueueController(currentVideo.id);
 
-  const isCategoriesRoute = pathname === "/categories" || pathname.startsWith("/categories/");
+  const isCategoriesRoute = isCategoriesOverlayPath(pathname);
   const isArtistsRoute = pathname === "/artists" || pathname.startsWith("/artist/") || pathname.startsWith("/artists/");
   const previousPathname = previousPathnameRef.current;
   const previousWasCategoriesRoute = previousPathname === "/categories" || previousPathname?.startsWith("/categories/") === true;
@@ -1190,14 +1199,12 @@ function ShellDynamicInner({
       : "A";
   const resumeParam = searchParams.get("resume") ?? undefined;
   const overlayRouteKey = (() => {
-    if (disableOverlayDropAnimation) {
-      if (pathname === "/playlists" || pathname.startsWith("/playlists/")) {
-        return "playlists-overlay";
-      }
+    if (pendingOverlayRouteKey) {
+      return pendingOverlayRouteKey;
+    }
 
-      if (pathname === "/categories" || pathname.startsWith("/categories/")) {
-        return "categories-overlay";
-      }
+    if (disableOverlayDropAnimation && isCategoriesRoute) {
+      return "categories-overlay";
     }
 
     const filteredParams = new URLSearchParams();
@@ -1213,6 +1220,12 @@ function ShellDynamicInner({
     const filteredQuery = filteredParams.toString();
     return filteredQuery ? `${pathname}?${filteredQuery}` : pathname;
   })();
+  const isCategoriesOverlayPendingOrActive = isCategoriesRoute
+    || pendingOverlayRouteKey === "categories-overlay"
+    || pendingOverlayRouteKey?.startsWith("/categories") === true;
+  const isArtistsOverlayPendingOrActive = isArtistsOverlayPath(pathname)
+    || pendingOverlayRouteKey === "artists-overlay"
+    || pendingOverlayRouteKey?.startsWith("/artists") === true;
   const routeLoadingLabel = pathname.endsWith("/wiki") || pendingOverlayOpenKind === "wiki" ? "Loading wiki" : "Loading video";
   const routeLoadingMessage = routeLoadingLabel === "Loading video"
     ? "connecting to upstream video provider..."
@@ -1366,47 +1379,48 @@ function ShellDynamicInner({
         window.clearTimeout(undockSettleTimeoutRef.current);
         undockSettleTimeoutRef.current = null;
       }
+      if (typeof window !== "undefined" && footerRevealTimeoutRef.current !== null) {
+        window.clearTimeout(footerRevealTimeoutRef.current);
+        footerRevealTimeoutRef.current = null;
+      }
       setIsUndockSettling(false);
+      setIsFooterRevealActive(false);
       setIsMobileCommunityOpen(false);
       return;
     }
 
     setIsOverlayClosing(false);
 
-    if (shouldRunFooterRevealRef.current) {
-      setIsUndockSettling(true);
-
-      if (typeof window !== "undefined") {
-        if (undockSettleTimeoutRef.current !== null) {
-          window.clearTimeout(undockSettleTimeoutRef.current);
-        }
-
-        undockSettleTimeoutRef.current = window.setTimeout(() => {
-          setIsUndockSettling(false);
-          undockSettleTimeoutRef.current = null;
-        }, UNDOCK_SETTLE_DURATION_MS);
-      }
-    } else {
-      setIsUndockSettling(false);
-    }
-
     if (!shouldRunFooterRevealRef.current) {
+      setIsUndockSettling(false);
       setIsFooterRevealActive(false);
       return;
     }
 
     shouldRunFooterRevealRef.current = false;
-    setIsFooterRevealActive(true);
+    setIsUndockSettling(true);
+    setIsFooterRevealActive(false);
 
     if (typeof window !== "undefined") {
-      if (footerRevealTimeoutRef.current !== null) {
-        window.clearTimeout(footerRevealTimeoutRef.current);
+      if (undockSettleTimeoutRef.current !== null) {
+        window.clearTimeout(undockSettleTimeoutRef.current);
       }
 
-      footerRevealTimeoutRef.current = window.setTimeout(() => {
-        setIsFooterRevealActive(false);
+      if (footerRevealTimeoutRef.current !== null) {
+        window.clearTimeout(footerRevealTimeoutRef.current);
         footerRevealTimeoutRef.current = null;
-      }, FOOTER_REVEAL_DURATION_MS);
+      }
+
+      undockSettleTimeoutRef.current = window.setTimeout(() => {
+        setIsUndockSettling(false);
+        undockSettleTimeoutRef.current = null;
+
+        setIsFooterRevealActive(true);
+        footerRevealTimeoutRef.current = window.setTimeout(() => {
+          setIsFooterRevealActive(false);
+          footerRevealTimeoutRef.current = null;
+        }, FOOTER_REVEAL_DURATION_MS);
+      }, UNDOCK_SETTLE_DURATION_MS);
     }
   }, [shouldShowOverlayPanel]);
 
@@ -1415,6 +1429,14 @@ function ShellDynamicInner({
       setPendingOverlayOpenKind(null);
     }
   }, [pathname, pendingOverlayOpenKind]);
+
+  useEffect(() => {
+    if (!pendingOverlayRouteKey || pathname === "/") {
+      return;
+    }
+
+    setPendingOverlayRouteKey(null);
+  }, [pathname, pendingOverlayRouteKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1436,6 +1458,28 @@ function ShellDynamicInner({
       const kind = openEvent.detail?.kind === "wiki" || openUrl.pathname.endsWith("/wiki") ? "wiki" : "video";
       setPendingOverlayOpenKind(kind);
 
+      const optimisticRouteKey = (() => {
+        if (isCategoriesOverlayPath(openUrl.pathname) && isCategoriesRoute) {
+          return "categories-overlay";
+        }
+
+        const inputParams = new URLSearchParams(openUrl.search);
+        const filteredParams = new URLSearchParams();
+
+        for (const [key, value] of inputParams.entries()) {
+          if (key === "v" || key === "resume" || (openUrl.pathname === "/admin" && key === "tab")) {
+            continue;
+          }
+
+          filteredParams.append(key, value);
+        }
+
+        const filteredQuery = filteredParams.toString();
+        return filteredQuery ? `${openUrl.pathname}?${filteredQuery}` : openUrl.pathname;
+      })();
+
+      setPendingOverlayRouteKey(optimisticRouteKey);
+
       const node = favouritesBlindInnerRef.current;
       if (node) {
         node.scrollTop = 0;
@@ -1448,6 +1492,7 @@ function ShellDynamicInner({
       overlayOpenTimeoutRef.current = window.setTimeout(() => {
         overlayOpenTimeoutRef.current = null;
         setPendingOverlayOpenKind((current) => (pathname === "/" ? null : current));
+        setPendingOverlayRouteKey((current) => (pathname === "/" ? null : current));
       }, 4500);
     };
 
@@ -1458,6 +1503,7 @@ function ShellDynamicInner({
         window.clearTimeout(overlayOpenTimeoutRef.current);
         overlayOpenTimeoutRef.current = null;
       }
+      setPendingOverlayRouteKey(null);
     };
   }, [pathname]);
 
@@ -1498,10 +1544,40 @@ function ShellDynamicInner({
 
       setIsOverlayClosing(true);
       shouldRunFooterRevealRef.current = true;
-      overlayCloseTimeoutRef.current = window.setTimeout(() => {
-        overlayCloseTimeoutRef.current = null;
+      const frame = playerChromeRef.current?.querySelector(".playerFrame, .playerLoadingFallback") as HTMLElement | null;
+      let didNavigate = false;
+      const finishCloseNavigation = () => {
+        if (didNavigate) {
+          return;
+        }
+
+        didNavigate = true;
+        if (overlayCloseTimeoutRef.current !== null) {
+          window.clearTimeout(overlayCloseTimeoutRef.current);
+          overlayCloseTimeoutRef.current = null;
+        }
+
         router.push(nextHref);
-      }, DOCK_MOVE_DURATION_MS);
+      };
+
+      const handleFrameTransitionEnd = (transitionEvent: TransitionEvent) => {
+        if (transitionEvent.propertyName !== "transform") {
+          return;
+        }
+
+        if (frame && transitionEvent.target !== frame) {
+          return;
+        }
+
+        frame?.removeEventListener("transitionend", handleFrameTransitionEnd);
+        finishCloseNavigation();
+      };
+
+      frame?.addEventListener("transitionend", handleFrameTransitionEnd);
+      overlayCloseTimeoutRef.current = window.setTimeout(() => {
+        frame?.removeEventListener("transitionend", handleFrameTransitionEnd);
+        finishCloseNavigation();
+      }, DOCK_MOVE_DURATION_MS + 120);
     };
 
     const handleDockHideRequest = () => {
@@ -3845,6 +3921,16 @@ function ShellDynamicInner({
     return `${href}?${params.toString()}`;
   }
 
+  function requestOverlayOpen(href: string, kind: "video" | "wiki" = "video") {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.dispatchEvent(new CustomEvent(OVERLAY_OPEN_REQUEST_EVENT, {
+      detail: { href, kind },
+    }));
+  }
+
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -4678,12 +4764,18 @@ function ShellDynamicInner({
           <nav className="mainNav" aria-label="Primary">
             {visibleNavItems.map((item) => {
               const isActive = isRouteActive(item.href, pathname);
+              const navHref = getNavHref(item.href);
               return (
                 <Link
                   key={item.href}
-                  href={getNavHref(item.href)}
+                  href={navHref}
                   prefetch={false}
                   className={isActive ? "navLink navLinkActive" : "navLink"}
+                  onClick={() => {
+                    if (item.href === "/categories" || item.href === "/artists") {
+                      requestOverlayOpen(navHref, "video");
+                    }
+                  }}
                 >
                   {item.href === "/categories" ? (
                     <>
@@ -5223,24 +5315,110 @@ function ShellDynamicInner({
 
             {shouldShowOverlayPanel || isAdminOverlayRoute ? (
               <section
-                key={overlayRouteKey}
                 className={overlayPanelClassName}
                 aria-label="Page overlay"
               >
                 <div ref={favouritesBlindInnerRef} className="favouritesBlindInner">
-                  {isOverlayRoute ? children : (
-                    <div className="playerLoadingFallback" role="status" aria-live="polite" aria-label={routeLoadingLabel}>
-                      <div className="playerBootLoader">
-                        <div className="playerBootBars" aria-hidden="true">
-                          <span />
-                          <span />
-                          <span />
-                          <span />
+                  {(() => {
+                    const loadingFallback = (
+                      isCategoriesOverlayPendingOrActive ? (
+                        <div className="categoriesFilterSection" aria-busy="true">
+                          <div className="favouritesBlindBar categoriesHeaderBar">
+                            <div className="categoriesHeaderMain">
+                              <strong>
+                                <span className="categoryHeaderBreadcrumb">☣ Categories</span>
+                              </strong>
+                              <div className="categoriesFilterBar">
+                                <input
+                                  type="text"
+                                  className="categoriesFilterInput"
+                                  placeholder="type to filter..."
+                                  aria-label="Filter categories by prefix"
+                                  autoComplete="off"
+                                  spellCheck={false}
+                                  disabled
+                                />
+                              </div>
+                            </div>
+                            <a
+                              href={`/?v=${encodeURIComponent(currentVideo.id)}&resume=1`}
+                              className="favouritesBlindClose"
+                              data-overlay-close="true"
+                            >
+                              Close
+                            </a>
+                          </div>
+
+                          <div className="categoriesCatalogStage">
+                            <div className="categoriesLoaderOverlay" role="status" aria-live="polite" aria-label="Loading categories">
+                              <div className="playerBootLoader categoriesLoaderBootLoader">
+                                <div className="playerBootBars" aria-hidden="true">
+                                  <span />
+                                  <span />
+                                  <span />
+                                  <span />
+                                </div>
+                                <p>Loading categories...</p>
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                        <p>{routeLoadingMessage}</p>
-                      </div>
-                    </div>
-                  )}
+                      ) : isArtistsOverlayPendingOrActive ? (
+                        <>
+                          <div className="favouritesBlindBar">
+                            <strong>
+                              <span className="categoryHeaderBreadcrumb">🎸 Artists</span>
+                            </strong>
+                            <a
+                              href={`/?v=${encodeURIComponent(currentVideo.id)}&resume=1`}
+                              className="favouritesBlindClose"
+                              data-overlay-close="true"
+                            >
+                              Close
+                            </a>
+                          </div>
+
+                          <div className="routeContractRow artistLoadingCenter" role="status" aria-live="polite" aria-label="Loading artists">
+                            <span className="playerBootBars" aria-hidden="true">
+                              <span />
+                              <span />
+                              <span />
+                              <span />
+                            </span>
+                            <span>Loading artists...</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="playerLoadingFallback" role="status" aria-live="polite" aria-label={routeLoadingLabel}>
+                          <div className="playerBootLoader">
+                            <div className="playerBootBars" aria-hidden="true">
+                              <span />
+                              <span />
+                              <span />
+                              <span />
+                            </div>
+                            <p>{routeLoadingMessage}</p>
+                          </div>
+                        </div>
+                      )
+                    );
+
+                    if (!isOverlayRoute) {
+                      return loadingFallback;
+                    }
+
+                    if (children == null) {
+                      return loadingFallback;
+                    }
+
+                    return (
+                      <Suspense
+                        fallback={loadingFallback}
+                      >
+                        {children}
+                      </Suspense>
+                    );
+                  })()}
                 </div>
               </section>
             ) : null}

@@ -102,7 +102,7 @@ function main() {
   assertNotContains(addButtonSource, "{isPending ? \"...\" : \"+ Playlist\"}", "Add-to-playlist button avoids loading ellipsis label", failures);
   assertNotContains(addButtonSource, "setMessage(", "Add-to-playlist button has no inline status messages", failures);
   assertContains(addButtonSource, "const autoPlaylistName =", "Add-to-playlist auto-creates playlist when none exist", failures);
-  assertContains(addButtonSource, "window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));", "Add-to-playlist dispatches playlist refresh event", failures);
+  assertContains(addButtonSource, "dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null)", "Add-to-playlist dispatches playlist refresh event", failures);
   assertContains(addButtonSource, "const router = useRouter();", "Add-to-playlist button can update route state", failures);
   assertContains(addButtonSource, "const searchParams = useSearchParams();", "Add-to-playlist button reads current route params", failures);
   assertContains(addButtonSource, "params.set(\"pl\", playlistId);", "Auto-created playlist is set active in URL params", failures);
@@ -117,8 +117,8 @@ function main() {
   assertContains(addButtonSource, "Existing playlist then open", "Add-to-playlist menu has 'Existing playlist then open' option", failures);
   assertContains(addButtonSource, "className=\"playlistQuickAddMenuClose\"", "Add-to-playlist menu has close button with correct class", failures);
   assertContains(addButtonSource, "onClick={() => setMenuOpen(false)}", "Add-to-playlist menu close button closes menu", failures);
-  assertContains(addButtonSource, "const PLAYLIST_CHOOSER_STATE_EVENT = \"ytr:playlist-chooser-state\";", "Playlist chooser broadcasts state events", failures);
-  assertContains(addButtonSource, "new CustomEvent(\"ytr:playlist-chooser-state\", {", "Add-to-playlist broadcasts chooser open/close state", failures);
+  assertContains(addButtonSource, "dispatchAppEvent(EVENT_NAMES.PLAYLIST_CHOOSER_STATE", "Playlist chooser broadcasts state events", failures);
+  assertContains(addButtonSource, "dispatchAppEvent(EVENT_NAMES.PLAYLIST_CHOOSER_STATE", "Add-to-playlist broadcasts chooser open/close state", failures);
   assertContains(addButtonSource, "function handleScroll() {", "Add-to-playlist menu has scroll handler", failures);
   assertContains(addButtonSource, "setMenuOpen(false);", "Scroll handler closes menu", failures);
   assertContains(addButtonSource, 'window.addEventListener("scroll", handleScroll, true);', "Menu scroll close listener is registered with capture phase", failures);
@@ -164,7 +164,7 @@ function main() {
   assertContains(shellSource, "const durationMs = 320;", "Playlist rail auto-scroll uses slowed smooth animation duration", failures);
   assertContains(shellSource, "const eased = 1 - ((1 - progress) ** 3);", "Playlist rail auto-scroll uses easing for smooth settle", failures);
   assertContains(shellSource, "window.cancelAnimationFrame(playlistAutoScrollRafRef.current);", "Playlist rail cancels stale auto-scroll animation before starting a new one", failures);
-  assertContains(playerSource, "PLAYLISTS_UPDATED_EVENT = \"ytr:playlists-updated\"", "Player listens to playlist update event", failures);
+  assertContains(playerSource, "listenToAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED", "Player listens to playlist update event", failures);
   assertMatches(playerSource, /\[activePlaylistId, isLoggedIn, playlistRefreshTick\]/, "Player reload effect depends on playlist refresh tick", failures);
 
   // Quick sanity that this invariant script is wired in package scripts.

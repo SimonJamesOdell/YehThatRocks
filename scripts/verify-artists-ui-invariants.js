@@ -65,7 +65,7 @@ function main() {
   assertContains(navSource, "onClick={(event) => onLetterClick(event, letter)}", "Letter nav intercepts link click for smooth in-place change", failures);
 
   // Results must consume letter-change event and fetch letter data directly.
-  assertContains(resultsSource, "window.addEventListener(ARTISTS_LETTER_CHANGE_EVENT", "Results listens for client letter-change event", failures);
+  assertContains(resultsSource, "listenToAppEvent(EVENT_NAMES.ARTISTS_LETTER_CHANGE", "Results listens for client letter-change event", failures);
   assertContains(resultsSource, "fetch(`/api/artists?${params.toString()}`", "Results fetches artists API directly on letter switch", failures);
   assertContains(resultsSource, "setCurrentLetter(nextLetter)", "Results swaps active letter state in place", failures);
 
