@@ -13,6 +13,8 @@ const files = {
   playerExperience: path.join(ROOT, "apps/web/components/player-experience.tsx"),
   clientAuthFetch: path.join(ROOT, "apps/web/lib/client-auth-fetch.ts"),
   favouritesRoute: path.join(ROOT, "apps/web/app/api/favourites/route.ts"),
+  userProfilePage: path.join(ROOT, "apps/web/app/(shell)/u/[screenName]/page.tsx"),
+  userProfilePanel: path.join(ROOT, "apps/web/components/user-profile-panel.tsx"),
   apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
   globalCss: path.join(ROOT, "apps/web/app/globals.css"),
 };
@@ -30,6 +32,12 @@ function assertContains(source, needle, description, failures) {
   }
 }
 
+function assertNotContains(source, needle, description, failures) {
+  if (source.includes(needle)) {
+    failures.push(`${description} (unexpected: ${needle})`);
+  }
+}
+
 function main() {
   const failures = [];
 
@@ -40,6 +48,8 @@ function main() {
   const playerExperienceSource = read(files.playerExperience);
   const clientAuthFetchSource = read(files.clientAuthFetch);
   const favouritesRouteSource = read(files.favouritesRoute);
+  const userProfilePageSource = read(files.userProfilePage);
+  const userProfilePanelSource = read(files.userProfilePanel);
   const apiSchemasSource = read(files.apiSchemas);
   const globalCssSource = read(files.globalCss);
 
@@ -50,6 +60,8 @@ function main() {
   assertContains(favouritesPageSource, "<FavouritesGrid", "Favourites page renders FavouritesGrid component", failures);
   assertContains(favouritesPageSource, "isAuthenticated={hasAccessToken}", "Favourites page passes auth state to FavouritesGrid", failures);
   assertContains(favouritesPageSource, "initialFavourites={favourites}", "Favourites page passes server-loaded favourites to FavouritesGrid", failures);
+  assertNotContains(favouritesPageSource, "getSeenVideoIdsForUser", "Own favourites page does not fetch seen ids", failures);
+  assertNotContains(favouritesPageSource, "seenVideoIds={", "Own favourites page does not pass seen ids into favourites grid", failures);
 
   // --- FavouritesGrid: client-side refresh and event handling ---
   assertContains(favouritesGridSource, "ytr:favourites-updated", "FavouritesGrid listens for ytr:favourites-updated refresh event", failures);
@@ -63,6 +75,9 @@ function main() {
   assertContains(favouritesGridSource, "action: \"remove\"", "FavouritesGrid sends remove action to favourites API", failures);
   assertContains(favouritesGridSource, 'import { ArtistWikiLink } from "@/components/artist-wiki-link";', "FavouritesGrid imports artist wiki link helper", failures);
   assertContains(favouritesGridSource, '<ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">', "FavouritesGrid wraps artist names with wiki links", failures);
+  assertContains(favouritesGridSource, "relatedSourceBadge relatedSourceBadgeTop100", "FavouritesGrid renders Top100 source badges", failures);
+  assertContains(favouritesGridSource, "relatedSourceBadge relatedSourceBadgeNew", "FavouritesGrid renders New source badges", failures);
+  assertNotContains(favouritesGridSource, "videoSeenBadge", "Own favourites grid does not render seen badges", failures);
 
   // --- FavouritesGrid: auth-gated error handling ---
   assertContains(favouritesGridSource, "response.status === 401 || response.status === 403", "FavouritesGrid handles 401/403 from favourites API gracefully", failures);
@@ -102,6 +117,17 @@ function main() {
   assertContains(favouritesRouteSource, "verifySameOrigin(request)", "Favourites POST route enforces same-origin CSRF check", failures);
   assertContains(favouritesRouteSource, "favouriteMutationSchema.safeParse(bodyResult.data)", "Favourites POST validates body against favouriteMutationSchema", failures);
   assertContains(favouritesRouteSource, "updateFavourite(parsed.data.videoId, parsed.data.action, authResult.auth.userId)", "Favourites POST delegates to updateFavourite with correct arguments", failures);
+
+  // --- Public user profile favourites/playlist-detail parity ---
+  assertContains(userProfilePageSource, "getSeenVideoIdsForUser(viewer.id)", "User profile page resolves viewer seen ids for public listings", failures);
+  assertContains(userProfilePageSource, "seenVideoIds={Array.from(seenVideoIds)}", "User profile page passes seen ids into panel", failures);
+  assertContains(userProfilePageSource, "isAuthenticated={hasAccessToken}", "User profile page passes auth state into panel", failures);
+  assertContains(userProfilePanelSource, "seenVideoIds?: string[];", "User profile panel accepts seen ids for listing badges", failures);
+  assertContains(userProfilePanelSource, "tab === \"playlist-detail\"", "User profile panel supports playlist-detail video listings", failures);
+  assertContains(userProfilePanelSource, "relatedSourceBadge relatedSourceBadgeTop100", "User profile panel renders Top100 source badges", failures);
+  assertContains(userProfilePanelSource, "relatedSourceBadge relatedSourceBadgeNew", "User profile panel renders New source badges", failures);
+  assertContains(userProfilePanelSource, "className=\"categoryVideoFavouriteButton\"", "User profile panel renders circular favourites controls on listing cards", failures);
+  assertContains(userProfilePanelSource, "<SearchResultFavouriteButton", "User profile panel renders add-to-favourites controls", failures);
 
   // --- Schema: favouriteMutationSchema ---
   assertContains(apiSchemasSource, "export const favouriteMutationSchema", "api-schemas exports favouriteMutationSchema", failures);

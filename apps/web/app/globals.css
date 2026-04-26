@@ -3801,6 +3801,79 @@ h1 {
   box-shadow: none;
 }
 
+.hideVideoConfirmBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+}
+
+.hideVideoConfirmModal {
+  width: min(92vw, 580px);
+  gap: 16px;
+}
+
+.hideVideoConfirmHeader {
+  justify-content: center;
+}
+
+.hideVideoConfirmTitle {
+  font-family: var(--font-display), cursive;
+  font-size: clamp(1.45rem, 3vw, 2.05rem);
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.hideVideoConfirmPreview {
+  display: grid;
+  grid-template-columns: minmax(152px, 176px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
+}
+
+.hideVideoConfirmThumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  display: block;
+  object-fit: cover;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+}
+
+.hideVideoConfirmPreviewCopy {
+  display: grid;
+  gap: 6px;
+}
+
+.hideVideoConfirmEyebrow {
+  margin: 0;
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 205, 193, 0.82);
+}
+
+.hideVideoConfirmVideoTitle {
+  margin: 0;
+  color: #fff7f3;
+  font-family: var(--font-display), cursive;
+  font-size: 1.16rem;
+  line-height: 1.22;
+}
+
+.hideVideoConfirmMessage {
+  margin: 0;
+  line-height: 1.55;
+  color: rgba(255, 225, 216, 0.92);
+}
+
+.hideVideoConfirmActions {
+  justify-content: center;
+}
+
 @media (max-width: 680px) {
   .shareModalGrid {
     grid-template-columns: 1fr;
@@ -3811,6 +3884,10 @@ h1 {
   }
 
   .adminVideoEditGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .hideVideoConfirmPreview {
     grid-template-columns: 1fr;
   }
 }
@@ -4397,6 +4474,38 @@ h1 {
   z-index: 3;
   opacity: 1;
   pointer-events: auto;
+}
+
+.endedChoiceCardActions {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.endedChoiceCardFavouriteBtn {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 188, 170, 0.5);
+  background: linear-gradient(180deg, rgba(138, 18, 20, 0.95), rgba(55, 6, 8, 0.95));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.endedChoiceCardFavouriteBtn .navFavouritesGlyph {
+  font-size: 0.88rem;
+}
+
+.endedChoiceCardFavouriteBtn:hover:not(:disabled) {
+  filter: brightness(1.1);
 }
 
 .endedChoiceCardPlaylistBtn {
@@ -5844,6 +5953,40 @@ h1 {
   z-index: 3;
 }
 
+.relatedCardFavouriteAction {
+  position: absolute;
+  bottom: 8px;
+  right: 40px;
+  z-index: 3;
+}
+
+.relatedCardFavouriteButton {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 188, 170, 0.5);
+  background: linear-gradient(180deg, rgba(138, 18, 20, 0.95), rgba(55, 6, 8, 0.95));
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.relatedCardFavouriteButton .navFavouritesGlyph {
+  font-size: 0.88rem;
+}
+
+.relatedCardFavouriteButton:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
 .relatedCardSlot > .playlistQuickAddWrap .relatedCardPlaylistAdd {
   position: static;
 }
@@ -6237,6 +6380,9 @@ h1 {
   bottom: 8px;
   margin: 0;
   z-index: 32;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .top100CardAction .playlistQuickAddWrap {
@@ -6298,6 +6444,14 @@ h1 {
 .trackCard.leaderboardCard.top100CardNewPersistentActions .top100CardFlagButton {
   top: 8px;
   left: auto;
+  right: 40px;
+  bottom: auto;
+  opacity: 1;
+}
+
+.trackCard.leaderboardCard.top100CardNewPersistentActions .top100CardHideButton {
+  top: 8px;
+  left: auto;
   right: 8px;
   bottom: auto;
   opacity: 1;
@@ -6326,7 +6480,45 @@ h1 {
   transition: opacity 160ms ease;
 }
 
+.trackCard.leaderboardCard .top100CardFavouriteButton {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(138, 18, 20, 0.95), rgba(55, 6, 8, 0.95));
+  border: 1px solid rgba(255, 188, 170, 0.5);
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  z-index: 4;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.trackCard.leaderboardCard .top100CardFavouriteButton .navFavouritesGlyph {
+  font-size: 0.88rem;
+}
+
 .trackCard.leaderboardCard.top100CardNewPersistentActions .top100CardPlaylistAddButton {
+  opacity: 1;
+}
+
+.trackCard.leaderboardCard.top100CardNewPersistentActions .top100CardFavouriteButton {
+  opacity: 1;
+}
+
+.trackCard.leaderboardCard.top100CardAlwaysVisibleControls .top100CardHideButton,
+.trackCard.leaderboardCard.top100CardAlwaysVisibleControls .top100CardFlagButton,
+.trackCard.leaderboardCard.top100CardAlwaysVisibleControls .top100CardPlaylistAddButton,
+.trackCard.leaderboardCard.top100CardAlwaysVisibleControls .top100CardFavouriteButton {
   opacity: 1;
 }
 
@@ -6336,6 +6528,8 @@ h1 {
 .top100CardCornerActions:focus-within .top100CardFlagButton,
 .top100CardCornerActions:hover .top100CardPlaylistAddButton,
 .top100CardCornerActions:focus-within .top100CardPlaylistAddButton,
+.top100CardCornerActions:hover .top100CardFavouriteButton,
+.top100CardCornerActions:focus-within .top100CardFavouriteButton,
 .top100CardCornerActions:hover .searchResultBlockButton,
 .top100CardCornerActions:focus-within .searchResultBlockButton {
   opacity: 1;
@@ -6349,13 +6543,18 @@ h1 {
   filter: brightness(1.1);
 }
 
+.top100CardFavouriteButton:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
 .top100CardFlagButton:hover:not(:disabled) {
   filter: brightness(1.16);
 }
 
 .top100CardHideButton:disabled,
 .top100CardFlagButton:disabled,
-.top100CardPlaylistAddButton:disabled {
+.top100CardPlaylistAddButton:disabled,
+.top100CardFavouriteButton:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -6399,14 +6598,67 @@ h1 {
   appearance: none;
   border: 1px solid rgba(255, 188, 170, 0.42);
   color: #fff;
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
   min-width: 44px;
   justify-content: center;
   transition: filter 160ms ease, opacity 160ms ease;
 }
 
+.trackCard.leaderboardCard .searchResultFavouriteBadgeButton.top100CardFavouriteButton {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  gap: 0;
+  border-radius: 999px;
+}
+
+.searchResultFavouriteBadgeButton.relatedCardFavouriteButton,
+.searchResultFavouriteBadgeButton.endedChoiceCardFavouriteBtn {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  gap: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .searchResultFavouriteBadgeButton:hover:not(:disabled) {
   filter: brightness(1.12);
+}
+
+.searchResultFavouriteBadgeButtonStateidle,
+.searchResultFavouriteBadgeButtonStatesaving,
+.searchResultFavouriteBadgeButtonStatesaved,
+.searchResultFavouriteBadgeButtonStateerror {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.searchResultFavouriteBadgeButtonStatesaving {
+  filter: saturate(0.82);
+}
+
+.searchResultFavouriteBadgeButtonStatesaved {
+  border-color: rgba(255, 214, 153, 0.82);
+  background: linear-gradient(180deg, rgba(168, 40, 46, 0.96), rgba(84, 14, 18, 0.98));
+  box-shadow: 0 0 0 1px rgba(255, 214, 153, 0.22), 0 8px 18px rgba(62, 6, 9, 0.34);
+}
+
+.searchResultFavouriteBadgeButtonStatesaved .navFavouritesGlyph {
+  transform: scale(1.04);
+}
+
+.searchResultFavouriteBadgeButtonStateerror {
+  border-color: rgba(255, 170, 170, 0.72);
 }
 
 .searchResultFavouriteBadgeButton:disabled {
@@ -6415,8 +6667,10 @@ h1 {
 }
 
 .searchResultFavouriteBadgeButton .navFavouritesGlyph {
-  margin-right: 0;
-  font-size: 1.06rem;
+  display: block;
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1;
 }
 
 .searchResultsHideSeen .top100CardSeen {
@@ -7112,6 +7366,20 @@ h1 {
   background: rgba(14, 74, 46, 0.46);
 }
 
+.watchNextFavouriteBadgeOverlay {
+  left: 3px;
+}
+
+.top100FavouriteBadgeOverlay {
+  left: 3px;
+}
+
+.endedChoiceFavouriteBadgeOverlay {
+  left: 3px;
+  bottom: -2px;
+  font-size: 2.4rem;
+}
+
 .leaderboardMeta {
   min-width: 0;
 }
@@ -7292,7 +7560,7 @@ h1 {
 }
 
 .artistsCatalogGrid {
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   justify-content: start;
 }
 
@@ -7882,6 +8150,10 @@ h1 {
   display: inline-flex;
 }
 
+.categoryVideoCardCornerActions .categoryVideoActions {
+  gap: 8px;
+}
+
 .categoryVideoHideButton {
   position: absolute;
   top: 8px;
@@ -7929,11 +8201,43 @@ h1 {
   transition: opacity 160ms ease;
 }
 
+.categoryVideoFavouriteButton {
+  min-width: 24px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  gap: 0;
+  border: 1px solid rgba(255, 188, 170, 0.42);
+  background: linear-gradient(180deg, rgba(118, 16, 18, 0.9), rgba(45, 6, 8, 0.94));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  z-index: 4;
+  cursor: pointer;
+  opacity: 1;
+  transition: filter 160ms ease, opacity 160ms ease;
+}
+
+.categoryVideoFavouriteButton .navFavouritesGlyph {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1;
+}
+
 .categoryVideoCardCornerActions:hover .categoryVideoHideButton,
 .categoryVideoCardCornerActions:focus-within .categoryVideoHideButton,
+.categoryVideoCardCornerActions:hover .categoryVideoFavouriteButton,
+.categoryVideoCardCornerActions:focus-within .categoryVideoFavouriteButton,
 .categoryVideoCardCornerActions:hover .categoryVideoPlaylistAddButton,
 .categoryVideoCardCornerActions:focus-within .categoryVideoPlaylistAddButton {
   opacity: 1;
+}
+
+.categoryVideoFavouriteButton:hover:not(:disabled) {
+  filter: brightness(1.12);
 }
 
 .categoryVideoHideButton:hover:not(:disabled) {
@@ -7945,6 +8249,7 @@ h1 {
 }
 
 .categoryVideoHideButton:disabled,
+.categoryVideoFavouriteButton:disabled,
 .categoryVideoPlaylistAddButton:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -7986,6 +8291,100 @@ h1 {
   box-shadow: var(--glow);
 }
 
+.artistVideoSourceBadges {
+  min-height: 20px;
+}
+
+.artistVideoFavouriteBadgeOverlay {
+  left: 3px;
+}
+
+.artistVideoFavouriteBadgeButton {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  position: absolute;
+}
+
+.trackCard.leaderboardCard .artistVideoFavouriteBadgeButton {
+  position: absolute;
+  left: 3px;
+  bottom: -4px;
+  display: inline-block;
+  font-size: 2.7rem;
+  min-width: 0;
+  min-height: 0;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #d83a3a;
+  text-shadow:
+    -1px -1px 0 #fff,
+    1px -1px 0 #fff,
+    -1px 1px 0 #fff,
+    1px 1px 0 #fff,
+    0 1px 0 rgba(0, 0, 0, 0.45),
+    0 0 8px rgba(216, 58, 58, 0.35);
+  line-height: 1;
+}
+
+.artistVideoFavouriteBadgeHeart {
+  display: inline-block;
+  line-height: 1;
+}
+
+.artistVideoFavouriteBadgeRemoveGlyph {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(255, 238, 232, 0.96);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.52);
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.artistVideoFavouriteBadgeButton:hover,
+.artistVideoFavouriteBadgeButton:focus-visible {
+  width: auto;
+  height: auto;
+  display: inline-block;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.artistVideoFavouriteBadgeButton:hover .artistVideoFavouriteBadgeHeart,
+.artistVideoFavouriteBadgeButton:focus-visible .artistVideoFavouriteBadgeHeart {
+  color: #000;
+  opacity: 1;
+  transform: scale(1);
+}
+
+.artistVideoFavouriteBadgeButton:hover .artistVideoFavouriteBadgeRemoveGlyph,
+.artistVideoFavouriteBadgeButton:focus-visible .artistVideoFavouriteBadgeRemoveGlyph {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.artistVideoFavouriteBadgeButton:disabled {
+  cursor: wait;
+  opacity: 0.8;
+}
+
 .categoryVideoTitle {
   margin: 0;
   font-size: 0.94rem;
@@ -8021,6 +8420,14 @@ h1 {
 
 .artistResultCard h3 {
   line-height: 1.1;
+}
+
+.artistResultName {
+  font-family: var(--font-display), cursive;
+}
+
+.artistResultGenre {
+  line-height: 1.2;
 }
 
 .artistResultCard p {

@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
+import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 
 type Top100VideoLinkProps = {
   track: {
@@ -80,6 +82,9 @@ export function Top100VideoLink({
   const hasWarmedRef = useRef(false);
   const clickFlashTimeoutRef = useRef<number | null>(null);
   const [isClickFlashing, setIsClickFlashing] = useState(false);
+  const [isFavourited, setIsFavourited] = useState(Number(track.favourited ?? 0) > 0);
+  const [isRemovingFavourite, setIsRemovingFavourite] = useState(false);
+  const hideButtonContextLabel = rowVariant === "new" ? "New" : "Top 100";
 
   const videoHref = useMemo(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -96,6 +101,10 @@ export function Top100VideoLink({
       }
     };
   }, []);
+
+  useEffect(() => {
+    setIsFavourited(Number(track.favourited ?? 0) > 0);
+  }, [track.id, track.favourited]);
 
   const triggerClickFlash = useCallback(() => {
     setIsClickFlashing(true);
@@ -153,9 +162,37 @@ export function Top100VideoLink({
     router.push(videoHref);
   }, [router, videoHref, warmSelection]);
 
+  const handleRemoveFavourite = useCallback(async (event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!isAuthenticated || isRemovingFavourite) {
+      return;
+    }
+
+    setIsRemovingFavourite(true);
+
+    try {
+      const response = await fetchWithAuthRetry("/api/favourites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId: track.id, action: "remove" }),
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      setIsFavourited(false);
+      window.dispatchEvent(new Event("ytr:favourites-updated"));
+    } finally {
+      setIsRemovingFavourite(false);
+    }
+  }, [isAuthenticated, isRemovingFavourite, track.id]);
+
   return (
     <article
-      className={`trackCard leaderboardCard top100CardWithPlaylistAction${isSeen ? " top100CardSeen" : ""}${isSeen && rowVariant === "new" ? " top100CardSeenNew" : ""}${isClickFlashing ? " top100CardClickFlash" : ""}${isAuthenticated ? " top100CardCornerActions" : ""}${rowVariant === "new" ? " top100CardNewPersistentActions" : ""}`}
+      className={`trackCard leaderboardCard top100CardWithPlaylistAction${isSeen ? " top100CardSeen" : ""}${isSeen && rowVariant === "new" ? " top100CardSeenNew" : ""}${isClickFlashing ? " top100CardClickFlash" : ""}${isAuthenticated ? " top100CardCornerActions" : ""}${rowVariant === "new" ? " top100CardNewPersistentActions" : ""}${rowVariant === "default" ? " top100CardAlwaysVisibleControls" : ""}`}
       role="link"
       tabIndex={0}
       aria-label={`Play ${track.title}`}
@@ -184,8 +221,8 @@ export function Top100VideoLink({
         <button
           type="button"
           className="top100CardHideButton"
-          aria-label={`Hide ${track.title} from Top 100`}
-          title="Hide from Top 100"
+          aria-label={`Hide ${track.title} from ${hideButtonContextLabel}`}
+          title={`Hide from ${hideButtonContextLabel}`}
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -231,7 +268,24 @@ export function Top100VideoLink({
             fetchPriority="auto"
             reportReason="thumbnail-load-error:top100"
           />
-          {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay">Seen</span> : null}
+          {isSeen && !isFavourited ? <span className="videoSeenBadge videoSeenBadgeOverlay">Seen</span> : null}
+          {isFavourited ? (
+            <button
+              type="button"
+              className="relatedFavouriteBadgeOverlay top100FavouriteBadgeOverlay artistVideoFavouriteBadgeButton"
+              aria-label={`Remove ${track.title} from favourites`}
+              title="Remove from favourites"
+              disabled={isRemovingFavourite}
+              onClick={handleRemoveFavourite}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+            >
+              <span className="artistVideoFavouriteBadgeHeart" aria-hidden="true">♥</span>
+              <span className="artistVideoFavouriteBadgeRemoveGlyph" aria-hidden="true">x</span>
+            </button>
+          ) : null}
         </div>
         <div className="leaderboardMeta">
           <h3>{track.title}</h3>
@@ -244,6 +298,20 @@ export function Top100VideoLink({
         </div>
       </Link>
       <div className="top100CardAction">
+        {!isFavourited ? (
+          <div
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <SearchResultFavouriteButton
+              videoId={track.id}
+              title={track.title}
+              isAuthenticated={isAuthenticated}
+              className="top100CardFavouriteButton"
+              onSaved={() => setIsFavourited(true)}
+            />
+          </div>
+        ) : null}
         <div
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}

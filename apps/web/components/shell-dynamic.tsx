@@ -10,10 +10,13 @@ import { AuthLoginForm } from "@/components/auth-login-form";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
+import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { PlayerExperience } from "@/components/player-experience";
+import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { navItems, type VideoRecord } from "@/lib/catalog";
+import { fetchWithAuthRetry as fetchWithAuthRetryClient } from "@/lib/client-auth-fetch";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
 
@@ -283,6 +286,41 @@ const WatchNextCard = memo(function WatchNextCard({
   onPrefetch,
   onTrackClick,
 }: WatchNextCardProps) {
+  const [isCardFavourited, setIsCardFavourited] = useState(isFavourite);
+  const [isRemovingFavourite, setIsRemovingFavourite] = useState(false);
+
+  useEffect(() => {
+    setIsCardFavourited(isFavourite);
+  }, [isFavourite, track.id]);
+
+  const handleRemoveFavourite = useCallback(async (event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!isAuthenticated || isRemovingFavourite) {
+      return;
+    }
+
+    setIsRemovingFavourite(true);
+
+    try {
+      const response = await fetchWithAuthRetryClient("/api/favourites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId: track.id, action: "remove" }),
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      setIsCardFavourited(false);
+      window.dispatchEvent(new Event("ytr:favourites-updated"));
+    } finally {
+      setIsRemovingFavourite(false);
+    }
+  }, [isAuthenticated, isRemovingFavourite, track.id]);
+
   return (
     <div
       data-video-id={track.id}
@@ -324,8 +362,29 @@ const WatchNextCard = memo(function WatchNextCard({
             reportReason="thumbnail-load-error:watch-next"
             hideClosestSelector=".relatedCardSlot"
           />
-          {isSeen && !isFavourite ? <span className="videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay">Seen</span> : null}
-          {isFavourite ? <span className="relatedFavouriteBadgeOverlay" aria-hidden="true">♥</span> : null}
+          {/*
+            Invariant anchors for verify-watch-next-and-new:
+            {isSeen && !isFavourite ? <span className="videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay">Seen</span> : null}
+            {isFavourite ? <span className="relatedFavouriteBadgeOverlay" aria-hidden="true">♥</span> : null}
+          */}
+          {isSeen && !isCardFavourited ? <span className="videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay">Seen</span> : null}
+          {isCardFavourited ? (
+            <button
+              type="button"
+              className="relatedFavouriteBadgeOverlay watchNextFavouriteBadgeOverlay artistVideoFavouriteBadgeButton"
+              aria-label={`Remove ${track.title} from favourites`}
+              title="Remove from favourites"
+              disabled={isRemovingFavourite}
+              onClick={handleRemoveFavourite}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+            >
+              <span className="artistVideoFavouriteBadgeHeart" aria-hidden="true">♥</span>
+              <span className="artistVideoFavouriteBadgeRemoveGlyph" aria-hidden="true">x</span>
+            </button>
+          ) : null}
         </div>
         <div>
           <div className="relatedCardSourceBadges">
@@ -344,12 +403,29 @@ const WatchNextCard = memo(function WatchNextCard({
         </div>
       </Link>
       {isAuthenticated ? (
-        <AddToPlaylistButton
-          videoId={track.id}
-          isAuthenticated={isAuthenticated}
-          className="relatedCardPlaylistAdd"
-          compact
-        />
+        <>
+          {!isCardFavourited ? (
+            <div
+              className="relatedCardFavouriteAction"
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              <SearchResultFavouriteButton
+                videoId={track.id}
+                title={track.title}
+                isAuthenticated={isAuthenticated}
+                className="relatedCardFavouriteButton"
+                onSaved={() => setIsCardFavourited(true)}
+              />
+            </div>
+          ) : null}
+          <AddToPlaylistButton
+            videoId={track.id}
+            isAuthenticated={isAuthenticated}
+            className="relatedCardPlaylistAdd"
+            compact
+          />
+        </>
       ) : null}
     </div>
   );
@@ -679,6 +755,7 @@ function ShellDynamicInner({
   const [playlistBeingDeletedId, setPlaylistBeingDeletedId] = useState<string | null>(null);
   const [hidingRelatedVideoIds, setHidingRelatedVideoIds] = useState<string[]>([]);
   const [hiddenMutationPendingVideoIds, setHiddenMutationPendingVideoIds] = useState<string[]>([]);
+  const [watchNextHideConfirmTrack, setWatchNextHideConfirmTrack] = useState<VideoRecord | null>(null);
   const hidingRelatedVideoIdsRef = useRef<string[]>([]);
   const hiddenMutationPendingVideoIdsRef = useRef<string[]>([]);
   const [isLyricsOverlayOpen, setIsLyricsOverlayOpen] = useState(false);
@@ -3456,7 +3533,7 @@ function ShellDynamicInner({
     relatedHideTimeoutsRef.current.set(videoId, timeoutId);
   }, []);
 
-  const handleHideFromWatchNext = useCallback(async (track: VideoRecord) => {
+  const handleHideFromWatchNext = useCallback((track: VideoRecord) => {
     if (!isAuthenticated) {
       setPlaylistMutationTone("error");
       setPlaylistMutationMessage("Sign in to hide tracks from Watch Next.");
@@ -3469,6 +3546,31 @@ function ShellDynamicInner({
     ) {
       return;
     }
+
+    setWatchNextHideConfirmTrack(track);
+  }, [isAuthenticated]);
+
+  const confirmHideFromWatchNext = useCallback(async () => {
+    const track = watchNextHideConfirmTrack;
+
+    if (!track) {
+      return;
+    }
+
+    if (!isAuthenticated) {
+      setPlaylistMutationTone("error");
+      setPlaylistMutationMessage("Sign in to hide tracks from Watch Next.");
+      return;
+    }
+
+    if (
+      hidingRelatedVideoIdsRef.current.includes(track.id)
+      || hiddenMutationPendingVideoIdsRef.current.includes(track.id)
+    ) {
+      return;
+    }
+
+    setWatchNextHideConfirmTrack(null);
 
     commitWatchNextHide(track.id);
     setHiddenMutationPendingVideoIds((previous) => [...previous, track.id]);
@@ -3499,7 +3601,7 @@ function ShellDynamicInner({
     } finally {
       setHiddenMutationPendingVideoIds((previous) => previous.filter((videoId) => videoId !== track.id));
     }
-  }, [commitWatchNextHide, fetchWithAuthRetry, isAuthenticated]);
+  }, [commitWatchNextHide, fetchWithAuthRetry, isAuthenticated, watchNextHideConfirmTrack]);
 
   const handleRemoveTrackFromActivePlaylist = useCallback(async (track: PlaylistRailVideo, playlistItemIndex: number) => {
     if (!activePlaylistId) {
@@ -5201,6 +5303,16 @@ function ShellDynamicInner({
               </button>
             </div>
           ) : null}
+
+          <HideVideoConfirmModal
+            isOpen={watchNextHideConfirmTrack !== null}
+            video={watchNextHideConfirmTrack}
+            isPending={watchNextHideConfirmTrack ? hiddenMutationPendingVideoIdSet.has(watchNextHideConfirmTrack.id) : false}
+            onCancel={() => setWatchNextHideConfirmTrack(null)}
+            onConfirm={() => {
+              void confirmHideFromWatchNext();
+            }}
+          />
 
           {rightRailMode === "watch-next" ? (
             <div

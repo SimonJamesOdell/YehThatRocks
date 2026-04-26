@@ -77,6 +77,10 @@ function main() {
   assertContains(top100LinkSource, "onClick={warmSelection}", "Top 100 warmed link warms on click", failures);
   assertContains(top100LinkSource, "prefetch={false}", "Top 100 warmed link disables Next.js link prefetch fan-out", failures);
   assertContains(top100LinkSource, "TOP100_WARM_LIMIT_PER_WINDOW", "Top 100 warmed link caps warm requests per time window", failures);
+  assertContains(top100LinkSource, "${rowVariant === \"default\" ? \" top100CardAlwaysVisibleControls\" : \"\"}", "Top 100 default rows always opt into always-visible controls class", failures);
+  assertContains(top100LinkSource, "className=\"top100CardFlagButton\"", "Top 100 rows render a dedicated quality-flag button", failures);
+  assertContains(top100LinkSource, "className=\"top100CardHideButton\"", "Top 100 rows render a dedicated hide button", failures);
+  assertContains(top100LinkSource, "className=\"top100CardFavouriteButton\"", "Top 100 rows render circular add-to-favourites control", failures);
   assertContains(top100LinkSource, 'import { ArtistWikiLink } from "@/components/artist-wiki-link";', "Top 100 warmed link imports artist wiki link helper", failures);
   assertContains(top100LinkSource, '<ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">', "Top 100 warmed link wraps artist name with wiki link", failures);
 
@@ -119,6 +123,15 @@ function main() {
   assertContains(globalCssSource, ".trackCard.leaderboardCard:hover {", "Leaderboard card rows turn red on hover", failures);
   assertContains(globalCssSource, "rgba(170, 30, 17", "Leaderboard hover uses the standard red gradient", failures);
   assertContains(globalCssSource, ".artistInlineLink", "Leaderboard rows reuse inline artist wiki link styling", failures);
+  assertContains(globalCssSource, ".trackCard.leaderboardCard .top100CardHideButton {", "Top 100 hide button has dedicated card styles", failures);
+  assertContains(globalCssSource, ".trackCard.leaderboardCard .top100CardFlagButton {", "Top 100 flag button has dedicated card styles", failures);
+  assertContains(globalCssSource, "right: 40px;", "Top 100 flag button sits left of the hide button", failures);
+  assertContains(globalCssSource, ".trackCard.leaderboardCard.top100CardAlwaysVisibleControls .top100CardHideButton,", "Top 100 always-visible controls include hide button", failures);
+  assertContains(globalCssSource, ".trackCard.leaderboardCard.top100CardAlwaysVisibleControls .top100CardFlagButton,", "Top 100 always-visible controls include flag button", failures);
+  assertContains(globalCssSource, ".trackCard.leaderboardCard.top100CardAlwaysVisibleControls .top100CardFavouriteButton {", "Top 100 always-visible controls include favourite button", failures);
+  assertContains(globalCssSource, ".trackCard.leaderboardCard .top100CardFavouriteButton {", "Top 100 favourite button has dedicated card styles", failures);
+  assertContains(globalCssSource, "width: 24px;", "Top 100 favourite button keeps circular 24px dimensions", failures);
+  assertContains(globalCssSource, "border-radius: 999px;", "Top 100 favourite button remains circular", failures);
 
   if (failures.length > 0) {
     console.error("Top 100 UI invariant check failed.");

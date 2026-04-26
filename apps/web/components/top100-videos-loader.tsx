@@ -1,10 +1,11 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { CloseLink } from "@/components/close-link";
+import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { Top100VideoLink } from "@/components/top100-video-link";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 
@@ -101,6 +102,7 @@ export function Top100VideosLoader({
   const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
   const [videos, setVideos] = useState<VideoRecord[]>(() => filterHiddenVideos(readTop100SessionCache() ?? [], hiddenVideoIdSet));
   const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
+  const [videoPendingHideConfirm, setVideoPendingHideConfirm] = useState<VideoRecord | null>(null);
   const [isLoading, setIsLoading] = useState(() => videos.length === 0);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -122,10 +124,22 @@ export function Top100VideosLoader({
     return rankMap;
   }, [videos]);
 
-  const handleHideVideo = async (track: VideoRecord) => {
+  const handleHideVideo = useCallback((track: VideoRecord) => {
     if (!isAuthenticated || hidingVideoIds.includes(track.id)) {
       return;
     }
+
+    setVideoPendingHideConfirm(track);
+  }, [hidingVideoIds, isAuthenticated]);
+
+  const confirmHideVideo = useCallback(async () => {
+    const track = videoPendingHideConfirm;
+
+    if (!track || !isAuthenticated || hidingVideoIds.includes(track.id)) {
+      return;
+    }
+
+    setVideoPendingHideConfirm(null);
 
     setHidingVideoIds((current) => [...current, track.id]);
     setVideos((current) => current.filter((candidate) => candidate.id !== track.id));
@@ -143,7 +157,7 @@ export function Top100VideosLoader({
     } finally {
       setHidingVideoIds((current) => current.filter((id) => id !== track.id));
     }
-  };
+  }, [hidingVideoIds, isAuthenticated, videoPendingHideConfirm]);
 
   const createPlaylistFromTop100 = async () => {
     if (!isAuthenticated) {
@@ -477,7 +491,17 @@ export function Top100VideosLoader({
       {visibleVideos.length === 0 ? (
         <div style={{ padding: "20px", textAlign: "center", color: "#999" }}>No unseen videos in Top 100 right now.</div>
       ) : null}
-    </div>
+      </div>
+
+      <HideVideoConfirmModal
+        isOpen={videoPendingHideConfirm !== null}
+        video={videoPendingHideConfirm}
+        isPending={videoPendingHideConfirm ? hidingVideoIds.includes(videoPendingHideConfirm.id) : false}
+        onCancel={() => setVideoPendingHideConfirm(null)}
+        onConfirm={() => {
+          void confirmHideVideo();
+        }}
+      />
     </>
   );
 }

@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import type { VideoRecord } from "@/lib/catalog";
 import { Top100VideoLink } from "@/components/top100-video-link";
 import { CloseLink } from "@/components/close-link";
+import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { NewScrollReset } from "@/components/new-scroll-reset";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import {
@@ -76,6 +77,8 @@ type NewVideoRowProps = {
   index: number;
   isAuthenticated: boolean;
   isSeen: boolean;
+  onHideVideo?: (track: VideoRecord) => void;
+  isHidePending: boolean;
   onFlagVideo?: (track: VideoRecord) => void;
   isFlagPending: boolean;
 };
@@ -85,6 +88,8 @@ const NewVideoRow = memo(function NewVideoRow({
   index,
   isAuthenticated,
   isSeen,
+  onHideVideo,
+  isHidePending,
   onFlagVideo,
   isFlagPending,
 }: NewVideoRowProps) {
@@ -96,6 +101,8 @@ const NewVideoRow = memo(function NewVideoRow({
       isAuthenticated={isAuthenticated}
       isSeen={isSeen}
       rowVariant="new"
+      onHideVideo={onHideVideo}
+      isHidePending={isHidePending}
       onFlagVideo={onFlagVideo}
       isFlagPending={isFlagPending}
     />
@@ -108,6 +115,8 @@ const NewVideoRow = memo(function NewVideoRow({
     && prev.index === next.index
     && prev.isAuthenticated === next.isAuthenticated
     && prev.isSeen === next.isSeen
+    && prev.isHidePending === next.isHidePending
+    && prev.onHideVideo === next.onHideVideo
     && prev.isFlagPending === next.isFlagPending
     && prev.onFlagVideo === next.onFlagVideo;
 });
@@ -131,6 +140,8 @@ export function NewVideosLoader({
   const initialVideoIdsKey = useMemo(() => initialVideos.map((video) => video.id).join("|"), [initialVideos]);
   const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
   const [allVideos, setAllVideos] = useState(() => dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet)));
+  const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
+  const [videoPendingHideConfirm, setVideoPendingHideConfirm] = useState<VideoRecord | null>(null);
   const [flaggingVideo, setFlaggingVideo] = useState<VideoRecord | null>(null);
   const [flagReason, setFlagReason] = useState<VideoQualityFlagReason>("broken-playback");
   const [flagPendingVideoId, setFlagPendingVideoId] = useState<string | null>(null);
@@ -167,6 +178,40 @@ export function NewVideosLoader({
     () => (isAuthenticated && hideSeen ? allVideos.filter((v) => !seenVideoIdSet.has(v.id)) : allVideos),
     [allVideos, hideSeen, isAuthenticated, seenVideoIdSet],
   );
+
+  const handleHideVideo = useCallback((track: VideoRecord) => {
+    if (!isAuthenticated || hidingVideoIds.includes(track.id)) {
+      return;
+    }
+
+    setVideoPendingHideConfirm(track);
+  }, [hidingVideoIds, isAuthenticated]);
+
+  const confirmHideVideo = useCallback(async () => {
+    const track = videoPendingHideConfirm;
+
+    if (!track || !isAuthenticated || hidingVideoIds.includes(track.id)) {
+      return;
+    }
+
+    setVideoPendingHideConfirm(null);
+    setHidingVideoIds((current) => [...current, track.id]);
+    setAllVideos((current) => current.filter((candidate) => candidate.id !== track.id));
+
+    try {
+      await fetch("/api/hidden-videos", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ videoId: track.id }),
+      });
+    } catch {
+      // Keep card hidden even if persistence fails, matching quick-hide behavior elsewhere.
+    } finally {
+      setHidingVideoIds((current) => current.filter((id) => id !== track.id));
+    }
+  }, [hidingVideoIds, isAuthenticated, videoPendingHideConfirm]);
 
   useEffect(() => {
     allVideoIdsRef.current = new Set(allVideos.map((video) => video.id));
@@ -895,6 +940,8 @@ export function NewVideosLoader({
           index={index}
           isAuthenticated={isAuthenticated}
           isSeen={seenVideoIdSet.has(track.id)}
+          onHideVideo={handleHideVideo}
+          isHidePending={hidingVideoIds.includes(track.id)}
           onFlagVideo={isAuthenticated ? handleOpenFlagDialog : undefined}
           isFlagPending={flagPendingVideoId === track.id}
         />
@@ -955,6 +1002,17 @@ export function NewVideosLoader({
         </div>
       ) : null}
     </div>
+
+    <HideVideoConfirmModal
+      isOpen={videoPendingHideConfirm !== null}
+      video={videoPendingHideConfirm}
+      isPending={videoPendingHideConfirm ? hidingVideoIds.includes(videoPendingHideConfirm.id) : false}
+      onCancel={() => setVideoPendingHideConfirm(null)}
+      onConfirm={() => {
+        void confirmHideVideo();
+      }}
+    />
+
     {isSuggestModalOpen && typeof document !== "undefined"
       ? createPortal(
         <div

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { CloseLink } from "@/components/close-link";
+import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import type { PlaylistSummary } from "@/lib/catalog-data";
 import type { PublicUserProfile } from "@/lib/catalog-data";
 import type { VideoRecord } from "@/lib/catalog";
@@ -20,14 +21,17 @@ type UserProfilePanelProps = {
   user: PublicUserProfile;
   favourites: VideoRecord[];
   playlists: PlaylistSummary[];
+  isAuthenticated: boolean;
+  seenVideoIds?: string[];
 };
 
 type ProfileTab = "favourites" | "playlists" | "playlist-detail";
 
-export function UserProfilePanel({ user, favourites, playlists }: UserProfilePanelProps) {
+export function UserProfilePanel({ user, favourites, playlists, isAuthenticated, seenVideoIds = [] }: UserProfilePanelProps) {
   const [tab, setTab] = useState<ProfileTab>("favourites");
   const [selectedPlaylist, setSelectedPlaylist] = useState<PlaylistDetail | null>(null);
   const [isLoadingPlaylist, setIsLoadingPlaylist] = useState(false);
+  const seenVideoIdSet = new Set(seenVideoIds);
 
   const scrollOverlayToTop = () => {
     const overlay = document.querySelector<HTMLElement>(".favouritesBlindInner");
@@ -134,12 +138,25 @@ export function UserProfilePanel({ user, favourites, playlists }: UserProfilePan
                         loading="lazy"
                         sizes="(max-width: 768px) 92vw, (max-width: 1200px) 44vw, 320px"
                       />
+                      {seenVideoIdSet.has(track.id) ? <span className="videoSeenBadge videoSeenBadgeOverlay categorySeenBadgeOverlay">Seen</span> : null}
+                    </div>
+                    <div className="relatedCardSourceBadges artistVideoSourceBadges">
+                      {track.isFavouriteSource ? <span className="relatedSourceBadge relatedSourceBadgeFavourite">Favourite</span> : null}
+                      {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
+                      {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
                     </div>
                     <h3 className="categoryVideoTitle">{track.title}</h3>
                   </Link>
                   <div className="actionRow categoryVideoActions">
+                    <SearchResultFavouriteButton
+                      videoId={track.id}
+                      title={track.title}
+                      isAuthenticated={isAuthenticated}
+                      className="categoryVideoFavouriteButton"
+                    />
                     <AddToPlaylistButton
                       videoId={track.id}
+                      isAuthenticated={isAuthenticated}
                       compact
                       className="historyCardPlaylistAddButton"
                     />
@@ -212,12 +229,25 @@ export function UserProfilePanel({ user, favourites, playlists }: UserProfilePan
                         loading="lazy"
                         sizes="(max-width: 768px) 92vw, (max-width: 1200px) 44vw, 320px"
                       />
+                      {seenVideoIdSet.has(track.id) ? <span className="videoSeenBadge videoSeenBadgeOverlay categorySeenBadgeOverlay">Seen</span> : null}
+                    </div>
+                    <div className="relatedCardSourceBadges artistVideoSourceBadges">
+                      {track.isFavouriteSource ? <span className="relatedSourceBadge relatedSourceBadgeFavourite">Favourite</span> : null}
+                      {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
+                      {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
                     </div>
                     <h3 className="categoryVideoTitle">{track.title}</h3>
                   </Link>
                   <div className="actionRow categoryVideoActions">
+                    <SearchResultFavouriteButton
+                      videoId={track.id}
+                      title={track.title}
+                      isAuthenticated={isAuthenticated}
+                      className="categoryVideoFavouriteButton"
+                    />
                     <AddToPlaylistButton
                       videoId={track.id}
+                      isAuthenticated={isAuthenticated}
                       compact
                       className="historyCardPlaylistAddButton"
                     />

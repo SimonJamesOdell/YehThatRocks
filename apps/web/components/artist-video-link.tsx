@@ -3,9 +3,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
+import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
+import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import type { VideoRecord } from "@/lib/catalog";
 
 const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
@@ -29,6 +31,13 @@ export function ArtistVideoLink({
 }: ArtistVideoLinkProps) {
   const router = useRouter();
   const hasWarmedRef = useRef(false);
+  const [isFavourited, setIsFavourited] = useState(Number(video.favourited ?? 0) > 0);
+  const [isRemovingFavourite, setIsRemovingFavourite] = useState(false);
+  const hasFavouriteHeart = isFavourited;
+
+  useEffect(() => {
+    setIsFavourited(Number(video.favourited ?? 0) > 0);
+  }, [video.id, video.favourited]);
 
   const warmSelection = useCallback(() => {
     if (typeof window !== "undefined") {
@@ -59,6 +68,34 @@ export function ArtistVideoLink({
     warmSelection();
     router.push(`/?v=${encodeURIComponent(video.id)}&resume=1`);
   }, [router, video.id, warmSelection]);
+
+  const handleRemoveFavourite = useCallback(async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!isAuthenticated || isRemovingFavourite) {
+      return;
+    }
+
+    setIsRemovingFavourite(true);
+
+    try {
+      const response = await fetchWithAuthRetry("/api/favourites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId: video.id, action: "remove" }),
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      setIsFavourited(false);
+      window.dispatchEvent(new Event("ytr:favourites-updated"));
+    } finally {
+      setIsRemovingFavourite(false);
+    }
+  }, [isAuthenticated, isRemovingFavourite, video.id]);
 
   return (
     <article
@@ -122,11 +159,46 @@ export function ArtistVideoLink({
             loading="lazy"
             sizes="(max-width: 768px) 92vw, (max-width: 1200px) 44vw, 320px"
           />
-          {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay categorySeenBadgeOverlay">Seen</span> : null}
+          {isSeen && !hasFavouriteHeart ? <span className="videoSeenBadge videoSeenBadgeOverlay categorySeenBadgeOverlay">Seen</span> : null}
+          {hasFavouriteHeart ? (
+            <button
+              type="button"
+              className="relatedFavouriteBadgeOverlay artistVideoFavouriteBadgeOverlay artistVideoFavouriteBadgeButton"
+              aria-label={`Remove ${video.title} from favourites`}
+              title="Remove from favourites"
+              disabled={isRemovingFavourite}
+              onClick={handleRemoveFavourite}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+            >
+              <span className="artistVideoFavouriteBadgeHeart" aria-hidden="true">♥</span>
+              <span className="artistVideoFavouriteBadgeRemoveGlyph" aria-hidden="true">x</span>
+            </button>
+          ) : null}
+        </div>
+        <div className="relatedCardSourceBadges artistVideoSourceBadges">
+          {video.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
+          {video.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
         </div>
         <h3 className="categoryVideoTitle">{video.title}</h3>
       </Link>
       <div className="actionRow categoryVideoActions">
+        {!isFavourited ? (
+          <div
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <SearchResultFavouriteButton
+              videoId={video.id}
+              title={video.title}
+              isAuthenticated={isAuthenticated}
+              className={useCornerActions ? "categoryVideoFavouriteButton" : undefined}
+              onSaved={() => setIsFavourited(true)}
+            />
+          </div>
+        ) : null}
         <div
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
