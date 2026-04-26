@@ -9,6 +9,7 @@ import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { CloseLink } from "@/components/close-link";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
 
 type FavouritesGridProps = {
   initialFavourites: VideoRecord[];
@@ -77,11 +78,11 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
       void refreshFavourites();
     };
 
-    window.addEventListener("ytr:favourites-updated", handleFavouritesUpdated);
+    const unsubscribe = listenToAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, handleFavouritesUpdated);
 
     return () => {
       isCancelled = true;
-      window.removeEventListener("ytr:favourites-updated", handleFavouritesUpdated);
+      unsubscribe();
     };
   }, [isAuthenticated, pathname]);
 
@@ -193,12 +194,8 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
         ? `/?v=${encodeURIComponent(currentVideoId)}&pl=${encodeURIComponent(createdPlaylistId)}&resume=1`
         : `/?pl=${encodeURIComponent(createdPlaylistId)}`;
 
-      window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", {
-        detail: { href: closeHref },
-      }));
-      window.dispatchEvent(new CustomEvent("ytr:right-rail-mode", {
-        detail: { mode: "playlist", playlistId: createdPlaylistId },
-      }));
+      dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href: closeHref });
+      dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, { mode: "playlist", playlistId: createdPlaylistId });
       router.push(closeHref);
 
       // Immediately populate the rail from the already-loaded favourites list
@@ -214,25 +211,20 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
         window.setTimeout(() => {
           const visible = optimisticVideos.slice(0, index + 1);
 
-          window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
-            detail: {
-              playlist: {
-                id: createdPlaylistId,
-                name: playlistName,
-                videos: visible,
-                itemCount: optimisticItemCount,
-              },
-              trackId: video.id,
+          dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
+            playlist: {
+              id: createdPlaylistId,
+              name: playlistName,
+              videos: visible,
+              itemCount: optimisticItemCount,
             },
-          }));
+          });
 
-          window.dispatchEvent(new CustomEvent("ytr:right-rail-mode", {
-            detail: {
-              mode: "playlist",
-              playlistId: createdPlaylistId,
-              trackId: video.id,
-            },
-          }));
+          dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
+            mode: "playlist",
+            playlistId: createdPlaylistId,
+            trackId: video.id,
+          });
         }, index * 22);
       }
 
@@ -242,16 +234,14 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
 
       window.setTimeout(() => {
         // Show all tracks (including any beyond ANIMATED_TRACK_LIMIT) optimistically.
-        window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
-          detail: {
-            playlist: {
-              id: createdPlaylistId,
-              name: playlistName,
-              videos: optimisticVideos,
-              itemCount: optimisticItemCount,
-            },
+        dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
+          playlist: {
+            id: createdPlaylistId,
+            name: playlistName,
+            videos: optimisticVideos,
+            itemCount: optimisticItemCount,
           },
-        }));
+        });
       }, animationDoneMs);
 
       // Fire bulk add in background; reconcile rail with server truth when it returns.
@@ -262,7 +252,7 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
       }).then(async (addAllResponse) => {
         if (!addAllResponse.ok) {
           setMessage("Playlist was created, but some tracks could not be saved.");
-          window.dispatchEvent(new Event("ytr:playlists-updated"));
+          dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
           return;
         }
 
@@ -279,19 +269,17 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
         const optimisticIds = optimisticVideos.map((v) => v.id).join(",");
         const serverIds = finalVideos.map((v) => v.id).join(",");
         if (serverIds !== optimisticIds || finalName !== playlistName) {
-          window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
-            detail: {
-              playlist: {
-                id: createdPlaylistId,
-                name: finalName,
-                videos: finalVideos,
-                itemCount: finalItemCount,
-              },
+          dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
+            playlist: {
+              id: createdPlaylistId,
+              name: finalName,
+              videos: finalVideos,
+              itemCount: finalItemCount,
             },
-          }));
+          });
         }
 
-        window.dispatchEvent(new Event("ytr:playlists-updated"));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
 
         const addedCount = finalVideos.length;
         if (addedCount < favouriteVideoIds.length) {
@@ -301,20 +289,22 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
         }
       }).catch(() => {
         setMessage("Playlist was created, but tracks could not be saved.");
-        window.dispatchEvent(new Event("ytr:playlists-updated"));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
       });
 
       // Mark creation complete once the optimistic animation has finished.
       window.setTimeout(() => {
-        window.dispatchEvent(new CustomEvent("ytr:playlist-creation-progress", {
-          detail: { playlistId: createdPlaylistId, phase: "done" },
-        }));
+        dispatchAppEvent(EVENT_NAMES.PLAYLIST_CREATION_PROGRESS, {
+          playlistId: createdPlaylistId,
+          phase: "done",
+        });
       }, animationDoneMs);
     } catch {
       if (createdPlaylistIdForProgress) {
-        window.dispatchEvent(new CustomEvent("ytr:playlist-creation-progress", {
-          detail: { playlistId: createdPlaylistIdForProgress, phase: "failed" },
-        }));
+        dispatchAppEvent(EVENT_NAMES.PLAYLIST_CREATION_PROGRESS, {
+          playlistId: createdPlaylistIdForProgress,
+          phase: "failed",
+        });
       }
       setMessage("Could not create playlist from favourites. Please try again.");
     } finally {
