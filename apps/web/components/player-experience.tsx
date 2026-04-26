@@ -17,6 +17,7 @@ import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference
 type PlayerExperienceProps = {
   currentVideo: VideoRecord;
   queue: VideoRecord[];
+  temporaryQueue?: VideoRecord[];
   isLoggedIn: boolean;
   isAdmin?: boolean;
   isDockedDesktop?: boolean;
@@ -157,6 +158,8 @@ const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
 const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
 const RIGHT_RAIL_LYRICS_OPEN_EVENT = "ytr:right-rail-lyrics-open";
 const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
+const VIDEO_ENDED_EVENT = "ytr:video-ended";
+const TEMP_QUEUE_DEQUEUE_EVENT = "ytr:temp-queue-dequeue";
 const ADMIN_OVERLAY_ENTER_EVENT = "ytr:admin-overlay-enter";
 const ADMIN_SESSION_REVALIDATE_INTERVAL_MS = 30_000;
 const maxEndedChoiceVideos = 12;
@@ -466,6 +469,7 @@ let didPageHaveUserInteraction = false;
 export function PlayerExperience({
   currentVideo,
   queue,
+  temporaryQueue = [],
   isLoggedIn,
   isAdmin: initialIsAdmin = false,
   isDockedDesktop = false,
@@ -1175,6 +1179,21 @@ export function PlayerExperience({
 
       // A playlist is selected but not ready yet; do not switch to random Watch Next.
       return null;
+    }
+
+    if (temporaryQueue.length > 0) {
+      const currentQueueIndex = temporaryQueue.findIndex((video) => video.id === currentVideo.id);
+      const nextQueuedVideoId = currentQueueIndex >= 0
+        ? (temporaryQueue[currentQueueIndex + 1]?.id ?? null)
+        : (temporaryQueue[0]?.id ?? null);
+
+      if (nextQueuedVideoId) {
+        return {
+          videoId: nextQueuedVideoId,
+          playlistItemIndex: null,
+          clearPlaylist: true,
+        };
+      }
     }
 
     if (isDockedDesktop && autoplayEnabled && routeAutoplayQueueIds.length > 0) {
@@ -2770,6 +2789,9 @@ export function PlayerExperience({
                 ? toSafeNumber(playerRef.current.getDuration(), 0)
                 : duration;
               void reportWatchEvent(2, "ended", endedTime, endedDuration);
+              window.dispatchEvent(new CustomEvent(VIDEO_ENDED_EVENT, {
+                detail: { videoId: activeVideoId },
+              }));
               triggerEndOfVideoAction();
             }
 
@@ -3609,6 +3631,13 @@ export function PlayerExperience({
 
     if (!nextTarget) {
       return;
+    }
+
+    const currentVideoWasQueued = temporaryQueue.some((video) => video.id === currentVideo.id);
+    if (currentVideoWasQueued && nextTarget.videoId !== currentVideo.id) {
+      window.dispatchEvent(new CustomEvent(TEMP_QUEUE_DEQUEUE_EVENT, {
+        detail: { videoId: currentVideo.id },
+      }));
     }
 
     showManualTransitionMask();

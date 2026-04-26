@@ -856,7 +856,7 @@ h1 {
 }
 
 .rightRailTabs {
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   margin-bottom: 12px;
   position: relative;
   z-index: 5;
@@ -5956,8 +5956,47 @@ h1 {
 .relatedCardFavouriteAction {
   position: absolute;
   bottom: 8px;
-  right: 40px;
+  right: 72px;
   z-index: 3;
+}
+
+.relatedCardQueueAdd {
+  appearance: none;
+  position: absolute;
+  bottom: 8px;
+  right: 40px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(138, 18, 20, 0.95), rgba(55, 6, 8, 0.95));
+  border: 1px solid rgba(255, 188, 170, 0.5);
+  color: #fff;
+  font-size: 0.9rem;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  z-index: 3;
+  cursor: pointer;
+}
+
+.relatedCardQueueAdd:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.relatedCardQueueAdd:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
+}
+
+.relatedCardQueueAddAdded {
+  background: linear-gradient(180deg, rgba(22, 110, 44, 0.95), rgba(10, 55, 20, 0.95));
+  border-color: rgba(100, 220, 130, 0.6);
+  color: #a8f0ba;
 }
 
 .relatedCardFavouriteButton {
@@ -6117,6 +6156,12 @@ h1 {
   pointer-events: none;
 }
 
+.relatedStackFadingOut .relatedCardQueueAdd {
+  animation: relatedRailFadeOut 210ms ease forwards;
+  animation-delay: calc(var(--related-index, 0) * 46ms);
+  pointer-events: none;
+}
+
 .relatedStackFadingOut .relatedCardHideButton {
   animation: relatedRailFadeOut 210ms ease forwards;
   animation-delay: calc(var(--related-index, 0) * 46ms);
@@ -6130,6 +6175,12 @@ h1 {
 }
 
 .relatedStackFadingIn .relatedCardPlaylistAdd {
+  opacity: 0;
+  animation: relatedRailFadeIn 230ms ease forwards;
+  animation-delay: calc(var(--related-index, 0) * 46ms);
+}
+
+.relatedStackFadingIn .relatedCardQueueAdd {
   opacity: 0;
   animation: relatedRailFadeIn 230ms ease forwards;
   animation-delay: calc(var(--related-index, 0) * 46ms);
@@ -6174,6 +6225,8 @@ h1 {
   .relatedStackFadingIn .relatedCardTransition,
   .relatedStackFadingOut .relatedCardPlaylistAdd,
   .relatedStackFadingIn .relatedCardPlaylistAdd,
+  .relatedStackFadingOut .relatedCardQueueAdd,
+  .relatedStackFadingIn .relatedCardQueueAdd,
   .relatedStackFadingOut .relatedCardHideButton,
   .relatedStackFadingIn .relatedCardHideButton {
     animation: none;
@@ -10346,7 +10399,7 @@ h1 {
   }
 
   .rightRailTabs {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
   }
 
   .mainNav {

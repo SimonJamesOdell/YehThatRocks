@@ -116,11 +116,25 @@ function main() {
   assertContains(currentVideoRouteSource, "const targetRelatedCount = 8;", "Current-video API targets 8 Watch Next items", failures);
   assertContains(currentVideoRouteSource, "earlyTopVideosForPadding ?? await getCachedTopVideosForCurrentVideo(30)", "Current-video API fetches bounded filler pool (parallel-prefetched or direct)", failures);
   assertContains(currentVideoRouteSource, "const filler = shuffleVideos(fillerPool).slice(0, targetRelatedCount - relatedVideos.length);", "Current-video API randomizes sparse filler selection", failures);
+  assertContains(shellDynamicSource, "type RightRailMode = \"watch-next\" | \"playlist\" | \"queue\";", "Shell supports queue mode in right rail tab state", failures);
+  assertContains(shellDynamicSource, "const TEMP_QUEUE_DEQUEUE_EVENT = \"ytr:temp-queue-dequeue\";", "Shell declares manual queue dequeue event", failures);
+  assertContains(shellDynamicSource, "const previousVideoIdRef = useRef<string>(currentVideo.id);", "Shell tracks previous video for transition-based queue cleanup", failures);
+  assertContains(shellDynamicSource, "setTemporaryQueueVideos((currentQueue) => currentQueue.filter((video) => video.id !== previousVideoId));", "Shell consumes prior queue item on active video transition", failures);
+  assertContains(shellDynamicSource, "window.addEventListener(TEMP_QUEUE_DEQUEUE_EVENT, removeFromTemporaryQueue as EventListener);", "Shell listens for manual queue dequeue events", failures);
 
   // Player invariants.
   assertContains(playerExperienceSource, "const AUTOPLAY_KEY = \"yeh-player-autoplay\";", "Player persists autoplay preference key", failures);
   assertContains(playerExperienceSource, "const PLAYER_VOLUME_KEY = \"yeh-player-volume\";", "Player defines persisted volume preference key", failures);
   assertContains(playerExperienceSource, "const PLAYER_MUTED_KEY = \"yeh-player-muted\";", "Player defines persisted mute preference key", failures);
+  assertContains(playerExperienceSource, "temporaryQueue?: VideoRecord[];", "Player props accept temporary queue feed", failures);
+  assertContains(playerExperienceSource, "temporaryQueue = [],", "Player defaults temporary queue to an empty list", failures);
+  assertContains(playerExperienceSource, "const VIDEO_ENDED_EVENT = \"ytr:video-ended\";", "Player declares queue consumption event for ended videos", failures);
+  assertContains(playerExperienceSource, "const TEMP_QUEUE_DEQUEUE_EVENT = \"ytr:temp-queue-dequeue\";", "Player declares queue dequeue event for manual Next", failures);
+  assertContains(playerExperienceSource, "const currentQueueIndex = temporaryQueue.findIndex((video) => video.id === currentVideo.id);", "Player queue-next resolution is based on current queue index", failures);
+  assertContains(playerExperienceSource, "? (temporaryQueue[currentQueueIndex + 1]?.id ?? null)", "Player queue-next resolution advances to the next queue slot", failures);
+  assertContains(playerExperienceSource, "if (currentVideoWasQueued && nextTarget.videoId !== currentVideo.id) {", "Manual Next only dequeues when transition is real", failures);
+  assertContains(playerExperienceSource, "window.dispatchEvent(new CustomEvent(TEMP_QUEUE_DEQUEUE_EVENT, {", "Manual Next dispatches queue dequeue event", failures);
+  assertContains(playerExperienceSource, "window.dispatchEvent(new CustomEvent(VIDEO_ENDED_EVENT, {", "ENDED state dispatches queue consumption event", failures);
   assertContains(playerExperienceSource, "const RESUME_KEY = \"yeh-player-resume\";", "Player defines resume snapshot key", failures);
   assertContains(playerExperienceSource, "window.localStorage.setItem(AUTOPLAY_KEY, ", "Player writes autoplay preference to localStorage", failures);
   assertContains(playerExperienceSource, "window.localStorage.setItem(PLAYER_VOLUME_KEY, String(normalizePlayerVolume(volume, 100)));", "Player writes volume preference to localStorage", failures);
