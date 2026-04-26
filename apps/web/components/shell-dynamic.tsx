@@ -324,6 +324,7 @@ const WatchNextCard = memo(function WatchNextCard({
             reportReason="thumbnail-load-error:watch-next"
             hideClosestSelector=".relatedCardSlot"
           />
+          {isSeen && !isFavourite ? <span className="videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay">Seen</span> : null}
           {isFavourite ? <span className="relatedFavouriteBadgeOverlay" aria-hidden="true">♥</span> : null}
         </div>
         <div>

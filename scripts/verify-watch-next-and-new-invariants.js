@@ -87,6 +87,9 @@ function main() {
   assertContains(shellDynamicSource, "initialHiddenVideoIds", "Watch Next shell accepts hidden video ids", failures);
   assertContains(shellDynamicSource, "filterHiddenRelatedVideos", "Watch Next shell filters hidden videos from rail", failures);
   assertNotContains(shellDynamicSource, "params.set(\"exclude\"", "Watch Next no longer sends giant exclude id lists in URL", failures);
+  assertContains(shellDynamicSource, "{isSeen && !isFavourite ? <span className=\"videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay\">Seen</span> : null}", "Watch Next only renders seen badge when card is seen and not favourited", failures);
+  assertContains(shellDynamicSource, "{isFavourite ? <span className=\"relatedFavouriteBadgeOverlay\" aria-hidden=\"true\">♥</span> : null}", "Watch Next renders favourite heart overlay for favourited cards", failures);
+  assertNotContains(shellDynamicSource, "{isSeen ? <span className=\"videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay\">Seen</span> : null}", "Watch Next must not render seen badge on favourited cards", failures);
 
   // Watch Next startup consistency invariants.
   assertContains(shellDynamicSource, "const [hasBootstrappedWatchNext, setHasBootstrappedWatchNext] = useState(false);", "Watch Next tracks a bootstrap gate before first rail render", failures);
