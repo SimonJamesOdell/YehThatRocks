@@ -1,3 +1,5 @@
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+
 export const ARTISTS_LETTER_CHANGE_EVENT = "ytr:artists-letter-change";
 export const ARTISTS_FILTER_CHANGE_EVENT = "ytr:artists-filter-change";
 
@@ -27,17 +29,9 @@ export function dispatchArtistsLetterChange(letter: string) {
     return;
   }
 
-  window.dispatchEvent(
-    new CustomEvent<ArtistsLetterChangeDetail>(ARTISTS_LETTER_CHANGE_EVENT, {
-      detail: { letter: normalized },
-    }),
-  );
+  dispatchAppEvent(EVENT_NAMES.ARTISTS_LETTER_CHANGE, { letter: normalized });
 }
 
 export function dispatchArtistsFilterChange(value: string) {
-  window.dispatchEvent(
-    new CustomEvent<ArtistsFilterChangeDetail>(ARTISTS_FILTER_CHANGE_EVENT, {
-      detail: { value },
-    }),
-  );
+  dispatchAppEvent(EVENT_NAMES.ARTISTS_FILTER_CHANGE, { value });
 }

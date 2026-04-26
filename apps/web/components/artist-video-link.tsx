@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import type { VideoRecord } from "@/lib/catalog";
 
 const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
@@ -91,7 +92,7 @@ export function ArtistVideoLink({
       }
 
       setIsFavourited(false);
-      window.dispatchEvent(new Event("ytr:favourites-updated"));
+      dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
     } finally {
       setIsRemovingFavourite(false);
     }
