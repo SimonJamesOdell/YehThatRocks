@@ -298,7 +298,7 @@ function main() {
   assertContains(playerExperienceSource, "const payload = (await response.json().catch(() => null)) as { error?: string; reason?: string } | null;", "Admin delete flow parses structured API delete failure payload", failures);
   assertContains(playerExperienceSource, "showUnavailableOverlayMessage(payload?.error || \"Could not remove this video from the site.\");", "Admin delete flow surfaces API-provided delete failure error", failures);
   assertContains(playerExperienceSource, 'window.dispatchEvent(new CustomEvent("ytr:video-catalog-deleted", { detail: { videoId: deletingVideoId } }));', "Main player delete dispatches catalog-deleted event", failures);
-  assertContains(adminVideoDeleteButtonSource, 'window.dispatchEvent(new CustomEvent("ytr:video-catalog-deleted", { detail: { videoId } }));', "Admin search-card delete dispatches catalog-deleted event", failures);
+  assertContains(adminVideoDeleteButtonSource, 'dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId });', "Admin search-card delete dispatches catalog-deleted event using typed dispatch", failures);
 
   // Dock-hide interaction invariants.
   assertContains(playerExperienceSource, 'window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));', "Dock close control dispatches hide-only event instead of navigating away", failures);
@@ -456,7 +456,7 @@ function main() {
   assertContains(chatSharedVideoSource, 'const SHARED_VIDEO_FIELD_SEPARATOR = "\\t";', "Shared chat video payload supports structured fields", failures);
   assertContains(chatSharedVideoSource, 'return {', "Shared chat video parsing returns structured payload object", failures);
   assertContains(artistWikiLinkSource, 'router.push(targetHref);', "Artist wiki link performs client-side navigation", failures);
-  assertContains(artistWikiLinkSource, 'window.dispatchEvent(new CustomEvent("ytr:overlay-open-request", {', "Artist wiki link triggers immediate overlay-open requests", failures);
+  assertContains(artistWikiLinkSource, 'dispatchAppEvent(EVENT_NAMES.OVERLAY_OPEN_REQUEST, {', "Artist wiki link triggers typed overlay-open requests", failures);
   assertContains(cssSource, '.shareModalBackdrop', "Share modal backdrop styles are defined", failures);
   assertContains(cssSource, '.shareModalGrid', "Share modal platform grid styles are defined", failures);
   assertContains(cssSource, '.railTabs.railTabsAdminOverlay', "Admin overlay rail tabs define two-column layout override", failures);
