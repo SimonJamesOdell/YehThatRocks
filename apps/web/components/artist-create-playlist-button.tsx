@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 
 type ArtistCreatePlaylistButtonProps = {
   isAuthenticated: boolean;
@@ -73,31 +74,28 @@ export function ArtistCreatePlaylistButton({
         ? `/?v=${encodeURIComponent(currentVideoId)}&pl=${encodeURIComponent(createdPlaylistId)}&resume=1`
         : `/?pl=${encodeURIComponent(createdPlaylistId)}`;
 
-      window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", {
-        detail: { href: closeHref },
-      }));
-      window.dispatchEvent(new CustomEvent("ytr:right-rail-mode", {
-        detail: { mode: "playlist", playlistId: createdPlaylistId },
-      }));
+      dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href: closeHref });
+      dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
+        mode: "playlist",
+        playlistId: createdPlaylistId,
+      });
       router.push(closeHref);
 
-      window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
-        detail: {
-          playlist: {
-            id: createdPlaylistId,
-            name: playlistName,
-            videos,
-            itemCount: videos.length,
-          },
+      dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
+        playlist: {
+          id: createdPlaylistId,
+          name: playlistName,
+          videos,
+          itemCount: videos.length,
         },
-      }));
+      });
 
       void fetch(`/api/playlists/${encodeURIComponent(createdPlaylistId)}/items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ videoIds }),
       }).then(async (addAllResponse) => {
-        window.dispatchEvent(new Event("ytr:playlists-updated"));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
 
         if (!addAllResponse.ok) {
           return;
@@ -111,18 +109,16 @@ export function ArtistCreatePlaylistButton({
         const finalName = updatedPlaylist?.name ?? playlistName;
         const finalItemCount = updatedPlaylist?.itemCount ?? finalVideos.length;
 
-        window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
-          detail: {
-            playlist: {
-              id: createdPlaylistId,
-              name: finalName,
-              videos: finalVideos,
-              itemCount: finalItemCount,
-            },
+        dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
+          playlist: {
+            id: createdPlaylistId,
+            name: finalName,
+            videos: finalVideos,
+            itemCount: finalItemCount,
           },
-        }));
+        });
       }).catch(() => {
-        window.dispatchEvent(new Event("ytr:playlists-updated"));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
       });
     } finally {
       setIsCreatingPlaylistFromArtist(false);
