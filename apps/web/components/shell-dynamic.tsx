@@ -506,6 +506,9 @@ const RELATED_BACKGROUND_PREFETCH_DELAY_FAST_MS = 280;
 const RELATED_BOOTSTRAP_MIN_VISIBLE = 8;
 const RELATED_LOADING_HINT_SHOW_DELAY_MS = 220;
 const RELATED_LOADING_HINT_HIDE_DELAY_MS = 320;
+const RELATED_FETCH_TIMEOUT_MS = 12_000;
+const RELATED_COLD_FETCH_RETRY_ATTEMPTS = 3;
+const RELATED_COLD_FETCH_RETRY_BASE_DELAY_MS = 900;
 const WATCH_NEXT_HIDE_ANIMATION_MS = 240;
 const WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-watch-next";
 const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
@@ -725,6 +728,7 @@ function ShellDynamicInner({
   const [isLoadingMoreRelated, setIsLoadingMoreRelated] = useState(false);
   const [showLoadingMoreRelatedHint, setShowLoadingMoreRelatedHint] = useState(false);
   const [hasMoreRelated, setHasMoreRelated] = useState(true);
+  const [watchNextLoadFailed, setWatchNextLoadFailed] = useState(false);
   const seenVideoIdsRef = useRef<Set<string>>(new Set(initialSeenVideoIds));
   const hiddenVideoIdsRef = useRef<Set<string>>(new Set(initialHiddenVideoIds));
   const activeVideoId = requestedVideoId ?? currentVideo.id;
@@ -842,6 +846,7 @@ function ShellDynamicInner({
   const relatedLoadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadInFlightRef = useRef(false);
   const relatedFetchOffsetRef = useRef<number | null>(null);
+  const watchNextAutoRecoverAttemptRef = useRef(0);
   const relatedScrollRafRef = useRef<number | null>(null);
   const hasUserScrolledWatchNextRef = useRef(false);
   const relatedVideosRef = useRef<VideoRecord[]>([]);
@@ -3034,7 +3039,7 @@ function ShellDynamicInner({
     && (!hasBootstrappedWatchNext || isWatchNextVideoSelectionPending);
   const shouldShowWatchNextRailLoader = shouldShowWatchNextBootstrapLoader
     || relatedTransitionPhase === "loading"
-    || (visibleWatchNextVideos.length === 0 && (isLoadingMoreRelated || hasMoreRelated));
+    || (visibleWatchNextVideos.length === 0 && (isLoadingMoreRelated || (hasMoreRelated && !watchNextLoadFailed)));
   const shouldShowWatchNextUnseenEmptyState = watchNextHideSeen
     && hasSeenWatchNextVideos
     && visibleWatchNextVideos.length === 0
@@ -3192,6 +3197,7 @@ function ShellDynamicInner({
 
     relatedLoadInFlightRef.current = true;
     setIsLoadingMoreRelated(true);
+    setWatchNextLoadFailed(false);
 
     try {
       const existing = dedupeRelatedRailVideos(dedupeVideoList(relatedVideosRef.current), currentVideo.id);
@@ -3213,18 +3219,58 @@ function ShellDynamicInner({
         params.set("offset", String(relatedFetchOffsetRef.current));
       }
 
-      const response = await fetch(`/api/current-video?${params.toString()}`, {
-        cache: "no-store",
-      });
+      const tryFetchPayload = async () => {
+        const abortController = new AbortController();
+        const timeoutId = window.setTimeout(() => {
+          abortController.abort();
+        }, RELATED_FETCH_TIMEOUT_MS);
 
-      if (!response.ok) {
-        return;
+        try {
+          const response = await fetch(`/api/current-video?${params.toString()}`, {
+            cache: "no-store",
+            signal: abortController.signal,
+          });
+
+          if (!response.ok) {
+            throw new Error("watch-next-load-failed");
+          }
+
+          return (await response.json()) as CurrentVideoResolvePayload & { hasMore?: boolean };
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
+      };
+
+      let payload: (CurrentVideoResolvePayload & { hasMore?: boolean }) | null = null;
+      const maxAttempts = isFirstColdFetch ? RELATED_COLD_FETCH_RETRY_ATTEMPTS : 1;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          payload = await tryFetchPayload();
+          break;
+        } catch {
+          if (attempt >= maxAttempts) {
+            throw new Error("watch-next-load-exhausted");
+          }
+
+          const retryDelayMs = Math.min(3_000, RELATED_COLD_FETCH_RETRY_BASE_DELAY_MS * (2 ** (attempt - 1)));
+          await new Promise<void>((resolve) => {
+            window.setTimeout(() => {
+              resolve();
+            }, retryDelayMs);
+          });
+        }
       }
 
-      const payload = (await response.json()) as CurrentVideoResolvePayload & { hasMore?: boolean };
-      const nextVideos = Array.isArray(payload.relatedVideos) ? payload.relatedVideos : [];
-      const payloadHasMore = payload.hasMore !== false;
+      if (!payload) {
+        throw new Error("watch-next-load-empty-payload");
+      }
+
+      const resolvedPayload = payload;
+      const nextVideos = Array.isArray(resolvedPayload.relatedVideos) ? resolvedPayload.relatedVideos : [];
+      const payloadHasMore = resolvedPayload.hasMore !== false;
       relatedFetchOffsetRef.current = (relatedFetchOffsetRef.current ?? existing.length) + nextVideos.length;
+      watchNextAutoRecoverAttemptRef.current = 0;
 
       if (nextVideos.length === 0 && !payloadHasMore) {
         setHasMoreRelated(false);
@@ -3245,7 +3291,10 @@ function ShellDynamicInner({
       }
 
     } catch {
-      // Ignore transient load-more failures and let the next scroll retry.
+      const existingAfterFailure = dedupeRelatedRailVideos(dedupeVideoList(relatedVideosRef.current), currentVideo.id);
+      if (existingAfterFailure.length === 0) {
+        setWatchNextLoadFailed(true);
+      }
     } finally {
       relatedLoadInFlightRef.current = false;
       setIsLoadingMoreRelated(false);
@@ -3333,11 +3382,40 @@ function ShellDynamicInner({
   useEffect(() => {
     relatedLoadInFlightRef.current = false;
     relatedFetchOffsetRef.current = null;
+    watchNextAutoRecoverAttemptRef.current = 0;
     hasUserScrolledWatchNextRef.current = false;
     setIsLoadingMoreRelated(false);
     setShowLoadingMoreRelatedHint(false);
     setHasMoreRelated(true);
+    setWatchNextLoadFailed(false);
   }, [currentVideo.id]);
+
+  useEffect(() => {
+    if (
+      !watchNextLoadFailed
+      || rightRailMode !== "watch-next"
+      || visibleWatchNextVideos.length > 0
+      || !hasMoreRelated
+    ) {
+      return;
+    }
+
+    if (watchNextAutoRecoverAttemptRef.current >= 2) {
+      return;
+    }
+
+    const retryAttempt = watchNextAutoRecoverAttemptRef.current + 1;
+    watchNextAutoRecoverAttemptRef.current = retryAttempt;
+    const retryDelayMs = Math.min(5_000, 1_500 * retryAttempt);
+
+    const timeoutId = window.setTimeout(() => {
+      void loadMoreRelatedVideos();
+    }, retryDelayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [hasMoreRelated, loadMoreRelatedVideos, rightRailMode, visibleWatchNextVideos.length, watchNextLoadFailed]);
 
   useEffect(() => {
     if (rightRailMode !== "watch-next") {
@@ -5547,6 +5625,21 @@ function ShellDynamicInner({
                 <p className={`rightRailStatus rightRailStatus${playlistMutationTone === "success" ? "Success" : playlistMutationTone === "error" ? "Error" : "Info"}`}>
                   {playlistMutationMessage}
                 </p>
+              ) : null}
+
+              {watchNextLoadFailed && visibleWatchNextVideos.length === 0 ? (
+                <div className="rightRailStatus rightRailStatusError" role="status" aria-live="polite">
+                  <p>Watch Next is taking too long to load. Retrying now.</p>
+                  <button
+                    type="button"
+                    className="newPageSeenToggle"
+                    onClick={() => {
+                      void loadMoreRelatedVideos();
+                    }}
+                  >
+                    Retry now
+                  </button>
+                </div>
               ) : null}
 
               {shouldShowWatchNextRailLoader ? (
