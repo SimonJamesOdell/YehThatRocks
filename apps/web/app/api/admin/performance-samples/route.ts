@@ -161,7 +161,15 @@ async function tryStartMysqlSlowLogCapture() {
     await executeRawUnsafeWithReconnect(`SET GLOBAL min_examined_row_limit = ${SLOW_LOG_MIN_EXAMINED_ROW_LIMIT}`);
     await executeRawUnsafeWithReconnect("SET GLOBAL slow_query_log = ON");
 
-    const verified = await verifyMysqlSlowLogCaptureSettings();
+    let verified = await verifyMysqlSlowLogCaptureSettings();
+    if (!verified) {
+      // One extra reconnect + verify pass avoids false negatives when MySQL
+      // briefly drops the app connection right after SET GLOBAL statements.
+      await prisma.$disconnect().catch(() => undefined);
+      await prisma.$connect().catch(() => undefined);
+      verified = await verifyMysqlSlowLogCaptureSettings();
+    }
+
     if (!verified) {
       return {
         enabled: false,
@@ -179,6 +187,13 @@ async function tryStartMysqlSlowLogCapture() {
       return {
         enabled: true,
         warning: null,
+      };
+    }
+
+    if (isTransientDbConnectionError(error)) {
+      return {
+        enabled: true,
+        warning: "MySQL slow-log start was requested, but verification was skipped after a transient app DB reconnect.",
       };
     }
 
