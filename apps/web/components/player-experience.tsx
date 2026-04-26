@@ -2798,7 +2798,10 @@ export function PlayerExperience({
                 : duration;
               void reportWatchEvent(2, "ended", endedTime, endedDuration);
               window.dispatchEvent(new CustomEvent(VIDEO_ENDED_EVENT, {
-                detail: { videoId: activeVideoId },
+                detail: {
+                  videoId: activeVideoId,
+                  reason: "ended",
+                },
               }));
               triggerEndOfVideoAction();
             }
@@ -3645,7 +3648,10 @@ export function PlayerExperience({
     const currentVideoWasQueued = temporaryQueue.some((video) => video.id === currentVideo.id);
     if (currentVideoWasQueued && nextTarget.videoId !== currentVideo.id) {
       window.dispatchEvent(new CustomEvent(TEMP_QUEUE_DEQUEUE_EVENT, {
-        detail: { videoId: currentVideo.id },
+        detail: {
+          videoId: currentVideo.id,
+          reason: "manual-next",
+        },
       }));
     }
 

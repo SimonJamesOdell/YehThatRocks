@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
 const path = require("node:path");
+const {
+  readFileStrict,
+  assertContains,
+  assertNotContains,
+  assertCssRuleContains,
+  assertCssRuleNotContains,
+} = require("./invariants/helpers");
+const { applyQueueResolutionRulePack } = require("./invariants/rule-packs/queue-resolution-pack");
 
 const ROOT = process.cwd();
 
@@ -22,95 +29,54 @@ const files = {
   videosUnavailableRoute: path.join(ROOT, "apps/web/app/api/videos/unavailable/route.ts"),
   nextTrackDecisionHook: path.join(ROOT, "apps/web/components/use-next-track-decision.ts"),
   temporaryQueueControllerHook: path.join(ROOT, "apps/web/components/use-temporary-queue-controller.ts"),
+  playerNextTrackDomain: path.join(ROOT, "apps/web/domains/player/resolve-next-track-target.ts"),
+  queueDomain: path.join(ROOT, "apps/web/domains/queue/temporary-queue.ts"),
+  playlistDomain: path.join(ROOT, "apps/web/domains/playlist/playlist-step-target.ts"),
   categoriesFilterGrid: path.join(ROOT, "apps/web/components/categories-filter-grid.tsx"),
   categoriesLoading: path.join(ROOT, "apps/web/app/(shell)/categories/loading.tsx"),
   playerEvents: path.join(ROOT, "apps/web/lib/player-events.ts"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
-function read(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
-  }
-
-  return fs.readFileSync(filePath, "utf8");
-}
-
-function assertContains(source, needle, description, failures) {
-  if (!source.includes(needle)) {
-    failures.push(`${description} (missing: ${needle})`);
-  }
-}
-
-function assertNotContains(source, needle, description, failures) {
-  if (source.includes(needle)) {
-    failures.push(`${description} (unexpected: ${needle})`);
-  }
-}
-
-function assertCssRuleContains(source, selector, needle, description, failures) {
-  const selectorIndex = source.indexOf(selector);
-  if (selectorIndex === -1) {
-    failures.push(`${description} (missing selector: ${selector})`);
-    return;
-  }
-
-  const blockStart = source.indexOf("{", selectorIndex);
-  const blockEnd = blockStart === -1 ? -1 : source.indexOf("}", blockStart + 1);
-  if (blockStart === -1 || blockEnd === -1) {
-    failures.push(`${description} (invalid css block for selector: ${selector})`);
-    return;
-  }
-
-  const block = source.slice(blockStart + 1, blockEnd);
-  if (!block.includes(needle)) {
-    failures.push(`${description} (missing in ${selector}: ${needle})`);
-  }
-}
-
-function assertCssRuleNotContains(source, selector, needle, description, failures) {
-  const selectorIndex = source.indexOf(selector);
-  if (selectorIndex === -1) {
-    failures.push(`${description} (missing selector: ${selector})`);
-    return;
-  }
-
-  const blockStart = source.indexOf("{", selectorIndex);
-  const blockEnd = blockStart === -1 ? -1 : source.indexOf("}", blockStart + 1);
-  if (blockStart === -1 || blockEnd === -1) {
-    failures.push(`${description} (invalid css block for selector: ${selector})`);
-    return;
-  }
-
-  const block = source.slice(blockStart + 1, blockEnd);
-  if (block.includes(needle)) {
-    failures.push(`${description} (unexpected in ${selector}: ${needle})`);
-  }
-}
-
 function main() {
   const failures = [];
 
-  const shellDynamicSource = read(files.shellDynamic);
-  const playerExperienceSource = read(files.playerExperience);
-  const chatRouteSource = read(files.chatRoute);
-  const chatStreamRouteSource = read(files.chatStreamRoute);
-  const currentVideoRouteSource = read(files.currentVideoRoute);
-  const sharePreviewRouteSource = read(files.sharePreviewRoute);
-  const shareHtmlRouteSource = read(files.shareHtmlRoute);
-  const shareMetadataSource = read(files.shareMetadata);
-  const chatSharedVideoSource = read(files.chatSharedVideo);
-  const artistWikiLinkSource = read(files.artistWikiLink);
-  const adminVideoDeleteButtonSource = read(files.adminVideoDeleteButton);
-  const seenToggleRouteSource = read(files.seenToggleRoute);
-  const statusPerformanceRouteSource = read(files.statusPerformanceRoute);
-  const videosUnavailableRouteSource = read(files.videosUnavailableRoute);
-  const nextTrackDecisionHookSource = read(files.nextTrackDecisionHook);
-  const temporaryQueueControllerHookSource = read(files.temporaryQueueControllerHook);
-  const categoriesFilterGridSource = read(files.categoriesFilterGrid);
-  const categoriesLoadingSource = read(files.categoriesLoading);
-  const playerEventsSource = read(files.playerEvents);
-  const cssSource = read(files.css);
+  const shellDynamicSource = readFileStrict(files.shellDynamic, ROOT);
+  const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
+  const chatRouteSource = readFileStrict(files.chatRoute, ROOT);
+  const chatStreamRouteSource = readFileStrict(files.chatStreamRoute, ROOT);
+  const currentVideoRouteSource = readFileStrict(files.currentVideoRoute, ROOT);
+  const sharePreviewRouteSource = readFileStrict(files.sharePreviewRoute, ROOT);
+  const shareHtmlRouteSource = readFileStrict(files.shareHtmlRoute, ROOT);
+  const shareMetadataSource = readFileStrict(files.shareMetadata, ROOT);
+  const chatSharedVideoSource = readFileStrict(files.chatSharedVideo, ROOT);
+  const artistWikiLinkSource = readFileStrict(files.artistWikiLink, ROOT);
+  const adminVideoDeleteButtonSource = readFileStrict(files.adminVideoDeleteButton, ROOT);
+  const seenToggleRouteSource = readFileStrict(files.seenToggleRoute, ROOT);
+  const statusPerformanceRouteSource = readFileStrict(files.statusPerformanceRoute, ROOT);
+  const videosUnavailableRouteSource = readFileStrict(files.videosUnavailableRoute, ROOT);
+  const nextTrackDecisionHookSource = readFileStrict(files.nextTrackDecisionHook, ROOT);
+  const temporaryQueueControllerHookSource = readFileStrict(files.temporaryQueueControllerHook, ROOT);
+  const playerNextTrackDomainSource = readFileStrict(files.playerNextTrackDomain, ROOT);
+  const queueDomainSource = readFileStrict(files.queueDomain, ROOT);
+  const playlistDomainSource = readFileStrict(files.playlistDomain, ROOT);
+  const categoriesFilterGridSource = readFileStrict(files.categoriesFilterGrid, ROOT);
+  const categoriesLoadingSource = readFileStrict(files.categoriesLoading, ROOT);
+  const playerEventsSource = readFileStrict(files.playerEvents, ROOT);
+  const cssSource = readFileStrict(files.css, ROOT);
+
+  applyQueueResolutionRulePack({
+    shellDynamicSource,
+    playerExperienceSource,
+    temporaryQueueControllerHookSource,
+    nextTrackDecisionHookSource,
+    playerNextTrackDomainSource,
+    queueDomainSource,
+    playlistDomainSource,
+    playerEventsSource,
+    assertContains,
+    failures,
+  });
 
   // Watch Next and current-video resolver invariants.
   assertContains(shellDynamicSource, "<div className=\"railTabs rightRailTabs\">", "Shell renders right rail tabs container", failures);
@@ -126,11 +92,6 @@ function main() {
   assertContains(currentVideoRouteSource, "const targetRelatedCount = 8;", "Current-video API targets 8 Watch Next items", failures);
   assertContains(currentVideoRouteSource, "earlyTopVideosForPadding ?? await getCachedTopVideosForCurrentVideo(30)", "Current-video API fetches bounded filler pool (parallel-prefetched or direct)", failures);
   assertContains(currentVideoRouteSource, "const filler = shuffleVideos(fillerPool).slice(0, targetRelatedCount - relatedVideos.length);", "Current-video API randomizes sparse filler selection", failures);
-  assertContains(shellDynamicSource, "type RightRailMode = \"watch-next\" | \"playlist\" | \"queue\";", "Shell supports queue mode in right rail tab state", failures);
-  assertContains(shellDynamicSource, "import { useTemporaryQueueController } from \"@/components/use-temporary-queue-controller\";", "Shell delegates queue orchestration into dedicated hook", failures);
-  assertContains(temporaryQueueControllerHookSource, "export function useTemporaryQueueController", "Temporary queue controller hook exists", failures);
-  assertContains(temporaryQueueControllerHookSource, "window.addEventListener(TEMP_QUEUE_DEQUEUE_EVENT", "Temporary queue hook listens for manual dequeue events", failures);
-  assertContains(temporaryQueueControllerHookSource, "setTemporaryQueueVideos((currentQueue) => currentQueue.filter((video) => video.id !== previousVideoId));", "Temporary queue hook consumes previous track on transition", failures);
 
   // Player invariants.
   assertContains(playerExperienceSource, "const AUTOPLAY_KEY = \"yeh-player-autoplay\";", "Player persists autoplay preference key", failures);
@@ -138,16 +99,8 @@ function main() {
   assertContains(playerExperienceSource, "const PLAYER_MUTED_KEY = \"yeh-player-muted\";", "Player defines persisted mute preference key", failures);
   assertContains(playerExperienceSource, "temporaryQueue?: VideoRecord[];", "Player props accept temporary queue feed", failures);
   assertContains(playerExperienceSource, "temporaryQueue = [],", "Player defaults temporary queue to an empty list", failures);
-  assertContains(playerExperienceSource, "import { useNextTrackDecision } from \"@/components/use-next-track-decision\";", "Player delegates next-target orchestration into dedicated hook", failures);
   assertContains(playerExperienceSource, "import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent", "Player consumes centralized typed events module", failures);
   assertContains(playerExperienceSource, "const { resolvePlaylistStepTarget, resolveNextTarget, resolvedNextTarget } = useNextTrackDecision({", "Player invokes extracted next-track decision hook", failures);
-  assertContains(nextTrackDecisionHookSource, "export function useNextTrackDecision", "Next-track decision hook exists", failures);
-  assertContains(nextTrackDecisionHookSource, "const currentQueueIndex = temporaryQueue.findIndex((video) => video.id === currentVideoId);", "Next-track hook resolves queue index using current video id", failures);
-  assertContains(nextTrackDecisionHookSource, "? (temporaryQueue[currentQueueIndex + 1]?.id ?? null)", "Next-track hook advances to next queue slot", failures);
-  assertContains(playerExperienceSource, "if (currentVideoWasQueued && nextTarget.videoId !== currentVideo.id) {", "Manual Next only dequeues when transition is real", failures);
-  assertContains(playerExperienceSource, "window.dispatchEvent(new CustomEvent(TEMP_QUEUE_DEQUEUE_EVENT, {", "Manual Next dispatches queue dequeue event", failures);
-  assertContains(playerExperienceSource, "window.dispatchEvent(new CustomEvent(VIDEO_ENDED_EVENT, {", "ENDED state dispatches queue consumption event", failures);
-  assertContains(playerEventsSource, 'export { VIDEO_ENDED_EVENT, TEMP_QUEUE_DEQUEUE_EVENT } from "@/lib/events-contract";', "Player events module re-exports from centralized events-contract", failures);
   assertContains(playerExperienceSource, "const RESUME_KEY = \"yeh-player-resume\";", "Player defines resume snapshot key", failures);
   assertContains(playerExperienceSource, "window.localStorage.setItem(AUTOPLAY_KEY, ", "Player writes autoplay preference to localStorage", failures);
   assertContains(playerExperienceSource, "window.localStorage.setItem(PLAYER_VOLUME_KEY, String(normalizePlayerVolume(volume, 100)));", "Player writes volume preference to localStorage", failures);

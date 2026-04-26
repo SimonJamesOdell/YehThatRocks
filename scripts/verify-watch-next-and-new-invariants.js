@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
 const path = require("node:path");
+const { readFileStrict, assertContains, assertNotContains } = require("./invariants/helpers");
+const { applyQueueResolutionRulePack } = require("./invariants/rule-packs/queue-resolution-pack");
 
 const ROOT = process.cwd();
 
@@ -16,10 +17,14 @@ const files = {
   top100VideosLoader: path.join(ROOT, "apps/web/components/top100-videos-loader.tsx"),
   nextTrackDecisionHook: path.join(ROOT, "apps/web/components/use-next-track-decision.ts"),
   temporaryQueueControllerHook: path.join(ROOT, "apps/web/components/use-temporary-queue-controller.ts"),
+  playerNextTrackDomain: path.join(ROOT, "apps/web/domains/player/resolve-next-track-target.ts"),
+  queueDomain: path.join(ROOT, "apps/web/domains/queue/temporary-queue.ts"),
+  playlistDomain: path.join(ROOT, "apps/web/domains/playlist/playlist-step-target.ts"),
   playerEvents: path.join(ROOT, "apps/web/lib/player-events.ts"),
   seenToggleHook: path.join(ROOT, "apps/web/components/use-seen-toggle-preference.ts"),
   seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
   seenToggleData: path.join(ROOT, "apps/web/lib/seen-toggle-preference-data.ts"),
+  shellDynamicHelpers: path.join(ROOT, "apps/web/components/shell-dynamic-helpers.ts"),
   apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
   newestRoute: path.join(ROOT, "apps/web/app/api/videos/newest/route.ts"),
   hideVideoConfirmModal: path.join(ROOT, "apps/web/components/hide-video-confirm-modal.tsx"),
@@ -27,48 +32,45 @@ const files = {
   css: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
-function read(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
-  }
-
-  return fs.readFileSync(filePath, "utf8");
-}
-
-function assertContains(source, needle, description, failures) {
-  if (!source.includes(needle)) {
-    failures.push(`${description} (missing: ${needle})`);
-  }
-}
-
-function assertNotContains(source, needle, description, failures) {
-  if (source.includes(needle)) {
-    failures.push(`${description} (unexpected: ${needle})`);
-  }
-}
-
 function main() {
   const failures = [];
 
-  const shellDynamicSource = read(files.shellDynamic);
-  const currentVideoRouteSource = read(files.currentVideoRoute);
-  const catalogDataSource = read(files.catalogData);
-  const playerExperienceSource = read(files.playerExperience);
-  const newPageSource = read(files.newPage);
-  const newLoadingSource = read(files.newLoading);
-  const newVideosLoaderSource = read(files.newVideosLoader);
-  const top100VideosLoaderSource = read(files.top100VideosLoader);
-  const nextTrackDecisionHookSource = read(files.nextTrackDecisionHook);
-  const temporaryQueueControllerHookSource = read(files.temporaryQueueControllerHook);
-  const playerEventsSource = read(files.playerEvents);
-  const seenToggleHookSource = read(files.seenToggleHook);
-  const seenToggleRouteSource = read(files.seenToggleRoute);
-  const seenToggleDataSource = read(files.seenToggleData);
-  const apiSchemasSource = read(files.apiSchemas);
-  const newestRouteSource = read(files.newestRoute);
-  const hideVideoConfirmModalSource = read(files.hideVideoConfirmModal);
-  const schemaSource = read(files.schema);
-  const cssSource = read(files.css);
+  const shellDynamicSource = readFileStrict(files.shellDynamic, ROOT);
+  const currentVideoRouteSource = readFileStrict(files.currentVideoRoute, ROOT);
+  const catalogDataSource = readFileStrict(files.catalogData, ROOT);
+  const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
+  const newPageSource = readFileStrict(files.newPage, ROOT);
+  const newLoadingSource = readFileStrict(files.newLoading, ROOT);
+  const newVideosLoaderSource = readFileStrict(files.newVideosLoader, ROOT);
+  const top100VideosLoaderSource = readFileStrict(files.top100VideosLoader, ROOT);
+  const nextTrackDecisionHookSource = readFileStrict(files.nextTrackDecisionHook, ROOT);
+  const temporaryQueueControllerHookSource = readFileStrict(files.temporaryQueueControllerHook, ROOT);
+  const playerNextTrackDomainSource = readFileStrict(files.playerNextTrackDomain, ROOT);
+  const queueDomainSource = readFileStrict(files.queueDomain, ROOT);
+  const playlistDomainSource = readFileStrict(files.playlistDomain, ROOT);
+  const playerEventsSource = readFileStrict(files.playerEvents, ROOT);
+  const seenToggleHookSource = readFileStrict(files.seenToggleHook, ROOT);
+  const seenToggleRouteSource = readFileStrict(files.seenToggleRoute, ROOT);
+  const seenToggleDataSource = readFileStrict(files.seenToggleData, ROOT);
+  const shellDynamicHelpersSource = readFileStrict(files.shellDynamicHelpers, ROOT);
+  const apiSchemasSource = readFileStrict(files.apiSchemas, ROOT);
+  const newestRouteSource = readFileStrict(files.newestRoute, ROOT);
+  const hideVideoConfirmModalSource = readFileStrict(files.hideVideoConfirmModal, ROOT);
+  const schemaSource = readFileStrict(files.schema, ROOT);
+  const cssSource = readFileStrict(files.css, ROOT);
+
+  applyQueueResolutionRulePack({
+    shellDynamicSource,
+    playerExperienceSource,
+    temporaryQueueControllerHookSource,
+    nextTrackDecisionHookSource,
+    playerNextTrackDomainSource,
+    queueDomainSource,
+    playlistDomainSource,
+    playerEventsSource,
+    assertContains,
+    failures,
+  });
 
   // Watch Next load-more invariants.
   assertContains(shellDynamicSource, "const relatedFetchOffsetRef = useRef<number | null>(null);", "Watch Next tracks a dedicated offset for paged fetches", failures);
@@ -111,42 +113,28 @@ function main() {
   assertContains(shellDynamicSource, "setHasBootstrappedWatchNext(true);", "Watch Next only unlocks first render after signatures match", failures);
 
   // Temporary queue invariants.
-  assertContains(shellDynamicSource, "type RightRailMode = \"watch-next\" | \"playlist\" | \"queue\";", "Shell right rail mode supports queue tab", failures);
-  assertContains(shellDynamicSource, "import { useTemporaryQueueController } from \"@/components/use-temporary-queue-controller\";", "Shell uses extracted temporary queue controller hook", failures);
   assertContains(shellDynamicSource, "const {", "Shell destructures temporary queue controller outputs", failures);
   assertContains(shellDynamicSource, "temporaryQueueVideos,", "Shell consumes queue list from extracted hook", failures);
   assertContains(shellDynamicSource, "handleAddToTemporaryQueue,", "Shell consumes queue add handler from extracted hook", failures);
   assertContains(shellDynamicSource, "handleRemoveFromTemporaryQueue,", "Shell consumes queue remove handler from extracted hook", failures);
   assertContains(shellDynamicSource, "handleClearTemporaryQueue,", "Shell consumes queue clear handler from extracted hook", failures);
   assertContains(shellDynamicSource, "temporaryQueueVideoIdSet,", "Shell consumes queue id set from extracted hook", failures);
-  assertContains(temporaryQueueControllerHookSource, "export function useTemporaryQueueController", "Temporary queue orchestration is extracted into dedicated hook", failures);
-  assertContains(temporaryQueueControllerHookSource, "window.addEventListener(VIDEO_ENDED_EVENT", "Temporary queue hook consumes ended-video event", failures);
-  assertContains(temporaryQueueControllerHookSource, "window.addEventListener(TEMP_QUEUE_DEQUEUE_EVENT", "Temporary queue hook consumes manual dequeue event", failures);
-  assertContains(temporaryQueueControllerHookSource, "const previousVideoIdRef = useRef(currentVideoId);", "Temporary queue hook tracks previous video id for transition cleanup", failures);
-  assertContains(temporaryQueueControllerHookSource, "setTemporaryQueueVideos((currentQueue) => currentQueue.filter((video) => video.id !== previousVideoId));", "Temporary queue hook removes previous video on transitions", failures);
   assertContains(shellDynamicSource, "Current queue • {temporaryQueueVideos.length}", "Shell queue rail label uses Current queue copy", failures);
   assertContains(shellDynamicSource, "rightRailMode === \"queue\" ? \"activeTab\" : undefined", "Shell highlights queue tab when selected", failures);
   assertContains(shellDynamicSource, "className={`relatedCard linkedCard relatedCardTransition rightRailPlaylistTrackCard${track.id === currentVideo.id ? \" relatedCardActive\" : \"\"}${clickedRelatedVideoId === track.id ? \" relatedCardClickFlash\" : \"\"}`}", "Queue cards reuse playlist active styling for currently playing item", failures);
   assertContains(shellDynamicSource, "temporaryQueue={temporaryQueueVideos}", "Shell passes temporary queue into player experience", failures);
 
-  assertContains(playerExperienceSource, "import { useNextTrackDecision } from \"@/components/use-next-track-decision\";", "Player uses extracted next-track decision hook", failures);
   assertContains(playerExperienceSource, "import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent", "Player consumes centralized typed events module", failures);
   assertContains(playerExperienceSource, "const { resolvePlaylistStepTarget, resolveNextTarget, resolvedNextTarget } = useNextTrackDecision({", "Player delegates next-target orchestration to extracted hook", failures);
-  assertContains(nextTrackDecisionHookSource, "export function useNextTrackDecision", "Next-track orchestration is extracted into dedicated hook", failures);
-  assertContains(nextTrackDecisionHookSource, "const currentQueueIndex = temporaryQueue.findIndex((video) => video.id === currentVideoId);", "Next-track hook calculates queue progression from current queue index", failures);
-  assertContains(nextTrackDecisionHookSource, "? (temporaryQueue[currentQueueIndex + 1]?.id ?? null)", "Next-track hook advances to the immediate next queue item", failures);
-  assertContains(nextTrackDecisionHookSource, ": (temporaryQueue[0]?.id ?? null);", "Next-track hook falls back to queue head when current video is not queued", failures);
   assertContains(playerExperienceSource, "const currentVideoWasQueued = temporaryQueue.some((video) => video.id === currentVideo.id);", "Player detects when current video belongs to temporary queue", failures);
-  assertContains(playerExperienceSource, "if (currentVideoWasQueued && nextTarget.videoId !== currentVideo.id) {", "Player only dequeues when Next actually advances to a different video", failures);
-  assertContains(playerExperienceSource, "window.dispatchEvent(new CustomEvent(TEMP_QUEUE_DEQUEUE_EVENT, {", "Player dispatches explicit dequeue event on manual Next", failures);
-  assertContains(playerExperienceSource, "window.dispatchEvent(new CustomEvent(VIDEO_ENDED_EVENT, {", "Player dispatches explicit queue-consumption event on ENDED", failures);
-  assertContains(playerEventsSource, 'export { VIDEO_ENDED_EVENT, TEMP_QUEUE_DEQUEUE_EVENT } from "@/lib/events-contract";', "Shared player events module re-exports from centralized events-contract", failures);
 
   // Watch Next redraw-loop regression invariants.
   assertContains(shellDynamicSource, "const currentIds = displayedRelatedVideos.map((video) => video.id);", "Watch Next transition effect snapshots currently displayed ids", failures);
   assertContains(shellDynamicSource, "const nextIds = sourceRelatedVideos.map((video) => video.id);", "Watch Next transition effect snapshots incoming ids", failures);
-  assertContains(shellDynamicSource, "const isAppendOnlyUpdate = currentIds.length > 0", "Watch Next detects append-only rail growth", failures);
-  assertContains(shellDynamicSource, "&& currentIds.every((id, index) => nextIds[index] === id);", "Watch Next verifies append-only prefix alignment", failures);
+  // Append-only detection is now in the shared helpers module (shell-dynamic-helpers.ts)
+  assertContains(shellDynamicHelpersSource, "currentIds.length > 0", "Watch Next detects append-only rail growth", failures);
+  assertContains(shellDynamicHelpersSource, "currentIds.every((id, index) => nextIds[index] === id)", "Watch Next verifies append-only prefix alignment", failures);
+  assertContains(shellDynamicSource, "const isAppendOnlyUpdate = detectAppendOnly(currentIds, nextIds);", "Watch Next uses extracted detectAppendOnly helper for append-only check", failures);
   assertContains(shellDynamicSource, "if (isAppendOnlyUpdate) {", "Watch Next branches append-only updates away from fade-in transitions", failures);
   assertContains(shellDynamicSource, "if (relatedTransitionPhase !== \"idle\") {", "Watch Next append-only branch normalizes transition phase", failures);
   assertNotContains(shellDynamicSource, "setRelatedTransitionPhase(\"fading-out\")", "Watch Next no longer re-enters fading-out transition loops", failures);
@@ -201,10 +189,10 @@ function main() {
   assertContains(playerExperienceSource, "const onFavouritesRoute = pathname === \"/favourites\";", "Docked autoplay recognizes Favourites list route", failures);
   assertContains(playerExperienceSource, "const onCategoryRoute = pathname.startsWith(\"/categories/\");", "Docked autoplay recognizes Category detail list route", failures);
   assertContains(playerExperienceSource, "const onArtistRoute = pathname.startsWith(\"/artist/\");", "Docked autoplay recognizes Artist detail list route", failures);
-  assertContains(nextTrackDecisionHookSource, "if (isDockedDesktop && autoplayEnabled && routeAutoplayQueueIds.length > 0)", "Autoplay next target prioritizes route queue when docked on list pages", failures);
-  assertContains(nextTrackDecisionHookSource, "const currentIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId === currentVideoId);", "Route queue next selection is based on current video position", failures);
-  assertContains(nextTrackDecisionHookSource, "const nextIndex = currentIndex >= 0", "Route queue next selection advances in list order", failures);
-  assertContains(nextTrackDecisionHookSource, "const randomWatchNextId = getRandomWatchNextId();", "Random watch-next fallback still exists when no route queue target is available", failures);
+  assertContains(playerNextTrackDomainSource, "if (isDockedDesktop && autoplayEnabled && routeAutoplayQueueIds.length > 0)", "Autoplay next target prioritizes route queue when docked on list pages", failures);
+  assertContains(playerNextTrackDomainSource, "const currentIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId === currentVideoId);", "Route queue next selection is based on current video position", failures);
+  assertContains(playerNextTrackDomainSource, "const nextIndex = currentIndex >= 0", "Route queue next selection advances in list order", failures);
+  assertContains(playerNextTrackDomainSource, "const randomWatchNextId = getRandomWatchNextId();", "Random watch-next fallback still exists when no route queue target is available", failures);
 
   // New route non-blocking and staged loading invariants.
   assertContains(newPageSource, 'import { NewVideosLoader } from "@/components/new-videos-loader";', "New page uses client loader for staged fetches", failures);

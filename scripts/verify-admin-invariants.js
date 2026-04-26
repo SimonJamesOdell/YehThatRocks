@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
 const path = require("node:path");
+const { readFileStrict, assertContains } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
 
@@ -18,33 +18,19 @@ const files = {
   currentVideoCache: path.join(ROOT, "apps/web/lib/current-video-cache.ts"),
 };
 
-function read(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
-  }
-
-  return fs.readFileSync(filePath, "utf8");
-}
-
-function assertContains(source, needle, description, failures) {
-  if (!source.includes(needle)) {
-    failures.push(`${description} (missing: ${needle})`);
-  }
-}
-
 function main() {
   const failures = [];
 
-  const adminAuthSource = read(files.adminAuth);
-  const accountPageSource = read(files.accountPage);
-  const adminPageSource = read(files.adminPage);
-  const adminDashboardRouteSource = read(files.adminDashboardRoute);
-  const adminCategoriesRouteSource = read(files.adminCategoriesRoute);
-  const adminVideosRouteSource = read(files.adminVideosRoute);
-  const adminArtistsRouteSource = read(files.adminArtistsRoute);
-  const adminDashboardPanelSource = read(files.adminDashboardPanel);
-  const catalogDataSource = read(files.catalogData);
-  const currentVideoCacheSource = read(files.currentVideoCache);
+  const adminAuthSource = readFileStrict(files.adminAuth, ROOT);
+  const accountPageSource = readFileStrict(files.accountPage, ROOT);
+  const adminPageSource = readFileStrict(files.adminPage, ROOT);
+  const adminDashboardRouteSource = readFileStrict(files.adminDashboardRoute, ROOT);
+  const adminCategoriesRouteSource = readFileStrict(files.adminCategoriesRoute, ROOT);
+  const adminVideosRouteSource = readFileStrict(files.adminVideosRoute, ROOT);
+  const adminArtistsRouteSource = readFileStrict(files.adminArtistsRoute, ROOT);
+  const adminDashboardPanelSource = readFileStrict(files.adminDashboardPanel, ROOT);
+  const catalogDataSource = readFileStrict(files.catalogData, ROOT);
+  const currentVideoCacheSource = readFileStrict(files.currentVideoCache, ROOT);
 
   // Admin identity and auth guard invariants.
   assertContains(adminAuthSource, 'const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "simonjamesodell@live.co.uk").trim().toLowerCase();', "Admin auth pins owner email with env override", failures);
