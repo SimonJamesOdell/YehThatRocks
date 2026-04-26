@@ -8,6 +8,7 @@ import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { Top100VideoLink } from "@/components/top100-video-link";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 
 type TopVideosPayload = {
   videos?: VideoRecord[];
@@ -222,12 +223,11 @@ export function Top100VideosLoader({
         ? `/?v=${encodeURIComponent(currentVideoId)}&pl=${encodeURIComponent(createdPlaylistId)}&resume=1`
         : `/?pl=${encodeURIComponent(createdPlaylistId)}`;
 
-      window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", {
-        detail: { href: closeHref },
-      }));
-      window.dispatchEvent(new CustomEvent("ytr:right-rail-mode", {
-        detail: { mode: "playlist", playlistId: createdPlaylistId },
-      }));
+      dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href: closeHref });
+      dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
+        mode: "playlist",
+        playlistId: createdPlaylistId,
+      });
       router.push(closeHref);
 
       const ANIMATED_TRACK_LIMIT = 40;
@@ -240,40 +240,33 @@ export function Top100VideosLoader({
         window.setTimeout(() => {
           const visible = sourceVideos.slice(0, index + 1);
 
-          window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
-            detail: {
-              playlist: {
-                id: createdPlaylistId,
-                name: playlistName,
-                videos: visible,
-                itemCount: optimisticItemCount,
-              },
-              trackId: video.id,
+          dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
+            playlist: {
+              id: createdPlaylistId,
+              name: playlistName,
+              videos: visible,
+              itemCount: optimisticItemCount,
             },
-          }));
+          });
 
-          window.dispatchEvent(new CustomEvent("ytr:right-rail-mode", {
-            detail: {
-              mode: "playlist",
-              playlistId: createdPlaylistId,
-              trackId: video.id,
-            },
-          }));
+          dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
+            mode: "playlist",
+            playlistId: createdPlaylistId,
+            trackId: video.id,
+          });
         }, index * 22);
       }
 
       const animationDoneMs = animatedVideos.length * 22 + 40;
       window.setTimeout(() => {
-        window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
-          detail: {
-            playlist: {
-              id: createdPlaylistId,
-              name: playlistName,
-              videos: sourceVideos,
-              itemCount: optimisticItemCount,
-            },
+        dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
+          playlist: {
+            id: createdPlaylistId,
+            name: playlistName,
+            videos: sourceVideos,
+            itemCount: optimisticItemCount,
           },
-        }));
+        });
       }, animationDoneMs);
 
       void fetch(`/api/playlists/${encodeURIComponent(createdPlaylistId)}/items`, {
@@ -283,7 +276,7 @@ export function Top100VideosLoader({
       }).then(async (addAllResponse) => {
         if (!addAllResponse.ok) {
           setMessage("Playlist was created, but some tracks could not be saved.");
-          window.dispatchEvent(new Event("ytr:playlists-updated"));
+          dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
           return;
         }
 
@@ -298,19 +291,17 @@ export function Top100VideosLoader({
         const optimisticIds = sourceVideos.map((v) => v.id).join(",");
         const serverIds = finalVideos.map((v) => v.id).join(",");
         if (serverIds !== optimisticIds || finalName !== playlistName) {
-          window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
-            detail: {
-              playlist: {
-                id: createdPlaylistId,
-                name: finalName,
-                videos: finalVideos,
-                itemCount: finalItemCount,
-              },
+          dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
+            playlist: {
+              id: createdPlaylistId,
+              name: finalName,
+              videos: finalVideos,
+              itemCount: finalItemCount,
             },
-          }));
+          });
         }
 
-        window.dispatchEvent(new Event("ytr:playlists-updated"));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
 
         const addedCount = finalVideos.length;
         if (addedCount < videoIds.length) {
@@ -320,7 +311,7 @@ export function Top100VideosLoader({
         }
       }).catch(() => {
         setMessage("Playlist was created, but tracks could not be saved.");
-        window.dispatchEvent(new Event("ytr:playlists-updated"));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
       });
     } catch {
       setMessage("Could not create playlist from Top 100. Please try again.");
