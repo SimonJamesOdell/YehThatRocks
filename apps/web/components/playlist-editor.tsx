@@ -7,14 +7,13 @@ import { useRouter } from "next/navigation";
 
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { CloseLink } from "@/components/close-link";
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import type { PlaylistDetail } from "@/lib/catalog-data";
 
 type PlaylistEditorProps = {
   playlist: PlaylistDetail;
   isAuthenticated: boolean;
 };
-
-const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 
 function getPlaylistVideoThumbnail(video: { id: string; thumbnail?: string | null }) {
   const thumbnail = video.thumbnail?.trim();
@@ -135,7 +134,7 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
         }
 
         setPlaylistVideos((current) => current.filter((_, itemIndex) => itemIndex !== index));
-        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
         router.refresh();
       } catch {
         setError("Could not remove that track. Please try again.");
@@ -245,7 +244,7 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
           setPlaylistVideos(updatedPlaylist.videos as typeof playlist.videos);
         }
 
-        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
       } catch {
         setError("Could not reorder tracks. Please try again.");
         setPlaylistVideos(previous);

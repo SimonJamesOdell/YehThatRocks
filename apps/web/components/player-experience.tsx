@@ -13,7 +13,7 @@ import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { useNextTrackDecision } from "@/components/use-next-track-decision";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
-import { TEMP_QUEUE_DEQUEUE_EVENT, VIDEO_ENDED_EVENT } from "@/lib/events-contract";
+import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent, TEMP_QUEUE_DEQUEUE_EVENT, VIDEO_ENDED_EVENT } from "@/lib/events-contract";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 
 type PlayerExperienceProps = {
@@ -141,7 +141,6 @@ const NEW_AUTOPLAY_PLAYLIST_SIZE = 50;
 const RANDOM_NEXT_RECENT_EXCLUSION = 18;
 const UNAVAILABLE_PLAYER_CODES = new Set([5, 100, 101, 150]);
 const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_PLAYER === "1";
-const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
 const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. Please choose another track.";
 const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstream video provider for this track. This is not a YehThatRocks failure. Please try the refresh button and if that does not work, choose another track.";
@@ -155,12 +154,7 @@ const PLAYBACK_STALL_PROGRESS_EPSILON_SECONDS = 0.2;
 const PLAYER_LOAD_REFRESH_HINT_DELAY_MS = 2000;
 const PLAYER_AUTO_RECONNECT_DELAY_MS = 2000;
 const MANUAL_TRANSITION_MASK_TIMEOUT_MS = 8000;
-const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
-const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
-const RIGHT_RAIL_LYRICS_OPEN_EVENT = "ytr:right-rail-lyrics-open";
-const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
-const ADMIN_OVERLAY_ENTER_EVENT = "ytr:admin-overlay-enter";
 const ADMIN_SESSION_REVALIDATE_INTERVAL_MS = 30_000;
 const maxEndedChoiceVideos = 12;
 const ENDED_CHOICE_BATCH_SIZE = maxEndedChoiceVideos;
@@ -330,7 +324,7 @@ const EndedChoiceCard = memo(function EndedChoiceCard({
       }
 
       setIsFavourited(false);
-      window.dispatchEvent(new Event("ytr:favourites-updated"));
+      dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
     } finally {
       setIsRemovingFavourite(false);
     }
@@ -1352,10 +1346,10 @@ export function PlayerExperience({
       setPlaylistRefreshTick((current) => current + 1);
     };
 
-    window.addEventListener(PLAYLISTS_UPDATED_EVENT, handlePlaylistsUpdated);
+    const unsubscribe = listenToAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, handlePlaylistsUpdated);
 
     return () => {
-      window.removeEventListener(PLAYLISTS_UPDATED_EVENT, handlePlaylistsUpdated);
+      unsubscribe();
     };
   }, []);
 
@@ -1957,9 +1951,7 @@ export function PlayerExperience({
         }
 
         if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent(WATCH_HISTORY_UPDATED_EVENT, {
-            detail: { videoId: activeVideoId },
-          }));
+          dispatchAppEvent(EVENT_NAMES.WATCH_HISTORY_UPDATED, { videoId: activeVideoId });
         }
       }
     } catch {
@@ -2260,19 +2252,13 @@ export function PlayerExperience({
       pauseActivePlayback();
     }
 
-    window.addEventListener(ADMIN_OVERLAY_ENTER_EVENT, handleAdminOverlayEnter);
-    return () => window.removeEventListener(ADMIN_OVERLAY_ENTER_EVENT, handleAdminOverlayEnter);
+    const unsubscribe = listenToAppEvent(EVENT_NAMES.ADMIN_OVERLAY_ENTER, handleAdminOverlayEnter);
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    function handleReplayRequest(event: Event) {
-      if (!(event instanceof CustomEvent)) {
-        return;
-      }
-
-      const requestedVideoId = typeof event.detail?.videoId === "string"
-        ? event.detail.videoId
-        : null;
+    function handleReplayRequest(payload: { videoId: string }) {
+      const requestedVideoId = typeof payload.videoId === "string" ? payload.videoId : null;
 
       if (!requestedVideoId || requestedVideoId !== currentVideoRef.current.id) {
         return;
@@ -2285,8 +2271,8 @@ export function PlayerExperience({
       handleEndedChoiceWatchAgain();
     }
 
-    window.addEventListener(REQUEST_VIDEO_REPLAY_EVENT, handleReplayRequest);
-    return () => window.removeEventListener(REQUEST_VIDEO_REPLAY_EVENT, handleReplayRequest);
+    const unsubscribe = listenToAppEvent(EVENT_NAMES.REQUEST_VIDEO_REPLAY, handleReplayRequest);
+    return () => unsubscribe();
   }, [showEndedChoiceOverlay]);
 
   async function reportUnavailableFromPlayer(reason: string): Promise<ReportUnavailableResult> {
@@ -3603,7 +3589,7 @@ export function PlayerExperience({
       } | null;
 
       if (response.ok) {
-        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
 
         if (payload?.activePlaylistDeleted) {
           const params = new URLSearchParams(searchParams.toString());
@@ -3639,7 +3625,7 @@ export function PlayerExperience({
       return false;
     }
 
-    window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+    dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
     return true;
   }
 
@@ -3701,13 +3687,11 @@ export function PlayerExperience({
         setShowFooterPlaylistMenu(false);
         setFooterShowExistingList(false);
 
-        window.dispatchEvent(new CustomEvent(RIGHT_RAIL_MODE_EVENT, {
-          detail: {
-            mode: "playlist",
-            playlistId,
-            trackId: currentVideo.id,
-          },
-        }));
+        dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
+          mode: "playlist",
+          playlistId,
+          trackId: currentVideo.id,
+        });
 
         if (footerOpenAfterSelect) {
           const params = new URLSearchParams(searchParams.toString());
@@ -3764,9 +3748,7 @@ export function PlayerExperience({
       setShowFooterPlaylistMenu(false);
       setFooterShowExistingList(false);
 
-      window.dispatchEvent(new CustomEvent(RIGHT_RAIL_MODE_EVENT, {
-        detail: { mode: "playlist", playlistId: created.id, trackId: currentVideo.id },
-      }));
+      dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, { mode: "playlist", playlistId: created.id, trackId: currentVideo.id });
     } catch {
       setFooterPlaylistAddState("error");
     }
@@ -3815,13 +3797,11 @@ export function PlayerExperience({
       markFooterPlaylistAdded();
       setShowFooterPlaylistMenu(false);
 
-      window.dispatchEvent(new CustomEvent(RIGHT_RAIL_MODE_EVENT, {
-        detail: {
-          mode: "playlist",
-          playlistId: created.id,
-          trackId: currentVideo.id,
-        },
-      }));
+      dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
+        mode: "playlist",
+        playlistId: created.id,
+        trackId: currentVideo.id,
+      });
 
       const params = new URLSearchParams(searchParams.toString());
       params.set("v", currentVideo.id);
@@ -3903,7 +3883,7 @@ export function PlayerExperience({
       const playlistId = typeof playlistPayload?.id === "string" ? playlistPayload.id : null;
 
       if (playlistId) {
-        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
       }
 
       return {
@@ -3985,7 +3965,7 @@ export function PlayerExperience({
       const playlistId = typeof playlistPayload?.id === "string" ? playlistPayload.id : null;
 
       if (playlistId) {
-        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
       }
 
       return {
@@ -4064,7 +4044,7 @@ export function PlayerExperience({
       const playlistId = typeof playlistPayload?.id === "string" ? playlistPayload.id : null;
 
       if (playlistId) {
-        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
       }
 
       return {
@@ -4142,7 +4122,7 @@ export function PlayerExperience({
       const playlistId = typeof playlistPayload?.id === "string" ? playlistPayload.id : null;
 
       if (playlistId) {
-        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
       }
 
       return {
@@ -4209,7 +4189,7 @@ export function PlayerExperience({
       const playlistId = typeof playlistPayload?.id === "string" ? playlistPayload.id : null;
 
       if (playlistId) {
-        window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
       }
 
       return {
@@ -4381,9 +4361,7 @@ export function PlayerExperience({
       return;
     }
 
-    window.dispatchEvent(new CustomEvent(RIGHT_RAIL_LYRICS_OPEN_EVENT, {
-      detail: { videoId: currentVideo.id },
-    }));
+    dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_LYRICS_OPEN, { videoId: currentVideo.id });
   }
 
   async function handleCopyShareLink() {
@@ -4708,9 +4686,9 @@ export function PlayerExperience({
             return;
           }
 
-          window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
-          window.dispatchEvent(new Event("ytr:favourites-updated"));
-          window.dispatchEvent(new CustomEvent("ytr:video-catalog-deleted", { detail: { videoId: deletingVideoId } }));
+          dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
+          dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
+          dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId: deletingVideoId });
           setPlaylistQueueIds((currentIds) => currentIds.filter((id) => id !== deletingVideoId));
 
           // Clear the deleted selection from the URL immediately so the resolver
