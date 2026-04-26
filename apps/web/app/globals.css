@@ -7057,6 +7057,61 @@ h1 {
   bottom: 6px;
 }
 
+.relatedFavouriteBadgeOverlay {
+  position: absolute;
+  left: 1px;
+  bottom: -4px;
+  display: inline-block;
+  font-size: 2.7rem;
+  line-height: 1;
+  color: #d83a3a;
+  text-shadow:
+    -1px -1px 0 #fff,
+    1px -1px 0 #fff,
+    -1px 1px 0 #fff,
+    1px 1px 0 #fff,
+    0 1px 0 rgba(0, 0, 0, 0.45),
+    0 0 8px rgba(216, 58, 58, 0.35);
+  z-index: 2;
+}
+
+.relatedSourceBadge {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(8, 8, 8, 0.54);
+  color: rgba(255, 238, 231, 0.92);
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.relatedCardSourceBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.relatedSourceBadgeFavourite {
+  border-color: rgba(255, 191, 191, 0.45);
+  background: rgba(88, 18, 18, 0.48);
+}
+
+.relatedSourceBadgeTop100 {
+  border-color: rgba(247, 218, 144, 0.45);
+  background: rgba(92, 62, 16, 0.46);
+}
+
+.relatedSourceBadgeNew {
+  border-color: rgba(172, 230, 190, 0.45);
+  background: rgba(14, 74, 46, 0.46);
+}
+
 .leaderboardMeta {
   min-width: 0;
 }

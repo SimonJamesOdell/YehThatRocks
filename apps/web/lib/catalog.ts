@@ -5,6 +5,10 @@ export type VideoRecord = {
   genre: string;
   favourited: number;
   description: string;
+  sourceLabel?: "Top100" | "New";
+  isFavouriteSource?: boolean;
+  isTop100Source?: boolean;
+  isNewSource?: boolean;
 };
 
 export type ArtistRecord = {
