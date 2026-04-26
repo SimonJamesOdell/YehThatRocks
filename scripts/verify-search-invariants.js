@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
 const path = require("node:path");
+const { readFileStrict, assertContains, assertNotContains } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
 
@@ -22,42 +22,23 @@ const files = {
   globalCss: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
-function read(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
-  }
-  return fs.readFileSync(filePath, "utf8");
-}
-
-function assertContains(source, needle, description, failures) {
-  if (!source.includes(needle)) {
-    failures.push(`${description} (missing: ${needle})`);
-  }
-}
-
-function assertNotContains(source, needle, description, failures) {
-  if (source.includes(needle)) {
-    failures.push(`${description} (unexpected: ${needle})`);
-  }
-}
-
 function main() {
   const failures = [];
 
-  const searchPageSource = read(files.searchPage);
-  const searchRouteSource = read(files.searchRoute);
-  const searchFlagsRouteSource = read(files.searchFlagsRoute);
-  const catalogDataSource = read(files.catalogData);
-  const searchFlagDataSource = read(files.searchFlagData);
-  const shellDynamicSource = read(files.shellDynamic);
-  const searchFlagButtonSource = read(files.searchFlagButton);
-  const searchSeenToggleSource = read(files.searchSeenToggle);
-  const seenToggleHookSource = read(files.seenToggleHook);
-  const seenToggleRouteSource = read(files.seenToggleRoute);
-  const adminVideoEditModalSource = read(files.adminVideoEditModal);
-  const adminVideoEditButtonSource = read(files.adminVideoEditButton);
-  const adminVideoDeleteButtonSource = read(files.adminVideoDeleteButton);
-  const globalCssSource = read(files.globalCss);
+  const searchPageSource = readFileStrict(files.searchPage, ROOT);
+  const searchRouteSource = readFileStrict(files.searchRoute, ROOT);
+  const searchFlagsRouteSource = readFileStrict(files.searchFlagsRoute, ROOT);
+  const catalogDataSource = readFileStrict(files.catalogData, ROOT);
+  const searchFlagDataSource = readFileStrict(files.searchFlagData, ROOT);
+  const shellDynamicSource = readFileStrict(files.shellDynamic, ROOT);
+  const searchFlagButtonSource = readFileStrict(files.searchFlagButton, ROOT);
+  const searchSeenToggleSource = readFileStrict(files.searchSeenToggle, ROOT);
+  const seenToggleHookSource = readFileStrict(files.seenToggleHook, ROOT);
+  const seenToggleRouteSource = readFileStrict(files.seenToggleRoute, ROOT);
+  const adminVideoEditModalSource = readFileStrict(files.adminVideoEditModal, ROOT);
+  const adminVideoEditButtonSource = readFileStrict(files.adminVideoEditButton, ROOT);
+  const adminVideoDeleteButtonSource = readFileStrict(files.adminVideoDeleteButton, ROOT);
+  const globalCssSource = readFileStrict(files.globalCss, ROOT);
 
   // --- Search page: server-side rendering ---
   assertContains(searchPageSource, "searchCatalog(query)", "Search page calls searchCatalog server-side", failures);

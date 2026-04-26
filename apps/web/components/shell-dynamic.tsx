@@ -17,6 +17,7 @@ import { useTemporaryQueueController } from "@/components/use-temporary-queue-co
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { navItems, type VideoRecord } from "@/lib/catalog";
+import { detectAppendOnly, filterSeenFromWatchNext } from "@/components/shell-dynamic-helpers";
 import { fetchWithAuthRetry as fetchWithAuthRetryClient } from "@/lib/client-auth-fetch";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
@@ -800,7 +801,7 @@ function ShellDynamicInner({
     key: WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY,
     isAuthenticated,
   });
-  const [, setSeenVideoRefreshTick] = useState(0);
+  const [seenVideoRefreshTick, setSeenVideoRefreshTick] = useState(0);
   const [clickedRelatedVideoId, setClickedRelatedVideoId] = useState<string | null>(null);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const [flashingChatTabs, setFlashingChatTabs] = useState<Record<FlashableChatMode, boolean>>({
@@ -2981,14 +2982,22 @@ function ShellDynamicInner({
     dedupeRelatedRailVideos(displayedRelatedVideos, currentVideo.id),
     hiddenVideoIdsRef.current,
   ), [currentVideo.id, displayedRelatedVideos]);
-  const visibleWatchNextVideos = useMemo(() => (
-    isAuthenticated && watchNextHideSeen
-      ? displayedRenderableRelatedVideos.filter((video) => !seenVideoIdsRef.current.has(video.id) || isFavouriteVideo(video))
-      : displayedRenderableRelatedVideos
-  ), [displayedRenderableRelatedVideos, isAuthenticated, watchNextHideSeen]);
+  const visibleWatchNextVideos = useMemo(
+    () => filterSeenFromWatchNext(
+      displayedRenderableRelatedVideos,
+      seenVideoIdsRef.current,
+      isAuthenticated,
+      watchNextHideSeen,
+    ),
+    // seenVideoRefreshTick invalidates the memo when seenVideoIdsRef.current mutates
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [displayedRenderableRelatedVideos, isAuthenticated, watchNextHideSeen, seenVideoRefreshTick],
+  );
   const hasSeenWatchNextVideos = useMemo(
     () => isAuthenticated && displayedRenderableRelatedVideos.some((video) => seenVideoIdsRef.current.has(video.id)),
-    [displayedRenderableRelatedVideos, isAuthenticated],
+    // seenVideoRefreshTick invalidates the memo when seenVideoIdsRef.current mutates
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [displayedRenderableRelatedVideos, isAuthenticated, seenVideoRefreshTick],
   );
   const hidingRelatedVideoIdSet = useMemo(() => new Set(hidingRelatedVideoIds), [hidingRelatedVideoIds]);
   const hiddenMutationPendingVideoIdSet = useMemo(() => new Set(hiddenMutationPendingVideoIds), [hiddenMutationPendingVideoIds]);
@@ -3569,18 +3578,19 @@ function ShellDynamicInner({
 
     // Fresh data arrived for a finalized video: render it.
     if (currentSignature !== nextSignature) {
-      const isAppendOnlyUpdate = currentIds.length > 0
-        && nextIds.length > currentIds.length
-        && currentIds.every((id, index) => nextIds[index] === id);
-
-      setDisplayedRelatedVideos(sourceRelatedVideos);
+      const isAppendOnlyUpdate = detectAppendOnly(currentIds, nextIds);
 
       if (isAppendOnlyUpdate) {
-        if (relatedTransitionPhase !== "idle") {
+        // Append-only: no animation needed — defer the card list update so
+        // it does not block user interaction (scrolling, clicks, etc.).
+        startTransition(() => {
+          setDisplayedRelatedVideos(sourceRelatedVideos);
           setRelatedTransitionPhase("idle");
-        }
+        });
         return;
       }
+
+      setDisplayedRelatedVideos(sourceRelatedVideos);
 
       if (!hasBootstrappedWatchNext) {
         setHasBootstrappedWatchNext(true);

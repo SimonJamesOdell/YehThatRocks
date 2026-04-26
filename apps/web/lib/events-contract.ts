@@ -39,13 +39,15 @@ export const EVENT_NAMES = {
   ARTISTS_FILTER_CHANGE: "ytr:artists-filter-change",
 } as const;
 
+export type QueueRemovalReason = "ended" | "manual-next" | "transition-sync";
+
 // ============================================================================
 // Event Payload Types
 // ============================================================================
 
 export type EventPayloads = {
-  [EVENT_NAMES.VIDEO_ENDED]: { videoId: string };
-  [EVENT_NAMES.TEMP_QUEUE_DEQUEUE]: { videoId: string };
+  [EVENT_NAMES.VIDEO_ENDED]: { videoId: string; reason?: QueueRemovalReason };
+  [EVENT_NAMES.TEMP_QUEUE_DEQUEUE]: { videoId: string; reason?: QueueRemovalReason };
   [EVENT_NAMES.WATCH_HISTORY_UPDATED]: { videoId: string };
   [EVENT_NAMES.PLAYLISTS_UPDATED]: null;
   [EVENT_NAMES.PLAYLIST_CHOOSER_STATE]: { isOpen: boolean };
