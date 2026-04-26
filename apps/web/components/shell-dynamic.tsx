@@ -114,7 +114,7 @@ type PublicPerformancePayload = {
   };
 };
 
-type RightRailMode = "watch-next" | "playlist";
+type RightRailMode = "watch-next" | "playlist" | "queue";
 
 type PlaylistRailVideo = {
   playlistItemId: string;
@@ -265,10 +265,12 @@ type WatchNextCardProps = {
   isAuthenticated: boolean;
   isSeen: boolean;
   isFavourite: boolean;
+  isQueued: boolean;
   isHiding: boolean;
   isHiddenMutationPending: boolean;
   isClicked: boolean;
   onHide: (track: VideoRecord) => void;
+  onAddToQueue: (track: VideoRecord) => void;
   onPrefetch: (track: VideoRecord) => void;
   onTrackClick: (trackId: string) => void;
 };
@@ -279,10 +281,12 @@ const WatchNextCard = memo(function WatchNextCard({
   isAuthenticated,
   isSeen,
   isFavourite,
+  isQueued,
   isHiding,
   isHiddenMutationPending,
   isClicked,
   onHide,
+  onAddToQueue,
   onPrefetch,
   onTrackClick,
 }: WatchNextCardProps) {
@@ -419,6 +423,20 @@ const WatchNextCard = memo(function WatchNextCard({
               />
             </div>
           ) : null}
+          <button
+            type="button"
+            className={`relatedCardQueueAdd${isQueued ? " relatedCardQueueAddAdded" : ""}`}
+            aria-label={isQueued ? `${track.title} is already in queue` : `Add ${track.title} to temporary queue`}
+            title={isQueued ? "Already in queue" : "Add to temporary queue"}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onAddToQueue(track);
+            }}
+            disabled={isQueued}
+          >
+            🕒
+          </button>
           <AddToPlaylistButton
             videoId={track.id}
             isAuthenticated={isAuthenticated}
@@ -441,10 +459,12 @@ const WatchNextCard = memo(function WatchNextCard({
     && prev.isAuthenticated === next.isAuthenticated
     && prev.isSeen === next.isSeen
     && prev.isFavourite === next.isFavourite
+    && prev.isQueued === next.isQueued
     && prev.isHiding === next.isHiding
     && prev.isHiddenMutationPending === next.isHiddenMutationPending
     && prev.isClicked === next.isClicked
     && prev.onHide === next.onHide
+    && prev.onAddToQueue === next.onAddToQueue
     && prev.onPrefetch === next.onPrefetch
     && prev.onTrackClick === next.onTrackClick;
 });
@@ -497,6 +517,8 @@ const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
 const RIGHT_RAIL_LYRICS_OPEN_EVENT = "ytr:right-rail-lyrics-open";
 const OVERLAY_OPEN_REQUEST_EVENT = "ytr:overlay-open-request";
 const ADMIN_OVERLAY_ENTER_EVENT = "ytr:admin-overlay-enter";
+const VIDEO_ENDED_EVENT = "ytr:video-ended";
+const TEMP_QUEUE_DEQUEUE_EVENT = "ytr:temp-queue-dequeue";
 const DOCK_MOVE_DURATION_MS = 520;
 const DOCK_CONTROLS_FADE_DURATION_MS = 220;
 const DOCK_CONTROLS_FADE_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - DOCK_CONTROLS_FADE_DURATION_MS);
@@ -737,6 +759,7 @@ function ShellDynamicInner({
   const [playlistCreationPendingId, setPlaylistCreationPendingId] = useState<string | null>(null);
   const [lastAddedRelatedVideoId, setLastAddedRelatedVideoId] = useState<string | null>(null);
   const [recentlyAddedPlaylistTrack, setRecentlyAddedPlaylistTrack] = useState<{ playlistId: string; trackId: string } | null>(null);
+  const [temporaryQueueVideos, setTemporaryQueueVideos] = useState<VideoRecord[]>([]);
   const [forcedUnavailableSignal, setForcedUnavailableSignal] = useState(0);
   const [forcedUnavailableMessage, setForcedUnavailableMessage] = useState<string | null>(null);
   const [hidingPlaylistTrackKeys, setHidingPlaylistTrackKeys] = useState<string[]>([]);
@@ -822,6 +845,7 @@ function ShellDynamicInner({
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const favouritesBlindInnerRef = useRef<HTMLDivElement | null>(null);
   const previousPathnameRef = useRef<string | null>(null);
+  const previousVideoIdRef = useRef<string>(currentVideo.id);
   const previousActivePlaylistIdRef = useRef<string | null>(activePlaylistId);
   const playlistRailLoadRequestIdRef = useRef(0);
   const playlistRailMutationVersionRef = useRef(0);
@@ -2399,7 +2423,7 @@ function ShellDynamicInner({
     const handleRightRailMode = (event: Event) => {
       const detail = (event as CustomEvent<{ mode?: RightRailMode; playlistId?: string; trackId?: string }>).detail;
       const mode = detail?.mode;
-      if (mode === "watch-next" || mode === "playlist") {
+      if (mode === "watch-next" || mode === "playlist" || mode === "queue") {
         setRightRailMode(mode);
       }
 
@@ -2880,8 +2904,37 @@ function ShellDynamicInner({
     () => isAuthenticated && displayedRenderableRelatedVideos.some((video) => seenVideoIdsRef.current.has(video.id)),
     [displayedRenderableRelatedVideos, isAuthenticated],
   );
+  const temporaryQueueVideoIdSet = useMemo(() => new Set(temporaryQueueVideos.map((video) => video.id)), [temporaryQueueVideos]);
   const hidingRelatedVideoIdSet = useMemo(() => new Set(hidingRelatedVideoIds), [hidingRelatedVideoIds]);
   const hiddenMutationPendingVideoIdSet = useMemo(() => new Set(hiddenMutationPendingVideoIds), [hiddenMutationPendingVideoIds]);
+
+  useEffect(() => {
+    const removeFromTemporaryQueue = (event: Event) => {
+      const detail = (event as CustomEvent<{ videoId?: string }>).detail;
+      const videoId = detail?.videoId;
+
+      if (!videoId) {
+        return;
+      }
+
+      setTemporaryQueueVideos((currentQueue) => currentQueue.filter((video) => video.id !== videoId));
+    };
+
+    window.addEventListener(VIDEO_ENDED_EVENT, removeFromTemporaryQueue as EventListener);
+    window.addEventListener(TEMP_QUEUE_DEQUEUE_EVENT, removeFromTemporaryQueue as EventListener);
+    return () => {
+      window.removeEventListener(VIDEO_ENDED_EVENT, removeFromTemporaryQueue as EventListener);
+      window.removeEventListener(TEMP_QUEUE_DEQUEUE_EVENT, removeFromTemporaryQueue as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    const previousVideoId = previousVideoIdRef.current;
+    if (previousVideoId !== currentVideo.id) {
+      setTemporaryQueueVideos((currentQueue) => currentQueue.filter((video) => video.id !== previousVideoId));
+      previousVideoIdRef.current = currentVideo.id;
+    }
+  }, [currentVideo.id]);
 
   useEffect(() => {
     hidingRelatedVideoIdsRef.current = hidingRelatedVideoIds;
@@ -3173,6 +3226,22 @@ function ShellDynamicInner({
       setClickedRelatedVideoId((activeId) => (activeId === trackId ? null : activeId));
       relatedClickFlashTimeoutRef.current = null;
     }, 240);
+  }, []);
+
+  const handleAddToTemporaryQueue = useCallback((track: VideoRecord) => {
+    setTemporaryQueueVideos((currentQueue) => (
+      currentQueue.some((video) => video.id === track.id)
+        ? currentQueue
+        : [...currentQueue, track]
+    ));
+  }, []);
+
+  const handleRemoveFromTemporaryQueue = useCallback((videoId: string) => {
+    setTemporaryQueueVideos((currentQueue) => currentQueue.filter((video) => video.id !== videoId));
+  }, []);
+
+  const handleClearTemporaryQueue = useCallback(() => {
+    setTemporaryQueueVideos([]);
   }, []);
 
   const maybeLoadMoreIfNearEnd = useCallback(() => {
@@ -5175,6 +5244,7 @@ function ShellDynamicInner({
                 <PlayerExperience
                   currentVideo={currentVideo}
                   queue={[currentVideo, ...uniqueRelatedVideos]}
+                  temporaryQueue={temporaryQueueVideos}
                   isLoggedIn={isAuthenticated}
                   isAdmin={isAdmin}
                   isDockedDesktop={shouldDockDesktopPlayer}
@@ -5289,6 +5359,15 @@ function ShellDynamicInner({
                   {activePlaylistTrackCount > 0 ? `Playlist (${activePlaylistTrackCount})` : "Playlist"}
                 </button>
               ) : null}
+              {isAuthenticated ? (
+                <button
+                  type="button"
+                  className={rightRailMode === "queue" ? "activeTab" : undefined}
+                  onClick={() => setRightRailMode("queue")}
+                >
+                  {temporaryQueueVideos.length > 0 ? `Queue (${temporaryQueueVideos.length})` : "Queue"}
+                </button>
+              ) : null}
             </div>
 
           {rightRailMode === "watch-next" && isAuthenticated ? (
@@ -5352,10 +5431,12 @@ function ShellDynamicInner({
                       isAuthenticated={isAuthenticated}
                       isSeen={isAuthenticated && seenVideoIdsRef.current.has(track.id)}
                       isFavourite={isFavouriteVideo(track)}
+                      isQueued={temporaryQueueVideoIdSet.has(track.id)}
                       isHiding={hidingRelatedVideoIdSet.has(track.id)}
                       isHiddenMutationPending={hiddenMutationPendingVideoIdSet.has(track.id)}
                       isClicked={clickedRelatedVideoId === track.id}
                       onHide={handleHideFromWatchNext}
+                      onAddToQueue={handleAddToTemporaryQueue}
                       onPrefetch={prefetchRelatedSelection}
                       onTrackClick={handleWatchNextTrackClick}
                     />
@@ -5383,6 +5464,87 @@ function ShellDynamicInner({
                   ) : null}
                 </>
               )}
+            </div>
+          ) : rightRailMode === "queue" ? (
+            <div className="relatedStack relatedStackPlaylist">
+              <div className="rightRailPlaylistBar">
+                <span className="rightRailPlaylistLabel">
+                  Current queue • {temporaryQueueVideos.length} {temporaryQueueVideos.length === 1 ? "track" : "tracks"}
+                </span>
+                {temporaryQueueVideos.length > 0 ? (
+                  <div className="rightRailPlaylistActions">
+                    <button
+                      type="button"
+                      className="rightRailPlaylistClose"
+                      onClick={handleClearTemporaryQueue}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="relatedStackPlaylistBody">
+                {temporaryQueueVideos.length > 0 ? (
+                  temporaryQueueVideos.map((track, index) => (
+                    <div
+                      key={`${track.id}:${index}`}
+                      className="relatedCardSlot"
+                      style={{ "--related-index": index } as CSSProperties}
+                    >
+                      <button
+                        type="button"
+                        className="relatedCardHideButton"
+                        aria-label={`Remove ${track.title} from temporary queue`}
+                        title="Remove from temporary queue"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handleRemoveFromTemporaryQueue(track.id);
+                        }}
+                      >
+                        ×
+                      </button>
+
+                      <Link
+                        href={`/?v=${track.id}`}
+                        className={`relatedCard linkedCard relatedCardTransition rightRailPlaylistTrackCard${track.id === currentVideo.id ? " relatedCardActive" : ""}${clickedRelatedVideoId === track.id ? " relatedCardClickFlash" : ""}`}
+                        onClick={() => handleWatchNextTrackClick(track.id)}
+                        onMouseEnter={() => prefetchRelatedSelection(track)}
+                        onFocus={() => prefetchRelatedSelection(track)}
+                        onPointerDown={() => prefetchRelatedSelection(track)}
+                      >
+                        <div className="thumbGlow">
+                          <YouTubeThumbnailImage
+                            videoId={track.id}
+                            alt={track.title}
+                            className="relatedThumb"
+                            loading={index < 3 ? "eager" : "lazy"}
+                            fetchPriority={index < 2 ? "high" : "auto"}
+                            reportReason="thumbnail-load-error:watch-next-queue"
+                            hideClosestSelector=".relatedCardSlot"
+                          />
+                        </div>
+                        <div>
+                          <div className="relatedCardSourceBadges">
+                            {track.isFavouriteSource ? <span className="relatedSourceBadge relatedSourceBadgeFavourite">Favourite</span> : null}
+                            {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
+                            {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
+                          </div>
+                          <h3>{track.title}</h3>
+                          <p>
+                            <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
+                              {track.channelTitle}
+                            </ArtistWikiLink>
+                          </p>
+                        </div>
+                      </Link>
+                    </div>
+                  ))
+                ) : (
+                  <p className="rightRailStatus">Queue is empty.</p>
+                )}
+              </div>
             </div>
           ) : (
             <div className="relatedStack relatedStackPlaylist">

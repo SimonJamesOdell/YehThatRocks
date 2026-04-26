@@ -104,6 +104,30 @@ function main() {
   assertContains(shellDynamicSource, "setRelatedTransitionPhase(\"fading-in\");", "Watch Next bootstrap triggers one-time fade-in on first synchronized render", failures);
   assertContains(shellDynamicSource, "setHasBootstrappedWatchNext(true);", "Watch Next only unlocks first render after signatures match", failures);
 
+  // Temporary queue invariants.
+  assertContains(shellDynamicSource, "type RightRailMode = \"watch-next\" | \"playlist\" | \"queue\";", "Shell right rail mode supports queue tab", failures);
+  assertContains(shellDynamicSource, "const VIDEO_ENDED_EVENT = \"ytr:video-ended\";", "Shell listens for video-ended queue consumption event", failures);
+  assertContains(shellDynamicSource, "const TEMP_QUEUE_DEQUEUE_EVENT = \"ytr:temp-queue-dequeue\";", "Shell listens for manual dequeue queue event", failures);
+  assertContains(shellDynamicSource, "const previousVideoIdRef = useRef<string>(currentVideo.id);", "Shell tracks previous video id for transition-based queue consumption", failures);
+  assertContains(shellDynamicSource, "window.addEventListener(VIDEO_ENDED_EVENT, removeFromTemporaryQueue as EventListener);", "Shell removes queue items when a queued video ends", failures);
+  assertContains(shellDynamicSource, "window.addEventListener(TEMP_QUEUE_DEQUEUE_EVENT, removeFromTemporaryQueue as EventListener);", "Shell removes queue items for manual dequeue actions", failures);
+  assertContains(shellDynamicSource, "setTemporaryQueueVideos((currentQueue) => currentQueue.filter((video) => video.id !== previousVideoId));", "Shell consumes previous queued item whenever current video changes", failures);
+  assertContains(shellDynamicSource, "Current queue • {temporaryQueueVideos.length}", "Shell queue rail label uses Current queue copy", failures);
+  assertContains(shellDynamicSource, "rightRailMode === \"queue\" ? \"activeTab\" : undefined", "Shell highlights queue tab when selected", failures);
+  assertContains(shellDynamicSource, "className={`relatedCard linkedCard relatedCardTransition rightRailPlaylistTrackCard${track.id === currentVideo.id ? \" relatedCardActive\" : \"\"}${clickedRelatedVideoId === track.id ? \" relatedCardClickFlash\" : \"\"}`}", "Queue cards reuse playlist active styling for currently playing item", failures);
+  assertContains(shellDynamicSource, "temporaryQueue={temporaryQueueVideos}", "Shell passes temporary queue into player experience", failures);
+
+  assertContains(playerExperienceSource, "const VIDEO_ENDED_EVENT = \"ytr:video-ended\";", "Player exposes video-ended event name for queue consumption", failures);
+  assertContains(playerExperienceSource, "const TEMP_QUEUE_DEQUEUE_EVENT = \"ytr:temp-queue-dequeue\";", "Player exposes manual dequeue event name", failures);
+  assertContains(playerExperienceSource, "const currentQueueIndex = temporaryQueue.findIndex((video) => video.id === currentVideo.id);", "Player calculates queue progression from current queue index", failures);
+  assertContains(playerExperienceSource, "const nextQueuedVideoId = currentQueueIndex >= 0", "Player resolves next queued target from position-aware logic", failures);
+  assertContains(playerExperienceSource, "? (temporaryQueue[currentQueueIndex + 1]?.id ?? null)", "Player advances to the immediate next queue item", failures);
+  assertContains(playerExperienceSource, ": (temporaryQueue[0]?.id ?? null);", "Player falls back to queue head when current video is not queued", failures);
+  assertContains(playerExperienceSource, "const currentVideoWasQueued = temporaryQueue.some((video) => video.id === currentVideo.id);", "Player detects when current video belongs to temporary queue", failures);
+  assertContains(playerExperienceSource, "if (currentVideoWasQueued && nextTarget.videoId !== currentVideo.id) {", "Player only dequeues when Next actually advances to a different video", failures);
+  assertContains(playerExperienceSource, "window.dispatchEvent(new CustomEvent(TEMP_QUEUE_DEQUEUE_EVENT, {", "Player dispatches explicit dequeue event on manual Next", failures);
+  assertContains(playerExperienceSource, "window.dispatchEvent(new CustomEvent(VIDEO_ENDED_EVENT, {", "Player dispatches explicit queue-consumption event on ENDED", failures);
+
   // Watch Next redraw-loop regression invariants.
   assertContains(shellDynamicSource, "const currentIds = displayedRelatedVideos.map((video) => video.id);", "Watch Next transition effect snapshots currently displayed ids", failures);
   assertContains(shellDynamicSource, "const nextIds = sourceRelatedVideos.map((video) => video.id);", "Watch Next transition effect snapshots incoming ids", failures);
