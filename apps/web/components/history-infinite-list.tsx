@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { EVENT_NAMES, listenToAppEvent } from "@/lib/events-contract";
 import type { WatchHistoryEntry } from "@/lib/catalog-data";
 
 type HistoryInfiniteListProps = {
@@ -26,8 +27,6 @@ type HistoryGroup = {
   label: string;
   entries: WatchHistoryEntry[];
 };
-
-const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
 
 function getVideoThumbnailUrl(videoId: string) {
   return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/mqdefault.jpg`;
@@ -195,10 +194,10 @@ export function HistoryInfiniteList({
       void refreshLatestHistoryWindow();
     };
 
-    window.addEventListener(WATCH_HISTORY_UPDATED_EVENT, handleWatchHistoryUpdated);
+    const unsubscribe = listenToAppEvent(EVENT_NAMES.WATCH_HISTORY_UPDATED, handleWatchHistoryUpdated);
 
     return () => {
-      window.removeEventListener(WATCH_HISTORY_UPDATED_EVENT, handleWatchHistoryUpdated);
+      unsubscribe();
     };
   }, [refreshLatestHistoryWindow]);
 

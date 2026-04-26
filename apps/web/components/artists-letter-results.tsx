@@ -15,6 +15,7 @@ import {
   type ArtistsFilterChangeDetail,
   type ArtistsLetterChangeDetail,
 } from "@/lib/artists-letter-events";
+import { EVENT_NAMES, listenToAppEvent } from "@/lib/events-contract";
 
 type ArtistWithCount = ArtistRecord & { videoCount: number };
 
@@ -90,9 +91,8 @@ export function ArtistsLetterResults({
   }, [initialArtists, initialHasMore, letter]);
 
   useEffect(() => {
-    const handler = (event: Event) => {
-      const custom = event as CustomEvent<ArtistsLetterChangeDetail>;
-      const nextLetterRaw = custom.detail?.letter;
+    const handler = (payload: { letter: string }) => {
+      const nextLetterRaw = payload.letter;
       const nextLetter = normalizeArtistLetter(nextLetterRaw ?? "");
 
       if (!isValidArtistLetter(nextLetter) || nextLetter === currentLetter || switchingLetterRef.current) {
@@ -105,9 +105,9 @@ export function ArtistsLetterResults({
       });
     };
 
-    window.addEventListener(ARTISTS_LETTER_CHANGE_EVENT, handler);
+    const unsubscribe = listenToAppEvent(EVENT_NAMES.ARTISTS_LETTER_CHANGE, handler);
     return () => {
-      window.removeEventListener(ARTISTS_LETTER_CHANGE_EVENT, handler);
+      unsubscribe();
     };
   }, [currentLetter, pageSize]);
 
@@ -284,14 +284,13 @@ export function ArtistsLetterResults({
   }, [artists, normalizedFilterValue]);
 
   useEffect(() => {
-    const handler = (event: Event) => {
-      const custom = event as CustomEvent<ArtistsFilterChangeDetail>;
-      setFilterValue(custom.detail?.value ?? "");
+    const handler = (payload: { value: string }) => {
+      setFilterValue(payload.value ?? "");
     };
 
-    window.addEventListener(ARTISTS_FILTER_CHANGE_EVENT, handler);
+    const unsubscribe = listenToAppEvent(EVENT_NAMES.ARTISTS_FILTER_CHANGE, handler);
     return () => {
-      window.removeEventListener(ARTISTS_FILTER_CHANGE_EVENT, handler);
+      unsubscribe();
     };
   }, []);
 
