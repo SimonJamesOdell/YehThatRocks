@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
 import { getArtistWikiPath, withVideoContext } from "@/lib/artist-routing";
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 
 type ArtistWikiLinkProps = {
   artistName: string;
@@ -31,9 +32,10 @@ export function ArtistWikiLink({ artistName, videoId, className, children, title
     }
 
     if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("ytr:overlay-open-request", {
-        detail: { href: targetHref, kind: "wiki" },
-      }));
+      dispatchAppEvent(EVENT_NAMES.OVERLAY_OPEN_REQUEST, {
+        href: targetHref,
+        kind: "wiki",
+      });
       window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     }
     router.push(targetHref);

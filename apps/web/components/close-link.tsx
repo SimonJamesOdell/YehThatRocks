@@ -4,6 +4,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+
 function CloseLinkInner() {
   const searchParams = useSearchParams();
   const v = searchParams.get("v");
@@ -27,9 +29,7 @@ function CloseLinkInner() {
         }
 
         event.preventDefault();
-        window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", {
-          detail: { href: closeHref },
-        }));
+        dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href: closeHref });
       }}
     >
       Close
