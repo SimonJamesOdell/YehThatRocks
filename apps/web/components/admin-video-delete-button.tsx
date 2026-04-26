@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 
 type AdminVideoDeleteButtonProps = {
   videoId: string;
@@ -51,7 +52,7 @@ export function AdminVideoDeleteButton({ videoId, title, isAdmin }: AdminVideoDe
       }
 
       card.classList.add("searchResultCardRemoving");
-      window.dispatchEvent(new CustomEvent("ytr:video-catalog-deleted", { detail: { videoId } }));
+      dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId });
       window.setTimeout(() => {
         card.remove();
       }, REMOVE_ANIMATION_MS);

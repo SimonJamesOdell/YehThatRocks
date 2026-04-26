@@ -5,6 +5,7 @@ import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useStat
 import { createPortal } from "react-dom";
 
 import type { VideoRecord } from "@/lib/catalog";
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { Top100VideoLink } from "@/components/top100-video-link";
 import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
@@ -618,31 +619,28 @@ export function NewVideosLoader({
         ? `/?v=${encodeURIComponent(currentVideoId)}&pl=${encodeURIComponent(createdPlaylistId)}&resume=1`
         : `/?pl=${encodeURIComponent(createdPlaylistId)}`;
 
-      window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", {
-        detail: { href: closeHref },
-      }));
-      window.dispatchEvent(new CustomEvent("ytr:right-rail-mode", {
-        detail: { mode: "playlist", playlistId: createdPlaylistId },
-      }));
+      dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href: closeHref });
+      dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
+        mode: "playlist",
+        playlistId: createdPlaylistId,
+      });
       router.push(closeHref);
 
-      window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
-        detail: {
-          playlist: {
-            id: createdPlaylistId,
-            name: playlistName,
-            videos: sourceVideos,
-            itemCount: sourceVideos.length,
-          },
+      dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
+        playlist: {
+          id: createdPlaylistId,
+          name: playlistName,
+          videos: sourceVideos,
+          itemCount: sourceVideos.length,
         },
-      }));
+      });
 
       void fetch(`/api/playlists/${encodeURIComponent(createdPlaylistId)}/items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ videoIds }),
       }).then(async (addAllResponse) => {
-        window.dispatchEvent(new Event("ytr:playlists-updated"));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
 
         if (!addAllResponse.ok) {
           setPlaylistStatus("Playlist was created, but some tracks could not be saved.");
@@ -657,19 +655,17 @@ export function NewVideosLoader({
         const finalName = updatedPlaylist?.name ?? playlistName;
         const finalItemCount = updatedPlaylist?.itemCount ?? finalVideos.length;
 
-        window.dispatchEvent(new CustomEvent("ytr:playlist-rail-sync", {
-          detail: {
-            playlist: {
-              id: createdPlaylistId,
-              name: finalName,
-              videos: finalVideos,
-              itemCount: finalItemCount,
-            },
+        dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
+          playlist: {
+            id: createdPlaylistId,
+            name: finalName,
+            videos: finalVideos,
+            itemCount: finalItemCount,
           },
-        }));
+        });
       }).catch(() => {
         setPlaylistStatus("Playlist was created, but tracks could not be saved.");
-        window.dispatchEvent(new Event("ytr:playlists-updated"));
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
       });
     } catch {
       setPlaylistStatus("Could not create playlist from New. Please try again.");
@@ -738,9 +734,7 @@ export function NewVideosLoader({
     }
 
     const href = `/?v=${encodeURIComponent(suggestOutcome.videoId)}&resume=1`;
-    window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", {
-      detail: { href },
-    }));
+    dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href });
     router.push(href);
     closeSuggestModal();
   };
