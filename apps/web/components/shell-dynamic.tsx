@@ -261,6 +261,7 @@ type WatchNextCardProps = {
   index: number;
   isAuthenticated: boolean;
   isSeen: boolean;
+  isFavourite: boolean;
   isHiding: boolean;
   isHiddenMutationPending: boolean;
   isClicked: boolean;
@@ -274,6 +275,7 @@ const WatchNextCard = memo(function WatchNextCard({
   index,
   isAuthenticated,
   isSeen,
+  isFavourite,
   isHiding,
   isHiddenMutationPending,
   isClicked,
@@ -284,6 +286,7 @@ const WatchNextCard = memo(function WatchNextCard({
   return (
     <div
       data-video-id={track.id}
+      data-seen={isSeen ? "1" : "0"}
       className={isHiding ? "relatedCardSlot relatedCardSlotExiting" : "relatedCardSlot"}
       style={{ "--related-index": index } as CSSProperties}
     >
@@ -321,9 +324,14 @@ const WatchNextCard = memo(function WatchNextCard({
             reportReason="thumbnail-load-error:watch-next"
             hideClosestSelector=".relatedCardSlot"
           />
-          {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay">Seen</span> : null}
+          {isFavourite ? <span className="relatedFavouriteBadgeOverlay" aria-hidden="true">♥</span> : null}
         </div>
         <div>
+          <div className="relatedCardSourceBadges">
+            {track.isFavouriteSource ? <span className="relatedSourceBadge relatedSourceBadgeFavourite">Favourite</span> : null}
+            {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
+            {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
+          </div>
           <h3>
             {track.title}
           </h3>
@@ -348,9 +356,14 @@ const WatchNextCard = memo(function WatchNextCard({
   return prev.track.id === next.track.id
     && prev.track.title === next.track.title
     && prev.track.channelTitle === next.track.channelTitle
+    && prev.track.sourceLabel === next.track.sourceLabel
+    && prev.track.isFavouriteSource === next.track.isFavouriteSource
+    && prev.track.isTop100Source === next.track.isTop100Source
+    && prev.track.isNewSource === next.track.isNewSource
     && prev.index === next.index
     && prev.isAuthenticated === next.isAuthenticated
     && prev.isSeen === next.isSeen
+    && prev.isFavourite === next.isFavourite
     && prev.isHiding === next.isHiding
     && prev.isHiddenMutationPending === next.isHiddenMutationPending
     && prev.isClicked === next.isClicked
@@ -383,7 +396,7 @@ const STARTUP_RETRY_MAX_ATTEMPTS = 8;
 const REQUESTED_VIDEO_RETRY_FAST_ATTEMPTS = 4;
 const REQUESTED_VIDEO_RETRY_SLOW_DELAY_MS = 8_000;
 const REQUESTED_VIDEO_RETRY_MAX_ATTEMPTS = 8;
-const RELATED_LOAD_BATCH_SIZE = 8;
+const RELATED_LOAD_BATCH_SIZE = 40;
 const RELATED_LOAD_AHEAD_PX = 560;
 const RELATED_MAX_VIDEOS = Number.MAX_SAFE_INTEGER;
 const RELATED_BACKGROUND_PREFETCH_TARGET = 35;
@@ -468,6 +481,10 @@ function sortVideosBySeen(videos: VideoRecord[], seenVideoIdSet: Set<string>) {
   }
 
   return [...unseen, ...seen];
+}
+
+function isFavouriteVideo(video: VideoRecord) {
+  return Number(video.favourited ?? 0) > 0;
 }
 
 function logFlow(event: string, detail?: Record<string, unknown>) {
@@ -661,6 +678,8 @@ function ShellDynamicInner({
   const [playlistBeingDeletedId, setPlaylistBeingDeletedId] = useState<string | null>(null);
   const [hidingRelatedVideoIds, setHidingRelatedVideoIds] = useState<string[]>([]);
   const [hiddenMutationPendingVideoIds, setHiddenMutationPendingVideoIds] = useState<string[]>([]);
+  const hidingRelatedVideoIdsRef = useRef<string[]>([]);
+  const hiddenMutationPendingVideoIdsRef = useRef<string[]>([]);
   const [isLyricsOverlayOpen, setIsLyricsOverlayOpen] = useState(false);
   const [lyricsOverlayVideoId, setLyricsOverlayVideoId] = useState<string | null>(null);
   const [isLyricsOverlayLoading, setIsLyricsOverlayLoading] = useState(false);
@@ -1891,7 +1910,13 @@ function ShellDynamicInner({
 
     const resolveRequestedVideo = async (attempt = 1): Promise<void> => {
       try {
-        const response = await fetch(`/api/current-video?v=${encodeURIComponent(requestedVideoId)}`);
+        const currentVideoParams = new URLSearchParams();
+        currentVideoParams.set("v", requestedVideoId);
+        if (isAuthenticated && watchNextHideSeen) {
+          currentVideoParams.set("hideSeen", "1");
+        }
+
+        const response = await fetch(`/api/current-video?${currentVideoParams.toString()}`);
         const data = response.ok ? ((await response.json()) as CurrentVideoResolvePayload) : null;
 
         if (ignore) {
@@ -2770,7 +2795,7 @@ function ShellDynamicInner({
   ), [currentVideo.id, displayedRelatedVideos]);
   const visibleWatchNextVideos = useMemo(() => (
     isAuthenticated && watchNextHideSeen
-      ? displayedRenderableRelatedVideos.filter((video) => !seenVideoIdsRef.current.has(video.id))
+      ? displayedRenderableRelatedVideos.filter((video) => !seenVideoIdsRef.current.has(video.id) || isFavouriteVideo(video))
       : displayedRenderableRelatedVideos
   ), [displayedRenderableRelatedVideos, isAuthenticated, watchNextHideSeen]);
   const hasSeenWatchNextVideos = useMemo(
@@ -2779,6 +2804,14 @@ function ShellDynamicInner({
   );
   const hidingRelatedVideoIdSet = useMemo(() => new Set(hidingRelatedVideoIds), [hidingRelatedVideoIds]);
   const hiddenMutationPendingVideoIdSet = useMemo(() => new Set(hiddenMutationPendingVideoIds), [hiddenMutationPendingVideoIds]);
+
+  useEffect(() => {
+    hidingRelatedVideoIdsRef.current = hidingRelatedVideoIds;
+  }, [hidingRelatedVideoIds]);
+
+  useEffect(() => {
+    hiddenMutationPendingVideoIdsRef.current = hiddenMutationPendingVideoIds;
+  }, [hiddenMutationPendingVideoIds]);
 
   useEffect(() => {
     if (hasBootstrappedWatchNext) {
@@ -2984,11 +3017,16 @@ function ShellDynamicInner({
         relatedFetchOffsetRef.current = existing.length;
       }
       const batchCount = Math.max(1, Math.min(30, Math.floor(requestedCount)));
+      const requestedBatchCount = Math.max(1, Math.min(40, Math.floor(requestedCount)));
 
       const params = new URLSearchParams();
       params.set("v", currentVideo.id);
+      if (isAuthenticated && watchNextHideSeen) {
+        params.set("hideSeen", "1");
+      }
       if (!isFirstColdFetch) {
         params.set("count", String(batchCount));
+        params.set("requestedCount", String(requestedBatchCount));
         params.set("offset", String(relatedFetchOffsetRef.current));
       }
 
@@ -3178,7 +3216,7 @@ function ShellDynamicInner({
       const remainingForAggressiveTarget = targetRunway - displayedRenderableRelatedVideos.length;
       const prefetchCount = Math.max(
         RELATED_LOAD_BATCH_SIZE,
-        Math.min(30, Math.max(remainingForTarget, remainingForAggressiveTarget)),
+        Math.min(40, Math.max(remainingForTarget, remainingForAggressiveTarget)),
       );
       void loadMoreRelatedVideos(prefetchCount);
     }, Math.min(RELATED_BACKGROUND_PREFETCH_DELAY_MS, RELATED_BACKGROUND_PREFETCH_DELAY_FAST_MS));
@@ -3424,7 +3462,10 @@ function ShellDynamicInner({
       return;
     }
 
-    if (hidingRelatedVideoIds.includes(track.id) || hiddenMutationPendingVideoIds.includes(track.id)) {
+    if (
+      hidingRelatedVideoIdsRef.current.includes(track.id)
+      || hiddenMutationPendingVideoIdsRef.current.includes(track.id)
+    ) {
       return;
     }
 
@@ -3457,7 +3498,7 @@ function ShellDynamicInner({
     } finally {
       setHiddenMutationPendingVideoIds((previous) => previous.filter((videoId) => videoId !== track.id));
     }
-  }, [commitWatchNextHide, fetchWithAuthRetry, hiddenMutationPendingVideoIds, hidingRelatedVideoIds, isAuthenticated]);
+  }, [commitWatchNextHide, fetchWithAuthRetry, isAuthenticated]);
 
   const handleRemoveTrackFromActivePlaylist = useCallback(async (track: PlaylistRailVideo, playlistItemIndex: number) => {
     if (!activePlaylistId) {
@@ -3922,7 +3963,13 @@ function ShellDynamicInner({
     }
 
     inFlightCurrentVideoPrefetchRef.current.add(videoId);
-    void fetch(`/api/current-video?v=${encodeURIComponent(videoId)}`, {
+    const prefetchParams = new URLSearchParams();
+    prefetchParams.set("v", videoId);
+    if (isAuthenticated && watchNextHideSeen) {
+      prefetchParams.set("hideSeen", "1");
+    }
+
+    void fetch(`/api/current-video?${prefetchParams.toString()}`, {
       cache: "no-store",
     })
       .then(async (response) => {
@@ -3971,7 +4018,7 @@ function ShellDynamicInner({
       .finally(() => {
         inFlightCurrentVideoPrefetchRef.current.delete(videoId);
       });
-  }, [prewarmRelatedThumbnail]);
+  }, [isAuthenticated, prewarmRelatedThumbnail, watchNextHideSeen]);
 
   const prefetchRelatedSelection = useCallback((video: VideoRecord) => {
     prewarmRelatedThumbnail(video.id);
@@ -5191,6 +5238,7 @@ function ShellDynamicInner({
                       index={index}
                       isAuthenticated={isAuthenticated}
                       isSeen={isAuthenticated && seenVideoIdsRef.current.has(track.id)}
+                      isFavourite={isFavouriteVideo(track)}
                       isHiding={hidingRelatedVideoIdSet.has(track.id)}
                       isHiddenMutationPending={hiddenMutationPendingVideoIdSet.has(track.id)}
                       isClicked={clickedRelatedVideoId === track.id}
