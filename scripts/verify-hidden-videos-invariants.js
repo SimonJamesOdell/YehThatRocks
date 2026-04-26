@@ -103,7 +103,7 @@ function main() {
   assertContains(playerExperienceSource, "function pauseActivePlayback(", "Player defines pauseActivePlayback helper to stop audio on hide", failures);
   assertContains(playerExperienceSource, "pauseActivePlayback();", "Player calls pauseActivePlayback when hiding current video", failures);
   assertContains(playerExperienceSource, "const activePlaylistQuery = activePlaylistId ? `?activePlaylistId=${encodeURIComponent(activePlaylistId)}` : \"\";", "Player sends active playlist context when blocking current video", failures);
-  assertContains(playerExperienceSource, "window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));", "Player refreshes playlist state after blocking current video", failures);
+  assertContains(playerExperienceSource, "dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null)", "Player refreshes playlist state after blocking current video", failures);
   assertContains(playerExperienceSource, "if (payload?.activePlaylistDeleted)", "Player handles active playlist deletion response after block", failures);
   assertContains(playerExperienceSource, "params.delete(\"pl\");", "Player clears active playlist id when blocked track deletes playlist", failures);
   assertContains(playerExperienceSource, "params.delete(\"pli\");", "Player clears active playlist index when blocked track deletes playlist", failures);

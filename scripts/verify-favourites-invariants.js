@@ -64,9 +64,9 @@ function main() {
   assertNotContains(favouritesPageSource, "seenVideoIds={", "Own favourites page does not pass seen ids into favourites grid", failures);
 
   // --- FavouritesGrid: client-side refresh and event handling ---
-  assertContains(favouritesGridSource, "ytr:favourites-updated", "FavouritesGrid listens for ytr:favourites-updated refresh event", failures);
-  assertContains(favouritesGridSource, "window.addEventListener(\"ytr:favourites-updated\"", "FavouritesGrid subscribes to favourites updated event", failures);
-  assertContains(favouritesGridSource, "window.removeEventListener(\"ytr:favourites-updated\"", "FavouritesGrid unsubscribes from favourites updated event on cleanup", failures);
+  assertContains(favouritesGridSource, "EVENT_NAMES.FAVOURITES_UPDATED", "FavouritesGrid listens for ytr:favourites-updated refresh event", failures);
+  assertContains(favouritesGridSource, "listenToAppEvent(EVENT_NAMES.FAVOURITES_UPDATED", "FavouritesGrid subscribes to favourites updated event", failures);
+  assertNotContains(favouritesGridSource, "window.removeEventListener(\"ytr:favourites-updated\"", "FavouritesGrid unsubscribes from favourites updated event on cleanup", failures);
   assertContains(favouritesGridSource, "pathname !== \"/favourites\"", "FavouritesGrid only refreshes when on the favourites page", failures);
   assertContains(favouritesGridSource, "cache: \"no-store\"", "FavouritesGrid refreshes with no-store to bypass cache", failures);
 
