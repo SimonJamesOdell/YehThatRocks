@@ -50,9 +50,12 @@ export type EventPayloads = {
   [EVENT_NAMES.PLAYLISTS_UPDATED]: null;
   [EVENT_NAMES.PLAYLIST_CHOOSER_STATE]: { isOpen: boolean };
   [EVENT_NAMES.PLAYLIST_RAIL_SYNC]: {
-    playlistId: string;
-    videos: Array<{ id: string; title: string; channelTitle: string; thumbnail?: string | null }>;
-    itemCount?: number;
+    playlist: {
+      id: string;
+      name: string;
+      videos: Array<{ id: string; title: string; channelTitle: string; thumbnail?: string | null }>;
+      itemCount: number;
+    };
   };
   [EVENT_NAMES.PLAYLIST_CREATION_PROGRESS]: {
     playlistId: string;
