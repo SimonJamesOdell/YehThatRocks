@@ -14,6 +14,13 @@ const PERFORMANCE_CAPTURE_WINDOW_KEY = "hotspot-analysis";
 const SLOW_LOG_OUTPUT = "TABLE";
 const SLOW_LOG_LONG_QUERY_TIME = 0.2;
 const SLOW_LOG_MIN_EXAMINED_ROW_LIMIT = 0;
+const TRANSIENT_DB_CONNECTION_ERROR_PATTERNS = [
+  "server has closed the connection",
+  "can't reach database server",
+  "connection terminated",
+  "connection reset",
+  "connection closed",
+];
 
 type PerfSampleRow = {
   sampled_at: Date;
@@ -62,12 +69,36 @@ async function recordPerformanceCaptureWindow(startedAt: Date) {
   `;
 }
 
+function isTransientDbConnectionError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const normalized = error.message.toLowerCase();
+  return TRANSIENT_DB_CONNECTION_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+async function executeRawUnsafeWithReconnect(sql: string) {
+  try {
+    await prisma.$executeRawUnsafe(sql);
+    return;
+  } catch (error) {
+    if (!isTransientDbConnectionError(error)) {
+      throw error;
+    }
+  }
+
+  // Reconnect once when MySQL closed the underlying connection unexpectedly.
+  await prisma.$disconnect().catch(() => undefined);
+  await prisma.$executeRawUnsafe(sql);
+}
+
 async function tryStartMysqlSlowLogCapture() {
   try {
-    await prisma.$executeRawUnsafe(`SET GLOBAL log_output = '${SLOW_LOG_OUTPUT}'`);
-    await prisma.$executeRawUnsafe(`SET GLOBAL long_query_time = ${SLOW_LOG_LONG_QUERY_TIME}`);
-    await prisma.$executeRawUnsafe(`SET GLOBAL min_examined_row_limit = ${SLOW_LOG_MIN_EXAMINED_ROW_LIMIT}`);
-    await prisma.$executeRawUnsafe("SET GLOBAL slow_query_log = ON");
+    await executeRawUnsafeWithReconnect(`SET GLOBAL log_output = '${SLOW_LOG_OUTPUT}'`);
+    await executeRawUnsafeWithReconnect(`SET GLOBAL long_query_time = ${SLOW_LOG_LONG_QUERY_TIME}`);
+    await executeRawUnsafeWithReconnect(`SET GLOBAL min_examined_row_limit = ${SLOW_LOG_MIN_EXAMINED_ROW_LIMIT}`);
+    await executeRawUnsafeWithReconnect("SET GLOBAL slow_query_log = ON");
 
     return {
       enabled: true,
@@ -203,11 +234,11 @@ export async function POST(request: NextRequest) {
   }
 
   const startedAt = new Date();
-  const [result, slowLog] = await Promise.all([
+  const [result] = await Promise.all([
     resetPerfSamplingWindow(),
-    tryStartMysqlSlowLogCapture(),
     recordPerformanceCaptureWindow(startedAt),
   ]);
+  const slowLog = await tryStartMysqlSlowLogCapture();
 
   return NextResponse.json({
     ok: true,
