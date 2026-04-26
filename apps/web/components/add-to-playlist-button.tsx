@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+
 type AddToPlaylistButtonProps = {
   videoId: string;
   isAuthenticated?: boolean;
@@ -13,8 +15,6 @@ type AddToPlaylistButtonProps = {
 };
 
 const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
-const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
-const PLAYLIST_CHOOSER_STATE_EVENT = "ytr:playlist-chooser-state";
 
 type PlaylistSummary = {
   id: string;
@@ -225,10 +225,7 @@ export function AddToPlaylistButton({
       return;
     }
 
-    const event = new CustomEvent("ytr:playlist-chooser-state", {
-      detail: { isOpen: chooserOpen },
-    });
-    window.dispatchEvent(event);
+    dispatchAppEvent(EVENT_NAMES.PLAYLIST_CHOOSER_STATE, { isOpen: chooserOpen });
   }, [chooserOpen]);
 
   async function addVideoToPlaylist(playlistId: string) {
@@ -253,7 +250,7 @@ export function AddToPlaylistButton({
 
     if (typeof window !== "undefined") {
       window.localStorage.setItem(LAST_PLAYLIST_ID_KEY, playlistId);
-      window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+      dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
     }
 
     return true;
@@ -342,7 +339,7 @@ export function AddToPlaylistButton({
 
         if (typeof window !== "undefined") {
           window.localStorage.setItem(LAST_PLAYLIST_ID_KEY, created.id);
-          window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+          dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
         }
 
         markAdded("Added");
@@ -402,7 +399,7 @@ export function AddToPlaylistButton({
 
         if (typeof window !== "undefined") {
           window.localStorage.setItem(LAST_PLAYLIST_ID_KEY, created.id);
-          window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+          dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
         }
 
         if (createdPlaylistId && selectedPlaylist.id === createdPlaylistId) {
