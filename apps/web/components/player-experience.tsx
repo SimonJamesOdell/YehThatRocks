@@ -11,7 +11,9 @@ import { buildCanonicalShareUrl } from "@/lib/share-metadata";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
+import { useNextTrackDecision } from "@/components/use-next-track-decision";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { TEMP_QUEUE_DEQUEUE_EVENT, VIDEO_ENDED_EVENT } from "@/lib/events-contract";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 
 type PlayerExperienceProps = {
@@ -158,8 +160,6 @@ const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
 const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
 const RIGHT_RAIL_LYRICS_OPEN_EVENT = "ytr:right-rail-lyrics-open";
 const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
-const VIDEO_ENDED_EVENT = "ytr:video-ended";
-const TEMP_QUEUE_DEQUEUE_EVENT = "ytr:temp-queue-dequeue";
 const ADMIN_OVERLAY_ENTER_EVENT = "ytr:admin-overlay-enter";
 const ADMIN_SESSION_REVALIDATE_INTERVAL_MS = 30_000;
 const maxEndedChoiceVideos = 12;
@@ -1146,85 +1146,18 @@ export function PlayerExperience({
     return selectionPool[randomIndex] ?? null;
   }
 
-  function resolvePlaylistStepTarget(step: 1 | -1) {
-    if (!hasActivePlaylistContext || playlistQueueIds.length === 0) {
-      return null;
-    }
-
-    const fallbackIndex = step > 0 ? 0 : Math.max(0, playlistQueueIds.length - 1);
-    const baseIndex = effectivePlaylistIndex ?? fallbackIndex;
-    const wrappedIndex =
-      step > 0
-        ? (baseIndex + 1) % playlistQueueIds.length
-        : (baseIndex - 1 + playlistQueueIds.length) % playlistQueueIds.length;
-    const videoId = playlistQueueIds[wrappedIndex] ?? null;
-
-    if (!videoId) {
-      return null;
-    }
-
-    return {
-      videoId,
-      playlistItemIndex: wrappedIndex,
-      clearPlaylist: false,
-    };
-  }
-
-  function resolveNextTarget() {
-    if (activePlaylistId) {
-      const nextPlaylistTarget = resolvePlaylistStepTarget(1);
-      if (nextPlaylistTarget) {
-        return nextPlaylistTarget;
-      }
-
-      // A playlist is selected but not ready yet; do not switch to random Watch Next.
-      return null;
-    }
-
-    if (temporaryQueue.length > 0) {
-      const currentQueueIndex = temporaryQueue.findIndex((video) => video.id === currentVideo.id);
-      const nextQueuedVideoId = currentQueueIndex >= 0
-        ? (temporaryQueue[currentQueueIndex + 1]?.id ?? null)
-        : (temporaryQueue[0]?.id ?? null);
-
-      if (nextQueuedVideoId) {
-        return {
-          videoId: nextQueuedVideoId,
-          playlistItemIndex: null,
-          clearPlaylist: true,
-        };
-      }
-    }
-
-    if (isDockedDesktop && autoplayEnabled && routeAutoplayQueueIds.length > 0) {
-      const currentIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId === currentVideo.id);
-      const fallbackIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId !== currentVideo.id);
-      const nextIndex = currentIndex >= 0
-        ? (currentIndex + 1) % routeAutoplayQueueIds.length
-        : fallbackIndex;
-      const nextId = nextIndex >= 0 ? routeAutoplayQueueIds[nextIndex] ?? null : null;
-
-      if (nextId) {
-        return {
-          videoId: nextId,
-          playlistItemIndex: null,
-          clearPlaylist: true,
-        };
-      }
-    }
-
-    const randomWatchNextId = getRandomWatchNextId();
-
-    if (!randomWatchNextId) {
-      return null;
-    }
-
-    return {
-      videoId: randomWatchNextId,
-      playlistItemIndex: null,
-      clearPlaylist: true,
-    };
-  }
+  const { resolvePlaylistStepTarget, resolveNextTarget, resolvedNextTarget } = useNextTrackDecision({
+    activePlaylistId,
+    hasActivePlaylistContext,
+    playlistQueueIds,
+    effectivePlaylistIndex,
+    temporaryQueue,
+    currentVideoId: currentVideo.id,
+    isDockedDesktop,
+    autoplayEnabled,
+    routeAutoplayQueueIds,
+    getRandomWatchNextId,
+  });
 
   async function resolveAutoplayRecoveryTarget() {
     try {
@@ -1265,7 +1198,6 @@ export function PlayerExperience({
     }
   }
 
-  const resolvedNextTarget = resolveNextTarget();
   nextVideoIdRef.current = resolvedNextTarget?.videoId ?? null;
   nextPlaylistIndexRef.current = resolvedNextTarget?.playlistItemIndex ?? null;
   nextClearPlaylistRef.current = resolvedNextTarget?.clearPlaylist ?? false;
@@ -4930,22 +4862,6 @@ export function PlayerExperience({
                         </svg>
                       </button>
                       <span className="playerBootRefreshLabel">Try connecting again</span>
-                                  {!isPlayerReady ? (
-                                    <div className="overlayBottom" style={{ opacity: 1, visibility: "visible", pointerEvents: "auto" }}>
-                                      <div className="overlayProgressWrap">
-                                        <input
-                                          type="range"
-                                          className="overlayProgress"
-                                          min={0}
-                                          max={1}
-                                          value={0}
-                                          disabled
-                                          aria-label="Progress bar unavailable during load"
-                                        />
-                                      </div>
-                                    </div>
-                                  ) : null}
-
                     </div>
                   ) : null}
                 </div>

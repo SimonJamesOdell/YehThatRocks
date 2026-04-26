@@ -20,6 +20,9 @@ const files = {
   seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
   statusPerformanceRoute: path.join(ROOT, "apps/web/app/api/status/performance/route.ts"),
   videosUnavailableRoute: path.join(ROOT, "apps/web/app/api/videos/unavailable/route.ts"),
+  nextTrackDecisionHook: path.join(ROOT, "apps/web/components/use-next-track-decision.ts"),
+  temporaryQueueControllerHook: path.join(ROOT, "apps/web/components/use-temporary-queue-controller.ts"),
+  playerEvents: path.join(ROOT, "apps/web/lib/player-events.ts"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
@@ -100,6 +103,9 @@ function main() {
   const seenToggleRouteSource = read(files.seenToggleRoute);
   const statusPerformanceRouteSource = read(files.statusPerformanceRoute);
   const videosUnavailableRouteSource = read(files.videosUnavailableRoute);
+  const nextTrackDecisionHookSource = read(files.nextTrackDecisionHook);
+  const temporaryQueueControllerHookSource = read(files.temporaryQueueControllerHook);
+  const playerEventsSource = read(files.playerEvents);
   const cssSource = read(files.css);
 
   // Watch Next and current-video resolver invariants.
@@ -117,10 +123,10 @@ function main() {
   assertContains(currentVideoRouteSource, "earlyTopVideosForPadding ?? await getCachedTopVideosForCurrentVideo(30)", "Current-video API fetches bounded filler pool (parallel-prefetched or direct)", failures);
   assertContains(currentVideoRouteSource, "const filler = shuffleVideos(fillerPool).slice(0, targetRelatedCount - relatedVideos.length);", "Current-video API randomizes sparse filler selection", failures);
   assertContains(shellDynamicSource, "type RightRailMode = \"watch-next\" | \"playlist\" | \"queue\";", "Shell supports queue mode in right rail tab state", failures);
-  assertContains(shellDynamicSource, "const TEMP_QUEUE_DEQUEUE_EVENT = \"ytr:temp-queue-dequeue\";", "Shell declares manual queue dequeue event", failures);
-  assertContains(shellDynamicSource, "const previousVideoIdRef = useRef<string>(currentVideo.id);", "Shell tracks previous video for transition-based queue cleanup", failures);
-  assertContains(shellDynamicSource, "setTemporaryQueueVideos((currentQueue) => currentQueue.filter((video) => video.id !== previousVideoId));", "Shell consumes prior queue item on active video transition", failures);
-  assertContains(shellDynamicSource, "window.addEventListener(TEMP_QUEUE_DEQUEUE_EVENT, removeFromTemporaryQueue as EventListener);", "Shell listens for manual queue dequeue events", failures);
+  assertContains(shellDynamicSource, "import { useTemporaryQueueController } from \"@/components/use-temporary-queue-controller\";", "Shell delegates queue orchestration into dedicated hook", failures);
+  assertContains(temporaryQueueControllerHookSource, "export function useTemporaryQueueController", "Temporary queue controller hook exists", failures);
+  assertContains(temporaryQueueControllerHookSource, "window.addEventListener(TEMP_QUEUE_DEQUEUE_EVENT", "Temporary queue hook listens for manual dequeue events", failures);
+  assertContains(temporaryQueueControllerHookSource, "setTemporaryQueueVideos((currentQueue) => currentQueue.filter((video) => video.id !== previousVideoId));", "Temporary queue hook consumes previous track on transition", failures);
 
   // Player invariants.
   assertContains(playerExperienceSource, "const AUTOPLAY_KEY = \"yeh-player-autoplay\";", "Player persists autoplay preference key", failures);
@@ -128,13 +134,16 @@ function main() {
   assertContains(playerExperienceSource, "const PLAYER_MUTED_KEY = \"yeh-player-muted\";", "Player defines persisted mute preference key", failures);
   assertContains(playerExperienceSource, "temporaryQueue?: VideoRecord[];", "Player props accept temporary queue feed", failures);
   assertContains(playerExperienceSource, "temporaryQueue = [],", "Player defaults temporary queue to an empty list", failures);
-  assertContains(playerExperienceSource, "const VIDEO_ENDED_EVENT = \"ytr:video-ended\";", "Player declares queue consumption event for ended videos", failures);
-  assertContains(playerExperienceSource, "const TEMP_QUEUE_DEQUEUE_EVENT = \"ytr:temp-queue-dequeue\";", "Player declares queue dequeue event for manual Next", failures);
-  assertContains(playerExperienceSource, "const currentQueueIndex = temporaryQueue.findIndex((video) => video.id === currentVideo.id);", "Player queue-next resolution is based on current queue index", failures);
-  assertContains(playerExperienceSource, "? (temporaryQueue[currentQueueIndex + 1]?.id ?? null)", "Player queue-next resolution advances to the next queue slot", failures);
+  assertContains(playerExperienceSource, "import { useNextTrackDecision } from \"@/components/use-next-track-decision\";", "Player delegates next-target orchestration into dedicated hook", failures);
+  assertContains(playerExperienceSource, "import { TEMP_QUEUE_DEQUEUE_EVENT, VIDEO_ENDED_EVENT } from \"@/lib/events-contract\";", "Player consumes centralized typed events module", failures);
+  assertContains(playerExperienceSource, "const { resolvePlaylistStepTarget, resolveNextTarget, resolvedNextTarget } = useNextTrackDecision({", "Player invokes extracted next-track decision hook", failures);
+  assertContains(nextTrackDecisionHookSource, "export function useNextTrackDecision", "Next-track decision hook exists", failures);
+  assertContains(nextTrackDecisionHookSource, "const currentQueueIndex = temporaryQueue.findIndex((video) => video.id === currentVideoId);", "Next-track hook resolves queue index using current video id", failures);
+  assertContains(nextTrackDecisionHookSource, "? (temporaryQueue[currentQueueIndex + 1]?.id ?? null)", "Next-track hook advances to next queue slot", failures);
   assertContains(playerExperienceSource, "if (currentVideoWasQueued && nextTarget.videoId !== currentVideo.id) {", "Manual Next only dequeues when transition is real", failures);
   assertContains(playerExperienceSource, "window.dispatchEvent(new CustomEvent(TEMP_QUEUE_DEQUEUE_EVENT, {", "Manual Next dispatches queue dequeue event", failures);
   assertContains(playerExperienceSource, "window.dispatchEvent(new CustomEvent(VIDEO_ENDED_EVENT, {", "ENDED state dispatches queue consumption event", failures);
+  assertContains(playerEventsSource, 'export { VIDEO_ENDED_EVENT, TEMP_QUEUE_DEQUEUE_EVENT } from "@/lib/events-contract";', "Player events module re-exports from centralized events-contract", failures);
   assertContains(playerExperienceSource, "const RESUME_KEY = \"yeh-player-resume\";", "Player defines resume snapshot key", failures);
   assertContains(playerExperienceSource, "window.localStorage.setItem(AUTOPLAY_KEY, ", "Player writes autoplay preference to localStorage", failures);
   assertContains(playerExperienceSource, "window.localStorage.setItem(PLAYER_VOLUME_KEY, String(normalizePlayerVolume(volume, 100)));", "Player writes volume preference to localStorage", failures);

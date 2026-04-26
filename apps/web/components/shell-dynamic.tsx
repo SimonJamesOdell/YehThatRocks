@@ -13,6 +13,7 @@ import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { PlayerExperience } from "@/components/player-experience";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
+import { useTemporaryQueueController } from "@/components/use-temporary-queue-controller";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { navItems, type VideoRecord } from "@/lib/catalog";
@@ -517,8 +518,6 @@ const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
 const RIGHT_RAIL_LYRICS_OPEN_EVENT = "ytr:right-rail-lyrics-open";
 const OVERLAY_OPEN_REQUEST_EVENT = "ytr:overlay-open-request";
 const ADMIN_OVERLAY_ENTER_EVENT = "ytr:admin-overlay-enter";
-const VIDEO_ENDED_EVENT = "ytr:video-ended";
-const TEMP_QUEUE_DEQUEUE_EVENT = "ytr:temp-queue-dequeue";
 const DOCK_MOVE_DURATION_MS = 520;
 const DOCK_CONTROLS_FADE_DURATION_MS = 220;
 const DOCK_CONTROLS_FADE_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - DOCK_CONTROLS_FADE_DURATION_MS);
@@ -759,7 +758,6 @@ function ShellDynamicInner({
   const [playlistCreationPendingId, setPlaylistCreationPendingId] = useState<string | null>(null);
   const [lastAddedRelatedVideoId, setLastAddedRelatedVideoId] = useState<string | null>(null);
   const [recentlyAddedPlaylistTrack, setRecentlyAddedPlaylistTrack] = useState<{ playlistId: string; trackId: string } | null>(null);
-  const [temporaryQueueVideos, setTemporaryQueueVideos] = useState<VideoRecord[]>([]);
   const [forcedUnavailableSignal, setForcedUnavailableSignal] = useState(0);
   const [forcedUnavailableMessage, setForcedUnavailableMessage] = useState<string | null>(null);
   const [hidingPlaylistTrackKeys, setHidingPlaylistTrackKeys] = useState<string[]>([]);
@@ -845,7 +843,6 @@ function ShellDynamicInner({
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const favouritesBlindInnerRef = useRef<HTMLDivElement | null>(null);
   const previousPathnameRef = useRef<string | null>(null);
-  const previousVideoIdRef = useRef<string>(currentVideo.id);
   const previousActivePlaylistIdRef = useRef<string | null>(activePlaylistId);
   const playlistRailLoadRequestIdRef = useRef(0);
   const playlistRailMutationVersionRef = useRef(0);
@@ -894,6 +891,14 @@ function ShellDynamicInner({
   const suggestionsRef = useRef<SearchSuggestion[]>([]);
   const showSuggestionsRef = useRef(false);
   const activeSuggestionIdxRef = useRef(-1);
+
+  const {
+    temporaryQueueVideos,
+    temporaryQueueVideoIdSet,
+    handleAddToTemporaryQueue,
+    handleRemoveFromTemporaryQueue,
+    handleClearTemporaryQueue,
+  } = useTemporaryQueueController(currentVideo.id);
 
   const isCategoriesRoute = pathname === "/categories" || pathname.startsWith("/categories/");
   const isArtistsRoute = pathname === "/artists" || pathname.startsWith("/artist/") || pathname.startsWith("/artists/");
@@ -2904,37 +2909,8 @@ function ShellDynamicInner({
     () => isAuthenticated && displayedRenderableRelatedVideos.some((video) => seenVideoIdsRef.current.has(video.id)),
     [displayedRenderableRelatedVideos, isAuthenticated],
   );
-  const temporaryQueueVideoIdSet = useMemo(() => new Set(temporaryQueueVideos.map((video) => video.id)), [temporaryQueueVideos]);
   const hidingRelatedVideoIdSet = useMemo(() => new Set(hidingRelatedVideoIds), [hidingRelatedVideoIds]);
   const hiddenMutationPendingVideoIdSet = useMemo(() => new Set(hiddenMutationPendingVideoIds), [hiddenMutationPendingVideoIds]);
-
-  useEffect(() => {
-    const removeFromTemporaryQueue = (event: Event) => {
-      const detail = (event as CustomEvent<{ videoId?: string }>).detail;
-      const videoId = detail?.videoId;
-
-      if (!videoId) {
-        return;
-      }
-
-      setTemporaryQueueVideos((currentQueue) => currentQueue.filter((video) => video.id !== videoId));
-    };
-
-    window.addEventListener(VIDEO_ENDED_EVENT, removeFromTemporaryQueue as EventListener);
-    window.addEventListener(TEMP_QUEUE_DEQUEUE_EVENT, removeFromTemporaryQueue as EventListener);
-    return () => {
-      window.removeEventListener(VIDEO_ENDED_EVENT, removeFromTemporaryQueue as EventListener);
-      window.removeEventListener(TEMP_QUEUE_DEQUEUE_EVENT, removeFromTemporaryQueue as EventListener);
-    };
-  }, []);
-
-  useEffect(() => {
-    const previousVideoId = previousVideoIdRef.current;
-    if (previousVideoId !== currentVideo.id) {
-      setTemporaryQueueVideos((currentQueue) => currentQueue.filter((video) => video.id !== previousVideoId));
-      previousVideoIdRef.current = currentVideo.id;
-    }
-  }, [currentVideo.id]);
 
   useEffect(() => {
     hidingRelatedVideoIdsRef.current = hidingRelatedVideoIds;
@@ -3226,22 +3202,6 @@ function ShellDynamicInner({
       setClickedRelatedVideoId((activeId) => (activeId === trackId ? null : activeId));
       relatedClickFlashTimeoutRef.current = null;
     }, 240);
-  }, []);
-
-  const handleAddToTemporaryQueue = useCallback((track: VideoRecord) => {
-    setTemporaryQueueVideos((currentQueue) => (
-      currentQueue.some((video) => video.id === track.id)
-        ? currentQueue
-        : [...currentQueue, track]
-    ));
-  }, []);
-
-  const handleRemoveFromTemporaryQueue = useCallback((videoId: string) => {
-    setTemporaryQueueVideos((currentQueue) => currentQueue.filter((video) => video.id !== videoId));
-  }, []);
-
-  const handleClearTemporaryQueue = useCallback(() => {
-    setTemporaryQueueVideos([]);
   }, []);
 
   const maybeLoadMoreIfNearEnd = useCallback(() => {
