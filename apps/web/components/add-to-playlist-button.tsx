@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, useTransition, type CSSProper
 import { createPortal } from "react-dom";
 
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { addPlaylistItemClient, createPlaylistClient, listPlaylistsClient } from "@/lib/playlist-client-service";
 
 type AddToPlaylistButtonProps = {
   videoId: string;
@@ -21,11 +22,6 @@ type PlaylistSummary = {
   name: string;
   itemCount?: number;
   leadVideoId?: string;
-};
-
-type CreatedPlaylistPayload = {
-  id?: string;
-  name?: string;
 };
 
 export function AddToPlaylistButton({
@@ -84,25 +80,21 @@ export function AddToPlaylistButton({
   }, []);
 
   async function loadPlaylists() {
-    const playlistsResponse = await fetch("/api/playlists", {
-      cache: "no-store",
+    const result = await listPlaylistsClient({
+      telemetryContext: {
+        component: "add-to-playlist-button",
+      },
     });
 
-    if (playlistsResponse.status === 401 || playlistsResponse.status === 403) {
+    if (!result.ok && (result.error.code === "unauthorized" || result.error.code === "forbidden")) {
       return [] as PlaylistSummary[];
     }
 
-    if (!playlistsResponse.ok) {
+    if (!result.ok) {
       throw new Error("playlists-load-failed");
     }
 
-    const payload = (await playlistsResponse.json().catch(() => null)) as
-      | {
-          playlists?: PlaylistSummary[];
-        }
-      | null;
-
-    return Array.isArray(payload?.playlists) ? payload.playlists : [];
+    return result.data;
   }
 
   const ensurePlaylistsLoaded = useCallback(async () => {
@@ -229,22 +221,23 @@ export function AddToPlaylistButton({
   }, [chooserOpen]);
 
   async function addVideoToPlaylist(playlistId: string) {
-    const addResponse = await fetch(
-      `/api/playlists/${encodeURIComponent(playlistId)}/items`,
+    const result = await addPlaylistItemClient(
       {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+        playlistId,
+        videoId,
+      },
+      {
+        telemetryContext: {
+          component: "add-to-playlist-button",
         },
-        body: JSON.stringify({ videoId }),
       },
     );
 
-    if (addResponse.status === 401 || addResponse.status === 403) {
+    if (!result.ok && (result.error.code === "unauthorized" || result.error.code === "forbidden")) {
       return false;
     }
 
-    if (!addResponse.ok) {
+    if (!result.ok) {
       return false;
     }
 
@@ -306,22 +299,24 @@ export function AddToPlaylistButton({
           hour12: false,
         })}`;
 
-        const createResponse = await fetch("/api/playlists", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
+        const createResult = await createPlaylistClient(
+          {
             name: autoPlaylistName,
             videoIds: [videoId],
-          }),
-        });
+          },
+          {
+            telemetryContext: {
+              component: "add-to-playlist-button",
+              mode: "create-and-add",
+            },
+          },
+        );
 
-        if (!createResponse.ok) {
+        if (!createResult.ok) {
           return;
         }
 
-        const created = (await createResponse.json().catch(() => null)) as CreatedPlaylistPayload | null;
+        const created = createResult.data;
         if (!created?.id) {
           return;
         }
@@ -366,22 +361,24 @@ export function AddToPlaylistButton({
           hour12: false,
         })}`;
 
-        const createResponse = await fetch("/api/playlists", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
+        const createResult = await createPlaylistClient(
+          {
             name: autoPlaylistName,
             videoIds: [videoId],
-          }),
-        });
+          },
+          {
+            telemetryContext: {
+              component: "add-to-playlist-button",
+              mode: "create-add-open",
+            },
+          },
+        );
 
-        if (!createResponse.ok) {
+        if (!createResult.ok) {
           return;
         }
 
-        const created = (await createResponse.json().catch(() => null)) as CreatedPlaylistPayload | null;
+        const created = createResult.data;
         if (!created?.id) {
           return;
         }

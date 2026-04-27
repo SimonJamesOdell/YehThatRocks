@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
 import type { HiddenVideoEntry } from "@/lib/catalog-data";
+import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
+import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 
 type BlockedVideosInfiniteListProps = {
   initialBlockedVideos: HiddenVideoEntry[];
@@ -68,6 +71,11 @@ export function BlockedVideosInfiniteList({
     return new Set(blockedVideos.map((entry) => entry.video.id));
   }, [blockedVideos]);
 
+  const retryLoadMore = useCallback(() => {
+    setLoadError(null);
+    void loadMore(nextOffsetRef.current);
+  }, []);
+
   async function loadMore(offset: number) {
     if (requestedOffsetsRef.current.has(offset) || isLoading || !hasMore) {
       return;
@@ -78,15 +86,21 @@ export function BlockedVideosInfiniteList({
     setLoadError(null);
 
     try {
-      const response = await fetch(`/api/hidden-videos?limit=${pageSize}&offset=${offset}`, {
-        cache: "no-store",
+      const result = await fetchJsonWithLoaderContract<BlockedVideosPayload>({
+        input: `/api/hidden-videos?limit=${pageSize}&offset=${offset}`,
+        init: {
+          cache: "no-store",
+        },
+        failureMessage: "Could not load more blocked videos. Please retry.",
       });
 
-      if (!response.ok) {
-        throw new Error("blocked-load-failed");
+      if (!result.ok) {
+        requestedOffsetsRef.current.delete(offset);
+        setLoadError(result.message);
+        return;
       }
 
-      const payload = (await response.json()) as BlockedVideosPayload;
+      const payload = result.data;
       const incoming = Array.isArray(payload.blockedVideos) ? payload.blockedVideos : [];
       const uniqueIncoming = incoming.filter((entry) => !seenIds.has(entry.video.id));
 
@@ -105,7 +119,7 @@ export function BlockedVideosInfiniteList({
       setHasMore(Boolean(payload.hasMore));
     } catch {
       requestedOffsetsRef.current.delete(offset);
-      setLoadError("Could not load more blocked videos. Scroll again to retry.");
+      setLoadError("Could not load more blocked videos. Please retry.");
     } finally {
       setIsLoading(false);
     }
@@ -116,30 +130,38 @@ export function BlockedVideosInfiniteList({
       return;
     }
 
+    let removedEntry: HiddenVideoEntry | null = null;
+
     setUnblockingIds((current) => new Set(current).add(videoId));
 
-    try {
-      const response = await fetch("/api/hidden-videos", {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ videoId }),
-      });
+    const result = await mutateHiddenVideo({
+      action: "unhide",
+      videoId,
+      rollbackOnError: true,
+      onOptimisticUpdate: () => {
+        setBlockedVideos((current) => {
+          removedEntry = current.find((entry) => entry.video.id === videoId) ?? null;
+          return current.filter((entry) => entry.video.id !== videoId);
+        });
+      },
+      onRollback: () => {
+        if (!removedEntry) {
+          return;
+        }
 
-      if (!response.ok) {
-        throw new Error("unblock-failed");
-      }
+        setBlockedVideos((current) => [removedEntry as HiddenVideoEntry, ...current]);
+      },
+      onSettled: () => {
+        setUnblockingIds((current) => {
+          const next = new Set(current);
+          next.delete(videoId);
+          return next;
+        });
+      },
+    });
 
-      setBlockedVideos((current) => current.filter((entry) => entry.video.id !== videoId));
-    } catch {
-      setLoadError("Could not unblock that video. Please try again.");
-    } finally {
-      setUnblockingIds((current) => {
-        const next = new Set(current);
-        next.delete(videoId);
-        return next;
-      });
+    if (!result.ok) {
+      setLoadError(result.message);
     }
   }
 
@@ -253,11 +275,13 @@ export function BlockedVideosInfiniteList({
         )}
       </ul>
 
-      <div className="routeContractRow" aria-live="polite">
-        {isLoading ? <span>Loading more blocked videos...</span> : null}
-        {loadError ? <span>{loadError}</span> : null}
-        {!isLoading && !hasMore && !loadError ? <span>End of blocked videos.</span> : null}
-      </div>
+      <RouteLoaderContractRow
+        isLoading={isLoading}
+        loadingLabel="Loading more blocked videos..."
+        error={loadError}
+        onRetry={loadError ? retryLoadMore : null}
+        endLabel={!isLoading && !hasMore && !loadError ? "End of blocked videos." : null}
+      />
 
       <div ref={sentinelRef} aria-hidden="true" style={{ height: 1 }} />
     </section>

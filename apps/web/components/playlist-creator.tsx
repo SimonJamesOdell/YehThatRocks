@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import type { VideoRecord } from "@/lib/catalog";
+import { createPlaylistClient } from "@/lib/playlist-client-service";
 
 type PlaylistCreatorProps = {
   suggestedVideos: VideoRecord[];
@@ -31,20 +32,26 @@ export function PlaylistCreator({ suggestedVideos, isAuthenticated }: PlaylistCr
     startTransition(async () => {
       setMessage(null);
 
-      const response = await fetch("/api/playlists", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ name: name.trim(), videoIds: selectedIds }),
-      });
+      const response = await createPlaylistClient(
+        { name: name.trim(), videoIds: selectedIds },
+        { telemetryContext: { component: "playlist-creator" } },
+      );
 
       if (!response.ok) {
-        setMessage(response.status === 401 ? "Sign in to create playlists." : "Playlist creation failed. Check the name and try again.");
+        setMessage(
+          response.error.code === "unauthorized" || response.error.code === "forbidden"
+            ? "Sign in to create playlists."
+            : "Playlist creation failed. Check the name and try again.",
+        );
         return;
       }
 
-      const playlist = (await response.json()) as { id: string };
+      const playlist = response.data as { id?: string };
+      if (!playlist.id) {
+        setMessage("Playlist creation failed. Check the name and try again.");
+        return;
+      }
+
       setMessage("Playlist created.");
       router.push(`/playlists/${playlist.id}`);
       router.refresh();

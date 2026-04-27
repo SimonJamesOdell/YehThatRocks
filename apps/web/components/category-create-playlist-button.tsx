@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { addPlaylistItemsClient, createPlaylistClient } from "@/lib/playlist-client-service";
 
 type CategoryCreatePlaylistButtonProps = {
   isAuthenticated: boolean;
@@ -125,22 +126,20 @@ export function CategoryCreatePlaylistButton({
     })}`;
 
     try {
-      const createResponse = await fetch("/api/playlists", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const createResponse = await createPlaylistClient({
+        name: playlistName,
+        videoIds: [],
+      }, {
+        telemetryContext: {
+          component: "category-create-playlist-button",
         },
-        body: JSON.stringify({
-          name: playlistName,
-          videoIds: [],
-        }),
       });
 
       if (!createResponse.ok) {
         return;
       }
 
-      const created = (await createResponse.json().catch(() => null)) as { id?: string } | null;
+      const created = createResponse.data as { id?: string };
       const createdPlaylistId = created?.id;
 
       if (!createdPlaylistId) {
@@ -168,20 +167,19 @@ export function CategoryCreatePlaylistButton({
         },
       });
 
-      void fetch(`/api/playlists/${encodeURIComponent(createdPlaylistId)}/items`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoIds: sourceVideoIds }),
-      }).then(async (addAllResponse) => {
+      void addPlaylistItemsClient(
+        { playlistId: createdPlaylistId, videoIds: sourceVideoIds },
+        { telemetryContext: { component: "category-create-playlist-button" } },
+      ).then(async (addAllResponse) => {
         dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
 
         if (!addAllResponse.ok) {
           return;
         }
 
-        const updatedPlaylist = (await addAllResponse.json().catch(() => null)) as
+        const updatedPlaylist = addAllResponse.data as
           | { id?: string; videos?: VideoRecord[]; itemCount?: number; name?: string }
-          | null;
+          | undefined;
 
         const finalVideos = Array.isArray(updatedPlaylist?.videos) ? updatedPlaylist.videos : filteredSourceVideos;
         const finalName = updatedPlaylist?.name ?? playlistName;

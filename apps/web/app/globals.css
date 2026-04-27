@@ -11,22 +11,61 @@
   --glow: 0 0 10px rgba(179, 18, 20, 0.24);
   --btn-blood-start: #8f1214;
   --btn-blood-end: #3f0507;
+  --ui-status-banner-radius: 16px;
+  --ui-status-banner-padding: 14px 18px;
+  --ui-status-banner-border: rgba(255, 194, 168, 0.24);
+  --ui-status-banner-bg:
+    linear-gradient(135deg, rgba(85, 22, 16, 0.92), rgba(33, 10, 8, 0.92)),
+    rgba(18, 8, 7, 0.94);
+  --ui-status-banner-shadow: 0 22px 48px rgba(0, 0, 0, 0.22);
+  --ui-loading-rail-min-height: 160px;
+  --ui-loading-rail-padding: 18px 10px;
+  --ui-loading-rail-text: rgba(255, 236, 232, 0.95);
+  --ui-modal-overlay-bg: rgba(6, 2, 2, 0.62);
+  --ui-modal-overlay-blur: 8px;
+  --ui-modal-overlay-saturate: 0.82;
+  --ui-modal-radius: 14px;
+  --ui-modal-padding: 20px;
+  --ui-modal-gap: 16px;
+  --ui-modal-border-color: rgba(255, 194, 168, 0.28);
+  --ui-modal-background:
+    radial-gradient(circle at 12% 8%, rgba(255, 84, 45, 0.2), transparent 44%),
+    linear-gradient(160deg, rgba(34, 8, 6, 0.96), rgba(11, 4, 4, 0.96));
+  --ui-modal-shadow: 0 28px 70px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 126, 96, 0.16) inset;
+  --ui-action-chip-radius: 999px;
+  --ui-action-chip-muted-bg: linear-gradient(180deg, rgba(34, 34, 34, 0.97), rgba(8, 8, 8, 0.97));
+  --ui-action-chip-muted-border: rgba(255, 255, 255, 0.28);
+  --ui-action-chip-accent-bg: linear-gradient(180deg, rgba(138, 18, 20, 0.95), rgba(55, 6, 8, 0.95));
+  --ui-action-chip-accent-border: rgba(255, 188, 170, 0.5);
+  --ui-action-chip-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  --ui-badge-seen-border: rgba(255, 255, 255, 0.75);
+  --ui-badge-seen-bg: #000;
+  --ui-badge-seen-text: #fff;
+  --ui-badge-favourite-text: #d83a3a;
+  --ui-badge-favourite-shadow:
+    -1px -1px 0 #fff,
+    1px -1px 0 #fff,
+    -1px 1px 0 #fff,
+    1px 1px 0 #fff,
+    0 1px 0 rgba(0, 0, 0, 0.45),
+    0 0 8px rgba(216, 58, 58, 0.35);
   --left-rail-width: clamp(280px, 24vw, 420px);
   --right-rail-width: clamp(260px, 22vw, 420px);
   --header-overhang-side: 20px;
   --header-side-reserved: clamp(250px, 16vw, 320px);
   --header-search-width: clamp(260px, calc(16vw + 40px), 340px);
 }
-.videoSeenBadge {
+.videoSeenBadge,
+.ui-badge-seen {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   margin-left: 8px;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.75);
-  background: #000;
-  color: #fff;
+  border: 1px solid var(--ui-badge-seen-border);
+  background: var(--ui-badge-seen-bg);
+  color: var(--ui-badge-seen-text);
   font-size: 0.86rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -34,6 +73,105 @@
   line-height: 1.2;
   white-space: nowrap;
   vertical-align: middle;
+}
+
+.ui-status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 12px 0 0;
+  padding: var(--ui-status-banner-padding);
+  border-radius: var(--ui-status-banner-radius);
+  border: 1px solid var(--ui-status-banner-border);
+  background: var(--ui-status-banner-bg);
+  box-shadow: var(--ui-status-banner-shadow);
+}
+
+.ui-status-banner-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.ui-status-banner-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.ui-status-banner-actions button {
+  min-width: 160px;
+}
+
+.ui-loading-rail {
+  min-height: var(--ui-loading-rail-min-height);
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  padding: var(--ui-loading-rail-padding);
+  text-align: center;
+  color: var(--ui-loading-rail-text);
+  letter-spacing: 0.04em;
+}
+
+.ui-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--ui-modal-overlay-bg);
+  backdrop-filter: blur(var(--ui-modal-overlay-blur)) saturate(var(--ui-modal-overlay-saturate));
+}
+
+.ui-modal-shell {
+  position: relative;
+  width: min(580px, 100%);
+  display: grid;
+  gap: var(--ui-modal-gap);
+  padding: var(--ui-modal-padding);
+  border-radius: var(--ui-modal-radius);
+  border: 1px solid var(--ui-modal-border-color);
+  background: var(--ui-modal-background);
+  box-shadow: var(--ui-modal-shadow);
+}
+
+.ui-modal-shell--wide {
+  width: min(760px, 100%);
+}
+
+.ui-loading-bars,
+.playerBootBars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 28px;
+}
+
+.ui-loading-bars span,
+.playerBootBars span {
+  width: 5px;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffb2a7, #de1605);
+  box-shadow: 0 0 10px rgba(222, 22, 5, 0.35);
+  animation: playerBootPulse 920ms ease-in-out infinite;
+}
+
+.ui-loading-bars span:nth-child(2),
+.playerBootBars span:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.ui-loading-bars span:nth-child(3),
+.playerBootBars span:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+.ui-loading-bars span:nth-child(4),
+.playerBootBars span:nth-child(4) {
+  animation-delay: 360ms;
 }
 
 * {
@@ -3214,34 +3352,6 @@ h1 {
   color: rgba(255, 220, 212, 0.9);
 }
 
-.playerBootBars {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 6px;
-  height: 28px;
-}
-
-.playerBootBars span {
-  width: 5px;
-  height: 8px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #ffb2a7, #de1605);
-  box-shadow: 0 0 10px rgba(222, 22, 5, 0.35);
-  animation: playerBootPulse 920ms ease-in-out infinite;
-}
-
-.playerBootBars span:nth-child(2) {
-  animation-delay: 120ms;
-}
-
-.playerBootBars span:nth-child(3) {
-  animation-delay: 240ms;
-}
-
-.playerBootBars span:nth-child(4) {
-  animation-delay: 360ms;
-}
-
 .playerFrame > iframe,
 .playerMount iframe {
   display: block;
@@ -6240,7 +6350,8 @@ h1 {
   height: 2px;
 }
 
-.relatedLoadingState {
+.relatedLoadingState,
+.ui-loading-rail {
   min-height: 160px;
   display: grid;
   place-items: center;
@@ -6460,7 +6571,8 @@ h1 {
 }
 
 .queueBadge,
-.leaderboardRank {
+.leaderboardRank,
+.ui-action-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -6549,56 +6661,69 @@ h1 {
   display: inline-flex;
 }
 
-.trackCard.leaderboardCard .top100CardHideButton {
+.trackCard.leaderboardCard .top100CardHideButton,
+.trackCard.leaderboardCard .top100CardFlagButton,
+.trackCard.leaderboardCard .searchResultBlockButton,
+.ui-action-chip-muted {
   appearance: none;
   position: absolute;
   top: 8px;
-  right: 8px;
   width: 26px;
   height: 26px;
   min-width: 26px;
   min-height: 26px;
   padding: 0;
-  border-radius: 999px;
+  border-radius: var(--ui-action-chip-radius);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, rgba(34, 34, 34, 0.97), rgba(8, 8, 8, 0.97));
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  color: #fff;
-  font-size: 1.05rem;
+  background: var(--ui-action-chip-muted-bg);
+  border: 1px solid var(--ui-action-chip-muted-border);
   line-height: 1;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
-  z-index: 5;
+  box-shadow: var(--ui-action-chip-shadow);
+  cursor: pointer;
+  transition: opacity 160ms ease;
+}
+
+.trackCard.leaderboardCard .top100CardPlaylistAddButton,
+.trackCard.leaderboardCard .top100CardFavouriteButton,
+.ui-action-chip-accent {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: var(--ui-action-chip-radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ui-action-chip-accent-bg);
+  border: 1px solid var(--ui-action-chip-accent-border);
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1;
+  box-shadow: var(--ui-action-chip-shadow);
+  z-index: 4;
   cursor: pointer;
   opacity: 0;
   transition: opacity 160ms ease;
 }
 
+.trackCard.leaderboardCard .top100CardHideButton {
+  right: 8px;
+  color: #fff;
+  font-size: 1.05rem;
+  z-index: 5;
+  opacity: 0;
+}
+
 .trackCard.leaderboardCard .top100CardFlagButton {
-  appearance: none;
-  position: absolute;
-  top: 8px;
   right: 40px;
-  width: 26px;
-  height: 26px;
-  min-width: 26px;
-  min-height: 26px;
-  padding: 0;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(180deg, rgba(34, 34, 34, 0.97), rgba(8, 8, 8, 0.97));
-  border: 1px solid rgba(255, 255, 255, 0.28);
   color: #ffd8b8;
   font-size: 1rem;
-  line-height: 1;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
   z-index: 5;
-  cursor: pointer;
   opacity: 0;
-  transition: opacity 160ms ease;
 }
 
 .trackCard.leaderboardCard.top100CardNewPersistentActions .top100CardFlagButton {
@@ -6618,49 +6743,11 @@ h1 {
 }
 
 .trackCard.leaderboardCard .top100CardPlaylistAddButton {
-  appearance: none;
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  min-height: 24px;
-  padding: 0;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(180deg, rgba(138, 18, 20, 0.95), rgba(55, 6, 8, 0.95));
-  border: 1px solid rgba(255, 188, 170, 0.5);
-  color: #fff;
-  font-size: 1rem;
-  line-height: 1;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
   z-index: 4;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 160ms ease;
 }
 
 .trackCard.leaderboardCard .top100CardFavouriteButton {
-  appearance: none;
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  min-height: 24px;
-  padding: 0;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(180deg, rgba(138, 18, 20, 0.95), rgba(55, 6, 8, 0.95));
-  border: 1px solid rgba(255, 188, 170, 0.5);
-  color: #fff;
-  font-size: 1rem;
-  line-height: 1;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
   z-index: 4;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 160ms ease;
 }
 
 .trackCard.leaderboardCard .top100CardFavouriteButton .navFavouritesGlyph {
@@ -6720,29 +6807,11 @@ h1 {
 }
 
 .trackCard.leaderboardCard .searchResultBlockButton {
-  appearance: none;
-  position: absolute;
-  top: 8px;
   right: 8px;
-  width: 26px;
-  height: 26px;
-  min-width: 26px;
-  min-height: 26px;
-  padding: 0;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(180deg, rgba(34, 34, 34, 0.97), rgba(8, 8, 8, 0.97));
-  border: 1px solid rgba(255, 255, 255, 0.28);
   color: #fff;
   font-size: 1.05rem;
-  line-height: 1;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
   z-index: 6;
-  cursor: pointer;
   opacity: 1;
-  transition: opacity 160ms ease;
 }
 
 .searchResultBlockButton:hover:not(:disabled) {
@@ -6777,7 +6846,8 @@ h1 {
 }
 
 .searchResultFavouriteBadgeButton.relatedCardFavouriteButton,
-.searchResultFavouriteBadgeButton.endedChoiceCardFavouriteBtn {
+.searchResultFavouriteBadgeButton.endedChoiceCardFavouriteBtn,
+.ui-action-chip-accent-compact {
   width: 24px;
   height: 24px;
   min-width: 24px;
@@ -7454,6 +7524,14 @@ h1 {
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
 }
 
+.ui-badge-seen-overlay {
+  position: absolute;
+  bottom: 8px;
+  margin-left: 0;
+  z-index: 2;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
+}
+
 .playerEndedChoiceTitle,
 .relatedCardSlot .relatedCard h3,
 .leaderboardMeta h3,
@@ -7471,21 +7549,16 @@ h1 {
   bottom: 6px;
 }
 
-.relatedFavouriteBadgeOverlay {
+.relatedFavouriteBadgeOverlay,
+.ui-badge-favourite-overlay {
   position: absolute;
   left: 1px;
   bottom: -4px;
   display: inline-block;
   font-size: 2.7rem;
   line-height: 1;
-  color: #d83a3a;
-  text-shadow:
-    -1px -1px 0 #fff,
-    1px -1px 0 #fff,
-    -1px 1px 0 #fff,
-    1px 1px 0 #fff,
-    0 1px 0 rgba(0, 0, 0, 0.45),
-    0 0 8px rgba(216, 58, 58, 0.35);
+  color: var(--ui-badge-favourite-text);
+  text-shadow: var(--ui-badge-favourite-shadow);
   z-index: 2;
 }
 
@@ -8740,6 +8813,27 @@ h1 {
   flex-wrap: wrap;
 }
 
+.routeContractRetryButton {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.routeContractRetryButton:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.routeContractRetryButton:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.75);
+  outline-offset: 2px;
+}
+
 .artistLoadingCenter {
   justify-content: center;
   min-height: 42vh;
@@ -9161,13 +9255,11 @@ h1 {
   justify-content: space-between;
   gap: 18px;
   margin: 12px 0 0;
-  padding: 14px 18px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 194, 168, 0.24);
-  background:
-    linear-gradient(135deg, rgba(85, 22, 16, 0.92), rgba(33, 10, 8, 0.92)),
-    rgba(18, 8, 7, 0.94);
-  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.22);
+  padding: var(--ui-status-banner-padding);
+  border-radius: var(--ui-status-banner-radius);
+  border: 1px solid var(--ui-status-banner-border);
+  background: var(--ui-status-banner-bg);
+  box-shadow: var(--ui-status-banner-shadow);
 }
 
 .authStatusBannerCopy {
@@ -9214,7 +9306,7 @@ h1 {
   position: relative;
   width: min(580px, 100%);
   display: grid;
-  gap: 18px;
+  gap: var(--ui-modal-gap);
   padding: 22px;
   border-radius: 16px;
   border: 1px solid rgba(255, 194, 168, 0.36);
@@ -9346,21 +9438,19 @@ h1 {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(6, 2, 2, 0.62);
+  background: var(--ui-modal-overlay-bg);
   backdrop-filter: blur(8px) saturate(0.82);
 }
 
 .performanceModalDialog {
   width: min(760px, 100%);
   display: grid;
-  gap: 16px;
-  padding: 20px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 194, 168, 0.28);
-  background:
-    radial-gradient(circle at 12% 8%, rgba(255, 84, 45, 0.2), transparent 44%),
-    linear-gradient(160deg, rgba(34, 8, 6, 0.96), rgba(11, 4, 4, 0.96));
-  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 126, 96, 0.16) inset;
+  gap: var(--ui-modal-gap);
+  padding: var(--ui-modal-padding);
+  border-radius: var(--ui-modal-radius);
+  border: 1px solid var(--ui-modal-border-color);
+  background: var(--ui-modal-background);
+  box-shadow: var(--ui-modal-shadow);
 }
 
 .performanceModalHeader {
@@ -9751,12 +9841,26 @@ h1 {
     flex-direction: column;
   }
 
+  .ui-status-banner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .authStatusBannerActions {
     width: 100%;
     justify-content: stretch;
   }
 
+  .ui-status-banner-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
   .authStatusBannerActions button {
+    width: 100%;
+  }
+
+  .ui-status-banner-actions button {
     width: 100%;
   }
 
@@ -9798,6 +9902,13 @@ h1 {
   }
 
   .performanceModalDialog {
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+    padding: 16px;
+  }
+
+  .ui-modal-shell,
+  .ui-modal-shell--wide {
     width: 100%;
     border-radius: 16px 16px 0 0;
     padding: 16px;

@@ -24,7 +24,7 @@ const files = {
   forgotPasswordRoute: path.join(ROOT, "apps/web/app/api/auth/forgot-password/route.ts"),
   sendVerificationRoute: path.join(ROOT, "apps/web/app/api/auth/send-verification/route.ts"),
   shellLayout: path.join(ROOT, "apps/web/app/(shell)/layout.tsx"),
-  shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic.tsx"),
+  shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
   historyPage: path.join(ROOT, "apps/web/app/(shell)/history/page.tsx"),
   favouritesPage: path.join(ROOT, "apps/web/app/(shell)/favourites/page.tsx"),
   playlistsPage: path.join(ROOT, "apps/web/app/(shell)/playlists/page.tsx"),

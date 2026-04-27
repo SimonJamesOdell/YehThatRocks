@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import type { VideoRecord } from "@/lib/catalog";
+import { addPlaylistItemClient } from "@/lib/playlist-client-service";
 
 type PlaylistItemAdderProps = {
   playlistId: string;
@@ -21,16 +22,17 @@ export function PlaylistItemAdder({ playlistId, videos, isAuthenticated }: Playl
     startTransition(async () => {
       setMessage(null);
 
-      const response = await fetch(`/api/playlists/${playlistId}/items`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ videoId }),
-      });
+      const response = await addPlaylistItemClient(
+        { playlistId, videoId },
+        { telemetryContext: { component: "playlist-item-adder" } },
+      );
 
       if (!response.ok) {
-        setMessage(response.status === 401 ? "Sign in to modify playlists." : "Could not add that track to the playlist.");
+        setMessage(
+          response.error.code === "unauthorized" || response.error.code === "forbidden"
+            ? "Sign in to modify playlists."
+            : "Could not add that track to the playlist.",
+        );
         return;
       }
 

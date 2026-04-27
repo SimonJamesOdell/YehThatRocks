@@ -9,7 +9,7 @@ const files = {
   nav: path.join(ROOT, "apps/web/components/artists-letter-nav.tsx"),
   results: path.join(ROOT, "apps/web/components/artists-letter-results.tsx"),
   events: path.join(ROOT, "apps/web/lib/artists-letter-events.ts"),
-  catalogData: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
+  catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   artistPage: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/page.tsx"),
   artistWikiPage: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/wiki/page.tsx"),
   artistLoading: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/loading.tsx"),

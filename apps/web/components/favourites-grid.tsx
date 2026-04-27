@@ -10,6 +10,7 @@ import { CloseLink } from "@/components/close-link";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
+import { addPlaylistItemsClient, createPlaylistClient } from "@/lib/playlist-client-service";
 
 type FavouritesGridProps = {
   initialFavourites: VideoRecord[];
@@ -157,18 +158,16 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
     let createdPlaylistIdForProgress: string | null = null;
 
     try {
-      const createResponse = await fetch("/api/playlists", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const createResponse = await createPlaylistClient({
+        name: playlistName,
+        videoIds: [],
+      }, {
+        telemetryContext: {
+          component: "favourites-grid",
         },
-        body: JSON.stringify({
-          name: playlistName,
-          videoIds: [],
-        }),
       });
 
-      if (createResponse.status === 401 || createResponse.status === 403) {
+      if (!createResponse.ok && (createResponse.error.code === "unauthorized" || createResponse.error.code === "forbidden")) {
         setMessage("Sign in to create playlists.");
         return;
       }
@@ -178,7 +177,7 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
         return;
       }
 
-      const created = (await createResponse.json().catch(() => null)) as { id?: string; name?: string } | null;
+      const created = createResponse.data as { id?: string; name?: string };
       const createdPlaylistId = created?.id;
 
       if (!createdPlaylistId) {
@@ -245,20 +244,19 @@ export function FavouritesGrid({ initialFavourites, isAuthenticated }: Favourite
       }, animationDoneMs);
 
       // Fire bulk add in background; reconcile rail with server truth when it returns.
-      void fetch(`/api/playlists/${encodeURIComponent(createdPlaylistId)}/items`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoIds: favouriteVideoIds }),
-      }).then(async (addAllResponse) => {
+      void addPlaylistItemsClient(
+        { playlistId: createdPlaylistId, videoIds: favouriteVideoIds },
+        { telemetryContext: { component: "favourites-grid" } },
+      ).then(async (addAllResponse) => {
         if (!addAllResponse.ok) {
           setMessage("Playlist was created, but some tracks could not be saved.");
           dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
           return;
         }
 
-        const updatedPlaylist = (await addAllResponse.json().catch(() => null)) as
+        const updatedPlaylist = addAllResponse.data as
           | { id?: string; videos?: VideoRecord[]; itemCount?: number; name?: string }
-          | null;
+          | undefined;
 
         const finalVideos = Array.isArray(updatedPlaylist?.videos) ? updatedPlaylist.videos : optimisticVideos;
         const finalName = updatedPlaylist?.name ?? playlistName;

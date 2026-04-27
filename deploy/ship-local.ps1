@@ -593,9 +593,17 @@ try {
   }
 
   if ((Get-ShipStageRank -Stage ([string]$shipState.Stage)) -lt (Get-ShipStageRank -Stage "deployed")) {
-    $remoteDeploy = "cd $VpsRepoDir && git pull --ff-only origin $Branch && WEB_IMAGE=$($shipState.ImageTag) SKIP_PULL=1 ./deploy/deploy-prod-hot-swap.sh"
+    $remoteDeploy = @"
+set -e
+cd $VpsRepoDir
+if [ -n "`$(git status --porcelain)" ]; then
+  echo "[ship-local] WARNING: VPS repo has local changes; auto-stashing before deploy"
+  git stash push --include-untracked -m "ship-local-auto-stash `$(date -Iseconds)" >/dev/null
+fi
+WEB_IMAGE=$($shipState.ImageTag) SKIP_PULL=1 ./deploy/deploy-prod-hot-swap.sh
+"@
     Write-Host "Triggering VPS hot-swap deploy..." -ForegroundColor Yellow
-    Exec "ssh $VpsHost '$remoteDeploy'"
+    ExecNative -Program "ssh" -CommandArgs @($VpsHost, $remoteDeploy)
     $shipState.Stage = "deployed"
     $shipState.UpdatedAt = (Get-Date).ToString("o")
     Write-ShipState -StateFilePath $shipStatePath -State $shipState

@@ -1,5 +1,7 @@
 "use client";
 
+import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
+
 type SearchResultBlockButtonProps = {
   videoId: string;
   title: string;
@@ -21,17 +23,10 @@ export function SearchResultBlockButton({ videoId, title }: SearchResultBlockBut
       card.remove();
     }, REMOVE_ANIMATION_MS);
 
-    try {
-      await fetch("/api/hidden-videos", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ videoId }),
-      });
-    } catch {
-      // Keep card removed even if persistence fails to match quick-hide behavior.
-    }
+    await mutateHiddenVideo({
+      action: "hide",
+      videoId,
+    });
   }
 
   return (

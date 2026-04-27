@@ -10,7 +10,7 @@ const files = {
   favouritesGrid: path.join(ROOT, "apps/web/components/favourites-grid.tsx"),
   favouritesManager: path.join(ROOT, "apps/web/components/favourites-manager.tsx"),
   searchResultFavouriteButton: path.join(ROOT, "apps/web/components/search-result-favourite-button.tsx"),
-  playerExperience: path.join(ROOT, "apps/web/components/player-experience.tsx"),
+  playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   clientAuthFetch: path.join(ROOT, "apps/web/lib/client-auth-fetch.ts"),
   favouritesRoute: path.join(ROOT, "apps/web/app/api/favourites/route.ts"),
   userProfilePage: path.join(ROOT, "apps/web/app/(shell)/u/[screenName]/page.tsx"),

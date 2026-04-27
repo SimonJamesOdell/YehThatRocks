@@ -10,6 +10,8 @@ LOGGING_CONF_SRC="$REPO_DIR/deploy/nginx/yehthatrocks-logging.conf"
 SITES_AVAILABLE="/etc/nginx/sites-available/yehthatrocks"
 SITES_ENABLED="/etc/nginx/sites-enabled/yehthatrocks"
 LOGGING_CONF_DEST="/etc/nginx/conf.d/yehthatrocks-logging.conf"
+LOG_FORMAT_NAME="ytr_timed"
+LOG_FORMAT_PATTERN="^[[:space:]]*log_format[[:space:]]+${LOG_FORMAT_NAME}([[:space:]]|$)"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="/etc/nginx/sites-available/yehthatrocks-backup-$TIMESTAMP"
 CANDIDATE_PATH="${SITES_AVAILABLE}.candidate.${TIMESTAMP}"
@@ -38,6 +40,10 @@ cleanup_candidate() {
   rm -f "$CANDIDATE_PATH"
 }
 
+find_log_format_definition_files() {
+  grep -R -l -E "$LOG_FORMAT_PATTERN" /etc/nginx --include='*.conf' 2>/dev/null || true
+}
+
 trap 'restore_enabled_link; cleanup_candidate' ERR
 
 mkdir -p "$BACKUP_DIR"
@@ -63,8 +69,31 @@ echo "[nginx-install] Backed up existing config to $BACKUP_DIR"
 echo "[nginx-install] Installing candidate config to $CANDIDATE_PATH"
 cp "$CONF_SRC" "$CANDIDATE_PATH"
 
-echo "[nginx-install] Installing logging include to $LOGGING_CONF_DEST"
-cp "$LOGGING_CONF_SRC" "$LOGGING_CONF_DEST"
+LOG_FORMAT_DEFINITION_FILES="$(find_log_format_definition_files)"
+LOG_FORMAT_DEFINED_OUTSIDE_DEST="false"
+
+if [ -n "$LOG_FORMAT_DEFINITION_FILES" ]; then
+  while IFS= read -r definition_file; do
+    [ -z "$definition_file" ] && continue
+    if [ "$definition_file" != "$LOGGING_CONF_DEST" ]; then
+      LOG_FORMAT_DEFINED_OUTSIDE_DEST="true"
+      break
+    fi
+  done <<EOF
+$LOG_FORMAT_DEFINITION_FILES
+EOF
+fi
+
+if [ "$LOG_FORMAT_DEFINED_OUTSIDE_DEST" = "true" ]; then
+  echo "[nginx-install] Detected existing '${LOG_FORMAT_NAME}' log_format outside managed include; skipping logging include copy"
+  if [ -e "$LOGGING_CONF_DEST" ]; then
+    echo "[nginx-install] Removing managed logging include to avoid duplicate '${LOG_FORMAT_NAME}' declarations"
+    rm -f "$LOGGING_CONF_DEST"
+  fi
+else
+  echo "[nginx-install] Installing logging include to $LOGGING_CONF_DEST"
+  cp "$LOGGING_CONF_SRC" "$LOGGING_CONF_DEST"
+fi
 
 echo "[nginx-install] Testing candidate site config"
 ln -sf "$CANDIDATE_PATH" "$SITES_ENABLED"

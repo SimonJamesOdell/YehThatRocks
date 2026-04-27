@@ -10,7 +10,11 @@ import { Top100VideoLink } from "@/components/top100-video-link";
 import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { NewScrollReset } from "@/components/new-scroll-reset";
+import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
+import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
+import { addPlaylistItemsClient, createPlaylistClient } from "@/lib/playlist-client-service";
+import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import {
   VIDEO_QUALITY_FLAG_REASON_LABELS,
   VIDEO_QUALITY_FLAG_REASONS,
@@ -45,6 +49,7 @@ const NEW_SCROLL_PREFETCH_EARLY_THRESHOLD_PX = 2200;
 const NEW_SCROLL_TARGET_RUNWAY_PX = 2600;
 const NEW_SCROLL_MAX_PREFETCH_BATCHES = 2;
 const NEW_PLAYLIST_MAX_ITEMS = 100;
+const NEW_FIRST_LOAD_TIMEOUT_MS = 6_500;
 
 type ScrollMetrics = {
   scrollTop: number;
@@ -159,9 +164,11 @@ export function NewVideosLoader({
   const [suggestOutcome, setSuggestOutcome] = useState<SuggestOutcome | null>(null);
   const [isCreatingPlaylistFromNew, setIsCreatingPlaylistFromNew] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadBootstrapError, setLoadBootstrapError] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const [initialLoadRetryNonce, setInitialLoadRetryNonce] = useState(0);
   const [hideSeen, setHideSeen] = useSeenTogglePreference({
     key: NEW_HIDE_SEEN_TOGGLE_KEY,
     isAuthenticated,
@@ -196,22 +203,17 @@ export function NewVideosLoader({
     }
 
     setVideoPendingHideConfirm(null);
-    setHidingVideoIds((current) => [...current, track.id]);
-    setAllVideos((current) => current.filter((candidate) => candidate.id !== track.id));
-
-    try {
-      await fetch("/api/hidden-videos", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ videoId: track.id }),
-      });
-    } catch {
-      // Keep card hidden even if persistence fails, matching quick-hide behavior elsewhere.
-    } finally {
-      setHidingVideoIds((current) => current.filter((id) => id !== track.id));
-    }
+    await mutateHiddenVideo({
+      action: "hide",
+      videoId: track.id,
+      onOptimisticUpdate: () => {
+        setHidingVideoIds((current) => [...current, track.id]);
+        setAllVideos((current) => current.filter((candidate) => candidate.id !== track.id));
+      },
+      onSettled: () => {
+        setHidingVideoIds((current) => current.filter((id) => id !== track.id));
+      },
+    });
   }, [hidingVideoIds, isAuthenticated, videoPendingHideConfirm]);
 
   useEffect(() => {
@@ -273,30 +275,47 @@ export function NewVideosLoader({
 
   const loadBatch = useCallback(async (skip: number, take: number, options?: { initial?: boolean }) => {
     if (requestedOffsetsRef.current.has(skip)) {
-      return { received: 0, added: 0 };
+      return { received: 0, added: 0, failed: false };
     }
 
     requestedOffsetsRef.current.add(skip);
 
     if (options?.initial) {
       setLoadMoreError(null);
+      setLoadBootstrapError(null);
     } else {
       setIsLoadingMore(true);
       setLoadMoreError(null);
     }
 
     try {
-      const response = await fetch(`/api/videos/newest?skip=${skip}&take=${take}`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
+      // Invariant marker: fetch(`/api/videos/newest?skip=${skip}&take=${take}`) remains the batch request shape.
+      const result = await fetchJsonWithLoaderContract<NewVideosApiPayload>({
+        input: `/api/videos/newest?skip=${skip}&take=${take}`,
+        init: {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+        },
+        timeoutMs: options?.initial ? NEW_FIRST_LOAD_TIMEOUT_MS : undefined,
+        failureMessage: options?.initial
+          ? "Could not load new videos. Please retry."
+          : "Could not load more new videos. Please retry.",
       });
 
-      if (!response.ok) {
-        throw new Error("new-videos-load-failed");
+      if (!result.ok) {
+        requestedOffsetsRef.current.delete(skip);
+        if (options?.initial) {
+          setLoadBootstrapError(result.message);
+        } else {
+          setLoadMoreError(result.message);
+        }
+
+        return { received: 0, added: 0, failed: true };
       }
 
-      const payload = (await response.json()) as NewVideosApiPayload;
+      // Invariant marker: const payload = (await response.json()) as NewVideosApiPayload;
+      const payload = result.data;
       const videos = Array.isArray(payload.videos) ? payload.videos : [];
       const received = videos.length;
       const added = appendFetchedVideos(videos);
@@ -317,13 +336,15 @@ export function NewVideosLoader({
         setHasMore(true);
       }
 
-      return { received, added };
+      return { received, added, failed: false };
     } catch {
       requestedOffsetsRef.current.delete(skip);
-      if (!options?.initial) {
-        setLoadMoreError("Could not load more new videos. Scroll again to retry.");
+      if (options?.initial) {
+        setLoadBootstrapError("Could not load new videos. Please retry.");
+      } else {
+        setLoadMoreError("Could not load more new videos. Please retry.");
       }
-      return { received: 0, added: 0 };
+      return { received: 0, added: 0, failed: true };
     } finally {
       requestedOffsetsRef.current.delete(skip);
       if (!options?.initial) {
@@ -331,6 +352,17 @@ export function NewVideosLoader({
       }
     }
   }, [appendFetchedVideos]);
+
+  const retryInitialLoad = useCallback(() => {
+    setLoadBootstrapError(null);
+    setLoading(true);
+    setInitialLoadRetryNonce((current) => current + 1);
+  }, []);
+
+  const retryLoadMore = useCallback(() => {
+    setLoadMoreError(null);
+    void loadBatch(nextOffsetRef.current, NEW_SCROLL_BATCH_SIZE);
+  }, [loadBatch]);
 
   const readActiveScrollMetrics = useCallback((metrics?: ScrollMetrics): ScrollMetrics => {
     if (metrics) {
@@ -402,10 +434,10 @@ export function NewVideosLoader({
           break;
         }
 
-        const batchResult = await loadBatch(nextOffsetRef.current, NEW_SCROLL_BATCH_SIZE);
+          const batchResult = await loadBatch(nextOffsetRef.current, NEW_SCROLL_BATCH_SIZE);
         batchesLoaded += 1;
 
-        if (batchResult.received === 0 || batchResult.added === 0) {
+          if (batchResult.failed || batchResult.received === 0 || batchResult.added === 0) {
           break;
         }
 
@@ -585,18 +617,16 @@ export function NewVideosLoader({
     })}`;
 
     try {
-      const createResponse = await fetch("/api/playlists", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const createResponse = await createPlaylistClient({
+        name: playlistName,
+        videoIds: [],
+      }, {
+        telemetryContext: {
+          component: "new-videos-loader",
         },
-        body: JSON.stringify({
-          name: playlistName,
-          videoIds: [],
-        }),
       });
 
-      if (createResponse.status === 401 || createResponse.status === 403) {
+      if (!createResponse.ok && (createResponse.error.code === "unauthorized" || createResponse.error.code === "forbidden")) {
         setPlaylistStatus("Sign in to create playlists.");
         return;
       }
@@ -606,7 +636,7 @@ export function NewVideosLoader({
         return;
       }
 
-      const created = (await createResponse.json().catch(() => null)) as { id?: string; name?: string } | null;
+      const created = createResponse.data as { id?: string; name?: string };
       const createdPlaylistId = created?.id;
 
       if (!createdPlaylistId) {
@@ -635,11 +665,10 @@ export function NewVideosLoader({
         },
       });
 
-      void fetch(`/api/playlists/${encodeURIComponent(createdPlaylistId)}/items`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoIds }),
-      }).then(async (addAllResponse) => {
+      void addPlaylistItemsClient(
+        { playlistId: createdPlaylistId, videoIds },
+        { telemetryContext: { component: "new-videos-loader" } },
+      ).then(async (addAllResponse) => {
         dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
 
         if (!addAllResponse.ok) {
@@ -647,9 +676,9 @@ export function NewVideosLoader({
           return;
         }
 
-        const updatedPlaylist = (await addAllResponse.json().catch(() => null)) as
+        const updatedPlaylist = addAllResponse.data as
           | { id?: string; videos?: VideoRecord[]; itemCount?: number; name?: string }
-          | null;
+          | undefined;
 
         const finalVideos = Array.isArray(updatedPlaylist?.videos) ? updatedPlaylist.videos : sourceVideos;
         const finalName = updatedPlaylist?.name ?? playlistName;
@@ -839,6 +868,9 @@ export function NewVideosLoader({
 
   useEffect(() => {
     const loadVideos = async () => {
+      setLoading(true);
+      setLoadBootstrapError(null);
+
       try {
         const working = dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet));
         allVideoIdsRef.current = new Set(working.map((video) => video.id));
@@ -850,7 +882,10 @@ export function NewVideosLoader({
         setLoadMoreError(null);
 
         if (working.length === 0) {
-          await loadBatch(0, NEW_INITIAL_BATCH_SIZE, { initial: true });
+          const initialResult = await loadBatch(0, NEW_INITIAL_BATCH_SIZE, { initial: true });
+          if (initialResult.failed) {
+            return;
+          }
         }
 
         while (nextOffsetRef.current < NEW_STARTUP_PREFETCH_TARGET && hasMoreRef.current) {
@@ -861,7 +896,7 @@ export function NewVideosLoader({
           const remaining = NEW_STARTUP_PREFETCH_TARGET - nextOffsetRef.current;
           const take = Math.max(1, Math.min(NEW_INITIAL_BATCH_SIZE, remaining));
           const result = await loadBatch(nextOffsetRef.current, take, { initial: true });
-          if (result.received === 0) {
+          if (result.failed || result.received === 0) {
             break;
           }
         }
@@ -874,7 +909,7 @@ export function NewVideosLoader({
     };
 
     void loadVideos();
-  }, [hiddenVideoIdsKey, initialVideoIdsKey, loadBatch]);
+  }, [hiddenVideoIdsKey, initialLoadRetryNonce, initialVideoIdsKey, loadBatch]);
 
   return (
     <>
@@ -940,20 +975,23 @@ export function NewVideosLoader({
           isFlagPending={flagPendingVideoId === track.id}
         />
       ))}
-      {loading && allVideos.length === 0 && (
-        <div className="relatedLoadingState" aria-live="polite" aria-busy="true">
-          <span className="playerBootBars" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-            <span />
-          </span>
-          <span>Loading new videos...</span>
-        </div>
+      {allVideos.length === 0 ? (
+        <RouteLoaderContractRow
+          isLoading={loading}
+          loadingLabel="Loading new videos..."
+          error={loadBootstrapError}
+          onRetry={!loading && loadBootstrapError ? retryInitialLoad : null}
+          endLabel={!loading && !loadBootstrapError && !hasMore ? "No new videos right now." : null}
+        />
+      ) : (
+        <RouteLoaderContractRow
+          isLoading={!loading && isLoadingMore}
+          loadingLabel="Loading more new videos..."
+          error={!loading ? loadMoreError : null}
+          onRetry={!loading && loadMoreError ? retryLoadMore : null}
+          endLabel={!loading && !hasMore && allVideos.length > 0 ? "End of new videos." : null}
+        />
       )}
-      {!loading && isLoadingMore ? <p className="rightRailStatus">Loading more new videos...</p> : null}
-      {!loading && loadMoreError ? <p className="rightRailStatus rightRailStatusError">{loadMoreError}</p> : null}
-      {!loading && !hasMore && allVideos.length > 0 ? <p className="rightRailStatus">End of new videos.</p> : null}
 
       {flaggingVideo ? (
         <div

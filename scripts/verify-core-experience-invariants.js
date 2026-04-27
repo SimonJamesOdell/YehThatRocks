@@ -1,69 +1,54 @@
 #!/usr/bin/env node
 
+// Domain: Core Experience
+// Covers: queue resolution (via rule-pack), Watch Next rail rendering,
+// current-video API pool + filler, and catalog data sourcing / classification.
+// Player controls → verify-player-core-invariants.js
+// Dock routing / categories / chat → verify-overlay-routing-invariants.js
+// New videos / seen-toggle → verify-new-videos-invariants.js
+
 const path = require("node:path");
 const {
   readFileStrict,
   assertContains,
   assertNotContains,
-  assertCssRuleContains,
-  assertCssRuleNotContains,
 } = require("./invariants/helpers");
 const { applyQueueResolutionRulePack } = require("./invariants/rule-packs/queue-resolution-pack");
 
 const ROOT = process.cwd();
 
 const files = {
-  shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic.tsx"),
-  playerExperience: path.join(ROOT, "apps/web/components/player-experience.tsx"),
-  chatRoute: path.join(ROOT, "apps/web/app/api/chat/route.ts"),
-  chatStreamRoute: path.join(ROOT, "apps/web/app/api/chat/stream/route.ts"),
+  shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
+  shellDynamicRendering: path.join(ROOT, "apps/web/components/shell-dynamic-rendering.tsx"),
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
-  sharePreviewRoute: path.join(ROOT, "apps/web/app/api/videos/share-preview/route.ts"),
-  shareHtmlRoute: path.join(ROOT, "apps/web/app/s/[videoId]/route.ts"),
-  shareMetadata: path.join(ROOT, "apps/web/lib/share-metadata.ts"),
-  chatSharedVideo: path.join(ROOT, "apps/web/lib/chat-shared-video.ts"),
-  artistWikiLink: path.join(ROOT, "apps/web/components/artist-wiki-link.tsx"),
-  adminVideoDeleteButton: path.join(ROOT, "apps/web/components/admin-video-delete-button.tsx"),
-  seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
-  statusPerformanceRoute: path.join(ROOT, "apps/web/app/api/status/performance/route.ts"),
-  videosUnavailableRoute: path.join(ROOT, "apps/web/app/api/videos/unavailable/route.ts"),
+  catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
+  metadataUtils: path.join(ROOT, "apps/web/lib/catalog-metadata-utils.ts"),
+  playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   nextTrackDecisionHook: path.join(ROOT, "apps/web/components/use-next-track-decision.ts"),
   temporaryQueueControllerHook: path.join(ROOT, "apps/web/components/use-temporary-queue-controller.ts"),
   playerNextTrackDomain: path.join(ROOT, "apps/web/domains/player/resolve-next-track-target.ts"),
   queueDomain: path.join(ROOT, "apps/web/domains/queue/temporary-queue.ts"),
   playlistDomain: path.join(ROOT, "apps/web/domains/playlist/playlist-step-target.ts"),
-  categoriesFilterGrid: path.join(ROOT, "apps/web/components/categories-filter-grid.tsx"),
-  categoriesLoading: path.join(ROOT, "apps/web/app/(shell)/categories/loading.tsx"),
   playerEvents: path.join(ROOT, "apps/web/lib/player-events.ts"),
-  css: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
 function main() {
   const failures = [];
 
   const shellDynamicSource = readFileStrict(files.shellDynamic, ROOT);
-  const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
-  const chatRouteSource = readFileStrict(files.chatRoute, ROOT);
-  const chatStreamRouteSource = readFileStrict(files.chatStreamRoute, ROOT);
+  const shellDynamicRenderingSource = readFileStrict(files.shellDynamicRendering, ROOT);
+  const shellRenderingSource = `${shellDynamicSource}\n${shellDynamicRenderingSource}`;
   const currentVideoRouteSource = readFileStrict(files.currentVideoRoute, ROOT);
-  const sharePreviewRouteSource = readFileStrict(files.sharePreviewRoute, ROOT);
-  const shareHtmlRouteSource = readFileStrict(files.shareHtmlRoute, ROOT);
-  const shareMetadataSource = readFileStrict(files.shareMetadata, ROOT);
-  const chatSharedVideoSource = readFileStrict(files.chatSharedVideo, ROOT);
-  const artistWikiLinkSource = readFileStrict(files.artistWikiLink, ROOT);
-  const adminVideoDeleteButtonSource = readFileStrict(files.adminVideoDeleteButton, ROOT);
-  const seenToggleRouteSource = readFileStrict(files.seenToggleRoute, ROOT);
-  const statusPerformanceRouteSource = readFileStrict(files.statusPerformanceRoute, ROOT);
-  const videosUnavailableRouteSource = readFileStrict(files.videosUnavailableRoute, ROOT);
+  const catalogDataSource = readFileStrict(files.catalogData, ROOT);
+  const metadataUtilsSource = readFileStrict(files.metadataUtils, ROOT);
+  const classificationSource = `${catalogDataSource}\n${metadataUtilsSource}`;
+  const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
   const nextTrackDecisionHookSource = readFileStrict(files.nextTrackDecisionHook, ROOT);
   const temporaryQueueControllerHookSource = readFileStrict(files.temporaryQueueControllerHook, ROOT);
   const playerNextTrackDomainSource = readFileStrict(files.playerNextTrackDomain, ROOT);
   const queueDomainSource = readFileStrict(files.queueDomain, ROOT);
   const playlistDomainSource = readFileStrict(files.playlistDomain, ROOT);
-  const categoriesFilterGridSource = readFileStrict(files.categoriesFilterGrid, ROOT);
-  const categoriesLoadingSource = readFileStrict(files.categoriesLoading, ROOT);
   const playerEventsSource = readFileStrict(files.playerEvents, ROOT);
-  const cssSource = readFileStrict(files.css, ROOT);
 
   applyQueueResolutionRulePack({
     shellDynamicSource,
@@ -78,7 +63,7 @@ function main() {
     failures,
   });
 
-  // Watch Next and current-video resolver invariants.
+  // Watch Next rail rendering invariants.
   assertContains(shellDynamicSource, "<div className=\"railTabs rightRailTabs\">", "Shell renders right rail tabs container", failures);
   assertContains(shellDynamicSource, "Watch Next", "Shell labels a right rail tab as Watch Next", failures);
   assertContains(shellDynamicSource, "Playlist", "Shell labels a right rail tab as Playlist", failures);
@@ -86,390 +71,39 @@ function main() {
   assertContains(shellDynamicSource, "seenVideoIdsRef.current = new Set<string>();", "Shell clears stale seen ids when auth is lost", failures);
   assertContains(shellDynamicSource, "if (!isAuthenticated) {", "Shell ignores watch-history seen updates while logged out", failures);
   assertContains(shellDynamicSource, "isSeen={isAuthenticated && seenVideoIdsRef.current.has(track.id)}", "Shell only renders watch-next seen badges for authenticated users", failures);
-  assertContains(shellDynamicSource, "{isSeen && !isFavourite ? <span className=\"videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay\">Seen</span> : null}", "Watch Next suppresses seen badge when favourite heart is present", failures);
+  assertContains(shellRenderingSource, "{isSeen && !isFavourite ? <span className=\"videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay\">Seen</span> : null}", "Watch Next suppresses seen badge when favourite heart is present", failures);
   assertNotContains(shellDynamicSource, "{isSeen ? <span className=\"videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay\">Seen</span> : null}", "Watch Next should not render seen badge for favourited cards", failures);
   assertContains(shellDynamicSource, "watchNextRailRef.current.scrollTop = 0;", "Watch Next resets scroll top during transition", failures);
+
+  // Current-video API invariants.
   assertContains(currentVideoRouteSource, "const targetRelatedCount = 8;", "Current-video API targets 8 Watch Next items", failures);
   assertContains(currentVideoRouteSource, "earlyTopVideosForPadding ?? await getCachedTopVideosForCurrentVideo(30)", "Current-video API fetches bounded filler pool (parallel-prefetched or direct)", failures);
   assertContains(currentVideoRouteSource, "const filler = shuffleVideos(fillerPool).slice(0, targetRelatedCount - relatedVideos.length);", "Current-video API randomizes sparse filler selection", failures);
 
-  // Player invariants.
-  assertContains(playerExperienceSource, "const AUTOPLAY_KEY = \"yeh-player-autoplay\";", "Player persists autoplay preference key", failures);
-  assertContains(playerExperienceSource, "const PLAYER_VOLUME_KEY = \"yeh-player-volume\";", "Player defines persisted volume preference key", failures);
-  assertContains(playerExperienceSource, "const PLAYER_MUTED_KEY = \"yeh-player-muted\";", "Player defines persisted mute preference key", failures);
-  assertContains(playerExperienceSource, "temporaryQueue?: VideoRecord[];", "Player props accept temporary queue feed", failures);
-  assertContains(playerExperienceSource, "temporaryQueue = [],", "Player defaults temporary queue to an empty list", failures);
-  assertContains(playerExperienceSource, "import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent", "Player consumes centralized typed events module", failures);
-  assertContains(playerExperienceSource, "const { resolvePlaylistStepTarget, resolveNextTarget, resolvedNextTarget } = useNextTrackDecision({", "Player invokes extracted next-track decision hook", failures);
-  assertContains(playerExperienceSource, "const RESUME_KEY = \"yeh-player-resume\";", "Player defines resume snapshot key", failures);
-  assertContains(playerExperienceSource, "window.localStorage.setItem(AUTOPLAY_KEY, ", "Player writes autoplay preference to localStorage", failures);
-  assertContains(playerExperienceSource, "window.localStorage.setItem(PLAYER_VOLUME_KEY, String(normalizePlayerVolume(volume, 100)));", "Player writes volume preference to localStorage", failures);
-  assertContains(playerExperienceSource, "window.localStorage.setItem(PLAYER_MUTED_KEY, String(isMuted));", "Player writes mute preference to localStorage", failures);
-  assertContains(playerExperienceSource, "persistMutedPreferenceOnNextSyncRef.current = true;", "Player only persists mute preference when the user explicitly changes mute state", failures);
-  assertContains(playerExperienceSource, "const activePlaylistId = searchParams.get(\"pl\");", "Player reads playlist context from query params", failures);
-  assertContains(playerExperienceSource, "const playlistId = activePlaylistId;", "Player snapshots active playlist id before async loading", failures);
-  assertContains(playerExperienceSource, "const response = await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {", "Player loads playlist sequence for ordered playback", failures);
-  assertContains(playerExperienceSource, "const shouldUseTopFallback =", "Player uses Top 100 fallback when Watch Next pool is small", failures);
-  assertContains(playerExperienceSource, "const shouldAutoAdvance =", "Player computes auto-advance using playlist/deep-link/autoplay guard", failures);
-  assertContains(playerExperienceSource, "const [showEndedChoiceOverlay, setShowEndedChoiceOverlay] = useState(false);", "Player tracks autoplay-off end chooser overlay state", failures);
-  assertContains(playerExperienceSource, "setShowEndedChoiceOverlay(true);", "Player opens chooser overlay when autoplay-off playback ends", failures);
-  assertContains(playerExperienceSource, "__ytrInitialPageLoadAutoplaySuppressed?: boolean;", "Player tracks first-load autoplay suppression flag on window runtime", failures);
-  assertContains(playerExperienceSource, "__ytrInitialPageLoadVideoId?: string | null;", "Player tracks first-load video id on window runtime", failures);
-  assertContains(playerExperienceSource, "if (window.__ytrInitialPageLoadVideoId === undefined)", "Player initializes initial-load video id once per page lifecycle", failures);
-  assertContains(playerExperienceSource, "window.__ytrInitialPageLoadVideoId = currentVideoRef.current.id;", "Player snapshots initial page-load video id from current runtime video", failures);
-  assertContains(playerExperienceSource, "const shouldSuppress = Boolean(initialPageLoadVideoId && videoId === initialPageLoadVideoId);", "Player suppresses autoplay only for initial page-load video", failures);
-  assertContains(playerExperienceSource, "window.__ytrInitialPageLoadAutoplaySuppressed = true;", "Player marks first-load autoplay suppression as handled", failures);
-  assertNotContains(playerExperienceSource, "ytr:initial-page-autoplay-suppressed", "Player should not persist first-load suppression in session storage", failures);
-  assertContains(playerExperienceSource, "notePlayAttempt();", "Player marks a play attempt before triggering custom playback", failures);
-  assertContains(playerExperienceSource, "playerRef.current.playVideo();", "Player custom play path delegates directly to iframe playback", failures);
-  assertNotContains(playerExperienceSource, "Some browsers/embeds can remain muted after reload until we explicitly unmute", "Player custom play path should not force an explicit unmute on first play", failures);
-  assertNotContains(playerExperienceSource, "if (!hasPlaybackStarted && volume > 0)", "Player custom play path should not special-case first-play unmute", failures);
-
-  // End-of-video docked player close behaviour invariants.
-  // When autoplay is off and the video ends in the docked position the player
-  // should silently close rather than show the choice overlay over the dock.
-  // When the user returns to "/" the player is restored and the choice overlay
-  // is shown. While an overlay page is open the dock must remain hidden.
-  assertContains(playerExperienceSource, "const [playerClosedByEndOfVideo, setPlayerClosedByEndOfVideo] = useState(false);", "Player tracks end-of-video closure state for docked mode", failures);
-  assertContains(playerExperienceSource, "|| playerClosedByEndOfVideo || (showEndedChoiceOverlay && pathname !== \"/\")", "Player suppresses dock surface when closed by EOV or choice overlay is pending on an overlay page", failures);
-  assertContains(playerExperienceSource, "// When autoplay is off and player is in docked position, close the player instead of showing overlay", "triggerEndOfVideoAction documents docked close logic", failures);
-  assertContains(playerExperienceSource, "setPlayerClosedByEndOfVideo(true);", "triggerEndOfVideoAction silently closes docked player on video end", failures);
-  assertContains(playerExperienceSource, "setPlayerClosedByEndOfVideo(false);", "Player resets EOV closure state when a new video is selected", failures);
-  assertContains(playerExperienceSource, "setPlayerClosedByEndOfVideo((wasClosed) => {", "Player restores dock and conditionally shows choice overlay when returning to home route", failures);
-  assertContains(playerExperienceSource, "if (wasClosed) {", "Player shows choice overlay on home-route restore only if player was previously closed by EOV", failures);
-  assertNotContains(playerExperienceSource, "void reportWatchEvent(1, \"qualified\", 0, 0);", "Player must not record watch history before real playback progress", failures);
-  assertContains(playerExperienceSource, "const hasPlaybackEvidence = hasPlaybackStartedRef.current || positionSec > 0 || progressPercent > 0;", "Player records watch history only with real playback evidence", failures);
-  assertContains(playerExperienceSource, "const nowPlayingLastVideoIdRef = useRef<string | null>(null);", "Player tracks last now-playing overlay video id for dedupe", failures);
-  assertContains(playerExperienceSource, "const nowPlayingLastTriggeredAtRef = useRef<number>(0);", "Player tracks now-playing overlay trigger timestamp for dedupe", failures);
-  assertContains(playerExperienceSource, "const duplicateNowPlayingPulse =", "Player computes duplicate now-playing pulse guard", failures);
-  assertContains(playerExperienceSource, "(now - nowPlayingLastTriggeredAtRef.current) < 1800", "Player suppresses repeated now-playing pulse within cooldown window", failures);
-  assertContains(playerExperienceSource, "const runtimePlayerWithVideoData = playerRef.current as (YouTubePlayer & {", "Player narrows runtime iframe type to optional getVideoData support", failures);
-  assertContains(playerExperienceSource, "const runtimeVideoId = runtimePlayerWithVideoData && typeof runtimePlayerWithVideoData.getVideoData === \"function\"", "Player reads runtime iframe video id before acting on PLAYING state", failures);
-  assertContains(playerExperienceSource, "if (runtimeVideoId && runtimeVideoId !== activeVideoId) {", "Player ignores stale PLAYING events from replaced video instances", failures);
-  assertContains(playerExperienceSource, "logPlayerDebug(\"onStateChange:ignore-stale-playing-event\"", "Player logs stale PLAYING event suppression", failures);
-  assertContains(playerExperienceSource, "setShowNowPlayingOverlay(false);", "Player clears now-playing overlay during active video reset", failures);
-  assertContains(playerExperienceSource, "window.clearTimeout(overlayTimeoutRef.current);", "Player clears in-flight now-playing timeout before video switch reset", failures);
-  assertContains(playerExperienceSource, "const playerFrameClassName = [", "Player derives loading-aware frame class list", failures);
-  assertContains(playerExperienceSource, "const [isManualTransitionMaskVisible, setIsManualTransitionMaskVisible] = useState(false);", "Player tracks immediate manual-transition loading mask state", failures);
-  assertContains(playerExperienceSource, "function showManualTransitionMask() {", "Player exposes a helper that instantly masks playback during manual skips", failures);
-  assertContains(playerExperienceSource, "const showRouteLikeLoadingCopy = isRouteResolving || isManualTransitionMaskVisible;", "Player reuses route-loading copy while manual transition mask is active", failures);
-  assertContains(playerExperienceSource, "const showPlayerLoadingOverlay = isManualTransitionMaskVisible", "Player allows manual transition mask to force the loading overlay", failures);
-  assertContains(playerExperienceSource, "showManualTransitionMask();", "Player immediately triggers the loading mask on manual next/previous/hide actions", failures);
-  assertContains(playerExperienceSource, 'showPlayerLoadingOverlay ? "playerFrameLoading" : "",', "Player applies playerFrameLoading class while loading overlay is active", failures);
-  assertContains(playerExperienceSource, "className={playerFrameClassName}", "Player frame uses computed loading-aware className", failures);
-  assertContains(playerExperienceSource, "className=\"playerEndedChoiceOverlay\"", "Player renders chooser overlay container", failures);
-  assertContains(playerExperienceSource, "playerEndedChoiceGrid", "Player renders chooser overlay grid", failures);
-  assertContains(playerExperienceSource, "playerEndedChoiceGridExiting", "Player defines exit animation for chooser overlay grid reshuffle", failures);
-  assertContains(playerExperienceSource, "const maxEndedChoiceVideos = 12;", "Player caps chooser cards to 12 for larger screens", failures);
-  assertContains(playerExperienceSource, "const ENDED_CHOICE_INITIAL_PREFETCH_COUNT = 24;", "Player primes exactly 24 chooser items for first batch", failures);
-  assertContains(playerExperienceSource, "const ENDED_CHOICE_BATCH_SIZE = maxEndedChoiceVideos;", "Player keeps incremental chooser fetches aligned to 12-item batches", failures);
-  assertContains(playerExperienceSource, "const ENDED_CHOICE_SCROLL_RUNWAY_COUNT = 24;", "Player maintains a 24-item scroll runway for chooser prefetch", failures);
-  assertContains(playerExperienceSource, "const ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS = 3;", "Player prewarms chooser fetches 3 seconds before track end", failures);
-  assertContains(playerExperienceSource, "const YOUTUBE_END_SCREEN_COVER_SECONDS = 0;", "Player no longer fades video early to mask YouTube end cards", failures);
-  assertNotContains(playerExperienceSource, "const YOUTUBE_END_SCREEN_COVER_SECONDS = 21;", "Player must not restore the old 21-second early fade threshold", failures);
-  assertContains(playerExperienceSource, "&& !autoplayEnabledRef.current", "Player only prewarms chooser when autoplay is disabled", failures);
-  assertContains(playerExperienceSource, "void fetchEndedChoiceSets(ENDED_CHOICE_INITIAL_PREFETCH_COUNT, {", "Player requests the 24-item chooser prime batch", failures);
-  assertContains(playerExperienceSource, "schedulePostPrimeBatch: true,", "Player schedules a one-time post-prime incremental chooser batch", failures);
-  assertContains(playerExperienceSource, "params.set(\"hideSeen\", endedChoiceHideSeen ? \"1\" : \"0\");", "Player always sends chooser hide-seen toggle value to server", failures);
-  assertContains(playerExperienceSource, "if (currentRunway < ENDED_CHOICE_SCROLL_RUNWAY_COUNT) {", "Player only fetches more chooser items when runway falls below 24", failures);
-  assertContains(playerExperienceSource, "void fetchEndedChoiceSets(ENDED_CHOICE_BATCH_SIZE, { background: true });", "Player loads chooser increments in 12-item background batches", failures);
-  assertContains(playerExperienceSource, "const [endedChoiceHideSeen, setEndedChoiceHideSeen] = useSeenTogglePreference({", "Player tracks end chooser seen-filter with shared persisted preference hook", failures);
-  assertContains(playerExperienceSource, "key: ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY", "Player stores end chooser seen-filter under dedicated key", failures);
-  assertContains(playerExperienceSource, "isAuthenticated: isLoggedIn,", "Player binds seen-toggle persistence to auth state", failures);
-  assertContains(playerExperienceSource, "const hasSeenEndedChoiceVideos = isLoggedIn && endedChoiceVideos.some((video) => seenVideoIds?.has(video.id));", "Player detects end chooser seen state only for authenticated users", failures);
-  assertContains(playerExperienceSource, "const isSeen = isLoggedIn && (seenVideoIds?.has(video.id) ?? false);", "Player only renders ended-choice seen badges for authenticated users", failures);
-  assertContains(playerExperienceSource, "const endedChoiceGridVideos = useMemo(() => {", "Player derives a rendered end-choice grid list from filter state", failures);
-  assertContains(playerExperienceSource, "const EndedChoiceCard = memo(function EndedChoiceCard({", "Ended-choice cards are memoized to reduce append-time re-render pressure", failures);
-  assertContains(playerExperienceSource, "startTransition(() => {", "Ended-choice remote append updates are scheduled as transitions", failures);
-  assertContains(playerExperienceSource, "const endedChoiceRemoteVideosRef = useRef<VideoRecord[]>([]);", "Ended-choice append path tracks remote videos via ref snapshot", failures);
-  assertContains(playerExperienceSource, "const endedChoiceRowHeightRef = useRef(220);", "Ended-choice scroll prefetch uses cached row-height measurement", failures);
-  assertContains(playerExperienceSource, "const measureEndedChoiceCard = useCallback((node: HTMLDivElement | null) => {", "Ended-choice cards provide a measured row-height callback", failures);
-  assertContains(playerExperienceSource, "const rowHeight = Math.max(1, endedChoiceRowHeightRef.current);", "Ended-choice set-index estimation avoids scroll-time DOM queries", failures);
-  assertContains(playerExperienceSource, "const endedChoiceNoProgressStreakRef = useRef(0);", "Ended-choice tracks no-progress streak for pagination exhaustion", failures);
-  assertContains(playerExperienceSource, "const endedChoiceFailureStreakRef = useRef(0);", "Ended-choice tracks consecutive background fetch failures", failures);
-  assertContains(playerExperienceSource, "const endedChoiceAutoRetryBlockedUntilRef = useRef(0);", "Ended-choice throttles aggressive auto-retries with cooldown", failures);
-  assertContains(playerExperienceSource, "endedChoiceAutoRetryBlockedUntilRef.current = Date.now() + cappedBackoff;", "Ended-choice applies adaptive retry backoff on repeated failures", failures);
-  assertContains(playerExperienceSource, "if (endedChoiceNoProgressStreakRef.current >= 3) {", "Ended-choice stops retry loops after repeated no-progress fetches", failures);
-  assertContains(playerExperienceSource, "}, [showEndedChoiceOverlay, currentVideo.id, endedChoiceReshuffleKey]);", "Ended-choice overlay init no longer re-runs on remote list length changes", failures);
-  assertNotContains(playerExperienceSource, "showEndedChoiceOverlay, currentVideo.id, endedChoiceRemoteVideos.length, endedChoiceReshuffleKey", "Ended-choice init must not depend on remote list length to avoid reset flicker", failures);
-  assertContains(playerExperienceSource, "const fullRowCount = Math.floor(visibleEndedChoiceVideos.length / 4) * 4;", "Player keeps end-choice seen-filter rows as complete multiples of four", failures);
-  assertContains(playerExperienceSource, "const needsSeenRowFill =", "Player computes when seen-filtered rows need background refill", failures);
-  assertContains(playerExperienceSource, "endedChoiceLoading && endedChoiceGridVideos.length > 0", "Player shows a bottom loading state while additional end-choice rows are fetched", failures);
-  assertContains(playerExperienceSource, 'className={`newPageSeenToggle playerEndedChoiceSeenToggle${endedChoiceHideSeen ? " newPageSeenToggleActive" : ""}`}', "Player reuses the New page seen-toggle styling in the end chooser", failures);
-  assertContains(playerExperienceSource, 'No unseen choices right now. Try more choices or watch again.', "Player shows an empty state when the chooser is filtered to no unseen videos", failures);
-  assertContains(playerExperienceSource, "autoplayEnabledRef.current &&", "Player only auto-advances when autoplay is enabled", failures);
-  assertContains(cssSource, ".playerEndedChoiceOverlay", "Chooser overlay styles are defined", failures);
-  assertContains(cssSource, ".playerEndedChoiceSeenToggle", "Chooser overlay defines a bottom-centered seen toggle style", failures);
-  assertContains(cssSource, ".playerEndedChoiceGrid", "Chooser overlay grid styles are defined", failures);
-  assertContains(cssSource, ".playerEndedChoiceEmptyState", "Chooser overlay defines an empty state for unseen-only filtering", failures);
-  assertContains(cssSource, ".playerEndedChoiceGridExiting", "Chooser overlay grid exit animation is defined", failures);
-  assertContains(cssSource, ".artistVideoFavouriteBadgeButton:hover,", "Favourite badge defines explicit hover state selector", failures);
-  assertContains(cssSource, ".artistVideoFavouriteBadgeButton:hover .artistVideoFavouriteBadgeHeart,", "Favourite badge hover keeps heart glyph styling rule", failures);
-  assertContains(cssSource, "color: #000;", "Favourite badge hover turns heart glyph black", failures);
-  assertContains(cssSource, ".artistVideoFavouriteBadgeButton:hover .artistVideoFavouriteBadgeRemoveGlyph,", "Favourite badge hover reveals remove glyph", failures);
-  assertContains(cssSource, "background: transparent;", "Favourite badge hover keeps transparent background without circular fill", failures);
-  assertNotContains(cssSource, ".artistVideoFavouriteBadgeButton:hover .artistVideoFavouriteBadgeHeart {\n  transform: translate", "Favourite badge heart must not shift position on hover", failures);
-  assertContains(cssSource, "@media (min-width: 2200px)", "Chooser overlay defines ultrawide breakpoint", failures);
-  assertContains(cssSource, "grid-template-columns: repeat(6, minmax(0, 1fr));", "Chooser overlay uses 6 columns on ultrawide for two rows", failures);
-  assertContains(playerExperienceSource, "const isInitialDeepLinkedSelection = Boolean(", "Player detects first-load deep-linked selections", failures);
-  assertContains(playerExperienceSource, "&& !isInitialDeepLinkedSelection", "Player suppresses autoplay on initial deep-link until user interaction", failures);
-  assertContains(playerExperienceSource, "autoAdvanceWhenAutoplay: true", "Player auto-advances unavailable tracks when autoplay is enabled", failures);
-  assertContains(playerExperienceSource, "const response = await fetch(\"/api/videos/unavailable\", {", "Player reports unavailable videos to API", failures);
-  assertContains(videosUnavailableRouteSource, "const optionalAuth = await getOptionalApiAuth(request);", "Unavailable-video API accepts optional auth for anonymous playback recovery", failures);
-  assertContains(playerExperienceSource, "const activeVideoId = currentVideoRef.current.id;", "Player evaluates errors against active runtime video id", failures);
-  assertContains(playerExperienceSource, "if (activeVideoId !== currentVideo.id) {", "Player ignores stale unavailable callbacks from replaced instances", failures);
-  assertContains(playerExperienceSource, "const playbackAlreadyEstablished =", "Player skips unavailable handling once playback is established", failures);
-  assertContains(playerExperienceSource, "setUnavailableOverlayMessage(null);", "Player clears stale unavailable overlay once playback starts", failures);
-  assertContains(playerExperienceSource, "setPlayerHostMode(\"youtube\");", "Player retries restricted videos with youtube host fallback", failures);
-  assertContains(playerExperienceSource, "const [showShareModal, setShowShareModal] = useState(false);", "Player tracks modal share state", failures);
-  assertContains(playerExperienceSource, "setShowShareModal(true);", "Player opens share modal from social share action", failures);
-  assertContains(playerExperienceSource, 'className="primaryActionIconButtonWrap primaryActionPlaylistWrap"', "Player renders footer playlist quick-add control", failures);
-  assertContains(playerExperienceSource, "const [showFooterPlaylistMenu, setShowFooterPlaylistMenu] = useState(false);", "Player tracks footer playlist menu state", failures);
-  assertContains(playerExperienceSource, "if (activePlaylistId) {", "Player adds current track directly when playlist context is active", failures);
-  assertContains(playerExperienceSource, "void loadFooterPlaylistMenu();", "Player loads playlist menu options on quick-add open", failures);
-  assertContains(playerExperienceSource, "handleFooterCreatePlaylist", "Player supports create-playlist flow from footer menu", failures);
-  assertContains(playerExperienceSource, "handleFooterPlaylistSelect", "Player supports selecting an existing playlist from footer menu", failures);
-  assertContains(playerExperienceSource, 'showDockCloseButton && isAdmin ? "primaryActionsDockedAdmin" : "",', "Player applies admin-docked footer class only for docked admin state", failures);
-  assertContains(playerExperienceSource, "!(showDockCloseButton && isAdmin) ? (", "Player suppresses inline share field in docked admin state", failures);
-  assertContains(playerExperienceSource, "showDockCloseButton && isAdmin ? (", "Player renders dedicated docked admin share row", failures);
-  assertContains(playerExperienceSource, "const ADMIN_SESSION_REVALIDATE_INTERVAL_MS = 30_000;", "Player defines a periodic admin-session revalidation cadence", failures);
-  assertContains(playerExperienceSource, "const [isAdminSessionActive, setIsAdminSessionActive] = useState(initialIsAdmin);", "Player tracks runtime admin-session capability state", failures);
-  assertContains(playerExperienceSource, "const isAdmin = isLoggedIn && isAdminSessionActive;", "Player gates admin controls on active session capability", failures);
-  assertContains(playerExperienceSource, "const revalidateAdminSession = useCallback(async () => {", "Player defines shared admin-session revalidation helper", failures);
-  assertContains(playerExperienceSource, "await fetchWithAuthRetry(\"/api/admin/dashboard\"", "Player revalidates admin capability against admin API guard", failures);
-  assertContains(playerExperienceSource, "window.addEventListener(\"focus\", handleFocus);", "Player revalidates admin capability when tab gains focus", failures);
-  assertContains(playerExperienceSource, "document.addEventListener(\"visibilitychange\", handleVisibilityChange);", "Player revalidates admin capability when tab becomes visible", failures);
-  assertContains(playerExperienceSource, "window.setInterval(() => {", "Player periodically revalidates admin capability while visible", failures);
-  assertContains(playerExperienceSource, "ADMIN_SESSION_REVALIDATE_INTERVAL_MS", "Player uses the admin-session revalidation interval constant", failures);
-  assertContains(playerExperienceSource, 'className="shareModalBackdrop"', "Player renders share modal backdrop", failures);
-  assertContains(playerExperienceSource, 'buildCanonicalShareUrl(currentVideo.id)', "Player uses canonical short share URLs", failures);
-  assertContains(playerExperienceSource, '<ArtistWikiLink', "Player renders artist wiki links in player surfaces", failures);
-  assertContains(playerExperienceSource, 'asButton', "Player uses button mode for footer artist wiki control", failures);
-  assertContains(playerExperienceSource, "const [localTitleOverride, setLocalTitleOverride] = useState<string | null>(null);", "Player keeps a local title override for immediate admin edit feedback", failures);
-  assertContains(playerExperienceSource, "const displayTitle = localTitleOverride ?? currentVideo.title;", "Player uses title override for immediate UI updates", failures);
-  assertContains(playerExperienceSource, "setLocalTitleOverride(adminEditTitle);", "Player applies admin title update locally immediately after save", failures);
-  assertContains(playerExperienceSource, "const clearedParams = new URLSearchParams(searchParams.toString());", "Admin delete flow derives cleared params from current URL state", failures);
-  assertContains(playerExperienceSource, "if (selectedVideoId === deletingVideoId) {", "Admin delete flow only clears query when current selection matches deleted id", failures);
-  assertContains(playerExperienceSource, "clearedParams.delete(\"v\");", "Admin delete flow removes deleted video id from URL immediately", failures);
-  assertContains(playerExperienceSource, "router.replace(clearedQuery ? `${pathname}?${clearedQuery}` : pathname);", "Admin delete flow updates URL immediately after successful deletion", failures);
-  assertContains(playerExperienceSource, "const payload = (await response.json().catch(() => null)) as { error?: string; reason?: string } | null;", "Admin delete flow parses structured API delete failure payload", failures);
-  assertContains(playerExperienceSource, "showUnavailableOverlayMessage(payload?.error || \"Could not remove this video from the site.\");", "Admin delete flow surfaces API-provided delete failure error", failures);
-  assertContains(playerExperienceSource, 'dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId: deletingVideoId })', "Main player delete dispatches catalog-deleted event", failures);
-  assertContains(adminVideoDeleteButtonSource, 'dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId });', "Admin search-card delete dispatches catalog-deleted event using typed dispatch", failures);
-
-  // Dock-hide interaction invariants.
-  assertContains(playerExperienceSource, 'window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));', "Dock close control dispatches hide-only event instead of navigating away", failures);
-  assertContains(shellDynamicSource, "const handleDockHideRequest = () => {", "Shell defines a dock-hide event handler", failures);
-  assertContains(shellDynamicSource, "setIsDockHidden(true);", "Shell hides docked player in response to dock-hide event", failures);
-  assertContains(shellDynamicSource, 'window.addEventListener("ytr:dock-hide-request", handleDockHideRequest);', "Shell subscribes to dock-hide requests", failures);
-  assertContains(shellDynamicSource, 'window.removeEventListener("ytr:dock-hide-request", handleDockHideRequest);', "Shell cleans up dock-hide listener", failures);
-  assertContains(shellDynamicSource, "if (shouldDockDesktopPlayer) {", "Shell restores hidden dock when entering docked overlay routes", failures);
-  assertContains(shellDynamicSource, "}, [pathname, shouldDockDesktopPlayer]);", "Shell re-evaluates dock visibility on overlay route changes", failures);
-  assertContains(shellDynamicSource, '<div className="playerDockLayer">', "Shell keeps player content in a dedicated dock layer", failures);
-  assertContains(shellDynamicSource, "const UNDOCK_SETTLE_DURATION_MS = 220;", "Shell defines an undock-settle duration", failures);
-  assertContains(shellDynamicSource, "const [isUndockSettling, setIsUndockSettling] = useState(false);", "Shell tracks undock settle state", failures);
-  assertContains(shellDynamicSource, 'isUndockSettling ? "playerChromeUndockSettling" : "",', "Shell applies undock-settle class to player chrome", failures);
-  assertContains(cssSource, ".playerDockLayer", "CSS defines dedicated dock layer sizing", failures);
-  assertContains(cssSource, ".playerChromeDockedHidden .playerDockLayer", "Dock-hide class only hides player layer, not overlay page", failures);
-  assertContains(cssSource, ".overlayIconBtn.overlayDockCloseBtn", "Dock close button keeps explicit red styling with high specificity", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .overlayCenter,", "Undocking keeps overlay center pinned to avoid play-button reflow", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndockSettling .overlayCenter {", "Undock settling keeps overlay center pinned", failures);
-  assertContains(cssSource, ".playerOverlayVisible .overlayCenter {", "Overlay center visible-state rules are explicitly defined", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop .playerDockLayer {", "Docked desktop player keeps a dedicated dock layer rule", failures);
-  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop .playerDockLayer", "position: relative;", "Docked desktop player dock layer preserves relative positioning for transformed frame anchoring", failures);
-  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop .playerDockLayer", "overflow: visible;", "Docked desktop player dock layer must remain unclipped so transformed frame can escape parent bounds", failures);
-  assertCssRuleNotContains(cssSource, ".playerChromeDockedDesktop .playerDockLayer", "overflow: hidden;", "Docked desktop player dock layer must never clip transformed frame", failures);
-  assertContains(cssSource, ".heroGridOverlayRoute .playerChrome {", "Overlay route defines dedicated player chrome stacking context", failures);
-  assertCssRuleContains(cssSource, ".heroGridOverlayRoute .playerChrome", "overflow: visible;", "Overlay route keeps player chrome overflow visible while docked", failures);
-  assertCssRuleContains(cssSource, ".heroGridOverlayRoute .playerChrome", "z-index: 25;", "Overlay route player chrome keeps docked player above occluded rail layers", failures);
-  assertContains(cssSource, "pointer-events: auto;", "Overlay controls remain interactive in CSS", failures);
-  assertContains(cssSource, ".playerFrame.playerFrameLoading > iframe,", "Loading mask hides direct iframe while player loader is active", failures);
-  assertContains(cssSource, ".playerFrame.playerFrameLoading .playerMount iframe {", "Loading mask hides mounted iframe while player loader is active", failures);
-  assertContains(cssSource, "opacity: 0;", "Loading mask applies full iframe opacity suppression", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop .primaryActions.primaryActionsDockedAdmin,", "CSS defines admin-only docked footer layout mode", failures);
-  assertContains(cssSource, "flex-wrap: wrap;", "Admin docked footer layout allows wrapped rows", failures);
-  assertContains(cssSource, "overflow: visible;", "Admin docked footer layout keeps secondary share row visible", failures);
-  assertContains(cssSource, "align-content: flex-start;", "Admin docked footer layout pins wrapped rows to top", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop .primaryActionsMainRow,", "CSS defines shared docked controls row container", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop .primaryActionsMainRow > *,", "CSS defines stable child sizing for docked controls row", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop .primaryActionsMainRow .shareUrlField,", "CSS keeps share URL field as the flexible slot in docked controls row", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop .primaryActions > .dockedAdminShareUrlRow,", "CSS positions dedicated docked admin share URL row", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayVolumeSlider {", "Docked-only volume scaling is scoped away from undock/settle states", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .overlayProgress {", "Docked-only scrub scaling is scoped away from undock/settle states", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerBootBars {", "Docked loading animation receives dedicated sizing rule", failures);
-  assertContains(cssSource, "height: 56px;", "Docked loading bars are scaled to 2x height", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerBootLoader p {", "Docked loading text has a dedicated sizing rule", failures);
-  assertContains(cssSource, "font-size: 1.9rem;", "Docked loading text scales to 2x size", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerBootRefreshBtn {", "Docked retry button has dedicated sizing rule", failures);
-  assertContains(cssSource, "width: 88px;", "Docked retry button scales to 2x width", failures);
-  assertContains(cssSource, "@keyframes playerBootPulseDocked {", "Docked loading bars use dedicated 2x animation keyframes", failures);
-  assertContains(cssSource, "height: 52px;", "Docked loading pulse reaches 2x peak height", failures);
-  assertContains(cssSource, "transition: width 520ms cubic-bezier(0.2, 0.92, 0.34, 1), height 520ms cubic-bezier(0.2, 0.92, 0.34, 1);", "Overlay controls animate size transitions during undock", failures);
-  assertContains(cssSource, "gap 520ms cubic-bezier(0.2, 0.92, 0.34, 1),", "Overlay bottom animates gap to final geometry", failures);
-  assertContains(cssSource, "padding 520ms cubic-bezier(0.2, 0.92, 0.34, 1);", "Overlay bottom animates padding to final geometry", failures);
-  assertContains(cssSource, ".favouritesBlindInner {", "Overlay scroll container keeps a dedicated favouritesBlindInner rule", failures);
-  assertContains(cssSource, "scrollbar-gutter: stable;", "Overlay scroll container reserves scrollbar gutter to avoid header reflow when content loads", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions {", "Undocking footer actions keep a dedicated rule", failures);
-  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions", "position: relative;", "Undocking footer actions use in-flow relative positioning to avoid handoff reflow", failures);
-  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions", "padding: 2px 0;", "Undocking footer actions retain the tuned vertical padding", failures);
-  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions", "visibility: hidden;", "Undocking footer actions stay hidden while preserving geometry", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActionsMainRow {", "Undocking footer main row has dedicated layout override", failures);
-  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActionsMainRow", "display: contents;", "Undocking footer main row uses contents layout to match final geometry", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions button,", "Undocking footer control sizing has dedicated overrides", failures);
-  assertContains(cssSource, "height: 10px;", "Undocking footer control height remains tuned to the current lock-in value", failures);
-  assertContains(cssSource, "min-height: 10px;", "Undocking footer control min-height remains tuned to the current lock-in value", failures);
-  assertContains(cssSource, ".playerChrome:not(.playerChromeDockedDesktop) .primaryActions {", "Non-docked footer geometry has dedicated stable sizing rule", failures);
-  assertCssRuleContains(cssSource, ".playerChrome:not(.playerChromeDockedDesktop) .primaryActions", "min-height: 74px;", "Non-docked footer preserves stable min-height during undock handoff", failures);
-  assertContains(cssSource, ".playerChromeFooterReveal .primaryActions {", "Footer reveal keeps a dedicated animation rule", failures);
-  assertCssRuleNotContains(cssSource, ".playerChromeFooterReveal .primaryActions", "transform:", "Footer reveal animation must avoid transform to prevent vertical flicker", failures);
-
-  // Public performance modal invariants.
-  assertContains(shellDynamicSource, 'className="performanceQuickLaunch"', "Shell renders top-right performance launcher button", failures);
-  assertContains(shellDynamicSource, 'aria-label="Open server performance metrics"', "Performance launcher includes accessible label", failures);
-  assertContains(shellDynamicSource, 'const [isPerformanceQuickLaunchVisible, setIsPerformanceQuickLaunchVisible] = useState(false);', "Shell tracks deferred visibility for the performance launcher", failures);
-  assertContains(shellDynamicSource, 'const isShellInitialUiSettled =', "Shell derives a settled-initial-UI gate before showing the performance launcher", failures);
-  assertContains(shellDynamicSource, 'if (isShellInitialUiSettled) {', "Shell waits for initial UI settling before showing the performance launcher", failures);
-  assertContains(shellDynamicSource, 'setIsPerformanceQuickLaunchVisible(true);', "Shell reveals the performance launcher only after initial UI settles", failures);
-  assertContains(shellDynamicSource, 'const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);', "Shell tracks performance modal open state", failures);
-  assertContains(shellDynamicSource, 'const PUBLIC_PERFORMANCE_POLL_MS = 2_500;', "Shell defines periodic polling interval for performance modal", failures);
-  assertContains(shellDynamicSource, 'await fetch("/api/status/performance"', "Shell loads metrics from public performance status endpoint", failures);
-  assertContains(shellDynamicSource, 'className="performanceModalOverlay"', "Shell renders performance modal backdrop overlay", failures);
-  assertContains(shellDynamicSource, 'className="performanceModalDialog"', "Shell renders performance modal dialog container", failures);
-  assertContains(shellDynamicSource, 'aria-labelledby="performance-modal-title"', "Performance modal exposes labelled dialog semantics", failures);
-  assertContains(shellDynamicSource, '{isPerformanceQuickLaunchVisible ? (', "Shell conditionally renders the performance launcher only when its deferred gate is open", failures);
-  assertContains(shellDynamicSource, '<PerformanceDial label="Memory"', "Performance modal renders memory dial", failures);
-  assertContains(shellDynamicSource, 'label="CPU"', "Performance modal renders CPU dial", failures);
-  assertContains(shellDynamicSource, '<PerformanceDial label="Disk"', "Performance modal renders disk dial", failures);
-  assertContains(shellDynamicSource, '<PerformanceDial label="Network"', "Performance modal renders network dial", failures);
-  assertContains(cssSource, ".performanceQuickLaunch", "CSS defines top-right performance launcher styles", failures);
-  assertContains(cssSource, ".performanceModalOverlay", "CSS defines darkened/blurred performance modal backdrop", failures);
-  assertContains(cssSource, "backdrop-filter: blur(8px) saturate(0.82);", "Performance modal backdrop keeps blur treatment", failures);
-  assertContains(cssSource, ".performanceModalDialog", "CSS defines centered performance modal dialog styles", failures);
-  assertContains(cssSource, ".performanceDialGrid", "CSS defines dial grid layout for performance modal", failures);
-
-  // Public status performance API invariants.
-  assertContains(statusPerformanceRouteSource, 'import { buildAdminHealthPayload } from "@/lib/admin-dashboard-health";', "Public performance API reuses host metric builder", failures);
-  assertContains(statusPerformanceRouteSource, "const payload = await buildAdminHealthPayload();", "Public performance API builds fresh health payload", failures);
-  assertContains(statusPerformanceRouteSource, "host: {", "Public performance API returns host metrics payload", failures);
-  assertContains(statusPerformanceRouteSource, "cpuUsagePercent: payload.health.host.cpuUsagePercent", "Public performance API exposes CPU dial metric", failures);
-  assertContains(statusPerformanceRouteSource, "memoryUsagePercent: payload.health.host.memoryUsagePercent", "Public performance API exposes memory dial metric", failures);
-  assertContains(statusPerformanceRouteSource, "networkUsagePercent: payload.health.host.networkUsagePercent", "Public performance API exposes network dial metric", failures);
-  assertContains(statusPerformanceRouteSource, '"Cache-Control": "no-store, no-cache, must-revalidate"', "Public performance API disables cache for live metrics", failures);
-  assertNotContains(statusPerformanceRouteSource, "requireAdminApiAuth", "Public performance API is intentionally not admin-gated", failures);
-  assertNotContains(statusPerformanceRouteSource, "requireApiAuth", "Public performance API is intentionally accessible without auth", failures);
-
-  // API invariants for shared seen-toggle persistence used by player surfaces.
-  assertContains(seenToggleRouteSource, "requireApiAuth", "Seen-toggle API requires auth before reading persisted player preferences", failures);
-  assertContains(seenToggleRouteSource, "verifySameOrigin", "Seen-toggle API protects mutations with same-origin checks", failures);
-  assertContains(seenToggleRouteSource, "getSeenTogglePreferenceForUser", "Seen-toggle API reads persisted values from data layer", failures);
-  assertContains(seenToggleRouteSource, "setSeenTogglePreferenceForUser", "Seen-toggle API writes persisted values through data layer", failures);
-
-  // Dock sizing hot-reload invariant.
-  assertContains(shellDynamicSource, "const frame = chrome.querySelector(\".playerFrame, .playerLoadingFallback\") as HTMLElement | null;", "Shell computes dock sizing using either player frame or loading fallback", failures);
-
-  // Player hover-controls recovery invariants.
-  assertContains(playerExperienceSource, "playerFrameRef.current?.matches(\":hover\")", "Player checks real hover state via :hover pseudo-class after pathname change", failures);
-  assertContains(playerExperienceSource, "window.setTimeout(() => {", "Player defers hover state check to allow synthetic mouseleave events to fire first", failures);
-  assertContains(playerExperienceSource, "return () => window.clearTimeout(id);", "Player cleans up hover-check timeout on effect teardown", failures);
-
-  // Denied deep-link loop guard invariants.
-  assertContains(shellDynamicSource, "const deniedRequestedVideoIdRef = useRef<string | null>(null);", "Shell tracks denied requested video ids", failures);
-  assertContains(shellDynamicSource, "if (deniedRequestedVideoIdRef.current === requestedVideoId) {", "Shell skips repeated denied requested video resolution", failures);
-  assertContains(shellDynamicSource, "if (requestedVideoId === lastVideoIdRef.current && isResolvingRequestedVideo) {", "Shell avoids duplicate in-flight resolve loops for same requested id", failures);
-  assertNotContains(shellDynamicSource, "params.delete(\"v\");", "Shell no longer mutates URL to clear denied video id", failures);
-  assertNotContains(shellDynamicSource, "params.delete(\"resume\");", "Shell no longer removes resume marker on denied id", failures);
-
-  // Chat UI invariants.
-  assertContains(shellDynamicSource, "const globalEvents = new EventSource(\"/api/chat/stream?mode=global\");", "Shell subscribes to global chat stream", failures);
-  assertContains(shellDynamicSource, "const videoEvents = new EventSource(`/api/chat/stream?mode=video&videoId=${encodeURIComponent(currentVideo.id)}`);", "Shell subscribes to video chat stream", failures);
-  assertContains(shellDynamicSource, "const response = await fetchWithAuthRetry(`/api/chat?${params.toString()}`);", "Shell loads chat via authenticated API call", failures);
-  assertContains(shellDynamicSource, "const response = await fetchWithAuthRetry(\"/api/chat\", {", "Shell posts chat messages via authenticated API call", failures);
-  assertContains(shellDynamicSource, "videoId: chatMode === \"video\" ? currentVideo.id : undefined,", "Shell sends video chat context when posting", failures);
-  assertContains(shellDynamicSource, 'className={isAdminOverlayRoute ? "railTabs railTabsAdminOverlay" : "railTabs"}', "Shell uses dedicated admin overlay rail tab layout class", failures);
-  assertContains(shellDynamicSource, "onClick={() => setChatMode(\"online\")}", "Shell keeps Who's Online tab selectable in chat rail", failures);
-  assertNotContains(shellDynamicSource, '<span className="tabLabel activeTab">Global Chat</span>', "Shell no longer hard-locks admin rail to a non-interactive Global Chat label", failures);
-  assertContains(shellDynamicSource, "node.scrollTop = node.scrollHeight;", "Shell auto-scrolls chat list to latest message", failures);
-  assertContains(shellDynamicSource, 'fetch(`/api/videos/share-preview?v=${encodeURIComponent(videoId)}`)', "Shared chat cards resolve preview metadata via share-preview API", failures);
-  assertContains(shellDynamicSource, "const REQUEST_VIDEO_REPLAY_EVENT = \"ytr:request-video-replay\";", "Shell defines replay-request event constant for shared chat cards", failures);
-  assertContains(shellDynamicSource, "window.dispatchEvent(new CustomEvent(REQUEST_VIDEO_REPLAY_EVENT, {", "Shell dispatches replay request when shared chat card is clicked", failures);
-  assertContains(shellDynamicSource, 'const routeLoadingLabel = pathname.endsWith("/wiki") || pendingOverlayOpenKind === "wiki" ? "Loading wiki" : "Loading video";', "Shell loading fallback derives wiki-aware copy including optimistic wiki opens", failures);
-  assertContains(shellDynamicSource, 'const OVERLAY_OPEN_REQUEST_EVENT = "ytr:overlay-open-request";', "Shell defines an optimistic overlay-open request event constant", failures);
-  assertContains(shellDynamicSource, 'window.addEventListener(OVERLAY_OPEN_REQUEST_EVENT, handleOverlayOpenRequest);', "Shell listens for optimistic overlay-open requests", failures);
-  assertContains(shellDynamicSource, 'const isCategoriesOverlayPendingOrActive = isCategoriesRoute', "Shell tracks when categories overlay is pending or active", failures);
-  assertContains(shellDynamicSource, 'const isArtistsOverlayPendingOrActive = isArtistsOverlayPath(pathname)', "Shell tracks when artists overlay is pending or active", failures);
-  assertContains(shellDynamicSource, 'isCategoriesOverlayPendingOrActive ? (', "Shell uses categories-specific optimistic fallback while route content resolves", failures);
-  assertContains(shellDynamicSource, ') : isArtistsOverlayPendingOrActive ? (', "Shell uses artists-specific optimistic fallback while route content resolves", failures);
-  assertContains(shellDynamicSource, 'className="categoriesFilterSection" aria-busy="true"', "Shell categories fallback renders full categories header skeleton immediately", failures);
-  assertContains(shellDynamicSource, 'className="categoriesLoaderOverlay" role="status" aria-live="polite" aria-label="Loading categories"', "Shell categories fallback keeps dedicated loader overlay visible", failures);
-  assertContains(shellDynamicSource, 'if (item.href === "/categories" || item.href === "/artists") {', "Shell dispatches optimistic overlay-open request for artists and categories nav buttons", failures);
-  assertContains(shellDynamicSource, 'className="routeContractRow artistLoadingCenter" role="status" aria-live="polite" aria-label="Loading artists"', "Shell artists fallback renders loading animation after overlay opens", failures);
-  assertContains(shellDynamicSource, '<span>Loading artists...</span>', "Shell artists fallback renders loading label", failures);
-  assertNotContains(shellDynamicSource, 'key={overlayRouteKey}', "Shell overlay suspense no longer keys on route key to avoid remount animation replay", failures);
-
-  // Categories open/loading/reveal contract invariants.
-  assertContains(categoriesLoadingSource, 'className="categoriesFilterSection" aria-busy="true"', "Categories route loading screen renders immediate shell section", failures);
-  assertContains(categoriesLoadingSource, 'className="favouritesBlindBar categoriesHeaderBar"', "Categories route loading screen renders header row immediately", failures);
-  assertContains(categoriesLoadingSource, 'className="categoriesFilterInput"', "Categories route loading screen renders filter input immediately", failures);
-  assertContains(categoriesLoadingSource, 'className="playerBootBars" aria-hidden="true"', "Categories route loading screen renders animated loading bars", failures);
-  assertContains(categoriesFilterGridSource, 'const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);', "Categories grid tracks explicit loader visibility state", failures);
-  assertContains(categoriesFilterGridSource, 'const [isLoaderFadingOut, setIsLoaderFadingOut] = useState(false);', "Categories grid tracks loader fade-out phase", failures);
-  assertContains(categoriesFilterGridSource, 'const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0);', "Categories grid initializes reveal state from hydrated cards", failures);
-  assertContains(categoriesFilterGridSource, 'setIsLoaderFadingOut(true);', "Categories grid starts loader fade before showing cards", failures);
-  assertContains(categoriesFilterGridSource, 'setHasRevealedCards(true);', "Categories grid enables card reveal class as part of loader handoff", failures);
-  assertContains(categoriesFilterGridSource, '}, 190);', "Categories grid keeps short overlap window between loader fade and card reveal", failures);
-  assertContains(categoriesFilterGridSource, 'className={`catalogGrid categoriesCatalogGrid categoriesCards${hasRevealedCards ? " categoriesCardsRevealed" : ""}`}', "Categories grid toggles reveal class for cascade animation", failures);
-  assertContains(categoriesFilterGridSource, 'className="catalogCard categoryCard linkedCard categoryCardCascade"', "Categories cards opt into cascade animation class", failures);
-  assertContains(categoriesFilterGridSource, 'style={{ "--category-cascade-index": index } as CSSProperties}', "Categories cards provide per-card cascade index variable", failures);
-  assertContains(categoriesFilterGridSource, 'className={`categoriesLoaderOverlay${isLoaderFadingOut ? " categoriesLoaderOverlayFading" : ""}`}', "Categories loader overlay supports fade-out class state", failures);
-  assertContains(cssSource, '.categoriesLoaderOverlay {', "Categories loader overlay styles are defined", failures);
-  assertContains(cssSource, 'inset: -16px 0 0 0;', "Categories loader overlay closes header-to-loader seam", failures);
-  assertContains(cssSource, '.categoriesLoaderBootLoader .playerBootBars {', "Categories loader bars have dedicated size overrides", failures);
-  assertContains(cssSource, '.categoriesLoaderBootLoader .playerBootBars span {', "Categories loader bar segments have dedicated animation overrides", failures);
-  assertNotContains(cssSource, 'height: 8px !important;', "Categories loader bars must not force fixed bar height that flattens pulse animation", failures);
-  assertContains(cssSource, '.categoriesCards.categoriesCardsRevealed .categoryCardCascade {', "Categories cards use revealed-state animation selector", failures);
-  assertContains(cssSource, 'animation: categoryCardCascadeIn 240ms ease-out both;', "Categories cards animate in with cascade keyframes", failures);
-  assertContains(cssSource, 'animation-delay: calc(var(--category-cascade-index, 0) * 24ms);', "Categories card cascade delay uses index variable", failures);
-
-  // Shared-chat same-video replay invariants.
-  assertContains(playerExperienceSource, "listenToAppEvent(EVENT_NAMES.REQUEST_VIDEO_REPLAY", "Player defines replay-request event constant", failures);
-  assertContains(playerExperienceSource, "listenToAppEvent(EVENT_NAMES.REQUEST_VIDEO_REPLAY, handleReplayRequest);", "Player subscribes to shared replay requests", failures);
-  assertContains(playerExperienceSource, "if (!requestedVideoId || requestedVideoId !== currentVideoRef.current.id) {", "Player ignores replay requests for non-current videos", failures);
-  assertContains(playerExperienceSource, "if (!showEndedChoiceOverlay) {", "Player only handles same-video replay while ended chooser is visible", failures);
-  assertContains(playerExperienceSource, "handleEndedChoiceWatchAgain();", "Player reuses watch-again flow for replay requests", failures);
-  assertContains(playerExperienceSource, "if (!playerClosedByEndOfVideo) {", "Player keeps runtime instance alive when surface is closed by end-of-video state", failures);
-
-  // Chat API invariants.
-  assertContains(chatRouteSource, "const authResult = await requireApiAuth(request);", "Chat REST API requires authenticated session", failures);
-  assertContains(chatRouteSource, "mode: z.enum([\"global\", \"video\", \"online\"]).default(\"global\"),", "Chat GET schema validates supported chat modes", failures);
-  assertContains(chatRouteSource, "mode: z.enum([\"global\", \"video\"]),", "Chat POST schema restricts writable modes", failures);
-  assertContains(chatRouteSource, "content: z.string().trim().min(1).max(200),", "Chat POST enforces message length limits", failures);
-  assertContains(chatRouteSource, "chatEvents.emit(chatChannel(mode, mode === \"video\" ? (videoId ?? null) : null), mapped);", "Chat POST emits events to room channel", failures);
-  assertContains(chatRouteSource, "return NextResponse.json({ ok: true, message: mapped }, { status: 201 });", "Chat POST returns created message payload", failures);
-
-  // Chat stream API invariants.
-  assertContains(chatStreamRouteSource, "const authResult = await requireApiAuth(request);", "Chat stream API requires authenticated session", failures);
-  assertContains(chatStreamRouteSource, "const stream = new ReadableStream({", "Chat stream API uses SSE readable stream", failures);
-  assertContains(chatStreamRouteSource, "controller.enqueue(encoder.encode(\": heartbeat\\n\\n\"));", "Chat stream API emits heartbeat comments", failures);
-  assertContains(chatStreamRouteSource, "\"Content-Type\": \"text/event-stream\"", "Chat stream API sets SSE content type", failures);
-
-  // Share and artist wiki helper invariants.
-  assertContains(sharePreviewRouteSource, 'const video = await getVideoForSharing(videoId);', "Share-preview API resolves lightweight share payloads", failures);
-  assertContains(sharePreviewRouteSource, 'return NextResponse.json({', "Share-preview API returns JSON payload", failures);
-  assertContains(shareHtmlRouteSource, 'const shareMetadata = await resolveShareMetadataForOrigin(rawVideoId, titleHint, siteOrigin);', "Short share route resolves host-aware metadata", failures);
-  assertContains(shareHtmlRouteSource, '<meta property="og:title"', "Short share route emits Open Graph metadata", failures);
-  assertContains(shareMetadataSource, 'export function buildCanonicalShareUrl(videoId: string, titleHint?: string, origin?: string)', "Share metadata exposes canonical short-link builder", failures);
-  assertContains(shareMetadataSource, 'const base = `${siteOrigin}/s/${encodeURIComponent(videoId)}`;', "Canonical share URLs use /s/<videoId>", failures);
-  assertContains(chatSharedVideoSource, 'const SHARED_VIDEO_FIELD_SEPARATOR = "\\t";', "Shared chat video payload supports structured fields", failures);
-  assertContains(chatSharedVideoSource, 'return {', "Shared chat video parsing returns structured payload object", failures);
-  assertContains(artistWikiLinkSource, 'router.push(targetHref);', "Artist wiki link performs client-side navigation", failures);
-  assertContains(artistWikiLinkSource, 'dispatchAppEvent(EVENT_NAMES.OVERLAY_OPEN_REQUEST, {', "Artist wiki link triggers typed overlay-open requests", failures);
-  assertContains(cssSource, '.shareModalBackdrop', "Share modal backdrop styles are defined", failures);
-  assertContains(cssSource, '.shareModalGrid', "Share modal platform grid styles are defined", failures);
-  assertContains(cssSource, '.railTabs.railTabsAdminOverlay', "Admin overlay rail tabs define two-column layout override", failures);
-  assertContains(cssSource, '.primaryActionPlaylistMenu', "Footer playlist quick-add menu styles are defined", failures);
-  assertContains(cssSource, '.primaryActionPlaylistMenuAction:hover:not(:disabled)', "Footer playlist menu keeps explicit hover accent styles", failures);
-  assertContains(cssSource, '.categoryHeaderWikiLink', "Artist wiki header link styles are defined", failures);
-  assertContains(cssSource, '.artistInlineLink', "Artist wiki inline link styles are defined", failures);
+  // Catalog data support invariants for fallback sourcing.
+  assertContains(catalogDataSource, "export async function getUnseenCatalogVideos(options?: {", "Catalog data exposes unseen catalog helper", failures);
+  assertContains(catalogDataSource, "const requested = Math.max(1, Math.min(500, Math.floor(options?.count ?? 100)));", "Unseen catalog helper validates and clamps requested count", failures);
+  assertContains(catalogDataSource, "const useSharedRelatedCache = excludedIds.size === 0;", "Related videos cache is reused for any exclude-free request size", failures);
+  assertContains(catalogDataSource, "if (cached && cached.expiresAt > now && cached.videos.length >= requestedCount)", "Related videos cache serves larger pooled recommendation requests", failures);
+  assertContains(catalogDataSource, "const newestPromise = getNewestVideos(50).then((videos) =>", "Related videos reuse newest helper instead of issuing a duplicate newest scan", failures);
+  assertContains(catalogDataSource, "if (await isRejectedVideo(normalizedVideoId)) {", "Hydration path fast-exits for rejected videos before external API calls", failures);
+  assertContains(catalogDataSource, "await persistRejectedVideo(video.id, availability.reason || \"unavailable\");", "Unavailable videos are persisted into rejected video blocklist", failures);
+  assertContains(catalogDataSource, "SELECT video_id FROM rejected_videos WHERE video_id IN", "Existing-catalog check includes rejected video ids", failures);
+  assertContains(catalogDataSource, "if (reason === \"admin-hard-delete\") {", "Hard-delete path applies admin-specific reject blocklist handling", failures);
+  assertContains(catalogDataSource, "VALUES (${normalizedVideoId}, ${\"admin-deleted\"}, ${new Date()})", "Admin hard-delete writes admin-deleted reason to rejected table", failures);
+  assertContains(catalogDataSource, "ORDER BY v.created_at DESC, v.id DESC", "Newest ranking is anchored on created_at then id", failures);
+  assertContains(catalogDataSource, "ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC", "Newest logic retains explicit legacy timestamp fallback path", failures);
+  assertContains(catalogDataSource, "const admissionDecision = admissionRow ? evaluatePlaybackMetadataEligibility(admissionRow) : null;", "Related cascade evaluates metadata eligibility before admitting discovered videos", failures);
+  assertContains(catalogDataSource, "!admissionRow || !Boolean(admissionRow.hasAvailable) || !admissionDecision?.allowed", "Related cascade requires available embed + metadata eligibility", failures);
+  assertContains(catalogDataSource, "await pruneVideoAndAssociationsByVideoId(candidate.id, \"related-cascade-strict-admission\").catch(() => undefined);", "Related cascade prunes candidates that fail strict admission", failures);
+  assertContains(catalogDataSource, "const ROCK_METAL_GENRE_PATTERN =", "Catalog classifier defines explicit rock/metal genre evidence pattern", failures);
+  assertContains(classificationSource, "function computeArtistChannelConfidenceDelta", "Catalog classifier computes artist/channel consistency confidence delta", failures);
+  assertContains(catalogDataSource, "const artistEvidence = correctedArtist", "Runtime metadata persistence derives internal artist evidence for confidence tuning", failures);
+  assertContains(catalogDataSource, "Known artist lacks strong rock/metal genre evidence.", "Runtime metadata persistence penalizes known artists without rock/metal evidence", failures);
+  assertContains(catalogDataSource, "Artist token matched channel title.", "Runtime metadata persistence boosts confidence when channel and artist align", failures);
+  assertContains(catalogDataSource, "if (isLikelyNonMusicText(video.title, video.description ?? \"\"))", "Runtime metadata persistence applies non-music confidence dampening", failures);
+  assertContains(catalogDataSource, "const mojibakeScore = scoreLikelyMojibake(video.title);", "Runtime metadata persistence uses mojibake score to dampen confidence", failures);
+  assertContains(catalogDataSource, "YehThatRocks is a rock/metal catalog.", "Groq metadata prompt encodes rock/metal-only extraction intent", failures);
 
   if (failures.length > 0) {
     console.error("Core experience invariant check failed.");

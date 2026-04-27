@@ -10,10 +10,10 @@ const files = {
   editor: path.join(ROOT, "apps/web/components/playlist-editor.tsx"),
   editorApi: path.join(ROOT, "apps/web/app/api/playlists/[id]/items/route.ts"),
   schemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
-  data: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
+  data: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   addButton: path.join(ROOT, "apps/web/components/add-to-playlist-button.tsx"),
-  shell: path.join(ROOT, "apps/web/components/shell-dynamic.tsx"),
-  player: path.join(ROOT, "apps/web/components/player-experience.tsx"),
+  shell: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
+  player: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
 };
 

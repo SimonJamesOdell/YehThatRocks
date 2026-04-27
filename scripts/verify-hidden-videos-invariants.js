@@ -9,11 +9,12 @@ const files = {
   prismaSchema: path.join(ROOT, "prisma/schema.prisma"),
   migration: path.join(ROOT, "prisma/migrations/20260412030719_auto/migration.sql"),
   apiRoute: path.join(ROOT, "apps/web/app/api/hidden-videos/route.ts"),
-  catalogData: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
+  hiddenVideoClient: path.join(ROOT, "apps/web/lib/hidden-video-client-service.ts"),
+  catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
   shellLayout: path.join(ROOT, "apps/web/app/(shell)/layout.tsx"),
-  shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic.tsx"),
-  playerExperience: path.join(ROOT, "apps/web/components/player-experience.tsx"),
+  shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
+  playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   newPage: path.join(ROOT, "apps/web/app/(shell)/new/page.tsx"),
   newLoader: path.join(ROOT, "apps/web/components/new-videos-loader.tsx"),
   top100Page: path.join(ROOT, "apps/web/app/(shell)/top100/page.tsx"),
@@ -43,6 +44,7 @@ function main() {
   const prismaSchemaSource = read(files.prismaSchema);
   const migrationSource = read(files.migration);
   const apiRouteSource = read(files.apiRoute);
+  const hiddenVideoClientSource = read(files.hiddenVideoClient);
   const catalogDataSource = read(files.catalogData);
   const apiSchemasSource = read(files.apiSchemas);
   const shellLayoutSource = read(files.shellLayout);
@@ -77,13 +79,18 @@ function main() {
   assertContains(apiRouteSource, "const activePlaylistId = request.nextUrl.searchParams.get(\"activePlaylistId\");", "Hidden videos POST accepts active playlist context", failures);
   assertContains(apiRouteSource, "hideVideoAndPrunePlaylistsForUser", "Hidden videos POST uses hide+prune helper", failures);
   assertContains(apiRouteSource, "activePlaylistDeleted: result.activePlaylistDeleted", "Hidden videos POST returns activePlaylistDeleted result", failures);
+  assertContains(hiddenVideoClientSource, "export async function mutateHiddenVideo", "Client exposes shared hidden video mutation helper", failures);
+  assertContains(hiddenVideoClientSource, "fetchWithAuthRetry(resolveRequestUrl(action, activePlaylistId)", "Shared hidden video client uses auth-retry fetch", failures);
+  assertContains(hiddenVideoClientSource, "rollbackOnError = false", "Shared hidden video client supports optional rollback", failures);
+  assertContains(hiddenVideoClientSource, "onOptimisticUpdate?.();", "Shared hidden video client supports optimistic hooks", failures);
+  assertContains(hiddenVideoClientSource, "messages.failure", "Shared hidden video client provides standard failure messaging", failures);
 
   // UI usage invariants.
   assertContains(shellLayoutSource, "initialHiddenVideoIds={Array.from(hiddenVideoIds)}", "Shell layout forwards hidden ids to shell dynamic", failures);
   assertContains(shellDynamicSource, "initialHiddenVideoIds", "Shell dynamic accepts hidden ids", failures);
   assertContains(shellDynamicSource, "filterHiddenRelatedVideos", "Shell dynamic filters Watch Next by hidden ids", failures);
   assertContains(shellDynamicSource, "relatedCardHideButton", "Shell dynamic renders hide button on Watch Next cards", failures);
-  assertContains(shellDynamicSource, 'fetchWithAuthRetry("/api/hidden-videos"', "Shell dynamic persists hidden Watch Next cards to hidden-videos API", failures);
+  assertContains(shellDynamicSource, "mutateHiddenVideo({", "Shell dynamic uses shared hidden-video mutation helper", failures);
 
   assertContains(newPageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "New page passes hidden ids to loader", failures);
   assertContains(newLoaderSource, "filterHiddenVideos", "New loader filters hidden videos", failures);
@@ -102,9 +109,10 @@ function main() {
   // dock after the skip transition completes.
   assertContains(playerExperienceSource, "function pauseActivePlayback(", "Player defines pauseActivePlayback helper to stop audio on hide", failures);
   assertContains(playerExperienceSource, "pauseActivePlayback();", "Player calls pauseActivePlayback when hiding current video", failures);
-  assertContains(playerExperienceSource, "const activePlaylistQuery = activePlaylistId ? `?activePlaylistId=${encodeURIComponent(activePlaylistId)}` : \"\";", "Player sends active playlist context when blocking current video", failures);
+  assertContains(playerExperienceSource, "activePlaylistId,", "Player forwards active playlist context when blocking current video", failures);
+  assertContains(playerExperienceSource, "mutateHiddenVideo<{ activePlaylistDeleted?: boolean }>", "Player uses shared hidden-video mutation helper", failures);
   assertContains(playerExperienceSource, "dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null)", "Player refreshes playlist state after blocking current video", failures);
-  assertContains(playerExperienceSource, "if (payload?.activePlaylistDeleted)", "Player handles active playlist deletion response after block", failures);
+  assertContains(playerExperienceSource, "if (result.payload?.activePlaylistDeleted)", "Player handles active playlist deletion response after block", failures);
   assertContains(playerExperienceSource, "params.delete(\"pl\");", "Player clears active playlist id when blocked track deletes playlist", failures);
   assertContains(playerExperienceSource, "params.delete(\"pli\");", "Player clears active playlist index when blocked track deletes playlist", failures);
 
