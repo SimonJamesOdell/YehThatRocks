@@ -57,7 +57,7 @@ function containsBotChallengeMarker(html: string) {
 }
 
 function shouldForcePruneFromRuntimeReason(reason: string) {
-  return /(yt-player-age-or-owner-restricted-(101|150)|yt-player-error-(101|150))/i.test(reason);
+  return /(yt-player-age-or-owner-restricted-(101|150)|yt-player-error-(100|101|150))/i.test(reason);
 }
 
 async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityCheckResult> {

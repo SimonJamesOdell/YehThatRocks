@@ -153,6 +153,8 @@ const UNAVAILABLE_PLAYER_CODES = new Set([5, 100, 101, 150]);
 const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_PLAYER === "1";
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
 const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. Please choose another track.";
+const BROKEN_UPSTREAM_OVERLAY_MESSAGE = "This video is no longer available on YouTube and has been removed from the catalog.";
+const BROKEN_UPSTREAM_AUTOADVANCE_MS = 6000;
 const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstream video provider for this track. This is not a YehThatRocks failure. Please try the refresh button and if that does not work, choose another track.";
 const EARLY_PLAYBACK_VERIFICATION_MS = 1200;
 const STUCK_PLAYBACK_CHECK_MS = 5000;
@@ -610,6 +612,7 @@ export function PlayerExperience({
   const [showNowPlayingOverlay, setShowNowPlayingOverlay] = useState(false);
   const [unavailableOverlayMessage, setUnavailableOverlayMessage] = useState<string | null>(null);
   const [unavailableOverlayRequiresOk, setUnavailableOverlayRequiresOk] = useState(false);
+  const [unavailableAutoAdvanceMs, setUnavailableAutoAdvanceMs] = useState<number | null>(null);
   const [showEndedChoiceOverlay, setShowEndedChoiceOverlay] = useState(false);
   const [showEndScreenCover, setShowEndScreenCover] = useState(false);
   const [endedChoiceFromUnavailable, setEndedChoiceFromUnavailable] = useState(false);
@@ -1447,6 +1450,7 @@ export function PlayerExperience({
   const lyricsUnavailableForCurrentVideo = lyricsAvailableForCurrentVideo === false;
   const lyricsButtonDisabled = footerActionsBlocked || lyricsUnavailableForCurrentVideo;
   const isUpstreamConnectivityOverlay = unavailableOverlayMessage === UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE;
+  const isBrokenUpstreamOverlay = unavailableOverlayMessage === BROKEN_UPSTREAM_OVERLAY_MESSAGE;
   const currentTrackYouTubeUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(currentVideo.id)}`;
   const footerSelectablePlaylists = activePlaylistId
     ? footerPlaylistMenuPlaylists.filter((playlist) => playlist.id !== activePlaylistId)
@@ -1611,6 +1615,7 @@ export function PlayerExperience({
     unavailableOverlayTimeoutRef.current = null;
     setUnavailableOverlayMessage(null);
     setUnavailableOverlayRequiresOk(false);
+    setUnavailableAutoAdvanceMs(null);
   }
 
   function acknowledgeUnavailableOverlay() {
@@ -1628,7 +1633,7 @@ export function PlayerExperience({
 
   function showUnavailableOverlayMessage(
     message?: string | null,
-    options?: { requiresOk?: boolean; autoAdvanceWhenAutoplay?: boolean },
+    options?: { requiresOk?: boolean; autoAdvanceWhenAutoplay?: boolean; countdownMs?: number },
   ) {
     clearUnavailableOverlayMessage();
     clearStuckPlaybackRetryTimer();
@@ -1643,10 +1648,14 @@ export function PlayerExperience({
     setUnavailableOverlayRequiresOk(requiresOk);
 
     if (!requiresOk && options?.autoAdvanceWhenAutoplay) {
+      const advanceMs = options.countdownMs ?? 1400;
+      if (options.countdownMs) {
+        setUnavailableAutoAdvanceMs(advanceMs);
+      }
       unavailableAutoActionTimeoutRef.current = window.setTimeout(() => {
         unavailableAutoActionTimeoutRef.current = null;
         acknowledgeUnavailableOverlay();
-      }, 1400);
+      }, advanceMs);
     }
 
     unavailableOverlayTimeoutRef.current = null;
@@ -2994,6 +3003,44 @@ export function PlayerExperience({
                 ? `yt-player-age-or-owner-restricted-${event.data}`
                 : `yt-player-error-${event.data}`;
 
+            const isDefinitiveBrokenUpstreamCode = event.data === 100 || event.data === 101 || event.data === 150;
+            const isImmediateBotChallengeCode = event.data === 5;
+
+            if (isDefinitiveBrokenUpstreamCode) {
+              autoplaySuppressedVideoIdRef.current = currentVideo.id;
+              playAttemptedAtRef.current = null;
+              pauseActivePlayback();
+              showUnavailableOverlayMessage(BROKEN_UPSTREAM_OVERLAY_MESSAGE, {
+                autoAdvanceWhenAutoplay: true,
+                countdownMs: BROKEN_UPSTREAM_AUTOADVANCE_MS,
+              });
+
+              void reportUnavailableFromPlayer(reason).then((reportResult) => {
+                logPlayerDebug("onError:broken-upstream-reported", {
+                  videoId: currentVideo.id,
+                  reason,
+                  shouldSkip: reportResult.shouldSkip,
+                  verificationReason: reportResult.verificationReason,
+                  skipped: reportResult.skipped,
+                });
+              });
+              return;
+            }
+
+            if (isImmediateBotChallengeCode) {
+              enableDirectIframeInteractionMode("on-error-code-5", null);
+              void reportUnavailableFromPlayer(reason).then((reportResult) => {
+                logPlayerDebug("onError:code-5-reported", {
+                  videoId: currentVideo.id,
+                  reason,
+                  shouldSkip: reportResult.shouldSkip,
+                  verificationReason: reportResult.verificationReason,
+                  skipped: reportResult.skipped,
+                });
+              });
+              return;
+            }
+
             const reportResult = await reportUnavailableFromPlayer(reason);
             const shouldSkip = reportResult.shouldSkip;
             const botChallengeDetected = isBotChallengeVerificationReason(reportResult.verificationReason);
@@ -3024,11 +3071,6 @@ export function PlayerExperience({
             });
 
             if (playbackEstablishedAfterReport) {
-              return;
-            }
-
-            if (event.data === 5) {
-              enableDirectIframeInteractionMode("on-error-code-5", reportResult.verificationReason);
               return;
             }
 
@@ -4946,14 +4988,21 @@ export function PlayerExperience({
           {unavailableOverlayMessage && !allowDirectIframeInteraction ? (
             <div className="videoUnavailableOverlay" role="alertdialog" aria-modal="true" aria-label="Video unavailable">
               <p className="videoUnavailableOverlayEyebrow">
-                {isUpstreamConnectivityOverlay ? "Provider connection timeout" : "Playback issue"}
+                {isBrokenUpstreamOverlay ? "Not available on YouTube" : isUpstreamConnectivityOverlay ? "Provider connection timeout" : "Playback issue"}
               </p>
               <strong className="videoUnavailableOverlayTitle">
-                {isUpstreamConnectivityOverlay ? "Could not start this track yet" : "This track is unavailable"}
+                {isBrokenUpstreamOverlay ? "This track no longer exists" : isUpstreamConnectivityOverlay ? "Could not start this track yet" : "This track is unavailable"}
               </strong>
               <p className="videoUnavailableOverlayBody">{unavailableOverlayMessage}</p>
+              {isBrokenUpstreamOverlay && unavailableAutoAdvanceMs !== null ? (
+                <div
+                  className="videoUnavailableCountdown"
+                  style={{ "--countdown-ms": `${unavailableAutoAdvanceMs}ms` } as React.CSSProperties}
+                  aria-hidden="true"
+                />
+              ) : null}
               <div className="videoUnavailableOverlayActions">
-                {isUpstreamConnectivityOverlay ? (
+                {!isBrokenUpstreamOverlay && isUpstreamConnectivityOverlay ? (
                   <button
                     type="button"
                     className="videoUnavailableOverlayRefresh"
@@ -4962,14 +5011,24 @@ export function PlayerExperience({
                     Retry connection
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  className="videoUnavailableOverlayAcknowledge"
-                  onClick={handleOpenCurrentTrackOnYouTube}
-                >
-                  Watch on YouTube
-                </button>
-                {unavailableOverlayRequiresOk ? (
+                {!isBrokenUpstreamOverlay ? (
+                  <button
+                    type="button"
+                    className="videoUnavailableOverlayAcknowledge"
+                    onClick={handleOpenCurrentTrackOnYouTube}
+                  >
+                    Watch on YouTube
+                  </button>
+                ) : null}
+                {isBrokenUpstreamOverlay ? (
+                  <button
+                    type="button"
+                    className="videoUnavailableOverlayAcknowledge"
+                    onClick={acknowledgeUnavailableOverlay}
+                  >
+                    {unavailableAutoAdvanceMs !== null ? "Continue now" : "Next track"}
+                  </button>
+                ) : unavailableOverlayRequiresOk ? (
                   <button
                     type="button"
                     className="videoUnavailableOverlayAcknowledge"

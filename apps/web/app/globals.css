@@ -4176,6 +4176,33 @@ h1 {
   filter: brightness(1.08);
 }
 
+@keyframes videoUnavailableCountdownShrink {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+
+.videoUnavailableCountdown {
+  height: 3px;
+  width: 100%;
+  background: rgba(255, 200, 180, 0.15);
+  border-radius: 99px;
+  overflow: hidden;
+  position: relative;
+  margin-top: 16px;
+}
+
+.videoUnavailableCountdown::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, rgba(255, 88, 44, 0.9), rgba(255, 195, 160, 0.95));
+  border-radius: inherit;
+  animation: videoUnavailableCountdownShrink var(--countdown-ms, 6000ms) linear forwards;
+}
+
 .playerPolicyBlocker {
   position: absolute;
   inset: 0;
