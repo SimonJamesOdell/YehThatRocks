@@ -1173,6 +1173,86 @@ h1 {
   white-space: pre-wrap;
 }
 
+.magazineRailCard {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  min-height: 120px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.magazineRailHeader {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  margin: 2px 0 8px;
+}
+
+.magazineRailHeader strong {
+  font-family: var(--font-display), sans-serif;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+  color: rgba(255, 242, 237, 0.96);
+}
+
+.magazineRailCard:hover {
+  background: rgba(220, 22, 5, 0.14);
+  border-color: rgba(255, 121, 108, 0.34);
+}
+
+.magazineRailCardClickable {
+  cursor: pointer;
+}
+
+.magazineRailCardClickable:focus-visible {
+  outline: 2px solid rgba(255, 121, 108, 0.7);
+  outline-offset: 2px;
+}
+
+.magazineRailCardClickable:active {
+  transform: translateY(1px) scale(0.995);
+  background: rgba(220, 22, 5, 0.2);
+  border-color: rgba(255, 121, 108, 0.5);
+}
+
+.magazineRailThumb {
+  width: 84px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.magazineRailBody {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+}
+
+.magazineRailBody .messageMeta {
+  margin-bottom: 0;
+  align-items: center;
+}
+
+.magazineRailBody .messageMeta strong {
+  font-size: 0.9rem;
+}
+
+.magazineRailBody .messageMeta > span:last-child {
+  font-size: 0.66rem;
+}
+
+.magazineRailBody p {
+  margin: 0;
+  color: rgba(214, 202, 196, 0.8);
+  font-size: 0.94rem;
+  line-height: 1.35;
+}
+
 .chatSharedVideoCard {
   display: grid;
   grid-template-columns: 84px minmax(0, 1fr);
@@ -1869,11 +1949,70 @@ h1 {
 
 .magazinePage {
   min-height: 100dvh;
-  width: min(1120px, calc(100% - 32px));
-  margin: 0 auto;
+  width: 100%;
   padding: 28px 0 52px;
   display: grid;
   gap: 18px;
+}
+
+.magazineOverlayBar {
+  position: sticky;
+  top: 0;
+  z-index: 45;
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: -28px;
+  padding-top: 18px;
+}
+
+.magazineOverlayBarBody {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.magazineOverlayBarTitle {
+  display: block;
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(1.35rem, 2vw, 1.8rem);
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: rgba(255, 245, 240, 0.96);
+}
+
+.magazineBreadcrumbs {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 219, 210, 0.78);
+  font-size: 0.8rem;
+}
+
+.magazineBreadcrumbLink {
+  color: rgba(255, 229, 220, 0.92);
+  text-decoration: none;
+}
+
+.magazineBreadcrumbLink:hover {
+  text-decoration: underline;
+}
+
+.magazineBreadcrumbSeparator {
+  color: rgba(255, 189, 177, 0.7);
+}
+
+.magazineBreadcrumbCurrent {
+  min-width: 0;
+  max-width: min(72vw, 900px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 241, 236, 0.92);
 }
 
 .magazineMasthead,
@@ -2374,8 +2513,24 @@ h1 {
 
 @media (max-width: 680px) {
   .magazinePage {
-    width: calc(100% - 20px);
+    width: 100%;
     padding-top: 18px;
+  }
+
+  .magazineOverlayBar {
+    top: 0;
+    align-items: stretch;
+    margin-top: -18px;
+    padding-top: 18px;
+  }
+
+  .magazineOverlayBar .favouritesBlindClose {
+    align-self: start;
+  }
+
+  .magazineBreadcrumbCurrent {
+    max-width: 100%;
+    white-space: normal;
   }
 
   .magazineTrackCard {
@@ -4109,6 +4264,13 @@ h1 {
   pointer-events: auto;
 }
 
+.videoUnavailableOverlayAutoAdvance {
+  width: min(96%, 840px);
+  padding: 28px 30px 26px;
+  border-color: rgba(255, 165, 140, 0.66);
+  box-shadow: 0 28px 58px rgba(0, 0, 0, 0.64);
+}
+
 .videoUnavailableOverlayEyebrow {
   margin: 0 0 8px;
   text-transform: uppercase;
@@ -4134,6 +4296,15 @@ h1 {
   line-height: 1.52;
   color: rgba(255, 230, 223, 0.93);
   text-align: center;
+}
+
+.videoUnavailableAutoAdvanceNote {
+  margin: 12px auto 0;
+  max-width: 66ch;
+  text-align: center;
+  font-size: 1rem;
+  line-height: 1.45;
+  color: rgba(255, 228, 218, 0.96);
 }
 
 .videoUnavailableOverlayActions {

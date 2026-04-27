@@ -22,6 +22,10 @@ const suggestSchema = z.object({
 const YOUTUBE_PLAYLIST_ID_PATTERN = /^[A-Za-z0-9_-]{10,}$/;
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || "";
 const PLAYBACK_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.PLAYBACK_MIN_CONFIDENCE || "0.8")));
+const SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE = Math.max(
+  0,
+  Math.min(1, Number(process.env.SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE || "0.08")),
+);
 const playlistBatchJobs = new Map<string, Promise<void>>();
 const YOUTUBE_QUOTA_EXHAUSTED_TTL_MS = 26 * 60 * 60 * 1000;
 let youtubeQuotaExhaustedUntilMs = 0;
@@ -441,9 +445,10 @@ export async function POST(request: NextRequest) {
       : [];
     const alreadyInCatalog = existingRows.length > 0;
 
-    // Disable cascade discovery for user suggestions to avoid excessive YouTube API usage.
-    // Related videos can be backfilled separately via admin tools or the backfill script.
-    const result = await importVideoFromDirectSource(source.videoId, { discoverRelated: false });
+    // Re-enable occasional related discovery for fresh suggestions to keep discovery flowing,
+    // while catalog-data quota guards preserve API headroom for ingest reliability.
+    const discoverRelatedForSuggestion = Math.random() < SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE;
+    const result = await importVideoFromDirectSource(source.videoId, { discoverRelated: discoverRelatedForSuggestion });
     if (!result.videoId) {
       return NextResponse.json({ ok: false, error: "Invalid YouTube URL or video id." }, { status: 400 });
     }
@@ -492,6 +497,7 @@ export async function POST(request: NextRequest) {
       rejectionReason,
       artist: submissionStatus === "rejected" ? null : resolvedMetadata.artist,
       track: submissionStatus === "rejected" ? null : resolvedMetadata.track,
+      relatedDiscoverySampled: discoverRelatedForSuggestion,
       decision: result.decision,
     });
   }
