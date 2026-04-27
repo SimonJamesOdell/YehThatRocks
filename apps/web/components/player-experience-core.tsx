@@ -567,6 +567,7 @@ export function PlayerExperience({
   const overlayTimeoutRef = useRef<number | null>(null);
   const unavailableOverlayTimeoutRef = useRef<number | null>(null);
   const unavailableAutoActionTimeoutRef = useRef<number | null>(null);
+  const unavailableAutoCountdownIntervalRef = useRef<number | null>(null);
   const playerLoadRefreshHintTimeoutRef = useRef<number | null>(null);
   const playerAutoReconnectTimeoutRef = useRef<number | null>(null);
   const manualTransitionMaskTimeoutRef = useRef<number | null>(null);
@@ -613,6 +614,7 @@ export function PlayerExperience({
   const [unavailableOverlayMessage, setUnavailableOverlayMessage] = useState<string | null>(null);
   const [unavailableOverlayRequiresOk, setUnavailableOverlayRequiresOk] = useState(false);
   const [unavailableAutoAdvanceMs, setUnavailableAutoAdvanceMs] = useState<number | null>(null);
+  const [unavailableAutoAdvanceSeconds, setUnavailableAutoAdvanceSeconds] = useState<number | null>(null);
   const [showEndedChoiceOverlay, setShowEndedChoiceOverlay] = useState(false);
   const [showEndScreenCover, setShowEndScreenCover] = useState(false);
   const [endedChoiceFromUnavailable, setEndedChoiceFromUnavailable] = useState(false);
@@ -1451,6 +1453,7 @@ export function PlayerExperience({
   const lyricsButtonDisabled = footerActionsBlocked || lyricsUnavailableForCurrentVideo;
   const isUpstreamConnectivityOverlay = unavailableOverlayMessage === UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE;
   const isBrokenUpstreamOverlay = unavailableOverlayMessage === BROKEN_UPSTREAM_OVERLAY_MESSAGE;
+  const isAutoAdvanceUnavailableOverlay = unavailableAutoAdvanceMs !== null;
   const currentTrackYouTubeUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(currentVideo.id)}`;
   const footerSelectablePlaylists = activePlaylistId
     ? footerPlaylistMenuPlaylists.filter((playlist) => playlist.id !== activePlaylistId)
@@ -1612,10 +1615,16 @@ export function PlayerExperience({
       unavailableAutoActionTimeoutRef.current = null;
     }
 
+    if (unavailableAutoCountdownIntervalRef.current) {
+      window.clearInterval(unavailableAutoCountdownIntervalRef.current);
+      unavailableAutoCountdownIntervalRef.current = null;
+    }
+
     unavailableOverlayTimeoutRef.current = null;
     setUnavailableOverlayMessage(null);
     setUnavailableOverlayRequiresOk(false);
     setUnavailableAutoAdvanceMs(null);
+    setUnavailableAutoAdvanceSeconds(null);
   }
 
   function acknowledgeUnavailableOverlay() {
@@ -1648,14 +1657,29 @@ export function PlayerExperience({
     setUnavailableOverlayRequiresOk(requiresOk);
 
     if (!requiresOk && options?.autoAdvanceWhenAutoplay) {
-      const advanceMs = options.countdownMs ?? 1400;
-      if (options.countdownMs) {
-        setUnavailableAutoAdvanceMs(advanceMs);
-      }
+      const advanceMs = options.countdownMs ?? 5000;
+      const deadline = Date.now() + advanceMs;
+      setUnavailableAutoAdvanceMs(advanceMs);
+      setUnavailableAutoAdvanceSeconds(Math.max(1, Math.ceil(advanceMs / 1000)));
+
+      unavailableAutoCountdownIntervalRef.current = window.setInterval(() => {
+        const remainingMs = Math.max(0, deadline - Date.now());
+        const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+        setUnavailableAutoAdvanceSeconds(remainingSeconds);
+
+        if (remainingMs <= 0 && unavailableAutoCountdownIntervalRef.current) {
+          window.clearInterval(unavailableAutoCountdownIntervalRef.current);
+          unavailableAutoCountdownIntervalRef.current = null;
+        }
+      }, 200);
+
       unavailableAutoActionTimeoutRef.current = window.setTimeout(() => {
         unavailableAutoActionTimeoutRef.current = null;
         acknowledgeUnavailableOverlay();
       }, advanceMs);
+    } else {
+      setUnavailableAutoAdvanceMs(null);
+      setUnavailableAutoAdvanceSeconds(null);
     }
 
     unavailableOverlayTimeoutRef.current = null;
@@ -2955,6 +2979,23 @@ export function PlayerExperience({
             }
 
             const runtimePlayer = playerRef.current;
+            const runtimePlayerWithVideoData = runtimePlayer as (YouTubePlayer & {
+              getVideoData?: () => { video_id?: string | null };
+            }) | null;
+            const runtimeVideoId =
+              runtimePlayerWithVideoData && typeof runtimePlayerWithVideoData.getVideoData === "function"
+                ? (runtimePlayerWithVideoData.getVideoData()?.video_id ?? null)
+                : null;
+
+            if (runtimeVideoId && runtimeVideoId !== activeVideoId) {
+              logPlayerDebug("onError:ignore-stale-runtime-video", {
+                activeVideoId,
+                runtimeVideoId,
+                errorCode: event.data,
+              });
+              return;
+            }
+
             const runtimeState =
               runtimePlayer && typeof runtimePlayer.getPlayerState === "function"
                 ? runtimePlayer.getPlayerState()
@@ -4986,7 +5027,7 @@ export function PlayerExperience({
           ) : null}
 
           {unavailableOverlayMessage && !allowDirectIframeInteraction ? (
-            <div className="videoUnavailableOverlay" role="alertdialog" aria-modal="true" aria-label="Video unavailable">
+            <div className={isAutoAdvanceUnavailableOverlay ? "videoUnavailableOverlay videoUnavailableOverlayAutoAdvance" : "videoUnavailableOverlay"} role="alertdialog" aria-modal="true" aria-label="Video unavailable">
               <p className="videoUnavailableOverlayEyebrow">
                 {isBrokenUpstreamOverlay ? "Not available on YouTube" : isUpstreamConnectivityOverlay ? "Provider connection timeout" : "Playback issue"}
               </p>
@@ -4994,7 +5035,12 @@ export function PlayerExperience({
                 {isBrokenUpstreamOverlay ? "This track no longer exists" : isUpstreamConnectivityOverlay ? "Could not start this track yet" : "This track is unavailable"}
               </strong>
               <p className="videoUnavailableOverlayBody">{unavailableOverlayMessage}</p>
-              {isBrokenUpstreamOverlay && unavailableAutoAdvanceMs !== null ? (
+              {isAutoAdvanceUnavailableOverlay && unavailableAutoAdvanceSeconds !== null ? (
+                <p className="videoUnavailableAutoAdvanceNote" aria-live="polite">
+                  Another video will be selected automatically in {unavailableAutoAdvanceSeconds}.. video plays.
+                </p>
+              ) : null}
+              {isAutoAdvanceUnavailableOverlay && unavailableAutoAdvanceMs !== null ? (
                 <div
                   className="videoUnavailableCountdown"
                   style={{ "--countdown-ms": `${unavailableAutoAdvanceMs}ms` } as React.CSSProperties}

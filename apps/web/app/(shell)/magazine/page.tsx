@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { CloseLink } from "@/components/close-link";
 import { magazineDraftEdition } from "@/lib/magazine-draft";
 
 export const metadata = {
@@ -21,6 +22,13 @@ export default function MagazineLandingPage() {
 
   return (
     <main className="magazinePage" role="main" aria-label="Yeh Magazine">
+      <div className="favouritesBlindBar magazineOverlayBar">
+        <div className="magazineOverlayBarBody">
+          <strong className="magazineOverlayBarTitle">Magazine</strong>
+        </div>
+        <CloseLink />
+      </div>
+
       <header className="magazineMasthead panel">
         <div className="magazineMastheadBrand">
           <Image
@@ -50,7 +58,7 @@ export default function MagazineLandingPage() {
           <span>Published {magazineDraftEdition.publishedDate}</span>
           <div className="magazineMetaActions">
             <a href="#latest-stories" className="magazinePrimaryCta">Browse stories</a>
-            <Link href={`/?v=${leadTrack?.videoId ?? ""}`} className="magazineWatchCta">Watch now</Link>
+            <Link href={`/?v=${leadTrack?.videoId ?? ""}&resume=1`} className="magazineWatchCta" data-overlay-close="true">Watch now</Link>
           </div>
         </div>
       </section>
@@ -68,7 +76,7 @@ export default function MagazineLandingPage() {
           <p>{leadTrack?.takeaway}</p>
           <div className="magazineTrackActions">
             <Link href={`/magazine/${leadTrack?.slug ?? ""}`} className="magazinePrimaryCta">Read cover story</Link>
-            <Link href={`/?v=${leadTrack?.videoId ?? ""}`} className="magazineWatchCta">Play in Yeh</Link>
+            <Link href={`/?v=${leadTrack?.videoId ?? ""}&resume=1`} className="magazineWatchCta" data-overlay-close="true">Play in Yeh</Link>
           </div>
         </div>
       </section>
@@ -93,7 +101,7 @@ export default function MagazineLandingPage() {
                 <p>{track.takeaway}</p>
                 <div className="magazineTrackActions">
                   <Link href={`/magazine/${track.slug}`} className="magazineTextLink">Read article</Link>
-                  <Link href={`/?v=${track.videoId}`} className="magazineWatchCta">Watch now</Link>
+                  <Link href={`/?v=${track.videoId}&resume=1`} className="magazineWatchCta" data-overlay-close="true">Watch now</Link>
                 </div>
               </div>
             </article>
@@ -131,7 +139,7 @@ export default function MagazineLandingPage() {
               <p>{track.takeaway}</p>
               <div className="magazineTrackActions">
                 <Link href={`/magazine/${track.slug}`} className="magazineTextLink">Read full take</Link>
-                <Link href={`/?v=${track.videoId}`} className="magazineTextLink">Watch clip</Link>
+                <Link href={`/?v=${track.videoId}&resume=1`} className="magazineTextLink" data-overlay-close="true">Watch clip</Link>
               </div>
             </article>
           ))}

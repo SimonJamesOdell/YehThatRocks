@@ -147,10 +147,11 @@ function main() {
 
   // Chat UI invariants.
   assertContains(shellDynamicSource, "const globalEvents = new EventSource(\"/api/chat/stream?mode=global\");", "Shell subscribes to global chat stream", failures);
-  assertContains(shellDynamicSource, "const videoEvents = new EventSource(`/api/chat/stream?mode=video&videoId=${encodeURIComponent(currentVideo.id)}`);", "Shell subscribes to video chat stream", failures);
+  assertContains(shellDynamicSource, 'setChatMode("magazine");', "Shell keeps Magazine tab selectable in chat rail", failures);
+  assertContains(shellDynamicSource, 'router.push(`/magazine?v=${encodeURIComponent(currentVideo.id)}`, { scroll: true });', "Magazine tab opens magazine landing route", failures);
   assertContains(shellDynamicSource, "const response = await fetchWithAuthRetry(`/api/chat?${params.toString()}`);", "Shell loads chat via authenticated API call", failures);
   assertContains(shellDynamicSource, "const response = await fetchWithAuthRetry(\"/api/chat\", {", "Shell posts chat messages via authenticated API call", failures);
-  assertContains(shellDynamicSource, "videoId: chatMode === \"video\" ? currentVideo.id : undefined,", "Shell sends video chat context when posting", failures);
+  assertContains(shellDynamicSource, "const latestMagazineTracks = useMemo(() => magazineDraftEdition.tracks, []);", "Shell hydrates magazine rail entries from magazine draft data", failures);
   assertContains(shellDynamicSource, 'className={isAdminOverlayRoute ? "railTabs railTabsAdminOverlay" : "railTabs"}', "Shell uses dedicated admin overlay rail tab layout class", failures);
   assertContains(shellDynamicSource, "onClick={() => setChatMode(\"online\")}", "Shell keeps Who's Online tab selectable in chat rail", failures);
   assertNotContains(shellDynamicSource, '<span className="tabLabel activeTab">Global Chat</span>', "Shell no longer hard-locks admin rail to a non-interactive Global Chat label", failures);

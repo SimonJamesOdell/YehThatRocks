@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { CloseLink } from "@/components/close-link";
 import { getMagazineTrackBySlug, magazineDraftEdition } from "@/lib/magazine-draft";
 
 type MagazineTrackPageProps = {
@@ -20,11 +21,22 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
     notFound();
   }
 
-  const backToArticleHref = encodeURIComponent(`/magazine/${track.slug}`);
   const relatedTracks = magazineDraftEdition.tracks.filter((editionTrack) => editionTrack.slug !== track.slug).slice(0, 3);
 
   return (
     <main className="magazinePage" role="main" aria-label="Magazine article">
+      <div className="favouritesBlindBar magazineOverlayBar">
+        <div className="magazineOverlayBarBody">
+          <strong className="magazineOverlayBarTitle">Magazine</strong>
+          <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
+            <Link href="/magazine" className="categoryHeaderBreadcrumbLink">Magazine</Link>
+            <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">&gt;</span>
+            <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{track.artist} - {track.title}</span>
+          </span>
+        </div>
+        <CloseLink />
+      </div>
+
       <header className="magazineArticleHero panel">
         <Link href="/magazine" className="magazineTextLink">Back to magazine</Link>
         <div className="magazineArticleHeroBrand">
@@ -91,7 +103,7 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
           </section>
 
           <div className="magazineArticleActions">
-            <Link href={`/?v=${track.videoId}&from=article&backTo=${backToArticleHref}`} className="magazineWatchCta">Watch now in YehThatRocks</Link>
+            <Link href={`/?v=${track.videoId}&resume=1`} className="magazineWatchCta" data-overlay-close="true">Watch now in YehThatRocks</Link>
             <Link href="/magazine" className="magazineTextLink">Open full edition</Link>
           </div>
         </article>
@@ -108,7 +120,7 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
           </div>
           <div className="magazineArticleSidebarActions">
             <Link href="/magazine" className="magazinePrimaryCta">Browse all stories</Link>
-            <Link href={`/?v=${track.videoId}&from=article&backTo=${backToArticleHref}`} className="magazineTextLink">Jump to player</Link>
+            <Link href={`/?v=${track.videoId}&resume=1`} className="magazineTextLink" data-overlay-close="true">Jump to player</Link>
           </div>
         </aside>
       </div>

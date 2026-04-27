@@ -175,6 +175,9 @@ const BOT_CHALLENGE_PATTERNS = [
 ];
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || undefined;
 const ENABLE_YOUTUBE_RELATED_DISCOVERY = process.env.ENABLE_YOUTUBE_RELATED_DISCOVERY !== "0";
+const YOUTUBE_DAILY_QUOTA_UNITS = Math.max(1_000, Number(process.env.YOUTUBE_DAILY_QUOTA_UNITS || "10000"));
+const YOUTUBE_RELATED_DISCOVERY_RESERVED_UNITS = Math.max(0, Number(process.env.YOUTUBE_RELATED_DISCOVERY_RESERVED_UNITS || "2500"));
+const YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS = Math.max(100, Number(process.env.YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS || "1500"));
 const RELATED_DISCOVERY_MAX_DEPTH = Math.max(1, Math.min(4, Number(process.env.RELATED_DISCOVERY_MAX_DEPTH || "2")));
 const RELATED_DISCOVERY_MAX_NEW_VIDEOS = Math.max(1, Math.min(400, Number(process.env.RELATED_DISCOVERY_MAX_NEW_VIDEOS || "40")));
 const RELATED_DISCOVERY_SEED_FANOUT = Math.max(1, Math.min(8, Number(process.env.RELATED_DISCOVERY_SEED_FANOUT || "8")));
@@ -196,6 +199,102 @@ let hasCheckedVideoMetadataColumns = false;
 let videoMetadataColumnsAvailable = false;
 let hasCheckedVideoChannelTitleColumn = false;
 let videoChannelTitleColumnAvailable = false;
+let relatedDiscoveryQuotaSnapshot:
+  | { dayKey: string; expiresAt: number; totalUnits: number; relatedUnits: number }
+  | null = null;
+
+function getPacificDayWindow(now = new Date()) {
+  const pacificDateKey = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+
+  const pacificNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+  const pacificDayStart = new Date(pacificNow);
+  pacificDayStart.setHours(0, 0, 0, 0);
+  const pacificNowCopy = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+  const offsetMs = now.getTime() - pacificNowCopy.getTime();
+
+  return {
+    dayKey: pacificDateKey,
+    dayStartUtc: new Date(pacificDayStart.getTime() + offsetMs),
+  };
+}
+
+async function canSpendRelatedDiscoveryUnits(units: number) {
+  if (!hasDatabaseUrl()) {
+    return true;
+  }
+
+  const safeUnits = Math.max(0, Math.floor(units));
+  if (safeUnits <= 0) {
+    return true;
+  }
+
+  const now = Date.now();
+  const { dayKey, dayStartUtc } = getPacificDayWindow(new Date(now));
+
+  if (
+    !relatedDiscoveryQuotaSnapshot
+    || relatedDiscoveryQuotaSnapshot.dayKey !== dayKey
+    || relatedDiscoveryQuotaSnapshot.expiresAt <= now
+  ) {
+    try {
+      const [totalRows, relatedRows] = await Promise.all([
+        prisma.$queryRaw<Array<{ total: bigint }>>`
+          SELECT COALESCE(SUM(units), 0) AS total
+          FROM external_api_usage_events
+          WHERE provider = 'youtube'
+            AND created_at >= ${dayStartUtc}
+        `,
+        prisma.$queryRaw<Array<{ total: bigint }>>`
+          SELECT COALESCE(SUM(units), 0) AS total
+          FROM external_api_usage_events
+          WHERE provider = 'youtube'
+            AND endpoint = 'search.list.relatedToVideoId'
+            AND created_at >= ${dayStartUtc}
+        `,
+      ]);
+
+      relatedDiscoveryQuotaSnapshot = {
+        dayKey,
+        expiresAt: now + 60_000,
+        totalUnits: Number(totalRows[0]?.total ?? 0),
+        relatedUnits: Number(relatedRows[0]?.total ?? 0),
+      };
+    } catch {
+      // If telemetry tables are unavailable, avoid hard-failing discovery.
+      return true;
+    }
+  }
+
+  const snapshot = relatedDiscoveryQuotaSnapshot;
+  if (!snapshot) {
+    return true;
+  }
+
+  const totalBudgetForNonReservedUsage = Math.max(0, YOUTUBE_DAILY_QUOTA_UNITS - YOUTUBE_RELATED_DISCOVERY_RESERVED_UNITS);
+  const reserveGuardAllows = snapshot.totalUnits + safeUnits <= totalBudgetForNonReservedUsage;
+  const relatedBudgetAllows = snapshot.relatedUnits + safeUnits <= YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS;
+
+  const allowed = reserveGuardAllows && relatedBudgetAllows;
+  if (!allowed) {
+    debugCatalog("fetchRelatedYouTubeVideos:quota-guard-blocked", {
+      requestedUnits: safeUnits,
+      totalUnits: snapshot.totalUnits,
+      relatedUnits: snapshot.relatedUnits,
+      dailyQuota: YOUTUBE_DAILY_QUOTA_UNITS,
+      reservedUnits: YOUTUBE_RELATED_DISCOVERY_RESERVED_UNITS,
+      relatedDailyBudget: YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS,
+      reserveGuardAllows,
+      relatedBudgetAllows,
+    });
+  }
+
+  return allowed;
+}
 
 function debugCatalog(event: string, detail?: Record<string, unknown>) {
   if (!CATALOG_DEBUG_ENABLED) {
@@ -1998,6 +2097,10 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
 
   if (!YOUTUBE_DATA_API_KEY) {
     debugCatalog("fetchRelatedYouTubeVideos:skipped-missing-api-key", { videoId });
+    return [];
+  }
+
+  if (!(await canSpendRelatedDiscoveryUnits(100))) {
     return [];
   }
 

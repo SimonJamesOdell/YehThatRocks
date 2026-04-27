@@ -23,6 +23,7 @@ import { fetchWithAuthRetry as fetchWithAuthRetryClient } from "@/lib/client-aut
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
+import { magazineDraftEdition } from "@/lib/magazine-draft";
 
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
   const perfWithPatchState = performance as Performance & {
@@ -49,7 +50,7 @@ if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
   }
 }
 
-type ChatMode = "global" | "video" | "online";
+type ChatMode = "global" | "magazine" | "online";
 
 type ChatMessage = {
   id: number;
@@ -142,7 +143,7 @@ type PlaylistRailSummary = {
   leadVideoId: string;
 };
 
-type FlashableChatMode = "global" | "video";
+type FlashableChatMode = "global";
 
 type LyricsRailPayload = {
   artistName: string | null;
@@ -448,7 +449,6 @@ function ShellDynamicInner({
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const [flashingChatTabs, setFlashingChatTabs] = useState<Record<FlashableChatMode, boolean>>({
     global: false,
-    video: false,
   });
   const [isResolvingInitialVideo, setIsResolvingInitialVideo] = useState(
     !requestedVideoId,
@@ -504,7 +504,6 @@ function ShellDynamicInner({
   const playlistRailMutationVersionRef = useRef(0);
   const flashTimeoutRef = useRef<Record<FlashableChatMode, number | null>>({
     global: null,
-    video: null,
   });
   const chatModeRef = useRef<ChatMode>(chatMode);
   const recentlyAddedPlaylistTrackTimeoutRef = useRef<number | null>(null);
@@ -526,6 +525,8 @@ function ShellDynamicInner({
   const [isDockHidden, setIsDockHidden] = useState(false);
   const [pendingOverlayOpenKind, setPendingOverlayOpenKind] = useState<"wiki" | "video" | null>(null);
   const [pendingOverlayRouteKey, setPendingOverlayRouteKey] = useState<string | null>(null);
+  const [pendingOverlayCloseVideoId, setPendingOverlayCloseVideoId] = useState<string | null>(null);
+  const [pendingOverlayCloseHref, setPendingOverlayCloseHref] = useState<string | null>(null);
   const [startupSelectionRefreshTick, setStartupSelectionRefreshTick] = useState(0);
   const overlayCloseTimeoutRef = useRef<number | null>(null);
   const overlayOpenTimeoutRef = useRef<number | null>(null);
@@ -583,6 +584,8 @@ function ShellDynamicInner({
   ].filter(Boolean).join(" ");
   const shouldRunChat = isAuthenticated && !shouldShowOverlayPanel;
   const shouldDisableRelatedRailTransition = pathname === "/new";
+  const isMagazineOverlayRoute = pathname === "/magazine" || pathname.startsWith("/magazine/");
+  const shouldOccludeLeftRail = shouldShowOverlayPanel && !isMagazineOverlayRoute;
   const isWaitingForClientHydration = !hasClientMounted;
   const isDesktopIntroActive =
     desktopIntroPhase === "hold"
@@ -599,7 +602,7 @@ function ShellDynamicInner({
     || Boolean(requestedVideoId && startupHydratedVideoIdRef.current === requestedVideoId)
     || Boolean(requestedVideoId && requestedVideoId !== currentVideo.id);
   const isArtistsIndexRoute = pathname === "/artists";
-  const shouldDockDesktopPlayer = shouldShowOverlayPanel;
+  const shouldDockDesktopPlayer = shouldShowOverlayPanel && !isMagazineOverlayRoute;
   const shouldDockUnderArtistsAlphabet = shouldDockDesktopPlayer && isArtistsIndexRoute;
   const playerChromeClassName = [
     "playerChrome",
@@ -625,6 +628,7 @@ function ShellDynamicInner({
     && !isWatchNextVideoSelectionPending
     && hasBootstrappedWatchNext
     && relatedTransitionPhase === "idle";
+  const latestMagazineTracks = useMemo(() => magazineDraftEdition.tracks, []);
 
   useEffect(() => {
     setHasClientMounted(true);
@@ -839,7 +843,17 @@ function ShellDynamicInner({
       void startPreparedDesktopIntroSequence();
     }
   }, [pathname, requestedVideoId, startPreparedDesktopIntroSequence]);
-  const isLeftRailSuppressed = shouldShowOverlayPanel || isMobileCommunityCollapsed;
+  const retryPendingOverlayVideoLoad = useCallback(() => {
+    if (!pendingOverlayCloseVideoId) {
+      return;
+    }
+
+    const retryHref = pendingOverlayCloseHref ?? `/?v=${encodeURIComponent(pendingOverlayCloseVideoId)}&resume=1`;
+    setPendingOverlayOpenKind("video");
+    router.replace(retryHref);
+    router.refresh();
+  }, [pendingOverlayCloseHref, pendingOverlayCloseVideoId, router]);
+  const isLeftRailSuppressed = shouldOccludeLeftRail || isMobileCommunityCollapsed;
   const artistLetterParam = searchParams.get("letter");
   const activeArtistLetter =
     artistLetterParam && /^[A-Za-z]$/.test(artistLetterParam)
@@ -1079,6 +1093,38 @@ function ShellDynamicInner({
   }, [pathname, pendingOverlayOpenKind]);
 
   useEffect(() => {
+    if (!pendingOverlayCloseVideoId) {
+      return;
+    }
+
+    if (pathname !== "/") {
+      setPendingOverlayCloseVideoId(null);
+      setPendingOverlayCloseHref(null);
+      return;
+    }
+
+    if (
+      requestedVideoId !== pendingOverlayCloseVideoId
+      || currentVideo.id !== pendingOverlayCloseVideoId
+      || isResolvingInitialVideo
+      || isResolvingRequestedVideo
+    ) {
+      return;
+    }
+
+    setPendingOverlayCloseVideoId(null);
+    setPendingOverlayCloseHref(null);
+    setPendingOverlayOpenKind(null);
+  }, [
+    currentVideo.id,
+    isResolvingInitialVideo,
+    isResolvingRequestedVideo,
+    pathname,
+    pendingOverlayCloseVideoId,
+    requestedVideoId,
+  ]);
+
+  useEffect(() => {
     if (!pendingOverlayRouteKey || pathname === "/") {
       return;
     }
@@ -1177,6 +1223,17 @@ function ShellDynamicInner({
       const nextHref = closeUrl.pathname === "/"
         ? `${closeUrl.pathname}${closeUrl.search}${closeUrl.hash}`
         : fallbackHomeHref;
+      const targetVideoId = closeUrl.pathname === "/" ? closeUrl.searchParams.get("v") : null;
+      const shouldHoldOverlayForVideoSwitch = Boolean(targetVideoId && targetVideoId !== currentVideo.id);
+
+      if (shouldHoldOverlayForVideoSwitch && targetVideoId) {
+        setPendingOverlayOpenKind("video");
+        setPendingOverlayCloseVideoId(targetVideoId);
+        setPendingOverlayCloseHref(nextHref);
+      } else {
+        setPendingOverlayCloseVideoId(null);
+        setPendingOverlayCloseHref(null);
+      }
 
       if (!shouldShowOverlayPanel) {
         setIsOverlayClosing(false);
@@ -2464,6 +2521,14 @@ function ShellDynamicInner({
       return;
     }
 
+    if (chatMode === "magazine") {
+      setChatMessages([]);
+      setOnlineUsers([]);
+      setChatError(null);
+      setIsChatLoading(false);
+      return;
+    }
+
     let cancelled = false;
 
     const loadChat = async () => {
@@ -2472,9 +2537,6 @@ function ShellDynamicInner({
 
       try {
         const params = new URLSearchParams({ mode: chatMode });
-        if (chatMode === "video") {
-          params.set("videoId", currentVideo.id);
-        }
 
         const response = await fetchWithAuthRetry(`/api/chat?${params.toString()}`);
 
@@ -2522,9 +2584,9 @@ function ShellDynamicInner({
       cancelled = true;
       if (intervalId !== undefined) window.clearInterval(intervalId);
     };
-  }, [chatMode, currentVideo.id, fetchWithAuthRetry, shouldRunChat]);
+  }, [chatMode, fetchWithAuthRetry, shouldRunChat]);
 
-  // Real-time SSE subscriptions for global + current video chat.
+  // Real-time SSE subscription for global chat.
   useEffect(() => {
     if (!shouldRunChat) {
       return;
@@ -2534,13 +2596,9 @@ function ShellDynamicInner({
       try {
         const message = JSON.parse(event.data) as ChatMessage;
 
-        const isGlobalMessage = message.room === "global";
-        const isVideoMessage = message.room === "video" && message.videoId === currentVideo.id;
-        const incomingMode: FlashableChatMode | null = isGlobalMessage
+        const incomingMode: FlashableChatMode | null = message.room === "global"
           ? "global"
-          : isVideoMessage
-            ? "video"
-            : null;
+          : null;
 
         if (!incomingMode) {
           return;
@@ -2562,28 +2620,21 @@ function ShellDynamicInner({
     };
 
     const globalEvents = new EventSource("/api/chat/stream?mode=global");
-    const videoEvents = new EventSource(`/api/chat/stream?mode=video&videoId=${encodeURIComponent(currentVideo.id)}`);
 
     globalEvents.onmessage = handleIncomingMessage;
-    videoEvents.onmessage = handleIncomingMessage;
 
     globalEvents.onerror = () => {
       // EventSource auto-reconnects; nothing to do here.
     };
 
-    videoEvents.onerror = () => {
-      // EventSource auto-reconnects; nothing to do here.
-    };
-
     return () => {
       globalEvents.close();
-      videoEvents.close();
     };
-  }, [currentVideo.id, shouldRunChat]);
+  }, [shouldRunChat]);
 
   useEffect(() => {
     return () => {
-      for (const mode of ["global", "video"] as const) {
+      for (const mode of ["global"] as const) {
         const timeoutId = flashTimeoutRef.current[mode];
         if (timeoutId !== null) {
           window.clearTimeout(timeoutId);
@@ -4139,7 +4190,7 @@ function ShellDynamicInner({
   async function handleChatSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (chatMode === "online") {
+    if (chatMode !== "global") {
       return;
     }
 
@@ -4158,8 +4209,7 @@ function ShellDynamicInner({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          mode: chatMode,
-          videoId: chatMode === "video" ? currentVideo.id : undefined,
+          mode: "global",
           content,
         }),
       });
@@ -4832,7 +4882,7 @@ function ShellDynamicInner({
           id={isMobileViewport ? "mobile-community-rail" : undefined}
           className={[
             "leftRail panel translucent",
-            shouldShowOverlayPanel ? "railOccluded" : "",
+            shouldOccludeLeftRail ? "railOccluded" : "",
             isMobileViewport ? "mobileRail" : "",
             isMobileViewport && !isMobileCommunityOpen ? "mobileRailClosed" : "",
           ].filter(Boolean).join(" ")}
@@ -4870,10 +4920,14 @@ function ShellDynamicInner({
                     </button>
                     <button
                       type="button"
-                      className={`${chatMode === "video" ? "activeTab" : ""} ${flashingChatTabs.video ? "attentionPulse" : ""}`.trim() || undefined}
-                      onClick={() => setChatMode("video")}
+                      className={chatMode === "magazine" ? "activeTab" : undefined}
+                      onClick={() => {
+                        setChatMode("magazine");
+                        favouritesBlindInnerRef.current?.scrollTo({ top: 0, behavior: "auto" });
+                        router.push(`/magazine?v=${encodeURIComponent(currentVideo.id)}`, { scroll: true });
+                      }}
                     >
-                      Video Chat
+                      Magazine
                     </button>
                     <button
                       type="button"
@@ -4888,14 +4942,55 @@ function ShellDynamicInner({
 
               <div className="chatList" ref={chatListRef}>
                 {isChatLoading ? <p className="chatStatus">Loading chat...</p> : null}
-                {!isChatLoading && chatMode !== "online" && chatMessages.length === 0 ? (
+                {!isChatLoading && chatMode === "global" && chatMessages.length === 0 ? (
                   <p className="chatStatus">
-                    {chatMode === "global"
-                      ? "No global messages yet. Start the noise."
-                      : "No messages for this video yet. Say something about the current track."}
+                    No global messages yet. Start the noise.
                   </p>
                 ) : null}
-                {chatMode === "online" ? (
+                {chatMode === "magazine" ? (
+                  latestMagazineTracks.length === 0 ? (
+                    <p className="chatStatus">No magazine articles are available yet.</p>
+                  ) : (
+                    <>
+                      <div className="magazineRailHeader">
+                        <strong>Latest Articles</strong>
+                      </div>
+                      {latestMagazineTracks.map((track) => (
+                        <article
+                          key={track.slug}
+                          className="magazineRailCard magazineRailCardClickable"
+                          onClick={() => router.push(`/magazine/${encodeURIComponent(track.slug)}?v=${encodeURIComponent(currentVideo.id)}`)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              router.push(`/magazine/${encodeURIComponent(track.slug)}?v=${encodeURIComponent(currentVideo.id)}`);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Open magazine article: ${track.artist} - ${track.title}`}
+                        >
+                          <Image
+                            src={`https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`}
+                            alt={`${track.artist} - ${track.title} thumbnail`}
+                            width={168}
+                            height={96}
+                            className="magazineRailThumb"
+                            loading="lazy"
+                            sizes="84px"
+                          />
+                          <div className="magazineRailBody">
+                            <div className="messageMeta">
+                              <strong>{track.artist}</strong>
+                              <span>{track.genre}</span>
+                            </div>
+                            <p>{track.title}</p>
+                          </div>
+                        </article>
+                      ))}
+                    </>
+                  )
+                ) : chatMode === "online" ? (
                   !isChatLoading && onlineUsers.length === 0 ? (
                     <p className="chatStatus">No users currently online.</p>
                   ) : (
@@ -4956,12 +5051,12 @@ function ShellDynamicInner({
                 )}
               </div>
 
-              {chatMode !== "online" ? (
+              {chatMode === "global" ? (
                 <>
                   <form className="chatComposer" onSubmit={handleChatSubmit}>
                     <input
                       type="text"
-                      placeholder={chatMode === "global" ? "Message the global room..." : `Talk about ${currentVideo.title}...`}
+                      placeholder="Message the global room..."
                       value={chatDraft}
                       onChange={(event) => setChatDraft(event.target.value)}
                       maxLength={200}
@@ -5121,6 +5216,17 @@ function ShellDynamicInner({
                               <span />
                             </div>
                             <p>{routeLoadingMessage}</p>
+                            {pendingOverlayCloseVideoId ? (
+                              <div className="routeContractRow">
+                                <button
+                                  type="button"
+                                  className="routeContractRetryButton"
+                                  onClick={retryPendingOverlayVideoLoad}
+                                >
+                                  Retry connection
+                                </button>
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       )
