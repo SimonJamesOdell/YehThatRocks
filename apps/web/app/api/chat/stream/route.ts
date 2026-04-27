@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 
-import { requireApiAuth } from "@/lib/auth-request";
+import { getOptionalApiAuth } from "@/lib/auth-request";
 import { chatChannel, chatEvents } from "@/lib/chat-events";
 
 const streamQuerySchema = z.object({
@@ -10,11 +10,7 @@ const streamQuerySchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
-
-  if (!authResult.ok) {
-    return authResult.response;
-  }
+  const authContext = await getOptionalApiAuth(request);
 
   const parsed = streamQuerySchema.safeParse({
     mode: request.nextUrl.searchParams.get("mode") ?? undefined,
@@ -26,6 +22,11 @@ export async function GET(request: NextRequest) {
   }
 
   const { mode, videoId } = parsed.data;
+
+  if (mode !== "global" && !authContext) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const channel = chatChannel(mode, mode === "video" ? videoId : null);
   const encoder = new TextEncoder();
 

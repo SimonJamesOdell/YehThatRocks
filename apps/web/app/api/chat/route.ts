@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { requireApiAuth } from "@/lib/auth-request";
+import { getOptionalApiAuth, requireApiAuth } from "@/lib/auth-request";
 import { chatChannel, chatEvents } from "@/lib/chat-events";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
@@ -256,11 +256,7 @@ function mapChatMessage(
 }
 
 export async function GET(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
-
-  if (!authResult.ok) {
-    return authResult.response;
-  }
+  const authContext = await getOptionalApiAuth(request);
 
   const parsedQuery = chatQuerySchema.safeParse({
     mode: request.nextUrl.searchParams.get("mode") ?? undefined,
@@ -273,9 +269,17 @@ export async function GET(request: NextRequest) {
 
   const { mode, videoId } = parsedQuery.data;
 
-  await touchOnlinePresenceThrottled(authResult.auth.userId).catch(() => undefined);
+  if (mode === "online" && !authContext) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (authContext) {
+    await touchOnlinePresenceThrottled(authContext.userId).catch(() => undefined);
+  }
 
   if (mode === "online") {
+    const onlineAuthContext = authContext!;
+
     const columns = await getOnlineColumns();
     const userIdCol = escapeIdentifier(columns.userId);
     const lastSeenCol = escapeIdentifier(columns.lastSeen);
@@ -296,7 +300,7 @@ export async function GET(request: NextRequest) {
         ORDER BY o.${lastSeenCol} DESC
         LIMIT 80
       `,
-      authResult.auth.userId,
+      onlineAuthContext.userId,
     );
 
     const userIds = Array.from(

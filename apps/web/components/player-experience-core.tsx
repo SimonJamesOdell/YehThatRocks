@@ -26,10 +26,12 @@ type PlayerExperienceProps = {
   isLoggedIn: boolean;
   isAdmin?: boolean;
   isDockedDesktop?: boolean;
+  suppressAuthWall?: boolean;
   seenVideoIds?: Set<string>;
   onHideVideo?: (track: VideoRecord) => void | Promise<void>;
   onAddVideoToPlaylist?: (track: VideoRecord) => void | Promise<void>;
   onDockHideRequest?: () => void;
+  onAuthRequired?: () => void;
   forcedUnavailableSignal?: number;
   forcedUnavailableMessage?: string | null;
   isRouteResolving?: boolean;
@@ -541,10 +543,12 @@ export function PlayerExperience({
   isLoggedIn,
   isAdmin: initialIsAdmin = false,
   isDockedDesktop = false,
+  suppressAuthWall = false,
   seenVideoIds,
   onHideVideo,
   onAddVideoToPlaylist,
   onDockHideRequest,
+  onAuthRequired,
   forcedUnavailableSignal = 0,
   forcedUnavailableMessage = null,
   isRouteResolving = false,
@@ -1473,8 +1477,10 @@ export function PlayerExperience({
   const showDockCloseButton = isDockedDesktop && pathname !== "/";
   const hasActivePlayback = isPlaying || safeCurrentTime > 0;
   const showRouteLikeLoadingCopy = isRouteResolving || isManualTransitionMaskVisible;
-  const showPlayerLoadingOverlay = isManualTransitionMaskVisible
-    || ((!isPlayerReady || isRouteResolving) && !hasActivePlayback);
+  const showPlayerLoadingOverlay = isLoggedIn && (
+    isManualTransitionMaskVisible
+      || ((!isPlayerReady || isRouteResolving) && !hasActivePlayback)
+  );
   const playerFrameClassName = [
     "playerFrame",
     isPlayerReady ? "playerFrameLoaded" : "",
@@ -2625,6 +2631,26 @@ export function PlayerExperience({
       queueSize: queue.length,
     });
 
+    if (!isLoggedIn) {
+      if (progressIntervalRef.current) {
+        window.clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+
+      if (typeof playerRef.current?.destroy === "function") {
+        playerRef.current.destroy();
+      }
+
+      playerRef.current = null;
+      setIsPlayerReady(false);
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
+      setShowPlayerRefreshHint(false);
+      setAllowDirectIframeInteraction(false);
+      return;
+    }
+
     if (typeof window === "undefined" || !playerElementRef.current) {
       return;
     }
@@ -3184,7 +3210,7 @@ export function PlayerExperience({
       clearStuckPlaybackWatchdogTimer();
       clearMidPlaybackBufferingCheck();
     };
-  }, [currentVideo.id, playerHostMode, playerReloadNonce]);
+  }, [currentVideo.id, isLoggedIn, playerHostMode, playerReloadNonce]);
 
   useEffect(() => {
     clearPlayerLoadRefreshHintTimer();
@@ -4758,6 +4784,28 @@ export function PlayerExperience({
                 className={allowDirectIframeInteraction ? "playerMount playerMountHidden" : "playerMount"}
               />
 
+              {!isLoggedIn && !suppressAuthWall ? (
+                <div className="playerAuthWall" role="region" aria-label="Sign in to watch">
+                  <img
+                    src={`https://i.ytimg.com/vi/${encodeURIComponent(currentVideo.id)}/hqdefault.jpg`}
+                    alt=""
+                    aria-hidden="true"
+                    className="playerAuthWallThumb"
+                  />
+                  <div className="playerAuthWallContent">
+                    <strong className="playerAuthWallTitle">Sign in to watch</strong>
+                    <p className="playerAuthWallDetail">{currentVideo.title}</p>
+                    <button
+                      type="button"
+                      className="navLink navLinkActive playerAuthWallBtn"
+                      onClick={onAuthRequired}
+                    >
+                      Sign in
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
               {showPlayerLoadingOverlay && !allowDirectIframeInteraction ? (
                 <div className="playerBootLoader" role="status" aria-live="polite" aria-label={showRouteLikeLoadingCopy ? routeLoadingLabel : "Loading video player"}>
                   <div className="playerBootBars" aria-hidden="true">
@@ -5662,17 +5710,19 @@ export function PlayerExperience({
                 <span className="primaryActionWikiLabel">lyrics</span>
               </button>
             ) : null}
-            <button
-              type="button"
-              className={autoplayEnabled ? "primaryActionToggleButton primaryActionAutoplayButton primaryActionToggleButtonActive" : "primaryActionToggleButton primaryActionAutoplayButton"}
-              onClick={handleToggleAutoplay}
-              disabled={footerActionsBlocked}
-              aria-label={autoplayEnabled ? "Disable autoplay" : "Enable autoplay"}
-              title={autoplayEnabled ? "Disable autoplay" : "Enable autoplay"}
-            >
-              <span className="primaryActionGlyph" aria-hidden="true">⇮</span>
-              <span>{autoplayEnabled ? "On" : "Off"}</span>
-            </button>
+            {isLoggedIn ? (
+              <button
+                type="button"
+                className={autoplayEnabled ? "primaryActionToggleButton primaryActionAutoplayButton primaryActionToggleButtonActive" : "primaryActionToggleButton primaryActionAutoplayButton"}
+                onClick={handleToggleAutoplay}
+                disabled={footerActionsBlocked}
+                aria-label={autoplayEnabled ? "Disable autoplay" : "Enable autoplay"}
+                title={autoplayEnabled ? "Disable autoplay" : "Enable autoplay"}
+              >
+                <span className="primaryActionGlyph" aria-hidden="true">⇮</span>
+                <span>{autoplayEnabled ? "On" : "Off"}</span>
+              </button>
+            ) : null}
             {isLoggedIn ? (
               <button
                 type="button"

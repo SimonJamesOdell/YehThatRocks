@@ -3,9 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { readAuthCookies } from "@/lib/auth-cookies";
 import { verifyToken } from "@/lib/auth-jwt";
 
-const PROTECTED_API_PREFIXES = [
+const AUTH_OPTIONAL_API_PREFIXES = [
   "/api/chat",
   "/api/chat/stream",
+];
+
+const PROTECTED_API_PREFIXES = [
   "/api/favourites",
   "/api/watch-history",
   "/api/playlists",
@@ -20,6 +23,10 @@ const METADATA_CRAWLER_USER_AGENT_PATTERN = /facebookexternalhit|facebot|twitter
 
 function isProtectedApi(pathname: string) {
   return PROTECTED_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+function isAuthOptionalApi(pathname: string) {
+  return AUTH_OPTIONAL_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
 function isMobileOrTabletRequest(request: NextRequest) {
@@ -118,7 +125,20 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  if (!isProtectedApi(pathname)) {
+  const { accessToken } = readAuthCookies(request);
+
+  if (isAuthOptionalApi(pathname)) {
+    if (accessToken) {
+      try {
+        const access = await verifyToken(accessToken, "access");
+        requestHeaders.set("x-auth-user-id", String(access.uid));
+        requestHeaders.set("x-auth-user-email", access.email);
+        requestHeaders.set("x-auth-verified", "1");
+      } catch {
+        // Invalid token falls through as guest access for public chat reads.
+      }
+    }
+
     return withSecurityHeaders(
       NextResponse.next({
         request: {
@@ -128,7 +148,15 @@ export async function proxy(request: NextRequest) {
     );
   }
 
-  const { accessToken } = readAuthCookies(request);
+  if (!isProtectedApi(pathname)) {
+    return withSecurityHeaders(
+      NextResponse.next({
+        request: {
+          headers: requestHeaders,
+        },
+      }),
+    );
+  }
 
   if (accessToken) {
     try {

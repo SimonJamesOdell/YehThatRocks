@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
 import { cookies } from "next/headers";
 import { ShellDynamic } from "@/components/shell-dynamic";
-import { AuthGate } from "@/components/auth-gate";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
-import { getCurrentVideo, getHiddenVideoIdsForUser, getSeenVideoIdsForUser, getActiveVideoCount } from "@/lib/catalog-data";
+import { getCurrentVideo, getHiddenVideoIdsForUser, getSeenVideoIdsForUser } from "@/lib/catalog-data";
 import { isAdminIdentity } from "@/lib/admin-auth";
 import { getCurrentAuthenticatedUserAuthStateByAccessToken } from "@/lib/server-auth";
 
@@ -11,10 +10,9 @@ export default async function ShellLayout({ children }: { children: ReactNode })
   const cookieStore = await cookies();
   const accessToken = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value;
   const hasAccessToken = Boolean(accessToken);
-  const [authState, initialVideo, activeVideoCount] = await Promise.all([
+  const [authState, initialVideo] = await Promise.all([
     getCurrentAuthenticatedUserAuthStateByAccessToken(accessToken),
     getCurrentVideo(),
-    getActiveVideoCount(),
   ]);
   const user = authState.status === "authenticated" ? authState.user : null;
   const isAdmin = Boolean(user && isAdminIdentity(user.id, user.email ?? ""));
@@ -35,16 +33,11 @@ export default async function ShellLayout({ children }: { children: ReactNode })
     );
   }
 
-  // Gate: unauthenticated visitors (and DB-unreachable visitors with no token) see
-  // only the logo and sign-in form.  Users with a valid access token during a
-  // transient DB outage are passed through as trusted.
-  const isAuthenticated =
+  // isLoggedIn: true for authenticated users and for users with a valid access
+  // token during a transient DB outage (trusted pass-through).
+  const isLoggedIn =
     authState.status === "authenticated" ||
     (authState.status === "unavailable" && hasAccessToken);
-
-  if (!isAuthenticated) {
-    return <AuthGate videoCount={activeVideoCount} />;
-  }
 
   const [seenVideoIds, hiddenVideoIds] = await Promise.all([
     user ? getSeenVideoIdsForUser(user.id) : Promise.resolve(new Set<string>()),
@@ -57,7 +50,7 @@ export default async function ShellLayout({ children }: { children: ReactNode })
       initialRelatedVideos={[]}
       initialSeenVideoIds={Array.from(seenVideoIds)}
       initialHiddenVideoIds={Array.from(hiddenVideoIds)}
-      isLoggedIn={authState.status === "authenticated" || (authState.status === "unavailable" && hasAccessToken)}
+      isLoggedIn={isLoggedIn}
       initialAuthStatus={authState.status === "unavailable" ? "unavailable" : "clear"}
       isAdmin={isAdmin}
     >
@@ -65,3 +58,4 @@ export default async function ShellLayout({ children }: { children: ReactNode })
     </ShellDynamic>
   );
 }
+
