@@ -51,7 +51,16 @@ function ExecNativeWithRetry(
 
   while ($attempt -le $MaxAttempts) {
     Write-Host "> $display" -ForegroundColor Cyan
-    $rawOutput = & $Program @CommandArgs 2>&1
+    $previousErrorActionPreference = $ErrorActionPreference
+    $rawOutput = $null
+    try {
+      # Some native tools (notably ssh/scp) emit informational lines on stderr.
+      # Keep those as captured output instead of turning them into terminating errors.
+      $ErrorActionPreference = "Continue"
+      $rawOutput = & $Program @CommandArgs 2>&1
+    } finally {
+      $ErrorActionPreference = $previousErrorActionPreference
+    }
     $exitCode = $LASTEXITCODE
     $output = (($rawOutput | ForEach-Object { $_.ToString() }) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join [Environment]::NewLine
 
