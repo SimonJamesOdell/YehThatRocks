@@ -7,6 +7,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { CSSProperties } from "react";
 
 import { AuthLoginForm } from "@/components/auth-login-form";
+import { AuthModal } from "@/components/auth-modal";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
@@ -393,7 +394,9 @@ function ShellDynamicInner({
   const [isLoadingPerformanceMetrics, setIsLoadingPerformanceMetrics] = useState(false);
   const [performanceMetricsError, setPerformanceMetricsError] = useState<string | null>(null);
   const [deniedPlaybackMessage, setDeniedPlaybackMessage] = useState<string | null>(null);
-  const [chatMode, setChatMode] = useState<ChatMode>("global");
+  const [chatMode, setChatMode] = useState<ChatMode>(() =>
+    pathname === "/magazine" || pathname.startsWith("/magazine/") ? "magazine" : "global"
+  );
   const [rightRailMode, setRightRailMode] = useState<RightRailMode>("watch-next");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
@@ -582,9 +585,9 @@ function ShellDynamicInner({
     isPlayerWidthOverlayRoute ? "favouritesBlindPlayerWidth" : "",
     isOverlayClosing ? "favouritesBlindClosing" : "",
   ].filter(Boolean).join(" ");
-  const shouldRunChat = isAuthenticated && !shouldShowOverlayPanel;
-  const shouldDisableRelatedRailTransition = pathname === "/new";
   const isMagazineOverlayRoute = pathname === "/magazine" || pathname.startsWith("/magazine/");
+  const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute) && (isAuthenticated || chatMode === "global");
+  const shouldDisableRelatedRailTransition = pathname === "/new";
   const shouldOccludeLeftRail = shouldShowOverlayPanel && !isMagazineOverlayRoute;
   const isWaitingForClientHydration = !hasClientMounted;
   const isDesktopIntroActive =
@@ -604,9 +607,10 @@ function ShellDynamicInner({
   const isArtistsIndexRoute = pathname === "/artists";
   const shouldDockDesktopPlayer = shouldShowOverlayPanel && !isMagazineOverlayRoute;
   const shouldDockUnderArtistsAlphabet = shouldDockDesktopPlayer && isArtistsIndexRoute;
+  const shouldKeepDockedDesktopPresentation = shouldDockDesktopPlayer || isOverlayClosing || isUndockSettling;
   const playerChromeClassName = [
     "playerChrome",
-    shouldDockDesktopPlayer ? "playerChromeDockedDesktop" : "",
+    shouldKeepDockedDesktopPresentation ? "playerChromeDockedDesktop" : "",
     shouldDockUnderArtistsAlphabet ? "playerChromeDockedArtists" : "",
     shouldDockDesktopPlayer && isDockTransitioning ? "playerChromeDockTransitioning" : "",
     isOverlayClosing ? "playerChromeUndocking" : "",
@@ -614,7 +618,7 @@ function ShellDynamicInner({
     !shouldShowOverlayPanel && isFooterRevealActive ? "playerChromeFooterReveal" : "",
     shouldDockDesktopPlayer && isDockHidden ? "playerChromeDockedHidden" : "",
   ].filter(Boolean).join(" ");
-  const playerChromeStyle = shouldDockDesktopPlayer
+  const playerChromeStyle = shouldKeepDockedDesktopPresentation
     ? ({
       "--player-dock-artists-offset": `${artistsPanelDockOffset}px`,
       "--player-dock-scale-x": String(playerDockScaleX),
@@ -1026,6 +1030,14 @@ function ShellDynamicInner({
 
     setChatMode("global");
   }, [isAdminOverlayRoute]);
+
+  useEffect(() => {
+    if (!isMagazineOverlayRoute) {
+      return;
+    }
+
+    setChatMode("magazine");
+  }, [isMagazineOverlayRoute]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !isAdminOverlayRoute) {
@@ -1633,6 +1645,12 @@ function ShellDynamicInner({
 
   useEffect(() => {
     if (requestedVideoId) {
+      return;
+    }
+
+    // Don't inject a ?v= into the URL while the user is browsing the magazine —
+    // wait until they leave the magazine overlay before selecting a startup video.
+    if (isMagazineOverlayRoute) {
       return;
     }
 
@@ -2654,8 +2672,10 @@ function ShellDynamicInner({
     setOnlineUsers([]);
     setIsChatLoading(false);
     setIsChatSubmitting(false);
-    setChatMode("global");
-  }, [isAuthenticated]);
+    if (!isMagazineOverlayRoute) {
+      setChatMode("global");
+    }
+  }, [isAuthenticated, isMagazineOverlayRoute]);
 
   useEffect(() => {
     const node = chatListRef.current;
@@ -3086,6 +3106,7 @@ function ShellDynamicInner({
     relatedFetchOffsetRef.current = null;
     watchNextAutoRecoverAttemptRef.current = 0;
     hasUserScrolledWatchNextRef.current = false;
+    setHasBootstrappedWatchNext(false);
     setIsLoadingMoreRelated(false);
     setShowLoadingMoreRelatedHint(false);
     setHasMoreRelated(true);
@@ -3674,14 +3695,37 @@ function ShellDynamicInner({
     setDragOverPlaylistTrackIndex(null);
   }, []);
 
-  const visibleNavItems = (
-    isAuthenticated
-      ? navItems
-      : navItems.filter(
-          (item) =>
-            !["/favourites", "/playlists", "/history", "/account"].includes(item.href),
-        )
-  ).filter((item) => item.href !== "/" && item.href !== "/ai");
+  // Always show all nav items; unauthenticated clicks on protected routes are
+  // intercepted client-side to open the auth modal.
+  const visibleNavItems = navItems.filter((item) => item.href !== "/" && item.href !== "/ai");
+
+  const protectedNavHrefs = new Set(["/favourites", "/playlists", "/history", "/account"]);
+
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  function openAuthModal() {
+    setIsAuthModalOpen(true);
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleAuthSuccess = () => {
+      setIsAuthenticated(true);
+      setAuthStatus("clear");
+      setAuthStatusMessage(null);
+      setIsAuthModalOpen(false);
+      setChatError(null);
+    };
+
+    window.addEventListener("ytr:auth-success", handleAuthSuccess);
+
+    return () => {
+      window.removeEventListener("ytr:auth-success", handleAuthSuccess);
+    };
+  }, []);
 
   function getNavHref(href: string) {
     const params = new URLSearchParams();
@@ -4544,7 +4588,12 @@ function ShellDynamicInner({
                   href={navHref}
                   prefetch={false}
                   className={isActive ? "navLink navLinkActive" : "navLink"}
-                  onClick={() => {
+                  onClick={(e) => {
+                    if (!isAuthenticated && protectedNavHrefs.has(item.href)) {
+                      e.preventDefault();
+                      openAuthModal();
+                      return;
+                    }
                     if (item.href === "/categories" || item.href === "/artists") {
                       requestOverlayOpen(navHref, "video");
                     }
@@ -4889,9 +4938,10 @@ function ShellDynamicInner({
           aria-hidden={isLeftRailSuppressed}
           inert={isLeftRailSuppressed ? true : undefined}
         >
-          {isAuthenticated ? (
-            <>
-              <div className={isAdminOverlayRoute ? "railTabs railTabsAdminOverlay" : "railTabs"}>
+          {(() => {
+            const railContent = (
+              <>
+                <div className={isAdminOverlayRoute ? "railTabs railTabsAdminOverlay" : "railTabs"}>
                 {isAdminOverlayRoute ? (
                   <>
                     <button
@@ -4899,12 +4949,19 @@ function ShellDynamicInner({
                       className={`${chatMode === "global" ? "activeTab" : ""} ${flashingChatTabs.global ? "attentionPulse" : ""}`.trim() || undefined}
                       onClick={() => setChatMode("global")}
                     >
-                      Global Chat
+                      Chat
                     </button>
                     <button
                       type="button"
                       className={chatMode === "online" ? "activeTab" : undefined}
-                      onClick={() => setChatMode("online")}
+                      onClick={() => {
+                        if (!isAuthenticated) {
+                          openAuthModal();
+                          return;
+                        }
+
+                        setChatMode("online");
+                      }}
                     >
                       Who&apos;s Online
                     </button>
@@ -4916,7 +4973,7 @@ function ShellDynamicInner({
                       className={`${chatMode === "global" ? "activeTab" : ""} ${flashingChatTabs.global ? "attentionPulse" : ""}`.trim() || undefined}
                       onClick={() => setChatMode("global")}
                     >
-                      Global Chat
+                      Chat
                     </button>
                     <button
                       type="button"
@@ -4924,7 +4981,9 @@ function ShellDynamicInner({
                       onClick={() => {
                         setChatMode("magazine");
                         favouritesBlindInnerRef.current?.scrollTo({ top: 0, behavior: "auto" });
-                        router.push(`/magazine?v=${encodeURIComponent(currentVideo.id)}`, { scroll: true });
+                        if (!isMagazineOverlayRoute) {
+                          router.push(`/magazine?v=${encodeURIComponent(currentVideo.id)}`, { scroll: true });
+                        }
                       }}
                     >
                       Magazine
@@ -4932,7 +4991,14 @@ function ShellDynamicInner({
                     <button
                       type="button"
                       className={chatMode === "online" ? "activeTab" : undefined}
-                      onClick={() => setChatMode("online")}
+                      onClick={() => {
+                        if (!isAuthenticated) {
+                          openAuthModal();
+                          return;
+                        }
+
+                        setChatMode("online");
+                      }}
                     >
                       Who&apos;s Online
                     </button>
@@ -4944,7 +5010,7 @@ function ShellDynamicInner({
                 {isChatLoading ? <p className="chatStatus">Loading chat...</p> : null}
                 {!isChatLoading && chatMode === "global" && chatMessages.length === 0 ? (
                   <p className="chatStatus">
-                    No global messages yet. Start the noise.
+                    No chat messages yet. Start the noise.
                   </p>
                 ) : null}
                 {chatMode === "magazine" ? (
@@ -4959,11 +5025,11 @@ function ShellDynamicInner({
                         <article
                           key={track.slug}
                           className="magazineRailCard magazineRailCardClickable"
-                          onClick={() => router.push(`/magazine/${encodeURIComponent(track.slug)}?v=${encodeURIComponent(currentVideo.id)}`)}
+                          onClick={() => router.push(`/magazine/${encodeURIComponent(track.slug)}`)}
                           onKeyDown={(event) => {
                             if (event.key === "Enter" || event.key === " ") {
                               event.preventDefault();
-                              router.push(`/magazine/${encodeURIComponent(track.slug)}?v=${encodeURIComponent(currentVideo.id)}`);
+                              router.push(`/magazine/${encodeURIComponent(track.slug)}`);
                             }
                           }}
                           role="button"
@@ -5052,45 +5118,39 @@ function ShellDynamicInner({
               </div>
 
               {chatMode === "global" ? (
-                <>
-                  <form className="chatComposer" onSubmit={handleChatSubmit}>
-                    <input
-                      type="text"
-                      placeholder="Message the global room..."
-                      value={chatDraft}
-                      onChange={(event) => setChatDraft(event.target.value)}
-                      maxLength={200}
-                      disabled={isChatSubmitting}
-                    />
-                    <button type="submit" disabled={isChatSubmitting || chatDraft.trim().length === 0}>
-                      {isChatSubmitting ? "Sending..." : "Send"}
+                isAuthenticated ? (
+                  <>
+                    <form className="chatComposer" onSubmit={handleChatSubmit}>
+                      <input
+                        type="text"
+                        placeholder="Message the chat..."
+                        value={chatDraft}
+                        onChange={(event) => setChatDraft(event.target.value)}
+                        maxLength={200}
+                        disabled={isChatSubmitting}
+                      />
+                      <button type="submit" disabled={isChatSubmitting || chatDraft.trim().length === 0}>
+                        {isChatSubmitting ? "Sending..." : "Send"}
+                      </button>
+                    </form>
+                    {chatError ? <p className="chatStatus chatStatusError">{chatError}</p> : null}
+                  </>
+                ) : (
+                  <div className="guestChatComposer">
+                    <button
+                      type="button"
+                      className="navLink navLinkActive guestChatSignInBtn"
+                      onClick={openAuthModal}
+                    >
+                      Sign in to chat
                     </button>
-                  </form>
-                  {chatError ? <p className="chatStatus chatStatusError">{chatError}</p> : null}
-                </>
+                  </div>
+                )
               ) : null}
             </>
-          ) : (
-            <div className="guestRail">
-              <div className="panelHeading guestRailHeading">
-                <span>Members only</span>
-                <strong>
-                  Sign in to join chat, save favourites, and build playlists
-                </strong>
-              </div>
-
-              <AuthLoginForm />
-
-              <div className="guestRailActions">
-                <Link href="/register" className="navLink">
-                  Create account
-                </Link>
-                <Link href="/forgot-password" className="navLink">
-                  Forgot password?
-                </Link>
-              </div>
-            </div>
-          )}
+            );
+            return railContent;
+          })()}
         </aside>
 
         <section className="playerStage">
@@ -5117,7 +5177,9 @@ function ShellDynamicInner({
                   temporaryQueue={temporaryQueueVideos}
                   isLoggedIn={isAuthenticated}
                   isAdmin={isAdmin}
+                  onAuthRequired={openAuthModal}
                   isDockedDesktop={shouldDockDesktopPlayer}
+                  suppressAuthWall={!isAuthenticated && isMagazineOverlayRoute}
                   seenVideoIds={seenVideoIdsRef.current}
                   onHideVideo={handleHideFromWatchNext}
                   onAddVideoToPlaylist={handleAddToPlaylistFromWatchNext}
@@ -5880,6 +5942,7 @@ function ShellDynamicInner({
           </aside>
         )}
       </section>
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
     </main>
   );
 }

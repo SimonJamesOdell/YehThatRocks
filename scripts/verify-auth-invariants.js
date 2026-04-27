@@ -33,6 +33,8 @@ const files = {
   adminAuth: path.join(ROOT, "apps/web/lib/admin-auth.ts"),
   authRequest: path.join(ROOT, "apps/web/lib/auth-request.ts"),
   serverAuth: path.join(ROOT, "apps/web/lib/server-auth.ts"),
+  authModal: path.join(ROOT, "apps/web/components/auth-modal.tsx"),
+  playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   authCookies: path.join(ROOT, "apps/web/lib/auth-cookies.ts"),
   globalCss: path.join(ROOT, "apps/web/app/globals.css"),
 };
@@ -87,6 +89,8 @@ function main() {
   const adminAuthSource = read(files.adminAuth);
   const authRequestSource = read(files.authRequest);
   const serverAuthSource = read(files.serverAuth);
+  const authModalSource = read(files.authModal);
+  const playerExperienceSource = read(files.playerExperience);
   const authCookiesSource = read(files.authCookies);
   const globalCssSource = read(files.globalCss);
 
@@ -248,6 +252,34 @@ function main() {
   assertContains(globalCssSource, ".accountTopBarActions", "globals.css defines account top-bar action group", failures);
   assertContains(globalCssSource, ".accountAvatarPreviewWrap", "globals.css defines avatar preview styles", failures);
   assertContains(globalCssSource, ".authStatusBanner", "globals.css defines auth-unavailable banner styles", failures);
+
+  // --- AuthModal: deferred in-app login/register modal ---
+  assertContains(authModalSource, 'className="authModal"', "AuthModal renders with authModal root class", failures);
+  assertContains(authModalSource, 'className="authModalBackdrop"', "AuthModal renders a backdrop element", failures);
+  assertContains(authModalSource, 'className="authModalPanel"', "AuthModal renders a panel container", failures);
+  assertContains(authModalSource, "AuthLoginForm", "AuthModal renders the login form", failures);
+  assertContains(authModalSource, "AuthRegisterForm", "AuthModal renders the register form", failures);
+  assertContains(authModalSource, "AuthForgotPasswordForm", "AuthModal renders the forgot password form", failures);
+
+  // --- Shell: AuthModal integration ---
+  assertContains(shellDynamicSource, "const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);", "Shell tracks auth modal open state", failures);
+  assertContains(shellDynamicSource, "function openAuthModal()", "Shell exposes an openAuthModal function", failures);
+  assertContains(shellDynamicSource, "<AuthModal", "Shell renders the AuthModal component", failures);
+  assertContains(shellDynamicSource, "isOpen={isAuthModalOpen}", "Shell passes isOpen prop to AuthModal", failures);
+  assertContains(shellDynamicSource, "onClose={() => setIsAuthModalOpen(false)}", "Shell passes onClose handler to AuthModal", failures);
+
+  // --- Player auth wall: guest-facing sign-in overlay ---
+  assertContains(playerExperienceSource, 'className="playerAuthWall"', "PlayerExperience renders a playerAuthWall overlay for unauthenticated users", failures);
+  assertContains(playerExperienceSource, "suppressAuthWall", "PlayerExperience supports suppressAuthWall prop to hide the wall on magazine routes", failures);
+  assertContains(playerExperienceSource, "onAuthRequired", "PlayerExperience exposes onAuthRequired callback for sign-in CTA", failures);
+  assertContains(shellDynamicSource, "suppressAuthWall={!isAuthenticated && isMagazineOverlayRoute}", "Shell suppresses player auth wall on magazine overlay routes", failures);
+
+  // --- CSS: auth modal and player auth wall ---
+  assertContains(globalCssSource, ".authModal", "globals.css defines .authModal styles", failures);
+  assertContains(globalCssSource, ".authModalBackdrop", "globals.css defines .authModalBackdrop styles", failures);
+  assertContains(globalCssSource, ".authModalPanel", "globals.css defines .authModalPanel styles", failures);
+  assertContains(globalCssSource, ".playerAuthWall", "globals.css defines .playerAuthWall overlay styles", failures);
+  assertContains(globalCssSource, ".playerAuthWallBtn", "globals.css defines .playerAuthWallBtn CTA button style", failures);
 
   if (failures.length > 0) {
     console.error("Auth invariant check failed.");

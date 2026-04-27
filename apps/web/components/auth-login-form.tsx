@@ -111,7 +111,9 @@ export function AuthLoginForm() {
   function redirectAfterAuth() {
     const videoParam = new URLSearchParams(window.location.search).get("v");
     const target = videoParam ? `/?v=${encodeURIComponent(videoParam)}` : "/";
-    window.location.href = target;
+    window.dispatchEvent(new Event("ytr:auth-success"));
+    router.push(target);
+    router.refresh();
   }
 
   async function storeBrowserCredential(username: string, password: string) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 /**
  * Rendered when a server component detects no valid access token but a
@@ -8,6 +9,8 @@ import { useEffect } from "react";
  * reloads the page so the server component gets a fresh access token.
  */
 export function AuthRefreshReload() {
+  const router = useRouter();
+
   useEffect(() => {
     let cancelled = false;
 
@@ -21,7 +24,8 @@ export function AuthRefreshReload() {
         });
 
         if (!cancelled && res.ok) {
-          window.location.reload();
+          window.dispatchEvent(new Event("ytr:auth-success"));
+          router.refresh();
         }
       } catch {
         // Refresh failed — leave the login prompt visible.
@@ -33,7 +37,7 @@ export function AuthRefreshReload() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router]);
 
   return null;
 }
