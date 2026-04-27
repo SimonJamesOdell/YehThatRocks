@@ -6,7 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
 import { EVENT_NAMES, listenToAppEvent } from "@/lib/events-contract";
+import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
 import type { WatchHistoryEntry } from "@/lib/catalog-data";
 
 type HistoryInfiniteListProps = {
@@ -27,6 +29,8 @@ type HistoryGroup = {
   label: string;
   entries: WatchHistoryEntry[];
 };
+
+const HISTORY_FIRST_REFRESH_TIMEOUT_MS = 6_500;
 
 function getVideoThumbnailUrl(videoId: string) {
   return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/mqdefault.jpg`;
@@ -104,6 +108,9 @@ export function HistoryInfiniteList({
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isRefreshingInitialHistory, setIsRefreshingInitialHistory] = useState(initialHistory.length === 0);
+  const [initialRefreshError, setInitialRefreshError] = useState<string | null>(null);
+  const [initialRefreshRetryNonce, setInitialRefreshRetryNonce] = useState(0);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const nextOffsetRef = useRef(initialHistory.length);
   const requestedOffsetsRef = useRef(new Set<number>());
@@ -150,17 +157,32 @@ export function HistoryInfiniteList({
     return groups;
   }, [filteredHistory]);
 
-  const refreshLatestHistoryWindow = useCallback(async () => {
+  const refreshLatestHistoryWindow = useCallback(async (options?: { initial?: boolean }) => {
+    if (options?.initial) {
+      setIsRefreshingInitialHistory(true);
+      setInitialRefreshError(null);
+    }
+
     try {
-      const response = await fetch(`/api/watch-history?limit=${pageSize}&offset=0`, {
-        cache: "no-store",
+      const result = await fetchJsonWithLoaderContract<WatchHistoryPayload>({
+        input: `/api/watch-history?limit=${pageSize}&offset=0`,
+        init: {
+          cache: "no-store",
+        },
+        timeoutMs: options?.initial ? HISTORY_FIRST_REFRESH_TIMEOUT_MS : undefined,
+        failureMessage: options?.initial
+          ? "Could not refresh history. Please retry."
+          : "Could not refresh history right now.",
       });
 
-      if (!response.ok) {
+      if (!result.ok) {
+        if (options?.initial) {
+          setInitialRefreshError(result.message);
+        }
         return;
       }
 
-      const payload = (await response.json()) as WatchHistoryPayload;
+      const payload = result.data;
       const latest = Array.isArray(payload.history) ? payload.history : [];
       const hasMoreLatest = Boolean(payload.hasMore);
       const nextOffset = Number(payload.nextOffset);
@@ -170,15 +192,31 @@ export function HistoryInfiniteList({
       nextOffsetRef.current = Number.isFinite(nextOffset) ? nextOffset : latest.length;
       requestedOffsetsRef.current.clear();
     } catch {
-      // Keep existing history when refresh fails.
+      if (options?.initial) {
+        setInitialRefreshError("Could not refresh history. Please retry.");
+      }
+    } finally {
+      if (options?.initial) {
+        setIsRefreshingInitialHistory(false);
+      }
     }
   }, [pageSize]);
+
+  const retryInitialHistoryRefresh = useCallback(() => {
+    setInitialRefreshError(null);
+    setInitialRefreshRetryNonce((current) => current + 1);
+  }, []);
+
+  const retryLoadMoreHistory = useCallback(() => {
+    setLoadError(null);
+    void loadMore(nextOffsetRef.current);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
-      await refreshLatestHistoryWindow();
+      await refreshLatestHistoryWindow({ initial: true });
       if (cancelled) {
         return;
       }
@@ -187,7 +225,7 @@ export function HistoryInfiniteList({
     return () => {
       cancelled = true;
     };
-  }, [refreshLatestHistoryWindow]);
+  }, [initialRefreshRetryNonce, refreshLatestHistoryWindow]);
 
   useEffect(() => {
     const handleWatchHistoryUpdated = () => {
@@ -211,15 +249,21 @@ export function HistoryInfiniteList({
     setLoadError(null);
 
     try {
-      const response = await fetch(`/api/watch-history?limit=${pageSize}&offset=${offset}`, {
-        cache: "no-store",
+      const result = await fetchJsonWithLoaderContract<WatchHistoryPayload>({
+        input: `/api/watch-history?limit=${pageSize}&offset=${offset}`,
+        init: {
+          cache: "no-store",
+        },
+        failureMessage: "Could not load more history. Please retry.",
       });
 
-      if (!response.ok) {
-        throw new Error("history-load-failed");
+      if (!result.ok) {
+        requestedOffsetsRef.current.delete(offset);
+        setLoadError(result.message);
+        return;
       }
 
-      const payload = (await response.json()) as WatchHistoryPayload;
+      const payload = result.data;
       const incoming = Array.isArray(payload.history) ? payload.history : [];
 
       const uniqueIncoming = incoming.filter((entry) => {
@@ -236,7 +280,7 @@ export function HistoryInfiniteList({
       setHasMore(Boolean(payload.hasMore));
     } catch {
       requestedOffsetsRef.current.delete(offset);
-      setLoadError("Could not load more history. Scroll again to retry.");
+      setLoadError("Could not load more history. Please retry.");
     } finally {
       setIsLoading(false);
     }
@@ -278,7 +322,13 @@ export function HistoryInfiniteList({
   if (history.length === 0) {
     return (
       <section className="accountHistoryPanel historyPagePanel">
-        <p className="authMessage">Play a few tracks and your history will appear here.</p>
+        <RouteLoaderContractRow
+          isLoading={isRefreshingInitialHistory}
+          loadingLabel="Loading history..."
+          error={initialRefreshError}
+          onRetry={!isRefreshingInitialHistory && initialRefreshError ? retryInitialHistoryRefresh : null}
+          endLabel={!isRefreshingInitialHistory && !initialRefreshError ? "Play a few tracks and your history will appear here." : null}
+        />
       </section>
     );
   }
@@ -386,11 +436,13 @@ export function HistoryInfiniteList({
         )}
       </div>
 
-      <div className="routeContractRow" aria-live="polite">
-        {isLoading ? <span>Loading more history...</span> : null}
-        {loadError ? <span>{loadError}</span> : null}
-        {!isLoading && !hasMore && !loadError ? <span>End of watch history.</span> : null}
-      </div>
+      <RouteLoaderContractRow
+        isLoading={isLoading}
+        loadingLabel="Loading more history..."
+        error={loadError}
+        onRetry={loadError ? retryLoadMoreHistory : null}
+        endLabel={!isLoading && !hasMore && !loadError ? "End of watch history." : null}
+      />
 
       <div ref={sentinelRef} aria-hidden="true" style={{ height: 1 }} />
     </section>

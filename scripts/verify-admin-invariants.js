@@ -14,7 +14,7 @@ const files = {
   adminVideosRoute: path.join(ROOT, "apps/web/app/api/admin/videos/route.ts"),
   adminArtistsRoute: path.join(ROOT, "apps/web/app/api/admin/artists/route.ts"),
   adminDashboardPanel: path.join(ROOT, "apps/web/components/admin-dashboard-panel.tsx"),
-  catalogData: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
+  catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   currentVideoCache: path.join(ROOT, "apps/web/lib/current-video-cache.ts"),
 };
 

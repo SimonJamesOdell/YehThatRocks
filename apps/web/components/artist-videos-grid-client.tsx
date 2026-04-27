@@ -9,6 +9,7 @@ import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import type { VideoRecord } from "@/lib/catalog";
+import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 
 const ARTIST_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-artist";
 
@@ -57,22 +58,17 @@ export function ArtistVideosGridClient({
 
     setVideoPendingHideConfirm(null);
 
-    setHidingVideoIds((current) => [...current, video.id]);
-    setVideos((current) => current.filter((candidate) => candidate.id !== video.id));
-
-    try {
-      await fetch("/api/hidden-videos", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ videoId: video.id }),
-      });
-    } catch {
-      // Keep card hidden even if persistence fails, matching quick-hide behavior elsewhere.
-    } finally {
-      setHidingVideoIds((current) => current.filter((id) => id !== video.id));
-    }
+    await mutateHiddenVideo({
+      action: "hide",
+      videoId: video.id,
+      onOptimisticUpdate: () => {
+        setHidingVideoIds((current) => [...current, video.id]);
+        setVideos((current) => current.filter((candidate) => candidate.id !== video.id));
+      },
+      onSettled: () => {
+        setHidingVideoIds((current) => current.filter((id) => id !== video.id));
+      },
+    });
   }, [hidingVideoIds, isAuthenticated, videoPendingHideConfirm]);
 
   return (

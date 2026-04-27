@@ -9,11 +9,11 @@ const files = {
   top100Page: path.join(ROOT, "apps/web/app/(shell)/top100/page.tsx"),
   top100Link: path.join(ROOT, "apps/web/components/top100-video-link.tsx"),
   top100Loader: path.join(ROOT, "apps/web/components/top100-videos-loader.tsx"),
-  shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic.tsx"),
+  shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
   topVideosRoute: path.join(ROOT, "apps/web/app/api/videos/top/route.ts"),
   topVideosCache: path.join(ROOT, "apps/web/lib/top-videos-cache.ts"),
-  catalogData: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
+  catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   globalCss: path.join(ROOT, "apps/web/app/globals.css"),
 };
 

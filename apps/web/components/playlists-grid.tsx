@@ -7,15 +7,12 @@ import { createPortal } from "react-dom";
 
 import { CloseLink } from "@/components/close-link";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { createPlaylistClient, listPlaylistsClient } from "@/lib/playlist-client-service";
 import type { PlaylistSummary } from "@/lib/catalog-data";
 
 type PlaylistsGridProps = {
   initialPlaylists: PlaylistSummary[];
   isAuthenticated: boolean;
-};
-
-type PlaylistsPayload = {
-  playlists?: PlaylistSummary[];
 };
 
 export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGridProps) {
@@ -58,19 +55,19 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
 
     async function refreshPlaylists() {
       try {
-        const response = await fetch("/api/playlists", {
-          method: "GET",
-          cache: "no-store",
+        const response = await listPlaylistsClient({
+          telemetryContext: {
+            component: "playlists-grid",
+            mode: "refresh",
+          },
         });
 
         if (!response.ok) {
           return;
         }
 
-        const payload = (await response.json().catch(() => null)) as PlaylistsPayload | null;
-
-        if (!cancelled && Array.isArray(payload?.playlists)) {
-          setPlaylists(payload.playlists);
+        if (!cancelled) {
+          setPlaylists(response.data as PlaylistSummary[]);
         }
       } catch {
         // Keep server-rendered playlists when refresh fails.
@@ -130,18 +127,18 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
       setMessage(null);
 
       try {
-        const response = await fetch("/api/playlists", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
+        const response = await createPlaylistClient({
             name: trimmedName,
             videoIds: [],
-          }),
-        });
+          }, {
+            telemetryContext: {
+              component: "playlists-grid",
+              mode: "create",
+            },
+          },
+        );
 
-        if (response.status === 401 || response.status === 403) {
+        if (!response.ok && (response.error.code === "unauthorized" || response.error.code === "forbidden")) {
           setMessage("Sign in to create playlists.");
           return;
         }
@@ -154,18 +151,16 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
         setName("");
         setShowCreateModal(false);
 
-        const refreshResponse = await fetch("/api/playlists", {
-          method: "GET",
-          cache: "no-store",
+        const refreshResponse = await listPlaylistsClient({
+          telemetryContext: {
+            component: "playlists-grid",
+            mode: "refresh-after-create",
+          },
         });
 
         if (refreshResponse.ok) {
-          const payload = (await refreshResponse.json().catch(() => null)) as PlaylistsPayload | null;
-
-          if (Array.isArray(payload?.playlists)) {
-            setPlaylists(payload.playlists);
-            dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-          }
+          setPlaylists(refreshResponse.data as PlaylistSummary[]);
+          dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
         }
       } catch {
         setMessage("Could not create playlist. Please try again.");

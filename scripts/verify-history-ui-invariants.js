@@ -10,7 +10,7 @@ const files = {
   historyList: path.join(ROOT, "apps/web/components/history-infinite-list.tsx"),
   watchHistoryRoute: path.join(ROOT, "apps/web/app/api/watch-history/route.ts"),
   apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
-  catalogData: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
+  catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   globalCss: path.join(ROOT, "apps/web/app/globals.css"),
 };
 

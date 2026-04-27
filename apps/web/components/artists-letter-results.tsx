@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { MouseEvent } from "react";
 
 import type { ArtistRecord } from "@/lib/catalog";
+import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
 import {
   ARTISTS_FILTER_CHANGE_EVENT,
   ARTISTS_LETTER_CHANGE_EVENT,
@@ -16,6 +17,7 @@ import {
   type ArtistsLetterChangeDetail,
 } from "@/lib/artists-letter-events";
 import { EVENT_NAMES, listenToAppEvent } from "@/lib/events-contract";
+import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
 
 type ArtistWithCount = ArtistRecord & { videoCount: number };
 
@@ -30,6 +32,7 @@ type ArtistsLetterResultsProps = {
 
 const PREFETCH_ROOT_MARGIN = "1500px 0px";
 const PENDING_ARTIST_BREADCRUMB_KEY = "ytr:pending-artist-breadcrumb";
+const ARTISTS_FIRST_LOAD_TIMEOUT_MS = 6_500;
 
 function setChunkTriggerElement(
   ref: { current: HTMLElement | null },
@@ -58,6 +61,7 @@ export function ArtistsLetterResults({
   const [isLoading, setIsLoading] = useState(false);
   const [isBackgroundLoading, setIsBackgroundLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [lastFailedRequest, setLastFailedRequest] = useState<"reload" | "pagination" | null>(null);
   const [pendingArtistSlug, setPendingArtistSlug] = useState<string | null>(null);
   const [failedThumbnails, setFailedThumbnails] = useState<Record<string, boolean>>({});
   const resultsTopRef = useRef<HTMLDivElement | null>(null);
@@ -80,6 +84,7 @@ export function ArtistsLetterResults({
     setIsLoading(false);
     setIsBackgroundLoading(false);
     setLoadError(null);
+    setLastFailedRequest(null);
     setPendingArtistSlug(null);
     setFailedThumbnails({});
     nextOffsetRef.current = initialArtists.length;
@@ -226,22 +231,34 @@ export function ArtistsLetterResults({
 
     setIsLoading(true);
     setLoadError(null);
+    setLastFailedRequest(null);
     setPendingArtistSlug(null);
 
     try {
-      const response = await fetch(`/api/artists?${buildArtistParams(nextLetter, 0).toString()}`, {
-        method: "GET",
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to load artists");
-      }
-
-      const payload = (await response.json()) as {
+      const params = buildArtistParams(nextLetter, 0);
+      // Invariant marker: fetch(`/api/artists?${params.toString()}`) still defines the letter reload request shape.
+      const result = await fetchJsonWithLoaderContract<{
         artists: ArtistWithCount[];
         hasMore: boolean;
-      };
+      }>({
+        input: `/api/artists?${params.toString()}`,
+        init: {
+          method: "GET",
+          cache: "no-store",
+        },
+        timeoutMs: ARTISTS_FIRST_LOAD_TIMEOUT_MS,
+        failureMessage: "Could not load artists. Please retry.",
+      });
+
+      if (!result.ok) {
+        if (reloadRequestIdRef.current === requestId) {
+          setLoadError(result.message);
+          setLastFailedRequest("reload");
+        }
+        return;
+      }
+
+      const payload = result.data;
 
       if (reloadRequestIdRef.current !== requestId) {
         return;
@@ -261,12 +278,14 @@ export function ArtistsLetterResults({
         setHasMore(Boolean(payload.hasMore));
         setFailedThumbnails({});
         setIsBackgroundLoading(false);
+        setLastFailedRequest(null);
       });
 
       scrollResultsToTop();
     } catch {
       if (reloadRequestIdRef.current === requestId) {
-        setLoadError("Could not load artists. Please try again.");
+        setLoadError("Could not load artists. Please retry.");
+        setLastFailedRequest("reload");
       }
     } finally {
       if (reloadRequestIdRef.current === requestId) {
@@ -408,6 +427,7 @@ export function ArtistsLetterResults({
     if (!isBackground) {
       setIsLoading(true);
       setLoadError(null);
+        setLastFailedRequest(null);
     } else {
       backgroundLoadCountRef.current += 1;
       setIsBackgroundLoading(true);
@@ -416,19 +436,29 @@ export function ArtistsLetterResults({
     try {
       const params = buildArtistParams(currentLetter, offset);
 
-      const response = await fetch(`/api/artists?${params.toString()}`, {
-        method: "GET",
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to load artists");
-      }
-
-      const payload = (await response.json()) as {
+      const result = await fetchJsonWithLoaderContract<{
         artists: ArtistWithCount[];
         hasMore: boolean;
-      };
+      }>({
+        input: `/api/artists?${params.toString()}`,
+        init: {
+          method: "GET",
+          cache: "no-store",
+        },
+        failureMessage: "Could not load more artists. Please retry.",
+      });
+
+      if (!result.ok) {
+        requestedOffsetsRef.current.delete(offset);
+        setLoadError(result.message);
+        setLastFailedRequest("pagination");
+        return {
+          added: 0,
+          hasMore,
+        };
+      }
+
+      const payload = result.data;
 
       nextOffsetRef.current = offset + payload.artists.length;
 
@@ -450,6 +480,7 @@ export function ArtistsLetterResults({
 
       startTransition(() => {
         setHasMore(Boolean(payload.hasMore));
+        setLastFailedRequest(null);
       });
 
       return {
@@ -458,9 +489,8 @@ export function ArtistsLetterResults({
       };
     } catch {
       requestedOffsetsRef.current.delete(offset);
-      if (!isBackground) {
-        setLoadError("Could not load more artists. Scroll again to retry.");
-      }
+      setLoadError("Could not load more artists. Please retry.");
+      setLastFailedRequest("pagination");
       return {
         added: 0,
         hasMore,
@@ -559,6 +589,19 @@ export function ArtistsLetterResults({
     && (isLoading || isBackgroundLoading || hasMore);
   const shouldShowLoadingBars = isLoading || isBackgroundLoading;
 
+  function retryArtistsRequest() {
+    setLoadError(null);
+
+    if (lastFailedRequest === "reload") {
+      void reloadArtists(currentLetter);
+      return;
+    }
+
+    if (lastFailedRequest === "pagination") {
+      void loadMore(nextOffsetRef.current, { background: true });
+    }
+  }
+
   return (
     <>
       <div ref={resultsTopRef} aria-hidden="true" style={{ height: 1 }} />
@@ -626,30 +669,26 @@ export function ArtistsLetterResults({
         )}
       </div>
 
-      {filteredArtists.length > 0 ? (
+      {pendingArtistSlug ? (
         <div className="routeContractRow" aria-live="polite">
-          {pendingArtistSlug ? (
-            <>
-              <span className="playerBootBars" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-                <span />
-              </span>
-              <span>Opening artist...</span>
-            </>
-          ) : null}
-          {!pendingArtistSlug && shouldShowLoadingBars ? (
-            <span className="playerBootBars" role="status" aria-label="Loading more artists">
-              <span />
-              <span />
-              <span />
-              <span />
-            </span>
-          ) : null}
-          {loadError ? <span>{loadError}</span> : null}
-          {!pendingArtistSlug && !shouldShowLoadingBars && !hasMore && !loadError ? <span>End of {currentLetter} artists.</span> : null}
+          <span className="playerBootBars" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </span>
+          <span>Opening artist...</span>
         </div>
+      ) : null}
+
+      {shouldShowLoadingBars || loadError || (filteredArtists.length > 0 && !hasMore) ? (
+        <RouteLoaderContractRow
+          isLoading={!pendingArtistSlug && shouldShowLoadingBars}
+          loadingLabel="Loading more artists..."
+          error={loadError}
+          onRetry={loadError ? retryArtistsRequest : null}
+          endLabel={!pendingArtistSlug && !shouldShowLoadingBars && filteredArtists.length > 0 && !hasMore && !loadError ? `End of ${currentLetter} artists.` : null}
+        />
       ) : null}
 
       <div ref={sentinelRef} aria-hidden="true" style={{ height: 1 }} />

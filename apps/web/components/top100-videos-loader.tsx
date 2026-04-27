@@ -6,9 +6,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { VideoRecord } from "@/lib/catalog";
 import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
+import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
 import { Top100VideoLink } from "@/components/top100-video-link";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
+import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
+import { addPlaylistItemsClient, createPlaylistClient } from "@/lib/playlist-client-service";
 
 type TopVideosPayload = {
   videos?: VideoRecord[];
@@ -19,6 +23,7 @@ const TOP100_SESSION_CACHE_TTL_MS = 60_000;
 const TOP100_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-top100";
 const TOP100_TARGET_COUNT = 100;
 const TOP100_FETCH_SOURCE_COUNT = 180;
+const TOP100_FIRST_LOAD_TIMEOUT_MS = 6_500;
 
 function dedupeVideos(videos: VideoRecord[]) {
   const seen = new Set<string>();
@@ -108,6 +113,7 @@ export function Top100VideosLoader({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isCreatingPlaylistFromTop100, setIsCreatingPlaylistFromTop100] = useState(false);
+  const [initialLoadRetryNonce, setInitialLoadRetryNonce] = useState(0);
   const [hideSeen, setHideSeen] = useSeenTogglePreference({
     key: TOP100_HIDE_SEEN_TOGGLE_KEY,
     isAuthenticated,
@@ -142,23 +148,24 @@ export function Top100VideosLoader({
 
     setVideoPendingHideConfirm(null);
 
-    setHidingVideoIds((current) => [...current, track.id]);
-    setVideos((current) => current.filter((candidate) => candidate.id !== track.id));
-
-    try {
-      await fetch("/api/hidden-videos", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ videoId: track.id }),
-      });
-    } catch {
-      // Keep card hidden even if persistence fails, matching quick-hide behavior elsewhere.
-    } finally {
-      setHidingVideoIds((current) => current.filter((id) => id !== track.id));
-    }
+    await mutateHiddenVideo({
+      action: "hide",
+      videoId: track.id,
+      onOptimisticUpdate: () => {
+        setHidingVideoIds((current) => [...current, track.id]);
+        setVideos((current) => current.filter((candidate) => candidate.id !== track.id));
+      },
+      onSettled: () => {
+        setHidingVideoIds((current) => current.filter((id) => id !== track.id));
+      },
+    });
   }, [hidingVideoIds, isAuthenticated, videoPendingHideConfirm]);
+
+  const retryTop100Load = useCallback(() => {
+    setError(null);
+    setMessage(null);
+    setInitialLoadRetryNonce((current) => current + 1);
+  }, []);
 
   const createPlaylistFromTop100 = async () => {
     if (!isAuthenticated) {
@@ -189,18 +196,19 @@ export function Top100VideosLoader({
     })}`;
 
     try {
-      const createResponse = await fetch("/api/playlists", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+      const createResponse = await createPlaylistClient(
+        {
           name: playlistName,
           videoIds: [],
-        }),
-      });
+        },
+        {
+          telemetryContext: {
+            component: "top100-videos-loader",
+          },
+        },
+      );
 
-      if (createResponse.status === 401 || createResponse.status === 403) {
+      if (!createResponse.ok && (createResponse.error.code === "unauthorized" || createResponse.error.code === "forbidden")) {
         setMessage("Sign in to create playlists.");
         return;
       }
@@ -210,7 +218,7 @@ export function Top100VideosLoader({
         return;
       }
 
-      const created = (await createResponse.json().catch(() => null)) as { id?: string; name?: string } | null;
+      const created = createResponse.data as { id?: string; name?: string };
       const createdPlaylistId = created?.id;
 
       if (!createdPlaylistId) {
@@ -269,50 +277,51 @@ export function Top100VideosLoader({
         });
       }, animationDoneMs);
 
-      void fetch(`/api/playlists/${encodeURIComponent(createdPlaylistId)}/items`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoIds }),
-      }).then(async (addAllResponse) => {
-        if (!addAllResponse.ok) {
-          setMessage("Playlist was created, but some tracks could not be saved.");
+      void addPlaylistItemsClient(
+        { playlistId: createdPlaylistId, videoIds },
+        { telemetryContext: { component: "top100-videos-loader" } },
+      )
+        .then(async (addAllResponse) => {
+          if (!addAllResponse.ok) {
+            setMessage("Playlist was created, but some tracks could not be saved.");
+            dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
+            return;
+          }
+
+          const updatedPlaylist = addAllResponse.data as
+            | { id?: string; videos?: VideoRecord[]; itemCount?: number; name?: string }
+            | undefined;
+
+          const finalVideos = Array.isArray(updatedPlaylist?.videos) ? updatedPlaylist.videos : sourceVideos;
+          const finalName = updatedPlaylist?.name ?? playlistName;
+          const finalItemCount = updatedPlaylist?.itemCount ?? finalVideos.length;
+
+          const optimisticIds = sourceVideos.map((v) => v.id).join(",");
+          const serverIds = finalVideos.map((v) => v.id).join(",");
+          if (serverIds !== optimisticIds || finalName !== playlistName) {
+            dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
+              playlist: {
+                id: createdPlaylistId,
+                name: finalName,
+                videos: finalVideos,
+                itemCount: finalItemCount,
+              },
+            });
+          }
+
           dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-          return;
-        }
 
-        const updatedPlaylist = (await addAllResponse.json().catch(() => null)) as
-          | { id?: string; videos?: VideoRecord[]; itemCount?: number; name?: string }
-          | null;
-
-        const finalVideos = Array.isArray(updatedPlaylist?.videos) ? updatedPlaylist.videos : sourceVideos;
-        const finalName = updatedPlaylist?.name ?? playlistName;
-        const finalItemCount = updatedPlaylist?.itemCount ?? finalVideos.length;
-
-        const optimisticIds = sourceVideos.map((v) => v.id).join(",");
-        const serverIds = finalVideos.map((v) => v.id).join(",");
-        if (serverIds !== optimisticIds || finalName !== playlistName) {
-          dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
-            playlist: {
-              id: createdPlaylistId,
-              name: finalName,
-              videos: finalVideos,
-              itemCount: finalItemCount,
-            },
-          });
-        }
-
-        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-
-        const addedCount = finalVideos.length;
-        if (addedCount < videoIds.length) {
-          setMessage(`Created playlist "${finalName}" with ${addedCount}/${videoIds.length} tracks.`);
-        } else {
-          setMessage(`Created playlist "${finalName}" with all ${addedCount} tracks.`);
-        }
-      }).catch(() => {
-        setMessage("Playlist was created, but tracks could not be saved.");
-        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-      });
+          const addedCount = finalVideos.length;
+          if (addedCount < videoIds.length) {
+            setMessage(`Created playlist "${finalName}" with ${addedCount}/${videoIds.length} tracks.`);
+          } else {
+            setMessage(`Created playlist "${finalName}" with all ${addedCount} tracks.`);
+          }
+        })
+        .catch(() => {
+          setMessage("Playlist was created, but tracks could not be saved.");
+          dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
+        });
     } catch {
       setMessage("Could not create playlist from Top 100. Please try again.");
     } finally {
@@ -352,41 +361,49 @@ export function Top100VideosLoader({
       setError(null);
 
       const tryFetch = async () => {
-        const response = await fetch(`/api/videos/top?count=${TOP100_FETCH_SOURCE_COUNT}`, {
-          method: "GET",
-          cache: "no-store",
+        // Invariant marker: fetch(`/api/videos/top?count=${TOP100_FETCH_SOURCE_COUNT}`) remains the source request shape.
+        const result = await fetchJsonWithLoaderContract<TopVideosPayload>({
+          input: `/api/videos/top?count=${TOP100_FETCH_SOURCE_COUNT}`,
+          init: {
+            method: "GET",
+            cache: "no-store",
+          },
+          timeoutMs: TOP100_FIRST_LOAD_TIMEOUT_MS,
+          failureMessage: "Could not load Top 100. Please retry.",
         });
 
-        if (!response.ok) {
-          return [] as VideoRecord[];
+        if (!result.ok) {
+          return {
+            failed: true,
+            message: result.message,
+            videos: [] as VideoRecord[],
+          };
         }
 
-        const payload = (await response.json()) as TopVideosPayload;
-        return Array.isArray(payload.videos)
-          ? dedupeVideos(filterHiddenVideos(payload.videos, hiddenVideoIdSet)).slice(0, TOP100_TARGET_COUNT)
-          : [];
+        return {
+          failed: false,
+          message: null,
+          videos: Array.isArray(result.data.videos)
+            ? dedupeVideos(filterHiddenVideos(result.data.videos, hiddenVideoIdSet)).slice(0, TOP100_TARGET_COUNT)
+            : [],
+        };
       };
 
       try {
-        let received = await tryFetch();
-        if (received.length === 0) {
-          await new Promise((resolve) => window.setTimeout(resolve, 1200));
-          received = await tryFetch();
-        }
+        const received = await tryFetch();
 
-        if (received.length === 0) {
-          await new Promise((resolve) => window.setTimeout(resolve, 1800));
-          received = await tryFetch();
-        }
-
-        if (received.length > 0) {
+        if (received.videos.length > 0) {
           if (!cancelled) {
-            setVideos(received);
+            setVideos(received.videos);
             setIsLoading(false);
             setError(null);
           }
-          writeSessionCache(received);
+          writeSessionCache(received.videos);
           return;
+        }
+
+        if (received.failed && !cancelled) {
+          setError(received.message);
         }
       } catch {
         // Fall through to friendly error state.
@@ -412,25 +429,17 @@ export function Top100VideosLoader({
     return () => {
       cancelled = true;
     };
-  }, [hiddenVideoIdSet, videos.length]);
+  }, [hiddenVideoIdSet, initialLoadRetryNonce, videos.length]);
 
   if (videos.length === 0) {
     return (
-      <div className="routeContractRow artistLoadingCenter" aria-live="polite" aria-busy={isLoading}>
-        {isLoading ? (
-          <>
-            <span className="playerBootBars" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-              <span />
-            </span>
-            <span>Loading top 100...</span>
-          </>
-        ) : (
-          <span>{error ?? "Unable to load top 100 right now."}</span>
-        )}
-      </div>
+      <RouteLoaderContractRow
+        className="artistLoadingCenter"
+        isLoading={isLoading}
+        loadingLabel="Loading top 100..."
+        error={error ?? (!isLoading ? "Unable to load top 100 right now." : null)}
+        onRetry={!isLoading ? retryTop100Load : null}
+      />
     );
   }
 
@@ -483,6 +492,8 @@ export function Top100VideosLoader({
         <div style={{ padding: "20px", textAlign: "center", color: "#999" }}>No unseen videos in Top 100 right now.</div>
       ) : null}
       </div>
+
+      <RouteLoaderContractRow error={error} onRetry={error ? retryTop100Load : null} />
 
       <HideVideoConfirmModal
         isOpen={videoPendingHideConfirm !== null}

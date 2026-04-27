@@ -7,8 +7,11 @@ import { ArtistVideoLink } from "@/components/artist-video-link";
 import { CategoryCreatePlaylistButton } from "@/components/category-create-playlist-button";
 import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
+import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import type { VideoRecord } from "@/lib/catalog";
+import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
+import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 
 type CategoryVideosInfiniteProps = {
   slug: string;
@@ -133,16 +136,22 @@ export function CategoryVideosInfinite({
       params.set("offset", String(offset));
       params.set("limit", String(pageSize));
 
-      const response = await fetch(`/api/categories/${encodeURIComponent(slug)}?${params.toString()}`, {
-        method: "GET",
-        cache: "no-store",
+      const result = await fetchJsonWithLoaderContract<CategoryVideosPayload>({
+        input: `/api/categories/${encodeURIComponent(slug)}?${params.toString()}`,
+        init: {
+          method: "GET",
+          cache: "no-store",
+        },
+        failureMessage: `Could not load more ${genre} tracks. Please retry.`,
       });
 
-      if (!response.ok) {
-        throw new Error("category-videos-load-failed");
+      if (!result.ok) {
+        requestedOffsetsRef.current.delete(offset);
+        setLoadError(result.message);
+        return { added: 0, hasMore };
       }
 
-      const payload = (await response.json()) as CategoryVideosPayload;
+      const payload = result.data;
       const incoming = Array.isArray(payload.videos) ? payload.videos : [];
       const uniqueIncoming = filterHiddenVideos(incoming, hiddenVideoIdSet).filter((video) => {
         if (!video?.id || seenIdsRef.current.has(video.id)) {
@@ -175,9 +184,7 @@ export function CategoryVideosInfinite({
       };
     } catch {
       requestedOffsetsRef.current.delete(offset);
-      if (!isBackground) {
-        setLoadError("Could not load more videos. Scroll again to retry.");
-      }
+      setLoadError(`Could not load more ${genre} tracks. Please retry.`);
       return { added: 0, hasMore };
     } finally {
       if (!isBackground) {
@@ -204,6 +211,11 @@ export function CategoryVideosInfinite({
       bufferWarmInFlightRef.current = false;
     }
   }, [loadMore]);
+
+  const retryCategoryLoad = useCallback(() => {
+    setLoadError(null);
+    void warmBuffer(videosCountRef.current + pageSize * SCROLL_BUFFER_PAGES);
+  }, [pageSize, warmBuffer]);
 
   useEffect(() => {
     if (!hasMore || videos.length >= pageSize * INITIAL_BUFFER_PAGES) {
@@ -297,22 +309,17 @@ export function CategoryVideosInfinite({
 
     setVideoPendingHideConfirm(null);
 
-    setHidingVideoIds((current) => [...current, video.id]);
-    setVideos((current) => current.filter((candidate) => candidate.id !== video.id));
-
-    try {
-      await fetch("/api/hidden-videos", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ videoId: video.id }),
-      });
-    } catch {
-      // Keep card hidden even if persistence fails, matching quick-hide behavior elsewhere.
-    } finally {
-      setHidingVideoIds((current) => current.filter((id) => id !== video.id));
-    }
+    await mutateHiddenVideo({
+      action: "hide",
+      videoId: video.id,
+      onOptimisticUpdate: () => {
+        setHidingVideoIds((current) => [...current, video.id]);
+        setVideos((current) => current.filter((candidate) => candidate.id !== video.id));
+      },
+      onSettled: () => {
+        setHidingVideoIds((current) => current.filter((id) => id !== video.id));
+      },
+    });
   }, [hidingVideoIds, isAuthenticated, videoPendingHideConfirm]);
 
   const visibleOrderedVideos = hideSeen
@@ -400,11 +407,13 @@ export function CategoryVideosInfinite({
         ))}
       </div>
 
-      <div className="routeContractRow" aria-live="polite">
-        {isLoading ? <span>Loading more {genre} tracks...</span> : null}
-        {loadError ? <span>{loadError}</span> : null}
-        {!isLoading && !hasMore && !loadError ? <span>End of {genre} tracks.</span> : null}
-      </div>
+      <RouteLoaderContractRow
+        isLoading={isLoading}
+        loadingLabel={`Loading more ${genre} tracks...`}
+        error={loadError}
+        onRetry={loadError ? retryCategoryLoad : null}
+        endLabel={!isLoading && !hasMore && !loadError ? `End of ${genre} tracks.` : null}
+      />
 
       <div ref={sentinelRef} aria-hidden="true" style={{ height: 1 }} />
 

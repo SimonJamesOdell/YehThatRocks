@@ -6,7 +6,8 @@ const path = require("node:path");
 const ROOT = process.cwd();
 
 const files = {
-  catalogData: path.join(ROOT, "apps/web/lib/catalog-data.ts"),
+  catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
+  metadataUtils: path.join(ROOT, "apps/web/lib/catalog-metadata-utils.ts"),
 };
 
 function read(filePath) {
@@ -26,6 +27,8 @@ function assertContains(source, needle, description, failures) {
 function main() {
   const failures = [];
   const catalogDataSource = read(files.catalogData);
+  const metadataUtilsSource = read(files.metadataUtils);
+  const classificationSource = `${catalogDataSource}\n${metadataUtilsSource}`;
 
   // Strict related-cascade admission invariants.
   assertContains(catalogDataSource, "const admissionDecision = admissionRow ? evaluatePlaybackMetadataEligibility(admissionRow) : null;", "Related cascade computes metadata admission decision", failures);
@@ -34,7 +37,7 @@ function main() {
 
   // Classification confidence-signal invariants.
   assertContains(catalogDataSource, "const ROCK_METAL_GENRE_PATTERN =", "Classifier defines rock/metal genre pattern", failures);
-  assertContains(catalogDataSource, "function computeArtistChannelConfidenceDelta", "Classifier defines artist/channel consistency signal", failures);
+  assertContains(classificationSource, "function computeArtistChannelConfidenceDelta", "Classifier defines artist/channel consistency signal", failures);
   assertContains(catalogDataSource, "const ARTIST_CATALOG_EVIDENCE_CACHE_TTL_MS =", "Classifier caches artist evidence lookups", failures);
   assertContains(catalogDataSource, "const artistCatalogEvidenceCache = new Map", "Classifier keeps artist evidence cache", failures);
   assertContains(catalogDataSource, "async function getArtistCatalogEvidence(artistName: string)", "Classifier exposes artist catalog evidence helper", failures);
@@ -44,9 +47,9 @@ function main() {
   assertContains(catalogDataSource, "const mojibakeScore = scoreLikelyMojibake(video.title);", "Classifier applies mojibake dampening", failures);
 
   // Admin direct import fallback must avoid artist/track reversal guesses.
-  assertContains(catalogDataSource, "function pickArtistAndTrackFromTitleSides", "Admin fallback defines channel/title side matcher", failures);
-  assertContains(catalogDataSource, "const matchedSideMetadata = sides && channelArtist ? pickArtistAndTrackFromTitleSides(sides, channelArtist) : null;", "Admin fallback only infers title-side artist when channel evidence matches", failures);
-  assertContains(catalogDataSource, "Admin direct import fallback from channel/title side matching.", "Admin fallback records channel/title side matching reason", failures);
+  assertContains(classificationSource, "function pickArtistAndTrackFromTitleSides", "Admin fallback defines channel/title side matcher", failures);
+  assertContains(classificationSource, "const matchedSideMetadata = sides && channelArtist ? pickArtistAndTrackFromTitleSides(sides, channelArtist) : null;", "Admin fallback only infers title-side artist when channel evidence matches", failures);
+  assertContains(classificationSource, "Admin direct import fallback from channel/title side matching.", "Admin fallback records channel/title side matching reason", failures);
 
   // Prompt intent invariant.
   assertContains(catalogDataSource, "YehThatRocks is a rock/metal catalog.", "Groq prompt encodes rock/metal-only extraction intent", failures);
