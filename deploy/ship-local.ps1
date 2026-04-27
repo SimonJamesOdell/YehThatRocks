@@ -51,8 +51,26 @@ function ExecNativeWithRetry(
 
   while ($attempt -le $MaxAttempts) {
     Write-Host "> $display" -ForegroundColor Cyan
-    $output = & $Program @CommandArgs 2>&1 | Out-String
-    $exitCode = $LASTEXITCODE
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $Program
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    foreach ($arg in $CommandArgs) {
+      [void]$psi.ArgumentList.Add($arg)
+    }
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $psi
+
+    [void]$process.Start()
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+
+    $exitCode = $process.ExitCode
+    $output = (($stdout, $stderr) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join [Environment]::NewLine
+    $process.Dispose()
 
     if (-not [string]::IsNullOrWhiteSpace($output)) {
       Write-Host $output.TrimEnd()
