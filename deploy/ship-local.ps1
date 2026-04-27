@@ -80,6 +80,31 @@ function ExecNativeWithRetry(
   }
 }
 
+function Invoke-RemoteShellScript(
+  [string]$VpsHost,
+  [string[]]$Lines,
+  [string]$RemoteScriptNamePrefix
+) {
+  $tempDir = [System.IO.Path]::GetTempPath()
+  $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+  $localScriptPath = Join-Path $tempDir ("{0}-{1}.sh" -f $RemoteScriptNamePrefix, $timestamp)
+  $remoteScriptPath = "/tmp/{0}-{1}.sh" -f $RemoteScriptNamePrefix, $timestamp
+
+  try {
+    $script = ($Lines -join "`n") + "`n"
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($localScriptPath, $script, $utf8NoBom)
+    ExecNativeWithRetry -Program "scp" -CommandArgs @($localScriptPath, "${VpsHost}:${remoteScriptPath}")
+    ExecNativeWithRetry -Program "ssh" -CommandArgs @($VpsHost, "sh $remoteScriptPath")
+  } finally {
+    if (Test-Path -LiteralPath $localScriptPath) {
+      Remove-Item -LiteralPath $localScriptPath -Force -ErrorAction SilentlyContinue
+    }
+
+    & ssh $VpsHost "rm -f '$remoteScriptPath'" *> $null
+  }
+}
+
 function Get-ShipStatePaths([string]$RepoRoot) {
   $bytes = [System.Text.Encoding]::UTF8.GetBytes($RepoRoot)
   $hasher = [System.Security.Cryptography.SHA256]::Create()
@@ -593,17 +618,17 @@ try {
   }
 
   if ((Get-ShipStageRank -Stage ([string]$shipState.Stage)) -lt (Get-ShipStageRank -Stage "deployed")) {
-    $remoteDeploy = @"
-set -e
-cd $VpsRepoDir
-if [ -n "`$(git status --porcelain)" ]; then
-  echo "[ship-local] WARNING: VPS repo has local changes; auto-stashing before deploy"
-  git stash push --include-untracked -m "ship-local-auto-stash `$(date -Iseconds)" >/dev/null
-fi
-WEB_IMAGE=$($shipState.ImageTag) SKIP_PULL=1 ./deploy/deploy-prod-hot-swap.sh
-"@
     Write-Host "Triggering VPS hot-swap deploy..." -ForegroundColor Yellow
-    ExecNative -Program "ssh" -CommandArgs @($VpsHost, $remoteDeploy)
+    Invoke-RemoteShellScript -VpsHost $VpsHost -RemoteScriptNamePrefix "ytr-deploy" -Lines @(
+      "#!/bin/sh",
+      "set -e",
+      "cd $VpsRepoDir",
+      'if [ -n "$(git status --porcelain)" ]; then',
+      '  echo "[ship-local] WARNING: VPS repo has local changes; auto-stashing before deploy"',
+      '  git stash push --include-untracked -m "ship-local-auto-stash $(date -Iseconds)" >/dev/null',
+      'fi',
+      "WEB_IMAGE=$($shipState.ImageTag) SKIP_PULL=1 ./deploy/deploy-prod-hot-swap.sh"
+    )
     $shipState.Stage = "deployed"
     $shipState.UpdatedAt = (Get-Date).ToString("o")
     Write-ShipState -StateFilePath $shipStatePath -State $shipState
