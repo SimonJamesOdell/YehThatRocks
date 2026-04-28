@@ -4957,20 +4957,6 @@ function ShellDynamicInner({
                     </button>
                     <button
                       type="button"
-                      className={chatMode === "online" ? "activeTab" : undefined}
-                      onClick={() => {
-                        if (!isAuthenticated) {
-                          openAuthModal();
-                          return;
-                        }
-
-                        setChatMode("online");
-                      }}
-                    >
-                      Who&apos;s Online
-                    </button>
-                    <button
-                      type="button"
                       className={chatMode === "magazine" ? "activeTab" : undefined}
                       onClick={() => {
                         setChatMode("magazine");
