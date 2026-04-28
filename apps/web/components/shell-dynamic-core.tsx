@@ -4947,7 +4947,6 @@ function ShellDynamicInner({
             const railContent = (
               <>
                 <div className={isAdminOverlayRoute ? "railTabs railTabsAdminOverlay" : "railTabs"}>
-                {isAdminOverlayRoute ? (
                   <>
                     <button
                       type="button"
@@ -4969,16 +4968,6 @@ function ShellDynamicInner({
                       }}
                     >
                       Who&apos;s Online
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className={`${chatMode === "global" ? "activeTab" : ""} ${flashingChatTabs.global ? "attentionPulse" : ""}`.trim() || undefined}
-                      onClick={() => setChatMode("global")}
-                    >
-                      Chat
                     </button>
                     <button
                       type="button"
@@ -5008,7 +4997,6 @@ function ShellDynamicInner({
                       Who&apos;s Online
                     </button>
                   </>
-                )}
               </div>
 
               <div className="chatList" ref={chatListRef}>
