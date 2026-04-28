@@ -10,6 +10,7 @@ import {
   currentVideoRelatedPoolCache,
   currentVideoRelatedPoolInflight,
 } from "@/lib/current-video-cache";
+import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import { getTopVideosFast, warmTopVideos } from "@/lib/top-videos-cache";
 
 const CURRENT_VIDEO_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_CATALOG === "1";
@@ -36,6 +37,7 @@ const WATCH_NEXT_STREAM_CACHE_TTL_MS = 30_000;
 const WATCH_NEXT_HEAD_MIX_WINDOW = 30;
 const WATCH_NEXT_HEAD_MIX_MAX_FAVOURITES = 3;
 const WATCH_NEXT_FAVOURITE_INSERT_INTERVAL = 14;
+const GENERIC_ARTIST_LABELS = new Set(["unknown artist", "unknown", "youtube"]);
 
 type CurrentVideoPayload = {
   currentVideo: Awaited<ReturnType<typeof getCurrentVideo>>;
@@ -354,6 +356,7 @@ async function getRandomCatalogVideosForCurrentVideo(currentVideoId: string, cou
   const queryLimit = Math.max(80, requested * 2);
   const selectSql = `
     SELECT
+      v.id AS dbId,
       v.videoId AS id,
       v.title AS title,
       COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
@@ -375,6 +378,7 @@ async function getRandomCatalogVideosForCurrentVideo(currentVideoId: string, cou
 
   const wrapSql = `
     SELECT
+      v.id AS dbId,
       v.videoId AS id,
       v.title AS title,
       COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
@@ -395,6 +399,7 @@ async function getRandomCatalogVideosForCurrentVideo(currentVideoId: string, cou
   `;
 
   const firstRows = await prisma.$queryRawUnsafe<Array<{
+    dbId: number;
     id: string;
     title: string;
     channelTitle: string | null;
@@ -405,6 +410,7 @@ async function getRandomCatalogVideosForCurrentVideo(currentVideoId: string, cou
   const remaining = Math.max(0, queryLimit - firstRows.length);
   const wrapRows = remaining > 0
     ? await prisma.$queryRawUnsafe<Array<{
+      dbId: number;
       id: string;
       title: string;
       channelTitle: string | null;
@@ -414,14 +420,49 @@ async function getRandomCatalogVideosForCurrentVideo(currentVideoId: string, cou
     : [];
   const rows = uniqueVideosById([...firstRows, ...wrapRows]).slice(0, requested);
 
-  return rows.map((row) => ({
+  const repairedArtists = rows
+    .map((row) => {
+      const normalizedCurrentArtist = (row.channelTitle ?? "").trim().toLowerCase();
+      const hasMeaningfulArtist = Boolean(normalizedCurrentArtist) && !GENERIC_ARTIST_LABELS.has(normalizedCurrentArtist);
+      if (hasMeaningfulArtist) {
+        return null;
+      }
+
+      const inferredArtist = inferArtistFromTitle(row.title)?.trim();
+      if (!inferredArtist) {
+        return null;
+      }
+
+      return { dbId: row.dbId, inferredArtist };
+    })
+    .filter((entry): entry is { dbId: number; inferredArtist: string } => Boolean(entry));
+
+  if (repairedArtists.length > 0) {
+    // Best-effort data repair: fill parsedArtist when we can infer a reliable artist from title.
+    void Promise.all(repairedArtists.map(({ dbId, inferredArtist }) => prisma.$executeRaw`
+      UPDATE videos
+      SET parsedArtist = ${inferredArtist}
+      WHERE id = ${dbId}
+        AND (parsedArtist IS NULL OR TRIM(parsedArtist) = '')
+    `));
+  }
+
+  return rows.map((row) => {
+    const normalizedCurrentArtist = (row.channelTitle ?? "").trim().toLowerCase();
+    const inferredArtist = inferArtistFromTitle(row.title)?.trim();
+    const resolvedArtist = row.channelTitle?.trim() && !GENERIC_ARTIST_LABELS.has(normalizedCurrentArtist)
+      ? row.channelTitle.trim()
+      : inferredArtist || "Unknown Artist";
+
+    return ({
     id: row.id,
     title: row.title,
-    channelTitle: row.channelTitle ?? "Unknown Artist",
+    channelTitle: resolvedArtist,
     genre: "",
     favourited: Number(row.favourited ?? 0),
     description: row.description ?? "",
-  }));
+    });
+  });
 }
 
 async function buildWatchNextRelatedStream(params: {
