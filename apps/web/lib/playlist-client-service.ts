@@ -2,7 +2,7 @@ import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 
 export const PLAYLIST_CLIENT_TELEMETRY_EVENT = "ytr:playlist-client-telemetry";
 
-type PlaylistOperation = "list" | "create" | "add-item" | "add-items";
+type PlaylistOperation = "list" | "create" | "add-item" | "add-items" | "import";
 
 type PlaylistServiceErrorCode =
   | "unauthorized"
@@ -77,6 +77,10 @@ function mapErrorCode(status: number | null): PlaylistServiceErrorCode {
 
 function defaultMessage(operation: PlaylistOperation, code: PlaylistServiceErrorCode) {
   if (code === "unauthorized" || code === "forbidden") {
+    if (operation === "import") {
+      return "Sign in to import playlists.";
+    }
+
     return operation === "add-item" || operation === "add-items"
       ? "Sign in to save tracks to playlists."
       : "Sign in to create playlists.";
@@ -92,6 +96,10 @@ function defaultMessage(operation: PlaylistOperation, code: PlaylistServiceError
 
   if (operation === "add-items") {
     return "Could not save tracks to playlist.";
+  }
+
+  if (operation === "import") {
+    return "Could not import playlist from YouTube.";
   }
 
   return "Could not load playlists.";
@@ -136,13 +144,22 @@ async function requestJson<T>(
 
     if (!response.ok) {
       const code = mapErrorCode(response.status);
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: unknown; message?: unknown }
+        | null;
+      const payloadError = typeof payload?.error === "string"
+        ? payload.error
+        : typeof payload?.message === "string"
+          ? payload.message
+          : null;
+
       emitTelemetry(operation, false, durationMs, response.status, code, options?.telemetryContext);
       return {
         ok: false,
         error: {
           code,
           status: response.status,
-          message: defaultMessage(operation, code),
+          message: payloadError ?? defaultMessage(operation, code),
         },
       };
     }
@@ -237,6 +254,38 @@ export async function addPlaylistItemsClient(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ videoIds: input.videoIds }),
+    },
+    options,
+  );
+}
+
+export async function importPlaylistClient(
+  input: { source: string; name?: string },
+  options?: ServiceOptions,
+) {
+  const payload = {
+    source: input.source,
+    name: input.name,
+  };
+
+  return requestJson<{
+    ok?: boolean;
+    playlist?: PlaylistMutationPayload;
+    source?: { playlistId?: string; playlistTitle?: string | null };
+    stats?: {
+      sourceVideoCount?: number;
+      matchedVideoCount?: number;
+      existingVideoCount?: number;
+      importedVideoCount?: number;
+      failedImportCount?: number;
+    };
+  }>(
+    "import",
+    "/api/playlists/import",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     },
     options,
   );

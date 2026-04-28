@@ -177,7 +177,11 @@ const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || undefin
 const ENABLE_YOUTUBE_RELATED_DISCOVERY = process.env.ENABLE_YOUTUBE_RELATED_DISCOVERY !== "0";
 const YOUTUBE_DAILY_QUOTA_UNITS = Math.max(1_000, Number(process.env.YOUTUBE_DAILY_QUOTA_UNITS || "10000"));
 const YOUTUBE_RELATED_DISCOVERY_RESERVED_UNITS = Math.max(0, Number(process.env.YOUTUBE_RELATED_DISCOVERY_RESERVED_UNITS || "2500"));
-const YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS = Math.max(100, Number(process.env.YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS || "1500"));
+const YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS = Math.max(100, Number(process.env.YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS || "3000"));
+const ENABLE_AUTO_RELATED_BACKFILL = process.env.ENABLE_AUTO_RELATED_BACKFILL !== "0";
+const AUTO_RELATED_BACKFILL_UNITS_PER_RUN = Math.max(100, Math.min(3000, Number(process.env.AUTO_RELATED_BACKFILL_UNITS_PER_RUN || "300")));
+const AUTO_RELATED_BACKFILL_MIN_INTERVAL_MS = Math.max(60_000, Number(process.env.AUTO_RELATED_BACKFILL_MIN_INTERVAL_MS || String(15 * 60 * 1000)));
+const AUTO_RELATED_BACKFILL_MAX_NEWEST_OFFSET = Math.max(0, Math.min(500, Number(process.env.AUTO_RELATED_BACKFILL_MAX_NEWEST_OFFSET || "0")));
 const RELATED_DISCOVERY_MAX_DEPTH = Math.max(1, Math.min(4, Number(process.env.RELATED_DISCOVERY_MAX_DEPTH || "2")));
 const RELATED_DISCOVERY_MAX_NEW_VIDEOS = Math.max(1, Math.min(400, Number(process.env.RELATED_DISCOVERY_MAX_NEW_VIDEOS || "40")));
 const RELATED_DISCOVERY_SEED_FANOUT = Math.max(1, Math.min(8, Number(process.env.RELATED_DISCOVERY_SEED_FANOUT || "8")));
@@ -202,6 +206,8 @@ let videoChannelTitleColumnAvailable = false;
 let relatedDiscoveryQuotaSnapshot:
   | { dayKey: string; expiresAt: number; totalUnits: number; relatedUnits: number }
   | null = null;
+let autoRelatedBackfillInFlight: Promise<void> | null = null;
+let autoRelatedBackfillLastStartedAt = 0;
 
 function getPacificDayWindow(now = new Date()) {
   const pacificDateKey = new Intl.DateTimeFormat("en-US", {
@@ -2409,6 +2415,41 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
   };
 }
 
+function maybeStartAutomaticRelatedBackfill(offset: number) {
+  if (!ENABLE_AUTO_RELATED_BACKFILL || !ENABLE_YOUTUBE_RELATED_DISCOVERY || !hasDatabaseUrl()) {
+    return;
+  }
+
+  if (offset > AUTO_RELATED_BACKFILL_MAX_NEWEST_OFFSET) {
+    return;
+  }
+
+  const now = Date.now();
+  if (autoRelatedBackfillInFlight || now - autoRelatedBackfillLastStartedAt < AUTO_RELATED_BACKFILL_MIN_INTERVAL_MS) {
+    return;
+  }
+
+  autoRelatedBackfillLastStartedAt = now;
+  autoRelatedBackfillInFlight = (async () => {
+    try {
+      const result = await runQuotaBackfill(AUTO_RELATED_BACKFILL_UNITS_PER_RUN);
+      debugCatalog("auto-related-backfill:complete", {
+        seedsAttempted: result.seedsAttempted,
+        fetchedNodes: result.fetchedNodes,
+        discoveredNewVideos: result.discoveredNewVideos,
+        unitsEstimated: result.unitsEstimated,
+        unitsPerRun: AUTO_RELATED_BACKFILL_UNITS_PER_RUN,
+      });
+    } catch (error) {
+      debugCatalog("auto-related-backfill:error", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      autoRelatedBackfillInFlight = null;
+    }
+  })();
+}
+
 async function hydrateAndPersistVideo(
   videoId: string,
   providedVideo?: PersistableVideoRecord,
@@ -4444,6 +4485,11 @@ export async function getNewestVideos(
 
   const safeCount = Math.max(1, Math.min(500, Math.floor(count)));
   const safeOffset = Math.max(0, Math.floor(offset));
+
+  // Keep the New rail replenished: opportunistically run shallow related backfills
+  // behind a cooldown and per-run budget; hard daily caps are enforced in fetch guards.
+  maybeStartAutomaticRelatedBackfill(safeOffset);
+
   const newestRequestKey = `${safeCount}:${safeOffset}:${options?.enforcePlaybackAvailability ? "1" : "0"}`;
   const now = Date.now();
 

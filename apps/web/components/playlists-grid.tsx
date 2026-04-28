@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 
 import { CloseLink } from "@/components/close-link";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
-import { createPlaylistClient, listPlaylistsClient } from "@/lib/playlist-client-service";
+import { createPlaylistClient, importPlaylistClient, listPlaylistsClient } from "@/lib/playlist-client-service";
 import type { PlaylistSummary } from "@/lib/catalog-data";
 
 type PlaylistsGridProps = {
@@ -21,8 +21,11 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
   const [playlists, setPlaylists] = useState<PlaylistSummary[]>(initialPlaylists);
   const [name, setName] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [importSource, setImportSource] = useState("");
+  const [importName, setImportName] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -82,13 +85,14 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (!showCreateModal) {
+    if (!showCreateModal && !showImportModal) {
       return;
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setShowCreateModal(false);
+        setShowImportModal(false);
       }
     };
 
@@ -97,7 +101,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [showCreateModal]);
+  }, [showCreateModal, showImportModal]);
 
   function openCreateModal() {
     if (!isAuthenticated) {
@@ -108,6 +112,87 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
     setName("");
     setMessage(null);
     setShowCreateModal(true);
+  }
+
+  function openImportModal() {
+    if (!isAuthenticated) {
+      setMessage("Sign in to import playlists.");
+      return;
+    }
+
+    setImportSource("");
+    setImportName("");
+    setMessage(null);
+    setShowImportModal(true);
+  }
+
+  function importPlaylistFromYouTube() {
+    if (!isAuthenticated) {
+      setMessage("Sign in to import playlists.");
+      return;
+    }
+
+    const trimmedSource = importSource.trim();
+    const trimmedName = importName.trim();
+
+    if (!trimmedSource) {
+      setMessage("Paste a YouTube playlist URL or playlist ID.");
+      return;
+    }
+
+    startTransition(async () => {
+      setMessage(null);
+
+      try {
+        const response = await importPlaylistClient(
+          {
+            source: trimmedSource,
+            name: trimmedName.length >= 2 ? trimmedName : undefined,
+          },
+          {
+            telemetryContext: {
+              component: "playlists-grid",
+              mode: "import-youtube",
+            },
+          },
+        );
+
+        if (!response.ok && (response.error.code === "unauthorized" || response.error.code === "forbidden")) {
+          setMessage("Sign in to import playlists.");
+          return;
+        }
+
+        if (!response.ok) {
+          setMessage(response.error.message || "Could not import playlist from YouTube.");
+          return;
+        }
+
+        const stats = response.data?.stats;
+        const createdPlaylist = response.data?.playlist;
+        const resolvedName = createdPlaylist?.name ?? "Imported playlist";
+        const matchedCount = Number(stats?.matchedVideoCount ?? 0);
+        const importedCount = Number(stats?.importedVideoCount ?? 0);
+
+        setShowImportModal(false);
+        setImportSource("");
+        setImportName("");
+        setMessage(`Imported ${resolvedName} with ${matchedCount} tracks (${importedCount} new videos ingested).`);
+
+        const refreshResponse = await listPlaylistsClient({
+          telemetryContext: {
+            component: "playlists-grid",
+            mode: "refresh-after-import",
+          },
+        });
+
+        if (refreshResponse.ok) {
+          setPlaylists(refreshResponse.data as PlaylistSummary[]);
+          dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
+        }
+      } catch {
+        setMessage("Could not import playlist from YouTube.");
+      }
+    });
   }
 
   function createPlaylist() {
@@ -224,6 +309,16 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
           >
             +
           </button>
+          <button
+            type="button"
+            className="newPageSeenToggle top100CreatePlaylistButton"
+            onClick={openImportModal}
+            disabled={isPending}
+            aria-label="Import YouTube playlist"
+            title="Import YouTube playlist"
+          >
+            + Import
+          </button>
         </div>
         <CloseLink />
       </div>
@@ -313,6 +408,59 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
       )}
 
       {message ? <p className="mutationMessage">{message}</p> : null}
+
+      {isMounted && showImportModal ? createPortal(
+        <div
+          className="suggestNewModalBackdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Import YouTube playlist"
+          onClick={() => setShowImportModal(false)}
+        >
+          <div className="suggestNewModalPanel" onClick={(event) => event.stopPropagation()}>
+            <div className="suggestNewModalHeader">
+              <h3>Import YouTube Playlist</h3>
+              <p className="suggestNewModalMeta">Paste a YouTube playlist URL. Missing videos will be ingested into the catalog.</p>
+            </div>
+
+            <label className="newFlagModalField suggestNewModalField" htmlFor="import-playlist-source">
+              Playlist URL or ID
+            </label>
+            <input
+              className="suggestNewModalInput"
+              id="import-playlist-source"
+              value={importSource}
+              onChange={(event) => setImportSource(event.currentTarget.value)}
+              placeholder="https://youtube.com/playlist?list=..."
+              disabled={isPending}
+              maxLength={2048}
+            />
+
+            <label className="newFlagModalField suggestNewModalField" htmlFor="import-playlist-name">
+              Playlist name (optional)
+            </label>
+            <input
+              className="suggestNewModalInput"
+              id="import-playlist-name"
+              value={importName}
+              onChange={(event) => setImportName(event.currentTarget.value)}
+              placeholder="Use source playlist name"
+              disabled={isPending}
+              maxLength={80}
+            />
+
+            <div className="newFlagModalActions">
+              <button type="button" className="newFlagModalActionBtn" onClick={() => setShowImportModal(false)} disabled={isPending}>
+                Cancel
+              </button>
+              <button type="button" className="newFlagModalActionBtn" onClick={importPlaylistFromYouTube} disabled={isPending}>
+                {isPending ? "Importing..." : "Import"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
     </>
   );
 }
