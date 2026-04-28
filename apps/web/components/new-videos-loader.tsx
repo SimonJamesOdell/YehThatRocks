@@ -50,6 +50,7 @@ const NEW_SCROLL_TARGET_RUNWAY_PX = 2600;
 const NEW_SCROLL_MAX_PREFETCH_BATCHES = 2;
 const NEW_PLAYLIST_MAX_ITEMS = 100;
 const NEW_FIRST_LOAD_TIMEOUT_MS = 6_500;
+const NEW_HEAD_REFRESH_INTERVAL_MS = 90_000;
 
 type ScrollMetrics = {
   scrollTop: number;
@@ -267,6 +268,30 @@ export function NewVideosLoader({
     if (uniqueIncoming.length > 0) {
       startTransition(() => {
         setAllVideos((prev) => [...prev, ...uniqueIncoming]);
+      });
+    }
+
+    return uniqueIncoming.length;
+  }, [hiddenVideoIdSet]);
+
+  const prependFetchedVideos = useCallback((videos: VideoRecord[]) => {
+    if (videos.length === 0) {
+      return 0;
+    }
+
+    const filteredIncoming = filterHiddenVideos(videos, hiddenVideoIdSet);
+    const uniqueIncoming = filteredIncoming.filter((video) => {
+      if (!video?.id || allVideoIdsRef.current.has(video.id)) {
+        return false;
+      }
+
+      allVideoIdsRef.current.add(video.id);
+      return true;
+    });
+
+    if (uniqueIncoming.length > 0) {
+      startTransition(() => {
+        setAllVideos((prev) => [...uniqueIncoming, ...prev]);
       });
     }
 
@@ -910,6 +935,49 @@ export function NewVideosLoader({
 
     void loadVideos();
   }, [hiddenVideoIdsKey, initialLoadRetryNonce, initialVideoIdsKey, loadBatch]);
+
+  const refreshNewestHead = useCallback(async () => {
+    if (loading || document.visibilityState !== "visible") {
+      return;
+    }
+
+    try {
+      const result = await fetchJsonWithLoaderContract<NewVideosApiPayload>({
+        input: `/api/videos/newest?skip=0&take=${NEW_INITIAL_BATCH_SIZE}`,
+        init: {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+        },
+        failureMessage: "Could not refresh new videos.",
+      });
+
+      if (!result.ok) {
+        return;
+      }
+
+      const payload = result.data;
+      const videos = Array.isArray(payload.videos) ? payload.videos : [];
+      const added = prependFetchedVideos(videos);
+      if (added > 0) {
+        // Keep pagination aligned after prepending fresh head entries.
+        nextOffsetRef.current += added;
+        setHasMore(true);
+      }
+    } catch {
+      // Head refresh is best-effort only.
+    }
+  }, [loading, prependFetchedVideos]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void refreshNewestHead();
+    }, NEW_HEAD_REFRESH_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [refreshNewestHead]);
 
   return (
     <>
