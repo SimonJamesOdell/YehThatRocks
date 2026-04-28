@@ -3421,6 +3421,10 @@ export function PlayerExperience({
       playlistItemIndex?: number | null;
     },
   ) {
+    const runtimePathname = typeof window !== "undefined" && window.location.pathname
+      ? window.location.pathname
+      : pathname;
+    const navigationPathname = runtimePathname || "/";
     const params = new URLSearchParams(searchParams.toString());
     params.set("v", videoId);
 
@@ -3437,7 +3441,7 @@ export function PlayerExperience({
       }
     }
 
-    router.push(`${pathname}?${params.toString()}`);
+    router.push(`${navigationPathname}?${params.toString()}`);
   }
 
   function triggerEndOfVideoAction(options?: { forceAutoplayAdvance?: boolean }) {
