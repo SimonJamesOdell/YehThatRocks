@@ -6,4 +6,14 @@
 -- - Artist statistics aggregation
 -- - Category/genre browsing that pulls artists
 
-CREATE INDEX idx_artists_artist ON artists(artist);
+SET @idx_exists = (
+  SELECT COUNT(*)
+  FROM information_schema.statistics
+  WHERE table_schema = DATABASE()
+    AND table_name = 'artists'
+    AND index_name = 'idx_artists_artist'
+);
+SET @sql = IF(@idx_exists = 0, 'CREATE INDEX idx_artists_artist ON artists(artist)', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
