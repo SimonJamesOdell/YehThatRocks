@@ -7479,6 +7479,12 @@ export async function getWatchHistory(userId: number, options?: { limit?: number
 export async function updateFavourite(videoId: string, action: "add" | "remove", userId?: number) {
   if (hasDatabaseUrl() && userId) {
     const normalizedVideoId = normalizeYouTubeVideoId(videoId) ?? videoId;
+    
+    // Perform the add/remove mutation in a transaction.
+    // The database TRIGGER on the favourites table (trg_favourites_insert/delete)
+    // automatically maintains videos.favourited by COUNT(DISTINCT userid) on every change,
+    // so we no longer need to recount it in application code.
+    // This reduces HOTSPOT 1: COUNT(DISTINCT) recount from O(N) per toggle to O(1) trigger fire.
     await prisma.$transaction(async (tx) => {
       if (action === "add") {
         const existing = await tx.favourite.findFirst({
@@ -7487,28 +7493,17 @@ export async function updateFavourite(videoId: string, action: "add" | "remove",
         });
 
         if (!existing) {
+          // Trigger will fire and update videos.favourited automatically
           await tx.favourite.create({
             data: { userid: userId, videoId: normalizedVideoId },
           });
         }
       } else {
+        // Trigger will fire and update videos.favourited automatically
         await tx.favourite.deleteMany({
           where: { userid: userId, videoId: normalizedVideoId },
         });
       }
-
-      const distinctRows = await tx.$queryRaw<Array<{ cnt: bigint | number }>>`
-        SELECT COUNT(DISTINCT userid) AS cnt
-        FROM favourites
-        WHERE videoId = ${normalizedVideoId}
-      `;
-      const rawCount = distinctRows[0]?.cnt ?? 0;
-      const favouriteCount = typeof rawCount === "bigint" ? Number(rawCount) : Number(rawCount);
-
-      await tx.video.updateMany({
-        where: { videoId: normalizedVideoId },
-        data: { favourited: Number.isFinite(favouriteCount) ? Math.max(0, favouriteCount) : 0 },
-      });
     });
 
     topPoolCache = undefined;

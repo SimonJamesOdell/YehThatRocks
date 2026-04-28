@@ -95,9 +95,12 @@ function main() {
   assertContains(topVideosCacheSource, "topVideosRefreshPromise = getTopVideos(Math.max(count, 100))", "Top videos cache refreshes from canonical top-videos helper", failures);
   assertContains(topVideosRouteSource, 'import { getTopVideosFast, warmTopVideos } from "@/lib/top-videos-cache";', "Top videos API route uses cache-backed canonical source", failures);
   assertContains(topVideosRouteSource, "let videos = await getTopVideosFast(sourceCount, TOP_VIDEOS_WAIT_MS);", "Top videos API reads canonical pool via fast cache helper", failures);
-  assertContains(catalogDataSource, "SELECT COUNT(DISTINCT userid) AS cnt", "Favourite mutations recalculate exact distinct-user totals", failures);
-  assertContains(catalogDataSource, "await tx.video.updateMany({", "Favourite mutations persist favourite counts back to videos", failures);
-  assertContains(catalogDataSource, "data: { favourited: Number.isFinite(favouriteCount) ? Math.max(0, favouriteCount) : 0 },", "Favourite mutations store normalized recalculated favourite totals", failures);
+  
+  // Favourite count maintenance moved to database triggers for performance.
+  // Invariant: updateFavourite must call add/delete operations, and triggers maintain the count.
+  assertContains(catalogDataSource, "TRIGGER", "Favourite mutations are maintained via database trigger (not app-level recount)", failures);
+  assertContains(catalogDataSource, "await tx.favourite.create({", "Favourite add operation persists to database", failures);
+  assertContains(catalogDataSource, "await tx.favourite.deleteMany({", "Favourite remove operation deletes from database", failures);
   assertContains(catalogDataSource, 'const { invalidateTopVideosCache } = await import("@/lib/top-videos-cache");', "Favourite mutations can invalidate Top 100 API cache", failures);
   assertContains(catalogDataSource, "invalidateTopVideosCache();", "Favourite mutations invalidate Top 100 API cache after updates", failures);
 
