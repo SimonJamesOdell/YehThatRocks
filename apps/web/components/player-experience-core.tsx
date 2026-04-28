@@ -158,6 +158,7 @@ const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. P
 const BROKEN_UPSTREAM_OVERLAY_MESSAGE = "This video is no longer available on YouTube and has been removed from the catalog.";
 const BROKEN_UPSTREAM_AUTOADVANCE_MS = 6000;
 const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstream video provider for this track. This is not a YehThatRocks failure. Please try the refresh button and if that does not work, choose another track.";
+const DELETED_TRACK_OVERLAY_MESSAGE = "This track was removed from YehThatRocks.";
 const EARLY_PLAYBACK_VERIFICATION_MS = 1200;
 const STUCK_PLAYBACK_CHECK_MS = 5000;
 const STUCK_PLAYBACK_MAX_RETRIES = 3;
@@ -234,8 +235,8 @@ function normalizePlayerVolume(value: unknown, fallback = 100) {
   return Math.max(0, Math.min(100, Math.round(toSafeNumber(value, fallback))));
 }
 
-function isBotChallengeVerificationReason(reason: string | null | undefined) {
-  return typeof reason === "string" && /bot-check/i.test(reason);
+function isInteractivePlaybackBlockReason(reason: string | null | undefined) {
+  return typeof reason === "string" && /(bot-check|interactive-login-check|login-required|content-check-required|consent)/i.test(reason);
 }
 
 function formatPlaybackTime(value: number) {
@@ -616,6 +617,7 @@ export function PlayerExperience({
   const [historyStack, setHistoryStack] = useState<string[]>([]);
   const [showNowPlayingOverlay, setShowNowPlayingOverlay] = useState(false);
   const [unavailableOverlayMessage, setUnavailableOverlayMessage] = useState<string | null>(null);
+  const [unavailableOverlayKind, setUnavailableOverlayKind] = useState<"playback" | "deleted">("playback");
   const [unavailableOverlayRequiresOk, setUnavailableOverlayRequiresOk] = useState(false);
   const [unavailableAutoAdvanceMs, setUnavailableAutoAdvanceMs] = useState<number | null>(null);
   const [unavailableAutoAdvanceSeconds, setUnavailableAutoAdvanceSeconds] = useState<number | null>(null);
@@ -1455,6 +1457,7 @@ export function PlayerExperience({
   const footerActionsBlocked = Boolean(unavailableOverlayMessage) || showEndedChoiceOverlay || playlistChooserOpen;
   const lyricsUnavailableForCurrentVideo = lyricsAvailableForCurrentVideo === false;
   const lyricsButtonDisabled = footerActionsBlocked || lyricsUnavailableForCurrentVideo;
+  const isDeletedConfirmationOverlay = unavailableOverlayKind === "deleted";
   const isUpstreamConnectivityOverlay = unavailableOverlayMessage === UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE;
   const isBrokenUpstreamOverlay = unavailableOverlayMessage === BROKEN_UPSTREAM_OVERLAY_MESSAGE;
   const isAutoAdvanceUnavailableOverlay = unavailableAutoAdvanceMs !== null;
@@ -1628,9 +1631,16 @@ export function PlayerExperience({
 
     unavailableOverlayTimeoutRef.current = null;
     setUnavailableOverlayMessage(null);
+    setUnavailableOverlayKind("playback");
     setUnavailableOverlayRequiresOk(false);
     setUnavailableAutoAdvanceMs(null);
     setUnavailableAutoAdvanceSeconds(null);
+  }
+
+  function acknowledgeDeletedOverlay() {
+    clearUnavailableOverlayMessage();
+    setEndedChoiceFromUnavailable(false);
+    triggerEndOfVideoAction({ forceAutoplayAdvance: true });
   }
 
   function acknowledgeUnavailableOverlay() {
@@ -1657,6 +1667,7 @@ export function PlayerExperience({
     clearMidPlaybackBufferingCheck();
 
     const requiresOk = options?.requiresOk ?? !autoplayEnabledRef.current;
+    setUnavailableOverlayKind("playback");
     setUnavailableOverlayMessage(message?.trim() || UNAVAILABLE_OVERLAY_MESSAGE);
     setShowEndedChoiceOverlay(false);
     setShowEndScreenCover(false);
@@ -1688,6 +1699,22 @@ export function PlayerExperience({
       setUnavailableAutoAdvanceSeconds(null);
     }
 
+    unavailableOverlayTimeoutRef.current = null;
+  }
+
+  function showDeletedOverlayConfirmation() {
+    clearUnavailableOverlayMessage();
+    clearStuckPlaybackRetryTimer();
+    clearStuckPlaybackWatchdogTimer();
+    clearMidPlaybackBufferingCheck();
+
+    setUnavailableOverlayKind("deleted");
+    setUnavailableOverlayMessage(DELETED_TRACK_OVERLAY_MESSAGE);
+    setShowEndedChoiceOverlay(false);
+    setShowEndScreenCover(false);
+    setUnavailableOverlayRequiresOk(true);
+    setUnavailableAutoAdvanceMs(null);
+    setUnavailableAutoAdvanceSeconds(null);
     unavailableOverlayTimeoutRef.current = null;
   }
 
@@ -1843,7 +1870,7 @@ export function PlayerExperience({
 
         const reportResult = await reportUnavailableFromPlayer("yt-player-upstream-connect-timeout");
         const shouldSkip = reportResult.shouldSkip;
-        const botChallengeDetected = isBotChallengeVerificationReason(reportResult.verificationReason);
+        const botChallengeDetected = isInteractivePlaybackBlockReason(reportResult.verificationReason);
 
         logPlayerDebug("runtime-block-check", {
           videoId: currentVideoRef.current.id,
@@ -1904,7 +1931,7 @@ export function PlayerExperience({
         }
 
         const reportResult = await reportUnavailableFromPlayer("yt-player-early-refusal-check");
-        const botChallengeDetected = isBotChallengeVerificationReason(reportResult.verificationReason);
+        const botChallengeDetected = isInteractivePlaybackBlockReason(reportResult.verificationReason);
 
         logPlayerDebug("early-playback-verification", {
           videoId: currentVideoRef.current.id,
@@ -2436,6 +2463,9 @@ export function PlayerExperience({
       return;
     }
 
+    const targetVideoId = currentVideo.id;
+    const capturedMessage = forcedUnavailableMessage;
+
     const runtimePlayer = playerRef.current;
     const runtimeState =
       runtimePlayer && typeof runtimePlayer.getPlayerState === "function"
@@ -2452,18 +2482,55 @@ export function PlayerExperience({
 
     if (playbackAlreadyEstablished) {
       logPlayerDebug("forced-unavailable:ignored-due-to-active-playback", {
-        videoId: currentVideo.id,
+        videoId: targetVideoId,
         runtimeState,
         runtimeTime,
       });
       return;
     }
 
-    autoplaySuppressedVideoIdRef.current = currentVideo.id;
-    pauseActivePlayback();
-    showUnavailableOverlayMessage(forcedUnavailableMessage, {
-      autoAdvanceWhenAutoplay: true,
-    });
+    // Delay before showing the overlay so the YouTube player has a chance to
+    // establish playback. If the video actually plays (database/embed state
+    // mismatch), onStateChange(PLAYING) will call clearUnavailableOverlayMessage
+    // before the timeout fires, preventing a false-positive error banner.
+    const timeoutId = window.setTimeout(() => {
+      if (currentVideoRef.current.id !== targetVideoId) {
+        return;
+      }
+
+      const postDelayPlayer = playerRef.current;
+      const postDelayState =
+        postDelayPlayer && typeof postDelayPlayer.getPlayerState === "function"
+          ? postDelayPlayer.getPlayerState()
+          : -1;
+      const postDelayTime =
+        postDelayPlayer && typeof postDelayPlayer.getCurrentTime === "function"
+          ? toSafeNumber(postDelayPlayer.getCurrentTime(), 0)
+          : 0;
+      const playbackEstablishedAfterDelay =
+        postDelayState === window.YT?.PlayerState.PLAYING
+        || hasPlaybackStartedRef.current
+        || postDelayTime > 1;
+
+      if (playbackEstablishedAfterDelay) {
+        logPlayerDebug("forced-unavailable:ignored-playback-established-after-delay", {
+          videoId: targetVideoId,
+          postDelayState,
+          postDelayTime,
+        });
+        return;
+      }
+
+      autoplaySuppressedVideoIdRef.current = targetVideoId;
+      pauseActivePlayback();
+      showUnavailableOverlayMessage(capturedMessage, {
+        autoAdvanceWhenAutoplay: true,
+      });
+    }, EARLY_PLAYBACK_VERIFICATION_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
   }, [currentVideo.id, forcedUnavailableMessage, forcedUnavailableSignal]);
 
   useEffect(() => {
@@ -3070,7 +3137,7 @@ export function PlayerExperience({
                 ? `yt-player-age-or-owner-restricted-${event.data}`
                 : `yt-player-error-${event.data}`;
 
-            const isDefinitiveBrokenUpstreamCode = event.data === 100 || event.data === 101 || event.data === 150;
+            const isDefinitiveBrokenUpstreamCode = event.data === 100;
             const isImmediateBotChallengeCode = event.data === 5;
 
             if (isDefinitiveBrokenUpstreamCode) {
@@ -3110,7 +3177,7 @@ export function PlayerExperience({
 
             const reportResult = await reportUnavailableFromPlayer(reason);
             const shouldSkip = reportResult.shouldSkip;
-            const botChallengeDetected = isBotChallengeVerificationReason(reportResult.verificationReason);
+            const botChallengeDetected = isInteractivePlaybackBlockReason(reportResult.verificationReason);
 
             const postReportPlayer = playerRef.current;
             const postReportState =
@@ -3151,14 +3218,20 @@ export function PlayerExperience({
               return;
             }
 
-            if (shouldSkip) {
+            if (shouldSkip && event.data === 100) {
               autoplaySuppressedVideoIdRef.current = currentVideo.id;
               playAttemptedAtRef.current = null;
               pauseActivePlayback();
               showUnavailableOverlayMessage(undefined, {
                 autoAdvanceWhenAutoplay: true,
               });
+              return;
             }
+
+            // Non-definitive skips (for example policy/interstitial mismatches) should
+            // still fall back to direct iframe interaction rather than entering
+            // an unavailable auto-advance loop.
+            enableDirectIframeInteractionMode("on-error-skip-fallback", reportResult.verificationReason);
           },
         },
       });
@@ -4676,48 +4749,14 @@ export function PlayerExperience({
           if (activePlaylistId) {
             const remainingPlaylistIds = playlistQueueIds.filter((id) => id !== deletingVideoId);
             if (remainingPlaylistIds.length > 0) {
-              const deletedIndex = effectivePlaylistIndex ?? playlistQueueIds.findIndex((id) => id === deletingVideoId);
-              const nextIndex = Math.max(0, Math.min(deletedIndex, remainingPlaylistIds.length - 1));
-              const nextId = remainingPlaylistIds[nextIndex] ?? remainingPlaylistIds[0] ?? null;
-
-              if (nextId && nextId !== deletingVideoId) {
-                navigateToVideo(nextId, {
-                  clearPlaylist: false,
-                  playlistId: activePlaylistId,
-                  playlistItemIndex: nextIndex,
-                });
-                return;
-              }
+              nextPlaylistIndexRef.current = Math.max(0, Math.min(
+                effectivePlaylistIndex ?? playlistQueueIds.findIndex((id) => id === deletingVideoId),
+                remainingPlaylistIds.length - 1,
+              ));
             }
           }
 
-          if (resolvedNextTarget?.videoId && resolvedNextTarget.videoId !== deletingVideoId) {
-            navigateToVideo(resolvedNextTarget.videoId, {
-              clearPlaylist: resolvedNextTarget.clearPlaylist,
-              playlistId: resolvedNextTarget.clearPlaylist ? null : activePlaylistId,
-              playlistItemIndex: resolvedNextTarget.playlistItemIndex,
-            });
-            return;
-          }
-
-          const recoveredVideoId = await resolveAutoplayRecoveryTarget();
-
-          if (recoveredVideoId && recoveredVideoId !== deletingVideoId) {
-            navigateToVideo(recoveredVideoId, {
-              clearPlaylist: true,
-              playlistId: null,
-              playlistItemIndex: null,
-            });
-            return;
-          }
-
-          const params = new URLSearchParams(searchParams.toString());
-          params.delete("v");
-          params.delete("pl");
-          params.delete("pli");
-          const query = params.toString();
-          router.replace(query ? `${pathname}?${query}` : pathname);
-          router.refresh();
+          showDeletedOverlayConfirmation();
         } catch {
           showUnavailableOverlayMessage("Could not remove this video from the site.");
         } finally {
@@ -5075,20 +5114,32 @@ export function PlayerExperience({
           ) : null}
 
           {unavailableOverlayMessage && !allowDirectIframeInteraction ? (
-            <div className={isAutoAdvanceUnavailableOverlay ? "videoUnavailableOverlay videoUnavailableOverlayAutoAdvance" : "videoUnavailableOverlay"} role="alertdialog" aria-modal="true" aria-label="Video unavailable">
+            <div className={isAutoAdvanceUnavailableOverlay ? "videoUnavailableOverlay videoUnavailableOverlayAutoAdvance" : "videoUnavailableOverlay"} role="alertdialog" aria-modal="true" aria-label={isDeletedConfirmationOverlay ? "Track deleted" : "Video unavailable"}>
               <p className="videoUnavailableOverlayEyebrow">
-                {isBrokenUpstreamOverlay ? "Not available on YouTube" : isUpstreamConnectivityOverlay ? "Provider connection timeout" : "Playback issue"}
+                {isDeletedConfirmationOverlay
+                  ? "Removed from YehThatRocks"
+                  : isBrokenUpstreamOverlay
+                    ? "Not available on YouTube"
+                    : isUpstreamConnectivityOverlay
+                      ? "Provider connection timeout"
+                      : "Playback issue"}
               </p>
               <strong className="videoUnavailableOverlayTitle">
-                {isBrokenUpstreamOverlay ? "This track no longer exists" : isUpstreamConnectivityOverlay ? "Could not start this track yet" : "This track is unavailable"}
+                {isDeletedConfirmationOverlay
+                  ? "Track deleted"
+                  : isBrokenUpstreamOverlay
+                    ? "This track no longer exists"
+                    : isUpstreamConnectivityOverlay
+                      ? "Could not start this track yet"
+                      : "This track is unavailable"}
               </strong>
               <p className="videoUnavailableOverlayBody">{unavailableOverlayMessage}</p>
-              {isAutoAdvanceUnavailableOverlay && unavailableAutoAdvanceSeconds !== null ? (
+              {!isDeletedConfirmationOverlay && isAutoAdvanceUnavailableOverlay && unavailableAutoAdvanceSeconds !== null ? (
                 <p className="videoUnavailableAutoAdvanceNote" aria-live="polite">
-                  Another video will be selected automatically in {unavailableAutoAdvanceSeconds}.. video plays.
+                  Another video will be selected automatically in {unavailableAutoAdvanceSeconds}.
                 </p>
               ) : null}
-              {isAutoAdvanceUnavailableOverlay && unavailableAutoAdvanceMs !== null ? (
+              {!isDeletedConfirmationOverlay && isAutoAdvanceUnavailableOverlay && unavailableAutoAdvanceMs !== null ? (
                 <div
                   className="videoUnavailableCountdown"
                   style={{ "--countdown-ms": `${unavailableAutoAdvanceMs}ms` } as React.CSSProperties}
@@ -5096,7 +5147,7 @@ export function PlayerExperience({
                 />
               ) : null}
               <div className="videoUnavailableOverlayActions">
-                {!isBrokenUpstreamOverlay && isUpstreamConnectivityOverlay ? (
+                {!isDeletedConfirmationOverlay && !isBrokenUpstreamOverlay && isUpstreamConnectivityOverlay ? (
                   <button
                     type="button"
                     className="videoUnavailableOverlayRefresh"
@@ -5105,16 +5156,15 @@ export function PlayerExperience({
                     Retry connection
                   </button>
                 ) : null}
-                {!isBrokenUpstreamOverlay ? (
+                {isDeletedConfirmationOverlay ? (
                   <button
                     type="button"
                     className="videoUnavailableOverlayAcknowledge"
-                    onClick={handleOpenCurrentTrackOnYouTube}
+                    onClick={acknowledgeDeletedOverlay}
                   >
-                    Watch on YouTube
+                    Next track
                   </button>
-                ) : null}
-                {isBrokenUpstreamOverlay ? (
+                ) : isBrokenUpstreamOverlay ? (
                   <button
                     type="button"
                     className="videoUnavailableOverlayAcknowledge"
