@@ -502,6 +502,7 @@ function ShellDynamicInner({
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const favouritesBlindInnerRef = useRef<HTMLDivElement | null>(null);
   const previousPathnameRef = useRef<string | null>(null);
+  const didArriveOnMagazineRouteRef = useRef(pathname === "/magazine" || pathname.startsWith("/magazine/"));
   const previousActivePlaylistIdRef = useRef<string | null>(activePlaylistId);
   const playlistRailLoadRequestIdRef = useRef(0);
   const playlistRailMutationVersionRef = useRef(0);
@@ -586,6 +587,7 @@ function ShellDynamicInner({
     isOverlayClosing ? "favouritesBlindClosing" : "",
   ].filter(Boolean).join(" ");
   const isMagazineOverlayRoute = pathname === "/magazine" || pathname.startsWith("/magazine/");
+  const shouldHidePlayerForMagazineGuest = !isAuthenticated && isMagazineOverlayRoute && didArriveOnMagazineRouteRef.current;
   const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute) && (isAuthenticated || chatMode === "global");
   const shouldDisableRelatedRailTransition = pathname === "/new";
   const shouldOccludeLeftRail = shouldShowOverlayPanel && !isMagazineOverlayRoute;
@@ -617,6 +619,7 @@ function ShellDynamicInner({
     isUndockSettling ? "playerChromeUndockSettling" : "",
     !shouldShowOverlayPanel && isFooterRevealActive ? "playerChromeFooterReveal" : "",
     shouldDockDesktopPlayer && isDockHidden ? "playerChromeDockedHidden" : "",
+    shouldHidePlayerForMagazineGuest ? "playerChromeMagazineGuestHidden" : "",
   ].filter(Boolean).join(" ");
   const playerChromeStyle = shouldKeepDockedDesktopPresentation
     ? ({
@@ -1247,9 +1250,11 @@ function ShellDynamicInner({
         setPendingOverlayCloseHref(null);
       }
 
-      if (!shouldShowOverlayPanel) {
+      if (!shouldShowOverlayPanel || isMagazineOverlayRoute) {
         setIsOverlayClosing(false);
         shouldRunFooterRevealRef.current = false;
+        setIsUndockSettling(false);
+        setIsFooterRevealActive(false);
         router.push(nextHref);
         return;
       }
@@ -1325,7 +1330,7 @@ function ShellDynamicInner({
       setIsUndockSettling(false);
       shouldRunFooterRevealRef.current = false;
     };
-  }, [currentVideo.id, router, shouldShowOverlayPanel]);
+  }, [currentVideo.id, isMagazineOverlayRoute, router, shouldShowOverlayPanel]);
 
   useEffect(() => {
     if (requestedVideoId) {
@@ -5596,7 +5601,7 @@ function ShellDynamicInner({
                 <div className="rightRailPlaylistBar">
                   <span className="rightRailPlaylistLabel">
                     {playlistRailData
-                      ? `${playlistRailData.name} • ${activePlaylistTrackCount} ${activePlaylistTrackCount === 1 ? "track" : "tracks"}`
+                      ? playlistRailData.name
                       : "Active playlist"}
                   </span>
                   <div className="rightRailPlaylistActions">
