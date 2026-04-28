@@ -1384,6 +1384,11 @@ h1 {
   flex-direction: column;
 }
 
+.playerChromeMagazineGuestHidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .playerDockLayer {
   flex: 1 1 auto;
   min-height: 0;
@@ -5832,6 +5837,8 @@ h1 {
 }
 
 .rightRailPlaylistLabel {
+  flex: 1 1 auto;
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5864,6 +5871,7 @@ h1 {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .rightRailPlaylistDelete {
