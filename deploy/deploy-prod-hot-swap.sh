@@ -91,6 +91,19 @@ cleanup_docker_artifacts() {
   fi
 }
 
+enable_trigger_migrations() {
+  local db_container_id
+  db_container_id="$("${COMPOSE[@]}" ps -q db 2>/dev/null || true)"
+
+  if [ -z "$db_container_id" ]; then
+    echo "[deploy] db container not running; cannot enable trigger migrations" >&2
+    return 1
+  fi
+
+  echo "[deploy] enabling MySQL log_bin_trust_function_creators for trigger migrations"
+  docker exec "$db_container_id" sh -lc 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "SET GLOBAL log_bin_trust_function_creators = 1;"'
+}
+
 wait_for_public_health() {
   local status_url="$1"
   local timeout_sec="$2"
@@ -172,6 +185,11 @@ else
 fi
 
 echo "[deploy] applying database migrations"
+if ! enable_trigger_migrations; then
+  echo "[deploy] failed to enable trigger migration compatibility" >&2
+  cleanup_docker_artifacts
+  exit 1
+fi
 if ! WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" run --rm --no-deps web \
     sh -c 'npx prisma migrate status --schema /app/prisma/schema.prisma; npx prisma migrate deploy --schema /app/prisma/schema.prisma'; then
   echo "[deploy] migration failed — aborting before any traffic is affected" >&2
