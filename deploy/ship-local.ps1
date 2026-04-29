@@ -487,18 +487,19 @@ try {
   Write-Host "Validating migrations for deployment safety..." -ForegroundColor Yellow
   $validateMigrationsPath = [System.IO.Path]::Combine($RepoDir, "deploy", "validate-migrations.sh")
   if (Test-Path -LiteralPath $validateMigrationsPath) {
+    $migrationValidationFailureMessage = "Migration validation did not complete successfully. Check the output above before deploying."
     try {
       # Convert Windows path to WSL/bash format for bash execution
       $bashScript = bash -c "wslpath -u '$validateMigrationsPath' 2>/dev/null || echo '$validateMigrationsPath'"
       & bash $bashScript
       if ($LASTEXITCODE -ne 0) {
-        throw "Migration validation failed. Fix the issues above before deploying."
+        throw $migrationValidationFailureMessage
       }
       Write-Host "✓ All migration checks passed" -ForegroundColor Green
     } catch {
       Write-Host "Migration validation error:" -ForegroundColor Red
-      Write-Host $_.Exception.Message -ForegroundColor Red
-      throw "Deployment aborted: $($_.Exception.Message)"
+      Write-Host $migrationValidationFailureMessage -ForegroundColor Red
+      throw "Deployment aborted: $migrationValidationFailureMessage"
     }
   } else {
     Write-Host "⚠ Migration validation script not found at $validateMigrationsPath (non-critical)" -ForegroundColor DarkYellow
