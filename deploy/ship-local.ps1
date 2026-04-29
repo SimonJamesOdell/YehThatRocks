@@ -488,7 +488,8 @@ try {
   $validateMigrationsPath = Join-Path $RepoDir "deploy" "validate-migrations.sh"
   if (Test-Path -LiteralPath $validateMigrationsPath) {
     try {
-      & bash $validateMigrationsPath $RepoDir
+      $bashPath = $validateMigrationsPath -replace '\\', '/'
+      & bash -c "bash '$bashPath'"
       if ($LASTEXITCODE -ne 0) {
         throw "Migration validation failed. Fix the issues above before deploying."
       }
