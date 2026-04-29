@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ArtistVideosGridClient } from "@/components/artist-videos-grid-client";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
-import { getArtistBySlug, getHiddenVideoIdsForUser, getNewestVideos, getSeenVideoIdsForUser, getTopVideos, getVideosByArtist } from "@/lib/catalog-data";
+import { getArtistBySlug, getArtistRouteSourceVideoIds, getHiddenVideoIdsForUser, getSeenVideoIdsForUser, getVideosByArtist } from "@/lib/catalog-data";
 import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
 
 type ArtistPageProps = {
@@ -34,14 +34,11 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
   if (resume) artistsParams.set("resume", resume);
   const artistsHref = artistsParams.toString() ? `/artists?${artistsParams.toString()}` : "/artists";
 
-  const [artistVideosRaw, topVideos, newestVideos] = await Promise.all([
-    getVideosByArtist(artist.name),
-    getTopVideos(100),
-    getNewestVideos(100),
-  ]);
+  const artistVideosRaw = await getVideosByArtist(artist.name);
+  const { topVideoIds, newestVideoIds } = await getArtistRouteSourceVideoIds(
+    artistVideosRaw.map((video) => video.id),
+  );
 
-  const topVideoIds = new Set(topVideos.map((video) => video.id));
-  const newestVideoIds = new Set(newestVideos.map((video) => video.id));
   const artistVideos = artistVideosRaw
     .filter((video) => !hiddenVideoIds.has(video.id))
     .map((video) => {

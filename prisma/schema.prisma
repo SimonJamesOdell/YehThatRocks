@@ -68,6 +68,7 @@ model ArtistStat {
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
   @@index([firstLetter, displayName])
+  @@index([slug], map: "artist_stats_slug_idx")
   @@index([videoCount])
   @@map("artist_stats")
 }

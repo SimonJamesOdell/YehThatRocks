@@ -10,6 +10,8 @@ const files = {
   results: path.join(ROOT, "apps/web/components/artists-letter-results.tsx"),
   events: path.join(ROOT, "apps/web/lib/artists-letter-events.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
+  schema: path.join(ROOT, "prisma/schema.prisma"),
+  performanceIndexes: path.join(ROOT, "scripts/apply-performance-indexes.sql"),
   artistPage: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/page.tsx"),
   artistWikiPage: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/wiki/page.tsx"),
   artistLoading: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/loading.tsx"),
@@ -49,6 +51,8 @@ function main() {
   const resultsSource = read(files.results);
   const eventsSource = read(files.events);
   const catalogDataSource = read(files.catalogData);
+  const schemaSource = read(files.schema);
+  const performanceIndexesSource = read(files.performanceIndexes);
   const artistPageSource = read(files.artistPage);
   const artistWikiPageSource = read(files.artistWikiPage);
   const artistLoadingSource = read(files.artistLoading);
@@ -98,9 +102,15 @@ function main() {
   assertContains(catalogDataSource, "if (artistSlugLookupCache && artistSlugLookupCache.expiresAt > now)", "Catalog data reuses cached slug lookup map", failures);
   assertContains(catalogDataSource, "const fastMatch = narrowed.find((artist) => slugify(artist.name) === slug);", "Catalog data keeps exact slugify match check in slug fast path", failures);
   assertContains(catalogDataSource, "if (!artistSlugLookupInFlight)", "Catalog data deduplicates concurrent fallback slug-map rebuilds", failures);
+  assertContains(schemaSource, '@@index([slug], map: "artist_stats_slug_idx")', "Artist stats schema keeps a direct slug index", failures);
+  assertContains(performanceIndexesSource, "index_name IN ('idx_site_videos_video_id_status', 'site_videos_video_id_status_idx')", "Performance index script avoids recreating duplicate site_videos availability index", failures);
+  assertContains(performanceIndexesSource, "CREATE INDEX artist_stats_slug_idx ON artist_stats (slug)", "Performance index script can backfill the artist slug index on existing databases", failures);
 
   // Artist detail and wiki route invariants.
   assertNotContains(artistPageSource, 'className="categoryHeaderWikiLink"', "Artist detail page no longer exposes a wiki header link", failures);
+  assertContains(artistPageSource, 'getArtistRouteSourceVideoIds(', "Artist detail page uses lightweight source membership lookup for Top100/New badges", failures);
+  assertNotContains(artistPageSource, 'getTopVideos(100)', "Artist detail page no longer fetches full Top100 rows just to annotate badges", failures);
+  assertNotContains(artistPageSource, 'getNewestVideos(100)', "Artist detail page no longer fetches full New rows just to annotate badges", failures);
   assertContains(artistWikiPageSource, 'const wiki = await getOrCreateArtistWiki(artist.name, slug);', "Artist wiki page resolves cached-or-generated wiki content", failures);
   assertContains(artistWikiPageSource, 'const verifiedExternal = await verifyExternalArtistBySlug(slug);', "Artist wiki page attempts external verification when slug lookup misses", failures);
   assertContains(artistWikiPageSource, 'await upsertVerifiedExternalArtistCandidate({', "Artist wiki page promotes verified external artists into projection", failures);

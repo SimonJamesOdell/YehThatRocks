@@ -138,6 +138,17 @@ function main() {
   assertContains(currentVideoRouteSource, "getTopVideos(300)", "Current-video route widens fallback with Top candidates", failures);
   assertContains(currentVideoRouteSource, "getNewestVideos(200, 0)", "Current-video route widens fallback with New candidates", failures);
   assertContains(currentVideoRouteSource, "getUnseenCatalogVideos({", "Current-video route widens fallback with unseen catalog candidates", failures);
+  assertContains(currentVideoRouteSource, "const RANDOM_CATALOG_MAX_ID_CACHE_TTL_MS = 60_000;", "Current-video route caches the available random-catalog max-id", failures);
+  assertContains(currentVideoRouteSource, "let randomCatalogMaxIdCache", "Current-video route stores a cached random-catalog max-id entry", failures);
+  assertContains(currentVideoRouteSource, "let randomCatalogMaxIdInFlight", "Current-video route deduplicates concurrent random-catalog max-id lookups", failures);
+  assertContains(currentVideoRouteSource, "const CURRENT_VIDEO_CACHE_MAX_ENTRIES = 300;", "Current-video route bounds current-video payload cache growth", failures);
+  assertContains(currentVideoRouteSource, "const CURRENT_VIDEO_PENDING_CACHE_MAX_ENTRIES = 300;", "Current-video route bounds pending payload cache growth", failures);
+  assertContains(currentVideoRouteSource, "const CURRENT_VIDEO_RELATED_POOL_CACHE_MAX_ENTRIES = 120;", "Current-video route bounds related pool cache growth", failures);
+  assertContains(currentVideoRouteSource, "const WATCH_NEXT_STREAM_CACHE_MAX_ENTRIES = 120;", "Current-video route bounds watch-next stream cache growth", failures);
+  assertContains(currentVideoRouteSource, "function pruneCurrentVideoRouteCaches(now = Date.now())", "Current-video route prunes expired and over-cap cache entries", failures);
+  assertContains(currentVideoRouteSource, "pruneCurrentVideoRouteCaches(now);", "Current-video route performs cache pruning during request handling", failures);
+  assertContains(currentVideoRouteSource, "paddedRelatedVideos = paddedRelatedVideos.filter((video) => !hiddenVideoIds.has(video.id));", "Current-video route reuses request-scoped hidden-id set for final filtering", failures);
+  assertNotContains(currentVideoRouteSource, "paddedRelatedVideos = await filterHiddenVideos", "Current-video route avoids redundant hidden-video DB lookups during final filtering", failures);
   assertContains(currentVideoRouteSource, "return [...deduped, ...merged].slice(0, CURRENT_VIDEO_RELATED_POOL_SIZE);", "Current-video route enforces bounded merged pool size", failures);
 
   // Docked autoplay route-queue invariants.

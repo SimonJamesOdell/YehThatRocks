@@ -4485,6 +4485,117 @@ export async function getTopVideos(count = 100) {
   }
 }
 
+function intersectVideoIdsWithCandidates(videoIds: Iterable<string>, candidateIds: Set<string>) {
+  const matched = new Set<string>();
+
+  for (const videoId of videoIds) {
+    if (candidateIds.has(videoId)) {
+      matched.add(videoId);
+    }
+  }
+
+  return matched;
+}
+
+export async function getArtistRouteSourceVideoIds(
+  videoIds: string[],
+  options?: {
+    topCount?: number;
+    newestCount?: number;
+  },
+) {
+  const normalizedVideoIds = Array.from(new Set(
+    videoIds
+      .map((videoId) => normalizeYouTubeVideoId(videoId))
+      .filter((videoId): videoId is string => Boolean(videoId)),
+  ));
+
+  const empty = {
+    topVideoIds: new Set<string>(),
+    newestVideoIds: new Set<string>(),
+  };
+
+  if (normalizedVideoIds.length === 0 || !hasDatabaseUrl()) {
+    return empty;
+  }
+
+  const candidateIds = new Set(normalizedVideoIds);
+  const safeTopCount = Math.max(1, Math.min(200, Math.floor(options?.topCount ?? 100)));
+  const safeNewestCount = Math.max(1, Math.min(200, Math.floor(options?.newestCount ?? 100)));
+  const now = Date.now();
+
+  const cachedTopVideoIds =
+    topPoolCache && topPoolCache.expiresAt > now && topPoolCache.rows.length >= safeTopCount
+      ? intersectVideoIdsWithCandidates(
+        topPoolCache.rows.slice(0, safeTopCount).map((row) => row.videoId),
+        candidateIds,
+      )
+      : null;
+
+  const cachedNewestVideoIds =
+    newestVideosCache && newestVideosCache.expiresAt > now && newestVideosCache.count >= safeNewestCount
+      ? intersectVideoIdsWithCandidates(
+        newestVideosCache.rows.slice(0, safeNewestCount).map((row) => row.videoId),
+        candidateIds,
+      )
+      : null;
+
+  const placeholders = normalizedVideoIds.map(() => "?").join(", ");
+
+  const topVideoIdsPromise = cachedTopVideoIds
+    ? Promise.resolve(cachedTopVideoIds)
+    : prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
+      `
+        SELECT ranked.videoId
+        FROM (
+          SELECT v.videoId
+          FROM videos v
+          WHERE v.videoId IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND sv.status = 'available'
+            )
+          ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
+          LIMIT ${safeTopCount}
+        ) ranked
+        WHERE ranked.videoId IN (${placeholders})
+      `,
+      ...normalizedVideoIds,
+    ).then((rows) => new Set(rows.map((row) => row.videoId)));
+
+  const newestVideoIdsPromise = cachedNewestVideoIds
+    ? Promise.resolve(cachedNewestVideoIds)
+    : prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
+      `
+        SELECT ranked.videoId
+        FROM (
+          SELECT v.videoId
+          FROM videos v
+          WHERE v.videoId IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND sv.status = 'available'
+            )
+          ORDER BY v.created_at DESC, v.id DESC
+          LIMIT ${safeNewestCount}
+        ) ranked
+        WHERE ranked.videoId IN (${placeholders})
+      `,
+      ...normalizedVideoIds,
+    ).then((rows) => new Set(rows.map((row) => row.videoId)));
+
+  const [topVideoIds, newestVideoIds] = await Promise.all([topVideoIdsPromise, newestVideoIdsPromise]);
+
+  return {
+    topVideoIds,
+    newestVideoIds,
+  };
+}
+
 async function filterPlayableNewestRows(rows: RankedVideoRow[], targetCount: number) {
   if (rows.length === 0) {
     return rows;

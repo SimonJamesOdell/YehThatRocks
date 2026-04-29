@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { filterHiddenVideos, getCurrentVideo, getFavouriteVideos, getHiddenVideoIdsForUser, getNewestVideos, getRelatedVideos, getSeenVideoIdsForUser, getTopVideos, getUnseenCatalogVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { getCurrentVideo, getFavouriteVideos, getHiddenVideoIdsForUser, getNewestVideos, getRelatedVideos, getSeenVideoIdsForUser, getTopVideos, getUnseenCatalogVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { getOptionalApiAuth } from "@/lib/auth-request";
 import { prisma } from "@/lib/db";
 import {
@@ -10,6 +10,18 @@ import {
   currentVideoRelatedPoolCache,
   currentVideoRelatedPoolInflight,
 } from "@/lib/current-video-cache";
+import {
+  blendRelatedWithFavourites,
+  createSeededRandom,
+  hashSeed,
+  injectSparseFavourites,
+  interleaveVideoBuckets,
+  limitFavouritesInHead,
+  pickBatchSourceVideos,
+  shuffleVideos,
+  shuffleWithRandom,
+  uniqueVideosById,
+} from "@/lib/current-video-route-utils";
 import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import { getTopVideosFast, warmTopVideos } from "@/lib/top-videos-cache";
 
@@ -17,6 +29,10 @@ const CURRENT_VIDEO_DEBUG_ENABLED = process.env.NODE_ENV === "development" && pr
 const CURRENT_VIDEO_CACHE_TTL_MS = 20_000;
 const CURRENT_VIDEO_FAILURE_COOLDOWN_MS = 8_000;
 const CURRENT_VIDEO_PENDING_CACHE_TTL_MS = 2_000;
+const CURRENT_VIDEO_CACHE_MAX_ENTRIES = 300;
+const CURRENT_VIDEO_PENDING_CACHE_MAX_ENTRIES = 300;
+const CURRENT_VIDEO_RELATED_POOL_CACHE_MAX_ENTRIES = 120;
+const WATCH_NEXT_STREAM_CACHE_MAX_ENTRIES = 120;
 const CURRENT_VIDEO_RESOLVER_TIMEOUT_MS = 2_500;
 const CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS = 1;
 const CURRENT_VIDEO_RELATED_POOL_CACHE_TTL_MS = 30_000;
@@ -25,6 +41,7 @@ const CURRENT_VIDEO_RELATED_POOL_BASE_SIZE = CURRENT_VIDEO_RELATED_POOL_SIZE;
 const CURRENT_VIDEO_RELATED_POOL_MAX_SIZE = 300_000;
 const CURRENT_VIDEO_RELATED_POOL_QUERY_EXPANSION_CAP = 60_000;
 const CURRENT_VIDEO_RELATED_OFFSET_MAX = CURRENT_VIDEO_RELATED_POOL_MAX_SIZE;
+const RANDOM_CATALOG_MAX_ID_CACHE_TTL_MS = 60_000;
 const WATCH_NEXT_FAVOURITE_BLEND_RATIO = 0.03;
 const ENDED_CHOICE_FAVOURITE_BLEND_RATIO = 0.45;
 const CURRENT_VIDEO_TOP_CACHE_WAIT_MS = 1_200;
@@ -61,248 +78,47 @@ type WatchNextStreamCacheEntry = {
 let currentVideoResolverBlockedUntil = 0;
 const watchNextStreamCache = new Map<string, WatchNextStreamCacheEntry>();
 const watchNextStreamInflight = new Map<string, Promise<WatchNextStreamCacheEntry>>();
-
-function shuffleVideos<T>(rows: T[]) {
-  const shuffled = [...rows];
-
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const randomIndex = Math.floor(Math.random() * (index + 1));
-    const current = shuffled[index];
-    shuffled[index] = shuffled[randomIndex];
-    shuffled[randomIndex] = current;
-  }
-
-  return shuffled;
-}
-
-function uniqueVideosById<T extends { id: string }>(rows: T[]) {
-  const seen = new Set<string>();
-  const unique: T[] = [];
-
-  for (const row of rows) {
-    if (seen.has(row.id)) {
-      continue;
+let randomCatalogMaxIdCache:
+  | {
+      expiresAt: number;
+      maxId: number;
     }
+  | undefined;
+let randomCatalogMaxIdInFlight: Promise<number> | undefined;
 
-    seen.add(row.id);
-    unique.push(row);
+function pruneMapToMaxEntries<K, V>(map: Map<K, V>, maxEntries: number) {
+  if (maxEntries <= 0) {
+    map.clear();
+    return;
   }
 
-  return unique;
-}
-
-function blendRelatedWithFavourites<T extends { id: string }>(
-  baseVideos: T[],
-  favouriteVideos: T[],
-  currentVideoId: string,
-  favouriteRatio: number,
-) {
-  if (favouriteVideos.length === 0 || favouriteRatio <= 0) {
-    return uniqueVideosById(baseVideos).filter((video) => video.id !== currentVideoId);
-  }
-
-  const preferred = uniqueVideosById(favouriteVideos).filter((video) => video.id !== currentVideoId);
-  if (preferred.length === 0) {
-    return uniqueVideosById(baseVideos).filter((video) => video.id !== currentVideoId);
-  }
-
-  const preferredIds = new Set(preferred.map((video) => video.id));
-  const discovery = uniqueVideosById(baseVideos).filter(
-    (video) => video.id !== currentVideoId && !preferredIds.has(video.id),
-  );
-
-  const blend = Math.max(0.05, Math.min(0.95, favouriteRatio));
-  const nonPreferredPerPreferred = Math.max(1, Math.round((1 - blend) / blend));
-  let nonPreferredSincePreferred = 0;
-  let preferredIndex = 0;
-  let discoveryIndex = 0;
-  const mixed: T[] = [];
-
-  while (preferredIndex < preferred.length || discoveryIndex < discovery.length) {
-    const shouldTakePreferred =
-      preferredIndex < preferred.length
-      && (nonPreferredSincePreferred >= nonPreferredPerPreferred || discoveryIndex >= discovery.length);
-
-    if (shouldTakePreferred) {
-      mixed.push(preferred[preferredIndex]);
-      preferredIndex += 1;
-      nonPreferredSincePreferred = 0;
-      continue;
-    }
-
-    if (discoveryIndex < discovery.length) {
-      mixed.push(discovery[discoveryIndex]);
-      discoveryIndex += 1;
-      nonPreferredSincePreferred += 1;
-      continue;
-    }
-
-    if (preferredIndex < preferred.length) {
-      mixed.push(preferred[preferredIndex]);
-      preferredIndex += 1;
-      nonPreferredSincePreferred = 0;
-    }
-  }
-
-  return mixed;
-}
-
-function interleaveVideoBuckets<T extends { id: string }>(buckets: T[][]) {
-  const queues = buckets.map((bucket) => [...bucket]);
-  const mixed: T[] = [];
-
-  while (queues.some((queue) => queue.length > 0)) {
-    for (const queue of queues) {
-      const next = queue.shift();
-      if (next) {
-        mixed.push(next);
-      }
-    }
-  }
-
-  return mixed;
-}
-
-function limitFavouritesInHead<T extends { id: string }>(
-  rows: T[],
-  favouriteIds: Set<string>,
-  headWindow: number,
-  maxFavouritesInHead: number,
-) {
-  if (rows.length <= 1 || favouriteIds.size === 0 || headWindow <= 0) {
-    return rows;
-  }
-
-  const early: T[] = [];
-  const deferredFavourites: T[] = [];
-  const tail: T[] = [];
-  let favouritesInHead = 0;
-
-  for (const row of rows) {
-    if (early.length < headWindow) {
-      const isFavourite = favouriteIds.has(row.id);
-      if (isFavourite && favouritesInHead >= maxFavouritesInHead) {
-        deferredFavourites.push(row);
-        continue;
-      }
-
-      early.push(row);
-      if (isFavourite) {
-        favouritesInHead += 1;
-      }
-      continue;
-    }
-
-    tail.push(row);
-  }
-
-  return [...early, ...deferredFavourites, ...tail];
-}
-
-function injectSparseFavourites<T extends { id: string }>(
-  baseVideos: T[],
-  favouriteVideos: T[],
-  currentVideoId: string,
-  insertInterval: number,
-) {
-  if (favouriteVideos.length === 0) {
-    return uniqueVideosById(baseVideos).filter((video) => video.id !== currentVideoId);
-  }
-
-  const base = uniqueVideosById(baseVideos).filter((video) => video.id !== currentVideoId);
-  const baseIds = new Set(base.map((video) => video.id));
-  const favourites = uniqueVideosById(favouriteVideos).filter(
-    (video) => video.id !== currentVideoId && !baseIds.has(video.id),
-  );
-
-  if (base.length === 0) {
-    return favourites;
-  }
-
-  if (favourites.length === 0) {
-    return base;
-  }
-
-  const safeInterval = Math.max(4, Math.floor(insertInterval));
-  const mixed: T[] = [];
-  let favouriteIndex = 0;
-
-  for (let index = 0; index < base.length; index += 1) {
-    mixed.push(base[index]);
-
-    const shouldInjectFavourite = (index + 1) % safeInterval === 0;
-    if (shouldInjectFavourite && favouriteIndex < favourites.length) {
-      mixed.push(favourites[favouriteIndex]);
-      favouriteIndex += 1;
-    }
-  }
-
-  while (favouriteIndex < favourites.length) {
-    mixed.push(favourites[favouriteIndex]);
-    favouriteIndex += 1;
-  }
-
-  return mixed;
-}
-
-function hashSeed(input: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return hash >>> 0;
-}
-
-function createSeededRandom(seedInput: string) {
-  let state = hashSeed(seedInput) || 0x9e3779b9;
-
-  return () => {
-    state = (state + 0x6D2B79F5) >>> 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function shuffleWithRandom<T>(rows: T[], random: () => number) {
-  const shuffled = [...rows];
-
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const randomIndex = Math.floor(random() * (index + 1));
-    const current = shuffled[index];
-    shuffled[index] = shuffled[randomIndex];
-    shuffled[randomIndex] = current;
-  }
-
-  return shuffled;
-}
-
-function pickBatchSourceVideos(params: {
-  source: WatchNextVideo[];
-  count: number;
-  blockedIds: Set<string>;
-  random: () => number;
-  labels?: Partial<Pick<WatchNextVideo, "isFavouriteSource" | "isTop100Source" | "isNewSource" | "sourceLabel">>;
-}) {
-  const picked: WatchNextVideo[] = [];
-  const shuffledSource = shuffleWithRandom(params.source, params.random);
-
-  for (const video of shuffledSource) {
-    if (params.blockedIds.has(video.id)) {
-      continue;
-    }
-
-    params.blockedIds.add(video.id);
-    picked.push({ ...video, ...params.labels });
-
-    if (picked.length >= params.count) {
+  while (map.size > maxEntries) {
+    const oldestKey = map.keys().next().value;
+    if (oldestKey === undefined) {
       break;
     }
+    map.delete(oldestKey);
   }
+}
 
-  return picked;
+function pruneExpiringMapEntries<K, V extends { expiresAt: number }>(map: Map<K, V>, now: number) {
+  for (const [key, value] of map.entries()) {
+    if (value.expiresAt <= now) {
+      map.delete(key);
+    }
+  }
+}
+
+function pruneCurrentVideoRouteCaches(now = Date.now()) {
+  pruneExpiringMapEntries(currentVideoCache, now);
+  pruneExpiringMapEntries(currentVideoPendingCache, now);
+  pruneExpiringMapEntries(currentVideoRelatedPoolCache, now);
+  pruneExpiringMapEntries(watchNextStreamCache, now);
+
+  pruneMapToMaxEntries(currentVideoCache, CURRENT_VIDEO_CACHE_MAX_ENTRIES);
+  pruneMapToMaxEntries(currentVideoPendingCache, CURRENT_VIDEO_PENDING_CACHE_MAX_ENTRIES);
+  pruneMapToMaxEntries(currentVideoRelatedPoolCache, CURRENT_VIDEO_RELATED_POOL_CACHE_MAX_ENTRIES);
+  pruneMapToMaxEntries(watchNextStreamCache, WATCH_NEXT_STREAM_CACHE_MAX_ENTRIES);
 }
 
 function sliceMergedRelatedPool<T extends { id: string }>(deduped: T[], merged: T[], targetSize: number) {
@@ -334,9 +150,17 @@ async function getCachedTopVideosForCurrentVideo(count: number) {
   return getTopVideos(safeCount);
 }
 
-async function getRandomCatalogVideosForCurrentVideo(currentVideoId: string, count: number) {
-  const requested = Math.max(1, Math.min(2_000, Math.floor(count)));
-  const maxIdRows = await prisma.$queryRaw<Array<{ maxId: number | null }>>`
+async function getAvailableRandomCatalogMaxId() {
+  const now = Date.now();
+  if (randomCatalogMaxIdCache && randomCatalogMaxIdCache.expiresAt > now) {
+    return randomCatalogMaxIdCache.maxId;
+  }
+
+  if (randomCatalogMaxIdInFlight) {
+    return randomCatalogMaxIdInFlight;
+  }
+
+  const resolveMaxId = prisma.$queryRaw<Array<{ maxId: number | null }>>`
     SELECT MAX(v.id) AS maxId
     FROM videos v
     WHERE v.videoId IS NOT NULL
@@ -346,8 +170,29 @@ async function getRandomCatalogVideosForCurrentVideo(currentVideoId: string, cou
         WHERE sv.video_id = v.id
           AND sv.status = 'available'
       )
-  `;
-  const maxId = Number(maxIdRows[0]?.maxId ?? 0);
+  `
+    .then((rows) => {
+      const maxId = Number(rows[0]?.maxId ?? 0);
+      const normalizedMaxId = Number.isFinite(maxId) ? maxId : 0;
+      randomCatalogMaxIdCache = {
+        expiresAt: Date.now() + RANDOM_CATALOG_MAX_ID_CACHE_TTL_MS,
+        maxId: normalizedMaxId,
+      };
+      return normalizedMaxId;
+    })
+    .finally(() => {
+      if (randomCatalogMaxIdInFlight === resolveMaxId) {
+        randomCatalogMaxIdInFlight = undefined;
+      }
+    });
+
+  randomCatalogMaxIdInFlight = resolveMaxId;
+  return resolveMaxId;
+}
+
+async function getRandomCatalogVideosForCurrentVideo(currentVideoId: string, count: number) {
+  const requested = Math.max(1, Math.min(2_000, Math.floor(count)));
+  const maxId = await getAvailableRandomCatalogMaxId();
   if (!Number.isFinite(maxId) || maxId <= 0) {
     return [];
   }
@@ -580,6 +425,8 @@ async function getWatchNextStreamSlice(params: {
   blockedIds: Set<string>;
   favouriteVideos: WatchNextVideo[];
 }) {
+  pruneCurrentVideoRouteCaches();
+
   const cacheKey = getWatchNextStreamCacheKey({
     currentVideoId: params.currentVideoId,
     userId: params.userId,
@@ -821,6 +668,7 @@ export async function GET(request: NextRequest) {
     : Promise.resolve([] as Awaited<ReturnType<typeof getFavouriteVideos>>);
   const cacheKey = `${v ?? "__default__"}:u:${optionalAuth?.userId ?? 0}:hideSeen:${hideSeenOnly ? 1 : 0}`;
   const now = Date.now();
+  pruneCurrentVideoRouteCaches(now);
 
   if (!isCustomRelatedRequest) {
     const cachedPending = currentVideoPendingCache.get(cacheKey);
@@ -1077,9 +925,12 @@ export async function GET(request: NextRequest) {
       paddedRelatedVideos = [...relatedVideos, ...filler];
     }
 
-    // Filter out blocked videos for authenticated users
-    if (optionalAuth) {
-      paddedRelatedVideos = await filterHiddenVideos(paddedRelatedVideos, optionalAuth.userId);
+    // Final hidden-video filtering should reuse the request-scoped hidden id set.
+    if (optionalAuth?.userId) {
+      const hiddenVideoIds = await getHiddenVideoIdsForRequest();
+      if (hiddenVideoIds && hiddenVideoIds.size > 0) {
+        paddedRelatedVideos = paddedRelatedVideos.filter((video) => !hiddenVideoIds.has(video.id));
+      }
     }
 
     const normalizedPayload: CurrentVideoPayload = {
