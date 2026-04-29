@@ -70,12 +70,48 @@ deploy_migrations() {
   local migration_output
   migration_output=$(mktemp)
   trap "rm -f '$migration_output'" RETURN
+
+  run_deploy() {
+    WEB_IMAGE="$web_image" $compose_cmd run --rm --no-deps web \
+      sh -c "npx prisma migrate deploy --schema $schema_path" > "$migration_output" 2>&1
+  }
   
-  if ! WEB_IMAGE="$web_image" $compose_cmd run --rm --no-deps web \
-      sh -c "npx prisma migrate deploy --schema $schema_path" > "$migration_output" 2>&1; then
+  if ! run_deploy; then
     
     local error_text
     error_text=$(cat "$migration_output")
+
+    if echo "$error_text" | grep -q "P3009"; then
+      local failed_migration
+      failed_migration=$(printf '%s\n' "$error_text" | sed -n 's/.*`\([^`][^`]*\)` migration started.*/\1/p' | head -n1)
+
+      if [ -n "$failed_migration" ]; then
+        log_warn "Detected failed migration state for: $failed_migration"
+
+        if WEB_IMAGE="$web_image" $compose_cmd run --rm --no-deps web \
+            sh -c "[ -d /app/prisma/migrations/$failed_migration ]" >/dev/null 2>&1; then
+          log_error "P3009 detected, but migration directory still exists: $failed_migration"
+          log_error "Manual intervention required; refusing automatic rollback resolution."
+          echo "$error_text" | tail -20 >&2
+          return 1
+        fi
+
+        log_warn "Migration directory for $failed_migration is missing in current code; resolving as rolled back."
+        if ! WEB_IMAGE="$web_image" $compose_cmd run --rm --no-deps web \
+            sh -c "npx prisma migrate resolve --rolled-back $failed_migration --schema $schema_path"; then
+          log_error "Failed to resolve stale migration state for $failed_migration"
+          return 1
+        fi
+
+        log_info "Retrying prisma migrate deploy after stale migration resolution..."
+        if run_deploy; then
+          log_info "Migrations deployed successfully"
+          return 0
+        fi
+
+        error_text=$(cat "$migration_output")
+      fi
+    fi
     
     # Provide actionable error messages for common issues
     if echo "$error_text" | grep -q "P3018"; then
