@@ -72,8 +72,8 @@ deploy_migrations() {
   trap "rm -f '$migration_output'" RETURN
 
   run_deploy() {
-    WEB_IMAGE="$web_image" $compose_cmd run --rm --no-deps web \
-      sh -c "npx prisma migrate deploy --schema $schema_path" > "$migration_output" 2>&1
+    WEB_IMAGE="$web_image" $compose_cmd run --rm --no-deps --entrypoint sh web \
+      -lc "npx prisma migrate deploy --schema $schema_path" > "$migration_output" 2>&1
   }
   
   if ! run_deploy; then
@@ -88,8 +88,8 @@ deploy_migrations() {
       if [ -n "$failed_migration" ]; then
         log_warn "Detected failed migration state for: $failed_migration"
 
-        if WEB_IMAGE="$web_image" $compose_cmd run --rm --no-deps web \
-            sh -c "[ -d /app/prisma/migrations/$failed_migration ]" >/dev/null 2>&1; then
+        if WEB_IMAGE="$web_image" $compose_cmd run --rm --no-deps --entrypoint sh web \
+          -lc "[ -d /app/prisma/migrations/$failed_migration ]" >/dev/null 2>&1; then
           log_error "P3009 detected, but migration directory still exists: $failed_migration"
           log_error "Manual intervention required; refusing automatic rollback resolution."
           echo "$error_text" | tail -20 >&2
@@ -97,8 +97,8 @@ deploy_migrations() {
         fi
 
         log_warn "Migration directory for $failed_migration is missing in current code; resolving as rolled back."
-        if ! WEB_IMAGE="$web_image" $compose_cmd run --rm --no-deps web \
-            sh -c "npx prisma migrate resolve --rolled-back $failed_migration --schema $schema_path"; then
+        if ! WEB_IMAGE="$web_image" $compose_cmd run --rm --no-deps --entrypoint sh web \
+          -lc "npx prisma migrate resolve --rolled-back $failed_migration --schema $schema_path"; then
           log_error "Failed to resolve stale migration state for $failed_migration"
           return 1
         fi
