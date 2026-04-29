@@ -239,6 +239,11 @@ function isInteractivePlaybackBlockReason(reason: string | null | undefined) {
   return typeof reason === "string" && /(bot-check|interactive-login-check|login-required|content-check-required|consent)/i.test(reason);
 }
 
+function isUnavailableVerificationReason(reason: string | null | undefined) {
+  return typeof reason === "string"
+    && /(oembed:(401|403|404|410)|embed:(401|403|404|410)|embed:age-restricted|embed:playability-unavailable|embed:video-unavailable)/i.test(reason);
+}
+
 function formatPlaybackTime(value: number) {
   const safeValue = Math.max(0, Math.floor(toSafeNumber(value, 0)));
   const hours = Math.floor(safeValue / 3600);
@@ -1892,9 +1897,15 @@ export function PlayerExperience({
 
         if (shouldSkip) {
           autoplaySuppressedVideoIdRef.current = currentVideoRef.current.id;
+          playAttemptedAtRef.current = null;
+          pauseActivePlayback();
+          showUnavailableOverlayMessage(undefined, {
+            autoAdvanceWhenAutoplay: true,
+          });
+          return;
         }
 
-        // When runtime playback remains blocked after retries, always expose the raw iframe
+        // If verification did not confirm a true unavailability, expose raw iframe
         // so users can satisfy upstream interstitials directly.
         enableDirectIframeInteractionMode(trigger, reportResult.verificationReason);
       })();
@@ -1944,6 +1955,14 @@ export function PlayerExperience({
         });
 
         if (!botChallengeDetected) {
+          if (reportResult.shouldSkip || isUnavailableVerificationReason(reportResult.verificationReason)) {
+            autoplaySuppressedVideoIdRef.current = currentVideoRef.current.id;
+            playAttemptedAtRef.current = null;
+            pauseActivePlayback();
+            showUnavailableOverlayMessage(undefined, {
+              autoAdvanceWhenAutoplay: true,
+            });
+          }
           return;
         }
 
@@ -3138,7 +3157,6 @@ export function PlayerExperience({
                 : `yt-player-error-${event.data}`;
 
             const isDefinitiveBrokenUpstreamCode = event.data === 100;
-            const isImmediateBotChallengeCode = event.data === 5;
 
             if (isDefinitiveBrokenUpstreamCode) {
               autoplaySuppressedVideoIdRef.current = currentVideo.id;
@@ -3161,23 +3179,10 @@ export function PlayerExperience({
               return;
             }
 
-            if (isImmediateBotChallengeCode) {
-              enableDirectIframeInteractionMode("on-error-code-5", null);
-              void reportUnavailableFromPlayer(reason).then((reportResult) => {
-                logPlayerDebug("onError:code-5-reported", {
-                  videoId: currentVideo.id,
-                  reason,
-                  shouldSkip: reportResult.shouldSkip,
-                  verificationReason: reportResult.verificationReason,
-                  skipped: reportResult.skipped,
-                });
-              });
-              return;
-            }
-
             const reportResult = await reportUnavailableFromPlayer(reason);
             const shouldSkip = reportResult.shouldSkip;
             const botChallengeDetected = isInteractivePlaybackBlockReason(reportResult.verificationReason);
+            const unavailableDetected = shouldSkip || isUnavailableVerificationReason(reportResult.verificationReason);
 
             const postReportPlayer = playerRef.current;
             const postReportState =
@@ -3199,6 +3204,7 @@ export function PlayerExperience({
               shouldSkip,
               verificationReason: reportResult.verificationReason,
               botChallengeDetected,
+              unavailableDetected,
               postReportState,
               postReportTime,
               playbackEstablishedAfterReport,
@@ -3213,24 +3219,23 @@ export function PlayerExperience({
               return;
             }
 
+            if (unavailableDetected) {
+              autoplaySuppressedVideoIdRef.current = currentVideo.id;
+              playAttemptedAtRef.current = null;
+              pauseActivePlayback();
+              showUnavailableOverlayMessage(isDefinitiveBrokenUpstreamCode ? BROKEN_UPSTREAM_OVERLAY_MESSAGE : undefined, {
+                autoAdvanceWhenAutoplay: true,
+                countdownMs: isDefinitiveBrokenUpstreamCode ? BROKEN_UPSTREAM_AUTOADVANCE_MS : undefined,
+              });
+              return;
+            }
+
             if (!shouldSkip) {
               enableDirectIframeInteractionMode("on-error-fallback", reportResult.verificationReason);
               return;
             }
 
-            if (shouldSkip && event.data === 100) {
-              autoplaySuppressedVideoIdRef.current = currentVideo.id;
-              playAttemptedAtRef.current = null;
-              pauseActivePlayback();
-              showUnavailableOverlayMessage(undefined, {
-                autoAdvanceWhenAutoplay: true,
-              });
-              return;
-            }
-
-            // Non-definitive skips (for example policy/interstitial mismatches) should
-            // still fall back to direct iframe interaction rather than entering
-            // an unavailable auto-advance loop.
+            // Fallback for rare skipped states where verification cannot classify confidently.
             enableDirectIframeInteractionMode("on-error-skip-fallback", reportResult.verificationReason);
           },
         },
