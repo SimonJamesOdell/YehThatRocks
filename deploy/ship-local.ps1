@@ -502,7 +502,7 @@ try {
       throw "Deployment aborted: $migrationValidationFailureMessage"
     }
   } else {
-    Write-Host "⚠ Migration validation script not found at $validateMigrationsPath (non-critical)" -ForegroundColor DarkYellow
+    Write-Warning ("Migration validation script not found at {0}; continuing without this non-critical check." -f $validateMigrationsPath)
   }
 
   Exec "git fetch origin $Branch"
