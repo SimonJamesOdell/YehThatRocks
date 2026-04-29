@@ -208,6 +208,9 @@ function main() {
   assertContains(anonymousRouteSource, "setAuthCookies(response, accessToken, refreshToken, false);", "Anonymous auth API sets auth cookies on account creation", failures);
   assertContains(anonymousRouteSource, "credentials:", "Anonymous auth API response returns generated credentials", failures);
   assertContains(anonymousRouteSource, "const password = generateSecureCredential(16);", "Anonymous auth API generates secure password for new anonymous accounts", failures);
+  assertContains(anonymousRouteSource, 'import { parseRequestJson } from "@/lib/request-json";', "Anonymous auth API uses shared JSON parser helper", failures);
+  assertContains(anonymousRouteSource, "const bodyResult = await parseRequestJson<AnonymousRequestBody>(request);", "Anonymous auth API parses POST body via shared JSON helper", failures);
+  assertNotContains(anonymousRouteSource, "request.json().catch(() => null)", "Anonymous auth API avoids bespoke request.json catch parsing", failures);
 
   // --- Change password form ---
   assertContains(changePasswordFormSource, 'name="currentPassword"', "Change password form has currentPassword field", failures);

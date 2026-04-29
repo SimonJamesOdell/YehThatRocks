@@ -10,6 +10,7 @@ import { SCREEN_NAME_MAX_LENGTH, SCREEN_NAME_MIN_LENGTH, isScreenNameTaken, norm
 import { createRefreshSession } from "@/lib/auth-sessions";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
+import { parseRequestJson } from "@/lib/request-json";
 import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
 
 type AnonymousRequestBody = {
@@ -159,7 +160,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const requestBody = (await request.json().catch(() => null)) as AnonymousRequestBody | null;
+    const bodyResult = await parseRequestJson<AnonymousRequestBody>(request);
+    const requestBody = bodyResult.ok ? bodyResult.data : null;
     const username = normalizeScreenName(requestBody?.screenName ?? "");
 
     if (username.length < SCREEN_NAME_MIN_LENGTH || username.length > SCREEN_NAME_MAX_LENGTH) {

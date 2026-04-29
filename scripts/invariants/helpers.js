@@ -61,10 +61,17 @@ function assertCssRuleNotContains(source, selector, needle, description, failure
   }
 }
 
+function assertFileDoesNotExist(filePath, description, failures, root = process.cwd()) {
+  if (fs.existsSync(filePath)) {
+    failures.push(`${description} (file should not exist: ${path.relative(root, filePath)})`);
+  }
+}
+
 module.exports = {
   readFileStrict,
   assertContains,
   assertNotContains,
   assertCssRuleContains,
   assertCssRuleNotContains,
+  assertFileDoesNotExist,
 };

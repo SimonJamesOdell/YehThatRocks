@@ -5,6 +5,7 @@ import { isObviousCrawlerRequest } from "@/lib/crawler-guard";
 import { prisma } from "@/lib/db";
 import { readAuthCookies } from "@/lib/auth-cookies";
 import { verifyToken } from "@/lib/auth-jwt";
+import { parseRequestJson } from "@/lib/request-json";
 import { z } from "zod";
 
 const schema = z.object({
@@ -135,14 +136,12 @@ export async function POST(request: NextRequest) {
   const csrfError = verifySameOrigin(request);
   if (csrfError) return csrfError;
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
+  const bodyResult = await parseRequestJson<unknown>(request);
+  if (!bodyResult.ok) {
     return NextResponse.json({ ok: false }, { status: 400 });
   }
 
-  const parsed = schema.safeParse(body);
+  const parsed = schema.safeParse(bodyResult.data);
   if (!parsed.success) {
     return NextResponse.json({ ok: false }, { status: 400 });
   }

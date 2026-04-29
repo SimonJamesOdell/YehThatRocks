@@ -12,6 +12,7 @@ const {
   readFileStrict,
   assertContains,
   assertNotContains,
+  assertFileDoesNotExist,
 } = require("./invariants/helpers");
 const { applyQueueResolutionRulePack } = require("./invariants/rule-packs/queue-resolution-pack");
 
@@ -21,6 +22,7 @@ const files = {
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
   shellDynamicRendering: path.join(ROOT, "apps/web/components/shell-dynamic-rendering.tsx"),
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
+  analyticsRoute: path.join(ROOT, "apps/web/app/api/analytics/route.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   metadataUtils: path.join(ROOT, "apps/web/lib/catalog-metadata-utils.ts"),
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
@@ -39,6 +41,7 @@ function main() {
   const shellDynamicRenderingSource = readFileStrict(files.shellDynamicRendering, ROOT);
   const shellRenderingSource = `${shellDynamicSource}\n${shellDynamicRenderingSource}`;
   const currentVideoRouteSource = readFileStrict(files.currentVideoRoute, ROOT);
+  const analyticsRouteSource = readFileStrict(files.analyticsRoute, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const metadataUtilsSource = readFileStrict(files.metadataUtils, ROOT);
   const classificationSource = `${catalogDataSource}\n${metadataUtilsSource}`;
@@ -80,6 +83,12 @@ function main() {
   assertContains(currentVideoRouteSource, "earlyTopVideosForPadding ?? await getCachedTopVideosForCurrentVideo(30)", "Current-video API fetches bounded filler pool (parallel-prefetched or direct)", failures);
   assertContains(currentVideoRouteSource, "const filler = shuffleVideos(fillerPool).slice(0, targetRelatedCount - relatedVideos.length);", "Current-video API randomizes sparse filler selection", failures);
 
+  // Analytics API invariants.
+  assertContains(analyticsRouteSource, 'import { parseRequestJson } from "@/lib/request-json";', "Analytics API uses shared JSON parser helper", failures);
+  assertContains(analyticsRouteSource, "const bodyResult = await parseRequestJson<unknown>(request);", "Analytics API parses request body via shared helper", failures);
+  assertContains(analyticsRouteSource, "if (!bodyResult.ok) {", "Analytics API handles shared parser failure path", failures);
+  assertContains(analyticsRouteSource, "return NextResponse.json({ ok: false }, { status: 400 });", "Analytics API preserves stable invalid-body response contract", failures);
+
   // Catalog data support invariants for fallback sourcing.
   assertContains(catalogDataSource, "export async function getUnseenCatalogVideos(options?: {", "Catalog data exposes unseen catalog helper", failures);
   assertContains(catalogDataSource, "const requested = Math.max(1, Math.min(500, Math.floor(options?.count ?? 100)));", "Unseen catalog helper validates and clamps requested count", failures);
@@ -104,6 +113,9 @@ function main() {
   assertContains(catalogDataSource, "if (isLikelyNonMusicText(video.title, video.description ?? \"\"))", "Runtime metadata persistence applies non-music confidence dampening", failures);
   assertContains(catalogDataSource, "const mojibakeScore = scoreLikelyMojibake(video.title);", "Runtime metadata persistence uses mojibake score to dampen confidence", failures);
   assertContains(catalogDataSource, "YehThatRocks is a rock/metal catalog.", "Groq metadata prompt encodes rock/metal-only extraction intent", failures);
+
+  // Shell architecture invariants: the live shell must be shell-dynamic-core.tsx; the legacy app-shell.tsx must not exist.
+  assertFileDoesNotExist(path.join(ROOT, "apps/web/components/app-shell.tsx"), "Legacy app-shell.tsx is not present (live shell is shell-dynamic-core.tsx)", failures, ROOT);
 
   if (failures.length > 0) {
     console.error("Core experience invariant check failed.");
