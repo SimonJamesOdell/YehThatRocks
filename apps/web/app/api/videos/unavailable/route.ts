@@ -56,6 +56,24 @@ function containsBotChallengeMarker(html: string) {
   return BOT_CHALLENGE_PATTERNS.some((pattern) => pattern.test(html));
 }
 
+function extractPlayabilityStatus(html: string) {
+  const statusMatch = html.match(/"playabilityStatus"\s*:\s*\{[\s\S]{0,800}?"status"\s*:\s*"([A-Z_]+)"([\s\S]{0,1200}?)\}/i);
+  if (!statusMatch) {
+    return null;
+  }
+
+  const status = statusMatch[1]?.trim().toUpperCase() ?? "";
+  const chunk = statusMatch[2] ?? "";
+  const reasonMatch = chunk.match(/"reason"\s*:\s*"([^"]+)"/i);
+  const reason = reasonMatch?.[1]?.trim() ?? null;
+  return { status, reason };
+}
+
+function isUnavailablePlayabilityReason(reason: string | null | undefined) {
+  return typeof reason === "string"
+    && /(video unavailable|private video|deleted|removed|copyright|terminated|not available|this video is unavailable)/i.test(reason);
+}
+
 function shouldForcePruneFromRuntimeReason(reason: string) {
   return /(yt-player-age-or-owner-restricted-(101|150)|yt-player-error-(100|101|150))/i.test(reason);
 }
@@ -88,6 +106,7 @@ async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityC
 
       if (embedResponse.ok) {
         const html = await embedResponse.text();
+        const playability = extractPlayabilityStatus(html);
 
         if (containsBotChallengeMarker(html)) {
           return { status: "check-failed", reason: "embed:bot-check" };
@@ -97,19 +116,15 @@ async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityC
           return { status: "unavailable", reason: "embed:age-restricted" };
         }
 
-        if (
-          /"playabilityStatus"\s*:\s*\{\s*"status"\s*:\s*"(LOGIN_REQUIRED|CONTENT_CHECK_REQUIRED)"/i.test(
-            html,
-          )
-        ) {
+        if (playability?.status === "LOGIN_REQUIRED" || playability?.status === "CONTENT_CHECK_REQUIRED") {
+          if (isUnavailablePlayabilityReason(playability.reason)) {
+            return { status: "unavailable", reason: "embed:playability-login-unavailable" };
+          }
+
           return { status: "check-failed", reason: "embed:interactive-login-check" };
         }
 
-        if (
-          /"playabilityStatus"\s*:\s*\{\s*"status"\s*:\s*"(ERROR|UNPLAYABLE|AGE_CHECK_REQUIRED)"/i.test(
-            html,
-          )
-        ) {
+        if (playability && /^(ERROR|UNPLAYABLE|AGE_CHECK_REQUIRED)$/i.test(playability.status)) {
           return { status: "unavailable", reason: "embed:playability-unavailable" };
         }
 
