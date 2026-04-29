@@ -485,12 +485,12 @@ try {
   Ensure-CleanGitWorktree
 
   Write-Host "Validating migrations for deployment safety..." -ForegroundColor Yellow
-  $validateMigrationsPath = Join-Path $RepoDir "deploy" "validate-migrations.sh"
+  $validateMigrationsPath = [System.IO.Path]::Combine($RepoDir, "deploy", "validate-migrations.sh")
   if (Test-Path -LiteralPath $validateMigrationsPath) {
     try {
       # Convert Windows path to WSL/bash format for bash execution
       $bashScript = bash -c "wslpath -u '$validateMigrationsPath' 2>/dev/null || echo '$validateMigrationsPath'"
-      & bash $validateMigrationsPath
+      & bash $bashScript
       if ($LASTEXITCODE -ne 0) {
         throw "Migration validation failed. Fix the issues above before deploying."
       }
