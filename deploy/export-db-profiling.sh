@@ -5,6 +5,8 @@ REPO_DIR="${REPO_DIR:-/srv/yehthatrocks}"
 ENV_FILE="${ENV_FILE:-$REPO_DIR/.env.production}"
 COMPOSE_FILE="${COMPOSE_FILE:-$REPO_DIR/docker-compose.prod.yml}"
 DISABLE_SLOW_LOG_AFTER_EXPORT="${DISABLE_SLOW_LOG_AFTER_EXPORT:-1}"
+AUTO_ENABLE_SLOW_LOG_ON_EXPORT="${AUTO_ENABLE_SLOW_LOG_ON_EXPORT:-1}"
+ALLOW_EMPTY_SLOW_LOG_EXPORT="${ALLOW_EMPTY_SLOW_LOG_EXPORT:-0}"
 TOP_N="${TOP_N:-80}"
 OUTLIER_MIN_TOTAL_S="${OUTLIER_MIN_TOTAL_S:-8}"
 OUTLIER_MIN_AVG_S="${OUTLIER_MIN_AVG_S:-0.8}"
@@ -47,11 +49,26 @@ exit 1
 
 STATE_FILE="$REPO_DIR/logs/db-profiling-state.env"
 STARTED_AT_UTC=""
+STATE_LONG_QUERY_TIME=""
+STATE_LOG_OUTPUT=""
+STATE_MIN_EXAMINED_ROW_LIMIT=""
 
 if [ -f "$STATE_FILE" ]; then
   STARTED_AT_UTC="$(grep -E '^STARTED_AT_UTC=' "$STATE_FILE" | head -n 1 | cut -d'=' -f2- || true)"
   STARTED_AT_UTC="${STARTED_AT_UTC#\"}"
   STARTED_AT_UTC="${STARTED_AT_UTC%\"}"
+
+  STATE_LONG_QUERY_TIME="$(grep -E '^LONG_QUERY_TIME=' "$STATE_FILE" | head -n 1 | cut -d'=' -f2- || true)"
+  STATE_LONG_QUERY_TIME="${STATE_LONG_QUERY_TIME#\"}"
+  STATE_LONG_QUERY_TIME="${STATE_LONG_QUERY_TIME%\"}"
+
+  STATE_LOG_OUTPUT="$(grep -E '^LOG_OUTPUT=' "$STATE_FILE" | head -n 1 | cut -d'=' -f2- || true)"
+  STATE_LOG_OUTPUT="${STATE_LOG_OUTPUT#\"}"
+  STATE_LOG_OUTPUT="${STATE_LOG_OUTPUT%\"}"
+
+  STATE_MIN_EXAMINED_ROW_LIMIT="$(grep -E '^MIN_EXAMINED_ROW_LIMIT=' "$STATE_FILE" | head -n 1 | cut -d'=' -f2- || true)"
+  STATE_MIN_EXAMINED_ROW_LIMIT="${STATE_MIN_EXAMINED_ROW_LIMIT#\"}"
+  STATE_MIN_EXAMINED_ROW_LIMIT="${STATE_MIN_EXAMINED_ROW_LIMIT%\"}"
 fi
 
 DB_STARTED_AT_UTC="$(run_mysql_query "
@@ -81,6 +98,65 @@ if [ -z "$STARTED_AT_UTC" ]; then
   exit 1
 fi
 
+SLOW_QUERY_LOG_STATUS="$(run_mysql_query "
+SELECT variable_value
+FROM performance_schema.global_variables
+WHERE variable_name = 'slow_query_log'
+LIMIT 1;
+" | tr -d '\r' | tail -n 1 || true)"
+
+if [ "${SLOW_QUERY_LOG_STATUS^^}" != "ON" ]; then
+  echo "[profiling] warning: slow_query_log is OFF; slow-log exports from this capture window will be empty." >&2
+
+  if [ "$AUTO_ENABLE_SLOW_LOG_ON_EXPORT" = "1" ]; then
+    ARMED_AT_UTC="$(date -u +"%Y-%m-%d %H:%M:%S")"
+    APPLY_LONG_QUERY_TIME="${STATE_LONG_QUERY_TIME:-0.10}"
+    APPLY_LOG_OUTPUT="${STATE_LOG_OUTPUT:-TABLE}"
+    APPLY_MIN_EXAMINED_ROW_LIMIT="${STATE_MIN_EXAMINED_ROW_LIMIT:-0}"
+
+    echo "[profiling] auto-enabling slow query log now and arming a fresh capture window." >&2
+    run_mysql_query "
+SET GLOBAL log_output = '$APPLY_LOG_OUTPUT';
+SET GLOBAL long_query_time = $APPLY_LONG_QUERY_TIME;
+SET GLOBAL min_examined_row_limit = $APPLY_MIN_EXAMINED_ROW_LIMIT;
+SET GLOBAL slow_query_log = ON;
+SHOW VARIABLES WHERE Variable_name IN ('slow_query_log','long_query_time','min_examined_row_limit','log_output');
+"
+
+    cat > "$STATE_FILE" <<EOF
+STARTED_AT_UTC="$ARMED_AT_UTC"
+LONG_QUERY_TIME="$APPLY_LONG_QUERY_TIME"
+LOG_OUTPUT="$APPLY_LOG_OUTPUT"
+MIN_EXAMINED_ROW_LIMIT="$APPLY_MIN_EXAMINED_ROW_LIMIT"
+EOF
+
+    echo "[profiling] slow query logging armed at UTC: $ARMED_AT_UTC" >&2
+    echo "[profiling] rerun export after a representative traffic window (for example 10-30 minutes)." >&2
+    exit 2
+  fi
+
+  echo "[profiling] aborting export. Set AUTO_ENABLE_SLOW_LOG_ON_EXPORT=1 to auto-arm capture." >&2
+  exit 2
+fi
+
+SLOW_LOG_ROW_COUNT="$(run_mysql_query "
+SELECT COUNT(*)
+FROM mysql.slow_log
+WHERE start_time >= '$STARTED_AT_UTC';
+" | tr -d '\r' | tail -n 1 || true)"
+
+if ! [[ "$SLOW_LOG_ROW_COUNT" =~ ^[0-9]+$ ]]; then
+  echo "[profiling] failed to read slow log row count for the capture window." >&2
+  exit 1
+fi
+
+if [ "$SLOW_LOG_ROW_COUNT" -eq 0 ] && [ "$ALLOW_EMPTY_SLOW_LOG_EXPORT" != "1" ]; then
+  echo "[profiling] no rows found in mysql.slow_log since capture start ($STARTED_AT_UTC)." >&2
+  echo "[profiling] aborting to avoid a non-actionable blank export." >&2
+  echo "[profiling] if this is expected, rerun with ALLOW_EMPTY_SLOW_LOG_EXPORT=1." >&2
+  exit 3
+fi
+
 OUT_DIR="$REPO_DIR/logs"
 mkdir -p "$OUT_DIR"
 STAMP="$(date -u +"%Y%m%d-%H%M%S")"
@@ -89,6 +165,7 @@ OUT_FILE="$OUT_DIR/db-profiling-report-$STAMP.txt"
 {
   echo "[profiling] report generated UTC: $(date -u +"%Y-%m-%d %H:%M:%S")"
   echo "[profiling] sample started UTC: $STARTED_AT_UTC"
+  echo "[profiling] slow_log_rows_since_start: $SLOW_LOG_ROW_COUNT"
   echo "[profiling] top rows: $TOP_N"
   echo "[profiling] outlier thresholds: total_query_s>=$OUTLIER_MIN_TOTAL_S, avg_query_s>=$OUTLIER_MIN_AVG_S, rows_examined_total>=$OUTLIER_MIN_ROWS_EXAMINED, calls>=$OUTLIER_MIN_CALLS"
   echo

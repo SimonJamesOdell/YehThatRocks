@@ -85,7 +85,7 @@ SET @idx_exists := (
   FROM information_schema.statistics
   WHERE table_schema = @schema_name
     AND table_name = 'site_videos'
-    AND index_name = 'idx_site_videos_video_id_status'
+    AND index_name IN ('idx_site_videos_video_id_status', 'site_videos_video_id_status_idx')
 );
 SET @sql := IF(
   @idx_exists = 0,
@@ -141,6 +141,23 @@ SET @sql := IF(
   @idx_exists = 0,
   'CREATE INDEX idx_related_related_videoId ON related (related, videoId)',
   'SELECT ''idx_related_related_videoId already exists'' AS info'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- artist_stats: supports direct slug lookups on artist detail and wiki routes.
+SET @idx_exists := (
+  SELECT COUNT(*)
+  FROM information_schema.statistics
+  WHERE table_schema = @schema_name
+    AND table_name = 'artist_stats'
+    AND index_name = 'artist_stats_slug_idx'
+);
+SET @sql := IF(
+  @idx_exists = 0,
+  'CREATE INDEX artist_stats_slug_idx ON artist_stats (slug)',
+  'SELECT ''artist_stats_slug_idx already exists'' AS info'
 );
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
