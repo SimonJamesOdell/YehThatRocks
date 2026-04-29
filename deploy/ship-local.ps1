@@ -638,9 +638,13 @@ try {
         [System.IO.File]::WriteAllText($localScriptPath, $script + "`n")
         ExecNative -Program "scp" -CommandArgs @($localScriptPath, "${VpsHost}:${remoteScriptPath}")
         ExecNative -Program "ssh" -CommandArgs @($VpsHost, "sh $remoteScriptPath")
+      } catch {
+        throw
       } finally {
         if (Test-Path $localScriptPath) { Remove-Item -Force $localScriptPath -ErrorAction SilentlyContinue }
       }
+    } catch {
+      throw
     } finally {
       if (Test-Path $localDumpPath) { Remove-Item -Force $localDumpPath -ErrorAction SilentlyContinue }
     }
