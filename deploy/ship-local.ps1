@@ -585,13 +585,15 @@ try {
   Write-Host "Transferring image to VPS (no registry)..." -ForegroundColor Yellow
   Transfer-ImageToVps -ImageTag $shipState.ImageTag -VpsHost $VpsHost -ShipState $shipState -ShipStatePath $shipStatePath
 
+  $localDumpPath = $null
+  $localScriptPath = $null
+
   if ($RestoreDb) {
     Write-Host "=== DB RESTORE: Dumping local database from Docker ===" -ForegroundColor Magenta
     $tempDir = [System.IO.Path]::GetTempPath()
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $localDumpPath = Join-Path $tempDir "ytr-db-$timestamp.sql"
     $remoteDumpPath = "/tmp/ytr-db-$timestamp.sql"
-    $localScriptPath = $null
 
     try {
       # Pipe mysqldump output directly to a local file
