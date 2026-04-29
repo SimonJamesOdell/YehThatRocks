@@ -210,9 +210,9 @@ const RELATED_BACKGROUND_PREFETCH_DELAY_FAST_MS = 280;
 const RELATED_BOOTSTRAP_MIN_VISIBLE = 8;
 const RELATED_LOADING_HINT_SHOW_DELAY_MS = 220;
 const RELATED_LOADING_HINT_HIDE_DELAY_MS = 320;
-const RELATED_FETCH_TIMEOUT_MS = 12_000;
+const RELATED_FETCH_TIMEOUT_MS = 4_000;
 const RELATED_COLD_FETCH_RETRY_ATTEMPTS = 3;
-const RELATED_COLD_FETCH_RETRY_BASE_DELAY_MS = 900;
+const RELATED_COLD_FETCH_RETRY_BASE_DELAY_MS = 250;
 const WATCH_NEXT_HIDE_ANIMATION_MS = 240;
 const WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-watch-next";
 const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
@@ -3134,7 +3134,7 @@ function ShellDynamicInner({
 
     const retryAttempt = watchNextAutoRecoverAttemptRef.current + 1;
     watchNextAutoRecoverAttemptRef.current = retryAttempt;
-    const retryDelayMs = Math.min(5_000, 1_500 * retryAttempt);
+    const retryDelayMs = Math.min(1_500, 350 * retryAttempt);
 
     const timeoutId = window.setTimeout(() => {
       void loadMoreRelatedVideos();
