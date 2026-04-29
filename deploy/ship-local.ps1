@@ -674,6 +674,8 @@ try {
   if ((-not $SkipLocalCleanup) -and (-not $SkipDockerPrune)) {
     Try-PruneDockerCaches
   }
+} catch {
+  throw
 } finally {
   if ($devServerWasRunning -and $ForceFullCleanupStopDevServer) {
     Start-DevServer -RepoRoot $RepoDir
