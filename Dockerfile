@@ -10,7 +10,22 @@ COPY packages/core/package.json packages/core/package.json
 COPY packages/schemas/package.json packages/schemas/package.json
 COPY packages/ui/package.json packages/ui/package.json
 COPY packages/api-client/package.json packages/api-client/package.json
-RUN npm ci --ignore-scripts
+RUN npm config set fetch-retries 5 && \
+        npm config set fetch-retry-factor 2 && \
+        npm config set fetch-retry-mintimeout 20000 && \
+        npm config set fetch-retry-maxtimeout 120000 && \
+        npm config set fetch-timeout 300000 && \
+        for attempt in 1 2 3; do \
+            echo "[deps] npm ci attempt ${attempt}/3"; \
+            npm ci --ignore-scripts --no-audit --no-fund && break; \
+            if [ "$attempt" -eq 3 ]; then \
+                echo "[deps] npm ci failed after 3 attempts"; \
+                exit 1; \
+            fi; \
+            echo "[deps] transient npm failure, cleaning cache and retrying..."; \
+            npm cache clean --force || true; \
+            sleep 5; \
+        done
 
 # --- Builder ---
 FROM base AS builder
