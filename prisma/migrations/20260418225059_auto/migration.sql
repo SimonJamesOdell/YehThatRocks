@@ -1,1 +1,0 @@
--- no-op: geo columns are already created by 20260418190000_add_analytics_geo_columns

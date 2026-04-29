@@ -190,11 +190,23 @@ if ! enable_trigger_migrations; then
   cleanup_docker_artifacts
   exit 1
 fi
-if ! WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" run --rm --no-deps web \
-    sh -c 'npx prisma migrate status --schema /app/prisma/schema.prisma; npx prisma migrate deploy --schema /app/prisma/schema.prisma'; then
-  echo "[deploy] migration failed — aborting before any traffic is affected" >&2
-  cleanup_docker_artifacts
-  exit 1
+
+# Use migration helper if available (provides better error messages and validation)
+MIGRATE_HELPER="${REPO_DIR}/deploy/migrate-safely.sh"
+if [ -f "$MIGRATE_HELPER" ]; then
+  if ! bash "$MIGRATE_HELPER" --deploy "$(echo "${COMPOSE[@]}")" "$WEB_IMAGE" /app/prisma/schema.prisma; then
+    echo "[deploy] migration failed — aborting before any traffic is affected" >&2
+    cleanup_docker_artifacts
+    exit 1
+  fi
+else
+  # Fallback to basic migration if helper not available
+  if ! WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" run --rm --no-deps web \
+      sh -c 'npx prisma migrate status --schema /app/prisma/schema.prisma; npx prisma migrate deploy --schema /app/prisma/schema.prisma'; then
+    echo "[deploy] migration failed — aborting before any traffic is affected" >&2
+    cleanup_docker_artifacts
+    exit 1
+  fi
 fi
 echo "[deploy] migrations applied"
 

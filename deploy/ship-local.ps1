@@ -484,6 +484,24 @@ try {
 
   Ensure-CleanGitWorktree
 
+  Write-Host "Validating migrations for deployment safety..." -ForegroundColor Yellow
+  $validateMigrationsPath = Join-Path $RepoDir "deploy" "validate-migrations.sh"
+  if (Test-Path -LiteralPath $validateMigrationsPath) {
+    try {
+      & bash $validateMigrationsPath $RepoDir
+      if ($LASTEXITCODE -ne 0) {
+        throw "Migration validation failed. Fix the issues above before deploying."
+      }
+      Write-Host "✓ All migration checks passed" -ForegroundColor Green
+    } catch {
+      Write-Host "Migration validation error:" -ForegroundColor Red
+      Write-Host $_.Exception.Message -ForegroundColor Red
+      throw "Deployment aborted: $($_.Exception.Message)"
+    }
+  } else {
+    Write-Host "⚠ Migration validation script not found at $validateMigrationsPath (non-critical)" -ForegroundColor DarkYellow
+  }
+
   Exec "git fetch origin $Branch"
   Exec "git checkout $Branch"
 
