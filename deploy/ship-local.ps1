@@ -603,8 +603,7 @@ try {
 
       $dumpBytes = (Get-Item $localDumpPath).Length
       if ($dumpBytes -lt 10240) {
-        $msg = "Dump is suspiciously small ($dumpBytes bytes) - aborting to protect VPS data."
-        throw $msg
+        throw ("Dump is suspiciously small ({0} bytes) - aborting to protect VPS data." -f $dumpBytes)
       }
       Write-Host "Dump size: $([math]::Round($dumpBytes / 1MB, 1)) MB" -ForegroundColor Green
 
