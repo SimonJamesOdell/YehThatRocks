@@ -495,7 +495,7 @@ try {
       if ($LASTEXITCODE -ne 0) {
         throw $migrationValidationFailureMessage
       }
-      Write-Host "✓ All migration checks passed" -ForegroundColor Green
+      Write-Host "All migration checks passed" -ForegroundColor Green
     } catch {
       Write-Host "Migration validation error:" -ForegroundColor Red
       Write-Host $migrationValidationFailureMessage -ForegroundColor Red
@@ -617,7 +617,7 @@ try {
       Write-Host "Restoring database on VPS..." -ForegroundColor Yellow
       $localScriptPath = Join-Path $tempDir "ytr-restore-$timestamp.sh"
       $remoteScriptPath = "/tmp/ytr-restore-$timestamp.sh"
-      # Build lines individually — concatenated lines use explicit string building
+      # Build lines individually; concatenated lines use explicit string building
       $L1  = '#!/bin/sh'
       $L2  = 'cd /srv/yehthatrocks'
       $L3  = "echo '[db-restore] Stopping web container...'"
