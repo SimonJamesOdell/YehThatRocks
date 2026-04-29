@@ -2111,11 +2111,41 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
   }
 
   try {
+    const seedRows = await prisma.$queryRaw<Array<{
+      title: string | null;
+      parsedArtist: string | null;
+      parsedTrack: string | null;
+    }>>`
+      SELECT
+        v.title,
+        v.parsedArtist,
+        v.parsedTrack
+      FROM videos v
+      WHERE v.videoId = ${videoId}
+      ORDER BY v.created_at DESC, v.id DESC
+      LIMIT 1
+    `;
+
+    const seed = seedRows[0];
+    const seedArtist = seed?.parsedArtist?.trim() || "";
+    const seedTrack = seed?.parsedTrack?.trim() || "";
+    const seedTitle = seed?.title?.trim() || "";
+    const query = [seedArtist, seedTrack, seedTitle]
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 180);
+
+    if (!query) {
+      debugCatalog("fetchRelatedYouTubeVideos:skipped-empty-query", { videoId });
+      return [];
+    }
+
     const url = new URL("https://www.googleapis.com/youtube/v3/search");
     url.searchParams.set("part", "snippet");
     url.searchParams.set("maxResults", "8");
-    url.searchParams.set("relatedToVideoId", videoId);
     url.searchParams.set("type", "video");
+    url.searchParams.set("q", query);
     url.searchParams.set("key", YOUTUBE_DATA_API_KEY);
 
     const response = await fetch(url, {
@@ -2125,15 +2155,18 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
     });
 
     if (!response.ok) {
+      const body = await response.text().catch(() => "");
       void recordExternalApiUsage({
         provider: "youtube",
-        endpoint: "search.list.relatedToVideoId",
+        endpoint: "search.list.query",
         units: 100,
         success: false,
         statusCode: response.status,
+        note: body.slice(0, 120) || null,
       });
-      debugCatalog("fetchRelatedYouTubeVideos:response-not-ok", {
+      debugCatalog("fetchRelatedYouTubeVideos:query-response-not-ok", {
         videoId,
+        query,
         status: response.status,
       });
       return [];
@@ -2141,7 +2174,7 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
 
     void recordExternalApiUsage({
       provider: "youtube",
-      endpoint: "search.list.relatedToVideoId",
+      endpoint: "search.list.query",
       units: 100,
       success: true,
       statusCode: response.status,
@@ -2166,7 +2199,7 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
             : "YouTube",
           genre: "Rock / Metal",
           favourited: 0,
-          description: item.snippet?.description?.trim() || "Related YouTube video discovered via YouTube Data API.",
+          description: item.snippet?.description?.trim() || "Related YouTube video discovered via YouTube Data API search query.",
           thumbnail:
             item.snippet?.thumbnails?.high?.url?.trim() ||
             item.snippet?.thumbnails?.medium?.url?.trim() ||
@@ -2176,22 +2209,26 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
-    debugCatalog("fetchRelatedYouTubeVideos:success", {
+    debugCatalog("fetchRelatedYouTubeVideos:query-success", {
       videoId,
+      query,
       relatedCount: mapped.length,
     });
 
     return mapped;
-  } catch {
+  } catch (error) {
     void recordExternalApiUsage({
       provider: "youtube",
-      endpoint: "search.list.relatedToVideoId",
+      endpoint: "search.list.query",
       units: 100,
       success: false,
       statusCode: null,
-      note: "request-error",
+      note: error instanceof Error ? error.message.slice(0, 120) : "request-error",
     });
-    debugCatalog("fetchRelatedYouTubeVideos:error", { videoId });
+    debugCatalog("fetchRelatedYouTubeVideos:query-error", {
+      videoId,
+      message: error instanceof Error ? error.message : String(error),
+    });
     return [];
   }
 }
