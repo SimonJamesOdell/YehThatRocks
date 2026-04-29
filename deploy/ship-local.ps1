@@ -591,6 +591,7 @@ try {
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $localDumpPath = Join-Path $tempDir "ytr-db-$timestamp.sql"
     $remoteDumpPath = "/tmp/ytr-db-$timestamp.sql"
+    $localScriptPath = $null
 
     try {
       # Pipe mysqldump output directly to a local file
@@ -613,39 +614,34 @@ try {
       Write-Host "Restoring database on VPS..." -ForegroundColor Yellow
       $localScriptPath = Join-Path $tempDir "ytr-restore-$timestamp.sh"
       $remoteScriptPath = "/tmp/ytr-restore-$timestamp.sh"
-      try {
-        # Build lines individually — concatenated lines use explicit string building
-        $L1  = '#!/bin/sh'
-        $L2  = 'cd /srv/yehthatrocks'
-        $L3  = "echo '[db-restore] Stopping web container...'"
-        $L4  = 'docker compose --env-file /srv/yehthatrocks/.env.production -f /srv/yehthatrocks/docker-compose.prod.yml stop web 2>/dev/null || true'
-        $L5  = "echo '[db-restore] Getting db container...'"
-        $L6  = 'DB_CTR=$(docker compose --env-file /srv/yehthatrocks/.env.production -f /srv/yehthatrocks/docker-compose.prod.yml ps -q db | head -n1)'
-        $L7  = 'if [ -z "$DB_CTR" ]; then echo "[db-restore] ERROR: db container not found" >&2; exit 1; fi'
-        $L8  = 'echo "[db-restore] Container: $DB_CTR"'
-        $L9  = 'DB=$(docker exec "$DB_CTR" sh -c ' + "'" + 'printf "%s" "$MYSQL_DATABASE"' + "')"
-        $L10 = 'USR=$(docker exec "$DB_CTR" sh -c ' + "'" + 'printf "%s" "$MYSQL_USER"' + "')"
-        $L11 = 'PASS=$(docker exec "$DB_CTR" sh -c ' + "'" + 'printf "%s" "$MYSQL_PASSWORD"' + "')"
-        $L12 = 'DB="${DB:-yeh}"'
-        $L13 = 'USR="${USR:-yeh}"'
-        $L14 = 'echo "[db-restore] Restoring into: $DB"'
-        $L15 = 'docker exec "$DB_CTR" mysql -u"$USR" -p"$PASS" -e "DROP DATABASE IF EXISTS \`$DB\`; CREATE DATABASE \`$DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"'
-        $L16 = "echo '[db-restore] Importing dump...'"
-        $L17 = "docker exec -i " + '"$DB_CTR"' + " mysql -u" + '"$USR"' + " -p" + '"$PASS"' + " " + '"$DB"' + " < $remoteDumpPath"
-        $L18 = "rm -f $remoteDumpPath $remoteScriptPath"
-        $L19 = "echo '[db-restore] Complete.'"
-        $script = ($L1,$L2,$L3,$L4,$L5,$L6,$L7,$L8,$L9,$L10,$L11,$L12,$L13,$L14,$L15,$L16,$L17,$L18,$L19) -join "`n"
-        [System.IO.File]::WriteAllText($localScriptPath, $script + "`n")
-        ExecNative -Program "scp" -CommandArgs @($localScriptPath, "${VpsHost}:${remoteScriptPath}")
-        ExecNative -Program "ssh" -CommandArgs @($VpsHost, "sh $remoteScriptPath")
-      } catch {
-        throw
-      } finally {
-        if (Test-Path $localScriptPath) { Remove-Item -Force $localScriptPath -ErrorAction SilentlyContinue }
-      }
+      # Build lines individually — concatenated lines use explicit string building
+      $L1  = '#!/bin/sh'
+      $L2  = 'cd /srv/yehthatrocks'
+      $L3  = "echo '[db-restore] Stopping web container...'"
+      $L4  = 'docker compose --env-file /srv/yehthatrocks/.env.production -f /srv/yehthatrocks/docker-compose.prod.yml stop web 2>/dev/null || true'
+      $L5  = "echo '[db-restore] Getting db container...'"
+      $L6  = 'DB_CTR=$(docker compose --env-file /srv/yehthatrocks/.env.production -f /srv/yehthatrocks/docker-compose.prod.yml ps -q db | head -n1)'
+      $L7  = 'if [ -z "$DB_CTR" ]; then echo "[db-restore] ERROR: db container not found" >&2; exit 1; fi'
+      $L8  = 'echo "[db-restore] Container: $DB_CTR"'
+      $L9  = 'DB=$(docker exec "$DB_CTR" sh -c ' + "'" + 'printf "%s" "$MYSQL_DATABASE"' + "')"
+      $L10 = 'USR=$(docker exec "$DB_CTR" sh -c ' + "'" + 'printf "%s" "$MYSQL_USER"' + "')"
+      $L11 = 'PASS=$(docker exec "$DB_CTR" sh -c ' + "'" + 'printf "%s" "$MYSQL_PASSWORD"' + "')"
+      $L12 = 'DB="${DB:-yeh}"'
+      $L13 = 'USR="${USR:-yeh}"'
+      $L14 = 'echo "[db-restore] Restoring into: $DB"'
+      $L15 = 'docker exec "$DB_CTR" mysql -u"$USR" -p"$PASS" -e "DROP DATABASE IF EXISTS \`$DB\`; CREATE DATABASE \`$DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"'
+      $L16 = "echo '[db-restore] Importing dump...'"
+      $L17 = "docker exec -i " + '"$DB_CTR"' + " mysql -u" + '"$USR"' + " -p" + '"$PASS"' + " " + '"$DB"' + " < $remoteDumpPath"
+      $L18 = "rm -f $remoteDumpPath $remoteScriptPath"
+      $L19 = "echo '[db-restore] Complete.'"
+      $script = ($L1,$L2,$L3,$L4,$L5,$L6,$L7,$L8,$L9,$L10,$L11,$L12,$L13,$L14,$L15,$L16,$L17,$L18,$L19) -join "`n"
+      [System.IO.File]::WriteAllText($localScriptPath, $script + "`n")
+      ExecNative -Program "scp" -CommandArgs @($localScriptPath, "${VpsHost}:${remoteScriptPath}")
+      ExecNative -Program "ssh" -CommandArgs @($VpsHost, "sh $remoteScriptPath")
     } catch {
       throw
     } finally {
+      if ($localScriptPath -and (Test-Path $localScriptPath)) { Remove-Item -Force $localScriptPath -ErrorAction SilentlyContinue }
       if (Test-Path $localDumpPath) { Remove-Item -Force $localDumpPath -ErrorAction SilentlyContinue }
     }
     Write-Host "=== DB RESTORE complete ===" -ForegroundColor Magenta
