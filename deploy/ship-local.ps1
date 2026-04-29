@@ -488,8 +488,9 @@ try {
   $validateMigrationsPath = Join-Path $RepoDir "deploy" "validate-migrations.sh"
   if (Test-Path -LiteralPath $validateMigrationsPath) {
     try {
-      $bashPath = $validateMigrationsPath -replace '\\', '/'
-      & bash -c "bash '$bashPath'"
+      # Convert Windows path to WSL/bash format for bash execution
+      $bashScript = bash -c "wslpath -u '$validateMigrationsPath' 2>/dev/null || echo '$validateMigrationsPath'"
+      & bash $validateMigrationsPath
       if ($LASTEXITCODE -ne 0) {
         throw "Migration validation failed. Fix the issues above before deploying."
       }
