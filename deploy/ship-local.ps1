@@ -643,8 +643,14 @@ try {
     } catch {
       throw
     } finally {
-      if ($localScriptPath -and (Test-Path $localScriptPath)) { Remove-Item -Force $localScriptPath -ErrorAction SilentlyContinue }
-      if (Test-Path $localDumpPath) { Remove-Item -Force $localDumpPath -ErrorAction SilentlyContinue }
+      $cleanupLocalScriptPath = Get-Variable -Name localScriptPath -ValueOnly -ErrorAction SilentlyContinue
+      if ($cleanupLocalScriptPath -and (Test-Path -LiteralPath $cleanupLocalScriptPath)) {
+        Remove-Item -LiteralPath $cleanupLocalScriptPath -Force -ErrorAction SilentlyContinue
+      }
+      $cleanupLocalDumpPath = Get-Variable -Name localDumpPath -ValueOnly -ErrorAction SilentlyContinue
+      if ($cleanupLocalDumpPath -and (Test-Path -LiteralPath $cleanupLocalDumpPath)) {
+        Remove-Item -LiteralPath $cleanupLocalDumpPath -Force -ErrorAction SilentlyContinue
+      }
     }
     Write-Host "=== DB RESTORE complete ===" -ForegroundColor Magenta
   }
