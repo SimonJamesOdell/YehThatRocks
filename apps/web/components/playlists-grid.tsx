@@ -409,6 +409,47 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
 
       {message ? <p className="mutationMessage">{message}</p> : null}
 
+      {isMounted && showCreateModal ? createPortal(
+        <div
+          className="suggestNewModalBackdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Create playlist"
+          onClick={() => setShowCreateModal(false)}
+        >
+          <div className="suggestNewModalPanel" onClick={(event) => event.stopPropagation()}>
+            <div className="suggestNewModalHeader">
+              <h3>Create Playlist</h3>
+              <p className="suggestNewModalMeta">Give your playlist a name and start building your queue.</p>
+            </div>
+
+            <label className="newFlagModalField suggestNewModalField" htmlFor="create-playlist-name">
+              Playlist name
+            </label>
+            <input
+              className="suggestNewModalInput"
+              id="create-playlist-name"
+              value={name}
+              onChange={(event) => setName(event.currentTarget.value)}
+              placeholder="Playlist name"
+              disabled={isPending}
+              maxLength={80}
+              autoFocus
+            />
+
+            <div className="newFlagModalActions">
+              <button type="button" className="newFlagModalActionBtn" onClick={() => setShowCreateModal(false)} disabled={isPending}>
+                Cancel
+              </button>
+              <button type="button" className="newFlagModalActionBtn" onClick={createPlaylist} disabled={isPending}>
+                {isPending ? "Creating..." : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
+
       {isMounted && showImportModal ? createPortal(
         <div
           className="suggestNewModalBackdrop"

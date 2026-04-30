@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cookies } from "next/headers";
 import { ShellDynamic } from "@/components/shell-dynamic";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
-import { getCurrentVideo, getHiddenVideoIdsForUser, getSeenVideoIdsForUser } from "@/lib/catalog-data";
+import { getCurrentVideo, getDataSourceStatus, getHiddenVideoIdsForUser, getSeenVideoIdsForUser } from "@/lib/catalog-data";
 import { isAdminIdentity } from "@/lib/admin-auth";
 import { getCurrentAuthenticatedUserAuthStateByAccessToken } from "@/lib/server-auth";
 
@@ -10,22 +10,27 @@ export default async function ShellLayout({ children }: { children: ReactNode })
   const cookieStore = await cookies();
   const accessToken = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value;
   const hasAccessToken = Boolean(accessToken);
-  const [authState, initialVideo] = await Promise.all([
+  const [authState, initialVideo, dataSourceStatus] = await Promise.all([
     getCurrentAuthenticatedUserAuthStateByAccessToken(accessToken),
     getCurrentVideo(),
+    getDataSourceStatus(),
   ]);
   const user = authState.status === "authenticated" ? authState.user : null;
   const isAdmin = Boolean(user && isAdminIdentity(user.id, user.email ?? ""));
 
   if (!initialVideo) {
+    const isBackendOutage = dataSourceStatus.mode === "database-error";
+
     return (
       <main className="serviceFailureScreen" role="main" aria-label="Service unavailable">
         <div className="serviceFailureBackdrop" aria-hidden="true" />
-        <section className="serviceFailurePanel" role="status" aria-live="polite" aria-label="Backend unavailable">
+        <section className="serviceFailurePanel" role="status" aria-live="polite" aria-label={isBackendOutage ? "Backend unavailable" : "No approved videos available"}>
           <p className="serviceFailureEyebrow">Service state</p>
-          <h2 className="serviceFailureTitle">Backend unavailable</h2>
+          <h2 className="serviceFailureTitle">{isBackendOutage ? "Backend unavailable" : "No approved videos available"}</h2>
           <p className="serviceFailureLead">
-            Yeh That Rocks cannot connect to the backend server and cannot load right now. Please try again later.
+            {isBackendOutage
+              ? "Yeh That Rocks cannot connect to the backend server and cannot load right now. Please try again later."
+              : "The backend is online, but there are currently no approved videos to play. Approve videos in Admin to bring the catalog online."}
           </p>
 
         </section>

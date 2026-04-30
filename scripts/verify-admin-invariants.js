@@ -13,6 +13,7 @@ const files = {
   adminCategoriesRoute: path.join(ROOT, "apps/web/app/api/admin/categories/route.ts"),
   adminVideosRoute: path.join(ROOT, "apps/web/app/api/admin/videos/route.ts"),
   adminArtistsRoute: path.join(ROOT, "apps/web/app/api/admin/artists/route.ts"),
+  adminPendingRoute: path.join(ROOT, "apps/web/app/api/admin/videos/pending/route.ts"),
   adminDashboardPanel: path.join(ROOT, "apps/web/components/admin-dashboard-panel.tsx"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   currentVideoCache: path.join(ROOT, "apps/web/lib/current-video-cache.ts"),
@@ -28,6 +29,7 @@ function main() {
   const adminCategoriesRouteSource = readFileStrict(files.adminCategoriesRoute, ROOT);
   const adminVideosRouteSource = readFileStrict(files.adminVideosRoute, ROOT);
   const adminArtistsRouteSource = readFileStrict(files.adminArtistsRoute, ROOT);
+  const adminPendingRouteSource = readFileStrict(files.adminPendingRoute, ROOT);
   const adminDashboardPanelSource = readFileStrict(files.adminDashboardPanel, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const currentVideoCacheSource = readFileStrict(files.currentVideoCache, ROOT);
@@ -95,6 +97,21 @@ function main() {
   assertContains(catalogDataSource, "${\"admin-deleted\"}", "Catalog prune helper writes admin-deleted rejection reason", failures);
   assertContains(currentVideoCacheSource, "export function clearCurrentVideoRouteCaches()", "Current-video cache module exposes shared route cache clear helper", failures);
   assertContains(currentVideoCacheSource, "currentVideoRelatedPoolCache.clear();", "Current-video cache helper clears related pool cache", failures);
+
+  // Video approval gate invariants.
+  // The `approved` column gates new video visibility. Every public catalog query must filter
+  // by approved=1, and the ingestion pipeline must not throw on newly-inserted unapproved rows.
+  assertContains(catalogDataSource, "COALESCE(v.approved, 0) = 1", "Catalog queries filter by approved flag to hide unreviewed videos", failures);
+  assertContains(catalogDataSource, "{ includeUnapproved: true }", "Persist pipeline uses includeUnapproved lookup so it never throws on new rows with approved=0", failures);
+  assertContains(catalogDataSource, "async function maybeBackfillLegacyApprovedVideos()", "Runtime boot has a safety-net backfill for DBs where no rows are approved yet", failures);
+
+  // Admin pending approval route invariants.
+  assertContains(adminPendingRouteSource, "const auth = await requireAdminApiAuth(request);", "Admin pending videos route enforces admin auth", failures);
+  assertContains(adminPendingRouteSource, "const csrf = verifySameOrigin(request);", "Admin pending moderation POST enforces CSRF", failures);
+  assertContains(adminPendingRouteSource, 'action: z.enum(["approve", "remove"])', "Admin pending route validates action enum (approve|remove)", failures);
+  assertContains(adminPendingRouteSource, "COALESCE(approved, 0) = 0", "Admin pending route lists only unapproved videos", failures);
+  assertContains(adminPendingRouteSource, "SET approved = 1", "Admin pending approve action sets approved flag", failures);
+  assertContains(adminDashboardPanelSource, "pendingVideos", "Admin dashboard panel fetches and renders the pending approval queue", failures);
 
   if (failures.length > 0) {
     console.error("Admin invariant check failed.");

@@ -151,15 +151,15 @@ function main() {
   assertNotContains(currentVideoRouteSource, "paddedRelatedVideos = await filterHiddenVideos", "Current-video route avoids redundant hidden-video DB lookups during final filtering", failures);
   assertContains(currentVideoRouteSource, "return [...deduped, ...merged].slice(0, CURRENT_VIDEO_RELATED_POOL_SIZE);", "Current-video route enforces bounded merged pool size", failures);
 
-  // Docked autoplay route-queue invariants.
+  // Docked route-queue invariants.
   assertContains(playerExperienceSource, "const [routeAutoplayQueueIds, setRouteAutoplayQueueIds] = useState<string[]>([]);", "Player tracks route-scoped autoplay queue ids", failures);
-  assertContains(playerExperienceSource, "if (!isDockedDesktop || !autoplayEnabled || Boolean(activePlaylistId))", "Route autoplay queue activates only while docked autoplay is enabled and no playlist is active", failures);
+  assertContains(playerExperienceSource, "if (!isDockedDesktop || Boolean(activePlaylistId))", "Route queue activates only while docked and no playlist is active", failures);
   assertContains(playerExperienceSource, "const onNewRoute = pathname === \"/new\";", "Docked autoplay recognizes New page list route", failures);
   assertContains(playerExperienceSource, "const onTop100Route = pathname === \"/top100\";", "Docked autoplay recognizes Top100 list route", failures);
   assertContains(playerExperienceSource, "const onFavouritesRoute = pathname === \"/favourites\";", "Docked autoplay recognizes Favourites list route", failures);
   assertContains(playerExperienceSource, "const onCategoryRoute = pathname.startsWith(\"/categories/\");", "Docked autoplay recognizes Category detail list route", failures);
   assertContains(playerExperienceSource, "const onArtistRoute = pathname.startsWith(\"/artist/\");", "Docked autoplay recognizes Artist detail list route", failures);
-  assertContains(playerNextTrackDomainSource, "if (isDockedDesktop && autoplayEnabled && routeAutoplayQueueIds.length > 0)", "Autoplay next target prioritizes route queue when docked on list pages", failures);
+  assertContains(playerNextTrackDomainSource, "if (isDockedDesktop && routeAutoplayQueueIds.length > 0)", "Next target prioritizes the route queue when docked on list pages", failures);
   assertContains(playerNextTrackDomainSource, "const currentIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId === currentVideoId);", "Route queue next selection is based on current video position", failures);
   assertContains(playerNextTrackDomainSource, "const nextIndex = currentIndex >= 0", "Route queue next selection advances in list order", failures);
   assertContains(playerNextTrackDomainSource, "const randomWatchNextId = getRandomWatchNextId();", "Random watch-next fallback still exists when no route queue target is available", failures);

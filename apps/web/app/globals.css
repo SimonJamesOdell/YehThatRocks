@@ -6842,6 +6842,31 @@ h1 {
   box-shadow: 0 10px 24px rgba(64, 10, 8, 0.46);
 }
 
+.trackCard.leaderboardCard.top100CardActive {
+  position: relative;
+  z-index: 2;
+  overflow: hidden;
+  outline: 2px solid rgba(179, 18, 20, 0.95);
+  outline-offset: -2px;
+  animation: fireActiveOutline 1.8s ease-in-out infinite;
+}
+
+.trackCard.leaderboardCard.top100CardActive::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  background-color: rgba(75, 6, 8, 0.24);
+  animation: backgroundPulseOverlay 1.8s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.trackCard.leaderboardCard.top100CardActive > * {
+  position: relative;
+  z-index: 1;
+}
+
 .trackCard.leaderboardCard.top100CardClickFlash {
   animation: top100CardClickFlash 220ms ease-out;
 }

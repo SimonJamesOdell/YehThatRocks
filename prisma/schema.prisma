@@ -23,6 +23,7 @@ model Video {
   channelTitle    String?        @map("channelTitle") @db.VarChar(255)
   thumbnail       String?        @db.VarChar(500)
   viewCount       Int?           @map("viewCount")
+  approved        Boolean        @default(false)
   favourited      Int            @default(0)
   description     String?        @db.LongText
   createdAt       DateTime?      @map("created_at")

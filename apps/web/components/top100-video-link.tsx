@@ -23,6 +23,7 @@ type Top100VideoLinkProps = {
   index: number;
   isAuthenticated?: boolean;
   isSeen?: boolean;
+  isActive?: boolean;
   rowVariant?: "default" | "new";
   onHideVideo?: (track: Top100VideoLinkProps["track"]) => void;
   isHidePending?: boolean;
@@ -70,6 +71,7 @@ export function Top100VideoLink({
   index,
   isAuthenticated = true,
   isSeen = false,
+  isActive = false,
   rowVariant = "default",
   onHideVideo,
   isHidePending = false,
@@ -192,7 +194,7 @@ export function Top100VideoLink({
 
   return (
     <article
-      className={`trackCard leaderboardCard top100CardWithPlaylistAction${isSeen ? " top100CardSeen" : ""}${isSeen && rowVariant === "new" ? " top100CardSeenNew" : ""}${isClickFlashing ? " top100CardClickFlash" : ""}${isAuthenticated ? " top100CardCornerActions" : ""}${rowVariant === "new" ? " top100CardNewPersistentActions" : ""}${rowVariant === "default" ? " top100CardAlwaysVisibleControls" : ""}`}
+      className={`trackCard leaderboardCard top100CardWithPlaylistAction${isSeen ? " top100CardSeen" : ""}${isSeen && rowVariant === "new" ? " top100CardSeenNew" : ""}${isActive ? " top100CardActive" : ""}${isClickFlashing ? " top100CardClickFlash" : ""}${isAuthenticated ? " top100CardCornerActions" : ""}${rowVariant === "new" ? " top100CardNewPersistentActions" : ""}${rowVariant === "default" ? " top100CardAlwaysVisibleControls" : ""}`}
       role="link"
       tabIndex={0}
       aria-label={`Play ${track.title}`}
@@ -253,6 +255,7 @@ export function Top100VideoLink({
         href={videoHref}
         className="linkedCard leaderboardTrackLink"
         prefetch={false}
+        aria-current={isActive ? "true" : undefined}
         onMouseEnter={stagePendingSelection}
         onFocus={stagePendingSelection}
         onPointerDown={warmSelection}

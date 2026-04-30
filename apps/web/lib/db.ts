@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 
-import { recordPrismaOperation } from "@/lib/runtime-profiler";
+import { normalizePrismaQueryFingerprint } from "@/lib/query-fingerprint";
+import { recordPrismaOperation, recordPrismaQueryFingerprint } from "@/lib/runtime-profiler";
 
 declare global {
   var __yehPrisma__: PrismaClient | undefined;
@@ -150,9 +151,15 @@ if (process.env.DATABASE_URL && !global.__yehPrismaProfilingHookInstalled__) {
         recordPrismaOperation(operation, durationMs);
       }
     });
-  } else if (typeof prismaWithProfilingHooks.$on === "function") {
+  }
+
+  if (typeof prismaWithProfilingHooks.$on === "function") {
     prismaWithProfilingHooks.$on("query", (event) => {
-      recordPrismaOperation(normalizeQueryOperation(event.query), event.duration);
+      if (typeof prismaWithProfilingHooks.$use !== "function") {
+        recordPrismaOperation(normalizeQueryOperation(event.query), event.duration);
+      }
+
+      recordPrismaQueryFingerprint(normalizePrismaQueryFingerprint(event.query), event.duration);
     });
   }
 

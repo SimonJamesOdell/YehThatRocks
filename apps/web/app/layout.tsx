@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Metal_Mania } from "next/font/google";
+import Script from "next/script";
 
 import { startAdminHostMetricSampling } from "@/lib/admin-dashboard-health";
 import { YouTubeIframeApiLoader } from "@/components/youtube-iframe-api-loader";
@@ -52,6 +53,43 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <Script
+          id="performance-measure-guard"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function () {
+                if (typeof window === "undefined" || typeof performance === "undefined") {
+                  return;
+                }
+
+                var perf = performance;
+                if (perf.__ytrMeasurePatched) {
+                  return;
+                }
+
+                var originalMeasure = perf.measure.bind(perf);
+                perf.__ytrMeasurePatched = true;
+                perf.measure = function () {
+                  try {
+                    return originalMeasure.apply(perf, arguments);
+                  } catch (error) {
+                    var message = error && error.message ? String(error.message) : String(error);
+                    if (
+                      message.indexOf("negative time stamp") !== -1 ||
+                      message.indexOf("cannot have a negative time stamp") !== -1 ||
+                      message.indexOf("Failed to execute 'measure'") !== -1 ||
+                      message.indexOf("NotFound") !== -1
+                    ) {
+                      return;
+                    }
+                    throw error;
+                  }
+                };
+              })();
+            `,
+          }}
+        />
         <link rel="dns-prefetch" href="https://www.youtube.com" />
         <link rel="dns-prefetch" href="https://www.youtube-nocookie.com" />
         <link rel="dns-prefetch" href="https://i.ytimg.com" />

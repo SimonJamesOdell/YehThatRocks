@@ -24,7 +24,6 @@ describe("resolveNextTrackTarget", () => {
       temporaryQueue: [createVideo("q1"), createVideo("q2")],
       currentVideoId: "p1",
       isDockedDesktop: true,
-      autoplayEnabled: true,
       routeAutoplayQueueIds: ["r1", "r2"],
       getRandomWatchNextId: vi.fn(() => "rand"),
     })).toEqual({
@@ -45,7 +44,6 @@ describe("resolveNextTrackTarget", () => {
       temporaryQueue: [createVideo("q1")],
       currentVideoId: "q1",
       isDockedDesktop: true,
-      autoplayEnabled: true,
       routeAutoplayQueueIds: ["r1", "r2"],
       getRandomWatchNextId: randomPicker,
     })).toBeNull();
@@ -62,7 +60,6 @@ describe("resolveNextTrackTarget", () => {
       temporaryQueue: [createVideo("q1"), createVideo("q2")],
       currentVideoId: "q1",
       isDockedDesktop: true,
-      autoplayEnabled: true,
       routeAutoplayQueueIds: ["r1", "r2"],
       getRandomWatchNextId: vi.fn(() => "rand"),
     })).toEqual({
@@ -79,7 +76,6 @@ describe("resolveNextTrackTarget", () => {
       temporaryQueue: [],
       currentVideoId: "r1",
       isDockedDesktop: true,
-      autoplayEnabled: true,
       routeAutoplayQueueIds: ["r1", "r2"],
       getRandomWatchNextId: vi.fn(() => "rand"),
     })).toEqual({
@@ -96,11 +92,28 @@ describe("resolveNextTrackTarget", () => {
       temporaryQueue: [],
       currentVideoId: "v1",
       isDockedDesktop: false,
-      autoplayEnabled: false,
       routeAutoplayQueueIds: [],
       getRandomWatchNextId: vi.fn(() => "rand"),
     })).toEqual({
       videoId: "rand",
+      playlistItemIndex: null,
+      clearPlaylist: true,
+    });
+  });
+
+  it("allows route-queue next while autoplay is off", () => {
+    expect(resolveNextTrackTarget({
+      activePlaylistId: null,
+      hasActivePlaylistContext: false,
+      playlistQueueIds: [],
+      effectivePlaylistIndex: null,
+      temporaryQueue: [],
+      currentVideoId: "r1",
+      isDockedDesktop: true,
+      routeAutoplayQueueIds: ["r1", "r2", "r3"],
+      getRandomWatchNextId: vi.fn(() => "rand"),
+    })).toEqual({
+      videoId: "r2",
       playlistItemIndex: null,
       clearPlaylist: true,
     });

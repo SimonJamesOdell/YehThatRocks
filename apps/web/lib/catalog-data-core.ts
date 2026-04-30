@@ -1,17 +1,20 @@
 import { prisma } from "@/lib/db";
 import { recordExternalApiUsage } from "@/lib/api-usage-telemetry";
 import { getSearchRankingSignals } from "@/lib/search-flag-data";
-import {
-  artists as seedArtists,
-  genres as seedGenres,
-  getArtistBySlug as getSeedArtistBySlug,
-  getRelatedVideos as getSeedRelatedVideos,
-  getVideoById as getSeedVideoById,
-  searchCatalog as searchSeedCatalog,
-  videos as seedVideos,
-  type ArtistRecord,
-  type VideoRecord,
-} from "@/lib/catalog";
+import type { ArtistRecord, VideoRecord } from "@/lib/catalog";
+
+// Seed data fallbacks are disabled — the app requires a live database connection.
+// These stubs ensure all legacy fallback paths return empty results instead of
+// leaking fake placeholder content when canonical data is unavailable.
+const seedVideos: VideoRecord[] = [];
+const seedArtists: ArtistRecord[] = [];
+const seedGenres: string[] = [];
+function getSeedRelatedVideos(_videoId: string): VideoRecord[] { return []; }
+function getSeedVideoById(_videoId: string): VideoRecord | undefined { return undefined; }
+function getSeedArtistBySlug(_slug: string): ArtistRecord | undefined { return undefined; }
+function searchSeedCatalog(_query: string): { videos: VideoRecord[]; artists: ArtistRecord[]; genres: string[] } {
+  return { videos: [], artists: [], genres: [] };
+}
 import {
   buildNormalizedVideoTitleFromMetadata,
   computeArtistChannelConfidenceDelta,
@@ -21,6 +24,10 @@ import {
   normalizeParsedString,
   normalizePossiblyMojibakeText,
 } from "@/lib/catalog-metadata-utils";
+import { pruneMapToMaxEntries } from "@/lib/bounded-map";
+import { createFavouriteVideosCache } from "@/lib/favourite-videos-cache";
+import { computeRelatedBackfillDelayMs, shouldScheduleRelatedBackfill } from "@/lib/related-backfill-scheduler";
+import { createSeenVideoIdCache } from "@/lib/seen-video-id-cache";
 
 export { buildNormalizedVideoTitleFromMetadata };
 
@@ -77,6 +84,7 @@ type RankedVideoRow = {
   title: string;
   channelTitle: string | null;
   parsedArtist?: string | null;
+  parsedTrack?: string | null;
   favourited: number;
   description: string | null;
 };
@@ -182,6 +190,8 @@ const ENABLE_AUTO_RELATED_BACKFILL = process.env.ENABLE_AUTO_RELATED_BACKFILL !=
 const AUTO_RELATED_BACKFILL_UNITS_PER_RUN = Math.max(100, Math.min(3000, Number(process.env.AUTO_RELATED_BACKFILL_UNITS_PER_RUN || "300")));
 const AUTO_RELATED_BACKFILL_MIN_INTERVAL_MS = Math.max(60_000, Number(process.env.AUTO_RELATED_BACKFILL_MIN_INTERVAL_MS || String(15 * 60 * 1000)));
 const AUTO_RELATED_BACKFILL_MAX_NEWEST_OFFSET = Math.max(0, Math.min(500, Number(process.env.AUTO_RELATED_BACKFILL_MAX_NEWEST_OFFSET || "0")));
+const AUTO_RELATED_BACKFILL_DEFER_MS = Math.max(0, Math.min(60_000, Number(process.env.AUTO_RELATED_BACKFILL_DEFER_MS || "5000")));
+const AUTO_RELATED_BACKFILL_DEFER_JITTER_MS = Math.max(0, Math.min(60_000, Number(process.env.AUTO_RELATED_BACKFILL_DEFER_JITTER_MS || "5000")));
 const RELATED_DISCOVERY_MAX_DEPTH = Math.max(1, Math.min(4, Number(process.env.RELATED_DISCOVERY_MAX_DEPTH || "2")));
 const RELATED_DISCOVERY_MAX_NEW_VIDEOS = Math.max(1, Math.min(400, Number(process.env.RELATED_DISCOVERY_MAX_NEW_VIDEOS || "40")));
 const RELATED_DISCOVERY_SEED_FANOUT = Math.max(1, Math.min(8, Number(process.env.RELATED_DISCOVERY_SEED_FANOUT || "8")));
@@ -203,11 +213,15 @@ let hasCheckedVideoMetadataColumns = false;
 let videoMetadataColumnsAvailable = false;
 let hasCheckedVideoChannelTitleColumn = false;
 let videoChannelTitleColumnAvailable = false;
+let legacyApprovalBootstrapAttempted = false;
+let legacyApprovalBootstrapInFlight: Promise<boolean> | null = null;
 let relatedDiscoveryQuotaSnapshot:
   | { dayKey: string; expiresAt: number; totalUnits: number; relatedUnits: number }
   | null = null;
 let autoRelatedBackfillInFlight: Promise<void> | null = null;
 let autoRelatedBackfillLastStartedAt = 0;
+let autoRelatedBackfillTimer: ReturnType<typeof setTimeout> | null = null;
+let autoRelatedBackfillScheduledFor = 0;
 
 function getPacificDayWindow(now = new Date()) {
   const pacificDateKey = new Intl.DateTimeFormat("en-US", {
@@ -309,6 +323,60 @@ function debugCatalog(event: string, detail?: Record<string, unknown>) {
 
   const payload = detail ? ` ${JSON.stringify(detail)}` : "";
   console.log(`[catalog-data] ${event}${payload}`);
+}
+
+async function maybeBackfillLegacyApprovedVideos() {
+  if (legacyApprovalBootstrapAttempted) {
+    return false;
+  }
+
+  if (legacyApprovalBootstrapInFlight) {
+    return legacyApprovalBootstrapInFlight;
+  }
+
+  legacyApprovalBootstrapInFlight = (async () => {
+    legacyApprovalBootstrapAttempted = true;
+
+    if (!hasDatabaseUrl()) {
+      return false;
+    }
+
+    try {
+      const rows = await prisma.$queryRaw<Array<{ total: bigint | number; approved: bigint | number }>>`
+        SELECT
+          COUNT(*) AS total,
+          SUM(CASE WHEN COALESCE(approved, 0) = 1 THEN 1 ELSE 0 END) AS approved
+        FROM videos
+      `;
+
+      const total = Number(rows[0]?.total ?? 0);
+      const approved = Number(rows[0]?.approved ?? 0);
+
+      if (!Number.isFinite(total) || total <= 0 || approved > 0) {
+        return false;
+      }
+
+      const updated = await prisma.$executeRaw`
+        UPDATE videos
+        SET approved = 1
+        WHERE COALESCE(approved, 0) = 0
+      `;
+
+      if (Number(updated) > 0) {
+        clearCatalogVideoCaches();
+        debugCatalog("bootstrap-approval-backfill:updated", { total, updated: Number(updated) });
+        return true;
+      }
+
+      return false;
+    } catch {
+      return false;
+    } finally {
+      legacyApprovalBootstrapInFlight = null;
+    }
+  })();
+
+  return legacyApprovalBootstrapInFlight;
 }
 
 function scoreLikelyMojibake(value: string) {
@@ -918,6 +986,36 @@ const relatedBaseRowsInFlight = new Map<string, Promise<RelatedBaseRowBuckets>>(
 const SAME_GENRE_RELATED_POOL_CACHE_TTL_MS = 5 * 60 * 1000;
 const sameGenreRelatedPoolCache = new Map<string, { expiresAt: number; rows: RankedVideoRow[] }>();
 const sameGenreRelatedPoolInFlight = new Map<string, Promise<RankedVideoRow[]>>();
+const FAVOURITE_VIDEOS_CACHE_TTL_MS = 20_000;
+const USER_SCOPED_CACHE_MAX_ENTRIES = Math.max(100, Math.min(10_000, Number(process.env.USER_SCOPED_CACHE_MAX_ENTRIES || "1500")));
+const favouriteVideosCache = createFavouriteVideosCache(FAVOURITE_VIDEOS_CACHE_TTL_MS, { maxEntries: USER_SCOPED_CACHE_MAX_ENTRIES });
+const favouriteVideosInFlight = new Map<number, Promise<VideoRecord[]>>();
+const FAVOURITE_VIDEOS_METRICS_LOG_INTERVAL_MS = 60_000;
+const FAVOURITE_VIDEOS_METRICS_LOG_EVERY_LOOKUPS = 250;
+const favouriteVideosCacheMetrics = {
+  lookups: 0,
+  hits: 0,
+  misses: 0,
+  inFlightReuses: 0,
+  dbLoads: 0,
+  dbErrors: 0,
+  forceRefreshes: 0,
+  lastLoggedAt: 0,
+};
+const SEEN_VIDEO_IDS_CACHE_TTL_MS = 20_000;
+const seenVideoIdsCache = createSeenVideoIdCache(SEEN_VIDEO_IDS_CACHE_TTL_MS, { maxEntries: USER_SCOPED_CACHE_MAX_ENTRIES });
+const seenVideoIdsInFlight = new Map<number, Promise<Set<string>>>();
+const SEEN_VIDEO_IDS_METRICS_LOG_INTERVAL_MS = 60_000;
+const SEEN_VIDEO_IDS_METRICS_LOG_EVERY_LOOKUPS = 250;
+const seenVideoIdsCacheMetrics = {
+  lookups: 0,
+  hits: 0,
+  misses: 0,
+  inFlightReuses: 0,
+  dbLoads: 0,
+  dbErrors: 0,
+  lastLoggedAt: 0,
+};
 const HIDDEN_VIDEO_IDS_CACHE_TTL_MS = 20_000;
 const hiddenVideoIdsCache = new Map<number, { expiresAt: number; ids: Set<string> }>();
 const hiddenVideoIdsInFlight = new Map<number, Promise<Set<string>>>();
@@ -1125,10 +1223,12 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
           v.title,
           COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
           NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
+          NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
           COALESCE(v.favourited, 0) AS favourited,
           v.description
         FROM videos v
         WHERE v.videoId IS NOT NULL
+          AND COALESCE(v.approved, 0) = 1
           AND EXISTS (
             SELECT 1
             FROM site_videos sv
@@ -1150,6 +1250,7 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
       const videoFavouritedRef = pickColumn(videoColumns, ["favourited", "favorite", "is_favourited"]);
       const videoViewRef = pickColumn(videoColumns, ["viewCount", "view_count", "views"]);
       const videoParsedArtistRef = pickColumn(videoColumns, ["parsedArtist", "parsed_artist"]);
+      const videoParsedTrackRef = pickColumn(videoColumns, ["parsedTrack", "parsed_track"]);
       const videoChannelTitleRef = pickColumn(videoColumns, ["channelTitle", "channel_title"]);
       const videoPkRef = pickColumn(videoColumns, ["id"]);
       const siteVideoIdRef = pickColumn(siteVideoColumns, ["video_id", "videoId", "videoid"]);
@@ -1170,6 +1271,9 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
         const parsedArtistExpr = videoParsedArtistRef
           ? `NULLIF(TRIM(v.${escapeSqlIdentifier(videoParsedArtistRef.Field)}), '')`
           : "NULL";
+        const parsedTrackExpr = videoParsedTrackRef
+          ? `NULLIF(TRIM(v.${escapeSqlIdentifier(videoParsedTrackRef.Field)}), '')`
+          : "NULL";
         const channelTitleExpr = videoChannelTitleRef
           ? `NULLIF(TRIM(v.${escapeSqlIdentifier(videoChannelTitleRef.Field)}), '')`
           : "NULL";
@@ -1185,10 +1289,12 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
               v.${titleCol} AS title,
               ${displayArtistExpr} AS channelTitle,
               ${parsedArtistExpr} AS parsedArtist,
+              ${parsedTrackExpr} AS parsedTrack,
               ${favouritedExpr} AS favourited,
               ${descriptionExpr} AS description
             FROM videos v
             WHERE v.${externalVideoCol} IS NOT NULL
+              AND COALESCE(v.approved, 0) = 1
               AND EXISTS (
                 SELECT 1
                 FROM site_videos sv
@@ -1232,6 +1338,7 @@ function mapVideo(video: {
   title: string;
   channelTitle: string | null;
   parsedArtist?: string | null;
+  parsedTrack?: string | null;
   favourited: number | bigint | null;
   description: string | null;
 }): VideoRecord {
@@ -1241,10 +1348,24 @@ function mapVideo(video: {
       : Number(video.favourited ?? 0);
 
   const inferredChannelTitle = inferArtistFromTitle(video.title);
+  const parsedArtist = video.parsedArtist?.trim() || "";
+  const parsedTrack = video.parsedTrack?.trim() || "";
+  const channelTitle = video.channelTitle?.trim() || "";
+
+  const normalizeToken = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const normalizedTitle = video.title.toLowerCase();
+  const parsedArtistPos = parsedArtist ? normalizedTitle.indexOf(parsedArtist.toLowerCase()) : -1;
+  const parsedTrackPos = parsedTrack ? normalizedTitle.indexOf(parsedTrack.toLowerCase()) : -1;
+  const parsedTrackLikelyArtist =
+    Boolean(parsedTrack)
+    && parsedTrackPos >= 0
+    && (parsedArtistPos < 0 || parsedTrackPos < parsedArtistPos)
+    && normalizeToken(parsedTrack) !== normalizeToken(parsedArtist);
 
   const displayArtist =
-    video.parsedArtist?.trim() ||
-    video.channelTitle ||
+    (parsedTrackLikelyArtist ? parsedTrack : "") ||
+    parsedArtist ||
+    channelTitle ||
     inferredChannelTitle ||
     "Unknown Artist";
 
@@ -1303,6 +1424,17 @@ export function clearCatalogVideoCaches() {
   suggestInFlightMap.clear();
   genreArtistsCache.clear();
   genreVideosCache.clear();
+  favouriteVideosCache.clear();
+  favouriteVideosInFlight.clear();
+  seenVideoIdsCache.clear();
+  seenVideoIdsInFlight.clear();
+  hiddenVideoIdsCache.clear();
+  hiddenVideoIdsInFlight.clear();
+  if (autoRelatedBackfillTimer) {
+    clearTimeout(autoRelatedBackfillTimer);
+    autoRelatedBackfillTimer = null;
+    autoRelatedBackfillScheduledFor = 0;
+  }
 }
 
 async function getArtistVideoPoolByNormalizedName(normalizedArtist: string, limit: number): Promise<RankedVideoRow[]> {
@@ -1347,6 +1479,7 @@ async function getArtistVideoPoolByNormalizedName(normalizedArtist: string, limi
         ${AVAILABLE_SITE_VIDEOS_JOIN}
         WHERE ${videoArtistNormExpr} = ?
           AND v.videoId IS NOT NULL
+          AND COALESCE(v.approved, 0) = 1
           ${nullCheck}
         ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id DESC
         LIMIT ${materializedLimit}
@@ -1503,6 +1636,7 @@ async function getSameGenreRelatedPoolByArtist(normalizedArtist: string, limit: 
         FROM videos v
         ${AVAILABLE_SITE_VIDEOS_JOIN}
         WHERE v.videoId IS NOT NULL
+          AND COALESCE(v.approved, 0) = 1
           AND ${videoArtistNormExpr} IN (${placeholders})
         ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id DESC
         LIMIT ${materializedLimit}
@@ -1570,6 +1704,7 @@ async function getRelatedBaseRows(params: {
         ${AVAILABLE_SITE_VIDEOS_JOIN}
         WHERE r.videoId = ?
           AND v.videoId IS NOT NULL
+          AND COALESCE(v.approved, 0) = 1
         GROUP BY v.videoId, v.title, v.parsedArtist, v.favourited, v.description
         ORDER BY v.favourited DESC, MAX(COALESCE(v.viewCount, 0)) DESC, v.videoId ASC
         LIMIT 36
@@ -1647,7 +1782,7 @@ function mapPlaylistVideo(video: {
   };
 }
 
-async function getStoredVideoById(videoId: string): Promise<StoredVideoRow | null> {
+async function getStoredVideoById(videoId: string, options?: { includeUnapproved?: boolean }): Promise<StoredVideoRow | null> {
   const normalizedVideoId = normalizeYouTubeVideoId(videoId);
 
   if (!normalizedVideoId || !hasDatabaseUrl()) {
@@ -1656,6 +1791,7 @@ async function getStoredVideoById(videoId: string): Promise<StoredVideoRow | nul
 
   const rows = await getFastVideoByVideoIdRows(normalizedVideoId, {
     requireAvailable: false,
+    includeUnapproved: Boolean(options?.includeUnapproved),
   });
 
   debugCatalog("getStoredVideoById", {
@@ -1709,10 +1845,12 @@ async function persistRejectedVideo(videoId: string, reason: string): Promise<vo
 
 async function getFastVideoByVideoIdRows(
   normalizedVideoId: string,
-  options?: { requireAvailable?: boolean; preferParsedArtist?: boolean },
+  options?: { requireAvailable?: boolean; preferParsedArtist?: boolean; includeUnapproved?: boolean },
 ): Promise<StoredVideoRow[]> {
   const requireAvailable = options?.requireAvailable ?? false;
   const preferParsedArtist = options?.preferParsedArtist ?? false;
+  const includeUnapproved = options?.includeUnapproved ?? false;
+  const approvalFilter = includeUnapproved ? "" : "AND COALESCE(v.approved, 0) = 1";
   const availabilityFilter = requireAvailable
     ? `
       AND EXISTS (
@@ -1751,6 +1889,7 @@ async function getFastVideoByVideoIdRows(
       v.description
     FROM videos v FORCE INDEX (videos_videoId_key)
     WHERE v.videoId = ?
+      ${approvalFilter}
       ${availabilityFilter}
     ${orderByClause}
     LIMIT 1
@@ -1767,6 +1906,7 @@ async function getFastVideoByVideoIdRows(
       v.description
     FROM videos v
     WHERE v.videoId = ?
+      ${approvalFilter}
       ${availabilityFilter}
     ${orderByClause}
     LIMIT 1
@@ -1980,7 +2120,11 @@ async function persistVideoAvailability(video: PersistableVideoRecord, availabil
     availabilityReason: availability.reason,
   });
 
-  const persistedVideo = await getStoredVideoById(video.id);
+  // Use includeUnapproved: true here because newly-inserted videos have approved=0 by
+  // default (the approval gate keeps them out of public browsing until reviewed).
+  // We still need to retrieve the row to get its numeric primary key for subsequent
+  // site_videos and metadata operations — so we must not filter by approved here.
+  const persistedVideo = await getStoredVideoById(video.id, { includeUnapproved: true });
 
   if (!persistedVideo) {
     throw new Error(`Failed to persist video ${video.id}`);
@@ -2415,7 +2559,7 @@ export async function discoverRelatedVideosCascade(seedVideoId: string, options?
  * Seeds are videos in the catalog that have no related cache entry yet.
  * Up to `BACKFILL_CONCURRENCY` seeds are processed in parallel.
  */
-const BACKFILL_CONCURRENCY = 5;
+const BACKFILL_CONCURRENCY = Math.max(1, Math.min(5, Number(process.env.RELATED_BACKFILL_CONCURRENCY || "2")));
 
 export async function runQuotaBackfill(budgetUnits: number): Promise<{
   seedsAttempted: number;
@@ -2468,38 +2612,61 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
 }
 
 function maybeStartAutomaticRelatedBackfill(offset: number) {
-  if (!ENABLE_AUTO_RELATED_BACKFILL || !ENABLE_YOUTUBE_RELATED_DISCOVERY || !hasDatabaseUrl()) {
-    return;
-  }
-
-  if (offset > AUTO_RELATED_BACKFILL_MAX_NEWEST_OFFSET) {
-    return;
-  }
-
   const now = Date.now();
-  if (autoRelatedBackfillInFlight || now - autoRelatedBackfillLastStartedAt < AUTO_RELATED_BACKFILL_MIN_INTERVAL_MS) {
+  const shouldSchedule = shouldScheduleRelatedBackfill({
+    enabled: ENABLE_AUTO_RELATED_BACKFILL && ENABLE_YOUTUBE_RELATED_DISCOVERY && hasDatabaseUrl(),
+    offset,
+    maxNewestOffset: AUTO_RELATED_BACKFILL_MAX_NEWEST_OFFSET,
+    now,
+    lastStartedAt: autoRelatedBackfillLastStartedAt,
+    minIntervalMs: AUTO_RELATED_BACKFILL_MIN_INTERVAL_MS,
+    hasInFlight: Boolean(autoRelatedBackfillInFlight),
+    hasScheduled: Boolean(autoRelatedBackfillTimer),
+  });
+
+  if (!shouldSchedule) {
     return;
   }
 
-  autoRelatedBackfillLastStartedAt = now;
-  autoRelatedBackfillInFlight = (async () => {
-    try {
-      const result = await runQuotaBackfill(AUTO_RELATED_BACKFILL_UNITS_PER_RUN);
-      debugCatalog("auto-related-backfill:complete", {
-        seedsAttempted: result.seedsAttempted,
-        fetchedNodes: result.fetchedNodes,
-        discoveredNewVideos: result.discoveredNewVideos,
-        unitsEstimated: result.unitsEstimated,
-        unitsPerRun: AUTO_RELATED_BACKFILL_UNITS_PER_RUN,
-      });
-    } catch (error) {
-      debugCatalog("auto-related-backfill:error", {
-        message: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      autoRelatedBackfillInFlight = null;
-    }
-  })();
+  const startDelayMs = computeRelatedBackfillDelayMs(
+    AUTO_RELATED_BACKFILL_DEFER_MS,
+    AUTO_RELATED_BACKFILL_DEFER_JITTER_MS,
+  );
+  autoRelatedBackfillScheduledFor = now + startDelayMs;
+
+  autoRelatedBackfillTimer = setTimeout(() => {
+    autoRelatedBackfillTimer = null;
+    autoRelatedBackfillScheduledFor = 0;
+    autoRelatedBackfillLastStartedAt = Date.now();
+
+    autoRelatedBackfillInFlight = (async () => {
+      try {
+        const result = await runQuotaBackfill(AUTO_RELATED_BACKFILL_UNITS_PER_RUN);
+        debugCatalog("auto-related-backfill:complete", {
+          seedsAttempted: result.seedsAttempted,
+          fetchedNodes: result.fetchedNodes,
+          discoveredNewVideos: result.discoveredNewVideos,
+          unitsEstimated: result.unitsEstimated,
+          unitsPerRun: AUTO_RELATED_BACKFILL_UNITS_PER_RUN,
+          delayMs: startDelayMs,
+        });
+      } catch (error) {
+        debugCatalog("auto-related-backfill:error", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        autoRelatedBackfillInFlight = null;
+      }
+    })();
+  }, startDelayMs);
+
+  debugCatalog("auto-related-backfill:scheduled", {
+    offset,
+    delayMs: startDelayMs,
+    scheduledFor: autoRelatedBackfillScheduledFor,
+    unitsPerRun: AUTO_RELATED_BACKFILL_UNITS_PER_RUN,
+    concurrency: BACKFILL_CONCURRENCY,
+  });
 }
 
 async function hydrateAndPersistVideo(
@@ -2600,13 +2767,25 @@ export async function importVideoFromDirectSource(source: string, options?: { di
     };
   }
 
-  const existedBeforeImport = hasDatabaseUrl() ? Boolean(await getStoredVideoById(normalizedVideoId)) : false;
+  const existedBeforeImport = hasDatabaseUrl()
+    ? Boolean(await getStoredVideoById(normalizedVideoId, { includeUnapproved: true }))
+    : false;
 
   // Direct ingestion persists the seed video first, then runs a bounded related cascade.
   await hydrateAndPersistVideo(normalizedVideoId, undefined, {
     forceAvailabilityRefresh: true,
     skipRelatedDiscovery: true,
   });
+
+  if (hasDatabaseUrl()) {
+    await prisma.$executeRaw`
+      UPDATE videos
+      SET approved = 1,
+          updated_at = ${new Date()}
+      WHERE videoId = ${normalizedVideoId}
+    `;
+  }
+
   let decision = await getVideoPlaybackDecision(normalizedVideoId);
 
   // Apply the title-parsing heuristic fallback whenever parsedArtist is absent in the DB.
@@ -3992,6 +4171,7 @@ async function findArtistsFromVideoMetadata(search: string, limit: number) {
         FROM videos v
         ${AVAILABLE_SITE_VIDEOS_JOIN}
         WHERE v.videoId IS NOT NULL
+          AND COALESCE(v.approved, 0) = 1
           AND COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) IS NOT NULL
         GROUP BY artist_name
       ) ranked
@@ -4005,6 +4185,36 @@ async function findArtistsFromVideoMetadata(search: string, limit: number) {
 
 export async function getCurrentVideo(videoId?: string, options?: { skipPlaybackDecision?: boolean }) {
   const normalizedVideoId = normalizeYouTubeVideoId(videoId);
+
+  const resolveEmergencyBootstrapVideo = async () => {
+    try {
+      const emergencyRows = await prisma.$queryRaw<Array<RankedVideoRow>>`
+        SELECT
+          videoId,
+          title,
+          NULL AS channelTitle,
+          favourited,
+          description
+        FROM videos
+        WHERE videoId IS NOT NULL
+        ORDER BY COALESCE(favourited, 0) DESC, id DESC
+        LIMIT 1
+      `;
+
+      const emergencyVideo = emergencyRows[0];
+      if (!emergencyVideo) {
+        return null;
+      }
+
+      debugCatalog("getCurrentVideo:return-emergency-bootstrap-video", {
+        videoId: emergencyVideo.videoId,
+      });
+
+      return mapVideo(emergencyVideo);
+    } catch {
+      return null;
+    }
+  };
 
   debugCatalog("getCurrentVideo:start", {
     inputVideoId: videoId,
@@ -4054,6 +4264,7 @@ export async function getCurrentVideo(videoId?: string, options?: { skipPlayback
             description
           FROM videos
           WHERE videoId = ${normalizedVideoId}
+            AND COALESCE(approved, 0) = 1
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
@@ -4087,18 +4298,35 @@ export async function getCurrentVideo(videoId?: string, options?: { skipPlayback
       return mapVideo(video);
     }
 
+    if (!normalizedVideoId) {
+      const backfilledLegacyApprovals = await maybeBackfillLegacyApprovedVideos();
+      if (backfilledLegacyApprovals) {
+        const retryPool = await getRankedTopPool(50);
+        if (retryPool.length > 0) {
+          const retryRandomIndex = Math.floor(Math.random() * retryPool.length);
+          const retryVideo = retryPool[retryRandomIndex];
+          if (retryVideo) {
+            debugCatalog("getCurrentVideo:return-query-video-after-backfill", {
+              videoId: retryVideo.videoId,
+            });
+            return mapVideo(retryVideo);
+          }
+        }
+      }
+    }
+
     debugCatalog("getCurrentVideo:return-seed-video", {
       videoId: normalizedVideoId,
       reason: "no-query-hit",
     });
 
-    return null;
+    return resolveEmergencyBootstrapVideo();
   } catch {
     debugCatalog("getCurrentVideo:return-seed-video-after-error", {
       videoId: normalizedVideoId,
     });
 
-    return null;
+    return resolveEmergencyBootstrapVideo();
   }
 }
 
@@ -4179,6 +4407,7 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
       ) AS hasBlocked
     FROM videos v
     WHERE v.videoId = ${normalizedVideoId}
+      AND COALESCE(v.approved, 0) = 1
     ORDER BY hasAvailable DESC, hasBlocked ASC, v.updated_at DESC, v.id DESC
     LIMIT 1
   `;
@@ -4566,6 +4795,7 @@ export async function getArtistRouteSourceVideoIds(
           SELECT v.videoId
           FROM videos v
           WHERE v.videoId IS NOT NULL
+            AND COALESCE(v.approved, 0) = 1
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
@@ -4589,6 +4819,7 @@ export async function getArtistRouteSourceVideoIds(
           SELECT v.videoId
           FROM videos v
           WHERE v.videoId IS NOT NULL
+            AND COALESCE(v.approved, 0) = 1
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
@@ -4718,6 +4949,7 @@ export async function getNewestVideos(
             v.description
           FROM videos v
           WHERE v.videoId IS NOT NULL
+            AND COALESCE(v.approved, 0) = 1
           ORDER BY v.created_at DESC, v.id DESC
           LIMIT ${batchSize}
           OFFSET ${rawOffset}
@@ -4795,6 +5027,7 @@ export async function getNewestVideos(
           v.description
         FROM videos v
         WHERE v.videoId IS NOT NULL
+          AND COALESCE(v.approved, 0) = 1
           AND EXISTS (
             SELECT 1
             FROM site_videos sv
@@ -4832,6 +5065,7 @@ export async function getNewestVideos(
           v.description
         FROM videos v
         WHERE v.videoId IS NOT NULL
+          AND COALESCE(v.approved, 0) = 1
         ORDER BY v.created_at DESC, v.id DESC
         LIMIT ${safeCount}
         OFFSET ${safeOffset}
@@ -4862,6 +5096,7 @@ export async function getNewestVideos(
           v.description
         FROM videos v
         WHERE v.videoId IS NOT NULL
+          AND COALESCE(v.approved, 0) = 1
         ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC
         LIMIT ${safeCount}
         OFFSET ${safeOffset}
@@ -4892,6 +5127,7 @@ export async function getNewestVideos(
               description
             FROM videos
             WHERE videoId IS NOT NULL
+              AND COALESCE(approved, 0) = 1
             ORDER BY id DESC
             LIMIT ?
             OFFSET ?
@@ -5593,6 +5829,7 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
       ${AVAILABLE_SITE_VIDEOS_JOIN}
       WHERE ${videoArtistNormExpr} = ?
         AND v.videoId IS NOT NULL
+        AND COALESCE(v.approved, 0) = 1
         AND NOT EXISTS (
           SELECT 1
           FROM videos v_conflict
@@ -5715,6 +5952,7 @@ export async function searchCatalog(query: string) {
                    MATCH(title, parsedArtist, parsedTrack) AGAINST(${booleanQuery} IN BOOLEAN MODE) AS score
             FROM videos
             WHERE MATCH(title, parsedArtist, parsedTrack) AGAINST(${booleanQuery} IN BOOLEAN MODE)
+              AND COALESCE(approved, 0) = 1
             ORDER BY score DESC
             LIMIT 50
           `
@@ -5757,9 +5995,12 @@ export async function searchCatalog(query: string) {
       videos = await prisma.$queryRaw<Array<{ videoId: string; title: string; channelTitle: string | null; favourited: number; description: string | null }>>`
         SELECT videoId, title, NULL AS channelTitle, favourited, description, 1 AS score
         FROM videos
-        WHERE title LIKE ${likePattern}
-           OR parsedArtist LIKE ${likePattern}
-           OR parsedTrack LIKE ${likePattern}
+        WHERE COALESCE(approved, 0) = 1
+          AND (
+            title LIKE ${likePattern}
+            OR parsedArtist LIKE ${likePattern}
+            OR parsedTrack LIKE ${likePattern}
+          )
         ORDER BY favourited DESC
         LIMIT 50
       `;
@@ -5843,6 +6084,7 @@ export async function suggestCatalog(query: string): Promise<SearchSuggestion[]>
             SELECT videoId, title
             FROM videos
             WHERE title LIKE ${prefixPattern}
+              AND COALESCE(approved, 0) = 1
             ORDER BY favourited DESC
             LIMIT 4
           `
@@ -6310,6 +6552,7 @@ export async function getVideosByGenre(
       FROM videos v
       WHERE MATCH(v.title, v.parsedArtist, v.parsedTrack) AGAINST (${genre} IN NATURAL LANGUAGE MODE)
         AND v.videoId IS NOT NULL
+        AND COALESCE(v.approved, 0) = 1
         AND EXISTS (
           SELECT 1
           FROM site_videos sv
@@ -6379,6 +6622,7 @@ export async function getVideosByGenre(
               FROM videos v${videoArtistIndexHint}
               WHERE ${videoArtistNormExpr} IN (${placeholders})
                 AND v.videoId IS NOT NULL
+                AND COALESCE(v.approved, 0) = 1
                 AND EXISTS (
                   SELECT 1
                   FROM site_videos sv
@@ -6436,6 +6680,7 @@ export async function getVideosByGenre(
       FROM videos v
       WHERE MATCH(v.title, v.parsedArtist, v.parsedTrack) AGAINST (${fulltextTerm} IN BOOLEAN MODE)
         AND v.videoId IS NOT NULL
+        AND COALESCE(v.approved, 0) = 1
         AND EXISTS (
           SELECT 1
           FROM site_videos sv
@@ -6478,6 +6723,7 @@ export async function getVideosByGenre(
           FROM videos v
           WHERE ${videoArtistNormExpr} IN (${placeholders})
             AND v.videoId IS NOT NULL
+            AND COALESCE(v.approved, 0) = 1
             AND EXISTS (
               SELECT 1
               FROM site_videos sv
@@ -6515,6 +6761,7 @@ export async function getVideosByGenre(
         v.description
       FROM videos v
       WHERE v.videoId IS NOT NULL
+        AND COALESCE(v.approved, 0) = 1
         AND (
           LOWER(v.title) LIKE ${normalizedGenreNeedle}
           OR LOWER(COALESCE(v.description, '')) LIKE ${normalizedGenreNeedle}
@@ -6565,6 +6812,7 @@ export async function getVideosByGenre(
           ON sv.video_id = v.id
          AND sv.status = 'available'
         WHERE LOWER(TRIM(gc.genre)) = LOWER(TRIM(${genre}))
+          AND COALESCE(v.approved, 0) = 1
         ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
         LIMIT 1
       `;
@@ -6671,7 +6919,7 @@ function toPlaylistSummary(playlist: PlaylistDetail): PlaylistSummary {
     id: playlist.id,
     name: playlist.name,
     itemCount: playlist.videos.length,
-    leadVideoId: playlist.videos[0]?.id ?? seedVideos[0].id,
+    leadVideoId: playlist.videos[0]?.id ?? "",
   };
 }
 
@@ -7065,53 +7313,162 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
 }
 
 export async function getFavouriteVideos(userId?: number) {
+  return getFavouriteVideosInternal(userId);
+}
+
+function markFavouriteVideosCacheMetric(
+  event: "hit" | "miss" | "inflight-reuse" | "db-load" | "db-error" | "force-refresh",
+) {
+  if (event === "hit" || event === "miss" || event === "inflight-reuse") {
+    favouriteVideosCacheMetrics.lookups += 1;
+  }
+
+  switch (event) {
+    case "hit":
+      favouriteVideosCacheMetrics.hits += 1;
+      break;
+    case "miss":
+      favouriteVideosCacheMetrics.misses += 1;
+      break;
+    case "inflight-reuse":
+      favouriteVideosCacheMetrics.inFlightReuses += 1;
+      break;
+    case "db-load":
+      favouriteVideosCacheMetrics.dbLoads += 1;
+      break;
+    case "db-error":
+      favouriteVideosCacheMetrics.dbErrors += 1;
+      break;
+    case "force-refresh":
+      favouriteVideosCacheMetrics.forceRefreshes += 1;
+      break;
+  }
+
+  if (favouriteVideosCacheMetrics.lookups === 0) {
+    return;
+  }
+
+  const now = Date.now();
+  const shouldLogByInterval = now - favouriteVideosCacheMetrics.lastLoggedAt >= FAVOURITE_VIDEOS_METRICS_LOG_INTERVAL_MS;
+  const shouldLogByCount = favouriteVideosCacheMetrics.lookups % FAVOURITE_VIDEOS_METRICS_LOG_EVERY_LOOKUPS === 0;
+  if (!shouldLogByInterval && !shouldLogByCount) {
+    return;
+  }
+
+  favouriteVideosCacheMetrics.lastLoggedAt = now;
+  const { lookups, hits, misses, inFlightReuses, dbLoads, dbErrors, forceRefreshes } = favouriteVideosCacheMetrics;
+  const avoidedDbReads = hits + inFlightReuses;
+  const hitRatePercent = lookups > 0 ? Number(((hits / lookups) * 100).toFixed(1)) : 0;
+  const avoidedDbPercent = lookups > 0 ? Number(((avoidedDbReads / lookups) * 100).toFixed(1)) : 0;
+
+  console.info("[favourite-videos-cache]", {
+    lookups,
+    hits,
+    misses,
+    inFlightReuses,
+    dbLoads,
+    dbErrors,
+    forceRefreshes,
+    hitRatePercent,
+    avoidedDbPercent,
+  });
+}
+
+async function loadFavouriteVideosForUser(userId: number): Promise<VideoRecord[]> {
+  markFavouriteVideosCacheMetric("db-load");
+
+  const favourites = await prisma.favourite.findMany({
+    where: { userid: userId },
+    select: { videoId: true },
+    take: 50,
+  });
+
+  const youtubeIds = favourites
+    .map((f) => f.videoId)
+    .filter((id): id is string => Boolean(id));
+
+  if (youtubeIds.length === 0) {
+    favouriteVideosCache.set(userId, []);
+    return [];
+  }
+
+  const placeholders = youtubeIds.map(() => "?").join(", ");
+  const videos = await prisma.$queryRawUnsafe<Array<{
+    videoId: string;
+    title: string;
+    favourited: number | null;
+    description: string | null;
+  }>>(
+    `
+      SELECT v.videoId, v.title, v.favourited, v.description
+      FROM videos v
+      WHERE v.videoId IN (${placeholders})
+        AND COALESCE(v.approved, 0) = 1
+    `,
+    ...youtubeIds,
+  );
+
+  const firstVideoById = new Map<string, (typeof videos)[number]>();
+
+  for (const video of videos) {
+    if (!firstVideoById.has(video.videoId)) {
+      firstVideoById.set(video.videoId, video);
+    }
+  }
+
+  const orderedVideos = youtubeIds
+    .map((id) => firstVideoById.get(id))
+    .filter((video): video is (typeof videos)[number] => Boolean(video));
+
+  const mapped = orderedVideos.map((video) =>
+    mapVideo({
+      ...video,
+      channelTitle: null,
+    }),
+  );
+
+  favouriteVideosCache.set(userId, mapped);
+  return mapped;
+}
+
+async function getFavouriteVideosInternal(userId?: number, options?: { forceRefresh?: boolean }) {
   if (!userId || !hasDatabaseUrl()) {
     return [];
   }
 
-  try {
-    const favourites = await prisma.favourite.findMany({
-      where: { userid: userId },
-      select: { videoId: true },
-      take: 50,
-    });
+  const forceRefresh = Boolean(options?.forceRefresh);
+  if (forceRefresh) {
+    markFavouriteVideosCacheMetric("force-refresh");
+  }
 
-    const youtubeIds = favourites
-      .map((f) => f.videoId)
-      .filter((id): id is string => Boolean(id));
-
-    if (youtubeIds.length === 0) return [];
-
-    const videos = await prisma.video.findMany({
-      where: { videoId: { in: youtubeIds } },
-      select: {
-        videoId: true,
-        title: true,
-        favourited: true,
-        description: true,
-      },
-    });
-
-    const firstVideoById = new Map<string, (typeof videos)[number]>();
-
-    for (const video of videos) {
-      if (!firstVideoById.has(video.videoId)) {
-        firstVideoById.set(video.videoId, video);
-      }
+  if (!forceRefresh) {
+    const cached = favouriteVideosCache.get(userId);
+    if (cached) {
+      markFavouriteVideosCacheMetric("hit");
+      return cached;
     }
 
-    const orderedVideos = youtubeIds
-      .map((id) => firstVideoById.get(id))
-      .filter((video): video is (typeof videos)[number] => Boolean(video));
+    markFavouriteVideosCacheMetric("miss");
 
-    return orderedVideos.map((video) =>
-      mapVideo({
-        ...video,
-        channelTitle: null,
-      }),
-    );
+    const inFlight = favouriteVideosInFlight.get(userId);
+    if (inFlight) {
+      markFavouriteVideosCacheMetric("inflight-reuse");
+      return inFlight.then((videos) => videos.map((video) => ({ ...video })));
+    }
+  }
+
+  const pending = loadFavouriteVideosForUser(userId);
+  favouriteVideosInFlight.set(userId, pending);
+
+  try {
+    return (await pending).map((video) => ({ ...video }));
   } catch {
+    markFavouriteVideosCacheMetric("db-error");
     return [];
+  } finally {
+    if (favouriteVideosInFlight.get(userId) === pending) {
+      favouriteVideosInFlight.delete(userId);
+    }
   }
 }
 
@@ -7130,21 +7487,101 @@ async function fetchRecentlyWatchedIds(userId: number, limit = 300): Promise<Set
   }
 }
 
+function markSeenVideoIdsCacheMetric(event: "hit" | "miss" | "inflight-reuse" | "db-load" | "db-error") {
+  if (event === "hit" || event === "miss" || event === "inflight-reuse") {
+    seenVideoIdsCacheMetrics.lookups += 1;
+  }
+
+  switch (event) {
+    case "hit":
+      seenVideoIdsCacheMetrics.hits += 1;
+      break;
+    case "miss":
+      seenVideoIdsCacheMetrics.misses += 1;
+      break;
+    case "inflight-reuse":
+      seenVideoIdsCacheMetrics.inFlightReuses += 1;
+      break;
+    case "db-load":
+      seenVideoIdsCacheMetrics.dbLoads += 1;
+      break;
+    case "db-error":
+      seenVideoIdsCacheMetrics.dbErrors += 1;
+      break;
+  }
+
+  if (seenVideoIdsCacheMetrics.lookups === 0) {
+    return;
+  }
+
+  const now = Date.now();
+  const shouldLogByInterval = now - seenVideoIdsCacheMetrics.lastLoggedAt >= SEEN_VIDEO_IDS_METRICS_LOG_INTERVAL_MS;
+  const shouldLogByCount = seenVideoIdsCacheMetrics.lookups % SEEN_VIDEO_IDS_METRICS_LOG_EVERY_LOOKUPS === 0;
+
+  if (!shouldLogByInterval && !shouldLogByCount) {
+    return;
+  }
+
+  seenVideoIdsCacheMetrics.lastLoggedAt = now;
+  const { lookups, hits, misses, inFlightReuses, dbLoads, dbErrors } = seenVideoIdsCacheMetrics;
+  const avoidedDbReads = hits + inFlightReuses;
+  const hitRatePercent = lookups > 0 ? Number(((hits / lookups) * 100).toFixed(1)) : 0;
+  const avoidedDbPercent = lookups > 0 ? Number(((avoidedDbReads / lookups) * 100).toFixed(1)) : 0;
+
+  console.info("[seen-video-ids-cache]", {
+    lookups,
+    hits,
+    misses,
+    inFlightReuses,
+    dbLoads,
+    dbErrors,
+    hitRatePercent,
+    avoidedDbPercent,
+  });
+}
+
 export async function getSeenVideoIdsForUser(userId: number): Promise<Set<string>> {
   if (!hasDatabaseUrl() || !Number.isInteger(userId) || userId <= 0) {
     return new Set<string>();
   }
 
-  try {
+  const cached = seenVideoIdsCache.get(userId);
+  if (cached) {
+    markSeenVideoIdsCacheMetric("hit");
+    return cached;
+  }
+
+  markSeenVideoIdsCacheMetric("miss");
+
+  const inFlight = seenVideoIdsInFlight.get(userId);
+  if (inFlight) {
+    markSeenVideoIdsCacheMetric("inflight-reuse");
+    return new Set(await inFlight);
+  }
+
+  const pending = (async () => {
+    markSeenVideoIdsCacheMetric("db-load");
     const rows = await prisma.$queryRaw<Array<{ videoId: string | null }>>`
       SELECT video_id AS videoId
       FROM watch_history
       WHERE user_id = ${userId}
     `;
 
-    return new Set(rows.map((row) => row.videoId).filter((videoId): videoId is string => Boolean(videoId)));
+    const ids = new Set(rows.map((row) => row.videoId).filter((videoId): videoId is string => Boolean(videoId)));
+    seenVideoIdsCache.set(userId, ids);
+    return ids;
+  })();
+  seenVideoIdsInFlight.set(userId, pending);
+
+  try {
+    return new Set(await pending);
   } catch {
+    markSeenVideoIdsCacheMetric("db-error");
     return new Set<string>();
+  } finally {
+    if (seenVideoIdsInFlight.get(userId) === pending) {
+      seenVideoIdsInFlight.delete(userId);
+    }
   }
 }
 
@@ -7153,10 +7590,12 @@ function cloneHiddenIdSet(ids: Set<string>) {
 }
 
 function cacheHiddenVideoIdsForUser(userId: number, ids: Set<string>) {
+  hiddenVideoIdsCache.delete(userId);
   hiddenVideoIdsCache.set(userId, {
     expiresAt: Date.now() + HIDDEN_VIDEO_IDS_CACHE_TTL_MS,
     ids: cloneHiddenIdSet(ids),
   });
+  pruneMapToMaxEntries(hiddenVideoIdsCache, USER_SCOPED_CACHE_MAX_ENTRIES);
 }
 
 function getCachedHiddenVideoIdsForUser(userId: number): Set<string> | undefined {
@@ -7328,17 +7767,36 @@ export async function hideVideoForUser(input: { userId: number; videoId: string 
   }
 
   try {
-    await prisma.$executeRawUnsafe(
-      `
-        INSERT INTO hidden_videos (user_id, video_id)
-        VALUES (?, ?)
-        ON DUPLICATE KEY UPDATE video_id = VALUES(video_id)
-      `,
-      input.userId,
-      normalizedVideoId,
-    );
+    const removedFavourite = await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `
+          INSERT INTO hidden_videos (user_id, video_id)
+          VALUES (?, ?)
+          ON DUPLICATE KEY UPDATE video_id = VALUES(video_id)
+        `,
+        input.userId,
+        normalizedVideoId,
+      );
+
+      const removed = await tx.favourite.deleteMany({
+        where: {
+          userid: input.userId,
+          videoId: normalizedVideoId,
+        },
+      });
+
+      return removed.count > 0;
+    });
 
     updateCachedHiddenVideoIdsForUser(input.userId, normalizedVideoId, true);
+
+    if (removedFavourite) {
+      favouriteVideosCache.delete(input.userId);
+      favouriteVideosInFlight.delete(input.userId);
+      topPoolCache = undefined;
+      const { invalidateTopVideosCache } = await import("@/lib/top-videos-cache");
+      invalidateTopVideosCache();
+    }
 
     return { ok: true as const };
   } catch {
@@ -7535,6 +7993,8 @@ export async function recordVideoWatch(input: {
       progressPercent,
     );
 
+    seenVideoIdsCache.add(input.userId, normalizedVideoId);
+
     return { ok: true as const };
   } catch {
     return { ok: false as const };
@@ -7676,7 +8136,7 @@ export async function updateFavourite(videoId: string, action: "add" | "remove",
     return {
       videoId: normalizedVideoId,
       isFavourite: action === "add",
-      favourites: await getFavouriteVideos(userId),
+      favourites: await getFavouriteVideosInternal(userId, { forceRefresh: true }),
     };
   }
 

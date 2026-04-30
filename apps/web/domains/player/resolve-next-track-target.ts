@@ -27,25 +27,22 @@ export type ResolveNextTrackTargetOptions = {
   temporaryQueue: VideoRecord[];
   currentVideoId: string;
   isDockedDesktop: boolean;
-  autoplayEnabled: boolean;
   routeAutoplayQueueIds: string[];
   getRandomWatchNextId: () => string | null;
 };
 
 function resolveRouteQueueTarget(options: {
   isDockedDesktop: boolean;
-  autoplayEnabled: boolean;
   routeAutoplayQueueIds: string[];
   currentVideoId: string;
 }): ResolveTarget | null {
   const {
     isDockedDesktop,
-    autoplayEnabled,
     routeAutoplayQueueIds,
     currentVideoId,
   } = options;
 
-  if (isDockedDesktop && autoplayEnabled && routeAutoplayQueueIds.length > 0) {
+  if (isDockedDesktop && routeAutoplayQueueIds.length > 0) {
     const currentIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId === currentVideoId);
     const fallbackIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId !== currentVideoId);
     const nextIndex = currentIndex >= 0
@@ -135,7 +132,6 @@ export function resolveNextTrackTarget(options: ResolveNextTrackTargetOptions): 
       evaluate: () => {
         const target = resolveRouteQueueTarget({
           isDockedDesktop: options.isDockedDesktop,
-          autoplayEnabled: options.autoplayEnabled,
           routeAutoplayQueueIds: options.routeAutoplayQueueIds,
           currentVideoId: options.currentVideoId,
         });

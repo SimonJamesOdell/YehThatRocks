@@ -26,7 +26,7 @@ import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
 import { magazineDraftEdition } from "@/lib/magazine-draft";
 
-if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
+if (typeof window !== "undefined") {
   const perfWithPatchState = performance as Performance & {
     __ytrMeasurePatched?: boolean;
   };
@@ -40,8 +40,14 @@ if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
         return originalMeasure(...args);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        // React dev profiling can sporadically emit invalid ranges; avoid hard-crashing route render.
-        if (message.includes("negative time stamp")) {
+        // Some browser/React timing paths can emit invalid measure ranges.
+        // These failures are non-critical and should not crash route rendering.
+        if (
+          message.includes("negative time stamp")
+          || message.includes("cannot have a negative time stamp")
+          || message.includes("Failed to execute 'measure'")
+          || message.includes("NotFound")
+        ) {
           return undefined as unknown as ReturnType<Performance["measure"]>;
         }
 
@@ -111,6 +117,13 @@ type PublicPerformancePayload = {
       };
       topOperations?: Array<{
         operation: string;
+        count: number;
+        totalDurationMs: number;
+        avgDurationMs: number;
+        p95DurationMs: number;
+      }>;
+      topQueryFingerprints?: Array<{
+        fingerprint: string;
         count: number;
         totalDurationMs: number;
         avgDurationMs: number;
@@ -4867,6 +4880,28 @@ function ShellDynamicInner({
                             <span role="cell">{operation.count}</span>
                             <span role="cell">{operation.avgDurationMs.toFixed(1)} ms</span>
                             <span role="cell">{operation.p95DurationMs.toFixed(1)} ms</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {Array.isArray(performanceRuntime.prisma?.topQueryFingerprints) && performanceRuntime.prisma.topQueryFingerprints.length > 0 ? (
+                    <div className="performanceTopOperations">
+                      <strong>Top SQL fingerprints by total time</strong>
+                      <div className="performanceTopOperationsTable" role="table" aria-label="Top database query fingerprints">
+                        <div className="performanceTopOperationsRow performanceTopOperationsHeader" role="row">
+                          <span role="columnheader">Fingerprint</span>
+                          <span role="columnheader">Count</span>
+                          <span role="columnheader">Avg</span>
+                          <span role="columnheader">P95</span>
+                        </div>
+                        {performanceRuntime.prisma.topQueryFingerprints.map((fingerprint) => (
+                          <div key={fingerprint.fingerprint} className="performanceTopOperationsRow" role="row">
+                            <span role="cell">{fingerprint.fingerprint}</span>
+                            <span role="cell">{fingerprint.count}</span>
+                            <span role="cell">{fingerprint.avgDurationMs.toFixed(1)} ms</span>
+                            <span role="cell">{fingerprint.p95DurationMs.toFixed(1)} ms</span>
                           </div>
                         ))}
                       </div>
