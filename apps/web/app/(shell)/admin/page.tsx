@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AdminTabLinks } from "@/components/admin-tab-links";
 import { CloseLink } from "@/components/close-link";
 import { AdminDashboardPanel, type AdminTab } from "@/components/admin-dashboard-panel";
 import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
@@ -22,21 +23,13 @@ export default async function AdminPage(props: {
   const searchParams = await Promise.resolve(props.searchParams ?? {});
   const rawTab = Array.isArray(searchParams.tab) ? searchParams.tab[0] : searchParams.tab;
   const activeTab = resolveAdminTab(rawTab ?? undefined);
-  const tabClass = (tab: AdminTab) => (activeTab === tab ? "navLink navLinkActive" : "navLink");
 
   return (
     <div className="adminOverlayPage">
       <div className="favouritesBlindBar">
         <strong><span className="whiteAccountGlyph" aria-hidden="true">🛠</span> Admin</strong>
-        <div className="accountTopBarActions">
-          <Link href="/admin?tab=overview" className={tabClass("overview")}>Overview</Link>
-          <Link href="/admin?tab=performance" className={tabClass("performance")}>Performance</Link>
-          <Link href="/admin?tab=worldmap" className={tabClass("worldmap")}>Visitor Map</Link>
-          <Link href="/admin?tab=api" className={tabClass("api")}>API Usage</Link>
-          <Link href="/admin?tab=categories" className={tabClass("categories")}>Categories</Link>
-          <Link href="/admin?tab=videos" className={tabClass("videos")}>Videos</Link>
-          <Link href="/admin?tab=artists" className={tabClass("artists")}>Artists</Link>
-          <Link href="/admin?tab=ambiguous" className={tabClass("ambiguous")}>Ambiguous</Link>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <AdminTabLinks activeTab={activeTab} enablePendingCount={adminAuthState.status === "authorized"} />
           <CloseLink />
         </div>
       </div>

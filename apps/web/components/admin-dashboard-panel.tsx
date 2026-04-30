@@ -284,6 +284,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [pendingVideos, setPendingVideos] = useState<PendingVideoRow[]>([]);
+  const [pendingVideoTotal, setPendingVideoTotal] = useState(0);
   const [artists, setArtists] = useState<ArtistRow[]>([]);
   const [ambiguousVideos, setAmbiguousVideos] = useState<AmbiguousVideoRow[]>([]);
 
@@ -781,10 +782,11 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   }
 
   async function loadPendingVideos() {
-    const pendingPayload = await readJson<{ pendingVideos: PendingVideoRow[] }>(
-      `/api/admin/videos/pending${videoQuery ? `?q=${encodeURIComponent(videoQuery)}` : ""}`,
+      const pendingPayload = await readJson<{ pendingVideos: PendingVideoRow[]; totalPending?: number }>(
+      "/api/admin/videos/pending",
     );
     setPendingVideos(pendingPayload.pendingVideos);
+      setPendingVideoTotal(Number(pendingPayload.totalPending ?? pendingPayload.pendingVideos.length));
   }
 
   async function loadArtists() {
@@ -855,7 +857,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       } else if (activeTab === "categories") {
         await loadCategories();
       } else if (activeTab === "videos") {
-        await Promise.all([loadVideos(), loadPendingVideos()]);
+        await loadPendingVideos();
       } else if (activeTab === "artists") {
         await loadArtists();
       } else if (activeTab === "ambiguous") {
@@ -1007,6 +1009,22 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       window.clearInterval(pollingTimer);
       stream.close();
     };
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "videos") {
+      return;
+    }
+
+    const PENDING_QUEUE_POLL_MS = 15_000;
+    const intervalId = window.setInterval(() => {
+      void loadPendingVideos();
+    }, PENDING_QUEUE_POLL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   useEffect(() => {
@@ -1796,45 +1814,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         <>
           <section className="panel featurePanel">
             <div className="panelHeading">
-              <span>Catalog Quality</span>
-              <strong>Metadata health</strong>
-            </div>
-            <div className="statusMetrics">
-              <div><strong>Playable</strong><p>{dashboard?.insights.metadataQuality.availableVideos ?? 0}</p></div>
-              <div><strong>Check Failed</strong><p>{dashboard?.insights.metadataQuality.checkFailedEntries ?? 0}</p></div>
-              <div><strong>Missing Meta</strong><p>{dashboard?.insights.metadataQuality.missingMetadata ?? 0}</p></div>
-              <div><strong>Low Confidence</strong><p>{dashboard?.insights.metadataQuality.lowConfidence ?? 0}</p></div>
-              <div><strong>Unknown Type</strong><p>{dashboard?.insights.metadataQuality.unknownType ?? 0}</p></div>
-            </div>
-          </section>
-
-          <section className="panel featurePanel">
-            <div className="panelHeading">
-              <span>Ingestion Velocity</span>
-              <strong>Videos added (14d)</strong>
-            </div>
-            <div className="interactiveStack">
-              {orderedIngestVelocity.length > 0 ? orderedIngestVelocity.map((item) => (
-                <div key={item.day}>
-                  <p className="authMessage">{item.day}: {item.count}</p>
-                  <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 8, height: 10, overflow: "hidden" }}>
-                    <div
-                      style={{
-                        width: `${Math.max(3, Math.round((item.count / maxIngestCount) * 100))}%`,
-                        height: "100%",
-                        background: "linear-gradient(90deg, #5fc1ff, #1f4f6d)",
-                      }}
-                    />
-                  </div>
-                </div>
-              )) : <p className="authMessage">No ingestion data available.</p>}
-            </div>
-          </section>
-
-          <section className="panel featurePanel">
-            <div className="panelHeading">
-              <span>Pending Approval Queue</span>
-              <strong>{pendingVideos.length} rows</strong>
+              <span>New Videos Pending Approval</span>
+              <strong>{pendingVideoTotal} total</strong>
             </div>
             <div className="interactiveStack">
               {pendingVideos.length === 0 ? <p className="authMessage">No pending videos.</p> : null}
@@ -1844,6 +1825,28 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                   <p className="authMessage">{row.title}</p>
                   <p className="authMessage">Artist: {row.parsedArtist ?? "-"} | Track: {row.parsedTrack ?? "-"}</p>
                   <p className="authMessage">Channel: {row.channelTitle ?? "-"}</p>
+                  <div
+                    style={{
+                      position: "relative",
+                      width: "100%",
+                      maxWidth: 480,
+                      aspectRatio: "16 / 9",
+                      borderRadius: 10,
+                      overflow: "hidden",
+                      background: "rgba(0,0,0,0.45)",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    <iframe
+                      src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0`}
+                      title={`Pending video preview ${row.videoId}`}
+                      loading="lazy"
+                      referrerPolicy="strict-origin-when-cross-origin"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+                    />
+                  </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
                       type="button"
@@ -1862,67 +1865,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                   </div>
                 </div>
               ))}
-            </div>
-          </section>
-
-          <section className="panel featurePanel">
-            <div className="panelHeading">
-              <span>Edit Videos</span>
-              <strong>{videos.length} rows</strong>
-            </div>
-            <div className="interactiveStack">
-            <label>
-              <span>Import by YouTube URL or ID</span>
-              <input
-                value={videoImportSource}
-                onChange={(event) => setVideoImportSource(event.target.value)}
-                placeholder="https://youtu.be/... or https://www.youtube.com/watch?v=..."
-              />
-            </label>
-            <button type="button" onClick={() => void importVideoFromSource()} disabled={ingestingVideo}>
-              {ingestingVideo ? "Importing..." : "Import Video"}
-            </button>
-            <label>
-              <span>Search</span>
-              <input value={videoQuery} onChange={(event) => setVideoQuery(event.target.value)} placeholder="videoId, title, artist, track" />
-            </label>
-            <button type="button" onClick={() => void loadVideos()}>Refresh Video Search</button>
-            {videos.slice(0, 25).map((row) => (
-              <div key={row.id} className="authForm">
-                <p className="authMessage">{row.videoId}</p>
-                <label>
-                  <span>Title</span>
-                  <input
-                    value={row.title}
-                    onChange={(event) => {
-                      const next = videos.map((item) => (item.id === row.id ? { ...item, title: event.target.value } : item));
-                      setVideos(next);
-                    }}
-                  />
-                </label>
-                <label>
-                  <span>Artist</span>
-                  <input
-                    value={row.parsedArtist ?? ""}
-                    onChange={(event) => {
-                      const next = videos.map((item) => (item.id === row.id ? { ...item, parsedArtist: event.target.value || null } : item));
-                      setVideos(next);
-                    }}
-                  />
-                </label>
-                <label>
-                  <span>Track</span>
-                  <input
-                    value={row.parsedTrack ?? ""}
-                    onChange={(event) => {
-                      const next = videos.map((item) => (item.id === row.id ? { ...item, parsedTrack: event.target.value || null } : item));
-                      setVideos(next);
-                    }}
-                  />
-                </label>
-                <button type="button" onClick={() => void saveVideo(row)}>Save Video</button>
-              </div>
-            ))}
             </div>
           </section>
         </>
