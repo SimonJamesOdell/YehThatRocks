@@ -22,6 +22,13 @@ export async function GET(request: NextRequest) {
 
   const q = (request.nextUrl.searchParams.get("q") ?? "").trim();
 
+  const totalRows = await prisma.$queryRaw<Array<{ total: bigint | number }>>`
+    SELECT COUNT(*) AS total
+    FROM videos
+    WHERE COALESCE(approved, 0) = 0
+  `;
+  const totalPending = Number(totalRows[0]?.total ?? 0);
+
   const pendingVideos = q
     ? await prisma.$queryRaw<Array<{
         id: number;
@@ -62,7 +69,7 @@ export async function GET(request: NextRequest) {
         LIMIT 100
       `;
 
-  return NextResponse.json({ pendingVideos });
+  return NextResponse.json({ pendingVideos, totalPending });
 }
 
 export async function POST(request: NextRequest) {
