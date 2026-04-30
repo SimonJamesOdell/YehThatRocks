@@ -154,7 +154,7 @@ export function NewVideosLoader({
   const hiddenVideoIdsKey = useMemo(() => [...hiddenVideoIds].sort().join("|"), [hiddenVideoIds]);
   const seenVideoIdsKey = useMemo(() => [...seenVideoIds].sort().join("|"), [seenVideoIds]);
   const initialVideoIdsKey = useMemo(() => initialVideos.map((video) => video.id).join("|"), [initialVideos]);
-  const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
+  const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIdsKey]);
   const [allVideos, setAllVideos] = useState(() => dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet)));
   const [clientSeenVideoIds, setClientSeenVideoIds] = useState(() => new Set(seenVideoIds));
   const [deferredSeenRemovalIds, setDeferredSeenRemovalIds] = useState<Set<string>>(() => new Set());

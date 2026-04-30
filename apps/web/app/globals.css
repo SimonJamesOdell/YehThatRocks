@@ -3213,6 +3213,15 @@ h1 {
     gap: 0;
   }
 
+  .playerChromeDockedDesktop .primaryActions .primaryActionDockedNextButton {
+    width: 56px;
+    min-width: 56px;
+    flex: 0 0 56px;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+
   .playerChromeDockedDesktop .primaryActionAutoplayButton > span:not(.primaryActionGlyph),
   .playerChromeDockedArtists .primaryActionAutoplayButton > span:not(.primaryActionGlyph) {
     display: none;
@@ -3221,10 +3230,10 @@ h1 {
   .playerChromeDockedDesktop .primaryActions .primaryActionToggleButtonTrash,
   .playerChromeDockedArtists .primaryActions .primaryActionToggleButtonTrash {
     width: auto;
-    min-width: 182px;
+    min-width: 148px;
     height: 42px;
     min-height: 42px;
-    flex: 1 1 182px;
+    flex: 1 1 148px;
   }
 
   .playerChromeDockedDesktop .primaryActions .primaryActionToggleButtonTrash .primaryActionTrashLabel,
@@ -5156,8 +5165,12 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 12px;
+  gap: 11px;
   width: 100%;
+}
+
+.playerChromeDockedDesktop .primaryActionsMainRow {
+  transform: translateX(-5px);
 }
 
 .playerChromeDockedDesktop .primaryActions.primaryActionsDockedAdmin,
