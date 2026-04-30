@@ -150,6 +150,7 @@ const RESUME_KEY = "yeh-player-resume";
 const HISTORY_LIMIT = 20;
 const AUTOPLAY_FALLBACK_POOL_SIZE = 600;
 const NEW_AUTOPLAY_PLAYLIST_SIZE = 50;
+const ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT = "ytr:new-route-queue-sync";
 const RANDOM_NEXT_RECENT_EXCLUSION = 18;
 const UNAVAILABLE_PLAYER_CODES = new Set([5, 100, 101, 150]);
 const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_PLAYER === "1";
@@ -159,10 +160,10 @@ const BROKEN_UPSTREAM_OVERLAY_MESSAGE = "This video is no longer available on Yo
 const BROKEN_UPSTREAM_AUTOADVANCE_MS = 6000;
 const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstream video provider for this track. This is not a YehThatRocks failure. Please try the refresh button and if that does not work, choose another track.";
 const DELETED_TRACK_OVERLAY_MESSAGE = "This track was removed from YehThatRocks.";
-const EARLY_PLAYBACK_VERIFICATION_MS = 1200;
-const STUCK_PLAYBACK_CHECK_MS = 5000;
+const EARLY_PLAYBACK_VERIFICATION_MS = 700;
+const STUCK_PLAYBACK_CHECK_MS = 2200;
 const STUCK_PLAYBACK_MAX_RETRIES = 3;
-const STUCK_PLAYBACK_RETRY_DELAYS_MS = [600, 1400, 2600] as const;
+const STUCK_PLAYBACK_RETRY_DELAYS_MS = [350, 900, 1600] as const;
 const MID_PLAYBACK_BUFFERING_CHECK_MS = 1000;
 const MID_PLAYBACK_BUFFERING_THRESHOLD_MS = 8000;
 const PLAYBACK_STALL_DIRECT_IFRAME_THRESHOLD_MS = 4500;
@@ -1227,7 +1228,7 @@ export function PlayerExperience({
   }, [fetchAutoplaySourceVideoIds, fetchHiddenVideoIdSet, isLoggedIn]);
 
   useEffect(() => {
-    if (!isDockedDesktop || !autoplayEnabled || Boolean(activePlaylistId)) {
+    if (!isDockedDesktop || Boolean(activePlaylistId)) {
       setRouteAutoplayQueueIds([]);
       return;
     }
@@ -1241,6 +1242,25 @@ export function PlayerExperience({
 
     let cancelled = false;
     const routeAutoplaySource = autoplaySource;
+    let receivedSyncedQueue = false;
+
+    const handleRouteQueueSync = (event: Event) => {
+      if (routeAutoplaySource.type !== "new") {
+        return;
+      }
+
+      const detail = (event as CustomEvent<{ source?: string; videoIds?: string[] }>).detail;
+      if (detail?.source !== "new" || !Array.isArray(detail.videoIds)) {
+        return;
+      }
+
+      receivedSyncedQueue = true;
+      setRouteAutoplayQueueIds(Array.from(new Set(detail.videoIds.filter((videoId): videoId is string => Boolean(videoId)))));
+    };
+
+    if (typeof window !== "undefined" && routeAutoplaySource.type === "new") {
+      window.addEventListener(ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT, handleRouteQueueSync as EventListener);
+    }
 
     async function loadRouteAutoplayQueue() {
       try {
@@ -1251,11 +1271,11 @@ export function PlayerExperience({
 
         const dedupedVisibleIds = Array.from(new Set(rawIds.filter((videoId) => !hiddenSet.has(videoId))));
 
-        if (!cancelled) {
+        if (!cancelled && !receivedSyncedQueue) {
           setRouteAutoplayQueueIds(dedupedVisibleIds);
         }
       } catch {
-        if (!cancelled) {
+        if (!cancelled && !receivedSyncedQueue) {
           setRouteAutoplayQueueIds([]);
         }
       }
@@ -1265,8 +1285,11 @@ export function PlayerExperience({
 
     return () => {
       cancelled = true;
+      if (typeof window !== "undefined" && routeAutoplaySource.type === "new") {
+        window.removeEventListener(ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT, handleRouteQueueSync as EventListener);
+      }
     };
-  }, [activePlaylistId, autoplayEnabled, fetchAutoplaySourceVideoIds, fetchHiddenVideoIdSet, isDockedDesktop, pathname]);
+  }, [activePlaylistId, fetchAutoplaySourceVideoIds, fetchHiddenVideoIdSet, isDockedDesktop, pathname]);
 
   function getRandomWatchNextId() {
     const queueIds = Array.from(new Set(queue.map((video) => video.id))).filter((videoId) => videoId !== currentVideo.id);
@@ -1310,7 +1333,6 @@ export function PlayerExperience({
     temporaryQueue,
     currentVideoId: currentVideo.id,
     isDockedDesktop,
-    autoplayEnabled,
     routeAutoplayQueueIds,
     getRandomWatchNextId,
   });
@@ -3155,8 +3177,29 @@ export function PlayerExperience({
               event.data === 101 || event.data === 150
                 ? `yt-player-age-or-owner-restricted-${event.data}`
                 : `yt-player-error-${event.data}`;
+            const isRestrictedEmbedCode = event.data === 101 || event.data === 150;
 
             const isDefinitiveBrokenUpstreamCode = event.data === 100;
+
+            if (isRestrictedEmbedCode) {
+              autoplaySuppressedVideoIdRef.current = currentVideo.id;
+              playAttemptedAtRef.current = null;
+              pauseActivePlayback();
+              showUnavailableOverlayMessage(undefined, {
+                autoAdvanceWhenAutoplay: true,
+              });
+
+              void reportUnavailableFromPlayer(reason).then((reportResult) => {
+                logPlayerDebug("onError:restricted-upstream-reported", {
+                  videoId: currentVideo.id,
+                  reason,
+                  shouldSkip: reportResult.shouldSkip,
+                  verificationReason: reportResult.verificationReason,
+                  skipped: reportResult.skipped,
+                });
+              });
+              return;
+            }
 
             if (isDefinitiveBrokenUpstreamCode) {
               autoplaySuppressedVideoIdRef.current = currentVideo.id;
@@ -3779,6 +3822,27 @@ export function PlayerExperience({
     scheduleEndedChoicePrefetchCheck();
   }
 
+  function shouldAutoPrimeEndedChoiceRunway() {
+    if (
+      !showEndedChoiceOverlay
+      || endedChoiceUserScrolledRef.current
+      || endedChoiceFetchingRef.current
+      || !endedChoiceHasMoreRef.current
+    ) {
+      return false;
+    }
+
+    const overlay = endedChoiceOverlayRef.current;
+    const isScrollable = overlay ? overlay.scrollHeight > overlay.clientHeight + 4 : false;
+    const visibleCount = estimateEndedChoiceVisibleCount();
+    const lowRunway = endedChoiceGridVideos.length < visibleCount + ENDED_CHOICE_SCROLL_RUNWAY_COUNT;
+
+    const needsSeenRowFill = endedChoiceHideSeen
+      && (visibleEndedChoiceVideos.length === 0 || visibleEndedChoiceVideos.length % 4 !== 0);
+
+    return needsSeenRowFill || (!isScrollable && lowRunway);
+  }
+
   useEffect(() => {
     if (!showEndedChoiceOverlay) {
       return;
@@ -3814,6 +3878,29 @@ export function PlayerExperience({
       schedulePostPrimeBatch: true,
     });
   }, [showEndedChoiceOverlay, currentVideo.id, endedChoiceReshuffleKey]);
+
+  useEffect(() => {
+    if (!shouldAutoPrimeEndedChoiceRunway()) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      if (!shouldAutoPrimeEndedChoiceRunway()) {
+        return;
+      }
+
+      void fetchEndedChoiceSets(ENDED_CHOICE_BATCH_SIZE, { background: true });
+    }, 60);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    endedChoiceGridVideos.length,
+    endedChoiceHideSeen,
+    showEndedChoiceOverlay,
+    visibleEndedChoiceVideos.length,
+  ]);
 
   useEffect(() => {
     const needsSeenRowFill =
@@ -5740,8 +5827,8 @@ export function PlayerExperience({
               className="primaryActionNavIconButton"
               onClick={handleNext}
               disabled={footerActionsBlocked}
-              aria-label="Next"
-              title="Next"
+              aria-label="Next track"
+              title="Next track"
             >
               <span className="primaryNavGlyph" aria-hidden="true">⇥</span>
             </button>

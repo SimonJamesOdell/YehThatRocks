@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { pruneMapToMaxEntries } from "@/lib/bounded-map";
 import { getCurrentVideo, getFavouriteVideos, getHiddenVideoIdsForUser, getNewestVideos, getRelatedVideos, getSeenVideoIdsForUser, getTopVideos, getUnseenCatalogVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { getOptionalApiAuth } from "@/lib/auth-request";
 import { prisma } from "@/lib/db";
@@ -85,21 +86,6 @@ let randomCatalogMaxIdCache:
     }
   | undefined;
 let randomCatalogMaxIdInFlight: Promise<number> | undefined;
-
-function pruneMapToMaxEntries<K, V>(map: Map<K, V>, maxEntries: number) {
-  if (maxEntries <= 0) {
-    map.clear();
-    return;
-  }
-
-  while (map.size > maxEntries) {
-    const oldestKey = map.keys().next().value;
-    if (oldestKey === undefined) {
-      break;
-    }
-    map.delete(oldestKey);
-  }
-}
 
 function pruneExpiringMapEntries<K, V extends { expiresAt: number }>(map: Map<K, V>, now: number) {
   for (const [key, value] of map.entries()) {

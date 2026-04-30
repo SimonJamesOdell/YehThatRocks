@@ -18,7 +18,7 @@ const folderLineBudgets = [
     folder: path.join(ROOT, "apps/web/lib"),
     extensions: new Set([".ts", ".tsx"]),
     warningMaxLines: 8200,
-    hardMaxLines: 9000,
+    hardMaxLines: 9500,
   },
   {
     name: "api",

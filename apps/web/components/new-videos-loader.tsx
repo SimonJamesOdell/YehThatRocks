@@ -5,7 +5,7 @@ import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useStat
 import { createPortal } from "react-dom";
 
 import type { VideoRecord } from "@/lib/catalog";
-import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
 import { Top100VideoLink } from "@/components/top100-video-link";
 import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
@@ -22,6 +22,7 @@ import {
 } from "@/lib/video-quality-flags";
 
 const NEW_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-new";
+const NEW_ROUTE_QUEUE_SYNC_EVENT = "ytr:new-route-queue-sync";
 
 type SuggestOutcome = {
   kind: "video" | "playlist";
@@ -84,6 +85,7 @@ type NewVideoRowProps = {
   index: number;
   isAuthenticated: boolean;
   isSeen: boolean;
+  isActive: boolean;
   onHideVideo?: (track: VideoRecord) => void;
   isHidePending: boolean;
   onFlagVideo?: (track: VideoRecord) => void;
@@ -95,6 +97,7 @@ const NewVideoRow = memo(function NewVideoRow({
   index,
   isAuthenticated,
   isSeen,
+  isActive,
   onHideVideo,
   isHidePending,
   onFlagVideo,
@@ -107,6 +110,7 @@ const NewVideoRow = memo(function NewVideoRow({
       index={index}
       isAuthenticated={isAuthenticated}
       isSeen={isSeen}
+      isActive={isActive}
       rowVariant="new"
       onHideVideo={onHideVideo}
       isHidePending={isHidePending}
@@ -122,6 +126,7 @@ const NewVideoRow = memo(function NewVideoRow({
     && prev.index === next.index
     && prev.isAuthenticated === next.isAuthenticated
     && prev.isSeen === next.isSeen
+    && prev.isActive === next.isActive
     && prev.isHidePending === next.isHidePending
     && prev.onHideVideo === next.onHideVideo
     && prev.isFlagPending === next.isFlagPending
@@ -143,10 +148,16 @@ export function NewVideosLoader({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const activeVideoId = searchParams.get("v");
+  const previousActiveVideoIdRef = useRef<string | null>(activeVideoId);
+  const endedActiveVideoIdRef = useRef<string | null>(null);
   const hiddenVideoIdsKey = useMemo(() => [...hiddenVideoIds].sort().join("|"), [hiddenVideoIds]);
+  const seenVideoIdsKey = useMemo(() => [...seenVideoIds].sort().join("|"), [seenVideoIds]);
   const initialVideoIdsKey = useMemo(() => initialVideos.map((video) => video.id).join("|"), [initialVideos]);
   const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
   const [allVideos, setAllVideos] = useState(() => dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet)));
+  const [clientSeenVideoIds, setClientSeenVideoIds] = useState(() => new Set(seenVideoIds));
+  const [deferredSeenRemovalIds, setDeferredSeenRemovalIds] = useState<Set<string>>(() => new Set());
   const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
   const [videoPendingHideConfirm, setVideoPendingHideConfirm] = useState<VideoRecord | null>(null);
   const [flaggingVideo, setFlaggingVideo] = useState<VideoRecord | null>(null);
@@ -182,11 +193,118 @@ export function NewVideosLoader({
   const prefetchInFlightRef = useRef(false);
   const lastPrefetchAtRef = useRef(0);
   const allVideoIdsRef = useRef(new Set<string>());
-  const seenVideoIdSet = useMemo(() => new Set(seenVideoIds), [seenVideoIds]);
+  const seenVideoIdSet = clientSeenVideoIds;
   const visibleVideos = useMemo(
-    () => (isAuthenticated && hideSeen ? allVideos.filter((v) => !seenVideoIdSet.has(v.id)) : allVideos),
-    [allVideos, hideSeen, isAuthenticated, seenVideoIdSet],
+    () => (isAuthenticated && hideSeen
+      ? allVideos.filter((video) => !seenVideoIdSet.has(video.id) || deferredSeenRemovalIds.has(video.id) || video.id === activeVideoId)
+      : allVideos),
+    [activeVideoId, allVideos, deferredSeenRemovalIds, hideSeen, isAuthenticated, seenVideoIdSet],
   );
+
+  useEffect(() => {
+    setClientSeenVideoIds(new Set(seenVideoIds));
+  }, [seenVideoIdsKey]);
+
+  useEffect(() => {
+    const previousActiveVideoId = previousActiveVideoIdRef.current;
+    if (previousActiveVideoId && previousActiveVideoId !== activeVideoId) {
+      endedActiveVideoIdRef.current = null;
+      setDeferredSeenRemovalIds((current) => {
+        if (!current.has(previousActiveVideoId)) {
+          return current;
+        }
+
+        const next = new Set(current);
+        next.delete(previousActiveVideoId);
+        return next;
+      });
+    }
+
+    previousActiveVideoIdRef.current = activeVideoId;
+  }, [activeVideoId]);
+
+  useEffect(() => {
+    if (!hideSeen || !activeVideoId || !seenVideoIdSet.has(activeVideoId) || endedActiveVideoIdRef.current === activeVideoId) {
+      return;
+    }
+
+    setDeferredSeenRemovalIds((current) => {
+      if (current.has(activeVideoId)) {
+        return current;
+      }
+
+      const next = new Set(current);
+      next.add(activeVideoId);
+      return next;
+    });
+  }, [activeVideoId, hideSeen, seenVideoIdSet]);
+
+  useEffect(() => {
+    const unsubscribeWatchHistory = listenToAppEvent(EVENT_NAMES.WATCH_HISTORY_UPDATED, ({ videoId }) => {
+      if (!videoId) {
+        return;
+      }
+
+      setClientSeenVideoIds((current) => {
+        if (current.has(videoId)) {
+          return current;
+        }
+
+        const next = new Set(current);
+        next.add(videoId);
+        return next;
+      });
+
+      if (!hideSeen || activeVideoId !== videoId || endedActiveVideoIdRef.current === videoId) {
+        return;
+      }
+
+      setDeferredSeenRemovalIds((current) => {
+        if (current.has(videoId)) {
+          return current;
+        }
+
+        const next = new Set(current);
+        next.add(videoId);
+        return next;
+      });
+    });
+
+    const unsubscribeVideoEnded = listenToAppEvent(EVENT_NAMES.VIDEO_ENDED, ({ videoId }) => {
+      if (!videoId) {
+        return;
+      }
+
+      endedActiveVideoIdRef.current = videoId;
+      setDeferredSeenRemovalIds((current) => {
+        if (!current.has(videoId)) {
+          return current;
+        }
+
+        const next = new Set(current);
+        next.delete(videoId);
+        return next;
+      });
+    });
+
+    return () => {
+      unsubscribeWatchHistory();
+      unsubscribeVideoEnded();
+    };
+  }, [activeVideoId, hideSeen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.dispatchEvent(new CustomEvent(NEW_ROUTE_QUEUE_SYNC_EVENT, {
+      detail: {
+        source: "new",
+        videoIds: visibleVideos.map((video) => video.id),
+      },
+    }));
+  }, [visibleVideos]);
 
   const handleHideVideo = useCallback((track: VideoRecord) => {
     if (!isAuthenticated || hidingVideoIds.includes(track.id)) {
@@ -1037,6 +1155,7 @@ export function NewVideosLoader({
           index={index}
           isAuthenticated={isAuthenticated}
           isSeen={seenVideoIdSet.has(track.id)}
+          isActive={track.id === activeVideoId}
           onHideVideo={handleHideVideo}
           isHidePending={hidingVideoIds.includes(track.id)}
           onFlagVideo={isAuthenticated ? handleOpenFlagDialog : undefined}

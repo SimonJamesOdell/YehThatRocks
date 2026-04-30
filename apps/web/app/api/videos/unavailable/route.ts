@@ -34,6 +34,8 @@ const BOT_CHALLENGE_PATTERNS = [
   /"status"\s*:\s*"BOT_CHECK_REQUIRED"/i,
 ];
 const UNAVAILABLE_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_UNAVAILABLE === "1";
+const OEMBED_VERIFY_TIMEOUT_MS = 1800;
+const EMBED_VERIFY_TIMEOUT_MS = 2200;
 
 function debugUnavailable(event: string, detail?: Record<string, unknown>) {
   if (!UNAVAILABLE_DEBUG_ENABLED) {
@@ -78,15 +80,31 @@ function shouldForcePruneFromRuntimeReason(reason: string) {
   return /(yt-player-age-or-owner-restricted-(101|150)|yt-player-error-(100|101|150))/i.test(reason);
 }
 
+async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityCheckResult> {
   const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`;
 
   try {
-    const oembedResponse = await fetch(oembedUrl, {
+    const oembedResponse = await fetchWithTimeout(oembedUrl, {
       headers: {
         "User-Agent": "YehThatRocks/1.0",
       },
-    });
+    }, OEMBED_VERIFY_TIMEOUT_MS);
 
     if ([401, 403, 404, 410].includes(oembedResponse.status)) {
       return { status: "unavailable", reason: `oembed:${oembedResponse.status}` };
@@ -94,11 +112,11 @@ async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityC
 
     if (oembedResponse.ok) {
       const embedUrl = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?enablejsapi=1`;
-      const embedResponse = await fetch(embedUrl, {
+      const embedResponse = await fetchWithTimeout(embedUrl, {
         headers: {
           "User-Agent": "YehThatRocks/1.0",
         },
-      });
+      }, EMBED_VERIFY_TIMEOUT_MS);
 
       if ([401, 403, 404, 410].includes(embedResponse.status)) {
         return { status: "unavailable", reason: `embed:${embedResponse.status}` };
@@ -138,6 +156,13 @@ async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityC
 
     return { status: "check-failed", reason: `oembed:${oembedResponse.status}` };
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return {
+        status: "check-failed",
+        reason: "verify-timeout",
+      };
+    }
+
     return {
       status: "check-failed",
       reason: `verify-network:${error instanceof Error ? error.message : "unknown"}`,

@@ -12,6 +12,14 @@ type OperationAggregate = {
   p95DurationMs: number;
 };
 
+type QueryFingerprintAggregate = {
+  fingerprint: string;
+  count: number;
+  totalDurationMs: number;
+  avgDurationMs: number;
+  p95DurationMs: number;
+};
+
 type PrismaProfilingSnapshot = {
   windowSec: number;
   totalQueries: number;
@@ -19,6 +27,7 @@ type PrismaProfilingSnapshot = {
   avgDurationMs: number;
   p95DurationMs: number;
   topOperations: OperationAggregate[];
+  topQueryFingerprints: QueryFingerprintAggregate[];
   totalsSinceBoot: {
     totalQueries: number;
     totalDurationMs: number;
@@ -40,6 +49,7 @@ const MAX_PRISMA_EVENTS = 8_000;
 const MAX_TOP_OPERATIONS = 8;
 
 const prismaEvents: TimedEvent[] = [];
+const prismaFingerprintEvents: TimedEvent[] = [];
 let totalPrismaQueriesSinceBoot = 0;
 let totalPrismaDurationMsSinceBoot = 0;
 
@@ -73,7 +83,7 @@ function pruneEvents(events: TimedEvent[], now = Date.now()) {
   }
 }
 
-function buildOperationAggregates(events: TimedEvent[]) {
+function buildTimedAggregates(events: TimedEvent[]) {
   const grouped = new Map<string, number[]>();
 
   for (const event of events) {
@@ -86,10 +96,10 @@ function buildOperationAggregates(events: TimedEvent[]) {
     grouped.set(event.key, [event.durationMs]);
   }
 
-  const aggregates: OperationAggregate[] = Array.from(grouped.entries()).map(([operation, durations]) => {
+  const aggregates = Array.from(grouped.entries()).map(([key, durations]) => {
     const totalDurationMs = durations.reduce((acc, value) => acc + value, 0);
     return {
-      operation,
+      key,
       count: durations.length,
       totalDurationMs: round(totalDurationMs, 1),
       avgDurationMs: round(totalDurationMs / Math.max(1, durations.length), 1),
@@ -108,6 +118,20 @@ function buildOperationAggregates(events: TimedEvent[]) {
   return aggregates.slice(0, MAX_TOP_OPERATIONS);
 }
 
+function buildOperationAggregates(events: TimedEvent[]): OperationAggregate[] {
+  return buildTimedAggregates(events).map(({ key, ...aggregate }) => ({
+    operation: key,
+    ...aggregate,
+  }));
+}
+
+function buildFingerprintAggregates(events: TimedEvent[]): QueryFingerprintAggregate[] {
+  return buildTimedAggregates(events).map(({ key, ...aggregate }) => ({
+    fingerprint: key,
+    ...aggregate,
+  }));
+}
+
 export function recordPrismaOperation(operation: string, durationMs: number) {
   const safeDurationMs = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
   const event: TimedEvent = {
@@ -122,8 +146,26 @@ export function recordPrismaOperation(operation: string, durationMs: number) {
   pruneEvents(prismaEvents, event.atMs);
 }
 
+export function recordPrismaQueryFingerprint(fingerprint: string, durationMs: number) {
+  const key = fingerprint.trim();
+  if (!key) {
+    return;
+  }
+
+  const safeDurationMs = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
+  const event: TimedEvent = {
+    atMs: Date.now(),
+    key,
+    durationMs: safeDurationMs,
+  };
+
+  prismaFingerprintEvents.push(event);
+  pruneEvents(prismaFingerprintEvents, event.atMs);
+}
+
 export function resetRuntimeProfiling() {
   prismaEvents.length = 0;
+  prismaFingerprintEvents.length = 0;
   totalPrismaQueriesSinceBoot = 0;
   totalPrismaDurationMsSinceBoot = 0;
 }
@@ -131,6 +173,7 @@ export function resetRuntimeProfiling() {
 export function getRuntimeProfilingSnapshot(): RuntimeProfilingSnapshot {
   const now = Date.now();
   pruneEvents(prismaEvents, now);
+  pruneEvents(prismaFingerprintEvents, now);
 
   const windowSec = PROFILING_WINDOW_MS / 1000;
   const durations = prismaEvents.map((event) => event.durationMs);
@@ -152,6 +195,7 @@ export function getRuntimeProfilingSnapshot(): RuntimeProfilingSnapshot {
       avgDurationMs: round(totalDurationMs / Math.max(1, prismaEvents.length), 1),
       p95DurationMs: round(percentile(durations, 95), 1),
       topOperations: buildOperationAggregates(prismaEvents),
+      topQueryFingerprints: buildFingerprintAggregates(prismaFingerprintEvents),
       totalsSinceBoot: {
         totalQueries: totalPrismaQueriesSinceBoot,
         totalDurationMs: round(totalPrismaDurationMsSinceBoot, 1),

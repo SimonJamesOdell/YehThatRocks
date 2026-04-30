@@ -165,6 +165,16 @@ type VideoRow = {
   channelTitle: string | null;
   updatedAt: string | null;
 };
+type PendingVideoRow = {
+  id: number;
+  videoId: string;
+  title: string;
+  parsedArtist: string | null;
+  parsedTrack: string | null;
+  channelTitle: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
 type ArtistRow = {
   id: number;
   name: string;
@@ -273,6 +283,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [videos, setVideos] = useState<VideoRow[]>([]);
+  const [pendingVideos, setPendingVideos] = useState<PendingVideoRow[]>([]);
   const [artists, setArtists] = useState<ArtistRow[]>([]);
   const [ambiguousVideos, setAmbiguousVideos] = useState<AmbiguousVideoRow[]>([]);
 
@@ -769,6 +780,13 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     setVideos(videoPayload.videos);
   }
 
+  async function loadPendingVideos() {
+    const pendingPayload = await readJson<{ pendingVideos: PendingVideoRow[] }>(
+      `/api/admin/videos/pending${videoQuery ? `?q=${encodeURIComponent(videoQuery)}` : ""}`,
+    );
+    setPendingVideos(pendingPayload.pendingVideos);
+  }
+
   async function loadArtists() {
     const artistPayload = await readJson<{ artists: ArtistRow[] }>(
       `/api/admin/artists${artistQuery ? `?q=${encodeURIComponent(artistQuery)}` : ""}`,
@@ -837,7 +855,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       } else if (activeTab === "categories") {
         await loadCategories();
       } else if (activeTab === "videos") {
-        await loadVideos();
+        await Promise.all([loadVideos(), loadPendingVideos()]);
       } else if (activeTab === "artists") {
         await loadArtists();
       } else if (activeTab === "ambiguous") {
@@ -1054,7 +1072,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     try {
       await patchJson("/api/admin/videos", row);
       setSaveMessage(`Saved video ${row.videoId}.`);
-      await loadVideos();
+      await Promise.all([loadVideos(), loadPendingVideos()]);
     } catch (saveError) {
       setSaveMessage(saveError instanceof Error ? saveError.message : "Video save failed.");
     }
@@ -1084,11 +1102,25 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       }
 
       setVideoImportSource("");
-      await loadVideos();
+      await Promise.all([loadVideos(), loadPendingVideos()]);
     } catch (importError) {
       setSaveMessage(importError instanceof Error ? importError.message : "Video import failed.");
     } finally {
       setIngestingVideo(false);
+    }
+  }
+
+  async function moderatePendingVideo(videoId: string, action: "approve" | "remove") {
+    setModeratingVideoId(videoId);
+
+    try {
+      await postJson<{ ok: boolean }>("/api/admin/videos/pending", { videoId, action });
+      setSaveMessage(action === "approve" ? `Approved ${videoId}.` : `Removed ${videoId}.`);
+      await Promise.all([loadPendingVideos(), loadVideos()]);
+    } catch (moderationError) {
+      setSaveMessage(moderationError instanceof Error ? moderationError.message : "Pending moderation action failed.");
+    } finally {
+      setModeratingVideoId(null);
     }
   }
 
@@ -1796,6 +1828,40 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                   </div>
                 </div>
               )) : <p className="authMessage">No ingestion data available.</p>}
+            </div>
+          </section>
+
+          <section className="panel featurePanel">
+            <div className="panelHeading">
+              <span>Pending Approval Queue</span>
+              <strong>{pendingVideos.length} rows</strong>
+            </div>
+            <div className="interactiveStack">
+              {pendingVideos.length === 0 ? <p className="authMessage">No pending videos.</p> : null}
+              {pendingVideos.slice(0, 50).map((row) => (
+                <div key={`pending-${row.id}`} className="authForm">
+                  <p className="authMessage">{row.videoId}</p>
+                  <p className="authMessage">{row.title}</p>
+                  <p className="authMessage">Artist: {row.parsedArtist ?? "-"} | Track: {row.parsedTrack ?? "-"}</p>
+                  <p className="authMessage">Channel: {row.channelTitle ?? "-"}</p>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => void moderatePendingVideo(row.videoId, "approve")}
+                      disabled={moderatingVideoId === row.videoId}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void moderatePendingVideo(row.videoId, "remove")}
+                      disabled={moderatingVideoId === row.videoId}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
 
