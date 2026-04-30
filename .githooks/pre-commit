@@ -1,7 +1,8 @@
 #!/bin/sh
 # Automatically generate a Prisma migration when prisma/schema.prisma is staged.
-# Uses schema-to-schema diff — no database connection required.
-# The generated migration file is staged and included in the same commit.
+# Uses migrations-to-schema diff so it respects manual migrations and never
+# generates a duplicate migration for a column already added by a manual migration.
+# No database connection required.
 
 set -e
 
@@ -21,13 +22,11 @@ fi
 
 # Retrieve the previously committed schema to diff against.
 # Falls back to empty file on very first commit.
-PREV_SCHEMA=$(mktemp)
-trap 'rm -f "$PREV_SCHEMA"' EXIT
-git show HEAD:prisma/schema.prisma > "$PREV_SCHEMA" 2>/dev/null || printf '' > "$PREV_SCHEMA"
-
-# Generate the migration SQL (pure schema-to-schema diff, no DB needed).
+# Generate the migration SQL by diffing what the existing migrations produce
+# against the current schema.prisma. This means manual migrations are respected
+# and no duplicate migration is generated for changes they already cover.
 DIFF=$("$PRISMA_BIN" migrate diff \
-  --from-schema-datamodel "$PREV_SCHEMA" \
+  --from-migrations prisma/migrations \
   --to-schema-datamodel prisma/schema.prisma \
   --script 2>/dev/null) || true
 
