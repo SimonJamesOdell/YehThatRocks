@@ -106,8 +106,12 @@ async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityC
       },
     }, OEMBED_VERIFY_TIMEOUT_MS);
 
-    if ([401, 403, 404, 410].includes(oembedResponse.status)) {
+    if ([404, 410].includes(oembedResponse.status)) {
       return { status: "unavailable", reason: `oembed:${oembedResponse.status}` };
+    }
+
+    if ([401, 403].includes(oembedResponse.status)) {
+      return { status: "check-failed", reason: `oembed:provider-blocked-${oembedResponse.status}` };
     }
 
     if (oembedResponse.ok) {
@@ -118,8 +122,12 @@ async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityC
         },
       }, EMBED_VERIFY_TIMEOUT_MS);
 
-      if ([401, 403, 404, 410].includes(embedResponse.status)) {
+      if ([404, 410].includes(embedResponse.status)) {
         return { status: "unavailable", reason: `embed:${embedResponse.status}` };
+      }
+
+      if ([401, 403].includes(embedResponse.status)) {
+        return { status: "check-failed", reason: `embed:provider-blocked-${embedResponse.status}` };
       }
 
       if (embedResponse.ok) {
@@ -256,7 +264,7 @@ export async function POST(request: NextRequest) {
     await prisma.siteVideo.updateMany({
       where: { videoId: { in: ids } },
       data: {
-        status: "available",
+        status: verification.reason.includes("provider-blocked") ? "check-failed" : "available",
         title: truncate(`${videoTitle} [runtime-report-ignored:${reason}|${verification.reason}]`, 255),
       },
     });
@@ -278,7 +286,7 @@ export async function POST(request: NextRequest) {
             `${titleById.get(id) ?? "Unknown"} [runtime-report-ignored:${reason}|${verification.reason}]`,
             255,
           ),
-          status: "available",
+          status: verification.reason.includes("provider-blocked") ? "check-failed" : "available",
         })),
         skipDuplicates: true,
       });

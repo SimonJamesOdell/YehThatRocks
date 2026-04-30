@@ -118,6 +118,7 @@ export type PlaybackDecisionRow = {
   parseConfidence: number | null;
   hasAvailable: number;
   hasBlocked: number;
+  hasCheckFailed?: number;
 };
 
 export type ParsedVideoMetadata = {

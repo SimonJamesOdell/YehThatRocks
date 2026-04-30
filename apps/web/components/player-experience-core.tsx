@@ -187,6 +187,14 @@ type ReportUnavailableResult = {
   skipped: boolean;
 };
 
+type VerifiedPlaybackFailurePresentation = {
+  kind: "direct-iframe";
+} | {
+  kind: "unavailable";
+  message?: string;
+  countdownMs?: number;
+};
+
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
   const consoleWithPatchState = console as typeof console & {
     __ytrWarnPatched?: boolean;
@@ -237,12 +245,39 @@ function normalizePlayerVolume(value: unknown, fallback = 100) {
 }
 
 function isInteractivePlaybackBlockReason(reason: string | null | undefined) {
-  return typeof reason === "string" && /(bot-check|interactive-login-check|login-required|content-check-required|consent)/i.test(reason);
+  return typeof reason === "string" && /(bot-check|interactive-login-check|login-required|content-check-required|consent|provider-blocked)/i.test(reason);
 }
 
 function isUnavailableVerificationReason(reason: string | null | undefined) {
   return typeof reason === "string"
-    && /(oembed:(401|403|404|410)|embed:(401|403|404|410)|embed:age-restricted|embed:playability-unavailable|embed:video-unavailable)/i.test(reason);
+    && /(oembed:(404|410)|embed:(404|410)|embed:age-restricted|embed:playability-unavailable|embed:video-unavailable)/i.test(reason);
+}
+
+function resolveVerifiedPlaybackFailurePresentation(options: {
+  runtimeReason: string;
+  reportResult: ReportUnavailableResult;
+  unavailableMessage?: string;
+  unavailableCountdownMs?: number;
+}): VerifiedPlaybackFailurePresentation {
+  const { runtimeReason, reportResult, unavailableMessage, unavailableCountdownMs } = options;
+
+  if (isInteractivePlaybackBlockReason(reportResult.verificationReason)) {
+    return { kind: "direct-iframe" };
+  }
+
+  if (reportResult.shouldSkip || isUnavailableVerificationReason(reportResult.verificationReason)) {
+    return {
+      kind: "unavailable",
+      message: unavailableMessage,
+      countdownMs: unavailableCountdownMs,
+    };
+  }
+
+  if (/yt-player-(age-or-owner-restricted-(101|150)|error-(5|101|150))/i.test(runtimeReason)) {
+    return { kind: "direct-iframe" };
+  }
+
+  return { kind: "direct-iframe" };
 }
 
 function formatPlaybackTime(value: number) {
@@ -1505,6 +1540,7 @@ export function PlayerExperience({
   // (video ended with autoplay off). On "/", the choice overlay is shown instead.
   const suppressUnavailablePlaybackSurface = endedChoiceFromUnavailable || Boolean(unavailableOverlayMessage) || playerClosedByEndOfVideo || (showEndedChoiceOverlay && pathname !== "/");
   const showDockCloseButton = isDockedDesktop && pathname !== "/";
+  const isDockedNewRoute = showDockCloseButton && pathname === "/new";
   const hasActivePlayback = isPlaying || safeCurrentTime > 0;
   const showRouteLikeLoadingCopy = isRouteResolving || isManualTransitionMaskVisible;
   const showPlayerLoadingOverlay = isLoggedIn && (
@@ -1769,6 +1805,46 @@ export function PlayerExperience({
     });
   }
 
+  function applyVerifiedPlaybackFailurePresentation(
+    trigger: string,
+    runtimeReason: string,
+    reportResult: ReportUnavailableResult,
+    options?: { unavailableMessage?: string; unavailableCountdownMs?: number },
+  ) {
+    const presentation = resolveVerifiedPlaybackFailurePresentation({
+      runtimeReason,
+      reportResult,
+      unavailableMessage: options?.unavailableMessage,
+      unavailableCountdownMs: options?.unavailableCountdownMs,
+    });
+
+    logPlayerDebug("playback-failure:presentation", {
+      videoId: currentVideoRef.current.id,
+      trigger,
+      runtimeReason,
+      verificationReason: reportResult.verificationReason,
+      shouldSkip: reportResult.shouldSkip,
+      skipped: reportResult.skipped,
+      presentation: presentation.kind,
+    });
+
+    if (presentation.kind === "direct-iframe") {
+      clearStuckPlaybackRetryTimer();
+      clearStuckPlaybackWatchdogTimer();
+      clearMidPlaybackBufferingCheck();
+      enableDirectIframeInteractionMode(trigger, reportResult.verificationReason);
+      return;
+    }
+
+    autoplaySuppressedVideoIdRef.current = currentVideoRef.current.id;
+    playAttemptedAtRef.current = null;
+    pauseActivePlayback();
+    showUnavailableOverlayMessage(presentation.message, {
+      autoAdvanceWhenAutoplay: true,
+      countdownMs: presentation.countdownMs,
+    });
+  }
+
   function resetPlaybackStallWatchdog(lastTime?: number | null) {
     playbackStallStartedAtRef.current = null;
     playbackStallLastTimeRef.current = typeof lastTime === "number" ? lastTime : null;
@@ -1896,15 +1972,12 @@ export function PlayerExperience({
         }
 
         const reportResult = await reportUnavailableFromPlayer("yt-player-upstream-connect-timeout");
-        const shouldSkip = reportResult.shouldSkip;
-        const botChallengeDetected = isInteractivePlaybackBlockReason(reportResult.verificationReason);
-
         logPlayerDebug("runtime-block-check", {
           videoId: currentVideoRef.current.id,
           playerHostMode,
-          shouldSkip,
+          shouldSkip: reportResult.shouldSkip,
           verificationReason: reportResult.verificationReason,
-          botChallengeDetected,
+          botChallengeDetected: isInteractivePlaybackBlockReason(reportResult.verificationReason),
           durationValue,
           currentPosition,
           state,
@@ -1912,24 +1985,7 @@ export function PlayerExperience({
           trigger,
         });
 
-        if (botChallengeDetected) {
-          enableDirectIframeInteractionMode(trigger, reportResult.verificationReason);
-          return;
-        }
-
-        if (shouldSkip) {
-          autoplaySuppressedVideoIdRef.current = currentVideoRef.current.id;
-          playAttemptedAtRef.current = null;
-          pauseActivePlayback();
-          showUnavailableOverlayMessage(undefined, {
-            autoAdvanceWhenAutoplay: true,
-          });
-          return;
-        }
-
-        // If verification did not confirm a true unavailability, expose raw iframe
-        // so users can satisfy upstream interstitials directly.
-        enableDirectIframeInteractionMode(trigger, reportResult.verificationReason);
+        applyVerifiedPlaybackFailurePresentation(trigger, "yt-player-upstream-connect-timeout", reportResult);
       })();
     }, STUCK_PLAYBACK_CHECK_MS);
   }
@@ -1963,35 +2019,20 @@ export function PlayerExperience({
           return;
         }
 
-        const reportResult = await reportUnavailableFromPlayer("yt-player-early-refusal-check");
-        const botChallengeDetected = isInteractivePlaybackBlockReason(reportResult.verificationReason);
+        const runtimeReason = "yt-player-early-refusal-check";
+        const reportResult = await reportUnavailableFromPlayer(runtimeReason);
 
         logPlayerDebug("early-playback-verification", {
           videoId: currentVideoRef.current.id,
           playerHostMode,
           verificationReason: reportResult.verificationReason,
-          botChallengeDetected,
+          botChallengeDetected: isInteractivePlaybackBlockReason(reportResult.verificationReason),
           durationValue,
           currentPosition,
           state,
         });
 
-        if (!botChallengeDetected) {
-          if (reportResult.shouldSkip || isUnavailableVerificationReason(reportResult.verificationReason)) {
-            autoplaySuppressedVideoIdRef.current = currentVideoRef.current.id;
-            playAttemptedAtRef.current = null;
-            pauseActivePlayback();
-            showUnavailableOverlayMessage(undefined, {
-              autoAdvanceWhenAutoplay: true,
-            });
-          }
-          return;
-        }
-
-        clearStuckPlaybackRetryTimer();
-        clearStuckPlaybackWatchdogTimer();
-        clearMidPlaybackBufferingCheck();
-        enableDirectIframeInteractionMode("early-playback-verification", reportResult.verificationReason);
+        applyVerifiedPlaybackFailurePresentation("early-playback-verification", runtimeReason, reportResult);
       })();
     }, EARLY_PLAYBACK_VERIFICATION_MS);
 
@@ -3182,22 +3223,8 @@ export function PlayerExperience({
             const isDefinitiveBrokenUpstreamCode = event.data === 100;
 
             if (isRestrictedEmbedCode) {
-              autoplaySuppressedVideoIdRef.current = currentVideo.id;
-              playAttemptedAtRef.current = null;
-              pauseActivePlayback();
-              showUnavailableOverlayMessage(undefined, {
-                autoAdvanceWhenAutoplay: true,
-              });
-
-              void reportUnavailableFromPlayer(reason).then((reportResult) => {
-                logPlayerDebug("onError:restricted-upstream-reported", {
-                  videoId: currentVideo.id,
-                  reason,
-                  shouldSkip: reportResult.shouldSkip,
-                  verificationReason: reportResult.verificationReason,
-                  skipped: reportResult.skipped,
-                });
-              });
+              const reportResult = await reportUnavailableFromPlayer(reason);
+              applyVerifiedPlaybackFailurePresentation("on-error-restricted", reason, reportResult);
               return;
             }
 
@@ -3223,9 +3250,6 @@ export function PlayerExperience({
             }
 
             const reportResult = await reportUnavailableFromPlayer(reason);
-            const shouldSkip = reportResult.shouldSkip;
-            const botChallengeDetected = isInteractivePlaybackBlockReason(reportResult.verificationReason);
-            const unavailableDetected = shouldSkip || isUnavailableVerificationReason(reportResult.verificationReason);
 
             const postReportPlayer = playerRef.current;
             const postReportState =
@@ -3244,10 +3268,10 @@ export function PlayerExperience({
             logPlayerDebug("onError:shouldSkip", {
               videoId: currentVideo.id,
               reason,
-              shouldSkip,
+              shouldSkip: reportResult.shouldSkip,
               verificationReason: reportResult.verificationReason,
-              botChallengeDetected,
-              unavailableDetected,
+              botChallengeDetected: isInteractivePlaybackBlockReason(reportResult.verificationReason),
+              unavailableDetected: reportResult.shouldSkip || isUnavailableVerificationReason(reportResult.verificationReason),
               postReportState,
               postReportTime,
               playbackEstablishedAfterReport,
@@ -3257,29 +3281,7 @@ export function PlayerExperience({
               return;
             }
 
-            if (botChallengeDetected) {
-              enableDirectIframeInteractionMode("on-error", reportResult.verificationReason);
-              return;
-            }
-
-            if (unavailableDetected) {
-              autoplaySuppressedVideoIdRef.current = currentVideo.id;
-              playAttemptedAtRef.current = null;
-              pauseActivePlayback();
-              showUnavailableOverlayMessage(isDefinitiveBrokenUpstreamCode ? BROKEN_UPSTREAM_OVERLAY_MESSAGE : undefined, {
-                autoAdvanceWhenAutoplay: true,
-                countdownMs: isDefinitiveBrokenUpstreamCode ? BROKEN_UPSTREAM_AUTOADVANCE_MS : undefined,
-              });
-              return;
-            }
-
-            if (!shouldSkip) {
-              enableDirectIframeInteractionMode("on-error-fallback", reportResult.verificationReason);
-              return;
-            }
-
-            // Fallback for rare skipped states where verification cannot classify confidently.
-            enableDirectIframeInteractionMode("on-error-skip-fallback", reportResult.verificationReason);
+            applyVerifiedPlaybackFailurePresentation("on-error", reason, reportResult);
           },
         },
       });
@@ -4056,6 +4058,30 @@ export function PlayerExperience({
       clearPlaylist: nextTarget.clearPlaylist,
       playlistId: activePlaylistId,
       playlistItemIndex: nextTarget.playlistItemIndex,
+    });
+  }
+
+  function handleDockedNewRouteNextTrack() {
+    if (!isDockedNewRoute || footerActionsBlocked || routeAutoplayQueueIds.length === 0) {
+      return;
+    }
+
+    const currentIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId === currentVideo.id);
+    const nextVideoId = currentIndex >= 0
+      ? (routeAutoplayQueueIds[(currentIndex + 1) % routeAutoplayQueueIds.length] ?? null)
+      : (routeAutoplayQueueIds[0] ?? null);
+
+    if (!nextVideoId) {
+      return;
+    }
+
+    showManualTransitionMask();
+    hasUserGesturePlaybackUnlockRef.current = true;
+    pendingAutoAdvanceVideoIdRef.current = nextVideoId;
+    navigateToVideo(nextVideoId, {
+      clearPlaylist: true,
+      playlistId: activePlaylistId,
+      playlistItemIndex: null,
     });
   }
 
@@ -5868,6 +5894,18 @@ export function PlayerExperience({
               >
                 <span className="primaryActionGlyph" aria-hidden="true">⇮</span>
                 <span>{autoplayEnabled ? "On" : "Off"}</span>
+              </button>
+            ) : null}
+            {isDockedNewRoute ? (
+              <button
+                type="button"
+                className="primaryActionToggleButton primaryActionDockedNextButton"
+                onClick={handleDockedNewRouteNextTrack}
+                disabled={footerActionsBlocked || routeAutoplayQueueIds.length === 0}
+                aria-label="Next track in New"
+                title="Next track in New"
+              >
+                <span className="primaryNavGlyph" aria-hidden="true">⇥</span>
               </button>
             ) : null}
             {isLoggedIn ? (

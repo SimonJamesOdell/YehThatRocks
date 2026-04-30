@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
@@ -80,7 +80,6 @@ export function Top100VideoLink({
 }: Top100VideoLinkProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const router = useRouter();
   const hasWarmedRef = useRef(false);
   const clickFlashTimeoutRef = useRef<number | null>(null);
   const [isClickFlashing, setIsClickFlashing] = useState(false);
@@ -159,10 +158,20 @@ export function Top100VideoLink({
     }).catch(() => undefined);
   }, [stagePendingSelection, track.id, triggerClickFlash]);
 
-  const openVideoFromCard = useCallback(() => {
+  const navigateToVideo = useCallback(() => {
     warmSelection();
-    router.push(videoHref);
-  }, [router, videoHref, warmSelection]);
+
+    if (typeof window !== "undefined" && window.location.pathname === pathname) {
+      window.history.pushState(window.history.state, "", videoHref);
+      return;
+    }
+
+    window.location.assign(videoHref);
+  }, [pathname, videoHref, warmSelection]);
+
+  const openVideoFromCard = useCallback(() => {
+    navigateToVideo();
+  }, [navigateToVideo]);
 
   const handleRemoveFavourite = useCallback(async (event: ReactMouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -259,7 +268,21 @@ export function Top100VideoLink({
         onMouseEnter={stagePendingSelection}
         onFocus={stagePendingSelection}
         onPointerDown={warmSelection}
-        onClick={warmSelection}
+        onClick={(event) => {
+          if (
+            event.defaultPrevented
+            || event.button !== 0
+            || event.metaKey
+            || event.ctrlKey
+            || event.shiftKey
+            || event.altKey
+          ) {
+            return;
+          }
+
+          event.preventDefault();
+          navigateToVideo();
+        }}
       >
         <div className="leaderboardRank">#{index + 1}</div>
         <div className="leaderboardThumbWrap" data-video-id={track.id}>

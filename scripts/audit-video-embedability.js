@@ -270,8 +270,12 @@ async function checkVideo(videoId) {
         return { status: "check-failed", reason: `oembed:${response.status}+embed:indeterminate` };
       }
 
-      if ([401, 403, 404, 410].includes(response.status)) {
+      if ([404, 410].includes(response.status)) {
         return { status: "unavailable", reason: `oembed:${response.status}` };
+      }
+
+      if ([401, 403].includes(response.status)) {
+        return { status: "check-failed", reason: `oembed:provider-blocked-${response.status}` };
       }
 
       if (response.status >= 500 || response.status === 429) {
@@ -311,8 +315,11 @@ async function checkEmbedPlayability(videoId) {
     });
 
     if (!response.ok) {
-      if ([401, 403, 404, 410].includes(response.status)) {
+      if ([404, 410].includes(response.status)) {
         return { status: "unavailable", reason: `embed:${response.status}` };
+      }
+      if ([401, 403].includes(response.status)) {
+        return { status: "check-failed", reason: `embed:provider-blocked-${response.status}` };
       }
       return { status: "check-failed", reason: `embed:${response.status}` };
     }

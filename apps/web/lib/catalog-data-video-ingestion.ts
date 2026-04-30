@@ -357,8 +357,11 @@ async function checkEmbedPlayability(videoId: string): Promise<VideoAvailability
     });
 
     if (!response.ok) {
-      if ([401, 403, 404, 410].includes(response.status)) {
+      if ([404, 410].includes(response.status)) {
         return { status: "unavailable", reason: `embed:${response.status}` };
+      }
+      if ([401, 403].includes(response.status)) {
+        return { status: "check-failed", reason: `embed:provider-blocked-${response.status}` };
       }
       return { status: "check-failed", reason: `embed:${response.status}` };
     }
@@ -1507,10 +1510,11 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
       SELECT
         v.id, v.title, v.description, v.parsedArtist, v.parsedTrack, v.parsedVideoType, v.parseConfidence,
         EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND sv.status = 'available') AS hasAvailable,
-        EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status <> 'available')) AS hasBlocked
+        EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status = 'unavailable')) AS hasBlocked,
+        EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND sv.status = 'check-failed') AS hasCheckFailed
       FROM videos v
       WHERE v.videoId = ${normalizedVideoId} AND COALESCE(v.approved, 0) = 1
-      ORDER BY hasAvailable DESC, hasBlocked ASC, v.updated_at DESC, v.id DESC
+      ORDER BY hasAvailable DESC, hasBlocked ASC, hasCheckFailed ASC, v.updated_at DESC, v.id DESC
       LIMIT 1
     `;
 
@@ -1543,6 +1547,12 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
     }
 
     if (!Boolean(row.hasAvailable)) {
+      if (Boolean(row.hasCheckFailed) && !Boolean(row.hasBlocked)) {
+        const passthroughDecision: PlaybackDecision = { allowed: true, reason: "ok" };
+        playbackDecisionCache.set(normalizedVideoId, { expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS, decision: passthroughDecision });
+        return passthroughDecision;
+      }
+
       const decision: PlaybackDecision = { allowed: false, reason: "unavailable", message: "Sorry, that video cannot be played on YehThatRocks." };
       playbackDecisionCache.set(normalizedVideoId, { expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS, decision });
       return decision;
