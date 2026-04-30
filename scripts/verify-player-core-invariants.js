@@ -267,6 +267,21 @@ function main() {
   assertContains(cssSource, ".playerChromeDockedDesktop .primaryActionsMainRow .shareUrlField,", "CSS keeps share URL field as the flexible slot in docked controls row", failures);
   assertContains(cssSource, ".playerChromeDockedDesktop .primaryActions > .dockedAdminShareUrlRow,", "CSS positions dedicated docked admin share URL row", failures);
 
+  // Footer reflow prevention: fixed-height reserve wrapper and JS height lock.
+  assertContains(playerExperienceSource, 'className="playerFooterReserve"', "Player renders footer controls inside a fixed-height reserve wrapper to prevent layout reflow", failures);
+  assertContains(playerExperienceSource, '{!suppressUnavailablePlaybackSurface ? (', "Footer controls are conditionally rendered inside the reserve wrapper", failures);
+
+  // Shell: JS height lock during undock-settle to prevent player chrome reflow.
+  const shellSource = readFileStrict(path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"), ROOT);
+  assertContains(shellSource, "const lockedHeight = chrome.getBoundingClientRect().height;", "Shell measures and locks playerChrome height at start of undock-settle to prevent reflow", failures);
+  assertContains(shellSource, "chrome.style.height = `${lockedHeight}px`;", "Shell writes inline height lock on playerChrome before footer re-renders", failures);
+  assertContains(shellSource, "chrome.style.height = \"\";", "Shell releases the height lock after footer reveal animation completes", failures);
+  assertContains(shellSource, "// Release any height lock so docking can size freely.", "Shell clears height lock when overlay re-opens mid-transition", failures);
+
+  // CSS: playerFooterReserve layout rules.
+  assertContains(cssSource, ".playerFooterReserve {", "CSS defines fixed-height footer reserve wrapper", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop .playerFooterReserve", "CSS collapses reserve wrapper height when player is docked", failures);
+
   // CSS: share modal, playlist menu, wiki links.
   assertContains(cssSource, '.shareModalBackdrop', "Share modal backdrop styles are defined", failures);
   assertContains(cssSource, '.shareModalGrid', "Share modal platform grid styles are defined", failures);

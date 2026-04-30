@@ -132,6 +132,9 @@ function main() {
   assertContains(globalCssSource, ".trackCard.leaderboardCard.top100CardAlwaysVisibleControls .top100CardHideButton,", "Top 100 always-visible controls include hide button", failures);
   assertContains(globalCssSource, ".trackCard.leaderboardCard.top100CardAlwaysVisibleControls .top100CardFlagButton,", "Top 100 always-visible controls include flag button", failures);
   assertContains(globalCssSource, ".trackCard.leaderboardCard.top100CardAlwaysVisibleControls .top100CardFavouriteButton {", "Top 100 always-visible controls include favourite button", failures);
+  assertContains(globalCssSource, ".trackCard.leaderboardCard.top100CardActive > .top100CardAction,", "Active card action buttons override position:relative from the glow animation rule", failures);
+  assertContains(globalCssSource, ".trackCard.leaderboardCard.top100CardActive > .top100CardHideButton,", "Active card hide button preserves absolute positioning during glow animation", failures);
+  assertContains(globalCssSource, ".trackCard.leaderboardCard.top100CardActive > .top100CardFlagButton {", "Active card flag button preserves absolute positioning during glow animation", failures);
   assertContains(globalCssSource, ".trackCard.leaderboardCard .top100CardFavouriteButton {", "Top 100 favourite button has dedicated card styles", failures);
   assertContains(globalCssSource, "width: 24px;", "Top 100 favourite button keeps circular 24px dimensions", failures);
   assertContains(globalCssSource, "border-radius: 999px;", "Top 100 favourite button remains circular", failures);

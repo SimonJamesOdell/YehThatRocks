@@ -1073,6 +1073,10 @@ function ShellDynamicInner({
         window.clearTimeout(footerRevealTimeoutRef.current);
         footerRevealTimeoutRef.current = null;
       }
+      // Release any height lock so docking can size freely.
+      if (playerChromeRef.current) {
+        playerChromeRef.current.style.height = "";
+      }
       setIsUndockSettling(false);
       setIsFooterRevealActive(false);
       setIsMobileCommunityOpen(false);
@@ -1090,6 +1094,16 @@ function ShellDynamicInner({
     shouldRunFooterRevealRef.current = false;
     setIsUndockSettling(true);
     setIsFooterRevealActive(false);
+
+    // Lock the player chrome height now so that layout changes during the
+    // settle/footer-reveal window (e.g. primaryActions entering the flow) cannot
+    // cause a visible reflow.  We measure before the state flush so we get the
+    // height that the animation left the chrome at.
+    const chrome = playerChromeRef.current;
+    if (chrome) {
+      const lockedHeight = chrome.getBoundingClientRect().height;
+      chrome.style.height = `${lockedHeight}px`;
+    }
 
     if (typeof window !== "undefined") {
       if (undockSettleTimeoutRef.current !== null) {
@@ -1109,6 +1123,10 @@ function ShellDynamicInner({
         footerRevealTimeoutRef.current = window.setTimeout(() => {
           setIsFooterRevealActive(false);
           footerRevealTimeoutRef.current = null;
+          // Release the height lock after the footer has fully faded in.
+          if (chrome) {
+            chrome.style.height = "";
+          }
         }, FOOTER_REVEAL_DURATION_MS);
       }, UNDOCK_SETTLE_DURATION_MS);
     }

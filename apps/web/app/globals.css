@@ -3058,6 +3058,10 @@ h1 {
     height: 42px;
   }
 
+  .playerChromeDockedDesktop .playerFooterReserve {
+    min-height: 0;
+  }
+
   .playerChromeDockedDesktop .primaryActions {
     position: absolute;
     left: 0;
@@ -4955,6 +4959,15 @@ h1 {
 .playerSummary strong {
   display: block;
   margin-top: 4px;
+}
+
+.playerFooterReserve {
+  flex: 0 0 auto;
+  min-height: 74px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .primaryActions {
@@ -6865,6 +6878,13 @@ h1 {
 .trackCard.leaderboardCard.top100CardActive > * {
   position: relative;
   z-index: 1;
+}
+
+.trackCard.leaderboardCard.top100CardActive > .top100CardAction,
+.trackCard.leaderboardCard.top100CardActive > .top100CardHideButton,
+.trackCard.leaderboardCard.top100CardActive > .top100CardFlagButton {
+  position: absolute;
+  z-index: 32;
 }
 
 .trackCard.leaderboardCard.top100CardClickFlash {

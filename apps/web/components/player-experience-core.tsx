@@ -5615,6 +5615,7 @@ export function PlayerExperience({
             }}
           />
 
+          <div className="playerFooterReserve">
           {!suppressUnavailablePlaybackSurface ? (
             <div
               className={[
@@ -5911,6 +5912,7 @@ export function PlayerExperience({
             ) : null}
             </div>
           ) : null}
+          </div>
         </>
       );
     }
