@@ -1499,7 +1499,45 @@ export function PlayerExperience({
     unavailableOverlayTimeoutRef.current = null;
   }
 
+  function hasActivePlaybackForCurrentVideo() {
+    const runtimePlayer = playerRef.current;
+    const runtimePlayerWithVideoData = runtimePlayer as (YouTubePlayer & {
+      getVideoData?: () => { video_id?: string | null };
+    }) | null;
+
+    const runtimeVideoId =
+      runtimePlayerWithVideoData && typeof runtimePlayerWithVideoData.getVideoData === "function"
+        ? (runtimePlayerWithVideoData.getVideoData()?.video_id ?? null)
+        : null;
+
+    if (runtimeVideoId && runtimeVideoId !== currentVideoRef.current.id) {
+      return false;
+    }
+
+    const runtimeState =
+      runtimePlayer && typeof runtimePlayer.getPlayerState === "function"
+        ? runtimePlayer.getPlayerState()
+        : -1;
+    const runtimeTime =
+      runtimePlayer && typeof runtimePlayer.getCurrentTime === "function"
+        ? toSafeNumber(runtimePlayer.getCurrentTime(), 0)
+        : 0;
+
+    return runtimeState === window.YT?.PlayerState.PLAYING || hasPlaybackStartedRef.current || runtimeTime > 1;
+  }
+
   function enableDirectIframeInteractionMode(trigger: string, verificationReason: string | null) {
+    if (hasActivePlaybackForCurrentVideo()) {
+      setAllowDirectIframeInteraction(false);
+      allowDirectIframeInteractionRef.current = false;
+      logPlayerDebug("bot-challenge:direct-iframe-mode-suppressed-active-playback", {
+        videoId: currentVideoRef.current.id,
+        trigger,
+        verificationReason,
+      });
+      return;
+    }
+
     if (overlayTimeoutRef.current) {
       window.clearTimeout(overlayTimeoutRef.current);
       overlayTimeoutRef.current = null;
@@ -2332,6 +2370,23 @@ export function PlayerExperience({
       window.clearTimeout(timeoutId);
     };
   }, [currentVideo.id, forcedUnavailableMessage, forcedUnavailableSignal]);
+
+  useEffect(() => {
+    if (!allowDirectIframeInteraction) {
+      return;
+    }
+
+    if (!hasActivePlaybackForCurrentVideo()) {
+      return;
+    }
+
+    // If playback recovered while the policy blocker was visible, drop back to normal player UI.
+    setAllowDirectIframeInteraction(false);
+    allowDirectIframeInteractionRef.current = false;
+    logPlayerDebug("bot-challenge:direct-iframe-mode-cleared-active-playback", {
+      videoId: currentVideo.id,
+    });
+  }, [allowDirectIframeInteraction, currentVideo.id, isPlaying, safeCurrentTime]);
 
   useEffect(() => {
     // When an overlay page closes, the pointer may already be over the player.

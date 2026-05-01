@@ -117,7 +117,7 @@ function main() {
   assertContains(adminPendingRouteSource, "parsedArtist: z.string().trim().max(255).nullable().optional(),", "Admin pending moderation accepts optional artist override", failures);
   assertContains(adminPendingRouteSource, "const approveData:", "Admin pending approve action builds a typed mutable update payload", failures);
   assertContains(adminPendingRouteSource, "await prisma.video.updateMany({", "Admin pending approve action updates approval and optional metadata together", failures);
-  assertContains(adminPendingRouteSource, "COALESCE(approved, 0) = 0", "Admin pending route lists only unapproved videos", failures);
+  assertContains(adminPendingRouteSource, "PENDING_VIDEO_APPROVAL_WHERE_CLAUSE", "Admin pending route uses shared index-friendly unapproved predicate", failures);
   assertContains(adminPendingRouteSource, "approved: true,", "Admin pending approve action sets approved flag", failures);
   assertContains(adminDashboardPanelSource, "pendingVideos", "Admin dashboard panel fetches and renders the pending approval queue", failures);
   assertContains(adminDashboardPanelSource, "Artist (optional override)", "Admin pending approval cards render editable artist override input", failures);

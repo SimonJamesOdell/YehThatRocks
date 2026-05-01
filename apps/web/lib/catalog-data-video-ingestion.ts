@@ -44,6 +44,7 @@ import {
   getArtistCatalogEvidence,
   scheduleArtistProjectionRefreshForName,
 } from "@/lib/catalog-data-artists";
+import { markAvailableVideoMaxIdDirty, recordAvailableVideoIdCandidate } from "@/lib/available-video-max-id";
 import { clearGenreCardThumbnailForVideo } from "@/lib/catalog-data-genres";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -771,6 +772,12 @@ async function persistVideoAvailability(video: PersistableVideoRecord, availabil
     await clearGenreCardThumbnailForVideo(video.id);
   }
 
+  if (availability.status === "available") {
+    void recordAvailableVideoIdCandidate(persistedVideo.id).catch(() => undefined);
+  } else {
+    void markAvailableVideoMaxIdDirty().catch(() => undefined);
+  }
+
   await maybePersistRuntimeMetadata(persistedVideo.id, video);
   return persistedVideo;
 }
@@ -1464,6 +1471,7 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
   }
 
   await clearGenreCardThumbnailForVideo(normalizedVideoId);
+  void markAvailableVideoMaxIdDirty().catch(() => undefined);
 
   if (reason === "admin-hard-delete") {
     try {
