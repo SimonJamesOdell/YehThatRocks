@@ -8,6 +8,8 @@ import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from "@/lib/auth-config";
 import { getFavouriteVideos } from "@/lib/catalog-data";
 import { getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
 
+const FAVOURITES_BATCH_SIZE = 20;
+
 export default async function FavouritesPage() {
   const cookieStore = await cookies();
   const hasAccessToken = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
@@ -15,12 +17,19 @@ export default async function FavouritesPage() {
   const user = authState.status === "authenticated" ? authState.user : null;
   const hasRefreshToken = Boolean(cookieStore.get(REFRESH_TOKEN_COOKIE)?.value);
   const favourites = user ? await getFavouriteVideos(user.id) : [];
+  const initialFavourites = favourites.slice(0, FAVOURITES_BATCH_SIZE);
+  const totalCount = favourites.length;
 
   return (
     <>
       <FavouritesScrollReset />
       {user ? (
-        <FavouritesGrid initialFavourites={favourites} isAuthenticated={hasAccessToken} />
+        <FavouritesGrid
+          initialFavourites={initialFavourites}
+          initialTotalCount={totalCount}
+          initialHasMore={totalCount > initialFavourites.length}
+          isAuthenticated={hasAccessToken}
+        />
       ) : (
         <>
           <div className="favouritesBlindBar">

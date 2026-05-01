@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent as ReactMouseEvent, type UIEvent } from "react";
+import { ChangeEvent, startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type UIEvent } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
@@ -8,16 +8,28 @@ import type { VideoRecord } from "@/lib/catalog";
 import { buildSharedVideoMessage } from "@/lib/chat-shared-video";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
-import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { RemoveFavouriteConfirmModal } from "@/components/remove-favourite-confirm-modal";
-import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { useNextTrackDecision } from "@/components/use-next-track-decision";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent, TEMP_QUEUE_DEQUEUE_EVENT, VIDEO_ENDED_EVENT } from "@/lib/events-contract";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import { addPlaylistItemClient, createPlaylistClient, listPlaylistsClient } from "@/lib/playlist-client-service";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
+import { EndedChoiceCard } from "@/components/player-experience-ended-choice-card";
+import {
+  buildRouteAutoplayPlaylistName,
+  buildRouteAutoplayTelemetryMode,
+  resolveRouteAutoplaySource,
+  type NextChoiceVideo,
+  type RouteAutoplaySource,
+} from "@/components/player-experience-autoplay-utils";
+import {
+  isInteractivePlaybackBlockReason,
+  isUnavailableVerificationReason,
+  resolveVerifiedPlaybackFailurePresentation,
+  type ReportUnavailableResult,
+} from "@/components/player-experience-playback-failure-utils";
 
 type PlayerExperienceProps = {
   currentVideo: VideoRecord;
@@ -71,15 +83,6 @@ type PlayerPreferencesResponse = {
 type LyricsAvailabilityResponse = {
   available?: boolean;
 };
-
-type RouteAutoplaySource =
-  | { type: "new" }
-  | { type: "top100" }
-  | { type: "favourites" }
-  | { type: "category"; slug: string }
-  | { type: "artist"; slug: string };
-
-type NextChoiceVideo = VideoRecord;
 
 type YouTubePlayerStateChangeEvent = {
   data: number;
@@ -181,20 +184,6 @@ const ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS = 3;
 const YOUTUBE_END_SCREEN_COVER_SECONDS = 0;
 const ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-ended-choice";
 
-type ReportUnavailableResult = {
-  shouldSkip: boolean;
-  verificationReason: string | null;
-  skipped: boolean;
-};
-
-type VerifiedPlaybackFailurePresentation = {
-  kind: "direct-iframe";
-} | {
-  kind: "unavailable";
-  message?: string;
-  countdownMs?: number;
-};
-
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
   const consoleWithPatchState = console as typeof console & {
     __ytrWarnPatched?: boolean;
@@ -244,42 +233,6 @@ function normalizePlayerVolume(value: unknown, fallback = 100) {
   return Math.max(0, Math.min(100, Math.round(toSafeNumber(value, fallback))));
 }
 
-function isInteractivePlaybackBlockReason(reason: string | null | undefined) {
-  return typeof reason === "string" && /(bot-check|interactive-login-check|login-required|content-check-required|consent|provider-blocked)/i.test(reason);
-}
-
-function isUnavailableVerificationReason(reason: string | null | undefined) {
-  return typeof reason === "string"
-    && /(oembed:(404|410)|embed:(404|410)|embed:age-restricted|embed:playability-unavailable|embed:video-unavailable)/i.test(reason);
-}
-
-function resolveVerifiedPlaybackFailurePresentation(options: {
-  runtimeReason: string;
-  reportResult: ReportUnavailableResult;
-  unavailableMessage?: string;
-  unavailableCountdownMs?: number;
-}): VerifiedPlaybackFailurePresentation {
-  const { runtimeReason, reportResult, unavailableMessage, unavailableCountdownMs } = options;
-
-  if (isInteractivePlaybackBlockReason(reportResult.verificationReason)) {
-    return { kind: "direct-iframe" };
-  }
-
-  if (reportResult.shouldSkip || isUnavailableVerificationReason(reportResult.verificationReason)) {
-    return {
-      kind: "unavailable",
-      message: unavailableMessage,
-      countdownMs: unavailableCountdownMs,
-    };
-  }
-
-  if (/yt-player-(age-or-owner-restricted-(101|150)|error-(5|101|150))/i.test(runtimeReason)) {
-    return { kind: "direct-iframe" };
-  }
-
-  return { kind: "direct-iframe" };
-}
-
 function formatPlaybackTime(value: number) {
   const safeValue = Math.max(0, Math.floor(toSafeNumber(value, 0)));
   const hours = Math.floor(safeValue / 3600);
@@ -305,241 +258,6 @@ function buildGeneratedPlaylistName() {
   });
   return `Playlist ${datePart} ${timePart}`;
 }
-
-function formatAutoplayPlaylistTimestamp(now: Date) {
-  return `${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-}
-
-function resolveRouteAutoplaySource(pathname: string): RouteAutoplaySource | null {
-  const onNewRoute = pathname === "/new";
-  const onTop100Route = pathname === "/top100";
-  const onFavouritesRoute = pathname === "/favourites";
-  const onCategoryRoute = pathname.startsWith("/categories/");
-  const onArtistRoute = pathname.startsWith("/artist/");
-
-  if (onNewRoute) {
-    return { type: "new" };
-  }
-
-  if (onTop100Route) {
-    return { type: "top100" };
-  }
-
-  if (onFavouritesRoute) {
-    return { type: "favourites" };
-  }
-
-  if (onCategoryRoute) {
-    const slug = pathname.slice("/categories/".length).split("/")[0] ?? "";
-    return slug ? { type: "category", slug } : null;
-  }
-
-  if (onArtistRoute) {
-    const slug = pathname.slice("/artist/".length).split("/")[0] ?? "";
-    return slug ? { type: "artist", slug } : null;
-  }
-
-  return null;
-}
-
-function buildRouteAutoplayPlaylistName(source: RouteAutoplaySource, now = new Date()) {
-  const timestamp = formatAutoplayPlaylistTimestamp(now);
-
-  switch (source.type) {
-    case "new":
-      return `New autoplay ${timestamp}`;
-    case "top100":
-      return `Top 100 autoplay ${timestamp}`;
-    case "favourites":
-      return `Favourites autoplay ${timestamp}`;
-    case "category": {
-      const readableCategory = decodeURIComponent(source.slug).replace(/-/g, " ");
-      return `${readableCategory} autoplay ${timestamp}`;
-    }
-    case "artist": {
-      const readableArtist = decodeURIComponent(source.slug).replace(/-/g, " ");
-      return `${readableArtist} autoplay ${timestamp}`;
-    }
-  }
-}
-
-function buildRouteAutoplayTelemetryMode(source: RouteAutoplaySource) {
-  return `${source.type}-autoplay`;
-}
-
-type EndedChoiceCardProps = {
-  video: VideoRecord;
-  index: number;
-  isSeen: boolean;
-  isHiding: boolean;
-  shouldAnimateCard: boolean;
-  isLoggedIn: boolean;
-  onSelect: (videoId: string) => void;
-  onHide: (video: VideoRecord) => void;
-  onMeasure?: (node: HTMLDivElement | null) => void;
-};
-
-const EndedChoiceCard = memo(function EndedChoiceCard({
-  video,
-  index,
-  isSeen,
-  isHiding,
-  shouldAnimateCard,
-  isLoggedIn,
-  onSelect,
-  onHide,
-  onMeasure,
-}: EndedChoiceCardProps) {
-  const [isFavourited, setIsFavourited] = useState(Number(video.favourited ?? 0) > 0);
-  const [isRemovingFavourite, setIsRemovingFavourite] = useState(false);
-
-  useEffect(() => {
-    setIsFavourited(Number(video.favourited ?? 0) > 0);
-  }, [video.id, video.favourited]);
-
-  const cardClassName = isHiding
-    ? "endedChoiceCardSlot endedChoiceCardSlotExiting"
-    : shouldAnimateCard
-      ? "endedChoiceCardSlot"
-      : "endedChoiceCardSlot endedChoiceCardSlotStatic";
-
-  const cardStyle = shouldAnimateCard
-    ? {
-        "--ended-choice-row-4": Math.min(3, Math.floor(index / 4)),
-        "--ended-choice-row-2": Math.min(5, Math.floor(index / 2)),
-        "--ended-choice-row-1": Math.min(7, index),
-      } as CSSProperties
-    : undefined;
-
-  const handleHide = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-    onHide(video);
-  }, [onHide, video]);
-
-  const handleSelect = useCallback(() => {
-    onSelect(video.id);
-  }, [onSelect, video.id]);
-
-  const handleRemoveFavourite = useCallback(async (event: ReactMouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (!isLoggedIn || isRemovingFavourite) {
-      return;
-    }
-
-    setIsRemovingFavourite(true);
-
-    try {
-      const response = await fetchWithAuthRetry("/api/favourites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoId: video.id, action: "remove" }),
-      });
-
-      if (!response.ok) {
-        return;
-      }
-
-      setIsFavourited(false);
-      dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
-    } finally {
-      setIsRemovingFavourite(false);
-    }
-  }, [isLoggedIn, isRemovingFavourite, video.id]);
-
-  return (
-    <div
-      ref={onMeasure}
-      className={cardClassName}
-      style={cardStyle}
-    >
-      {isLoggedIn ? (
-        <button
-          type="button"
-          className="endedChoiceCardHideBtn"
-          aria-label={`Hide ${video.title} from suggestions`}
-          title="Hide from suggestions"
-          onClick={handleHide}
-          disabled={isHiding}
-        >×</button>
-      ) : null}
-      <button
-        type="button"
-        className={isSeen ? "playerEndedChoiceCard playerEndedChoiceCardSeen" : "playerEndedChoiceCard"}
-        onClick={handleSelect}
-      >
-        <div className="playerEndedChoiceThumbWrap">
-          <img
-            src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
-            alt=""
-            className="playerEndedChoiceThumb"
-            loading="lazy"
-          />
-          {isSeen && !isFavourited ? <span className="playerEndedChoiceSeenBadge">Seen</span> : null}
-          {isFavourited ? (
-            <button
-              type="button"
-              className="relatedFavouriteBadgeOverlay endedChoiceFavouriteBadgeOverlay artistVideoFavouriteBadgeButton"
-              aria-label={`Remove ${video.title} from favourites`}
-              title="Remove from favourites"
-              disabled={isRemovingFavourite}
-              onClick={handleRemoveFavourite}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-            >
-              <span className="artistVideoFavouriteBadgeHeart" aria-hidden="true">♥</span>
-              <span className="artistVideoFavouriteBadgeRemoveGlyph" aria-hidden="true">x</span>
-            </button>
-          ) : null}
-        </div>
-        <span className="playerEndedChoiceMeta">
-          <span className="playerEndedChoiceTitle">
-            {video.title}
-          </span>
-          <span className="playerEndedChoiceChannel">
-            <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
-              {video.channelTitle}
-            </ArtistWikiLink>
-          </span>
-        </span>
-      </button>
-      {isLoggedIn ? (
-        <div className="endedChoiceCardActions">
-          {!isFavourited ? (
-            <SearchResultFavouriteButton
-              videoId={video.id}
-              title={video.title}
-              isAuthenticated={isLoggedIn}
-              className="endedChoiceCardFavouriteBtn"
-              onSaved={() => setIsFavourited(true)}
-            />
-          ) : null}
-          <AddToPlaylistButton
-            videoId={video.id}
-            isAuthenticated={isLoggedIn}
-            className="endedChoiceCardPlaylistBtn"
-            compact
-          />
-        </div>
-      ) : null}
-    </div>
-  );
-}, (prev, next) => {
-  return prev.video.id === next.video.id
-    && prev.video.title === next.video.title
-    && prev.video.channelTitle === next.video.channelTitle
-    && prev.index === next.index
-    && prev.isSeen === next.isSeen
-    && prev.isHiding === next.isHiding
-    && prev.shouldAnimateCard === next.shouldAnimateCard
-    && prev.isLoggedIn === next.isLoggedIn
-    && prev.onSelect === next.onSelect
-    && prev.onHide === next.onHide
-    && prev.onMeasure === next.onMeasure;
-});
 
 function switchPlayerVideo(player: YouTubePlayer, videoId: string) {
   const playerWithFallbacks = player as YouTubePlayer & {

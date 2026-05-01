@@ -11,7 +11,7 @@ const files = {
   watchHistoryRoute: path.join(ROOT, "apps/web/app/api/watch-history/route.ts"),
   apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
-  globalCss: path.join(ROOT, "apps/web/app/globals.css"),
+  appRoot: path.join(ROOT, "apps/web/app"),
 };
 
 function read(filePath) {
@@ -19,6 +19,27 @@ function read(filePath) {
     throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
   }
   return fs.readFileSync(filePath, "utf8");
+}
+
+function collectCssFiles(dirPath, acc = []) {
+  if (!fs.existsSync(dirPath)) {
+    return acc;
+  }
+
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      collectCssFiles(fullPath, acc);
+      continue;
+    }
+
+    if (entry.isFile() && entry.name.endsWith(".css")) {
+      acc.push(fullPath);
+    }
+  }
+
+  return acc;
 }
 
 function assertContains(source, needle, description, failures) {
@@ -41,7 +62,9 @@ function main() {
   const watchHistoryRouteSource = read(files.watchHistoryRoute);
   const apiSchemasSource = read(files.apiSchemas);
   const catalogDataSource = read(files.catalogData);
-  const globalCssSource = read(files.globalCss);
+  const globalCssSource = collectCssFiles(files.appRoot)
+    .map((filePath) => read(filePath))
+    .join("\n");
 
   // --- History page: server-side auth and data loading ---
   assertContains(historyPageSource, "getCurrentAuthenticatedUser", "History page resolves current authenticated user server-side", failures);

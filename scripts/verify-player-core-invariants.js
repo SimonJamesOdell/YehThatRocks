@@ -7,6 +7,7 @@
 // player hover recovery, same-video replay, share/wiki helpers.
 
 const path = require("node:path");
+const fs = require("node:fs");
 const {
   readFileStrict,
   assertContains,
@@ -19,6 +20,9 @@ const ROOT = process.cwd();
 
 const files = {
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
+  endedChoiceCard: path.join(ROOT, "apps/web/components/player-experience-ended-choice-card.tsx"),
+  autoplayUtils: path.join(ROOT, "apps/web/components/player-experience-autoplay-utils.ts"),
+  playbackFailureUtils: path.join(ROOT, "apps/web/components/player-experience-playback-failure-utils.ts"),
   videosUnavailableRoute: path.join(ROOT, "apps/web/app/api/videos/unavailable/route.ts"),
   adminVideoDeleteButton: path.join(ROOT, "apps/web/components/admin-video-delete-button.tsx"),
   seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
@@ -27,13 +31,37 @@ const files = {
   shareMetadata: path.join(ROOT, "apps/web/lib/share-metadata.ts"),
   chatSharedVideo: path.join(ROOT, "apps/web/lib/chat-shared-video.ts"),
   artistWikiLink: path.join(ROOT, "apps/web/components/artist-wiki-link.tsx"),
-  css: path.join(ROOT, "apps/web/app/globals.css"),
+  appRoot: path.join(ROOT, "apps/web/app"),
 };
+
+function collectCssFiles(dirPath, acc = []) {
+  if (!fs.existsSync(dirPath)) {
+    return acc;
+  }
+
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      collectCssFiles(fullPath, acc);
+      continue;
+    }
+
+    if (entry.isFile() && entry.name.endsWith(".css")) {
+      acc.push(fullPath);
+    }
+  }
+
+  return acc;
+}
 
 function main() {
   const failures = [];
 
   const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
+  const endedChoiceCardSource = readFileStrict(files.endedChoiceCard, ROOT);
+  const autoplayUtilsSource = readFileStrict(files.autoplayUtils, ROOT);
+  const playbackFailureUtilsSource = readFileStrict(files.playbackFailureUtils, ROOT);
   const videosUnavailableRouteSource = readFileStrict(files.videosUnavailableRoute, ROOT);
   const adminVideoDeleteButtonSource = readFileStrict(files.adminVideoDeleteButton, ROOT);
   const seenToggleRouteSource = readFileStrict(files.seenToggleRoute, ROOT);
@@ -42,7 +70,9 @@ function main() {
   const shareMetadataSource = readFileStrict(files.shareMetadata, ROOT);
   const chatSharedVideoSource = readFileStrict(files.chatSharedVideo, ROOT);
   const artistWikiLinkSource = readFileStrict(files.artistWikiLink, ROOT);
-  const cssSource = readFileStrict(files.css, ROOT);
+  const cssSource = collectCssFiles(files.appRoot)
+    .map((filePath) => readFileStrict(filePath, ROOT))
+    .join("\n");
 
   // Player preferences and persistence.
   assertContains(playerExperienceSource, "const AUTOPLAY_KEY = \"yeh-player-autoplay\";", "Player persists autoplay preference key", failures);
@@ -133,7 +163,8 @@ function main() {
   assertContains(playerExperienceSource, "const hasSeenEndedChoiceVideos = isLoggedIn && endedChoiceVideos.some((video) => seenVideoIds?.has(video.id));", "Player detects end chooser seen state only for authenticated users", failures);
   assertContains(playerExperienceSource, "const isSeen = isLoggedIn && (seenVideoIds?.has(video.id) ?? false);", "Player only renders ended-choice seen badges for authenticated users", failures);
   assertContains(playerExperienceSource, "const endedChoiceGridVideos = useMemo(() => {", "Player derives a rendered end-choice grid list from filter state", failures);
-  assertContains(playerExperienceSource, "const EndedChoiceCard = memo(function EndedChoiceCard({", "Ended-choice cards are memoized to reduce append-time re-render pressure", failures);
+  assertContains(playerExperienceSource, 'import { EndedChoiceCard } from "@/components/player-experience-ended-choice-card";', "Player imports extracted ended-choice card module", failures);
+  assertContains(endedChoiceCardSource, "export const EndedChoiceCard = memo(function EndedChoiceCard({", "Ended-choice cards are memoized to reduce append-time re-render pressure", failures);
   assertContains(playerExperienceSource, "startTransition(() => {", "Ended-choice remote append updates are scheduled as transitions", failures);
   assertContains(playerExperienceSource, "const endedChoiceRemoteVideosRef = useRef<VideoRecord[]>([]);", "Ended-choice append path tracks remote videos via ref snapshot", failures);
   assertContains(playerExperienceSource, "const endedChoiceRowHeightRef = useRef(220);", "Ended-choice scroll prefetch uses cached row-height measurement", failures);
@@ -152,6 +183,19 @@ function main() {
   assertContains(playerExperienceSource, 'className={`newPageSeenToggle playerEndedChoiceSeenToggle${endedChoiceHideSeen ? " newPageSeenToggleActive" : ""}`}', "Player reuses the New page seen-toggle styling in the end chooser", failures);
   assertContains(playerExperienceSource, 'No unseen choices right now. Try more choices or watch again.', "Player shows an empty state when the chooser is filtered to no unseen videos", failures);
   assertContains(playerExperienceSource, "autoplayEnabledRef.current &&", "Player only auto-advances when autoplay is enabled", failures);
+
+  // Extracted helper-module invariants.
+  assertContains(playerExperienceSource, "@/components/player-experience-autoplay-utils", "Player imports extracted route autoplay helpers", failures);
+  assertContains(autoplayUtilsSource, "export type RouteAutoplaySource =", "Autoplay utility module exports route source type", failures);
+  assertContains(autoplayUtilsSource, "export function resolveRouteAutoplaySource(pathname: string)", "Autoplay utility module exports route source resolver", failures);
+  assertContains(autoplayUtilsSource, "export function buildRouteAutoplayPlaylistName", "Autoplay utility module exports playlist name builder", failures);
+  assertContains(autoplayUtilsSource, "export function buildRouteAutoplayTelemetryMode", "Autoplay utility module exports telemetry mode helper", failures);
+
+  assertContains(playerExperienceSource, "@/components/player-experience-playback-failure-utils", "Player imports extracted playback-failure helpers", failures);
+  assertContains(playbackFailureUtilsSource, "export type ReportUnavailableResult = {", "Playback-failure utility module exports report type", failures);
+  assertContains(playbackFailureUtilsSource, "export function isInteractivePlaybackBlockReason", "Playback-failure utility module exports interactive-block classifier", failures);
+  assertContains(playbackFailureUtilsSource, "export function isUnavailableVerificationReason", "Playback-failure utility module exports unavailable classifier", failures);
+  assertContains(playbackFailureUtilsSource, "export function resolveVerifiedPlaybackFailurePresentation", "Playback-failure utility module exports presentation resolver", failures);
 
   // Deep-link suppression and unavailable video handling.
   assertContains(playerExperienceSource, "const isInitialDeepLinkedSelection = Boolean(", "Player detects first-load deep-linked selections", failures);

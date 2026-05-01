@@ -143,7 +143,10 @@ function main() {
   assertContains(schemaSource, "model RejectedVideo {", "Schema defines rejected video blocklist table", failures);
 
   // Active row button positioning fix: the glow animation rule must not override absolute-position buttons.
-  const cssSource = readFileStrict(path.join(ROOT, "apps/web/app/globals.css"), ROOT);
+  const cssSource = [
+    readFileStrict(path.join(ROOT, "apps/web/app/globals.css"), ROOT),
+    readFileStrict(path.join(ROOT, "apps/web/app/styles/track-cards.css"), ROOT),
+  ].join("\n");
   assertContains(cssSource, ".trackCard.leaderboardCard.top100CardActive > .top100CardAction,", "Active row action buttons restore absolute positioning over the > * glow rule", failures);
   assertContains(cssSource, ".trackCard.leaderboardCard.top100CardActive > .top100CardFlagButton {", "Active row flag button has position:absolute override for glow state", failures);
   assertContains(schemaSource, "@@map(\"rejected_videos\")", "Rejected video model maps to rejected_videos table", failures);

@@ -16,7 +16,7 @@ const files = {
   userProfilePage: path.join(ROOT, "apps/web/app/(shell)/u/[screenName]/page.tsx"),
   userProfilePanel: path.join(ROOT, "apps/web/components/user-profile-panel.tsx"),
   apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
-  globalCss: path.join(ROOT, "apps/web/app/globals.css"),
+  appRoot: path.join(ROOT, "apps/web/app"),
 };
 
 function read(filePath) {
@@ -24,6 +24,27 @@ function read(filePath) {
     throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
   }
   return fs.readFileSync(filePath, "utf8");
+}
+
+function collectCssFiles(dirPath, acc = []) {
+  if (!fs.existsSync(dirPath)) {
+    return acc;
+  }
+
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      collectCssFiles(fullPath, acc);
+      continue;
+    }
+
+    if (entry.isFile() && entry.name.endsWith(".css")) {
+      acc.push(fullPath);
+    }
+  }
+
+  return acc;
 }
 
 function assertContains(source, needle, description, failures) {
@@ -51,15 +72,21 @@ function main() {
   const userProfilePageSource = read(files.userProfilePage);
   const userProfilePanelSource = read(files.userProfilePanel);
   const apiSchemasSource = read(files.apiSchemas);
-  const globalCssSource = read(files.globalCss);
+  const globalCssSource = collectCssFiles(files.appRoot)
+    .map((filePath) => read(filePath))
+    .join("\n");
 
   // --- Favourites page: server-side auth and data loading ---
   assertContains(favouritesPageSource, "getCurrentAuthenticatedUser", "Favourites page resolves current authenticated user server-side", failures);
   assertContains(favouritesPageSource, "getFavouriteVideos(user.id)", "Favourites page loads favourites for authenticated user only", failures);
   assertContains(favouritesPageSource, "user ? await getFavouriteVideos(user.id) : []", "Favourites page returns empty array for unauthenticated visitors", failures);
+  assertContains(favouritesPageSource, "const initialFavourites = favourites.slice(0, FAVOURITES_BATCH_SIZE)", "Favourites page slices server favourites for paginated initial batch", failures);
+  assertContains(favouritesPageSource, "const totalCount = favourites.length", "Favourites page computes favourites total count for header", failures);
   assertContains(favouritesPageSource, "<FavouritesGrid", "Favourites page renders FavouritesGrid component", failures);
   assertContains(favouritesPageSource, "isAuthenticated={hasAccessToken}", "Favourites page passes auth state to FavouritesGrid", failures);
-  assertContains(favouritesPageSource, "initialFavourites={favourites}", "Favourites page passes server-loaded favourites to FavouritesGrid", failures);
+  assertContains(favouritesPageSource, "initialFavourites={initialFavourites}", "Favourites page passes initial paginated favourites to FavouritesGrid", failures);
+  assertContains(favouritesPageSource, "initialTotalCount={totalCount}", "Favourites page passes favourites total count to FavouritesGrid", failures);
+  assertContains(favouritesPageSource, "initialHasMore={totalCount > initialFavourites.length}", "Favourites page passes initial hasMore to FavouritesGrid", failures);
   assertNotContains(favouritesPageSource, "getSeenVideoIdsForUser", "Own favourites page does not fetch seen ids", failures);
   assertNotContains(favouritesPageSource, "seenVideoIds={", "Own favourites page does not pass seen ids into favourites grid", failures);
 

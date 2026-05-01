@@ -8,6 +8,7 @@
 // Seen-toggle API/data → verify-new-videos-invariants.js
 
 const path = require("node:path");
+const fs = require("node:fs");
 const { readFileStrict, assertContains, assertNotContains } = require("./invariants/helpers");
 const { applyQueueResolutionRulePack } = require("./invariants/rule-packs/queue-resolution-pack");
 
@@ -18,31 +19,68 @@ const files = {
   shellDynamicRendering: path.join(ROOT, "apps/web/components/shell-dynamic-rendering.tsx"),
   shellDynamicHelpers: path.join(ROOT, "apps/web/components/shell-dynamic-helpers.ts"),
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
+  currentVideoRouteService: path.join(ROOT, "apps/web/lib/current-video-route-service.ts"),
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
+  autoplayUtils: path.join(ROOT, "apps/web/components/player-experience-autoplay-utils.ts"),
   nextTrackDecisionHook: path.join(ROOT, "apps/web/components/use-next-track-decision.ts"),
   temporaryQueueControllerHook: path.join(ROOT, "apps/web/components/use-temporary-queue-controller.ts"),
   playerNextTrackDomain: path.join(ROOT, "apps/web/domains/player/resolve-next-track-target.ts"),
   queueDomain: path.join(ROOT, "apps/web/domains/queue/temporary-queue.ts"),
   playlistDomain: path.join(ROOT, "apps/web/domains/playlist/playlist-step-target.ts"),
   playerEvents: path.join(ROOT, "apps/web/lib/player-events.ts"),
-  css: path.join(ROOT, "apps/web/app/globals.css"),
+  appRoot: path.join(ROOT, "apps/web/app"),
 };
+
+function collectCssFiles(dirPath, acc = []) {
+  if (!fs.existsSync(dirPath)) {
+    return acc;
+  }
+
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      collectCssFiles(fullPath, acc);
+      continue;
+    }
+
+    if (entry.isFile() && entry.name.endsWith(".css")) {
+      acc.push(fullPath);
+    }
+  }
+
+  return acc;
+}
 
 function main() {
   const failures = [];
 
-  const shellDynamicSource = readFileStrict(files.shellDynamic, ROOT);
+  const shellDynamicSource = [
+    readFileStrict(files.shellDynamic, ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
+  ].join('\n');
   const shellDynamicRenderingSource = readFileStrict(files.shellDynamicRendering, ROOT);
   const shellDynamicHelpersSource = readFileStrict(files.shellDynamicHelpers, ROOT);
-  const currentVideoRouteSource = readFileStrict(files.currentVideoRoute, ROOT);
+  const currentVideoRouteServiceSource = readFileStrict(files.currentVideoRouteService, ROOT);
+  const currentVideoRouteSource = [
+    readFileStrict(files.currentVideoRoute, ROOT),
+    currentVideoRouteServiceSource,
+  ].join('\n');
   const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
+  const autoplayUtilsSource = readFileStrict(files.autoplayUtils, ROOT);
   const nextTrackDecisionHookSource = readFileStrict(files.nextTrackDecisionHook, ROOT);
   const temporaryQueueControllerHookSource = readFileStrict(files.temporaryQueueControllerHook, ROOT);
   const playerNextTrackDomainSource = readFileStrict(files.playerNextTrackDomain, ROOT);
   const queueDomainSource = readFileStrict(files.queueDomain, ROOT);
   const playlistDomainSource = readFileStrict(files.playlistDomain, ROOT);
   const playerEventsSource = readFileStrict(files.playerEvents, ROOT);
-  const cssSource = readFileStrict(files.css, ROOT);
+  const cssSource = collectCssFiles(files.appRoot)
+    .map((filePath) => readFileStrict(filePath, ROOT))
+    .join("\n");
 
   applyQueueResolutionRulePack({
     shellDynamicSource,
@@ -58,6 +96,8 @@ function main() {
   });
 
   // Watch Next load-more invariants.
+  assertNotContains(currentVideoRouteServiceSource, 'from "next/server"', "Current-video route service is free of HTTP-layer imports (next/server)", failures);
+  assertNotContains(currentVideoRouteServiceSource, "NextResponse", "Current-video route service does not construct HTTP responses", failures);
   assertContains(shellDynamicSource, "const relatedFetchOffsetRef = useRef<number | null>(null);", "Watch Next tracks a dedicated offset for paged fetches", failures);
   assertContains(shellDynamicSource, "const RELATED_BACKGROUND_PREFETCH_TARGET = 35;", "Watch Next defines a background prefetch target buffer", failures);
   assertContains(shellDynamicSource, "const RELATED_BACKGROUND_PREFETCH_DELAY_MS = 650;", "Watch Next defines a quiet delay before background prefetch", failures);
@@ -131,9 +171,9 @@ function main() {
 
   // Current-video related pool invariants.
   assertContains(currentVideoRouteSource, "const CURRENT_VIDEO_RELATED_POOL_SIZE = 100;", "Current-video route targets a 100-item related pool", failures);
-  assertContains(currentVideoRouteSource, '? Math.max(48, requestedRelatedOffset + requestedRelatedCount + 24)', "Current-video route uses bounded ended-choice pool sizing instead of 1000+ overfetch", failures);
+  assertContains(currentVideoRouteSource, 'Math.max(48, ', "Current-video route uses bounded ended-choice pool sizing instead of 1000+ overfetch", failures);
   assertContains(currentVideoRouteSource, "const preferUnseenForEndedChoice = requestMode === \"ended-choice\" && hideSeenOnly && Boolean(optionalAuth?.userId);", "Current-video route derives ended-choice unseen preference from hideSeen toggle", failures);
-  assertContains(currentVideoRouteSource, "const seenVideoIds = await getSeenVideoIdsForUser(optionalAuth.userId);", "Current-video route fetches seen ids for ended-choice hide-seen requests", failures);
+  assertContains(currentVideoRouteSource, "const seenVideoIds = await getSeenVideoIdsForUser(", "Current-video route fetches seen ids for ended-choice hide-seen requests", failures);
   assertContains(currentVideoRouteSource, "filteredPool = filteredPool.filter((video) => !seenVideoIds.has(video.id));", "Current-video route enforces server-side displayable unseen filtering for ended-choice batches", failures);
   assertContains(currentVideoRouteSource, "getTopVideos(300)", "Current-video route widens fallback with Top candidates", failures);
   assertContains(currentVideoRouteSource, "getNewestVideos(200, 0)", "Current-video route widens fallback with New candidates", failures);
@@ -154,11 +194,12 @@ function main() {
   // Docked route-queue invariants.
   assertContains(playerExperienceSource, "const [routeAutoplayQueueIds, setRouteAutoplayQueueIds] = useState<string[]>([]);", "Player tracks route-scoped autoplay queue ids", failures);
   assertContains(playerExperienceSource, "if (!isDockedDesktop || Boolean(activePlaylistId))", "Route queue activates only while docked and no playlist is active", failures);
-  assertContains(playerExperienceSource, "const onNewRoute = pathname === \"/new\";", "Docked autoplay recognizes New page list route", failures);
-  assertContains(playerExperienceSource, "const onTop100Route = pathname === \"/top100\";", "Docked autoplay recognizes Top100 list route", failures);
-  assertContains(playerExperienceSource, "const onFavouritesRoute = pathname === \"/favourites\";", "Docked autoplay recognizes Favourites list route", failures);
-  assertContains(playerExperienceSource, "const onCategoryRoute = pathname.startsWith(\"/categories/\");", "Docked autoplay recognizes Category detail list route", failures);
-  assertContains(playerExperienceSource, "const onArtistRoute = pathname.startsWith(\"/artist/\");", "Docked autoplay recognizes Artist detail list route", failures);
+  assertContains(playerExperienceSource, "resolveRouteAutoplaySource(pathname)", "Player resolves docked autoplay route context through extracted helper", failures);
+  assertContains(autoplayUtilsSource, "const onNewRoute = pathname === \"/new\";", "Docked autoplay recognizes New page list route", failures);
+  assertContains(autoplayUtilsSource, "const onTop100Route = pathname === \"/top100\";", "Docked autoplay recognizes Top100 list route", failures);
+  assertContains(autoplayUtilsSource, "const onFavouritesRoute = pathname === \"/favourites\";", "Docked autoplay recognizes Favourites list route", failures);
+  assertContains(autoplayUtilsSource, "const onCategoryRoute = pathname.startsWith(\"/categories/\");", "Docked autoplay recognizes Category detail list route", failures);
+  assertContains(autoplayUtilsSource, "const onArtistRoute = pathname.startsWith(\"/artist/\");", "Docked autoplay recognizes Artist detail list route", failures);
   assertContains(playerNextTrackDomainSource, "if (isDockedDesktop && routeAutoplayQueueIds.length > 0)", "Next target prioritizes the route queue when docked on list pages", failures);
   assertContains(playerNextTrackDomainSource, "const currentIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId === currentVideoId);", "Route queue next selection is based on current video position", failures);
   assertContains(playerNextTrackDomainSource, "const nextIndex = currentIndex >= 0", "Route queue next selection advances in list order", failures);

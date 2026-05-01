@@ -200,18 +200,12 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
     let rows: RankedVideoRow[] = [];
 
     try {
-      rows = await prisma.$queryRaw<RankedVideoRow[]>`
+      const rankedVideoIdRows = await prisma.$queryRaw<Array<{ videoId: string }>>`
         SELECT
-          v.videoId,
-          v.title,
-          COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
-          NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
-          NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
-          COALESCE(v.favourited, 0) AS favourited,
-          v.description
+          v.videoId
         FROM videos v
         WHERE v.videoId IS NOT NULL
-          AND COALESCE(v.approved, 0) = 1
+          AND v.approved = 1
           AND EXISTS (
             SELECT 1
             FROM site_videos sv
@@ -221,6 +215,29 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
         ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
         LIMIT ${fetchLimit}
       `;
+
+      const rankedVideoIds = Array.from(new Set(rankedVideoIdRows.map((row) => row.videoId).filter(Boolean))).slice(0, fetchLimit);
+
+      if (rankedVideoIds.length > 0) {
+        const placeholders = rankedVideoIds.map(() => "?").join(", ");
+        rows = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
+          `
+            SELECT
+              v.videoId,
+              v.title,
+              COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
+              NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
+              NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
+              COALESCE(v.favourited, 0) AS favourited,
+              v.description
+            FROM videos v
+            WHERE v.videoId IN (${placeholders})
+            ORDER BY FIELD(v.videoId, ${placeholders})
+          `,
+          ...rankedVideoIds,
+          ...rankedVideoIds,
+        );
+      }
     } catch {
       const [videoColumns, siteVideoColumns] = await Promise.all([
         loadTableColumns("videos"),

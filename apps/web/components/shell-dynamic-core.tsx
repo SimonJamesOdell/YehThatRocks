@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { FormEvent, Suspense, memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { Suspense, memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { CSSProperties } from "react";
 
@@ -14,9 +14,14 @@ import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { PlayerExperience } from "@/components/player-experience";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
-import { useTemporaryQueueController } from "@/components/use-temporary-queue-controller";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
+import { useTemporaryQueueController } from "@/components/use-temporary-queue-controller";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
+import { useDesktopIntro } from "@/components/use-desktop-intro";
+import { usePerformanceMetrics } from "@/components/use-performance-metrics";
+import { useSearchAutocomplete, type SearchSuggestion } from "@/components/use-search-autocomplete";
+import { useChatState, type ChatMode, type ChatMessage, type OnlineUser } from "@/components/use-chat-state";
+import { usePlaylistRail, type RightRailMode, type PlaylistRailVideo, type PlaylistRailPayload, type PlaylistRailSummary } from "@/components/use-playlist-rail";
 import { PerformanceDial, SharedVideoMessageCard, WatchNextCard } from "@/components/shell-dynamic-rendering";
 import { navItems, type VideoRecord } from "@/lib/catalog";
 import { detectAppendOnly, filterSeenFromWatchNext } from "@/components/shell-dynamic-helpers";
@@ -24,7 +29,6 @@ import { fetchWithAuthRetry as fetchWithAuthRetryClient } from "@/lib/client-aut
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
-import { magazineDraftEdition } from "@/lib/magazine-draft";
 
 if (typeof window !== "undefined") {
   const perfWithPatchState = performance as Performance & {
@@ -57,107 +61,12 @@ if (typeof window !== "undefined") {
   }
 }
 
-type ChatMode = "global" | "magazine" | "online";
-
-type ChatMessage = {
-  id: number;
-  content: string;
-  createdAt: string | null;
-  room: string;
-  videoId: string | null;
-  user: {
-    id: number | null;
-    name: string;
-    avatarUrl: string | null;
-  };
-};
-
-type OnlineUser = {
-  id: number;
-  name: string;
-  avatarUrl: string | null;
-  lastSeen: string | null;
-  isOnline?: boolean;
-};
-
 type CurrentVideoResolvePayload = {
   currentVideo?: VideoRecord;
   relatedVideos?: VideoRecord[];
   pending?: boolean;
   denied?: { message?: string; reason?: string; videoId?: string };
 };
-
-type PublicPerformancePayload = {
-  meta?: { generatedAt?: string };
-  host?: {
-    cpuUsagePercent?: number | null;
-    cpuAverageUsagePercent?: number | null;
-    cpuPeakCoreUsagePercent?: number | null;
-    memoryUsagePercent?: number | null;
-    diskUsagePercent?: number | null;
-    swapUsagePercent?: number | null;
-    networkUsagePercent?: number | null;
-  };
-  runtime?: {
-    node?: {
-      uptimeSec?: number;
-      rssMb?: number;
-      heapUsedMb?: number;
-      heapTotalMb?: number;
-    };
-    prisma?: {
-      windowSec?: number;
-      totalQueries?: number;
-      queriesPerSec?: number;
-      avgDurationMs?: number;
-      p95DurationMs?: number;
-      totalsSinceBoot?: {
-        totalQueries?: number;
-        totalDurationMs?: number;
-      };
-      topOperations?: Array<{
-        operation: string;
-        count: number;
-        totalDurationMs: number;
-        avgDurationMs: number;
-        p95DurationMs: number;
-      }>;
-      topQueryFingerprints?: Array<{
-        fingerprint: string;
-        count: number;
-        totalDurationMs: number;
-        avgDurationMs: number;
-        p95DurationMs: number;
-      }>;
-    };
-  };
-};
-
-type RightRailMode = "watch-next" | "playlist" | "queue";
-
-type PlaylistRailVideo = {
-  playlistItemId: string;
-  id: string;
-  title: string;
-  channelTitle: string;
-  thumbnail?: string | null;
-};
-
-type PlaylistRailPayload = {
-  id: string;
-  name: string;
-  videos: PlaylistRailVideo[];
-  itemCount?: number;
-};
-
-type PlaylistRailSummary = {
-  id: string;
-  name: string;
-  itemCount: number;
-  leadVideoId: string;
-};
-
-type FlashableChatMode = "global";
 
 type LyricsRailPayload = {
   artistName: string | null;
@@ -243,12 +152,6 @@ const DOCK_CONTROLS_FADE_DURATION_MS = 220;
 const DOCK_CONTROLS_FADE_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - DOCK_CONTROLS_FADE_DURATION_MS);
 const UNDOCK_SETTLE_DURATION_MS = 220;
 const FOOTER_REVEAL_DURATION_MS = 240;
-const DESKTOP_INTRO_HOLD_MS = 1300;
-const DESKTOP_INTRO_MOVE_MS = 760;
-const DESKTOP_INTRO_REVEAL_MS = 820;
-const DESKTOP_INTRO_MAX_LOGO_WIDTH_PX = 1128;
-const DESKTOP_INTRO_VIEWPORT_WIDTH_RATIO = 1.128;
-const PUBLIC_PERFORMANCE_POLL_MS = 2_500;
 
 function isCategoriesOverlayPath(pathname: string) {
   return pathname === "/categories" || pathname.startsWith("/categories/");
@@ -399,53 +302,9 @@ function ShellDynamicInner({
   );
   const [isAuthUnavailableDialogDismissed, setIsAuthUnavailableDialogDismissed] = useState(false);
   const [isRetryingAuthStatus, setIsRetryingAuthStatus] = useState(false);
-  const [isPerformanceQuickLaunchVisible, setIsPerformanceQuickLaunchVisible] = useState(false);
-  const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);
-  const [performanceMetrics, setPerformanceMetrics] = useState<PublicPerformancePayload["host"] | null>(null);
-  const [performanceRuntime, setPerformanceRuntime] = useState<PublicPerformancePayload["runtime"] | null>(null);
-  const [performanceMetricsGeneratedAt, setPerformanceMetricsGeneratedAt] = useState<string | null>(null);
-  const [isLoadingPerformanceMetrics, setIsLoadingPerformanceMetrics] = useState(false);
-  const [performanceMetricsError, setPerformanceMetricsError] = useState<string | null>(null);
   const [deniedPlaybackMessage, setDeniedPlaybackMessage] = useState<string | null>(null);
-  const [chatMode, setChatMode] = useState<ChatMode>(() =>
-    pathname === "/magazine" || pathname.startsWith("/magazine/") ? "magazine" : "global"
-  );
-  const [rightRailMode, setRightRailMode] = useState<RightRailMode>("watch-next");
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
-  const [chatDraft, setChatDraft] = useState("");
-  const [chatError, setChatError] = useState<string | null>(null);
-  const [isChatLoading, setIsChatLoading] = useState(false);
-  const [playlistRailData, setPlaylistRailData] = useState<PlaylistRailPayload | null>(null);
-  const [isPlaylistRailLoading, setIsPlaylistRailLoading] = useState(false);
-  const [playlistRailError, setPlaylistRailError] = useState<string | null>(null);
-  const [playlistRailSummaries, setPlaylistRailSummaries] = useState<PlaylistRailSummary[]>([]);
-  const [isPlaylistSummaryLoading, setIsPlaylistSummaryLoading] = useState(false);
-  const [playlistSummaryError, setPlaylistSummaryError] = useState<string | null>(null);
-  const [playlistRefreshTick, setPlaylistRefreshTick] = useState(0);
-  const [playlistMutationMessage, setPlaylistMutationMessage] = useState<string | null>(null);
-  const [playlistMutationTone, setPlaylistMutationTone] = useState<"info" | "success" | "error">("info");
-  const [playlistMutationPendingVideoId, setPlaylistMutationPendingVideoId] = useState<string | null>(null);
-  const [isCreatingRailPlaylist, setIsCreatingRailPlaylist] = useState(false);
-  const [playlistCreationPendingId, setPlaylistCreationPendingId] = useState<string | null>(null);
-  const [lastAddedRelatedVideoId, setLastAddedRelatedVideoId] = useState<string | null>(null);
-  const [recentlyAddedPlaylistTrack, setRecentlyAddedPlaylistTrack] = useState<{ playlistId: string; trackId: string } | null>(null);
   const [forcedUnavailableSignal, setForcedUnavailableSignal] = useState(0);
   const [forcedUnavailableMessage, setForcedUnavailableMessage] = useState<string | null>(null);
-  const [hidingPlaylistTrackKeys, setHidingPlaylistTrackKeys] = useState<string[]>([]);
-  const [playlistItemMutationPendingKeys, setPlaylistItemMutationPendingKeys] = useState<string[]>([]);
-  const reorderSeqRef = useRef(0);
-  const suppressPlaylistRailAutoSwitchRef = useRef(false);
-  // Stores the id of a playlist created via the Watch Next rail before the URL params
-  // (?pl=) have propagated to the next React render. Without this, rapid successive
-  // clicks each see activePlaylistId===null and create separate playlists.
-  const pendingCreatedPlaylistIdRef = useRef<string | null>(null);
-  const [draggedPlaylistTrackIndex, setDraggedPlaylistTrackIndex] = useState<number | null>(null);
-  const [dragOverPlaylistTrackIndex, setDragOverPlaylistTrackIndex] = useState<number | null>(null);
-  const [isDeletingActivePlaylist, setIsDeletingActivePlaylist] = useState(false);
-  const [showDeleteActivePlaylistConfirm, setShowDeleteActivePlaylistConfirm] = useState(false);
-  const [confirmDeleteRailPlaylist, setConfirmDeleteRailPlaylist] = useState<{ id: string; name: string } | null>(null);
-  const [playlistBeingDeletedId, setPlaylistBeingDeletedId] = useState<string | null>(null);
   const [hidingRelatedVideoIds, setHidingRelatedVideoIds] = useState<string[]>([]);
   const [hiddenMutationPendingVideoIds, setHiddenMutationPendingVideoIds] = useState<string[]>([]);
   const [watchNextHideConfirmTrack, setWatchNextHideConfirmTrack] = useState<VideoRecord | null>(null);
@@ -462,10 +321,6 @@ function ShellDynamicInner({
   });
   const [seenVideoRefreshTick, setSeenVideoRefreshTick] = useState(0);
   const [clickedRelatedVideoId, setClickedRelatedVideoId] = useState<string | null>(null);
-  const [isChatSubmitting, setIsChatSubmitting] = useState(false);
-  const [flashingChatTabs, setFlashingChatTabs] = useState<Record<FlashableChatMode, boolean>>({
-    global: false,
-  });
   const [isResolvingInitialVideo, setIsResolvingInitialVideo] = useState(
     !requestedVideoId,
   );
@@ -474,14 +329,8 @@ function ShellDynamicInner({
   );
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isMobileCommunityOpen, setIsMobileCommunityOpen] = useState(false);
-  const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(true);
-  const [isDesktopIntroLogoReady, setIsDesktopIntroLogoReady] = useState(false);
-  const [desktopIntroPhase, setDesktopIntroPhase] = useState<"disabled" | "hold" | "moving" | "revealing" | "done">("disabled");
   const [hasClientMounted, setHasClientMounted] = useState(false);
   const [hasBootstrappedWatchNext, setHasBootstrappedWatchNext] = useState(false);
-  const [desktopIntroDeltaX, setDesktopIntroDeltaX] = useState(0);
-  const [desktopIntroDeltaY, setDesktopIntroDeltaY] = useState(0);
-  const [desktopIntroScale, setDesktopIntroScale] = useState(1);
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
   const lastVideoIdRef = useRef<string | null>(
     requestedVideoId && requestedVideoId === initialVideo.id ? requestedVideoId : null,
@@ -498,10 +347,7 @@ function ShellDynamicInner({
   const relatedTransitionTimeoutRef = useRef<number | null>(null);
   const relatedClickFlashTimeoutRef = useRef<number | null>(null);
   const relatedHideTimeoutsRef = useRef<Map<string, number>>(new Map());
-  const playlistItemHideTimeoutsRef = useRef<Map<string, number>>(new Map());
   const relatedStackRef = useRef<HTMLDivElement | null>(null);
-  const playlistStackBodyRef = useRef<HTMLDivElement | null>(null);
-  const playlistAutoScrollRafRef = useRef<number | null>(null);
   const relatedLoadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadInFlightRef = useRef(false);
   const relatedFetchOffsetRef = useRef<number | null>(null);
@@ -511,26 +357,9 @@ function ShellDynamicInner({
   const relatedVideosRef = useRef<VideoRecord[]>([]);
   const watchNextRailRef = useRef<HTMLElement | null>(null);
   const playerChromeRef = useRef<HTMLDivElement | null>(null);
-  const brandLogoTargetRef = useRef<HTMLAnchorElement | null>(null);
-  const chatListRef = useRef<HTMLDivElement | null>(null);
   const favouritesBlindInnerRef = useRef<HTMLDivElement | null>(null);
   const previousPathnameRef = useRef<string | null>(null);
   const didArriveOnMagazineRouteRef = useRef(pathname === "/magazine" || pathname.startsWith("/magazine/"));
-  const previousActivePlaylistIdRef = useRef<string | null>(activePlaylistId);
-  const playlistRailLoadRequestIdRef = useRef(0);
-  const playlistRailMutationVersionRef = useRef(0);
-  const flashTimeoutRef = useRef<Record<FlashableChatMode, number | null>>({
-    global: null,
-  });
-  const chatModeRef = useRef<ChatMode>(chatMode);
-  const recentlyAddedPlaylistTrackTimeoutRef = useRef<number | null>(null);
-
-  // Search autocomplete
-  type SearchSuggestion = { type: "artist" | "track" | "genre"; label: string; url: string };
-  const [searchValue, setSearchValue] = useState("");
-  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [activeSuggestionIdx, setActiveSuggestionIdx] = useState(-1);
   const [artistsPanelDockOffset, setArtistsPanelDockOffset] = useState(0);
   const [playerDockScaleX, setPlayerDockScaleX] = useState(1);
   const [playerDockScaleY, setPlayerDockScaleY] = useState(1);
@@ -551,21 +380,6 @@ function ShellDynamicInner({
   const undockSettleTimeoutRef = useRef<number | null>(null);
   const shouldRunFooterRevealRef = useRef(false);
   const dockTransitionTimeoutRef = useRef<number | null>(null);
-  const desktopIntroHoldTimeoutRef = useRef<number | null>(null);
-  const desktopIntroMoveTimeoutRef = useRef<number | null>(null);
-  const desktopIntroRevealTimeoutRef = useRef<number | null>(null);
-  const desktopIntroMeasureRafRef = useRef<number | null>(null);
-  const shouldReplayDesktopIntroOnHomeRef = useRef(false);
-  const desktopIntroPhaseRef = useRef<"disabled" | "hold" | "moving" | "revealing" | "done">("disabled");
-  const desktopIntroLogoLoadIdRef = useRef(0);
-  const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const suggestAbortRef = useRef<AbortController | null>(null);
-  const latestSuggestQueryRef = useRef("");
-  const searchComboboxRef = useRef<HTMLDivElement | null>(null);
-  // Refs to reliably access current state in event handlers
-  const suggestionsRef = useRef<SearchSuggestion[]>([]);
-  const showSuggestionsRef = useRef(false);
-  const activeSuggestionIdxRef = useRef(-1);
 
   const {
     temporaryQueueVideos,
@@ -601,14 +415,9 @@ function ShellDynamicInner({
   ].filter(Boolean).join(" ");
   const isMagazineOverlayRoute = pathname === "/magazine" || pathname.startsWith("/magazine/");
   const shouldHidePlayerForMagazineGuest = !isAuthenticated && isMagazineOverlayRoute && didArriveOnMagazineRouteRef.current;
-  const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute) && (isAuthenticated || chatMode === "global");
   const shouldDisableRelatedRailTransition = pathname === "/new";
   const shouldOccludeLeftRail = shouldShowOverlayPanel && !isMagazineOverlayRoute;
   const isWaitingForClientHydration = !hasClientMounted;
-  const isDesktopIntroActive =
-    desktopIntroPhase === "hold"
-    || desktopIntroPhase === "moving"
-    || desktopIntroPhase === "revealing";
   const isWaitingForStartupVideoUrlSync =
     !requestedVideoId
     && startupHydratedVideoIdRef.current !== null;
@@ -643,26 +452,227 @@ function ShellDynamicInner({
     } as CSSProperties)
     : undefined;
   const isMobileCommunityCollapsed = isMobileViewport && !isMobileCommunityOpen;
+
+  // ── Auth callbacks (needed by hooks below) ───────────────────────────────
+
+  const refreshAuthSession = useCallback(async () => {
+    if (refreshPromiseRef.current) {
+      return refreshPromiseRef.current;
+    }
+
+    const refreshPromise = (async () => {
+      try {
+        const response = await fetch("/api/auth/refresh", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+        });
+
+        return response.ok;
+      } catch {
+        return false;
+      }
+    })();
+
+    refreshPromiseRef.current = refreshPromise;
+    try {
+      return await refreshPromise;
+    } finally {
+      refreshPromiseRef.current = null;
+    }
+  }, []);
+
+  const fetchWithAuthRetry = useCallback(
+    async (input: string, init?: RequestInit) => {
+      const requestInit: RequestInit = {
+        credentials: "same-origin",
+        ...init,
+      };
+
+      let response = await fetch(input, requestInit);
+
+      if (response.status !== 401 && response.status !== 403) {
+        return response;
+      }
+
+      const didRefresh = await refreshAuthSession();
+
+      if (!didRefresh) {
+        return response;
+      }
+
+      response = await fetch(input, requestInit);
+      return response;
+    },
+    [refreshAuthSession],
+  );
+
+  const checkAuthState = useCallback(async () => {
+    const isDocumentVisible = typeof document === "undefined" || document.visibilityState === "visible";
+    const resolveAuthState = async () => {
+      try {
+        const response = await fetchWithAuthRetry("/api/auth/me");
+
+        if (response.status === 401 || response.status === 403) {
+          return "unauthenticated" as const;
+        }
+
+        if (!response.ok) {
+          return "unavailable" as const;
+        }
+
+        return "authenticated" as const;
+      } catch {
+        return "unavailable" as const;
+      }
+    };
+
+    let resolvedState = await resolveAuthState();
+
+    // Tabs resuming from sleep can produce one-off network/auth hiccups.
+    // Retry once before showing a blocking auth-unavailable modal.
+    if (resolvedState === "unavailable" && isAuthenticated) {
+      await new Promise<void>((resolve) => {
+        window.setTimeout(() => {
+          resolve();
+        }, 900);
+      });
+      resolvedState = await resolveAuthState();
+    }
+
+    // When refresh rotates in a parallel request, one /api/auth/me probe can briefly
+    // read stale cookies and report 401. Retry once before forcing a sign-out.
+    if (resolvedState === "unauthenticated" && isAuthenticated) {
+      await new Promise<void>((resolve) => {
+        window.setTimeout(() => {
+          resolve();
+        }, 450);
+      });
+      resolvedState = await resolveAuthState();
+    }
+
+    // Background tabs and wake-from-sleep transitions can briefly fail auth probes
+    // without any real server outage. Avoid showing a blocking modal until the page
+    // is foregrounded again and another visible check can confirm the failure.
+    if (resolvedState === "unavailable" && isAuthenticated && !isDocumentVisible) {
+      return "authenticated" as const;
+    }
+
+    if (resolvedState === "unauthenticated") {
+      setAuthStatus("clear");
+      setAuthStatusMessage(null);
+      setIsAuthenticated(false);
+      return "unauthenticated" as const;
+    }
+
+    if (resolvedState === "unavailable") {
+      setAuthStatus("unavailable");
+      setAuthStatusMessage("The auth server is probably being updated. Please wait a moment and try again.");
+      return "unavailable" as const;
+    }
+
+    setAuthStatus("clear");
+    setAuthStatusMessage(null);
+    setIsAuthenticated(true);
+    return "authenticated" as const;
+  }, [fetchWithAuthRetry, isAuthenticated]);
+
+  // ── Custom hooks ──────────────────────────────────────────────────────────
+
+  const {
+    isDesktopIntroActive,
+    isDesktopIntroPreload,
+    isDesktopIntroLogoReady,
+    desktopIntroPhase,
+    desktopIntroDeltaX,
+    desktopIntroDeltaY,
+    desktopIntroScale,
+    brandLogoTargetRef,
+    shellDesktopIntroStyle: _shellDesktopIntroStyle,
+    startPreparedDesktopIntroSequence,
+    shouldReplayDesktopIntroOnHomeRef,
+  } = useDesktopIntro({ pathname });
+
+  const {
+    searchValue, setSearchValue,
+    suggestions, showSuggestions, setShowSuggestions,
+    activeSuggestionIdx,
+    searchComboboxRef,
+    handleSearchInput, handleSearchKeyDown, handleSuggestionClick,
+  } = useSearchAutocomplete({ currentVideoId: currentVideo.id, router });
+
+  const {
+    rightRailMode, setRightRailMode,
+    playlistRailData, isPlaylistRailLoading, playlistRailError,
+    playlistRailSummaries, isPlaylistSummaryLoading, playlistSummaryError,
+    playlistRefreshTick, setPlaylistRefreshTick,
+    playlistMutationMessage, playlistMutationTone,
+    setPlaylistMutationMessage, setPlaylistMutationTone,
+    playlistMutationPendingVideoId,
+    isCreatingRailPlaylist, playlistCreationPendingId,
+    lastAddedRelatedVideoId, recentlyAddedPlaylistTrack,
+    hidingPlaylistTrackKeys, playlistItemMutationPendingKeys,
+    draggedPlaylistTrackIndex, dragOverPlaylistTrackIndex,
+    isDeletingActivePlaylist,
+    showDeleteActivePlaylistConfirm, setShowDeleteActivePlaylistConfirm,
+    confirmDeleteRailPlaylist, setConfirmDeleteRailPlaylist,
+    playlistBeingDeletedId,
+    playlistStackBodyRef,
+    activePlaylistTrackIndex, activePlaylistTrackCount, isCreatingActivePlaylist,
+    getActivatePlaylistHref, getClosePlaylistHref,
+    handleDeleteActivePlaylist, handleDeletePlaylistFromRail,
+    handleCreatePlaylistFromRail, handleAddToPlaylistFromWatchNext,
+    handleRemoveTrackFromActivePlaylist, handleReorderActivePlaylistTrack,
+    handleSwitchToWatchNextRail,
+    handlePlaylistTrackDragStart, handlePlaylistTrackDragOver,
+    handlePlaylistTrackDrop, handlePlaylistTrackDragEnd,
+  } = usePlaylistRail({
+    activePlaylistId,
+    requestedPlaylistItemIndex,
+    currentVideoId: currentVideo.id,
+    pathname,
+    searchParamsString: searchParams.toString(),
+    router,
+    isAuthenticated,
+    fetchWithAuthRetry,
+    checkAuthState,
+  });
+
+  const {
+    chatMode, setChatMode,
+    chatMessages, onlineUsers, chatDraft, setChatDraft,
+    chatError, isChatLoading, isChatSubmitting,
+    flashingChatTabs, chatListRef, latestMagazineTracks,
+    handleChatSubmit,
+  } = useChatState({
+    initialPathname: pathname,
+    isAuthenticated,
+    isMagazineOverlayRoute,
+    isAdminOverlayRoute,
+    shouldShowOverlayPanel,
+    fetchWithAuthRetry,
+    checkAuthState,
+  });
+
   const isShellInitialUiSettled =
     !isDesktopIntroActive
     && !isWatchNextVideoSelectionPending
     && hasBootstrappedWatchNext
     && relatedTransitionPhase === "idle";
-  const latestMagazineTracks = useMemo(() => magazineDraftEdition.tracks, []);
+
+  const {
+    isPerformanceQuickLaunchVisible,
+    isPerformanceModalOpen, setIsPerformanceModalOpen,
+    performanceMetrics, performanceRuntime, performanceMetricsGeneratedAt,
+    isLoadingPerformanceMetrics, performanceMetricsError,
+  } = usePerformanceMetrics({ isShellInitialUiSettled });
 
   useEffect(() => {
     setHasClientMounted(true);
   }, []);
-
-  useEffect(() => {
-    if (isPerformanceQuickLaunchVisible) {
-      return;
-    }
-
-    if (isShellInitialUiSettled) {
-      setIsPerformanceQuickLaunchVisible(true);
-    }
-  }, [isPerformanceQuickLaunchVisible, isShellInitialUiSettled]);
 
   useEffect(() => {
     previousPathnameRef.current = pathname;
@@ -688,166 +698,6 @@ function ShellDynamicInner({
     }
   }, [activeVideoId]);
 
-  useEffect(() => {
-    desktopIntroPhaseRef.current = desktopIntroPhase;
-  }, [desktopIntroPhase]);
-
-  const clearDesktopIntroTimers = useCallback(() => {
-    if (desktopIntroHoldTimeoutRef.current !== null) {
-      window.clearTimeout(desktopIntroHoldTimeoutRef.current);
-      desktopIntroHoldTimeoutRef.current = null;
-    }
-
-    if (desktopIntroMoveTimeoutRef.current !== null) {
-      window.clearTimeout(desktopIntroMoveTimeoutRef.current);
-      desktopIntroMoveTimeoutRef.current = null;
-    }
-
-    if (desktopIntroRevealTimeoutRef.current !== null) {
-      window.clearTimeout(desktopIntroRevealTimeoutRef.current);
-      desktopIntroRevealTimeoutRef.current = null;
-    }
-
-    if (desktopIntroMeasureRafRef.current !== null) {
-      window.cancelAnimationFrame(desktopIntroMeasureRafRef.current);
-      desktopIntroMeasureRafRef.current = null;
-    }
-  }, []);
-
-  const syncDesktopIntroTarget = useCallback(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const target = brandLogoTargetRef.current;
-    if (!target) {
-      return;
-    }
-
-    const logoImage = target.querySelector("img.brandLogo");
-    const rect = (logoImage ?? target).getBoundingClientRect();
-    const viewportCenterX = window.innerWidth / 2;
-    const viewportCenterY = window.innerHeight / 2;
-    const targetCenterX = rect.left + rect.width / 2;
-    const targetCenterY = rect.top + rect.height / 2;
-    const introStartWidth = Math.min(window.innerWidth * DESKTOP_INTRO_VIEWPORT_WIDTH_RATIO, DESKTOP_INTRO_MAX_LOGO_WIDTH_PX);
-    const targetScale = Math.max(0.3, Math.min(1.2, rect.width / introStartWidth));
-
-    setDesktopIntroDeltaX(targetCenterX - viewportCenterX);
-    setDesktopIntroDeltaY(targetCenterY - viewportCenterY);
-    setDesktopIntroScale(targetScale);
-  }, []);
-
-  const startDesktopIntroSequence = useCallback(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const isDesktop = window.matchMedia("(min-width: 1181px)").matches;
-    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    if (!isDesktop || prefersReducedMotion) {
-      setDesktopIntroPhase("disabled");
-      setIsDesktopIntroPreload(false);
-      return;
-    }
-
-    clearDesktopIntroTimers();
-    setDesktopIntroDeltaX(0);
-    setDesktopIntroDeltaY(0);
-    setDesktopIntroScale(1);
-    setDesktopIntroPhase("hold");
-    setIsDesktopIntroPreload(false);
-
-    desktopIntroMeasureRafRef.current = window.requestAnimationFrame(() => {
-      syncDesktopIntroTarget();
-      desktopIntroMeasureRafRef.current = null;
-    });
-
-    desktopIntroHoldTimeoutRef.current = window.setTimeout(() => {
-      syncDesktopIntroTarget();
-      setDesktopIntroPhase("moving");
-
-      desktopIntroMoveTimeoutRef.current = window.setTimeout(() => {
-        setDesktopIntroPhase("revealing");
-        desktopIntroMoveTimeoutRef.current = null;
-
-        desktopIntroRevealTimeoutRef.current = window.setTimeout(() => {
-          setDesktopIntroPhase("done");
-          desktopIntroRevealTimeoutRef.current = null;
-        }, DESKTOP_INTRO_REVEAL_MS);
-      }, DESKTOP_INTRO_MOVE_MS);
-    }, DESKTOP_INTRO_HOLD_MS);
-  }, [clearDesktopIntroTimers, syncDesktopIntroTarget]);
-
-  const prepareDesktopIntroLogo = useCallback(async () => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-
-    const loadId = desktopIntroLogoLoadIdRef.current + 1;
-    desktopIntroLogoLoadIdRef.current = loadId;
-    setIsDesktopIntroLogoReady(false);
-
-    const image = new window.Image();
-    image.decoding = "async";
-    image.src = DESKTOP_INTRO_LOGO_SRC;
-
-    const finalizeReady = () => {
-      if (desktopIntroLogoLoadIdRef.current !== loadId) {
-        return false;
-      }
-
-      setIsDesktopIntroLogoReady(true);
-      return true;
-    };
-
-    if (image.complete) {
-      if (typeof image.decode === "function") {
-        try {
-          await image.decode();
-        } catch {
-          // Fall back to the completed image state if decode rejects.
-        }
-      }
-
-      return finalizeReady();
-    }
-
-    return await new Promise<boolean>((resolve) => {
-      const handleLoad = () => {
-        cleanup();
-        finalizeReady();
-        resolve(true);
-      };
-
-      const handleError = () => {
-        cleanup();
-        finalizeReady();
-        resolve(false);
-      };
-
-      const cleanup = () => {
-        image.removeEventListener("load", handleLoad);
-        image.removeEventListener("error", handleError);
-      };
-
-      image.addEventListener("load", handleLoad, { once: true });
-      image.addEventListener("error", handleError, { once: true });
-    });
-  }, []);
-
-  const startPreparedDesktopIntroSequence = useCallback(async () => {
-    setIsDesktopIntroPreload(true);
-    const ready = await prepareDesktopIntroLogo();
-
-    if (!ready) {
-      setIsDesktopIntroPreload(false);
-    }
-
-    startDesktopIntroSequence();
-  }, [prepareDesktopIntroLogo, startDesktopIntroSequence]);
-
   const handleBrandLogoClick = useCallback(() => {
     // Force startup resolver to run again after logo navigation clears ?v.
     hasResolvedInitialVideoRef.current = false;
@@ -862,7 +712,7 @@ function ShellDynamicInner({
       shouldReplayDesktopIntroOnHomeRef.current = false;
       void startPreparedDesktopIntroSequence();
     }
-  }, [pathname, requestedVideoId, startPreparedDesktopIntroSequence]);
+  }, [pathname, requestedVideoId, shouldReplayDesktopIntroOnHomeRef, startPreparedDesktopIntroSequence]);
   const retryPendingOverlayVideoLoad = useCallback(() => {
     if (!pendingOverlayCloseVideoId) {
       return;
@@ -963,51 +813,6 @@ function ShellDynamicInner({
     const nextQuery = params.toString();
     router.push(nextQuery ? `${pathname}?${nextQuery}` : pathname);
   }, [isOverlayClosing, pathname, router, searchParams, shouldShowOverlayPanel]);
-
-  useEffect(() => {
-    if (!isAuthenticated && rightRailMode === "playlist") {
-      setRightRailMode("watch-next");
-    }
-  }, [isAuthenticated, rightRailMode]);
-
-  useEffect(() => {
-    if (isAuthenticated && activePlaylistId && rightRailMode !== "playlist") {
-      if (suppressPlaylistRailAutoSwitchRef.current) {
-        suppressPlaylistRailAutoSwitchRef.current = false;
-        return;
-      }
-      setRightRailMode("playlist");
-    }
-  }, [activePlaylistId, isAuthenticated, rightRailMode]);
-
-  useEffect(() => {
-    if (pathname !== "/" || activePlaylistId || rightRailMode === "watch-next") {
-      return;
-    }
-
-    // Only force-reset when returning from an overlay route to home.
-    if (!previousPathname || previousPathname === "/") {
-      return;
-    }
-
-    setRightRailMode("watch-next");
-  }, [activePlaylistId, pathname, previousPathname, rightRailMode]);
-
-  useEffect(() => {
-    const previousActivePlaylistId = previousActivePlaylistIdRef.current;
-
-    if (previousActivePlaylistId && !activePlaylistId && rightRailMode === "playlist") {
-      setRightRailMode("watch-next");
-    }
-
-    previousActivePlaylistIdRef.current = activePlaylistId;
-
-    // Once the URL param has propagated, clear the pending ref so subsequent
-    // navigation away and back doesn't skip playlist creation unexpectedly.
-    if (activePlaylistId && pendingCreatedPlaylistIdRef.current === activePlaylistId) {
-      pendingCreatedPlaylistIdRef.current = null;
-    }
-  }, [activePlaylistId, rightRailMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1376,38 +1181,6 @@ function ShellDynamicInner({
       setIsDockHidden(false);
     }
   }, [pathname, shouldDockDesktopPlayer]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    void startPreparedDesktopIntroSequence();
-
-    const handleResize = () => {
-      const phase = desktopIntroPhaseRef.current;
-      if (phase === "hold" || phase === "moving") {
-        syncDesktopIntroTarget();
-      }
-    };
-
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-
-      clearDesktopIntroTimers();
-    };
-  }, [clearDesktopIntroTimers, startPreparedDesktopIntroSequence, syncDesktopIntroTarget]);
-
-  useEffect(() => {
-    if (pathname !== "/" || !shouldReplayDesktopIntroOnHomeRef.current) {
-      return;
-    }
-
-    shouldReplayDesktopIntroOnHomeRef.current = false;
-    void startPreparedDesktopIntroSequence();
-  }, [pathname, startPreparedDesktopIntroSequence]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1984,132 +1757,6 @@ function ShellDynamicInner({
     setForcedUnavailableMessage(null);
   }, [pathname, searchParamsKey]);
 
-  const refreshAuthSession = useCallback(async () => {
-    if (refreshPromiseRef.current) {
-      return refreshPromiseRef.current;
-    }
-
-    const refreshPromise = (async () => {
-      try {
-        const response = await fetch("/api/auth/refresh", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: "{}",
-        });
-
-        return response.ok;
-      } catch {
-        return false;
-      }
-    })();
-
-    refreshPromiseRef.current = refreshPromise;
-    try {
-      return await refreshPromise;
-    } finally {
-      refreshPromiseRef.current = null;
-    }
-  }, []);
-
-  const fetchWithAuthRetry = useCallback(
-    async (input: string, init?: RequestInit) => {
-      const requestInit: RequestInit = {
-        credentials: "same-origin",
-        ...init,
-      };
-
-      let response = await fetch(input, requestInit);
-
-      if (response.status !== 401 && response.status !== 403) {
-        return response;
-      }
-
-      const didRefresh = await refreshAuthSession();
-
-      if (!didRefresh) {
-        return response;
-      }
-
-      response = await fetch(input, requestInit);
-      return response;
-    },
-    [refreshAuthSession],
-  );
-
-  const checkAuthState = useCallback(async () => {
-    const isDocumentVisible = typeof document === "undefined" || document.visibilityState === "visible";
-    const resolveAuthState = async () => {
-      try {
-        const response = await fetchWithAuthRetry("/api/auth/me");
-
-        if (response.status === 401 || response.status === 403) {
-          return "unauthenticated" as const;
-        }
-
-        if (!response.ok) {
-          return "unavailable" as const;
-        }
-
-        return "authenticated" as const;
-      } catch {
-        return "unavailable" as const;
-      }
-    };
-
-    let resolvedState = await resolveAuthState();
-
-    // Tabs resuming from sleep can produce one-off network/auth hiccups.
-    // Retry once before showing a blocking auth-unavailable modal.
-    if (resolvedState === "unavailable" && isAuthenticated) {
-      await new Promise<void>((resolve) => {
-        window.setTimeout(() => {
-          resolve();
-        }, 900);
-      });
-      resolvedState = await resolveAuthState();
-    }
-
-    // When refresh rotates in a parallel request, one /api/auth/me probe can briefly
-    // read stale cookies and report 401. Retry once before forcing a sign-out.
-    if (resolvedState === "unauthenticated" && isAuthenticated) {
-      await new Promise<void>((resolve) => {
-        window.setTimeout(() => {
-          resolve();
-        }, 450);
-      });
-      resolvedState = await resolveAuthState();
-    }
-
-    // Background tabs and wake-from-sleep transitions can briefly fail auth probes
-    // without any real server outage. Avoid showing a blocking modal until the page
-    // is foregrounded again and another visible check can confirm the failure.
-    if (resolvedState === "unavailable" && isAuthenticated && !isDocumentVisible) {
-      return "authenticated" as const;
-    }
-
-    if (resolvedState === "unauthenticated") {
-      setAuthStatus("clear");
-      setAuthStatusMessage(null);
-      setIsAuthenticated(false);
-      setChatError(null);
-      return "unauthenticated" as const;
-    }
-
-    if (resolvedState === "unavailable") {
-      setAuthStatus("unavailable");
-      setAuthStatusMessage("The auth server is probably being updated. Please wait a moment and try again.");
-      return "unavailable" as const;
-    }
-
-    setAuthStatus("clear");
-    setAuthStatusMessage(null);
-    setIsAuthenticated(true);
-    return "authenticated" as const;
-  }, [fetchWithAuthRetry, isAuthenticated]);
-
   const retryAuthStateCheck = useCallback(async () => {
     if (isRetryingAuthStatus) {
       return;
@@ -2137,300 +1784,6 @@ function ShellDynamicInner({
       window.clearInterval(intervalId);
     };
   }, [authStatus, authStatusMessage, retryAuthStateCheck]);
-
-  const loadPublicPerformanceMetrics = useCallback(async () => {
-    setIsLoadingPerformanceMetrics(true);
-
-    try {
-      const response = await fetch("/api/status/performance", {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error("performance-metrics-load-failed");
-      }
-
-      const payload = (await response.json()) as PublicPerformancePayload;
-      setPerformanceMetrics(payload.host ?? null);
-      setPerformanceRuntime(payload.runtime ?? null);
-      setPerformanceMetricsGeneratedAt(payload.meta?.generatedAt ?? null);
-      setPerformanceMetricsError(null);
-    } catch {
-      setPerformanceMetricsError("Performance metrics are temporarily unavailable.");
-      setPerformanceRuntime(null);
-    } finally {
-      setIsLoadingPerformanceMetrics(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isPerformanceModalOpen) {
-      return;
-    }
-
-    const pollPerformanceMetrics = () => {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-
-      void loadPublicPerformanceMetrics();
-    };
-
-    pollPerformanceMetrics();
-    const intervalId = window.setInterval(() => {
-      pollPerformanceMetrics();
-    }, PUBLIC_PERFORMANCE_POLL_MS);
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        void loadPublicPerformanceMetrics();
-      }
-    };
-
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
-    return () => {
-      window.clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
-  }, [isPerformanceModalOpen, loadPublicPerformanceMetrics]);
-
-  useEffect(() => {
-    if (!isPerformanceModalOpen) {
-      return;
-    }
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsPerformanceModalOpen(false);
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [isPerformanceModalOpen]);
-
-  useEffect(() => {
-    const handlePlaylistsUpdated = () => {
-      setPlaylistRefreshTick((current) => current + 1);
-    };
-
-    const handlePlaylistRailSync = (event: Event) => {
-      const detail = (event as CustomEvent<{ playlist?: PlaylistRailPayload; trackId?: string }>).detail;
-      const playlist = detail?.playlist;
-
-      if (!playlist?.id || !Array.isArray(playlist.videos)) {
-        return;
-      }
-
-      if (rightRailMode !== "playlist") {
-        return;
-      }
-
-      if (activePlaylistId && playlist.id !== activePlaylistId) {
-        return;
-      }
-
-      setPlaylistCreationPendingId((currentPendingId) => (
-        currentPendingId === playlist.id ? null : currentPendingId
-      ));
-
-      setPlaylistRailData(playlist);
-      setPlaylistRailError(null);
-      setIsPlaylistRailLoading(false);
-    };
-
-    const handlePlaylistCreationProgress = (event: Event) => {
-      const detail = (event as CustomEvent<{ playlistId?: string; phase?: "creating" | "done" | "failed" }>).detail;
-      const playlistId = detail?.playlistId;
-
-      if (!playlistId) {
-        return;
-      }
-
-      if (detail?.phase === "creating") {
-        setPlaylistCreationPendingId(playlistId);
-        return;
-      }
-
-      setPlaylistCreationPendingId((currentPendingId) => (
-        currentPendingId === playlistId ? null : currentPendingId
-      ));
-    };
-
-    const handleRightRailMode = (event: Event) => {
-      const detail = (event as CustomEvent<{ mode?: RightRailMode; playlistId?: string; trackId?: string }>).detail;
-      const mode = detail?.mode;
-      if (mode === "watch-next" || mode === "playlist" || mode === "queue") {
-        setRightRailMode(mode);
-      }
-
-      if (detail?.playlistId && detail?.trackId) {
-        setRecentlyAddedPlaylistTrack({
-          playlistId: detail.playlistId,
-          trackId: detail.trackId,
-        });
-
-        if (recentlyAddedPlaylistTrackTimeoutRef.current !== null) {
-          window.clearTimeout(recentlyAddedPlaylistTrackTimeoutRef.current);
-        }
-
-        recentlyAddedPlaylistTrackTimeoutRef.current = window.setTimeout(() => {
-          setRecentlyAddedPlaylistTrack((current) => (
-            current?.playlistId === detail.playlistId && current?.trackId === detail.trackId
-              ? null
-              : current
-          ));
-          recentlyAddedPlaylistTrackTimeoutRef.current = null;
-        }, 2600);
-      }
-    };
-
-    window.addEventListener(PLAYLISTS_UPDATED_EVENT, handlePlaylistsUpdated);
-    window.addEventListener(PLAYLIST_RAIL_SYNC_EVENT, handlePlaylistRailSync);
-    window.addEventListener(RIGHT_RAIL_MODE_EVENT, handleRightRailMode);
-    window.addEventListener(PLAYLIST_CREATION_PROGRESS_EVENT, handlePlaylistCreationProgress);
-
-    return () => {
-      window.removeEventListener(PLAYLISTS_UPDATED_EVENT, handlePlaylistsUpdated);
-      window.removeEventListener(PLAYLIST_RAIL_SYNC_EVENT, handlePlaylistRailSync);
-      window.removeEventListener(RIGHT_RAIL_MODE_EVENT, handleRightRailMode);
-      window.removeEventListener(PLAYLIST_CREATION_PROGRESS_EVENT, handlePlaylistCreationProgress);
-
-      if (recentlyAddedPlaylistTrackTimeoutRef.current !== null) {
-        window.clearTimeout(recentlyAddedPlaylistTrackTimeoutRef.current);
-        recentlyAddedPlaylistTrackTimeoutRef.current = null;
-      }
-    };
-  }, [activePlaylistId, rightRailMode]);
-
-  useEffect(() => {
-    if (rightRailMode !== "playlist") {
-      return;
-    }
-
-    if (!activePlaylistId) {
-      setPlaylistRailData(null);
-      setPlaylistRailError(null);
-      setIsPlaylistRailLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    const requestId = ++playlistRailLoadRequestIdRef.current;
-    const mutationVersionAtStart = playlistRailMutationVersionRef.current;
-
-    const loadPlaylistRail = async () => {
-      setIsPlaylistRailLoading(true);
-      setPlaylistRailError(null);
-
-      try {
-        const response = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(activePlaylistId)}`, {
-          cache: "no-store",
-        });
-
-        if (cancelled || requestId !== playlistRailLoadRequestIdRef.current) {
-          return;
-        }
-
-        if (response.status === 401 || response.status === 403) {
-          void checkAuthState();
-          setPlaylistRailData(null);
-          setPlaylistRailError("Sign in to view playlist tracks.");
-          return;
-        }
-
-        if (!response.ok) {
-          setPlaylistRailData(null);
-          setPlaylistRailError("Could not load playlist tracks.");
-          return;
-        }
-
-        const payload = (await response.json()) as PlaylistRailPayload;
-        if (
-          !cancelled
-          && requestId === playlistRailLoadRequestIdRef.current
-          && mutationVersionAtStart === playlistRailMutationVersionRef.current
-        ) {
-          setPlaylistRailData(payload);
-          setPlaylistCreationPendingId((currentPendingId) => (
-            currentPendingId === payload.id ? null : currentPendingId
-          ));
-        }
-      } catch {
-        if (!cancelled && requestId === playlistRailLoadRequestIdRef.current) {
-          setPlaylistRailData(null);
-          setPlaylistRailError("Could not load playlist tracks.");
-        }
-      } finally {
-        if (!cancelled && requestId === playlistRailLoadRequestIdRef.current) {
-          setIsPlaylistRailLoading(false);
-        }
-      }
-    };
-
-    void loadPlaylistRail();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activePlaylistId, fetchWithAuthRetry, pathname, playlistRefreshTick, rightRailMode]);
-
-  useEffect(() => {
-    if (rightRailMode !== "playlist") {
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadPlaylistSummaries = async () => {
-      setIsPlaylistSummaryLoading(true);
-      setPlaylistSummaryError(null);
-
-      try {
-        const response = await fetchWithAuthRetry("/api/playlists");
-
-        if (cancelled) {
-          return;
-        }
-
-        if (response.status === 401 || response.status === 403) {
-          void checkAuthState();
-          setPlaylistRailSummaries([]);
-          setPlaylistSummaryError("Sign in to view playlists.");
-          return;
-        }
-
-        if (!response.ok) {
-          setPlaylistRailSummaries([]);
-          setPlaylistSummaryError("Could not load playlists.");
-          return;
-        }
-
-        const payload = (await response.json()) as { playlists?: PlaylistRailSummary[] };
-        if (!cancelled) {
-          setPlaylistRailSummaries(Array.isArray(payload.playlists) ? payload.playlists : []);
-        }
-      } catch {
-        if (!cancelled) {
-          setPlaylistRailSummaries([]);
-          setPlaylistSummaryError("Could not load playlists.");
-        }
-      } finally {
-        if (!cancelled) {
-          setIsPlaylistSummaryLoading(false);
-        }
-      }
-    };
-
-    void loadPlaylistSummaries();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activePlaylistId, fetchWithAuthRetry, playlistRefreshTick, rightRailMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2535,192 +1888,6 @@ function ShellDynamicInner({
       cancelled = true;
     };
   }, [isLyricsOverlayOpen, lyricsOverlayVideoId]);
-
-  function triggerChatTabFlash(mode: FlashableChatMode) {
-    const existingTimeoutId = flashTimeoutRef.current[mode];
-    if (existingTimeoutId !== null) {
-      window.clearTimeout(existingTimeoutId);
-    }
-
-    // Toggle off first so repeated arrivals retrigger the animation.
-    setFlashingChatTabs((current) => ({
-      ...current,
-      [mode]: false,
-    }));
-
-    window.requestAnimationFrame(() => {
-      setFlashingChatTabs((current) => ({
-        ...current,
-        [mode]: true,
-      }));
-    });
-
-    flashTimeoutRef.current[mode] = window.setTimeout(() => {
-      setFlashingChatTabs((current) => ({
-        ...current,
-        [mode]: false,
-      }));
-      flashTimeoutRef.current[mode] = null;
-    }, 900);
-  }
-
-  useEffect(() => {
-    chatModeRef.current = chatMode;
-  }, [chatMode]);
-
-  // Load chat history whenever mode / video / auth changes.
-  // For "online" mode we also keep a 30 s refresh so presence stays current.
-  useEffect(() => {
-    if (!shouldRunChat) {
-      return;
-    }
-
-    if (chatMode === "magazine") {
-      setChatMessages([]);
-      setOnlineUsers([]);
-      setChatError(null);
-      setIsChatLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadChat = async () => {
-      setIsChatLoading(true);
-      setChatError(null);
-
-      try {
-        const params = new URLSearchParams({ mode: chatMode });
-
-        const response = await fetchWithAuthRetry(`/api/chat?${params.toString()}`);
-
-        if (response.status === 401 || response.status === 403) {
-          if (!cancelled) {
-            void checkAuthState();
-            setChatError(null);
-          }
-          return;
-        }
-
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-          if (!cancelled) {
-            setChatError(payload?.error ?? "Chat failed to load.");
-          }
-          return;
-        }
-
-        const payload = (await response.json()) as { messages?: ChatMessage[]; onlineUsers?: OnlineUser[] };
-        if (!cancelled) {
-          setChatMessages(Array.isArray(payload.messages) ? payload.messages : []);
-          setOnlineUsers(Array.isArray(payload.onlineUsers) ? payload.onlineUsers : []);
-        }
-      } catch {
-        if (!cancelled) {
-          setChatError("Chat failed to load.");
-        }
-      } finally {
-        if (!cancelled) {
-          setIsChatLoading(false);
-        }
-      }
-    };
-
-    void loadChat();
-
-    // Only the "online" presence tab needs periodic refresh.
-    const intervalId =
-      chatMode === "online"
-        ? window.setInterval(() => { void loadChat(); }, 30_000)
-        : undefined;
-
-    return () => {
-      cancelled = true;
-      if (intervalId !== undefined) window.clearInterval(intervalId);
-    };
-  }, [chatMode, fetchWithAuthRetry, shouldRunChat]);
-
-  // Real-time SSE subscription for global chat.
-  useEffect(() => {
-    if (!shouldRunChat) {
-      return;
-    }
-
-    const handleIncomingMessage = (event: MessageEvent<string>) => {
-      try {
-        const message = JSON.parse(event.data) as ChatMessage;
-
-        const incomingMode: FlashableChatMode | null = message.room === "global"
-          ? "global"
-          : null;
-
-        if (!incomingMode) {
-          return;
-        }
-
-        if (chatModeRef.current !== incomingMode) {
-          triggerChatTabFlash(incomingMode);
-          return;
-        }
-
-        setChatMessages((current) => {
-          // Deduplicate: the sender already added this via the POST response.
-          if (current.some((m) => m.id === message.id)) return current;
-          return [...current, message];
-        });
-      } catch {
-        // ignore malformed events
-      }
-    };
-
-    const globalEvents = new EventSource("/api/chat/stream?mode=global");
-
-    globalEvents.onmessage = handleIncomingMessage;
-
-    globalEvents.onerror = () => {
-      // EventSource auto-reconnects; nothing to do here.
-    };
-
-    return () => {
-      globalEvents.close();
-    };
-  }, [shouldRunChat]);
-
-  useEffect(() => {
-    return () => {
-      for (const mode of ["global"] as const) {
-        const timeoutId = flashTimeoutRef.current[mode];
-        if (timeoutId !== null) {
-          window.clearTimeout(timeoutId);
-        }
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (shouldRunChat) {
-      return;
-    }
-
-    setChatDraft("");
-    setChatError(null);
-    setChatMessages([]);
-    setOnlineUsers([]);
-    setIsChatLoading(false);
-    setIsChatSubmitting(false);
-    if (!isMagazineOverlayRoute) {
-      setChatMode("global");
-    }
-  }, [isAuthenticated, isMagazineOverlayRoute]);
-
-  useEffect(() => {
-    const node = chatListRef.current;
-    if (!node) {
-      return;
-    }
-
-    node.scrollTop = node.scrollHeight;
-  }, [chatMessages]);
 
   const sourceRelatedVideos = useMemo(() => dedupeVideoList(relatedVideos), [relatedVideos]);
   const uniqueRelatedVideos = useMemo(() => filterHiddenRelatedVideos(
@@ -2841,102 +2008,6 @@ function ShellDynamicInner({
   const activePlaylistSummary = activePlaylistId
     ? playlistRailSummaries.find((playlist) => playlist.id === activePlaylistId) ?? null
     : null;
-  const activePlaylistTrackCount = playlistRailData
-    ? Math.max(playlistRailData.videos.length, playlistRailData.itemCount ?? activePlaylistSummary?.itemCount ?? 0)
-    : (activePlaylistSummary?.itemCount ?? 0);
-  const matchedPlaylistVideoIndex = playlistRailData
-    ? playlistRailData.videos.findIndex((track) => track.id === currentVideo.id)
-    : -1;
-  const hasTrustedRequestedPlaylistItemIndex = requestedPlaylistItemIndex !== null
-    && playlistRailData !== null
-    && requestedPlaylistItemIndex >= 0
-    && requestedPlaylistItemIndex < playlistRailData.videos.length
-    && playlistRailData.videos[requestedPlaylistItemIndex]?.id === currentVideo.id;
-  const activePlaylistTrackIndex = hasTrustedRequestedPlaylistItemIndex
-    ? requestedPlaylistItemIndex
-    : (matchedPlaylistVideoIndex >= 0 ? matchedPlaylistVideoIndex : null);
-  const isCreatingActivePlaylist = Boolean(
-    activePlaylistId
-    && playlistCreationPendingId === activePlaylistId
-    && isPlaylistRailLoading,
-  );
-
-  useEffect(() => {
-    if (rightRailMode !== "playlist" || !activePlaylistId || isPlaylistRailLoading) {
-      return;
-    }
-
-    // Delay slightly so class updates/render settle before measuring.
-    const timeoutId = window.setTimeout(() => {
-      const container = playlistStackBodyRef.current;
-      if (!container) {
-        return;
-      }
-
-      const indexedActiveRow = activePlaylistTrackIndex !== null
-        ? container.querySelector(`.playlistRailTrackRow[data-playlist-index="${activePlaylistTrackIndex}"]`) as HTMLElement | null
-        : null;
-      const fallbackActiveRow = container
-        .querySelector(".rightRailPlaylistTrackCard.relatedCardActive")
-        ?.closest(".playlistRailTrackRow") as HTMLElement | null;
-      const activeRow = indexedActiveRow ?? fallbackActiveRow;
-
-      if (!activeRow) {
-        return;
-      }
-
-      const topGutterPx = 8;
-      const containerRect = container.getBoundingClientRect();
-      const rowRect = activeRow.getBoundingClientRect();
-      const rowTopInViewport = rowRect.top - containerRect.top;
-
-      const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
-      const desiredTop = container.scrollTop + rowTopInViewport - topGutterPx;
-      const targetTop = Math.min(maxScrollTop, Math.max(0, desiredTop));
-
-      if (Math.abs(container.scrollTop - targetTop) > 1) {
-        if (playlistAutoScrollRafRef.current !== null) {
-          window.cancelAnimationFrame(playlistAutoScrollRafRef.current);
-          playlistAutoScrollRafRef.current = null;
-        }
-
-        const startTop = container.scrollTop;
-        const scrollDelta = targetTop - startTop;
-        const durationMs = 320;
-        const startTime = performance.now();
-
-        const animateScroll = (now: number) => {
-          const progress = Math.min(1, (now - startTime) / durationMs);
-          const eased = 1 - ((1 - progress) ** 3);
-          container.scrollTop = startTop + (scrollDelta * eased);
-
-          if (progress < 1) {
-            playlistAutoScrollRafRef.current = window.requestAnimationFrame(animateScroll);
-            return;
-          }
-
-          playlistAutoScrollRafRef.current = null;
-        };
-
-        playlistAutoScrollRafRef.current = window.requestAnimationFrame(animateScroll);
-      }
-    }, 50);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      if (playlistAutoScrollRafRef.current !== null) {
-        window.cancelAnimationFrame(playlistAutoScrollRafRef.current);
-        playlistAutoScrollRafRef.current = null;
-      }
-    };
-  }, [
-    activePlaylistId,
-    activePlaylistTrackIndex,
-    currentVideo.id,
-    isPlaylistRailLoading,
-    rightRailMode,
-    playlistRailData?.videos.length,
-  ]);
 
   const loadMoreRelatedVideos = useCallback(async (requestedCount = RELATED_LOAD_BATCH_SIZE) => {
     if (
@@ -3086,6 +2157,101 @@ function ShellDynamicInner({
       relatedClickFlashTimeoutRef.current = null;
     }, 240);
   }, []);
+
+  const commitWatchNextHide = useCallback((videoId: string) => {
+    setHidingRelatedVideoIds((previous) => {
+      if (previous.includes(videoId)) {
+        return previous;
+      }
+
+      return [...previous, videoId];
+    });
+
+    const existingTimeoutId = relatedHideTimeoutsRef.current.get(videoId);
+    if (existingTimeoutId !== undefined) {
+      window.clearTimeout(existingTimeoutId);
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setDisplayedRelatedVideos((previous) => previous.filter((video) => video.id !== videoId));
+      setRelatedVideos((previous) => previous.filter((video) => video.id !== videoId));
+      hiddenVideoIdsRef.current.add(videoId);
+      setHidingRelatedVideoIds((previous) => previous.filter((candidateId) => candidateId !== videoId));
+      relatedHideTimeoutsRef.current.delete(videoId);
+    }, WATCH_NEXT_HIDE_ANIMATION_MS);
+
+    relatedHideTimeoutsRef.current.set(videoId, timeoutId);
+  }, []);
+
+  const handleHideFromWatchNext = useCallback((track: VideoRecord) => {
+    if (!isAuthenticated) {
+      setPlaylistMutationTone("error");
+      setPlaylistMutationMessage("Sign in to hide tracks from Watch Next.");
+      return;
+    }
+
+    if (
+      hidingRelatedVideoIdsRef.current.includes(track.id)
+      || hiddenMutationPendingVideoIdsRef.current.includes(track.id)
+    ) {
+      return;
+    }
+
+    setWatchNextHideConfirmTrack(track);
+  }, [isAuthenticated, setPlaylistMutationMessage, setPlaylistMutationTone]);
+
+  const confirmHideFromWatchNext = useCallback(async () => {
+    const track = watchNextHideConfirmTrack;
+
+    if (!track) {
+      return;
+    }
+
+    if (!isAuthenticated) {
+      setPlaylistMutationTone("error");
+      setPlaylistMutationMessage("Sign in to hide tracks from Watch Next.");
+      return;
+    }
+
+    if (
+      hidingRelatedVideoIdsRef.current.includes(track.id)
+      || hiddenMutationPendingVideoIdsRef.current.includes(track.id)
+    ) {
+      return;
+    }
+
+    setWatchNextHideConfirmTrack(null);
+
+    const result = await mutateHiddenVideo({
+      action: "hide",
+      videoId: track.id,
+      messages: {
+        unauthorized: "Sign in to hide tracks from Watch Next.",
+      },
+      onOptimisticUpdate: () => {
+        commitWatchNextHide(track.id);
+        setHiddenMutationPendingVideoIds((previous) => [...previous, track.id]);
+      },
+      onUnauthorized: () => {
+        void checkAuthState();
+      },
+      onSettled: () => {
+        setHiddenMutationPendingVideoIds((previous) => previous.filter((videoId) => videoId !== track.id));
+      },
+    });
+
+    if (!result.ok) {
+      setPlaylistMutationTone("error");
+      setPlaylistMutationMessage(result.message);
+    }
+  }, [
+    checkAuthState,
+    commitWatchNextHide,
+    isAuthenticated,
+    setPlaylistMutationMessage,
+    setPlaylistMutationTone,
+    watchNextHideConfirmTrack,
+  ]);
 
   const maybeLoadMoreIfNearEnd = useCallback(() => {
     if (
@@ -3395,7 +2561,6 @@ function ShellDynamicInner({
 
   useEffect(() => {
     const hideTimeouts = relatedHideTimeoutsRef.current;
-    const playlistHideTimeouts = playlistItemHideTimeoutsRef.current;
 
     return () => {
       if (relatedClickFlashTimeoutRef.current !== null) {
@@ -3407,603 +2572,8 @@ function ShellDynamicInner({
         window.clearTimeout(timeoutId);
       }
       hideTimeouts.clear();
-
-      for (const timeoutId of playlistHideTimeouts.values()) {
-        window.clearTimeout(timeoutId);
-      }
-      playlistHideTimeouts.clear();
     };
   }, []);
-
-  const commitPlaylistTrackRemoval = useCallback((slotKey: string, playlistItemIndex: number) => {
-    setHidingPlaylistTrackKeys((previous) => {
-      if (previous.includes(slotKey)) {
-        return previous;
-      }
-
-      return [...previous, slotKey];
-    });
-
-    const existingTimeoutId = playlistItemHideTimeoutsRef.current.get(slotKey);
-    if (existingTimeoutId !== undefined) {
-      window.clearTimeout(existingTimeoutId);
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setPlaylistRailData((previous) => {
-        if (!previous) {
-          return previous;
-        }
-
-        if (playlistItemIndex < 0 || playlistItemIndex >= previous.videos.length) {
-          return previous;
-        }
-
-        return {
-          ...previous,
-          videos: previous.videos.filter((_, index) => index !== playlistItemIndex),
-        };
-      });
-      setHidingPlaylistTrackKeys((previous) => previous.filter((candidateKey) => candidateKey !== slotKey));
-      playlistItemHideTimeoutsRef.current.delete(slotKey);
-    }, WATCH_NEXT_HIDE_ANIMATION_MS);
-
-    playlistItemHideTimeoutsRef.current.set(slotKey, timeoutId);
-  }, []);
-
-  const commitWatchNextHide = useCallback((videoId: string) => {
-    setHidingRelatedVideoIds((previous) => {
-      if (previous.includes(videoId)) {
-        return previous;
-      }
-
-      return [...previous, videoId];
-    });
-
-    const existingTimeoutId = relatedHideTimeoutsRef.current.get(videoId);
-    if (existingTimeoutId !== undefined) {
-      window.clearTimeout(existingTimeoutId);
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setDisplayedRelatedVideos((previous) => previous.filter((video) => video.id !== videoId));
-      setRelatedVideos((previous) => previous.filter((video) => video.id !== videoId));
-      hiddenVideoIdsRef.current.add(videoId);
-      setHidingRelatedVideoIds((previous) => previous.filter((candidateId) => candidateId !== videoId));
-      relatedHideTimeoutsRef.current.delete(videoId);
-    }, WATCH_NEXT_HIDE_ANIMATION_MS);
-
-    relatedHideTimeoutsRef.current.set(videoId, timeoutId);
-  }, []);
-
-  const handleHideFromWatchNext = useCallback((track: VideoRecord) => {
-    if (!isAuthenticated) {
-      setPlaylistMutationTone("error");
-      setPlaylistMutationMessage("Sign in to hide tracks from Watch Next.");
-      return;
-    }
-
-    if (
-      hidingRelatedVideoIdsRef.current.includes(track.id)
-      || hiddenMutationPendingVideoIdsRef.current.includes(track.id)
-    ) {
-      return;
-    }
-
-    setWatchNextHideConfirmTrack(track);
-  }, [isAuthenticated]);
-
-  const confirmHideFromWatchNext = useCallback(async () => {
-    const track = watchNextHideConfirmTrack;
-
-    if (!track) {
-      return;
-    }
-
-    if (!isAuthenticated) {
-      setPlaylistMutationTone("error");
-      setPlaylistMutationMessage("Sign in to hide tracks from Watch Next.");
-      return;
-    }
-
-    if (
-      hidingRelatedVideoIdsRef.current.includes(track.id)
-      || hiddenMutationPendingVideoIdsRef.current.includes(track.id)
-    ) {
-      return;
-    }
-
-    setWatchNextHideConfirmTrack(null);
-
-    const result = await mutateHiddenVideo({
-      action: "hide",
-      videoId: track.id,
-      messages: {
-        unauthorized: "Sign in to hide tracks from Watch Next.",
-      },
-      onOptimisticUpdate: () => {
-        commitWatchNextHide(track.id);
-        setHiddenMutationPendingVideoIds((previous) => [...previous, track.id]);
-      },
-      onUnauthorized: () => {
-        void checkAuthState();
-      },
-      onSettled: () => {
-        setHiddenMutationPendingVideoIds((previous) => previous.filter((videoId) => videoId !== track.id));
-      },
-    });
-
-    if (!result.ok) {
-      setPlaylistMutationTone("error");
-      setPlaylistMutationMessage(result.message);
-    }
-  }, [checkAuthState, commitWatchNextHide, isAuthenticated, watchNextHideConfirmTrack]);
-
-  const handleRemoveTrackFromActivePlaylist = useCallback(async (track: PlaylistRailVideo, playlistItemIndex: number) => {
-    if (!activePlaylistId) {
-      return;
-    }
-
-    const slotKey = track.playlistItemId ?? `${track.id}:${playlistItemIndex}`;
-
-    if (hidingPlaylistTrackKeys.includes(slotKey) || playlistItemMutationPendingKeys.includes(slotKey)) {
-      return;
-    }
-
-    commitPlaylistTrackRemoval(slotKey, playlistItemIndex);
-    setPlaylistItemMutationPendingKeys((previous) => [...previous, slotKey]);
-
-    try {
-      const response = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(activePlaylistId)}/items`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ playlistItemId: track.playlistItemId, playlistItemIndex }),
-      });
-
-      if (response.status === 401 || response.status === 403) {
-        void checkAuthState();
-        setPlaylistMutationTone("error");
-        setPlaylistMutationMessage("Sign in to edit playlists.");
-        return;
-      }
-
-      if (!response.ok) {
-        setPlaylistMutationTone("error");
-        setPlaylistMutationMessage("Track removed visually, but playlist update failed.");
-        return;
-      }
-
-      const updatedPlaylist = (await response.json().catch(() => null)) as PlaylistRailPayload | null;
-
-      setPlaylistRailSummaries((previous) =>
-        previous.map((summary) =>
-          summary.id === activePlaylistId
-            ? {
-                ...summary,
-                itemCount: updatedPlaylist?.videos.length ?? Math.max(0, summary.itemCount - 1),
-                leadVideoId: updatedPlaylist?.videos[0]?.id ?? "__placeholder__",
-              }
-            : summary,
-        ),
-      );
-
-      if (updatedPlaylist?.id === activePlaylistId && Array.isArray(updatedPlaylist.videos)) {
-        setPlaylistRailData(updatedPlaylist);
-      }
-    } catch {
-      setPlaylistMutationTone("error");
-      setPlaylistMutationMessage("Track removed visually, but playlist update failed.");
-    } finally {
-      setPlaylistItemMutationPendingKeys((previous) => previous.filter((candidateKey) => candidateKey !== slotKey));
-    }
-  }, [activePlaylistId, commitPlaylistTrackRemoval, fetchWithAuthRetry, hidingPlaylistTrackKeys, playlistItemMutationPendingKeys]);
-
-  const handleReorderActivePlaylistTrack = useCallback(async (fromIndex: number, toIndex: number) => {
-    if (!activePlaylistId || fromIndex === toIndex) {
-      return;
-    }
-
-    const currentPlaylist = playlistRailData;
-
-    if (!currentPlaylist || !Array.isArray(currentPlaylist.videos)) {
-      return;
-    }
-
-    if (
-      fromIndex < 0
-      || toIndex < 0
-      || fromIndex >= currentPlaylist.videos.length
-      || toIndex >= currentPlaylist.videos.length
-    ) {
-      return;
-    }
-
-    // Read item IDs before state changes (safe — human-speed clicks always have fresh closure).
-    const fromPlaylistItemId = currentPlaylist.videos[fromIndex]?.playlistItemId;
-    const toPlaylistItemId = currentPlaylist.videos[toIndex]?.playlistItemId;
-
-    // Optimistic update via functional form so rapid queued calls each build on the latest state.
-    playlistRailMutationVersionRef.current += 1;
-    setPlaylistRailData((prev) => {
-      if (!prev || !Array.isArray(prev.videos)) return prev;
-      if (fromIndex >= prev.videos.length || toIndex >= prev.videos.length) return prev;
-      const reorderedVideos = [...prev.videos];
-      const [moved] = reorderedVideos.splice(fromIndex, 1);
-      if (!moved) return prev;
-      reorderedVideos.splice(toIndex, 0, moved);
-      return { ...prev, videos: reorderedVideos };
-    });
-
-    // Sequence number: only the latest response updates persisted state.
-    const seq = ++reorderSeqRef.current;
-
-    try {
-      const response = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(activePlaylistId)}/items`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          fromPlaylistItemId,
-          toPlaylistItemId,
-          fromIndex,
-          toIndex,
-        }),
-      });
-
-      // A newer reorder was initiated while this one was in flight — discard this response.
-      if (seq < reorderSeqRef.current) {
-        return;
-      }
-
-      if (response.status === 401 || response.status === 403) {
-        void checkAuthState();
-        setPlaylistRailData(currentPlaylist);
-        setPlaylistMutationTone("error");
-        setPlaylistMutationMessage("Sign in to edit playlists.");
-        return;
-      }
-
-      if (!response.ok) {
-        setPlaylistRailData(currentPlaylist);
-        setPlaylistMutationTone("error");
-        setPlaylistMutationMessage("Could not reorder playlist tracks.");
-        return;
-      }
-
-      const updatedPlaylist = (await response.json().catch(() => null)) as PlaylistRailPayload | null;
-
-      if (updatedPlaylist?.id === activePlaylistId && Array.isArray(updatedPlaylist.videos)) {
-        setPlaylistRailData(updatedPlaylist);
-        setPlaylistRailSummaries((previous) =>
-          previous.map((summary) =>
-            summary.id === activePlaylistId
-              ? {
-                  ...summary,
-                  itemCount: updatedPlaylist.videos.length,
-                  leadVideoId: updatedPlaylist.videos[0]?.id ?? "__placeholder__",
-                }
-              : summary,
-          ),
-        );
-      }
-    } catch {
-      if (seq >= reorderSeqRef.current) {
-        setPlaylistRailData(currentPlaylist);
-        setPlaylistMutationTone("error");
-        setPlaylistMutationMessage("Could not reorder playlist tracks.");
-      }
-    }
-  }, [activePlaylistId, fetchWithAuthRetry, playlistRailData]);
-
-  const handlePlaylistTrackDragStart = useCallback((event: ReactDragEvent<HTMLDivElement>, index: number) => {
-    event.stopPropagation();
-    setDraggedPlaylistTrackIndex(index);
-    setDragOverPlaylistTrackIndex(index);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", String(index));
-  }, []);
-
-  const handlePlaylistTrackDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>, index: number) => {
-    event.preventDefault();
-    if (dragOverPlaylistTrackIndex !== index) {
-      setDragOverPlaylistTrackIndex(index);
-    }
-  }, [dragOverPlaylistTrackIndex]);
-
-  const handlePlaylistTrackDrop = useCallback((event: ReactDragEvent<HTMLDivElement>, toIndex: number) => {
-    event.preventDefault();
-    const fromIndex = draggedPlaylistTrackIndex;
-    setDraggedPlaylistTrackIndex(null);
-    setDragOverPlaylistTrackIndex(null);
-
-    if (fromIndex === null || fromIndex === toIndex) {
-      return;
-    }
-
-    void handleReorderActivePlaylistTrack(fromIndex, toIndex);
-  }, [draggedPlaylistTrackIndex, handleReorderActivePlaylistTrack]);
-
-  const handlePlaylistTrackDragEnd = useCallback(() => {
-    setDraggedPlaylistTrackIndex(null);
-    setDragOverPlaylistTrackIndex(null);
-  }, []);
-
-  // Always show all nav items; unauthenticated clicks on protected routes are
-  // intercepted client-side to open the auth modal.
-  const visibleNavItems = navItems.filter((item) => item.href !== "/" && item.href !== "/ai");
-
-  const protectedNavHrefs = new Set(["/favourites", "/playlists", "/history", "/account"]);
-
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-
-  function openAuthModal() {
-    setIsAuthModalOpen(true);
-  }
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const handleAuthSuccess = () => {
-      setIsAuthenticated(true);
-      setAuthStatus("clear");
-      setAuthStatusMessage(null);
-      setIsAuthModalOpen(false);
-      setChatError(null);
-    };
-
-    window.addEventListener("ytr:auth-success", handleAuthSuccess);
-
-    return () => {
-      window.removeEventListener("ytr:auth-success", handleAuthSuccess);
-    };
-  }, []);
-
-  function getNavHref(href: string) {
-    const params = new URLSearchParams();
-    params.set("v", currentVideo.id);
-    params.set("resume", "1");
-
-    if (href === "/artists") {
-      params.set("letter", activeArtistLetter);
-    }
-
-    return `${href}?${params.toString()}`;
-  }
-
-  function requestOverlayOpen(href: string, kind: "video" | "wiki" = "video") {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.dispatchEvent(new CustomEvent(OVERLAY_OPEN_REQUEST_EVENT, {
-      detail: { href, kind },
-    }));
-  }
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const targetHrefs = visibleNavItems
-      .filter((item) => !isRouteActive(item.href, pathname))
-      .map((item) => getNavHref(item.href));
-
-    if (targetHrefs.length === 0) {
-      return;
-    }
-
-    let cancelled = false;
-    let idleId: number | null = null;
-
-    const requestIdle = (window as Window & {
-      requestIdleCallback?: (callback: () => void, opts?: { timeout: number }) => number;
-      cancelIdleCallback?: (id: number) => void;
-    }).requestIdleCallback;
-    const cancelIdle = (window as Window & {
-      requestIdleCallback?: (callback: () => void, opts?: { timeout: number }) => number;
-      cancelIdleCallback?: (id: number) => void;
-    }).cancelIdleCallback;
-
-    const warmRoutes = () => {
-      if (cancelled) {
-        return;
-      }
-
-      for (const href of targetHrefs) {
-        router.prefetch(href);
-      }
-    };
-
-    const timeoutId = window.setTimeout(() => {
-      if (typeof requestIdle === "function") {
-        idleId = requestIdle(() => {
-          warmRoutes();
-        }, { timeout: 1500 });
-        return;
-      }
-
-      warmRoutes();
-    }, 1200);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-      if (idleId !== null && typeof cancelIdle === "function") {
-        cancelIdle(idleId);
-      }
-    };
-  }, [activeArtistLetter, currentVideo.id, pathname, router, visibleNavItems]);
-
-  function getRelatedThumbnail(id: string) {
-    return `https://i.ytimg.com/vi/${encodeURIComponent(id)}/mqdefault.jpg`;
-  }
-
-  function getActivatePlaylistHref(playlistId: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("v", currentVideo.id);
-    params.set("resume", "1");
-    params.set("pl", playlistId);
-    params.delete("pli");
-    return `/?${params.toString()}`;
-  }
-
-  function getClosePlaylistHref() {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("v", currentVideo.id);
-    params.set("resume", "1");
-    params.delete("pl");
-    params.delete("pli");
-    const query = params.toString();
-    return query.length > 0 ? `/?${query}` : "/";
-  }
-
-  const handleSwitchToWatchNextRail = useCallback(() => {
-    setRightRailMode("watch-next");
-
-    if (!activePlaylistId) {
-      return;
-    }
-
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("v", currentVideo.id);
-    params.set("resume", "1");
-    params.delete("pl");
-    params.delete("pli");
-
-    const query = params.toString();
-    router.replace(query ? `/?${query}` : "/");
-  }, [activePlaylistId, currentVideo.id, router, searchParams]);
-
-  async function handleDeleteActivePlaylist() {
-    if (!activePlaylistId || isDeletingActivePlaylist) {
-      return;
-    }
-
-    setIsDeletingActivePlaylist(true);
-
-    try {
-      const response = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(activePlaylistId)}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        setPlaylistMutationTone("error");
-        setPlaylistMutationMessage("Could not delete playlist.");
-        return;
-      }
-
-      window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
-      setPlaylistRailData(null);
-      setPlaylistRailError(null);
-      router.push(getClosePlaylistHref());
-    } catch {
-      setPlaylistMutationTone("error");
-      setPlaylistMutationMessage("Could not delete playlist.");
-    } finally {
-      setIsDeletingActivePlaylist(false);
-    }
-  }
-
-  useEffect(() => {
-    if (!activePlaylistId) {
-      setShowDeleteActivePlaylistConfirm(false);
-    }
-  }, [activePlaylistId]);
-
-  useEffect(() => {
-    if (rightRailMode !== "playlist") {
-      setConfirmDeleteRailPlaylist(null);
-    }
-  }, [rightRailMode]);
-
-  async function handleDeletePlaylistFromRail(playlistId: string) {
-    if (playlistBeingDeletedId) {
-      return;
-    }
-
-    setPlaylistBeingDeletedId(playlistId);
-
-    try {
-      const response = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(playlistId)}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        return;
-      }
-
-      window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
-      setPlaylistRailSummaries((current) => current.filter((p) => p.id !== playlistId));
-    } catch {
-      // Silent failure
-    } finally {
-      setPlaylistBeingDeletedId(null);
-    }
-  }
-
-  async function handleCreatePlaylistFromRail() {
-    if (isCreatingRailPlaylist) {
-      return;
-    }
-
-    setIsCreatingRailPlaylist(true);
-    setPlaylistMutationTone("info");
-    setPlaylistMutationMessage(null);
-
-    try {
-      const response = await fetchWithAuthRetry("/api/playlists", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: buildGeneratedPlaylistName(),
-          videoIds: [],
-        }),
-      });
-
-      if (response.status === 401 || response.status === 403) {
-        void checkAuthState();
-        setPlaylistMutationTone("error");
-        setPlaylistMutationMessage("Sign in to create playlists.");
-        return;
-      }
-
-      if (!response.ok) {
-        setPlaylistMutationTone("error");
-        setPlaylistMutationMessage("Could not create playlist.");
-        return;
-      }
-
-      const created = (await response.json()) as { id?: string };
-      if (!created.id) {
-        setPlaylistMutationTone("error");
-        setPlaylistMutationMessage("Playlist was created but could not be opened.");
-        return;
-      }
-
-      setPlaylistCreationPendingId(created.id);
-      window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
-      router.replace(getActivatePlaylistHref(created.id));
-    } catch {
-      setPlaylistMutationTone("error");
-      setPlaylistMutationMessage("Could not create playlist.");
-    } finally {
-      setIsCreatingRailPlaylist(false);
-    }
-  }
 
   const prewarmRelatedThumbnail = useCallback((videoId: string) => {
     if (typeof window === "undefined") {
@@ -4017,7 +2587,7 @@ function ShellDynamicInner({
     prewarmedThumbnailIdsRef.current.add(videoId);
     const img = new window.Image();
     img.decoding = "async";
-    img.src = getRelatedThumbnail(videoId);
+    img.src = `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
   }, []);
 
   const prefetchCurrentVideoPayload = useCallback((videoId: string) => {
@@ -4066,7 +2636,7 @@ function ShellDynamicInner({
           return;
         }
 
-        if (data.currentVideo?.id === videoId) {
+        if (data.currentVideo.id === videoId) {
           prefetchFailureCountRef.current = 0;
           prefetchBlockedUntilRef.current = 0;
           prefetchedCurrentVideoPayloadRef.current.set(videoId, {
@@ -4114,214 +2684,6 @@ function ShellDynamicInner({
       );
     }
   }, [prefetchCurrentVideoPayload, prewarmRelatedThumbnail]);
-
-  function buildGeneratedPlaylistName() {
-    const now = new Date();
-    const datePart = now.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
-    const timePart = now.toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    return `Playlist ${datePart} ${timePart}`;
-  }
-
-  async function handleAddToPlaylistFromWatchNext(track: VideoRecord) {
-    if (playlistMutationPendingVideoId) {
-      return;
-    }
-
-    setPlaylistMutationPendingVideoId(track.id);
-    setPlaylistMutationMessage(null);
-    setPlaylistMutationTone("info");
-
-    try {
-      const effectivePlaylistId = activePlaylistId ?? pendingCreatedPlaylistIdRef.current;
-
-      if (effectivePlaylistId) {
-        const addResponse = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(effectivePlaylistId)}/items`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ videoId: track.id }),
-        });
-
-        if (addResponse.status === 401 || addResponse.status === 403) {
-          void checkAuthState();
-          setPlaylistMutationTone("error");
-          setPlaylistMutationMessage("Sign in to save tracks to playlists.");
-          return;
-        }
-
-        if (!addResponse.ok) {
-          setPlaylistMutationTone("error");
-          setPlaylistMutationMessage("Could not add track to playlist.");
-          return;
-        }
-
-        setLastAddedRelatedVideoId(track.id);
-        setPlaylistRailData((prev) =>
-          prev ? { ...prev, itemCount: Math.max(prev.videos.length, prev.itemCount ?? 0) + 1 } : prev,
-        );
-        return;
-      }
-
-      const createResponse = await fetchWithAuthRetry("/api/playlists", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: buildGeneratedPlaylistName(),
-          videoIds: [],
-        }),
-      });
-
-      if (createResponse.status === 401 || createResponse.status === 403) {
-        void checkAuthState();
-        setPlaylistMutationTone("error");
-        setPlaylistMutationMessage("Sign in to create playlists.");
-        return;
-      }
-
-      if (!createResponse.ok) {
-        setPlaylistMutationTone("error");
-        setPlaylistMutationMessage("Could not create playlist.");
-        return;
-      }
-
-      const created = (await createResponse.json()) as { id?: string };
-
-      if (!created.id) {
-        setPlaylistMutationTone("error");
-        setPlaylistMutationMessage("Playlist was created but could not be opened.");
-        return;
-      }
-
-      const addResponse = await fetchWithAuthRetry(`/api/playlists/${encodeURIComponent(created.id)}/items`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ videoId: track.id }),
-      });
-
-      if (addResponse.status === 401 || addResponse.status === 403) {
-        void checkAuthState();
-        setPlaylistMutationTone("error");
-        setPlaylistMutationMessage("Sign in to save tracks to playlists.");
-        return;
-      }
-
-      if (!addResponse.ok) {
-        setPlaylistMutationTone("error");
-        setPlaylistMutationMessage("Playlist created, but this track could not be added.");
-        return;
-      }
-
-      setLastAddedRelatedVideoId(track.id);
-      pendingCreatedPlaylistIdRef.current = created.id;
-      suppressPlaylistRailAutoSwitchRef.current = true;
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("v", currentVideo.id);
-      params.set("resume", "1");
-      params.set("pl", created.id);
-      params.delete("pli");
-      router.replace(`/?${params.toString()}`);
-    } catch {
-      setPlaylistMutationTone("error");
-      setPlaylistMutationMessage("Could not update playlists right now.");
-    } finally {
-      setPlaylistMutationPendingVideoId(null);
-    }
-  }
-
-  useEffect(() => {
-    if (!playlistMutationMessage) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setPlaylistMutationMessage(null);
-    }, 2500);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [playlistMutationMessage]);
-
-  useEffect(() => {
-    if (!lastAddedRelatedVideoId) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setLastAddedRelatedVideoId(null);
-    }, 1800);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [lastAddedRelatedVideoId]);
-
-  async function handleChatSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (chatMode !== "global") {
-      return;
-    }
-
-    const content = chatDraft.trim();
-    if (!content) {
-      return;
-    }
-
-    setIsChatSubmitting(true);
-    setChatError(null);
-
-    try {
-      const response = await fetchWithAuthRetry("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          mode: "global",
-          content,
-        }),
-      });
-
-      if (response.status === 401 || response.status === 403) {
-        void checkAuthState();
-        setChatError(null);
-        return;
-      }
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        setChatError(payload?.error ?? "Unable to send message.");
-        return;
-      }
-
-      const payload = (await response.json()) as { message?: ChatMessage };
-      if (payload.message) {
-        setChatMessages((current) => {
-          if (current.some((message) => message.id === payload.message?.id)) {
-            return current;
-          }
-          return [...current, payload.message as ChatMessage];
-        });
-      }
-      setChatDraft("");
-    } catch {
-      setChatError("Unable to send message.");
-    } finally {
-      setIsChatSubmitting(false);
-    }
-  }
 
   useEffect(() => {
     for (const video of displayedRelatedVideos.slice(0, 6)) {
@@ -4424,132 +2786,113 @@ function ShellDynamicInner({
     router.replace(query ? `/?${query}` : "/");
   }, [currentVideo.id, isAuthenticated, pathname, router, searchParams]);
 
-  // Dismiss suggestions when clicking outside the combobox
-  useEffect(() => {
-    function onPointerDown(e: PointerEvent) {
-      if (searchComboboxRef.current && !searchComboboxRef.current.contains(e.target as Node)) {
-        setShowSuggestions(false);
-        setActiveSuggestionIdx(-1);
-      }
-    }
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, []);
+  // Always show all nav items; unauthenticated clicks on protected routes are
+  // intercepted client-side to open the auth modal.
+  const visibleNavItems = navItems.filter((item) => item.href !== "/" && item.href !== "/ai");
+
+  const protectedNavHrefs = new Set(["/favourites", "/playlists", "/history", "/account"]);
+
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  function openAuthModal() {
+    setIsAuthModalOpen(true);
+  }
 
   useEffect(() => {
-    return () => {
-      if (suggestDebounceRef.current) {
-        clearTimeout(suggestDebounceRef.current);
-        suggestDebounceRef.current = null;
-      }
-
-      if (suggestAbortRef.current) {
-        suggestAbortRef.current.abort();
-        suggestAbortRef.current = null;
-      }
-    };
-  }, []);
-
-  function handleSearchInput(e: React.ChangeEvent<HTMLInputElement>) {
-    const value = e.target.value;
-    setSearchValue(value);
-    setActiveSuggestionIdx(-1);
-
-    if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
-
-    const trimmed = value.trim();
-    latestSuggestQueryRef.current = trimmed;
-
-    if (suggestAbortRef.current) {
-      suggestAbortRef.current.abort();
-      suggestAbortRef.current = null;
-    }
-
-    if (!trimmed || trimmed.length < 2) {
-      setSuggestions([]);
-      setShowSuggestions(false);
+    if (typeof window === "undefined") {
       return;
     }
 
-    suggestDebounceRef.current = setTimeout(async () => {
-      const controller = new AbortController();
-      suggestAbortRef.current = controller;
+    const handleAuthSuccess = () => {
+      setIsAuthenticated(true);
+      setAuthStatus("clear");
+      setAuthStatusMessage(null);
+      setIsAuthModalOpen(false);
+    };
 
-      try {
-        const res = await fetch(`/api/search/suggest?q=${encodeURIComponent(trimmed)}`, { signal: controller.signal });
-        if (res.ok) {
-          const data = await res.json() as { suggestions: SearchSuggestion[] };
-          if (latestSuggestQueryRef.current !== trimmed) {
-            return;
-          }
-          setSuggestions(data.suggestions);
-          setShowSuggestions(data.suggestions.length > 0);
-        }
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
-        // non-critical — ignore suggest failures silently
-      } finally {
-        if (suggestAbortRef.current === controller) {
-          suggestAbortRef.current = null;
-        }
-      }
-    }, 140);
-  }
+    window.addEventListener("ytr:auth-success", handleAuthSuccess);
 
-  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    const isOpen = showSuggestions && suggestions && suggestions.length > 0;
+    return () => {
+      window.removeEventListener("ytr:auth-success", handleAuthSuccess);
+    };
+  }, []);
 
-    if (e.key === "ArrowDown") {
-      if (isOpen) {
-        e.preventDefault();
-        e.stopPropagation();
-        setActiveSuggestionIdx((prev) => Math.min(prev + 1, suggestions!.length - 1));
-      }
-    } else if (e.key === "ArrowUp") {
-      if (isOpen) {
-        e.preventDefault();
-        e.stopPropagation();
-        setActiveSuggestionIdx((prev) => Math.max(prev - 1, -1));
-      }
-    } else if (e.key === "Escape") {
-      if (isOpen) {
-        e.preventDefault();
-        e.stopPropagation();
-        setShowSuggestions(false);
-        setActiveSuggestionIdx(-1);
-      }
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      e.stopPropagation();
+  function getNavHref(href: string) {
+    const params = new URLSearchParams();
+    params.set("v", currentVideo.id);
+    params.set("resume", "1");
 
-      // Only navigate to a suggestion when one is explicitly highlighted.
-      if (isOpen && suggestions && activeSuggestionIdx >= 0) {
-        const selected = suggestions[activeSuggestionIdx];
-        if (selected) {
-          handleSuggestionClick(selected);
-          return;
-        }
-      }
-
-      // No dropdown - search with the query text
-      if (searchValue.trim()) {
-        router.push(`/search?q=${encodeURIComponent(searchValue.trim())}&v=${encodeURIComponent(currentVideo.id)}`);
-        setShowSuggestions(false);
-        setSearchValue("");
-      }
+    if (href === "/artists") {
+      params.set("letter", activeArtistLetter);
     }
+
+    return `${href}?${params.toString()}`;
   }
 
-  function handleSuggestionClick(suggestion: SearchSuggestion) {
-    const url = suggestion.type === "track"
-      ? suggestion.url
-      : `${suggestion.url}?v=${encodeURIComponent(currentVideo.id)}&resume=1`;
-    setShowSuggestions(false);
-    setSearchValue("");
-    router.push(url);
+  function requestOverlayOpen(href: string, kind: "video" | "wiki" = "video") {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.dispatchEvent(new CustomEvent(OVERLAY_OPEN_REQUEST_EVENT, {
+      detail: { href, kind },
+    }));
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const targetHrefs = visibleNavItems
+      .filter((item) => !isRouteActive(item.href, pathname))
+      .map((item) => getNavHref(item.href));
+
+    if (targetHrefs.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    let idleId: number | null = null;
+
+    const requestIdle = (window as Window & {
+      requestIdleCallback?: (callback: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    }).requestIdleCallback;
+    const cancelIdle = (window as Window & {
+      requestIdleCallback?: (callback: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    }).cancelIdleCallback;
+
+    const warmRoutes = () => {
+      if (cancelled) {
+        return;
+      }
+
+      for (const href of targetHrefs) {
+        router.prefetch(href);
+      }
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      if (typeof requestIdle === "function") {
+        idleId = requestIdle(() => {
+          warmRoutes();
+        }, { timeout: 1500 });
+        return;
+      }
+
+      warmRoutes();
+    }, 1200);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+      if (idleId !== null && typeof cancelIdle === "function") {
+        cancelIdle(idleId);
+      }
+    };
+  }, [activeArtistLetter, currentVideo.id, pathname, router, visibleNavItems]);
 
   const shellClassName = [
     shouldShowOverlayPanel ? "shell shellOverlayRoute" : "shell",
@@ -5860,7 +4203,7 @@ function ShellDynamicInner({
                       key={key}
                       className="playlistRailDropPlaceholder"
                       aria-hidden="true"
-                      onDragOver={(event) => { event.preventDefault(); setDragOverPlaylistTrackIndex(index); }}
+                      onDragOver={(event) => handlePlaylistTrackDragOver(event, index)}
                       onDrop={(event) => handlePlaylistTrackDrop(event, index)}
                     />
                   );

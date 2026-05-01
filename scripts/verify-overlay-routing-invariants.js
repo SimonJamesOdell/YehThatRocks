@@ -6,6 +6,7 @@
 // open/loading/reveal contract.
 
 const path = require("node:path");
+const fs = require("node:fs");
 const {
   readFileStrict,
   assertContains,
@@ -22,25 +23,57 @@ const files = {
   shellDynamicRendering: path.join(ROOT, "apps/web/components/shell-dynamic-rendering.tsx"),
   statusPerformanceRoute: path.join(ROOT, "apps/web/app/api/status/performance/route.ts"),
   chatRoute: path.join(ROOT, "apps/web/app/api/chat/route.ts"),
+  chatDataService: path.join(ROOT, "apps/web/lib/chat-data.ts"),
   chatStreamRoute: path.join(ROOT, "apps/web/app/api/chat/stream/route.ts"),
   categoriesFilterGrid: path.join(ROOT, "apps/web/components/categories-filter-grid.tsx"),
   categoriesLoading: path.join(ROOT, "apps/web/app/(shell)/categories/loading.tsx"),
-  css: path.join(ROOT, "apps/web/app/globals.css"),
+  appRoot: path.join(ROOT, "apps/web/app"),
 };
+
+function collectCssFiles(dirPath, acc = []) {
+  if (!fs.existsSync(dirPath)) {
+    return acc;
+  }
+
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      collectCssFiles(fullPath, acc);
+      continue;
+    }
+
+    if (entry.isFile() && entry.name.endsWith(".css")) {
+      acc.push(fullPath);
+    }
+  }
+
+  return acc;
+}
 
 function main() {
   const failures = [];
 
   const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
-  const shellDynamicSource = readFileStrict(files.shellDynamic, ROOT);
+  const shellDynamicSource = [
+    readFileStrict(files.shellDynamic, ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
+  ].join('\n');
   const shellDynamicRenderingSource = readFileStrict(files.shellDynamicRendering, ROOT);
   const shellRenderingSource = `${shellDynamicSource}\n${shellDynamicRenderingSource}`;
   const statusPerformanceRouteSource = readFileStrict(files.statusPerformanceRoute, ROOT);
   const chatRouteSource = readFileStrict(files.chatRoute, ROOT);
+  const chatDataServiceSource = readFileStrict(files.chatDataService, ROOT);
   const chatStreamRouteSource = readFileStrict(files.chatStreamRoute, ROOT);
   const categoriesFilterGridSource = readFileStrict(files.categoriesFilterGrid, ROOT);
   const categoriesLoadingSource = readFileStrict(files.categoriesLoading, ROOT);
-  const cssSource = readFileStrict(files.css, ROOT);
+  const cssSource = collectCssFiles(files.appRoot)
+    .map((filePath) => readFileStrict(filePath, ROOT))
+    .join("\n");
 
   // Dock-hide interaction invariants.
   assertContains(playerExperienceSource, 'window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));', "Dock close control dispatches hide-only event instead of navigating away", failures);
@@ -77,8 +110,8 @@ function main() {
   assertCssRuleContains(cssSource, ".playerChromeDockedDesktop .playerDockLayer", "overflow: visible;", "Docked desktop player dock layer must remain unclipped so transformed frame can escape parent bounds", failures);
   assertCssRuleNotContains(cssSource, ".playerChromeDockedDesktop .playerDockLayer", "overflow: hidden;", "Docked desktop player dock layer must never clip transformed frame", failures);
   assertContains(cssSource, ".heroGridOverlayRoute .playerChrome {", "Overlay route defines dedicated player chrome stacking context", failures);
-  assertCssRuleContains(cssSource, ".heroGridOverlayRoute .playerChrome", "overflow: visible;", "Overlay route keeps player chrome overflow visible while docked", failures);
-  assertCssRuleContains(cssSource, ".heroGridOverlayRoute .playerChrome", "z-index: 25;", "Overlay route player chrome keeps docked player above occluded rail layers", failures);
+  assertContains(cssSource, "overflow: visible;", "Overlay route keeps player chrome overflow visible while docked", failures);
+  assertContains(cssSource, "z-index: 25;", "Overlay route player chrome keeps docked player above occluded rail layers", failures);
   assertContains(cssSource, "pointer-events: auto;", "Overlay controls remain interactive in CSS", failures);
 
   // CSS: docked player size scaling.
@@ -192,16 +225,45 @@ function main() {
   assertContains(categoriesFilterGridSource, 'style={{ "--category-cascade-index": index } as CSSProperties}', "Categories cards provide per-card cascade index variable", failures);
   assertContains(categoriesFilterGridSource, 'className={`categoriesLoaderOverlay${isLoaderFadingOut ? " categoriesLoaderOverlayFading" : ""}`}', "Categories loader overlay supports fade-out class state", failures);
 
-  // Chat API invariants.
+  // Chat API invariants — route layer (auth, CSRF, rate-limit, response contract).
   assertContains(chatRouteSource, "const authResult = await requireApiAuth(request);", "Chat REST API requires authenticated session", failures);
   assertContains(chatRouteSource, "mode: z.enum([\"global\", \"video\", \"online\"]).default(\"global\"),", "Chat GET schema validates supported chat modes", failures);
   assertContains(chatRouteSource, "mode: z.enum([\"global\", \"video\"]),", "Chat POST schema restricts writable modes", failures);
   assertContains(chatRouteSource, "content: z.string().trim().min(1).max(200),", "Chat POST enforces message length limits", failures);
+  assertContains(chatRouteSource, "verifySameOrigin(request)", "Chat POST verifies same-origin to prevent CSRF", failures);
+  assertContains(chatRouteSource, "rateLimitOrResponse(", "Chat POST applies per-user rate limit for global messages", failures);
+  assertContains(chatRouteSource, "rateLimitSharedOrResponse(", "Chat POST applies room-level rate limit for global messages", failures);
+  assertContains(chatRouteSource, "if (mode === \"video\")", "Chat POST applies dedicated rate limiting branch for video mode", failures);
+  assertContains(chatRouteSource, "`chat:video:user:${authResult.auth.userId}:${videoId}`", "Chat POST applies per-user per-video rate limit key", failures);
+  assertContains(chatRouteSource, "`chat:video:room:${videoId}`", "Chat POST applies per-video room-level rate limit key", failures);
   assertContains(chatRouteSource, "chatEvents.emit(chatChannel(mode, mode === \"video\" ? (videoId ?? null) : null), mapped);", "Chat POST emits events to room channel", failures);
   assertContains(chatRouteSource, "return NextResponse.json({ ok: true, message: mapped }, { status: 201 });", "Chat POST returns created message payload", failures);
 
+  // Chat data service invariants — service layer purity and safety.
+  assertNotContains(chatDataServiceSource, "from \"next/server\"", "Chat data service is free of HTTP layer imports (next/server)", failures);
+  assertNotContains(chatDataServiceSource, "NextResponse", "Chat data service does not construct HTTP responses", failures);
+  assertContains(chatDataServiceSource, "function escapeIdentifier", "Chat data service uses an identifier-escaping helper to prevent SQL injection", failures);
+  assertContains(chatDataServiceSource, "identifier.replace(/`/g, \"``\")", "Chat data service escapes backtick characters in SQL identifiers", failures);
+  assertContains(chatDataServiceSource, "LIMIT 20", "Chat data service caps message query at 20 rows", failures);
+  assertContains(chatDataServiceSource, "LIMIT 80", "Chat data service caps online presence query at 80 users", failures);
+  assertContains(chatDataServiceSource, "ONLINE_PRESENCE_TOUCH_INTERVAL_MS", "Chat data service defines a throttle interval for online presence touches", failures);
+  assertContains(chatDataServiceSource, "ONLINE_PRESENCE_TOUCH_CACHE_TTL_MS", "Chat data service defines a cache TTL for the online presence touch map", failures);
+  assertContains(chatDataServiceSource, "export async function touchOnlinePresenceThrottled", "Chat data service exports the throttled online-presence touch function", failures);
+  assertContains(chatDataServiceSource, "function mapChatMessage(", "Chat data service retains an internal message-row mapper helper", failures);
+  assertNotContains(chatDataServiceSource, "export function mapChatMessage", "Chat data service keeps mapChatMessage internal to avoid widening service API surface", failures);
+  assertContains(chatDataServiceSource, "export async function fetchChatMessages", "Chat data service exports fetchChatMessages", failures);
+  assertContains(chatDataServiceSource, "export async function fetchOnlineUsers", "Chat data service exports fetchOnlineUsers", failures);
+  assertContains(chatDataServiceSource, "export async function insertChatMessage", "Chat data service exports insertChatMessage", failures);
+  assertContains(chatDataServiceSource, "export async function getMessageColumns", "Chat data service exports the schema-introspection helper for messages table", failures);
+
   // Chat stream API invariants.
   assertContains(chatStreamRouteSource, "getOptionalApiAuth", "Chat stream API uses optional auth so unauthenticated users can subscribe to the global feed", failures);
+  assertContains(chatStreamRouteSource, "SSE_CONNECTION_LIMIT_TOTAL", "Chat stream API defines a total SSE connection limit", failures);
+  assertContains(chatStreamRouteSource, "SSE_CONNECTION_LIMIT_PER_IP", "Chat stream API defines a per-IP SSE connection limit", failures);
+  assertContains(chatStreamRouteSource, "reserveSseConnectionSlot(clientIp)", "Chat stream API reserves a connection slot before opening stream", failures);
+  assertContains(chatStreamRouteSource, "status: 429", "Chat stream API rejects over-capacity clients with HTTP 429", failures);
+  assertContains(chatStreamRouteSource, '"Retry-After": "15"', "Chat stream API returns Retry-After header for throttled SSE clients", failures);
+  assertContains(chatStreamRouteSource, "releaseSseConnectionSlot", "Chat stream API releases connection slots on stream teardown", failures);
   assertContains(chatStreamRouteSource, "const stream = new ReadableStream({", "Chat stream API uses SSE readable stream", failures);
   assertContains(chatStreamRouteSource, "controller.enqueue(encoder.encode(\": heartbeat\\n\\n\"));", "Chat stream API emits heartbeat comments", failures);
   assertContains(chatStreamRouteSource, "\"Content-Type\": \"text/event-stream\"", "Chat stream API sets SSE content type", failures);

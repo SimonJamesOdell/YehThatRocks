@@ -8,6 +8,7 @@ import { revokeUserRefreshSessions } from "@/lib/auth-sessions";
 import { consumePasswordResetToken } from "@/lib/auth-token-records";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
+import { rateLimitOrResponse } from "@/lib/rate-limit";
 import { parseRequestJson } from "@/lib/request-json";
 
 export async function POST(request: NextRequest) {
@@ -28,6 +29,13 @@ export async function POST(request: NextRequest) {
 
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const rateLimited = rateLimitOrResponse(request, `auth:reset-password:${parsed.data.token}`, 8, 15 * 60 * 1000);
+
+  if (rateLimited) {
+    await recordAuthAudit({ action: "reset-password", success: false, detail: "Reset password rate limited", ...requestMeta });
+    return rateLimited;
   }
 
   const userId = await consumePasswordResetToken(parsed.data.token);

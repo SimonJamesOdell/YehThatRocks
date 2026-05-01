@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
@@ -78,6 +78,7 @@ export function Top100VideoLink({
   onFlagVideo,
   isFlagPending = false,
 }: Top100VideoLinkProps) {
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const hasWarmedRef = useRef(false);
@@ -160,14 +161,8 @@ export function Top100VideoLink({
 
   const navigateToVideo = useCallback(() => {
     warmSelection();
-
-    if (typeof window !== "undefined" && window.location.pathname === pathname) {
-      window.history.pushState(window.history.state, "", videoHref);
-      return;
-    }
-
-    window.location.assign(videoHref);
-  }, [pathname, videoHref, warmSelection]);
+    router.push(videoHref);
+  }, [router, videoHref, warmSelection]);
 
   const openVideoFromCard = useCallback(() => {
     navigateToVideo();
