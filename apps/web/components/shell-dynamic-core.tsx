@@ -424,6 +424,7 @@ function ShellDynamicInner({
   const shouldHidePlayerForMagazineGuest = !isAuthenticated && isMagazineOverlayRoute && didArriveOnMagazineRouteRef.current;
   const shouldDisableRelatedRailTransition = pathname === "/new";
   const shouldOccludeLeftRail = shouldShowOverlayPanel && !isMagazineOverlayRoute;
+  const shouldOccludeRightRail = shouldShowOverlayPanel && !isMagazineOverlayRoute && pathname !== "/new";
   const isWaitingForClientHydration = !hasClientMounted;
   const isWaitingForStartupVideoUrlSync =
     !requestedVideoId
@@ -463,7 +464,6 @@ function ShellDynamicInner({
   const isMobileCommunityCollapsed = isMobileViewport && !isMobileCommunityOpen;
 
   // ── Auth callbacks (needed by hooks below) ───────────────────────────────
-
   const refreshAuthSession = useCallback(async () => {
     if (refreshPromiseRef.current) {
       return refreshPromiseRef.current;
@@ -590,7 +590,6 @@ function ShellDynamicInner({
   }, [fetchWithAuthRetry, isAuthenticated]);
 
   // ── Custom hooks ──────────────────────────────────────────────────────────
-
   const {
     isDesktopIntroActive,
     isDesktopIntroPreload,
@@ -661,7 +660,7 @@ function ShellDynamicInner({
     isAuthenticated,
     isMagazineOverlayRoute,
     isAdminOverlayRoute,
-    shouldShowOverlayPanel,
+    shouldShowOverlayPanel: shouldShowOverlayPanel && pathname !== "/new",
     fetchWithAuthRetry,
     checkAuthState,
   });
@@ -809,7 +808,12 @@ function ShellDynamicInner({
     }
 
     const targetVideoId = url.searchParams.get("v");
-    if (!targetVideoId) {
+    if (!targetVideoId) return;
+
+    if (pathname === "/new" && target?.closest(".rightRail")) {
+      event.preventDefault();
+      url.searchParams.delete("resume");
+      window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", { detail: { href: `${url.pathname}${url.search}${url.hash}` } }));
       return;
     }
 
@@ -1131,9 +1135,9 @@ function ShellDynamicInner({
       setIsOverlayClosing(true);
       shouldRunFooterRevealRef.current = true;
       earlyFooterRevealFiredRef.current = false;
+      const shouldNavigateDuringCloseAnimation = pathname === "/new" && shouldHoldOverlayForVideoSwitch;
 
-      // Schedule the footer reveal to start early so it completes right as
-      // the undock movement animation finishes, giving a smoother transition.
+      // Schedule the footer reveal to start early so it completes as the undock animation finishes.
       if (footerRevealEarlyTimeoutRef.current !== null) {
         window.clearTimeout(footerRevealEarlyTimeoutRef.current);
       }
@@ -1158,6 +1162,11 @@ function ShellDynamicInner({
 
         router.push(nextHref);
       };
+
+      if (shouldNavigateDuringCloseAnimation) {
+        finishCloseNavigation();
+        return;
+      }
 
       const handleFrameTransitionEnd = (transitionEvent: TransitionEvent) => {
         if (transitionEvent.propertyName !== "transform") {
@@ -1213,7 +1222,7 @@ function ShellDynamicInner({
       shouldRunFooterRevealRef.current = false;
       earlyFooterRevealFiredRef.current = false;
     };
-  }, [currentVideo.id, isMagazineOverlayRoute, router, shouldShowOverlayPanel]);
+  }, [currentVideo.id, isMagazineOverlayRoute, pathname, router, shouldShowOverlayPanel]);
 
   useEffect(() => {
     if (requestedVideoId) {
@@ -2019,7 +2028,6 @@ function ShellDynamicInner({
   const shouldShowWatchNextEmptyState = visibleWatchNextVideos.length === 0
     && !shouldShowWatchNextRailLoader
     && !shouldShowWatchNextUnseenEmptyState;
-
 
   useEffect(() => {
     relatedVideosRef.current = relatedVideos;
@@ -3755,12 +3763,12 @@ function ShellDynamicInner({
           <aside
             ref={watchNextRailRef}
             className={
-              shouldShowOverlayPanel
+              shouldOccludeRightRail
                 ? "rightRail panel translucent railOccluded"
                 : "rightRail panel translucent"
             }
-            aria-hidden={shouldShowOverlayPanel}
-            inert={shouldShowOverlayPanel ? true : undefined}
+            aria-hidden={shouldOccludeRightRail}
+            inert={shouldOccludeRightRail ? true : undefined}
           >
             {isLyricsOverlayOpen ? (
               <section

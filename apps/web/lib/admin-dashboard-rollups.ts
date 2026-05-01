@@ -53,6 +53,99 @@ let rollupsStarted = false;
 let rollupsInFlight: Promise<void> | null = null;
 let rollupsLastRefreshedAtMs = 0;
 let dailyBackfillDone = false;
+let usersCreatedAtColumnPromise: Promise<string | null> | null = null;
+
+async function getUsersCreatedAtColumn() {
+  if (!usersCreatedAtColumnPromise) {
+    usersCreatedAtColumnPromise = prisma.$queryRaw<Array<{ columnName: string }>>`
+      SELECT column_name AS columnName
+      FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'users'
+        AND column_name IN ('created_at', 'createdAt')
+      ORDER BY CASE column_name WHEN 'created_at' THEN 0 ELSE 1 END
+      LIMIT 1
+    `
+      .then((rows) => rows[0]?.columnName ?? null)
+      .catch(() => null);
+  }
+
+  return usersCreatedAtColumnPromise;
+}
+
+async function buildRegistrationsDailyJoinSql(options?: { recentDays?: number }) {
+  const usersCreatedAtColumn = await getUsersCreatedAtColumn();
+  if (!usersCreatedAtColumn) {
+    return `
+      LEFT JOIN (
+        SELECT NULL AS day_date, 0 AS registrations
+        WHERE 1 = 0
+      ) reg ON reg.day_date = metrics.day_date
+    `;
+  }
+
+  const recentClause = options?.recentDays != null
+    ? `WHERE ${usersCreatedAtColumn} >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${options.recentDays} DAY)`
+    : "";
+
+  return `
+    LEFT JOIN (
+      SELECT DATE(${usersCreatedAtColumn}) AS day_date, COUNT(*) AS registrations
+      FROM users
+      ${recentClause}
+      GROUP BY DATE(${usersCreatedAtColumn})
+    ) reg ON reg.day_date = metrics.day_date
+  `;
+}
+
+async function ensureColumnExists(tableName: string, columnName: string, columnDefinitionSql: string) {
+  const rows = await prisma.$queryRawUnsafe<Array<{ count: bigint | number }>>(
+    `
+      SELECT COUNT(*) AS count
+      FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = '${tableName}'
+        AND column_name = '${columnName}'
+    `,
+  );
+
+  if (Number(rows[0]?.count ?? 0) > 0) {
+    return;
+  }
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE ${tableName}
+    ADD COLUMN ${columnName} ${columnDefinitionSql}
+  `);
+}
+
+async function ensureRollupTableShape() {
+  await ensureColumnExists("admin_dashboard_analytics_daily", "return_visits", "BIGINT NOT NULL DEFAULT 0");
+  await ensureColumnExists("admin_dashboard_analytics_daily", "new_visitors", "BIGINT NOT NULL DEFAULT 0");
+  await ensureColumnExists("admin_dashboard_analytics_daily", "repeat_visitors", "BIGINT NOT NULL DEFAULT 0");
+  await ensureColumnExists("admin_dashboard_analytics_daily", "total_sessions", "BIGINT NOT NULL DEFAULT 0");
+  await ensureColumnExists("admin_dashboard_analytics_daily", "auth_events", "BIGINT NOT NULL DEFAULT 0");
+  await ensureColumnExists("admin_dashboard_analytics_daily", "registrations", "BIGINT NOT NULL DEFAULT 0");
+  await ensureColumnExists(
+    "admin_dashboard_analytics_daily",
+    "updated_at",
+    "DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)",
+  );
+
+  await ensureColumnExists("admin_dashboard_analytics_hourly", "return_visits", "BIGINT NOT NULL DEFAULT 0");
+  await ensureColumnExists(
+    "admin_dashboard_analytics_hourly",
+    "updated_at",
+    "DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)",
+  );
+
+  await ensureColumnExists("admin_dashboard_auth_hourly", "auth_events", "BIGINT NOT NULL DEFAULT 0");
+  await ensureColumnExists(
+    "admin_dashboard_auth_hourly",
+    "updated_at",
+    "DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)",
+  );
+}
 
 async function ensureRollupTables() {
   await prisma.$executeRawUnsafe(`
@@ -95,10 +188,14 @@ async function ensureRollupTables() {
       KEY idx_admin_dash_auth_hourly_updated_at (updated_at)
     )
   `);
+
+  await ensureRollupTableShape();
 }
 
 async function maybeBackfillDailyHistory() {
   if (dailyBackfillDone) return;
+
+  const registrationsDailyJoinSql = await buildRegistrationsDailyJoinSql();
 
   const rows = await prisma.$queryRaw<Array<{ count: bigint | number }>>`
     SELECT COUNT(*) AS count FROM admin_dashboard_analytics_daily
@@ -148,11 +245,7 @@ async function maybeBackfillDailyHistory() {
         FROM auth_audit_logs
         GROUP BY DATE(created_at)
       ) auth ON auth.day_date = metrics.day_date
-      LEFT JOIN (
-        SELECT DATE(created_at) AS day_date, COUNT(*) AS registrations
-        FROM users
-        GROUP BY DATE(created_at)
-      ) reg ON reg.day_date = metrics.day_date
+      ${registrationsDailyJoinSql}
       ON DUPLICATE KEY UPDATE
         page_views = VALUES(page_views),
         video_views = VALUES(video_views),
@@ -171,6 +264,8 @@ async function maybeBackfillDailyHistory() {
 }
 
 async function refreshRecentDailyRollups() {
+  const registrationsDailyJoinSql = await buildRegistrationsDailyJoinSql({ recentDays: DAILY_RECENT_DAYS });
+
   await prisma.$executeRawUnsafe(`
     INSERT INTO admin_dashboard_analytics_daily (
       day_date,
@@ -215,12 +310,7 @@ async function refreshRecentDailyRollups() {
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${DAILY_RECENT_DAYS} DAY)
       GROUP BY DATE(created_at)
     ) auth ON auth.day_date = metrics.day_date
-    LEFT JOIN (
-      SELECT DATE(created_at) AS day_date, COUNT(*) AS registrations
-      FROM users
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${DAILY_RECENT_DAYS} DAY)
-      GROUP BY DATE(created_at)
-    ) reg ON reg.day_date = metrics.day_date
+    ${registrationsDailyJoinSql}
     ON DUPLICATE KEY UPDATE
       page_views = VALUES(page_views),
       video_views = VALUES(video_views),
