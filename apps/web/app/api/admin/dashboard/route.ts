@@ -396,29 +396,77 @@ export async function GET(request: NextRequest) {
     dailySeriesRows,
   } = rollups;
 
+  const effectiveDailySeriesRows: Array<{
+    day: Date;
+    pageViews: bigint | number;
+    videoViews: bigint | number;
+    uniqueVisitors: bigint | number;
+    returnVisits: bigint | number;
+    authEvents: bigint | number;
+  }> = dailySeriesRows.length > 0
+    ? dailySeriesRows
+    : await prisma.$queryRaw<Array<{
+        day: Date;
+        pageViews: bigint | number;
+        videoViews: bigint | number;
+        uniqueVisitors: bigint | number;
+        returnVisits: bigint | number;
+        authEvents: bigint | number;
+      }>>`
+        SELECT
+          metrics.day AS day,
+          metrics.pageViews AS pageViews,
+          metrics.videoViews AS videoViews,
+          metrics.uniqueVisitors AS uniqueVisitors,
+          metrics.returnVisits AS returnVisits,
+          COALESCE(auth.authEvents, 0) AS authEvents
+        FROM (
+          SELECT
+            DATE(created_at) AS day,
+            SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS pageViews,
+            SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS videoViews,
+            COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS uniqueVisitors,
+            COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS returnVisits
+          FROM analytics_events
+          GROUP BY DATE(created_at)
+        ) metrics
+        LEFT JOIN (
+          SELECT DATE(created_at) AS day, COUNT(*) AS authEvents
+          FROM auth_audit_logs
+          GROUP BY DATE(created_at)
+        ) auth ON auth.day = metrics.day
+        ORDER BY metrics.day ASC
+      `.catch(() => []);
+
   const nowDate = new Date();
   const earliestCandidates = [earliestAnalyticsAt[0]?.earliestAt, earliestAuthAt[0]?.earliestAt].filter(
     (value): value is Date => value instanceof Date,
   );
+  const earliestFallback = effectiveDailySeriesRows[0]?.day;
+  const earliestFallbackDate = earliestFallback instanceof Date
+    ? earliestFallback
+    : earliestFallback
+      ? new Date(earliestFallback)
+      : null;
   const earliestRecordAt = earliestCandidates.length > 0
     ? new Date(Math.min(...earliestCandidates.map((value) => value.getTime())))
-    : null;
+    : earliestFallbackDate;
   const allTimeMonthSpan = earliestRecordAt ? countMonthsInclusive(earliestRecordAt, nowDate) : 1;
   const allTimeBucketMonths = Math.max(1, Math.ceil(allTimeMonthSpan / 12));
   const allTimeBucketCount = Math.min(12, Math.max(1, Math.ceil(allTimeMonthSpan / allTimeBucketMonths)));
 
-  const allTimeSeries = buildRollingAnalyticsSeriesFromRollup(nowDate, "allTime", dailySeriesRows, {
+  const allTimeSeries = buildRollingAnalyticsSeriesFromRollup(nowDate, "allTime", effectiveDailySeriesRows, {
     bucketCount: allTimeBucketCount,
     bucketMonths: allTimeBucketMonths,
   });
-  const monthlySeries = buildRollingAnalyticsSeriesFromRollup(nowDate, "monthly", dailySeriesRows, {
+  const monthlySeries = buildRollingAnalyticsSeriesFromRollup(nowDate, "monthly", effectiveDailySeriesRows, {
     bucketCount: 12,
     bucketMonths: 1,
   });
-  const weeklySeries = buildRollingAnalyticsSeriesFromRollup(nowDate, "weekly", dailySeriesRows, {
+  const weeklySeries = buildRollingAnalyticsSeriesFromRollup(nowDate, "weekly", effectiveDailySeriesRows, {
     bucketCount: 12,
   });
-  const dailySeries = buildRollingAnalyticsSeriesFromRollup(nowDate, "daily", dailySeriesRows, {
+  const dailySeries = buildRollingAnalyticsSeriesFromRollup(nowDate, "daily", effectiveDailySeriesRows, {
     bucketCount: 12,
   });
 

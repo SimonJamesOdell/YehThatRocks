@@ -3326,7 +3326,7 @@ export function PlayerExperience({
       }
     }
 
-    router.push(`${navigationPathname}?${params.toString()}`);
+    router.push(`${navigationPathname}?${params.toString()}`, { scroll: false });
   }
 
   function triggerEndOfVideoAction(options?: { forceAutoplayAdvance?: boolean }) {
