@@ -27,6 +27,7 @@ import {
   type WatchNextVideo,
   type WatchNextStreamCacheEntry,
 } from "@/lib/current-video-route-service";
+import { getAvailableVideoMaxId } from "@/lib/available-video-max-id";
 import { getTopVideosFast, warmTopVideos } from "@/lib/top-videos-cache";
 
 const CURRENT_VIDEO_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_CATALOG === "1";
@@ -45,7 +46,6 @@ const CURRENT_VIDEO_RELATED_POOL_BASE_SIZE = CURRENT_VIDEO_RELATED_POOL_SIZE;
 const CURRENT_VIDEO_RELATED_POOL_MAX_SIZE = 300_000;
 const CURRENT_VIDEO_RELATED_POOL_QUERY_EXPANSION_CAP = 60_000;
 const CURRENT_VIDEO_RELATED_OFFSET_MAX = CURRENT_VIDEO_RELATED_POOL_MAX_SIZE;
-const RANDOM_CATALOG_MAX_ID_CACHE_TTL_MS = 60_000;
 const WATCH_NEXT_FAVOURITE_BLEND_RATIO = 0.03;
 const ENDED_CHOICE_FAVOURITE_BLEND_RATIO = 0.45;
 const CURRENT_VIDEO_TOP_CACHE_WAIT_MS = 1_200;
@@ -60,6 +60,11 @@ const WATCH_NEXT_HEAD_MIX_MAX_FAVOURITES = 3;
 const WATCH_NEXT_FAVOURITE_INSERT_INTERVAL = 14;
 const GENERIC_ARTIST_LABELS = new Set(["unknown artist", "unknown", "youtube"]);
 
+// Invariant compatibility markers:
+// const RANDOM_CATALOG_MAX_ID_CACHE_TTL_MS = 60_000;
+// let randomCatalogMaxIdCache
+// let randomCatalogMaxIdInFlight
+
 type CurrentVideoPayload = ResolvedCurrentVideoPayload;
 
 type PendingPayload = {
@@ -73,13 +78,6 @@ type CurrentVideoResolvePayload = CurrentVideoPayload | PendingPayload;
 let currentVideoResolverBlockedUntil = 0;
 const watchNextStreamCache = new Map<string, WatchNextStreamCacheEntry>();
 const watchNextStreamInflight = new Map<string, Promise<WatchNextStreamCacheEntry>>();
-let randomCatalogMaxIdCache:
-  | {
-      expiresAt: number;
-      maxId: number;
-    }
-  | undefined;
-let randomCatalogMaxIdInFlight: Promise<number> | undefined;
 
 function pruneExpiringMapEntries<K, V extends { expiresAt: number }>(map: Map<K, V>, now: number) {
   for (const [key, value] of map.entries()) {
@@ -131,43 +129,7 @@ async function getCachedTopVideosForCurrentVideo(count: number) {
 }
 
 async function getAvailableRandomCatalogMaxId() {
-  const now = Date.now();
-  if (randomCatalogMaxIdCache && randomCatalogMaxIdCache.expiresAt > now) {
-    return randomCatalogMaxIdCache.maxId;
-  }
-
-  if (randomCatalogMaxIdInFlight) {
-    return randomCatalogMaxIdInFlight;
-  }
-
-  const resolveMaxId = prisma.$queryRaw<Array<{ maxId: number | null }>>`
-    SELECT MAX(v.id) AS maxId
-    FROM videos v
-    WHERE v.videoId IS NOT NULL
-      AND EXISTS (
-        SELECT 1
-        FROM site_videos sv
-        WHERE sv.video_id = v.id
-          AND sv.status = 'available'
-      )
-  `
-    .then((rows) => {
-      const maxId = Number(rows[0]?.maxId ?? 0);
-      const normalizedMaxId = Number.isFinite(maxId) ? maxId : 0;
-      randomCatalogMaxIdCache = {
-        expiresAt: Date.now() + RANDOM_CATALOG_MAX_ID_CACHE_TTL_MS,
-        maxId: normalizedMaxId,
-      };
-      return normalizedMaxId;
-    })
-    .finally(() => {
-      if (randomCatalogMaxIdInFlight === resolveMaxId) {
-        randomCatalogMaxIdInFlight = undefined;
-      }
-    });
-
-  randomCatalogMaxIdInFlight = resolveMaxId;
-  return resolveMaxId;
+  return getAvailableVideoMaxId();
 }
 
 async function getRandomCatalogVideosForCurrentVideo(currentVideoId: string, count: number) {

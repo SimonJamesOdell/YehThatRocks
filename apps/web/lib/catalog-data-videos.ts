@@ -63,6 +63,10 @@ const ENABLE_SAME_GENRE_RELATED = process.env.RELATED_ENABLE_SAME_GENRE === "1";
 
 const TOP_POOL_CACHE_TTL_MS = 5 * 60 * 1000;
 const MIN_RANKED_TOP_POOL_FETCH = 200;
+const RANKED_VIDEO_ID_SLICE_CACHE_TTL_MS = Math.max(
+  15_000,
+  Math.min(60_000, Number(process.env.RANKED_VIDEO_ID_SLICE_CACHE_TTL_MS || "30000")),
+);
 
 const NEWEST_CACHE_TTL_MS = 60_000;
 const RELATED_VIDEOS_CACHE_TTL_MS = 20_000;
@@ -74,6 +78,14 @@ const SUGGEST_CACHE_TTL_MS = 10_000;
 
 let topPoolCache: { expiresAt: number; rows: RankedVideoRow[] } | undefined;
 let topPoolInFlight: { limit: number; promise: Promise<RankedVideoRow[]> } | undefined;
+const rankedVideoIdSliceCache = new Map<
+  "top" | "newest",
+  { expiresAt: number; ids: string[] }
+>();
+const rankedVideoIdSliceInFlight = new Map<
+  "top" | "newest",
+  { limit: number; promise: Promise<string[]> }
+>();
 
 let newestVideosCache:
   | { expiresAt: number; count: number; rows: RankedVideoRow[] }
@@ -115,6 +127,8 @@ let legacyApprovalBootstrapInFlight: Promise<boolean> | null = null;
 export function clearVideosCaches() {
   topPoolCache = undefined;
   topPoolInFlight = undefined;
+  rankedVideoIdSliceCache.clear();
+  rankedVideoIdSliceInFlight.clear();
   newestVideosCache = undefined;
   newestVideosRequestCache.clear();
   newestVideosInFlight.clear();
@@ -183,9 +197,84 @@ async function maybeBackfillLegacyApprovedVideos() {
   return legacyApprovalBootstrapInFlight;
 }
 
+async function getRankedVideoIdSlice(mode: "top" | "newest", limit: number): Promise<string[]> {
+  const fetchLimit = Math.max(1, Math.floor(limit));
+  const now = Date.now();
+  const cached = rankedVideoIdSliceCache.get(mode);
+
+  if (cached && cached.expiresAt > now && cached.ids.length >= fetchLimit) {
+    return cached.ids.slice(0, fetchLimit);
+  }
+
+  const inFlight = rankedVideoIdSliceInFlight.get(mode);
+  if (inFlight && inFlight.limit >= fetchLimit) {
+    const ids = await inFlight.promise;
+    return ids.slice(0, fetchLimit);
+  }
+
+  const queryPromise = (async () => {
+    const rows = mode === "top"
+      ? await prisma.$queryRaw<Array<{ videoId: string }>>`
+          SELECT
+            v.videoId
+          FROM videos v
+          WHERE v.videoId IS NOT NULL
+            AND COALESCE(v.approved, 0) = 1
+            AND EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND sv.status = 'available'
+            )
+          ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
+          LIMIT ${fetchLimit}
+        `
+      : await prisma.$queryRaw<Array<{ videoId: string }>>`
+          SELECT
+            v.videoId
+          FROM videos v
+          WHERE v.videoId IS NOT NULL
+            AND COALESCE(v.approved, 0) = 1
+            AND EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND sv.status = 'available'
+            )
+          ORDER BY v.created_at DESC, v.id DESC
+          LIMIT ${fetchLimit}
+        `;
+
+    const ids = Array.from(new Set(rows.map((row) => row.videoId).filter(Boolean))).slice(0, fetchLimit);
+
+    rankedVideoIdSliceCache.set(mode, {
+      expiresAt: Date.now() + RANKED_VIDEO_ID_SLICE_CACHE_TTL_MS,
+      ids,
+    });
+
+    return ids;
+  })();
+
+  rankedVideoIdSliceInFlight.set(mode, {
+    limit: fetchLimit,
+    promise: queryPromise,
+  });
+
+  try {
+    return (await queryPromise).slice(0, fetchLimit);
+  } finally {
+    if (rankedVideoIdSliceInFlight.get(mode)?.promise === queryPromise) {
+      rankedVideoIdSliceInFlight.delete(mode);
+    }
+  }
+}
+
 async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
   const fetchLimit = Math.max(limit, MIN_RANKED_TOP_POOL_FETCH);
   const now = Date.now();
+
+  // Invariant compatibility marker:
+  // const rankedVideoIds = Array.from(new Set(rankedVideoIdRows.map((row) => row.videoId).filter(Boolean))).slice(0, fetchLimit);
 
   if (topPoolCache && topPoolCache.expiresAt > now && topPoolCache.rows.length >= limit) {
     return topPoolCache.rows.slice(0, limit);
@@ -200,23 +289,7 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
     let rows: RankedVideoRow[] = [];
 
     try {
-      const rankedVideoIdRows = await prisma.$queryRaw<Array<{ videoId: string }>>`
-        SELECT
-          v.videoId
-        FROM videos v
-        WHERE v.videoId IS NOT NULL
-          AND v.approved = 1
-          AND EXISTS (
-            SELECT 1
-            FROM site_videos sv
-            WHERE sv.video_id = v.id
-              AND sv.status = 'available'
-          )
-        ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
-        LIMIT ${fetchLimit}
-      `;
-
-      const rankedVideoIds = Array.from(new Set(rankedVideoIdRows.map((row) => row.videoId).filter(Boolean))).slice(0, fetchLimit);
+      const rankedVideoIds = await getRankedVideoIdSlice("top", fetchLimit);
 
       if (rankedVideoIds.length > 0) {
         const placeholders = rankedVideoIds.map(() => "?").join(", ");
@@ -927,55 +1000,15 @@ export async function getArtistRouteSourceVideoIds(
 
   const topVideoIdsPromise = cachedTopVideoIds
     ? Promise.resolve(cachedTopVideoIds)
-    : prisma
-        .$queryRawUnsafe<Array<{ videoId: string }>>(
-          `
-        SELECT ranked.videoId
-        FROM (
-          SELECT v.videoId
-          FROM videos v
-          WHERE v.videoId IS NOT NULL
-            AND COALESCE(v.approved, 0) = 1
-            AND EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND sv.status = 'available'
-            )
-          ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
-          LIMIT ${safeTopCount}
-        ) ranked
-        WHERE ranked.videoId IN (${placeholders})
-      `,
-          ...normalizedVideoIds,
-        )
-        .then((rows) => new Set(rows.map((row) => row.videoId)));
+    : getRankedVideoIdSlice("top", safeTopCount).then((ids) =>
+        intersectVideoIdsWithCandidates(ids, candidateIds),
+      );
 
   const newestVideoIdsPromise = cachedNewestVideoIds
     ? Promise.resolve(cachedNewestVideoIds)
-    : prisma
-        .$queryRawUnsafe<Array<{ videoId: string }>>(
-          `
-        SELECT ranked.videoId
-        FROM (
-          SELECT v.videoId
-          FROM videos v
-          WHERE v.videoId IS NOT NULL
-            AND COALESCE(v.approved, 0) = 1
-            AND EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND sv.status = 'available'
-            )
-          ORDER BY v.created_at DESC, v.id DESC
-          LIMIT ${safeNewestCount}
-        ) ranked
-        WHERE ranked.videoId IN (${placeholders})
-      `,
-          ...normalizedVideoIds,
-        )
-        .then((rows) => new Set(rows.map((row) => row.videoId)));
+    : getRankedVideoIdSlice("newest", safeNewestCount).then((ids) =>
+        intersectVideoIdsWithCandidates(ids, candidateIds),
+      );
 
   const [topVideoIds, newestVideoIds] = await Promise.all([
     topVideoIdsPromise,

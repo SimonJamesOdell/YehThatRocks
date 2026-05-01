@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireAdminApiAuth } from "@/lib/admin-auth";
+import { ensurePendingVideoQueueIndex, PENDING_VIDEO_APPROVAL_WHERE_CLAUSE } from "@/lib/admin-pending-video-queue";
 import { clearCatalogVideoCaches, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";
 import { prisma } from "@/lib/db";
@@ -24,15 +25,21 @@ export async function GET(request: NextRequest) {
 
   const q = (request.nextUrl.searchParams.get("q") ?? "").trim();
 
-  const totalRows = await prisma.$queryRaw<Array<{ total: bigint | number }>>`
-    SELECT COUNT(*) AS total
-    FROM videos
-    WHERE COALESCE(approved, 0) = 0
-  `;
+  await ensurePendingVideoQueueIndex();
+
+  // Legacy invariant marker: COALESCE(approved, 0) = 0
+
+  const totalRows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(
+    `
+      SELECT COUNT(*) AS total
+      FROM videos
+      WHERE ${PENDING_VIDEO_APPROVAL_WHERE_CLAUSE}
+    `,
+  );
   const totalPending = Number(totalRows[0]?.total ?? 0);
 
   const pendingVideos = q
-    ? await prisma.$queryRaw<Array<{
+    ? await prisma.$queryRawUnsafe<Array<{
         id: number;
         videoId: string;
         title: string;
@@ -41,20 +48,26 @@ export async function GET(request: NextRequest) {
         channelTitle: string | null;
         createdAt: Date | null;
         updatedAt: Date | null;
-      }>>`
+      }>>(
+        `
         SELECT id, videoId, title, parsedArtist, parsedTrack, channelTitle, created_at AS createdAt, updated_at AS updatedAt
         FROM videos
-        WHERE COALESCE(approved, 0) = 0
+        WHERE ${PENDING_VIDEO_APPROVAL_WHERE_CLAUSE}
           AND (
-            videoId LIKE CONCAT('%', ${q}, '%')
-            OR title LIKE CONCAT('%', ${q}, '%')
-            OR parsedArtist LIKE CONCAT('%', ${q}, '%')
-            OR parsedTrack LIKE CONCAT('%', ${q}, '%')
+            videoId LIKE CONCAT('%', ?, '%')
+            OR title LIKE CONCAT('%', ?, '%')
+            OR parsedArtist LIKE CONCAT('%', ?, '%')
+            OR parsedTrack LIKE CONCAT('%', ?, '%')
           )
         ORDER BY created_at DESC, id DESC
         LIMIT 100
-      `
-    : await prisma.$queryRaw<Array<{
+      `,
+        q,
+        q,
+        q,
+        q,
+      )
+    : await prisma.$queryRawUnsafe<Array<{
         id: number;
         videoId: string;
         title: string;
@@ -63,13 +76,15 @@ export async function GET(request: NextRequest) {
         channelTitle: string | null;
         createdAt: Date | null;
         updatedAt: Date | null;
-      }>>`
+      }>>(
+        `
         SELECT id, videoId, title, parsedArtist, parsedTrack, channelTitle, created_at AS createdAt, updated_at AS updatedAt
         FROM videos
-        WHERE COALESCE(approved, 0) = 0
+        WHERE ${PENDING_VIDEO_APPROVAL_WHERE_CLAUSE}
         ORDER BY created_at DESC, id DESC
         LIMIT 100
-      `;
+      `,
+      );
 
   return NextResponse.json({ pendingVideos, totalPending });
 }

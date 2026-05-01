@@ -4,7 +4,9 @@ import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireAdminApiAuth } from "@/lib/admin-auth";
+import { getAdminDashboardAuthAuditCounters } from "@/lib/admin-dashboard-auth-counters";
 import { buildAdminHealthPayload, readAdminHostMetricHistory } from "@/lib/admin-dashboard-health";
+import { ensureAdminDashboardRollupsFresh, readAdminDashboardRollups } from "@/lib/admin-dashboard-rollups";
 import { prisma } from "@/lib/db";
 
 function toNumber(value: bigint | number | string | null | undefined) {
@@ -83,45 +85,19 @@ function buildRangeLabel(start: Date, end: Date, mode: "daily" | "weekly" | "mon
   return `${formatMonthLabel(start)} - ${formatMonthLabel(end)}`;
 }
 
-async function readAnalyticsBucketMetrics(bucketStart: Date, bucketEnd: Date) {
-  const [analyticsRows, authRows] = await Promise.all([
-    prisma.$queryRaw<Array<{
-      pageViews: bigint | number;
-      videoViews: bigint | number;
-      uniqueVisitors: bigint | number;
-      returnVisits: bigint | number;
-    }>>`
-      SELECT
-        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS pageViews,
-        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS videoViews,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS uniqueVisitors,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS returnVisits
-      FROM analytics_events
-      WHERE created_at >= ${bucketStart}
-        AND created_at < ${bucketEnd}
-    `.catch(() => []),
-    prisma.$queryRaw<Array<{ authEvents: bigint | number }>>`
-      SELECT COUNT(*) AS authEvents
-      FROM auth_audit_logs
-      WHERE created_at >= ${bucketStart}
-        AND created_at < ${bucketEnd}
-    `.catch(() => []),
-  ]);
-
-  return {
-    pageViews: toNumber(analyticsRows[0]?.pageViews),
-    videoViews: toNumber(analyticsRows[0]?.videoViews),
-    uniqueVisitors: toNumber(analyticsRows[0]?.uniqueVisitors),
-    returnVisits: toNumber(analyticsRows[0]?.returnVisits),
-    authEvents: toNumber(authRows[0]?.authEvents),
-  };
-}
-
-async function buildRollingAnalyticsSeries(
+function buildRollingAnalyticsSeriesFromRollup(
   nowDate: Date,
   mode: "daily" | "weekly" | "monthly" | "allTime",
+  rows: Array<{
+    day: Date;
+    pageViews: bigint | number;
+    videoViews: bigint | number;
+    uniqueVisitors: bigint | number;
+    returnVisits: bigint | number;
+    authEvents: bigint | number;
+  }>,
   options?: { bucketCount?: number; bucketMonths?: number },
-): Promise<AnalyticsSeriesBucket[]> {
+): AnalyticsSeriesBucket[] {
   const bucketCount = options?.bucketCount ?? 12;
   const bucketMonths = options?.bucketMonths ?? 1;
 
@@ -145,7 +121,29 @@ async function buildRollingAnalyticsSeries(
     return { bucketStart, bucketEnd };
   });
 
-  const metrics = await Promise.all(bucketDefs.map((bucket) => readAnalyticsBucketMetrics(bucket.bucketStart, bucket.bucketEnd)));
+  const metrics = bucketDefs.map((bucket) => {
+    let pageViews = 0;
+    let videoViews = 0;
+    let uniqueVisitors = 0;
+    let returnVisits = 0;
+    let authEvents = 0;
+
+    for (const row of rows) {
+      const day = row.day instanceof Date
+        ? new Date(Date.UTC(row.day.getUTCFullYear(), row.day.getUTCMonth(), row.day.getUTCDate()))
+        : new Date(row.day);
+
+      if (day < bucket.bucketStart || day >= bucket.bucketEnd) continue;
+
+      pageViews += toNumber(row.pageViews);
+      videoViews += toNumber(row.videoViews);
+      uniqueVisitors += toNumber(row.uniqueVisitors);
+      returnVisits += toNumber(row.returnVisits);
+      authEvents += toNumber(row.authEvents);
+    }
+
+    return { pageViews, videoViews, uniqueVisitors, returnVisits, authEvents };
+  });
 
   return bucketDefs.map((bucket, index) => ({
     bucketStart: bucket.bucketStart.toISOString(),
@@ -196,6 +194,8 @@ export async function GET(request: NextRequest) {
 
   const startedAt = now;
 
+  await ensureAdminDashboardRollupsFresh({ force: forceRefresh }).catch(() => undefined);
+
   const { health } = await buildAdminHealthPayload();
 
   const [userCounts, videos, artists, categories] = await Promise.all([
@@ -229,43 +229,18 @@ export async function GET(request: NextRequest) {
     LIMIT 20
   `.catch(() => []);
 
-  const traffic = await prisma.$queryRaw<Array<{ day: Date; count: bigint | number }>>`
-    SELECT DATE(created_at) AS day, COUNT(*) AS count
-    FROM auth_audit_logs
-    WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
-    GROUP BY DATE(created_at)
-    ORDER BY day DESC
-    LIMIT 14
-  `.catch(() => []);
-
-  const [auth24h, actionBreakdown, metadataQuality, ingestVelocity, groqDailySpend, apiUsageDaily] = await Promise.all([
-    prisma.$queryRaw<Array<{
-      total: bigint | number;
-      success: bigint | number;
-      failed: bigint | number;
-      uniqueIps: bigint | number;
-      uniqueUsers: bigint | number;
-    }>>`
-      SELECT
-        COUNT(*) AS total,
-        SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS success,
-        SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failed,
-        COUNT(DISTINCT NULLIF(TRIM(ip_address), '')) AS uniqueIps,
-        COUNT(DISTINCT user_id) AS uniqueUsers
-      FROM auth_audit_logs
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)
-    `.catch(() => []),
-    prisma.$queryRaw<Array<{ action: string; total: bigint | number; failed: bigint | number }>>`
-      SELECT
-        action,
-        COUNT(*) AS total,
-        SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failed
-      FROM auth_audit_logs
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 DAY)
-      GROUP BY action
-      ORDER BY total DESC
-      LIMIT 8
-    `.catch(() => []),
+  const [authAuditCounters, metadataQuality, ingestVelocity, groqDailySpend, apiUsageDaily] = await Promise.all([
+    getAdminDashboardAuthAuditCounters().catch(() => ({
+      auth24h: [] as Array<{
+        total: bigint | number;
+        success: bigint | number;
+        failed: bigint | number;
+        uniqueIps: bigint | number;
+        uniqueUsers: bigint | number;
+      }>,
+      actionBreakdown: [] as Array<{ action: string; total: bigint | number; failed: bigint | number }>,
+      traffic: [] as Array<{ day: Date; count: bigint | number }>,
+    })),
     (async () => {
       const cached = metadataQualityCache;
       if (cached && cached.expiresAt > Date.now()) {
@@ -361,81 +336,20 @@ export async function GET(request: NextRequest) {
     `.catch(() => []),
   ]);
 
-  const [analyticsDaily, hourlyRecentAnalytics, hourlyRecentAuth, analyticsNewVsRepeat, registrationsPerDay, analyticsTotals, geoVisitorsRaw, hostMetricHistory, earliestAnalyticsAt, earliestAuthAt] = await Promise.all([
-    prisma.$queryRaw<Array<{
-      day: Date;
-      pageViews: bigint | number;
-      videoViews: bigint | number;
-      uniqueVisitors: bigint | number;
-    }>>`
-      SELECT
-        DATE(created_at) AS day,
-        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS pageViews,
-        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS videoViews,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS uniqueVisitors
-      FROM analytics_events
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
-      GROUP BY DATE(created_at)
-      ORDER BY day DESC
-      LIMIT 30
-    `.catch(() => []),
-    prisma.$queryRaw<Array<{
-      bucketStart: Date | string;
-      pageViews: bigint | number;
-      videoViews: bigint | number;
-      uniqueVisitors: bigint | number;
-      returnVisits: bigint | number;
-    }>>`
-      SELECT
-        DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') AS bucketStart,
-        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS pageViews,
-        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS videoViews,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS uniqueVisitors,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS returnVisits
-      FROM analytics_events
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
-      GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
-      ORDER BY bucketStart ASC
-    `.catch(() => []),
-    prisma.$queryRaw<Array<{ bucketStart: Date | string; authEvents: bigint | number }>>`
-      SELECT
-        DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') AS bucketStart,
-        COUNT(*) AS authEvents
-      FROM auth_audit_logs
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
-      GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
-      ORDER BY bucketStart ASC
-    `.catch(() => []),
-    prisma.$queryRaw<Array<{ newVisitors: bigint | number; repeatVisitors: bigint | number }>>`
-      SELECT
-        SUM(CASE WHEN is_new_visitor = 1 THEN 1 ELSE 0 END) AS newVisitors,
-        SUM(CASE WHEN is_new_visitor = 0 THEN 1 ELSE 0 END) AS repeatVisitors
-      FROM analytics_events
-      WHERE event_type = 'page_view'
-        AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
-    `.catch(() => []),
-    prisma.$queryRaw<Array<{ day: Date; count: bigint | number }>>`
-      SELECT DATE(created_at) AS day, COUNT(*) AS count
-      FROM users
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
-      GROUP BY DATE(created_at)
-      ORDER BY day DESC
-      LIMIT 30
-    `.catch(() => []),
-    prisma.$queryRaw<Array<{
-      totalPageViews: bigint | number;
-      totalVideoViews: bigint | number;
-      uniqueVisitors: bigint | number;
-      totalSessions: bigint | number;
-    }>>`
-      SELECT
-        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS totalPageViews,
-        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS totalVideoViews,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS uniqueVisitors,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS totalSessions
-      FROM analytics_events
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
-    `.catch(() => []),
+  const { auth24h, actionBreakdown, traffic } = authAuditCounters;
+
+  const [rollups, geoVisitorsRaw, hostMetricHistory] = await Promise.all([
+    readAdminDashboardRollups().catch(() => ({
+      analyticsDaily: [] as Array<{ day: Date; pageViews: bigint | number; videoViews: bigint | number; uniqueVisitors: bigint | number }>,
+      hourlyRecentAnalytics: [] as Array<{ bucketStart: Date | string; pageViews: bigint | number; videoViews: bigint | number; uniqueVisitors: bigint | number; returnVisits: bigint | number }>,
+      hourlyRecentAuth: [] as Array<{ bucketStart: Date | string; authEvents: bigint | number }>,
+      analyticsNewVsRepeat: [] as Array<{ newVisitors: bigint | number; repeatVisitors: bigint | number }>,
+      registrationsPerDay: [] as Array<{ day: Date; count: bigint | number }>,
+      analyticsTotals: [] as Array<{ totalPageViews: bigint | number; totalVideoViews: bigint | number; uniqueVisitors: bigint | number; totalSessions: bigint | number }>,
+      earliestAnalyticsAt: [] as Array<{ earliestAt: Date | null }>,
+      earliestAuthAt: [] as Array<{ earliestAt: Date | null }>,
+      dailySeriesRows: [] as Array<{ day: Date; pageViews: bigint | number; videoViews: bigint | number; uniqueVisitors: bigint | number; returnVisits: bigint | number; authEvents: bigint | number }>,
+    })),
     prisma.$queryRaw<Array<{
       visitorId: string;
       lat: bigint | number | string;
@@ -457,15 +371,19 @@ export async function GET(request: NextRequest) {
       LIMIT 1000
     `.catch(() => []),
     readAdminHostMetricHistory(),
-    prisma.$queryRaw<Array<{ earliestAt: Date | null }>>`
-      SELECT MIN(created_at) AS earliestAt
-      FROM analytics_events
-    `.catch(() => []),
-    prisma.$queryRaw<Array<{ earliestAt: Date | null }>>`
-      SELECT MIN(created_at) AS earliestAt
-      FROM auth_audit_logs
-    `.catch(() => []),
   ]);
+
+  const {
+    analyticsDaily,
+    hourlyRecentAnalytics,
+    hourlyRecentAuth,
+    analyticsNewVsRepeat,
+    registrationsPerDay,
+    analyticsTotals,
+    earliestAnalyticsAt,
+    earliestAuthAt,
+    dailySeriesRows,
+  } = rollups;
 
   const nowDate = new Date();
   const earliestCandidates = [earliestAnalyticsAt[0]?.earliestAt, earliestAuthAt[0]?.earliestAt].filter(
@@ -478,12 +396,20 @@ export async function GET(request: NextRequest) {
   const allTimeBucketMonths = Math.max(1, Math.ceil(allTimeMonthSpan / 12));
   const allTimeBucketCount = Math.min(12, Math.max(1, Math.ceil(allTimeMonthSpan / allTimeBucketMonths)));
 
-  const [allTimeSeries, monthlySeries, weeklySeries, dailySeries] = await Promise.all([
-    buildRollingAnalyticsSeries(nowDate, "allTime", { bucketCount: allTimeBucketCount, bucketMonths: allTimeBucketMonths }),
-    buildRollingAnalyticsSeries(nowDate, "monthly", { bucketCount: 12, bucketMonths: 1 }),
-    buildRollingAnalyticsSeries(nowDate, "weekly", { bucketCount: 12 }),
-    buildRollingAnalyticsSeries(nowDate, "daily", { bucketCount: 12 }),
-  ]);
+  const allTimeSeries = buildRollingAnalyticsSeriesFromRollup(nowDate, "allTime", dailySeriesRows, {
+    bucketCount: allTimeBucketCount,
+    bucketMonths: allTimeBucketMonths,
+  });
+  const monthlySeries = buildRollingAnalyticsSeriesFromRollup(nowDate, "monthly", dailySeriesRows, {
+    bucketCount: 12,
+    bucketMonths: 1,
+  });
+  const weeklySeries = buildRollingAnalyticsSeriesFromRollup(nowDate, "weekly", dailySeriesRows, {
+    bucketCount: 12,
+  });
+  const dailySeries = buildRollingAnalyticsSeriesFromRollup(nowDate, "daily", dailySeriesRows, {
+    bucketCount: 12,
+  });
 
   const authByHour = new Map(hourlyRecentAuth.map((row) => [toIsoBucketStart(row.bucketStart), toNumber(row.authEvents)]));
   const hourlyRecent = hourlyRecentAnalytics.map((row) => {

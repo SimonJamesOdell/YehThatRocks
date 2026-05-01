@@ -166,9 +166,13 @@ if (process.env.DATABASE_URL && !global.__yehPrismaProfilingHookInstalled__) {
   global.__yehPrismaProfilingHookInstalled__ = true;
 
   setImmediate(() => {
-    void import("@/lib/perf-sample-persistence")
-      .then(({ startPerfSampling }) => {
+    void Promise.all([
+      import("@/lib/perf-sample-persistence"),
+      import("@/lib/admin-dashboard-rollups"),
+    ])
+      .then(([{ startPerfSampling }, { startAdminDashboardRollups }]) => {
         startPerfSampling();
+        startAdminDashboardRollups();
       })
       .catch(() => {
         // Best-effort telemetry startup.
