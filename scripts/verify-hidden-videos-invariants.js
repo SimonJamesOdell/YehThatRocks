@@ -48,7 +48,14 @@ function main() {
   const catalogDataSource = read(files.catalogData);
   const apiSchemasSource = read(files.apiSchemas);
   const shellLayoutSource = read(files.shellLayout);
-  const shellDynamicSource = read(files.shellDynamic);
+  const shellDynamicSource = [
+    read(files.shellDynamic),
+    read(path.join(ROOT, 'apps/web/components/use-chat-state.ts')),
+    read(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts')),
+    read(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts')),
+    read(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts')),
+    read(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts')),
+  ].join('\n');
   const playerExperienceSource = read(files.playerExperience);
   const newPageSource = read(files.newPage);
   const newLoaderSource = read(files.newLoader);

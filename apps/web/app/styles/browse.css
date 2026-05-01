@@ -1,0 +1,1356 @@
+.catalogGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+}
+
+.categoriesCatalogGrid {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  justify-content: start;
+}
+
+.artistsCatalogGrid {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  justify-content: start;
+}
+
+.categoriesFilterSection {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 16px;
+  min-height: 100%;
+}
+
+.categoriesCatalogStage {
+  position: relative;
+  min-height: clamp(260px, 52vh, 680px);
+}
+
+@media (min-width: 1181px) {
+  .heroGridOverlayRoute .categoriesCatalogStage {
+    min-height: max(260px, calc(100dvh - 290px));
+  }
+}
+
+@media (max-width: 1180px) {
+  .categoriesCatalogStage {
+    min-height: max(260px, calc(100dvh - 250px));
+  }
+}
+
+.categoriesLoaderOverlay {
+  position: absolute;
+  inset: -16px 0 0 0;
+  border-radius: 10px;
+  overflow: hidden;
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+  z-index: 3;
+}
+
+.categoriesLoaderOverlay.categoriesLoaderOverlayFading {
+  opacity: 0;
+}
+
+.categoriesLoaderBootLoader {
+  inset: 0;
+}
+
+.categoriesLoaderBootLoader .playerBootBars {
+  gap: 6px !important;
+  height: 28px !important;
+  transform: none;
+}
+
+.categoriesLoaderBootLoader .playerBootBars span {
+  width: 5px !important;
+  box-shadow: 0 0 10px rgba(222, 22, 5, 0.35) !important;
+  animation-name: playerBootPulse !important;
+  animation-duration: 920ms !important;
+  animation-timing-function: ease-in-out !important;
+  animation-iteration-count: infinite !important;
+}
+
+.categoriesLoaderBootLoader p {
+  font-size: 0.95rem !important;
+  letter-spacing: 0.06em !important;
+}
+
+.categoriesCards .categoryCardCascade {
+  opacity: 0;
+  transform: translate3d(0, 10px, 0);
+}
+
+.categoriesCards.categoriesCardsRevealed .categoryCardCascade {
+  animation: categoryCardCascadeIn 240ms ease-out both;
+  animation-delay: calc(var(--category-cascade-index, 0) * 24ms);
+}
+
+.categoriesHeaderBar {
+  gap: 16px;
+}
+
+.categoriesHeaderMain {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+}
+
+.categoriesFilterBar {
+  display: flex;
+  flex: 1;
+  max-width: 420px;
+  min-width: 0;
+}
+
+.categoriesHeaderActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.favouritesCreatePlaylistButton {
+  min-height: 40px;
+  padding: 6px 16px;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.categoriesFilterInput {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.categoriesFilterInput::placeholder {
+  color: rgba(255, 255, 255, 0.46);
+}
+
+.categoriesFilterInput:focus {
+  outline: none;
+  border-color: rgba(255, 126, 102, 0.62);
+  box-shadow: 0 0 0 1px rgba(255, 126, 102, 0.28);
+}
+
+.categoriesFilterEmptyState {
+  grid-column: 1 / -1;
+}
+
+@keyframes categoryCardCascadeIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (max-width: 820px) {
+  .categoriesHeaderBar {
+    align-items: stretch;
+  }
+
+  .categoriesHeaderMain {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .categoriesFilterBar {
+    max-width: none;
+  }
+
+  .categoriesHeaderActions {
+    width: 100%;
+  }
+
+  .favouritesCreatePlaylistButton {
+    width: 100%;
+  }
+}
+
+.favouritesCatalogGrid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  justify-content: start;
+}
+
+.favouritesCardCompact {
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.favouritesCardCompact h3 {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.18;
+  letter-spacing: 0.01em;
+}
+
+.favouritesCardCompact p {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.1;
+  opacity: 0.86;
+}
+
+.favouritesCardCompact .artistInlineLink {
+  pointer-events: none;
+}
+
+.favouritesCardCompact .actionRow {
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.favouritesCardActionsRow {
+  justify-content: flex-end;
+}
+
+.favouritesPlaylistCircleButton {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(138, 18, 20, 0.95), rgba(55, 6, 8, 0.95));
+  border: 1px solid rgba(255, 188, 170, 0.5);
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+}
+
+.favouritesPlaylistCircleButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.favouritesThumbOverlayWrap {
+  position: relative;
+}
+
+.favouritesDeleteButton {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.playlistCardInteractive {
+  cursor: pointer;
+}
+
+.playlistCardInteractive:focus-visible {
+  outline: 2px solid rgba(255, 151, 130, 0.9);
+  outline-offset: 2px;
+}
+
+.playlistCardTitleStatic {
+  pointer-events: none;
+}
+
+.playlistEditorBreadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+  font-size: clamp(1.35rem, 1.8vw, 1.75rem);
+  line-height: 1;
+}
+
+.playlistEditorHeading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  position: relative;
+  top: -1px;
+  font-family: var(--font-display), cursive;
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: 700;
+}
+
+.playlistEditorHeading .whitePlaylistGlyph {
+  position: relative;
+  top: 1px;
+}
+
+.playlistEditorHeadingLink {
+  display: inline-flex;
+  align-items: center;
+  line-height: inherit;
+  color: #ffffff;
+  text-decoration: none;
+}
+
+.playlistEditorHeadingLink:hover {
+  color: #ffffff;
+  text-decoration: none;
+}
+
+.playlistEditorHeadingSeparator {
+  color: rgba(238, 248, 255, 0.55);
+}
+
+.playlistEditorTitleWrap {
+  display: inline-flex;
+  align-items: center;
+  line-height: inherit;
+  gap: 10px;
+  min-width: 0;
+  min-height: 32px;
+}
+
+.playlistEditorCurrentName,
+.playlistEditorHeadingSeparator {
+  line-height: inherit;
+}
+
+.playlistEditorCurrentName {
+  display: inline-flex;
+  align-items: center;
+  color: #ffffff;
+  font-family: var(--font-display), cursive;
+  font-size: inherit;
+  font-weight: 700;
+}
+
+.playlistEditorInlineEditButton {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.playlistEditorInlineEditButton:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.playlistEditorNameInput {
+  width: min(340px, 48vw);
+  margin: 0;
+  font: inherit;
+  line-height: 1;
+  color: #ffffff;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.42);
+  padding: 0;
+}
+
+.playlistEditorNameInput:focus-visible {
+  outline: none;
+  box-shadow: inset 0 -1px 0 rgba(255, 213, 203, 0.95);
+}
+
+.playlistEditorNameAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  min-width: auto;
+  padding: 8px 12px;
+  font-size: 1rem;
+  line-height: 1;
+  border-radius: 7px;
+}
+
+.playlistEditorEmptyState {
+  padding: 20px 0 8px;
+}
+
+.playlistEditorEmptyState p {
+  margin: 0;
+  color: #ffe1dc;
+}
+
+.playlistEditorContent {
+  display: grid;
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .playlistEditorBreadcrumb {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .playlistEditorTitleWrap {
+    flex-wrap: wrap;
+  }
+
+  .playlistEditorNameInput {
+    width: 100%;
+  }
+}
+
+.favouritesDeleteOverlayButton {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  background: rgba(12, 8, 8, 0.88);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+}
+
+.favouritesEditOverlayButton {
+  position: absolute;
+  top: 48px;
+  right: 8px;
+  z-index: 2;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  background: rgba(12, 8, 8, 0.88);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+}
+
+.playlistsHeaderBar {
+  margin-bottom: 14px;
+}
+
+.playlistsHeaderTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.playlistsHeaderCreateButton {
+  min-width: 34px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.playlistsNameInput {
+  max-width: 340px;
+}
+
+.playlistsModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(3, 2, 2, 0.64);
+  backdrop-filter: blur(6px);
+}
+
+.playlistsModal {
+  width: min(460px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: linear-gradient(180deg, rgba(31, 20, 20, 0.95), rgba(18, 12, 12, 0.95));
+  box-shadow: 0 24px 54px rgba(0, 0, 0, 0.52);
+}
+
+.playlistsModal h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.playlistsModal .playlistsNameInput {
+  width: 100%;
+  max-width: none;
+}
+
+.playlistsModal .actionRow {
+  width: 100%;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.playlistsPrimaryButton,
+.playlistsSecondaryButton {
+  padding: 14px 18px;
+  border-radius: 8px;
+  color: var(--text);
+  transition: filter 140ms ease, transform 140ms ease;
+}
+
+.playlistsPrimaryButton {
+  background: linear-gradient(180deg, #aa1e11, #5a0906);
+  box-shadow: var(--glow);
+}
+
+.playlistsSecondaryButton {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.playlistsPrimaryButton:not(:disabled):hover,
+.playlistsSecondaryButton:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+.playlistsPrimaryButton:disabled,
+.playlistsSecondaryButton:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.favouritesEmptyState {
+  min-height: 42vh;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 8px;
+}
+
+.favouritesEmptyState p {
+  margin: 0;
+}
+
+.compactGrid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.artistAlphabetBar {
+  display: grid;
+  grid-template-columns: repeat(13, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.artistsLetterPanel {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--left-rail-width);
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  padding: 17px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-strong);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45), var(--glow);
+  height: fit-content;
+}
+
+.artistsLetterPanelGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+
+.artistAlphabetButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: #ffe7e1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-family: var(--font-display), cursive;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.artistAlphabetButton:hover {
+  background: rgba(160, 32, 18, 0.58);
+  border-color: rgba(255, 126, 102, 0.62);
+  color: #fff4f1;
+}
+
+.artistAlphabetButtonActive {
+  background: linear-gradient(180deg, rgba(220, 22, 5, 0.88), rgba(98, 8, 4, 0.92));
+  border-color: rgba(255, 126, 102, 0.75);
+  color: #fff;
+  box-shadow: var(--glow);
+}
+
+.categoryVideoGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  align-content: start;
+}
+
+@media (max-width: 1320px) {
+  .categoryVideoGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .categoryVideoGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .categoryVideoGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.categoryVideoObserverAnchor {
+  display: contents;
+}
+
+.categoryNoVideos {
+  grid-column: 1 / -1;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.9rem;
+  padding: 12px 0;
+}
+
+.categoryVideoGridSingle {
+  grid-template-columns: minmax(220px, 320px);
+  justify-content: start;
+}
+
+.artistVideoGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.categoryVideoCard {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  transition: background 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+  cursor: pointer;
+}
+
+.categoryVideoPrimaryLink {
+  display: grid;
+  gap: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.categoryVideoActions {
+  justify-content: flex-end;
+}
+
+.categoryVideoCardCornerActions {
+  position: relative;
+}
+
+.categoryVideoCardCornerActions .categoryVideoActions {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  margin: 0;
+  z-index: 32;
+}
+
+.categoryVideoCardCornerActions .categoryVideoTitle {
+  padding-right: 34px;
+}
+
+.categoryVideoCardCornerActions .playlistQuickAddWrap {
+  display: inline-flex;
+}
+
+.categoryVideoCardCornerActions .categoryVideoActions {
+  gap: 8px;
+}
+
+.categoryVideoHideButton {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(34, 34, 34, 0.97), rgba(8, 8, 8, 0.97));
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff;
+  font-size: 1.05rem;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  z-index: 5;
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 160ms ease;
+}
+
+.categoryVideoPlaylistAddButton {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(138, 18, 20, 0.95), rgba(55, 6, 8, 0.95));
+  border: 1px solid rgba(255, 188, 170, 0.5);
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  z-index: 4;
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 160ms ease;
+}
+
+.categoryVideoFavouriteButton {
+  min-width: 24px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  gap: 0;
+  border: 1px solid rgba(255, 188, 170, 0.42);
+  background: linear-gradient(180deg, rgba(118, 16, 18, 0.9), rgba(45, 6, 8, 0.94));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  z-index: 4;
+  cursor: pointer;
+  opacity: 1;
+  transition: filter 160ms ease, opacity 160ms ease;
+}
+
+.categoryVideoFavouriteButton .navFavouritesGlyph {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1;
+}
+
+.categoryVideoCardCornerActions:hover .categoryVideoHideButton,
+.categoryVideoCardCornerActions:focus-within .categoryVideoHideButton,
+.categoryVideoCardCornerActions:hover .categoryVideoFavouriteButton,
+.categoryVideoCardCornerActions:focus-within .categoryVideoFavouriteButton,
+.categoryVideoCardCornerActions:hover .categoryVideoPlaylistAddButton,
+.categoryVideoCardCornerActions:focus-within .categoryVideoPlaylistAddButton {
+  opacity: 1;
+}
+
+.categoryVideoFavouriteButton:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.categoryVideoHideButton:hover:not(:disabled) {
+  filter: brightness(1.2);
+}
+
+.categoryVideoPlaylistAddButton:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.categoryVideoHideButton:disabled,
+.categoryVideoFavouriteButton:disabled,
+.categoryVideoPlaylistAddButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.categoryVideoCard:hover {
+  background: linear-gradient(180deg, rgba(170, 30, 17, 0.56), rgba(90, 9, 6, 0.7));
+  border-color: rgba(255, 116, 88, 0.78);
+  box-shadow: var(--glow);
+}
+
+.categoryVideoCard.categoryVideoCardSeen {
+  background: linear-gradient(180deg, rgba(14, 14, 14, 0.92), rgba(8, 8, 8, 0.96));
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.categoryVideoCard.categoryVideoCardSeen .categoryThumb {
+  filter: brightness(0.42) saturate(0.65) contrast(0.95);
+}
+
+.categoryVideoCard.categoryVideoCardSeen:hover {
+  background: linear-gradient(180deg, rgba(170, 30, 17, 0.56), rgba(90, 9, 6, 0.7));
+  border-color: rgba(255, 116, 88, 0.78);
+  box-shadow: var(--glow);
+}
+
+.artistVideoGrid .categoryVideoCard.artistVideoCardSeen {
+  background: linear-gradient(180deg, rgba(14, 14, 14, 0.92), rgba(8, 8, 8, 0.96));
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.artistVideoGrid .categoryVideoCard.artistVideoCardSeen .categoryThumb {
+  filter: brightness(0.42) saturate(0.65) contrast(0.95);
+}
+
+.artistVideoGrid .categoryVideoCard.artistVideoCardSeen:hover {
+  background: linear-gradient(180deg, rgba(170, 30, 17, 0.56), rgba(90, 9, 6, 0.7));
+  border-color: rgba(255, 116, 88, 0.78);
+  box-shadow: var(--glow);
+}
+
+.artistVideoSourceBadges {
+  min-height: 20px;
+}
+
+.artistVideoFavouriteBadgeOverlay {
+  left: 3px;
+}
+
+.artistVideoFavouriteBadgeButton {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  position: absolute;
+}
+
+.trackCard.leaderboardCard .artistVideoFavouriteBadgeButton {
+  position: absolute;
+  left: 3px;
+  bottom: -4px;
+  display: inline-block;
+  font-size: 2.7rem;
+  min-width: 0;
+  min-height: 0;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #d83a3a;
+  text-shadow:
+    -1px -1px 0 #fff,
+    1px -1px 0 #fff,
+    -1px 1px 0 #fff,
+    1px 1px 0 #fff,
+    0 1px 0 rgba(0, 0, 0, 0.45),
+    0 0 8px rgba(216, 58, 58, 0.35);
+  line-height: 1;
+}
+
+.artistVideoFavouriteBadgeHeart {
+  display: inline-block;
+  line-height: 1;
+}
+
+.artistVideoFavouriteBadgeRemoveGlyph {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(255, 238, 232, 0.96);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.52);
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.artistVideoFavouriteBadgeButton:hover,
+.artistVideoFavouriteBadgeButton:focus-visible {
+  width: auto;
+  height: auto;
+  display: inline-block;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.artistVideoFavouriteBadgeButton:hover .artistVideoFavouriteBadgeHeart,
+.artistVideoFavouriteBadgeButton:focus-visible .artistVideoFavouriteBadgeHeart {
+  color: #000;
+  opacity: 1;
+  transform: scale(1);
+}
+
+.artistVideoFavouriteBadgeButton:hover .artistVideoFavouriteBadgeRemoveGlyph,
+.artistVideoFavouriteBadgeButton:focus-visible .artistVideoFavouriteBadgeRemoveGlyph {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.artistVideoFavouriteBadgeButton:disabled {
+  cursor: wait;
+  opacity: 0.8;
+}
+
+.categoryVideoTitle {
+  margin: 0;
+  font-size: 0.94rem;
+  line-height: 1.35;
+  color: rgba(224, 212, 206, 0.82);
+}
+
+.catalogCard {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  transition: background 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+
+.artistResultCard {
+  gap: 5px;
+  padding: 10px;
+}
+
+@supports (content-visibility: auto) {
+  .artistResultCard {
+    content-visibility: auto;
+    contain-intrinsic-size: 260px 210px;
+  }
+}
+
+.artistResultThumbWrap {
+  aspect-ratio: 16 / 6;
+}
+
+.artistResultCard h3 {
+  line-height: 1.1;
+}
+
+.artistResultName {
+  font-family: var(--font-display), cursive;
+}
+
+.artistResultGenre {
+  line-height: 1.2;
+}
+
+.artistResultCard p {
+  margin: 0;
+  line-height: 1.2;
+}
+
+.linkedCard:hover {
+  background: linear-gradient(180deg, rgba(170, 30, 17, 0.56), rgba(90, 9, 6, 0.7));
+  border-color: rgba(255, 116, 88, 0.78);
+  box-shadow: var(--glow);
+}
+
+.categoryCard {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: background 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+
+.categoryCard:hover {
+  background: linear-gradient(180deg, rgba(170, 30, 17, 0.56), rgba(90, 9, 6, 0.7));
+  border-color: rgba(255, 116, 88, 0.78);
+  box-shadow: var(--glow);
+}
+
+.categoryCard h3 {
+  font-family: var(--font-display), cursive;
+}
+
+.categoryThumbWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.categoryThumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.playlistThumbEmpty {
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.playlistThumbEmptyGlyph {
+  font-family: var(--font-display), cursive;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1;
+  color: rgba(255, 225, 220, 0.72);
+  text-shadow: 0 0 18px rgba(255, 78, 54, 0.2);
+}
+
+.artistHeroCard {
+  display: grid;
+  gap: 6px;
+}
+
+.routeContractRow {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.routeContractRetryButton {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.routeContractRetryButton:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.routeContractRetryButton:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.75);
+  outline-offset: 2px;
+}
+
+.artistLoadingCenter {
+  justify-content: center;
+  min-height: 42vh;
+  text-align: center;
+}
+
+.categoryHeaderBreadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--font-display), cursive;
+  letter-spacing: 0.02em;
+}
+
+.categoryHeaderIcon {
+  font-size: 1.05em;
+  line-height: 1;
+}
+
+.categoryHeaderBreadcrumbLink {
+  color: rgba(238, 248, 255, 0.9);
+  text-decoration: none;
+}
+
+.categoryHeaderBreadcrumbLink:hover {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
+.categoryHeaderBreadcrumbSeparator {
+  color: rgba(238, 248, 255, 0.55);
+}
+
+.categoryHeaderBreadcrumbCurrent {
+  color: #ffffff;
+}
+
+.categoryHeaderWikiLink {
+  margin-left: auto;
+  color: rgba(255, 240, 236, 0.9);
+  text-decoration: none;
+  border: 1px solid rgba(255, 110, 78, 0.4);
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.categoryHeaderWikiLink:hover {
+  background: rgba(255, 110, 78, 0.16);
+}
+
+.artistInlineLink {
+  color: rgba(255, 232, 223, 0.92);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 115, 85, 0.55);
+  text-underline-offset: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.artistInlineLink:hover,
+.artistInlineLink:focus-visible {
+  color: #ffffff;
+  text-decoration-color: rgba(255, 146, 120, 0.88);
+  outline: none;
+}
+
+.artistWikiPage {
+  display: grid;
+  gap: 18px;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.artistWikiHeader {
+  display: grid;
+  gap: 6px;
+}
+
+.artistWikiHero {
+  text-align: center;
+  padding: 18px 16px 6px;
+}
+
+.artistWikiHeroKicker {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.78rem;
+  color: rgba(255, 203, 191, 0.82);
+}
+
+.artistWikiHeader h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4.8vw, 3.6rem);
+  line-height: 1.04;
+  text-wrap: balance;
+  text-shadow: 0 8px 28px rgba(0, 0, 0, 0.42);
+}
+
+.artistWikiMeta {
+  margin: 0;
+  color: rgba(255, 232, 223, 0.74);
+  font-size: 0.9rem;
+}
+
+.artistWikiFlow {
+  display: grid;
+  gap: 20px;
+}
+
+.artistWikiFlow::after {
+  content: "";
+  display: block;
+  clear: both;
+}
+
+.artistWikiTopRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(270px, 36vw, 390px);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.artistWikiLeadFigure {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.artistWikiLeadImage {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: rgba(8, 6, 6, 0.7);
+  display: block;
+}
+
+.artistWikiLeadFigure figcaption {
+  padding: 8px 10px;
+  font-size: 0.8rem;
+}
+
+.artistWikiLeadFigure figcaption a {
+  color: rgba(180, 220, 255, 0.96);
+}
+
+.artistWikiLeadFigure figcaption a:hover {
+  color: #ffffff;
+}
+
+.artistWikiOverviewSection {
+  margin: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px;
+}
+
+.artistWikiOverviewSection h2,
+.artistWikiOverviewSection p {
+  margin: 0;
+}
+
+.artistWikiGallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.artistWikiImageCard {
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.artistWikiImage {
+  width: 100%;
+  height: 188px;
+  object-fit: cover;
+  display: block;
+}
+
+.artistWikiImageCard figcaption {
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  color: rgba(242, 245, 255, 0.82);
+}
+
+.artistWikiImageCard figcaption a {
+  color: rgba(180, 220, 255, 0.96);
+}
+
+.artistWikiImageCard figcaption a:hover {
+  color: #ffffff;
+}
+
+.artistWikiSection {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 10px;
+}
+
+.artistWikiSection h2,
+.artistWikiSection h3 {
+  margin: 0;
+}
+
+.artistWikiSection p {
+  margin: 0;
+  line-height: 1.58;
+}
+
+.artistWikiSection.artistWikiOverviewSection {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+  text-align: left;
+  gap: 4px;
+  height: 100%;
+}
+
+.artistWikiSection.artistWikiOverviewSection h2,
+.artistWikiSection.artistWikiOverviewSection p {
+  margin: 0;
+}
+
+.artistWikiOverviewAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--btn-blood-start), var(--btn-blood-end));
+  color: var(--text);
+  text-decoration: none;
+  box-shadow: var(--glow);
+}
+
+.artistWikiOverviewAction:hover {
+  filter: brightness(1.08);
+}
+
+.artistWikiList,
+.artistWikiSourceList {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.artistWikiSourceList a {
+  color: rgba(180, 220, 255, 0.96);
+}
+
+.artistWikiSourceList a:hover {
+  color: #ffffff;
+}
+
+.artistWikiNote {
+  color: rgba(255, 232, 223, 0.8);
+  font-size: 0.93rem;
+}
+
+@media (max-width: 900px) {
+  .artistWikiTopRow {
+    grid-template-columns: 1fr;
+    margin-bottom: 14px;
+  }
+
+  .artistWikiLeadFigure {
+    width: min(100%, 480px);
+    margin: 0 auto;
+  }
+}
+
+.contractHint {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.contractHint code {
+  padding: 0 0.25rem;
+  border-radius: 0.2rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+

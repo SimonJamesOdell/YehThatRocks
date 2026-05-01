@@ -1,0 +1,506 @@
+.heroGrid {
+  display: grid;
+  grid-template-columns: var(--left-rail-width) minmax(0, 1fr) var(--right-rail-width);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.heroGridAdminOverlayRoute {
+  grid-template-columns: var(--left-rail-width) minmax(0, 1fr);
+}
+
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-strong);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35), var(--glow);
+}
+
+.translucent {
+  background: var(--panel);
+  backdrop-filter: blur(18px);
+}
+
+.leftRail,
+.rightRail {
+  padding: 18px;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rightRail {
+  padding: 12px;
+  position: relative;
+}
+
+.rightRailLyricsOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  background: linear-gradient(180deg, rgba(16, 5, 4, 0.96), rgba(10, 2, 2, 0.98));
+  border-radius: 10px;
+}
+
+.rightRailLyricsOverlayHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.rightRailLyricsOverlayHeader strong {
+  font-family: var(--font-display), cursive;
+  font-size: 1.2rem;
+  letter-spacing: 0.04em;
+}
+
+.rightRailLyricsOverlayClose {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 210, 199, 0.6);
+  border-radius: 6px;
+  background: rgba(144, 22, 10, 0.55);
+  color: #ffeae2;
+  font-size: 1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.rightRailLyricsOverlayBody {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 10px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.rightRailLyricsOverlayMeta {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 219, 209, 0.88);
+}
+
+.rightRailLyricsOverlayText {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: rgba(255, 241, 236, 0.95);
+}
+
+.leftRail.panel.translucent,
+.rightRail.panel.translucent {
+  padding: 0;
+  background-color: rgba(8, 8, 8, 0.03) !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.14), var(--glow);
+}
+
+.leftRail.panel.translucent {
+  font-size: 1rem;
+}
+
+.leftRail.panel.translucent .chatMessage,
+.rightRail.panel.translucent .relatedCard {
+  background-color: rgba(255, 255, 255, 0.01) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.leftRail.panel.translucent .chatMessageClickable:hover,
+.rightRail.panel.translucent .chatMessageClickable:hover {
+  background-color: rgba(220, 22, 5, 0.25) !important;
+}
+
+.railTabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 18px 18px 0 18px;
+  margin-bottom: 18px;
+}
+
+.railTabs.railTabsAdminOverlay {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.rightRailTabs {
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 12px;
+  position: relative;
+  z-index: 5;
+  pointer-events: auto;
+}
+
+.rightRailTabs button {
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
+  position: relative;
+  z-index: 6;
+  pointer-events: auto;
+}
+
+.rightRailTabs .tabLabel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 18px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(108, 14, 16, 0.62), rgba(42, 7, 8, 0.7));
+  color: var(--text);
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
+  cursor: default;
+  user-select: none;
+}
+
+.leftRail .railTabs button {
+  font-size: 0.8rem;
+}
+
+.railTabs button {
+  background: linear-gradient(180deg, rgba(108, 14, 16, 0.62), rgba(42, 7, 8, 0.7));
+  box-shadow: none;
+}
+
+.railTabs .tabLabel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 18px;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.8rem;
+  letter-spacing: 0.01em;
+  user-select: none;
+}
+
+.railTabs .activeTab {
+  background: linear-gradient(180deg, var(--btn-blood-start), var(--btn-blood-end));
+}
+
+.railTabs .attentionPulse {
+  animation: chatTabAttentionPulse 900ms ease-out 1;
+}
+
+@keyframes chatTabAttentionPulse {
+  0% {
+    box-shadow: 0 0 0 rgba(248, 98, 72, 0);
+    filter: brightness(1);
+  }
+
+  30% {
+    box-shadow: 0 0 0 3px rgba(248, 98, 72, 0.35), 0 0 18px rgba(248, 98, 72, 0.6);
+    filter: brightness(1.2);
+  }
+
+  100% {
+    box-shadow: 0 0 0 rgba(248, 98, 72, 0);
+    filter: brightness(1);
+  }
+}
+
+.chatList {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 0 18px;
+  min-height: 0;
+  width: 100%;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.chatStatus {
+  margin: 0;
+  padding: 10px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+}
+
+.chatStatusError {
+  margin-top: 10px;
+  background: rgba(110, 15, 10, 0.28);
+  color: #ffd6cf;
+}
+
+.chatMessage {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 4px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chatMessageClickable {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.chatMessageClickable:hover {
+  background: rgba(220, 22, 5, 0.25) !important;
+}
+
+.chatMessage > div {
+  min-width: 0;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ff4a2b, #4e0808);
+  font-family: var(--font-display), cursive;
+  font-size: 1.2rem;
+}
+
+.chatAvatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid rgba(220, 22, 5, 0.35);
+}
+
+.messageMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.chatMessage .messageMeta strong {
+  color: #fff7f3;
+  font-weight: 600;
+  font-size: 0.94rem;
+}
+
+.chatMessage .messageMeta > span:last-child {
+  color: rgba(255, 182, 170, 0.58);
+  font-weight: 400;
+  font-size: 0.64rem;
+}
+
+.chatOnlineBadge {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: rgba(100, 200, 100, 0.8);
+  white-space: nowrap;
+  margin-left: 4px;
+}
+
+.chatMessage p {
+  color: rgba(214, 202, 196, 0.65);
+  font-weight: 300;
+  font-size: 0.94rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.magazineRailCard {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  min-height: 120px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.magazineRailHeader {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  margin: 2px 0 8px;
+}
+
+.magazineRailHeader strong {
+  font-family: var(--font-display), sans-serif;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+  color: rgba(255, 242, 237, 0.96);
+}
+
+.magazineRailCard:hover {
+  background: rgba(220, 22, 5, 0.14);
+  border-color: rgba(255, 121, 108, 0.34);
+}
+
+.magazineRailCardClickable {
+  cursor: pointer;
+}
+
+.magazineRailCardClickable:focus-visible {
+  outline: 2px solid rgba(255, 121, 108, 0.7);
+  outline-offset: 2px;
+}
+
+.magazineRailCardClickable:active {
+  transform: translateY(1px) scale(0.995);
+  background: rgba(220, 22, 5, 0.2);
+  border-color: rgba(255, 121, 108, 0.5);
+}
+
+.magazineRailThumb {
+  width: 84px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.magazineRailBody {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+}
+
+.magazineRailBody .messageMeta {
+  margin-bottom: 0;
+  align-items: center;
+}
+
+.magazineRailBody .messageMeta strong {
+  font-size: 0.9rem;
+}
+
+.magazineRailBody .messageMeta > span:last-child {
+  font-size: 0.66rem;
+}
+
+.magazineRailBody p {
+  margin: 0;
+  color: rgba(214, 202, 196, 0.8);
+  font-size: 0.94rem;
+  line-height: 1.35;
+}
+
+.chatSharedVideoCard {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 8px;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 6px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.chatSharedVideoCard:hover {
+  background: rgba(220, 22, 5, 0.22);
+  border-color: rgba(255, 121, 108, 0.48);
+}
+
+.chatSharedVideoThumb {
+  width: 84px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.chatSharedVideoMeta {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+}
+
+.chatSharedVideoMeta strong {
+  font-family: var(--font-display), cursive;
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.18;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.chatSharedVideoMeta span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chatComposer {
+  display: flex;
+  gap: 10px;
+  padding: 0 18px 18px;
+  margin-top: 16px;
+  flex: 0 0 auto;
+}
+
+.guestRail {
+  display: grid;
+  gap: 16px;
+  min-height: 0;
+  height: 100%;
+  align-content: start;
+}
+
+.guestRailHeading {
+  gap: 8px;
+  padding: 18px 18px 0;
+}
+
+.guestRailCopy {
+  display: grid;
+  gap: 14px;
+}
+
+.guestBenefitList {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.guestRail .authForm {
+  max-width: none;
+}
+
+.guestRailActions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+
+.guestRailActions .navLink {
+  width: 100%;
+  border-radius: 8px;
+}
+

@@ -26,11 +26,43 @@ const files = {
   chatStreamRoute: path.join(ROOT, "apps/web/app/api/chat/stream/route.ts"),
 };
 
+files.appRoot = path.join(ROOT, "apps/web/app");
+
+function collectCssFiles(dirPath, acc = []) {
+  if (!fs.existsSync(dirPath)) {
+    return acc;
+  }
+
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      collectCssFiles(fullPath, acc);
+      continue;
+    }
+
+    if (entry.isFile() && entry.name.endsWith(".css")) {
+      acc.push(fullPath);
+    }
+  }
+
+  return acc;
+}
+
 function main() {
   const failures = [];
 
-  const shellDynamicSource = readFileStrict(files.shellDynamic, ROOT);
-  const cssSource = readFileStrict(files.css, ROOT);
+  const shellDynamicSource = [
+    readFileStrict(files.shellDynamic, ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
+  ].join('\n');
+  const cssSource = collectCssFiles(files.appRoot)
+    .map((filePath) => readFileStrict(filePath, ROOT))
+    .join("\n");
   const proxySource = readFileStrict(files.proxyMiddleware, ROOT);
   const chatRouteSource = readFileStrict(files.chatRoute, ROOT);
   const chatStreamRouteSource = readFileStrict(files.chatStreamRoute, ROOT);
@@ -52,7 +84,7 @@ function main() {
   );
   assertContains(
     shellDynamicSource,
-    'pathname === "/magazine" || pathname.startsWith("/magazine/") ? "magazine" : "global"',
+    'initialPathname === "/magazine" || initialPathname.startsWith("/magazine/")',
     "chatMode lazy initialiser yields 'magazine' for magazine route arrivals",
     failures,
   );
@@ -67,11 +99,11 @@ function main() {
     "Shell has an !isMagazineOverlayRoute guard in the chatMode reset-on-auth effect",
     failures,
   );
-  // The reset effect should depend on isMagazineOverlayRoute as well as isAuthenticated.
+  // The reset/sync effect should depend on isMagazineOverlayRoute.
   assertContains(
     shellDynamicSource,
-    "}, [isAuthenticated, isMagazineOverlayRoute]);",
-    "chatMode reset-on-auth effect lists isMagazineOverlayRoute in its dependency array",
+    "}, [isMagazineOverlayRoute]);",
+    "chatMode magazine sync effect lists isMagazineOverlayRoute in its dependency array",
     failures,
   );
 

@@ -1,0 +1,538 @@
+.playerFooterReserve {
+  flex: 0 0 auto;
+  min-height: 74px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.primaryActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 12px 0;
+  opacity: 1;
+  transition: opacity 220ms ease;
+}
+
+.primaryActionsMainRow {
+  display: contents;
+}
+
+.primaryActionsUnavailable {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+.playerChromeFooterReveal .primaryActions {
+  animation: primaryActionsReturn 180ms ease-out both;
+}
+
+@keyframes primaryActionsReturn {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+.primaryActions button {
+  min-height: 50px;
+}
+
+.primaryActionIconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  min-width: 56px;
+  min-height: 50px;
+  padding: 0;
+}
+
+.primaryActions .primaryActionIconButtonFavourited {
+  background: linear-gradient(180deg, #3b1613, #170707);
+  border: 1px solid rgba(255, 122, 101, 0.4);
+  box-shadow: none;
+}
+
+.primaryActions .primaryActionIconButtonFavourited:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.primaryActionIconButton .navFavouritesGlyph {
+  width: auto;
+  margin-right: 0;
+  transform: none;
+}
+
+.shareUrlField {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 1 auto;
+  max-width: 100%;
+  white-space: nowrap;
+  margin-left: 6px;
+}
+
+.shareUrlInputWrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: min(100%, 40rem);
+}
+
+.shareUrlLabel {
+  font-family: var(--font-display), cursive;
+  font-size: 0.8rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: rgba(255, 218, 210, 0.86);
+  flex: 0 0 auto;
+}
+
+.shareUrlInput {
+  width: auto;
+  min-width: 0;
+  max-width: min(100%, 40rem);
+  padding: 10px 44px 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(9, 7, 7, 0.92);
+  color: #fff2ed;
+  font-size: 0.82rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.shareUrlInput:focus {
+  outline: 2px solid rgba(255, 103, 74, 0.42);
+  outline-offset: 2px;
+}
+
+.primaryActions .shareUrlCopyButton {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: linear-gradient(180deg, rgba(62, 62, 62, 0.95), rgba(34, 34, 34, 0.95));
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.primaryActions .shareUrlCopyButton:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.shareUrlCopyIcon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.primaryActions .shareUrlCopyButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.primaryActionToggleButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.primaryActions .primaryActionToggleButton {
+  height: 50px;
+  min-height: 50px;
+  padding: 0 12px;
+}
+
+.primaryActionGlyph {
+  display: inline-block;
+  font-size: 1.7rem;
+  line-height: 1;
+  transform: rotate(90deg);
+  transform-origin: center;
+  flex: 0 0 auto;
+}
+
+.dockedAdminShareUrlRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 0 100%;
+  width: min(100%, 44rem);
+  margin: 4px auto 0;
+}
+
+.playerChromeDockedDesktop .primaryActions > .dockedAdminShareUrlRow,
+.playerChromeDockedArtists .primaryActions > .dockedAdminShareUrlRow {
+  flex: 1 0 100%;
+  margin-top: 14px;
+  transform: translateX(0px);
+}
+
+.playerChromeDockedDesktop .primaryActionsMainRow,
+.playerChromeDockedArtists .primaryActionsMainRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 11px;
+  width: 100%;
+}
+
+.playerChromeDockedDesktop .primaryActionsMainRow {
+  transform: translateX(-5px);
+}
+
+.playerChromeDockedDesktop .primaryActions.primaryActionsDockedAdmin,
+.playerChromeDockedArtists .primaryActions.primaryActionsDockedAdmin {
+  flex-wrap: wrap;
+  overflow: visible;
+  align-content: flex-start;
+  transform: translateX(calc(-1 * (var(--left-rail-width) + 12px))) translateY(-10px);
+}
+
+.playerChromeDockedDesktop .primaryActionsMainRow > *,
+.playerChromeDockedArtists .primaryActionsMainRow > * {
+  flex: 0 0 auto;
+}
+
+.playerChromeDockedDesktop .primaryActionsMainRow .shareUrlField,
+.playerChromeDockedArtists .primaryActionsMainRow .shareUrlField {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dockedAdminShareUrlInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(9, 7, 7, 0.92);
+  color: #fff2ed;
+  font-size: 0.8rem;
+}
+
+.dockedAdminShareUrlInput:focus {
+  outline: 2px solid rgba(255, 103, 74, 0.42);
+  outline-offset: 1px;
+}
+
+.dockedAdminShareUrlCopyButton {
+  height: 38px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: linear-gradient(180deg, rgba(62, 62, 62, 0.95), rgba(34, 34, 34, 0.95));
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.dockedAdminShareUrlCopyButton:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.dockedAdminShareUrlCopyButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.primaryActionWikiLabel {
+  display: inline-block;
+  font-family: var(--font-display), cursive;
+  font-size: 0.9rem;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  text-transform: lowercase;
+}
+
+.primaryNavGlyph {
+  display: inline-block;
+  font-size: 2.05rem;
+  line-height: 1;
+  margin-right: 0;
+  vertical-align: middle;
+}
+
+.primaryActionNavIconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  min-width: 56px;
+  min-height: 50px;
+  padding: 0;
+}
+
+.primaryActions .primaryActionNavIconButton,
+.primaryActions .primaryActionIconButton {
+  padding: 0;
+}
+
+.primaryActionIconButtonWrap {
+  position: relative;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.primaryActionPlaylistWrap {
+  z-index: 16;
+}
+
+.primaryActionPlaylistButton {
+  font-weight: 800;
+}
+
+.primaryActionPlaylistGlyph {
+  font-size: 1.65rem;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.primaryActionPlaylistMenu {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  width: min(280px, calc(100vw - 32px));
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(6, 6, 6, 0.98);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+}
+
+.primaryActionPlaylistMenuList {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.primaryActions .primaryActionPlaylistMenuAction {
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(22, 22, 22, 0.95);
+  color: #fff5f2;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.88rem;
+  line-height: 1.2;
+  box-shadow: none;
+}
+
+.primaryActions .primaryActionPlaylistMenuAction:hover:not(:disabled) {
+  background: rgba(189, 34, 15, 0.88);
+  border-color: rgba(255, 126, 94, 0.7);
+}
+
+.primaryActions .primaryActionPlaylistMenuAction:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.primaryActionPlaylistMenuStatus {
+  margin: 0;
+  padding: 4px 2px;
+  color: rgba(255, 223, 214, 0.86);
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.82rem;
+}
+
+.favouriteSavedToast {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: rgba(20, 12, 12, 0.92);
+  color: #fff2ed;
+  border: 1px solid rgba(255, 103, 74, 0.4);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  animation: favouriteToastIn 200ms ease-out;
+}
+
+.favouriteSavedToastError {
+  border-color: rgba(255, 60, 60, 0.5);
+  color: #ffaaaa;
+}
+
+.playlistActionToast {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.playlistActionToastSpinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 242, 237, 0.26);
+  border-top-color: rgba(255, 242, 237, 0.96);
+  animation: playlistActionToastSpin 700ms linear infinite;
+}
+
+@keyframes playlistActionToastSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.playlistDropGhost {
+  position: fixed;
+  z-index: 140;
+  pointer-events: none;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 22px 46px rgba(0, 0, 0, 0.56), 0 0 20px rgba(255, 96, 72, 0.38);
+  animation: playlistDropGhostFlight 620ms cubic-bezier(0.2, 0.95, 0.18, 1) both;
+}
+
+.playlistDropGhostImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+@keyframes playlistDropGhostFlight {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -14px, 0) scale(1.12);
+    filter: saturate(1.12) brightness(1.04);
+  }
+
+  18% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--playlist-drop-dx), var(--playlist-drop-dy), 0) scale(var(--playlist-drop-scale));
+    filter: saturate(0.92) brightness(0.82);
+  }
+}
+
+@keyframes favouriteToastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.primaryActionToggleButtonActive {
+  background: linear-gradient(180deg, #d02d16, #76100b);
+  box-shadow: 0 0 0 1px rgba(255, 115, 82, 0.35), 0 0 14px rgba(255, 58, 26, 0.35);
+}
+
+.primaryActions .primaryActionToggleButtonTrash {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 124px;
+  min-height: 50px;
+  padding: 0 8px;
+  gap: 6px;
+  background: linear-gradient(180deg, #2a2a2a, #0f0f0f);
+  border: 2px solid rgba(206, 63, 63, 0.98);
+  color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(206, 63, 63, 0.5), 0 0 14px rgba(0, 0, 0, 0.28);
+}
+
+.primaryActions .primaryActionToggleButtonTrash:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.primaryActions .primaryActionToggleButtonTrash svg {
+  color: #e14d4d;
+}
+
+.primaryActions .primaryActionToggleButtonTrash .primaryActionThumbsDownGlyph {
+  color: #ffffff;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.primaryActions .primaryActionToggleButtonTrash .primaryActionTrashLabel {
+  color: #ffffff;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.78rem;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.primaryActions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+@media (min-width: 1200px) {
+  .primaryActions {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .shareUrlField {
+    margin-left: 0;
+    gap: 8px;
+    flex: 0 1 calc(26ch + 110px);
+  }
+
+  .shareUrlInputWrap,
+  .shareUrlInput {
+    max-width: calc(26ch + 110px);
+  }
+
+  .primaryActions .primaryActionToggleButton {
+    height: 50px;
+    min-height: 50px;
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .primaryActionIconButton,
+  .primaryActionNavIconButton {
+    width: 52px;
+    min-width: 52px;
+    min-height: 50px;
+  }
+
+  .primaryActions .primaryActionToggleButtonTrash {
+    min-width: 110px;
+    min-height: 50px;
+  }
+}
+

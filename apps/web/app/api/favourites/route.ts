@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { favouriteMutationSchema } from "@/lib/api-schemas";
 import { requireApiAuth } from "@/lib/auth-request";
-import { filterHiddenVideos, getFavouriteVideos, updateFavourite } from "@/lib/catalog-data";
+import { filterHiddenVideos, getFavouriteVideos, getFavouriteVideosPage, updateFavourite } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
@@ -13,10 +13,36 @@ export async function GET(request: NextRequest) {
     return authResult.response;
   }
 
-  let favourites = await getFavouriteVideos(authResult.auth.userId);
-  // Filter out blocked videos from favourites
-  favourites = await filterHiddenVideos(favourites, authResult.auth.userId);
-  return NextResponse.json({ favourites });
+  const limitRaw = request.nextUrl.searchParams.get("limit");
+  const offsetRaw = request.nextUrl.searchParams.get("offset");
+  const hasPaging = limitRaw !== null || offsetRaw !== null;
+
+  if (!hasPaging) {
+    let favourites = await getFavouriteVideos(authResult.auth.userId);
+    // Filter out blocked videos from favourites
+    favourites = await filterHiddenVideos(favourites, authResult.auth.userId);
+
+    return NextResponse.json({
+      favourites,
+      totalCount: favourites.length,
+      hasMore: false,
+      nextOffset: favourites.length,
+    });
+  }
+
+  const parsedLimit = Number(limitRaw ?? "20");
+  const parsedOffset = Number(offsetRaw ?? "0");
+  const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(100, Math.floor(parsedLimit))) : 20;
+  const offset = Number.isFinite(parsedOffset) ? Math.max(0, Math.floor(parsedOffset)) : 0;
+
+  const paged = await getFavouriteVideosPage(authResult.auth.userId, { limit, offset });
+
+  return NextResponse.json({
+    favourites: paged.favourites,
+    totalCount: paged.totalCount,
+    hasMore: paged.hasMore,
+    nextOffset: paged.nextOffset,
+  });
 }
 
 export async function POST(request: NextRequest) {

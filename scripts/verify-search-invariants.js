@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const path = require("node:path");
+const fs = require("node:fs");
 const { readFileStrict, assertContains, assertNotContains } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
@@ -19,8 +20,29 @@ const files = {
   adminVideoEditModal: path.join(ROOT, "apps/web/components/admin-video-edit-modal.tsx"),
   adminVideoEditButton: path.join(ROOT, "apps/web/components/admin-video-edit-button.tsx"),
   adminVideoDeleteButton: path.join(ROOT, "apps/web/components/admin-video-delete-button.tsx"),
-  globalCss: path.join(ROOT, "apps/web/app/globals.css"),
+  appRoot: path.join(ROOT, "apps/web/app"),
 };
+
+function collectCssFiles(dirPath, acc = []) {
+  if (!fs.existsSync(dirPath)) {
+    return acc;
+  }
+
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      collectCssFiles(fullPath, acc);
+      continue;
+    }
+
+    if (entry.isFile() && entry.name.endsWith(".css")) {
+      acc.push(fullPath);
+    }
+  }
+
+  return acc;
+}
 
 function main() {
   const failures = [];
@@ -30,7 +52,14 @@ function main() {
   const searchFlagsRouteSource = readFileStrict(files.searchFlagsRoute, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const searchFlagDataSource = readFileStrict(files.searchFlagData, ROOT);
-  const shellDynamicSource = readFileStrict(files.shellDynamic, ROOT);
+  const shellDynamicSource = [
+    readFileStrict(files.shellDynamic, ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
+  ].join('\n');
   const searchFlagButtonSource = readFileStrict(files.searchFlagButton, ROOT);
   const searchSeenToggleSource = readFileStrict(files.searchSeenToggle, ROOT);
   const seenToggleHookSource = readFileStrict(files.seenToggleHook, ROOT);
@@ -38,7 +67,9 @@ function main() {
   const adminVideoEditModalSource = readFileStrict(files.adminVideoEditModal, ROOT);
   const adminVideoEditButtonSource = readFileStrict(files.adminVideoEditButton, ROOT);
   const adminVideoDeleteButtonSource = readFileStrict(files.adminVideoDeleteButton, ROOT);
-  const globalCssSource = readFileStrict(files.globalCss, ROOT);
+  const globalCssSource = collectCssFiles(files.appRoot)
+    .map((filePath) => readFileStrict(filePath, ROOT))
+    .join("\n");
 
   // --- Search page: server-side rendering ---
   assertContains(searchPageSource, "searchCatalog(query)", "Search page calls searchCatalog server-side", failures);

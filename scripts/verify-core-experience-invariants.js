@@ -22,8 +22,11 @@ const files = {
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
   shellDynamicRendering: path.join(ROOT, "apps/web/components/shell-dynamic-rendering.tsx"),
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
+  currentVideoRouteService: path.join(ROOT, "apps/web/lib/current-video-route-service.ts"),
   analyticsRoute: path.join(ROOT, "apps/web/app/api/analytics/route.ts"),
+  cronRelatedBackfillRoute: path.join(ROOT, "apps/web/app/api/cron/related-backfill/route.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
+  catalogDataVideos: path.join(ROOT, "apps/web/lib/catalog-data-videos.ts"),
   metadataUtils: path.join(ROOT, "apps/web/lib/catalog-metadata-utils.ts"),
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   nextTrackDecisionHook: path.join(ROOT, "apps/web/components/use-next-track-decision.ts"),
@@ -37,12 +40,25 @@ const files = {
 function main() {
   const failures = [];
 
-  const shellDynamicSource = readFileStrict(files.shellDynamic, ROOT);
+  const shellDynamicSource = [
+    readFileStrict(files.shellDynamic, ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
+  ].join('\n');
   const shellDynamicRenderingSource = readFileStrict(files.shellDynamicRendering, ROOT);
   const shellRenderingSource = `${shellDynamicSource}\n${shellDynamicRenderingSource}`;
-  const currentVideoRouteSource = readFileStrict(files.currentVideoRoute, ROOT);
+  const currentVideoRouteServiceSource = readFileStrict(files.currentVideoRouteService, ROOT);
+  const currentVideoRouteSource = [
+    readFileStrict(files.currentVideoRoute, ROOT),
+    currentVideoRouteServiceSource,
+  ].join('\n');
   const analyticsRouteSource = readFileStrict(files.analyticsRoute, ROOT);
+  const cronRelatedBackfillRouteSource = readFileStrict(files.cronRelatedBackfillRoute, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
+  const catalogDataVideosSource = readFileStrict(files.catalogDataVideos, ROOT);
   const metadataUtilsSource = readFileStrict(files.metadataUtils, ROOT);
   const classificationSource = `${catalogDataSource}\n${metadataUtilsSource}`;
   const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
@@ -79,9 +95,11 @@ function main() {
   assertContains(shellDynamicSource, "watchNextRailRef.current.scrollTop = 0;", "Watch Next resets scroll top during transition", failures);
 
   // Current-video API invariants.
-  assertContains(currentVideoRouteSource, "const targetRelatedCount = 8;", "Current-video API targets 8 Watch Next items", failures);
-  assertContains(currentVideoRouteSource, "earlyTopVideosForPadding ?? await getCachedTopVideosForCurrentVideo(30)", "Current-video API fetches bounded filler pool (parallel-prefetched or direct)", failures);
-  assertContains(currentVideoRouteSource, "const filler = shuffleVideos(fillerPool).slice(0, targetRelatedCount - relatedVideos.length);", "Current-video API randomizes sparse filler selection", failures);
+  assertContains(currentVideoRouteSource, "RESOLVE_CURRENT_VIDEO_TARGET_RELATED_COUNT = 8;", "Current-video API targets 8 Watch Next items", failures);
+  assertContains(currentVideoRouteSource, "earlyTopVideosForPadding ?? await ", "Current-video API fetches bounded filler pool (parallel-prefetched or direct)", failures);
+  assertContains(currentVideoRouteSource, "const filler = shuffleVideos(fillerPool).slice(0, ", "Current-video API randomizes sparse filler selection", failures);
+  assertNotContains(currentVideoRouteServiceSource, 'from "next/server"', "Current-video route service is free of HTTP-layer imports (next/server)", failures);
+  assertNotContains(currentVideoRouteServiceSource, "NextResponse", "Current-video route service does not construct HTTP responses", failures);
 
   // Analytics API invariants.
   assertContains(analyticsRouteSource, 'import { parseRequestJson } from "@/lib/request-json";', "Analytics API uses shared JSON parser helper", failures);
@@ -89,7 +107,19 @@ function main() {
   assertContains(analyticsRouteSource, "if (!bodyResult.ok) {", "Analytics API handles shared parser failure path", failures);
   assertContains(analyticsRouteSource, "return NextResponse.json({ ok: false }, { status: 400 });", "Analytics API preserves stable invalid-body response contract", failures);
 
+  // Cron related-backfill API invariants.
+  assertContains(cronRelatedBackfillRouteSource, "const CRON_SECRET = process.env.CRON_SECRET?.trim() || \"\";", "Cron related-backfill route resolves CRON_SECRET from environment", failures);
+  assertContains(cronRelatedBackfillRouteSource, "function isCronAuthorized(request: NextRequest): boolean", "Cron related-backfill route defines explicit authorization guard", failures);
+  assertContains(cronRelatedBackfillRouteSource, "const auth = request.headers.get(\"authorization\") ?? \"\";", "Cron related-backfill route reads Authorization header", failures);
+  assertContains(cronRelatedBackfillRouteSource, "const token = auth.startsWith(\"Bearer \") ? auth.slice(7).trim() : \"\";", "Cron related-backfill route parses bearer token", failures);
+  assertContains(cronRelatedBackfillRouteSource, "return token.length > 0 && token === CRON_SECRET;", "Cron related-backfill route requires bearer token to match CRON_SECRET", failures);
+  assertContains(cronRelatedBackfillRouteSource, "if (!isCronAuthorized(request)) {", "Cron related-backfill route rejects unauthorized requests early", failures);
+  assertContains(cronRelatedBackfillRouteSource, "return NextResponse.json({ error: \"Unauthorized.\" }, { status: HTTP_UNAUTHORIZED });", "Cron related-backfill route returns stable unauthorized response contract", failures);
+
   // Catalog data support invariants for fallback sourcing.
+  assertContains(catalogDataVideosSource, "const rankedVideoIds = Array.from(new Set(rankedVideoIdRows.map((row) => row.videoId).filter(Boolean))).slice(0, fetchLimit);", "Ranked top-pool builder deduplicates candidate video ids before hydration", failures);
+  assertContains(catalogDataVideosSource, "WHERE v.videoId IN (${placeholders})", "Ranked top-pool builder hydrates rows using candidate id IN filter", failures);
+  assertContains(catalogDataVideosSource, "ORDER BY FIELD(v.videoId, ${placeholders})", "Ranked top-pool hydration preserves candidate ordering using FIELD", failures);
   assertContains(catalogDataSource, "export async function getUnseenCatalogVideos(options?: {", "Catalog data exposes unseen catalog helper", failures);
   assertContains(catalogDataSource, "const requested = Math.max(1, Math.min(500, Math.floor(options?.count ?? 100)));", "Unseen catalog helper validates and clamps requested count", failures);
   assertContains(catalogDataSource, "const useSharedRelatedCache = excludedIds.size === 0;", "Related videos cache is reused for any exclude-free request size", failures);

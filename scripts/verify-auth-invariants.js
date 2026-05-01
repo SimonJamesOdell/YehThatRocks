@@ -22,7 +22,10 @@ const files = {
   profileRoute: path.join(ROOT, "apps/web/app/api/auth/profile/route.ts"),
   changePasswordRoute: path.join(ROOT, "apps/web/app/api/auth/change-password/route.ts"),
   forgotPasswordRoute: path.join(ROOT, "apps/web/app/api/auth/forgot-password/route.ts"),
+  resetPasswordRoute: path.join(ROOT, "apps/web/app/api/auth/reset-password/route.ts"),
   sendVerificationRoute: path.join(ROOT, "apps/web/app/api/auth/send-verification/route.ts"),
+  verifyEmailRoute: path.join(ROOT, "apps/web/app/api/auth/verify-email/route.ts"),
+  upgradeToEmailRoute: path.join(ROOT, "apps/web/app/api/auth/upgrade-to-email/route.ts"),
   shellLayout: path.join(ROOT, "apps/web/app/(shell)/layout.tsx"),
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
   historyPage: path.join(ROOT, "apps/web/app/(shell)/history/page.tsx"),
@@ -36,7 +39,8 @@ const files = {
   authModal: path.join(ROOT, "apps/web/components/auth-modal.tsx"),
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   authCookies: path.join(ROOT, "apps/web/lib/auth-cookies.ts"),
-  globalCss: path.join(ROOT, "apps/web/app/globals.css"),
+  rateLimitLib: path.join(ROOT, "apps/web/lib/rate-limit.ts"),
+  appRoot: path.join(ROOT, "apps/web/app"),
 };
 
 function read(filePath) {
@@ -44,6 +48,27 @@ function read(filePath) {
     throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
   }
   return fs.readFileSync(filePath, "utf8");
+}
+
+function collectCssFiles(dirPath, acc = []) {
+  if (!fs.existsSync(dirPath)) {
+    return acc;
+  }
+
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      collectCssFiles(fullPath, acc);
+      continue;
+    }
+
+    if (entry.isFile() && entry.name.endsWith(".css")) {
+      acc.push(fullPath);
+    }
+  }
+
+  return acc;
 }
 
 function assertContains(source, needle, description, failures) {
@@ -78,9 +103,20 @@ function main() {
   const authRetryButtonSource = read(files.authRetryButton);
   const protectedAuthGatePanelSource = read(files.protectedAuthGatePanel);
   const anonymousRouteSource = read(files.anonymousRoute);
+  const loginRouteSource = read(files.loginRoute);
   const profileRouteSource = read(files.profileRoute);
+  const resetPasswordRouteSource = read(files.resetPasswordRoute);
+  const verifyEmailRouteSource = read(files.verifyEmailRoute);
+  const upgradeToEmailRouteSource = read(files.upgradeToEmailRoute);
   const shellLayoutSource = read(files.shellLayout);
-  const shellDynamicSource = read(files.shellDynamic);
+  const shellDynamicSource = [
+    read(files.shellDynamic),
+    read(path.join(ROOT, 'apps/web/components/use-chat-state.ts')),
+    read(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts')),
+    read(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts')),
+    read(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts')),
+    read(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts')),
+  ].join('\n');
   const historyPageSource = read(files.historyPage);
   const favouritesPageSource = read(files.favouritesPage);
   const playlistsPageSource = read(files.playlistsPage);
@@ -92,7 +128,10 @@ function main() {
   const authModalSource = read(files.authModal);
   const playerExperienceSource = read(files.playerExperience);
   const authCookiesSource = read(files.authCookies);
-  const globalCssSource = read(files.globalCss);
+  const rateLimitLibSource = read(files.rateLimitLib);
+  const globalCssSource = collectCssFiles(files.appRoot)
+    .map((filePath) => read(filePath))
+    .join("\n");
 
   // --- Account page tabs and top-bar actions ---
   assertContains(accountPageSource, "<AuthLogoutButton />", "Account page renders logout action in the top bar", failures);
@@ -132,6 +171,32 @@ function main() {
   assertContains(profileRouteSource, "bio", "Profile API handles bio", failures);
   assertContains(profileRouteSource, "location", "Profile API handles location", failures);
   assertContains(profileRouteSource, "(prisma as PrismaWithProfileUser).user.update({", "Profile API persists profile fields through Prisma update", failures);
+
+  // --- Login API route ---
+  assertContains(loginRouteSource, "export async function POST", "Login API exposes POST handler", failures);
+  assertContains(loginRouteSource, "verifySameOrigin(request)", "Login API enforces same-origin CSRF protection", failures);
+  assertContains(loginRouteSource, "rateLimitOrResponse(request, `auth:login:${normalizedEmail}`, 10, 15 * 60 * 1000)", "Login API applies per-identifier auth rate limiting", failures);
+  assertContains(loginRouteSource, 'detail: "Login rate limited"', "Login API records audit events for rate-limited attempts", failures);
+
+  // --- Reset password API route ---
+  assertContains(resetPasswordRouteSource, "export async function POST", "Reset-password API exposes POST handler", failures);
+  assertContains(resetPasswordRouteSource, "verifySameOrigin(request)", "Reset-password API enforces same-origin CSRF protection", failures);
+  assertContains(resetPasswordRouteSource, "rateLimitOrResponse(request, `auth:reset-password:${parsed.data.token}`, 8, 15 * 60 * 1000)", "Reset-password API applies per-token rate limiting", failures);
+  assertContains(resetPasswordRouteSource, 'detail: "Reset password rate limited"', "Reset-password API records audit events for rate-limited attempts", failures);
+  assertContains(resetPasswordRouteSource, "consumePasswordResetToken(parsed.data.token)", "Reset-password API consumes one-time reset token", failures);
+
+  // --- Verify email API route ---
+  assertContains(verifyEmailRouteSource, "export async function GET", "Verify-email API exposes GET handler", failures);
+  assertContains(verifyEmailRouteSource, "consumeEmailVerificationToken(parsed.data.token)", "Verify-email API consumes one-time verification token", failures);
+  assertContains(verifyEmailRouteSource, '"/verify-email?status=invalid"', "Verify-email API redirects invalid tokens to invalid status", failures);
+  assertContains(verifyEmailRouteSource, '"/verify-email?status=success"', "Verify-email API redirects valid tokens to success status", failures);
+
+  // --- Upgrade-to-email API route ---
+  assertContains(upgradeToEmailRouteSource, "export async function POST", "Upgrade-to-email API exposes POST handler", failures);
+  assertContains(upgradeToEmailRouteSource, "requireApiAuth(request)", "Upgrade-to-email API requires authenticated session", failures);
+  assertContains(upgradeToEmailRouteSource, "verifySameOrigin(request)", "Upgrade-to-email API enforces same-origin CSRF protection", failures);
+  assertContains(upgradeToEmailRouteSource, "createEmailVerificationToken(upgraded.id)", "Upgrade-to-email API issues email verification tokens", failures);
+  assertContains(upgradeToEmailRouteSource, "sendVerificationEmail(upgraded.email ?? email, verificationToken)", "Upgrade-to-email API sends verification email after upgrade", failures);
 
   // --- Login form ---
   assertContains(loginFormSource, 'name="email"', "Login form has email/handle input field", failures);
@@ -188,6 +253,18 @@ function main() {
   assertContains(authCookiesSource, "response.headers.append(\"Set-Cookie\", accessExpiry);", "Logout appends host-only access cookie expiry header", failures);
   assertContains(authCookiesSource, "response.headers.append(\"Set-Cookie\", refreshExpiry);", "Logout appends host-only refresh cookie expiry header", failures);
   assertContains(authCookiesSource, "ResponseCookies is keyed by name", "Auth cookie clear logic documents duplicate-name overwrite protection", failures);
+
+  // --- Rate limiter library contract ---
+  assertContains(rateLimitLibSource, "const ipBucket = new Map<string, RateEntry>();", "Rate limiter keeps an IP-scoped bucket map", failures);
+  assertContains(rateLimitLibSource, "const sharedBucket = new Map<string, RateEntry>();", "Rate limiter keeps a shared bucket map", failures);
+  assertContains(rateLimitLibSource, "const PRUNE_INTERVAL_MS = 60_000;", "Rate limiter defines periodic pruning interval", failures);
+  assertContains(rateLimitLibSource, "function pruneExpiredEntries(now: number)", "Rate limiter exposes expired-entry pruning helper", failures);
+  assertContains(rateLimitLibSource, "if (!current || now >= current.resetAt)", "Rate limiter opens a new fixed window when key is missing or expired", failures);
+  assertContains(rateLimitLibSource, "map.set(key, { count: 1, resetAt: now + windowMs });", "Rate limiter initializes a fixed window with count=1 and resetAt", failures);
+  assertContains(rateLimitLibSource, "if (current.count >= limit)", "Rate limiter blocks requests once the fixed-window count reaches the limit", failures);
+  assertContains(rateLimitLibSource, "{ status: 429, headers: { \"Retry-After\": String(retryAfter) } }", "Rate limiter returns HTTP 429 with Retry-After header", failures);
+  assertContains(rateLimitLibSource, 'const key = `${getClientIp(request)}:${keySuffix}`;', "IP limiter keys buckets by client IP plus suffix", failures);
+  assertContains(rateLimitLibSource, "return checkBucket(sharedBucket, key, limit, windowMs, now);", "Shared limiter path uses shared bucket checks", failures);
 
   // --- Anonymous credentials modal ---
   assertContains(anonymousCredentialsModalSource, 'isContinuing ? "Continuing..." : "Continue"', "Anonymous credentials modal CTA is Continue with pending state", failures);

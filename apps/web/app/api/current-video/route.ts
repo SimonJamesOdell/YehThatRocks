@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { pruneMapToMaxEntries } from "@/lib/bounded-map";
-import { getCurrentVideo, getFavouriteVideos, getHiddenVideoIdsForUser, getNewestVideos, getRelatedVideos, getSeenVideoIdsForUser, getTopVideos, getUnseenCatalogVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { getFavouriteVideos, getNewestVideos, getRelatedVideos, getTopVideos, getUnseenCatalogVideos } from "@/lib/catalog-data";
 import { getOptionalApiAuth } from "@/lib/auth-request";
 import { prisma } from "@/lib/db";
 import {
@@ -12,18 +12,21 @@ import {
   currentVideoRelatedPoolInflight,
 } from "@/lib/current-video-cache";
 import {
-  blendRelatedWithFavourites,
-  createSeededRandom,
   hashSeed,
   injectSparseFavourites,
   interleaveVideoBuckets,
   limitFavouritesInHead,
-  pickBatchSourceVideos,
-  shuffleVideos,
-  shuffleWithRandom,
   uniqueVideosById,
 } from "@/lib/current-video-route-utils";
-import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
+import {
+  buildWatchNextRelatedStream as buildWatchNextRelatedStreamService,
+  fetchRandomCatalogVideosForCurrentVideo as fetchRandomCatalogVideosForCurrentVideoService,
+  resolveCurrentVideoPayload as resolveCurrentVideoPayloadService,
+  resolveWatchNextStreamSlice as resolveWatchNextStreamSliceService,
+  type ResolvedCurrentVideoPayload,
+  type WatchNextVideo,
+  type WatchNextStreamCacheEntry,
+} from "@/lib/current-video-route-service";
 import { getTopVideosFast, warmTopVideos } from "@/lib/top-videos-cache";
 
 const CURRENT_VIDEO_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_CATALOG === "1";
@@ -57,11 +60,7 @@ const WATCH_NEXT_HEAD_MIX_MAX_FAVOURITES = 3;
 const WATCH_NEXT_FAVOURITE_INSERT_INTERVAL = 14;
 const GENERIC_ARTIST_LABELS = new Set(["unknown artist", "unknown", "youtube"]);
 
-type CurrentVideoPayload = {
-  currentVideo: Awaited<ReturnType<typeof getCurrentVideo>>;
-  relatedVideos: Awaited<ReturnType<typeof getRelatedVideos>>;
-  hasMore?: boolean;
-};
+type CurrentVideoPayload = ResolvedCurrentVideoPayload;
 
 type PendingPayload = {
   pending: true;
@@ -69,12 +68,7 @@ type PendingPayload = {
 };
 
 type CurrentVideoResolvePayload = CurrentVideoPayload | PendingPayload;
-type WatchNextVideo = Awaited<ReturnType<typeof getRelatedVideos>>[number];
-type WatchNextStreamCacheEntry = {
-  expiresAt: number;
-  videos: WatchNextVideo[];
-  hasMore: boolean;
-};
+// WatchNextVideo and WatchNextStreamCacheEntry imported from service
 
 let currentVideoResolverBlockedUntil = 0;
 const watchNextStreamCache = new Map<string, WatchNextStreamCacheEntry>();
@@ -177,122 +171,11 @@ async function getAvailableRandomCatalogMaxId() {
 }
 
 async function getRandomCatalogVideosForCurrentVideo(currentVideoId: string, count: number) {
-  const requested = Math.max(1, Math.min(2_000, Math.floor(count)));
-  const maxId = await getAvailableRandomCatalogMaxId();
-  if (!Number.isFinite(maxId) || maxId <= 0) {
-    return [];
-  }
-
-  const randomStartId = Math.max(1, Math.floor(Math.random() * maxId));
-  const queryLimit = Math.max(80, requested * 2);
-  const selectSql = `
-    SELECT
-      v.id AS dbId,
-      v.videoId AS id,
-      v.title AS title,
-      COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
-      COALESCE(v.favourited, 0) AS favourited,
-      v.description AS description
-    FROM videos v
-    WHERE v.videoId IS NOT NULL
-      AND v.videoId <> ?
-      AND v.id >= ?
-      AND EXISTS (
-        SELECT 1
-        FROM site_videos sv
-        WHERE sv.video_id = v.id
-          AND sv.status = 'available'
-      )
-    ORDER BY v.id ASC
-    LIMIT ?
-  `;
-
-  const wrapSql = `
-    SELECT
-      v.id AS dbId,
-      v.videoId AS id,
-      v.title AS title,
-      COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
-      COALESCE(v.favourited, 0) AS favourited,
-      v.description AS description
-    FROM videos v
-    WHERE v.videoId IS NOT NULL
-      AND v.videoId <> ?
-      AND v.id < ?
-      AND EXISTS (
-        SELECT 1
-        FROM site_videos sv
-        WHERE sv.video_id = v.id
-          AND sv.status = 'available'
-      )
-    ORDER BY v.id ASC
-    LIMIT ?
-  `;
-
-  const firstRows = await prisma.$queryRawUnsafe<Array<{
-    dbId: number;
-    id: string;
-    title: string;
-    channelTitle: string | null;
-    favourited: number | null;
-    description: string | null;
-  }>>(selectSql, currentVideoId, randomStartId, queryLimit);
-
-  const remaining = Math.max(0, queryLimit - firstRows.length);
-  const wrapRows = remaining > 0
-    ? await prisma.$queryRawUnsafe<Array<{
-      dbId: number;
-      id: string;
-      title: string;
-      channelTitle: string | null;
-      favourited: number | null;
-      description: string | null;
-    }>>(wrapSql, currentVideoId, randomStartId, remaining)
-    : [];
-  const rows = uniqueVideosById([...firstRows, ...wrapRows]).slice(0, requested);
-
-  const repairedArtists = rows
-    .map((row) => {
-      const normalizedCurrentArtist = (row.channelTitle ?? "").trim().toLowerCase();
-      const hasMeaningfulArtist = Boolean(normalizedCurrentArtist) && !GENERIC_ARTIST_LABELS.has(normalizedCurrentArtist);
-      if (hasMeaningfulArtist) {
-        return null;
-      }
-
-      const inferredArtist = inferArtistFromTitle(row.title)?.trim();
-      if (!inferredArtist) {
-        return null;
-      }
-
-      return { dbId: row.dbId, inferredArtist };
-    })
-    .filter((entry): entry is { dbId: number; inferredArtist: string } => Boolean(entry));
-
-  if (repairedArtists.length > 0) {
-    // Best-effort data repair: fill parsedArtist when we can infer a reliable artist from title.
-    void Promise.all(repairedArtists.map(({ dbId, inferredArtist }) => prisma.$executeRaw`
-      UPDATE videos
-      SET parsedArtist = ${inferredArtist}
-      WHERE id = ${dbId}
-        AND (parsedArtist IS NULL OR TRIM(parsedArtist) = '')
-    `));
-  }
-
-  return rows.map((row) => {
-    const normalizedCurrentArtist = (row.channelTitle ?? "").trim().toLowerCase();
-    const inferredArtist = inferArtistFromTitle(row.title)?.trim();
-    const resolvedArtist = row.channelTitle?.trim() && !GENERIC_ARTIST_LABELS.has(normalizedCurrentArtist)
-      ? row.channelTitle.trim()
-      : inferredArtist || "Unknown Artist";
-
-    return ({
-    id: row.id,
-    title: row.title,
-    channelTitle: resolvedArtist,
-    genre: "",
-    favourited: Number(row.favourited ?? 0),
-    description: row.description ?? "",
-    });
+  return fetchRandomCatalogVideosForCurrentVideoService({
+    currentVideoId,
+    count,
+    getAvailableRandomCatalogMaxId,
+    genericArtistLabels: GENERIC_ARTIST_LABELS,
   });
 }
 
@@ -304,94 +187,16 @@ async function buildWatchNextRelatedStream(params: {
   blockedIds: Set<string>;
   favouriteVideos: WatchNextVideo[];
 }) {
-  const targetCount = Math.max(1, params.count);
-  const targetTotal = params.offset + targetCount;
-  const seedBase = `${params.currentVideoId}:u:${params.userId ?? 0}:o:${params.offset}:c:${params.count}`;
-
-  const [topPoolRaw, newestPoolRaw, randomPoolRaw] = await Promise.all([
-    getCachedTopVideosForCurrentVideo(WATCH_NEXT_TOP_POOL_SIZE),
-    getNewestVideos(WATCH_NEXT_NEWEST_POOL_SIZE, 0),
-    getRandomCatalogVideosForCurrentVideo(
-      params.currentVideoId,
-      Math.max(WATCH_NEXT_RANDOM_POOL_MIN, targetTotal + WATCH_NEXT_BATCH_SIZE * 2),
-    ),
-  ]);
-
-  const removeBlocked = (videos: WatchNextVideo[]) => videos.filter((video) => !params.blockedIds.has(video.id));
-  const topPool = removeBlocked(topPoolRaw);
-  const newestPool = removeBlocked(newestPoolRaw);
-  const randomPool = removeBlocked(randomPoolRaw);
-  const favouritePool = removeBlocked(params.favouriteVideos);
-
-  const globalUsedIds = new Set(params.blockedIds);
-  const stream: WatchNextVideo[] = [];
-  let batchNumber = 0;
-  let canContinue = true;
-
-  while (stream.length < targetTotal && canContinue && batchNumber < 200) {
-    const batchBlockedIds = new Set(globalUsedIds);
-    const batchRandom = createSeededRandom(`${seedBase}:batch:${batchNumber}`);
-
-    const favourites = pickBatchSourceVideos({
-      source: favouritePool,
-      count: WATCH_NEXT_SOURCE_SLICE_SIZE,
-      blockedIds: batchBlockedIds,
-      random: batchRandom,
-      labels: { isFavouriteSource: true },
-    });
-    const top = pickBatchSourceVideos({
-      source: topPool,
-      count: WATCH_NEXT_SOURCE_SLICE_SIZE,
-      blockedIds: batchBlockedIds,
-      random: batchRandom,
-      labels: { isTop100Source: true, sourceLabel: "Top100" },
-    });
-    const newest = pickBatchSourceVideos({
-      source: newestPool,
-      count: WATCH_NEXT_SOURCE_SLICE_SIZE,
-      blockedIds: batchBlockedIds,
-      random: batchRandom,
-      labels: { isNewSource: true, sourceLabel: "New" },
-    });
-    const randoms = pickBatchSourceVideos({
-      source: randomPool,
-      count: WATCH_NEXT_SOURCE_SLICE_SIZE,
-      blockedIds: batchBlockedIds,
-      random: batchRandom,
-    });
-
-    let batch = [...favourites, ...top, ...newest, ...randoms];
-
-    if (batch.length < WATCH_NEXT_BATCH_SIZE) {
-      const topOff = pickBatchSourceVideos({
-        source: interleaveVideoBuckets([randomPool, newestPool, topPool]),
-        count: WATCH_NEXT_BATCH_SIZE - batch.length,
-        blockedIds: batchBlockedIds,
-        random: batchRandom,
-      });
-      batch = [...batch, ...topOff];
-    }
-
-    if (batch.length === 0) {
-      canContinue = false;
-      break;
-    }
-
-    const shuffledBatch = shuffleWithRandom(batch, createSeededRandom(`${seedBase}:shuffle:${batchNumber}`));
-    for (const video of shuffledBatch) {
-      globalUsedIds.add(video.id);
-      stream.push(video);
-    }
-
-    batchNumber += 1;
-  }
-
-  const sliceStart = Math.min(params.offset, stream.length);
-  const sliceEnd = Math.min(stream.length, sliceStart + targetCount);
-  const videos = stream.slice(sliceStart, sliceEnd);
-  const hasMore = sliceEnd < stream.length || canContinue;
-
-  return { videos, hasMore };
+  return buildWatchNextRelatedStreamService({
+    ...params,
+    watchNextBatchSize: WATCH_NEXT_BATCH_SIZE,
+    watchNextSourceSliceSize: WATCH_NEXT_SOURCE_SLICE_SIZE,
+    watchNextTopPoolSize: WATCH_NEXT_TOP_POOL_SIZE,
+    watchNextNewestPoolSize: WATCH_NEXT_NEWEST_POOL_SIZE,
+    watchNextRandomPoolMin: WATCH_NEXT_RANDOM_POOL_MIN,
+    getTopPool: getCachedTopVideosForCurrentVideo,
+    getRandomPool: getRandomCatalogVideosForCurrentVideo,
+  });
 }
 
 function getWatchNextStreamCacheKey(params: {
@@ -411,84 +216,36 @@ async function getWatchNextStreamSlice(params: {
   blockedIds: Set<string>;
   favouriteVideos: WatchNextVideo[];
 }) {
-  pruneCurrentVideoRouteCaches();
-
   const cacheKey = getWatchNextStreamCacheKey({
     currentVideoId: params.currentVideoId,
     userId: params.userId,
     blockedIds: params.blockedIds,
   });
-  const now = Date.now();
   const requiredSize = Math.max(
     WATCH_NEXT_BATCH_SIZE,
     params.offset + params.count + WATCH_NEXT_BATCH_SIZE,
   );
-  const cached = watchNextStreamCache.get(cacheKey);
-
-  if (cached && cached.expiresAt > now) {
-    const hasRequiredRows = cached.videos.length >= requiredSize;
-    const canServeFromTail = !cached.hasMore && cached.videos.length >= (params.offset + params.count);
-
-    if (hasRequiredRows || canServeFromTail) {
-      const start = Math.min(params.offset, cached.videos.length);
-      const end = Math.min(cached.videos.length, start + params.count);
-      return {
-        videos: cached.videos.slice(start, end),
-        hasMore: end < cached.videos.length || cached.hasMore,
-      };
-    }
-  }
-
-  const inFlight = watchNextStreamInflight.get(cacheKey);
-  if (inFlight) {
-    const inflightEntry = await inFlight;
-    const start = Math.min(params.offset, inflightEntry.videos.length);
-    const end = Math.min(inflightEntry.videos.length, start + params.count);
-    return {
-      videos: inflightEntry.videos.slice(start, end),
-      hasMore: end < inflightEntry.videos.length || inflightEntry.hasMore,
-    };
-  }
-
-  const targetCount = Math.max(
+  return resolveWatchNextStreamSliceService({
+    currentVideoId: params.currentVideoId,
+    userId: params.userId,
+    offset: params.offset,
+    count: params.count,
     requiredSize,
-    (cached?.videos.length ?? 0) + WATCH_NEXT_BATCH_SIZE,
-  );
-
-  const pending = (async () => {
-    const stream = await buildWatchNextRelatedStream({
+    cacheKey,
+    watchNextBatchSize: WATCH_NEXT_BATCH_SIZE,
+    watchNextStreamCacheTtlMs: WATCH_NEXT_STREAM_CACHE_TTL_MS,
+    watchNextStreamCache,
+    watchNextStreamInflight,
+    pruneCaches: pruneCurrentVideoRouteCaches,
+    buildStream: async (targetCount) => buildWatchNextRelatedStream({
       currentVideoId: params.currentVideoId,
       userId: params.userId,
       offset: 0,
       count: targetCount,
       blockedIds: new Set(params.blockedIds),
       favouriteVideos: params.favouriteVideos,
-    });
-
-    const entry: WatchNextStreamCacheEntry = {
-      expiresAt: Date.now() + WATCH_NEXT_STREAM_CACHE_TTL_MS,
-      videos: stream.videos,
-      hasMore: stream.hasMore,
-    };
-    watchNextStreamCache.set(cacheKey, entry);
-    return entry;
-  })();
-
-  watchNextStreamInflight.set(cacheKey, pending);
-
-  try {
-    const entry = await pending;
-    const start = Math.min(params.offset, entry.videos.length);
-    const end = Math.min(entry.videos.length, start + params.count);
-    return {
-      videos: entry.videos.slice(start, end),
-      hasMore: end < entry.videos.length || entry.hasMore,
-    };
-  } finally {
-    if (watchNextStreamInflight.get(cacheKey) === pending) {
-      watchNextStreamInflight.delete(cacheKey);
-    }
-  }
+    }),
+  });
 }
 
 async function getRelatedPoolForCurrentVideo(
@@ -708,253 +465,43 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const resolvePayloadPromise = (async () => {
-    let seenVideoIdsForRequest: Set<string> | null = null;
-    let hiddenVideoIdsForRequest: Set<string> | null = null;
-    const getSeenVideoIdsForRequest = async () => {
-      if (!shouldFilterSeen || !optionalAuth?.userId) {
-        return null;
-      }
-
-      if (!seenVideoIdsForRequest) {
-        seenVideoIdsForRequest = await getSeenVideoIdsForUser(optionalAuth.userId);
-      }
-
-      return seenVideoIdsForRequest;
-    };
-    const getHiddenVideoIdsForRequest = async () => {
-      if (!optionalAuth?.userId) {
-        return null;
-      }
-
-      if (!hiddenVideoIdsForRequest) {
-        hiddenVideoIdsForRequest = await getHiddenVideoIdsForUser(optionalAuth.userId);
-      }
-
-      return hiddenVideoIdsForRequest;
-    };
-
-    if (v) {
-      const decision = await getVideoPlaybackDecision(v);
-      logCurrentVideoRoute("request:decision", {
-        requestedVideoId: v,
-        allowed: decision.allowed,
-        reason: decision.reason,
-      });
-
-      if (!decision.allowed) {
-        if (decision.reason === "unavailable") {
-          await pruneVideoAndAssociationsByVideoId(v, "api-current-video-denied-unavailable").catch(() => undefined);
-        }
-        logCurrentVideoRoute("request:denied", {
-          requestedVideoId: v,
-          reason: decision.reason,
+  const resolvePayloadPromise = resolveCurrentVideoPayloadService({
+    requestedVideoId: v,
+    requestMode,
+    requestedRelatedCount,
+    requestedRelatedOffset,
+    excludedRelatedIds,
+    isCustomRelatedRequest,
+    usePagedRelatedPool,
+    useUnifiedWatchNextPool,
+    shouldFilterSeen,
+    preferUnseenForEndedChoice,
+    favouriteBlendRatio,
+    userId: optionalAuth?.userId,
+    relatedPoolSize: CURRENT_VIDEO_RELATED_POOL_SIZE,
+    favouriteVideosPromise: favouriteVideosPromise as Promise<WatchNextVideo[]>,
+    getWatchNextStreamSlice,
+    getRelatedPoolForCurrentVideo,
+    getCachedTopVideosForCurrentVideo,
+    logEvent: logCurrentVideoRoute,
+    onPayloadResolved: (payload, resolvedVideoId) => {
+      if (!isCustomRelatedRequest) {
+        currentVideoCache.set(cacheKey, {
+          expiresAt: Date.now() + CURRENT_VIDEO_CACHE_TTL_MS,
+          payload,
         });
-
-        return {
-          pending: true as const,
-          denied: {
-            videoId: v,
-            reason: decision.reason,
-            message: decision.message ?? "Sorry, that video cannot be played on YehThatRocks.",
-          },
-        };
+        currentVideoResolverBlockedUntil = 0;
+        // Pre-warm the related pool for this video so the client's first background
+        // prefetch joins an in-flight pool build rather than cold-starting it
+        // (cuts Watch Next fill latency from several seconds to near-zero on warm cache).
+        getRelatedPoolForCurrentVideo(
+          resolvedVideoId,
+          optionalAuth?.userId,
+          CURRENT_VIDEO_RELATED_POOL_SIZE,
+        ).catch(() => undefined);
       }
-    }
-
-    const currentVideo = await getCurrentVideo(v, { skipPlaybackDecision: Boolean(v) });
-    if (!currentVideo?.id) {
-      logCurrentVideoRoute("request:pending", {
-        requestedVideoId: v,
-      });
-
-      return { pending: true as const };
-    }
-
-    let relatedVideos: Awaited<ReturnType<typeof getRelatedVideos>> = [];
-    let hasMoreForCustomRequest: boolean | undefined;
-    let earlyTopVideosForPadding: Awaited<ReturnType<typeof getCachedTopVideosForCurrentVideo>> | undefined;
-    const favouriteVideos = await favouriteVideosPromise;
-    const favouriteVideoIdSet = new Set(favouriteVideos.map((video) => video.id));
-    const allowFavouriteSeenBypass = requestMode !== "ended-choice";
-
-    if (useUnifiedWatchNextPool) {
-      const hiddenVideoIds = await getHiddenVideoIdsForRequest();
-      const blockedIds = new Set<string>([currentVideo.id, ...excludedRelatedIds]);
-
-      if (hiddenVideoIds && hiddenVideoIds.size > 0) {
-        for (const videoId of hiddenVideoIds) {
-          blockedIds.add(videoId);
-        }
-      }
-
-      const { videos, hasMore } = await getWatchNextStreamSlice({
-        currentVideoId: currentVideo.id,
-        userId: optionalAuth?.userId,
-        offset: requestedRelatedOffset,
-        count: requestedRelatedCount,
-        blockedIds,
-        favouriteVideos,
-      });
-
-      relatedVideos = videos;
-      hasMoreForCustomRequest = hasMore;
-    } else if (usePagedRelatedPool) {
-      const poolSizeTarget = requestMode === "ended-choice"
-        ? Math.max(48, requestedRelatedOffset + requestedRelatedCount + 24)
-        : Math.max(48, requestedRelatedOffset + requestedRelatedCount + 24);
-      const relatedPool = await getRelatedPoolForCurrentVideo(
-        currentVideo.id,
-        optionalAuth?.userId,
-        poolSizeTarget,
-        favouriteVideos,
-        await getHiddenVideoIdsForRequest(),
-      );
-      let filteredPool = excludedRelatedIds.length > 0
-        ? relatedPool.filter((video) => !excludedRelatedIds.includes(video.id))
-        : relatedPool;
-
-      if (preferUnseenForEndedChoice && optionalAuth?.userId) {
-        const seenVideoIds = await getSeenVideoIdsForUser(optionalAuth.userId);
-        seenVideoIdsForRequest = seenVideoIds;
-        const unseenBoost = await getUnseenCatalogVideos({
-          userId: optionalAuth.userId,
-          count: Math.max(300, Math.min(CURRENT_VIDEO_RELATED_POOL_QUERY_EXPANSION_CAP, poolSizeTarget)),
-          excludeVideoIds: [currentVideo.id, ...excludedRelatedIds],
-        });
-
-        filteredPool = uniqueVideosById([
-          ...unseenBoost,
-          ...filteredPool,
-        ]);
-      }
-
-      filteredPool = blendRelatedWithFavourites(
-        filteredPool,
-        favouriteVideos,
-        currentVideo.id,
-        favouriteBlendRatio,
-      );
-
-      if (shouldFilterSeen) {
-        const seenVideoIds = await getSeenVideoIdsForRequest();
-        if (seenVideoIds) {
-          filteredPool = filteredPool.filter((video) => !seenVideoIds.has(video.id));
-        }
-      }
-
-      const start = Math.min(requestedRelatedOffset, filteredPool.length);
-      const end = Math.min(filteredPool.length, start + requestedRelatedCount);
-      relatedVideos = filteredPool.slice(start, end);
-      hasMoreForCustomRequest = end < filteredPool.length;
-    } else {
-      const requestedWithProbe = Math.min(30, requestedRelatedCount + 1);
-      // Start top-video prefetch in parallel so padding is zero-cost if the
-      // related set comes back smaller than the target batch size.
-      const paddingTopVideosPromise = getCachedTopVideosForCurrentVideo(30);
-      const fetchedRelatedVideos = await getRelatedVideos(currentVideo.id, {
-        userId: optionalAuth?.userId,
-        count: requestedWithProbe,
-        excludeVideoIds: excludedRelatedIds,
-      });
-      earlyTopVideosForPadding = await paddingTopVideosPromise;
-      const blendedRelatedVideos = blendRelatedWithFavourites(
-        fetchedRelatedVideos,
-        favouriteVideos,
-        currentVideo.id,
-        favouriteBlendRatio,
-      );
-      const hiddenVideoIds = await getHiddenVideoIdsForRequest();
-      const visibleNonHiddenVideos = hiddenVideoIds && hiddenVideoIds.size > 0
-        ? blendedRelatedVideos.filter((video) => !hiddenVideoIds.has(video.id))
-        : blendedRelatedVideos;
-      const seenVideoIds = await getSeenVideoIdsForRequest();
-      const visibleRelatedVideos = seenVideoIds
-        ? visibleNonHiddenVideos.filter((video) => {
-          if (!seenVideoIds.has(video.id)) {
-            return true;
-          }
-
-          return allowFavouriteSeenBypass && favouriteVideoIdSet.has(video.id);
-        })
-        : visibleNonHiddenVideos;
-      hasMoreForCustomRequest = visibleRelatedVideos.length > requestedRelatedCount;
-      relatedVideos = visibleRelatedVideos.slice(0, requestedRelatedCount);
-    }
-
-    const targetRelatedCount = 8;
-    let paddedRelatedVideos = relatedVideos;
-
-    if (!isCustomRelatedRequest && relatedVideos.length < targetRelatedCount) {
-      const topVideos = earlyTopVideosForPadding ?? await getCachedTopVideosForCurrentVideo(30);
-      const seenVideoIds = await getSeenVideoIdsForRequest();
-      const hiddenVideoIds = await getHiddenVideoIdsForRequest();
-      const blockedIds = new Set([currentVideo.id, ...relatedVideos.map((video) => video.id)]);
-      const fillerPool = uniqueVideosById(topVideos.filter((video) => {
-        if (blockedIds.has(video.id)) {
-          return false;
-        }
-
-        if (hiddenVideoIds?.has(video.id)) {
-          return false;
-        }
-
-        if (seenVideoIds?.has(video.id)) {
-          if (!allowFavouriteSeenBypass || !favouriteVideoIdSet.has(video.id)) {
-            return false;
-          }
-        }
-
-        return true;
-      }));
-      const filler = shuffleVideos(fillerPool).slice(0, targetRelatedCount - relatedVideos.length);
-      paddedRelatedVideos = [...relatedVideos, ...filler];
-    }
-
-    // Final hidden-video filtering should reuse the request-scoped hidden id set.
-    if (optionalAuth?.userId) {
-      const hiddenVideoIds = await getHiddenVideoIdsForRequest();
-      if (hiddenVideoIds && hiddenVideoIds.size > 0) {
-        paddedRelatedVideos = paddedRelatedVideos.filter((video) => !hiddenVideoIds.has(video.id));
-      }
-    }
-
-    const normalizedPayload: CurrentVideoPayload = {
-      currentVideo,
-      relatedVideos: paddedRelatedVideos,
-      hasMore: isCustomRelatedRequest ? hasMoreForCustomRequest : undefined,
-    };
-
-    if (!isCustomRelatedRequest) {
-      currentVideoCache.set(cacheKey, {
-        expiresAt: Date.now() + CURRENT_VIDEO_CACHE_TTL_MS,
-        payload: normalizedPayload,
-      });
-    }
-
-    if (!isCustomRelatedRequest) {
-      currentVideoResolverBlockedUntil = 0;
-    }
-
-    // Pre-warm the related pool for this video so the client's first background
-    // prefetch joins an in-flight pool build rather than cold-starting it
-    // (cuts Watch Next fill latency from several seconds to near-zero on warm cache).
-    if (!isCustomRelatedRequest) {
-      getRelatedPoolForCurrentVideo(
-        currentVideo.id,
-        optionalAuth?.userId,
-        CURRENT_VIDEO_RELATED_POOL_SIZE,
-      ).catch(() => undefined);
-    }
-
-    logCurrentVideoRoute("request:success", {
-      requestedVideoId: v,
-      resolvedVideoId: currentVideo.id,
-      relatedCount: paddedRelatedVideos.length,
-    });
-
-    return normalizedPayload;
-  })();
+    },
+  });
 
   if (isCustomRelatedRequest) {
     try {

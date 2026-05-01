@@ -13,8 +13,11 @@ const files = {
   data: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   addButton: path.join(ROOT, "apps/web/components/add-to-playlist-button.tsx"),
   shell: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
+  playlistRailHook: path.join(ROOT, "apps/web/components/use-playlist-rail.ts"),
   player: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
+  playlistCss: path.join(ROOT, "apps/web/app/styles/playlist-ui.css"),
+  trackCardsCss: path.join(ROOT, "apps/web/app/styles/track-cards.css"),
 };
 
 function read(filePath) {
@@ -52,9 +55,17 @@ function main() {
   const schemasSource = read(files.schemas);
   const dataSource = read(files.data);
   const addButtonSource = read(files.addButton);
-  const shellSource = read(files.shell);
+  const playlistRailHookSource = read(files.playlistRailHook);
+  const shellSource = [
+    read(files.shell),
+    playlistRailHookSource,
+  ].join("\n");
   const playerSource = read(files.player);
-  const cssSource = read(files.css);
+  const cssSource = [
+    read(files.css),
+    read(files.playlistCss),
+    read(files.trackCardsCss),
+  ].join("\n");
 
   // pickColumn ordering invariant: must iterate priority names first, not DB columns.
   // If this regresses to iterating columns first, sort_order is never selected (id wins)
@@ -72,10 +83,11 @@ function main() {
   // rail to fully reload on every autoplay advance (because ?v= changes each track).
   assertContains(
     shellSource,
-    "}, [activePlaylistId, fetchWithAuthRetry, pathname, playlistRefreshTick, rightRailMode]);",
+    "}, [activePlaylistId, checkAuthState, fetchWithAuthRetry, pathname, playlistRefreshTick, rightRailMode]);",
     "Playlist rail load effect omits searchParamsKey to prevent autoplay-triggered reloads",
     failures,
   );
+  assertNotContains(playlistRailHookSource, "searchParamsKey", "Playlist rail load logic does not depend on searchParamsKey", failures);
 
   // API and schema invariants for playlist item remove/reorder.
   assertContains(schemasSource, "removePlaylistItemSchema", "Remove playlist item schema exists", failures);
@@ -137,7 +149,7 @@ function main() {
   // Playlist rail delete button invariants.
   assertContains(shellSource, "const [playlistBeingDeletedId, setPlaylistBeingDeletedId] = useState<string | null>(null);", "Shell tracks playlist being deleted from rail", failures);
   assertContains(shellSource, "const [confirmDeleteRailPlaylist, setConfirmDeleteRailPlaylist] = useState<{ id: string; name: string } | null>(null);", "Shell tracks pending playlist delete confirmation state", failures);
-  assertContains(shellSource, "async function handleDeletePlaylistFromRail(playlistId: string)", "Shell has delete handler for playlist rail card", failures);
+  assertContains(shellSource, "const handleDeletePlaylistFromRail = useCallback(async (playlistId: string)", "Shell has delete handler for playlist rail card", failures);
   assertContains(shellSource, "className=\"rightRailPlaylistCardDelete\"", "Playlist rail cards have delete button", failures);
   assertContains(shellSource, "setConfirmDeleteRailPlaylist({ id: playlist.id, name: playlist.name });", "Playlist rail delete button opens confirmation modal", failures);
   assertContains(shellSource, "void handleDeletePlaylistFromRail(playlistId);", "Playlist rail confirmation modal invokes delete handler", failures);
@@ -154,7 +166,7 @@ function main() {
   assertContains(shellSource, "const requestedPlaylistItemIndex = (() => {", "Playlist rail derives requested playlist item index from URL", failures);
   assertContains(shellSource, "const matchedPlaylistVideoIndex = playlistRailData", "Playlist rail derives active index from current playback", failures);
   assertContains(shellSource, "const hasTrustedRequestedPlaylistItemIndex = requestedPlaylistItemIndex !== null", "Playlist rail only trusts URL item index when valid", failures);
-  assertContains(shellSource, "playlistRailData.videos[requestedPlaylistItemIndex]?.id === currentVideo.id", "Playlist rail validates URL index against currently playing video", failures);
+  assertContains(shellSource, "playlistRailData.videos[requestedPlaylistItemIndex]?.id === currentVideoId", "Playlist rail validates URL index against currently playing video", failures);
   assertContains(shellSource, "const activePlaylistTrackIndex = hasTrustedRequestedPlaylistItemIndex", "Playlist rail computes a single active track index source of truth", failures);
   assertContains(shellSource, "const playlistStackBodyRef = useRef<HTMLDivElement | null>(null);", "Playlist rail keeps a dedicated scroll-body ref", failures);
   assertContains(shellSource, "const playlistAutoScrollRafRef = useRef<number | null>(null);", "Playlist rail tracks animation frame id for smooth auto-scroll", failures);

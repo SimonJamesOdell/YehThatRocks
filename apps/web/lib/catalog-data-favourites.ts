@@ -9,6 +9,13 @@ import type { VideoRecord } from "@/lib/catalog";
 import { hasDatabaseUrl, mapVideo, normalizeYouTubeVideoId } from "@/lib/catalog-data-utils";
 import { pruneMapToMaxEntries } from "@/lib/bounded-map";
 
+type FavouriteVideosPage = {
+  favourites: VideoRecord[];
+  totalCount: number;
+  hasMore: boolean;
+  nextOffset: number;
+};
+
 // ── Constants & caches ────────────────────────────────────────────────────────
 
 export const FAVOURITE_VIDEOS_CACHE_TTL_MS = 20_000;
@@ -106,7 +113,7 @@ async function loadFavouriteVideosForUser(userId: number): Promise<VideoRecord[]
   const favourites = await prisma.favourite.findMany({
     where: { userid: userId },
     select: { videoId: true },
-    take: 50,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
   });
 
   const youtubeIds = favourites
@@ -207,6 +214,97 @@ export async function getFavouriteVideosInternal(
 
 export async function getFavouriteVideos(userId?: number): Promise<VideoRecord[]> {
   return getFavouriteVideosInternal(userId);
+}
+
+export async function getFavouriteVideosPage(
+  userId: number,
+  options?: { limit?: number; offset?: number },
+): Promise<FavouriteVideosPage> {
+  if (!hasDatabaseUrl() || !Number.isInteger(userId) || userId <= 0) {
+    return {
+      favourites: [],
+      totalCount: 0,
+      hasMore: false,
+      nextOffset: 0,
+    };
+  }
+
+  const limit = Math.max(1, Math.min(100, Math.floor(options?.limit ?? 20)));
+  const offset = Math.max(0, Math.floor(options?.offset ?? 0));
+
+  try {
+    const [rows, countRows] = await Promise.all([
+      prisma.$queryRawUnsafe<
+        Array<{
+          videoId: string;
+          title: string;
+          favourited: number | bigint | null;
+          description: string | null;
+        }>
+      >(
+        `
+          SELECT v.videoId, v.title, v.favourited, v.description
+          FROM favourites f
+          INNER JOIN videos v ON v.videoId = f.videoId
+          LEFT JOIN hidden_videos hv
+            ON hv.user_id = ?
+            AND hv.video_id = f.videoId
+          WHERE f.userid = ?
+            AND f.videoId IS NOT NULL
+            AND hv.video_id IS NULL
+            AND COALESCE(v.approved, 0) = 1
+          ORDER BY f.createdAt DESC, f.id DESC
+          LIMIT ? OFFSET ?
+        `,
+        userId,
+        userId,
+        limit + 1,
+        offset,
+      ),
+      prisma.$queryRawUnsafe<Array<{ totalCount: number | bigint }>>(
+        `
+          SELECT COUNT(*) AS totalCount
+          FROM favourites f
+          INNER JOIN videos v ON v.videoId = f.videoId
+          LEFT JOIN hidden_videos hv
+            ON hv.user_id = ?
+            AND hv.video_id = f.videoId
+          WHERE f.userid = ?
+            AND f.videoId IS NOT NULL
+            AND hv.video_id IS NULL
+            AND COALESCE(v.approved, 0) = 1
+        `,
+        userId,
+        userId,
+      ),
+    ]);
+
+    const hasMore = rows.length > limit;
+    const visibleRows = hasMore ? rows.slice(0, limit) : rows;
+    const favourites = visibleRows.map((video) =>
+      mapVideo({
+        ...video,
+        channelTitle: null,
+      }),
+    );
+
+    const rawTotalCount = countRows[0]?.totalCount ?? 0;
+    const totalCount = Number.isFinite(Number(rawTotalCount)) ? Number(rawTotalCount) : favourites.length;
+
+    return {
+      favourites,
+      totalCount,
+      hasMore,
+      nextOffset: offset + favourites.length,
+    };
+  } catch {
+    return {
+      favourites: [],
+      totalCount: 0,
+      hasMore: false,
+      nextOffset: offset,
+    };
+  }
 }
 
 export async function fetchFavouriteVideoIds(userId: number, limit = 1000): Promise<Set<string>> {
