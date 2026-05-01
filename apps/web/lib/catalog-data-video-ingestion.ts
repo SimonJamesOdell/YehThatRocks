@@ -209,7 +209,7 @@ async function canSpendRelatedDiscoveryUnits(units: number) {
           SELECT COALESCE(SUM(units), 0) AS total
           FROM external_api_usage_events
           WHERE provider = 'youtube'
-            AND endpoint = 'search.list.relatedToVideoId'
+            AND endpoint = 'search.list.query'
             AND created_at >= ${dayStartUtc}
         `,
       ]);
@@ -245,6 +245,20 @@ async function canSpendRelatedDiscoveryUnits(units: number) {
   }
 
   return allowed;
+}
+
+/**
+ * Immediately update the in-memory quota snapshot to reflect units just spent,
+ * so rapid follow-on calls within the 60-second TTL window see an accurate
+ * remaining budget rather than the stale pre-spend figure.
+ */
+function recordSpentRelatedDiscoveryUnits(units: number) {
+  if (!relatedDiscoveryQuotaSnapshot) return;
+  relatedDiscoveryQuotaSnapshot = {
+    ...relatedDiscoveryQuotaSnapshot,
+    totalUnits: relatedDiscoveryQuotaSnapshot.totalUnits + units,
+    relatedUnits: relatedDiscoveryQuotaSnapshot.relatedUnits + units,
+  };
 }
 
 function scoreLikelyMojibake(value: string) {
@@ -896,12 +910,15 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
         statusCode: response.status,
         note: body.slice(0, 120) || null,
       });
+      // Count failed requests against the budget too — the quota is consumed
+      // regardless of whether YouTube returns a valid result.
+      recordSpentRelatedDiscoveryUnits(100);
       debugCatalog("fetchRelatedYouTubeVideos:query-response-not-ok", { videoId, query, status: response.status });
       return [];
     }
 
     void recordExternalApiUsage({ provider: "youtube", endpoint: "search.list.query", units: 100, success: true, statusCode: response.status });
-
+      recordSpentRelatedDiscoveryUnits(100);
     const data = (await response.json()) as YouTubeRelatedSearchResponse;
 
     const mapped = (data.items ?? [])
@@ -939,6 +956,7 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
       statusCode: null,
       note: error instanceof Error ? error.message.slice(0, 120) : "request-error",
     });
+    recordSpentRelatedDiscoveryUnits(100);
     debugCatalog("fetchRelatedYouTubeVideos:query-error", {
       videoId,
       message: error instanceof Error ? error.message : String(error),
