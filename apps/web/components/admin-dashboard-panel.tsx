@@ -1128,11 +1128,24 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     }
   }
 
-  async function moderatePendingVideo(videoId: string, action: "approve" | "remove") {
+  async function moderatePendingVideo(row: PendingVideoRow, action: "approve" | "remove") {
+    const videoId = row.videoId;
     setModeratingVideoId(videoId);
 
     try {
-      await postJson<{ ok: boolean }>("/api/admin/videos/pending", { videoId, action });
+      const payload: {
+        videoId: string;
+        action: "approve" | "remove";
+        title?: string;
+        parsedArtist?: string | null;
+      } = { videoId, action };
+
+      if (action === "approve") {
+        payload.title = row.title.trim();
+        payload.parsedArtist = (row.parsedArtist ?? "").trim() || null;
+      }
+
+      await postJson<{ ok: boolean }>("/api/admin/videos/pending", payload);
       setSaveMessage(action === "approve" ? `Approved ${videoId}.` : `Removed ${videoId}.`);
       await Promise.all([loadPendingVideos(), loadVideos()]);
     } catch (moderationError) {
@@ -1822,8 +1835,29 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
               {pendingVideos.slice(0, 50).map((row) => (
                 <div key={`pending-${row.id}`} className="authForm">
                   <p className="authMessage">{row.videoId}</p>
-                  <p className="authMessage">{row.title}</p>
-                  <p className="authMessage">Artist: {row.parsedArtist ?? "-"} | Track: {row.parsedTrack ?? "-"}</p>
+                  <label>
+                    <span>Title</span>
+                    <input
+                      value={row.title}
+                      onChange={(event) => {
+                        const next = pendingVideos.map((item) => (item.id === row.id ? { ...item, title: event.target.value } : item));
+                        setPendingVideos(next);
+                      }}
+                      placeholder="Video title"
+                    />
+                  </label>
+                  <label>
+                    <span>Artist (optional override)</span>
+                    <input
+                      value={row.parsedArtist ?? ""}
+                      onChange={(event) => {
+                        const next = pendingVideos.map((item) => (item.id === row.id ? { ...item, parsedArtist: event.target.value || null } : item));
+                        setPendingVideos(next);
+                      }}
+                      placeholder="Artist"
+                    />
+                  </label>
+                  <p className="authMessage">Track: {row.parsedTrack ?? "-"}</p>
                   <p className="authMessage">Channel: {row.channelTitle ?? "-"}</p>
                   <div
                     style={{
@@ -1850,14 +1884,14 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
                       type="button"
-                      onClick={() => void moderatePendingVideo(row.videoId, "approve")}
-                      disabled={moderatingVideoId === row.videoId}
+                      onClick={() => void moderatePendingVideo(row, "approve")}
+                      disabled={moderatingVideoId === row.videoId || row.title.trim().length === 0}
                     >
                       Approve
                     </button>
                     <button
                       type="button"
-                      onClick={() => void moderatePendingVideo(row.videoId, "remove")}
+                      onClick={() => void moderatePendingVideo(row, "remove")}
                       disabled={moderatingVideoId === row.videoId}
                     >
                       Remove

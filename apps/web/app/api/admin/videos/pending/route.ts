@@ -11,6 +11,8 @@ import { parseRequestJson } from "@/lib/request-json";
 const moderatePendingSchema = z.object({
   videoId: z.string().trim().min(1).max(64),
   action: z.enum(["approve", "remove"]),
+  title: z.string().trim().min(1).max(255).optional(),
+  parsedArtist: z.string().trim().max(255).nullable().optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -97,15 +99,33 @@ export async function POST(request: NextRequest) {
   const { videoId, action } = parsed.data;
 
   if (action === "approve") {
-    const approvedRows = await prisma.$executeRaw`
-      UPDATE videos
-      SET approved = 1,
-          updated_at = ${new Date()}
-      WHERE videoId = ${videoId}
-        AND COALESCE(approved, 0) = 0
-    `;
+    const approveData: {
+      approved: boolean;
+      updatedAt: Date;
+      title?: string;
+      parsedArtist?: string | null;
+    } = {
+      approved: true,
+      updatedAt: new Date(),
+    };
 
-    if (Number(approvedRows) === 0) {
+    if (parsed.data.title !== undefined) {
+      approveData.title = parsed.data.title;
+    }
+
+    if (parsed.data.parsedArtist !== undefined) {
+      approveData.parsedArtist = parsed.data.parsedArtist;
+    }
+
+    const approvedRows = await prisma.video.updateMany({
+      where: {
+        videoId,
+        approved: false,
+      },
+      data: approveData,
+    });
+
+    if (approvedRows.count === 0) {
       const existing = await prisma.$queryRaw<Array<{ id: number }>>`
         SELECT id
         FROM videos

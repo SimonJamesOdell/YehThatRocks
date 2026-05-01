@@ -14,8 +14,10 @@ const files = {
   adminVideosRoute: path.join(ROOT, "apps/web/app/api/admin/videos/route.ts"),
   adminArtistsRoute: path.join(ROOT, "apps/web/app/api/admin/artists/route.ts"),
   adminPendingRoute: path.join(ROOT, "apps/web/app/api/admin/videos/pending/route.ts"),
+  adminImportRoute: path.join(ROOT, "apps/web/app/api/admin/videos/import/route.ts"),
   adminDashboardPanel: path.join(ROOT, "apps/web/components/admin-dashboard-panel.tsx"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
+  catalogDataIngestion: path.join(ROOT, "apps/web/lib/catalog-data-video-ingestion.ts"),
   currentVideoCache: path.join(ROOT, "apps/web/lib/current-video-cache.ts"),
 };
 
@@ -30,8 +32,10 @@ function main() {
   const adminVideosRouteSource = readFileStrict(files.adminVideosRoute, ROOT);
   const adminArtistsRouteSource = readFileStrict(files.adminArtistsRoute, ROOT);
   const adminPendingRouteSource = readFileStrict(files.adminPendingRoute, ROOT);
+  const adminImportRouteSource = readFileStrict(files.adminImportRoute, ROOT);
   const adminDashboardPanelSource = readFileStrict(files.adminDashboardPanel, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
+  const catalogDataIngestionSource = readFileStrict(files.catalogDataIngestion, ROOT);
   const currentVideoCacheSource = readFileStrict(files.currentVideoCache, ROOT);
 
   // Admin identity and auth guard invariants.
@@ -109,9 +113,22 @@ function main() {
   assertContains(adminPendingRouteSource, "const auth = await requireAdminApiAuth(request);", "Admin pending videos route enforces admin auth", failures);
   assertContains(adminPendingRouteSource, "const csrf = verifySameOrigin(request);", "Admin pending moderation POST enforces CSRF", failures);
   assertContains(adminPendingRouteSource, 'action: z.enum(["approve", "remove"])', "Admin pending route validates action enum (approve|remove)", failures);
+  assertContains(adminPendingRouteSource, "title: z.string().trim().min(1).max(255).optional(),", "Admin pending moderation accepts optional title override", failures);
+  assertContains(adminPendingRouteSource, "parsedArtist: z.string().trim().max(255).nullable().optional(),", "Admin pending moderation accepts optional artist override", failures);
+  assertContains(adminPendingRouteSource, "const approveData:", "Admin pending approve action builds a typed mutable update payload", failures);
+  assertContains(adminPendingRouteSource, "await prisma.video.updateMany({", "Admin pending approve action updates approval and optional metadata together", failures);
   assertContains(adminPendingRouteSource, "COALESCE(approved, 0) = 0", "Admin pending route lists only unapproved videos", failures);
-  assertContains(adminPendingRouteSource, "SET approved = 1", "Admin pending approve action sets approved flag", failures);
+  assertContains(adminPendingRouteSource, "approved: true,", "Admin pending approve action sets approved flag", failures);
   assertContains(adminDashboardPanelSource, "pendingVideos", "Admin dashboard panel fetches and renders the pending approval queue", failures);
+  assertContains(adminDashboardPanelSource, "Artist (optional override)", "Admin pending approval cards render editable artist override input", failures);
+  assertContains(adminDashboardPanelSource, "placeholder=\"Video title\"", "Admin pending approval cards render editable title input", failures);
+
+  // Unapproved video passthrough invariants — ensure ?v= and user-submitted videos can be played
+  // immediately for the requesting user while staying in the admin approval queue for others.
+  assertContains(catalogDataIngestionSource, "forceApprove?: boolean", "importVideoFromDirectSource accepts forceApprove option to control auto-approval", failures);
+  assertContains(catalogDataIngestionSource, "options?.forceApprove", "importVideoFromDirectSource conditionally sets approved=1 only when forceApprove is true", failures);
+  assertContains(catalogDataIngestionSource, "unapprovedRows", "getVideoPlaybackDecision queries without approved filter for freshly-ingested videos", failures);
+  assertContains(adminImportRouteSource, "forceApprove: true", "Admin import route explicitly force-approves imported videos so they appear in catalog immediately", failures);
 
   if (failures.length > 0) {
     console.error("Admin invariant check failed.");
