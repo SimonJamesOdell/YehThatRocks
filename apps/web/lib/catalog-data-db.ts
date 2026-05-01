@@ -24,6 +24,7 @@ export type VideoForeignKeyRef = { tableName: string; columnName: string };
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 export const PARSED_ARTIST_NORM_INDEX = "idx_videos_parsed_artist_norm_fav_view_videoid_id";
+export const ARTIST_NAME_NORM_PREFIX_INDEX = "idx_artists_artist_name_norm_prefix";
 
 export const AVAILABLE_SITE_VIDEOS_JOIN = `
         INNER JOIN (
@@ -63,6 +64,9 @@ let artistColumnMapCache:
       genreColumns: string[];
     }
   | undefined;
+
+let artistSearchPrefixIndexEnsured = false;
+let artistSearchPrefixIndexEnsureInFlight: Promise<void> | null = null;
 
 let artistVideoColumnMapCache:
   | {
@@ -254,6 +258,89 @@ export async function getArtistColumnMap() {
 
   artistColumnMapCache = { name, normalizedName, country, genreColumns };
   return artistColumnMapCache;
+}
+
+function isDuplicateSchemaError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /duplicate column name|duplicate key name|already exists/i.test(error.message);
+}
+
+async function ensureArtistSearchPrefixIndexInternal() {
+  const columns = await getArtistColumnMap();
+  const nameCol = escapeSqlIdentifier(columns.name);
+  let normalizedColumn = columns.normalizedName;
+
+  if (!normalizedColumn) {
+    try {
+      await prisma.$executeRawUnsafe(
+        `
+          ALTER TABLE artists
+          ADD COLUMN artist_name_norm VARCHAR(255)
+          GENERATED ALWAYS AS (LOWER(TRIM(COALESCE(${nameCol}, '')))) STORED
+        `,
+      );
+
+      artistColumnMapCache = undefined;
+      normalizedColumn = "artist_name_norm";
+    } catch (error) {
+      if (!isDuplicateSchemaError(error)) {
+        return;
+      }
+
+      artistColumnMapCache = undefined;
+      const refreshed = await getArtistColumnMap();
+      normalizedColumn = refreshed.normalizedName;
+    }
+  }
+
+  if (!normalizedColumn) {
+    return;
+  }
+
+  try {
+    const existing = await prisma.$queryRawUnsafe<Array<{ Key_name?: string }>>(
+      "SHOW INDEX FROM artists WHERE Key_name = ?",
+      ARTIST_NAME_NORM_PREFIX_INDEX,
+    );
+
+    if (existing.length > 0) {
+      return;
+    }
+
+    const normalizedCol = escapeSqlIdentifier(normalizedColumn);
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX ${ARTIST_NAME_NORM_PREFIX_INDEX} ON artists (${normalizedCol}, ${nameCol})`,
+    );
+  } catch (error) {
+    if (!isDuplicateSchemaError(error)) {
+      return;
+    }
+  }
+}
+
+export async function ensureArtistSearchPrefixIndex() {
+  if (!hasDatabaseUrl() || artistSearchPrefixIndexEnsured) {
+    return;
+  }
+
+  if (!artistSearchPrefixIndexEnsureInFlight) {
+    artistSearchPrefixIndexEnsureInFlight = ensureArtistSearchPrefixIndexInternal()
+      .catch(() => undefined)
+      .finally(() => {
+        artistSearchPrefixIndexEnsured = true;
+        artistSearchPrefixIndexEnsureInFlight = null;
+      });
+  }
+
+  await artistSearchPrefixIndexEnsureInFlight;
+}
+
+export function resetArtistSearchPrefixIndexEnsureState() {
+  artistSearchPrefixIndexEnsured = false;
+  artistSearchPrefixIndexEnsureInFlight = null;
 }
 
 export async function getArtistVideoColumnMap() {

@@ -8,6 +8,7 @@ import { getAdminDashboardAuthAuditCounters } from "@/lib/admin-dashboard-auth-c
 import { buildAdminHealthPayload, readAdminHostMetricHistory } from "@/lib/admin-dashboard-health";
 import { ensureAdminDashboardRollupsFresh, readAdminDashboardRollups } from "@/lib/admin-dashboard-rollups";
 import { prisma } from "@/lib/db";
+import { getInteractiveTableCount } from "@/lib/interactive-table-counts";
 
 function toNumber(value: bigint | number | string | null | undefined) {
   if (typeof value === "bigint") {
@@ -210,8 +211,18 @@ export async function GET(request: NextRequest) {
         SUM(CASE WHEN email IS NULL OR TRIM(email) = '' THEN 1 ELSE 0 END) AS anonymousUsers
       FROM users
     `.catch(() => []),
-    prisma.video.count().catch(() => 0),
-    prisma.artist.count().catch(() => 0),
+    getInteractiveTableCount({
+      cacheKey: "admin-dashboard-videos",
+      tableName: "videos",
+      fallback: 0,
+      exactCount: () => prisma.video.count(),
+    }),
+    getInteractiveTableCount({
+      cacheKey: "admin-dashboard-artists",
+      tableName: "artists",
+      fallback: 0,
+      exactCount: () => prisma.artist.count(),
+    }),
     prisma.genreCard.count().catch(() => 0),
   ]);
 

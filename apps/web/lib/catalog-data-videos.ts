@@ -44,6 +44,7 @@ import {
   findArtistsInDatabase,
   findArtistsFromVideoMetadata,
 } from "@/lib/catalog-data-artists";
+import { getInteractiveTableCount } from "@/lib/interactive-table-counts";
 import {
   getVideoPlaybackDecision,
   maybeStartAutomaticRelatedBackfill,
@@ -1452,8 +1453,18 @@ export async function getDataSourceStatus(): Promise<DataSourceStatus> {
 
   try {
     const [videoCount, artistCount, genreCount] = await Promise.all([
-      prisma.video.count(),
-      prisma.artist.count(),
+      getInteractiveTableCount({
+        cacheKey: "catalog-status-videos",
+        tableName: "videos",
+        fallback: seedVideos.length,
+        exactCount: () => prisma.video.count(),
+      }),
+      getInteractiveTableCount({
+        cacheKey: "catalog-status-artists",
+        tableName: "artists",
+        fallback: seedArtists.length,
+        exactCount: () => prisma.artist.count(),
+      }),
       prisma.genre.count(),
     ]);
 

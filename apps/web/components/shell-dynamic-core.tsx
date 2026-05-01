@@ -152,6 +152,11 @@ const DOCK_CONTROLS_FADE_DURATION_MS = 220;
 const DOCK_CONTROLS_FADE_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - DOCK_CONTROLS_FADE_DURATION_MS);
 const UNDOCK_SETTLE_DURATION_MS = 220;
 const FOOTER_REVEAL_DURATION_MS = 240;
+// Duration of the primaryActionsReturn CSS animation (must stay in sync with player-actions.css).
+const FOOTER_REVEAL_ANIMATION_MS = 180;
+// Start the footer fade this many ms after the undock movement begins so it
+// finishes right as the video reaches its final position.
+const FOOTER_EARLY_REVEAL_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - FOOTER_REVEAL_ANIMATION_MS - 20);
 
 function isCategoriesOverlayPath(pathname: string) {
   return pathname === "/categories" || pathname.startsWith("/categories/");
@@ -377,8 +382,10 @@ function ShellDynamicInner({
   const overlayCloseTimeoutRef = useRef<number | null>(null);
   const overlayOpenTimeoutRef = useRef<number | null>(null);
   const footerRevealTimeoutRef = useRef<number | null>(null);
+  const footerRevealEarlyTimeoutRef = useRef<number | null>(null);
   const undockSettleTimeoutRef = useRef<number | null>(null);
   const shouldRunFooterRevealRef = useRef(false);
+  const earlyFooterRevealFiredRef = useRef(false);
   const dockTransitionTimeoutRef = useRef<number | null>(null);
 
   const {
@@ -439,7 +446,9 @@ function ShellDynamicInner({
     shouldDockDesktopPlayer && isDockTransitioning ? "playerChromeDockTransitioning" : "",
     isOverlayClosing ? "playerChromeUndocking" : "",
     isUndockSettling ? "playerChromeUndockSettling" : "",
-    !shouldShowOverlayPanel && isFooterRevealActive ? "playerChromeFooterReveal" : "",
+    // Allow the footer reveal during the undock movement (isOverlayClosing) so the
+    // footer finishes fading in just as the video reaches its final position.
+    (!shouldShowOverlayPanel || isOverlayClosing) && isFooterRevealActive ? "playerChromeFooterReveal" : "",
     shouldDockDesktopPlayer && isDockHidden ? "playerChromeDockedHidden" : "",
     shouldHidePlayerForMagazineGuest ? "playerChromeMagazineGuestHidden" : "",
   ].filter(Boolean).join(" ");
@@ -878,12 +887,17 @@ function ShellDynamicInner({
         window.clearTimeout(footerRevealTimeoutRef.current);
         footerRevealTimeoutRef.current = null;
       }
+      if (typeof window !== "undefined" && footerRevealEarlyTimeoutRef.current !== null) {
+        window.clearTimeout(footerRevealEarlyTimeoutRef.current);
+        footerRevealEarlyTimeoutRef.current = null;
+      }
       // Release any height lock so docking can size freely.
       if (playerChromeRef.current) {
         playerChromeRef.current.style.height = "";
       }
       setIsUndockSettling(false);
       setIsFooterRevealActive(false);
+      earlyFooterRevealFiredRef.current = false;
       setIsMobileCommunityOpen(false);
       return;
     }
@@ -898,7 +912,9 @@ function ShellDynamicInner({
 
     shouldRunFooterRevealRef.current = false;
     setIsUndockSettling(true);
-    setIsFooterRevealActive(false);
+    // Do not reset isFooterRevealActive here — the early reveal timer may have
+    // already started it during the movement animation. We only reset if the
+    // early reveal did not fire (see fallback path below).
 
     // Lock the player chrome height now so that layout changes during the
     // settle/footer-reveal window (e.g. primaryActions entering the flow) cannot
@@ -924,15 +940,27 @@ function ShellDynamicInner({
         setIsUndockSettling(false);
         undockSettleTimeoutRef.current = null;
 
-        setIsFooterRevealActive(true);
-        footerRevealTimeoutRef.current = window.setTimeout(() => {
+        if (earlyFooterRevealFiredRef.current) {
+          // Early reveal already ran during the movement animation — the footer
+          // animation has completed. Just release the height lock.
+          earlyFooterRevealFiredRef.current = false;
           setIsFooterRevealActive(false);
-          footerRevealTimeoutRef.current = null;
-          // Release the height lock after the footer has fully faded in.
           if (chrome) {
             chrome.style.height = "";
           }
-        }, FOOTER_REVEAL_DURATION_MS);
+        } else {
+          // Fallback: early reveal timer was cancelled or didn't fire (e.g. the
+          // overlay was closed very quickly). Trigger the reveal now.
+          setIsFooterRevealActive(true);
+          footerRevealTimeoutRef.current = window.setTimeout(() => {
+            setIsFooterRevealActive(false);
+            footerRevealTimeoutRef.current = null;
+            // Release the height lock after the footer has fully faded in.
+            if (chrome) {
+              chrome.style.height = "";
+            }
+          }, FOOTER_REVEAL_DURATION_MS);
+        }
       }, UNDOCK_SETTLE_DURATION_MS);
     }
   }, [shouldShowOverlayPanel]);
@@ -1102,6 +1130,19 @@ function ShellDynamicInner({
 
       setIsOverlayClosing(true);
       shouldRunFooterRevealRef.current = true;
+      earlyFooterRevealFiredRef.current = false;
+
+      // Schedule the footer reveal to start early so it completes right as
+      // the undock movement animation finishes, giving a smoother transition.
+      if (footerRevealEarlyTimeoutRef.current !== null) {
+        window.clearTimeout(footerRevealEarlyTimeoutRef.current);
+      }
+      footerRevealEarlyTimeoutRef.current = window.setTimeout(() => {
+        footerRevealEarlyTimeoutRef.current = null;
+        earlyFooterRevealFiredRef.current = true;
+        setIsFooterRevealActive(true);
+      }, FOOTER_EARLY_REVEAL_DELAY_MS);
+
       const frame = playerChromeRef.current?.querySelector(".playerFrame, .playerLoadingFallback") as HTMLElement | null;
       let didNavigate = false;
       const finishCloseNavigation = () => {
@@ -1157,6 +1198,11 @@ function ShellDynamicInner({
         footerRevealTimeoutRef.current = null;
       }
 
+      if (footerRevealEarlyTimeoutRef.current !== null) {
+        window.clearTimeout(footerRevealEarlyTimeoutRef.current);
+        footerRevealEarlyTimeoutRef.current = null;
+      }
+
       if (undockSettleTimeoutRef.current !== null) {
         window.clearTimeout(undockSettleTimeoutRef.current);
         undockSettleTimeoutRef.current = null;
@@ -1165,6 +1211,7 @@ function ShellDynamicInner({
       setIsFooterRevealActive(false);
       setIsUndockSettling(false);
       shouldRunFooterRevealRef.current = false;
+      earlyFooterRevealFiredRef.current = false;
     };
   }, [currentVideo.id, isMagazineOverlayRoute, router, shouldShowOverlayPanel]);
 
@@ -2064,7 +2111,17 @@ function ShellDynamicInner({
             throw new Error("watch-next-load-failed");
           }
 
-          return (await response.json()) as CurrentVideoResolvePayload & { hasMore?: boolean };
+          const json = (await response.json()) as CurrentVideoResolvePayload & { hasMore?: boolean };
+
+          // If the server is busy (resolver timeout, concurrency shed, or cooldown),
+          // it returns { pending: true } with a 200 OK. Treat this as a retryable
+          // transient error so the retry loop can back off and try again rather than
+          // silently accepting zero videos and leaving the rail stuck loading forever.
+          if (json && typeof json === "object" && "pending" in json && (json as { pending?: boolean }).pending) {
+            throw new Error("watch-next-server-busy");
+          }
+
+          return json;
         } finally {
           window.clearTimeout(timeoutId);
         }
@@ -2122,6 +2179,9 @@ function ShellDynamicInner({
     } catch {
       const existingAfterFailure = dedupeRelatedRailVideos(dedupeVideoList(relatedVideosRef.current), currentVideo.id);
       if (existingAfterFailure.length === 0) {
+        // Reset the offset back to null so the next attempt (auto-recover or manual)
+        // is treated as a fresh cold-start and gets the full retry budget.
+        relatedFetchOffsetRef.current = null;
         setWatchNextLoadFailed(true);
       }
     } finally {
