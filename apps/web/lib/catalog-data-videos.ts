@@ -525,7 +525,11 @@ export async function getCurrentVideo(
     }
 
     if (normalizedVideoId) {
-      const storedVideo = await getStoredVideoById(normalizedVideoId);
+      // When the caller already verified playback eligibility externally (skipPlaybackDecision),
+      // include unapproved rows so that freshly-ingested pending-review videos are returned.
+      const storedVideo = await getStoredVideoById(normalizedVideoId, {
+        includeUnapproved: Boolean(options?.skipPlaybackDecision),
+      });
 
       if (storedVideo) {
         debugCatalog("getCurrentVideo:return-local-video", {

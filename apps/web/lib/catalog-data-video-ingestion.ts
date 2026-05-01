@@ -992,7 +992,8 @@ async function hydrateAndPersistVideo(
     return null;
   }
 
-  const existingVideo = await getStoredVideoById(normalizedVideoId);
+  // Include unapproved rows so that pending-review videos don't trigger redundant re-hydration.
+  const existingVideo = await getStoredVideoById(normalizedVideoId, { includeUnapproved: true });
   if (existingVideo && !options?.forceAvailabilityRefresh) {
     debugCatalog("hydrateAndPersistVideo:local-hit", { videoId: normalizedVideoId });
     return mapStoredVideoToPersistable(existingVideo);
@@ -1228,7 +1229,7 @@ export function maybeStartAutomaticRelatedBackfill(offset: number) {
 
 // ── Admin imports / pruning ───────────────────────────────────────────────────
 
-export async function importVideoFromDirectSource(source: string, options?: { discoverRelated?: boolean }) {
+export async function importVideoFromDirectSource(source: string, options?: { discoverRelated?: boolean; forceApprove?: boolean }) {
   const normalizedVideoId = normalizeYouTubeVideoId(source);
 
   if (!normalizedVideoId) {
@@ -1251,7 +1252,10 @@ export async function importVideoFromDirectSource(source: string, options?: { di
     skipRelatedDiscovery: true,
   });
 
-  if (hasDatabaseUrl()) {
+  // Only auto-approve when the caller explicitly requests it (e.g. admin import).
+  // User-submitted videos (suggest, playlist import) stay at approved=NULL so they
+  // land in the admin pending queue before becoming visible to other users.
+  if (hasDatabaseUrl() && options?.forceApprove) {
     await prisma.$executeRaw`
       UPDATE videos SET approved = 1, updated_at = ${new Date()} WHERE videoId = ${normalizedVideoId}
     `;
@@ -1530,14 +1534,30 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
       return decision;
     }
 
-    row = (await fetchDecisionRows())[0];
-    hydratedFromDirectRequest = true;
-
-    if (!row) {
-      const decision: PlaybackDecision = { allowed: false, reason: "not-found", message: "Sorry, that video cannot be played on YehThatRocks." };
-      playbackDecisionCache.set(normalizedVideoId, { expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS, decision });
-      return decision;
+    // The video was just ingested and lands with approved=NULL (pending admin review).
+    // The approved=1 filter won't find it, so query without that restriction to allow
+    // the requesting user to play it immediately while it stays unapproved for others.
+    const unapprovedRows = await prisma.$queryRaw<Array<PlaybackDecisionRow>>`
+      SELECT
+        v.id, v.title, v.description, v.parsedArtist, v.parsedTrack, v.parsedVideoType, v.parseConfidence,
+        EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND sv.status = 'available') AS hasAvailable,
+        EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status = 'unavailable')) AS hasBlocked,
+        EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND sv.status = 'check-failed') AS hasCheckFailed
+      FROM videos v
+      WHERE v.videoId = ${normalizedVideoId}
+      ORDER BY hasAvailable DESC, hasBlocked ASC, hasCheckFailed ASC, v.updated_at DESC, v.id DESC
+      LIMIT 1
+    `;
+    const unapprovedRow = unapprovedRows[0];
+    if (unapprovedRow && (Boolean(unapprovedRow.hasAvailable) || Boolean(unapprovedRow.hasCheckFailed))) {
+      const passthroughDecision: PlaybackDecision = { allowed: true, reason: "ok" };
+      playbackDecisionCache.set(normalizedVideoId, { expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS, decision: passthroughDecision });
+      return passthroughDecision;
     }
+
+    const decision: PlaybackDecision = { allowed: false, reason: "not-found", message: "Sorry, that video cannot be played on YehThatRocks." };
+    playbackDecisionCache.set(normalizedVideoId, { expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS, decision });
+    return decision;
   }
 
   if (!Boolean(row.hasAvailable)) {

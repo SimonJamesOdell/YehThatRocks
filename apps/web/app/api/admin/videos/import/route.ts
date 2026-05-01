@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const result = await importVideoFromDirectSource(parsed.data.source, { discoverRelated: false });
+  const result = await importVideoFromDirectSource(parsed.data.source, { discoverRelated: false, forceApprove: true });
 
   if (!result.videoId) {
     return NextResponse.json(
