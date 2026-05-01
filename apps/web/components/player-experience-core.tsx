@@ -160,6 +160,8 @@ const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.e
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
 const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. Please choose another track.";
 const BROKEN_UPSTREAM_OVERLAY_MESSAGE = "This video is no longer available on YouTube and has been removed from the catalog.";
+const COPYRIGHT_CLAIM_OVERLAY_MESSAGE = "This video is no longer available due to a copyright claim on YouTube.";
+const REMOVED_PRIVATE_OVERLAY_MESSAGE = "This video is unavailable on YouTube because it was removed, deleted, or made private.";
 const BROKEN_UPSTREAM_AUTOADVANCE_MS = 6000;
 const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstream video provider for this track. This is not a YehThatRocks failure. Please try the refresh button and if that does not work, choose another track.";
 const DELETED_TRACK_OVERLAY_MESSAGE = "This track was removed from YehThatRocks.";
@@ -1240,6 +1242,8 @@ export function PlayerExperience({
   const isDeletedConfirmationOverlay = unavailableOverlayKind === "deleted";
   const isUpstreamConnectivityOverlay = unavailableOverlayMessage === UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE;
   const isBrokenUpstreamOverlay = unavailableOverlayMessage === BROKEN_UPSTREAM_OVERLAY_MESSAGE;
+  const isCopyrightClaimOverlay = unavailableOverlayMessage === COPYRIGHT_CLAIM_OVERLAY_MESSAGE;
+  const isRemovedOrPrivateOverlay = unavailableOverlayMessage === REMOVED_PRIVATE_OVERLAY_MESSAGE;
   const isAutoAdvanceUnavailableOverlay = unavailableAutoAdvanceMs !== null;
   const currentTrackYouTubeUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(currentVideo.id)}`;
   const footerSelectablePlaylists = activePlaylistId
@@ -1633,6 +1637,9 @@ export function PlayerExperience({
       reportResult,
       unavailableMessage: options?.unavailableMessage,
       unavailableCountdownMs: options?.unavailableCountdownMs,
+      connectivityMessage: UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE,
+      copyrightMessage: COPYRIGHT_CLAIM_OVERLAY_MESSAGE,
+      removedOrPrivateMessage: REMOVED_PRIVATE_OVERLAY_MESSAGE,
     });
 
     logPlayerDebug("playback-failure:presentation", {
@@ -1640,6 +1647,7 @@ export function PlayerExperience({
       trigger,
       runtimeReason,
       verificationReason: reportResult.verificationReason,
+      classification: reportResult.classification,
       shouldSkip: reportResult.shouldSkip,
       skipped: reportResult.skipped,
       presentation: presentation.kind,
@@ -1657,7 +1665,8 @@ export function PlayerExperience({
     playAttemptedAtRef.current = null;
     pauseActivePlayback();
     showUnavailableOverlayMessage(presentation.message, {
-      autoAdvanceWhenAutoplay: true,
+      requiresOk: presentation.requiresOk,
+      autoAdvanceWhenAutoplay: presentation.autoAdvanceWhenAutoplay,
       countdownMs: presentation.countdownMs,
     });
   }
@@ -2512,6 +2521,7 @@ export function PlayerExperience({
       return {
         shouldSkip: false,
         verificationReason: reportedUnavailableVerificationReasonRef.current,
+        classification: null,
         skipped: true,
       };
     }
@@ -2535,6 +2545,7 @@ export function PlayerExperience({
             ok?: boolean;
             skipped?: boolean;
             reason?: string;
+            classification?: string;
           }
         | null;
 
@@ -2547,12 +2558,14 @@ export function PlayerExperience({
       });
 
       const verificationReason = typeof payload?.reason === "string" ? payload.reason : null;
+      const classification = typeof payload?.classification === "string" ? payload.classification : null;
       const skipped = payload?.skipped === true;
       reportedUnavailableVerificationReasonRef.current = verificationReason;
 
       return {
         shouldSkip: Boolean(response.ok && payload?.ok && !skipped),
         verificationReason,
+        classification,
         skipped,
       };
     } catch {
@@ -2564,6 +2577,7 @@ export function PlayerExperience({
       return {
         shouldSkip: false,
         verificationReason: null,
+        classification: null,
         skipped: false,
       };
     }
@@ -5075,6 +5089,10 @@ export function PlayerExperience({
               <p className="videoUnavailableOverlayEyebrow">
                 {isDeletedConfirmationOverlay
                   ? "Removed from YehThatRocks"
+                  : isCopyrightClaimOverlay
+                    ? "Copyright claim on YouTube"
+                    : isRemovedOrPrivateOverlay
+                      ? "Removed or private on YouTube"
                   : isBrokenUpstreamOverlay
                     ? "Not available on YouTube"
                     : isUpstreamConnectivityOverlay
@@ -5084,6 +5102,10 @@ export function PlayerExperience({
               <strong className="videoUnavailableOverlayTitle">
                 {isDeletedConfirmationOverlay
                   ? "Track deleted"
+                  : isCopyrightClaimOverlay
+                    ? "Copyright claim detected"
+                    : isRemovedOrPrivateOverlay
+                      ? "This track is no longer public"
                   : isBrokenUpstreamOverlay
                     ? "This track no longer exists"
                     : isUpstreamConnectivityOverlay

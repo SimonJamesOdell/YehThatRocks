@@ -1961,13 +1961,11 @@ function ShellDynamicInner({
       isAuthenticated,
       watchNextHideSeen,
     ),
-    // seenVideoRefreshTick invalidates the memo when seenVideoIdsRef.current mutates
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [displayedRenderableRelatedVideos, isAuthenticated, watchNextHideSeen, seenVideoRefreshTick],
   );
   const hasSeenWatchNextVideos = useMemo(
     () => isAuthenticated && displayedRenderableRelatedVideos.some((video) => seenVideoIdsRef.current.has(video.id)),
-    // seenVideoRefreshTick invalidates the memo when seenVideoIdsRef.current mutates
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [displayedRenderableRelatedVideos, isAuthenticated, seenVideoRefreshTick],
   );
@@ -2018,9 +2016,11 @@ function ShellDynamicInner({
 
   const shouldShowWatchNextBootstrapLoader = rightRailMode === "watch-next"
     && (!hasBootstrappedWatchNext || isWatchNextVideoSelectionPending);
-  const shouldShowWatchNextRailLoader = shouldShowWatchNextBootstrapLoader
+  // When watchNextLoadFailed, hide spinner so error/retry renders cleanly.
+  const shouldShowWatchNextRailLoader = !watchNextLoadFailed && (
+    shouldShowWatchNextBootstrapLoader
     || relatedTransitionPhase === "loading"
-    || (visibleWatchNextVideos.length === 0 && (isLoadingMoreRelated || (hasMoreRelated && !watchNextLoadFailed)));
+    || (visibleWatchNextVideos.length === 0 && (isLoadingMoreRelated || hasMoreRelated)));
   const shouldShowWatchNextUnseenEmptyState = watchNextHideSeen
     && hasSeenWatchNextVideos
     && visibleWatchNextVideos.length === 0
@@ -2121,10 +2121,7 @@ function ShellDynamicInner({
 
           const json = (await response.json()) as CurrentVideoResolvePayload & { hasMore?: boolean };
 
-          // If the server is busy (resolver timeout, concurrency shed, or cooldown),
-          // it returns { pending: true } with a 200 OK. Treat this as a retryable
-          // transient error so the retry loop can back off and try again rather than
-          // silently accepting zero videos and leaving the rail stuck loading forever.
+          // If server is busy (timeout/cooldown), { pending: true } is retryable, not a silent fail.
           if (json && typeof json === "object" && "pending" in json && (json as { pending?: boolean }).pending) {
             throw new Error("watch-next-server-busy");
           }
@@ -2393,13 +2390,15 @@ function ShellDynamicInner({
       return;
     }
 
-    if (watchNextAutoRecoverAttemptRef.current >= 2) {
+    if (watchNextAutoRecoverAttemptRef.current >= 3) {
       return;
     }
 
     const retryAttempt = watchNextAutoRecoverAttemptRef.current + 1;
     watchNextAutoRecoverAttemptRef.current = retryAttempt;
-    const retryDelayMs = Math.min(1_500, 350 * retryAttempt);
+    // Delays: 800ms, 3s, 10s. The 10s attempt outlasts the server's 8s resolver-failure cooldown.
+    const retryDelays = [800, 3_000, 10_000];
+    const retryDelayMs = retryDelays[retryAttempt - 1] ?? 10_000;
 
     const timeoutId = window.setTimeout(() => {
       void loadMoreRelatedVideos();
