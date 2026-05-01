@@ -161,7 +161,7 @@ export function Top100VideoLink({
 
   const navigateToVideo = useCallback(() => {
     warmSelection();
-    router.push(videoHref);
+    router.push(videoHref, { scroll: false });
   }, [router, videoHref, warmSelection]);
 
   const openVideoFromCard = useCallback(() => {

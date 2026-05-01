@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { VideoRecord } from "@/lib/catalog";
@@ -195,6 +195,9 @@ export function NewVideosLoader({
   const allVideoIdsRef = useRef(new Set<string>());
   const activeTrackAutoScrollRafRef = useRef<number | null>(null);
   const lastAutoScrolledActiveVideoIdRef = useRef<string | null>(null);
+  // Captures the overlay's scrollTop synchronously before each browser paint
+  // so we can restore it if something (e.g. Next.js scroll-restoration) resets it to 0.
+  const capturedScrollTopRef = useRef<number>(0);
   const seenVideoIdSet = clientSeenVideoIds;
   const visibleVideos = useMemo(
     () => (isAuthenticated && hideSeen
@@ -206,6 +209,16 @@ export function NewVideosLoader({
   useEffect(() => {
     setClientSeenVideoIds(new Set(seenVideoIds));
   }, [seenVideoIdsKey]);
+
+  // Capture the overlay scroll position synchronously after each React commit
+  // (before the browser paints) whenever the active video changes.  If anything
+  // resets scrollTop to 0 in a subsequent useEffect (e.g. NewScrollReset or
+  // Next.js scroll restoration), the auto-scroll effect can restore it via rAF
+  // before the next frame is painted.
+  useLayoutEffect(() => {
+    const overlay = document.querySelector<HTMLElement>(".favouritesBlindInner");
+    capturedScrollTopRef.current = overlay?.scrollTop ?? 0;
+  }, [activeVideoId]);
 
   useEffect(() => {
     const previousActiveVideoId = previousActiveVideoIdRef.current;
@@ -250,6 +263,23 @@ export function NewVideosLoader({
       return;
     }
 
+    // The useLayoutEffect above captured the overlay's scrollTop just before the
+    // browser painted this render.  If any subsequent useEffect (e.g. NewScrollReset,
+    // or Next.js scroll-restoration) resets scrollTop to 0 after that paint, we restore
+    // it via rAF — which fires before the NEXT browser paint — so the user never sees
+    // a flash to the top of the list.
+    const captured = capturedScrollTopRef.current;
+    let restoreRafId: number | null = null;
+    if (captured > 1) {
+      restoreRafId = window.requestAnimationFrame(() => {
+        restoreRafId = null;
+        const overlayForRestore = document.querySelector<HTMLElement>(".favouritesBlindInner");
+        if (overlayForRestore && overlayForRestore.scrollTop === 0) {
+          overlayForRestore.scrollTop = captured;
+        }
+      });
+    }
+
     const timeoutId = window.setTimeout(() => {
       const overlayContainer = document.querySelector<HTMLElement>(".favouritesBlindInner");
       const scrollContainer = overlayContainer ?? document.scrollingElement as HTMLElement | null;
@@ -257,18 +287,32 @@ export function NewVideosLoader({
         return;
       }
 
+      // Belt-and-suspenders: if scrollTop is still 0 after the rAF restore pass
+      // (e.g. something reset it again), use our captured value so the animation
+      // starts from the correct position rather than the top of the list.
+      if (scrollContainer.scrollTop === 0 && captured > 1) {
+        scrollContainer.scrollTop = captured;
+      }
+
       const activeRow = document.querySelector<HTMLElement>(".trackCard.top100CardActive");
       if (!activeRow) {
         return;
       }
 
-      const topGutterPx = 8;
+      const topGutterPx = 70;
+      // Compute the card's absolute offset within the scroll content.
+      // getBoundingClientRect gives viewport-relative coordinates, but the
+      // difference (rowRect.top - containerRect.top) is always the visual gap
+      // between the container's top edge and the card's top edge — this is
+      // purely a function of scroll position and DOM layout, not of where the
+      // container sits on screen.  Adding scrollTop converts it to an absolute
+      // content offset, giving a stable target regardless of any ongoing
+      // overlay animation.
       const containerRect = scrollContainer.getBoundingClientRect();
       const rowRect = activeRow.getBoundingClientRect();
-      const rowTopInViewport = rowRect.top - containerRect.top;
+      const rowOffsetInContent = scrollContainer.scrollTop + (rowRect.top - containerRect.top);
       const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
-      const desiredTop = scrollContainer.scrollTop + rowTopInViewport - topGutterPx;
-      const targetTop = Math.min(maxScrollTop, Math.max(0, desiredTop));
+      const targetTop = Math.min(maxScrollTop, Math.max(0, rowOffsetInContent - topGutterPx));
 
       if (Math.abs(scrollContainer.scrollTop - targetTop) <= 1) {
         lastAutoScrolledActiveVideoIdRef.current = activeVideoId;
@@ -303,6 +347,9 @@ export function NewVideosLoader({
     }, 50);
 
     return () => {
+      if (restoreRafId !== null) {
+        window.cancelAnimationFrame(restoreRafId);
+      }
       window.clearTimeout(timeoutId);
       if (activeTrackAutoScrollRafRef.current !== null) {
         window.cancelAnimationFrame(activeTrackAutoScrollRafRef.current);
