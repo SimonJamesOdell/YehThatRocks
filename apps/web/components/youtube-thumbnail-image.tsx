@@ -16,11 +16,20 @@ type YouTubeThumbnailImageProps = {
 
 type ThumbState = "unknown" | "ready" | "broken";
 
+// Keyed by videoId (not URL). The probe always uses hqdefault which returns
+// HTTP 404 for private/deleted/unavailable videos, unlike mqdefault which
+// returns a generic placeholder image (200 OK) even for unavailable videos.
 const thumbnailHealthCache = new Map<string, ThumbState>();
 const unavailableReportSent = new Set<string>();
 
 function buildThumbUrl(videoId: string, format: "mqdefault" | "hqdefault") {
   return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/${format}.jpg`;
+}
+
+// Always probe with hqdefault — it reliably returns 404 for unavailable videos.
+// mqdefault returns a generic placeholder (200 OK) regardless of availability.
+function buildProbeUrl(videoId: string) {
+  return buildThumbUrl(videoId, "hqdefault");
 }
 
 function reportUnavailable(videoId: string, reason: string) {
@@ -58,15 +67,16 @@ export function YouTubeThumbnailImage({
   reportReason = "thumbnail-load-error",
 }: YouTubeThumbnailImageProps) {
   const src = useMemo(() => buildThumbUrl(videoId, format), [videoId, format]);
-  const [thumbState, setThumbState] = useState<{ src: string; state: ThumbState }>(() => ({
-    src,
-    state: thumbnailHealthCache.get(src) ?? "unknown",
+  const probeUrl = useMemo(() => buildProbeUrl(videoId), [videoId]);
+  const [thumbState, setThumbState] = useState<{ videoId: string; state: ThumbState }>(() => ({
+    videoId,
+    state: thumbnailHealthCache.get(videoId) ?? "unknown",
   }));
   const elementRef = useRef<HTMLImageElement | null>(null);
-  const state = thumbState.src === src ? thumbState.state : thumbnailHealthCache.get(src) ?? "unknown";
+  const state = thumbState.videoId === videoId ? thumbState.state : thumbnailHealthCache.get(videoId) ?? "unknown";
 
   useEffect(() => {
-    const cached = thumbnailHealthCache.get(src);
+    const cached = thumbnailHealthCache.get(videoId);
     if (cached && cached !== "unknown") {
       return;
     }
@@ -78,24 +88,24 @@ export function YouTubeThumbnailImage({
       if (cancelled) {
         return;
       }
-      thumbnailHealthCache.set(src, "ready");
-      setThumbState({ src, state: "ready" });
+      thumbnailHealthCache.set(videoId, "ready");
+      setThumbState({ videoId, state: "ready" });
     };
 
     probe.onerror = () => {
       if (cancelled) {
         return;
       }
-      thumbnailHealthCache.set(src, "broken");
-      setThumbState({ src, state: "broken" });
+      thumbnailHealthCache.set(videoId, "broken");
+      setThumbState({ videoId, state: "broken" });
     };
 
-    probe.src = src;
+    probe.src = probeUrl;
 
     return () => {
       cancelled = true;
     };
-  }, [src]);
+  }, [videoId, probeUrl]);
 
   useEffect(() => {
     if (state !== "broken") {
@@ -128,8 +138,8 @@ export function YouTubeThumbnailImage({
       decoding={decoding}
       fetchPriority={fetchPriority}
       onError={() => {
-        thumbnailHealthCache.set(src, "broken");
-        setThumbState({ src, state: "broken" });
+        thumbnailHealthCache.set(videoId, "broken");
+        setThumbState({ videoId, state: "broken" });
       }}
     />
   );

@@ -14,9 +14,21 @@ type MarkUnavailableBody = {
   reason?: string;
 };
 
+type AvailabilityClassification =
+  | "available"
+  | "copyright-claim"
+  | "removed-or-private"
+  | "embed-restricted"
+  | "bot-check"
+  | "network-latency"
+  | "provider-blocked"
+  | "unknown-unavailable"
+  | "unknown-check-failed";
+
 type AvailabilityCheckResult = {
   status: "available" | "unavailable" | "check-failed";
   reason: string;
+  classification: AvailabilityClassification;
 };
 
 const AGE_RESTRICTED_PATTERNS = [
@@ -36,6 +48,7 @@ const BOT_CHALLENGE_PATTERNS = [
 const UNAVAILABLE_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_UNAVAILABLE === "1";
 const OEMBED_VERIFY_TIMEOUT_MS = 1800;
 const EMBED_VERIFY_TIMEOUT_MS = 2200;
+const WATCH_VERIFY_TIMEOUT_MS = 2400;
 
 function debugUnavailable(event: string, detail?: Record<string, unknown>) {
   if (!UNAVAILABLE_DEBUG_ENABLED) {
@@ -68,12 +81,76 @@ function extractPlayabilityStatus(html: string) {
   const chunk = statusMatch[2] ?? "";
   const reasonMatch = chunk.match(/"reason"\s*:\s*"([^"]+)"/i);
   const reason = reasonMatch?.[1]?.trim() ?? null;
-  return { status, reason };
+  const subreasonMatch = chunk.match(/"subreason"\s*:\s*\{[\s\S]{0,500}?"simpleText"\s*:\s*"([^"]+)"/i)
+    || chunk.match(/"subreason"\s*:\s*"([^"]+)"/i);
+  const subreason = subreasonMatch?.[1]?.trim() ?? null;
+  return { status, reason, subreason };
 }
 
 function isUnavailablePlayabilityReason(reason: string | null | undefined) {
   return typeof reason === "string"
     && /(video unavailable|private video|deleted|removed|copyright|terminated|not available|this video is unavailable)/i.test(reason);
+}
+
+function classifyPlayabilityFailure(reason: string | null | undefined, subreason?: string | null): Exclude<AvailabilityClassification, "available" | "unknown-check-failed"> | null {
+  const combined = `${reason ?? ""} ${subreason ?? ""}`.trim();
+  if (!combined) {
+    return null;
+  }
+
+  if (/(copyright claim|copyrighted content|blocked due to a copyright claim|claim by)/i.test(combined)) {
+    return "copyright-claim";
+  }
+
+  if (/(private video|video unavailable|this video is unavailable|has been removed|deleted|no longer available|uploader has not made this video available)/i.test(combined)) {
+    return "removed-or-private";
+  }
+
+  if (/(age[-\s]?restricted|age check|login required)/i.test(combined)) {
+    return "embed-restricted";
+  }
+
+  if (/(not a bot|prove you(?:'|\u2019)re not a bot|unusual traffic|automated queries|captcha)/i.test(combined)) {
+    return "bot-check";
+  }
+
+  if (/(not available|unavailable|removed|terminated)/i.test(combined)) {
+    return "unknown-unavailable";
+  }
+
+  return null;
+}
+
+function classifyUnavailableReason(reason: string): AvailabilityClassification {
+  if (/copyright/i.test(reason)) {
+    return "copyright-claim";
+  }
+
+  if (/(private|deleted|removed|video-unavailable|oembed:(404|410)|embed:(404|410))/i.test(reason)) {
+    return "removed-or-private";
+  }
+
+  if (/age-restricted/i.test(reason)) {
+    return "embed-restricted";
+  }
+
+  return "unknown-unavailable";
+}
+
+function classifyCheckFailedReason(reason: string): AvailabilityClassification {
+  if (/(bot-check|interactive-login-check|consent|login-required)/i.test(reason)) {
+    return "bot-check";
+  }
+
+  if (/(verify-timeout|verify-network)/i.test(reason)) {
+    return "network-latency";
+  }
+
+  if (/provider-blocked/i.test(reason)) {
+    return "provider-blocked";
+  }
+
+  return "unknown-check-failed";
 }
 
 function shouldForcePruneFromRuntimeReason(reason: string) {
@@ -107,11 +184,14 @@ async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityC
     }, OEMBED_VERIFY_TIMEOUT_MS);
 
     if ([404, 410].includes(oembedResponse.status)) {
-      return { status: "unavailable", reason: `oembed:${oembedResponse.status}` };
+      const reason = `oembed:${oembedResponse.status}`;
+      return { status: "unavailable", reason, classification: classifyUnavailableReason(reason) };
     }
 
+    let checkFailedReason: string | null = null;
+
     if ([401, 403].includes(oembedResponse.status)) {
-      return { status: "check-failed", reason: `oembed:provider-blocked-${oembedResponse.status}` };
+      checkFailedReason = `oembed:provider-blocked-${oembedResponse.status}`;
     }
 
     if (oembedResponse.ok) {
@@ -123,57 +203,124 @@ async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityC
       }, EMBED_VERIFY_TIMEOUT_MS);
 
       if ([404, 410].includes(embedResponse.status)) {
-        return { status: "unavailable", reason: `embed:${embedResponse.status}` };
+        const reason = `embed:${embedResponse.status}`;
+        return { status: "unavailable", reason, classification: classifyUnavailableReason(reason) };
       }
 
       if ([401, 403].includes(embedResponse.status)) {
-        return { status: "check-failed", reason: `embed:provider-blocked-${embedResponse.status}` };
+        checkFailedReason = `embed:provider-blocked-${embedResponse.status}`;
       }
 
       if (embedResponse.ok) {
         const html = await embedResponse.text();
         const playability = extractPlayabilityStatus(html);
 
+        const playabilityClassification = classifyPlayabilityFailure(playability?.reason, playability?.subreason);
+
+        if (playabilityClassification === "copyright-claim") {
+          return { status: "unavailable", reason: "embed:copyright-claim", classification: "copyright-claim" };
+        }
+
+        if (playabilityClassification === "removed-or-private") {
+          return { status: "unavailable", reason: "embed:removed-or-private", classification: "removed-or-private" };
+        }
+
+        if (playabilityClassification === "embed-restricted") {
+          return { status: "unavailable", reason: "embed:age-restricted", classification: "embed-restricted" };
+        }
+
         if (containsBotChallengeMarker(html)) {
-          return { status: "check-failed", reason: "embed:bot-check" };
+          checkFailedReason = "embed:bot-check";
         }
 
         if (containsAgeRestrictionMarker(html)) {
-          return { status: "unavailable", reason: "embed:age-restricted" };
+          return { status: "unavailable", reason: "embed:age-restricted", classification: "embed-restricted" };
         }
 
         if (playability?.status === "LOGIN_REQUIRED" || playability?.status === "CONTENT_CHECK_REQUIRED") {
           if (isUnavailablePlayabilityReason(playability.reason)) {
-            return { status: "unavailable", reason: "embed:playability-login-unavailable" };
+            return { status: "unavailable", reason: "embed:playability-login-unavailable", classification: "unknown-unavailable" };
           }
 
-          return { status: "check-failed", reason: "embed:interactive-login-check" };
+          checkFailedReason = "embed:interactive-login-check";
         }
 
         if (playability && /^(ERROR|UNPLAYABLE|AGE_CHECK_REQUIRED)$/i.test(playability.status)) {
-          return { status: "unavailable", reason: "embed:playability-unavailable" };
+          return { status: "unavailable", reason: "embed:playability-unavailable", classification: "unknown-unavailable" };
         }
 
         if (/video unavailable/i.test(html)) {
-          return { status: "unavailable", reason: "embed:video-unavailable" };
+          return { status: "unavailable", reason: "embed:video-unavailable", classification: "removed-or-private" };
         }
-
-        return { status: "available", reason: "embed:accessible-no-markers" };
       }
     }
 
-    return { status: "check-failed", reason: `oembed:${oembedResponse.status}` };
+    // Fallback to watch page playability to disambiguate provider-block vs true unavailable.
+    const watchUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&bpctr=9999999999&has_verified=1`;
+    const watchResponse = await fetchWithTimeout(watchUrl, {
+      headers: {
+        "User-Agent": "YehThatRocks/1.0",
+      },
+    }, WATCH_VERIFY_TIMEOUT_MS);
+
+    if ([404, 410].includes(watchResponse.status)) {
+      const reason = `watch:${watchResponse.status}`;
+      return { status: "unavailable", reason, classification: classifyUnavailableReason(reason) };
+    }
+
+    if (watchResponse.ok) {
+      const watchHtml = await watchResponse.text();
+      const watchPlayability = extractPlayabilityStatus(watchHtml);
+      const watchClassification = classifyPlayabilityFailure(watchPlayability?.reason, watchPlayability?.subreason);
+
+      if (watchClassification === "copyright-claim") {
+        return { status: "unavailable", reason: "watch:copyright-claim", classification: "copyright-claim" };
+      }
+
+      if (watchClassification === "removed-or-private") {
+        return { status: "unavailable", reason: "watch:removed-or-private", classification: "removed-or-private" };
+      }
+
+      if (watchClassification === "embed-restricted") {
+        return { status: "unavailable", reason: "watch:embed-restricted", classification: "embed-restricted" };
+      }
+
+      if (watchClassification === "bot-check") {
+        return { status: "check-failed", reason: "watch:bot-check", classification: "bot-check" };
+      }
+
+      if (watchPlayability && /^(ERROR|UNPLAYABLE|AGE_CHECK_REQUIRED)$/i.test(watchPlayability.status)) {
+        return { status: "unavailable", reason: "watch:playability-unavailable", classification: "unknown-unavailable" };
+      }
+
+      if (watchPlayability?.status === "LOGIN_REQUIRED" || watchPlayability?.status === "CONTENT_CHECK_REQUIRED") {
+        return { status: "check-failed", reason: "watch:interactive-login-check", classification: "bot-check" };
+      }
+    }
+
+    if (oembedResponse.ok && !checkFailedReason) {
+      return { status: "available", reason: "embed:accessible-no-markers", classification: "available" };
+    }
+
+    const fallbackReason = checkFailedReason ?? `oembed:${oembedResponse.status}`;
+    return {
+      status: "check-failed",
+      reason: fallbackReason,
+      classification: classifyCheckFailedReason(fallbackReason),
+    };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       return {
         status: "check-failed",
         reason: "verify-timeout",
+        classification: "network-latency",
       };
     }
 
     return {
       status: "check-failed",
       reason: `verify-network:${error instanceof Error ? error.message : "unknown"}`,
+      classification: "network-latency",
     };
   }
 }
@@ -230,7 +377,7 @@ export async function POST(request: NextRequest) {
 
   if (videos.length === 0) {
     debugUnavailable("unknown-video-id", { videoId });
-    return NextResponse.json({ ok: true, skipped: true, reason: "unknown-video-id" }, { status: 202 });
+    return NextResponse.json({ ok: true, skipped: true, reason: "unknown-video-id", classification: "unknown-check-failed" }, { status: 202 });
   }
 
   const verification = await verifyYouTubeAvailability(videoId);
@@ -257,14 +404,22 @@ export async function POST(request: NextRequest) {
       `runtime-force-prune:${reason}|${verification.reason}`,
     ).catch(() => ({ pruned: false, deletedVideoRows: 0, reason: "prune-failed" }));
 
-    return NextResponse.json({ ok: true, pruned: pruneResult.pruned, deletedVideoRows: pruneResult.deletedVideoRows });
+    return NextResponse.json({
+      ok: true,
+      pruned: pruneResult.pruned,
+      deletedVideoRows: pruneResult.deletedVideoRows,
+      reason: verification.reason,
+      classification: verification.classification,
+    });
   }
 
   if (verification.status !== "unavailable") {
+    const siteVideoStatus = verification.status === "check-failed" ? "check-failed" : "available";
+
     await prisma.siteVideo.updateMany({
       where: { videoId: { in: ids } },
       data: {
-        status: verification.reason.includes("provider-blocked") ? "check-failed" : "available",
+        status: siteVideoStatus,
         title: truncate(`${videoTitle} [runtime-report-ignored:${reason}|${verification.reason}]`, 255),
       },
     });
@@ -286,13 +441,18 @@ export async function POST(request: NextRequest) {
             `${titleById.get(id) ?? "Unknown"} [runtime-report-ignored:${reason}|${verification.reason}]`,
             255,
           ),
-          status: verification.reason.includes("provider-blocked") ? "check-failed" : "available",
+          status: siteVideoStatus,
         })),
         skipDuplicates: true,
       });
     }
 
-    return NextResponse.json({ ok: true, skipped: true, reason: verification.reason }, { status: 202 });
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      reason: verification.reason,
+      classification: verification.classification,
+    }, { status: 202 });
   }
 
   debugUnavailable("marking-unavailable", {
@@ -307,5 +467,11 @@ export async function POST(request: NextRequest) {
     `runtime-unavailable:${reason}|${verification.reason}`,
   ).catch(() => ({ pruned: false, deletedVideoRows: 0, reason: "prune-failed" }));
 
-  return NextResponse.json({ ok: true, pruned: pruneResult.pruned, deletedVideoRows: pruneResult.deletedVideoRows });
+  return NextResponse.json({
+    ok: true,
+    pruned: pruneResult.pruned,
+    deletedVideoRows: pruneResult.deletedVideoRows,
+    reason: verification.reason,
+    classification: verification.classification,
+  });
 }
