@@ -1526,10 +1526,71 @@ export function PlayerExperience({
     return runtimeState === window.YT?.PlayerState.PLAYING || hasPlaybackStartedRef.current || runtimeTime > 1;
   }
 
+  function restoreVisiblePlaybackStateFromRuntime(reason: string) {
+    const runtimePlayer = playerRef.current;
+    if (!runtimePlayer) {
+      return;
+    }
+
+    const runtimePlayerWithVideoData = runtimePlayer as (YouTubePlayer & {
+      getVideoData?: () => { video_id?: string | null };
+    }) | null;
+    const runtimeVideoId =
+      runtimePlayerWithVideoData && typeof runtimePlayerWithVideoData.getVideoData === "function"
+        ? (runtimePlayerWithVideoData.getVideoData()?.video_id ?? null)
+        : null;
+
+    if (runtimeVideoId && runtimeVideoId !== currentVideoRef.current.id) {
+      return;
+    }
+
+    const runtimeState = typeof runtimePlayer.getPlayerState === "function"
+      ? runtimePlayer.getPlayerState()
+      : -1;
+    const runtimeTime = typeof runtimePlayer.getCurrentTime === "function"
+      ? toSafeNumber(runtimePlayer.getCurrentTime(), 0)
+      : 0;
+    const runtimeDuration = typeof runtimePlayer.getDuration === "function"
+      ? toSafeNumber(runtimePlayer.getDuration(), 0)
+      : 0;
+    const runtimeMuted = typeof runtimePlayer.isMuted === "function"
+      ? Boolean(runtimePlayer.isMuted())
+      : isMutedRef.current;
+
+    const playbackActive = runtimeState === window.YT?.PlayerState.PLAYING || runtimeTime > 1;
+    if (!playbackActive) {
+      return;
+    }
+
+    setIsPlayerReady(true);
+    setShowPlayerRefreshHint(false);
+    setIsPlaying(true);
+    setHasPlaybackStarted(true);
+    hasPlaybackStartedRef.current = true;
+    setCurrentTime(runtimeTime);
+    if (runtimeDuration > 0) {
+      setDuration(runtimeDuration);
+    }
+    if (runtimeMuted !== isMutedRef.current) {
+      setIsMuted(runtimeMuted);
+    }
+    resetPlaybackStallWatchdog(runtimeTime);
+
+    logPlayerDebug("bot-challenge:restored-visible-playback-state", {
+      videoId: currentVideoRef.current.id,
+      reason,
+      runtimeState,
+      runtimeTime,
+      runtimeDuration,
+      runtimeMuted,
+    });
+  }
+
   function enableDirectIframeInteractionMode(trigger: string, verificationReason: string | null) {
     if (hasActivePlaybackForCurrentVideo()) {
       setAllowDirectIframeInteraction(false);
       allowDirectIframeInteractionRef.current = false;
+      restoreVisiblePlaybackStateFromRuntime("direct-iframe-suppressed-active-playback");
       logPlayerDebug("bot-challenge:direct-iframe-mode-suppressed-active-playback", {
         videoId: currentVideoRef.current.id,
         trigger,
@@ -2383,6 +2444,7 @@ export function PlayerExperience({
     // If playback recovered while the policy blocker was visible, drop back to normal player UI.
     setAllowDirectIframeInteraction(false);
     allowDirectIframeInteractionRef.current = false;
+    restoreVisiblePlaybackStateFromRuntime("direct-iframe-cleared-active-playback");
     logPlayerDebug("bot-challenge:direct-iframe-mode-cleared-active-playback", {
       videoId: currentVideo.id,
     });

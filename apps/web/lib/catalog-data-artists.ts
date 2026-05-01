@@ -24,6 +24,7 @@ import {
 } from "@/lib/catalog-data-utils";
 import {
   AVAILABLE_SITE_VIDEOS_JOIN,
+  ensureArtistSearchPrefixIndex,
   getArtistColumnMap,
   getArtistNameNormalizationExpr,
   getArtistVideoColumnMap,
@@ -582,11 +583,18 @@ export async function findArtistsInDatabase(options: {
   nameOnly?: boolean;
 }) {
   const { limit, search, orderByName, prefixOnly, nameOnly } = options;
-  const columns = await getArtistColumnMap();
   const normalizedSearch = search?.trim() ?? "";
   const normalizedArtistSearch = normalizedSearch ? normalizeArtistKey(normalizedSearch) : "";
+  const shouldUseNormalizedPrefixSearch = prefixOnly && normalizedArtistSearch.length > 0;
+
+  if (shouldUseNormalizedPrefixSearch) {
+    await ensureArtistSearchPrefixIndex();
+  }
+
+  const columns = await getArtistColumnMap();
 
   const nameCol = escapeSqlIdentifier(columns.name);
+  const normalizedNameCol = columns.normalizedName ? escapeSqlIdentifier(columns.normalizedName) : null;
   const countrySelect = columns.country ? `a.${escapeSqlIdentifier(columns.country)} AS country` : "NULL AS country";
   const genreExpr = columns.genreColumns.length > 0
     ? `COALESCE(${columns.genreColumns.map((column) => `a.${escapeSqlIdentifier(column)}`).join(", ")})`
@@ -596,19 +604,26 @@ export async function findArtistsInDatabase(options: {
   const params: string[] = [];
 
   if (normalizedSearch) {
-    const needle = prefixOnly ? `${normalizedSearch}%` : `%${normalizedSearch}%`;
-    whereParts.push(`a.${nameCol} LIKE ?`);
-    params.push(needle);
+    const defaultNeedle = prefixOnly ? `${normalizedSearch}%` : `%${normalizedSearch}%`;
+    const normalizedNeedle = prefixOnly ? `${normalizedArtistSearch}%` : `%${normalizedArtistSearch}%`;
+
+    if (shouldUseNormalizedPrefixSearch && normalizedNameCol) {
+      whereParts.push(`a.${normalizedNameCol} LIKE ?`);
+      params.push(normalizedNeedle);
+    } else {
+      whereParts.push(`a.${nameCol} LIKE ?`);
+      params.push(defaultNeedle);
+    }
 
     if (!nameOnly && columns.country) {
       whereParts.push(`a.${escapeSqlIdentifier(columns.country)} LIKE ?`);
-      params.push(needle);
+      params.push(defaultNeedle);
     }
 
     if (!nameOnly) {
       for (const genreColumn of columns.genreColumns) {
         whereParts.push(`a.${escapeSqlIdentifier(genreColumn)} LIKE ?`);
-        params.push(needle);
+        params.push(defaultNeedle);
       }
     }
   }

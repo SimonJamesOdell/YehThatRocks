@@ -974,6 +974,22 @@ async function getExistingCatalogVideoIdSet(videoIds: string[]) {
   ]);
 }
 
+async function canAdmitVideoByStrictMetadata(videoId: string) {
+  const admissionRows = await prisma.$queryRaw<Array<PlaybackDecisionRow>>`
+    SELECT
+      v.id, v.title, v.description, v.parsedArtist, v.parsedTrack, v.parsedVideoType, v.parseConfidence,
+      EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND sv.status = 'available') AS hasAvailable,
+      EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status <> 'available')) AS hasBlocked
+    FROM videos v
+    WHERE v.videoId = ${videoId}
+    ORDER BY v.updated_at DESC, v.id DESC LIMIT 1
+  `;
+
+  const admissionRow = admissionRows[0];
+  const admissionDecision = admissionRow ? evaluatePlaybackMetadataEligibility(admissionRow) : null;
+  return Boolean(admissionRow && admissionRow.hasAvailable && admissionDecision?.allowed);
+}
+
 function getRelatedFanoutForDepth(depth: number) {
   const value = Math.floor(RELATED_DISCOVERY_SEED_FANOUT * Math.pow(0.5, depth));
   return Math.max(1, Math.min(8, value));
@@ -1043,8 +1059,15 @@ async function hydrateAndPersistVideo(
     for (const relatedVideo of relatedVideos) {
       const relatedAvailability = await checkEmbedPlayability(relatedVideo.id);
       await persistVideoAvailability(relatedVideo, relatedAvailability);
-      if (relatedAvailability.status === "available") {
+      if (relatedAvailability.status !== "available") {
+        continue;
+      }
+
+      const admitted = await canAdmitVideoByStrictMetadata(relatedVideo.id);
+      if (admitted) {
         availableRelatedIds.push(relatedVideo.id);
+      } else {
+        await pruneVideoAndAssociationsByVideoId(relatedVideo.id, "related-inline-strict-admission").catch(() => undefined);
       }
     }
 
@@ -1111,20 +1134,7 @@ export async function discoverRelatedVideosCascade(
 
       if (!hydrated) continue;
 
-      const admissionRows = await prisma.$queryRaw<Array<PlaybackDecisionRow>>`
-        SELECT
-          v.id, v.title, v.description, v.parsedArtist, v.parsedTrack, v.parsedVideoType, v.parseConfidence,
-          EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND sv.status = 'available') AS hasAvailable,
-          EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status <> 'available')) AS hasBlocked
-        FROM videos v
-        WHERE v.videoId = ${candidate.id}
-        ORDER BY v.updated_at DESC, v.id DESC LIMIT 1
-      `;
-
-      const admissionRow = admissionRows[0];
-      const admissionDecision = admissionRow ? evaluatePlaybackMetadataEligibility(admissionRow) : null;
-
-      if (!admissionRow || !Boolean(admissionRow.hasAvailable) || !admissionDecision?.allowed) {
+      if (!(await canAdmitVideoByStrictMetadata(candidate.id))) {
         await pruneVideoAndAssociationsByVideoId(candidate.id, "related-cascade-strict-admission").catch(() => undefined);
         continue;
       }

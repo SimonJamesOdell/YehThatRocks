@@ -193,6 +193,8 @@ export function NewVideosLoader({
   const prefetchInFlightRef = useRef(false);
   const lastPrefetchAtRef = useRef(0);
   const allVideoIdsRef = useRef(new Set<string>());
+  const activeTrackAutoScrollRafRef = useRef<number | null>(null);
+  const lastAutoScrolledActiveVideoIdRef = useRef<string | null>(null);
   const seenVideoIdSet = clientSeenVideoIds;
   const visibleVideos = useMemo(
     () => (isAuthenticated && hideSeen
@@ -238,6 +240,76 @@ export function NewVideosLoader({
       return next;
     });
   }, [activeVideoId, hideSeen, seenVideoIdSet]);
+
+  useEffect(() => {
+    if (!activeVideoId || loading || visibleVideos.length === 0) {
+      return;
+    }
+
+    if (lastAutoScrolledActiveVideoIdRef.current === activeVideoId) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      const overlayContainer = document.querySelector<HTMLElement>(".favouritesBlindInner");
+      const scrollContainer = overlayContainer ?? document.scrollingElement as HTMLElement | null;
+      if (!scrollContainer) {
+        return;
+      }
+
+      const activeRow = document.querySelector<HTMLElement>(".trackCard.top100CardActive");
+      if (!activeRow) {
+        return;
+      }
+
+      const topGutterPx = 8;
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const rowRect = activeRow.getBoundingClientRect();
+      const rowTopInViewport = rowRect.top - containerRect.top;
+      const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+      const desiredTop = scrollContainer.scrollTop + rowTopInViewport - topGutterPx;
+      const targetTop = Math.min(maxScrollTop, Math.max(0, desiredTop));
+
+      if (Math.abs(scrollContainer.scrollTop - targetTop) <= 1) {
+        lastAutoScrolledActiveVideoIdRef.current = activeVideoId;
+        return;
+      }
+
+      if (activeTrackAutoScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(activeTrackAutoScrollRafRef.current);
+        activeTrackAutoScrollRafRef.current = null;
+      }
+
+      const startTop = scrollContainer.scrollTop;
+      const scrollDelta = targetTop - startTop;
+      const durationMs = 320;
+      const startTime = performance.now();
+
+      const animateScroll = (now: number) => {
+        const progress = Math.min(1, (now - startTime) / durationMs);
+        const eased = 1 - ((1 - progress) ** 3);
+        scrollContainer.scrollTop = startTop + (scrollDelta * eased);
+
+        if (progress < 1) {
+          activeTrackAutoScrollRafRef.current = window.requestAnimationFrame(animateScroll);
+          return;
+        }
+
+        activeTrackAutoScrollRafRef.current = null;
+        lastAutoScrolledActiveVideoIdRef.current = activeVideoId;
+      };
+
+      activeTrackAutoScrollRafRef.current = window.requestAnimationFrame(animateScroll);
+    }, 50);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (activeTrackAutoScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(activeTrackAutoScrollRafRef.current);
+        activeTrackAutoScrollRafRef.current = null;
+      }
+    };
+  }, [activeVideoId, loading, visibleVideos.length]);
 
   useEffect(() => {
     const unsubscribeWatchHistory = listenToAppEvent(EVENT_NAMES.WATCH_HISTORY_UPDATED, ({ videoId }) => {
