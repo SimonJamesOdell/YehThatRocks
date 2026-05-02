@@ -1996,6 +1996,12 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                   {recentlyApprovedVideos.length === 0 ? <p className="authMessage">No recently approved videos yet.</p> : null}
                   {recentlyApprovedVideos.map((row) => (
                     <div key={`recent-${row.id}`} className="authForm">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`https://img.youtube.com/vi/${row.videoId}/mqdefault.jpg`}
+                        alt={row.title}
+                        style={{ width: "100%", maxWidth: 320, display: "block", borderRadius: 4, marginBottom: 8 }}
+                      />
                       <p className="authMessage"><strong>{row.videoId}</strong></p>
                       <p className="authMessage">{row.title}</p>
                       {row.parsedArtist ? <p className="authMessage">Artist: {row.parsedArtist}</p> : null}
