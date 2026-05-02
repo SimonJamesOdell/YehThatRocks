@@ -1914,7 +1914,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
               ) : (
                 <>
                   <span>Recently Approved</span>
-                  <strong>last 60 min · {recentlyApprovedVideos.length} video{recentlyApprovedVideos.length !== 1 ? "s" : ""}</strong>
+                  <strong>last 24 hours · {recentlyApprovedVideos.length} video{recentlyApprovedVideos.length !== 1 ? "s" : ""}</strong>
                 </>
               )}
             </div>
@@ -1992,7 +1992,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                 </>
               ) : (
                 <>
-                  <p className="authMessage">Approved in the last 60 minutes. Use Revoke to return a video to the pending queue.</p>
+                  <p className="authMessage">Approved in the last 24 hours, newest first. Use Revoke to return a video to the pending queue.</p>
                   {recentlyApprovedVideos.length === 0 ? <p className="authMessage">No recently approved videos yet.</p> : null}
                   {recentlyApprovedVideos.map((row) => (
                     <div key={`recent-${row.id}`} className="authForm">
