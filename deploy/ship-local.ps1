@@ -90,6 +90,55 @@ function ExecNativeWithRetry(
   }
 }
 
+function ExecDockerBuildWithRetry(
+  [string[]]$CommandArgs,
+  [int]$MaxAttempts = 3,
+  [int]$InitialDelaySeconds = 6
+) {
+  $display = "docker " + ($CommandArgs -join " ")
+  $delaySeconds = [Math]::Max(1, $InitialDelaySeconds)
+  $attempt = 1
+
+  while ($attempt -le $MaxAttempts) {
+    Write-Host "> $display" -ForegroundColor Cyan
+    $previousErrorActionPreference = $ErrorActionPreference
+    $rawOutput = $null
+    try {
+      $ErrorActionPreference = "Continue"
+      $rawOutput = & docker @CommandArgs 2>&1
+    } finally {
+      $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    $exitCode = $LASTEXITCODE
+    $output = (($rawOutput | ForEach-Object { $_.ToString() }) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join [Environment]::NewLine
+
+    if (-not [string]::IsNullOrWhiteSpace($output)) {
+      Write-Host $output.TrimEnd()
+    }
+
+    if ($exitCode -eq 0) {
+      return
+    }
+
+    $retryable =
+      ($output -match "failed to receive status") -or
+      ($output -match "rpc error: code = Unavailable") -or
+      ($output -match "error reading from server: EOF") -or
+      ($output -match "Cannot connect to the Docker daemon") -or
+      ($output -match "error during connect")
+
+    if (-not $retryable -or $attempt -ge $MaxAttempts) {
+      throw ("Command failed with exit code {0}; command {1}" -f $exitCode, $display)
+    }
+
+    Write-Warning ("Transient Docker build failure detected. Retrying in {0}s (attempt {1}/{2})..." -f $delaySeconds, $attempt, $MaxAttempts)
+    Start-Sleep -Seconds $delaySeconds
+    $delaySeconds = [Math]::Min(30, $delaySeconds * 2)
+    $attempt += 1
+  }
+}
+
 function Invoke-RemoteShellScript(
   [string]$VpsHost,
   [string[]]$Lines,
@@ -577,7 +626,13 @@ try {
 
   if ((Get-ShipStageRank -Stage ([string]$shipState.Stage)) -lt (Get-ShipStageRank -Stage "image-built")) {
     Write-Host "Building image locally with full progress output..." -ForegroundColor Yellow
-    Exec "docker build --progress=plain -t $($shipState.ImageTag) -t $($shipState.LatestTag) ."
+    ExecDockerBuildWithRetry -CommandArgs @(
+      "build",
+      "--progress=plain",
+      "-t", $shipState.ImageTag,
+      "-t", $shipState.LatestTag,
+      "."
+    )
     $shipState.Stage = "image-built"
     $shipState.UpdatedAt = (Get-Date).ToString("o")
     Write-ShipState -StateFilePath $shipStatePath -State $shipState
