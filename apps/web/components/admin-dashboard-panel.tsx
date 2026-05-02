@@ -295,6 +295,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [pendingVideos, setPendingVideos] = useState<PendingVideoRow[]>([]);
   const [pendingVideoTotal, setPendingVideoTotal] = useState(0);
   const [recentlyApprovedVideos, setRecentlyApprovedVideos] = useState<RecentlyApprovedVideoRow[]>([]);
+  const [videoModerationPane, setVideoModerationPane] = useState<"pending" | "recent">("pending");
   const [revokingVideoId, setRevokingVideoId] = useState<string | null>(null);
   const [artists, setArtists] = useState<ArtistRow[]>([]);
   const [ambiguousVideos, setAmbiguousVideos] = useState<AmbiguousVideoRow[]>([]);
@@ -1861,108 +1862,131 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
 
       {activeTab === "videos" ? (
         <>
-          {recentlyApprovedVideos.length > 0 ? (
-            <section className="panel featurePanel">
-              <div className="panelHeading">
-                <span>Recently Approved</span>
-                <strong>last 60 min · {recentlyApprovedVideos.length} video{recentlyApprovedVideos.length !== 1 ? "s" : ""}</strong>
-              </div>
-              <div className="interactiveStack">
-                <p className="authMessage">Approved in the last 60 minutes. Use Revoke to return a video to the pending queue.</p>
-                {recentlyApprovedVideos.map((row) => (
-                  <div key={`recent-${row.id}`} className="authForm">
-                    <p className="authMessage"><strong>{row.videoId}</strong></p>
-                    <p className="authMessage">{row.title}</p>
-                    {row.parsedArtist ? <p className="authMessage">Artist: {row.parsedArtist}</p> : null}
-                    {row.parsedTrack ? <p className="authMessage">Track: {row.parsedTrack}</p> : null}
-                    {row.channelTitle ? <p className="authMessage">Channel: {row.channelTitle}</p> : null}
-                    {row.updatedAt ? <p className="authMessage">Approved: {new Date(row.updatedAt).toLocaleTimeString()}</p> : null}
-                    <button
-                      type="button"
-                      onClick={() => void revokeApprovedVideo(row.videoId)}
-                      disabled={revokingVideoId === row.videoId}
-                    >
-                      {revokingVideoId === row.videoId ? "Revoking…" : "Revoke Approval"}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
           <section className="panel featurePanel">
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <button
+                type="button"
+                className={videoModerationPane === "pending" ? "navLink navLinkActive" : "navLink"}
+                onClick={() => setVideoModerationPane("pending")}
+              >
+                New Videos Pending ({pendingVideoTotal})
+              </button>
+              <button
+                type="button"
+                className={videoModerationPane === "recent" ? "navLink navLinkActive" : "navLink"}
+                onClick={() => setVideoModerationPane("recent")}
+              >
+                Recently Approved ({recentlyApprovedVideos.length})
+              </button>
+            </div>
             <div className="panelHeading">
-              <span>New Videos Pending Approval</span>
-              <strong>{pendingVideoTotal} total</strong>
+              {videoModerationPane === "pending" ? (
+                <>
+                  <span>New Videos Pending Approval</span>
+                  <strong>{pendingVideoTotal} total</strong>
+                </>
+              ) : (
+                <>
+                  <span>Recently Approved</span>
+                  <strong>last 60 min · {recentlyApprovedVideos.length} video{recentlyApprovedVideos.length !== 1 ? "s" : ""}</strong>
+                </>
+              )}
             </div>
             <div className="interactiveStack">
-              {pendingVideos.length === 0 ? <p className="authMessage">No pending videos.</p> : null}
-              {pendingVideos.slice(0, 50).map((row) => (
-                <div key={`pending-${row.id}`} className="authForm">
-                  <p className="authMessage">{row.videoId}</p>
-                  <label>
-                    <span>Title</span>
-                    <input
-                      value={row.title}
-                      onChange={(event) => {
-                        const next = pendingVideos.map((item) => (item.id === row.id ? { ...item, title: event.target.value } : item));
-                        setPendingVideos(next);
-                      }}
-                      placeholder="Video title"
-                    />
-                  </label>
-                  <label>
-                    <span>Artist (optional override)</span>
-                    <input
-                      value={row.parsedArtist ?? ""}
-                      onChange={(event) => {
-                        const next = pendingVideos.map((item) => (item.id === row.id ? { ...item, parsedArtist: event.target.value || null } : item));
-                        setPendingVideos(next);
-                      }}
-                      placeholder="Artist"
-                    />
-                  </label>
-                  <p className="authMessage">Track: {row.parsedTrack ?? "-"}</p>
-                  <p className="authMessage">Channel: {row.channelTitle ?? "-"}</p>
-                  <div
-                    style={{
-                      position: "relative",
-                      width: "100%",
-                      maxWidth: 480,
-                      aspectRatio: "16 / 9",
-                      borderRadius: 10,
-                      overflow: "hidden",
-                      background: "rgba(0,0,0,0.45)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                    }}
-                  >
-                    <iframe
-                      src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0`}
-                      title={`Pending video preview ${row.videoId}`}
-                      loading="lazy"
-                      referrerPolicy="strict-origin-when-cross-origin"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                      allowFullScreen
-                      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
-                    />
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      onClick={() => void moderatePendingVideo(row, "approve")}
-                      disabled={moderatingVideoId === row.videoId || row.title.trim().length === 0}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void moderatePendingVideo(row, "remove")}
-                      disabled={moderatingVideoId === row.videoId}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              ))}
+              {videoModerationPane === "pending" ? (
+                <>
+                  {pendingVideos.length === 0 ? <p className="authMessage">No pending videos.</p> : null}
+                  {pendingVideos.slice(0, 50).map((row) => (
+                    <div key={`pending-${row.id}`} className="authForm">
+                      <p className="authMessage">{row.videoId}</p>
+                      <label>
+                        <span>Title</span>
+                        <input
+                          value={row.title}
+                          onChange={(event) => {
+                            const next = pendingVideos.map((item) => (item.id === row.id ? { ...item, title: event.target.value } : item));
+                            setPendingVideos(next);
+                          }}
+                          placeholder="Video title"
+                        />
+                      </label>
+                      <label>
+                        <span>Artist (optional override)</span>
+                        <input
+                          value={row.parsedArtist ?? ""}
+                          onChange={(event) => {
+                            const next = pendingVideos.map((item) => (item.id === row.id ? { ...item, parsedArtist: event.target.value || null } : item));
+                            setPendingVideos(next);
+                          }}
+                          placeholder="Artist"
+                        />
+                      </label>
+                      <p className="authMessage">Track: {row.parsedTrack ?? "-"}</p>
+                      <p className="authMessage">Channel: {row.channelTitle ?? "-"}</p>
+                      <div
+                        style={{
+                          position: "relative",
+                          width: "100%",
+                          maxWidth: 480,
+                          aspectRatio: "16 / 9",
+                          borderRadius: 10,
+                          overflow: "hidden",
+                          background: "rgba(0,0,0,0.45)",
+                          border: "1px solid rgba(255,255,255,0.12)",
+                        }}
+                      >
+                        <iframe
+                          src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0`}
+                          title={`Pending video preview ${row.videoId}`}
+                          loading="lazy"
+                          referrerPolicy="strict-origin-when-cross-origin"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+                        />
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={() => void moderatePendingVideo(row, "approve")}
+                          disabled={moderatingVideoId === row.videoId || row.title.trim().length === 0}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void moderatePendingVideo(row, "remove")}
+                          disabled={moderatingVideoId === row.videoId}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <p className="authMessage">Approved in the last 60 minutes. Use Revoke to return a video to the pending queue.</p>
+                  {recentlyApprovedVideos.length === 0 ? <p className="authMessage">No recently approved videos yet.</p> : null}
+                  {recentlyApprovedVideos.map((row) => (
+                    <div key={`recent-${row.id}`} className="authForm">
+                      <p className="authMessage"><strong>{row.videoId}</strong></p>
+                      <p className="authMessage">{row.title}</p>
+                      {row.parsedArtist ? <p className="authMessage">Artist: {row.parsedArtist}</p> : null}
+                      {row.parsedTrack ? <p className="authMessage">Track: {row.parsedTrack}</p> : null}
+                      {row.channelTitle ? <p className="authMessage">Channel: {row.channelTitle}</p> : null}
+                      {row.updatedAt ? <p className="authMessage">Approved: {new Date(row.updatedAt).toLocaleTimeString()}</p> : null}
+                      <button
+                        type="button"
+                        onClick={() => void revokeApprovedVideo(row.videoId)}
+                        disabled={revokingVideoId === row.videoId}
+                      >
+                        {revokingVideoId === row.videoId ? "Revoking…" : "Revoke Approval"}
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           </section>
         </>
