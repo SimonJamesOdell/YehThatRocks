@@ -246,6 +246,19 @@ async function readNoStoreJson<T>(input: RequestInfo | URL, init?: RequestInit):
   });
 }
 
+function isAuthResponseError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.message === "Unauthorized" ||
+    error.message === "Forbidden" ||
+    error.message.includes("(401)") ||
+    error.message.includes("(403)")
+  );
+}
+
 function Dial({ label, value, color, detail }: { label: string; value: number | null; color: string; detail?: string | null }) {
   const radius = 34;
   const stroke = 8;
@@ -1052,10 +1065,23 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       return;
     }
 
+    const refreshVideoModerationQueues = async () => {
+      try {
+        await Promise.all([loadPendingVideos(), loadRecentlyApprovedVideos()]);
+      } catch (pollError) {
+        if (isAuthResponseError(pollError)) {
+          setError("Unauthorized. Please sign in again.");
+          return;
+        }
+
+        // Keep the current admin data visible on transient polling failures.
+      }
+    };
+
     const VIDEOS_TAB_POLL_MS = 8_000;
+    void refreshVideoModerationQueues();
     const intervalId = window.setInterval(() => {
-      void loadPendingVideos();
-      void loadRecentlyApprovedVideos();
+      void refreshVideoModerationQueues();
     }, VIDEOS_TAB_POLL_MS);
 
     return () => {
