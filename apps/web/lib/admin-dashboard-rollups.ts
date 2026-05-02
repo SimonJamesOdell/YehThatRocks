@@ -26,6 +26,14 @@ type HourlyAuthRollupRow = {
   authEvents: bigint | number;
 };
 
+type GeoVisitorRollupRow = {
+  visitorId: string;
+  lat: bigint | number | string;
+  lng: bigint | number | string;
+  eventCount: bigint | number;
+  lastSeenAt: Date | string;
+};
+
 type DashboardRollupRead = {
   analyticsDaily: Array<{ day: Date; pageViews: bigint | number; videoViews: bigint | number; uniqueVisitors: bigint | number }>;
   hourlyRecentAnalytics: HourlyAnalyticsRollupRow[];
@@ -38,6 +46,7 @@ type DashboardRollupRead = {
     uniqueVisitors: bigint | number;
     totalSessions: bigint | number;
   }>;
+  geoVisitors: GeoVisitorRollupRow[];
   earliestAnalyticsAt: Array<{ earliestAt: Date | null }>;
   earliestAuthAt: Array<{ earliestAt: Date | null }>;
   dailySeriesRows: DailyAnalyticsRollupRow[];
@@ -48,6 +57,7 @@ const DAILY_RECENT_DAYS = 45;
 const HOURLY_RECENT_DAYS = 21;
 const DAILY_RETENTION_DAYS = 365 * 8;
 const HOURLY_RETENTION_DAYS = 35;
+const GEO_VISITOR_ROLLUP_INTERVAL_MS = Math.max(60_000, Number(process.env.ADMIN_DASHBOARD_GEO_ROLLUP_INTERVAL_MS || "600000"));
 // How often to run the expensive full historical scan (past DAILY_RECENT_DAYS / HOURLY_RECENT_DAYS).
 // Normal ticks use a narrow window (today+yesterday / last 2 hours) instead.
 const FULL_SCAN_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -57,6 +67,7 @@ let rollupsInFlight: Promise<void> | null = null;
 let rollupsLastRefreshedAtMs = 0;
 let lastFullDailyRefreshMs = 0;
 let lastFullHourlyRefreshMs = 0;
+let lastGeoVisitorRefreshMs = 0;
 let dailyBackfillDone = false;
 let usersCreatedAtColumnPromise: Promise<string | null> | null = null;
 
@@ -150,6 +161,12 @@ async function ensureRollupTableShape() {
     "updated_at",
     "DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)",
   );
+
+  await ensureColumnExists(
+    "admin_dashboard_geo_visitors",
+    "updated_at",
+    "DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)",
+  );
 }
 
 async function ensureRollupTables() {
@@ -194,7 +211,98 @@ async function ensureRollupTables() {
     )
   `);
 
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS admin_dashboard_geo_visitors (
+      visitor_id VARCHAR(191) NOT NULL,
+      avg_geo_lat DOUBLE NOT NULL,
+      avg_geo_lng DOUBLE NOT NULL,
+      event_count BIGINT NOT NULL DEFAULT 0,
+      last_seen_at DATETIME(3) NOT NULL,
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+      PRIMARY KEY (visitor_id),
+      KEY idx_admin_dash_geo_last_seen_at (last_seen_at),
+      KEY idx_admin_dash_geo_updated_at (updated_at)
+    )
+  `);
+
   await ensureRollupTableShape();
+}
+
+async function refreshGeoVisitorRollup() {
+  // Prefer has_geo_coords (generated column + index) when present for better
+  // grouping/filter performance; fall back to null checks for compatibility.
+  try {
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO admin_dashboard_geo_visitors (
+        visitor_id,
+        avg_geo_lat,
+        avg_geo_lng,
+        event_count,
+        last_seen_at
+      )
+      SELECT
+        visitor_id,
+        AVG(geo_lat) AS avg_geo_lat,
+        AVG(geo_lng) AS avg_geo_lng,
+        COUNT(*) AS event_count,
+        MAX(created_at) AS last_seen_at
+      FROM analytics_events
+      WHERE has_geo_coords = 1
+      GROUP BY visitor_id
+      ON DUPLICATE KEY UPDATE
+        avg_geo_lat = VALUES(avg_geo_lat),
+        avg_geo_lng = VALUES(avg_geo_lng),
+        event_count = VALUES(event_count),
+        last_seen_at = VALUES(last_seen_at),
+        updated_at = CURRENT_TIMESTAMP(3)
+    `);
+  } catch {
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO admin_dashboard_geo_visitors (
+        visitor_id,
+        avg_geo_lat,
+        avg_geo_lng,
+        event_count,
+        last_seen_at
+      )
+      SELECT
+        visitor_id,
+        AVG(geo_lat) AS avg_geo_lat,
+        AVG(geo_lng) AS avg_geo_lng,
+        COUNT(*) AS event_count,
+        MAX(created_at) AS last_seen_at
+      FROM analytics_events
+      WHERE geo_lat IS NOT NULL
+        AND geo_lng IS NOT NULL
+      GROUP BY visitor_id
+      ON DUPLICATE KEY UPDATE
+        avg_geo_lat = VALUES(avg_geo_lat),
+        avg_geo_lng = VALUES(avg_geo_lng),
+        event_count = VALUES(event_count),
+        last_seen_at = VALUES(last_seen_at),
+        updated_at = CURRENT_TIMESTAMP(3)
+    `);
+  }
+
+  // Remove stale visitors no longer present in source with geo coordinates.
+  await prisma.$executeRawUnsafe(`
+    DELETE gv
+    FROM admin_dashboard_geo_visitors gv
+    LEFT JOIN (
+      SELECT DISTINCT visitor_id
+      FROM analytics_events
+      WHERE geo_lat IS NOT NULL
+        AND geo_lng IS NOT NULL
+    ) src ON src.visitor_id = gv.visitor_id
+    WHERE src.visitor_id IS NULL
+  `);
+
+  lastGeoVisitorRefreshMs = Date.now();
+}
+
+/** Exported for unit tests only — do not call from application code. */
+export async function refreshGeoVisitorRollupForTest() {
+  return refreshGeoVisitorRollup();
 }
 
 async function maybeBackfillDailyHistory() {
@@ -421,15 +529,19 @@ async function pruneOldRollupRows() {
   ]);
 }
 
-async function refreshRollupsNow() {
+async function refreshRollupsNow(options?: { force?: boolean }) {
   const now = Date.now();
   const doFullScan = now - lastFullDailyRefreshMs >= FULL_SCAN_INTERVAL_MS;
   const doFullHourlyScan = now - lastFullHourlyRefreshMs >= FULL_SCAN_INTERVAL_MS;
+  const doGeoRollupRefresh = Boolean(options?.force) || now - lastGeoVisitorRefreshMs >= GEO_VISITOR_ROLLUP_INTERVAL_MS;
 
   await ensureRollupTables();
   await maybeBackfillDailyHistory();
   await refreshRecentDailyRollups({ fullScan: doFullScan });
   await refreshRecentHourlyRollups({ fullScan: doFullHourlyScan });
+  if (doGeoRollupRefresh) {
+    await refreshGeoVisitorRollup();
+  }
   await pruneOldRollupRows();
   rollupsLastRefreshedAtMs = Date.now();
 }
@@ -441,7 +553,7 @@ export async function ensureAdminDashboardRollupsFresh(options?: { force?: boole
   }
 
   if (!rollupsInFlight) {
-    rollupsInFlight = refreshRollupsNow().finally(() => {
+    rollupsInFlight = refreshRollupsNow({ force }).finally(() => {
       rollupsInFlight = null;
     });
   }
@@ -450,10 +562,16 @@ export async function ensureAdminDashboardRollupsFresh(options?: { force?: boole
 }
 
 /** Reset module-level state — for unit tests only. */
-export function resetRollupsStateForTest(state: { lastRefreshedAtMs?: number; lastFullDailyRefreshMs?: number; lastFullHourlyRefreshMs?: number }) {
+export function resetRollupsStateForTest(state: {
+  lastRefreshedAtMs?: number;
+  lastFullDailyRefreshMs?: number;
+  lastFullHourlyRefreshMs?: number;
+  lastGeoVisitorRefreshMs?: number;
+}) {
   if (state.lastRefreshedAtMs !== undefined) rollupsLastRefreshedAtMs = state.lastRefreshedAtMs;
   if (state.lastFullDailyRefreshMs !== undefined) lastFullDailyRefreshMs = state.lastFullDailyRefreshMs;
   if (state.lastFullHourlyRefreshMs !== undefined) lastFullHourlyRefreshMs = state.lastFullHourlyRefreshMs;
+  if (state.lastGeoVisitorRefreshMs !== undefined) lastGeoVisitorRefreshMs = state.lastGeoVisitorRefreshMs;
   rollupsInFlight = null;
   dailyBackfillDone = true; // prevent backfill scan in tests
 }
@@ -482,6 +600,7 @@ export async function readAdminDashboardRollups(): Promise<DashboardRollupRead> 
     analyticsNewVsRepeat,
     registrationsPerDay,
     analyticsTotals,
+    geoVisitors,
     earliestAnalyticsAt,
     earliestAuthAt,
     dailySeriesRows,
@@ -546,6 +665,17 @@ export async function readAdminDashboardRollups(): Promise<DashboardRollupRead> 
       FROM admin_dashboard_analytics_daily
       WHERE day_date >= DATE_SUB(UTC_DATE(), INTERVAL 30 DAY)
     `.catch(() => []),
+    prisma.$queryRaw<GeoVisitorRollupRow[]>`
+      SELECT
+        visitor_id AS visitorId,
+        avg_geo_lat AS lat,
+        avg_geo_lng AS lng,
+        event_count AS eventCount,
+        last_seen_at AS lastSeenAt
+      FROM admin_dashboard_geo_visitors
+      ORDER BY last_seen_at DESC
+      LIMIT 1000
+    `.catch(() => []),
     prisma.$queryRaw<Array<{ earliestAt: Date | null }>>`
       SELECT MIN(day_date) AS earliestAt
       FROM admin_dashboard_analytics_daily
@@ -579,6 +709,7 @@ export async function readAdminDashboardRollups(): Promise<DashboardRollupRead> 
     analyticsNewVsRepeat,
     registrationsPerDay,
     analyticsTotals,
+    geoVisitors,
     earliestAnalyticsAt,
     earliestAuthAt,
     dailySeriesRows,

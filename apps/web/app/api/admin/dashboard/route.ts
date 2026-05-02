@@ -349,7 +349,7 @@ export async function GET(request: NextRequest) {
 
   const { auth24h, actionBreakdown, traffic } = authAuditCounters;
 
-  const [rollups, geoVisitorsRaw, hostMetricHistory] = await Promise.all([
+  const [rollups, hostMetricHistory] = await Promise.all([
     readAdminDashboardRollups().catch(() => ({
       analyticsDaily: [] as Array<{ day: Date; pageViews: bigint | number; videoViews: bigint | number; uniqueVisitors: bigint | number }>,
       hourlyRecentAnalytics: [] as Array<{ bucketStart: Date | string; pageViews: bigint | number; videoViews: bigint | number; uniqueVisitors: bigint | number; returnVisits: bigint | number }>,
@@ -357,30 +357,11 @@ export async function GET(request: NextRequest) {
       analyticsNewVsRepeat: [] as Array<{ newVisitors: bigint | number; repeatVisitors: bigint | number }>,
       registrationsPerDay: [] as Array<{ day: Date; count: bigint | number }>,
       analyticsTotals: [] as Array<{ totalPageViews: bigint | number; totalVideoViews: bigint | number; uniqueVisitors: bigint | number; totalSessions: bigint | number }>,
+      geoVisitors: [] as Array<{ visitorId: string; lat: bigint | number | string; lng: bigint | number | string; eventCount: bigint | number; lastSeenAt: Date | string }>,
       earliestAnalyticsAt: [] as Array<{ earliestAt: Date | null }>,
       earliestAuthAt: [] as Array<{ earliestAt: Date | null }>,
       dailySeriesRows: [] as Array<{ day: Date; pageViews: bigint | number; videoViews: bigint | number; uniqueVisitors: bigint | number; returnVisits: bigint | number; authEvents: bigint | number }>,
     })),
-    prisma.$queryRaw<Array<{
-      visitorId: string;
-      lat: bigint | number | string;
-      lng: bigint | number | string;
-      eventCount: bigint | number;
-      lastSeenAt: Date;
-    }>>`
-      SELECT
-        visitor_id AS visitorId,
-        AVG(geo_lat) AS lat,
-        AVG(geo_lng) AS lng,
-        COUNT(*) AS eventCount,
-        MAX(created_at) AS lastSeenAt
-      FROM analytics_events
-      WHERE geo_lat IS NOT NULL
-        AND geo_lng IS NOT NULL
-      GROUP BY visitor_id
-      ORDER BY lastSeenAt DESC
-      LIMIT 1000
-    `.catch(() => []),
     readAdminHostMetricHistory(),
   ]);
 
@@ -391,6 +372,7 @@ export async function GET(request: NextRequest) {
     analyticsNewVsRepeat,
     registrationsPerDay,
     analyticsTotals,
+    geoVisitors: geoVisitorsRaw,
     earliestAnalyticsAt,
     earliestAuthAt,
     dailySeriesRows,
