@@ -315,7 +315,7 @@ function scheduleArtistStatsLetterBackfill(letter: string, rows: Array<ArtistRec
   artistStatsLetterBackfillInFlight.set(normalizedLetter, promise);
 }
 
-async function refreshArtistProjectionForName(artistName: string) {
+export async function refreshArtistProjectionForName(artistName: string) {
   const displayName = artistName.trim();
   if (!displayName || !hasDatabaseUrl()) return;
   if (!(await hasArtistStatsProjection())) return;
@@ -335,10 +335,35 @@ async function refreshArtistProjectionForName(artistName: string) {
     const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
     const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
 
+    // DB-side freshness check: if the projection row was updated recently, skip
+    // the expensive COUNT + thumbnail scan and just extend the in-memory cache.
+    const freshnessRows = await prisma.$queryRawUnsafe<Array<{ updatedAt: Date | string | null }>>(
+      `
+        SELECT updated_at AS updatedAt
+        FROM artist_stats
+        WHERE normalized_artist = ?
+        LIMIT 1
+      `,
+      normalizedArtist,
+    );
+    const existingUpdatedAt = freshnessRows[0]?.updatedAt;
+    if (existingUpdatedAt) {
+      const ageMs = Date.now() - new Date(existingUpdatedAt as string | Date).getTime();
+      if (ageMs < ARTIST_PROJECTION_REFRESH_TTL_MS) {
+        artistProjectionRefreshCache.set(normalizedArtist, {
+          expiresAt: Date.now() + ARTIST_PROJECTION_REFRESH_TTL_MS,
+        });
+        return;
+      }
+    }
+
+    // AVAILABLE_SITE_VIDEOS_JOIN already deduplicates via SELECT DISTINCT video_id,
+    // so each video appears at most once — COUNT(v.id) is equivalent to
+    // COUNT(DISTINCT v.videoId) with no extra cost.
     const [countRows, thumbnailRows] = await Promise.all([
       prisma.$queryRawUnsafe<Array<{ videoCount: number | null }>>(
         `
-          SELECT COUNT(DISTINCT v.videoId) AS videoCount
+          SELECT COUNT(v.id) AS videoCount
           FROM videos v${videoArtistIndexHint}
           ${AVAILABLE_SITE_VIDEOS_JOIN}
           WHERE ${videoArtistNormExpr} = ?

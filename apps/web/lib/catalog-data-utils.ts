@@ -343,21 +343,9 @@ export function mapVideo(video: {
 
   const inferredChannelTitle = inferArtistFromTitle(video.title);
   const parsedArtist = video.parsedArtist?.trim() || "";
-  const parsedTrack = video.parsedTrack?.trim() || "";
   const channelTitle = video.channelTitle?.trim() || "";
 
-  const normalizeToken = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
-  const normalizedTitle = video.title.toLowerCase();
-  const parsedArtistPos = parsedArtist ? normalizedTitle.indexOf(parsedArtist.toLowerCase()) : -1;
-  const parsedTrackPos = parsedTrack ? normalizedTitle.indexOf(parsedTrack.toLowerCase()) : -1;
-  const parsedTrackLikelyArtist =
-    Boolean(parsedTrack) &&
-    parsedTrackPos >= 0 &&
-    (parsedArtistPos < 0 || parsedTrackPos < parsedArtistPos) &&
-    normalizeToken(parsedTrack) !== normalizeToken(parsedArtist);
-
   const displayArtist =
-    (parsedTrackLikelyArtist ? parsedTrack : "") ||
     parsedArtist ||
     channelTitle ||
     inferredChannelTitle ||
