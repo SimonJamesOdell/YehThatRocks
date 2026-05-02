@@ -165,6 +165,15 @@ type VideoRow = {
   channelTitle: string | null;
   updatedAt: string | null;
 };
+type RecentlyApprovedVideoRow = {
+  id: number;
+  videoId: string;
+  title: string;
+  parsedArtist: string | null;
+  parsedTrack: string | null;
+  channelTitle: string | null;
+  updatedAt: string | null;
+};
 type PendingVideoRow = {
   id: number;
   videoId: string;
@@ -285,6 +294,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [pendingVideos, setPendingVideos] = useState<PendingVideoRow[]>([]);
   const [pendingVideoTotal, setPendingVideoTotal] = useState(0);
+  const [recentlyApprovedVideos, setRecentlyApprovedVideos] = useState<RecentlyApprovedVideoRow[]>([]);
+  const [revokingVideoId, setRevokingVideoId] = useState<string | null>(null);
   const [artists, setArtists] = useState<ArtistRow[]>([]);
   const [ambiguousVideos, setAmbiguousVideos] = useState<AmbiguousVideoRow[]>([]);
 
@@ -789,6 +800,30 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       setPendingVideoTotal(Number(pendingPayload.totalPending ?? pendingPayload.pendingVideos.length));
   }
 
+  async function loadRecentlyApprovedVideos() {
+    try {
+      const payload = await readJson<{ recentlyApproved: RecentlyApprovedVideoRow[] }>(
+        "/api/admin/videos/recently-approved",
+      );
+      setRecentlyApprovedVideos(payload.recentlyApproved);
+    } catch {
+      // Non-fatal — keep last known list.
+    }
+  }
+
+  async function revokeApprovedVideo(videoId: string) {
+    setRevokingVideoId(videoId);
+    try {
+      await postJson<{ ok: boolean }>("/api/admin/videos/recently-approved", { videoId });
+      setSaveMessage(`Revoked approval for ${videoId} — returned to pending queue.`);
+      await Promise.all([loadRecentlyApprovedVideos(), loadPendingVideos()]);
+    } catch (revokeError) {
+      setSaveMessage(revokeError instanceof Error ? revokeError.message : "Revoke failed.");
+    } finally {
+      setRevokingVideoId(null);
+    }
+  }
+
   async function loadArtists() {
     const artistPayload = await readJson<{ artists: ArtistRow[] }>(
       `/api/admin/artists${artistQuery ? `?q=${encodeURIComponent(artistQuery)}` : ""}`,
@@ -857,7 +892,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       } else if (activeTab === "categories") {
         await loadCategories();
       } else if (activeTab === "videos") {
-        await loadPendingVideos();
+        await Promise.all([loadPendingVideos(), loadRecentlyApprovedVideos()]);
       } else if (activeTab === "artists") {
         await loadArtists();
       } else if (activeTab === "ambiguous") {
@@ -1016,10 +1051,11 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       return;
     }
 
-    const PENDING_QUEUE_POLL_MS = 15_000;
+    const VIDEOS_TAB_POLL_MS = 8_000;
     const intervalId = window.setInterval(() => {
       void loadPendingVideos();
-    }, PENDING_QUEUE_POLL_MS);
+      void loadRecentlyApprovedVideos();
+    }, VIDEOS_TAB_POLL_MS);
 
     return () => {
       window.clearInterval(intervalId);
@@ -1825,6 +1861,34 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
 
       {activeTab === "videos" ? (
         <>
+          {recentlyApprovedVideos.length > 0 ? (
+            <section className="panel featurePanel">
+              <div className="panelHeading">
+                <span>Recently Approved</span>
+                <strong>last 60 min · {recentlyApprovedVideos.length} video{recentlyApprovedVideos.length !== 1 ? "s" : ""}</strong>
+              </div>
+              <div className="interactiveStack">
+                <p className="authMessage">Approved in the last 60 minutes. Use Revoke to return a video to the pending queue.</p>
+                {recentlyApprovedVideos.map((row) => (
+                  <div key={`recent-${row.id}`} className="authForm">
+                    <p className="authMessage"><strong>{row.videoId}</strong></p>
+                    <p className="authMessage">{row.title}</p>
+                    {row.parsedArtist ? <p className="authMessage">Artist: {row.parsedArtist}</p> : null}
+                    {row.parsedTrack ? <p className="authMessage">Track: {row.parsedTrack}</p> : null}
+                    {row.channelTitle ? <p className="authMessage">Channel: {row.channelTitle}</p> : null}
+                    {row.updatedAt ? <p className="authMessage">Approved: {new Date(row.updatedAt).toLocaleTimeString()}</p> : null}
+                    <button
+                      type="button"
+                      onClick={() => void revokeApprovedVideo(row.videoId)}
+                      disabled={revokingVideoId === row.videoId}
+                    >
+                      {revokingVideoId === row.videoId ? "Revoking…" : "Revoke Approval"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
           <section className="panel featurePanel">
             <div className="panelHeading">
               <span>New Videos Pending Approval</span>
