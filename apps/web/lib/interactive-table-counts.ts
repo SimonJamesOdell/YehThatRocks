@@ -83,6 +83,15 @@ async function readApproximateTableCount(tableName: string): Promise<number | nu
 }
 
 function refreshExactCount(cacheKey: string, exactCount: () => Promise<number>, fallback: number): Promise<number> {
+  return refreshExactCountWithTtl(cacheKey, exactCount, fallback, INTERACTIVE_TABLE_COUNT_EXACT_TTL_MS);
+}
+
+function refreshExactCountWithTtl(
+  cacheKey: string,
+  exactCount: () => Promise<number>,
+  fallback: number,
+  ttlMs: number,
+): Promise<number> {
   const inFlight = exactCountInFlight.get(cacheKey);
   if (inFlight) {
     return inFlight;
@@ -94,7 +103,7 @@ function refreshExactCount(cacheKey: string, exactCount: () => Promise<number>, 
       const resolved = safe === null ? fallback : safe;
       exactCountCache.set(cacheKey, {
         value: resolved,
-        expiresAt: Date.now() + INTERACTIVE_TABLE_COUNT_EXACT_TTL_MS,
+        expiresAt: Date.now() + ttlMs,
       });
       return resolved;
     })
@@ -118,8 +127,10 @@ export async function getInteractiveTableCount(options: {
   tableName: string;
   fallback: number;
   exactCount: () => Promise<number>;
+  exactTtlMs?: number;
 }): Promise<number> {
-  const { cacheKey, tableName, fallback, exactCount } = options;
+  const { cacheKey, tableName, fallback, exactCount, exactTtlMs } = options;
+  const resolvedExactTtlMs = Math.max(5_000, Number(exactTtlMs ?? INTERACTIVE_TABLE_COUNT_EXACT_TTL_MS));
 
   const now = Date.now();
   const exactCached = exactCountCache.get(cacheKey);
@@ -128,17 +139,17 @@ export async function getInteractiveTableCount(options: {
   }
 
   if (exactCached) {
-    void refreshExactCount(cacheKey, exactCount, fallback);
+    void refreshExactCountWithTtl(cacheKey, exactCount, fallback, resolvedExactTtlMs);
     return exactCached.value;
   }
 
   const approx = await readApproximateTableCount(tableName);
   if (approx !== null) {
-    void refreshExactCount(cacheKey, exactCount, fallback);
+    void refreshExactCountWithTtl(cacheKey, exactCount, fallback, resolvedExactTtlMs);
     return approx;
   }
 
-  return refreshExactCount(cacheKey, exactCount, fallback);
+  return refreshExactCountWithTtl(cacheKey, exactCount, fallback, resolvedExactTtlMs);
 }
 
 export function clearInteractiveTableCountCache() {

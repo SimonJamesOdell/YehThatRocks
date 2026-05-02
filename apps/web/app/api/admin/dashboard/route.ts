@@ -155,6 +155,10 @@ function buildRollingAnalyticsSeriesFromRollup(
 }
 
 const ADMIN_DASHBOARD_CACHE_TTL_MS = 30_000;
+const ADMIN_DASHBOARD_TABLE_COUNT_TTL_MS = Math.max(
+  120_000,
+  Number(process.env.ADMIN_DASHBOARD_TABLE_COUNT_TTL_MS || "300000"),
+);
 let adminDashboardCache: {
   expiresAt: number;
   payload: Record<string, unknown>;
@@ -216,14 +220,22 @@ export async function GET(request: NextRequest) {
       tableName: "videos",
       fallback: 0,
       exactCount: () => prisma.video.count(),
+      exactTtlMs: ADMIN_DASHBOARD_TABLE_COUNT_TTL_MS,
     }),
     getInteractiveTableCount({
       cacheKey: "admin-dashboard-artists",
       tableName: "artists",
       fallback: 0,
       exactCount: () => prisma.artist.count(),
+      exactTtlMs: ADMIN_DASHBOARD_TABLE_COUNT_TTL_MS,
     }),
-    prisma.genreCard.count().catch(() => 0),
+    getInteractiveTableCount({
+      cacheKey: "admin-dashboard-categories",
+      tableName: "genre_cards",
+      fallback: 0,
+      exactCount: () => prisma.genreCard.count(),
+      exactTtlMs: ADMIN_DASHBOARD_TABLE_COUNT_TTL_MS,
+    }),
   ]);
 
   const users = toNumber(userCounts[0]?.users);
