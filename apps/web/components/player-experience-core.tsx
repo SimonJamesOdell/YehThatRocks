@@ -1046,6 +1046,63 @@ export function PlayerExperience({
     };
   }, [activePlaylistId, fetchAutoplaySourceVideoIds, fetchHiddenVideoIdSet, isDockedDesktop, pathname]);
 
+  useEffect(() => {
+    const shouldHydrateNonDockedNewQueue =
+      !isDockedDesktop &&
+      pathname === "/new" &&
+      !activePlaylistId &&
+      autoplayEnabled;
+
+    if (!shouldHydrateNonDockedNewQueue) {
+      return;
+    }
+
+    let cancelled = false;
+    let receivedSyncedQueue = false;
+
+    const handleRouteQueueSync = (event: Event) => {
+      const detail = (event as CustomEvent<{ source?: string; videoIds?: string[] }>).detail;
+      if (detail?.source !== "new" || !Array.isArray(detail.videoIds)) {
+        return;
+      }
+
+      receivedSyncedQueue = true;
+      setRouteAutoplayQueueIds(Array.from(new Set(detail.videoIds.filter((videoId): videoId is string => Boolean(videoId)))));
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener(ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT, handleRouteQueueSync as EventListener);
+    }
+
+    async function loadRouteAutoplayQueue() {
+      try {
+        const [hiddenSet, rawIds] = await Promise.all([
+          fetchHiddenVideoIdSet(),
+          fetchAutoplaySourceVideoIds({ type: "new" }),
+        ]);
+
+        const dedupedVisibleIds = Array.from(new Set(rawIds.filter((videoId) => !hiddenSet.has(videoId))));
+
+        if (!cancelled && !receivedSyncedQueue) {
+          setRouteAutoplayQueueIds(dedupedVisibleIds);
+        }
+      } catch {
+        if (!cancelled && !receivedSyncedQueue) {
+          setRouteAutoplayQueueIds([]);
+        }
+      }
+    }
+
+    void loadRouteAutoplayQueue();
+
+    return () => {
+      cancelled = true;
+      if (typeof window !== "undefined") {
+        window.removeEventListener(ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT, handleRouteQueueSync as EventListener);
+      }
+    };
+  }, [activePlaylistId, autoplayEnabled, fetchAutoplaySourceVideoIds, fetchHiddenVideoIdSet, isDockedDesktop, pathname]);
+
   function getRandomWatchNextId() {
     const queueIds = Array.from(new Set(queue.map((video) => video.id))).filter((videoId) => videoId !== currentVideo.id);
     const topFallbackVideoIds = Array.from(new Set(topFallbackVideos.map((video) => video.id))).filter(
@@ -1088,6 +1145,7 @@ export function PlayerExperience({
     temporaryQueue,
     currentVideoId: currentVideo.id,
     isDockedDesktop,
+    shouldUseRouteQueueRegardlessOfDocked: autoplayEnabled && pathname === "/new",
     routeAutoplayQueueIds,
     getRandomWatchNextId,
   });

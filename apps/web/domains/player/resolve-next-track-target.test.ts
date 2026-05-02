@@ -24,6 +24,7 @@ describe("resolveNextTrackTarget", () => {
       temporaryQueue: [createVideo("q1"), createVideo("q2")],
       currentVideoId: "p1",
       isDockedDesktop: true,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: ["r1", "r2"],
       getRandomWatchNextId: vi.fn(() => "rand"),
     })).toEqual({
@@ -44,6 +45,7 @@ describe("resolveNextTrackTarget", () => {
       temporaryQueue: [createVideo("q1")],
       currentVideoId: "q1",
       isDockedDesktop: true,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: ["r1", "r2"],
       getRandomWatchNextId: randomPicker,
     })).toBeNull();
@@ -60,6 +62,7 @@ describe("resolveNextTrackTarget", () => {
       temporaryQueue: [createVideo("q1"), createVideo("q2")],
       currentVideoId: "q1",
       isDockedDesktop: true,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: ["r1", "r2"],
       getRandomWatchNextId: vi.fn(() => "rand"),
     })).toEqual({
@@ -76,6 +79,7 @@ describe("resolveNextTrackTarget", () => {
       temporaryQueue: [],
       currentVideoId: "r1",
       isDockedDesktop: true,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: ["r1", "r2"],
       getRandomWatchNextId: vi.fn(() => "rand"),
     })).toEqual({
@@ -92,6 +96,7 @@ describe("resolveNextTrackTarget", () => {
       temporaryQueue: [],
       currentVideoId: "v1",
       isDockedDesktop: false,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: [],
       getRandomWatchNextId: vi.fn(() => "rand"),
     })).toEqual({
@@ -110,10 +115,49 @@ describe("resolveNextTrackTarget", () => {
       temporaryQueue: [],
       currentVideoId: "r1",
       isDockedDesktop: true,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: ["r1", "r2", "r3"],
       getRandomWatchNextId: vi.fn(() => "rand"),
     })).toEqual({
       videoId: "r2",
+      playlistItemIndex: null,
+      clearPlaylist: true,
+    });
+  });
+
+  it("uses route queue when autoplay explicitly allows non-docked route queues", () => {
+    expect(resolveNextTrackTarget({
+      activePlaylistId: null,
+      hasActivePlaylistContext: false,
+      playlistQueueIds: [],
+      effectivePlaylistIndex: null,
+      temporaryQueue: [],
+      currentVideoId: "r1",
+      isDockedDesktop: false,
+      shouldUseRouteQueueRegardlessOfDocked: true,
+      routeAutoplayQueueIds: ["r1", "r2", "r3"],
+      getRandomWatchNextId: vi.fn(() => "rand"),
+    })).toEqual({
+      videoId: "r2",
+      playlistItemIndex: null,
+      clearPlaylist: true,
+    });
+  });
+
+  it("ignores non-docked route queue when override is disabled", () => {
+    expect(resolveNextTrackTarget({
+      activePlaylistId: null,
+      hasActivePlaylistContext: false,
+      playlistQueueIds: [],
+      effectivePlaylistIndex: null,
+      temporaryQueue: [],
+      currentVideoId: "r1",
+      isDockedDesktop: false,
+      shouldUseRouteQueueRegardlessOfDocked: false,
+      routeAutoplayQueueIds: ["r1", "r2", "r3"],
+      getRandomWatchNextId: vi.fn(() => "rand"),
+    })).toEqual({
+      videoId: "rand",
       playlistItemIndex: null,
       clearPlaylist: true,
     });

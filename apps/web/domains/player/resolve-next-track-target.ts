@@ -27,22 +27,42 @@ export type ResolveNextTrackTargetOptions = {
   temporaryQueue: VideoRecord[];
   currentVideoId: string;
   isDockedDesktop: boolean;
+  shouldUseRouteQueueRegardlessOfDocked: boolean;
   routeAutoplayQueueIds: string[];
   getRandomWatchNextId: () => string | null;
 };
 
 function resolveRouteQueueTarget(options: {
   isDockedDesktop: boolean;
+  shouldUseRouteQueueRegardlessOfDocked: boolean;
   routeAutoplayQueueIds: string[];
   currentVideoId: string;
 }): ResolveTarget | null {
   const {
     isDockedDesktop,
+    shouldUseRouteQueueRegardlessOfDocked,
     routeAutoplayQueueIds,
     currentVideoId,
   } = options;
 
   if (isDockedDesktop && routeAutoplayQueueIds.length > 0) {
+    const currentIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId === currentVideoId);
+    const fallbackIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId !== currentVideoId);
+    const nextIndex = currentIndex >= 0
+      ? (currentIndex + 1) % routeAutoplayQueueIds.length
+      : fallbackIndex;
+    const nextId = nextIndex >= 0 ? routeAutoplayQueueIds[nextIndex] ?? null : null;
+
+    if (nextId) {
+      return {
+        videoId: nextId,
+        playlistItemIndex: null,
+        clearPlaylist: true,
+      };
+    }
+  }
+
+  if (shouldUseRouteQueueRegardlessOfDocked && routeAutoplayQueueIds.length > 0) {
     const currentIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId === currentVideoId);
     const fallbackIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId !== currentVideoId);
     const nextIndex = currentIndex >= 0
@@ -132,6 +152,7 @@ export function resolveNextTrackTarget(options: ResolveNextTrackTargetOptions): 
       evaluate: () => {
         const target = resolveRouteQueueTarget({
           isDockedDesktop: options.isDockedDesktop,
+          shouldUseRouteQueueRegardlessOfDocked: options.shouldUseRouteQueueRegardlessOfDocked,
           routeAutoplayQueueIds: options.routeAutoplayQueueIds,
           currentVideoId: options.currentVideoId,
         });

@@ -17,6 +17,7 @@ export function useNextTrackDecision({
   temporaryQueue,
   currentVideoId,
   isDockedDesktop,
+  shouldUseRouteQueueRegardlessOfDocked,
   routeAutoplayQueueIds,
   getRandomWatchNextId,
 }: UseNextTrackDecisionOptions) {
@@ -48,6 +49,7 @@ export function useNextTrackDecision({
       temporaryQueue,
       currentVideoId,
       isDockedDesktop,
+      shouldUseRouteQueueRegardlessOfDocked,
       routeAutoplayQueueIds,
       getRandomWatchNextId,
     });
@@ -60,6 +62,7 @@ export function useNextTrackDecision({
     isDockedDesktop,
     playlistQueueIds,
     routeAutoplayQueueIds,
+    shouldUseRouteQueueRegardlessOfDocked,
     temporaryQueue,
   ]);
 
