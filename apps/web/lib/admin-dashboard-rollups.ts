@@ -48,10 +48,15 @@ const DAILY_RECENT_DAYS = 45;
 const HOURLY_RECENT_DAYS = 21;
 const DAILY_RETENTION_DAYS = 365 * 8;
 const HOURLY_RETENTION_DAYS = 35;
+// How often to run the expensive full historical scan (past DAILY_RECENT_DAYS / HOURLY_RECENT_DAYS).
+// Normal ticks use a narrow window (today+yesterday / last 2 hours) instead.
+const FULL_SCAN_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 let rollupsStarted = false;
 let rollupsInFlight: Promise<void> | null = null;
 let rollupsLastRefreshedAtMs = 0;
+let lastFullDailyRefreshMs = 0;
+let lastFullHourlyRefreshMs = 0;
 let dailyBackfillDone = false;
 let usersCreatedAtColumnPromise: Promise<string | null> | null = null;
 
@@ -263,8 +268,12 @@ async function maybeBackfillDailyHistory() {
   dailyBackfillDone = true;
 }
 
-async function refreshRecentDailyRollups() {
-  const registrationsDailyJoinSql = await buildRegistrationsDailyJoinSql({ recentDays: DAILY_RECENT_DAYS });
+async function refreshRecentDailyRollups(options: { fullScan: boolean }) {
+  // Fast path: only recompute today and yesterday — past days are immutable.
+  // Full path (every 6 h): recompute the full DAILY_RECENT_DAYS window to
+  // catch any late-arriving events or day-boundary edge cases.
+  const intervalDays = options.fullScan ? DAILY_RECENT_DAYS : 1;
+  const registrationsDailyJoinSql = await buildRegistrationsDailyJoinSql({ recentDays: intervalDays });
 
   await prisma.$executeRawUnsafe(`
     INSERT INTO admin_dashboard_analytics_daily (
@@ -301,13 +310,13 @@ async function refreshRecentDailyRollups() {
         SUM(CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN 1 ELSE 0 END) AS repeat_visitors,
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
       FROM analytics_events
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${DAILY_RECENT_DAYS} DAY)
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${intervalDays} DAY)
       GROUP BY DATE(created_at)
     ) metrics
     LEFT JOIN (
       SELECT DATE(created_at) AS day_date, COUNT(*) AS auth_events
       FROM auth_audit_logs
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${DAILY_RECENT_DAYS} DAY)
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${intervalDays} DAY)
       GROUP BY DATE(created_at)
     ) auth ON auth.day_date = metrics.day_date
     ${registrationsDailyJoinSql}
@@ -323,9 +332,27 @@ async function refreshRecentDailyRollups() {
       registrations = VALUES(registrations),
       updated_at = CURRENT_TIMESTAMP(3)
   `);
+
+  if (options.fullScan) {
+    lastFullDailyRefreshMs = Date.now();
+  }
 }
 
-async function refreshRecentHourlyRollups() {
+/** Exported for unit tests only — do not call from application code. */
+export async function refreshRecentDailyRollupsForTest(options: { fullScan: boolean }) {
+  return refreshRecentDailyRollups(options);
+}
+
+async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
+  // Fast path: only recompute the current and previous hour buckets (2-hour window).
+  // Full path (every 6 h): recompute the full HOURLY_RECENT_DAYS window.
+  const analyticsIntervalClause = options.fullScan
+    ? `INTERVAL ${HOURLY_RECENT_DAYS} DAY`
+    : `INTERVAL 2 HOUR`;
+  const authIntervalClause = options.fullScan
+    ? `INTERVAL ${HOURLY_RECENT_DAYS} DAY`
+    : `INTERVAL 2 HOUR`;
+
   await prisma.$executeRawUnsafe(`
     INSERT INTO admin_dashboard_analytics_hourly (
       bucket_start,
@@ -341,7 +368,7 @@ async function refreshRecentHourlyRollups() {
       COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
       COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits
     FROM analytics_events
-    WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${HOURLY_RECENT_DAYS} DAY)
+    WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${analyticsIntervalClause})
     GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
     ON DUPLICATE KEY UPDATE
       page_views = VALUES(page_views),
@@ -360,12 +387,21 @@ async function refreshRecentHourlyRollups() {
       STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s') AS bucket_start,
       COUNT(*) AS auth_events
     FROM auth_audit_logs
-    WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${HOURLY_RECENT_DAYS} DAY)
+    WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${authIntervalClause})
     GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
     ON DUPLICATE KEY UPDATE
       auth_events = VALUES(auth_events),
       updated_at = CURRENT_TIMESTAMP(3)
   `);
+
+  if (options.fullScan) {
+    lastFullHourlyRefreshMs = Date.now();
+  }
+}
+
+/** Exported for unit tests only — do not call from application code. */
+export async function refreshRecentHourlyRollupsForTest(options: { fullScan: boolean }) {
+  return refreshRecentHourlyRollups(options);
 }
 
 async function pruneOldRollupRows() {
@@ -386,10 +422,14 @@ async function pruneOldRollupRows() {
 }
 
 async function refreshRollupsNow() {
+  const now = Date.now();
+  const doFullScan = now - lastFullDailyRefreshMs >= FULL_SCAN_INTERVAL_MS;
+  const doFullHourlyScan = now - lastFullHourlyRefreshMs >= FULL_SCAN_INTERVAL_MS;
+
   await ensureRollupTables();
   await maybeBackfillDailyHistory();
-  await refreshRecentDailyRollups();
-  await refreshRecentHourlyRollups();
+  await refreshRecentDailyRollups({ fullScan: doFullScan });
+  await refreshRecentHourlyRollups({ fullScan: doFullHourlyScan });
   await pruneOldRollupRows();
   rollupsLastRefreshedAtMs = Date.now();
 }
@@ -407,6 +447,15 @@ export async function ensureAdminDashboardRollupsFresh(options?: { force?: boole
   }
 
   await rollupsInFlight;
+}
+
+/** Reset module-level state — for unit tests only. */
+export function resetRollupsStateForTest(state: { lastRefreshedAtMs?: number; lastFullDailyRefreshMs?: number; lastFullHourlyRefreshMs?: number }) {
+  if (state.lastRefreshedAtMs !== undefined) rollupsLastRefreshedAtMs = state.lastRefreshedAtMs;
+  if (state.lastFullDailyRefreshMs !== undefined) lastFullDailyRefreshMs = state.lastFullDailyRefreshMs;
+  if (state.lastFullHourlyRefreshMs !== undefined) lastFullHourlyRefreshMs = state.lastFullHourlyRefreshMs;
+  rollupsInFlight = null;
+  dailyBackfillDone = true; // prevent backfill scan in tests
 }
 
 export function startAdminDashboardRollups() {

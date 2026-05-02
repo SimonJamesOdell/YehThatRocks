@@ -219,29 +219,27 @@ async function getRankedVideoIdSlice(mode: "top" | "newest", limit: number): Pro
           SELECT
             v.videoId
           FROM videos v
+          INNER JOIN (
+            SELECT DISTINCT sv.video_id
+            FROM site_videos sv FORCE INDEX (idx_site_videos_status_video_id)
+            WHERE sv.status = 'available'
+          ) available_sv ON available_sv.video_id = v.id
           WHERE v.videoId IS NOT NULL
             AND COALESCE(v.approved, 0) = 1
-            AND EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND sv.status = 'available'
-            )
           ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
           LIMIT ${fetchLimit}
         `
       : await prisma.$queryRaw<Array<{ videoId: string }>>`
           SELECT
             v.videoId
-          FROM videos v
+          FROM videos v FORCE INDEX (idx_videos_created_at_id)
+          INNER JOIN (
+            SELECT DISTINCT sv.video_id
+            FROM site_videos sv FORCE INDEX (idx_site_videos_status_video_id)
+            WHERE sv.status = 'available'
+          ) available_sv ON available_sv.video_id = v.id
           WHERE v.videoId IS NOT NULL
             AND COALESCE(v.approved, 0) = 1
-            AND EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = v.id
-                AND sv.status = 'available'
-            )
           ORDER BY v.created_at DESC, v.id DESC
           LIMIT ${fetchLimit}
         `;
