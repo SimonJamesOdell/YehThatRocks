@@ -12,6 +12,17 @@ OUTLIER_MIN_TOTAL_S="${OUTLIER_MIN_TOTAL_S:-8}"
 OUTLIER_MIN_AVG_S="${OUTLIER_MIN_AVG_S:-0.8}"
 OUTLIER_MIN_ROWS_EXAMINED="${OUTLIER_MIN_ROWS_EXAMINED:-1000000}"
 OUTLIER_MIN_CALLS="${OUTLIER_MIN_CALLS:-3}"
+SUPPRESS_EXPORT_SELF_LOGGING="${SUPPRESS_EXPORT_SELF_LOGGING:-1}"
+
+SLOW_LOG_EXPORT_NOISE_FILTER="
+  AND sql_text NOT LIKE '%FROM mysql.slow_log%'
+  AND sql_text NOT LIKE '%CREATE TEMPORARY TABLE ytr_slow_agg%'
+  AND sql_text NOT LIKE '%DROP TEMPORARY TABLE IF EXISTS ytr_slow_agg%'
+  AND sql_text NOT LIKE '%FROM performance_capture_windows%'
+  AND sql_text NOT LIKE '%SET GLOBAL slow_query_log = OFF%'
+  AND sql_text NOT LIKE '%SET GLOBAL slow_query_log = ON%'
+  AND sql_text NOT LIKE '%SHOW VARIABLES WHERE Variable_name IN (%'
+"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "[profiling] env file not found at $ENV_FILE" >&2
@@ -162,6 +173,18 @@ mkdir -p "$OUT_DIR"
 STAMP="$(date -u +"%Y%m%d-%H%M%S")"
 OUT_FILE="$OUT_DIR/db-profiling-report-$STAMP.txt"
 
+ORIGINAL_SLOW_QUERY_LOG_STATUS="${SLOW_QUERY_LOG_STATUS^^}"
+RESTORE_SLOW_LOG_AFTER_REPORT=0
+
+if [ "$SUPPRESS_EXPORT_SELF_LOGGING" = "1" ] && [ "$ORIGINAL_SLOW_QUERY_LOG_STATUS" = "ON" ]; then
+  # Keep report SQL out of mysql.slow_log so rankings reflect runtime traffic,
+  # not this exporter's own aggregation/scans.
+  run_mysql_query "SET GLOBAL slow_query_log = OFF;" >/dev/null
+  if [ "$DISABLE_SLOW_LOG_AFTER_EXPORT" != "1" ]; then
+    RESTORE_SLOW_LOG_AFTER_REPORT=1
+  fi
+fi
+
 {
   echo "[profiling] report generated UTC: $(date -u +"%Y-%m-%d %H:%M:%S")"
   echo "[profiling] sample started UTC: $STARTED_AT_UTC"
@@ -198,7 +221,7 @@ SELECT
   ) AS sample_sql
 FROM mysql.slow_log
 WHERE start_time >= '$STARTED_AT_UTC'
-  AND sql_text NOT LIKE '%FROM mysql.slow_log%'
+  ${SLOW_LOG_EXPORT_NOISE_FILTER}
 GROUP BY sample_sql;
 
 SELECT
@@ -267,6 +290,7 @@ SELECT
   LEFT(REPLACE(REPLACE(sql_text, CHAR(10), ' '), CHAR(13), ' '), 280) AS sample_sql
 FROM mysql.slow_log
 WHERE start_time >= '$STARTED_AT_UTC'
+  ${SLOW_LOG_EXPORT_NOISE_FILTER}
   AND (
     TIME_TO_SEC(query_time) >= $OUTLIER_MIN_AVG_S
     OR rows_examined >= $OUTLIER_MIN_ROWS_EXAMINED
@@ -286,6 +310,7 @@ SELECT
   LEFT(REPLACE(REPLACE(sql_text, CHAR(10), ' '), CHAR(13), ' '), 280) AS sample_sql
 FROM mysql.slow_log
 WHERE start_time >= '$STARTED_AT_UTC'
+  ${SLOW_LOG_EXPORT_NOISE_FILTER}
 ORDER BY query_time DESC
 LIMIT $TOP_N;
 "
@@ -296,6 +321,12 @@ if [ "$DISABLE_SLOW_LOG_AFTER_EXPORT" = "1" ]; then
   echo "[profiling] disabling slow query log after export"
   run_mysql_query "
 SET GLOBAL slow_query_log = OFF;
+SHOW VARIABLES WHERE Variable_name = 'slow_query_log';
+"
+elif [ "$RESTORE_SLOW_LOG_AFTER_REPORT" = "1" ]; then
+  echo "[profiling] restoring slow query log after self-noise-suppressed export"
+  run_mysql_query "
+SET GLOBAL slow_query_log = ON;
 SHOW VARIABLES WHERE Variable_name = 'slow_query_log';
 "
 fi
