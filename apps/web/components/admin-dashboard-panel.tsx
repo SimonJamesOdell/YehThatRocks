@@ -1996,12 +1996,28 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                   {recentlyApprovedVideos.length === 0 ? <p className="authMessage">No recently approved videos yet.</p> : null}
                   {recentlyApprovedVideos.map((row) => (
                     <div key={`recent-${row.id}`} className="authForm">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={`https://img.youtube.com/vi/${row.videoId}/mqdefault.jpg`}
-                        alt={row.title}
-                        style={{ width: "100%", maxWidth: 320, display: "block", borderRadius: 4, marginBottom: 8 }}
-                      />
+                      <div
+                        style={{
+                          position: "relative",
+                          width: "100%",
+                          maxWidth: 480,
+                          aspectRatio: "16 / 9",
+                          borderRadius: 10,
+                          overflow: "hidden",
+                          background: "rgba(0,0,0,0.45)",
+                          border: "1px solid rgba(255,255,255,0.12)",
+                        }}
+                      >
+                        <iframe
+                          src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0`}
+                          title={`Recently approved video preview ${row.videoId}`}
+                          loading="lazy"
+                          referrerPolicy="strict-origin-when-cross-origin"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+                        />
+                      </div>
                       <p className="authMessage"><strong>{row.videoId}</strong></p>
                       <p className="authMessage">{row.title}</p>
                       {row.parsedArtist ? <p className="authMessage">Artist: {row.parsedArtist}</p> : null}
