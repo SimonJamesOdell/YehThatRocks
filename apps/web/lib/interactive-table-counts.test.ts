@@ -143,4 +143,46 @@ describe("interactive table counts", () => {
 
     nowSpy.mockRestore();
   });
+
+  it("honors per-call exact TTL override for admin counters", async () => {
+    const nowSpy = vi.spyOn(Date, "now");
+    const exactCount = vi
+      .fn()
+      .mockResolvedValueOnce(500)
+      .mockResolvedValueOnce(777);
+    queryRawUnsafeMock.mockResolvedValue([]);
+
+    const {
+      INTERACTIVE_TABLE_COUNT_EXACT_TTL_MS,
+      clearInteractiveTableCountCache,
+      getInteractiveTableCount,
+    } = await import("@/lib/interactive-table-counts");
+
+    clearInteractiveTableCountCache();
+
+    nowSpy.mockReturnValue(100_000);
+    const first = await getInteractiveTableCount({
+      cacheKey: "admin-videos",
+      tableName: "videos",
+      fallback: 0,
+      exactCount,
+      exactTtlMs: 300_000,
+    });
+
+    // Beyond the default TTL, but still within the override TTL.
+    nowSpy.mockReturnValue(100_000 + INTERACTIVE_TABLE_COUNT_EXACT_TTL_MS + 1);
+    const stillCached = await getInteractiveTableCount({
+      cacheKey: "admin-videos",
+      tableName: "videos",
+      fallback: 0,
+      exactCount,
+      exactTtlMs: 300_000,
+    });
+
+    expect(first).toBe(500);
+    expect(stillCached).toBe(500);
+    expect(exactCount).toHaveBeenCalledTimes(1);
+
+    nowSpy.mockRestore();
+  });
 });
