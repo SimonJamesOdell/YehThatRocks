@@ -8,7 +8,7 @@ import { prisma } from "@/lib/db";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
-const RECENTLY_APPROVED_WINDOW_MINUTES = 60;
+const RECENTLY_APPROVED_WINDOW_HOURS = 24;
 
 const revokeSchema = z.object({
   videoId: z.string().trim().min(1).max(64),
@@ -36,14 +36,13 @@ export async function GET(request: NextRequest) {
       SELECT id, videoId, title, parsedArtist, parsedTrack, channelTitle, updated_at AS updatedAt
       FROM videos
       WHERE approved = 1
-        AND updated_at >= DATE_SUB(NOW(), INTERVAL ? MINUTE)
-      ORDER BY updated_at DESC
-      LIMIT 50
+        AND updated_at >= DATE_SUB(NOW(), INTERVAL ? HOUR)
+      ORDER BY updated_at DESC, id DESC
     `,
-    RECENTLY_APPROVED_WINDOW_MINUTES,
+    RECENTLY_APPROVED_WINDOW_HOURS,
   );
 
-  return NextResponse.json({ recentlyApproved: rows, windowMinutes: RECENTLY_APPROVED_WINDOW_MINUTES });
+  return NextResponse.json({ recentlyApproved: rows, windowHours: RECENTLY_APPROVED_WINDOW_HOURS });
 }
 
 export async function POST(request: NextRequest) {
