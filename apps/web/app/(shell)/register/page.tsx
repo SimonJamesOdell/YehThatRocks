@@ -1,13 +1,10 @@
-import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import { AuthRegisterForm } from "@/components/auth-register-form";
 
 export default function RegisterPage() {
   return (
     <>
-      <div className="favouritesBlindBar">
-        <strong>Register</strong>
-        <CloseLink />
-      </div>
+      <OverlayHeader title="Register" />
       <AuthRegisterForm />
     </>
   );

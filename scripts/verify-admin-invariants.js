@@ -15,6 +15,7 @@ const files = {
   adminArtistsRoute: path.join(ROOT, "apps/web/app/api/admin/artists/route.ts"),
   adminPendingRoute: path.join(ROOT, "apps/web/app/api/admin/videos/pending/route.ts"),
   adminImportRoute: path.join(ROOT, "apps/web/app/api/admin/videos/import/route.ts"),
+  adminPerformanceSamplesRoute: path.join(ROOT, "apps/web/app/api/admin/performance-samples/route.ts"),
   adminDashboardPanel: path.join(ROOT, "apps/web/components/admin-dashboard-panel.tsx"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   catalogDataIngestion: path.join(ROOT, "apps/web/lib/catalog-data-video-ingestion.ts"),
@@ -33,6 +34,7 @@ function main() {
   const adminArtistsRouteSource = readFileStrict(files.adminArtistsRoute, ROOT);
   const adminPendingRouteSource = readFileStrict(files.adminPendingRoute, ROOT);
   const adminImportRouteSource = readFileStrict(files.adminImportRoute, ROOT);
+  const adminPerformanceSamplesRouteSource = readFileStrict(files.adminPerformanceSamplesRoute, ROOT);
   const adminDashboardPanelSource = readFileStrict(files.adminDashboardPanel, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const catalogDataIngestionSource = readFileStrict(files.catalogDataIngestion, ROOT);
@@ -93,6 +95,9 @@ function main() {
   assertContains(adminDashboardPanelSource, "window.setInterval(() => {", "Admin dashboard schedules periodic analytics refresh", failures);
   assertContains(adminDashboardPanelSource, "}, ANALYTICS_AUTO_REFRESH_MS);", "Admin dashboard interval uses the 5-minute refresh constant", failures);
   assertContains(adminDashboardPanelSource, "void refreshOverviewAnalytics();", "Admin dashboard manual refresh button reuses shared refresh helper", failures);
+
+  // Admin performance samples route parse style invariants.
+  assertContains(adminPerformanceSamplesRouteSource, "const ms = Number.parseInt(process.env.SLOW_QUERY_LONG_TIME_THRESHOLD_MS, 10);", "Admin performance samples route parses slow-query threshold with Number.parseInt", failures);
 
   // Shared cache helpers must exist so admin edit invalidation is centralized.
   assertContains(catalogDataSource, "export function clearCatalogVideoCaches()", "Catalog data exposes shared video cache clear helper", failures);

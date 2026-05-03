@@ -1,9 +1,9 @@
-import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 
 export default function CategoryDetailLoading() {
   return (
     <>
-      <div className="favouritesBlindBar">
+      <OverlayHeader close={false}>
         <strong>
           <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
             <span className="categoryHeaderIcon" aria-hidden="true">☣</span>
@@ -12,8 +12,7 @@ export default function CategoryDetailLoading() {
             <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">Loading...</span>
           </span>
         </strong>
-        <CloseLink />
-      </div>
+      </OverlayHeader>
 
       <div className="categoryVideoGrid" aria-busy="true">
         {Array.from({ length: 6 }).map((_, index) => (

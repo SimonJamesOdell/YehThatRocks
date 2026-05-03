@@ -5,6 +5,7 @@
  */
 
 import { prisma } from "@/lib/db";
+import { BoundedMap } from "@/lib/bounded-map";
 import {
   debugCatalog,
   escapeSqlIdentifier,
@@ -34,10 +35,15 @@ export const AVAILABLE_SITE_VIDEOS_JOIN = `
         ) available_sv ON available_sv.video_id = v.id
 `;
 
+const TABLE_SCHEMA_CACHE_MAX_ENTRIES = Math.max(
+  16,
+  Math.min(512, Number(process.env.TABLE_SCHEMA_CACHE_MAX_ENTRIES || "128")),
+);
+
 // ── Schema-introspection caches ───────────────────────────────────────────────
 
-const tableColumnsCache = new Map<string, TableColumnInfo[]>();
-const tableColumnsInFlight = new Map<string, Promise<TableColumnInfo[]>>();
+const tableColumnsCache = new BoundedMap<string, TableColumnInfo[]>(TABLE_SCHEMA_CACHE_MAX_ENTRIES);
+const tableColumnsInFlight = new BoundedMap<string, Promise<TableColumnInfo[]>>(TABLE_SCHEMA_CACHE_MAX_ENTRIES);
 let videoForeignKeyRefsCache: VideoForeignKeyRef[] | undefined;
 
 let hasCheckedVideoMetadataColumns = false;

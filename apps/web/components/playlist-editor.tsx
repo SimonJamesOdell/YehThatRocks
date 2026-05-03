@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import type { PlaylistDetail } from "@/lib/catalog-data";
 
@@ -254,7 +255,7 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
 
   return (
     <>
-      <div className="favouritesBlindBar">
+      <OverlayHeader close={false}>
         <div className="playlistEditorBreadcrumb">
           <strong className="playlistEditorHeading">
             <span className="whitePlaylistGlyph" aria-hidden="true">♬</span>
@@ -316,7 +317,7 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
           )}
         </div>
         <CloseLink />
-      </div>
+      </OverlayHeader>
 
       {error ? <p className="mutationMessage">{error}</p> : null}
 

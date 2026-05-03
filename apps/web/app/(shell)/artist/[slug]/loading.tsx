@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 
 import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
+import { OverlayLoadingShell } from "@/components/overlay-loading-shell";
 
 const PENDING_ARTIST_BREADCRUMB_KEY = "ytr:pending-artist-breadcrumb";
 
@@ -38,30 +40,23 @@ export default function ArtistDetailLoading() {
   }, [slug]);
 
   return (
-    <>
-      <div className="favouritesBlindBar">
-        <strong>
-          <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
-            <span className="categoryHeaderIcon" aria-hidden="true">🎸</span>
-            <Link href="/artists" className="categoryHeaderBreadcrumbLink">
-              Artists
-            </Link>
-            <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">&gt;</span>
-            <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{artistLabel}</span>
-          </span>
-        </strong>
-        <CloseLink />
-      </div>
-
-      <div className="routeContractRow artistLoadingCenter" aria-live="polite" aria-busy="true">
-        <span className="playerBootBars" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-          <span />
-        </span>
-        <span>{isWikiRoute ? "Loading wiki..." : "Loading artist videos..."}</span>
-      </div>
-    </>
+    <OverlayLoadingShell
+      header={
+        <OverlayHeader close={false}>
+          <strong>
+            <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
+              <span className="categoryHeaderIcon" aria-hidden="true">🎸</span>
+              <Link href="/artists" className="categoryHeaderBreadcrumbLink">
+                Artists
+              </Link>
+              <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">&gt;</span>
+              <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{artistLabel}</span>
+            </span>
+          </strong>
+          <CloseLink />
+        </OverlayHeader>
+      }
+      message={isWikiRoute ? "Loading wiki..." : "Loading artist videos..."}
+    />
   );
 }

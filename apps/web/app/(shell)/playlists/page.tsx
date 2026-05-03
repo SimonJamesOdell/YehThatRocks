@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 
 import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import { PlaylistsGrid } from "@/components/playlists-grid";
 import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
 import { REFRESH_TOKEN_COOKIE } from "@/lib/auth-config";
@@ -17,10 +18,10 @@ export default async function PlaylistsPage() {
   if (!user) {
     return (
       <>
-        <div className="favouritesBlindBar">
-          <strong><span className="whitePlaylistGlyph" aria-hidden="true">♬</span> Playlists</strong>
-          <CloseLink />
-        </div>
+        <OverlayHeader
+          icon={<span className="whitePlaylistGlyph" aria-hidden="true">♬</span>}
+          title="Playlists"
+        />
             <ProtectedAuthGatePanel
               status={authState.status === "unavailable" ? "unavailable" : "unauthenticated"}
           heading="♬ Playlists"

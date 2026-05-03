@@ -1,33 +1,30 @@
-import { cookies } from "next/headers";
 import Link from "next/link";
 
-import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
-import { isAdminIdentity } from "@/lib/admin-auth";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { AdminVideoDeleteButton } from "@/components/admin-video-delete-button";
 import { AdminVideoEditButton } from "@/components/admin-video-edit-button";
 import { CloseLink } from "@/components/close-link";
-import { NewScrollReset } from "@/components/new-scroll-reset";
+import { OverlayHeader } from "@/components/overlay-header";
+import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { SearchResultBlockButton } from "@/components/search-result-block-button";
 import { SearchFlagButton } from "@/components/search-flag-button";
 import { SearchSeenToggle } from "@/components/search-seen-toggle";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
-import { getGenreSlug, getSeenVideoIdsForUser, searchCatalog } from "@/lib/catalog-data";
+import { getGenreSlug, searchCatalog } from "@/lib/catalog-data";
 import { getSuppressedSearchVideoIds } from "@/lib/search-flag-data";
-import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
+import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
 
 type SearchPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 export default async function SearchPage({ searchParams }: SearchPageProps) {
-  const cookieStore = await cookies();
-  const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
-  const user = await getCurrentAuthenticatedUser();
-  const isAdminUser = Boolean(user && isAdminIdentity(user.id, user.email ?? ""));
-  const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();
+  const [{ hasAccessToken: isAuthenticated, user, isAdmin: isAdminUser }, { seenVideoIds }] = await Promise.all([
+    getShellRequestAuthState(),
+    getShellRequestVideoState(),
+  ]);
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const query = typeof resolvedSearchParams?.q === "string" ? resolvedSearchParams.q : "";
   const results = await searchCatalog(query);
@@ -40,14 +37,14 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
 
   return (
     <>
-      <NewScrollReset />
-      <div className="favouritesBlindBar">
+      <OverlayScrollReset />
+      <OverlayHeader close={false}>
         <div className="newPageHeaderLeft">
           <strong>Search Results ({uniqueVideos.length + uniqueArtists.length + uniqueGenres.length})</strong>
           <SearchSeenToggle trackStackId="search-video-grid" hasSeen={uniqueVideos.some((v) => seenVideoIds.has(v.id))} isAuthenticated={isAuthenticated} />
         </div>
         <CloseLink />
-      </div>
+      </OverlayHeader>
 
       <div id="search-video-grid" className="trackStack spanTwoColumns">
         {uniqueVideos.map((video) => {

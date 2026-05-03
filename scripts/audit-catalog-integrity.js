@@ -1,43 +1,9 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
 const path = require("node:path");
 const { PrismaClient } = require("@prisma/client");
-
-function loadDatabaseEnv() {
-  const envPath = path.resolve(process.cwd(), "apps/web/.env.local");
-  if (!fs.existsSync(envPath)) {
-    return;
-  }
-
-  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-
-    const match = trimmed.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (!match) {
-      continue;
-    }
-
-    const [, key, rawValue] = match;
-    if (process.env[key]) {
-      continue;
-    }
-
-    process.env[key] = rawValue.replace(/^"/, "").replace(/"$/, "");
-  }
-}
-
-function parseArg(name, fallback) {
-  const raw = process.argv.find((arg) => arg.startsWith(`--${name}=`));
-  if (!raw) {
-    return fallback;
-  }
-  return raw.slice(name.length + 3);
-}
+const { parseArg, asNumber } = require("./lib/cli");
+const { loadDatabaseEnv } = require("./lib/runtime");
 
 function toNumber(value) {
   if (typeof value === "bigint") {
@@ -75,8 +41,8 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-const sampleLimit = Math.max(1, Number(parseArg("sample", "25")));
-const minRelated = Math.max(1, Number(parseArg("min-related", "4")));
+const sampleLimit = asNumber(parseArg("sample", "25"), 25, { min: 1 });
+const minRelated = asNumber(parseArg("min-related", "4"), 4, { min: 1 });
 const outPathArg = parseArg("out", "").trim();
 const outPath = outPathArg || path.resolve(process.cwd(), `logs/catalog-audit-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
 

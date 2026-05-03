@@ -15,6 +15,12 @@ const files = {
   newPage: path.join(ROOT, "apps/web/app/(shell)/new/page.tsx"),
   newLoading: path.join(ROOT, "apps/web/app/(shell)/new/loading.tsx"),
   newVideosLoader: path.join(ROOT, "apps/web/components/new-videos-loader.tsx"),
+  newVideosDataLoaderHook: path.join(ROOT, "apps/web/components/use-new-videos-data-loader.ts"),
+  activeRowAutoScrollHook: path.join(ROOT, "apps/web/components/use-active-row-auto-scroll.ts"),
+  newVideosScrollPrefetchHook: path.join(ROOT, "apps/web/components/use-new-videos-scroll-prefetch.ts"),
+  newVideosModerationHook: path.join(ROOT, "apps/web/components/use-new-videos-moderation.ts"),
+  suggestNewModal: path.join(ROOT, "apps/web/components/suggest-new-modal.tsx"),
+  suggestNewHook: path.join(ROOT, "apps/web/components/use-suggest-new-video.ts"),
   top100VideosLoader: path.join(ROOT, "apps/web/components/top100-videos-loader.tsx"),
   newestRoute: path.join(ROOT, "apps/web/app/api/videos/newest/route.ts"),
   hideVideoConfirmModal: path.join(ROOT, "apps/web/components/hide-video-confirm-modal.tsx"),
@@ -32,6 +38,12 @@ function main() {
   const newPageSource = readFileStrict(files.newPage, ROOT);
   const newLoadingSource = readFileStrict(files.newLoading, ROOT);
   const newVideosLoaderSource = readFileStrict(files.newVideosLoader, ROOT);
+  const newVideosDataLoaderHookSource = readFileStrict(files.newVideosDataLoaderHook, ROOT);
+  const activeRowAutoScrollHookSource = readFileStrict(files.activeRowAutoScrollHook, ROOT);
+  const newVideosScrollPrefetchHookSource = readFileStrict(files.newVideosScrollPrefetchHook, ROOT);
+  const newVideosModerationHookSource = readFileStrict(files.newVideosModerationHook, ROOT);
+  const suggestNewModalSource = readFileStrict(files.suggestNewModal, ROOT);
+  const suggestNewHookSource = readFileStrict(files.suggestNewHook, ROOT);
   const top100VideosLoaderSource = readFileStrict(files.top100VideosLoader, ROOT);
   const newestRouteSource = readFileStrict(files.newestRoute, ROOT);
   const hideVideoConfirmModalSource = readFileStrict(files.hideVideoConfirmModal, ROOT);
@@ -50,14 +62,14 @@ function main() {
   assertContains(newPageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "New page passes hidden ids into client loader", failures);
   assertNotContains(newPageSource, "getNewestVideos(", "New page does not block route open on server-side newest query", failures);
   assertContains(newLoadingSource, "Loading new videos...", "New route exposes a dedicated loading state", failures);
-  assertContains(newVideosLoaderSource, "fetch(`/api/videos/newest?skip=${skip}&take=${take}`", "New videos loader uses offset/take pagination for batch fetches", failures);
-  assertContains(newVideosLoaderSource, "const payload = (await response.json()) as NewVideosApiPayload;", "New videos loader parses newest API pagination metadata", failures);
+  assertContains(newVideosDataLoaderHookSource, "fetch(`/api/videos/newest?skip=${skip}&take=${take}`", "New videos data hook uses offset/take pagination for batch fetches", failures);
+  assertContains(newVideosDataLoaderHookSource, "const payload = (await response.json()) as NewVideosApiPayload;", "New videos data hook parses newest API pagination metadata", failures);
   assertContains(newestRouteSource, "const probedVideos = await getNewestVideos(probeTake, skip, {", "Newest API probes one extra row to calculate hasMore", failures);
   assertContains(newestRouteSource, "enforcePlaybackAvailability: true,", "Newest API enforces playback availability", failures);
   assertContains(newestRouteSource, "const hasMore = probedVideos.length > take;", "Newest API derives hasMore from probed count", failures);
   assertContains(newestRouteSource, "const nextOffset = skip + videos.length;", "Newest API returns nextOffset derived from emitted rows", failures);
   assertContains(newestRouteSource, "nextOffset,", "Newest API response includes nextOffset", failures);
-  assertContains(newVideosLoaderSource, "nextOffsetRef.current = Number.isFinite(nextOffset) ? nextOffset : skip + received;", "New videos loader advances offset using API-provided nextOffset when available", failures);
+  assertContains(newVideosDataLoaderHookSource, "nextOffsetRef.current = Number.isFinite(nextOffset) ? nextOffset : skip + received;", "New videos data hook advances offset using API-provided nextOffset when available", failures);
 
   // New videos loader constants and state.
   assertContains(newVideosLoaderSource, "const NEW_INITIAL_BATCH_SIZE = 12;", "New videos loader uses smaller initial lazy-load batches", failures);
@@ -66,39 +78,74 @@ function main() {
   assertContains(newVideosLoaderSource, "const NEW_SCROLL_BATCH_SIZE = 10;", "New videos loader uses small incremental batches while scrolling", failures);
   assertContains(newVideosLoaderSource, "const NEW_SCROLL_PREFETCH_THRESHOLD_PX = 1400;", "New videos loader keeps a modest runway ahead near the bottom", failures);
   assertContains(newVideosLoaderSource, "const NEW_SCROLL_START_RATIO = 0.5;", "New videos loader starts additional loading around halfway through scrolling", failures);
-  assertContains(newVideosLoaderSource, "type ScrollMetrics = {", "New videos loader tracks scroll metrics from the active scroll container", failures);
-  assertContains(newVideosLoaderSource, "await loadBatch(0, NEW_INITIAL_BATCH_SIZE, { initial: true });", "New videos loader performs fast bootstrap with the small initial batch size", failures);
-  assertContains(newVideosLoaderSource, "while (nextOffsetRef.current < NEW_STARTUP_PREFETCH_TARGET && hasMoreRef.current)", "New videos loader incrementally warms startup buffer via repeated small fetches", failures);
-  assertContains(newVideosLoaderSource, "const [isLoadingMore, setIsLoadingMore] = useState(false);", "New videos loader tracks incremental infinite-scroll loading state", failures);
-  assertContains(newVideosLoaderSource, "const [hasMore, setHasMore] = useState(true);", "New videos loader tracks pagination exhaustion", failures);
-  assertContains(newVideosLoaderSource, "const emptyBatchStreakRef = useRef(0);", "New videos loader tracks consecutive empty pages before stopping", failures);
-  assertContains(newVideosLoaderSource, "const hasMoreRef = useRef(true);", "New videos loader mirrors hasMore in a ref for stable observer callbacks", failures);
-  assertContains(newVideosLoaderSource, "const isLoadingMoreRef = useRef(false);", "New videos loader mirrors incremental loading in a ref for stable observer callbacks", failures);
-  assertContains(newVideosLoaderSource, "const prefetchInFlightRef = useRef(false);", "New videos loader prevents overlapping ahead-prefetch loops", failures);
-  assertContains(newVideosLoaderSource, "const lastPrefetchAtRef = useRef(0);", "New videos loader throttles viewport-driven prefetch checks", failures);
-  assertContains(newVideosLoaderSource, "const readActiveScrollMetrics = useCallback((metrics?: ScrollMetrics): ScrollMetrics => {", "New videos loader resolves active overlay/window scroll metrics", failures);
-  assertContains(newVideosLoaderSource, "const maybeLoadMoreFromScroll = useCallback(async (metrics?: ScrollMetrics) => {", "New videos loader uses a single scroll-driven load-more function", failures);
-  assertContains(newVideosLoaderSource, "const scrollProgress = activeMetrics.scrollTop / maxScrollablePx;", "New videos loader computes scroll progress from active metrics", failures);
-  assertContains(newVideosLoaderSource, "if (scrollProgress < NEW_SCROLL_START_RATIO)", "New videos loader waits until halfway scroll progress", failures);
-  assertContains(newVideosLoaderSource, "if (now - lastPrefetchAtRef.current < 120) {", "New videos loader rate-limits rapid read-ahead checks", failures);
-  assertContains(newVideosLoaderSource, "const remainingScrollablePx = Math.max(", "New videos loader calculates remaining page scroll runway", failures);
-  assertContains(newVideosLoaderSource, "if (remainingScrollablePx > NEW_SCROLL_PREFETCH_THRESHOLD_PX)", "New videos loader only fetches near the lower runway", failures);
-  assertContains(newVideosLoaderSource, "await loadBatch(nextOffsetRef.current, NEW_SCROLL_BATCH_SIZE);", "New videos loader appends one chunk at a time while scrolling", failures);
+  assertContains(newVideosDataLoaderHookSource, "const initialResult = await loadBatch(0, initialBatchSize, { initial: true });", "New videos data hook performs fast bootstrap with the small initial batch size", failures);
+  assertContains(newVideosDataLoaderHookSource, "while (nextOffsetRef.current < startupPrefetchTarget && hasMoreRef.current)", "New videos data hook incrementally warms startup buffer via repeated small fetches", failures);
+  assertContains(newVideosDataLoaderHookSource, "const [isLoadingMore, setIsLoadingMore] = useState(false);", "New videos data hook tracks incremental infinite-scroll loading state", failures);
+  assertContains(newVideosDataLoaderHookSource, "const [hasMore, setHasMore] = useState(true);", "New videos data hook tracks pagination exhaustion", failures);
+  assertContains(newVideosDataLoaderHookSource, "const emptyBatchStreakRef = useRef(0);", "New videos data hook tracks consecutive empty pages before stopping", failures);
+  assertContains(newVideosDataLoaderHookSource, "const hasMoreRef = useRef(true);", "New videos data hook mirrors hasMore in a ref for stable observer callbacks", failures);
+  assertContains(newVideosDataLoaderHookSource, "const isLoadingMoreRef = useRef(false);", "New videos data hook mirrors incremental loading in a ref for stable observer callbacks", failures);
+  assertContains(newVideosDataLoaderHookSource, "const prefetchInFlightRef = useRef(false);", "New videos data hook prevents overlapping ahead-prefetch loops", failures);
+  assertContains(newVideosDataLoaderHookSource, "const lastPrefetchAtRef = useRef(0);", "New videos data hook throttles viewport-driven prefetch checks", failures);
+  assertContains(newVideosLoaderSource, 'import { useNewVideosDataLoader } from "@/components/use-new-videos-data-loader";', "New videos loader imports data-loading hook", failures);
+  assertContains(newVideosLoaderSource, "} = useNewVideosDataLoader({", "New videos loader delegates bootstrap and head-refresh behavior to data-loading hook", failures);
+  assertContains(newVideosLoaderSource, 'import { useNewVideosScrollPrefetch } from "@/components/use-new-videos-scroll-prefetch";', "New videos loader imports scroll prefetch hook", failures);
+  assertContains(newVideosLoaderSource, "useNewVideosScrollPrefetch({", "New videos loader delegates scroll prefetch/read-ahead behavior to hook", failures);
+  assertContains(newVideosScrollPrefetchHookSource, "type ScrollMetrics = {", "New videos scroll prefetch hook tracks scroll metrics from the active scroll container", failures);
+  assertContains(newVideosScrollPrefetchHookSource, "const readActiveScrollMetrics = useCallback((metrics?: ScrollMetrics): ScrollMetrics => {", "New videos scroll prefetch hook resolves active overlay/window scroll metrics", failures);
+  assertContains(newVideosScrollPrefetchHookSource, "const maybeLoadMoreFromScroll = useCallback(async (metrics?: ScrollMetrics) => {", "New videos scroll prefetch hook uses a single scroll-driven load-more function", failures);
+  assertContains(newVideosScrollPrefetchHookSource, "const scrollProgress = activeMetrics.scrollTop / maxScrollablePx;", "New videos scroll prefetch hook computes scroll progress from active metrics", failures);
+  assertContains(newVideosScrollPrefetchHookSource, "if (scrollProgress < scrollStartRatio)", "New videos scroll prefetch hook waits until halfway scroll progress threshold", failures);
+  assertContains(newVideosScrollPrefetchHookSource, "if (now - lastPrefetchAtRef.current < 120) {", "New videos scroll prefetch hook rate-limits rapid read-ahead checks", failures);
+  assertContains(newVideosScrollPrefetchHookSource, "const remainingScrollablePx = Math.max(", "New videos scroll prefetch hook calculates remaining page scroll runway", failures);
+  assertContains(newVideosScrollPrefetchHookSource, "if (remainingScrollablePx > scrollPrefetchThresholdPx)", "New videos scroll prefetch hook only fetches near the lower runway", failures);
+  assertContains(newVideosScrollPrefetchHookSource, "await loadBatch(nextOffsetRef.current, scrollBatchSize);", "New videos scroll prefetch hook appends one chunk at a time while scrolling", failures);
   assertContains(newVideosLoaderSource, "const sourceVideos = visibleVideos.slice(0, NEW_PLAYLIST_MAX_ITEMS);", "New videos loader only adds the first 100 New videos when creating a playlist", failures);
-  assertContains(newVideosLoaderSource, "window.addEventListener(\"scroll\", onWindowScroll, { passive: true });", "New videos loader prefetches ahead during active scrolling", failures);
-  assertContains(newVideosLoaderSource, "overlay.addEventListener(\"scroll\", onOverlayScroll, { passive: true });", "New videos loader prefetches from overlay container scrolling", failures);
+  assertContains(newVideosLoaderSource, 'import { createPlaylistFromVideoList } from "@/lib/playlist-create-from-video-list";', "New videos loader imports shared createPlaylistFromVideoList helper", failures);
+  assertContains(newVideosLoaderSource, "await createPlaylistFromVideoList({", "New videos loader delegates playlist creation flow to shared helper", failures);
+  assertNotContains(newVideosLoaderSource, "await createPlaylistClient(", "New videos loader does not duplicate low-level playlist creation orchestration", failures);
+  assertNotContains(newVideosLoaderSource, "addPlaylistItemsClient(", "New videos loader does not duplicate low-level add-items orchestration", failures);
+  assertContains(newVideosScrollPrefetchHookSource, "window.addEventListener(\"scroll\", onWindowScroll, { passive: true });", "New videos scroll prefetch hook prefetches ahead during active scrolling", failures);
+  assertContains(newVideosScrollPrefetchHookSource, "overlay.addEventListener(\"scroll\", onOverlayScroll, { passive: true });", "New videos scroll prefetch hook prefetches from overlay container scrolling", failures);
   assertNotContains(newVideosLoaderSource, "IntersectionObserver(", "New videos loader does not perform autonomous observer-driven loading", failures);
   assertNotContains(newVideosLoaderSource, "sentinelRef", "New videos loader does not depend on a bottom sentinel for loading", failures);
-  assertContains(newVideosLoaderSource, "if (received === 0 && (payload.hasMore === false || emptyBatchStreakRef.current >= 2)) {", "New videos loader only stops after explicit exhaustion or repeated empty batches", failures);
+  assertContains(newVideosDataLoaderHookSource, "if (received === 0 && (payload.hasMore === false || emptyBatchStreakRef.current >= 2)) {", "New videos data hook only stops after explicit exhaustion or repeated empty batches", failures);
   assertContains(newVideosLoaderSource, "const NewVideoRow = memo(function NewVideoRow", "New videos loader memoizes row wrapper to reduce append-time rerenders", failures);
-  assertContains(newVideosLoaderSource, "filterHiddenVideos", "New videos loader filters hidden videos", failures);
+  assertContains(newVideosDataLoaderHookSource, "filterHiddenVideos", "New videos data hook filters hidden videos", failures);
   assertNotContains(newVideosLoaderSource, "sortVideosBySeen(", "New videos loader does not reorder rows by seen state", failures);
   assertNotContains(newVideosLoaderSource, "/api/watch-history", "New videos loader does not pad with watch-history rows", failures);
+
+  // New videos moderation domain split invariants.
+  assertContains(newVideosLoaderSource, 'import { useNewVideosModeration } from "@/components/use-new-videos-moderation";', "New videos loader imports moderation hook", failures);
+  assertContains(newVideosLoaderSource, "} = useNewVideosModeration({", "New videos loader delegates hide/flag mutation orchestration to moderation hook", failures);
+  assertContains(newVideosModerationHookSource, "export function useNewVideosModeration", "New videos moderation hook exports explicit hide/flag domain behavior", failures);
+  assertContains(newVideosModerationHookSource, 'import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";', "New videos moderation hook uses shared hidden-video mutation service", failures);
+  assertContains(newVideosModerationHookSource, "fetch(\"/api/videos/flags\", {", "New videos moderation hook owns flag mutation API orchestration", failures);
+  assertContains(newVideosModerationHookSource, "onRemoveVideoById(flaggingVideo.id);", "New videos moderation hook removes rows through explicit boundary callback", failures);
+
+  // Active-row auto-scroll domain split invariants.
+  assertContains(newVideosLoaderSource, 'import { useActiveRowAutoScroll } from "@/components/use-active-row-auto-scroll";', "New videos loader imports active-row auto-scroll hook", failures);
+  assertContains(newVideosLoaderSource, "useActiveRowAutoScroll({", "New videos loader delegates active-row auto-scroll behavior to hook", failures);
+  assertContains(activeRowAutoScrollHookSource, "export function useActiveRowAutoScroll", "Active-row auto-scroll hook exports explicit domain behavior", failures);
+  assertContains(activeRowAutoScrollHookSource, "document.querySelector<HTMLElement>(\".trackCard.top100CardActive\")", "Active-row auto-scroll hook resolves active row anchor from track card selector", failures);
+  assertContains(activeRowAutoScrollHookSource, "window.requestAnimationFrame", "Active-row auto-scroll hook drives smooth scrolling via requestAnimationFrame", failures);
+
+  // Suggest New domain split invariants.
+  assertContains(newVideosLoaderSource, 'import { SuggestNewModal } from "@/components/suggest-new-modal";', "New videos loader imports Suggest New presentational modal", failures);
+  assertContains(newVideosLoaderSource, 'import { useSuggestNewVideo } from "@/components/use-suggest-new-video";', "New videos loader imports Suggest New domain hook", failures);
+  assertContains(newVideosLoaderSource, "const {", "New videos loader destructures hook return for Suggest New state/actions", failures);
+  assertContains(newVideosLoaderSource, "} = useSuggestNewVideo({", "New videos loader delegates Suggest New state machine to hook", failures);
+  assertContains(newVideosLoaderSource, "<SuggestNewModal", "New videos loader renders Suggest New via dedicated modal component", failures);
+  assertContains(suggestNewHookSource, "export function useSuggestNewVideo", "Suggest New hook exports explicit domain state machine", failures);
+  assertContains(suggestNewHookSource, "fetch(\"/api/videos/suggest\", {", "Suggest New hook owns suggest API orchestration", failures);
+  assertContains(suggestNewModalSource, "export function SuggestNewModal", "Suggest New modal exports presentational component", failures);
+  assertContains(suggestNewModalSource, "createPortal(", "Suggest New modal owns portal rendering details", failures);
 
   // New videos loader catalog-deleted event handling.
   assertContains(newVideosLoaderSource, 'window.addEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);', "New videos loader subscribes to catalog-deleted event for live removals", failures);
   assertContains(newVideosLoaderSource, 'return () => window.removeEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);', "New videos loader unsubscribes from catalog-deleted event", failures);
-  assertContains(newVideosLoaderSource, "allVideoIdsRef.current.delete(deletedId);", "New videos loader updates id index after catalog-deleted event", failures);
+  assertContains(newVideosLoaderSource, "removeVideoById(deletedId);", "New videos loader delegates catalog-deleted removals to data-loading hook boundary", failures);
+  assertContains(newVideosDataLoaderHookSource, "allVideoIdsRef.current.delete(videoId);", "New videos data hook updates id index when removing a video", failures);
 
   // Seen-toggle persistence for New and Top 100 surfaces.
   assertContains(newVideosLoaderSource, "useSeenTogglePreference", "New videos loader uses shared seen-toggle persistence hook", failures);
@@ -108,8 +155,7 @@ function main() {
   assertContains(top100VideosLoaderSource, "key: TOP100_HIDE_SEEN_TOGGLE_KEY", "Top 100 loader stores preference under Top 100 key", failures);
 
   // Hide-confirm modal integration for New and Top 100.
-  assertContains(newVideosLoaderSource, "const [videoPendingHideConfirm, setVideoPendingHideConfirm] = useState<VideoRecord | null>(null);", "New videos loader tracks hide-confirm modal target video", failures);
-  assertContains(newVideosLoaderSource, "setVideoPendingHideConfirm(track);", "New videos loader opens hide-confirm modal from card actions", failures);
+  assertContains(newVideosLoaderSource, "videoPendingHideConfirm", "New videos loader tracks hide-confirm modal target video through moderation hook state", failures);
   assertContains(newVideosLoaderSource, "<HideVideoConfirmModal", "New videos loader renders hide-confirm modal", failures);
   assertContains(newVideosLoaderSource, "void confirmHideVideo();", "New videos loader confirms exclusion via shared modal callback", failures);
   assertContains(top100VideosLoaderSource, "const [videoPendingHideConfirm, setVideoPendingHideConfirm] = useState<VideoRecord | null>(null);", "Top 100 loader tracks hide-confirm modal target video", failures);

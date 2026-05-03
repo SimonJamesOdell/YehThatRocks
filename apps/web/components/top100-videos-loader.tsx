@@ -6,13 +6,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { VideoRecord } from "@/lib/catalog";
 import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
+import { OverlayHeader } from "@/components/overlay-header";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
 import { Top100VideoLink } from "@/components/top100-video-link";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
+import { createPlaylistFromVideoList } from "@/lib/playlist-create-from-video-list";
+import { dedupeVideos, filterHiddenVideos } from "@/lib/video-list-utils";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
-import { addPlaylistItemsClient, createPlaylistClient } from "@/lib/playlist-client-service";
 
 type TopVideosPayload = {
   videos?: VideoRecord[];
@@ -25,28 +27,7 @@ const TOP100_TARGET_COUNT = 100;
 const TOP100_FETCH_SOURCE_COUNT = 180;
 const TOP100_FIRST_LOAD_TIMEOUT_MS = 6_500;
 
-function dedupeVideos(videos: VideoRecord[]) {
-  const seen = new Set<string>();
-
-  return videos.filter((video) => {
-    if (seen.has(video.id)) {
-      return false;
-    }
-
-    seen.add(video.id);
-    return true;
-  });
-}
-
-function filterHiddenVideos(videos: VideoRecord[], hiddenVideoIdSet: Set<string>) {
-  if (hiddenVideoIdSet.size === 0) {
-    return videos;
-  }
-
-  return videos.filter((video) => !hiddenVideoIdSet.has(video.id));
-}
-
-function readTop100SessionCache() {
+function readTop100SessionCache(options?: { allowStale?: boolean }) {
   if (typeof window === "undefined") {
     return null;
   }
@@ -58,34 +39,18 @@ function readTop100SessionCache() {
     }
 
     const parsed = JSON.parse(raw) as { cachedAt?: number; videos?: VideoRecord[] };
-    if (!Array.isArray(parsed.videos) || !Number.isFinite(parsed.cachedAt)) {
-      return null;
-    }
-
-    if (Date.now() - Number(parsed.cachedAt) > TOP100_SESSION_CACHE_TTL_MS) {
-      return null;
-    }
-
-    return dedupeVideos(parsed.videos).slice(0, TOP100_TARGET_COUNT);
-  } catch {
-    return null;
-  }
-}
-
-function readTop100SessionCacheStale() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = window.sessionStorage.getItem(TOP100_SESSION_CACHE_KEY);
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw) as { videos?: VideoRecord[] };
     if (!Array.isArray(parsed.videos)) {
       return null;
+    }
+
+    if (!options?.allowStale) {
+      if (!Number.isFinite(parsed.cachedAt)) {
+        return null;
+      }
+
+      if (Date.now() - Number(parsed.cachedAt) > TOP100_SESSION_CACHE_TTL_MS) {
+        return null;
+      }
     }
 
     return dedupeVideos(parsed.videos).slice(0, TOP100_TARGET_COUNT);
@@ -168,25 +133,13 @@ export function Top100VideosLoader({
   }, []);
 
   const createPlaylistFromTop100 = async () => {
-    if (!isAuthenticated) {
-      setMessage("Sign in to create playlists.");
-      return;
-    }
-
     if (isCreatingPlaylistFromTop100) {
       return;
     }
 
     const sourceVideos = visibleVideos;
-    const videoIds = sourceVideos.map((video) => video.id).filter(Boolean);
-
-    if (videoIds.length === 0) {
-      setMessage(hideSeen ? "No unseen Top 100 videos to add." : "No Top 100 videos to add.");
-      return;
-    }
 
     setIsCreatingPlaylistFromTop100(true);
-    setMessage(null);
 
     const playlistName = `Top 100 ${hideSeen ? "Unseen " : ""}${new Date().toLocaleString([], {
       month: "short",
@@ -196,134 +149,28 @@ export function Top100VideosLoader({
     })}`;
 
     try {
-      const createResponse = await createPlaylistClient(
-        {
-          name: playlistName,
-          videoIds: [],
+      await createPlaylistFromVideoList({
+        isAuthenticated,
+        sourceVideos,
+        playlistName,
+        router,
+        currentVideoId: searchParams.get("v"),
+        telemetryComponent: "top100-videos-loader",
+        setStatus: setMessage,
+        emptyMessage: hideSeen ? "No unseen Top 100 videos to add." : "No Top 100 videos to add.",
+        createFailedMessage: "Could not create playlist from Top 100. Please try again.",
+        optimisticMode: {
+          kind: "staggered",
+          reconcileOnlyWhenChanged: true,
         },
-        {
-          telemetryContext: {
-            component: "top100-videos-loader",
-          },
+        onBuildSuccessMessage: ({ playlistName: finalName, addedCount, requestedCount }) => {
+          if (addedCount < requestedCount) {
+            return `Created playlist "${finalName}" with ${addedCount}/${requestedCount} tracks.`;
+          }
+
+          return `Created playlist "${finalName}" with all ${addedCount} tracks.`;
         },
-      );
-
-      if (!createResponse.ok && (createResponse.error.code === "unauthorized" || createResponse.error.code === "forbidden")) {
-        setMessage("Sign in to create playlists.");
-        return;
-      }
-
-      if (!createResponse.ok) {
-        setMessage("Could not create playlist from Top 100. Please try again.");
-        return;
-      }
-
-      const created = createResponse.data as { id?: string; name?: string };
-      const createdPlaylistId = created?.id;
-
-      if (!createdPlaylistId) {
-        setMessage("Could not create playlist from Top 100. Please try again.");
-        return;
-      }
-
-      const currentVideoId = searchParams.get("v");
-      const closeHref = currentVideoId
-        ? `/?v=${encodeURIComponent(currentVideoId)}&pl=${encodeURIComponent(createdPlaylistId)}&resume=1`
-        : `/?pl=${encodeURIComponent(createdPlaylistId)}`;
-
-      dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href: closeHref });
-      dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
-        mode: "playlist",
-        playlistId: createdPlaylistId,
       });
-      router.push(closeHref);
-
-      const ANIMATED_TRACK_LIMIT = 40;
-      const animatedVideos = sourceVideos.slice(0, ANIMATED_TRACK_LIMIT);
-      const optimisticItemCount = sourceVideos.length;
-
-      for (let index = 0; index < animatedVideos.length; index += 1) {
-        const video = animatedVideos[index];
-
-        window.setTimeout(() => {
-          const visible = sourceVideos.slice(0, index + 1);
-
-          dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
-            playlist: {
-              id: createdPlaylistId,
-              name: playlistName,
-              videos: visible,
-              itemCount: optimisticItemCount,
-            },
-          });
-
-          dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
-            mode: "playlist",
-            playlistId: createdPlaylistId,
-            trackId: video.id,
-          });
-        }, index * 22);
-      }
-
-      const animationDoneMs = animatedVideos.length * 22 + 40;
-      window.setTimeout(() => {
-        dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
-          playlist: {
-            id: createdPlaylistId,
-            name: playlistName,
-            videos: sourceVideos,
-            itemCount: optimisticItemCount,
-          },
-        });
-      }, animationDoneMs);
-
-      void addPlaylistItemsClient(
-        { playlistId: createdPlaylistId, videoIds },
-        { telemetryContext: { component: "top100-videos-loader" } },
-      )
-        .then(async (addAllResponse) => {
-          if (!addAllResponse.ok) {
-            setMessage("Playlist was created, but some tracks could not be saved.");
-            dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-            return;
-          }
-
-          const updatedPlaylist = addAllResponse.data as
-            | { id?: string; videos?: VideoRecord[]; itemCount?: number; name?: string }
-            | undefined;
-
-          const finalVideos = Array.isArray(updatedPlaylist?.videos) ? updatedPlaylist.videos : sourceVideos;
-          const finalName = updatedPlaylist?.name ?? playlistName;
-          const finalItemCount = updatedPlaylist?.itemCount ?? finalVideos.length;
-
-          const optimisticIds = sourceVideos.map((v) => v.id).join(",");
-          const serverIds = finalVideos.map((v) => v.id).join(",");
-          if (serverIds !== optimisticIds || finalName !== playlistName) {
-            dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
-              playlist: {
-                id: createdPlaylistId,
-                name: finalName,
-                videos: finalVideos,
-                itemCount: finalItemCount,
-              },
-            });
-          }
-
-          dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-
-          const addedCount = finalVideos.length;
-          if (addedCount < videoIds.length) {
-            setMessage(`Created playlist "${finalName}" with ${addedCount}/${videoIds.length} tracks.`);
-          } else {
-            setMessage(`Created playlist "${finalName}" with all ${addedCount} tracks.`);
-          }
-        })
-        .catch(() => {
-          setMessage("Playlist was created, but tracks could not be saved.");
-          dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-        });
-    } catch {
-      setMessage("Could not create playlist from Top 100. Please try again.");
     } finally {
       setIsCreatingPlaylistFromTop100(false);
     }
@@ -409,7 +256,7 @@ export function Top100VideosLoader({
         // Fall through to friendly error state.
       }
 
-      const staleCache = filterHiddenVideos(readTop100SessionCacheStale() ?? [], hiddenVideoIdSet);
+      const staleCache = filterHiddenVideos(readTop100SessionCache({ allowStale: true }) ?? [], hiddenVideoIdSet);
       if (!cancelled && staleCache.length > 0) {
         setVideos(staleCache);
         setMessage("Top 100 is still warming up on the server. Showing recent cached results.");
@@ -445,7 +292,7 @@ export function Top100VideosLoader({
 
   return (
     <>
-      <div className="favouritesBlindBar">
+      <OverlayHeader close={false}>
         <div className="newPageHeaderLeft">
           <strong>Top 100</strong>
           {isAuthenticated ? (
@@ -472,7 +319,7 @@ export function Top100VideosLoader({
           ) : null}
         </div>
         <CloseLink />
-      </div>
+      </OverlayHeader>
 
       {message ? <p className="rightRailStatus">{message}</p> : null}
 

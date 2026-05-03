@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 
 import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { createPlaylistClient, importPlaylistClient, listPlaylistsClient } from "@/lib/playlist-client-service";
 import type { PlaylistSummary } from "@/lib/catalog-data";
@@ -296,7 +297,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
 
   return (
     <>
-      <div className="favouritesBlindBar playlistsHeaderBar">
+      <OverlayHeader className="playlistsHeaderBar" close={false}>
         <div className="playlistsHeaderTitle">
           <strong><span className="whitePlaylistGlyph" aria-hidden="true">♬</span> Playlists</strong>
           <button
@@ -321,7 +322,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
           </button>
         </div>
         <CloseLink />
-      </div>
+      </OverlayHeader>
 
       {playlists.length > 0 ? (
         <div className="catalogGrid favouritesCatalogGrid">

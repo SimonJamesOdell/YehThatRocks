@@ -7,10 +7,12 @@ import { ArtistVideoLink } from "@/components/artist-video-link";
 import { CategoryCreatePlaylistButton } from "@/components/category-create-playlist-button";
 import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
+import { OverlayHeader } from "@/components/overlay-header";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
+import { dedupeVideos, filterHiddenVideos } from "@/lib/video-list-utils";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 
 type CategoryVideosInfiniteProps = {
@@ -35,30 +37,6 @@ const CHUNK_TRIGGER_ROOT_MARGIN = "1400px 0px";
 const INITIAL_BUFFER_PAGES = 3;
 const SCROLL_BUFFER_PAGES = 2;
 const CATEGORY_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-category";
-
-function dedupeVideosById(rows: VideoRecord[]) {
-  const seen = new Set<string>();
-  const unique: VideoRecord[] = [];
-
-  for (const row of rows) {
-    if (!row?.id || seen.has(row.id)) {
-      continue;
-    }
-
-    seen.add(row.id);
-    unique.push(row);
-  }
-
-  return unique;
-}
-
-function filterHiddenVideos(videos: VideoRecord[], hiddenVideoIdSet: Set<string>) {
-  if (hiddenVideoIdSet.size === 0) {
-    return videos;
-  }
-
-  return videos.filter((video) => !hiddenVideoIdSet.has(video.id));
-}
 
 function sortVideosBySeen(videos: VideoRecord[], seenVideoIdSet: Set<string>) {
   if (seenVideoIdSet.size === 0) {
@@ -90,7 +68,7 @@ export function CategoryVideosInfinite({
   pageSize = 48,
 }: CategoryVideosInfiniteProps) {
   const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
-  const [videos, setVideos] = useState<VideoRecord[]>(() => dedupeVideosById(filterHiddenVideos(initialVideos, hiddenVideoIdSet)));
+  const [videos, setVideos] = useState<VideoRecord[]>(() => dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet)));
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -332,7 +310,7 @@ export function CategoryVideosInfinite({
   if (videos.length === 0) {
     return (
       <>
-        <div className="favouritesBlindBar">
+        <OverlayHeader close={false}>
           <div className="newPageHeaderLeft">
             <strong>
               <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
@@ -346,7 +324,7 @@ export function CategoryVideosInfinite({
             </strong>
           </div>
           <CloseLink />
-        </div>
+        </OverlayHeader>
         <p className="categoryNoVideos">No videos found for this category yet.</p>
       </>
     );
@@ -354,7 +332,7 @@ export function CategoryVideosInfinite({
 
   return (
     <>
-      <div className="favouritesBlindBar">
+      <OverlayHeader close={false}>
         <div className="newPageHeaderLeft">
           <strong>
             <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
@@ -386,7 +364,7 @@ export function CategoryVideosInfinite({
           />
         </div>
         <CloseLink />
-      </div>
+      </OverlayHeader>
 
       <div className="categoryVideoGrid">
         {visibleOrderedVideos.map((video, index) => (

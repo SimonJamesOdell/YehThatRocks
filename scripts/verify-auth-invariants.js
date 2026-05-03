@@ -40,6 +40,10 @@ const files = {
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   authCookies: path.join(ROOT, "apps/web/lib/auth-cookies.ts"),
   rateLimitLib: path.join(ROOT, "apps/web/lib/rate-limit.ts"),
+  prismaTypes: path.join(ROOT, "apps/web/lib/prisma-types.ts"),
+  authSessions: path.join(ROOT, "apps/web/lib/auth-sessions.ts"),
+  authTokenRecords: path.join(ROOT, "apps/web/lib/auth-token-records.ts"),
+  authAudit: path.join(ROOT, "apps/web/lib/auth-audit.ts"),
   appRoot: path.join(ROOT, "apps/web/app"),
 };
 
@@ -106,6 +110,7 @@ function main() {
   const loginRouteSource = read(files.loginRoute);
   const profileRouteSource = read(files.profileRoute);
   const resetPasswordRouteSource = read(files.resetPasswordRoute);
+  const sendVerificationRouteSource = read(files.sendVerificationRoute);
   const verifyEmailRouteSource = read(files.verifyEmailRoute);
   const upgradeToEmailRouteSource = read(files.upgradeToEmailRoute);
   const shellLayoutSource = read(files.shellLayout);
@@ -129,6 +134,10 @@ function main() {
   const playerExperienceSource = read(files.playerExperience);
   const authCookiesSource = read(files.authCookies);
   const rateLimitLibSource = read(files.rateLimitLib);
+  const prismaTypesSource = read(files.prismaTypes);
+  const authSessionsSource = read(files.authSessions);
+  const authTokenRecordsSource = read(files.authTokenRecords);
+  const authAuditSource = read(files.authAudit);
   const globalCssSource = collectCssFiles(files.appRoot)
     .map((filePath) => read(filePath))
     .join("\n");
@@ -238,6 +247,23 @@ function main() {
   assertContains(serverAuthSource, 'status: "unavailable"', "Server auth helper exposes auth-unavailable status", failures);
   assertContains(serverAuthSource, 'status: "unauthenticated"', "Server auth helper exposes unauthenticated status", failures);
   assertContains(shellLayoutSource, 'initialAuthStatus={authState.status === "unavailable" ? "unavailable" : "clear"}', "Shell layout passes initial auth-unavailable state into the client shell", failures);
+
+  // --- Shared Prisma wrapper typing contract ---
+  assertContains(prismaTypesSource, "export type PrismaWithVerifiedUser", "Shared prisma-types exports PrismaWithVerifiedUser", failures);
+  assertContains(prismaTypesSource, "export type PrismaWithProfileUser", "Shared prisma-types exports PrismaWithProfileUser", failures);
+  assertContains(prismaTypesSource, "export type PrismaWithVerificationEmailUser", "Shared prisma-types exports PrismaWithVerificationEmailUser", failures);
+  assertContains(prismaTypesSource, "export type PrismaWithAuthSession", "Shared prisma-types exports PrismaWithAuthSession", failures);
+  assertContains(prismaTypesSource, "export type PrismaWithTokenModels", "Shared prisma-types exports PrismaWithTokenModels", failures);
+  assertContains(prismaTypesSource, "export type PrismaWithAuthAudit", "Shared prisma-types exports PrismaWithAuthAudit", failures);
+  assertContains(serverAuthSource, 'from "@/lib/prisma-types"', "Server auth imports shared prisma wrapper types", failures);
+  assertNotContains(serverAuthSource, "type PrismaWithVerifiedUser =", "Server auth no longer redeclares PrismaWithVerifiedUser locally", failures);
+  assertContains(profileRouteSource, 'from "@/lib/prisma-types"', "Profile route imports shared prisma wrapper types", failures);
+  assertNotContains(profileRouteSource, "type PrismaWithProfileUser =", "Profile route no longer redeclares PrismaWithProfileUser locally", failures);
+  assertContains(sendVerificationRouteSource, 'from "@/lib/prisma-types"', "Send-verification route imports shared prisma wrapper types", failures);
+  assertNotContains(sendVerificationRouteSource, "type PrismaWithVerifiedUser =", "Send-verification route no longer redeclares PrismaWithVerifiedUser locally", failures);
+  assertContains(authSessionsSource, 'from "@/lib/prisma-types"', "Auth sessions module imports shared prisma wrapper types", failures);
+  assertContains(authTokenRecordsSource, 'from "@/lib/prisma-types"', "Auth token records module imports shared prisma wrapper types", failures);
+  assertContains(authAuditSource, 'from "@/lib/prisma-types"', "Auth audit module imports shared prisma wrapper types", failures);
   assertContains(shellDynamicSource, 'const [authStatus, setAuthStatus] = useState<"clear" | "unavailable">(initialAuthStatus);', "Shell tracks auth availability separately from authenticated state", failures);
   assertContains(shellDynamicSource, 'response.status === 401 || response.status === 403', "Shell distinguishes confirmed auth failures from outages", failures);
   assertContains(shellDynamicSource, 'setIsAuthenticated(false);', "Shell drops global auth state on confirmed auth failure", failures);

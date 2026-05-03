@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 
 import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import {
   dispatchArtistsFilterChange,
   dispatchArtistsLetterChange,
@@ -52,7 +53,7 @@ export function ArtistsFilterHeader({ activeLetter, v, resume }: ArtistsFilterHe
   }, [activeLetter, resume, v]);
 
   return (
-    <div className="favouritesBlindBar categoriesHeaderBar">
+    <OverlayHeader className="categoriesHeaderBar" close={false}>
       <div className="categoriesHeaderMain">
         <strong>
           <span className="categoryHeaderBreadcrumb">🎸 Artists</span>
@@ -71,6 +72,6 @@ export function ArtistsFilterHeader({ activeLetter, v, resume }: ArtistsFilterHe
         </div>
       </div>
       <CloseLink />
-    </div>
+    </OverlayHeader>
   );
 }

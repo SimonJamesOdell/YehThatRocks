@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import { getMagazineTrackBySlug, magazineDraftEdition } from "@/lib/magazine-draft";
 
 type MagazineTrackPageProps = {
@@ -25,7 +26,7 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
 
   return (
     <main className="magazinePage" role="main" aria-label="Magazine article">
-      <div className="favouritesBlindBar magazineOverlayBar">
+      <OverlayHeader className="magazineOverlayBar" close={false}>
         <div className="magazineOverlayBarBody">
           <strong className="magazineOverlayBarTitle">Magazine</strong>
           <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
@@ -35,7 +36,7 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
           </span>
         </div>
         <CloseLink />
-      </div>
+      </OverlayHeader>
 
       <header className="magazineArticleHero panel">
         <Link href="/magazine" className="magazineTextLink">Back to magazine</Link>

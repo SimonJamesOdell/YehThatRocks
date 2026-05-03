@@ -1,16 +1,11 @@
-import { cookies } from "next/headers";
-
-import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { Top100VideosLoader } from "@/components/top100-videos-loader";
-import { getHiddenVideoIdsForUser, getSeenVideoIdsForUser } from "@/lib/catalog-data";
-import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
+import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
 
 export default async function TopHundredPage() {
-  const cookieStore = await cookies();
-  const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
-  const user = await getCurrentAuthenticatedUser();
-  const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();
-  const hiddenVideoIds = user ? await getHiddenVideoIdsForUser(user.id) : new Set<string>();
+  const [{ hasAccessToken: isAuthenticated }, { seenVideoIds, hiddenVideoIds }] = await Promise.all([
+    getShellRequestAuthState(),
+    getShellRequestVideoState(),
+  ]);
 
   return (
     <Top100VideosLoader

@@ -24,10 +24,20 @@ const files = {
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
   currentVideoRouteService: path.join(ROOT, "apps/web/lib/current-video-route-service.ts"),
   analyticsRoute: path.join(ROOT, "apps/web/app/api/analytics/route.ts"),
+  analyticsClient: path.join(ROOT, "apps/web/lib/analytics-client.ts"),
   cronRelatedBackfillRoute: path.join(ROOT, "apps/web/app/api/cron/related-backfill/route.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   catalogDataVideos: path.join(ROOT, "apps/web/lib/catalog-data-videos.ts"),
+  catalogDataArtists: path.join(ROOT, "apps/web/lib/catalog-data-artists.ts"),
+  catalogDataGenres: path.join(ROOT, "apps/web/lib/catalog-data-genres.ts"),
+  catalogDataHidden: path.join(ROOT, "apps/web/lib/catalog-data-hidden.ts"),
+  catalogDataHistory: path.join(ROOT, "apps/web/lib/catalog-data-history.ts"),
+  catalogDataFavourites: path.join(ROOT, "apps/web/lib/catalog-data-favourites.ts"),
+  catalogDataDb: path.join(ROOT, "apps/web/lib/catalog-data-db.ts"),
+  catalogDataVideoIngestion: path.join(ROOT, "apps/web/lib/catalog-data-video-ingestion.ts"),
   metadataUtils: path.join(ROOT, "apps/web/lib/catalog-metadata-utils.ts"),
+  boundedMap: path.join(ROOT, "apps/web/lib/bounded-map.ts"),
+  runtimeBootstrap: path.join(ROOT, "apps/web/lib/runtime-bootstrap.ts"),
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   nextTrackDecisionHook: path.join(ROOT, "apps/web/components/use-next-track-decision.ts"),
   temporaryQueueControllerHook: path.join(ROOT, "apps/web/components/use-temporary-queue-controller.ts"),
@@ -56,10 +66,20 @@ function main() {
     currentVideoRouteServiceSource,
   ].join('\n');
   const analyticsRouteSource = readFileStrict(files.analyticsRoute, ROOT);
+  const analyticsClientSource = readFileStrict(files.analyticsClient, ROOT);
   const cronRelatedBackfillRouteSource = readFileStrict(files.cronRelatedBackfillRoute, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const catalogDataVideosSource = readFileStrict(files.catalogDataVideos, ROOT);
+  const catalogDataArtistsSource = readFileStrict(files.catalogDataArtists, ROOT);
+  const catalogDataGenresSource = readFileStrict(files.catalogDataGenres, ROOT);
+  const catalogDataHiddenSource = readFileStrict(files.catalogDataHidden, ROOT);
+  const catalogDataHistorySource = readFileStrict(files.catalogDataHistory, ROOT);
+  const catalogDataFavouritesSource = readFileStrict(files.catalogDataFavourites, ROOT);
+  const catalogDataDbSource = readFileStrict(files.catalogDataDb, ROOT);
+  const catalogDataVideoIngestionSource = readFileStrict(files.catalogDataVideoIngestion, ROOT);
   const metadataUtilsSource = readFileStrict(files.metadataUtils, ROOT);
+  const boundedMapSource = readFileStrict(files.boundedMap, ROOT);
+  const runtimeBootstrapSource = readFileStrict(files.runtimeBootstrap, ROOT);
   const classificationSource = `${catalogDataSource}\n${metadataUtilsSource}`;
   const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
   const nextTrackDecisionHookSource = readFileStrict(files.nextTrackDecisionHook, ROOT);
@@ -106,6 +126,35 @@ function main() {
   assertContains(analyticsRouteSource, "const bodyResult = await parseRequestJson<unknown>(request);", "Analytics API parses request body via shared helper", failures);
   assertContains(analyticsRouteSource, "if (!bodyResult.ok) {", "Analytics API handles shared parser failure path", failures);
   assertContains(analyticsRouteSource, "return NextResponse.json({ ok: false }, { status: 400 });", "Analytics API preserves stable invalid-body response contract", failures);
+
+  // Analytics client UUID invariants.
+  assertContains(analyticsClientSource, "crypto.randomUUID()", "Analytics client uses crypto.randomUUID() for visitor/session ID generation", failures);
+  assertNotContains(analyticsClientSource, "uuidV4", "Analytics client does not use a custom Math.random-based UUID implementation", failures);
+  assertNotContains(analyticsClientSource, "Math.random", "Analytics client does not use Math.random for ID generation", failures);
+
+  // Cache-bound invariants.
+  assertContains(boundedMapSource, "export class BoundedMap", "BoundedMap utility exports a bounded map class", failures);
+  assertContains(catalogDataVideosSource, "const VIDEO_CACHE_MAX_ENTRIES =", "Core video catalog defines bounded cache capacity", failures);
+  assertContains(catalogDataVideosSource, "const newestVideosRequestCache = new BoundedMap", "Core video catalog bounds newest request cache", failures);
+  assertContains(catalogDataVideosSource, "const relatedVideosCache = new BoundedMap", "Core video catalog bounds related videos cache", failures);
+  assertContains(catalogDataVideosSource, "const suggestCacheMap = new BoundedMap", "Core video catalog bounds suggest cache", failures);
+  assertContains(catalogDataArtistsSource, "const ARTIST_CACHE_MAX_ENTRIES =", "Artist catalog defines bounded cache capacity", failures);
+  assertContains(catalogDataArtistsSource, "const artistSearchCache = new BoundedMap", "Artist catalog bounds search cache", failures);
+  assertContains(catalogDataGenresSource, "const GENRE_CACHE_MAX_ENTRIES =", "Genre catalog defines bounded cache capacity", failures);
+  assertContains(catalogDataGenresSource, "const genreVideosCache = new BoundedMap", "Genre catalog bounds videos cache", failures);
+  assertContains(catalogDataHiddenSource, "const hiddenVideoIdsCache = new BoundedMap", "Hidden catalog bounds hidden-id cache", failures);
+  assertContains(catalogDataHistorySource, "const seenVideoIdsInFlight = new BoundedMap", "History catalog bounds in-flight seen cache", failures);
+  assertContains(catalogDataFavouritesSource, "const favouriteVideosInFlight = new BoundedMap", "Favourites catalog bounds in-flight favourites cache", failures);
+  assertContains(catalogDataDbSource, "const tableColumnsCache = new BoundedMap", "Catalog DB schema helper bounds table-column cache", failures);
+  assertContains(catalogDataVideoIngestionSource, "const rejectedVideoCache = new BoundedMap", "Video ingestion bounds rejected-video cache", failures);
+
+  // Runtime bootstrap patching invariants.
+  assertContains(runtimeBootstrapSource, "export function applyRuntimeBootstrapPatches", "Runtime bootstrap utility exposes explicit patch opt-in entrypoint", failures);
+  assertContains(runtimeBootstrapSource, "export function enableSafePerformanceMeasurePatch", "Runtime bootstrap utility exposes dedicated performance.measure patch helper", failures);
+  assertContains(shellDynamicSource, 'import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";', "Shell imports centralized runtime bootstrap patch helper", failures);
+  assertContains(shellDynamicSource, "applyRuntimeBootstrapPatches({ safePerformanceMeasure: true });", "Shell explicitly opts into safe performance.measure patch", failures);
+  assertNotContains(shellDynamicSource, "__ytrMeasurePatched", "Shell no longer keeps local performance patch state flags", failures);
+  assertNotContains(shellDynamicSource, "performance.measure =", "Shell no longer monkey-patches performance.measure inline", failures);
 
   // Cron related-backfill API invariants.
   assertContains(cronRelatedBackfillRouteSource, "const CRON_SECRET = process.env.CRON_SECRET?.trim() || \"\";", "Cron related-backfill route resolves CRON_SECRET from environment", failures);

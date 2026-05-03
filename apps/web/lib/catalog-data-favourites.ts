@@ -5,9 +5,9 @@
 
 import { prisma } from "@/lib/db";
 import { createFavouriteVideosCache } from "@/lib/favourite-videos-cache";
+import { BoundedMap } from "@/lib/bounded-map";
 import type { VideoRecord } from "@/lib/catalog";
 import { hasDatabaseUrl, mapVideo, normalizeYouTubeVideoId } from "@/lib/catalog-data-utils";
-import { pruneMapToMaxEntries } from "@/lib/bounded-map";
 
 type FavouriteVideosPage = {
   favourites: VideoRecord[];
@@ -27,7 +27,9 @@ export const USER_SCOPED_CACHE_MAX_ENTRIES = Math.max(
 const favouriteVideosCache = createFavouriteVideosCache(FAVOURITE_VIDEOS_CACHE_TTL_MS, {
   maxEntries: USER_SCOPED_CACHE_MAX_ENTRIES,
 });
-const favouriteVideosInFlight = new Map<number, Promise<VideoRecord[]>>();
+const favouriteVideosInFlight = new BoundedMap<number, Promise<VideoRecord[]>>(
+  USER_SCOPED_CACHE_MAX_ENTRIES,
+);
 
 const FAVOURITE_VIDEOS_METRICS_LOG_INTERVAL_MS = 60_000;
 const FAVOURITE_VIDEOS_METRICS_LOG_EVERY_LOOKUPS = 250;

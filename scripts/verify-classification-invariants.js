@@ -7,6 +7,7 @@ const ROOT = process.cwd();
 
 const files = {
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
+  catalogDataArtists: path.join(ROOT, "apps/web/lib/catalog-data-artists.ts"),
   metadataUtils: path.join(ROOT, "apps/web/lib/catalog-metadata-utils.ts"),
 };
 
@@ -27,6 +28,7 @@ function assertContains(source, needle, description, failures) {
 function main() {
   const failures = [];
   const catalogDataSource = read(files.catalogData);
+  const catalogDataArtistsSource = read(files.catalogDataArtists);
   const metadataUtilsSource = read(files.metadataUtils);
   const classificationSource = `${catalogDataSource}\n${metadataUtilsSource}`;
 
@@ -39,7 +41,7 @@ function main() {
   assertContains(catalogDataSource, "const ROCK_METAL_GENRE_PATTERN =", "Classifier defines rock/metal genre pattern", failures);
   assertContains(classificationSource, "function computeArtistChannelConfidenceDelta", "Classifier defines artist/channel consistency signal", failures);
   assertContains(catalogDataSource, "const ARTIST_CATALOG_EVIDENCE_CACHE_TTL_MS =", "Classifier caches artist evidence lookups", failures);
-  assertContains(catalogDataSource, "const artistCatalogEvidenceCache = new Map", "Classifier keeps artist evidence cache", failures);
+  assertContains(catalogDataArtistsSource, "const artistCatalogEvidenceCache = new BoundedMap", "Classifier keeps artist evidence cache in a bounded map", failures);
   assertContains(catalogDataSource, "async function getArtistCatalogEvidence(artistName: string)", "Classifier exposes artist catalog evidence helper", failures);
   assertContains(catalogDataSource, "Known artist lacks strong rock/metal genre evidence.", "Classifier penalizes known artists lacking rock/metal evidence", failures);
   assertContains(catalogDataSource, "Artist token matched channel title.", "Classifier boosts confidence for artist/channel match", failures);

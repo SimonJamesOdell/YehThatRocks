@@ -4,6 +4,7 @@
  */
 
 import { prisma } from "@/lib/db";
+import { BoundedMap } from "@/lib/bounded-map";
 import type { VideoRecord } from "@/lib/catalog";
 import type {
   RankedVideoRow,
@@ -74,33 +75,38 @@ const RELATED_VIDEOS_CACHE_TTL_MS = 20_000;
 const RELATED_BASE_ROWS_CACHE_TTL_MS = 30_000;
 const REJECTED_VIDEO_CACHE_TTL_MS = 5 * 60_000;
 const SUGGEST_CACHE_TTL_MS = 10_000;
+const VIDEO_CACHE_MAX_ENTRIES = Math.max(
+  200,
+  Math.min(8_000, Number(process.env.VIDEO_CACHE_MAX_ENTRIES || "1500")),
+);
+const RANKED_SLICE_CACHE_MAX_ENTRIES = 8;
 
 // ── Cache variables ───────────────────────────────────────────────────────────
 
 let topPoolCache: { expiresAt: number; rows: RankedVideoRow[] } | undefined;
 let topPoolInFlight: { limit: number; promise: Promise<RankedVideoRow[]> } | undefined;
-const rankedVideoIdSliceCache = new Map<
+const rankedVideoIdSliceCache = new BoundedMap<
   "top" | "newest",
   { expiresAt: number; ids: string[] }
->();
-const rankedVideoIdSliceInFlight = new Map<
+>(RANKED_SLICE_CACHE_MAX_ENTRIES);
+const rankedVideoIdSliceInFlight = new BoundedMap<
   "top" | "newest",
   { limit: number; promise: Promise<string[]> }
->();
+>(RANKED_SLICE_CACHE_MAX_ENTRIES);
 
 let newestVideosCache:
   | { expiresAt: number; count: number; rows: RankedVideoRow[] }
   | undefined;
-const newestVideosRequestCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
-const newestVideosInFlight = new Map<string, Promise<VideoRecord[]>>();
+const newestVideosRequestCache = new BoundedMap<string, { expiresAt: number; videos: VideoRecord[] }>(VIDEO_CACHE_MAX_ENTRIES);
+const newestVideosInFlight = new BoundedMap<string, Promise<VideoRecord[]>>(VIDEO_CACHE_MAX_ENTRIES);
 
-const rejectedVideoCache = new Map<string, { expiresAt: number; rejected: boolean }>();
+const rejectedVideoCache = new BoundedMap<string, { expiresAt: number; rejected: boolean }>(VIDEO_CACHE_MAX_ENTRIES);
 
-const relatedVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
-const relatedVideosInFlight = new Map<
+const relatedVideosCache = new BoundedMap<string, { expiresAt: number; videos: VideoRecord[] }>(VIDEO_CACHE_MAX_ENTRIES);
+const relatedVideosInFlight = new BoundedMap<
   string,
   { count: number; promise: Promise<VideoRecord[]> }
->();
+>(VIDEO_CACHE_MAX_ENTRIES);
 
 type RelatedBaseRowBuckets = {
   directRows: RankedVideoRow[];
@@ -110,14 +116,14 @@ type RelatedBaseRowBuckets = {
   sameGenreRows: RankedVideoRow[];
 };
 
-const relatedBaseRowsCache = new Map<
+const relatedBaseRowsCache = new BoundedMap<
   string,
   { expiresAt: number; rows: RelatedBaseRowBuckets }
->();
-const relatedBaseRowsInFlight = new Map<string, Promise<RelatedBaseRowBuckets>>();
+>(VIDEO_CACHE_MAX_ENTRIES);
+const relatedBaseRowsInFlight = new BoundedMap<string, Promise<RelatedBaseRowBuckets>>(VIDEO_CACHE_MAX_ENTRIES);
 
-const suggestCacheMap = new Map<string, { expiresAt: number; results: SearchSuggestion[] }>();
-const suggestInFlightMap = new Map<string, Promise<SearchSuggestion[]>>();
+const suggestCacheMap = new BoundedMap<string, { expiresAt: number; results: SearchSuggestion[] }>(VIDEO_CACHE_MAX_ENTRIES);
+const suggestInFlightMap = new BoundedMap<string, Promise<SearchSuggestion[]>>(VIDEO_CACHE_MAX_ENTRIES);
 
 // Bootstrap legacy approval state
 let legacyApprovalBootstrapAttempted = false;

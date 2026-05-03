@@ -1,15 +1,12 @@
 import Link from "next/link";
 
-import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import { AuthLoginForm } from "@/components/auth-login-form";
 
 export default function LoginPage() {
   return (
     <>
-      <div className="favouritesBlindBar">
-        <strong>Login</strong>
-        <CloseLink />
-      </div>
+      <OverlayHeader title="Login" />
 
       <section className="panel featurePanel spanTwoColumns">
         <div className="panelHeading">

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
+import type { useRouter } from "next/navigation";
+
+type RouterInstance = ReturnType<typeof useRouter>;
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -31,7 +33,7 @@ export function useSearchAutocomplete({
   router,
 }: {
   currentVideoId: string;
-  router: AppRouterInstance;
+  router: RouterInstance;
 }): SearchAutocompleteState {
   const [searchValue, setSearchValue] = useState("");
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);

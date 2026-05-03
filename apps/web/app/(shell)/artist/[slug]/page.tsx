@@ -1,10 +1,8 @@
-import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { ArtistVideosGridClient } from "@/components/artist-videos-grid-client";
-import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
-import { getArtistBySlug, getArtistRouteSourceVideoIds, getHiddenVideoIdsForUser, getSeenVideoIdsForUser, getVideosByArtist } from "@/lib/catalog-data";
-import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
+import { getArtistBySlug, getArtistRouteSourceVideoIds, getVideosByArtist } from "@/lib/catalog-data";
+import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
 
 type ArtistPageProps = {
   params: Promise<{ slug: string }>;
@@ -12,11 +10,10 @@ type ArtistPageProps = {
 };
 
 export default async function ArtistPage({ params, searchParams }: ArtistPageProps) {
-  const cookieStore = await cookies();
-  const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
-  const user = await getCurrentAuthenticatedUser();
-  const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();
-  const hiddenVideoIds = user ? await getHiddenVideoIdsForUser(user.id) : new Set<string>();
+  const [{ hasAccessToken: isAuthenticated }, { seenVideoIds, hiddenVideoIds }] = await Promise.all([
+    getShellRequestAuthState(),
+    getShellRequestVideoState(),
+  ]);
   const { slug } = await params;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const letter = typeof resolvedSearchParams?.letter === "string" ? resolvedSearchParams.letter : undefined;

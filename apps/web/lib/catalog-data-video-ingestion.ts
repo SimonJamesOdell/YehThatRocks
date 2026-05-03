@@ -6,6 +6,7 @@
 
 import { prisma } from "@/lib/db";
 import { recordExternalApiUsage } from "@/lib/api-usage-telemetry";
+import { BoundedMap } from "@/lib/bounded-map";
 import {
   buildNormalizedVideoTitleFromMetadata,
   computeArtistChannelConfidenceDelta,
@@ -89,6 +90,10 @@ const NON_MUSIC_SIGNAL_PATTERN = /\b(instagram|tiktok|facebook|whatsapp|snapchat
 
 const REJECTED_VIDEO_CACHE_TTL_MS = 5 * 60_000;
 const BACKFILL_CONCURRENCY = Math.max(1, Math.min(5, Number(process.env.RELATED_BACKFILL_CONCURRENCY || "2")));
+const INGESTION_CACHE_MAX_ENTRIES = Math.max(
+  200,
+  Math.min(5_000, Number(process.env.INGESTION_CACHE_MAX_ENTRIES || "2000")),
+);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -128,8 +133,8 @@ type CachedPlaybackDecision = {
 
 // ── Cache state ───────────────────────────────────────────────────────────────
 
-const rejectedVideoCache = new Map<string, { expiresAt: number; rejected: boolean }>();
-const playbackDecisionCache = new Map<string, CachedPlaybackDecision>();
+const rejectedVideoCache = new BoundedMap<string, { expiresAt: number; rejected: boolean }>(INGESTION_CACHE_MAX_ENTRIES);
+const playbackDecisionCache = new BoundedMap<string, CachedPlaybackDecision>(INGESTION_CACHE_MAX_ENTRIES);
 const runtimeMetadataBackfillInFlight = new Set<number>();
 
 let relatedDiscoveryQuotaSnapshot:

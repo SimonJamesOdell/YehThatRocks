@@ -22,30 +22,13 @@
 
 "use strict";
 
-const fs = require("node:fs");
-const path = require("node:path");
 const { PrismaClient } = require("@prisma/client");
-
-// ---------------------------------------------------------------------------
-// Env bootstrap
-// ---------------------------------------------------------------------------
-
-function loadDatabaseEnv() {
-  const envPath = path.resolve(process.cwd(), "apps/web/.env.local");
-  if (!fs.existsSync(envPath)) return;
-  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const m = trimmed.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (!m) continue;
-    const [, key, raw] = m;
-    if (!process.env[key]) process.env[key] = raw.replace(/^"/, "").replace(/"$/, "");
-  }
-}
+const { hasFlag } = require("./lib/cli");
+const { loadDatabaseEnv } = require("./lib/runtime");
 
 loadDatabaseEnv();
 
-if (process.argv.includes("--help")) {
+if (hasFlag("help")) {
   console.log(
     [
       "Usage: node scripts/build-genre-cards.js [options]",
@@ -63,7 +46,7 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-const isDryRun = process.argv.includes("--dry-run");
+const isDryRun = hasFlag("dry-run");
 const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 const GENRE_TOKEN_STOP_WORDS = new Set([
   "and",

@@ -7,6 +7,7 @@ import { ArtistVideoLink } from "@/components/artist-video-link";
 import { ArtistCreatePlaylistButton } from "@/components/artist-create-playlist-button";
 import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
+import { OverlayHeader } from "@/components/overlay-header";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import type { VideoRecord } from "@/lib/catalog";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
@@ -73,7 +74,7 @@ export function ArtistVideosGridClient({
 
   return (
     <>
-      <div className="favouritesBlindBar">
+      <OverlayHeader close={false}>
         <div className="newPageHeaderLeft">
           <strong>
             <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
@@ -103,7 +104,7 @@ export function ArtistVideosGridClient({
           />
         </div>
         <CloseLink />
-      </div>
+      </OverlayHeader>
 
       <div className="categoryVideoGrid artistVideoGrid">
         {visibleVideos.map((video) => (

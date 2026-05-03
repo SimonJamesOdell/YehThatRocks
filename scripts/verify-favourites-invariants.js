@@ -110,6 +110,12 @@ function main() {
   assertContains(favouritesGridSource, "response.status === 401 || response.status === 403", "FavouritesGrid handles 401/403 from favourites API gracefully", failures);
   assertContains(favouritesGridSource, "Sign in to manage favourites", "FavouritesGrid shows sign-in prompt for unauthenticated actions", failures);
 
+  // --- FavouritesGrid: shared playlist creation orchestration ---
+  assertContains(favouritesGridSource, 'import { createPlaylistFromVideoList } from "@/lib/playlist-create-from-video-list";', "FavouritesGrid imports shared createPlaylistFromVideoList helper", failures);
+  assertContains(favouritesGridSource, "await createPlaylistFromVideoList({", "FavouritesGrid delegates playlist creation flow to shared helper", failures);
+  assertNotContains(favouritesGridSource, "await createPlaylistClient(", "FavouritesGrid does not duplicate low-level playlist creation call orchestration", failures);
+  assertNotContains(favouritesGridSource, "addPlaylistItemsClient(", "FavouritesGrid does not duplicate low-level playlist add-items orchestration", failures);
+
   // --- Client auth retry for favourites mutations ---
   assertContains(clientAuthFetchSource, "export async function fetchWithAuthRetry", "Client auth helper exports fetchWithAuthRetry", failures);
   assertContains(clientAuthFetchSource, "const response = await fetch(\"/api/auth/refresh\"", "Client auth helper calls refresh endpoint when needed", failures);

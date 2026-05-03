@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import type { GenreCard } from "@/lib/catalog-data";
 import { getGenreSlug } from "@/lib/catalog-data";
@@ -130,7 +131,7 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
 
   return (
     <div className="categoriesFilterSection">
-      <div className="favouritesBlindBar categoriesHeaderBar">
+      <OverlayHeader className="categoriesHeaderBar" close={false}>
         <div className="categoriesHeaderMain">
           <strong>
             <span className="categoryHeaderBreadcrumb">☣ Categories</span>
@@ -149,7 +150,7 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
           </div>
         </div>
         <CloseLink />
-      </div>
+      </OverlayHeader>
 
       <div className="categoriesCatalogStage">
         {filteredCards.length > 0 ? (

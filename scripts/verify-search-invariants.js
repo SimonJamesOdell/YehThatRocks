@@ -11,6 +11,7 @@ const files = {
   searchRoute: path.join(ROOT, "apps/web/app/api/search/route.ts"),
   searchFlagsRoute: path.join(ROOT, "apps/web/app/api/search-flags/route.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
+  catalogDataArtists: path.join(ROOT, "apps/web/lib/catalog-data-artists.ts"),
   searchFlagData: path.join(ROOT, "apps/web/lib/search-flag-data.ts"),
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
   searchFlagButton: path.join(ROOT, "apps/web/components/search-flag-button.tsx"),
@@ -51,6 +52,7 @@ function main() {
   const searchRouteSource = readFileStrict(files.searchRoute, ROOT);
   const searchFlagsRouteSource = readFileStrict(files.searchFlagsRoute, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
+  const catalogDataArtistsSource = readFileStrict(files.catalogDataArtists, ROOT);
   const searchFlagDataSource = readFileStrict(files.searchFlagData, ROOT);
   const shellDynamicSource = [
     readFileStrict(files.shellDynamic, ROOT),
@@ -80,7 +82,7 @@ function main() {
   assertContains(searchPageSource, "{uniqueVideos.map((video) => {", "Search page renders deduplicated video list", failures);
   assertContains(searchPageSource, "new Map(results.artists.map((artist) => [artist.slug, artist])).values()", "Search page deduplicates artists by slug", failures);
   assertContains(searchPageSource, "new Set(results.genres)", "Search page deduplicates genres using Set", failures);
-  assertContains(searchPageSource, "const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();", "Search page loads seen video ids for authenticated users", failures);
+  assertContains(searchPageSource, "getShellRequestVideoState", "Search page loads seen/hidden state via shared shell request state helper", failures);
   assertContains(searchPageSource, "const isSeen = seenVideoIds.has(video.id);", "Search page computes seen status per video", failures);
   assertContains(searchPageSource, "top100CardSeen", "Search page applies seen-card darkening class used by New/Top100", failures);
   assertContains(searchPageSource, 'videoSeenBadge videoSeenBadgeOverlay', "Search page renders seen badge overlay on thumbnails", failures);
@@ -151,8 +153,8 @@ function main() {
 
   // Artist search efficiency guardrails (5-minute cache + in-flight dedupe).
   assertContains(catalogDataSource, "const ARTIST_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;", "Catalog data defines artist search cache TTL", failures);
-  assertContains(catalogDataSource, "const artistSearchCache = new Map", "Catalog data stores artist search cache entries", failures);
-  assertContains(catalogDataSource, "const artistSearchInFlight = new Map", "Catalog data tracks in-flight artist search requests", failures);
+  assertContains(catalogDataArtistsSource, "const artistSearchCache = new BoundedMap", "Catalog data stores artist search cache entries in a bounded map", failures);
+  assertContains(catalogDataArtistsSource, "const artistSearchInFlight = new BoundedMap", "Catalog data tracks in-flight artist search requests in a bounded map", failures);
   assertContains(catalogDataSource, "const searchCacheKey = `s:${normalizedSearch}|l:${cappedLimit}|o:${orderByName ? 1 : 0}|p:${prefixOnly ? 1 : 0}|n:${nameOnly ? 1 : 0}`;", "Catalog data keys artist search cache by normalized query and mode", failures);
   assertContains(catalogDataSource, "const inFlight = artistSearchInFlight.get(searchCacheKey);", "Catalog data reuses in-flight artist search work", failures);
   assertContains(catalogDataSource, "artistSearchCache.set(searchCacheKey", "Catalog data writes artist search cache after query completion", failures);
@@ -184,10 +186,10 @@ function main() {
   assertContains(shellDynamicSource, "router.push(`/search?q=${encodeURIComponent(searchValue.trim())}&v=${encodeURIComponent(currentVideo.id)}`);", "Shell Enter without active suggestion routes to search results", failures);
 
   // --- Admin video edit modal and button on search results ---
-  assertContains(searchPageSource, 'import { isAdminIdentity } from "@/lib/admin-auth";', "Search page imports admin identity helper", failures);
+  assertContains(searchPageSource, "getShellRequestAuthState", "Search page resolves auth/admin state via shared shell request state helper", failures);
   assertContains(searchPageSource, 'import { AdminVideoEditButton } from "@/components/admin-video-edit-button";', "Search page imports admin video edit button", failures);
   assertContains(searchPageSource, 'import { AdminVideoDeleteButton } from "@/components/admin-video-delete-button";', "Search page imports admin video delete button", failures);
-  assertContains(searchPageSource, "const isAdminUser = Boolean(user && isAdminIdentity(user.id, user.email ?? \"\"));", "Search page computes admin status from user", failures);
+  assertContains(searchPageSource, "isAdmin: isAdminUser", "Search page maps helper-provided admin state into isAdminUser", failures);
   assertContains(searchPageSource, "<AdminVideoEditButton videoId={video.id} isAdmin={isAdminUser} />", "Search page renders admin edit button for each video", failures);
   assertContains(searchPageSource, "<AdminVideoDeleteButton videoId={video.id} title={video.title} isAdmin={isAdminUser} />", "Search page renders admin delete button for each video", failures);
 

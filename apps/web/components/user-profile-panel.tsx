@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { CloseLink } from "@/components/close-link";
+import { useOverlayScrollContainerRef } from "@/components/overlay-scroll-container-context";
+import { OverlayHeader } from "@/components/overlay-header";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import type { PlaylistSummary } from "@/lib/catalog-data";
 import type { PublicUserProfile } from "@/lib/catalog-data";
@@ -31,10 +33,11 @@ export function UserProfilePanel({ user, favourites, playlists, isAuthenticated,
   const [tab, setTab] = useState<ProfileTab>("favourites");
   const [selectedPlaylist, setSelectedPlaylist] = useState<PlaylistDetail | null>(null);
   const [isLoadingPlaylist, setIsLoadingPlaylist] = useState(false);
+  const overlayScrollContainerRef = useOverlayScrollContainerRef();
   const seenVideoIdSet = new Set(seenVideoIds);
 
   const scrollOverlayToTop = () => {
-    const overlay = document.querySelector<HTMLElement>(".favouritesBlindInner");
+    const overlay = overlayScrollContainerRef?.current;
     if (overlay) {
       overlay.scrollTo({ top: 0, left: 0, behavior: "auto" });
     }
@@ -92,7 +95,7 @@ export function UserProfilePanel({ user, favourites, playlists, isAuthenticated,
 
   return (
     <div className="userProfilePage">
-      <div className="favouritesBlindBar userProfileBar">
+      <OverlayHeader className="userProfileBar" close={false}>
         <div className="userProfileHeaderWrap">
           {user.avatarUrl ? (
             <Image
@@ -119,7 +122,7 @@ export function UserProfilePanel({ user, favourites, playlists, isAuthenticated,
         </div>
         <div className="userProfileHeaderTabsSlot">{tabControls}</div>
         <CloseLink />
-      </div>
+      </OverlayHeader>
 
       {tab === "favourites" && (
         <section className="userProfileSection">

@@ -5,6 +5,7 @@ import { requireApiAuth } from "@/lib/auth-request";
 import { isScreenNameTaken, normalizeScreenName } from "@/lib/auth-screen-name";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
+import type { PrismaWithProfileUser } from "@/lib/prisma-types";
 import { parseRequestJson } from "@/lib/request-json";
 
 const profileSchema = z.object({
@@ -16,57 +17,6 @@ const profileSchema = z.object({
   bio: z.string().trim().max(1200),
   location: z.string().trim().max(120),
 });
-
-type PrismaWithProfileUser = typeof prisma & {
-  user: {
-    findUnique: (args: {
-      where: { id: number };
-      select: {
-        id: true;
-        email: true;
-        emailVerifiedAt: true;
-        screenName: true;
-        avatarUrl: true;
-        bio: true;
-        location: true;
-      };
-    }) => Promise<{
-      id: number;
-      email: string | null;
-      emailVerifiedAt: Date | null;
-      screenName: string | null;
-      avatarUrl: string | null;
-      bio: string | null;
-      location: string | null;
-    } | null>;
-    update: (args: {
-      where: { id: number };
-      data: {
-        screenName: string;
-        avatarUrl: string | null;
-        bio: string | null;
-        location: string | null;
-      };
-      select: {
-        id: true;
-        email: true;
-        emailVerifiedAt: true;
-        screenName: true;
-        avatarUrl: true;
-        bio: true;
-        location: true;
-      };
-    }) => Promise<{
-      id: number;
-      email: string | null;
-      emailVerifiedAt: Date | null;
-      screenName: string | null;
-      avatarUrl: string | null;
-      bio: string | null;
-      location: string | null;
-    }>;
-  };
-};
 
 export async function GET(request: NextRequest) {
   const authResult = await requireApiAuth(request);

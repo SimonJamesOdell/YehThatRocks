@@ -120,7 +120,7 @@ function main() {
   assertContains(shellDynamicSource, "aria-label=\"Loading more suggestions\"", "Watch Next load-more hint uses loader bars with an accessible status label", failures);
   assertNotContains(shellDynamicSource, "<p className=\"rightRailStatus\">Loading more suggestions...</p>", "Watch Next no longer shows repetitive loading text between appended batches", failures);
   assertContains(shellDynamicSource, "initialHiddenVideoIds", "Watch Next shell accepts hidden video ids", failures);
-  assertContains(shellDynamicSource, "filterHiddenRelatedVideos", "Watch Next shell filters hidden videos from rail", failures);
+  assertContains(shellDynamicSource, "filterHiddenVideos", "Watch Next shell filters hidden videos from rail", failures);
   assertNotContains(shellDynamicSource, "params.set(\"exclude\"", "Watch Next no longer sends giant exclude id lists in URL", failures);
   assertContains(shellDynamicRenderingSource, "{isSeen && !isFavourite ? <span className=\"videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay\">Seen</span> : null}", "Watch Next only renders seen badge when card is seen and not favourited", failures);
   assertContains(shellDynamicRenderingSource, "{isFavourite ? <span className=\"relatedFavouriteBadgeOverlay\" aria-hidden=\"true\">♥</span> : null}", "Watch Next renders favourite heart overlay for favourited cards", failures);

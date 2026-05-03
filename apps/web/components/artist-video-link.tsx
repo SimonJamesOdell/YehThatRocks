@@ -9,9 +9,8 @@ import { SearchResultFavouriteButton } from "@/components/search-result-favourit
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 import type { VideoRecord } from "@/lib/catalog";
-
-const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
 
 type ArtistVideoLinkProps = {
   video: VideoRecord;

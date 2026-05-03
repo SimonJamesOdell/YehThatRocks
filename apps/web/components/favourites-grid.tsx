@@ -7,10 +7,11 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
-import { addPlaylistItemsClient, createPlaylistClient } from "@/lib/playlist-client-service";
+import { createPlaylistFromVideoList } from "@/lib/playlist-create-from-video-list";
 
 const FAVOURITES_BATCH_SIZE = 20;
 
@@ -359,11 +360,6 @@ export function FavouritesGrid({
   }, [router]);
 
   async function createPlaylistFromFavourites() {
-    if (!isAuthenticated) {
-      setMessage("Sign in to create playlists.");
-      return;
-    }
-
     let sourceFavourites = favourites;
 
     if (hasMore) {
@@ -389,15 +385,7 @@ export function FavouritesGrid({
       }
     }
 
-    const favouriteVideoIds = sourceFavourites.map((track) => track.id).filter(Boolean);
-
-    if (favouriteVideoIds.length === 0) {
-      setMessage("No favourites available to add.");
-      return;
-    }
-
     setIsCreatingPlaylistFromFavourites(true);
-    setMessage(null);
 
     const playlistName = `Favourites ${new Date().toLocaleString([], {
       month: "short",
@@ -405,156 +393,31 @@ export function FavouritesGrid({
       hour: "2-digit",
       minute: "2-digit",
     })}`;
-    let createdPlaylistIdForProgress: string | null = null;
 
     try {
-      const createResponse = await createPlaylistClient({
-        name: playlistName,
-        videoIds: [],
-      }, {
-        telemetryContext: {
-          component: "favourites-grid",
+      await createPlaylistFromVideoList({
+        isAuthenticated,
+        sourceVideos: sourceFavourites,
+        playlistName,
+        router,
+        currentVideoId: searchParams.get("v"),
+        telemetryComponent: "favourites-grid",
+        setStatus: setMessage,
+        emptyMessage: "No favourites available to add.",
+        createFailedMessage: "Could not create playlist from favourites. Please try again.",
+        optimisticMode: {
+          kind: "staggered",
+          reconcileOnlyWhenChanged: true,
+        },
+        dispatchCreationProgressDone: true,
+        onBuildSuccessMessage: ({ playlistName: finalName, addedCount, requestedCount }) => {
+          if (addedCount < requestedCount) {
+            return `Created playlist "${finalName}" with ${addedCount}/${requestedCount} tracks.`;
+          }
+
+          return `Created playlist "${finalName}" with all ${addedCount} favourites.`;
         },
       });
-
-      if (!createResponse.ok && (createResponse.error.code === "unauthorized" || createResponse.error.code === "forbidden")) {
-        setMessage("Sign in to create playlists.");
-        return;
-      }
-
-      if (!createResponse.ok) {
-        setMessage("Could not create playlist from favourites. Please try again.");
-        return;
-      }
-
-      const created = createResponse.data as { id?: string; name?: string };
-      const createdPlaylistId = created?.id;
-
-      if (!createdPlaylistId) {
-        setMessage("Could not create playlist from favourites. Please try again.");
-        return;
-      }
-
-      createdPlaylistIdForProgress = createdPlaylistId;
-
-      // Navigate and open the rail immediately — no loading state needed.
-      const currentVideoId = searchParams.get("v");
-      const closeHref = currentVideoId
-        ? `/?v=${encodeURIComponent(currentVideoId)}&pl=${encodeURIComponent(createdPlaylistId)}&resume=1`
-        : `/?pl=${encodeURIComponent(createdPlaylistId)}`;
-
-      dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href: closeHref });
-      dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, { mode: "playlist", playlistId: createdPlaylistId });
-      router.push(closeHref);
-
-      // Immediately populate the rail from the already-loaded favourites list
-      // using a staggered reveal so tracks animate in without waiting for the server.
-      const ANIMATED_TRACK_LIMIT = 40;
-      const optimisticVideos = sourceFavourites;
-      const animatedVideos = optimisticVideos.slice(0, ANIMATED_TRACK_LIMIT);
-      const optimisticItemCount = optimisticVideos.length;
-
-      for (let index = 0; index < animatedVideos.length; index += 1) {
-        const video = animatedVideos[index];
-
-        window.setTimeout(() => {
-          const visible = optimisticVideos.slice(0, index + 1);
-
-          dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
-            playlist: {
-              id: createdPlaylistId,
-              name: playlistName,
-              videos: visible,
-              itemCount: optimisticItemCount,
-            },
-          });
-
-          dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
-            mode: "playlist",
-            playlistId: createdPlaylistId,
-            trackId: video.id,
-          });
-        }, index * 22);
-      }
-
-      // Once the optimistic animation is done, send the full list to the server
-      // in the background and reconcile with the authoritative server response.
-      const animationDoneMs = animatedVideos.length * 22 + 40;
-
-      window.setTimeout(() => {
-        // Show all tracks (including any beyond ANIMATED_TRACK_LIMIT) optimistically.
-        dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
-          playlist: {
-            id: createdPlaylistId,
-            name: playlistName,
-            videos: optimisticVideos,
-            itemCount: optimisticItemCount,
-          },
-        });
-      }, animationDoneMs);
-
-      // Fire bulk add in background; reconcile rail with server truth when it returns.
-      void addPlaylistItemsClient(
-        { playlistId: createdPlaylistId, videoIds: favouriteVideoIds },
-        { telemetryContext: { component: "favourites-grid" } },
-      ).then(async (addAllResponse) => {
-        if (!addAllResponse.ok) {
-          setMessage("Playlist was created, but some tracks could not be saved.");
-          dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-          return;
-        }
-
-        const updatedPlaylist = addAllResponse.data as
-          | { id?: string; videos?: VideoRecord[]; itemCount?: number; name?: string }
-          | undefined;
-
-        const finalVideos = Array.isArray(updatedPlaylist?.videos) ? updatedPlaylist.videos : optimisticVideos;
-        const finalName = updatedPlaylist?.name ?? playlistName;
-        const finalItemCount = updatedPlaylist?.itemCount ?? finalVideos.length;
-
-        // Only reconcile if the server returned a meaningfully different set
-        // (different IDs order/count or name) to avoid a redundant re-render.
-        const optimisticIds = optimisticVideos.map((v) => v.id).join(",");
-        const serverIds = finalVideos.map((v) => v.id).join(",");
-        if (serverIds !== optimisticIds || finalName !== playlistName) {
-          dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
-            playlist: {
-              id: createdPlaylistId,
-              name: finalName,
-              videos: finalVideos,
-              itemCount: finalItemCount,
-            },
-          });
-        }
-
-        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-
-        const addedCount = finalVideos.length;
-        if (addedCount < favouriteVideoIds.length) {
-          setMessage(`Created playlist "${finalName}" with ${addedCount}/${favouriteVideoIds.length} tracks.`);
-        } else {
-          setMessage(`Created playlist "${finalName}" with all ${addedCount} favourites.`);
-        }
-      }).catch(() => {
-        setMessage("Playlist was created, but tracks could not be saved.");
-        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-      });
-
-      // Mark creation complete once the optimistic animation has finished.
-      window.setTimeout(() => {
-        dispatchAppEvent(EVENT_NAMES.PLAYLIST_CREATION_PROGRESS, {
-          playlistId: createdPlaylistId,
-          phase: "done",
-        });
-      }, animationDoneMs);
-    } catch {
-      if (createdPlaylistIdForProgress) {
-        dispatchAppEvent(EVENT_NAMES.PLAYLIST_CREATION_PROGRESS, {
-          playlistId: createdPlaylistIdForProgress,
-          phase: "failed",
-        });
-      }
-      setMessage("Could not create playlist from favourites. Please try again.");
     } finally {
       setIsCreatingPlaylistFromFavourites(false);
     }
@@ -562,7 +425,7 @@ export function FavouritesGrid({
 
   return (
     <>
-      <div className="favouritesBlindBar categoriesHeaderBar">
+      <OverlayHeader className="categoriesHeaderBar" close={false}>
         <div className="categoriesHeaderMain">
           <strong><span className="whiteHeart" aria-hidden="true">❤️</span> Favourites ({totalCount})</strong>
           <div className="categoriesFilterBar">
@@ -593,7 +456,7 @@ export function FavouritesGrid({
           </div>
         </div>
         <CloseLink />
-      </div>
+      </OverlayHeader>
 
       {filteredFavourites.length > 0 ? (
         <>

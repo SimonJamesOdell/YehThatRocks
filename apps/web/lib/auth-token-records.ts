@@ -1,32 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 
 import { prisma } from "@/lib/db";
-
-type VerificationDelegate = {
-  create: (args: { data: { userId: number; tokenHash: string; expiresAt: Date } }) => Promise<unknown>;
-  findUnique: (args: { where: { tokenHash: string } }) => Promise<{
-    id: number;
-    userId: number;
-    expiresAt: Date;
-    consumedAt: Date | null;
-  } | null>;
-  updateMany: (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => Promise<unknown>;
-};
-
-type PasswordResetDelegate = VerificationDelegate;
-
-type UserDelegate = {
-  update: (args: {
-    where: { id: number };
-    data: { emailVerifiedAt?: Date; passwordHash?: string };
-  }) => Promise<unknown>;
-};
-
-type PrismaWithTokenModels = typeof prisma & {
-  emailVerificationToken: VerificationDelegate;
-  passwordResetToken: PasswordResetDelegate;
-  user: UserDelegate;
-};
+import type { PrismaWithTokenModels } from "@/lib/prisma-types";
 
 const VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;

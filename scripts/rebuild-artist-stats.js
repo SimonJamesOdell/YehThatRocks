@@ -1,35 +1,8 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
-const path = require("node:path");
 const { PrismaClient } = require("@prisma/client");
-
-function loadDatabaseEnv() {
-  const envPath = path.resolve(process.cwd(), "apps/web/.env.local");
-  if (!fs.existsSync(envPath)) {
-    return;
-  }
-
-  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-
-    const match = trimmed.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (!match) {
-      continue;
-    }
-
-    const [, key, rawValue] = match;
-    if (process.env[key]) {
-      continue;
-    }
-
-    process.env[key] = rawValue.replace(/^"/, "").replace(/"$/, "");
-  }
-}
+const { parseArg, hasFlag } = require("./lib/cli");
+const { loadDatabaseEnv } = require("./lib/runtime");
 
 loadDatabaseEnv();
 
@@ -48,17 +21,9 @@ Options:
   --help               Show this help
 `;
 
-if (process.argv.includes("--help")) {
+if (hasFlag("help")) {
   console.log(HELP_TEXT.trim());
   process.exit(0);
-}
-
-function parseArg(name, fallback) {
-  const raw = process.argv.find((arg) => arg.startsWith(`--${name}=`));
-  if (!raw) {
-    return fallback;
-  }
-  return raw.slice(name.length + 3);
 }
 
 function slugify(value) {
@@ -126,7 +91,7 @@ async function getArtistVideoColumnMap(prisma) {
 
 async function main() {
   const prisma = new PrismaClient();
-  const dryRun = process.argv.includes("--dry-run");
+  const dryRun = hasFlag("dry-run");
   const letter = parseArg("letter", "").trim().toUpperCase();
   const limit = Math.max(0, Number.parseInt(parseArg("limit", "0"), 10) || 0);
   const startedAt = Date.now();

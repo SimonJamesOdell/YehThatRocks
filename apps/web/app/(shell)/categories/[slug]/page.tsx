@@ -1,20 +1,12 @@
-import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { CategoryVideosInfinite } from "@/components/category-videos-infinite";
-import { CategoriesScrollReset } from "@/components/categories-scroll-reset";
+import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import {
   getGenreBySlug,
-  getGenres,
-  getGenreSlug,
-  getHiddenVideoIdsForUser,
-  getSeenVideoIdsForUser,
   getVideosByGenre,
 } from "@/lib/catalog-data";
-import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
-import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
-
-export const revalidate = 3600;
+import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
 const CATEGORY_INITIAL_PAGE_SIZE = 48;
 
 type CategoryPageProps = {
@@ -22,16 +14,10 @@ type CategoryPageProps = {
 };
 
 export default async function CategoryDetailPage({ params }: CategoryPageProps) {
-  const cookieStore = await cookies();
-  const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
-  const user = await getCurrentAuthenticatedUser();
-
-  const [seenVideoIds, hiddenVideoIds] = user
-    ? await Promise.all([
-      getSeenVideoIdsForUser(user.id),
-      getHiddenVideoIdsForUser(user.id),
-    ])
-    : [new Set<string>(), new Set<string>()];
+  const [{ hasAccessToken: isAuthenticated }, { seenVideoIds, hiddenVideoIds }] = await Promise.all([
+    getShellRequestAuthState(),
+    getShellRequestVideoState(),
+  ]);
 
   const { slug } = await params;
   const genre = await getGenreBySlug(slug);
@@ -46,7 +32,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
   const initialVideos = initialVideosWithProbe.slice(0, CATEGORY_INITIAL_PAGE_SIZE);
   return (
     <>
-      <CategoriesScrollReset />
+      <OverlayScrollReset />
 
       <CategoryVideosInfinite
         slug={slug}

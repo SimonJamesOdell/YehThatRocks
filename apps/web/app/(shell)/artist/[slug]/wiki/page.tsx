@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import { getArtistBySlug, upsertVerifiedExternalArtistCandidate } from "@/lib/catalog-data";
 import { getOrCreateArtistWiki, verifyExternalArtistBySlug } from "@/lib/artist-wiki";
 import { getArtistPagePath, withVideoContext } from "@/lib/artist-routing";
@@ -99,7 +100,7 @@ export default async function ArtistWikiPage({ params, searchParams }: ArtistWik
 
   return (
     <>
-      <div className="favouritesBlindBar">
+      <OverlayHeader close={false}>
         <strong>
           <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
             <span className="categoryHeaderIcon" aria-hidden="true">📖</span>
@@ -115,7 +116,7 @@ export default async function ArtistWikiPage({ params, searchParams }: ArtistWik
           </span>
         </strong>
         <CloseLink />
-      </div>
+      </OverlayHeader>
 
       <section className="artistWikiPage" aria-label={`${artist.name} wiki`}>
         <div className="artistWikiFlow">

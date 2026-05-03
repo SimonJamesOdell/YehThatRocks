@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
+import { ServiceFailurePanel } from "@/components/service-failure-panel";
 
 type CategoryErrorProps = {
   error: Error;
@@ -14,24 +15,22 @@ export default function CategoryError({ error, reset }: CategoryErrorProps) {
   }, [error]);
 
   return (
-    <main className="serviceFailureScreen" role="main" aria-label="Category unavailable">
-      <div className="serviceFailureBackdrop" aria-hidden="true" />
-      <section className="serviceFailurePanel" role="status" aria-live="polite" aria-label="Category unavailable">
-        <p className="serviceFailureEyebrow">Category status</p>
-        <h2 className="serviceFailureTitle">Category temporarily unavailable</h2>
-        <p className="serviceFailureLead">
-          The system cannot serve this request right now. Please try again later.
-        </p>
-
-        <div className="serviceFailureActions">
+    <ServiceFailurePanel
+      mainAriaLabel="Category unavailable"
+      panelAriaLabel="Category unavailable"
+      eyebrow="Category status"
+      title="Category temporarily unavailable"
+      lead="The system cannot serve this request right now. Please try again later."
+      actions={(
+        <>
           <button type="button" className="serviceFailureActionPrimary" onClick={reset}>
             Try again
           </button>
           <Link href="/categories" className="serviceFailureActionSecondary">
             Back to categories
           </Link>
-        </div>
-      </section>
-    </main>
+        </>
+      )}
+    />
   );
 }

@@ -9,6 +9,7 @@ import {
   SHARE_SITE_NAME,
   resolveShareMetadataForOrigin,
 } from "@/lib/share-metadata";
+import { ServiceFailurePanel } from "@/components/service-failure-panel";
 import { ShareRedirect } from "./share-redirect";
 
 type SharePageProps = {
@@ -111,17 +112,15 @@ export default async function ShareVideoPage({ params }: SharePageProps) {
   const targetHref = normalizedVideoId ? `/?v=${encodeURIComponent(normalizedVideoId)}&resume=1` : "/";
 
   return (
-    <main className="serviceFailureScreen" role="main" aria-label="Opening shared video">
-      <ShareRedirect targetHref={targetHref} />
-      <div className="serviceFailureBackdrop" aria-hidden="true" />
-      <section className="serviceFailurePanel" role="status" aria-live="polite" aria-label="Opening shared video">
-        <p className="serviceFailureEyebrow">Share link</p>
-        <h1 className="serviceFailureTitle">Opening video...</h1>
-        <p className="serviceFailureLead">If you are not redirected, use the button below.</p>
-        <div className="serviceFailureActions">
-          <Link href={targetHref} className="linkedCard">Open video</Link>
-        </div>
-      </section>
-    </main>
+    <ServiceFailurePanel
+      mainAriaLabel="Opening shared video"
+      panelAriaLabel="Opening shared video"
+      eyebrow="Share link"
+      title="Opening video..."
+      lead="If you are not redirected, use the button below."
+      headingLevel={1}
+      prePanelContent={<ShareRedirect targetHref={targetHref} />}
+      actions={<Link href={targetHref} className="linkedCard">Open video</Link>}
+    />
   );
 }

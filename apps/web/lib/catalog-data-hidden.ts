@@ -4,7 +4,7 @@
  */
 
 import { prisma } from "@/lib/db";
-import { pruneMapToMaxEntries } from "@/lib/bounded-map";
+import { BoundedMap } from "@/lib/bounded-map";
 import type { HiddenVideoEntry } from "@/lib/catalog-data-utils";
 import {
   hasDatabaseUrl,
@@ -28,8 +28,12 @@ const USER_SCOPED_CACHE_MAX_ENTRIES = Math.max(
 );
 
 const HIDDEN_VIDEO_IDS_CACHE_TTL_MS = 20_000;
-const hiddenVideoIdsCache = new Map<number, { expiresAt: number; ids: Set<string> }>();
-const hiddenVideoIdsInFlight = new Map<number, Promise<Set<string>>>();
+const hiddenVideoIdsCache = new BoundedMap<number, { expiresAt: number; ids: Set<string> }>(
+  USER_SCOPED_CACHE_MAX_ENTRIES,
+);
+const hiddenVideoIdsInFlight = new BoundedMap<number, Promise<Set<string>>>(
+  USER_SCOPED_CACHE_MAX_ENTRIES,
+);
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
@@ -43,7 +47,6 @@ function cacheHiddenVideoIdsForUser(userId: number, ids: Set<string>) {
     expiresAt: Date.now() + HIDDEN_VIDEO_IDS_CACHE_TTL_MS,
     ids: cloneHiddenIdSet(ids),
   });
-  pruneMapToMaxEntries(hiddenVideoIdsCache, USER_SCOPED_CACHE_MAX_ENTRIES);
 }
 
 function getCachedHiddenVideoIdsForUser(userId: number): Set<string> | undefined {

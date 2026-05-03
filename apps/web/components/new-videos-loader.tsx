@@ -1,20 +1,25 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
 import { Top100VideoLink } from "@/components/top100-video-link";
 import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
-import { NewScrollReset } from "@/components/new-scroll-reset";
+import { SuggestNewModal } from "@/components/suggest-new-modal";
+import { useOverlayScrollContainerRef } from "@/components/overlay-scroll-container-context";
+import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
+import { OverlayHeader } from "@/components/overlay-header";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
+import { useActiveRowAutoScroll } from "@/components/use-active-row-auto-scroll";
+import { useNewVideosDataLoader } from "@/components/use-new-videos-data-loader";
+import { useNewVideosModeration } from "@/components/use-new-videos-moderation";
+import { useNewVideosScrollPrefetch } from "@/components/use-new-videos-scroll-prefetch";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
-import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
-import { addPlaylistItemsClient, createPlaylistClient } from "@/lib/playlist-client-service";
-import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
+import { useSuggestNewVideo } from "@/components/use-suggest-new-video";
+import { createPlaylistFromVideoList } from "@/lib/playlist-create-from-video-list";
 import {
   VIDEO_QUALITY_FLAG_REASON_LABELS,
   VIDEO_QUALITY_FLAG_REASONS,
@@ -23,16 +28,6 @@ import {
 
 const NEW_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-new";
 const NEW_ROUTE_QUEUE_SYNC_EVENT = "ytr:new-route-queue-sync";
-
-type SuggestOutcome = {
-  kind: "video" | "playlist";
-  status: "ingested" | "already-in-catalog" | "rejected" | "queued";
-  title: string;
-  detail: string;
-  videoId?: string;
-  artist?: string | null;
-  track?: string | null;
-};
 
 type NewVideosApiPayload = {
   videos?: VideoRecord[];
@@ -52,33 +47,6 @@ const NEW_SCROLL_MAX_PREFETCH_BATCHES = 2;
 const NEW_PLAYLIST_MAX_ITEMS = 100;
 const NEW_FIRST_LOAD_TIMEOUT_MS = 6_500;
 const NEW_HEAD_REFRESH_INTERVAL_MS = 90_000;
-
-type ScrollMetrics = {
-  scrollTop: number;
-  scrollHeight: number;
-  clientHeight: number;
-};
-
-function dedupeVideos(videos: VideoRecord[]) {
-  const seen = new Set<string>();
-
-  return videos.filter((video) => {
-    if (seen.has(video.id)) {
-      return false;
-    }
-
-    seen.add(video.id);
-    return true;
-  });
-}
-
-function filterHiddenVideos(videos: VideoRecord[], hiddenVideoIdSet: Set<string>) {
-  if (hiddenVideoIdSet.size === 0) {
-    return videos;
-  }
-
-  return videos.filter((video) => !hiddenVideoIdSet.has(video.id));
-}
 
 type NewVideoRowProps = {
   track: VideoRecord;
@@ -155,49 +123,85 @@ export function NewVideosLoader({
   const seenVideoIdsKey = useMemo(() => [...seenVideoIds].sort().join("|"), [seenVideoIds]);
   const initialVideoIdsKey = useMemo(() => initialVideos.map((video) => video.id).join("|"), [initialVideos]);
   const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIdsKey]);
-  const [allVideos, setAllVideos] = useState(() => dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet)));
   const [clientSeenVideoIds, setClientSeenVideoIds] = useState(() => new Set(seenVideoIds));
   const [deferredSeenRemovalIds, setDeferredSeenRemovalIds] = useState<Set<string>>(() => new Set());
-  const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
-  const [videoPendingHideConfirm, setVideoPendingHideConfirm] = useState<VideoRecord | null>(null);
-  const [flaggingVideo, setFlaggingVideo] = useState<VideoRecord | null>(null);
-  const [flagReason, setFlagReason] = useState<VideoQualityFlagReason>("broken-playback");
-  const [flagPendingVideoId, setFlagPendingVideoId] = useState<string | null>(null);
-  const [flagStatus, setFlagStatus] = useState<string | null>(null);
   const [playlistStatus, setPlaylistStatus] = useState<string | null>(null);
-  const [isSuggestModalOpen, setIsSuggestModalOpen] = useState(false);
-  const [suggestSource, setSuggestSource] = useState("");
-  const [suggestArtist, setSuggestArtist] = useState("");
-  const [suggestTrack, setSuggestTrack] = useState("");
-  const [suggestPending, setSuggestPending] = useState(false);
-  const [suggestQuotaStatusPending, setSuggestQuotaStatusPending] = useState(false);
-  const [suggestQuotaExhausted, setSuggestQuotaExhausted] = useState(false);
-  const [suggestError, setSuggestError] = useState<string | null>(null);
-  const [suggestOutcome, setSuggestOutcome] = useState<SuggestOutcome | null>(null);
   const [isCreatingPlaylistFromNew, setIsCreatingPlaylistFromNew] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [loadBootstrapError, setLoadBootstrapError] = useState<string | null>(null);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
-  const [initialLoadRetryNonce, setInitialLoadRetryNonce] = useState(0);
   const [hideSeen, setHideSeen] = useSeenTogglePreference({
     key: NEW_HIDE_SEEN_TOGGLE_KEY,
     isAuthenticated,
   });
-  const nextOffsetRef = useRef(initialVideos.length);
-  const requestedOffsetsRef = useRef(new Set<number>());
-  const emptyBatchStreakRef = useRef(0);
-  const hasMoreRef = useRef(true);
-  const isLoadingMoreRef = useRef(false);
-  const prefetchInFlightRef = useRef(false);
-  const lastPrefetchAtRef = useRef(0);
-  const allVideoIdsRef = useRef(new Set<string>());
-  const activeTrackAutoScrollRafRef = useRef<number | null>(null);
-  const lastAutoScrolledActiveVideoIdRef = useRef<string | null>(null);
-  // Captures the overlay's scrollTop synchronously before each browser paint
-  // so we can restore it if something (e.g. Next.js scroll-restoration) resets it to 0.
-  const capturedScrollTopRef = useRef<number>(0);
+  const {
+    allVideos,
+    allVideoIdsRef,
+    hasMore,
+    hasMoreRef,
+    isLoadingMore,
+    isLoadingMoreRef,
+    lastPrefetchAtRef,
+    loadBatch,
+    loadBootstrapError,
+    loadMoreError,
+    loading,
+    nextOffsetRef,
+    prefetchInFlightRef,
+    removeVideoById,
+    retryInitialLoad,
+    retryLoadMore,
+  } = useNewVideosDataLoader({
+    initialVideos,
+    hiddenVideoIdSet,
+    hiddenVideoIdsKey,
+    initialVideoIdsKey,
+    initialBatchSize: NEW_INITIAL_BATCH_SIZE,
+    startupPrefetchTarget: NEW_STARTUP_PREFETCH_TARGET,
+    scrollBatchSize: NEW_SCROLL_BATCH_SIZE,
+    firstLoadTimeoutMs: NEW_FIRST_LOAD_TIMEOUT_MS,
+    headRefreshIntervalMs: NEW_HEAD_REFRESH_INTERVAL_MS,
+  });
+  const {
+    cancelHideVideo,
+    confirmHideVideo,
+    flagPendingVideoId,
+    flagReason,
+    flagStatus,
+    flaggingVideo,
+    handleCloseFlagDialog,
+    handleHideVideo,
+    handleOpenFlagDialog,
+    handleSubmitFlag,
+    hidingVideoIds,
+    setFlagReason,
+    videoPendingHideConfirm,
+  } = useNewVideosModeration({
+    isAuthenticated,
+    isAdminUser,
+    onRemoveVideoById: removeVideoById,
+  });
+  const {
+    closeSuggestModal,
+    isSuggestModalOpen,
+    openSuggestModal,
+    refreshSuggestQuotaStatus,
+    resetSuggestForAnother,
+    setSuggestArtist,
+    setSuggestSource,
+    setSuggestTrack,
+    submitSuggestNew,
+    suggestArtist,
+    suggestError,
+    suggestOutcome,
+    suggestPending,
+    suggestQuotaExhausted,
+    suggestQuotaStatusPending,
+    suggestSource,
+    suggestTrack,
+    watchSuggestedVideoNow,
+  } = useSuggestNewVideo({
+    isAuthenticated,
+    router,
+  });
+  const overlayScrollContainerRef = useOverlayScrollContainerRef();
   const seenVideoIdSet = clientSeenVideoIds;
   const visibleVideos = useMemo(
     () => (isAuthenticated && hideSeen
@@ -209,16 +213,6 @@ export function NewVideosLoader({
   useEffect(() => {
     setClientSeenVideoIds(new Set(seenVideoIds));
   }, [seenVideoIdsKey]);
-
-  // Capture the overlay scroll position synchronously after each React commit
-  // (before the browser paints) whenever the active video changes.  If anything
-  // resets scrollTop to 0 in a subsequent useEffect (e.g. NewScrollReset or
-  // Next.js scroll restoration), the auto-scroll effect can restore it via rAF
-  // before the next frame is painted.
-  useLayoutEffect(() => {
-    const overlay = document.querySelector<HTMLElement>(".favouritesBlindInner");
-    capturedScrollTopRef.current = overlay?.scrollTop ?? 0;
-  }, [activeVideoId]);
 
   useEffect(() => {
     const previousActiveVideoId = previousActiveVideoIdRef.current;
@@ -254,109 +248,12 @@ export function NewVideosLoader({
     });
   }, [activeVideoId, hideSeen, seenVideoIdSet]);
 
-  useEffect(() => {
-    if (!activeVideoId || loading || visibleVideos.length === 0) {
-      return;
-    }
-
-    if (lastAutoScrolledActiveVideoIdRef.current === activeVideoId) {
-      return;
-    }
-
-    // The useLayoutEffect above captured the overlay's scrollTop just before the
-    // browser painted this render.  If any subsequent useEffect (e.g. NewScrollReset,
-    // or Next.js scroll-restoration) resets scrollTop to 0 after that paint, we restore
-    // it via rAF — which fires before the NEXT browser paint — so the user never sees
-    // a flash to the top of the list.
-    const captured = capturedScrollTopRef.current;
-    let restoreRafId: number | null = null;
-    if (captured > 1) {
-      restoreRafId = window.requestAnimationFrame(() => {
-        restoreRafId = null;
-        const overlayForRestore = document.querySelector<HTMLElement>(".favouritesBlindInner");
-        if (overlayForRestore && overlayForRestore.scrollTop === 0) {
-          overlayForRestore.scrollTop = captured;
-        }
-      });
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      const overlayContainer = document.querySelector<HTMLElement>(".favouritesBlindInner");
-      const scrollContainer = overlayContainer ?? document.scrollingElement as HTMLElement | null;
-      if (!scrollContainer) {
-        return;
-      }
-
-      // Belt-and-suspenders: if scrollTop is still 0 after the rAF restore pass
-      // (e.g. something reset it again), use our captured value so the animation
-      // starts from the correct position rather than the top of the list.
-      if (scrollContainer.scrollTop === 0 && captured > 1) {
-        scrollContainer.scrollTop = captured;
-      }
-
-      const activeRow = document.querySelector<HTMLElement>(".trackCard.top100CardActive");
-      if (!activeRow) {
-        return;
-      }
-
-      const topGutterPx = 70;
-      // Compute the card's absolute offset within the scroll content.
-      // getBoundingClientRect gives viewport-relative coordinates, but the
-      // difference (rowRect.top - containerRect.top) is always the visual gap
-      // between the container's top edge and the card's top edge — this is
-      // purely a function of scroll position and DOM layout, not of where the
-      // container sits on screen.  Adding scrollTop converts it to an absolute
-      // content offset, giving a stable target regardless of any ongoing
-      // overlay animation.
-      const containerRect = scrollContainer.getBoundingClientRect();
-      const rowRect = activeRow.getBoundingClientRect();
-      const rowOffsetInContent = scrollContainer.scrollTop + (rowRect.top - containerRect.top);
-      const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
-      const targetTop = Math.min(maxScrollTop, Math.max(0, rowOffsetInContent - topGutterPx));
-
-      if (Math.abs(scrollContainer.scrollTop - targetTop) <= 1) {
-        lastAutoScrolledActiveVideoIdRef.current = activeVideoId;
-        return;
-      }
-
-      if (activeTrackAutoScrollRafRef.current !== null) {
-        window.cancelAnimationFrame(activeTrackAutoScrollRafRef.current);
-        activeTrackAutoScrollRafRef.current = null;
-      }
-
-      const startTop = scrollContainer.scrollTop;
-      const scrollDelta = targetTop - startTop;
-      const durationMs = 320;
-      const startTime = performance.now();
-
-      const animateScroll = (now: number) => {
-        const progress = Math.min(1, (now - startTime) / durationMs);
-        const eased = 1 - ((1 - progress) ** 3);
-        scrollContainer.scrollTop = startTop + (scrollDelta * eased);
-
-        if (progress < 1) {
-          activeTrackAutoScrollRafRef.current = window.requestAnimationFrame(animateScroll);
-          return;
-        }
-
-        activeTrackAutoScrollRafRef.current = null;
-        lastAutoScrolledActiveVideoIdRef.current = activeVideoId;
-      };
-
-      activeTrackAutoScrollRafRef.current = window.requestAnimationFrame(animateScroll);
-    }, 50);
-
-    return () => {
-      if (restoreRafId !== null) {
-        window.cancelAnimationFrame(restoreRafId);
-      }
-      window.clearTimeout(timeoutId);
-      if (activeTrackAutoScrollRafRef.current !== null) {
-        window.cancelAnimationFrame(activeTrackAutoScrollRafRef.current);
-        activeTrackAutoScrollRafRef.current = null;
-      }
-    };
-  }, [activeVideoId, loading, visibleVideos.length]);
+  useActiveRowAutoScroll({
+    activeVideoId,
+    isLoading: loading,
+    visibleVideoCount: visibleVideos.length,
+    overlayScrollContainerRef,
+  });
 
   useEffect(() => {
     const unsubscribeWatchHistory = listenToAppEvent(EVENT_NAMES.WATCH_HISTORY_UPDATED, ({ videoId }) => {
@@ -425,35 +322,6 @@ export function NewVideosLoader({
     }));
   }, [visibleVideos]);
 
-  const handleHideVideo = useCallback((track: VideoRecord) => {
-    if (!isAuthenticated || hidingVideoIds.includes(track.id)) {
-      return;
-    }
-
-    setVideoPendingHideConfirm(track);
-  }, [hidingVideoIds, isAuthenticated]);
-
-  const confirmHideVideo = useCallback(async () => {
-    const track = videoPendingHideConfirm;
-
-    if (!track || !isAuthenticated || hidingVideoIds.includes(track.id)) {
-      return;
-    }
-
-    setVideoPendingHideConfirm(null);
-    await mutateHiddenVideo({
-      action: "hide",
-      videoId: track.id,
-      onOptimisticUpdate: () => {
-        setHidingVideoIds((current) => [...current, track.id]);
-        setAllVideos((current) => current.filter((candidate) => candidate.id !== track.id));
-      },
-      onSettled: () => {
-        setHidingVideoIds((current) => current.filter((id) => id !== track.id));
-      },
-    });
-  }, [hidingVideoIds, isAuthenticated, videoPendingHideConfirm]);
-
   useEffect(() => {
     allVideoIdsRef.current = new Set(allVideos.map((video) => video.id));
   }, [allVideos]);
@@ -465,411 +333,40 @@ export function NewVideosLoader({
         return;
       }
 
-      setAllVideos((current) => current.filter((v) => v.id !== deletedId));
-      allVideoIdsRef.current.delete(deletedId);
+      removeVideoById(deletedId);
     }
 
     window.addEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);
     return () => window.removeEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);
-  }, []);
-
-  useEffect(() => {
-    hasMoreRef.current = hasMore;
-  }, [hasMore]);
-
-  useEffect(() => {
-    isLoadingMoreRef.current = isLoadingMore;
-  }, [isLoadingMore]);
-
-  const handleOpenFlagDialog = useCallback((track: VideoRecord) => {
-    setFlaggingVideo(track);
-    setFlagReason("broken-playback");
-    setFlagStatus(null);
-  }, []);
-
-  const appendFetchedVideos = useCallback((videos: VideoRecord[]) => {
-    if (videos.length === 0) {
-      return 0;
-    }
-
-    const filteredIncoming = filterHiddenVideos(videos, hiddenVideoIdSet);
-    const uniqueIncoming = filteredIncoming.filter((video) => {
-      if (!video?.id || allVideoIdsRef.current.has(video.id)) {
-        return false;
-      }
-
-      allVideoIdsRef.current.add(video.id);
-      return true;
-    });
-
-    if (uniqueIncoming.length > 0) {
-      startTransition(() => {
-        setAllVideos((prev) => [...prev, ...uniqueIncoming]);
-      });
-    }
-
-    return uniqueIncoming.length;
-  }, [hiddenVideoIdSet]);
-
-  const prependFetchedVideos = useCallback((videos: VideoRecord[]) => {
-    if (videos.length === 0) {
-      return 0;
-    }
-
-    const filteredIncoming = filterHiddenVideos(videos, hiddenVideoIdSet);
-    const uniqueIncoming = filteredIncoming.filter((video) => {
-      if (!video?.id || allVideoIdsRef.current.has(video.id)) {
-        return false;
-      }
-
-      allVideoIdsRef.current.add(video.id);
-      return true;
-    });
-
-    if (uniqueIncoming.length > 0) {
-      startTransition(() => {
-        setAllVideos((prev) => [...uniqueIncoming, ...prev]);
-      });
-    }
-
-    return uniqueIncoming.length;
-  }, [hiddenVideoIdSet]);
-
-  const loadBatch = useCallback(async (skip: number, take: number, options?: { initial?: boolean }) => {
-    if (requestedOffsetsRef.current.has(skip)) {
-      return { received: 0, added: 0, failed: false };
-    }
-
-    requestedOffsetsRef.current.add(skip);
-
-    if (options?.initial) {
-      setLoadMoreError(null);
-      setLoadBootstrapError(null);
-    } else {
-      setIsLoadingMore(true);
-      setLoadMoreError(null);
-    }
-
-    try {
-      // Invariant marker: fetch(`/api/videos/newest?skip=${skip}&take=${take}`) remains the batch request shape.
-      const result = await fetchJsonWithLoaderContract<NewVideosApiPayload>({
-        input: `/api/videos/newest?skip=${skip}&take=${take}`,
-        init: {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-        },
-        timeoutMs: options?.initial ? NEW_FIRST_LOAD_TIMEOUT_MS : undefined,
-        failureMessage: options?.initial
-          ? "Could not load new videos. Please retry."
-          : "Could not load more new videos. Please retry.",
-      });
-
-      if (!result.ok) {
-        requestedOffsetsRef.current.delete(skip);
-        if (options?.initial) {
-          setLoadBootstrapError(result.message);
-        } else {
-          setLoadMoreError(result.message);
-        }
-
-        return { received: 0, added: 0, failed: true };
-      }
-
-      // Invariant marker: const payload = (await response.json()) as NewVideosApiPayload;
-      const payload = result.data;
-      const videos = Array.isArray(payload.videos) ? payload.videos : [];
-      const received = videos.length;
-      const added = appendFetchedVideos(videos);
-
-      const nextOffset = Number(payload.nextOffset);
-      nextOffsetRef.current = Number.isFinite(nextOffset) ? nextOffset : skip + received;
-
-      if (received === 0) {
-        emptyBatchStreakRef.current += 1;
-      } else {
-        emptyBatchStreakRef.current = 0;
-      }
-
-      if (received === 0 && (payload.hasMore === false || emptyBatchStreakRef.current >= 2)) {
-        setHasMore(false);
-      } else if (received > 0) {
-        // Keep advancing while server still yields rows, even if hasMore is conservative.
-        setHasMore(true);
-      }
-
-      return { received, added, failed: false };
-    } catch {
-      requestedOffsetsRef.current.delete(skip);
-      if (options?.initial) {
-        setLoadBootstrapError("Could not load new videos. Please retry.");
-      } else {
-        setLoadMoreError("Could not load more new videos. Please retry.");
-      }
-      return { received: 0, added: 0, failed: true };
-    } finally {
-      requestedOffsetsRef.current.delete(skip);
-      if (!options?.initial) {
-        setIsLoadingMore(false);
-      }
-    }
-  }, [appendFetchedVideos]);
-
-  const retryInitialLoad = useCallback(() => {
-    setLoadBootstrapError(null);
-    setLoading(true);
-    setInitialLoadRetryNonce((current) => current + 1);
-  }, []);
-
-  const retryLoadMore = useCallback(() => {
-    setLoadMoreError(null);
-    void loadBatch(nextOffsetRef.current, NEW_SCROLL_BATCH_SIZE);
-  }, [loadBatch]);
-
-  const readActiveScrollMetrics = useCallback((metrics?: ScrollMetrics): ScrollMetrics => {
-    if (metrics) {
-      return metrics;
-    }
-
-    const overlay = document.querySelector<HTMLElement>(".favouritesBlindInner");
-    if (overlay && overlay.scrollHeight > overlay.clientHeight) {
-      return {
-        scrollTop: overlay.scrollTop,
-        scrollHeight: overlay.scrollHeight,
-        clientHeight: overlay.clientHeight,
-      };
-    }
-
-    return {
-      scrollTop: window.scrollY,
-      scrollHeight: document.documentElement.scrollHeight,
-      clientHeight: window.innerHeight,
-    };
-  }, []);
-
-  const maybeLoadMoreFromScroll = useCallback(async (metrics?: ScrollMetrics) => {
-    if (prefetchInFlightRef.current || loading || isLoadingMoreRef.current || !hasMoreRef.current) {
-      return;
-    }
-
-    if (document.visibilityState !== "visible") {
-      return;
-    }
-
-    const now = Date.now();
-    if (now - lastPrefetchAtRef.current < 120) {
-      return;
-    }
-    lastPrefetchAtRef.current = now;
-
-    prefetchInFlightRef.current = true;
-
-    try {
-      const activeMetrics = readActiveScrollMetrics(metrics);
-      const maxScrollablePx = Math.max(0, activeMetrics.scrollHeight - activeMetrics.clientHeight);
-      if (maxScrollablePx <= 0) {
-        return;
-      }
-
-      const scrollProgress = activeMetrics.scrollTop / maxScrollablePx;
-      const remainingScrollablePx = Math.max(0, maxScrollablePx - activeMetrics.scrollTop);
-      const canUseAggressivePrefetch =
-        scrollProgress >= NEW_SCROLL_AGGRESSIVE_START_RATIO
-        && remainingScrollablePx <= NEW_SCROLL_PREFETCH_EARLY_THRESHOLD_PX;
-
-      if (scrollProgress < NEW_SCROLL_START_RATIO) {
-        if (!canUseAggressivePrefetch) {
-          return;
-        }
-      }
-
-      if (remainingScrollablePx > NEW_SCROLL_PREFETCH_THRESHOLD_PX) {
-        if (!canUseAggressivePrefetch) {
-          return;
-        }
-      }
-
-      let batchesLoaded = 0;
-
-      while (hasMoreRef.current && batchesLoaded < NEW_SCROLL_MAX_PREFETCH_BATCHES) {
-        if (document.visibilityState !== "visible") {
-          break;
-        }
-
-          const batchResult = await loadBatch(nextOffsetRef.current, NEW_SCROLL_BATCH_SIZE);
-        batchesLoaded += 1;
-
-          if (batchResult.failed || batchResult.received === 0 || batchResult.added === 0) {
-          break;
-        }
-
-        const refreshedMetrics = readActiveScrollMetrics();
-        const refreshedMaxScrollablePx = Math.max(0, refreshedMetrics.scrollHeight - refreshedMetrics.clientHeight);
-        if (refreshedMaxScrollablePx <= 0) {
-          break;
-        }
-
-        const refreshedRemainingScrollablePx = Math.max(0, refreshedMaxScrollablePx - refreshedMetrics.scrollTop);
-        if (refreshedRemainingScrollablePx >= NEW_SCROLL_TARGET_RUNWAY_PX) {
-          break;
-        }
-      }
-    } finally {
-      prefetchInFlightRef.current = false;
-    }
-  }, [loadBatch, loading, readActiveScrollMetrics]);
-
-  useEffect(() => {
-    if (loading || !hasMore) {
-      return;
-    }
-
-    const overlay = document.querySelector<HTMLElement>(".favouritesBlindInner");
-
-    const onWindowScroll = () => {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-
-      void maybeLoadMoreFromScroll();
-    };
-
-    const onOverlayScroll = (event: Event) => {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-
-      const target = event.currentTarget;
-      if (!(target instanceof HTMLElement)) {
-        void maybeLoadMoreFromScroll();
-        return;
-      }
-
-      void maybeLoadMoreFromScroll({
-        scrollTop: target.scrollTop,
-        scrollHeight: target.scrollHeight,
-        clientHeight: target.clientHeight,
-      });
-    };
-
-    window.addEventListener("scroll", onWindowScroll, { passive: true });
-    if (overlay) {
-      overlay.addEventListener("scroll", onOverlayScroll, { passive: true });
-    }
-
-    return () => {
-      window.removeEventListener("scroll", onWindowScroll);
-      if (overlay) {
-        overlay.removeEventListener("scroll", onOverlayScroll);
-      }
-    };
-  }, [hasMore, loading, maybeLoadMoreFromScroll]);
-
-  useEffect(() => {
-    if (loading || !hasMore) {
-      return;
-    }
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        void maybeLoadMoreFromScroll();
-      }
-    };
-
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
-  }, [hasMore, loading, maybeLoadMoreFromScroll]);
-
-  const handleCloseFlagDialog = () => {
-    if (flagPendingVideoId) {
-      return;
-    }
-
-    setFlaggingVideo(null);
-    setFlagStatus(null);
-  };
-
-  const handleSubmitFlag = async () => {
-    if (!flaggingVideo || flagPendingVideoId) {
-      return;
-    }
-
-    setFlagPendingVideoId(flaggingVideo.id);
-    setFlagStatus(null);
-
-    try {
-      const response = await fetch("/api/videos/flags", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          videoId: flaggingVideo.id,
-          reason: flagReason,
-        }),
-      });
-
-      if (!response.ok) {
-        setFlagStatus("Could not submit flag. Please try again.");
-        return;
-      }
-
-      const payload = (await response.json().catch(() => null)) as
-        | {
-            ok?: boolean;
-            actedGlobally?: boolean;
-            excludedForUser?: boolean;
-          }
-        | null;
-
-      if (!payload?.ok) {
-        setFlagStatus("Could not submit flag. Please try again.");
-        return;
-      }
-
-      setAllVideos((current) => current.filter((video) => video.id !== flaggingVideo.id));
-
-      if (isAdminUser || payload.actedGlobally) {
-        setFlagStatus("Flag recorded. This video is now excluded globally.");
-      } else if (payload.excludedForUser) {
-        setFlagStatus("Flag recorded. This video is now hidden for your account.");
-      } else {
-        setFlagStatus("Flag recorded.");
-      }
-
-      window.setTimeout(() => {
-        setFlaggingVideo(null);
-        setFlagStatus(null);
-      }, 900);
-    } catch {
-      setFlagStatus("Could not submit flag. Please try again.");
-    } finally {
-      setFlagPendingVideoId(null);
-    }
-  };
+  }, [removeVideoById]);
+
+  useNewVideosScrollPrefetch({
+    loading,
+    hasMore,
+    overlayScrollContainerRef,
+    prefetchInFlightRef,
+    lastPrefetchAtRef,
+    isLoadingMoreRef,
+    hasMoreRef,
+    nextOffsetRef,
+    loadBatch,
+    scrollBatchSize: NEW_SCROLL_BATCH_SIZE,
+    scrollStartRatio: NEW_SCROLL_START_RATIO,
+    scrollPrefetchThresholdPx: NEW_SCROLL_PREFETCH_THRESHOLD_PX,
+    scrollAggressiveStartRatio: NEW_SCROLL_AGGRESSIVE_START_RATIO,
+    scrollPrefetchEarlyThresholdPx: NEW_SCROLL_PREFETCH_EARLY_THRESHOLD_PX,
+    scrollTargetRunwayPx: NEW_SCROLL_TARGET_RUNWAY_PX,
+    scrollMaxPrefetchBatches: NEW_SCROLL_MAX_PREFETCH_BATCHES,
+  });
 
   const createPlaylistFromNew = async () => {
-    if (!isAuthenticated) {
-      setPlaylistStatus("Sign in to create playlists.");
-      return;
-    }
-
     if (isCreatingPlaylistFromNew) {
       return;
     }
 
     const sourceVideos = visibleVideos.slice(0, NEW_PLAYLIST_MAX_ITEMS);
-    const videoIds = sourceVideos.map((video) => video.id).filter(Boolean);
-
-    if (videoIds.length === 0) {
-      setPlaylistStatus(hideSeen ? "No unseen New videos to add." : "No New videos to add.");
-      return;
-    }
 
     setIsCreatingPlaylistFromNew(true);
-    setPlaylistStatus(null);
 
     const playlistName = `New ${hideSeen ? "Unseen " : ""}${new Date().toLocaleString([], {
       month: "short",
@@ -879,347 +376,30 @@ export function NewVideosLoader({
     })}`;
 
     try {
-      const createResponse = await createPlaylistClient({
-        name: playlistName,
-        videoIds: [],
-      }, {
-        telemetryContext: {
-          component: "new-videos-loader",
+      await createPlaylistFromVideoList({
+        isAuthenticated,
+        sourceVideos,
+        playlistName,
+        router,
+        currentVideoId: searchParams.get("v"),
+        telemetryComponent: "new-videos-loader",
+        setStatus: setPlaylistStatus,
+        emptyMessage: hideSeen ? "No unseen New videos to add." : "No New videos to add.",
+        createFailedMessage: "Could not create playlist from New. Please try again.",
+        optimisticMode: {
+          kind: "immediate",
         },
+        onBuildSuccessMessage: () => null,
       });
-
-      if (!createResponse.ok && (createResponse.error.code === "unauthorized" || createResponse.error.code === "forbidden")) {
-        setPlaylistStatus("Sign in to create playlists.");
-        return;
-      }
-
-      if (!createResponse.ok) {
-        setPlaylistStatus("Could not create playlist from New. Please try again.");
-        return;
-      }
-
-      const created = createResponse.data as { id?: string; name?: string };
-      const createdPlaylistId = created?.id;
-
-      if (!createdPlaylistId) {
-        setPlaylistStatus("Could not create playlist from New. Please try again.");
-        return;
-      }
-
-      const currentVideoId = searchParams.get("v");
-      const closeHref = currentVideoId
-        ? `/?v=${encodeURIComponent(currentVideoId)}&pl=${encodeURIComponent(createdPlaylistId)}&resume=1`
-        : `/?pl=${encodeURIComponent(createdPlaylistId)}`;
-
-      dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href: closeHref });
-      dispatchAppEvent(EVENT_NAMES.RIGHT_RAIL_MODE, {
-        mode: "playlist",
-        playlistId: createdPlaylistId,
-      });
-      router.push(closeHref);
-
-      dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
-        playlist: {
-          id: createdPlaylistId,
-          name: playlistName,
-          videos: sourceVideos,
-          itemCount: sourceVideos.length,
-        },
-      });
-
-      void addPlaylistItemsClient(
-        { playlistId: createdPlaylistId, videoIds },
-        { telemetryContext: { component: "new-videos-loader" } },
-      ).then(async (addAllResponse) => {
-        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-
-        if (!addAllResponse.ok) {
-          setPlaylistStatus("Playlist was created, but some tracks could not be saved.");
-          return;
-        }
-
-        const updatedPlaylist = addAllResponse.data as
-          | { id?: string; videos?: VideoRecord[]; itemCount?: number; name?: string }
-          | undefined;
-
-        const finalVideos = Array.isArray(updatedPlaylist?.videos) ? updatedPlaylist.videos : sourceVideos;
-        const finalName = updatedPlaylist?.name ?? playlistName;
-        const finalItemCount = updatedPlaylist?.itemCount ?? finalVideos.length;
-
-        dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
-          playlist: {
-            id: createdPlaylistId,
-            name: finalName,
-            videos: finalVideos,
-            itemCount: finalItemCount,
-          },
-        });
-      }).catch(() => {
-        setPlaylistStatus("Playlist was created, but tracks could not be saved.");
-        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-      });
-    } catch {
-      setPlaylistStatus("Could not create playlist from New. Please try again.");
     } finally {
       setIsCreatingPlaylistFromNew(false);
     }
   };
 
-  const closeSuggestModal = () => {
-    if (suggestPending) {
-      return;
-    }
-
-    setIsSuggestModalOpen(false);
-    setSuggestError(null);
-    setSuggestOutcome(null);
-  };
-
-  const refreshSuggestQuotaStatus = async () => {
-    if (!isAuthenticated) {
-      setSuggestQuotaExhausted(false);
-      return;
-    }
-
-    setSuggestQuotaStatusPending(true);
-
-    try {
-      const response = await fetch("/api/videos/suggest", {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-      });
-
-      const payload = (await response.json().catch(() => null)) as
-        | {
-            ok?: boolean;
-            quotaExhausted?: boolean;
-          }
-        | null;
-
-      if (response.ok && payload?.ok) {
-        setSuggestQuotaExhausted(Boolean(payload.quotaExhausted));
-      }
-    } catch {
-      // Best effort status check only.
-    } finally {
-      setSuggestQuotaStatusPending(false);
-    }
-  };
-
-  const resetSuggestForAnother = () => {
-    setSuggestSource("");
-    setSuggestArtist("");
-    setSuggestTrack("");
-    setSuggestError(null);
-    setSuggestOutcome(null);
-
-    if (suggestQuotaExhausted) {
-      return;
-    }
-  };
-
-  const watchSuggestedVideoNow = () => {
-    if (!suggestOutcome?.videoId) {
-      return;
-    }
-
-    const href = `/?v=${encodeURIComponent(suggestOutcome.videoId)}&resume=1`;
-    dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href });
-    router.push(href);
-    closeSuggestModal();
-  };
-
-  const submitSuggestNew = async () => {
-    if (!isAuthenticated) {
-      setSuggestError("Sign in to suggest new videos.");
-      return;
-    }
-
-    const source = suggestSource.trim();
-    if (!source) {
-      setSuggestError("Paste a YouTube URL, playlist URL, or video id.");
-      return;
-    }
-
-    setSuggestPending(true);
-    setSuggestError(null);
-    setSuggestOutcome(null);
-
-    try {
-      const response = await fetch("/api/videos/suggest", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          source,
-          artist: suggestArtist.trim() || undefined,
-          track: suggestTrack.trim() || undefined,
-        }),
-      });
-
-      const payload = (await response.json().catch(() => null)) as
-        | {
-            ok?: boolean;
-            error?: string;
-            kind?: "video" | "playlist";
-            videoId?: string;
-            submissionStatus?: "ingested" | "already-in-catalog" | "rejected";
-            rejectionReason?: string | null;
-            artist?: string | null;
-            track?: string | null;
-            queuedVideoCount?: number;
-            errorCode?: string;
-            decision?: { message?: string };
-          }
-        | null;
-
-      if (!response.ok || !payload?.ok) {
-        if (payload?.errorCode === "youtube-quota-exhausted") {
-          setSuggestQuotaExhausted(true);
-        }
-        setSuggestError(payload?.error || "Could not submit suggestion. Please try again.");
-        return;
-      }
-
-      if (payload.kind === "playlist") {
-        setSuggestOutcome({
-          kind: "playlist",
-          status: "queued",
-          title: "Playlist queued",
-          detail: `Queued ${payload.queuedVideoCount ?? 0} videos for background ingestion.`,
-        });
-      } else {
-        if (payload.submissionStatus === "already-in-catalog") {
-          setSuggestOutcome({
-            kind: "video",
-            status: "already-in-catalog",
-            title: "Already in catalog",
-            detail: "This video already exists in the catalog and is available now.",
-            videoId: payload.videoId,
-            artist: payload.artist,
-            track: payload.track,
-          });
-        } else if (payload.submissionStatus === "rejected") {
-          setSuggestOutcome({
-            kind: "video",
-            status: "rejected",
-            title: "Suggestion rejected",
-            detail: payload.rejectionReason || payload.decision?.message || "Rejected during ingestion/classification.",
-            videoId: payload.videoId,
-          });
-        } else {
-          setSuggestOutcome({
-            kind: "video",
-            status: "ingested",
-            title: "Ingestion succeeded",
-            detail: "Video ingested and classified successfully.",
-            videoId: payload.videoId,
-            artist: payload.artist,
-            track: payload.track,
-          });
-        }
-      }
-    } catch {
-      setSuggestError("Could not submit suggestion. Please try again.");
-    } finally {
-      setSuggestPending(false);
-    }
-  };
-
-  useEffect(() => {
-    const loadVideos = async () => {
-      setLoading(true);
-      setLoadBootstrapError(null);
-
-      try {
-        const working = dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet));
-        allVideoIdsRef.current = new Set(working.map((video) => video.id));
-        setAllVideos(working);
-        nextOffsetRef.current = working.length;
-        requestedOffsetsRef.current.clear();
-        emptyBatchStreakRef.current = 0;
-        setHasMore(true);
-        setLoadMoreError(null);
-
-        if (working.length === 0) {
-          const initialResult = await loadBatch(0, NEW_INITIAL_BATCH_SIZE, { initial: true });
-          if (initialResult.failed) {
-            return;
-          }
-        }
-
-        while (nextOffsetRef.current < NEW_STARTUP_PREFETCH_TARGET && hasMoreRef.current) {
-          if (document.visibilityState !== "visible") {
-            break;
-          }
-
-          const remaining = NEW_STARTUP_PREFETCH_TARGET - nextOffsetRef.current;
-          const take = Math.max(1, Math.min(NEW_INITIAL_BATCH_SIZE, remaining));
-          const result = await loadBatch(nextOffsetRef.current, take, { initial: true });
-          if (result.failed || result.received === 0) {
-            break;
-          }
-        }
-
-      } catch (error) {
-        console.error("Failed to load new videos:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void loadVideos();
-  }, [hiddenVideoIdsKey, initialLoadRetryNonce, initialVideoIdsKey, loadBatch]);
-
-  const refreshNewestHead = useCallback(async () => {
-    if (loading || document.visibilityState !== "visible") {
-      return;
-    }
-
-    try {
-      const result = await fetchJsonWithLoaderContract<NewVideosApiPayload>({
-        input: `/api/videos/newest?skip=0&take=${NEW_INITIAL_BATCH_SIZE}`,
-        init: {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-        },
-        failureMessage: "Could not refresh new videos.",
-      });
-
-      if (!result.ok) {
-        return;
-      }
-
-      const payload = result.data;
-      const videos = Array.isArray(payload.videos) ? payload.videos : [];
-      const added = prependFetchedVideos(videos);
-      if (added > 0) {
-        // Keep pagination aligned after prepending fresh head entries.
-        nextOffsetRef.current += added;
-        setHasMore(true);
-      }
-    } catch {
-      // Head refresh is best-effort only.
-    }
-  }, [loading, prependFetchedVideos]);
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      void refreshNewestHead();
-    }, NEW_HEAD_REFRESH_INTERVAL_MS);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [refreshNewestHead]);
-
   return (
     <>
-      <NewScrollReset />
-      <div className="favouritesBlindBar">
+      <OverlayScrollReset />
+      <OverlayHeader close={false}>
         <div className="newPageHeaderLeft">
           <strong><span style={{filter: "brightness(0) invert(1)"}}>⭐</span> New</strong>
           {isAuthenticated ? (
@@ -1236,16 +416,7 @@ export function NewVideosLoader({
             <button
               type="button"
               className="newPageSeenToggle top100CreatePlaylistButton"
-              onClick={() => {
-                setSuggestSource("");
-                setSuggestArtist("");
-                setSuggestTrack("");
-                setSuggestOutcome(null);
-                setSuggestError(null);
-                setSuggestQuotaExhausted(false);
-                setIsSuggestModalOpen(true);
-                void refreshSuggestQuotaStatus();
-              }}
+              onClick={openSuggestModal}
             >
               + Suggest New
             </button>
@@ -1264,7 +435,7 @@ export function NewVideosLoader({
           ) : null}
         </div>
         <CloseLink />
-      </div>
+      </OverlayHeader>
       {playlistStatus ? <p className="rightRailStatus">{playlistStatus}</p> : null}
       <div className="trackStack spanTwoColumns">
       {visibleVideos.map((track, index) => (
@@ -1345,154 +516,35 @@ export function NewVideosLoader({
       isOpen={videoPendingHideConfirm !== null}
       video={videoPendingHideConfirm}
       isPending={videoPendingHideConfirm ? hidingVideoIds.includes(videoPendingHideConfirm.id) : false}
-      onCancel={() => setVideoPendingHideConfirm(null)}
+      onCancel={cancelHideVideo}
       onConfirm={() => {
         void confirmHideVideo();
       }}
     />
 
-    {isSuggestModalOpen && typeof document !== "undefined"
-      ? createPortal(
-        <div
-          className="suggestNewModalBackdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Suggest new YouTube videos"
-          onClick={closeSuggestModal}
-        >
-          <div className="suggestNewModalPanel" onClick={(event) => event.stopPropagation()}>
-            <div className="suggestNewModalHeader">
-              <h3>Suggest New</h3>
-              <p className="suggestNewModalMeta">Paste a YouTube video or playlist. We will ingest and classify it.</p>
-            </div>
-
-            <p className="suggestNewModalHints">
-              Accepted formats: <strong>watch URLs</strong>, <strong>short URLs</strong>, <strong>video IDs</strong>, and <strong>playlist URLs</strong>.
-            </p>
-
-            {suggestQuotaExhausted ? (
-              <div className="suggestNewModalResult suggestNewModalResult-rejected" role="status" aria-live="polite">
-                <p className="suggestNewModalResultTitle">YouTube API credits exhausted</p>
-                <p className="suggestNewModalResultDetail">
-                  Suggest New is temporarily unavailable because the YouTube API daily quota is exhausted. Please try again later.
-                </p>
-              </div>
-            ) : null}
-
-            {!suggestQuotaExhausted ? (
-              <>
-            <label className="newFlagModalField suggestNewModalField" htmlFor="suggest-new-source">
-              YouTube URL or Video ID
-            </label>
-            <input
-              className="suggestNewModalInput"
-              id="suggest-new-source"
-              value={suggestSource}
-              onChange={(event) => setSuggestSource(event.currentTarget.value)}
-              placeholder="https://youtube.com/watch?v=... or https://youtube.com/playlist?list=..."
-              disabled={suggestPending}
-              maxLength={2048}
-            />
-
-            <div className="suggestNewModalOptionalGrid">
-            <label className="newFlagModalField suggestNewModalField" htmlFor="suggest-new-artist">
-              Artist (optional)
-            </label>
-            <input
-              className="suggestNewModalInput"
-              id="suggest-new-artist"
-              value={suggestArtist}
-              onChange={(event) => setSuggestArtist(event.currentTarget.value)}
-              placeholder="Artist name"
-              disabled={suggestPending}
-              maxLength={255}
-            />
-
-            <label className="newFlagModalField suggestNewModalField" htmlFor="suggest-new-track">
-              Track name (optional)
-            </label>
-            <input
-              className="suggestNewModalInput"
-              id="suggest-new-track"
-              value={suggestTrack}
-              onChange={(event) => setSuggestTrack(event.currentTarget.value)}
-              placeholder="Track title"
-              disabled={suggestPending}
-              maxLength={255}
-            />
-            </div>
-              </>
-            ) : null}
-
-            {suggestError ? <p className="newFlagModalStatus suggestNewModalStatus">{suggestError}</p> : null}
-
-            {suggestOutcome ? (
-              <div className={`suggestNewModalResult suggestNewModalResult-${suggestOutcome.status}`}>
-                <p className="suggestNewModalResultTitle">{suggestOutcome.title}</p>
-                <p className="suggestNewModalResultDetail">{suggestOutcome.detail}</p>
-                {suggestOutcome.kind === "video" && suggestOutcome.status !== "rejected" ? (
-                  <div className="suggestNewModalResultMeta">
-                    <p><strong>Artist:</strong> {suggestOutcome.artist?.trim() || "Unknown"}</p>
-                    <p><strong>Track:</strong> {suggestOutcome.track?.trim() || "Unknown"}</p>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {suggestOutcome && suggestOutcome.kind === "video" && suggestOutcome.status !== "rejected" ? (
-              <div className="newFlagModalActions suggestNewModalActions">
-                <button type="button" onClick={resetSuggestForAnother} disabled={suggestPending}>
-                  Suggest another
-                </button>
-                <button type="button" onClick={watchSuggestedVideoNow} disabled={suggestPending || !suggestOutcome.videoId}>
-                  Watch now
-                </button>
-              </div>
-            ) : suggestOutcome ? (
-              <div className="newFlagModalActions suggestNewModalActions">
-                <button type="button" onClick={closeSuggestModal} disabled={suggestPending}>
-                  Close
-                </button>
-                <button type="button" onClick={resetSuggestForAnother} disabled={suggestPending}>
-                  Suggest another
-                </button>
-              </div>
-            ) : suggestQuotaExhausted ? (
-              <div className="newFlagModalActions suggestNewModalActions">
-                <button type="button" onClick={closeSuggestModal} disabled={suggestPending || suggestQuotaStatusPending}>
-                  Close
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void refreshSuggestQuotaStatus();
-                  }}
-                  disabled={suggestPending || suggestQuotaStatusPending}
-                >
-                  {suggestQuotaStatusPending ? "Checking..." : "Check again"}
-                </button>
-              </div>
-            ) : (
-              <div className="newFlagModalActions suggestNewModalActions">
-                <button type="button" onClick={closeSuggestModal} disabled={suggestPending}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void submitSuggestNew();
-                  }}
-                  disabled={suggestPending}
-                >
-                  {suggestPending ? "Submitting..." : "Submit"}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>,
-        document.body,
-      )
-      : null}
+    <SuggestNewModal
+      isOpen={isSuggestModalOpen}
+      suggestSource={suggestSource}
+      suggestArtist={suggestArtist}
+      suggestTrack={suggestTrack}
+      suggestPending={suggestPending}
+      suggestQuotaStatusPending={suggestQuotaStatusPending}
+      suggestQuotaExhausted={suggestQuotaExhausted}
+      suggestError={suggestError}
+      suggestOutcome={suggestOutcome}
+      onClose={closeSuggestModal}
+      onSuggestSourceChange={setSuggestSource}
+      onSuggestArtistChange={setSuggestArtist}
+      onSuggestTrackChange={setSuggestTrack}
+      onSubmit={() => {
+        void submitSuggestNew();
+      }}
+      onResetForAnother={resetSuggestForAnother}
+      onWatchNow={watchSuggestedVideoNow}
+      onRefreshQuotaStatus={() => {
+        void refreshSuggestQuotaStatus();
+      }}
+    />
     </>
   );
 }

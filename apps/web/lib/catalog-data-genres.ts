@@ -4,6 +4,7 @@
  */
 
 import { prisma } from "@/lib/db";
+import { BoundedMap } from "@/lib/bounded-map";
 import type { ArtistRecord, VideoRecord } from "@/lib/catalog";
 import {
   dedupeRankedRows,
@@ -35,12 +36,16 @@ import {
 const GENRE_RESULTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const GENRE_CARDS_CACHE_TTL_MS = 30 * 1000;
 const CATEGORY_QUERY_TIMEOUT_MS = 2_500;
+const GENRE_CACHE_MAX_ENTRIES = Math.max(
+  100,
+  Math.min(2_000, Number(process.env.GENRE_CACHE_MAX_ENTRIES || "600")),
+);
 
 // ── Caches ────────────────────────────────────────────────────────────────────
 
-const genreArtistsCache = new Map<string, { expiresAt: number; artists: ArtistRecord[] }>();
-const genreVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
-const genreVideosInFlight = new Map<string, Promise<VideoRecord[]>>();
+const genreArtistsCache = new BoundedMap<string, { expiresAt: number; artists: ArtistRecord[] }>(GENRE_CACHE_MAX_ENTRIES);
+const genreVideosCache = new BoundedMap<string, { expiresAt: number; videos: VideoRecord[] }>(GENRE_CACHE_MAX_ENTRIES);
+const genreVideosInFlight = new BoundedMap<string, Promise<VideoRecord[]>>(GENRE_CACHE_MAX_ENTRIES);
 let genreCardsCache: { expiresAt: number; cards: GenreCard[] } | undefined;
 let genreCardsInFlight: Promise<GenreCard[]> | undefined;
 let genreListCache: { expiresAt: number; genres: string[] } | undefined;

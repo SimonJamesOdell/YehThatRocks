@@ -6,15 +6,7 @@ import { requireApiAuth } from "@/lib/auth-request";
 import { createEmailVerificationToken } from "@/lib/auth-token-records";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
-
-type PrismaWithVerifiedUser = typeof prisma & {
-  user: {
-    findUnique: (args: {
-      where: { id: number };
-      select: { id: true; email: true; emailVerifiedAt: true };
-    }) => Promise<{ id: number; email: string | null; emailVerifiedAt: Date | null } | null>;
-  };
-};
+import type { PrismaWithVerificationEmailUser } from "@/lib/prisma-types";
 
 export async function POST(request: NextRequest) {
   const requestMeta = getRequestMetadata(request.headers);
@@ -30,7 +22,7 @@ export async function POST(request: NextRequest) {
     return csrfError;
   }
 
-  const user = await (prisma as PrismaWithVerifiedUser).user.findUnique({
+  const user = await (prisma as PrismaWithVerificationEmailUser).user.findUnique({
     where: { id: authResult.auth.userId },
     select: { id: true, email: true, emailVerifiedAt: true },
   });

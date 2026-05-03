@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 
 type VerifyEmailPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -19,10 +19,7 @@ export default async function VerifyEmailPage({ searchParams }: VerifyEmailPageP
 
   return (
     <>
-      <div className="favouritesBlindBar">
-        <strong>Verify email</strong>
-        <CloseLink />
-      </div>
+      <OverlayHeader title="Verify email" />
 
       <section className="panel featurePanel spanTwoColumns">
         <div className="panelHeading">
