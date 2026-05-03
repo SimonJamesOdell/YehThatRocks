@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { ArtistsFilterHeader } from "@/components/artists-filter-header";
@@ -5,6 +6,19 @@ import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { ArtistsLetterResults } from "@/components/artists-letter-results";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { getArtistsByLetter } from "@/lib/catalog-data";
+
+export const metadata: Metadata = {
+  title: "Rock & Metal Artists A–Z | YehThatRocks",
+  description: "Browse over 140,000 rock and metal artists on YehThatRocks. Find your favourite band and watch their videos.",
+  alternates: { canonical: "/artists" },
+  openGraph: {
+    title: "Rock & Metal Artists A–Z | YehThatRocks",
+    description: "Browse over 140,000 rock and metal artists on YehThatRocks.",
+    url: "/artists",
+    siteName: "YehThatRocks",
+    type: "website",
+  },
+};
 
 type ArtistsPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;

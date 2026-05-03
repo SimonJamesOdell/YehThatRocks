@@ -1,8 +1,29 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { ArtistVideosGridClient } from "@/components/artist-videos-grid-client";
 import { getArtistBySlug, getArtistRouteSourceVideoIds, getVideosByArtist } from "@/lib/catalog-data";
 import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
+
+export async function generateMetadata({ params }: ArtistPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const artist = await getArtistBySlug(slug);
+  if (!artist) return {};
+  const title = `${artist.name} Videos | YehThatRocks`;
+  const description = `Watch ${artist.name} music videos on YehThatRocks — the home of rock and metal streaming.`;
+  return {
+    title,
+    description,
+    alternates: { canonical: `/artist/${slug}` },
+    openGraph: {
+      title,
+      description,
+      url: `/artist/${slug}`,
+      siteName: "YehThatRocks",
+      type: "website",
+    },
+  };
+}
 
 type ArtistPageProps = {
   params: Promise<{ slug: string }>;

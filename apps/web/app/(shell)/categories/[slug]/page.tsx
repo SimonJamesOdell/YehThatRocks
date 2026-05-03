@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { CategoryVideosInfinite } from "@/components/category-videos-infinite";
@@ -7,7 +8,26 @@ import {
   getVideosByGenre,
 } from "@/lib/catalog-data";
 import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
+
 const CATEGORY_INITIAL_PAGE_SIZE = 48;
+
+export async function generateMetadata({ params }: CategoryPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const genre = await getGenreBySlug(slug);
+  if (!genre) return {};
+  return {
+    title: `${genre} Videos | YehThatRocks`,
+    description: `Stream the best ${genre} music videos on YehThatRocks — community-driven rock and metal discovery.`,
+    alternates: { canonical: `/categories/${slug}` },
+    openGraph: {
+      title: `${genre} Videos | YehThatRocks`,
+      description: `Stream the best ${genre} music videos on YehThatRocks.`,
+      url: `/categories/${slug}`,
+      siteName: "YehThatRocks",
+      type: "website",
+    },
+  };
+}
 
 type CategoryPageProps = {
   params: Promise<{ slug: string }>;
