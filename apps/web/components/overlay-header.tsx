@@ -8,6 +8,7 @@ type OverlayHeaderProps = {
   breadcrumb?: ReactNode;
   icon?: ReactNode;
   headingClassName?: string;
+  actions?: ReactNode;
   close?: boolean;
   closeSlot?: ReactNode;
   children?: ReactNode;
@@ -19,6 +20,7 @@ export function OverlayHeader({
   breadcrumb,
   icon,
   headingClassName,
+  actions,
   close = true,
   closeSlot,
   children,
@@ -37,6 +39,7 @@ export function OverlayHeader({
   return (
     <div className={resolvedClassName}>
       {resolvedHeaderContent}
+      {actions}
       {closeSlot ?? (close ? <CloseLink /> : null)}
     </div>
   );

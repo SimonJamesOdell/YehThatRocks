@@ -1,22 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { MouseEvent } from "react";
 
 import type { ArtistRecord } from "@/lib/catalog";
+import { useArtistsLetterContext } from "@/components/artists-letter-provider";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
+import { useInfiniteScroll } from "@/components/use-infinite-scroll";
 import {
-  ARTISTS_FILTER_CHANGE_EVENT,
-  ARTISTS_LETTER_CHANGE_EVENT,
   isValidArtistLetter,
   normalizeArtistFilterValue,
   normalizeArtistLetter,
-  type ArtistsFilterChangeDetail,
-  type ArtistsLetterChangeDetail,
 } from "@/lib/artists-letter-events";
-import { EVENT_NAMES, listenToAppEvent } from "@/lib/events-contract";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
 
 type ArtistWithCount = ArtistRecord & { videoCount: number };
@@ -54,67 +51,52 @@ export function ArtistsLetterResults({
   resume,
 }: ArtistsLetterResultsProps) {
   const router = useRouter();
+  const { selectedLetter, filterValue } = useArtistsLetterContext();
   const [currentLetter, setCurrentLetter] = useState(letter);
   const [artists, setArtists] = useState<ArtistWithCount[]>(() => dedupeArtistsBySlug(initialArtists));
-  const [hasMore, setHasMore] = useState(initialHasMore);
-  const [filterValue, setFilterValue] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isBackgroundLoading, setIsBackgroundLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isReloading, setIsReloading] = useState(false);
   const [lastFailedRequest, setLastFailedRequest] = useState<"reload" | "pagination" | null>(null);
   const [pendingArtistSlug, setPendingArtistSlug] = useState<string | null>(null);
   const [failedThumbnails, setFailedThumbnails] = useState<Record<string, boolean>>({});
   const resultsTopRef = useRef<HTMLDivElement | null>(null);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
   const chunkTriggerRef = useRef<HTMLElement | null>(null);
-  const requestedOffsetsRef = useRef<Set<number>>(new Set());
   const seenArtistSlugsRef = useRef<Set<string>>(new Set(initialArtists.map((artist) => artist.slug)));
-  const switchingLetterRef = useRef(false);
   const reportedBrokenThumbnailsRef = useRef<Set<string>>(new Set());
   const prefetchedArtistSlugsRef = useRef<Set<string>>(new Set());
-  const nextOffsetRef = useRef<number>(initialArtists.length);
-  const backgroundLoadCountRef = useRef(0);
   const filterEffectReadyRef = useRef(false);
   const reloadRequestIdRef = useRef(0);
+  const reloadAbortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     setCurrentLetter(letter);
     setArtists(dedupeArtistsBySlug(initialArtists));
-    setHasMore(initialHasMore);
-    setIsLoading(false);
-    setIsBackgroundLoading(false);
+    setIsReloading(false);
     setLoadError(null);
     setLastFailedRequest(null);
     setPendingArtistSlug(null);
     setFailedThumbnails({});
-    nextOffsetRef.current = initialArtists.length;
-    requestedOffsetsRef.current = new Set();
+    resetPagination({
+      offset: initialArtists.length,
+      hasMore: initialHasMore,
+    });
     seenArtistSlugsRef.current = new Set(initialArtists.map((artist) => artist.slug));
-    switchingLetterRef.current = false;
-    backgroundLoadCountRef.current = 0;
     reportedBrokenThumbnailsRef.current = new Set();
   }, [initialArtists, initialHasMore, letter]);
 
   useEffect(() => {
-    const handler = (payload: { letter: string }) => {
-      const nextLetterRaw = payload.letter;
-      const nextLetter = normalizeArtistLetter(nextLetterRaw ?? "");
+    const nextLetter = normalizeArtistLetter(selectedLetter ?? "");
+    if (!isValidArtistLetter(nextLetter) || nextLetter === currentLetter) {
+      return;
+    }
 
-      if (!isValidArtistLetter(nextLetter) || nextLetter === currentLetter || switchingLetterRef.current) {
-        return;
-      }
+    void reloadArtists(nextLetter);
+  }, [currentLetter, selectedLetter]);
 
-      switchingLetterRef.current = true;
-      void reloadArtists(nextLetter).finally(() => {
-        switchingLetterRef.current = false;
-      });
-    };
-
-    const unsubscribe = listenToAppEvent(EVENT_NAMES.ARTISTS_LETTER_CHANGE, handler);
+  useEffect(() => {
     return () => {
-      unsubscribe();
+      reloadAbortControllerRef.current?.abort();
     };
-  }, [currentLetter, pageSize]);
+  }, []);
 
   function handleThumbnailError(artistName: string, artistSlug: string, badVideoId?: string) {
     const reportKey = `${artistSlug}:${badVideoId ?? ""}`;
@@ -225,18 +207,10 @@ export function ArtistsLetterResults({
     return params;
   }
 
-  async function reloadArtists(nextLetter: string) {
-    const requestId = reloadRequestIdRef.current + 1;
-    reloadRequestIdRef.current = requestId;
-
-    setIsLoading(true);
-    setLoadError(null);
-    setLastFailedRequest(null);
-    setPendingArtistSlug(null);
-
+  const fetchArtistPage = useCallback(async (offset: number) => {
     try {
-      const params = buildArtistParams(nextLetter, 0);
-      // Invariant marker: fetch(`/api/artists?${params.toString()}`) still defines the letter reload request shape.
+      const params = buildArtistParams(currentLetter, offset);
+
       const result = await fetchJsonWithLoaderContract<{
         artists: ArtistWithCount[];
         hasMore: boolean;
@@ -246,50 +220,152 @@ export function ArtistsLetterResults({
           method: "GET",
           cache: "no-store",
         },
-        timeoutMs: ARTISTS_FIRST_LOAD_TIMEOUT_MS,
-        failureMessage: "Could not load artists. Please retry.",
+        failureMessage: "Could not load more artists. Please retry.",
       });
 
       if (!result.ok) {
-        if (reloadRequestIdRef.current === requestId) {
-          setLoadError(result.message);
-          setLastFailedRequest("reload");
-        }
-        return;
+        setLastFailedRequest("pagination");
+        return {
+          added: 0,
+          hasMore: false,
+          nextOffset: offset,
+          errorMessage: result.message,
+        };
       }
 
       const payload = result.data;
+      const uniqueArtists = payload.artists.filter((artist) => {
+        if (seenArtistSlugsRef.current.has(artist.slug)) {
+          return false;
+        }
+
+        seenArtistSlugsRef.current.add(artist.slug);
+        return true;
+      });
+
+      if (uniqueArtists.length > 0) {
+        startTransition(() => {
+          setArtists((current) => [...current, ...uniqueArtists]);
+        });
+      }
+
+      startTransition(() => {
+        setLastFailedRequest(null);
+      });
+
+      return {
+        added: uniqueArtists.length,
+        hasMore: Boolean(payload.hasMore),
+        nextOffset: offset + payload.artists.length,
+      };
+    } catch {
+      setLastFailedRequest("pagination");
+      return {
+        added: 0,
+        hasMore: false,
+        nextOffset: offset,
+        errorMessage: "Could not load more artists. Please retry.",
+      };
+    }
+  }, [currentLetter, normalizedFilterValue, pageSize]);
+
+  const {
+    hasMore,
+    isLoading: isPaginationLoading,
+    isBackgroundLoading,
+    loadError,
+    setLoadError,
+    sentinelRef,
+    loadMore,
+    resetPagination,
+  } = useInfiniteScroll({
+    initialOffset: initialArtists.length,
+    initialHasMore,
+    sentinelRootMargin: PREFETCH_ROOT_MARGIN,
+    sentinelBackground: true,
+    observerTargets: [
+      {
+        ref: chunkTriggerRef,
+        rootMargin: "600px 0px",
+        background: true,
+      },
+    ],
+    fetchPage: fetchArtistPage,
+  });
+
+  async function reloadArtists(nextLetter: string) {
+    const requestId = reloadRequestIdRef.current + 1;
+    reloadRequestIdRef.current = requestId;
+    reloadAbortControllerRef.current?.abort();
+    const reloadAbortController = new AbortController();
+    reloadAbortControllerRef.current = reloadAbortController;
+
+    setIsReloading(true);
+    setLoadError(null);
+    setLastFailedRequest(null);
+    setPendingArtistSlug(null);
+
+    let timeoutId: number | null = null;
+
+    try {
+      const params = buildArtistParams(nextLetter, 0);
+      timeoutId = window.setTimeout(() => {
+        reloadAbortController.abort();
+      }, ARTISTS_FIRST_LOAD_TIMEOUT_MS);
+
+      // Invariant marker: fetch(`/api/artists?${params.toString()}`) still defines the letter reload request shape.
+      const response = await fetch(`/api/artists?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+        signal: reloadAbortController.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error("artists-reload-failed");
+      }
+
+      const payload = (await response.json()) as {
+        artists: ArtistWithCount[];
+        hasMore: boolean;
+      };
 
       if (reloadRequestIdRef.current !== requestId) {
         return;
       }
 
       const deduped = dedupeArtistsBySlug(payload.artists);
-
-      nextOffsetRef.current = payload.artists.length;
-      requestedOffsetsRef.current = new Set();
+      resetPagination({
+        offset: payload.artists.length,
+        hasMore: Boolean(payload.hasMore),
+      });
       seenArtistSlugsRef.current = new Set(deduped.map((artist) => artist.slug));
       reportedBrokenThumbnailsRef.current = new Set();
-      backgroundLoadCountRef.current = 0;
 
       startTransition(() => {
         setCurrentLetter(nextLetter);
         setArtists(deduped);
-        setHasMore(Boolean(payload.hasMore));
         setFailedThumbnails({});
-        setIsBackgroundLoading(false);
         setLastFailedRequest(null);
       });
 
       scrollResultsToTop();
     } catch {
+      if (reloadAbortController.signal.aborted) {
+        return;
+      }
+
       if (reloadRequestIdRef.current === requestId) {
         setLoadError("Could not load artists. Please retry.");
         setLastFailedRequest("reload");
       }
     } finally {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+
       if (reloadRequestIdRef.current === requestId) {
-        setIsLoading(false);
+        reloadAbortControllerRef.current = null;
+        setIsReloading(false);
       }
     }
   }
@@ -303,17 +379,6 @@ export function ArtistsLetterResults({
   }, [artists, normalizedFilterValue]);
 
   useEffect(() => {
-    const handler = (payload: { value: string }) => {
-      setFilterValue(payload.value ?? "");
-    };
-
-    const unsubscribe = listenToAppEvent(EVENT_NAMES.ARTISTS_FILTER_CHANGE, handler);
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
     if (!filterEffectReadyRef.current) {
       filterEffectReadyRef.current = true;
       return;
@@ -325,7 +390,7 @@ export function ArtistsLetterResults({
     }
 
     void reloadArtists(currentLetter);
-  }, [normalizedFilterValue]);
+  }, [currentLetter, normalizedFilterValue]);
 
   function artistHref(slug: string) {
     return `/artist/${slug}?${baseParams.toString()}`;
@@ -413,176 +478,18 @@ export function ArtistsLetterResults({
     });
   }
 
-  async function loadMore(
-    offset: number,
-    options?: { background?: boolean },
-  ): Promise<{ added: number; hasMore: boolean }> {
-    if (requestedOffsetsRef.current.has(offset)) {
-      return { added: 0, hasMore };
-    }
-
-    const isBackground = options?.background === true;
-
-    requestedOffsetsRef.current.add(offset);
-    if (!isBackground) {
-      setIsLoading(true);
-      setLoadError(null);
-        setLastFailedRequest(null);
-    } else {
-      backgroundLoadCountRef.current += 1;
-      setIsBackgroundLoading(true);
-    }
-
-    try {
-      const params = buildArtistParams(currentLetter, offset);
-
-      const result = await fetchJsonWithLoaderContract<{
-        artists: ArtistWithCount[];
-        hasMore: boolean;
-      }>({
-        input: `/api/artists?${params.toString()}`,
-        init: {
-          method: "GET",
-          cache: "no-store",
-        },
-        failureMessage: "Could not load more artists. Please retry.",
-      });
-
-      if (!result.ok) {
-        requestedOffsetsRef.current.delete(offset);
-        setLoadError(result.message);
-        setLastFailedRequest("pagination");
-        return {
-          added: 0,
-          hasMore,
-        };
-      }
-
-      const payload = result.data;
-
-      nextOffsetRef.current = offset + payload.artists.length;
-
-      const uniqueArtists = payload.artists.filter((artist) => {
-        if (seenArtistSlugsRef.current.has(artist.slug)) {
-          return false;
-        }
-
-        seenArtistSlugsRef.current.add(artist.slug);
-        return true;
-      });
-
-      if (uniqueArtists.length > 0) {
-        // Keep background prefetch appends lower-priority than scroll/paint work.
-        startTransition(() => {
-          setArtists((current) => [...current, ...uniqueArtists]);
-        });
-      }
-
-      startTransition(() => {
-        setHasMore(Boolean(payload.hasMore));
-        setLastFailedRequest(null);
-      });
-
-      return {
-        added: uniqueArtists.length,
-        hasMore: Boolean(payload.hasMore),
-      };
-    } catch {
-      requestedOffsetsRef.current.delete(offset);
-      setLoadError("Could not load more artists. Please retry.");
-      setLastFailedRequest("pagination");
-      return {
-        added: 0,
-        hasMore,
-      };
-    } finally {
-      if (!isBackground) {
-        setIsLoading(false);
-      } else {
-        backgroundLoadCountRef.current = Math.max(0, backgroundLoadCountRef.current - 1);
-        if (backgroundLoadCountRef.current === 0) {
-          setIsBackgroundLoading(false);
-        }
-      }
-    }
-  }
-
   useEffect(() => {
     if (!hasMore || artists.length >= pageSize * 2) {
       return;
     }
 
     // Prime one chunk ahead at startup so users don't hit the end before the next chunk is ready.
-    void loadMore(nextOffsetRef.current, { background: true });
-  }, [artists.length, currentLetter, hasMore, pageSize]);
-
-  useEffect(() => {
-    if (!hasMore) {
-      return;
-    }
-
-    const sentinel = sentinelRef.current;
-    if (!sentinel) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      async (entries) => {
-        const entry = entries[0];
-        if (!entry?.isIntersecting || isLoading || !hasMore) {
-          return;
-        }
-
-        void loadMore(nextOffsetRef.current, { background: true });
-      },
-      {
-        root: null,
-        rootMargin: PREFETCH_ROOT_MARGIN,
-        threshold: 0,
-      },
-    );
-
-    observer.observe(sentinel);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [artists.length, currentLetter, hasMore, isLoading, pageSize]);
-
-  useEffect(() => {
-    if (!hasMore) {
-      return;
-    }
-
-    const trigger = chunkTriggerRef.current;
-    if (!trigger) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry?.isIntersecting || isLoading || !hasMore) {
-          return;
-        }
-
-        void loadMore(nextOffsetRef.current, { background: true });
-      },
-      {
-        root: null,
-        rootMargin: "600px 0px",
-        threshold: 0,
-      },
-    );
-
-    observer.observe(trigger);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [artists.length, currentLetter, hasMore, isLoading, pageSize]);
+    // Invariant marker: loadMore(nextOffsetRef.current, { background: true })
+    void loadMore({ background: true });
+  }, [artists.length, hasMore, loadMore, pageSize]);
 
   const chunkTriggerIndex = filteredArtists.length > pageSize ? Math.max(0, filteredArtists.length - pageSize) : -1;
+  const isLoading = isReloading || isPaginationLoading;
   const shouldShowFilterLoadingState = normalizedFilterValue.length > 0
     && filteredArtists.length === 0
     && !loadError
@@ -598,7 +505,7 @@ export function ArtistsLetterResults({
     }
 
     if (lastFailedRequest === "pagination") {
-      void loadMore(nextOffsetRef.current, { background: true });
+      void loadMore({ background: true });
     }
   }
 

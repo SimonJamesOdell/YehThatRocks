@@ -2,12 +2,13 @@
 
 import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { CloseLink } from "@/components/close-link";
 import { OverlayHeader } from "@/components/overlay-header";
+import { useInfiniteScroll } from "@/components/use-infinite-scroll";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
@@ -131,17 +132,74 @@ export function FavouritesGrid({
   const searchParams = useSearchParams();
   const [favourites, setFavourites] = useState<VideoRecord[]>(initialFavourites);
   const [totalCount, setTotalCount] = useState(initialTotalCount);
-  const [hasMore, setHasMore] = useState(initialHasMore);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [filterValue, setFilterValue] = useState("");
   const [pendingVideoId, setPendingVideoId] = useState<string | null>(null);
   const [isCreatingPlaylistFromFavourites, setIsCreatingPlaylistFromFavourites] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const nextOffsetRef = useRef(initialFavourites.length);
-  const requestedOffsetsRef = useRef(new Set<number>());
+  const {
+    hasMore,
+    isLoading: isLoadingMore,
+    loadError,
+    sentinelRef,
+    retryLoadMore,
+    resetPagination,
+  } = useInfiniteScroll({
+    initialOffset: initialFavourites.length,
+    initialHasMore,
+    isEnabled: isAuthenticated && pathname === "/favourites",
+    sentinelRootMargin: "700px 0px",
+    fetchPage: useCallback(async (offset) => {
+      const response = await fetchWithAuthRetry(
+        `/api/favourites?limit=${FAVOURITES_BATCH_SIZE}&offset=${offset}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        },
+      );
+
+      if (!response.ok) {
+        return {
+          added: 0,
+          hasMore: false,
+          nextOffset: offset,
+          errorMessage: "Could not load more favourites. Please try again.",
+        };
+      }
+
+      const payload = (await response.json().catch(() => null)) as FavouritesPayload | null;
+      const incoming = Array.isArray(payload?.favourites) ? payload.favourites : [];
+
+      let added = 0;
+      setFavourites((current) => {
+        const seen = new Set(current.map((video) => video.id));
+        const uniqueIncoming = incoming.filter((video) => !seen.has(video.id));
+        added = uniqueIncoming.length;
+
+        if (added === 0) {
+          return current;
+        }
+
+        return [...current, ...uniqueIncoming];
+      });
+
+      if (typeof payload?.totalCount === "number" && Number.isFinite(payload.totalCount)) {
+        setTotalCount(Math.max(0, Math.floor(payload.totalCount)));
+      }
+
+      const nextOffset = Number(payload?.nextOffset);
+      return {
+        added,
+        hasMore:
+          typeof payload?.hasMore === "boolean"
+            ? payload.hasMore
+            : incoming.length === FAVOURITES_BATCH_SIZE,
+        nextOffset: Number.isFinite(nextOffset)
+          ? Math.max(offset + incoming.length, Math.floor(nextOffset))
+          : offset + incoming.length,
+      };
+    }, []),
+  });
 
   const filteredFavourites = useMemo(() => {
     const needle = filterValue.trim().toLowerCase();
@@ -155,70 +213,6 @@ export function FavouritesGrid({
       return title.startsWith(needle) || artist.startsWith(needle);
     });
   }, [filterValue, favourites]);
-
-  const loadMore = useCallback(async (offset: number) => {
-    if (!isAuthenticated || pathname !== "/favourites") {
-      return;
-    }
-
-    if (requestedOffsetsRef.current.has(offset) || isLoadingMore || !hasMore) {
-      return;
-    }
-
-    requestedOffsetsRef.current.add(offset);
-    setIsLoadingMore(true);
-    setLoadError(null);
-
-    try {
-      const response = await fetchWithAuthRetry(
-        `/api/favourites?limit=${FAVOURITES_BATCH_SIZE}&offset=${offset}`,
-        {
-          method: "GET",
-          cache: "no-store",
-        },
-      );
-
-      if (!response.ok) {
-        requestedOffsetsRef.current.delete(offset);
-        setLoadError("Could not load more favourites. Please try again.");
-        return;
-      }
-
-      const payload = (await response.json().catch(() => null)) as FavouritesPayload | null;
-      const incoming = Array.isArray(payload?.favourites) ? payload.favourites : [];
-
-      setFavourites((current) => {
-        const seen = new Set(current.map((video) => video.id));
-        const uniqueIncoming = incoming.filter((video) => !seen.has(video.id));
-
-        if (uniqueIncoming.length === 0) {
-          return current;
-        }
-
-        return [...current, ...uniqueIncoming];
-      });
-
-      if (typeof payload?.totalCount === "number" && Number.isFinite(payload.totalCount)) {
-        setTotalCount(Math.max(0, Math.floor(payload.totalCount)));
-      }
-
-      const nextOffset = Number(payload?.nextOffset);
-      nextOffsetRef.current = Number.isFinite(nextOffset)
-        ? Math.max(offset + incoming.length, Math.floor(nextOffset))
-        : offset + incoming.length;
-
-      if (typeof payload?.hasMore === "boolean") {
-        setHasMore(payload.hasMore);
-      } else {
-        setHasMore(incoming.length === FAVOURITES_BATCH_SIZE);
-      }
-    } catch {
-      requestedOffsetsRef.current.delete(offset);
-      setLoadError("Could not load more favourites. Please try again.");
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [hasMore, isAuthenticated, isLoadingMore, pathname]);
 
   useEffect(() => {
     if (!isAuthenticated || pathname !== "/favourites") {
@@ -252,12 +246,12 @@ export function FavouritesGrid({
         if (!isCancelled) {
           setFavourites(windowFavourites);
           setTotalCount(nextTotalCount);
-          setHasMore(typeof payload?.hasMore === "boolean" ? payload.hasMore : windowFavourites.length < nextTotalCount);
-          requestedOffsetsRef.current.clear();
-          nextOffsetRef.current = Number.isFinite(nextOffset)
-            ? Math.max(windowFavourites.length, Math.floor(nextOffset))
-            : windowFavourites.length;
-          setLoadError(null);
+          resetPagination({
+            hasMore: typeof payload?.hasMore === "boolean" ? payload.hasMore : windowFavourites.length < nextTotalCount,
+            offset: Number.isFinite(nextOffset)
+              ? Math.max(windowFavourites.length, Math.floor(nextOffset))
+              : windowFavourites.length,
+          });
         }
       } catch {
         // Keep the initial server-provided favourites if refresh fails.
@@ -277,39 +271,6 @@ export function FavouritesGrid({
       unsubscribe();
     };
   }, [isAuthenticated, pathname]);
-
-  useEffect(() => {
-    if (!hasMore) {
-      return;
-    }
-
-    const sentinel = sentinelRef.current;
-    if (!sentinel) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry?.isIntersecting) {
-          return;
-        }
-
-        void loadMore(nextOffsetRef.current);
-      },
-      {
-        root: null,
-        rootMargin: "700px 0px",
-        threshold: 0,
-      },
-    );
-
-    observer.observe(sentinel);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [hasMore, loadMore]);
 
   const removeFavourite = useCallback((videoId: string) => {
     if (!isAuthenticated) {
@@ -375,9 +336,10 @@ export function FavouritesGrid({
             sourceFavourites = payload.favourites;
             setFavourites(payload.favourites);
             setTotalCount(payload.favourites.length);
-            setHasMore(false);
-            requestedOffsetsRef.current.clear();
-            nextOffsetRef.current = payload.favourites.length;
+            resetPagination({
+              hasMore: false,
+              offset: payload.favourites.length,
+            });
           }
         }
       } catch {
@@ -485,7 +447,7 @@ export function FavouritesGrid({
                 type="button"
                 className="newPageSeenToggle"
                 onClick={() => {
-                  void loadMore(nextOffsetRef.current);
+                  retryLoadMore();
                 }}
                 disabled={isLoadingMore || !hasMore}
               >

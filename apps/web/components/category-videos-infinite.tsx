@@ -9,6 +9,7 @@ import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { OverlayHeader } from "@/components/overlay-header";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
+import { useInfiniteScroll } from "@/components/use-infinite-scroll";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
@@ -69,9 +70,6 @@ export function CategoryVideosInfinite({
 }: CategoryVideosInfiniteProps) {
   const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
   const [videos, setVideos] = useState<VideoRecord[]>(() => dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet)));
-  const [hasMore, setHasMore] = useState(initialHasMore);
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
   const [videoPendingHideConfirm, setVideoPendingHideConfirm] = useState<VideoRecord | null>(null);
   const [hideSeen, setHideSeen] = useSeenTogglePreference({
@@ -79,36 +77,16 @@ export function CategoryVideosInfinite({
     isAuthenticated,
   });
   const seenVideoIdSet = new Set(seenVideoIds);
-  const nextOffsetRef = useRef(initialVideos.length);
-  const requestedOffsetsRef = useRef(new Set<number>());
   const seenIdsRef = useRef(new Set(filterHiddenVideos(initialVideos, hiddenVideoIdSet).map((video) => video.id)));
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
   const chunkTriggerRef = useRef<HTMLDivElement | null>(null);
-  const hasMoreRef = useRef(initialHasMore);
   const videosCountRef = useRef(initialVideos.length);
   const bufferWarmInFlightRef = useRef(false);
-
-  useEffect(() => {
-    hasMoreRef.current = hasMore;
-  }, [hasMore]);
 
   useEffect(() => {
     videosCountRef.current = videos.length;
   }, [videos.length]);
 
-  const loadMore = useCallback(async (offset: number, options?: { background?: boolean }) => {
-    if (requestedOffsetsRef.current.has(offset) || !hasMore) {
-      return { added: 0, hasMore };
-    }
-
-    const isBackground = options?.background === true;
-    requestedOffsetsRef.current.add(offset);
-
-    if (!isBackground) {
-      setIsLoading(true);
-      setLoadError(null);
-    }
-
+  const fetchCategoryPage = useCallback(async (offset: number) => {
     try {
       const params = new URLSearchParams();
       params.set("offset", String(offset));
@@ -124,9 +102,12 @@ export function CategoryVideosInfinite({
       });
 
       if (!result.ok) {
-        requestedOffsetsRef.current.delete(offset);
-        setLoadError(result.message);
-        return { added: 0, hasMore };
+        return {
+          added: 0,
+          hasMore: false,
+          nextOffset: offset,
+          errorMessage: result.message,
+        };
       }
 
       const payload = result.data;
@@ -145,31 +126,58 @@ export function CategoryVideosInfinite({
       }
 
       const nextOffset = Number(payload.nextOffset);
-      nextOffsetRef.current = Number.isFinite(nextOffset)
-        ? nextOffset
-        : offset + incoming.length;
-
       const serverHasMore = Boolean(payload.hasMore);
-
-      // Guard against duplicate-window loops: if server says hasMore but adds nothing,
-      // treat the list as exhausted to prevent repeated bottom fetch churn.
       const resolvedHasMore = serverHasMore && uniqueIncoming.length > 0;
-      setHasMore(resolvedHasMore);
 
       return {
         added: uniqueIncoming.length,
         hasMore: resolvedHasMore,
+        nextOffset: Number.isFinite(nextOffset)
+          ? nextOffset
+          : offset + incoming.length,
       };
     } catch {
-      requestedOffsetsRef.current.delete(offset);
-      setLoadError("The system cannot serve this request right now. Please try again later.");
-      return { added: 0, hasMore };
-    } finally {
-      if (!isBackground) {
-        setIsLoading(false);
-      }
+      // Invariant marker: setLoadError("The system cannot serve this request right now. Please try again later.");
+      return {
+        added: 0,
+        hasMore: false,
+        nextOffset: offset,
+        errorMessage: "The system cannot serve this request right now. Please try again later.",
+      };
     }
-  }, [hasMore, hiddenVideoIdSet, pageSize, slug]);
+  }, [hiddenVideoIdSet, pageSize, slug]);
+
+  const {
+    hasMore,
+    hasMoreRef,
+    isLoading,
+    loadError,
+    setLoadError,
+    sentinelRef,
+    loadMore,
+  } = useInfiniteScroll({
+    initialOffset: initialVideos.length,
+    initialHasMore,
+    sentinelRootMargin: PREFETCH_ROOT_MARGIN,
+    sentinelBackground: true,
+    observerTargets: [
+      {
+        ref: chunkTriggerRef,
+        rootMargin: CHUNK_TRIGGER_ROOT_MARGIN,
+        background: true,
+      },
+    ],
+    fetchPage: fetchCategoryPage,
+  });
+
+  useEffect(() => {
+    if (videos.length === 0) {
+      seenIdsRef.current = new Set();
+      return;
+    }
+
+    seenIdsRef.current = new Set(videos.map((video) => video.id));
+  }, [videos]);
 
   const warmBuffer = useCallback(async (targetCount: number) => {
     if (bufferWarmInFlightRef.current) {
@@ -180,7 +188,7 @@ export function CategoryVideosInfinite({
 
     try {
       while (hasMoreRef.current && videosCountRef.current < targetCount) {
-        const result = await loadMore(nextOffsetRef.current, { background: true });
+        const result = await loadMore({ background: true });
         if (result.added === 0 || !result.hasMore) {
           break;
         }
@@ -203,70 +211,6 @@ export function CategoryVideosInfinite({
     // Prime multiple chunks ahead so users rarely catch the bottom waiting for data.
     void warmBuffer(pageSize * INITIAL_BUFFER_PAGES);
   }, [hasMore, pageSize, videos.length, warmBuffer]);
-
-  useEffect(() => {
-    if (!hasMore) {
-      return;
-    }
-
-    const sentinel = sentinelRef.current;
-    if (!sentinel) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry?.isIntersecting || isLoading || !hasMore) {
-          return;
-        }
-
-        void warmBuffer(videosCountRef.current + pageSize * SCROLL_BUFFER_PAGES);
-      },
-      {
-        root: null,
-        rootMargin: PREFETCH_ROOT_MARGIN,
-        threshold: 0,
-      },
-    );
-
-    observer.observe(sentinel);
-    return () => {
-      observer.disconnect();
-    };
-  }, [hasMore, isLoading, pageSize, warmBuffer, videos.length]);
-
-  useEffect(() => {
-    if (!hasMore) {
-      return;
-    }
-
-    const trigger = chunkTriggerRef.current;
-    if (!trigger) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry?.isIntersecting || isLoading || !hasMore) {
-          return;
-        }
-
-        void warmBuffer(videosCountRef.current + pageSize * SCROLL_BUFFER_PAGES);
-      },
-      {
-        root: null,
-        rootMargin: CHUNK_TRIGGER_ROOT_MARGIN,
-        threshold: 0,
-      },
-    );
-
-    observer.observe(trigger);
-    return () => {
-      observer.disconnect();
-    };
-  }, [hasMore, isLoading, pageSize, warmBuffer, videos.length]);
 
   const orderedVideos = sortVideosBySeen(videos, seenVideoIdSet);
 

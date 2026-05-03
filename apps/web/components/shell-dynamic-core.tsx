@@ -10,6 +10,7 @@ import { AuthLoginForm } from "@/components/auth-login-form";
 import { AuthModal } from "@/components/auth-modal";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { ArtistsLetterProvider } from "@/components/artists-letter-provider";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { OverlayHeader } from "@/components/overlay-header";
@@ -2933,6 +2934,7 @@ function ShellDynamicInner({
 
   return (
     <OverlayScrollContainerProvider overlayScrollContainerRef={favouritesBlindInnerRef}>
+      <ArtistsLetterProvider initialLetter={activeArtistLetter} v={activeVideoId} resume={resumeParam}>
       <main className={shellClassName} style={shellStyle}>
       <div className="backdrop" />
 
@@ -3344,7 +3346,6 @@ function ShellDynamicInner({
       >
         {isArtistsIndexRoute ? (
           <ArtistsLetterNav
-            activeLetter={activeArtistLetter}
             v={activeVideoId}
             resume={resumeParam}
           />
@@ -4341,6 +4342,7 @@ function ShellDynamicInner({
       </section>
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
       </main>
+      </ArtistsLetterProvider>
     </OverlayScrollContainerProvider>
   );
 }

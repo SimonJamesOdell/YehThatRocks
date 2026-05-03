@@ -37,9 +37,9 @@ export default async function ArtistsPage({ searchParams }: ArtistsPageProps) {
     <>
       <OverlayScrollReset />
 
-      <ArtistsFilterHeader activeLetter={activeLetter} v={v} resume={resume} />
+      <ArtistsFilterHeader />
 
-      <ArtistsLetterNav activeLetter={activeLetter} v={v} resume={resume} variant="mobile" />
+      <ArtistsLetterNav v={v} resume={resume} variant="mobile" />
 
       <ArtistsLetterResults
         letter={activeLetter}

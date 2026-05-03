@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 
-import { CloseLink } from "@/components/close-link";
 import { OverlayHeader } from "@/components/overlay-header";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { createPlaylistClient, importPlaylistClient, listPlaylistsClient } from "@/lib/playlist-client-service";
@@ -86,14 +85,13 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (!showCreateModal && !showImportModal) {
+    if (!showCreateModal) {
       return;
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setShowCreateModal(false);
-        setShowImportModal(false);
       }
     };
 
@@ -102,7 +100,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [showCreateModal, showImportModal]);
+  }, [showCreateModal]);
 
   function openCreateModal() {
     if (!isAuthenticated) {
@@ -297,31 +295,37 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
 
   return (
     <>
-      <OverlayHeader className="playlistsHeaderBar" close={false}>
+      <OverlayHeader
+        className="playlistsHeaderBar"
+        close={false}
+        actions={(
+          <>
+            <button
+              type="button"
+              className="playlistsPrimaryButton playlistsHeaderCreateButton"
+              onClick={openCreateModal}
+              disabled={isPending}
+              aria-label="Create playlist"
+              title="Create playlist"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className="playlistsPrimaryButton playlistsHeaderCreateButton"
+              onClick={openImportModal}
+              disabled={isPending}
+              aria-label="Import YouTube playlist"
+              title="Import YouTube playlist"
+            >
+              ⇪
+            </button>
+          </>
+        )}
+      >
         <div className="playlistsHeaderTitle">
           <strong><span className="whitePlaylistGlyph" aria-hidden="true">♬</span> Playlists</strong>
-          <button
-            type="button"
-            className="playlistsPrimaryButton playlistsHeaderCreateButton"
-            onClick={openCreateModal}
-            disabled={isPending}
-            aria-label="Create playlist"
-            title="Create playlist"
-          >
-            +
-          </button>
-          <button
-            type="button"
-            className="newPageSeenToggle top100CreatePlaylistButton"
-            onClick={openImportModal}
-            disabled={isPending}
-            aria-label="Import YouTube playlist"
-            title="Import YouTube playlist"
-          >
-            + Import
-          </button>
         </div>
-        <CloseLink />
       </OverlayHeader>
 
       {playlists.length > 0 ? (
@@ -409,47 +413,6 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
       )}
 
       {message ? <p className="mutationMessage">{message}</p> : null}
-
-      {isMounted && showCreateModal ? createPortal(
-        <div
-          className="suggestNewModalBackdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Create playlist"
-          onClick={() => setShowCreateModal(false)}
-        >
-          <div className="suggestNewModalPanel" onClick={(event) => event.stopPropagation()}>
-            <div className="suggestNewModalHeader">
-              <h3>Create Playlist</h3>
-              <p className="suggestNewModalMeta">Give your playlist a name and start building your queue.</p>
-            </div>
-
-            <label className="newFlagModalField suggestNewModalField" htmlFor="create-playlist-name">
-              Playlist name
-            </label>
-            <input
-              className="suggestNewModalInput"
-              id="create-playlist-name"
-              value={name}
-              onChange={(event) => setName(event.currentTarget.value)}
-              placeholder="Playlist name"
-              disabled={isPending}
-              maxLength={80}
-              autoFocus
-            />
-
-            <div className="newFlagModalActions">
-              <button type="button" className="newFlagModalActionBtn" onClick={() => setShowCreateModal(false)} disabled={isPending}>
-                Cancel
-              </button>
-              <button type="button" className="newFlagModalActionBtn" onClick={createPlaylist} disabled={isPending}>
-                {isPending ? "Creating..." : "Create"}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      ) : null}
 
       {isMounted && showImportModal ? createPortal(
         <div

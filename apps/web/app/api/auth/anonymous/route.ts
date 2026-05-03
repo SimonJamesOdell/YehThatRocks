@@ -6,6 +6,7 @@ import { buildAnonymousScreenNameSuggestion } from "@/lib/anonymous-screen-name"
 import { setAuthCookies } from "@/lib/auth-cookies";
 import { signAccessToken, signRefreshToken } from "@/lib/auth-jwt";
 import { hashPassword } from "@/lib/auth-password";
+import { handleUnhandledAuthError } from "@/lib/auth-route-error";
 import { SCREEN_NAME_MAX_LENGTH, SCREEN_NAME_MIN_LENGTH, isScreenNameTaken, normalizeScreenName } from "@/lib/auth-screen-name";
 import { createRefreshSession } from "@/lib/auth-sessions";
 import { verifySameOrigin } from "@/lib/csrf";
@@ -232,26 +233,15 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("[auth-anonymous] unhandled error", error);
-
-    const message = error instanceof Error ? error.message : "Unknown error";
-
-    try {
-      await recordAuthAudit({
-        action: "register",
-        success: false,
-        detail: `Anonymous account creation failed: ${message}`,
-        ...requestMeta,
-      });
-    } catch (auditError) {
-      console.error("[auth-anonymous] failed to write auth audit", auditError);
-    }
-
-    return NextResponse.json(
-      {
+    return handleUnhandledAuthError(error, requestMeta, "register", {
+      logMessage: "[auth-anonymous] unhandled error",
+      auditFailureLogMessage: "[auth-anonymous] failed to write auth audit",
+      unknownMessage: "Unknown error",
+      auditDetail: (message) => `Anonymous account creation failed: ${message}`,
+      response: (message) => ({
+        status: 500,
         error: process.env.NODE_ENV === "development" ? message : "Failed to create anonymous account",
-      },
-      { status: 500 },
-    );
+      }),
+    });
   }
 }

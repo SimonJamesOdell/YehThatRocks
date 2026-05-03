@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
+import { useInfiniteScroll } from "@/components/use-infinite-scroll";
 import { EVENT_NAMES, listenToAppEvent } from "@/lib/events-contract";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
 import type { WatchHistoryEntry } from "@/lib/catalog-data";
@@ -105,15 +106,64 @@ export function HistoryInfiniteList({
   const router = useRouter();
   const [history, setHistory] = useState<WatchHistoryEntry[]>(initialHistory);
   const [filterValue, setFilterValue] = useState("");
-  const [hasMore, setHasMore] = useState(initialHasMore);
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [isRefreshingInitialHistory, setIsRefreshingInitialHistory] = useState(initialHistory.length === 0);
   const [initialRefreshError, setInitialRefreshError] = useState<string | null>(null);
   const [initialRefreshRetryNonce, setInitialRefreshRetryNonce] = useState(0);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const nextOffsetRef = useRef(initialHistory.length);
-  const requestedOffsetsRef = useRef(new Set<number>());
+  const {
+    hasMore,
+    isLoading,
+    loadError,
+    setLoadError,
+    sentinelRef,
+    loadMore,
+    retryLoadMore,
+    resetPagination,
+  } = useInfiniteScroll({
+    initialOffset: initialHistory.length,
+    initialHasMore,
+    sentinelRootMargin: "600px 0px",
+    fetchPage: useCallback(async (offset) => {
+      const result = await fetchJsonWithLoaderContract<WatchHistoryPayload>({
+        input: `/api/watch-history?limit=${pageSize}&offset=${offset}`,
+        init: {
+          cache: "no-store",
+        },
+        failureMessage: "Could not load more history. Please retry.",
+      });
+
+      if (!result.ok) {
+        return {
+          added: 0,
+          hasMore: false,
+          nextOffset: offset,
+          errorMessage: result.message,
+        };
+      }
+
+      const payload = result.data;
+      const incoming = Array.isArray(payload.history) ? payload.history : [];
+
+      let added = 0;
+      setHistory((current) => {
+        const seen = new Set(current.map((entry) => `${entry.video.id}:${entry.lastWatchedAt}`));
+        const uniqueIncoming = incoming.filter((entry) => !seen.has(`${entry.video.id}:${entry.lastWatchedAt}`));
+        added = uniqueIncoming.length;
+
+        if (added === 0) {
+          return current;
+        }
+
+        return [...current, ...uniqueIncoming];
+      });
+
+      const nextOffset = Number(payload.nextOffset);
+      return {
+        added,
+        hasMore: Boolean(payload.hasMore),
+        nextOffset: Number.isFinite(nextOffset) ? nextOffset : offset + incoming.length,
+      };
+    }, [pageSize]),
+  });
 
   const filteredHistory = useMemo(() => {
     const needle = filterValue.trim().toLowerCase();
@@ -127,10 +177,6 @@ export function HistoryInfiniteList({
       return title.startsWith(needle) || artist.startsWith(needle);
     });
   }, [filterValue, history]);
-
-  const seenKeys = useMemo(() => {
-    return new Set(history.map((entry) => `${entry.video.id}:${entry.lastWatchedAt}`));
-  }, [history]);
 
   const groupedHistory = useMemo<HistoryGroup[]>(() => {
     const groups: HistoryGroup[] = [];
@@ -188,9 +234,10 @@ export function HistoryInfiniteList({
       const nextOffset = Number(payload.nextOffset);
 
       setHistory(latest);
-      setHasMore(hasMoreLatest);
-      nextOffsetRef.current = Number.isFinite(nextOffset) ? nextOffset : latest.length;
-      requestedOffsetsRef.current.clear();
+      resetPagination({
+        hasMore: hasMoreLatest,
+        offset: Number.isFinite(nextOffset) ? nextOffset : latest.length,
+      });
     } catch {
       if (options?.initial) {
         setInitialRefreshError("Could not refresh history. Please retry.");
@@ -208,9 +255,8 @@ export function HistoryInfiniteList({
   }, []);
 
   const retryLoadMoreHistory = useCallback(() => {
-    setLoadError(null);
-    void loadMore(nextOffsetRef.current);
-  }, []);
+    retryLoadMore();
+  }, [retryLoadMore]);
 
   useEffect(() => {
     let cancelled = false;
@@ -238,86 +284,6 @@ export function HistoryInfiniteList({
       unsubscribe();
     };
   }, [refreshLatestHistoryWindow]);
-
-  async function loadMore(offset: number) {
-    if (requestedOffsetsRef.current.has(offset) || isLoading || !hasMore) {
-      return;
-    }
-
-    requestedOffsetsRef.current.add(offset);
-    setIsLoading(true);
-    setLoadError(null);
-
-    try {
-      const result = await fetchJsonWithLoaderContract<WatchHistoryPayload>({
-        input: `/api/watch-history?limit=${pageSize}&offset=${offset}`,
-        init: {
-          cache: "no-store",
-        },
-        failureMessage: "Could not load more history. Please retry.",
-      });
-
-      if (!result.ok) {
-        requestedOffsetsRef.current.delete(offset);
-        setLoadError(result.message);
-        return;
-      }
-
-      const payload = result.data;
-      const incoming = Array.isArray(payload.history) ? payload.history : [];
-
-      const uniqueIncoming = incoming.filter((entry) => {
-        const key = `${entry.video.id}:${entry.lastWatchedAt}`;
-        return !seenKeys.has(key);
-      });
-
-      if (uniqueIncoming.length > 0) {
-        setHistory((current) => [...current, ...uniqueIncoming]);
-      }
-
-      const nextOffset = Number(payload.nextOffset);
-      nextOffsetRef.current = Number.isFinite(nextOffset) ? nextOffset : offset + incoming.length;
-      setHasMore(Boolean(payload.hasMore));
-    } catch {
-      requestedOffsetsRef.current.delete(offset);
-      setLoadError("Could not load more history. Please retry.");
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    if (!hasMore) {
-      return;
-    }
-
-    const sentinel = sentinelRef.current;
-    if (!sentinel) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry?.isIntersecting) {
-          return;
-        }
-
-        void loadMore(nextOffsetRef.current);
-      },
-      {
-        root: null,
-        rootMargin: "600px 0px",
-        threshold: 0,
-      },
-    );
-
-    observer.observe(sentinel);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [hasMore, isLoading]);
 
   if (history.length === 0) {
     return (

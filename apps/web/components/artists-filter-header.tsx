@@ -1,56 +1,28 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 
 import { CloseLink } from "@/components/close-link";
 import { OverlayHeader } from "@/components/overlay-header";
+import { useArtistsLetterContext } from "@/components/artists-letter-provider";
 import {
-  dispatchArtistsFilterChange,
-  dispatchArtistsLetterChange,
   isValidArtistLetter,
   normalizeArtistLetter,
 } from "@/lib/artists-letter-events";
 
-type ArtistsFilterHeaderProps = {
-  activeLetter: string;
-  v?: string;
-  resume?: string;
-};
-
-function updateArtistsLetterInUrl(letter: string, v?: string, resume?: string) {
-  const url = new URL(window.location.href);
-  url.searchParams.set("letter", letter);
-
-  if (v) {
-    url.searchParams.set("v", v);
-  } else {
-    url.searchParams.delete("v");
-  }
-
-  if (resume) {
-    url.searchParams.set("resume", resume);
-  } else {
-    url.searchParams.delete("resume");
-  }
-
-  window.history.replaceState(window.history.state, "", `${url.pathname}?${url.searchParams.toString()}`);
-}
-
-export function ArtistsFilterHeader({ activeLetter, v, resume }: ArtistsFilterHeaderProps) {
-  const [filterValue, setFilterValue] = useState("");
+export function ArtistsFilterHeader() {
+  const { filterValue, selectedLetter, selectLetter, setFilterValue } = useArtistsLetterContext();
 
   const handleFilterChange = useCallback((value: string) => {
     setFilterValue(value);
-    dispatchArtistsFilterChange(value);
 
     const nextLetter = normalizeArtistLetter(value).charAt(0);
-    if (!isValidArtistLetter(nextLetter) || nextLetter === activeLetter) {
+    if (!isValidArtistLetter(nextLetter) || nextLetter === selectedLetter) {
       return;
     }
 
-    updateArtistsLetterInUrl(nextLetter, v, resume);
-    dispatchArtistsLetterChange(nextLetter);
-  }, [activeLetter, resume, v]);
+    selectLetter(nextLetter);
+  }, [selectLetter, selectedLetter, setFilterValue]);
 
   return (
     <OverlayHeader className="categoriesHeaderBar" close={false}>
