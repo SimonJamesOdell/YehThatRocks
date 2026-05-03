@@ -67,10 +67,6 @@ export async function generateMetadata({ params, searchParams }: SharePageProps)
     alternates: {
       canonical: shareUrl,
     },
-    robots: {
-      index: false,
-      follow: true,
-    },
     openGraph: {
       title: shareTitle,
       description: shareDescription,

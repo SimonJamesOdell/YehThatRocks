@@ -974,6 +974,27 @@ export async function getSameGenreRelatedPoolByArtist(normalizedArtist: string, 
 
 // ── Public artist queries ─────────────────────────────────────────────────────
 
+export async function getArtistSlugsForSitemap(offset: number, limit: number, minVideoCount = 2): Promise<string[]> {
+  if (!hasDatabaseUrl()) return seedArtists.map((a) => a.slug).slice(offset, offset + limit);
+  try {
+    if (await hasArtistStatsProjection()) {
+      const rows = await prisma.$queryRawUnsafe<Array<{ slug: string }>>(
+        `SELECT slug FROM artist_stats WHERE video_count >= ? ORDER BY video_count DESC, slug ASC LIMIT ? OFFSET ?`,
+        minVideoCount,
+        limit,
+        offset,
+      );
+      return rows.map((r) => r.slug);
+    }
+    const rows = await prisma.$queryRaw<Array<{ slug: string }>>`
+      SELECT slug FROM artists WHERE slug IS NOT NULL ORDER BY slug ASC LIMIT ${limit} OFFSET ${offset}
+    `;
+    return rows.map((r) => r.slug);
+  } catch {
+    return [];
+  }
+}
+
 export async function getArtists() {
   if (!hasDatabaseUrl()) return seedArtists;
 
