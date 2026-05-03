@@ -68,6 +68,13 @@ function assertInvariant(condition, description, details, failures) {
   }
 }
 
+function getGenreSlug(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 async function runApiChecks({ baseUrl, maxApiDurationMs, minCoverage }, failures) {
   const url = `${baseUrl.replace(/\/$/, "")}/api/categories`;
   const startedAt = Date.now();
@@ -127,6 +134,70 @@ async function runApiChecks({ baseUrl, maxApiDurationMs, minCoverage }, failures
     `coverage=${(coverage * 100).toFixed(2)}% threshold=${(minCoverage * 100).toFixed(2)}%`,
     failures,
   );
+
+  if (categories.length === 0) {
+    assertInvariant(true, "API category slug checks skipped when no categories exist", "", failures);
+    return;
+  }
+
+  const firstGenre = String(categories[0]?.genre ?? "").trim();
+  const firstSlug = getGenreSlug(firstGenre);
+  assertInvariant(Boolean(firstSlug), "API category slug derivation yields non-empty slug", `genre=${firstGenre}`, failures);
+  if (!firstSlug) {
+    return;
+  }
+
+  const categoryUrl = `${baseUrl.replace(/\/$/, "")}/api/categories/${encodeURIComponent(firstSlug)}?limit=24&offset=0`;
+  let categoryResponse;
+  try {
+    categoryResponse = await fetch(categoryUrl, {
+      method: "GET",
+      headers: {
+        "Cache-Control": "no-cache",
+      },
+    });
+  } catch (error) {
+    failures.push({
+      description: "API /api/categories/[slug] reachable",
+      details: `request failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    console.error("[fail] API /api/categories/[slug] reachable");
+    return;
+  }
+
+  assertInvariant(
+    categoryResponse.status !== 500,
+    "API /api/categories/[slug] never returns raw 500",
+    `status=${categoryResponse.status}`,
+    failures,
+  );
+
+  let categoryPayload;
+  try {
+    categoryPayload = await categoryResponse.json();
+  } catch (error) {
+    failures.push({
+      description: "API /api/categories/[slug] returns valid JSON",
+      details: error instanceof Error ? error.message : String(error),
+    });
+    console.error("[fail] API /api/categories/[slug] returns valid JSON");
+    return;
+  }
+
+  if (categoryResponse.status === 200) {
+    assertInvariant(typeof categoryPayload?.genre === "string" && categoryPayload.genre.length > 0, "API /api/categories/[slug] returns canonical genre name", `genre=${String(categoryPayload?.genre)}`, failures);
+    assertInvariant(Array.isArray(categoryPayload?.videos), "API /api/categories/[slug] returns videos array", `videosType=${typeof categoryPayload?.videos}`, failures);
+    assertInvariant(typeof categoryPayload?.hasMore === "boolean", "API /api/categories/[slug] returns hasMore boolean", `hasMore=${String(categoryPayload?.hasMore)}`, failures);
+    assertInvariant(Number.isFinite(Number(categoryPayload?.nextOffset)), "API /api/categories/[slug] returns numeric nextOffset", `nextOffset=${String(categoryPayload?.nextOffset)}`, failures);
+  } else {
+    assertInvariant(categoryResponse.status === 503, "API /api/categories/[slug] hard-fails with 503 when canonical data is unavailable", `status=${categoryResponse.status}`, failures);
+    assertInvariant(
+      categoryPayload?.error === "The system cannot serve this request right now. Please try again later.",
+      "API /api/categories/[slug] returns explicit retry message on hard-fail",
+      `error=${String(categoryPayload?.error)}`,
+      failures,
+    );
+  }
 }
 
 async function main() {

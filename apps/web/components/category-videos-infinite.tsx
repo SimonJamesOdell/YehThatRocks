@@ -142,7 +142,7 @@ export function CategoryVideosInfinite({
           method: "GET",
           cache: "no-store",
         },
-        failureMessage: `Could not load more ${genre} tracks. Please retry.`,
+        failureMessage: "The system cannot serve this request right now. Please try again later.",
       });
 
       if (!result.ok) {
@@ -184,7 +184,7 @@ export function CategoryVideosInfinite({
       };
     } catch {
       requestedOffsetsRef.current.delete(offset);
-      setLoadError(`Could not load more ${genre} tracks. Please retry.`);
+      setLoadError("The system cannot serve this request right now. Please try again later.");
       return { added: 0, hasMore };
     } finally {
       if (!isBackground) {

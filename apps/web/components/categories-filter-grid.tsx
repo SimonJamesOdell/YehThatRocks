@@ -1,10 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { CloseLink } from "@/components/close-link";
+import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import type { GenreCard } from "@/lib/catalog-data";
 import { getGenreSlug } from "@/lib/catalog-data";
 
@@ -164,14 +164,14 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
               >
                 {previewVideoId ? (
                   <div className="categoryThumbWrap">
-                    <Image
-                      src={`https://i.ytimg.com/vi/${previewVideoId}/mqdefault.jpg`}
+                    <YouTubeThumbnailImage
+                      videoId={previewVideoId}
                       alt=""
-                      width={320}
-                      height={180}
                       className="categoryThumb"
+                      format="mqdefault"
                       loading="lazy"
-                      sizes="(max-width: 768px) 92vw, (max-width: 1200px) 44vw, 320px"
+                      hideClosestSelector=".categoryCard"
+                      reportReason="category-thumbnail-load-error"
                     />
                   </div>
                 ) : null}
