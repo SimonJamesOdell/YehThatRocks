@@ -77,10 +77,6 @@ function mapErrorCode(status: number | null): PlaylistServiceErrorCode {
 
 function defaultMessage(operation: PlaylistOperation, code: PlaylistServiceErrorCode) {
   if (code === "unauthorized" || code === "forbidden") {
-    if (operation === "import") {
-      return "Sign in to import playlists.";
-    }
-
     return operation === "add-item" || operation === "add-items"
       ? "Sign in to save tracks to playlists."
       : "Sign in to create playlists.";
@@ -144,22 +140,13 @@ async function requestJson<T>(
 
     if (!response.ok) {
       const code = mapErrorCode(response.status);
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: unknown; message?: unknown }
-        | null;
-      const payloadError = typeof payload?.error === "string"
-        ? payload.error
-        : typeof payload?.message === "string"
-          ? payload.message
-          : null;
-
       emitTelemetry(operation, false, durationMs, response.status, code, options?.telemetryContext);
       return {
         ok: false,
         error: {
           code,
           status: response.status,
-          message: payloadError ?? defaultMessage(operation, code),
+          message: defaultMessage(operation, code),
         },
       };
     }

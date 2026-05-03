@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
+import { useInfiniteScroll } from "@/components/use-infinite-scroll";
 import type { HiddenVideoEntry } from "@/lib/catalog-data";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
@@ -46,13 +47,69 @@ export function BlockedVideosInfiniteList({
 }: BlockedVideosInfiniteListProps) {
   const [blockedVideos, setBlockedVideos] = useState<HiddenVideoEntry[]>(initialBlockedVideos);
   const [filterValue, setFilterValue] = useState("");
-  const [hasMore, setHasMore] = useState(initialHasMore);
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [unblockingIds, setUnblockingIds] = useState<Set<string>>(new Set());
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const nextOffsetRef = useRef(initialBlockedVideos.length);
-  const requestedOffsetsRef = useRef(new Set<number>());
+  const {
+    hasMore,
+    isLoading,
+    loadError,
+    setLoadError,
+    sentinelRef,
+    loadMore,
+    retryLoadMore,
+  } = useInfiniteScroll({
+    initialOffset: initialBlockedVideos.length,
+    initialHasMore,
+    sentinelRootMargin: "600px 0px",
+    fetchPage: useCallback(async (offset) => {
+      const result = await fetchJsonWithLoaderContract<BlockedVideosPayload>({
+        input: `/api/hidden-videos?limit=${pageSize}&offset=${offset}`,
+        init: {
+          cache: "no-store",
+        },
+        failureMessage: "Could not load more blocked videos. Please retry.",
+      });
+
+      if (!result.ok) {
+        return {
+          added: 0,
+          hasMore: false,
+          nextOffset: offset,
+          errorMessage: result.message,
+        };
+      }
+
+      const payload = result.data;
+      const incoming = Array.isArray(payload.blockedVideos) ? payload.blockedVideos : [];
+
+      let added = 0;
+      setBlockedVideos((current) => {
+        const seen = new Set(current.map((entry) => entry.video.id));
+        const uniqueIncoming = incoming.filter((entry) => !seen.has(entry.video.id));
+        added = uniqueIncoming.length;
+
+        if (added === 0) {
+          return current;
+        }
+
+        return [...current, ...uniqueIncoming];
+      });
+
+      if (added === 0) {
+        return {
+          added: 0,
+          hasMore: false,
+          nextOffset: offset + incoming.length,
+        };
+      }
+
+      const nextOffset = Number(payload.nextOffset);
+      return {
+        added,
+        hasMore: Boolean(payload.hasMore),
+        nextOffset: Number.isFinite(nextOffset) ? nextOffset : offset + incoming.length,
+      };
+    }, [pageSize]),
+  });
 
   const filteredBlockedVideos = useMemo(() => {
     const needle = filterValue.trim().toLowerCase();
@@ -66,64 +123,6 @@ export function BlockedVideosInfiniteList({
       return title.startsWith(needle) || artist.startsWith(needle);
     });
   }, [blockedVideos, filterValue]);
-
-  const seenIds = useMemo(() => {
-    return new Set(blockedVideos.map((entry) => entry.video.id));
-  }, [blockedVideos]);
-
-  const retryLoadMore = useCallback(() => {
-    setLoadError(null);
-    void loadMore(nextOffsetRef.current);
-  }, []);
-
-  async function loadMore(offset: number) {
-    if (requestedOffsetsRef.current.has(offset) || isLoading || !hasMore) {
-      return;
-    }
-
-    requestedOffsetsRef.current.add(offset);
-    setIsLoading(true);
-    setLoadError(null);
-
-    try {
-      const result = await fetchJsonWithLoaderContract<BlockedVideosPayload>({
-        input: `/api/hidden-videos?limit=${pageSize}&offset=${offset}`,
-        init: {
-          cache: "no-store",
-        },
-        failureMessage: "Could not load more blocked videos. Please retry.",
-      });
-
-      if (!result.ok) {
-        requestedOffsetsRef.current.delete(offset);
-        setLoadError(result.message);
-        return;
-      }
-
-      const payload = result.data;
-      const incoming = Array.isArray(payload.blockedVideos) ? payload.blockedVideos : [];
-      const uniqueIncoming = incoming.filter((entry) => !seenIds.has(entry.video.id));
-
-      if (uniqueIncoming.length > 0) {
-        setBlockedVideos((current) => [...current, ...uniqueIncoming]);
-      }
-
-      // Prevent repeated load loops when backend page repeats already-seen ids.
-      if (uniqueIncoming.length === 0) {
-        setHasMore(false);
-        return;
-      }
-
-      const nextOffset = Number(payload.nextOffset);
-      nextOffsetRef.current = Number.isFinite(nextOffset) ? nextOffset : offset + incoming.length;
-      setHasMore(Boolean(payload.hasMore));
-    } catch {
-      requestedOffsetsRef.current.delete(offset);
-      setLoadError("Could not load more blocked videos. Please retry.");
-    } finally {
-      setIsLoading(false);
-    }
-  }
 
   async function handleUnblock(videoId: string) {
     if (unblockingIds.has(videoId)) {
@@ -164,39 +163,6 @@ export function BlockedVideosInfiniteList({
       setLoadError(result.message);
     }
   }
-
-  useEffect(() => {
-    if (!hasMore) {
-      return;
-    }
-
-    const sentinel = sentinelRef.current;
-    if (!sentinel) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry?.isIntersecting) {
-          return;
-        }
-
-        void loadMore(nextOffsetRef.current);
-      },
-      {
-        root: null,
-        rootMargin: "600px 0px",
-        threshold: 0,
-      },
-    );
-
-    observer.observe(sentinel);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [hasMore, isLoading]);
 
   if (blockedVideos.length === 0) {
     return (

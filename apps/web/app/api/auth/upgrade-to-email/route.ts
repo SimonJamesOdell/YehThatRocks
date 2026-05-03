@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { upgradeToEmailSchema } from "@/lib/api-schemas";
 import { getRequestMetadata, recordAuthAudit } from "@/lib/auth-audit";
 import { sendVerificationEmail } from "@/lib/auth-email";
+import { handleUnhandledAuthError } from "@/lib/auth-route-error";
 import { createEmailVerificationToken } from "@/lib/auth-token-records";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
@@ -143,27 +144,16 @@ export async function POST(request: NextRequest) {
       { status: 200 },
     );
   } catch (error) {
-    console.error("[auth-upgrade] unhandled error", error);
-
-    const message = error instanceof Error ? error.message : "Unknown error";
-
-    try {
-      await recordAuthAudit({
-        action: "upgrade",
-        success: false,
-        userId: authResult.auth.userId,
-        detail: `Upgrade failed: ${message}`,
-        ...requestMeta,
-      });
-    } catch (auditError) {
-      console.error("[auth-upgrade] failed to write auth audit", auditError);
-    }
-
-    return NextResponse.json(
-      {
+    return handleUnhandledAuthError(error, requestMeta, "upgrade", {
+      logMessage: "[auth-upgrade] unhandled error",
+      auditFailureLogMessage: "[auth-upgrade] failed to write auth audit",
+      unknownMessage: "Unknown error",
+      auditUserId: authResult.auth.userId,
+      auditDetail: (message) => `Upgrade failed: ${message}`,
+      response: (message) => ({
+        status: 500,
         error: process.env.NODE_ENV === "development" ? message : "Failed to upgrade account",
-      },
-      { status: 500 },
-    );
+      }),
+    });
   }
 }

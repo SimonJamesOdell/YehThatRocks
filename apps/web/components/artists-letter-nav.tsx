@@ -1,85 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent } from "react";
 
 import {
-  ARTISTS_LETTER_CHANGE_EVENT,
-  dispatchArtistsLetterChange,
-  isValidArtistLetter,
   normalizeArtistLetter,
-  type ArtistsLetterChangeDetail,
 } from "@/lib/artists-letter-events";
-import { EVENT_NAMES, listenToAppEvent } from "@/lib/events-contract";
+import { useArtistsLetterContext } from "@/components/artists-letter-provider";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 type ArtistsLetterNavProps = {
-  activeLetter: string;
   v?: string;
   resume?: string;
   variant?: "panel" | "mobile";
 };
 
-function updateArtistsLetterInUrl(letter: string, v?: string, resume?: string) {
-  const url = new URL(window.location.href);
-  url.searchParams.set("letter", letter);
-
-  if (v) {
-    url.searchParams.set("v", v);
-  } else {
-    url.searchParams.delete("v");
-  }
-
-  if (resume) {
-    url.searchParams.set("resume", resume);
-  } else {
-    url.searchParams.delete("resume");
-  }
-
-  window.history.replaceState(window.history.state, "", `${url.pathname}?${url.searchParams.toString()}`);
-}
-
-export function ArtistsLetterNav({ activeLetter, v, resume, variant = "panel" }: ArtistsLetterNavProps) {
-  const initialLetter = useMemo(() => {
-    const normalized = normalizeArtistLetter(activeLetter);
-    return isValidArtistLetter(normalized) ? normalized : "A";
-  }, [activeLetter]);
-  const [selectedLetter, setSelectedLetter] = useState(initialLetter);
-
-  useEffect(() => {
-    setSelectedLetter(initialLetter);
-  }, [initialLetter]);
-
-  useEffect(() => {
-    const handler = (payload: { letter: string }) => {
-      const nextLetter = payload.letter;
-      if (nextLetter && isValidArtistLetter(nextLetter)) {
-        setSelectedLetter(nextLetter);
-      }
-    };
-
-    const unsubscribe = listenToAppEvent(EVENT_NAMES.ARTISTS_LETTER_CHANGE, handler);
-    return () => {
-      unsubscribe();
-    };
-  }, []);
+export function ArtistsLetterNav({ v, resume, variant = "panel" }: ArtistsLetterNavProps) {
+  const { selectedLetter, selectLetter } = useArtistsLetterContext();
 
   function onLetterClick(event: MouseEvent<HTMLAnchorElement>, letter: string) {
     event.preventDefault();
     const normalized = normalizeArtistLetter(letter);
-    if (!isValidArtistLetter(normalized)) {
-      return;
-    }
-
-    if (normalized === selectedLetter) {
-      return;
-    }
-
-    setSelectedLetter(normalized);
-    updateArtistsLetterInUrl(normalized, v, resume);
-    dispatchArtistsLetterChange(normalized);
+    selectLetter(normalized);
   }
 
   const wrapperClassName = variant === "mobile"

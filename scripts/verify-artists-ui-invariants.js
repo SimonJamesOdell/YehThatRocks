@@ -8,6 +8,7 @@ const ROOT = process.cwd();
 const files = {
   nav: path.join(ROOT, "apps/web/components/artists-letter-nav.tsx"),
   results: path.join(ROOT, "apps/web/components/artists-letter-results.tsx"),
+  provider: path.join(ROOT, "apps/web/components/artists-letter-provider.tsx"),
   events: path.join(ROOT, "apps/web/lib/artists-letter-events.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   catalogDataArtists: path.join(ROOT, "apps/web/lib/catalog-data-artists.ts"),
@@ -15,7 +16,6 @@ const files = {
   performanceIndexes: path.join(ROOT, "scripts/apply-performance-indexes.sql"),
   artistPage: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/page.tsx"),
   artistWikiPage: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/wiki/page.tsx"),
-  artistLoading: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/loading.tsx"),
   artistRouting: path.join(ROOT, "apps/web/lib/artist-routing.ts"),
   artistWikiLink: path.join(ROOT, "apps/web/components/artist-wiki-link.tsx"),
 };
@@ -50,6 +50,7 @@ function main() {
 
   const navSource = read(files.nav);
   const resultsSource = read(files.results);
+  const providerSource = read(files.provider);
   const eventsSource = read(files.events);
   const catalogDataSource = read(files.catalogData);
   const catalogDataArtistsSource = read(files.catalogDataArtists);
@@ -57,23 +58,24 @@ function main() {
   const performanceIndexesSource = read(files.performanceIndexes);
   const artistPageSource = read(files.artistPage);
   const artistWikiPageSource = read(files.artistWikiPage);
-  const artistLoadingSource = read(files.artistLoading);
   const artistRoutingSource = read(files.artistRouting);
   const artistWikiLinkSource = read(files.artistWikiLink);
 
-  // Event contract exists and is shared.
-  assertContains(eventsSource, "ARTISTS_LETTER_CHANGE_EVENT", "Shared letter-change event constant exists", failures);
-  assertContains(eventsSource, "dispatchArtistsLetterChange", "Shared letter-change dispatch helper exists", failures);
+  // Shared artist letter utilities and context provider exist.
+  assertContains(eventsSource, "updateArtistsLetterInUrl", "Artist letter URL update helper exists", failures);
+  assertContains(providerSource, "ArtistsLetterProvider", "Artists letter provider exists", failures);
+  assertContains(providerSource, "useArtistsLetterContext", "Artists letter context hook exists", failures);
 
-  // Letter nav must do client-side in-place updates and dispatch an event.
-  assertContains(navSource, "window.history.replaceState", "Letter nav updates URL in place (no full route transition)", failures);
-  assertContains(navSource, "dispatchArtistsLetterChange", "Letter nav dispatches client-side letter-change event", failures);
+  // Letter nav must do client-side in-place updates via context.
+  assertContains(navSource, "useArtistsLetterContext", "Letter nav consumes shared artists context", failures);
+  assertContains(navSource, "selectLetter(normalized)", "Letter nav updates selected letter through context", failures);
   assertContains(navSource, "onClick={(event) => onLetterClick(event, letter)}", "Letter nav intercepts link click for smooth in-place change", failures);
 
-  // Results must consume letter-change event and fetch letter data directly.
-  assertContains(resultsSource, "listenToAppEvent(EVENT_NAMES.ARTISTS_LETTER_CHANGE", "Results listens for client letter-change event", failures);
+  // Results must consume context state and fetch letter data directly.
+  assertContains(resultsSource, "useArtistsLetterContext", "Results consumes artists context state", failures);
   assertContains(resultsSource, "fetch(`/api/artists?${params.toString()}`", "Results fetches artists API directly on letter switch", failures);
   assertContains(resultsSource, "setCurrentLetter(nextLetter)", "Results swaps active letter state in place", failures);
+  assertContains(resultsSource, "reloadAbortControllerRef.current?.abort();", "Results aborts in-flight letter reload requests", failures);
 
   // Scroll reset invariant for letter changes.
   assertContains(resultsSource, "function scrollResultsToTop()", "Results exposes scroll-to-top helper", failures);
@@ -123,8 +125,6 @@ function main() {
   assertContains(artistWikiPageSource, 'className="artistWikiTopRow"', "Artist wiki page renders overview and image top row", failures);
   assertContains(artistWikiPageSource, '<h2>Formation and Backstory</h2>', "Artist wiki page renders formation section", failures);
   assertContains(artistWikiPageSource, '<h2>Sources</h2>', "Artist wiki page renders sources section", failures);
-  assertContains(artistLoadingSource, 'const isWikiRoute = pathname.endsWith("/wiki");', "Artist route loading detects nested wiki paths", failures);
-  assertContains(artistLoadingSource, 'isWikiRoute ? "Loading wiki..." : "Loading artist videos..."', "Artist route loading shows wiki-specific loading copy", failures);
   assertContains(artistRoutingSource, 'export function getArtistWikiPath(artistName: string)', "Artist routing exposes artist wiki path helper", failures);
   assertContains(artistRoutingSource, 'return slug ? `/artist/${encodeURIComponent(slug)}/wiki` : null;', "Artist routing builds /artist/<slug>/wiki routes", failures);
   assertContains(artistWikiLinkSource, 'const targetHref = withVideoContext(href, videoId, true);', "Artist wiki link preserves current video context", failures);

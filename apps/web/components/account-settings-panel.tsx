@@ -7,6 +7,7 @@ import { AuthChangePasswordForm } from "@/components/auth-change-password-form";
 import { BlockedVideosInfiniteList } from "@/components/blocked-videos-infinite-list";
 import { UpgradeToEmailForm } from "@/components/upgrade-to-email-form";
 import type { HiddenVideoEntry } from "@/lib/catalog-data";
+import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 
 type AccountUser = {
   id: number;
@@ -52,13 +53,14 @@ export function AccountSettingsPanel({
   }, [avatarUrl]);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
 
     const loadProfile = async () => {
       try {
-        const response = await fetch("/api/auth/profile", {
+        const response = await fetchWithAuthRetry("/api/auth/profile", {
           method: "GET",
           cache: "no-store",
+          signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -66,7 +68,7 @@ export function AccountSettingsPanel({
         }
 
         const payload = (await response.json().catch(() => null)) as { user?: Partial<AccountUser> } | null;
-        if (cancelled || !payload?.user) {
+        if (controller.signal.aborted || !payload?.user) {
           return;
         }
 
@@ -74,7 +76,10 @@ export function AccountSettingsPanel({
         setAvatarUrl(payload.user.avatarUrl ?? "");
         setBio(payload.user.bio ?? "");
         setLocation(payload.user.location ?? "");
-      } catch {
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
         // Keep server-provided fallback values.
       }
     };
@@ -82,7 +87,7 @@ export function AccountSettingsPanel({
     void loadProfile();
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, []);
 
@@ -93,7 +98,7 @@ export function AccountSettingsPanel({
     setIsSaving(true);
 
     try {
-      const response = await fetch("/api/auth/profile", {
+      const response = await fetchWithAuthRetry("/api/auth/profile", {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",

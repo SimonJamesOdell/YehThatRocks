@@ -282,7 +282,7 @@ export function AddToPlaylistButton({
     setMenuOpen((current) => !current);
   }
 
-  function handleAddToNewPlaylist() {
+  function handleAddToNewPlaylist(openAfter: boolean) {
     if (isPending) {
       return;
     }
@@ -290,7 +290,6 @@ export function AddToPlaylistButton({
     setMenuOpen(false);
     startTransition(async () => {
       try {
-        let createdPlaylistId: string | null = null;
         const autoPlaylistName = `Playlist ${new Date().toLocaleString([], {
           day: "2-digit",
           month: "short",
@@ -307,7 +306,7 @@ export function AddToPlaylistButton({
           {
             telemetryContext: {
               component: "add-to-playlist-button",
-              mode: "create-and-add",
+              mode: openAfter ? "create-add-open" : "create-and-add",
             },
           },
         );
@@ -321,7 +320,7 @@ export function AddToPlaylistButton({
           return;
         }
 
-        createdPlaylistId = created.id;
+        const createdPlaylistId = created.id;
 
         const selectedPlaylist = {
           id: created.id,
@@ -337,71 +336,12 @@ export function AddToPlaylistButton({
           dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
         }
 
-        markAdded("Added");
-      } catch {
-        // Silent failure
-      }
-    });
-  }
-
-  function handleAddToNewPlaylistAndOpen() {
-    if (isPending) {
-      return;
-    }
-
-    setMenuOpen(false);
-    startTransition(async () => {
-      try {
-        let createdPlaylistId: string | null = null;
-        const autoPlaylistName = `Playlist ${new Date().toLocaleString([], {
-          day: "2-digit",
-          month: "short",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        })}`;
-
-        const createResult = await createPlaylistClient(
-          {
-            name: autoPlaylistName,
-            videoIds: [videoId],
-          },
-          {
-            telemetryContext: {
-              component: "add-to-playlist-button",
-              mode: "create-add-open",
-            },
-          },
-        );
-
-        if (!createResult.ok) {
-          return;
+        if (openAfter) {
+          if (createdPlaylistId && selectedPlaylist.id === createdPlaylistId) {
+            setActivePlaylist(createdPlaylistId);
+          }
         }
 
-        const created = createResult.data;
-        if (!created?.id) {
-          return;
-        }
-
-        createdPlaylistId = created.id;
-
-        const selectedPlaylist = {
-          id: created.id,
-          name: created.name ?? autoPlaylistName,
-        };
-
-        const nextPlaylists = [...playlists, selectedPlaylist];
-        setPlaylists(nextPlaylists);
-        setPlaylistsLoaded(true);
-
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem(LAST_PLAYLIST_ID_KEY, created.id);
-          dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-        }
-
-        if (createdPlaylistId && selectedPlaylist.id === createdPlaylistId) {
-          setActivePlaylist(createdPlaylistId);
-        }
         markAdded("Added");
       } catch {
         // Silent failure
@@ -600,7 +540,7 @@ export function AddToPlaylistButton({
             <button
               type="button"
               className="playlistQuickAddMenuAction"
-              onClick={() => handleAddToNewPlaylist()}
+              onClick={() => handleAddToNewPlaylist(false)}
               disabled={isPending}
             >
               New playlist
@@ -608,7 +548,7 @@ export function AddToPlaylistButton({
             <button
               type="button"
               className="playlistQuickAddMenuAction"
-              onClick={() => handleAddToNewPlaylistAndOpen()}
+              onClick={() => handleAddToNewPlaylist(true)}
               disabled={isPending}
             >
               New playlist then open

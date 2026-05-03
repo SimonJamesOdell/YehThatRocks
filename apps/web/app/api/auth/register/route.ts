@@ -6,6 +6,7 @@ import { sendVerificationEmail } from "@/lib/auth-email";
 import { setAuthCookies } from "@/lib/auth-cookies";
 import { signAccessToken, signRefreshToken } from "@/lib/auth-jwt";
 import { hashPassword } from "@/lib/auth-password";
+import { handleUnhandledAuthError } from "@/lib/auth-route-error";
 import { isScreenNameTaken, normalizeScreenName } from "@/lib/auth-screen-name";
 import { createRefreshSession } from "@/lib/auth-sessions";
 import { createEmailVerificationToken } from "@/lib/auth-token-records";
@@ -144,29 +145,18 @@ export async function POST(request: NextRequest) {
     });
     return response;
   } catch (error) {
-    console.error("[auth-register] unhandled register error", error);
-
-    const message = error instanceof Error ? error.message : "Unknown registration error";
-
-    try {
-      await recordAuthAudit({
-        action: "register",
-        success: false,
-        detail: `Unhandled register error: ${message}`,
-        ...requestMeta,
-      });
-    } catch (auditError) {
-      console.error("[auth-register] failed to write auth audit", auditError);
-    }
-
-    return NextResponse.json(
-      {
+    return handleUnhandledAuthError(error, requestMeta, "register", {
+      logMessage: "[auth-register] unhandled register error",
+      auditFailureLogMessage: "[auth-register] failed to write auth audit",
+      unknownMessage: "Unknown registration error",
+      auditDetail: (message) => `Unhandled register error: ${message}`,
+      response: (message) => ({
+        status: 500,
         error:
           process.env.NODE_ENV === "development"
             ? `Registration failed: ${message}`
             : "Internal server error",
-      },
-      { status: 500 },
-    );
+      }),
+    });
   }
 }

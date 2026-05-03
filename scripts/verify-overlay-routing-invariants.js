@@ -31,7 +31,6 @@ const files = {
   chatDataService: path.join(ROOT, "apps/web/lib/chat-data.ts"),
   chatStreamRoute: path.join(ROOT, "apps/web/app/api/chat/stream/route.ts"),
   categoriesFilterGrid: path.join(ROOT, "apps/web/components/categories-filter-grid.tsx"),
-  categoriesLoading: path.join(ROOT, "apps/web/app/(shell)/categories/loading.tsx"),
   overlayScrollReset: path.join(ROOT, "apps/web/components/overlay-scroll-reset.tsx"),
   appRoot: path.join(ROOT, "apps/web/app"),
 };
@@ -81,7 +80,6 @@ function main() {
   const chatDataServiceSource = readFileStrict(files.chatDataService, ROOT);
   const chatStreamRouteSource = readFileStrict(files.chatStreamRoute, ROOT);
   const categoriesFilterGridSource = readFileStrict(files.categoriesFilterGrid, ROOT);
-  const categoriesLoadingSource = readFileStrict(files.categoriesLoading, ROOT);
   const overlayScrollResetSource = readFileStrict(files.overlayScrollReset, ROOT);
   const cssSource = collectCssFiles(files.appRoot)
     .map((filePath) => readFileStrict(filePath, ROOT))
@@ -222,10 +220,6 @@ function main() {
   assertNotContains(shellDynamicSource, 'key={overlayRouteKey}', "Shell overlay suspense no longer keys on route key to avoid remount animation replay", failures);
 
   // Categories open/loading/reveal contract invariants.
-  assertContains(categoriesLoadingSource, 'className="categoriesFilterSection" aria-busy="true"', "Categories route loading screen renders immediate shell section", failures);
-  assertContains(categoriesLoadingSource, 'className="categoriesHeaderBar"', "Categories route loading screen renders header row immediately", failures);
-  assertContains(categoriesLoadingSource, 'className="categoriesFilterInput"', "Categories route loading screen renders filter input immediately", failures);
-  assertContains(categoriesLoadingSource, 'className="playerBootBars" aria-hidden="true"', "Categories route loading screen renders animated loading bars", failures);
   assertContains(categoriesFilterGridSource, 'const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);', "Categories grid tracks explicit loader visibility state", failures);
   assertContains(categoriesFilterGridSource, 'const [isLoaderFadingOut, setIsLoaderFadingOut] = useState(false);', "Categories grid tracks loader fade-out phase", failures);
   assertContains(categoriesFilterGridSource, 'const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0);', "Categories grid initializes reveal state from hydrated cards", failures);

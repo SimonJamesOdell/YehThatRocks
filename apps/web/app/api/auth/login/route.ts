@@ -6,6 +6,7 @@ import { getRequestMetadata, recordAuthAudit } from "@/lib/auth-audit";
 import { setAuthCookies } from "@/lib/auth-cookies";
 import { signAccessToken, signRefreshToken } from "@/lib/auth-jwt";
 import { verifyPassword } from "@/lib/auth-password";
+import { handleUnhandledAuthError } from "@/lib/auth-route-error";
 import { createRefreshSession } from "@/lib/auth-sessions";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
@@ -190,34 +191,25 @@ export async function POST(request: NextRequest) {
     });
     return response;
   } catch (error) {
-    console.error("[auth-login] unhandled login error", error);
-
-    const message = error instanceof Error ? error.message : "Unknown login error";
-    const transientDatabaseError = isTransientDatabaseError(error);
-
-    try {
-      await recordAuthAudit({
-        action: "login",
-        success: false,
-        detail: `Unhandled login error: ${message}`,
-        ...requestMeta,
-      });
-    } catch (auditError) {
-      console.error("[auth-login] failed to write auth audit", auditError);
-    }
-
-    return NextResponse.json(
-      {
-        error:
-          process.env.NODE_ENV === "development"
-            ? transientDatabaseError
-              ? "Login unavailable: database connection pool is exhausted"
-              : `Login failed: ${message}`
-            : transientDatabaseError
-              ? "Service unavailable"
-              : "Internal server error",
+    return handleUnhandledAuthError(error, requestMeta, "login", {
+      logMessage: "[auth-login] unhandled login error",
+      auditFailureLogMessage: "[auth-login] failed to write auth audit",
+      unknownMessage: "Unknown login error",
+      auditDetail: (message) => `Unhandled login error: ${message}`,
+      response: (message, unknownError) => {
+        const transientDatabaseError = isTransientDatabaseError(unknownError);
+        return {
+          status: transientDatabaseError ? 503 : 500,
+          error:
+            process.env.NODE_ENV === "development"
+              ? transientDatabaseError
+                ? "Login unavailable: database connection pool is exhausted"
+                : `Login failed: ${message}`
+              : transientDatabaseError
+                ? "Service unavailable"
+                : "Internal server error",
+        };
       },
-      { status: transientDatabaseError ? 503 : 500 },
-    );
+    });
   }
 }

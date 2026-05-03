@@ -13,7 +13,6 @@ const ROOT = process.cwd();
 const files = {
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   newPage: path.join(ROOT, "apps/web/app/(shell)/new/page.tsx"),
-  newLoading: path.join(ROOT, "apps/web/app/(shell)/new/loading.tsx"),
   newVideosLoader: path.join(ROOT, "apps/web/components/new-videos-loader.tsx"),
   newVideosDataLoaderHook: path.join(ROOT, "apps/web/components/use-new-videos-data-loader.ts"),
   activeRowAutoScrollHook: path.join(ROOT, "apps/web/components/use-active-row-auto-scroll.ts"),
@@ -36,7 +35,6 @@ function main() {
 
   const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
   const newPageSource = readFileStrict(files.newPage, ROOT);
-  const newLoadingSource = readFileStrict(files.newLoading, ROOT);
   const newVideosLoaderSource = readFileStrict(files.newVideosLoader, ROOT);
   const newVideosDataLoaderHookSource = readFileStrict(files.newVideosDataLoaderHook, ROOT);
   const activeRowAutoScrollHookSource = readFileStrict(files.activeRowAutoScrollHook, ROOT);
@@ -61,7 +59,7 @@ function main() {
   assertContains(newPageSource, "seenVideoIds={Array.from(seenVideoIds)}", "New page passes seen ids into client loader", failures);
   assertContains(newPageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "New page passes hidden ids into client loader", failures);
   assertNotContains(newPageSource, "getNewestVideos(", "New page does not block route open on server-side newest query", failures);
-  assertContains(newLoadingSource, "Loading new videos...", "New route exposes a dedicated loading state", failures);
+  assertContains(newVideosLoaderSource, 'loadingLabel="Loading new videos..."', "New route exposes a dedicated loading state", failures);
   assertContains(newVideosDataLoaderHookSource, "fetch(`/api/videos/newest?skip=${skip}&take=${take}`", "New videos data hook uses offset/take pagination for batch fetches", failures);
   assertContains(newVideosDataLoaderHookSource, "const payload = (await response.json()) as NewVideosApiPayload;", "New videos data hook parses newest API pagination metadata", failures);
   assertContains(newestRouteSource, "const probedVideos = await getNewestVideos(probeTake, skip, {", "Newest API probes one extra row to calculate hasMore", failures);
