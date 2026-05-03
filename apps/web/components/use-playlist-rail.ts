@@ -2,16 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent } from "react";
-import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
+import type { useRouter } from "next/navigation";
 import type { VideoRecord } from "@/lib/catalog";
+import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT } from "@/lib/events-contract";
+
+type RouterInstance = ReturnType<typeof useRouter>;
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const WATCH_NEXT_HIDE_ANIMATION_MS = 240;
-const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
-const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
-const PLAYLIST_RAIL_SYNC_EVENT = "ytr:playlist-rail-sync";
-const PLAYLIST_CREATION_PROGRESS_EVENT = "ytr:playlist-creation-progress";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -111,7 +110,7 @@ export function usePlaylistRail({
   pathname: string;
   /** `searchParams.toString()` so the hook can reconstruct URLSearchParams. */
   searchParamsString: string;
-  router: AppRouterInstance;
+  router: RouterInstance;
   isAuthenticated: boolean;
   fetchWithAuthRetry: (input: string, init?: RequestInit) => Promise<Response>;
   checkAuthState: () => Promise<"authenticated" | "unauthenticated" | "unavailable">;

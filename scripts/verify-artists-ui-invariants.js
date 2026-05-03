@@ -10,6 +10,7 @@ const files = {
   results: path.join(ROOT, "apps/web/components/artists-letter-results.tsx"),
   events: path.join(ROOT, "apps/web/lib/artists-letter-events.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
+  catalogDataArtists: path.join(ROOT, "apps/web/lib/catalog-data-artists.ts"),
   schema: path.join(ROOT, "prisma/schema.prisma"),
   performanceIndexes: path.join(ROOT, "scripts/apply-performance-indexes.sql"),
   artistPage: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/page.tsx"),
@@ -51,6 +52,7 @@ function main() {
   const resultsSource = read(files.results);
   const eventsSource = read(files.events);
   const catalogDataSource = read(files.catalogData);
+  const catalogDataArtistsSource = read(files.catalogDataArtists);
   const schemaSource = read(files.schema);
   const performanceIndexesSource = read(files.performanceIndexes);
   const artistPageSource = read(files.artistPage);
@@ -93,10 +95,13 @@ function main() {
   assertContains(resultsSource, "<Fragment key={artist.slug}>", "Artist list rendering remains keyed and stable", failures);
 
   // Catalog fallback performance guardrails for A-Z lists.
-  assertContains(catalogDataSource, "const artistLetterInFlight = new Map", "Catalog data tracks in-flight parsed-artist letter builds", failures);
-  assertContains(catalogDataSource, "const inFlightRows = artistLetterInFlight.get(letterCacheKey);", "Catalog data reuses in-flight parsed-artist letter queries", failures);
-  assertContains(catalogDataSource, "artistLetterInFlight.set(letterCacheKey, buildRowsPromise);", "Catalog data stores parsed-artist letter in-flight promise", failures);
-  assertContains(catalogDataSource, "if (artistLetterInFlight.get(letterCacheKey) === buildRowsPromise)", "Catalog data clears parsed-artist in-flight entry after completion", failures);
+  assertContains(catalogDataArtistsSource, "const ARTIST_CACHE_MAX_ENTRIES =", "Catalog data defines bounded artist-cache capacity", failures);
+  assertContains(catalogDataArtistsSource, "const artistNormVideoPoolCache = new BoundedMap", "Catalog data bounds artist normalized video pool cache", failures);
+  assertContains(catalogDataArtistsSource, "const artistVideosCache = new BoundedMap", "Catalog data bounds per-artist video cache", failures);
+  assertContains(catalogDataArtistsSource, "const artistLetterInFlight = new BoundedMap", "Catalog data tracks in-flight parsed-artist letter builds in a bounded map", failures);
+  assertContains(catalogDataArtistsSource, "const inFlightRows = artistLetterInFlight.get(letterCacheKey);", "Catalog data reuses in-flight parsed-artist letter queries", failures);
+  assertContains(catalogDataArtistsSource, "artistLetterInFlight.set(letterCacheKey, buildRowsPromise);", "Catalog data stores parsed-artist in-flight promise", failures);
+  assertContains(catalogDataArtistsSource, "if (artistLetterInFlight.get(letterCacheKey) === buildRowsPromise)", "Catalog data clears parsed-artist in-flight entry after completion", failures);
   assertContains(catalogDataSource, "const ARTIST_SLUG_LOOKUP_CACHE_TTL_MS = 5 * 60 * 1000;", "Catalog data defines slug lookup cache TTL", failures);
   assertContains(catalogDataSource, "const ARTIST_SINGLE_SLUG_CACHE_TTL_MS = 5 * 60 * 1000;", "Catalog data defines single-slug cache TTL", failures);
   assertContains(catalogDataSource, "if (artistSlugLookupCache && artistSlugLookupCache.expiresAt > now)", "Catalog data reuses cached slug lookup map", failures);

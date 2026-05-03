@@ -79,11 +79,15 @@ function main() {
   assertContains(top100LoaderSource, "fetch(`/api/videos/top?count=${TOP100_FETCH_SOURCE_COUNT}`", "Top 100 loader fetches videos from top API using configured source count", failures);
   assertContains(top100LoaderSource, "TOP100_SESSION_CACHE_KEY", "Top 100 loader uses session cache to reduce repeat requests", failures);
   assertContains(top100LoaderSource, "filterHiddenVideos", "Top 100 loader filters hidden videos", failures);
+  assertContains(top100LoaderSource, 'import { createPlaylistFromVideoList } from "@/lib/playlist-create-from-video-list";', "Top 100 loader imports shared createPlaylistFromVideoList helper", failures);
+  assertContains(top100LoaderSource, "await createPlaylistFromVideoList({", "Top 100 loader delegates playlist creation flow to shared helper", failures);
+  assertNotContains(top100LoaderSource, "await createPlaylistClient(", "Top 100 loader does not duplicate low-level playlist creation orchestration", failures);
+  assertNotContains(top100LoaderSource, "addPlaylistItemsClient(", "Top 100 loader does not duplicate low-level add-items orchestration", failures);
   assertNotContains(top100LoaderSource, "sortVideosBySeen(", "Top 100 loader does not reorder rows by seen state", failures);
   assertNotContains(top100LoaderSource, "/api/watch-history", "Top 100 loader does not pad with watch history rows", failures);
 
   // Warmed handoff invariants in the top100 link component.
-  assertContains(top100LinkSource, "const PENDING_VIDEO_SELECTION_KEY = \"ytr:pending-video-selection\";", "Top 100 warmed link uses pending selection cache key", failures);
+  assertContains(top100LinkSource, 'import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";', "Top 100 warmed link uses centralized pending selection cache key", failures);
   assertContains(top100LinkSource, "window.sessionStorage.setItem(", "Top 100 warmed link writes optimistic pending selection", failures);
   assertContains(top100LinkSource, "void fetch(`/api/current-video?v=${encodeURIComponent(track.id)}`", "Top 100 warmed link prefetches current-video payload", failures);
   assertContains(top100LinkSource, "const videoHref = useMemo(() => {", "Top 100 warmed link derives a route-preserving href", failures);
@@ -123,6 +127,9 @@ function main() {
   assertContains(topVideosCacheSource, "topVideosRefreshPromise = getTopVideos(Math.max(count, 100))", "Top videos cache refreshes from canonical top-videos helper", failures);
   assertContains(topVideosRouteSource, 'import { getTopVideosFast, warmTopVideos } from "@/lib/top-videos-cache";', "Top videos API route uses cache-backed canonical source", failures);
   assertContains(topVideosRouteSource, "let videos = await getTopVideosFast(sourceCount, TOP_VIDEOS_WAIT_MS);", "Top videos API reads canonical pool via fast cache helper", failures);
+  assertContains(topVideosRouteSource, "Number.parseInt(skipParam ?? \"0\", 10)", "Top videos API parses skip using Number.parseInt", failures);
+  assertContains(topVideosRouteSource, "Number.parseInt(takeParam ?? \"24\", 10)", "Top videos API parses take using Number.parseInt", failures);
+  assertContains(topVideosRouteSource, "Number.parseInt(countParam, 10)", "Top videos API parses count using Number.parseInt", failures);
   
   // Favourite count maintenance moved to database triggers for performance.
   // Invariant: updateFavourite must call add/delete operations, and triggers maintain the count.

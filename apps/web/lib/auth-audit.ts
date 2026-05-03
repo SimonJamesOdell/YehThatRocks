@@ -1,22 +1,7 @@
 import { prisma } from "@/lib/db";
 
 import { hasDatabaseUrl } from "@/lib/catalog-data";
-
-type PrismaWithAuthAudit = typeof prisma & {
-  authAuditLog: {
-    create: (args: {
-      data: {
-        action: string;
-        success: boolean;
-        email: string | null;
-        userId: number | null;
-        ipAddress: string | null;
-        userAgent: string | null;
-        detail: string | null;
-      };
-    }) => Promise<unknown>;
-  };
-};
+import type { PrismaWithAuthAudit } from "@/lib/prisma-types";
 
 type AuthAuditInput = {
   action: "register" | "login" | "refresh" | "logout" | "forgot-password" | "reset-password" | "verify-email" | "upgrade";

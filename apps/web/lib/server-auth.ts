@@ -3,25 +3,7 @@ import { cookies } from "next/headers";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { isTokenValidationError, verifyToken } from "@/lib/auth-jwt";
 import { prisma } from "@/lib/db";
-
-type VerifiedUser = {
-  id: number;
-  email: string | null;
-  emailVerifiedAt: Date | null;
-  screenName: string | null;
-  avatarUrl: string | null;
-  bio: string | null;
-  location: string | null;
-};
-
-type PrismaWithVerifiedUser = typeof prisma & {
-  user: {
-    findUnique: (args: {
-      where: { id: number };
-      select: { id: true; email: true; emailVerifiedAt: true; screenName: true; avatarUrl: true; bio: true; location: true };
-    }) => Promise<VerifiedUser | null>;
-  };
-};
+import type { PrismaWithVerifiedUser, VerifiedUser } from "@/lib/prisma-types";
 
 export type ServerAuthState =
   | { status: "authenticated"; user: VerifiedUser }
@@ -72,21 +54,8 @@ async function resolveAuthenticatedUserByAccessToken(accessToken?: string | null
   }
 }
 
-export async function getCurrentAuthenticatedUserByAccessToken(accessToken?: string | null) {
-  const authState = await resolveAuthenticatedUserByAccessToken(accessToken);
-  return authState.status === "authenticated" ? authState.user : null;
-}
-
 export async function getCurrentAuthenticatedUserAuthStateByAccessToken(accessToken?: string | null) {
   return resolveAuthenticatedUserByAccessToken(accessToken);
-}
-
-export async function getCurrentAuthenticatedUser() {
-  const cookieStore = await cookies();
-  const accessToken = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value;
-
-  const authState = await resolveAuthenticatedUserByAccessToken(accessToken);
-  return authState.status === "authenticated" ? authState.user : null;
 }
 
 export async function getCurrentAuthenticatedUserAuthState() {

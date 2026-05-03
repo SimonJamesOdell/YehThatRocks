@@ -6,17 +6,10 @@
 const VISITOR_KEY = "ytr_vid";
 const SESSION_KEY = "ytr_sid";
 
-function uuidV4(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
-  });
-}
-
 function getOrCreate(storage: Storage, key: string): string {
   let id = storage.getItem(key);
   if (!id) {
-    id = uuidV4();
+    id = crypto.randomUUID();
     storage.setItem(key, id);
   }
   return id;

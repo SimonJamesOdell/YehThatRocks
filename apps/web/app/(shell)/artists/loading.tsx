@@ -1,24 +1,5 @@
-import { CloseLink } from "@/components/close-link";
+import { OverlayLoadingShell } from "@/components/overlay-loading-shell";
 
 export default function ArtistsLoading() {
-  return (
-    <>
-      <div className="favouritesBlindBar">
-        <strong>
-          <span className="categoryHeaderBreadcrumb">🎸 Artists</span>
-        </strong>
-        <CloseLink />
-      </div>
-
-      <div className="routeContractRow artistLoadingCenter" aria-live="polite" aria-busy="true">
-        <span className="playerBootBars" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-          <span />
-        </span>
-        <span>Loading artists...</span>
-      </div>
-    </>
-  );
+  return <OverlayLoadingShell breadcrumb="🎸 Artists" message="Loading artists..." />;
 }

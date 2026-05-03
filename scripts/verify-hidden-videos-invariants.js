@@ -10,6 +10,9 @@ const files = {
   migration: path.join(ROOT, "prisma/migrations/20260412030719_auto/migration.sql"),
   apiRoute: path.join(ROOT, "apps/web/app/api/hidden-videos/route.ts"),
   hiddenVideoClient: path.join(ROOT, "apps/web/lib/hidden-video-client-service.ts"),
+  hiddenDataModule: path.join(ROOT, "apps/web/lib/catalog-data-hidden.ts"),
+  favouritesDataModule: path.join(ROOT, "apps/web/lib/catalog-data-favourites.ts"),
+  historyDataModule: path.join(ROOT, "apps/web/lib/catalog-data-history.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
   shellLayout: path.join(ROOT, "apps/web/app/(shell)/layout.tsx"),
@@ -17,11 +20,13 @@ const files = {
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   newPage: path.join(ROOT, "apps/web/app/(shell)/new/page.tsx"),
   newLoader: path.join(ROOT, "apps/web/components/new-videos-loader.tsx"),
+  newDataLoaderHook: path.join(ROOT, "apps/web/components/use-new-videos-data-loader.ts"),
   top100Page: path.join(ROOT, "apps/web/app/(shell)/top100/page.tsx"),
   top100Loader: path.join(ROOT, "apps/web/components/top100-videos-loader.tsx"),
   categoryPage: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/page.tsx"),
   categoryLoader: path.join(ROOT, "apps/web/components/category-videos-infinite.tsx"),
   artistPage: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/page.tsx"),
+  videoListUtils: path.join(ROOT, "apps/web/lib/video-list-utils.ts"),
 };
 
 function read(filePath) {
@@ -38,6 +43,12 @@ function assertContains(source, needle, description, failures) {
   }
 }
 
+function assertNotContains(source, needle, description, failures) {
+  if (source.includes(needle)) {
+    failures.push(`${description} (unexpected: ${needle})`);
+  }
+}
+
 function main() {
   const failures = [];
 
@@ -45,6 +56,9 @@ function main() {
   const migrationSource = read(files.migration);
   const apiRouteSource = read(files.apiRoute);
   const hiddenVideoClientSource = read(files.hiddenVideoClient);
+  const hiddenDataModuleSource = read(files.hiddenDataModule);
+  const favouritesDataModuleSource = read(files.favouritesDataModule);
+  const historyDataModuleSource = read(files.historyDataModule);
   const catalogDataSource = read(files.catalogData);
   const apiSchemasSource = read(files.apiSchemas);
   const shellLayoutSource = read(files.shellLayout);
@@ -59,11 +73,13 @@ function main() {
   const playerExperienceSource = read(files.playerExperience);
   const newPageSource = read(files.newPage);
   const newLoaderSource = read(files.newLoader);
+  const newDataLoaderHookSource = read(files.newDataLoaderHook);
   const top100PageSource = read(files.top100Page);
   const top100LoaderSource = read(files.top100Loader);
   const categoryPageSource = read(files.categoryPage);
   const categoryLoaderSource = read(files.categoryLoader);
   const artistPageSource = read(files.artistPage);
+  const videoListUtilsSource = read(files.videoListUtils);
 
   // DB + Prisma invariants.
   assertContains(prismaSchemaSource, "model HiddenVideo", "Prisma schema defines HiddenVideo model", failures);
@@ -91,25 +107,42 @@ function main() {
   assertContains(hiddenVideoClientSource, "rollbackOnError = false", "Shared hidden video client supports optional rollback", failures);
   assertContains(hiddenVideoClientSource, "onOptimisticUpdate?.();", "Shared hidden video client supports optimistic hooks", failures);
   assertContains(hiddenVideoClientSource, "messages.failure", "Shared hidden video client provides standard failure messaging", failures);
+  assertContains(hiddenDataModuleSource, "const hiddenVideoIdsCache = new BoundedMap", "Hidden videos module bounds user hidden-id cache", failures);
+  assertContains(hiddenDataModuleSource, "const hiddenVideoIdsInFlight = new BoundedMap", "Hidden videos module bounds in-flight hidden-id requests", failures);
+  assertContains(favouritesDataModuleSource, "const favouriteVideosInFlight = new BoundedMap", "Favourites module bounds in-flight favourite requests", failures);
+  assertContains(historyDataModuleSource, "const seenVideoIdsInFlight = new BoundedMap", "History module bounds in-flight seen-id requests", failures);
 
   // UI usage invariants.
   assertContains(shellLayoutSource, "initialHiddenVideoIds={Array.from(hiddenVideoIds)}", "Shell layout forwards hidden ids to shell dynamic", failures);
   assertContains(shellDynamicSource, "initialHiddenVideoIds", "Shell dynamic accepts hidden ids", failures);
-  assertContains(shellDynamicSource, "filterHiddenRelatedVideos", "Shell dynamic filters Watch Next by hidden ids", failures);
+  assertContains(shellDynamicSource, "filterHiddenVideos", "Shell dynamic filters Watch Next by hidden ids", failures);
   assertContains(shellDynamicSource, "relatedCardHideButton", "Shell dynamic renders hide button on Watch Next cards", failures);
   assertContains(shellDynamicSource, "mutateHiddenVideo({", "Shell dynamic uses shared hidden-video mutation helper", failures);
 
   assertContains(newPageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "New page passes hidden ids to loader", failures);
-  assertContains(newLoaderSource, "filterHiddenVideos", "New loader filters hidden videos", failures);
+  assertContains(newPageSource, "getShellRequestVideoState", "New page resolves hidden ids through shared shell request state helper", failures);
+  assertContains(newLoaderSource, 'import { useNewVideosDataLoader } from "@/components/use-new-videos-data-loader";', "New loader delegates data filtering/loading to dedicated hook", failures);
+  assertContains(newDataLoaderHookSource, "filterHiddenVideos", "New data loader hook filters hidden videos", failures);
 
   assertContains(top100PageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "Top100 page passes hidden ids to loader", failures);
+  assertContains(top100PageSource, "getShellRequestVideoState", "Top100 page resolves hidden ids through shared shell request state helper", failures);
   assertContains(top100LoaderSource, "filterHiddenVideos", "Top100 loader filters hidden videos", failures);
 
   assertContains(categoryPageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "Category page passes hidden ids to loader", failures);
+  assertContains(categoryPageSource, "getShellRequestVideoState", "Category page resolves hidden ids through shared shell request state helper", failures);
   assertContains(categoryLoaderSource, "filterHiddenVideos", "Category loader filters hidden videos", failures);
 
-  assertContains(artistPageSource, "getHiddenVideoIdsForUser", "Artist page loads hidden video ids", failures);
+  assertContains(artistPageSource, "getShellRequestVideoState", "Artist page loads hidden video ids through shared shell request state helper", failures);
   assertContains(artistPageSource, "!hiddenVideoIds.has(video.id)", "Artist page excludes hidden videos", failures);
+
+  // video-list-utils shared utility invariants.
+  assertContains(videoListUtilsSource, "export function dedupeVideos", "video-list-utils exports dedupeVideos", failures);
+  assertContains(videoListUtilsSource, "export function filterHiddenVideos", "video-list-utils exports filterHiddenVideos", failures);
+  assertContains(videoListUtilsSource, "!video?.id", "dedupeVideos guards against null/undefined video ids", failures);
+  assertContains(categoryLoaderSource, 'from "@/lib/video-list-utils"', "Category loader imports from shared video-list-utils", failures);
+  assertContains(newDataLoaderHookSource, 'from "@/lib/video-list-utils"', "New data loader hook imports from shared video-list-utils", failures);
+  assertContains(top100LoaderSource, 'from "@/lib/video-list-utils"', "Top100 loader imports from shared video-list-utils", failures);
+  assertContains(shellDynamicSource, 'from "@/lib/video-list-utils"', "Shell dynamic imports from shared video-list-utils", failures);
 
   // Player hide-video safety invariant: the player MUST pause active playback before
   // performing the hide flow. Without this, the hidden video keeps playing audio in the
@@ -122,6 +155,10 @@ function main() {
   assertContains(playerExperienceSource, "if (result.payload?.activePlaylistDeleted)", "Player handles active playlist deletion response after block", failures);
   assertContains(playerExperienceSource, "params.delete(\"pl\");", "Player clears active playlist id when blocked track deletes playlist", failures);
   assertContains(playerExperienceSource, "params.delete(\"pli\");", "Player clears active playlist index when blocked track deletes playlist", failures);
+
+  // force-dynamic / dead-config guards.
+  assertContains(shellLayoutSource, 'export const dynamic = "force-dynamic"', "Shell layout opts out of static generation via force-dynamic", failures);
+  assertNotContains(categoryPageSource, "export const revalidate", "Category detail page must not carry a dead revalidate directive (force-dynamic parent makes it a no-op)", failures);
 
   if (failures.length > 0) {
     console.error("Hidden videos invariant check failed.");

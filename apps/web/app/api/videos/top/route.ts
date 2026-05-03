@@ -11,9 +11,9 @@ export async function GET(request: NextRequest) {
   const skipParam = request.nextUrl.searchParams.get("skip");
   const takeParam = request.nextUrl.searchParams.get("take");
   const paginationRequested = skipParam !== null || takeParam !== null;
-  const skip = Math.max(0, parseInt(skipParam ?? "0", 10) || 0);
-  const take = Math.max(1, Math.min(200, parseInt(takeParam ?? "24", 10) || 24));
-  const count = Math.max(1, Math.min(1000, parseInt(countParam, 10) || 100));
+  const skip = Math.max(0, Number.parseInt(skipParam ?? "0", 10) || 0);
+  const take = Math.max(1, Math.min(200, Number.parseInt(takeParam ?? "24", 10) || 24));
+  const count = Math.max(1, Math.min(1000, Number.parseInt(countParam, 10) || 100));
   const sourceCount = paginationRequested
     ? Math.max(100, Math.min(1000, skip + take))
     : Math.max(count, 100);

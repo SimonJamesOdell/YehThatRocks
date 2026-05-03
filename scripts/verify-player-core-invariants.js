@@ -31,6 +31,7 @@ const files = {
   shareMetadata: path.join(ROOT, "apps/web/lib/share-metadata.ts"),
   chatSharedVideo: path.join(ROOT, "apps/web/lib/chat-shared-video.ts"),
   artistWikiLink: path.join(ROOT, "apps/web/components/artist-wiki-link.tsx"),
+  runtimeBootstrap: path.join(ROOT, "apps/web/lib/runtime-bootstrap.ts"),
   appRoot: path.join(ROOT, "apps/web/app"),
 };
 
@@ -70,6 +71,7 @@ function main() {
   const shareMetadataSource = readFileStrict(files.shareMetadata, ROOT);
   const chatSharedVideoSource = readFileStrict(files.chatSharedVideo, ROOT);
   const artistWikiLinkSource = readFileStrict(files.artistWikiLink, ROOT);
+  const runtimeBootstrapSource = readFileStrict(files.runtimeBootstrap, ROOT);
   const cssSource = collectCssFiles(files.appRoot)
     .map((filePath) => readFileStrict(filePath, ROOT))
     .join("\n");
@@ -87,6 +89,11 @@ function main() {
   assertContains(playerExperienceSource, "window.localStorage.setItem(PLAYER_VOLUME_KEY, String(normalizePlayerVolume(volume, 100)));", "Player writes volume preference to localStorage", failures);
   assertContains(playerExperienceSource, "window.localStorage.setItem(PLAYER_MUTED_KEY, String(isMuted));", "Player writes mute preference to localStorage", failures);
   assertContains(playerExperienceSource, "persistMutedPreferenceOnNextSyncRef.current = true;", "Player only persists mute preference when the user explicitly changes mute state", failures);
+  assertContains(runtimeBootstrapSource, "export function enableWebShareConsoleWarnFilter", "Runtime bootstrap utility exposes dedicated web-share warning filter helper", failures);
+  assertContains(playerExperienceSource, 'import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";', "Player imports centralized runtime bootstrap patch helper", failures);
+  assertContains(playerExperienceSource, "applyRuntimeBootstrapPatches({ suppressWebShareWarning: true });", "Player explicitly opts into web-share warning suppression", failures);
+  assertNotContains(playerExperienceSource, "__ytrWarnPatched", "Player no longer keeps local console.warn patch state flags", failures);
+  assertNotContains(playerExperienceSource, "console.warn = (...args: unknown[]) =>", "Player no longer monkey-patches console.warn inline", failures);
   assertContains(playerExperienceSource, "const activePlaylistId = searchParams.get(\"pl\");", "Player reads playlist context from query params", failures);
   assertContains(playerExperienceSource, "const playlistId = activePlaylistId;", "Player snapshots active playlist id before async loading", failures);
   assertContains(playerExperienceSource, "const response = await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {", "Player loads playlist sequence for ordered playback", failures);

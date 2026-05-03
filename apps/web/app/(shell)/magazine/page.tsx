@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import { magazineDraftEdition } from "@/lib/magazine-draft";
 
 export const metadata = {
@@ -22,12 +23,12 @@ export default function MagazineLandingPage() {
 
   return (
     <main className="magazinePage" role="main" aria-label="Yeh Magazine">
-      <div className="favouritesBlindBar magazineOverlayBar">
+      <OverlayHeader className="magazineOverlayBar" close={false}>
         <div className="magazineOverlayBarBody">
           <strong className="magazineOverlayBarTitle">Magazine</strong>
         </div>
         <CloseLink />
-      </div>
+      </OverlayHeader>
 
       <header className="magazineMasthead panel">
         <div className="magazineMastheadBrand">

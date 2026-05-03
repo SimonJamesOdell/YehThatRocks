@@ -4,6 +4,7 @@
  */
 
 import { prisma } from "@/lib/db";
+import { BoundedMap } from "@/lib/bounded-map";
 import { createSeenVideoIdCache } from "@/lib/seen-video-id-cache";
 import type { WatchHistoryEntry } from "@/lib/catalog-data-utils";
 import { hasDatabaseUrl, mapVideo, normalizeYouTubeVideoId } from "@/lib/catalog-data-utils";
@@ -20,7 +21,9 @@ const SEEN_VIDEO_IDS_CACHE_TTL_MS = 20_000;
 const seenVideoIdsCache = createSeenVideoIdCache(SEEN_VIDEO_IDS_CACHE_TTL_MS, {
   maxEntries: USER_SCOPED_CACHE_MAX_ENTRIES,
 });
-const seenVideoIdsInFlight = new Map<number, Promise<Set<string>>>();
+const seenVideoIdsInFlight = new BoundedMap<number, Promise<Set<string>>>(
+  USER_SCOPED_CACHE_MAX_ENTRIES,
+);
 
 const SEEN_VIDEO_IDS_METRICS_LOG_INTERVAL_MS = 60_000;
 const SEEN_VIDEO_IDS_METRICS_LOG_EVERY_LOOKUPS = 250;

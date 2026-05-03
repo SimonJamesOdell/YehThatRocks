@@ -1,9 +1,10 @@
 import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 
 export default function CategoriesLoading() {
   return (
     <div className="categoriesFilterSection" aria-busy="true">
-      <div className="favouritesBlindBar categoriesHeaderBar">
+      <OverlayHeader className="categoriesHeaderBar" close={false}>
         <div className="categoriesHeaderMain">
           <strong>
             <span className="categoryHeaderBreadcrumb">☣ Categories</span>
@@ -21,7 +22,7 @@ export default function CategoriesLoading() {
           </div>
         </div>
         <CloseLink />
-      </div>
+      </OverlayHeader>
 
       <div className="catalogGrid categoriesCatalogGrid">
         <div className="playerLoadingFallback categoriesFilterEmptyState" role="status" aria-live="polite" aria-label="Loading categories">

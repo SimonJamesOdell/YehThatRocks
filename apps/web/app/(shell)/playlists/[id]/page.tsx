@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { cookies } from "next/headers";
 
 import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import { PlaylistEditor } from "@/components/playlist-editor";
 import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
 import { REFRESH_TOKEN_COOKIE } from "@/lib/auth-config";
@@ -34,7 +35,7 @@ export default async function PlaylistDetailPage({ params, searchParams }: Playl
   if (!user) {
     return (
       <>
-        <div className="favouritesBlindBar">
+        <OverlayHeader close={false}>
           <div className="categoryHeaderBreadcrumb">
             <span className="categoryHeaderIcon whitePlaylistGlyph" aria-hidden="true">♬</span>
             <Link href="/playlists" className="categoryHeaderBreadcrumbLink">Playlists</Link>
@@ -42,7 +43,7 @@ export default async function PlaylistDetailPage({ params, searchParams }: Playl
             <span className="categoryHeaderBreadcrumbCurrent">Playlist</span>
           </div>
           <CloseLink />
-        </div>
+        </OverlayHeader>
             <ProtectedAuthGatePanel
               status={authState.status === "unavailable" ? "unavailable" : "unauthenticated"}
           heading="Playlist access"

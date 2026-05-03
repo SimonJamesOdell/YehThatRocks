@@ -5,47 +5,7 @@ import {
   REFRESH_TOKEN_TTL_REMEMBER_SECONDS,
   REFRESH_TOKEN_TTL_SECONDS,
 } from "@/lib/auth-config";
-
-type AuthSessionDelegate = {
-  create: (args: {
-    data: {
-      userId: number;
-      familyId: string;
-      tokenHash: string;
-      remember: boolean;
-      expiresAt: Date;
-    };
-  }) => Promise<unknown>;
-  findUnique: (args: {
-    where: {
-      tokenHash: string;
-    };
-  }) => Promise<{
-    id: number;
-    userId: number;
-    familyId: string;
-    expiresAt: Date;
-    revokedAt: Date | null;
-    replacedByHash: string | null;
-  } | null>;
-  updateMany: (args: {
-    where: Record<string, unknown>;
-    data: Record<string, unknown>;
-  }) => Promise<unknown>;
-  update: (args: {
-    where: {
-      id: number;
-    };
-    data: {
-      revokedAt: Date;
-      replacedByHash: string;
-    };
-  }) => Promise<unknown>;
-};
-
-type PrismaWithAuthSession = typeof prisma & {
-  authSession: AuthSessionDelegate;
-};
+import type { AuthSessionDelegate, PrismaWithAuthSession } from "@/lib/prisma-types";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { CloseLink } from "@/components/close-link";
 import { AccountSettingsPanel } from "@/components/account-settings-panel";
 import { AuthLogoutButton } from "@/components/auth-logout-button";
+import { OverlayHeader } from "@/components/overlay-header";
 import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
 import { isAdminIdentity } from "@/lib/admin-auth";
 import { getHiddenVideosForUser } from "@/lib/catalog-data";
@@ -21,7 +22,7 @@ export default async function AccountPage() {
 
   return (
     <>
-      <div className="favouritesBlindBar">
+      <OverlayHeader close={false}>
         <strong><span className="whiteAccountGlyph" aria-hidden="true">👤</span> Account</strong>
         <div className="accountTopBarActions">
           {user && isAdminUser ? (
@@ -30,7 +31,7 @@ export default async function AccountPage() {
           {user ? <AuthLogoutButton /> : null}
           <CloseLink />
         </div>
-      </div>
+      </OverlayHeader>
 
       {user ? (
         <AccountSettingsPanel

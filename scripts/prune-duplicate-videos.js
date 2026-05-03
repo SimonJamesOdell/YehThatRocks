@@ -1,51 +1,8 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
-const path = require("node:path");
 const { PrismaClient } = require("@prisma/client");
-
-function loadDatabaseEnv() {
-  const candidateEnvPaths = [
-    path.resolve(process.cwd(), ".env.production"),
-    path.resolve(process.cwd(), "apps/web/.env.production"),
-    path.resolve(process.cwd(), ".env.local"),
-    path.resolve(process.cwd(), "apps/web/.env.local"),
-  ];
-
-  for (const envPath of candidateEnvPaths) {
-    if (!fs.existsSync(envPath)) {
-      continue;
-    }
-
-    const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) {
-        continue;
-      }
-
-      const match = trimmed.match(/^([A-Z0-9_]+)=(.*)$/);
-      if (!match) {
-        continue;
-      }
-
-      const [, key, rawValue] = match;
-      if (process.env[key]) {
-        continue;
-      }
-
-      process.env[key] = rawValue.replace(/^"/, "").replace(/"$/, "");
-    }
-  }
-}
-
-function parseArg(name, fallback) {
-  const raw = process.argv.find((arg) => arg.startsWith(`--${name}=`));
-  if (!raw) {
-    return fallback;
-  }
-  return raw.slice(name.length + 3);
-}
+const { parseArg, hasFlag, asNumber } = require("./lib/cli");
+const { loadDatabaseEnv } = require("./lib/runtime");
 
 function toNumber(row, key) {
   return Number(row?.[key] ?? 0);
@@ -59,9 +16,9 @@ async function main() {
     process.exit(1);
   }
 
-  const apply = process.argv.includes("--apply");
-  const enforceUnique = process.argv.includes("--enforce-unique");
-  const sampleSize = Math.max(1, Number(parseArg("sample", "10")) || 10);
+  const apply = hasFlag("apply");
+  const enforceUnique = hasFlag("enforce-unique");
+  const sampleSize = asNumber(parseArg("sample", "10"), 10, { min: 1 });
   const targetVideoId = (parseArg("video-id", "") || "").trim();
   const prisma = new PrismaClient();
 

@@ -19,7 +19,7 @@ const SLOW_LOG_OUTPUT = "TABLE";
 // and covers ~47% of total query time, providing better performance diagnostics visibility
 function getSlowQueryLongQueryTimeSeconds(): number {
   if (process.env.SLOW_QUERY_LONG_TIME_THRESHOLD_MS) {
-    const ms = parseInt(process.env.SLOW_QUERY_LONG_TIME_THRESHOLD_MS, 10);
+    const ms = Number.parseInt(process.env.SLOW_QUERY_LONG_TIME_THRESHOLD_MS, 10);
     if (!Number.isFinite(ms) || ms < 10 || ms > 10000) {
       console.warn(
         `[perf] Invalid SLOW_QUERY_LONG_TIME_THRESHOLD_MS: ${process.env.SLOW_QUERY_LONG_TIME_THRESHOLD_MS}, ` +

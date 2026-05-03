@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireApiAuth } from "@/lib/auth-request";
-import { getCurrentAuthenticatedUser, getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
+import { getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
 import { prisma } from "@/lib/db";
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "simonjamesodell@live.co.uk").trim().toLowerCase();
@@ -58,17 +58,23 @@ export async function requireAdminApiAuth(request: NextRequest): Promise<
 }
 
 export async function requireAdminUser() {
-  const user = await getCurrentAuthenticatedUser();
+  const authState = await getCurrentAuthenticatedUserAuthState();
 
-  if (!user || !isAdminIdentity(user.id, user.email ?? "")) {
+  if (authState.status !== "authenticated") {
     return null;
   }
 
-  return user;
+  if (!isAdminIdentity(authState.user.id, authState.user.email ?? "")) {
+    return null;
+  }
+
+  return authState.user;
 }
 
+type AdminAuthorizedUser = NonNullable<Awaited<ReturnType<typeof requireAdminUser>>>;
+
 export type AdminUserAuthState =
-  | { status: "authorized"; user: NonNullable<Awaited<ReturnType<typeof getCurrentAuthenticatedUser>>> }
+  | { status: "authorized"; user: AdminAuthorizedUser }
   | { status: "unauthenticated" }
   | { status: "forbidden" }
   | { status: "unavailable"; message: string };

@@ -1,18 +1,11 @@
-import { cookies } from "next/headers";
-
-import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
-import { isAdminIdentity } from "@/lib/admin-auth";
-import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
-import { getHiddenVideoIdsForUser, getSeenVideoIdsForUser } from "@/lib/catalog-data";
 import { NewVideosLoader } from "@/components/new-videos-loader";
+import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
 
 export default async function NewPage() {
-  const cookieStore = await cookies();
-  const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
-  const user = await getCurrentAuthenticatedUser();
-  const isAdminUser = Boolean(user && isAdminIdentity(user.id, user.email ?? ""));
-  const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();
-  const hiddenVideoIds = user ? await getHiddenVideoIdsForUser(user.id) : new Set<string>();
+  const [{ hasAccessToken: isAuthenticated, isAdmin: isAdminUser }, { seenVideoIds, hiddenVideoIds }] = await Promise.all([
+    getShellRequestAuthState(),
+    getShellRequestVideoState(),
+  ]);
 
   return (
     <NewVideosLoader

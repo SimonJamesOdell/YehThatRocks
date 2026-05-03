@@ -12,9 +12,11 @@ import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
+import { OverlayHeader } from "@/components/overlay-header";
 import { PlayerExperience } from "@/components/player-experience";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
+import { OverlayScrollContainerProvider } from "@/components/overlay-scroll-container-context";
 import { useTemporaryQueueController } from "@/components/use-temporary-queue-controller";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { useDesktopIntro } from "@/components/use-desktop-intro";
@@ -28,38 +30,13 @@ import { detectAppendOnly, filterSeenFromWatchNext } from "@/components/shell-dy
 import { fetchWithAuthRetry as fetchWithAuthRetryClient } from "@/lib/client-auth-fetch";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
+import { dedupeVideos, filterHiddenVideos } from "@/lib/video-list-utils";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
+import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, OVERLAY_OPEN_REQUEST_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT } from "@/lib/events-contract";
+import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
+import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
 
-if (typeof window !== "undefined") {
-  const perfWithPatchState = performance as Performance & {
-    __ytrMeasurePatched?: boolean;
-  };
-
-  if (!perfWithPatchState.__ytrMeasurePatched) {
-    const originalMeasure = performance.measure.bind(performance);
-    perfWithPatchState.__ytrMeasurePatched = true;
-
-    performance.measure = ((...args: Parameters<Performance["measure"]>) => {
-      try {
-        return originalMeasure(...args);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        // Some browser/React timing paths can emit invalid measure ranges.
-        // These failures are non-critical and should not crash route rendering.
-        if (
-          message.includes("negative time stamp")
-          || message.includes("cannot have a negative time stamp")
-          || message.includes("Failed to execute 'measure'")
-          || message.includes("NotFound")
-        ) {
-          return undefined as unknown as ReturnType<Performance["measure"]>;
-        }
-
-        throw error;
-      }
-    }) as Performance["measure"];
-  }
-}
+applyRuntimeBootstrapPatches({ safePerformanceMeasure: true });
 
 type CurrentVideoResolvePayload = {
   currentVideo?: VideoRecord;
@@ -109,7 +86,6 @@ type ShellDynamicProps = {
 
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
 const LAST_RANDOM_START_VIDEO_ID_KEY = "ytr:last-random-start-video-id";
-const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
 const CURRENT_VIDEO_PREFETCH_TTL_MS = 25_000;
 const RELATED_FADE_STAGGER_MS = 22;
 const RELATED_FADE_OUT_BASE_MS = 120;
@@ -139,14 +115,6 @@ const WATCH_NEXT_HIDE_ANIMATION_MS = 240;
 const WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-watch-next";
 const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
 const PREFETCH_FAILURE_MAX_BACKOFF_MS = 20_000;
-const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
-const RIGHT_RAIL_MODE_EVENT = "ytr:right-rail-mode";
-const PLAYLIST_RAIL_SYNC_EVENT = "ytr:playlist-rail-sync";
-const PLAYLIST_CREATION_PROGRESS_EVENT = "ytr:playlist-creation-progress";
-const WATCH_HISTORY_UPDATED_EVENT = "ytr:watch-history-updated";
-const RIGHT_RAIL_LYRICS_OPEN_EVENT = "ytr:right-rail-lyrics-open";
-const OVERLAY_OPEN_REQUEST_EVENT = "ytr:overlay-open-request";
-const ADMIN_OVERLAY_ENTER_EVENT = "ytr:admin-overlay-enter";
 const DOCK_MOVE_DURATION_MS = 520;
 const DOCK_CONTROLS_FADE_DURATION_MS = 220;
 const DOCK_CONTROLS_FADE_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - DOCK_CONTROLS_FADE_DURATION_MS);
@@ -166,10 +134,8 @@ function isArtistsOverlayPath(pathname: string) {
   return pathname === "/artists" || pathname.startsWith("/artists/");
 }
 
-function dedupeVideoList(videos: VideoRecord[]) {
-  return videos.filter(
-    (video, index, all) => all.findIndex((candidate) => candidate.id === video.id) === index,
-  );
+function dedupeRelatedRailVideos(videos: VideoRecord[], currentVideoId: string) {
+  return dedupeVideos(videos).filter((video) => video.id !== currentVideoId);
 }
 
 function matchesPlaylistVideoOrder(a: PlaylistRailVideo[], b: PlaylistRailVideo[]) {
@@ -184,18 +150,6 @@ function matchesPlaylistVideoOrder(a: PlaylistRailVideo[], b: PlaylistRailVideo[
   }
 
   return true;
-}
-
-function dedupeRelatedRailVideos(videos: VideoRecord[], currentVideoId: string) {
-  return dedupeVideoList(videos).filter((video) => video.id !== currentVideoId);
-}
-
-function filterHiddenRelatedVideos(videos: VideoRecord[], hiddenVideoIdSet: Set<string>) {
-  if (hiddenVideoIdSet.size === 0) {
-    return videos;
-  }
-
-  return videos.filter((video) => !hiddenVideoIdSet.has(video.id));
 }
 
 function sortVideosBySeen(videos: VideoRecord[], seenVideoIdSet: Set<string>) {
@@ -285,7 +239,7 @@ function ShellDynamicInner({
 
     return parsedIndex;
   })();
-  const initialHydratedRelatedVideos = dedupeRelatedRailVideos(dedupeVideoList(initialRelatedVideos), initialVideo.id);
+  const initialHydratedRelatedVideos = dedupeRelatedRailVideos(dedupeVideos(initialRelatedVideos), initialVideo.id);
 
   const [currentVideo, setCurrentVideo] = useState(initialVideo);
   const [relatedVideos, setRelatedVideos] = useState<VideoRecord[]>(initialHydratedRelatedVideos);
@@ -796,7 +750,7 @@ function ShellDynamicInner({
     if (anchor.dataset.overlayClose === "true") {
       const closeHref = anchor.getAttribute("href") ?? "/";
       event.preventDefault();
-      window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", {
+      window.dispatchEvent(new CustomEvent(OVERLAY_CLOSE_REQUEST_EVENT, {
         detail: { href: closeHref },
       }));
       return;
@@ -813,7 +767,7 @@ function ShellDynamicInner({
     if (pathname === "/new" && target?.closest(".rightRail")) {
       event.preventDefault();
       url.searchParams.delete("resume");
-      window.dispatchEvent(new CustomEvent("ytr:overlay-close-request", { detail: { href: `${url.pathname}${url.search}${url.hash}` } }));
+      window.dispatchEvent(new CustomEvent(OVERLAY_CLOSE_REQUEST_EVENT, { detail: { href: `${url.pathname}${url.search}${url.hash}` } }));
       return;
     }
 
@@ -1192,11 +1146,11 @@ function ShellDynamicInner({
       setIsDockHidden(true);
     };
 
-    window.addEventListener("ytr:overlay-close-request", handleOverlayCloseRequest);
-    window.addEventListener("ytr:dock-hide-request", handleDockHideRequest);
+    window.addEventListener(OVERLAY_CLOSE_REQUEST_EVENT, handleOverlayCloseRequest);
+    window.addEventListener(DOCK_HIDE_REQUEST_EVENT, handleDockHideRequest);
     return () => {
-      window.removeEventListener("ytr:overlay-close-request", handleOverlayCloseRequest);
-      window.removeEventListener("ytr:dock-hide-request", handleDockHideRequest);
+      window.removeEventListener(OVERLAY_CLOSE_REQUEST_EVENT, handleOverlayCloseRequest);
+      window.removeEventListener(DOCK_HIDE_REQUEST_EVENT, handleDockHideRequest);
       if (overlayCloseTimeoutRef.current !== null) {
         window.clearTimeout(overlayCloseTimeoutRef.current);
         overlayCloseTimeoutRef.current = null;
@@ -1945,12 +1899,12 @@ function ShellDynamicInner({
     };
   }, [isLyricsOverlayOpen, lyricsOverlayVideoId]);
 
-  const sourceRelatedVideos = useMemo(() => dedupeVideoList(relatedVideos), [relatedVideos]);
-  const uniqueRelatedVideos = useMemo(() => filterHiddenRelatedVideos(
+  const sourceRelatedVideos = useMemo(() => dedupeVideos(relatedVideos), [relatedVideos]);
+  const uniqueRelatedVideos = useMemo(() => filterHiddenVideos(
     dedupeRelatedRailVideos(sourceRelatedVideos, currentVideo.id),
     hiddenVideoIdsRef.current,
   ), [currentVideo.id, sourceRelatedVideos]);
-  const displayedRenderableRelatedVideos = useMemo(() => filterHiddenRelatedVideos(
+  const displayedRenderableRelatedVideos = useMemo(() => filterHiddenVideos(
     dedupeRelatedRailVideos(displayedRelatedVideos, currentVideo.id),
     hiddenVideoIdsRef.current,
   ), [currentVideo.id, displayedRelatedVideos]);
@@ -2074,7 +2028,7 @@ function ShellDynamicInner({
       return;
     }
 
-    if (dedupeRelatedRailVideos(dedupeVideoList(relatedVideosRef.current), currentVideo.id).length >= RELATED_MAX_VIDEOS) {
+    if (dedupeRelatedRailVideos(dedupeVideos(relatedVideosRef.current), currentVideo.id).length >= RELATED_MAX_VIDEOS) {
       setHasMoreRelated(false);
       return;
     }
@@ -2084,7 +2038,7 @@ function ShellDynamicInner({
     setWatchNextLoadFailed(false);
 
     try {
-      const existing = dedupeRelatedRailVideos(dedupeVideoList(relatedVideosRef.current), currentVideo.id);
+      const existing = dedupeRelatedRailVideos(dedupeVideos(relatedVideosRef.current), currentVideo.id);
       const isFirstColdFetch = relatedFetchOffsetRef.current === null && existing.length === 0;
       if (relatedFetchOffsetRef.current === null || relatedFetchOffsetRef.current < existing.length) {
         relatedFetchOffsetRef.current = existing.length;
@@ -2170,7 +2124,7 @@ function ShellDynamicInner({
 
       startTransition(() => {
         setRelatedVideos((previous) => {
-          const merged = dedupeRelatedRailVideos(dedupeVideoList([...previous, ...nextVideos]), currentVideo.id)
+          const merged = dedupeRelatedRailVideos(dedupeVideos([...previous, ...nextVideos]), currentVideo.id)
             .slice(0, RELATED_MAX_VIDEOS);
           return merged;
         });
@@ -2182,7 +2136,7 @@ function ShellDynamicInner({
       }
 
     } catch {
-      const existingAfterFailure = dedupeRelatedRailVideos(dedupeVideoList(relatedVideosRef.current), currentVideo.id);
+      const existingAfterFailure = dedupeRelatedRailVideos(dedupeVideos(relatedVideosRef.current), currentVideo.id);
       if (existingAfterFailure.length === 0) {
         // Reset the offset back to null so the next attempt (auto-recover or manual)
         // is treated as a fresh cold-start and gets the full retry budget.
@@ -2978,7 +2932,8 @@ function ShellDynamicInner({
     : undefined;
 
   return (
-    <main className={shellClassName} style={shellStyle}>
+    <OverlayScrollContainerProvider overlayScrollContainerRef={favouritesBlindInnerRef}>
+      <main className={shellClassName} style={shellStyle}>
       <div className="backdrop" />
 
       {isDesktopIntroPreload || isDesktopIntroActive ? (
@@ -3645,7 +3600,7 @@ function ShellDynamicInner({
                     const loadingFallback = (
                       isCategoriesOverlayPendingOrActive ? (
                         <div className="categoriesFilterSection" aria-busy="true">
-                          <div className="favouritesBlindBar categoriesHeaderBar">
+                          <OverlayHeader className="categoriesHeaderBar" close={false}>
                             <div className="categoriesHeaderMain">
                               <strong>
                                 <span className="categoryHeaderBreadcrumb">☣ Categories</span>
@@ -3669,7 +3624,7 @@ function ShellDynamicInner({
                             >
                               Close
                             </a>
-                          </div>
+                          </OverlayHeader>
 
                           <div className="categoriesCatalogStage">
                             <div className="categoriesLoaderOverlay" role="status" aria-live="polite" aria-label="Loading categories">
@@ -3687,7 +3642,7 @@ function ShellDynamicInner({
                         </div>
                       ) : isArtistsOverlayPendingOrActive ? (
                         <>
-                          <div className="favouritesBlindBar">
+                          <OverlayHeader close={false}>
                             <strong>
                               <span className="categoryHeaderBreadcrumb">🎸 Artists</span>
                             </strong>
@@ -3698,7 +3653,7 @@ function ShellDynamicInner({
                             >
                               Close
                             </a>
-                          </div>
+                          </OverlayHeader>
 
                           <div className="routeContractRow artistLoadingCenter" role="status" aria-live="polite" aria-label="Loading artists">
                             <span className="playerBootBars" aria-hidden="true">
@@ -4385,7 +4340,8 @@ function ShellDynamicInner({
         )}
       </section>
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
-    </main>
+      </main>
+    </OverlayScrollContainerProvider>
   );
 }
 

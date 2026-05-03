@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { ArtistsFilterHeader } from "@/components/artists-filter-header";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { ArtistsLetterResults } from "@/components/artists-letter-results";
-import { ArtistsScrollReset } from "@/components/artists-scroll-reset";
+import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { getArtistsByLetter } from "@/lib/catalog-data";
 
 type ArtistsPageProps = {
@@ -35,7 +35,7 @@ export default async function ArtistsPage({ searchParams }: ArtistsPageProps) {
 
   return (
     <>
-      <ArtistsScrollReset />
+      <OverlayScrollReset />
 
       <ArtistsFilterHeader activeLetter={activeLetter} v={v} resume={resume} />
 

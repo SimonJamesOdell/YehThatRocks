@@ -1,13 +1,10 @@
-import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import { AuthForgotPasswordForm } from "@/components/auth-forgot-password-form";
 
 export default function ForgotPasswordPage() {
   return (
     <>
-      <div className="favouritesBlindBar">
-        <strong>Password reset</strong>
-        <CloseLink />
-      </div>
+      <OverlayHeader title="Password reset" />
 
       <section className="panel featurePanel spanTwoColumns">
         <div className="panelHeading">

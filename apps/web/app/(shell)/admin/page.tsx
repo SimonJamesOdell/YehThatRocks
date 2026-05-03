@@ -3,6 +3,7 @@ import Link from "next/link";
 import { AdminTabLinks } from "@/components/admin-tab-links";
 import { CloseLink } from "@/components/close-link";
 import { AdminDashboardPanel, type AdminTab } from "@/components/admin-dashboard-panel";
+import { OverlayHeader } from "@/components/overlay-header";
 import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
 import { requireAdminUserAuthState } from "@/lib/admin-auth";
 
@@ -26,13 +27,13 @@ export default async function AdminPage(props: {
 
   return (
     <div className="adminOverlayPage">
-      <div className="favouritesBlindBar">
+      <OverlayHeader close={false}>
         <strong><span className="whiteAccountGlyph" aria-hidden="true">🛠</span> Admin</strong>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <AdminTabLinks activeTab={activeTab} enablePendingCount={adminAuthState.status === "authorized"} />
           <CloseLink />
         </div>
-      </div>
+      </OverlayHeader>
 
       {adminAuthState.status === "authorized" ? (
         <AdminDashboardPanel activeTab={activeTab} />

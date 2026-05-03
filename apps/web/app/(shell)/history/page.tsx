@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 
-import { CloseLink } from "@/components/close-link";
 import { HistoryInfiniteList } from "@/components/history-infinite-list";
+import { OverlayHeader } from "@/components/overlay-header";
 import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
 import { REFRESH_TOKEN_COOKIE } from "@/lib/auth-config";
 import { getWatchHistory } from "@/lib/catalog-data";
@@ -22,10 +22,10 @@ export default async function HistoryPage() {
 
   return (
     <>
-      <div className="favouritesBlindBar">
-        <strong><span className="whiteHistoryGlyph" aria-hidden="true">🕘</span> History</strong>
-        <CloseLink />
-      </div>
+      <OverlayHeader
+        icon={<span className="whiteHistoryGlyph" aria-hidden="true">🕘</span>}
+        title="History"
+      />
 
       {!user ? (
         <ProtectedAuthGatePanel

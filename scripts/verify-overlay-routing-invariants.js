@@ -21,12 +21,18 @@ const files = {
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
   shellDynamicRendering: path.join(ROOT, "apps/web/components/shell-dynamic-rendering.tsx"),
+  shellLayout: path.join(ROOT, "apps/web/app/(shell)/layout.tsx"),
+  shellErrorBoundary: path.join(ROOT, "apps/web/app/(shell)/error.tsx"),
+  categoryErrorBoundary: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/error.tsx"),
+  shareVideoPage: path.join(ROOT, "apps/web/app/share/[videoId]/page.tsx"),
+  serviceFailurePanel: path.join(ROOT, "apps/web/components/service-failure-panel.tsx"),
   statusPerformanceRoute: path.join(ROOT, "apps/web/app/api/status/performance/route.ts"),
   chatRoute: path.join(ROOT, "apps/web/app/api/chat/route.ts"),
   chatDataService: path.join(ROOT, "apps/web/lib/chat-data.ts"),
   chatStreamRoute: path.join(ROOT, "apps/web/app/api/chat/stream/route.ts"),
   categoriesFilterGrid: path.join(ROOT, "apps/web/components/categories-filter-grid.tsx"),
   categoriesLoading: path.join(ROOT, "apps/web/app/(shell)/categories/loading.tsx"),
+  overlayScrollReset: path.join(ROOT, "apps/web/components/overlay-scroll-reset.tsx"),
   appRoot: path.join(ROOT, "apps/web/app"),
 };
 
@@ -64,6 +70,11 @@ function main() {
     readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
   ].join('\n');
   const shellDynamicRenderingSource = readFileStrict(files.shellDynamicRendering, ROOT);
+  const shellLayoutSource = readFileStrict(files.shellLayout, ROOT);
+  const shellErrorBoundarySource = readFileStrict(files.shellErrorBoundary, ROOT);
+  const categoryErrorBoundarySource = readFileStrict(files.categoryErrorBoundary, ROOT);
+  const shareVideoPageSource = readFileStrict(files.shareVideoPage, ROOT);
+  const serviceFailurePanelSource = readFileStrict(files.serviceFailurePanel, ROOT);
   const shellRenderingSource = `${shellDynamicSource}\n${shellDynamicRenderingSource}`;
   const statusPerformanceRouteSource = readFileStrict(files.statusPerformanceRoute, ROOT);
   const chatRouteSource = readFileStrict(files.chatRoute, ROOT);
@@ -71,6 +82,7 @@ function main() {
   const chatStreamRouteSource = readFileStrict(files.chatStreamRoute, ROOT);
   const categoriesFilterGridSource = readFileStrict(files.categoriesFilterGrid, ROOT);
   const categoriesLoadingSource = readFileStrict(files.categoriesLoading, ROOT);
+  const overlayScrollResetSource = readFileStrict(files.overlayScrollReset, ROOT);
   const cssSource = collectCssFiles(files.appRoot)
     .map((filePath) => readFileStrict(filePath, ROOT))
     .join("\n");
@@ -79,8 +91,8 @@ function main() {
   assertContains(playerExperienceSource, 'window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));', "Dock close control dispatches hide-only event instead of navigating away", failures);
   assertContains(shellDynamicSource, "const handleDockHideRequest = () => {", "Shell defines a dock-hide event handler", failures);
   assertContains(shellDynamicSource, "setIsDockHidden(true);", "Shell hides docked player in response to dock-hide event", failures);
-  assertContains(shellDynamicSource, 'window.addEventListener("ytr:dock-hide-request", handleDockHideRequest);', "Shell subscribes to dock-hide requests", failures);
-  assertContains(shellDynamicSource, 'window.removeEventListener("ytr:dock-hide-request", handleDockHideRequest);', "Shell cleans up dock-hide listener", failures);
+  assertContains(shellDynamicSource, 'window.addEventListener(DOCK_HIDE_REQUEST_EVENT, handleDockHideRequest);', "Shell subscribes to dock-hide requests", failures);
+  assertContains(shellDynamicSource, 'window.removeEventListener(DOCK_HIDE_REQUEST_EVENT, handleDockHideRequest);', "Shell cleans up dock-hide listener", failures);
   assertContains(shellDynamicSource, "if (shouldDockDesktopPlayer) {", "Shell restores hidden dock when entering docked overlay routes", failures);
   assertContains(shellDynamicSource, "}, [pathname, shouldDockDesktopPlayer]);", "Shell re-evaluates dock visibility on overlay route changes", failures);
   assertContains(shellDynamicSource, '<div className="playerDockLayer">', "Shell keeps player content in a dedicated dock layer", failures);
@@ -191,12 +203,12 @@ function main() {
   assertNotContains(shellDynamicSource, '<span className="tabLabel activeTab">Global Chat</span>', "Shell no longer hard-locks admin rail to a non-interactive Global Chat label", failures);
   assertContains(shellDynamicSource, "node.scrollTop = node.scrollHeight;", "Shell auto-scrolls chat list to latest message", failures);
   assertContains(shellRenderingSource, 'fetch(`/api/videos/share-preview?v=${encodeURIComponent(videoId)}`)', "Shared chat cards resolve preview metadata via share-preview API", failures);
-  assertContains(shellRenderingSource, "const REQUEST_VIDEO_REPLAY_EVENT = \"ytr:request-video-replay\";", "Shell defines replay-request event constant for shared chat cards", failures);
+  assertContains(shellRenderingSource, 'export { REQUEST_VIDEO_REPLAY_EVENT }', "Shell re-exports the replay-request event constant from events-contract", failures);
   assertContains(shellRenderingSource, "window.dispatchEvent(new CustomEvent(REQUEST_VIDEO_REPLAY_EVENT, {", "Shell dispatches replay request when shared chat card is clicked", failures);
 
   // Overlay open request and optimistic fallback.
   assertContains(shellDynamicSource, 'const routeLoadingLabel = pathname.endsWith("/wiki") || pendingOverlayOpenKind === "wiki" ? "Loading wiki" : "Loading video";', "Shell loading fallback derives wiki-aware copy including optimistic wiki opens", failures);
-  assertContains(shellDynamicSource, 'const OVERLAY_OPEN_REQUEST_EVENT = "ytr:overlay-open-request";', "Shell defines an optimistic overlay-open request event constant", failures);
+  assertContains(shellDynamicSource, '} from "@/lib/events-contract"', "Shell imports event constants from the centralized events-contract module", failures);
   assertContains(shellDynamicSource, 'window.addEventListener(OVERLAY_OPEN_REQUEST_EVENT, handleOverlayOpenRequest);', "Shell listens for optimistic overlay-open requests", failures);
   assertContains(shellDynamicSource, 'const isCategoriesOverlayPendingOrActive = isCategoriesRoute', "Shell tracks when categories overlay is pending or active", failures);
   assertContains(shellDynamicSource, 'const isArtistsOverlayPendingOrActive = isArtistsOverlayPath(pathname)', "Shell tracks when artists overlay is pending or active", failures);
@@ -211,7 +223,7 @@ function main() {
 
   // Categories open/loading/reveal contract invariants.
   assertContains(categoriesLoadingSource, 'className="categoriesFilterSection" aria-busy="true"', "Categories route loading screen renders immediate shell section", failures);
-  assertContains(categoriesLoadingSource, 'className="favouritesBlindBar categoriesHeaderBar"', "Categories route loading screen renders header row immediately", failures);
+  assertContains(categoriesLoadingSource, 'className="categoriesHeaderBar"', "Categories route loading screen renders header row immediately", failures);
   assertContains(categoriesLoadingSource, 'className="categoriesFilterInput"', "Categories route loading screen renders filter input immediately", failures);
   assertContains(categoriesLoadingSource, 'className="playerBootBars" aria-hidden="true"', "Categories route loading screen renders animated loading bars", failures);
   assertContains(categoriesFilterGridSource, 'const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);', "Categories grid tracks explicit loader visibility state", failures);
@@ -284,6 +296,22 @@ function main() {
   assertContains(cssSource, '.categoriesCards.categoriesCardsRevealed .categoryCardCascade {', "Categories cards use revealed-state animation selector", failures);
   assertContains(cssSource, 'animation: categoryCardCascadeIn 240ms ease-out both;', "Categories cards animate in with cascade keyframes", failures);
   assertContains(cssSource, 'animation-delay: calc(var(--category-cascade-index, 0) * 24ms);', "Categories card cascade delay uses index variable", failures);
+
+  // Shared service-failure panel extraction invariants.
+  assertContains(serviceFailurePanelSource, "export function ServiceFailurePanel", "Shared service-failure panel component is exported", failures);
+  assertContains(serviceFailurePanelSource, "serviceFailureScreen", "Shared service-failure panel renders the serviceFailureScreen wrapper", failures);
+  assertContains(serviceFailurePanelSource, "serviceFailureActions", "Shared service-failure panel renders the serviceFailureActions slot", failures);
+  assertContains(shellLayoutSource, 'import { ServiceFailurePanel } from "@/components/service-failure-panel";', "Shell layout imports shared service-failure panel", failures);
+  assertContains(shellErrorBoundarySource, 'import { ServiceFailurePanel } from "@/components/service-failure-panel";', "Shell error boundary imports shared service-failure panel", failures);
+  assertContains(categoryErrorBoundarySource, 'import { ServiceFailurePanel } from "@/components/service-failure-panel";', "Category error boundary imports shared service-failure panel", failures);
+  assertContains(shareVideoPageSource, 'import { ServiceFailurePanel } from "@/components/service-failure-panel";', "Share page imports shared service-failure panel", failures);
+  assertNotContains(shellLayoutSource, "function renderServiceUnavailablePanel()", "Shell layout no longer keeps local duplicated renderServiceUnavailablePanel helper", failures);
+
+  // Overlay scroll-reset invariants.
+  assertContains(overlayScrollResetSource, "export function OverlayScrollReset()", "Single shared scroll-reset component exported as OverlayScrollReset", failures);
+  assertContains(overlayScrollResetSource, "useOverlayScrollContainerRef", "Scroll-reset reads the shared overlay scroll container ref", failures);
+  assertContains(shellDynamicSource, "<OverlayScrollContainerProvider overlayScrollContainerRef={favouritesBlindInnerRef}>", "Shell provides shared overlay scroll container ref context", failures);
+  assertContains(overlayScrollResetSource, 'window.scrollTo({ top: 0, left: 0, behavior: "auto" })', "Scroll-reset resets window scroll position", failures);
 
   if (failures.length > 0) {
     console.error("Overlay routing invariant check failed.");

@@ -15,6 +15,7 @@ import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent, TEMP_QUEUE_DEQUEUE_EVENT, VIDEO_ENDED_EVENT } from "@/lib/events-contract";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import { addPlaylistItemClient, createPlaylistClient, listPlaylistsClient } from "@/lib/playlist-client-service";
+import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { EndedChoiceCard } from "@/components/player-experience-ended-choice-card";
 import {
@@ -186,28 +187,7 @@ const ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS = 3;
 const YOUTUBE_END_SCREEN_COVER_SECONDS = 0;
 const ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-ended-choice";
 
-if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
-  const consoleWithPatchState = console as typeof console & {
-    __ytrWarnPatched?: boolean;
-  };
-
-  if (!consoleWithPatchState.__ytrWarnPatched) {
-    const originalWarn = console.warn.bind(console);
-    consoleWithPatchState.__ytrWarnPatched = true;
-
-    console.warn = (...args: unknown[]) => {
-      const first = args[0];
-      const message = typeof first === "string" ? first : "";
-
-      // YouTube widget emits this repeatedly in some browsers; hide this known non-actionable warning.
-      if (message.includes("Unrecognized feature: 'web-share'.")) {
-        return;
-      }
-
-      originalWarn(...args);
-    };
-  }
-}
+applyRuntimeBootstrapPatches({ suppressWebShareWarning: true });
 
 function logPlayerDebug(event: string, detail?: Record<string, unknown>) {
   if (!PLAYER_DEBUG_ENABLED) {

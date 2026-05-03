@@ -1,11 +1,12 @@
 import Link from "next/link";
 
 import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 
 export default function ArtistWikiNotFoundPage() {
   return (
     <>
-      <div className="favouritesBlindBar">
+      <OverlayHeader close={false}>
         <strong>
           <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
             <span className="categoryHeaderIcon" aria-hidden="true">📖</span>
@@ -17,7 +18,7 @@ export default function ArtistWikiNotFoundPage() {
           </span>
         </strong>
         <CloseLink />
-      </div>
+      </OverlayHeader>
 
       <section className="artistWikiPage" aria-label="Artist wiki unavailable">
         <article className="artistWikiSection artistWikiOverviewSection">

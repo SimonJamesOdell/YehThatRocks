@@ -1,4 +1,4 @@
-import { CloseLink } from "@/components/close-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import { AuthResetPasswordForm } from "@/components/auth-reset-password-form";
 
 type ResetPasswordPageProps = {
@@ -11,10 +11,7 @@ export default async function ResetPasswordPage({ searchParams }: ResetPasswordP
 
   return (
     <>
-      <div className="favouritesBlindBar">
-        <strong>Reset password</strong>
-        <CloseLink />
-      </div>
+      <OverlayHeader title="Reset password" />
 
       <section className="panel featurePanel spanTwoColumns">
         <div className="panelHeading">

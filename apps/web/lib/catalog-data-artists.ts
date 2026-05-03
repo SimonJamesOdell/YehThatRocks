@@ -5,6 +5,7 @@
  */
 
 import { prisma } from "@/lib/db";
+import { BoundedMap } from "@/lib/bounded-map";
 import type { ArtistRecord, VideoRecord } from "@/lib/catalog";
 import {
   dedupeRankedRows,
@@ -53,34 +54,38 @@ const ARTIST_SINGLE_SLUG_CACHE_TTL_MS = 5 * 60 * 1000;
 const ARTIST_VIDEOS_CACHE_TTL_MS = 60_000;
 const KNOWN_ARTIST_MATCH_CACHE_TTL_MS = 10 * 60 * 1000;
 const ARTIST_CATALOG_EVIDENCE_CACHE_TTL_MS = 10 * 60 * 1000;
+const ARTIST_CACHE_MAX_ENTRIES = Math.max(
+  200,
+  Math.min(10_000, Number(process.env.ARTIST_CACHE_MAX_ENTRIES || "2000")),
+);
 const ENABLE_SAME_GENRE_RELATED = process.env.RELATED_ENABLE_SAME_GENRE === "1";
 const BATCH_UPSERT_SIZE = 100;
 
 // ── Cache stores ──────────────────────────────────────────────────────────────
 
-const artistNormVideoPoolCache = new Map<string, { expiresAt: number; rows: RankedVideoRow[] }>();
-const artistNormVideoPoolInFlight = new Map<string, { limit: number; promise: Promise<RankedVideoRow[]> }>();
-const sameGenreRelatedPoolCache = new Map<string, { expiresAt: number; rows: RankedVideoRow[] }>();
-const sameGenreRelatedPoolInFlight = new Map<string, Promise<RankedVideoRow[]>>();
-const artistLetterCache = new Map<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>();
-const artistLetterInFlight = new Map<string, Promise<Array<ArtistRecord & { videoCount: number }>>>();
-const artistLetterPageCache = new Map<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>();
-const artistLetterPageInFlight = new Map<string, Promise<Array<ArtistRecord & { videoCount: number }>>>();
-const artistSearchCache = new Map<string, { expiresAt: number; rows: Array<{ name: string; country: string | null; genre1: string | null }> }>();
-const artistSearchInFlight = new Map<string, Promise<Array<{ name: string; country: string | null; genre1: string | null }>>>();
-const artistStatsLetterBackfillCache = new Map<string, { expiresAt: number }>();
-const artistStatsLetterBackfillInFlight = new Map<string, Promise<void>>();
-const artistProjectionRefreshCache = new Map<string, { expiresAt: number }>();
-const artistProjectionRefreshInFlight = new Map<string, Promise<void>>();
+const artistNormVideoPoolCache = new BoundedMap<string, { expiresAt: number; rows: RankedVideoRow[] }>(ARTIST_CACHE_MAX_ENTRIES);
+const artistNormVideoPoolInFlight = new BoundedMap<string, { limit: number; promise: Promise<RankedVideoRow[]> }>(ARTIST_CACHE_MAX_ENTRIES);
+const sameGenreRelatedPoolCache = new BoundedMap<string, { expiresAt: number; rows: RankedVideoRow[] }>(ARTIST_CACHE_MAX_ENTRIES);
+const sameGenreRelatedPoolInFlight = new BoundedMap<string, Promise<RankedVideoRow[]>>(ARTIST_CACHE_MAX_ENTRIES);
+const artistLetterCache = new BoundedMap<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>(ARTIST_CACHE_MAX_ENTRIES);
+const artistLetterInFlight = new BoundedMap<string, Promise<Array<ArtistRecord & { videoCount: number }>>>(ARTIST_CACHE_MAX_ENTRIES);
+const artistLetterPageCache = new BoundedMap<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>(ARTIST_CACHE_MAX_ENTRIES);
+const artistLetterPageInFlight = new BoundedMap<string, Promise<Array<ArtistRecord & { videoCount: number }>>>(ARTIST_CACHE_MAX_ENTRIES);
+const artistSearchCache = new BoundedMap<string, { expiresAt: number; rows: Array<{ name: string; country: string | null; genre1: string | null }> }>(ARTIST_CACHE_MAX_ENTRIES);
+const artistSearchInFlight = new BoundedMap<string, Promise<Array<{ name: string; country: string | null; genre1: string | null }>>>(ARTIST_CACHE_MAX_ENTRIES);
+const artistStatsLetterBackfillCache = new BoundedMap<string, { expiresAt: number }>(ARTIST_CACHE_MAX_ENTRIES);
+const artistStatsLetterBackfillInFlight = new BoundedMap<string, Promise<void>>(ARTIST_CACHE_MAX_ENTRIES);
+const artistProjectionRefreshCache = new BoundedMap<string, { expiresAt: number }>(ARTIST_CACHE_MAX_ENTRIES);
+const artistProjectionRefreshInFlight = new BoundedMap<string, Promise<void>>(ARTIST_CACHE_MAX_ENTRIES);
 let artistsListCache: { expiresAt: number; rows: ArtistRecord[] } | undefined;
 let artistsListInFlight: Promise<ArtistRecord[]> | undefined;
 let artistSlugLookupCache: { expiresAt: number; rowsBySlug: Map<string, ArtistRecord> } | undefined;
 let artistSlugLookupInFlight: Promise<Map<string, ArtistRecord>> | undefined;
-const artistSingleSlugCache = new Map<string, { expiresAt: number; artist: ArtistRecord }>();
-const artistVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
-const artistVideosInFlight = new Map<string, Promise<VideoRecord[]>>();
-const knownArtistMatchCache = new Map<string, { expiresAt: number; known: boolean }>();
-const artistCatalogEvidenceCache = new Map<string, { expiresAt: number; known: boolean; rockOrMetalGenreMatch: boolean }>();
+const artistSingleSlugCache = new BoundedMap<string, { expiresAt: number; artist: ArtistRecord }>(ARTIST_CACHE_MAX_ENTRIES);
+const artistVideosCache = new BoundedMap<string, { expiresAt: number; videos: VideoRecord[] }>(ARTIST_CACHE_MAX_ENTRIES);
+const artistVideosInFlight = new BoundedMap<string, Promise<VideoRecord[]>>(ARTIST_CACHE_MAX_ENTRIES);
+const knownArtistMatchCache = new BoundedMap<string, { expiresAt: number; known: boolean }>(ARTIST_CACHE_MAX_ENTRIES);
+const artistCatalogEvidenceCache = new BoundedMap<string, { expiresAt: number; known: boolean; rockOrMetalGenreMatch: boolean }>(ARTIST_CACHE_MAX_ENTRIES);
 let artistVideoStatsSourceCache: "videosbyartist" | "parsedArtist" | undefined;
 
 // ── Cache helpers ─────────────────────────────────────────────────────────────

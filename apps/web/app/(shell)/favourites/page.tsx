@@ -1,8 +1,8 @@
 import { cookies } from "next/headers";
 
-import { CloseLink } from "@/components/close-link";
 import { FavouritesGrid } from "@/components/favourites-grid";
-import { FavouritesScrollReset } from "@/components/favourites-scroll-reset";
+import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
+import { OverlayHeader } from "@/components/overlay-header";
 import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
 import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from "@/lib/auth-config";
 import { getFavouriteVideos } from "@/lib/catalog-data";
@@ -22,7 +22,7 @@ export default async function FavouritesPage() {
 
   return (
     <>
-      <FavouritesScrollReset />
+      <OverlayScrollReset />
       {user ? (
         <FavouritesGrid
           initialFavourites={initialFavourites}
@@ -32,10 +32,10 @@ export default async function FavouritesPage() {
         />
       ) : (
         <>
-          <div className="favouritesBlindBar">
-            <strong><span className="whiteHeart" aria-hidden="true">❤</span> Favourites</strong>
-            <CloseLink />
-          </div>
+          <OverlayHeader
+            icon={<span className="whiteHeart" aria-hidden="true">❤</span>}
+            title="Favourites"
+          />
             <ProtectedAuthGatePanel
               status={authState.status === "unavailable" ? "unavailable" : "unauthenticated"}
             heading="❤ Favourites"

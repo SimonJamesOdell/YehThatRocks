@@ -9,6 +9,8 @@ import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { dispatchAppEvent, EVENT_NAMES } from "@/lib/events-contract";
+import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 
 type Top100VideoLinkProps = {
   track: {
@@ -31,7 +33,6 @@ type Top100VideoLinkProps = {
   isFlagPending?: boolean;
 };
 
-const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
 const TOP100_WARM_WINDOW_MS = 12_000;
 const TOP100_WARM_LIMIT_PER_WINDOW = 6;
 const TOP100_VIDEO_WARM_TTL_MS = 25_000;
@@ -190,7 +191,7 @@ export function Top100VideoLink({
       }
 
       setIsFavourited(false);
-      window.dispatchEvent(new Event("ytr:favourites-updated"));
+      dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
     } finally {
       setIsRemovingFavourite(false);
     }

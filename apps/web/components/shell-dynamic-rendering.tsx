@@ -9,7 +9,8 @@ import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchWithAuthRetry as fetchWithAuthRetryClient } from "@/lib/client-auth-fetch";
 
-export const REQUEST_VIDEO_REPLAY_EVENT = "ytr:request-video-replay";
+import { REQUEST_VIDEO_REPLAY_EVENT, EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+export { REQUEST_VIDEO_REPLAY_EVENT };
 
 type SharedVideoPreview = {
   id: string;
@@ -161,7 +162,7 @@ export const WatchNextCard = memo(function WatchNextCard({
       }
 
       setIsCardFavourited(false);
-      window.dispatchEvent(new Event("ytr:favourites-updated"));
+      dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
     } finally {
       setIsRemovingFavourite(false);
     }
