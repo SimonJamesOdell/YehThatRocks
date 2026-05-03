@@ -7,13 +7,14 @@
 // player hover recovery, same-video replay, share/wiki helpers.
 
 const path = require("node:path");
-const fs = require("node:fs");
 const {
   readFileStrict,
+  collectCssFiles,
   assertContains,
   assertNotContains,
   assertCssRuleContains,
   assertCssRuleNotContains,
+  finishInvariantCheck,
 } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
@@ -34,27 +35,6 @@ const files = {
   runtimeBootstrap: path.join(ROOT, "apps/web/lib/runtime-bootstrap.ts"),
   appRoot: path.join(ROOT, "apps/web/app"),
 };
-
-function collectCssFiles(dirPath, acc = []) {
-  if (!fs.existsSync(dirPath)) {
-    return acc;
-  }
-
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      collectCssFiles(fullPath, acc);
-      continue;
-    }
-
-    if (entry.isFile() && entry.name.endsWith(".css")) {
-      acc.push(fullPath);
-    }
-  }
-
-  return acc;
-}
 
 function main() {
   const failures = [];
@@ -342,15 +322,11 @@ function main() {
   assertContains(cssSource, '.categoryHeaderWikiLink', "Artist wiki header link styles are defined", failures);
   assertContains(cssSource, '.artistInlineLink', "Artist wiki inline link styles are defined", failures);
 
-  if (failures.length > 0) {
-    console.error("Player core invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Player core invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Player core invariant check failed.",
+    successMessage: "Player core invariant check passed.",
+  });
 }
 
 main();

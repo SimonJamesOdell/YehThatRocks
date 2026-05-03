@@ -12,6 +12,7 @@ const {
   readFileStrict,
   assertContains,
   assertNotContains,
+  finishInvariantCheck,
 } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
@@ -134,16 +135,11 @@ function main() {
   }
 
   // Summary
-  if (failures.length > 0) {
-    console.error("\n❌ Shell decomposition invariants FAILED:\n");
-    for (const failure of failures) {
-      console.error(`  • ${failure}`);
-    }
-    console.error(`\n${failures.length} failure(s)\n`);
-    process.exit(1);
-  }
-
-  console.log("✅ Shell decomposition invariants passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "\n❌ Shell decomposition invariants FAILED:\n",
+    successMessage: "✅ Shell decomposition invariants passed.",
+  });
 }
 
 main();

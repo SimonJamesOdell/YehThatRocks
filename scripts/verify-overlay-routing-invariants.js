@@ -6,13 +6,14 @@
 // open/loading/reveal contract.
 
 const path = require("node:path");
-const fs = require("node:fs");
 const {
   readFileStrict,
+  collectCssFiles,
   assertContains,
   assertNotContains,
   assertCssRuleContains,
   assertCssRuleNotContains,
+  finishInvariantCheck,
 } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
@@ -34,27 +35,6 @@ const files = {
   overlayScrollReset: path.join(ROOT, "apps/web/components/overlay-scroll-reset.tsx"),
   appRoot: path.join(ROOT, "apps/web/app"),
 };
-
-function collectCssFiles(dirPath, acc = []) {
-  if (!fs.existsSync(dirPath)) {
-    return acc;
-  }
-
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      collectCssFiles(fullPath, acc);
-      continue;
-    }
-
-    if (entry.isFile() && entry.name.endsWith(".css")) {
-      acc.push(fullPath);
-    }
-  }
-
-  return acc;
-}
 
 function main() {
   const failures = [];
@@ -307,15 +287,11 @@ function main() {
   assertContains(shellDynamicSource, "<OverlayScrollContainerProvider overlayScrollContainerRef={favouritesBlindInnerRef}>", "Shell provides shared overlay scroll container ref context", failures);
   assertContains(overlayScrollResetSource, 'window.scrollTo({ top: 0, left: 0, behavior: "auto" })', "Scroll-reset resets window scroll position", failures);
 
-  if (failures.length > 0) {
-    console.error("Overlay routing invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Overlay routing invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Overlay routing invariant check failed.",
+    successMessage: "Overlay routing invariant check passed.",
+  });
 }
 
 main();

@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
 const path = require("node:path");
+const {
+  readFileStrict,
+  assertContains,
+  assertNotContains,
+  assertContainsOneOf,
+  finishInvariantCheck,
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 
@@ -19,53 +25,28 @@ const files = {
   trackCardsCss: path.join(ROOT, "apps/web/app/styles/track-cards.css"),
 };
 
-function read(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
-  }
-  return fs.readFileSync(filePath, "utf8");
-}
-
-function assertContains(source, needle, description, failures) {
-  if (!source.includes(needle)) {
-    failures.push(`${description} (missing: ${needle})`);
-  }
-}
-
-function assertNotContains(source, needle, description, failures) {
-  if (source.includes(needle)) {
-    failures.push(`${description} (unexpected: ${needle})`);
-  }
-}
-
-function assertContainsOneOf(source, needles, description, failures) {
-  if (!needles.some((needle) => source.includes(needle))) {
-    failures.push(`${description} (missing one of: ${needles.join(" | ")})`);
-  }
-}
-
 function main() {
   const failures = [];
 
-  const top100PageSource = read(files.top100Page);
-  const top100LinkSource = read(files.top100Link);
-  const top100LoaderSource = read(files.top100Loader);
+  const top100PageSource = readFileStrict(files.top100Page, ROOT);
+  const top100LinkSource = readFileStrict(files.top100Link, ROOT);
+  const top100LoaderSource = readFileStrict(files.top100Loader, ROOT);
   const shellDynamicSource = [
-    read(files.shellDynamic),
-    read(path.join(ROOT, 'apps/web/components/use-chat-state.ts')),
-    read(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts')),
-    read(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts')),
-    read(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts')),
-    read(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts')),
+    readFileStrict(files.shellDynamic, ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
   ].join('\n');
-  const currentVideoRouteServiceSource = read(files.currentVideoRouteService);
-  const currentVideoRouteSource = [read(files.currentVideoRoute), currentVideoRouteServiceSource].join('\n');
-  const topVideosRouteSource = read(files.topVideosRoute);
-  const topVideosCacheSource = read(files.topVideosCache);
-  const catalogDataSource = read(files.catalogData);
+  const currentVideoRouteServiceSource = readFileStrict(files.currentVideoRouteService, ROOT);
+  const currentVideoRouteSource = [readFileStrict(files.currentVideoRoute, ROOT), currentVideoRouteServiceSource].join('\n');
+  const topVideosRouteSource = readFileStrict(files.topVideosRoute, ROOT);
+  const topVideosCacheSource = readFileStrict(files.topVideosCache, ROOT);
+  const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const globalCssSource = [
-    read(files.globalCss),
-    read(files.trackCardsCss),
+    readFileStrict(files.globalCss, ROOT),
+    readFileStrict(files.trackCardsCss, ROOT),
   ].join("\n");
 
   // Top 100 page should delegate heavy list work to client loader for faster shell open.
@@ -176,15 +157,11 @@ function main() {
   assertContains(globalCssSource, "width: 24px;", "Top 100 favourite button keeps circular 24px dimensions", failures);
   assertContains(globalCssSource, "border-radius: 999px;", "Top 100 favourite button remains circular", failures);
 
-  if (failures.length > 0) {
-    console.error("Top 100 UI invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Top 100 UI invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Top 100 UI invariant check failed.",
+    successMessage: "Top 100 UI invariant check passed.",
+  });
 }
 
 main();

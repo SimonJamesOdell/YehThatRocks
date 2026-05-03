@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
 const path = require("node:path");
+const {
+  readFileStrict,
+  assertContains,
+  assertNotContains,
+  assertMatches,
+  finishInvariantCheck,
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 
@@ -20,51 +26,25 @@ const files = {
   trackCardsCss: path.join(ROOT, "apps/web/app/styles/track-cards.css"),
 };
 
-function read(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
-  }
-
-  return fs.readFileSync(filePath, "utf8");
-}
-
-function assertContains(source, needle, description, failures) {
-  if (!source.includes(needle)) {
-    failures.push(`${description} (missing: ${needle})`);
-  }
-}
-
-function assertNotContains(source, needle, description, failures) {
-  if (source.includes(needle)) {
-    failures.push(`${description} (forbidden: ${needle})`);
-  }
-}
-
-function assertMatches(source, pattern, description, failures) {
-  if (!pattern.test(source)) {
-    failures.push(`${description} (pattern: ${pattern})`);
-  }
-}
-
 function main() {
   const failures = [];
 
-  const packageJsonSource = read(files.packageJson);
-  const editorSource = read(files.editor);
-  const editorApiSource = read(files.editorApi);
-  const schemasSource = read(files.schemas);
-  const dataSource = read(files.data);
-  const addButtonSource = read(files.addButton);
-  const playlistRailHookSource = read(files.playlistRailHook);
+  const packageJsonSource = readFileStrict(files.packageJson, ROOT);
+  const editorSource = readFileStrict(files.editor, ROOT);
+  const editorApiSource = readFileStrict(files.editorApi, ROOT);
+  const schemasSource = readFileStrict(files.schemas, ROOT);
+  const dataSource = readFileStrict(files.data, ROOT);
+  const addButtonSource = readFileStrict(files.addButton, ROOT);
+  const playlistRailHookSource = readFileStrict(files.playlistRailHook, ROOT);
   const shellSource = [
-    read(files.shell),
+    readFileStrict(files.shell, ROOT),
     playlistRailHookSource,
   ].join("\n");
-  const playerSource = read(files.player);
+  const playerSource = readFileStrict(files.player, ROOT);
   const cssSource = [
-    read(files.css),
-    read(files.playlistCss),
-    read(files.trackCardsCss),
+    readFileStrict(files.css, ROOT),
+    readFileStrict(files.playlistCss, ROOT),
+    readFileStrict(files.trackCardsCss, ROOT),
   ].join("\n");
 
   // pickColumn ordering invariant: must iterate priority names first, not DB columns.
@@ -182,15 +162,11 @@ function main() {
   // Quick sanity that this invariant script is wired in package scripts.
   assertContains(packageJsonSource, "verify:playlists-ui", "Root package includes playlist UI verify script", failures);
 
-  if (failures.length > 0) {
-    console.error("Playlist UI invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Playlist UI invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Playlist UI invariant check failed.",
+    successMessage: "Playlist UI invariant check passed.",
+  });
 }
 
 main();

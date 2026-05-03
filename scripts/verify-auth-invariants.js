@@ -1,7 +1,15 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
 const path = require("node:path");
+const fs = require("node:fs");
+const {
+  readFileStrict,
+  collectCssFiles,
+  assertContains,
+  assertContainsEither,
+  assertNotContains,
+  finishInvariantCheck,
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 
@@ -47,99 +55,53 @@ const files = {
   appRoot: path.join(ROOT, "apps/web/app"),
 };
 
-function read(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
-  }
-  return fs.readFileSync(filePath, "utf8");
-}
-
-function collectCssFiles(dirPath, acc = []) {
-  if (!fs.existsSync(dirPath)) {
-    return acc;
-  }
-
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      collectCssFiles(fullPath, acc);
-      continue;
-    }
-
-    if (entry.isFile() && entry.name.endsWith(".css")) {
-      acc.push(fullPath);
-    }
-  }
-
-  return acc;
-}
-
-function assertContains(source, needle, description, failures) {
-  if (!source.includes(needle)) {
-    failures.push(`${description} (missing: ${needle})`);
-  }
-}
-
-function assertContainsEither(source, needles, description, failures) {
-  if (!needles.some(needle => source.includes(needle))) {
-    failures.push(`${description} (missing any of: ${needles.join(", ")})`);
-  }
-}
-
-function assertNotContains(source, needle, description, failures) {
-  if (source.includes(needle)) {
-    failures.push(`${description} (unexpected: ${needle})`);
-  }
-}
-
 function main() {
   const failures = [];
 
-  const accountPageSource = read(files.accountPage);
-  const accountPanelSource = read(files.accountPanel);
-  const logoutButtonSource = read(files.logoutButton);
-  const loginFormSource = read(files.loginForm);
-  const anonymousCredentialsModalSource = read(files.anonymousCredentialsModal);
-  const changePasswordFormSource = read(files.changePasswordForm);
-  const forgotPasswordFormSource = read(files.forgotPasswordForm);
-  const accountActionsSource = read(files.accountActions);
-  const authRetryButtonSource = read(files.authRetryButton);
-  const protectedAuthGatePanelSource = read(files.protectedAuthGatePanel);
-  const anonymousRouteSource = read(files.anonymousRoute);
-  const loginRouteSource = read(files.loginRoute);
-  const profileRouteSource = read(files.profileRoute);
-  const resetPasswordRouteSource = read(files.resetPasswordRoute);
-  const sendVerificationRouteSource = read(files.sendVerificationRoute);
-  const verifyEmailRouteSource = read(files.verifyEmailRoute);
-  const upgradeToEmailRouteSource = read(files.upgradeToEmailRoute);
-  const shellLayoutSource = read(files.shellLayout);
+  const accountPageSource = readFileStrict(files.accountPage, ROOT);
+  const accountPanelSource = readFileStrict(files.accountPanel, ROOT);
+  const logoutButtonSource = readFileStrict(files.logoutButton, ROOT);
+  const loginFormSource = readFileStrict(files.loginForm, ROOT);
+  const anonymousCredentialsModalSource = readFileStrict(files.anonymousCredentialsModal, ROOT);
+  const changePasswordFormSource = readFileStrict(files.changePasswordForm, ROOT);
+  const forgotPasswordFormSource = readFileStrict(files.forgotPasswordForm, ROOT);
+  const accountActionsSource = readFileStrict(files.accountActions, ROOT);
+  const authRetryButtonSource = readFileStrict(files.authRetryButton, ROOT);
+  const protectedAuthGatePanelSource = readFileStrict(files.protectedAuthGatePanel, ROOT);
+  const anonymousRouteSource = readFileStrict(files.anonymousRoute, ROOT);
+  const loginRouteSource = readFileStrict(files.loginRoute, ROOT);
+  const profileRouteSource = readFileStrict(files.profileRoute, ROOT);
+  const resetPasswordRouteSource = readFileStrict(files.resetPasswordRoute, ROOT);
+  const sendVerificationRouteSource = readFileStrict(files.sendVerificationRoute, ROOT);
+  const verifyEmailRouteSource = readFileStrict(files.verifyEmailRoute, ROOT);
+  const upgradeToEmailRouteSource = readFileStrict(files.upgradeToEmailRoute, ROOT);
+  const shellLayoutSource = readFileStrict(files.shellLayout, ROOT);
   const shellDynamicSource = [
-    read(files.shellDynamic),
-    read(path.join(ROOT, 'apps/web/components/use-chat-state.ts')),
-    read(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts')),
-    read(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts')),
-    read(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts')),
-    read(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts')),
+    readFileStrict(files.shellDynamic, ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
   ].join('\n');
-  const historyPageSource = read(files.historyPage);
-  const favouritesPageSource = read(files.favouritesPage);
-  const playlistsPageSource = read(files.playlistsPage);
-  const playlistDetailPageSource = read(files.playlistDetailPage);
-  const adminPageSource = read(files.adminPage);
-  const adminAuthSource = read(files.adminAuth);
-  const authRequestSource = read(files.authRequest);
-  const serverAuthSource = read(files.serverAuth);
-  const authModalSource = read(files.authModal);
-  const playerExperienceSource = read(files.playerExperience);
-  const authCookiesSource = read(files.authCookies);
-  const rateLimitLibSource = read(files.rateLimitLib);
-  const prismaTypesSource = read(files.prismaTypes);
-  const authSessionsSource = read(files.authSessions);
-  const authTokenRecordsSource = read(files.authTokenRecords);
-  const authAuditSource = read(files.authAudit);
+  const historyPageSource = readFileStrict(files.historyPage, ROOT);
+  const favouritesPageSource = readFileStrict(files.favouritesPage, ROOT);
+  const playlistsPageSource = readFileStrict(files.playlistsPage, ROOT);
+  const playlistDetailPageSource = readFileStrict(files.playlistDetailPage, ROOT);
+  const adminPageSource = readFileStrict(files.adminPage, ROOT);
+  const adminAuthSource = readFileStrict(files.adminAuth, ROOT);
+  const authRequestSource = readFileStrict(files.authRequest, ROOT);
+  const serverAuthSource = readFileStrict(files.serverAuth, ROOT);
+  const authModalSource = readFileStrict(files.authModal, ROOT);
+  const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
+  const authCookiesSource = readFileStrict(files.authCookies, ROOT);
+  const rateLimitLibSource = readFileStrict(files.rateLimitLib, ROOT);
+  const prismaTypesSource = readFileStrict(files.prismaTypes, ROOT);
+  const authSessionsSource = readFileStrict(files.authSessions, ROOT);
+  const authTokenRecordsSource = readFileStrict(files.authTokenRecords, ROOT);
+  const authAuditSource = readFileStrict(files.authAudit, ROOT);
   const globalCssSource = collectCssFiles(files.appRoot)
-    .map((filePath) => read(filePath))
+    .map((filePath) => readFileStrict(filePath, ROOT))
     .join("\n");
 
   // --- Account page tabs and top-bar actions ---
@@ -387,15 +349,11 @@ function main() {
   assertContains(globalCssSource, ".playerAuthWall", "globals.css defines .playerAuthWall overlay styles", failures);
   assertContains(globalCssSource, ".playerAuthWallBtn", "globals.css defines .playerAuthWallBtn CTA button style", failures);
 
-  if (failures.length > 0) {
-    console.error("Auth invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Auth invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Auth invariant check failed.",
+    successMessage: "Auth invariant check passed.",
+  });
 }
 
 main();

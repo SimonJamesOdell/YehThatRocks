@@ -4,6 +4,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { PrismaClient } = require("@prisma/client");
+const { assertInvariant, finishInvariantCheck } = require("./lib/test-harness");
 
 function loadDatabaseEnv() {
   const envPath = path.resolve(process.cwd(), "apps/web/.env.local");
@@ -53,19 +54,6 @@ function hasFlag(name) {
 function asNumber(value, fallback) {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
-}
-
-function assertInvariant(condition, description, details, failures) {
-  if (condition) {
-    console.log(`[ok] ${description}`);
-    return;
-  }
-
-  failures.push({ description, details });
-  console.error(`[fail] ${description}`);
-  if (details) {
-    console.error(`       ${details}`);
-  }
 }
 
 function getGenreSlug(value) {
@@ -298,12 +286,11 @@ async function main() {
       await runApiChecks({ baseUrl, maxApiDurationMs, minCoverage }, failures);
     }
 
-    if (failures.length > 0) {
-      console.error(`\nInvariant check failed: ${failures.length} issue(s).`);
-      process.exit(1);
-    }
-
-    console.log("\nAll category invariants passed.");
+    finishInvariantCheck({
+      failures,
+      failureHeader: `\nInvariant check failed: ${failures.length} issue(s).`,
+      successMessage: "\nAll category invariants passed.",
+    });
   } finally {
     await prisma.$disconnect();
   }
