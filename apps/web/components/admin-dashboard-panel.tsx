@@ -5,6 +5,8 @@ import { feature } from "topojson-client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import worldAtlasCountries from "world-atlas/countries-110m.json";
 
+import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+
 const HEALTH_FALLBACK_POLL_MS = 2_000;
 const ANALYTICS_AUTO_REFRESH_MS = 5 * 60 * 1000;
 
@@ -225,7 +227,7 @@ type PerfWindowResetResponse = {
 export type AdminTab = "overview" | "performance" | "worldmap" | "api" | "categories" | "videos" | "artists" | "ambiguous";
 
 async function readJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init);
+  const response = await fetchWithAuthRetry(input, init);
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error?: string } | null;
