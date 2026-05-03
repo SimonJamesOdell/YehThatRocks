@@ -78,7 +78,7 @@ function main() {
 
   // --- HistoryInfiniteList: structure and pagination ---
   assertContains(historyListSource, '"use client"', "HistoryInfiniteList is a client component", failures);
-  assertContains(historyListSource, "IntersectionObserver", "HistoryInfiniteList uses IntersectionObserver for infinite scroll", failures);
+  assertContains(historyListSource, "useInfiniteScroll", "HistoryInfiniteList uses shared useInfiniteScroll hook", failures);
   assertContains(historyListSource, "/api/watch-history?limit=", "HistoryInfiniteList paginates via /api/watch-history", failures);
   assertContains(historyListSource, "cache: \"no-store\"", "HistoryInfiniteList fetches history pages with no-store cache", failures);
   assertContains(historyListSource, "historyGroups", "HistoryInfiniteList groups items by date", failures);
