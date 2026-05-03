@@ -4,10 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const thumbnailReportedVideoIds = new Set<string>();
-
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
+import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import type { VideoRecord } from "@/lib/catalog";
@@ -33,24 +32,6 @@ export function ArtistVideoLink({
 }: ArtistVideoLinkProps) {
   const router = useRouter();
   const hasWarmedRef = useRef(false);
-  const articleRef = useRef<HTMLElement | null>(null);
-
-  const handleThumbError = useCallback(() => {
-    if (articleRef.current) {
-      articleRef.current.style.display = "none";
-    }
-    if (thumbnailReportedVideoIds.has(video.id)) {
-      return;
-    }
-    thumbnailReportedVideoIds.add(video.id);
-    void fetch("/api/videos/unavailable", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      keepalive: true,
-      body: JSON.stringify({ videoId: video.id, reason: "thumbnail-load-error" }),
-    }).catch(() => undefined);
-  }, [video.id]);
   const [isFavourited, setIsFavourited] = useState(Number(video.favourited ?? 0) > 0);
   const [isRemovingFavourite, setIsRemovingFavourite] = useState(false);
   const hasFavouriteHeart = isFavourited;
@@ -119,7 +100,6 @@ export function ArtistVideoLink({
 
   return (
     <article
-      ref={articleRef}
       className={`categoryVideoCard${isSeen ? " categoryVideoCardSeen artistVideoCardSeen" : ""}${useCornerActions ? " categoryVideoCardCornerActions" : ""}`}
       role="link"
       tabIndex={0}
@@ -171,14 +151,15 @@ export function ArtistVideoLink({
         onClick={warmSelection}
       >
         <div className="categoryThumbWrap">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
+          <YouTubeThumbnailImage
+            videoId={video.id}
             alt=""
             className="categoryThumb"
+            format="mqdefault"
             loading="lazy"
             decoding="async"
-            onError={handleThumbError}
+            hideClosestSelector=".categoryVideoCard"
+            reportReason="thumbnail-load-error"
           />
           {isSeen && !hasFavouriteHeart ? <span className="videoSeenBadge videoSeenBadgeOverlay categorySeenBadgeOverlay">Seen</span> : null}
           {hasFavouriteHeart ? (

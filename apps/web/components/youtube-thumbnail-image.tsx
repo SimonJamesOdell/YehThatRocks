@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { isLikelyUnavailableThumbnailDimensions } from "@/lib/youtube-thumbnail-health";
+
 type YouTubeThumbnailImageProps = {
   videoId: string;
   alt: string;
@@ -73,6 +75,7 @@ export function YouTubeThumbnailImage({
     state: thumbnailHealthCache.get(videoId) ?? "unknown",
   }));
   const elementRef = useRef<HTMLImageElement | null>(null);
+  const brokenMarkerRef = useRef<HTMLSpanElement | null>(null);
   const state = thumbState.videoId === videoId ? thumbState.state : thumbnailHealthCache.get(videoId) ?? "unknown";
 
   useEffect(() => {
@@ -88,6 +91,19 @@ export function YouTubeThumbnailImage({
       if (cancelled) {
         return;
       }
+
+      // YouTube fallback placeholders for unavailable videos can still load
+      // as tiny 120x90 images. Treat these as broken so cards are excluded.
+      const isLikelyUnavailablePlaceholder = isLikelyUnavailableThumbnailDimensions(
+        probe.naturalWidth,
+        probe.naturalHeight,
+      );
+      if (isLikelyUnavailablePlaceholder) {
+        thumbnailHealthCache.set(videoId, "broken");
+        setThumbState({ videoId, state: "broken" });
+        return;
+      }
+
       thumbnailHealthCache.set(videoId, "ready");
       setThumbState({ videoId, state: "ready" });
     };
@@ -114,14 +130,19 @@ export function YouTubeThumbnailImage({
 
     reportUnavailable(videoId, reportReason);
 
-    const closest = hideClosestSelector
-      ? elementRef.current?.closest(hideClosestSelector)
+    const anchorElement = elementRef.current ?? brokenMarkerRef.current;
+    const closest = hideClosestSelector && anchorElement
+      ? anchorElement.closest(hideClosestSelector)
       : null;
     if (closest instanceof HTMLElement) {
       closest.style.display = "none";
       closest.setAttribute("data-thumbnail-broken", "1");
     }
   }, [hideClosestSelector, reportReason, state, videoId]);
+
+  if (state === "broken") {
+    return <span ref={brokenMarkerRef} aria-hidden="true" style={{ display: "none" }} />;
+  }
 
   if (state !== "ready") {
     return null;
@@ -137,7 +158,16 @@ export function YouTubeThumbnailImage({
       loading={loading}
       decoding={decoding}
       fetchPriority={fetchPriority}
-      onError={() => {
+      onError={(event) => {
+        const target = event.currentTarget;
+        if (hideClosestSelector) {
+          const closest = target.closest(hideClosestSelector);
+          if (closest instanceof HTMLElement) {
+            closest.style.display = "none";
+            closest.setAttribute("data-thumbnail-broken", "1");
+          }
+        }
+        reportUnavailable(videoId, reportReason);
         thumbnailHealthCache.set(videoId, "broken");
         setThumbState({ videoId, state: "broken" });
       }}

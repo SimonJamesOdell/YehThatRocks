@@ -30,8 +30,14 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
   const cookieStore = await cookies();
   const isAuthenticated = Boolean(cookieStore.get(ACCESS_TOKEN_COOKIE)?.value);
   const user = await getCurrentAuthenticatedUser();
-  const seenVideoIds = user ? await getSeenVideoIdsForUser(user.id) : new Set<string>();
-  const hiddenVideoIds = user ? await getHiddenVideoIdsForUser(user.id) : new Set<string>();
+
+  const [seenVideoIds, hiddenVideoIds] = user
+    ? await Promise.all([
+      getSeenVideoIdsForUser(user.id),
+      getHiddenVideoIdsForUser(user.id),
+    ])
+    : [new Set<string>(), new Set<string>()];
+
   const { slug } = await params;
   const genre = await getGenreBySlug(slug);
 
@@ -40,6 +46,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
   }
 
   const initialVideosWithProbe = await getVideosByGenre(genre, { offset: 0, limit: CATEGORY_INITIAL_PAGE_SIZE + 1 });
+
   const initialHasMore = initialVideosWithProbe.length > CATEGORY_INITIAL_PAGE_SIZE;
   const initialVideos = initialVideosWithProbe.slice(0, CATEGORY_INITIAL_PAGE_SIZE);
   return (
