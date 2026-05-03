@@ -109,8 +109,6 @@ The existing `yeh` database is retained as-is and extended. The following tables
 | Table | Purpose |
 |---|---|
 | `users` | Rebuilt: hashed passwords, email, screen name, avatar, preferences, ban fields |
-| `ai_tracks` | AI-generated tracks (see Section 9) |
-| `ai_track_votes` | Up/down votes on AI tracks |
 | `artist_videos` | Cleaner artist ↔ video relationship (replaces `videosbyartist`) |
 
 ### 4.3 Security Fixes on Migration
@@ -142,8 +140,6 @@ The existing `yeh` database is retained as-is and extended. The following tables
 | `/register/` | Registration |
 | `/login/` | Login |
 | `/logout/` | Logout |
-| `/ai/` | AI-generated tracks section |
-| `/ai/<track-id>/` | Individual AI track page |
 | `/admin/` | Admin control panel |
 | `/sitemap.xml` | XML sitemap for SEO |
 
@@ -311,79 +307,6 @@ Implementation: Socket.IO gateway (or equivalent), reconnect-on-disconnect handl
 
 ---
 
-## 9. AI-Generated Tracks (New Feature)
-
-This section covers the new AI music feature — a first-class section of the site distinct from YouTube videos.
-
-### 9.1 Purpose
-
-AI music generation tools (e.g. Suno, Udio) can produce surprisingly good rock and metal tracks. This section of YehThatRocks curates **AI-generated rock and metal tracks** as a **separate, clearly labelled** experience. It provides a space to discover, rate, and discuss AI music within the rock/metal fan community — with full transparency that listeners know they are hearing AI output.
-
-### 9.2 The AI Tracks Section (`/ai/`)
-
-- **Landing page** shows a grid of AI-generated tracks  
-- Each track card shows: generated artwork / thumbnail, title, genre tag, generation tool used (e.g. "Suno"), upload date, play count, vote score  
-- Filter by genre  
-- Sort by: Newest, Most Played, Top Rated  
-
-### 9.3 Individual AI Track Page (`/ai/<id>/`)
-
-- Audio player (HTML5 `<audio>` element)  
-- Track artwork (full size)  
-- Track title, description/prompt used to generate it  
-- Genre tags  
-- **AI tool attribution** (Suno / Udio / Other — clearly labelled)  
-- Prompt text that was used to generate the track (transparency)  
-- Up/down vote buttons (logged-in users only)  
-- Comment section (real-time or standard threaded comments)  
-- Share URL + social share buttons  
-
-### 9.4 Database: `ai_tracks` Table
-
-```
-id             INT AUTO_INCREMENT PRIMARY KEY
-title          VARCHAR(255)
-description    TEXT                    -- human-written description
-prompt         TEXT                    -- prompt used in generation
-genre_id       INT (FK → genres.id)
-tool           VARCHAR(100)            -- 'Suno', 'Udio', 'Other'
-audio_url      VARCHAR(500)            -- hosted audio file URL or CDN path
-artwork_url    VARCHAR(500)
-play_count     INT DEFAULT 0
-uploaded_by    INT (FK → users.id)     -- NULL if admin-uploaded
-status         ENUM('pending','published','rejected') DEFAULT 'pending'
-created_at     DATETIME
-updated_at     DATETIME
-```
-
-### 9.5 Database: `ai_track_votes` Table
-
-```
-id             INT AUTO_INCREMENT PRIMARY KEY
-track_id       INT (FK → ai_tracks.id)
-user_id        INT (FK → users.id)
-vote           TINYINT                 -- 1 = upvote, -1 = downvote
-created_at     DATETIME
-UNIQUE KEY (track_id, user_id)
-```
-
-### 9.6 Submission Flow
-
-- Admin curates the initial library of AI tracks via the admin panel  
-- **Phase 2**: Allow registered users to submit AI-generated tracks for review  
-- All submissions go through admin approval before appearing publicly  
-- Audio files stored on the server or a CDN (not YouTube)  
-- Maximum file size: 20MB per track; accepted formats: MP3, WAV, OGG
-
-### 9.7 Player Integration
-
-- AI tracks use a separate **HTML5 audio player** (not the YouTube IFrame player)  
-- The site-wide player area adapts: when viewing an AI track, it shows the HTML5 player + artwork; when on a YouTube video it shows the YouTube embed  
-- The two modes (YouTube / AI) are clearly distinct visually  
-- Autoplay, next track, and favourites all work for AI tracks too
-
----
-
 ## 10. Admin Panel (`/admin/`)
 
 Accessible only to admin users (separate session flag).
@@ -392,7 +315,6 @@ Accessible only to admin users (separate session flag).
 - **Dashboard**: site stats (total users, videos, plays today, active chat users)  
 - **User management**: view all users, ban/unban, force password reset, delete account  
 - **Video management**: view most-played, remove flagged videos from the catalogue  
-- **AI track management**: upload new AI tracks, approve submissions, edit metadata, publish/reject/delete  
 - **Chat moderation**: view recent messages, delete messages, ban users from chat  
 - **Cache management**: clear search/related/category caches  
 - **Genre management**: add/edit/delete genres  
@@ -406,7 +328,7 @@ Accessible only to admin users (separate session flag).
 - Clean semantic HTML with proper `<h1>`, `<h2>` structure  
 - `<title>` tags and `<meta description>` populated per page  
 - Open Graph + Twitter Card meta tags on all shareable pages  
-- XML sitemaps: one per entity type (artists, genres, videos, ai_tracks)  
+- XML sitemaps: one per entity type (artists, genres, videos)  
 - `robots.txt` correctly configured  
 - Canonical URLs to avoid duplicate content  
 - The 139,583 artist records are a significant long-tail SEO asset — each artist page should be indexable
@@ -556,7 +478,7 @@ This section exists to ensure the rebuilt product is recognisably similar to the
 ### 18.2 Legacy-Compatible UX Contract
 
 - Maintain legacy deep-link behavior for videos via `?v=<youtubeId>` on web routes  
-- Existing key routes must remain recognisable (`/search`, `/categories`, `/top100`, `/favourites`, `/account`, `/ai`)  
+- Existing key routes must remain recognisable (`/search`, `/categories`, `/top100`, `/favourites`, `/account`)  
 - Video changes should not require full page reloads  
 - "Add to favourites" and "Share to global chat" must remain one-click primary actions near the player  
 - Keep the dual-chat concept visible without burying it in secondary navigation
