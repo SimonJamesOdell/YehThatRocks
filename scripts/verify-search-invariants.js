@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 
 const path = require("node:path");
-const fs = require("node:fs");
-const { readFileStrict, assertContains, assertNotContains } = require("./invariants/helpers");
+const {
+  readFileStrict,
+  collectCssFiles,
+  assertContains,
+  assertNotContains,
+  finishInvariantCheck,
+} = require("./invariants/helpers");
 
 const ROOT = process.cwd();
 
@@ -23,27 +28,6 @@ const files = {
   adminVideoDeleteButton: path.join(ROOT, "apps/web/components/admin-video-delete-button.tsx"),
   appRoot: path.join(ROOT, "apps/web/app"),
 };
-
-function collectCssFiles(dirPath, acc = []) {
-  if (!fs.existsSync(dirPath)) {
-    return acc;
-  }
-
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      collectCssFiles(fullPath, acc);
-      continue;
-    }
-
-    if (entry.isFile() && entry.name.endsWith(".css")) {
-      acc.push(fullPath);
-    }
-  }
-
-  return acc;
-}
 
 function main() {
   const failures = [];
@@ -224,15 +208,11 @@ function main() {
   assertContains(globalCssSource, "right: 40px;", "Admin edit button is positioned to the left of the block button", failures);
   assertContains(globalCssSource, ".searchResultAdminDeleteBtn", "CSS includes admin delete button styling", failures);
 
-  if (failures.length > 0) {
-    console.error("Search invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Search invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Search invariant check failed.",
+    successMessage: "Search invariant check passed.",
+  });
 }
 
 main();

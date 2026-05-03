@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const path = require("node:path");
-const { readFileStrict, assertContains, assertNotContains } = require("./invariants/helpers");
+const { readFileStrict, assertContains, assertNotContains, finishInvariantCheck } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
 
@@ -58,15 +58,11 @@ function main() {
   assertContains(categoryVideosInfiniteSource, "failureMessage: \"The system cannot serve this request right now. Please try again later.\"", "Category infinite loader uses explicit hard-fail notification for API failures", failures);
   assertContains(categoryVideosInfiniteSource, "setLoadError(\"The system cannot serve this request right now. Please try again later.\");", "Category infinite loader preserves explicit retry-later message for caught request failures", failures);
 
-  if (failures.length > 0) {
-    console.error("Thumbnail pre-flight invariant check failed.");
-    for (const failure of failures) {
-      console.error(` - ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Thumbnail pre-flight invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Thumbnail pre-flight invariant check failed.",
+    successMessage: "Thumbnail pre-flight invariant check passed.",
+  });
 }
 
 main();

@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
 const path = require("node:path");
+const {
+  readFileStrict,
+  assertContains,
+  assertNotContains,
+  finishInvariantCheck,
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 
@@ -29,57 +34,37 @@ const files = {
   videoListUtils: path.join(ROOT, "apps/web/lib/video-list-utils.ts"),
 };
 
-function read(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
-  }
-
-  return fs.readFileSync(filePath, "utf8");
-}
-
-function assertContains(source, needle, description, failures) {
-  if (!source.includes(needle)) {
-    failures.push(`${description} (missing: ${needle})`);
-  }
-}
-
-function assertNotContains(source, needle, description, failures) {
-  if (source.includes(needle)) {
-    failures.push(`${description} (unexpected: ${needle})`);
-  }
-}
-
 function main() {
   const failures = [];
 
-  const prismaSchemaSource = read(files.prismaSchema);
-  const migrationSource = read(files.migration);
-  const apiRouteSource = read(files.apiRoute);
-  const hiddenVideoClientSource = read(files.hiddenVideoClient);
-  const hiddenDataModuleSource = read(files.hiddenDataModule);
-  const favouritesDataModuleSource = read(files.favouritesDataModule);
-  const historyDataModuleSource = read(files.historyDataModule);
-  const catalogDataSource = read(files.catalogData);
-  const apiSchemasSource = read(files.apiSchemas);
-  const shellLayoutSource = read(files.shellLayout);
+  const prismaSchemaSource = readFileStrict(files.prismaSchema, ROOT);
+  const migrationSource = readFileStrict(files.migration, ROOT);
+  const apiRouteSource = readFileStrict(files.apiRoute, ROOT);
+  const hiddenVideoClientSource = readFileStrict(files.hiddenVideoClient, ROOT);
+  const hiddenDataModuleSource = readFileStrict(files.hiddenDataModule, ROOT);
+  const favouritesDataModuleSource = readFileStrict(files.favouritesDataModule, ROOT);
+  const historyDataModuleSource = readFileStrict(files.historyDataModule, ROOT);
+  const catalogDataSource = readFileStrict(files.catalogData, ROOT);
+  const apiSchemasSource = readFileStrict(files.apiSchemas, ROOT);
+  const shellLayoutSource = readFileStrict(files.shellLayout, ROOT);
   const shellDynamicSource = [
-    read(files.shellDynamic),
-    read(path.join(ROOT, 'apps/web/components/use-chat-state.ts')),
-    read(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts')),
-    read(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts')),
-    read(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts')),
-    read(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts')),
+    readFileStrict(files.shellDynamic, ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
   ].join('\n');
-  const playerExperienceSource = read(files.playerExperience);
-  const newPageSource = read(files.newPage);
-  const newLoaderSource = read(files.newLoader);
-  const newDataLoaderHookSource = read(files.newDataLoaderHook);
-  const top100PageSource = read(files.top100Page);
-  const top100LoaderSource = read(files.top100Loader);
-  const categoryPageSource = read(files.categoryPage);
-  const categoryLoaderSource = read(files.categoryLoader);
-  const artistPageSource = read(files.artistPage);
-  const videoListUtilsSource = read(files.videoListUtils);
+  const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
+  const newPageSource = readFileStrict(files.newPage, ROOT);
+  const newLoaderSource = readFileStrict(files.newLoader, ROOT);
+  const newDataLoaderHookSource = readFileStrict(files.newDataLoaderHook, ROOT);
+  const top100PageSource = readFileStrict(files.top100Page, ROOT);
+  const top100LoaderSource = readFileStrict(files.top100Loader, ROOT);
+  const categoryPageSource = readFileStrict(files.categoryPage, ROOT);
+  const categoryLoaderSource = readFileStrict(files.categoryLoader, ROOT);
+  const artistPageSource = readFileStrict(files.artistPage, ROOT);
+  const videoListUtilsSource = readFileStrict(files.videoListUtils, ROOT);
 
   // DB + Prisma invariants.
   assertContains(prismaSchemaSource, "model HiddenVideo", "Prisma schema defines HiddenVideo model", failures);
@@ -160,15 +145,11 @@ function main() {
   assertContains(shellLayoutSource, 'export const dynamic = "force-dynamic"', "Shell layout opts out of static generation via force-dynamic", failures);
   assertNotContains(categoryPageSource, "export const revalidate", "Category detail page must not carry a dead revalidate directive (force-dynamic parent makes it a no-op)", failures);
 
-  if (failures.length > 0) {
-    console.error("Hidden videos invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Hidden videos invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Hidden videos invariant check failed.",
+    successMessage: "Hidden videos invariant check passed.",
+  });
 }
 
 main();

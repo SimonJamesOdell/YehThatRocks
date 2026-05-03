@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
 const path = require("node:path");
+const {
+  readFileStrict,
+  assertContains,
+  finishInvariantCheck,
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 
@@ -11,25 +15,11 @@ const files = {
   metadataUtils: path.join(ROOT, "apps/web/lib/catalog-metadata-utils.ts"),
 };
 
-function read(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
-  }
-
-  return fs.readFileSync(filePath, "utf8");
-}
-
-function assertContains(source, needle, description, failures) {
-  if (!source.includes(needle)) {
-    failures.push(`${description} (missing: ${needle})`);
-  }
-}
-
 function main() {
   const failures = [];
-  const catalogDataSource = read(files.catalogData);
-  const catalogDataArtistsSource = read(files.catalogDataArtists);
-  const metadataUtilsSource = read(files.metadataUtils);
+  const catalogDataSource = readFileStrict(files.catalogData, ROOT);
+  const catalogDataArtistsSource = readFileStrict(files.catalogDataArtists, ROOT);
+  const metadataUtilsSource = readFileStrict(files.metadataUtils, ROOT);
   const classificationSource = `${catalogDataSource}\n${metadataUtilsSource}`;
 
   // Strict related-cascade admission invariants.
@@ -56,15 +46,11 @@ function main() {
   // Prompt intent invariant.
   assertContains(catalogDataSource, "YehThatRocks is a rock/metal catalog.", "Groq prompt encodes rock/metal-only extraction intent", failures);
 
-  if (failures.length > 0) {
-    console.error("Classification invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Classification invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Classification invariant check failed.",
+    successMessage: "Classification invariant check passed.",
+  });
 }
 
 main();

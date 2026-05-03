@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
 const path = require("node:path");
+const {
+  readFileStrict,
+  collectCssFiles,
+  assertContains,
+  assertNotContains,
+  finishInvariantCheck,
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 
@@ -14,56 +20,16 @@ const files = {
   appRoot: path.join(ROOT, "apps/web/app"),
 };
 
-function read(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
-  }
-  return fs.readFileSync(filePath, "utf8");
-}
-
-function collectCssFiles(dirPath, acc = []) {
-  if (!fs.existsSync(dirPath)) {
-    return acc;
-  }
-
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      collectCssFiles(fullPath, acc);
-      continue;
-    }
-
-    if (entry.isFile() && entry.name.endsWith(".css")) {
-      acc.push(fullPath);
-    }
-  }
-
-  return acc;
-}
-
-function assertContains(source, needle, description, failures) {
-  if (!source.includes(needle)) {
-    failures.push(`${description} (missing: ${needle})`);
-  }
-}
-
-function assertNotContains(source, needle, description, failures) {
-  if (source.includes(needle)) {
-    failures.push(`${description} (should NOT contain: ${needle})`);
-  }
-}
-
 function main() {
   const failures = [];
 
-  const historyPageSource = read(files.historyPage);
-  const historyListSource = read(files.historyList);
-  const watchHistoryRouteSource = read(files.watchHistoryRoute);
-  const apiSchemasSource = read(files.apiSchemas);
-  const catalogDataSource = read(files.catalogData);
+  const historyPageSource = readFileStrict(files.historyPage, ROOT);
+  const historyListSource = readFileStrict(files.historyList, ROOT);
+  const watchHistoryRouteSource = readFileStrict(files.watchHistoryRoute, ROOT);
+  const apiSchemasSource = readFileStrict(files.apiSchemas, ROOT);
+  const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const globalCssSource = collectCssFiles(files.appRoot)
-    .map((filePath) => read(filePath))
+    .map((filePath) => readFileStrict(filePath, ROOT))
     .join("\n");
 
   // --- History page: server-side auth and data loading ---
@@ -145,15 +111,11 @@ function main() {
   assertContains(globalCssSource, ".historyCardAction", "globals.css defines history card playlist action anchor", failures);
   assertContains(globalCssSource, ".historyCardPlaylistAddButton", "globals.css defines history playlist add button style", failures);
 
-  if (failures.length > 0) {
-    console.error("History UI invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("History UI invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "History UI invariant check failed.",
+    successMessage: "History UI invariant check passed.",
+  });
 }
 
 main();

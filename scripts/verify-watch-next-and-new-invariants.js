@@ -8,8 +8,13 @@
 // Seen-toggle API/data → verify-new-videos-invariants.js
 
 const path = require("node:path");
-const fs = require("node:fs");
-const { readFileStrict, assertContains, assertNotContains } = require("./invariants/helpers");
+const {
+  readFileStrict,
+  collectCssFiles,
+  assertContains,
+  assertNotContains,
+  finishInvariantCheck,
+} = require("./invariants/helpers");
 const { applyQueueResolutionRulePack } = require("./invariants/rule-packs/queue-resolution-pack");
 
 const ROOT = process.cwd();
@@ -30,27 +35,6 @@ const files = {
   playerEvents: path.join(ROOT, "apps/web/lib/player-events.ts"),
   appRoot: path.join(ROOT, "apps/web/app"),
 };
-
-function collectCssFiles(dirPath, acc = []) {
-  if (!fs.existsSync(dirPath)) {
-    return acc;
-  }
-
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      collectCssFiles(fullPath, acc);
-      continue;
-    }
-
-    if (entry.isFile() && entry.name.endsWith(".css")) {
-      acc.push(fullPath);
-    }
-  }
-
-  return acc;
-}
 
 function main() {
   const failures = [];
@@ -216,15 +200,11 @@ function main() {
   assertContains(cssSource, "-webkit-line-clamp: 2;", "Watch Next card title clamped to 2 lines", failures);
   assertContains(cssSource, ".relatedCardSlot .relatedCard h3", "Watch Next card h3 has its own CSS rule", failures);
 
-  if (failures.length > 0) {
-    console.error("Watch Next + New invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Watch Next + New invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Watch Next + New invariant check failed.",
+    successMessage: "Watch Next + New invariant check passed.",
+  });
 }
 
 main();

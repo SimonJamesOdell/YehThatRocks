@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
 const path = require("node:path");
+const {
+  readFileStrict,
+  assertContains,
+  assertNotContains,
+  assertMatches,
+  finishInvariantCheck,
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 
@@ -20,46 +26,21 @@ const files = {
   artistWikiLink: path.join(ROOT, "apps/web/components/artist-wiki-link.tsx"),
 };
 
-function read(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
-  }
-  return fs.readFileSync(filePath, "utf8");
-}
-
-function assertContains(source, needle, description, failures) {
-  if (!source.includes(needle)) {
-    failures.push(`${description} (missing: ${needle})`);
-  }
-}
-
-function assertNotContains(source, needle, description, failures) {
-  if (source.includes(needle)) {
-    failures.push(`${description} (unexpected: ${needle})`);
-  }
-}
-
-function assertMatches(source, pattern, description, failures) {
-  if (!pattern.test(source)) {
-    failures.push(`${description} (pattern: ${pattern})`);
-  }
-}
-
 function main() {
   const failures = [];
 
-  const navSource = read(files.nav);
-  const resultsSource = read(files.results);
-  const providerSource = read(files.provider);
-  const eventsSource = read(files.events);
-  const catalogDataSource = read(files.catalogData);
-  const catalogDataArtistsSource = read(files.catalogDataArtists);
-  const schemaSource = read(files.schema);
-  const performanceIndexesSource = read(files.performanceIndexes);
-  const artistPageSource = read(files.artistPage);
-  const artistWikiPageSource = read(files.artistWikiPage);
-  const artistRoutingSource = read(files.artistRouting);
-  const artistWikiLinkSource = read(files.artistWikiLink);
+  const navSource = readFileStrict(files.nav, ROOT);
+  const resultsSource = readFileStrict(files.results, ROOT);
+  const providerSource = readFileStrict(files.provider, ROOT);
+  const eventsSource = readFileStrict(files.events, ROOT);
+  const catalogDataSource = readFileStrict(files.catalogData, ROOT);
+  const catalogDataArtistsSource = readFileStrict(files.catalogDataArtists, ROOT);
+  const schemaSource = readFileStrict(files.schema, ROOT);
+  const performanceIndexesSource = readFileStrict(files.performanceIndexes, ROOT);
+  const artistPageSource = readFileStrict(files.artistPage, ROOT);
+  const artistWikiPageSource = readFileStrict(files.artistWikiPage, ROOT);
+  const artistRoutingSource = readFileStrict(files.artistRouting, ROOT);
+  const artistWikiLinkSource = readFileStrict(files.artistWikiLink, ROOT);
 
   // Shared artist letter utilities and context provider exist.
   assertContains(eventsSource, "updateArtistsLetterInUrl", "Artist letter URL update helper exists", failures);
@@ -130,15 +111,11 @@ function main() {
   assertContains(artistWikiLinkSource, 'const targetHref = withVideoContext(href, videoId, true);', "Artist wiki link preserves current video context", failures);
   assertContains(artistWikiLinkSource, 'if (asButton) {', "Artist wiki link supports button rendering for footer controls", failures);
 
-  if (failures.length > 0) {
-    console.error("Artists UI invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Artists UI invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Artists UI invariant check failed.",
+    successMessage: "Artists UI invariant check passed.",
+  });
 }
 
 main();

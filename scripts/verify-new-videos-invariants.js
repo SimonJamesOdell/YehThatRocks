@@ -6,7 +6,7 @@
 // seen-toggle persistence (hook, API, data layer), data-model (schema) invariants.
 
 const path = require("node:path");
-const { readFileStrict, assertContains, assertNotContains } = require("./invariants/helpers");
+const { readFileStrict, assertContains, assertNotContains, finishInvariantCheck } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
 
@@ -195,15 +195,11 @@ function main() {
   assertContains(cssSource, ".trackCard.leaderboardCard.top100CardActive > .top100CardFlagButton {", "Active row flag button has position:absolute override for glow state", failures);
   assertContains(schemaSource, "@@map(\"rejected_videos\")", "Rejected video model maps to rejected_videos table", failures);
 
-  if (failures.length > 0) {
-    console.error("New videos invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("New videos invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "New videos invariant check failed.",
+    successMessage: "New videos invariant check passed.",
+  });
 }
 
 main();

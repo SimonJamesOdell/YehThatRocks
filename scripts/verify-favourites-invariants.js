@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 
-const fs = require("node:fs");
 const path = require("node:path");
+const {
+  readFileStrict,
+  collectCssFiles,
+  assertContains,
+  assertNotContains,
+  finishInvariantCheck,
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 
@@ -19,61 +25,21 @@ const files = {
   appRoot: path.join(ROOT, "apps/web/app"),
 };
 
-function read(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Missing file: ${path.relative(ROOT, filePath)}`);
-  }
-  return fs.readFileSync(filePath, "utf8");
-}
-
-function collectCssFiles(dirPath, acc = []) {
-  if (!fs.existsSync(dirPath)) {
-    return acc;
-  }
-
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      collectCssFiles(fullPath, acc);
-      continue;
-    }
-
-    if (entry.isFile() && entry.name.endsWith(".css")) {
-      acc.push(fullPath);
-    }
-  }
-
-  return acc;
-}
-
-function assertContains(source, needle, description, failures) {
-  if (!source.includes(needle)) {
-    failures.push(`${description} (missing: ${needle})`);
-  }
-}
-
-function assertNotContains(source, needle, description, failures) {
-  if (source.includes(needle)) {
-    failures.push(`${description} (unexpected: ${needle})`);
-  }
-}
-
 function main() {
   const failures = [];
 
-  const favouritesPageSource = read(files.favouritesPage);
-  const favouritesGridSource = read(files.favouritesGrid);
-  const favouritesManagerSource = read(files.favouritesManager);
-  const searchResultFavouriteButtonSource = read(files.searchResultFavouriteButton);
-  const playerExperienceSource = read(files.playerExperience);
-  const clientAuthFetchSource = read(files.clientAuthFetch);
-  const favouritesRouteSource = read(files.favouritesRoute);
-  const userProfilePageSource = read(files.userProfilePage);
-  const userProfilePanelSource = read(files.userProfilePanel);
-  const apiSchemasSource = read(files.apiSchemas);
+  const favouritesPageSource = readFileStrict(files.favouritesPage, ROOT);
+  const favouritesGridSource = readFileStrict(files.favouritesGrid, ROOT);
+  const favouritesManagerSource = readFileStrict(files.favouritesManager, ROOT);
+  const searchResultFavouriteButtonSource = readFileStrict(files.searchResultFavouriteButton, ROOT);
+  const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
+  const clientAuthFetchSource = readFileStrict(files.clientAuthFetch, ROOT);
+  const favouritesRouteSource = readFileStrict(files.favouritesRoute, ROOT);
+  const userProfilePageSource = readFileStrict(files.userProfilePage, ROOT);
+  const userProfilePanelSource = readFileStrict(files.userProfilePanel, ROOT);
+  const apiSchemasSource = readFileStrict(files.apiSchemas, ROOT);
   const globalCssSource = collectCssFiles(files.appRoot)
-    .map((filePath) => read(filePath))
+    .map((filePath) => readFileStrict(filePath, ROOT))
     .join("\n");
 
   // --- Favourites page: server-side auth and data loading ---
@@ -174,15 +140,11 @@ function main() {
   assertContains(globalCssSource, ".favouritesEmptyState", "globals.css defines .favouritesEmptyState style", failures);
   assertContains(globalCssSource, ".artistInlineLink", "globals.css defines inline artist wiki link styling", failures);
 
-  if (failures.length > 0) {
-    console.error("Favourites invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Favourites invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Favourites invariant check failed.",
+    successMessage: "Favourites invariant check passed.",
+  });
 }
 
 main();

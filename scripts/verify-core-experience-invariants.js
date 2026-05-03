@@ -13,6 +13,7 @@ const {
   assertContains,
   assertNotContains,
   assertFileDoesNotExist,
+  finishInvariantCheck,
 } = require("./invariants/helpers");
 const { applyQueueResolutionRulePack } = require("./invariants/rule-packs/queue-resolution-pack");
 
@@ -196,15 +197,11 @@ function main() {
   // Shell architecture invariants: the live shell must be shell-dynamic-core.tsx; the legacy app-shell.tsx must not exist.
   assertFileDoesNotExist(path.join(ROOT, "apps/web/components/app-shell.tsx"), "Legacy app-shell.tsx is not present (live shell is shell-dynamic-core.tsx)", failures, ROOT);
 
-  if (failures.length > 0) {
-    console.error("Core experience invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Core experience invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Core experience invariant check failed.",
+    successMessage: "Core experience invariant check passed.",
+  });
 }
 
 main();

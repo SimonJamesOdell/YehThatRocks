@@ -9,8 +9,10 @@ const path = require("node:path");
 const fs = require("node:fs");
 const {
   readFileStrict,
+  collectCssFiles,
   assertContains,
   assertNotContains,
+  finishInvariantCheck,
 } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
@@ -27,27 +29,6 @@ const files = {
 };
 
 files.appRoot = path.join(ROOT, "apps/web/app");
-
-function collectCssFiles(dirPath, acc = []) {
-  if (!fs.existsSync(dirPath)) {
-    return acc;
-  }
-
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      collectCssFiles(fullPath, acc);
-      continue;
-    }
-
-    if (entry.isFile() && entry.name.endsWith(".css")) {
-      acc.push(fullPath);
-    }
-  }
-
-  return acc;
-}
 
 function main() {
   const failures = [];
@@ -282,15 +263,11 @@ function main() {
   assertContains(cssSource, ".guestChatComposer", "CSS defines .guestChatComposer for unauthenticated chat footer", failures);
   assertContains(cssSource, ".guestChatSignInBtn", "CSS defines .guestChatSignInBtn CTA button style", failures);
 
-  if (failures.length > 0) {
-    console.error("Magazine invariant check FAILED.");
-    for (const failure of failures) {
-      console.error(`  - ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Magazine invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Magazine invariant check FAILED.",
+    successMessage: "Magazine invariant check passed.",
+  });
 }
 
 main();

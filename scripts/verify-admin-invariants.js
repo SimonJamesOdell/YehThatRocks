@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const path = require("node:path");
-const { readFileStrict, assertContains } = require("./invariants/helpers");
+const { readFileStrict, assertContains, finishInvariantCheck } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
 
@@ -135,15 +135,11 @@ function main() {
   assertContains(catalogDataIngestionSource, "unapprovedRows", "getVideoPlaybackDecision queries without approved filter for freshly-ingested videos", failures);
   assertContains(adminImportRouteSource, "forceApprove: true", "Admin import route explicitly force-approves imported videos so they appear in catalog immediately", failures);
 
-  if (failures.length > 0) {
-    console.error("Admin invariant check failed.");
-    for (const failure of failures) {
-      console.error(`- ${failure}`);
-    }
-    process.exit(1);
-  }
-
-  console.log("Admin invariant check passed.");
+  finishInvariantCheck({
+    failures,
+    failureHeader: "Admin invariant check failed.",
+    successMessage: "Admin invariant check passed.",
+  });
 }
 
 main();
