@@ -2810,7 +2810,7 @@ function ShellDynamicInner({
 
   // Always show all nav items; unauthenticated clicks on protected routes are
   // intercepted client-side to open the auth modal.
-  const visibleNavItems = navItems.filter((item) => item.href !== "/" && item.href !== "/ai");
+  const visibleNavItems = navItems.filter((item) => item.href !== "/");
 
   const protectedNavHrefs = new Set(["/favourites", "/playlists", "/history", "/account"]);
 

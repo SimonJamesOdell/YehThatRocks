@@ -24,7 +24,7 @@
 - Misleading name; no component — each file hand-writes `<div className="favouritesBlindBar">` + title + close button
 - Variants (breadcrumbs, icons) are ad-hoc per file
 
-**Some occurrences:** [favourites/page.tsx](apps/web/app/(shell)/favourites/page.tsx), [search/page.tsx](apps/web/app/(shell)/search/page.tsx), [login/page.tsx](apps/web/app/(shell)/login/page.tsx), [playlists/[id]/page.tsx](apps/web/app/(shell)/playlists/[id]/page.tsx), [ai/page.tsx](apps/web/app/(shell)/ai/page.tsx), [app-shell.tsx](apps/web/components/app-shell.tsx), [playlists-grid.tsx](apps/web/components/playlists-grid.tsx), [playlist-editor.tsx](apps/web/components/playlist-editor.tsx), + all loading/page pairs from #1
+**Some occurrences:** [favourites/page.tsx](apps/web/app/(shell)/favourites/page.tsx), [search/page.tsx](apps/web/app/(shell)/search/page.tsx), [login/page.tsx](apps/web/app/(shell)/login/page.tsx), [playlists/[id]/page.tsx](apps/web/app/(shell)/playlists/[id]/page.tsx), [app-shell.tsx](apps/web/components/app-shell.tsx), [playlists-grid.tsx](apps/web/components/playlists-grid.tsx), [playlist-editor.tsx](apps/web/components/playlist-editor.tsx), + all loading/page pairs from #1
 
 **Fix:** Extract `<OverlayHeader title icon breadcrumbs />`. Rename CSS class to `overlayHeaderBar`.
 
