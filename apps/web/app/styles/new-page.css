@@ -255,6 +255,27 @@
 .suggestNewModalHeader {
   display: grid;
   gap: 6px;
+  position: relative;
+}
+
+.suggestNewModalClose {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: none;
+  border: none;
+  color: rgba(255, 220, 210, 0.7);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.suggestNewModalClose:hover {
+  color: #fff;
+  background: rgba(255, 80, 50, 0.2);
 }
 
 .suggestNewModalHeader h3 {

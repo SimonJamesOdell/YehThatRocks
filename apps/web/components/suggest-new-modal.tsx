@@ -65,6 +65,7 @@ export function SuggestNewModal({
         <div className="suggestNewModalHeader">
           <h3>Suggest New</h3>
           <p className="suggestNewModalMeta">Paste a YouTube video or playlist. We will ingest and classify it.</p>
+          <button className="suggestNewModalClose" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
         <p className="suggestNewModalHints">
