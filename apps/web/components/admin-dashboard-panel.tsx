@@ -189,6 +189,7 @@ type PendingVideoRow = {
 type PendingVideoDraft = {
   title: string;
   parsedArtist: string | null;
+  parsedTrack: string | null;
 };
 type ArtistRow = {
   id: number;
@@ -1218,18 +1219,23 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     try {
       const draft = pendingVideoDrafts[row.id];
       const titleToApprove = (draft?.title ?? row.title).trim();
-      const parsedArtistToApprove = (draft?.parsedArtist ?? row.parsedArtist ?? "").trim() || null;
+      // Use draft value if a draft exists (even if artist was cleared to null/empty),
+      // only fall back to row value when the user has never touched this row.
+      const parsedArtistToApprove = (draft !== undefined ? (draft.parsedArtist ?? "") : (row.parsedArtist ?? "")).trim() || null;
+      const parsedTrackToApprove = (draft !== undefined ? (draft.parsedTrack ?? "") : (row.parsedTrack ?? "")).trim() || null;
 
       const payload: {
         videoId: string;
         action: "approve" | "remove";
         title?: string;
         parsedArtist?: string | null;
+        parsedTrack?: string | null;
       } = { videoId, action };
 
       if (action === "approve") {
         payload.title = titleToApprove;
         payload.parsedArtist = parsedArtistToApprove;
+        payload.parsedTrack = parsedTrackToApprove;
       }
 
       await postJson<{ ok: boolean }>("/api/admin/videos/pending", payload);
@@ -1960,7 +1966,11 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                     (() => {
                       const draft = pendingVideoDrafts[row.id];
                       const editableTitle = draft?.title ?? row.title;
-                      const editableArtist = draft?.parsedArtist ?? row.parsedArtist ?? "";
+                      // If a draft exists for this row (user has edited it), use the draft
+                      // value even if parsedArtist/parsedTrack is null (user cleared the field).
+                      // Only fall back to the server value when no draft exists yet.
+                      const editableArtist = draft !== undefined ? (draft.parsedArtist ?? "") : (row.parsedArtist ?? "");
+                      const editableTrack = draft !== undefined ? (draft.parsedTrack ?? "") : (row.parsedTrack ?? "");
 
                       return (
                     <div key={`pending-${row.id}`} className="authForm">
@@ -1976,6 +1986,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                               [row.id]: {
                                 title: nextTitle,
                                 parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
+                                parsedTrack: current[row.id]?.parsedTrack ?? row.parsedTrack,
                               },
                             }));
                           }}
@@ -1993,13 +2004,31 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                               [row.id]: {
                                 title: current[row.id]?.title ?? row.title,
                                 parsedArtist: nextArtist || null,
+                                parsedTrack: current[row.id]?.parsedTrack ?? row.parsedTrack,
                               },
                             }));
                           }}
                           placeholder="Artist"
                         />
                       </label>
-                      <p className="authMessage">Track: {row.parsedTrack ?? "-"}</p>
+                      <label>
+                        <span>Track (optional override)</span>
+                        <input
+                          value={editableTrack}
+                          onChange={(event) => {
+                            const nextTrack = event.target.value;
+                            setPendingVideoDrafts((current) => ({
+                              ...current,
+                              [row.id]: {
+                                title: current[row.id]?.title ?? row.title,
+                                parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
+                                parsedTrack: nextTrack || null,
+                              },
+                            }));
+                          }}
+                          placeholder="Track name"
+                        />
+                      </label>
                       <p className="authMessage">Channel: {row.channelTitle ?? "-"}</p>
                       <div
                         style={{

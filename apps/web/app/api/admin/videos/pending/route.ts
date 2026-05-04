@@ -14,6 +14,7 @@ const moderatePendingSchema = z.object({
   action: z.enum(["approve", "remove"]),
   title: z.string().trim().min(1).max(255).optional(),
   parsedArtist: z.string().trim().max(255).nullable().optional(),
+  parsedTrack: z.string().trim().max(255).nullable().optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -119,6 +120,7 @@ export async function POST(request: NextRequest) {
       updatedAt: Date;
       title?: string;
       parsedArtist?: string | null;
+      parsedTrack?: string | null;
     } = {
       approved: true,
       updatedAt: new Date(),
@@ -130,6 +132,10 @@ export async function POST(request: NextRequest) {
 
     if (parsed.data.parsedArtist !== undefined) {
       approveData.parsedArtist = parsed.data.parsedArtist;
+    }
+
+    if (parsed.data.parsedTrack !== undefined) {
+      approveData.parsedTrack = parsed.data.parsedTrack;
     }
 
     const approvedRows = await prisma.video.updateMany({
