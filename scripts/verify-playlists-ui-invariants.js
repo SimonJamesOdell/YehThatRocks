@@ -21,6 +21,7 @@ const files = {
   shell: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
   playlistRailHook: path.join(ROOT, "apps/web/components/use-playlist-rail.ts"),
   player: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
+  playlistSequenceHook: path.join(ROOT, "apps/web/components/use-playlist-sequence.ts"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
   playlistCss: path.join(ROOT, "apps/web/app/styles/playlist-ui.css"),
   trackCardsCss: path.join(ROOT, "apps/web/app/styles/track-cards.css"),
@@ -40,7 +41,10 @@ function main() {
     readFileStrict(files.shell, ROOT),
     playlistRailHookSource,
   ].join("\n");
-  const playerSource = readFileStrict(files.player, ROOT);
+  const playerSource = [
+    readFileStrict(files.player, ROOT),
+    readFileStrict(files.playlistSequenceHook, ROOT),
+  ].join("\n");
   const cssSource = [
     readFileStrict(files.css, ROOT),
     readFileStrict(files.playlistCss, ROOT),

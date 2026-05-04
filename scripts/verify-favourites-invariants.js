@@ -17,6 +17,7 @@ const files = {
   favouritesManager: path.join(ROOT, "apps/web/components/favourites-manager.tsx"),
   searchResultFavouriteButton: path.join(ROOT, "apps/web/components/search-result-favourite-button.tsx"),
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
+  useFavouriteState: path.join(ROOT, "apps/web/components/use-favourite-state.ts"),
   clientAuthFetch: path.join(ROOT, "apps/web/lib/client-auth-fetch.ts"),
   favouritesRoute: path.join(ROOT, "apps/web/app/api/favourites/route.ts"),
   userProfilePage: path.join(ROOT, "apps/web/app/(shell)/u/[screenName]/page.tsx"),
@@ -32,7 +33,10 @@ function main() {
   const favouritesGridSource = readFileStrict(files.favouritesGrid, ROOT);
   const favouritesManagerSource = readFileStrict(files.favouritesManager, ROOT);
   const searchResultFavouriteButtonSource = readFileStrict(files.searchResultFavouriteButton, ROOT);
-  const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
+  const playerExperienceSource = [
+    readFileStrict(files.playerExperience, ROOT),
+    readFileStrict(files.useFavouriteState, ROOT),
+  ].join("\n");
   const clientAuthFetchSource = readFileStrict(files.clientAuthFetch, ROOT);
   const favouritesRouteSource = readFileStrict(files.favouritesRoute, ROOT);
   const userProfilePageSource = readFileStrict(files.userProfilePage, ROOT);
