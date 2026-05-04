@@ -186,6 +186,10 @@ type PendingVideoRow = {
   createdAt: string | null;
   updatedAt: string | null;
 };
+type PendingVideoDraft = {
+  title: string;
+  parsedArtist: string | null;
+};
 type ArtistRow = {
   id: number;
   name: string;
@@ -308,6 +312,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [pendingVideos, setPendingVideos] = useState<PendingVideoRow[]>([]);
+  const [pendingVideoDrafts, setPendingVideoDrafts] = useState<Record<number, PendingVideoDraft>>({});
   const [pendingVideoTotal, setPendingVideoTotal] = useState(0);
   const [recentlyApprovedVideos, setRecentlyApprovedVideos] = useState<RecentlyApprovedVideoRow[]>([]);
   const [videoModerationPane, setVideoModerationPane] = useState<"pending" | "recent">("pending");
@@ -809,11 +814,24 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   }
 
   async function loadPendingVideos() {
-      const pendingPayload = await readJson<{ pendingVideos: PendingVideoRow[]; totalPending?: number }>(
+    const pendingPayload = await readJson<{ pendingVideos: PendingVideoRow[]; totalPending?: number }>(
       "/api/admin/videos/pending",
     );
     setPendingVideos(pendingPayload.pendingVideos);
-      setPendingVideoTotal(Number(pendingPayload.totalPending ?? pendingPayload.pendingVideos.length));
+    setPendingVideoTotal(Number(pendingPayload.totalPending ?? pendingPayload.pendingVideos.length));
+    setPendingVideoDrafts((current) => {
+      const liveIds = new Set(pendingPayload.pendingVideos.map((item) => item.id));
+      const next: Record<number, PendingVideoDraft> = {};
+
+      for (const [key, draft] of Object.entries(current)) {
+        const id = Number(key);
+        if (liveIds.has(id)) {
+          next[id] = draft;
+        }
+      }
+
+      return next;
+    });
   }
 
   async function loadRecentlyApprovedVideos() {
@@ -1198,6 +1216,10 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     setModeratingVideoId(videoId);
 
     try {
+      const draft = pendingVideoDrafts[row.id];
+      const titleToApprove = (draft?.title ?? row.title).trim();
+      const parsedArtistToApprove = (draft?.parsedArtist ?? row.parsedArtist ?? "").trim() || null;
+
       const payload: {
         videoId: string;
         action: "approve" | "remove";
@@ -1206,11 +1228,20 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       } = { videoId, action };
 
       if (action === "approve") {
-        payload.title = row.title.trim();
-        payload.parsedArtist = (row.parsedArtist ?? "").trim() || null;
+        payload.title = titleToApprove;
+        payload.parsedArtist = parsedArtistToApprove;
       }
 
       await postJson<{ ok: boolean }>("/api/admin/videos/pending", payload);
+      setPendingVideoDrafts((current) => {
+        if (!(row.id in current)) {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next[row.id];
+        return next;
+      });
       setSaveMessage(action === "approve" ? `Approved ${videoId}.` : `Removed ${videoId}.`);
       await Promise.all([loadPendingVideos(), loadVideos()]);
     } catch (moderationError) {
@@ -1925,15 +1956,28 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                 <>
                   {pendingVideos.length === 0 ? <p className="authMessage">No pending videos.</p> : null}
                   {pendingVideos.slice(0, 50).map((row) => (
+                    // Keep user edits stable while the pending queue auto-refreshes.
+                    (() => {
+                      const draft = pendingVideoDrafts[row.id];
+                      const editableTitle = draft?.title ?? row.title;
+                      const editableArtist = draft?.parsedArtist ?? row.parsedArtist ?? "";
+
+                      return (
                     <div key={`pending-${row.id}`} className="authForm">
                       <p className="authMessage">{row.videoId}</p>
                       <label>
                         <span>Title</span>
                         <input
-                          value={row.title}
+                          value={editableTitle}
                           onChange={(event) => {
-                            const next = pendingVideos.map((item) => (item.id === row.id ? { ...item, title: event.target.value } : item));
-                            setPendingVideos(next);
+                            const nextTitle = event.target.value;
+                            setPendingVideoDrafts((current) => ({
+                              ...current,
+                              [row.id]: {
+                                title: nextTitle,
+                                parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
+                              },
+                            }));
                           }}
                           placeholder="Video title"
                         />
@@ -1941,10 +1985,16 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                       <label>
                         <span>Artist (optional override)</span>
                         <input
-                          value={row.parsedArtist ?? ""}
+                          value={editableArtist}
                           onChange={(event) => {
-                            const next = pendingVideos.map((item) => (item.id === row.id ? { ...item, parsedArtist: event.target.value || null } : item));
-                            setPendingVideos(next);
+                            const nextArtist = event.target.value;
+                            setPendingVideoDrafts((current) => ({
+                              ...current,
+                              [row.id]: {
+                                title: current[row.id]?.title ?? row.title,
+                                parsedArtist: nextArtist || null,
+                              },
+                            }));
                           }}
                           placeholder="Artist"
                         />
@@ -1977,7 +2027,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                         <button
                           type="button"
                           onClick={() => void moderatePendingVideo(row, "approve")}
-                          disabled={moderatingVideoId === row.videoId || row.title.trim().length === 0}
+                          disabled={moderatingVideoId === row.videoId || editableTitle.trim().length === 0}
                         >
                           Approve
                         </button>
@@ -1990,6 +2040,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                         </button>
                       </div>
                     </div>
+                      );
+                    })()
                   ))}
                 </>
               ) : (
