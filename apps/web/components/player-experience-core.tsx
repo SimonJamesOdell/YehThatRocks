@@ -2939,8 +2939,17 @@ export function PlayerExperience({
             const isDefinitiveBrokenUpstreamCode = event.data === 100;
 
             if (isRestrictedEmbedCode) {
-              const reportResult = await reportUnavailableFromPlayer(reason);
-              applyVerifiedPlaybackFailurePresentation("on-error-restricted", reason, reportResult);
+              // resolveVerifiedPlaybackFailurePresentation always returns direct-iframe for
+              // codes 101/150 regardless of the server report result — so show the notice
+              // immediately and report in the background instead of awaiting the server's
+              // sequential oEmbed → embed → watch-page verification (up to ~6 s).
+              void reportUnavailableFromPlayer(reason);
+              applyVerifiedPlaybackFailurePresentation("on-error-restricted", reason, {
+                shouldSkip: false,
+                verificationReason: null,
+                classification: null,
+                skipped: false,
+              });
               return;
             }
 

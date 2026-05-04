@@ -44,6 +44,7 @@ import {
 } from "@/lib/catalog-data-db";
 import {
   getArtistCatalogEvidence,
+  maybeInsertNewArtist,
   scheduleArtistProjectionRefreshForName,
 } from "@/lib/catalog-data-artists";
 import { markAvailableVideoMaxIdDirty, recordAvailableVideoIdCandidate } from "@/lib/available-video-max-id";
@@ -167,6 +168,13 @@ export function clearIngestionCaches() {
     autoRelatedBackfillTimer = null;
     autoRelatedBackfillScheduledFor = 0;
   }
+}
+
+export function clearIngestionCachesForVideo(videoId: string) {
+  const normalizedId = normalizeYouTubeVideoId(videoId);
+  if (!normalizedId) return;
+  rejectedVideoCache.delete(normalizedId);
+  playbackDecisionCache.delete(normalizedId);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -702,6 +710,14 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
 
     if (correctedArtist) {
       scheduleArtistProjectionRefreshForName(correctedArtist);
+
+      // If this is a brand-new artist (not yet in the 140K artists table) and we
+      // are confident about the classification, insert it so that future videos
+      // by the same artist benefit from the catalog-match confidence boost.
+      if (!artistEvidence.known && adjustedConfidence >= PLAYBACK_MIN_CONFIDENCE) {
+        const genreHint = mbData?.isRockOrMetal ? "Rock / Metal" : null;
+        void maybeInsertNewArtist(correctedArtist, genreHint).catch(() => undefined);
+      }
     }
   } catch (error) {
     debugCatalog("maybePersistRuntimeMetadata:error", {
@@ -1035,7 +1051,7 @@ function getRelatedFanoutForDepth(depth: number) {
 async function hydrateAndPersistVideo(
   videoId: string,
   providedVideo?: PersistableVideoRecord,
-  options?: { forceAvailabilityRefresh?: boolean; skipRelatedDiscovery?: boolean },
+  options?: { forceAvailabilityRefresh?: boolean; skipRelatedDiscovery?: boolean; skipEmbedCheck?: boolean },
 ): Promise<PersistableVideoRecord | null> {
   if (!hasDatabaseUrl()) return providedVideo ?? (await fetchOEmbedVideo(videoId));
 
@@ -1045,7 +1061,9 @@ async function hydrateAndPersistVideo(
     return null;
   }
 
-  if (await isRejectedVideo(normalizedVideoId)) {
+  // When skipEmbedCheck is set (admin force-approve), bypass the rejection cache so that
+  // a previously-rejected video can be re-ingested without the embed check.
+  if (!options?.skipEmbedCheck && await isRejectedVideo(normalizedVideoId)) {
     debugCatalog("hydrateAndPersistVideo:rejected-skip", { videoId: normalizedVideoId });
     return null;
   }
@@ -1061,6 +1079,7 @@ async function hydrateAndPersistVideo(
     videoId: normalizedVideoId,
     hasExistingVideo: Boolean(existingVideo),
     forceAvailabilityRefresh: Boolean(options?.forceAvailabilityRefresh),
+    skipEmbedCheck: Boolean(options?.skipEmbedCheck),
   });
 
   const video =
@@ -1072,7 +1091,13 @@ async function hydrateAndPersistVideo(
     return null;
   }
 
-  const availability = await checkEmbedPlayability(normalizedVideoId);
+  // When an admin explicitly force-approves, skip the server-side embed check.
+  // The VPS IP may be blocked/bot-challenged by YouTube while the video is genuinely
+  // embeddable. oEmbed success (above) confirms the video exists; the admin confirms
+  // it is embeddable. Running the embed check from the VPS would just re-reject it.
+  const availability: VideoAvailability = options?.skipEmbedCheck
+    ? { status: "available", reason: "admin-force-approved" }
+    : await checkEmbedPlayability(normalizedVideoId);
   debugCatalog("hydrateAndPersistVideo:availability", {
     videoId: normalizedVideoId,
     status: availability.status,
@@ -1302,6 +1327,10 @@ export async function importVideoFromDirectSource(source: string, options?: { di
   await hydrateAndPersistVideo(normalizedVideoId, undefined, {
     forceAvailabilityRefresh: true,
     skipRelatedDiscovery: true,
+    // When forceApprove is set the admin has confirmed the video is embeddable.
+    // Skip the server-side embed check to avoid VPS IP-based bot-detection rejecting
+    // a video that plays fine in a browser.
+    skipEmbedCheck: Boolean(options?.forceApprove),
   });
 
   // Only auto-approve when the caller explicitly requests it (e.g. admin import).
@@ -1674,4 +1703,188 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
 
   playbackDecisionCache.set(normalizedVideoId, { expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS, decision });
   return decision;
+}
+
+// ── Video replacement ─────────────────────────────────────────────────────────
+
+/**
+ * Searches YouTube for an alternative upload of the same artist + track.
+ * Returns the first embeddable, non-rejected videoId that isn't already in the catalog,
+ * or null if none found or the YouTube API key is absent.
+ */
+async function searchYouTubeForReplacementVideoId(
+  artist: string,
+  track: string,
+  excludeVideoId: string,
+): Promise<string | null> {
+  if (!YOUTUBE_DATA_API_KEY) return null;
+
+  const query = `${artist} ${track} official`.trim().slice(0, 180);
+  const url = new URL("https://www.googleapis.com/youtube/v3/search");
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("maxResults", "5");
+  url.searchParams.set("type", "video");
+  url.searchParams.set("q", query);
+  url.searchParams.set("key", YOUTUBE_DATA_API_KEY);
+
+  let response: Response;
+  try {
+    response = await fetch(url, { headers: { "User-Agent": "YehThatRocks/1.0" } });
+  } catch (error) {
+    debugCatalog("searchYouTubeForReplacementVideoId:fetch-error", {
+      artist,
+      track,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+
+  void recordExternalApiUsage({
+    provider: "youtube",
+    endpoint: "search.list.query",
+    units: 100,
+    success: response.ok,
+    statusCode: response.status,
+  });
+  recordSpentRelatedDiscoveryUnits(100);
+
+  if (!response.ok) {
+    debugCatalog("searchYouTubeForReplacementVideoId:response-not-ok", { artist, track, status: response.status });
+    return null;
+  }
+
+  const data = (await response.json()) as YouTubeRelatedSearchResponse;
+  const candidates = (data.items ?? [])
+    .map((item) => normalizeYouTubeVideoId(item.id?.videoId))
+    .filter((id): id is string => Boolean(id) && id !== excludeVideoId);
+
+  for (const candidateId of candidates) {
+    if (await isRejectedVideo(candidateId)) continue;
+
+    // Skip if this videoId is already a different song in the catalog.
+    const existing = await prisma.video.findFirst({ where: { videoId: candidateId }, select: { id: true } });
+    if (existing) continue;
+
+    const availability = await checkEmbedPlayability(candidateId);
+    if (availability.status === "available") {
+      debugCatalog("searchYouTubeForReplacementVideoId:found", { artist, track, excludeVideoId, candidateId });
+      return candidateId;
+    }
+  }
+
+  debugCatalog("searchYouTubeForReplacementVideoId:none-found", { artist, track, excludeVideoId });
+  return null;
+}
+
+/**
+ * Replaces all database references from `oldVideoId` to `newVideoId` in-place.
+ *
+ * The `videos` row's integer primary key stays the same, so FK-based associations
+ * (playlist items, site_videos, videosbyartist) are preserved automatically.
+ * Tables that store the YouTube videoId string are updated individually.
+ *
+ * Returns { replaced: true } on success, or { replaced: false, reason } when the
+ * new ID already exists in the catalog or the old ID has no DB row.
+ */
+export async function replaceVideoIdInDatabase(
+  oldVideoId: string,
+  newVideoId: string,
+): Promise<{ replaced: boolean; reason: string }> {
+  if (!hasDatabaseUrl()) return { replaced: false, reason: "no-db" };
+
+  const normalizedOld = normalizeYouTubeVideoId(oldVideoId);
+  const normalizedNew = normalizeYouTubeVideoId(newVideoId);
+  if (!normalizedOld || !normalizedNew || normalizedOld === normalizedNew) {
+    return { replaced: false, reason: "invalid-ids" };
+  }
+
+  // Abort if the replacement ID is already a different record in the catalog.
+  const conflictRow = await prisma.video.findFirst({ where: { videoId: normalizedNew }, select: { id: true } });
+  if (conflictRow) return { replaced: false, reason: "new-id-already-exists" };
+
+  const existingRow = await prisma.video.findFirst({ where: { videoId: normalizedOld }, select: { id: true } });
+  if (!existingRow) return { replaced: false, reason: "old-id-not-found" };
+
+  const now = new Date();
+
+  // Core swap — integer id unchanged, so FK-linked tables (playlistitems, site_videos,
+  // videosbyartist) automatically point to the new YouTube video.
+  await prisma.$executeRaw`
+    UPDATE videos SET videoId = ${normalizedNew}, updated_at = ${now} WHERE videoId = ${normalizedOld}
+  `;
+
+  // Restore availability in site_videos (still references the integer id).
+  await prisma.$executeRaw`
+    UPDATE site_videos SET status = 'available' WHERE video_id = ${existingRow.id}
+  `.catch(() => undefined);
+
+  // Remove old rejection record so the video is no longer blocked.
+  await prisma.$executeRaw`
+    DELETE FROM rejected_videos WHERE video_id = ${normalizedOld}
+  `.catch(() => undefined);
+
+  // Best-effort updates to all string-keyed tables.
+  await prisma.$executeRaw`UPDATE related SET videoId = ${normalizedNew} WHERE videoId = ${normalizedOld}`.catch(() => undefined);
+  await prisma.$executeRaw`UPDATE related SET related = ${normalizedNew} WHERE related = ${normalizedOld}`.catch(() => undefined);
+  await prisma.$executeRaw`UPDATE genre_cards SET thumbnail_video_id = ${normalizedNew} WHERE thumbnail_video_id = ${normalizedOld}`.catch(() => undefined);
+  await prisma.$executeRaw`UPDATE artist_stats SET thumbnail_video_id = ${normalizedNew} WHERE thumbnail_video_id = ${normalizedOld}`.catch(() => undefined);
+  await prisma.$executeRaw`UPDATE favourites SET videoId = ${normalizedNew} WHERE videoId = ${normalizedOld}`.catch(() => undefined);
+  await prisma.$executeRaw`UPDATE watch_history SET video_id = ${normalizedNew} WHERE video_id = ${normalizedOld}`.catch(() => undefined);
+  await prisma.$executeRaw`UPDATE hidden_videos SET video_id = ${normalizedNew} WHERE video_id = ${normalizedOld}`.catch(() => undefined);
+  await prisma.$executeRaw`UPDATE messages SET video_id = ${normalizedNew} WHERE video_id = ${normalizedOld}`.catch(() => undefined);
+
+  clearIngestionCachesForVideo(normalizedOld);
+  clearIngestionCachesForVideo(normalizedNew);
+  _fullCacheInvalidator?.();
+
+  debugCatalog("replaceVideoIdInDatabase:replaced", { oldVideoId: normalizedOld, newVideoId: normalizedNew });
+  return { replaced: true, reason: "ok" };
+}
+
+/**
+ * Searches for an alternative YouTube upload of the same artist + track as the given
+ * unavailable video and, if found, replaces all DB references in-place.
+ *
+ * Requires a YouTube Data API key and a DB row with parsedArtist / parsedTrack.
+ * Returns { replaced: true, newVideoId } on success.
+ */
+export async function findAndReplaceUnavailableVideo(videoId: string): Promise<{
+  replaced: boolean;
+  newVideoId?: string;
+  reason: string;
+}> {
+  if (!YOUTUBE_DATA_API_KEY) return { replaced: false, reason: "no-youtube-api-key" };
+  if (!hasDatabaseUrl()) return { replaced: false, reason: "no-db" };
+
+  const normalizedVideoId = normalizeYouTubeVideoId(videoId);
+  if (!normalizedVideoId) return { replaced: false, reason: "invalid-video-id" };
+
+  const rows = await prisma.$queryRaw<Array<{ parsedArtist: string | null; parsedTrack: string | null }>>`
+    SELECT parsedArtist, parsedTrack FROM videos WHERE videoId = ${normalizedVideoId} LIMIT 1
+  `;
+  const artist = rows[0]?.parsedArtist?.trim();
+  const track = rows[0]?.parsedTrack?.trim();
+  if (!artist || !track) return { replaced: false, reason: "missing-metadata" };
+
+  const replacementId = await searchYouTubeForReplacementVideoId(artist, track, normalizedVideoId);
+  if (!replacementId) return { replaced: false, reason: "no-replacement-found" };
+
+  const result = await replaceVideoIdInDatabase(normalizedVideoId, replacementId);
+  if (!result.replaced) return { replaced: false, reason: result.reason };
+
+  // Fetch the new video's oEmbed title and schedule metadata reclassification.
+  const updatedRow = await prisma.video.findFirst({ where: { videoId: replacementId }, select: { id: true } });
+  if (updatedRow) {
+    const oembed = await fetchOEmbedVideo(replacementId);
+    if (oembed) {
+      if (oembed.title) {
+        await prisma.$executeRaw`
+          UPDATE videos SET title = ${truncate(oembed.title, 255)}, updated_at = ${new Date()} WHERE videoId = ${replacementId}
+        `.catch(() => undefined);
+      }
+      triggerRuntimeMetadataBackfill(updatedRow.id, oembed);
+    }
+  }
+
+  return { replaced: true, newVideoId: replacementId, reason: "ok" };
 }

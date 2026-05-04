@@ -544,6 +544,65 @@ export async function upsertVerifiedExternalArtistCandidate(candidate: {
   return true;
 }
 
+/**
+ * Insert a newly-discovered artist into the `artists` source-of-truth table so
+ * that future classification confidence checks can benefit from the catalog hit.
+ *
+ * Uses INSERT IGNORE so concurrent calls and re-runs are safe.
+ * Only writes if the artist is not already present (checked via normalised key).
+ * Never throws — failures are silently swallowed to avoid disrupting ingestion.
+ */
+export async function maybeInsertNewArtist(artistName: string, genre: string | null) {
+  const displayName = artistName.trim();
+  if (!displayName || !hasDatabaseUrl()) return;
+
+  const normalizedArtist = normalizeArtistKey(displayName);
+
+  try {
+    const columns = await getArtistColumnMap();
+    const nameCol = escapeSqlIdentifier(columns.name);
+
+    // Quick existence check using the normalised expression to avoid a duplicate row.
+    const existing = await prisma.$queryRawUnsafe<Array<{ c: number }>>(
+      `SELECT COUNT(*) AS c FROM artists a WHERE LOWER(TRIM(a.${nameCol})) = ? LIMIT 1`,
+      normalizedArtist,
+    );
+    if (Number(existing[0]?.c ?? 0) > 0) return;
+
+    // Build the INSERT dynamically based on which optional columns exist.
+    const colNames: string[] = [nameCol];
+    const placeholders: string[] = ["?"];
+    const values: unknown[] = [displayName];
+
+    if (columns.normalizedName) {
+      colNames.push(escapeSqlIdentifier(columns.normalizedName));
+      placeholders.push("?");
+      values.push(normalizedArtist);
+    }
+
+    if (columns.country) {
+      colNames.push(escapeSqlIdentifier(columns.country));
+      placeholders.push("NULL");
+    }
+
+    if (columns.genreColumns.length > 0 && genre) {
+      colNames.push(escapeSqlIdentifier(columns.genreColumns[0]));
+      placeholders.push("?");
+      values.push(genre.trim().slice(0, 255));
+    }
+
+    await prisma.$executeRawUnsafe(
+      `INSERT IGNORE INTO artists (${colNames.join(", ")}) VALUES (${placeholders.join(", ")})`,
+      ...values,
+    );
+
+    // Invalidate caches so the next getArtistCatalogEvidence call sees the new row.
+    invalidateArtistLookupCaches();
+  } catch {
+    // Best-effort: never fail ingestion because of a directory insert error.
+  }
+}
+
 export async function refreshArtistThumbnailForName(artistName: string, badVideoId?: string) {
   const displayName = artistName.trim();
   if (!displayName || !hasDatabaseUrl()) return null;

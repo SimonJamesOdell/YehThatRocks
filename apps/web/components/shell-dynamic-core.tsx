@@ -2851,6 +2851,22 @@ function ShellDynamicInner({
     return `${href}?${params.toString()}`;
   }
 
+  function getUserProfileHref(screenName: string, userId: number | null | undefined) {
+    const trimmedScreenName = screenName.trim();
+    const hasStableUserId = typeof userId === "number" && Number.isInteger(userId) && userId > 0;
+    const hasUsableScreenName = trimmedScreenName.length > 0 && trimmedScreenName.toLowerCase() !== "anonymous";
+
+    if (!hasStableUserId && !hasUsableScreenName) {
+      return null;
+    }
+
+    const slug = hasStableUserId ? `user-${userId}` : trimmedScreenName;
+    const params = new URLSearchParams();
+    params.set("v", currentVideo.id);
+    params.set("resume", "1");
+    return `/u/${encodeURIComponent(slug)}?${params.toString()}`;
+  }
+
   function requestOverlayOpen(href: string, kind: "video" | "wiki" = "video") {
     if (typeof window === "undefined") {
       return;
@@ -3458,11 +3474,24 @@ function ShellDynamicInner({
                   !isChatLoading && onlineUsers.length === 0 ? (
                     <p className="chatStatus">No users currently online.</p>
                   ) : (
-                    onlineUsers.map((user) => (
+                    onlineUsers.map((user) => {
+                      const profileHref = getUserProfileHref(user.name, user.id);
+                      const isProfileClickable = Boolean(profileHref);
+
+                      return (
                       <article
                         key={user.id}
-                        className="chatMessage chatMessageClickable"
-                        onClick={() => router.push(`/u/${encodeURIComponent(user.name)}`)}
+                        className={isProfileClickable ? "chatMessage chatMessageClickable" : "chatMessage"}
+                        onClick={isProfileClickable ? () => router.push(profileHref!) : undefined}
+                        onKeyDown={isProfileClickable ? (event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            router.push(profileHref!);
+                          }
+                        } : undefined}
+                        role={isProfileClickable ? "button" : undefined}
+                        tabIndex={isProfileClickable ? 0 : undefined}
+                        aria-label={isProfileClickable ? `Open profile for ${user.name}` : undefined}
                       >
                         {user.avatarUrl ? (
                           <Image src={user.avatarUrl} alt="" width={88} height={88} className="chatAvatar" loading="lazy" sizes="44px" unoptimized />
@@ -3478,17 +3507,29 @@ function ShellDynamicInner({
                           <p>Online now</p>
                         </div>
                       </article>
-                    ))
+                      );
+                    })
                   )
                 ) : (
                   chatMessages.map((message) => {
                     const isUserOnline = onlineUsers.some((u) => u.name === message.user.name);
                     const sharedVideo = parseSharedVideoMessage(message.content);
+                    const profileHref = getUserProfileHref(message.user.name, message.user.id);
+                    const isProfileClickable = Boolean(profileHref);
                     return (
                       <article
                         key={message.id}
-                        className="chatMessage chatMessageClickable"
-                        onClick={() => router.push(`/u/${encodeURIComponent(message.user.name)}`)}
+                        className={isProfileClickable ? "chatMessage chatMessageClickable" : "chatMessage"}
+                        onClick={isProfileClickable ? () => router.push(profileHref!) : undefined}
+                        onKeyDown={isProfileClickable ? (event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            router.push(profileHref!);
+                          }
+                        } : undefined}
+                        role={isProfileClickable ? "button" : undefined}
+                        tabIndex={isProfileClickable ? 0 : undefined}
+                        aria-label={isProfileClickable ? `Open profile for ${message.user.name}` : undefined}
                       >
                         {message.user.avatarUrl ? (
                           <Image src={message.user.avatarUrl} alt="" width={88} height={88} className="chatAvatar" loading="lazy" sizes="44px" unoptimized />

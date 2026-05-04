@@ -182,6 +182,7 @@ export function NewVideosLoader({
     closeSuggestModal,
     isSuggestModalOpen,
     openSuggestModal,
+    pendingConfirmation,
     refreshSuggestQuotaStatus,
     retryRejectedSuggestVideo,
     resetSuggestForAnother,
@@ -535,6 +536,7 @@ export function NewVideosLoader({
       suggestQuotaExhausted={suggestQuotaExhausted}
       suggestError={suggestError}
       suggestOutcome={suggestOutcome}
+      pendingConfirmation={pendingConfirmation}
       isAdminUser={isAdminUser}
       suggestRetryPending={suggestRetryPending}
       onClose={closeSuggestModal}

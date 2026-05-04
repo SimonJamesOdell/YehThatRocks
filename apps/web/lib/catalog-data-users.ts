@@ -17,36 +17,57 @@ export async function getPublicUserProfile(screenName: string): Promise<{
 }> {
   const empty = { user: null, favourites: [], playlists: [] };
 
-  if (!hasDatabaseUrl() || !screenName?.trim()) {
+  const requestedScreenName = screenName?.trim();
+
+  if (!hasDatabaseUrl() || !requestedScreenName) {
     return empty;
   }
 
   try {
-    const rows = await prisma.$queryRaw<
-      Array<{
-        id: number | bigint;
-        screenName: string | null;
-        email: string | null;
-        avatarUrl: string | null;
-        bio: string | null;
-        location: string | null;
-        createdAt: Date | string | null;
-      }>
-    >`
-      SELECT id, screen_name AS screenName, email, avatar_url AS avatarUrl, bio, location, created_at AS createdAt
-      FROM users
-      WHERE screen_name = ${screenName.trim()}
-      LIMIT 1
-    `;
+    const userIdMatch = /^user-(\d+)$/i.exec(requestedScreenName);
+    const requestedUserId = userIdMatch ? Number(userIdMatch[1]) : null;
 
-    const userRow = rows[0];
+    const userRow = requestedUserId !== null
+      ? await prisma.user.findUnique({
+          where: { id: requestedUserId },
+          select: {
+            id: true,
+            screenName: true,
+            email: true,
+            avatarUrl: true,
+            bio: true,
+            location: true,
+          },
+        })
+      : await prisma.user.findFirst({
+          where: {
+            OR: [
+              { screenName: requestedScreenName },
+              {
+                screenName: null,
+                email: {
+                  not: null,
+                  startsWith: `${requestedScreenName}@`,
+                },
+              },
+            ],
+          },
+          select: {
+            id: true,
+            screenName: true,
+            email: true,
+            avatarUrl: true,
+            bio: true,
+            location: true,
+          },
+          orderBy: { id: "asc" },
+        });
 
     if (!userRow) {
       return empty;
     }
 
-    const userId =
-      typeof userRow.id === "bigint" ? Number(userRow.id) : Number(userRow.id);
+    const userId = Number(userRow.id);
 
     if (!Number.isInteger(userId) || userId <= 0) {
       return empty;
@@ -63,10 +84,6 @@ export async function getPublicUserProfile(screenName: string): Promise<{
       avatarUrl: userRow.avatarUrl,
       bio: userRow.bio,
       location: userRow.location,
-      joinedAt:
-        userRow.createdAt
-          ? new Date(userRow.createdAt).toISOString()
-          : new Date(0).toISOString(),
     };
 
     const [favourites, playlists] = await Promise.all([
