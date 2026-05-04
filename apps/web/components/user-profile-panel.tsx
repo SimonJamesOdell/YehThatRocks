@@ -106,6 +106,7 @@ export function UserProfilePanel({ user, favourites, playlists, isAuthenticated,
               className="userProfileHeaderAvatar"
               loading="lazy"
               sizes="56px"
+              unoptimized
             />
           ) : (
             <div className="userProfileHeaderAvatarFallback" aria-hidden="true">👤</div>
