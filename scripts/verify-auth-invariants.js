@@ -28,6 +28,8 @@ const files = {
   loginRoute: path.join(ROOT, "apps/web/app/api/auth/login/route.ts"),
   logoutRoute: path.join(ROOT, "apps/web/app/api/auth/logout/route.ts"),
   profileRoute: path.join(ROOT, "apps/web/app/api/auth/profile/route.ts"),
+  profileAvatarRoute: path.join(ROOT, "apps/web/app/api/auth/profile/avatar/route.ts"),
+  avatarStorage: path.join(ROOT, "apps/web/lib/avatar-storage.ts"),
   changePasswordRoute: path.join(ROOT, "apps/web/app/api/auth/change-password/route.ts"),
   forgotPasswordRoute: path.join(ROOT, "apps/web/app/api/auth/forgot-password/route.ts"),
   resetPasswordRoute: path.join(ROOT, "apps/web/app/api/auth/reset-password/route.ts"),
@@ -71,6 +73,8 @@ function main() {
   const anonymousRouteSource = readFileStrict(files.anonymousRoute, ROOT);
   const loginRouteSource = readFileStrict(files.loginRoute, ROOT);
   const profileRouteSource = readFileStrict(files.profileRoute, ROOT);
+  const profileAvatarRouteSource = readFileStrict(files.profileAvatarRoute, ROOT);
+  const avatarStorageSource = readFileStrict(files.avatarStorage, ROOT);
   const resetPasswordRouteSource = readFileStrict(files.resetPasswordRoute, ROOT);
   const sendVerificationRouteSource = readFileStrict(files.sendVerificationRoute, ROOT);
   const verifyEmailRouteSource = readFileStrict(files.verifyEmailRoute, ROOT);
@@ -111,7 +115,8 @@ function main() {
   assertContains(accountPageSource, "<ProtectedAuthGatePanel", "Account page uses shared protected auth panel for non-authenticated states", failures);
   assertContains(accountPanelSource, "User details", "Account panel has User details tab", failures);
   assertContains(accountPanelSource, "Security", "Account panel has Security tab", failures);
-  assertContains(accountPanelSource, "name=\"avatarUrl\"", "Account panel includes avatar URL field", failures);
+  assertContains(accountPanelSource, "name=\"avatarFile\"", "Account panel includes avatar upload field", failures);
+  assertContains(accountPanelSource, '"/api/auth/profile/avatar"', "Account panel uploads avatars through the avatar API route", failures);
   assertContains(accountPanelSource, "name=\"bio\"", "Account panel includes bio field", failures);
   assertContains(accountPanelSource, "name=\"location\"", "Account panel includes location field", failures);
   assertContains(accountPanelSource, '"/api/auth/profile"', "Account panel saves profile details via /api/auth/profile", failures);
@@ -138,10 +143,14 @@ function main() {
   assertContains(profileRouteSource, "export async function PATCH", "Profile API supports PATCH updates", failures);
   assertContains(profileRouteSource, "verifySameOrigin(request)", "Profile API enforces same-origin CSRF protection", failures);
   assertContains(profileRouteSource, "screenName", "Profile API validates screenName", failures);
-  assertContains(profileRouteSource, "avatarUrl", "Profile API validates avatarUrl", failures);
   assertContains(profileRouteSource, "bio", "Profile API handles bio", failures);
   assertContains(profileRouteSource, "location", "Profile API handles location", failures);
   assertContains(profileRouteSource, "(prisma as PrismaWithProfileUser).user.update({", "Profile API persists profile fields through Prisma update", failures);
+  assertContains(profileAvatarRouteSource, "export async function POST", "Avatar API supports avatar uploads", failures);
+  assertContains(profileAvatarRouteSource, "verifySameOrigin(request)", "Avatar API enforces same-origin CSRF protection", failures);
+  assertContains(profileAvatarRouteSource, "storeOptimizedAvatar", "Avatar API optimizes uploads before storage", failures);
+  assertContains(profileAvatarRouteSource, 'avatarUrl: nextAvatarUrl', "Avatar API stores managed avatar URLs on the user record", failures);
+  assertContains(avatarStorageSource, "randomUUID", "Avatar storage uses UUID filenames", failures);
 
   // --- Login API route ---
   assertContains(loginRouteSource, "export async function POST", "Login API exposes POST handler", failures);

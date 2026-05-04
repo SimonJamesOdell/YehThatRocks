@@ -27,10 +27,13 @@ export async function getPublicUserProfile(screenName: string): Promise<{
         id: number | bigint;
         screenName: string | null;
         email: string | null;
+        avatarUrl: string | null;
+        bio: string | null;
+        location: string | null;
         createdAt: Date | string | null;
       }>
     >`
-      SELECT id, screen_name AS screenName, email, created_at AS createdAt
+      SELECT id, screen_name AS screenName, email, avatar_url AS avatarUrl, bio, location, created_at AS createdAt
       FROM users
       WHERE screen_name = ${screenName.trim()}
       LIMIT 1
@@ -57,9 +60,9 @@ export async function getPublicUserProfile(screenName: string): Promise<{
     const user: PublicUserProfile = {
       id: userId,
       screenName: userRow.screenName ?? emailName ?? `user-${userId}`,
-      avatarUrl: null,
-      bio: null,
-      location: null,
+      avatarUrl: userRow.avatarUrl,
+      bio: userRow.bio,
+      location: userRow.location,
       joinedAt:
         userRow.createdAt
           ? new Date(userRow.createdAt).toISOString()

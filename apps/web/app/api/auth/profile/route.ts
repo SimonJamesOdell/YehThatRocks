@@ -10,10 +10,6 @@ import { parseRequestJson } from "@/lib/request-json";
 
 const profileSchema = z.object({
   screenName: z.string().trim().min(2).max(80),
-  avatarUrl: z.union([
-    z.literal(""),
-    z.string().trim().url().max(500),
-  ]),
   bio: z.string().trim().max(1200),
   location: z.string().trim().max(120),
 });
@@ -80,7 +76,6 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const avatarUrl = parsed.data.avatarUrl.trim();
   const screenName = normalizeScreenName(parsed.data.screenName);
 
   if (await isScreenNameTaken(screenName, authResult.auth.userId)) {
@@ -91,7 +86,6 @@ export async function PATCH(request: NextRequest) {
     where: { id: authResult.auth.userId },
     data: {
       screenName,
-      avatarUrl: avatarUrl.length > 0 ? avatarUrl : null,
       bio: parsed.data.bio.length > 0 ? parsed.data.bio : null,
       location: parsed.data.location.length > 0 ? parsed.data.location : null,
     },
