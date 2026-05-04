@@ -14,6 +14,7 @@ import {
   normalizeParsedConfidence,
   normalizeParsedString,
   normalizePossiblyMojibakeText,
+  scoreLikelyMojibake,
 } from "@/lib/catalog-metadata-utils";
 import {
   computeRelatedBackfillDelayMs,
@@ -47,6 +48,7 @@ import {
 } from "@/lib/catalog-data-artists";
 import { markAvailableVideoMaxIdDirty, recordAvailableVideoIdCandidate } from "@/lib/available-video-max-id";
 import { clearGenreCardThumbnailForVideo } from "@/lib/catalog-data-genres";
+import { getMusicBrainzArtistData } from "@/lib/musicbrainz";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -264,13 +266,6 @@ function recordSpentRelatedDiscoveryUnits(units: number) {
     totalUnits: relatedDiscoveryQuotaSnapshot.totalUnits + units,
     relatedUnits: relatedDiscoveryQuotaSnapshot.relatedUnits + units,
   };
-}
-
-function scoreLikelyMojibake(value: string) {
-  const markerCount = (value.match(/(?:Ã.|Â.|â.|Ð.|Ñ.|┬.|�)/g) ?? []).length;
-  const replacementCount = (value.match(/�/g) ?? []).length;
-  const boxDrawingCount = (value.match(/[┬▒░]/g) ?? []).length;
-  return markerCount * 3 + replacementCount * 4 + boxDrawingCount * 2;
 }
 
 function containsAgeRestrictionMarker(html: string) {
@@ -622,9 +617,14 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
 
     const correctedArtist = parsed.artist;
     const correctedTrack = parsed.track;
-    const artistEvidence = correctedArtist
-      ? await getArtistCatalogEvidence(correctedArtist)
-      : { known: false, rockOrMetalGenreMatch: false };
+    const [artistEvidence, mbData] = await Promise.all([
+      correctedArtist
+        ? getArtistCatalogEvidence(correctedArtist)
+        : Promise.resolve({ known: false, rockOrMetalGenreMatch: false }),
+      correctedArtist
+        ? getMusicBrainzArtistData(correctedArtist)
+        : Promise.resolve(null),
+    ]);
 
     const confidenceNotes: string[] = [];
     let adjustedConfidence = Number(parsed.confidence ?? 0);
@@ -635,6 +635,18 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
       if (!artistEvidence.rockOrMetalGenreMatch) {
         adjustedConfidence = Math.min(adjustedConfidence, 0.74);
         confidenceNotes.push("Known artist lacks strong rock/metal genre evidence.");
+      }
+    }
+
+    if (mbData) {
+      if (mbData.isRockOrMetal) {
+        adjustedConfidence = Math.max(adjustedConfidence, 0.85);
+        const tagHint = mbData.disambiguation || mbData.tags.slice(0, 3).join(", ");
+        confidenceNotes.push(`MusicBrainz confirmed rock/metal: ${tagHint || "genre match"}.`);
+      } else if (mbData.isDefinitelyNotRockOrMetal) {
+        adjustedConfidence = Math.min(adjustedConfidence, 0.68);
+        const tagHint = mbData.disambiguation || mbData.tags.slice(0, 2).join(", ");
+        confidenceNotes.push(`MusicBrainz genre mismatch (non-rock/metal): ${tagHint || "non-rock genre"}.`);
       }
     }
 

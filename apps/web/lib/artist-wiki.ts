@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { getVideosByArtist } from "@/lib/catalog-data";
 import { slugifyArtistName } from "@/lib/artist-routing";
+import { getMusicBrainzArtistData } from "@/lib/musicbrainz";
 
 const WIKI_CACHE_VERSION = 3;
 const WIKI_CACHE_DIR = path.join(process.cwd(), ".cache", "artist-wiki");
@@ -31,19 +32,6 @@ type ArtistWikiImage = {
   url: string;
   title: string;
   sourceUrl: string;
-};
-
-type MusicBrainzArtist = {
-  id?: string;
-  name?: string;
-  country?: string;
-  disambiguation?: string;
-  score?: number;
-  "life-span"?: {
-    begin?: string;
-    end?: string;
-    ended?: boolean;
-  };
 };
 
 type ArtistWikiSections = {
@@ -155,22 +143,6 @@ function isLikelyWikipediaMatch(artistName: string, pageTitle: string) {
   }
 
   return titleSlug.includes(artistSlug) || artistSlug.includes(titleSlug);
-}
-
-function isLikelyMusicBrainzMatch(artistName: string, candidateName: string) {
-  const artistSlug = slugifyArtistName(artistName);
-  const candidateSlug = slugifyArtistName(candidateName);
-
-  if (!artistSlug || !candidateSlug) {
-    return false;
-  }
-
-  if (artistSlug === candidateSlug) {
-    return true;
-  }
-
-  // Keep this permissive for aliases/diacritics while rejecting unrelated top hits.
-  return artistSlug.includes(candidateSlug) || candidateSlug.includes(artistSlug);
 }
 
 function trimText(value: unknown, fallback = "") {
@@ -415,38 +387,19 @@ async function fetchWikipediaSource(artistName: string): Promise<ExternalSource 
 
 async function fetchMusicBrainzSource(artistName: string): Promise<ExternalSource | null> {
   try {
-    const response = await fetchWithTimeout(
-      `https://musicbrainz.org/ws/2/artist/?query=${encodeURIComponent(`artist:${artistName}`)}&fmt=json&limit=1`,
-      4500,
-    );
-
-    if (!response.ok) {
+    const mbData = await getMusicBrainzArtistData(artistName);
+    if (!mbData?.mbid || !mbData.canonicalName) {
       return null;
     }
-
-    const payload = (await response.json().catch(() => null)) as { artists?: MusicBrainzArtist[] } | null;
-    const artist = payload?.artists?.[0];
-
-    if (!artist?.id) {
-      return null;
-    }
-
-    const matchedName = trimText(artist.name, "");
-    if (!matchedName || !isLikelyMusicBrainzMatch(artistName, matchedName)) {
-      return null;
-    }
-
-    const years = [artist["life-span"]?.begin, artist["life-span"]?.end].filter(Boolean).join(" - ");
     const snippetParts = [
-      trimText(artist.name, artistName),
-      trimText(artist.country, ""),
-      trimText(artist.disambiguation, ""),
-      years,
+      mbData.canonicalName,
+      mbData.disambiguation ?? "",
+      mbData.tags.slice(0, 6).join(", "),
     ].filter(Boolean);
 
     return {
-      title: `MusicBrainz: ${trimText(artist.name, artistName)}`,
-      url: `https://musicbrainz.org/artist/${artist.id}`,
+      title: `MusicBrainz: ${mbData.canonicalName}`,
+      url: `https://musicbrainz.org/artist/${mbData.mbid}`,
       snippet: snippetParts.join(" | "),
     };
   } catch {

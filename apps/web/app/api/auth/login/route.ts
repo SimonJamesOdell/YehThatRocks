@@ -1,35 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 
 import { loginSchema } from "@/lib/api-schemas";
 import { getRequestMetadata, recordAuthAudit } from "@/lib/auth-audit";
 import { setAuthCookies } from "@/lib/auth-cookies";
 import { signAccessToken, signRefreshToken } from "@/lib/auth-jwt";
 import { verifyPassword } from "@/lib/auth-password";
-import { handleUnhandledAuthError } from "@/lib/auth-route-error";
+import { handleUnhandledAuthError, isTransientDatabaseError } from "@/lib/auth-route-error";
 import { createRefreshSession } from "@/lib/auth-sessions";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
 import { rateLimitOrResponse } from "@/lib/rate-limit";
 import { parseRequestJson } from "@/lib/request-json";
-
-function isTransientDatabaseError(error: unknown) {
-  if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    const lowerMessage = error.message.toLowerCase();
-    return (
-      lowerMessage.includes("timed out fetching a new connection from the connection pool") ||
-      lowerMessage.includes("can't reach database server") ||
-      lowerMessage.includes("too many connections")
-    );
-  }
-
-  const message = error instanceof Error ? error.message.toLowerCase() : "";
-  return (
-    message.includes("timed out fetching a new connection from the connection pool") ||
-    message.includes("can't reach database server") ||
-    message.includes("too many connections")
-  );
-}
 
 function normalizeLoginSecret(value: string) {
   return value

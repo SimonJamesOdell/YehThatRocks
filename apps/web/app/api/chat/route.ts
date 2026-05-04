@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 
 import { getOptionalApiAuth, requireApiAuth } from "@/lib/auth-request";
+import { chatQuerySchema, createChatMessageSchema } from "@/lib/api-schemas";
 import { chatChannel, chatEvents } from "@/lib/chat-events";
 import {
   fetchChatMessages,
@@ -12,17 +12,6 @@ import {
 import { verifySameOrigin } from "@/lib/csrf";
 import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
 import { parseRequestJson } from "@/lib/request-json";
-
-const chatQuerySchema = z.object({
-  mode: z.enum(["global", "video", "online"]).default("global"),
-  videoId: z.string().trim().min(1).max(32).optional(),
-});
-
-const createChatMessageSchema = z.object({
-  mode: z.enum(["global", "video"]),
-  videoId: z.string().trim().min(1).max(32).optional(),
-  content: z.string().trim().min(1).max(200),
-});
 
 export async function GET(request: NextRequest) {
   const authContext = await getOptionalApiAuth(request);

@@ -243,8 +243,8 @@ function main() {
   assertContains(authCookiesSource, "ResponseCookies is keyed by name", "Auth cookie clear logic documents duplicate-name overwrite protection", failures);
 
   // --- Rate limiter library contract ---
-  assertContains(rateLimitLibSource, "const ipBucket = new Map<string, RateEntry>();", "Rate limiter keeps an IP-scoped bucket map", failures);
-  assertContains(rateLimitLibSource, "const sharedBucket = new Map<string, RateEntry>();", "Rate limiter keeps a shared bucket map", failures);
+  assertContains(rateLimitLibSource, "const ipBucket = new BoundedMap<string, RateEntry>(", "Rate limiter keeps a bounded IP-scoped bucket map", failures);
+  assertContains(rateLimitLibSource, "const sharedBucket = new BoundedMap<string, RateEntry>(", "Rate limiter keeps a bounded shared bucket map", failures);
   assertContains(rateLimitLibSource, "const PRUNE_INTERVAL_MS = 60_000;", "Rate limiter defines periodic pruning interval", failures);
   assertContains(rateLimitLibSource, "function pruneExpiredEntries(now: number)", "Rate limiter exposes expired-entry pruning helper", failures);
   assertContains(rateLimitLibSource, "if (!current || now >= current.resetAt)", "Rate limiter opens a new fixed window when key is missing or expired", failures);

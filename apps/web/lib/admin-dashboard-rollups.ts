@@ -582,10 +582,14 @@ export function startAdminDashboardRollups() {
   }
 
   rollupsStarted = true;
-  void ensureAdminDashboardRollupsFresh({ force: true }).catch(() => undefined);
+  void ensureAdminDashboardRollupsFresh({ force: true }).catch((error) => {
+    console.error("Initial admin dashboard rollup refresh failed", error);
+  });
 
   const timer = setInterval(() => {
-    void ensureAdminDashboardRollupsFresh().catch(() => undefined);
+    void ensureAdminDashboardRollupsFresh().catch((error) => {
+      console.error("Scheduled admin dashboard rollup refresh failed", error);
+    });
   }, ROLLUP_INTERVAL_MS);
   timer.unref?.();
 }
