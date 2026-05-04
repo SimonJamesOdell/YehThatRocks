@@ -34,11 +34,18 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
   const [suggestQuotaExhausted, setSuggestQuotaExhausted] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
   const [suggestOutcome, setSuggestOutcome] = useState<SuggestOutcome | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<{
+    videoId: string;
+    suggestedArtist: string | null;
+    suggestedTrack: string | null;
+    parseConfidence: number | null;
+  } | null>(null);
 
   const applyVideoOutcome = useCallback((payload: {
     videoId?: string;
-    submissionStatus?: "ingested" | "already-in-catalog" | "rejected";
+    submissionStatus?: "ingested" | "already-in-catalog" | "rejected" | "replaced";
     rejectionReason?: string | null;
+    replacedFrom?: string | null;
     artist?: string | null;
     track?: string | null;
     decision?: { message?: string };
@@ -63,6 +70,19 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
         title: "Suggestion rejected",
         detail: payload.rejectionReason || payload.decision?.message || "Rejected during ingestion/classification.",
         videoId: payload.videoId,
+      });
+      return;
+    }
+
+    if (payload.submissionStatus === "replaced") {
+      setSuggestOutcome({
+        kind: "video",
+        status: "ingested",
+        title: "Replaced with alternative upload",
+        detail: `Original upload unavailable — replaced with a working alternative${payload.artist && payload.track ? ` (${payload.artist} – ${payload.track})` : ""}.`,
+        videoId: payload.videoId,
+        artist: payload.artist,
+        track: payload.track,
       });
       return;
     }
@@ -117,6 +137,7 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
     setSuggestOutcome(null);
     setSuggestError(null);
     setSuggestQuotaExhausted(false);
+    setPendingConfirmation(null);
     setIsSuggestModalOpen(true);
     void refreshSuggestQuotaStatus();
   }, [refreshSuggestQuotaStatus]);
@@ -137,6 +158,7 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
     setSuggestTrack("");
     setSuggestError(null);
     setSuggestOutcome(null);
+    setPendingConfirmation(null);
 
     if (suggestQuotaExhausted) {
       return;
@@ -189,10 +211,13 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
           error?: string;
           kind?: "video" | "playlist";
           videoId?: string;
-          submissionStatus?: "ingested" | "already-in-catalog" | "rejected";
+          submissionStatus?: "ingested" | "already-in-catalog" | "rejected" | "needs-confirmation";
           rejectionReason?: string | null;
           artist?: string | null;
           track?: string | null;
+          suggestedArtist?: string | null;
+          suggestedTrack?: string | null;
+          parseConfidence?: number | null;
           queuedVideoCount?: number;
           errorCode?: string;
           decision?: { message?: string };
@@ -214,15 +239,28 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
           title: "Playlist queued",
           detail: `Queued ${payload.queuedVideoCount ?? 0} videos for background ingestion.`,
         });
+      } else if (payload.submissionStatus === "needs-confirmation" && payload.videoId) {
+        // Pre-fill the artist/track fields with the AI's best guess and enter
+        // confirmation mode — the user must correct and resubmit.
+        setPendingConfirmation({
+          videoId: payload.videoId,
+          suggestedArtist: payload.suggestedArtist ?? null,
+          suggestedTrack: payload.suggestedTrack ?? null,
+          parseConfidence: payload.parseConfidence ?? null,
+        });
+        setSuggestArtist(payload.suggestedArtist ?? "");
+        setSuggestTrack(payload.suggestedTrack ?? "");
       } else {
-        applyVideoOutcome(payload);
+        setPendingConfirmation(null);
+        // submissionStatus is not "needs-confirmation" here — we handled that branch above.
+        applyVideoOutcome({ ...payload, submissionStatus: payload.submissionStatus as "ingested" | "already-in-catalog" | "rejected" | "replaced" | undefined });
       }
     } catch {
       setSuggestError("Could not submit suggestion. Please try again.");
     } finally {
       setSuggestPending(false);
     }
-  }, [applyVideoOutcome, isAuthenticated, suggestArtist, suggestSource, suggestTrack]);
+  }, [applyVideoOutcome, isAuthenticated, suggestArtist, suggestSource, suggestTrack, pendingConfirmation]);
 
   const retryRejectedSuggestVideo = useCallback(async () => {
     if (!isAdminUser) {
@@ -251,8 +289,9 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
           ok?: boolean;
           error?: string;
           videoId?: string;
-          submissionStatus?: "ingested" | "already-in-catalog" | "rejected";
+          submissionStatus?: "ingested" | "already-in-catalog" | "rejected" | "replaced";
           rejectionReason?: string | null;
+          replacedFrom?: string | null;
           artist?: string | null;
           track?: string | null;
           decision?: { message?: string };
@@ -276,6 +315,7 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
     closeSuggestModal,
     isSuggestModalOpen,
     openSuggestModal,
+    pendingConfirmation,
     refreshSuggestQuotaStatus,
     resetSuggestForAnother,
     setSuggestArtist,

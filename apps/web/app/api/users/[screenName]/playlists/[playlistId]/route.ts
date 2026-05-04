@@ -29,8 +29,8 @@ function toJsonSafeValue(value: unknown): unknown {
 
 export async function GET(_request: NextRequest, context: PlaylistRouteContext) {
   const { screenName, playlistId } = await context.params;
-  const decodedScreenName = decodeURIComponent(screenName);
-  const { user } = await getPublicUserProfile(decodedScreenName);
+  // App Router params are already decoded.
+  const { user } = await getPublicUserProfile(screenName);
 
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });

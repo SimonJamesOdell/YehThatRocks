@@ -6,6 +6,8 @@ import {
   importVideoFromDirectSource,
   hasDatabaseUrl,
   pruneVideoAndAssociationsByVideoId,
+  clearIngestionCachesForVideo,
+  findAndReplaceUnavailableVideo,
 } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
@@ -58,6 +60,36 @@ export async function POST(request: NextRequest) {
 
   const { videoId } = parsed.data;
 
+  // Clear in-memory caches first so isRejectedVideo reads the DB fresh.
+  clearIngestionCachesForVideo(videoId);
+
+  // Attempt to find an alternative upload BEFORE pruning associations.
+  // If the video has parsedArtist + parsedTrack and a YouTube API key is configured,
+  // this searches for a replacement and swaps the videoId in-place so that playlist
+  // items, favourites, and watch history are preserved.
+  const replacementResult = hasDatabaseUrl()
+    ? await findAndReplaceUnavailableVideo(videoId).catch(() => ({ replaced: false as const, reason: "error" }))
+    : { replaced: false as const, reason: "no-db" };
+
+  if (replacementResult.replaced && replacementResult.newVideoId) {
+    const newVideoId = replacementResult.newVideoId;
+    const metadataRows = await prisma.$queryRaw<Array<{ parsedArtist: string | null; parsedTrack: string | null }>>`
+      SELECT parsedArtist, parsedTrack FROM videos WHERE videoId = ${newVideoId} LIMIT 1
+    `;
+    const metadata = metadataRows[0];
+    return NextResponse.json({
+      ok: true,
+      kind: "video",
+      videoId: newVideoId,
+      submissionStatus: "replaced",
+      replacedFrom: videoId,
+      artist: metadata?.parsedArtist ?? null,
+      track: metadata?.parsedTrack ?? null,
+      decision: { allowed: true, reason: "ok" },
+    });
+  }
+
+  // No replacement found — fall back to clearing and re-ingesting the same ID.
   if (hasDatabaseUrl()) {
     await prisma.$executeRaw`
       DELETE FROM rejected_videos
@@ -69,6 +101,9 @@ export async function POST(request: NextRequest) {
       deletedVideoRows: 0,
       reason: "clear-failed",
     }));
+
+    // Re-clear caches after prune (prune may have updated cache state).
+    clearIngestionCachesForVideo(videoId);
   }
 
   const result = await importVideoFromDirectSource(videoId, {

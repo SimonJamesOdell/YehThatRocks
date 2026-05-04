@@ -4,6 +4,13 @@ import { createPortal } from "react-dom";
 
 import type { SuggestOutcome } from "@/components/use-suggest-new-video";
 
+type PendingConfirmation = {
+  videoId: string;
+  suggestedArtist: string | null;
+  suggestedTrack: string | null;
+  parseConfidence: number | null;
+};
+
 type SuggestNewModalProps = {
   isOpen: boolean;
   suggestSource: string;
@@ -14,6 +21,7 @@ type SuggestNewModalProps = {
   suggestQuotaExhausted: boolean;
   suggestError: string | null;
   suggestOutcome: SuggestOutcome | null;
+  pendingConfirmation: PendingConfirmation | null;
   isAdminUser: boolean;
   suggestRetryPending: boolean;
   onClose: () => void;
@@ -37,6 +45,7 @@ export function SuggestNewModal({
   suggestQuotaExhausted,
   suggestError,
   suggestOutcome,
+  pendingConfirmation,
   isAdminUser,
   suggestRetryPending,
   onClose,
@@ -53,6 +62,8 @@ export function SuggestNewModal({
     return null;
   }
 
+  const isConfirmationStep = Boolean(pendingConfirmation && !suggestOutcome);
+
   return createPortal(
     <div
       className="suggestNewModalBackdrop"
@@ -64,7 +75,12 @@ export function SuggestNewModal({
       <div className="suggestNewModalPanel" onClick={(event) => event.stopPropagation()}>
         <div className="suggestNewModalHeader">
           <h3>Suggest New</h3>
-          <p className="suggestNewModalMeta">Paste a YouTube video or playlist. We will ingest and classify it.</p>
+          <p className="suggestNewModalMeta">
+            {isConfirmationStep
+              ? "Our classifier isn't confident about this video — please confirm or correct the artist and track name."
+              : "Paste a YouTube video or playlist. We will ingest and classify it."
+            }
+          </p>
           <button className="suggestNewModalClose" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
@@ -83,22 +99,39 @@ export function SuggestNewModal({
 
         {!suggestQuotaExhausted ? (
           <>
-            <label className="newFlagModalField suggestNewModalField" htmlFor="suggest-new-source">
-              YouTube URL or Video ID
-            </label>
-            <input
-              className="suggestNewModalInput"
-              id="suggest-new-source"
-              value={suggestSource}
-              onChange={(event) => onSuggestSourceChange(event.currentTarget.value)}
-              placeholder="https://youtube.com/watch?v=... or https://youtube.com/playlist?list=..."
-              disabled={suggestPending}
-              maxLength={2048}
-            />
+            {!isConfirmationStep ? (
+              <>
+                <p className="suggestNewModalHints">
+                  Accepted formats: <strong>watch URLs</strong>, <strong>short URLs</strong>, <strong>video IDs</strong>, and <strong>playlist URLs</strong>.
+                </p>
+                <label className="newFlagModalField suggestNewModalField" htmlFor="suggest-new-source">
+                  YouTube URL or Video ID
+                </label>
+                <input
+                  className="suggestNewModalInput"
+                  id="suggest-new-source"
+                  value={suggestSource}
+                  onChange={(event) => onSuggestSourceChange(event.currentTarget.value)}
+                  placeholder="https://youtube.com/watch?v=... or https://youtube.com/playlist?list=..."
+                  disabled={suggestPending}
+                  maxLength={2048}
+                />
+              </>
+            ) : (
+              <div className="suggestNewModalConfirmBanner" role="status">
+                <p className="suggestNewModalConfirmBannerText">
+                  We found this video but couldn&apos;t classify it with enough confidence
+                  {pendingConfirmation?.parseConfidence !== null && pendingConfirmation?.parseConfidence !== undefined
+                    ? ` (${Math.round(pendingConfirmation.parseConfidence * 100)}% confidence)`
+                    : ""
+                  }. Please confirm or correct the artist and track name below, then click <strong>Confirm &amp; submit</strong>.
+                </p>
+              </div>
+            )}
 
             <div className="suggestNewModalOptionalGrid">
               <label className="newFlagModalField suggestNewModalField" htmlFor="suggest-new-artist">
-                Artist (optional)
+                Artist{isConfirmationStep ? " *" : " (optional)"}
               </label>
               <input
                 className="suggestNewModalInput"
@@ -108,10 +141,12 @@ export function SuggestNewModal({
                 placeholder="Artist name"
                 disabled={suggestPending}
                 maxLength={255}
+                required={isConfirmationStep}
+                aria-required={isConfirmationStep}
               />
 
               <label className="newFlagModalField suggestNewModalField" htmlFor="suggest-new-track">
-                Track name (optional)
+                Track name{isConfirmationStep ? " *" : " (optional)"}
               </label>
               <input
                 className="suggestNewModalInput"
@@ -121,6 +156,8 @@ export function SuggestNewModal({
                 placeholder="Track title"
                 disabled={suggestPending}
                 maxLength={255}
+                required={isConfirmationStep}
+                aria-required={isConfirmationStep}
               />
             </div>
           </>
@@ -189,9 +226,9 @@ export function SuggestNewModal({
             <button
               type="button"
               onClick={onSubmit}
-              disabled={suggestPending}
+              disabled={suggestPending || (isConfirmationStep && (!suggestArtist.trim() || !suggestTrack.trim()))}
             >
-              {suggestPending ? "Submitting..." : "Submit"}
+              {suggestPending ? "Submitting..." : isConfirmationStep ? "Confirm & submit" : "Submit"}
             </button>
           </div>
         )}

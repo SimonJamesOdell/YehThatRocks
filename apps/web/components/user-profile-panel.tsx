@@ -81,7 +81,7 @@ export function UserProfilePanel({ user, favourites, playlists, isAuthenticated,
         className={tab === "favourites" ? "activeTab" : undefined}
         onClick={() => setTab("favourites")}
       >
-        Favourites
+        Favourites ({favourites.length})
       </button>
       <button
         type="button"

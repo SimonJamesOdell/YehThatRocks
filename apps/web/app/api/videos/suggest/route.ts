@@ -464,21 +464,42 @@ export async function POST(request: NextRequest) {
     });
 
     const parseConfidence = await loadVideoParseConfidence(result.videoId);
+    const userProvidedArtist = parsed.data.artist?.trim() || null;
+    const userProvidedTrack = parsed.data.track?.trim() || null;
+    const userConfirmedMetadata = Boolean(userProvidedArtist && userProvidedTrack);
     const hasQualifiedMetadata =
       Boolean(resolvedMetadata.artist?.trim())
       && Boolean(resolvedMetadata.track?.trim())
       && parseConfidence !== null
       && parseConfidence >= PLAYBACK_MIN_CONFIDENCE;
 
-    let submissionStatus: "ingested" | "already-in-catalog" | "rejected" = result.decision.allowed
+    let submissionStatus: "ingested" | "already-in-catalog" | "rejected" | "needs-confirmation" = result.decision.allowed
       ? (alreadyInCatalog ? "already-in-catalog" : "ingested")
       : "rejected";
 
     let rejectionCode: string | null = submissionStatus === "rejected" ? result.decision.reason : null;
     let rejectionReason: string | null = submissionStatus === "rejected" ? getRejectionReason(result.decision) : null;
 
-    // Suggest New confirmation should only report success when parsing quality is good.
-    if (submissionStatus !== "rejected" && !hasQualifiedMetadata) {
+    // When metadata confidence is low but the video is otherwise playable and the user
+    // hasn't already confirmed with explicit artist+track, ask them to confirm.
+    // If the user already supplied both artist and track, treat their input as authoritative.
+    if (submissionStatus !== "rejected" && !hasQualifiedMetadata && !userConfirmedMetadata) {
+      const hasAnyGuess = Boolean(resolvedMetadata.artist?.trim() || resolvedMetadata.track?.trim());
+      if (hasAnyGuess || result.decision.allowed) {
+        // Return the AI's best guess for the user to correct and resubmit.
+        return NextResponse.json({
+          ok: true,
+          kind: "video",
+          videoId: result.videoId,
+          submissionStatus: "needs-confirmation",
+          alreadyInCatalog,
+          suggestedArtist: resolvedMetadata.artist ?? null,
+          suggestedTrack: resolvedMetadata.track ?? null,
+          parseConfidence: parseConfidence ?? null,
+          decision: result.decision,
+        });
+      }
+      // No guess at all — hard reject as before.
       submissionStatus = "rejected";
       rejectionCode = parseConfidence === null || parseConfidence < PLAYBACK_MIN_CONFIDENCE ? "low-confidence" : "missing-metadata";
       rejectionReason =
@@ -486,6 +507,10 @@ export async function POST(request: NextRequest) {
           ? `Rejected: parsed metadata confidence is below required threshold (${PLAYBACK_MIN_CONFIDENCE}).`
           : "Rejected: parsed artist/track metadata is incomplete.";
     }
+
+    // Hard reject if the video itself failed (unavailable, wrong type, etc.)
+    // When userConfirmedMetadata is true we reach here — the user's hints are treated as
+    // authoritative so no further rejection check is needed.
 
     return NextResponse.json({
       ok: true,

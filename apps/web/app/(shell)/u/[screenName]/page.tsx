@@ -17,7 +17,8 @@ export default async function UserProfilePage({ params }: UserProfilePageProps) 
   const viewer = authState.status === "authenticated" ? authState.user : null;
   const seenVideoIds = viewer ? await getSeenVideoIdsForUser(viewer.id) : new Set<string>();
   const { screenName } = await params;
-  const { user, favourites, playlists } = await getPublicUserProfile(decodeURIComponent(screenName));
+  // App Router params are already decoded.
+  const { user, favourites, playlists } = await getPublicUserProfile(screenName);
 
   if (!user) {
     notFound();
