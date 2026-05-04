@@ -14,6 +14,8 @@ type SuggestNewModalProps = {
   suggestQuotaExhausted: boolean;
   suggestError: string | null;
   suggestOutcome: SuggestOutcome | null;
+  isAdminUser: boolean;
+  suggestRetryPending: boolean;
   onClose: () => void;
   onSuggestSourceChange: (value: string) => void;
   onSuggestArtistChange: (value: string) => void;
@@ -22,6 +24,7 @@ type SuggestNewModalProps = {
   onResetForAnother: () => void;
   onWatchNow: () => void;
   onRefreshQuotaStatus: () => void;
+  onRetryRejectedVideo: () => void;
 };
 
 export function SuggestNewModal({
@@ -34,6 +37,8 @@ export function SuggestNewModal({
   suggestQuotaExhausted,
   suggestError,
   suggestOutcome,
+  isAdminUser,
+  suggestRetryPending,
   onClose,
   onSuggestSourceChange,
   onSuggestArtistChange,
@@ -42,6 +47,7 @@ export function SuggestNewModal({
   onResetForAnother,
   onWatchNow,
   onRefreshQuotaStatus,
+  onRetryRejectedVideo,
 }: SuggestNewModalProps) {
   if (!isOpen || typeof document === "undefined") {
     return null;
@@ -148,6 +154,15 @@ export function SuggestNewModal({
             <button type="button" onClick={onClose} disabled={suggestPending}>
               Close
             </button>
+            {isAdminUser && suggestOutcome.kind === "video" && suggestOutcome.status === "rejected" && suggestOutcome.videoId ? (
+              <button
+                type="button"
+                onClick={onRetryRejectedVideo}
+                disabled={suggestPending || suggestRetryPending}
+              >
+                {suggestRetryPending ? "Retrying..." : "Clear failed entry & retry ingest"}
+              </button>
+            ) : null}
             <button type="button" onClick={onResetForAnother} disabled={suggestPending}>
               Suggest another
             </button>

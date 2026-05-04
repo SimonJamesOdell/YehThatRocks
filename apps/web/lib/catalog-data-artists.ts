@@ -21,6 +21,8 @@ import {
   seedVideos,
   getSeedArtistBySlug,
   slugify,
+  mapVideo,
+  ENABLE_SAME_GENRE_RELATED,
   type RankedVideoRow,
 } from "@/lib/catalog-data-utils";
 import {
@@ -58,7 +60,6 @@ const ARTIST_CACHE_MAX_ENTRIES = Math.max(
   200,
   Math.min(10_000, Number(process.env.ARTIST_CACHE_MAX_ENTRIES || "2000")),
 );
-const ENABLE_SAME_GENRE_RELATED = process.env.RELATED_ENABLE_SAME_GENRE === "1";
 const BATCH_UPSERT_SIZE = 100;
 
 // ── Cache stores ──────────────────────────────────────────────────────────────
@@ -1419,15 +1420,13 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
       return fallback;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mapVideo: (row: any) => VideoRecord = (row) => ({
-      id: row.videoId,
-      title: row.title,
-      channelTitle: row.parsedArtist || artistName,
-      genre: "Rock / Metal",
-      favourited: Number(row.favourited ?? 0),
-      description: row.description ?? "Legacy video entry from the retained Yeh database.",
-    });
+    type ArtistVideoRow = {
+      videoId: string;
+      title: string;
+      parsedArtist: string | null;
+      favourited: number;
+      description: string | null;
+    };
 
     try {
       const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
@@ -1459,12 +1458,10 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
         LIMIT ${safeLimit}
       `;
 
-      const rows = await prisma.$queryRawUnsafe<Array<{
-        videoId: string; title: string; parsedArtist: string | null; favourited: number; description: string | null;
-      }>>(query, normalizedArtist, normalizedArtist);
+      const rows = await prisma.$queryRawUnsafe<ArtistVideoRow[]>(query, normalizedArtist, normalizedArtist);
 
       const mapped = rows
-        .map(mapVideo)
+        .map((row) => mapVideo({ ...row, channelTitle: row.parsedArtist }))
         .filter((video, index, allVideos) => allVideos.findIndex((candidate) => candidate.id === video.id) === index);
 
       artistVideosCache.set(cacheKey, { expiresAt: Date.now() + ARTIST_VIDEOS_CACHE_TTL_MS, videos: mapped });

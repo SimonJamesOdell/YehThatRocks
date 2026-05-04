@@ -123,3 +123,18 @@ export const playerPreferenceMutationSchema = z.object({
 }).refine((value) => value.autoplayEnabled !== undefined || value.volume !== undefined, {
   message: "autoplayEnabled or volume is required",
 });
+
+export const chatQuerySchema = z.object({
+  mode: z.enum(["global", "video", "online"]).default("global"),
+  videoId: z.string().trim().min(1).max(32).optional(),
+});
+
+export const createChatMessageSchema = z.object({
+  mode: z.enum(["global", "video"]),
+  videoId: z.string().trim().min(1).max(32).optional(),
+  content: z.string().trim().min(1).max(200),
+});
+
+export const adminRetrySuggestIngestSchema = z.object({
+  videoId: z.string().trim().regex(/^[A-Za-z0-9_-]{11}$/),
+});

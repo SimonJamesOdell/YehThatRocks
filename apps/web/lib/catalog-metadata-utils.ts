@@ -1,50 +1,17 @@
-function truncate(value: string, maxLength: number) {
-  return value.length > maxLength ? value.slice(0, maxLength) : value;
-}
+import {
+  collapseWhitespace,
+  collectBracketTags as collectBracketMetadataTags,
+  collectInlineFeatureTag as collectInlineFeatureMetadataTag,
+  normalizeLooseToken as normalizeLooseMetadataToken,
+  normalizePossiblyMojibakeText,
+  sanitizeMetadataToken as sanitizeMetadataTitleToken,
+  scoreLikelyMojibake,
+  splitTitle as splitTitleForNormalization,
+  stripKnownPrefix as stripKnownTrackPrefix,
+  truncate,
+} from "./catalog-metadata-normalization-shared";
 
-function scoreLikelyMojibake(value: string) {
-  const markerCount = (value.match(/(?:Ã.|Â.|â.|Ð.|Ñ.|┬.|�)/g) ?? []).length;
-  const replacementCount = (value.match(/�/g) ?? []).length;
-  const boxDrawingCount = (value.match(/[┬▒░]/g) ?? []).length;
-  return markerCount * 3 + replacementCount * 4 + boxDrawingCount * 2;
-}
-
-export function normalizePossiblyMojibakeText(value: string) {
-  const input = value.trim();
-  if (!input) {
-    return input;
-  }
-
-  const originalScore = scoreLikelyMojibake(input);
-  if (originalScore === 0) {
-    return input;
-  }
-
-  const candidates = new Set<string>();
-  const repairedOnce = Buffer.from(input, "latin1").toString("utf8").trim();
-  if (repairedOnce && repairedOnce !== input) {
-    candidates.add(repairedOnce);
-  }
-
-  const repairedTwice = Buffer.from(repairedOnce, "latin1").toString("utf8").trim();
-  if (repairedTwice && repairedTwice !== input) {
-    candidates.add(repairedTwice);
-  }
-
-  let best = input;
-  let bestScore = originalScore;
-
-  for (const candidate of candidates) {
-    const candidateScore = scoreLikelyMojibake(candidate);
-    if (candidateScore < bestScore) {
-      best = candidate;
-      bestScore = candidateScore;
-    }
-  }
-
-  // Require a meaningful reduction so artistic punctuation/symbol choices are preserved.
-  return bestScore <= originalScore - 2 ? best : input;
-}
+export { normalizePossiblyMojibakeText, scoreLikelyMojibake };
 
 export function normalizeParsedString(value: unknown, maxLength: number) {
   if (typeof value !== "string") {
@@ -57,110 +24,6 @@ export function normalizeParsedString(value: unknown, maxLength: number) {
   }
 
   return truncate(trimmed, maxLength);
-}
-
-function collapseWhitespace(value: string | null | undefined) {
-  return (value ?? "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function normalizeLooseMetadataToken(value: string | null | undefined) {
-  return collapseWhitespace(value)
-    .toLowerCase()
-    .replace(/[\u2012\u2013\u2014\u2015]/g, "-")
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'");
-}
-
-function splitTitleForNormalization(title: string) {
-  const raw = collapseWhitespace(title);
-  if (!raw) {
-    return null;
-  }
-
-  const separators = [" - ", " – ", " — ", " | "];
-  let best: { idx: number; separator: string } | null = null;
-
-  for (const separator of separators) {
-    const idx = raw.indexOf(separator);
-    if (idx <= 0) {
-      continue;
-    }
-
-    if (!best || idx < best.idx) {
-      best = { idx, separator };
-    }
-  }
-
-  if (!best) {
-    return null;
-  }
-
-  const left = raw.slice(0, best.idx).trim();
-  const right = raw.slice(best.idx + best.separator.length).trim();
-  if (!left || !right) {
-    return null;
-  }
-
-  return { left, right };
-}
-
-function stripKnownTrackPrefix(text: string, token: string) {
-  if (!text || !token) {
-    return text;
-  }
-
-  const textNorm = normalizeLooseMetadataToken(text);
-  const tokenNorm = normalizeLooseMetadataToken(token);
-  if (!tokenNorm || !textNorm.startsWith(tokenNorm)) {
-    return text;
-  }
-
-  const consumed = text.slice(0, token.length);
-  if (normalizeLooseMetadataToken(consumed) !== tokenNorm) {
-    return text;
-  }
-
-  return text.slice(consumed.length).trim();
-}
-
-function collectBracketMetadataTags(text: string) {
-  const tags: string[] = [];
-  const tagRegex = /(\([^)]*(?:live|official|video|lyrics?|lyric\s+video|remaster(?:ed)?|feat\.?|ft\.?|featuring|cover|remix|acoustic|session|version|edit)[^)]*\)|\[[^\]]*(?:live|official|video|lyrics?|lyric\s+video|remaster(?:ed)?|feat\.?|ft\.?|featuring|cover|remix|acoustic|session|version|edit)[^\]]*\])/gi;
-
-  for (const match of text.matchAll(tagRegex)) {
-    const value = collapseWhitespace(match[0]);
-    if (value) {
-      tags.push(value);
-    }
-  }
-
-  return tags;
-}
-
-function collectInlineFeatureMetadataTag(text: string) {
-  const featureRegex = /(?:^|\s)(feat\.?|ft\.?|featuring)\s+[^\[\]()]+$/i;
-  const hit = text.match(featureRegex);
-  if (!hit) {
-    return null;
-  }
-
-  return collapseWhitespace(hit[0]);
-}
-
-function sanitizeMetadataTitleToken(value: string | null | undefined, maxLength = 255) {
-  const normalized = normalizePossiblyMojibakeText(value ?? "");
-  if (!normalized) {
-    return null;
-  }
-
-  const cleaned = collapseWhitespace(normalized);
-  if (!cleaned) {
-    return null;
-  }
-
-  return truncate(cleaned, maxLength);
 }
 
 export function normalizeParsedConfidence(value: unknown) {

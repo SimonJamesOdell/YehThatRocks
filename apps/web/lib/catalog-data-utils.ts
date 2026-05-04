@@ -138,6 +138,8 @@ export const ROCK_METAL_GENRE_PATTERN = /\b(rock|metal|hard rock|heavy metal|thr
 export const CATALOG_DEBUG_ENABLED =
   process.env.NODE_ENV === "development" && process.env.DEBUG_CATALOG === "1";
 
+export const ENABLE_SAME_GENRE_RELATED = process.env.RELATED_ENABLE_SAME_GENRE === "1";
+
 // ── Seed stubs (all return empty — live DB required) ──────────────────────────
 
 export const seedVideos: VideoRecord[] = [];

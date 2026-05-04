@@ -31,6 +31,7 @@ import {
   searchSeedCatalog,
   getSeedVideoById,
   escapeSqlIdentifier,
+  ENABLE_SAME_GENRE_RELATED,
 } from "@/lib/catalog-data-utils";
 import {
   loadTableColumns,
@@ -60,8 +61,6 @@ import { fetchRecentlyWatchedIds, getSeenVideoIdsForUser } from "@/lib/catalog-d
 import { getSearchRankingSignals } from "@/lib/search-flag-data";
 
 // ── Constants ────────────────────────────────────────────────────────────────
-
-const ENABLE_SAME_GENRE_RELATED = process.env.RELATED_ENABLE_SAME_GENRE === "1";
 
 const TOP_POOL_CACHE_TTL_MS = 5 * 60 * 1000;
 const MIN_RANKED_TOP_POOL_FETCH = 200;

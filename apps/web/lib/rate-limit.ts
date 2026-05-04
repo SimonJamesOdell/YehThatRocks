@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { BoundedMap } from "@/lib/bounded-map";
 
 type RateEntry = {
   count: number;
@@ -6,10 +7,11 @@ type RateEntry = {
 };
 
 // IP-scoped bucket — keyed by "<ip>:<suffix>"
-const ipBucket = new Map<string, RateEntry>();
+// Bounded to prevent memory exhaustion from spoofed x-forwarded-for IPs.
+const ipBucket = new BoundedMap<string, RateEntry>(10_000);
 
 // Shared bucket — keyed by suffix only, not IP (for room-level caps)
-const sharedBucket = new Map<string, RateEntry>();
+const sharedBucket = new BoundedMap<string, RateEntry>(500);
 
 const PRUNE_INTERVAL_MS = 60_000;
 let lastPrunedAt = 0;

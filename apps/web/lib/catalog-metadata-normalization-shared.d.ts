@@ -1,0 +1,10 @@
+export function collapseWhitespace(value: string | null | undefined): string;
+export function normalizeLooseToken(value: string | null | undefined): string;
+export function truncate(value: string, maxLength: number): string;
+export function scoreLikelyMojibake(value: string): number;
+export function normalizePossiblyMojibakeText(value: string): string;
+export function sanitizeMetadataToken(value: string | null | undefined, maxLength?: number): string | null;
+export function splitTitle(title: string): { left: string; right: string } | null;
+export function stripKnownPrefix(text: string, token: string): string;
+export function collectBracketTags(text: string): string[];
+export function collectInlineFeatureTag(text: string): string | null;

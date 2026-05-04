@@ -1,6 +1,23 @@
 import { NextResponse } from "next/server";
 
+import { Prisma } from "@prisma/client";
 import { recordAuthAudit } from "@/lib/auth-audit";
+
+export function isTransientDatabaseError(error: unknown): boolean {
+  const lowerMessage = (
+    error instanceof Prisma.PrismaClientKnownRequestError
+      ? error.message
+      : error instanceof Error
+        ? error.message
+        : ""
+  ).toLowerCase();
+
+  return (
+    lowerMessage.includes("timed out fetching a new connection from the connection pool") ||
+    lowerMessage.includes("can't reach database server") ||
+    lowerMessage.includes("too many connections")
+  );
+}
 
 type AuthAuditAction = Parameters<typeof recordAuthAudit>[0]["action"];
 type AuthRequestMeta = Pick<Parameters<typeof recordAuthAudit>[0], "ipAddress" | "userAgent">;

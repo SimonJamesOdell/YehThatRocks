@@ -19,19 +19,64 @@ export type SuggestOutcome = {
 
 type UseSuggestNewVideoOptions = {
   isAuthenticated: boolean;
+  isAdminUser: boolean;
   router: RouterInstance;
 };
 
-export function useSuggestNewVideo({ isAuthenticated, router }: UseSuggestNewVideoOptions) {
+export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: UseSuggestNewVideoOptions) {
   const [isSuggestModalOpen, setIsSuggestModalOpen] = useState(false);
   const [suggestSource, setSuggestSource] = useState("");
   const [suggestArtist, setSuggestArtist] = useState("");
   const [suggestTrack, setSuggestTrack] = useState("");
   const [suggestPending, setSuggestPending] = useState(false);
+  const [suggestRetryPending, setSuggestRetryPending] = useState(false);
   const [suggestQuotaStatusPending, setSuggestQuotaStatusPending] = useState(false);
   const [suggestQuotaExhausted, setSuggestQuotaExhausted] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
   const [suggestOutcome, setSuggestOutcome] = useState<SuggestOutcome | null>(null);
+
+  const applyVideoOutcome = useCallback((payload: {
+    videoId?: string;
+    submissionStatus?: "ingested" | "already-in-catalog" | "rejected";
+    rejectionReason?: string | null;
+    artist?: string | null;
+    track?: string | null;
+    decision?: { message?: string };
+  }) => {
+    if (payload.submissionStatus === "already-in-catalog") {
+      setSuggestOutcome({
+        kind: "video",
+        status: "already-in-catalog",
+        title: "Already in catalog",
+        detail: "This video already exists in the catalog and is available now.",
+        videoId: payload.videoId,
+        artist: payload.artist,
+        track: payload.track,
+      });
+      return;
+    }
+
+    if (payload.submissionStatus === "rejected") {
+      setSuggestOutcome({
+        kind: "video",
+        status: "rejected",
+        title: "Suggestion rejected",
+        detail: payload.rejectionReason || payload.decision?.message || "Rejected during ingestion/classification.",
+        videoId: payload.videoId,
+      });
+      return;
+    }
+
+    setSuggestOutcome({
+      kind: "video",
+      status: "ingested",
+      title: "Ingestion succeeded",
+      detail: "Video ingested and classified successfully.",
+      videoId: payload.videoId,
+      artist: payload.artist,
+      track: payload.track,
+    });
+  }, []);
 
   const refreshSuggestQuotaStatus = useCallback(async () => {
     if (!isAuthenticated) {
@@ -169,41 +214,63 @@ export function useSuggestNewVideo({ isAuthenticated, router }: UseSuggestNewVid
           title: "Playlist queued",
           detail: `Queued ${payload.queuedVideoCount ?? 0} videos for background ingestion.`,
         });
-      } else if (payload.submissionStatus === "already-in-catalog") {
-        setSuggestOutcome({
-          kind: "video",
-          status: "already-in-catalog",
-          title: "Already in catalog",
-          detail: "This video already exists in the catalog and is available now.",
-          videoId: payload.videoId,
-          artist: payload.artist,
-          track: payload.track,
-        });
-      } else if (payload.submissionStatus === "rejected") {
-        setSuggestOutcome({
-          kind: "video",
-          status: "rejected",
-          title: "Suggestion rejected",
-          detail: payload.rejectionReason || payload.decision?.message || "Rejected during ingestion/classification.",
-          videoId: payload.videoId,
-        });
       } else {
-        setSuggestOutcome({
-          kind: "video",
-          status: "ingested",
-          title: "Ingestion succeeded",
-          detail: "Video ingested and classified successfully.",
-          videoId: payload.videoId,
-          artist: payload.artist,
-          track: payload.track,
-        });
+        applyVideoOutcome(payload);
       }
     } catch {
       setSuggestError("Could not submit suggestion. Please try again.");
     } finally {
       setSuggestPending(false);
     }
-  }, [isAuthenticated, suggestArtist, suggestSource, suggestTrack]);
+  }, [applyVideoOutcome, isAuthenticated, suggestArtist, suggestSource, suggestTrack]);
+
+  const retryRejectedSuggestVideo = useCallback(async () => {
+    if (!isAdminUser) {
+      setSuggestError("Only admins can retry failed ingestions.");
+      return;
+    }
+
+    if (suggestOutcome?.kind !== "video" || suggestOutcome.status !== "rejected" || !suggestOutcome.videoId) {
+      return;
+    }
+
+    setSuggestRetryPending(true);
+    setSuggestError(null);
+
+    try {
+      const response = await fetch("/api/admin/videos/retry-suggest-ingest", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ videoId: suggestOutcome.videoId }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+          ok?: boolean;
+          error?: string;
+          videoId?: string;
+          submissionStatus?: "ingested" | "already-in-catalog" | "rejected";
+          rejectionReason?: string | null;
+          artist?: string | null;
+          track?: string | null;
+          decision?: { message?: string };
+        }
+        | null;
+
+      if (!response.ok || !payload?.ok) {
+        setSuggestError(payload?.error || "Could not clear prior state and retry ingestion.");
+        return;
+      }
+
+      applyVideoOutcome(payload);
+    } catch {
+      setSuggestError("Could not clear prior state and retry ingestion.");
+    } finally {
+      setSuggestRetryPending(false);
+    }
+  }, [applyVideoOutcome, isAdminUser, suggestOutcome]);
 
   return {
     closeSuggestModal,
@@ -219,10 +286,12 @@ export function useSuggestNewVideo({ isAuthenticated, router }: UseSuggestNewVid
     suggestError,
     suggestOutcome,
     suggestPending,
+    suggestRetryPending,
     suggestQuotaExhausted,
     suggestQuotaStatusPending,
     suggestSource,
     suggestTrack,
+    retryRejectedSuggestVideo,
     watchSuggestedVideoNow,
   };
 }

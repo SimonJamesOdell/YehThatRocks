@@ -177,7 +177,9 @@ export function AddToPlaylistButton({
     }
 
     const timeoutId = window.setTimeout(() => {
-      void ensurePlaylistsLoaded().catch(() => undefined);
+      void ensurePlaylistsLoaded().catch((error) => {
+        console.error("Failed to load playlists for chooser", error);
+      });
     }, 0);
 
     return () => {

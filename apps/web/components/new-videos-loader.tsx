@@ -183,6 +183,7 @@ export function NewVideosLoader({
     isSuggestModalOpen,
     openSuggestModal,
     refreshSuggestQuotaStatus,
+    retryRejectedSuggestVideo,
     resetSuggestForAnother,
     setSuggestArtist,
     setSuggestSource,
@@ -192,6 +193,7 @@ export function NewVideosLoader({
     suggestError,
     suggestOutcome,
     suggestPending,
+    suggestRetryPending,
     suggestQuotaExhausted,
     suggestQuotaStatusPending,
     suggestSource,
@@ -199,6 +201,7 @@ export function NewVideosLoader({
     watchSuggestedVideoNow,
   } = useSuggestNewVideo({
     isAuthenticated,
+    isAdminUser,
     router,
   });
   const overlayScrollContainerRef = useOverlayScrollContainerRef();
@@ -532,6 +535,8 @@ export function NewVideosLoader({
       suggestQuotaExhausted={suggestQuotaExhausted}
       suggestError={suggestError}
       suggestOutcome={suggestOutcome}
+      isAdminUser={isAdminUser}
+      suggestRetryPending={suggestRetryPending}
       onClose={closeSuggestModal}
       onSuggestSourceChange={setSuggestSource}
       onSuggestArtistChange={setSuggestArtist}
@@ -543,6 +548,9 @@ export function NewVideosLoader({
       onWatchNow={watchSuggestedVideoNow}
       onRefreshQuotaStatus={() => {
         void refreshSuggestQuotaStatus();
+      }}
+      onRetryRejectedVideo={() => {
+        void retryRejectedSuggestVideo();
       }}
     />
     </>

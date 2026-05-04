@@ -29,6 +29,7 @@ const files = {
   serviceFailurePanel: path.join(ROOT, "apps/web/components/service-failure-panel.tsx"),
   statusPerformanceRoute: path.join(ROOT, "apps/web/app/api/status/performance/route.ts"),
   chatRoute: path.join(ROOT, "apps/web/app/api/chat/route.ts"),
+  apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
   chatDataService: path.join(ROOT, "apps/web/lib/chat-data.ts"),
   chatStreamRoute: path.join(ROOT, "apps/web/app/api/chat/stream/route.ts"),
   categoriesFilterGrid: path.join(ROOT, "apps/web/components/categories-filter-grid.tsx"),
@@ -57,6 +58,7 @@ function main() {
   const shellRenderingSource = `${shellDynamicSource}\n${shellDynamicRenderingSource}`;
   const statusPerformanceRouteSource = readFileStrict(files.statusPerformanceRoute, ROOT);
   const chatRouteSource = readFileStrict(files.chatRoute, ROOT);
+  const apiSchemasSource = readFileStrict(files.apiSchemas, ROOT);
   const chatDataServiceSource = readFileStrict(files.chatDataService, ROOT);
   const chatStreamRouteSource = readFileStrict(files.chatStreamRoute, ROOT);
   const categoriesFilterGridSource = readFileStrict(files.categoriesFilterGrid, ROOT);
@@ -213,9 +215,12 @@ function main() {
 
   // Chat API invariants — route layer (auth, CSRF, rate-limit, response contract).
   assertContains(chatRouteSource, "const authResult = await requireApiAuth(request);", "Chat REST API requires authenticated session", failures);
-  assertContains(chatRouteSource, "mode: z.enum([\"global\", \"video\", \"online\"]).default(\"global\"),", "Chat GET schema validates supported chat modes", failures);
-  assertContains(chatRouteSource, "mode: z.enum([\"global\", \"video\"]),", "Chat POST schema restricts writable modes", failures);
-  assertContains(chatRouteSource, "content: z.string().trim().min(1).max(200),", "Chat POST enforces message length limits", failures);
+  assertContains(chatRouteSource, "import { chatQuerySchema, createChatMessageSchema } from \"@/lib/api-schemas\";", "Chat route imports shared chat schemas", failures);
+  assertContains(chatRouteSource, "chatQuerySchema.safeParse", "Chat GET validates request data with shared query schema", failures);
+  assertContains(chatRouteSource, "createChatMessageSchema.safeParse", "Chat POST validates request body with shared message schema", failures);
+  assertContains(apiSchemasSource, "mode: z.enum([\"global\", \"video\", \"online\"]).default(\"global\"),", "Chat GET schema validates supported chat modes", failures);
+  assertContains(apiSchemasSource, "mode: z.enum([\"global\", \"video\"]),", "Chat POST schema restricts writable modes", failures);
+  assertContains(apiSchemasSource, "content: z.string().trim().min(1).max(200),", "Chat POST enforces message length limits", failures);
   assertContains(chatRouteSource, "verifySameOrigin(request)", "Chat POST verifies same-origin to prevent CSRF", failures);
   assertContains(chatRouteSource, "rateLimitOrResponse(", "Chat POST applies per-user rate limit for global messages", failures);
   assertContains(chatRouteSource, "rateLimitSharedOrResponse(", "Chat POST applies room-level rate limit for global messages", failures);
