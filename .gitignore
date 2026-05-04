@@ -10,6 +10,7 @@ logs
 *.log
 rocks.sql
 apps/web/.cache
+apps/web/public/avatars/
 
 # Environment secrets
 .env

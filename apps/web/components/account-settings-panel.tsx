@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { AuthAccountActions } from "@/components/auth-account-actions";
 import { AuthChangePasswordForm } from "@/components/auth-change-password-form";
@@ -40,8 +40,12 @@ export function AccountSettingsPanel({
   const [bio, setBio] = useState(user.bio ?? "");
   const [location, setLocation] = useState(user.location ?? "");
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [avatarMessage, setAvatarMessage] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
   const avatarPreview = useMemo(() => {
     const trimmed = avatarUrl.trim();
@@ -105,7 +109,6 @@ export function AccountSettingsPanel({
         },
         body: JSON.stringify({
           screenName,
-          avatarUrl,
           bio,
           location,
         }),
@@ -135,6 +138,70 @@ export function AccountSettingsPanel({
       setSaveError("Could not save your profile details.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleAvatarUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setAvatarMessage(null);
+    setAvatarError(null);
+    setIsUploadingAvatar(true);
+
+    const formData = new FormData();
+    formData.append("avatar", file);
+
+    try {
+      const response = await fetchWithAuthRetry("/api/auth/profile/avatar", {
+        method: "POST",
+        body: formData,
+      });
+
+      const payload = (await response.json().catch(() => null)) as { user?: Partial<AccountUser>; error?: string } | null;
+
+      if (!response.ok || !payload?.user) {
+        setAvatarError(payload?.error ?? "Could not upload your avatar.");
+        return;
+      }
+
+      setAvatarUrl(payload.user.avatarUrl ?? "");
+      setAvatarMessage("Avatar uploaded.");
+    } catch {
+      setAvatarError("Could not upload your avatar.");
+    } finally {
+      if (avatarInputRef.current) {
+        avatarInputRef.current.value = "";
+      }
+      setIsUploadingAvatar(false);
+    }
+  }
+
+  async function handleAvatarRemove() {
+    setAvatarMessage(null);
+    setAvatarError(null);
+    setIsUploadingAvatar(true);
+
+    try {
+      const response = await fetchWithAuthRetry("/api/auth/profile/avatar", {
+        method: "DELETE",
+      });
+
+      const payload = (await response.json().catch(() => null)) as { user?: Partial<AccountUser>; error?: string } | null;
+
+      if (!response.ok || !payload?.user) {
+        setAvatarError(payload?.error ?? "Could not remove your avatar.");
+        return;
+      }
+
+      setAvatarUrl(payload.user.avatarUrl ?? "");
+      setAvatarMessage("Avatar removed.");
+    } catch {
+      setAvatarError("Could not remove your avatar.");
+    } finally {
+      setIsUploadingAvatar(false);
     }
   }
 
@@ -192,14 +259,32 @@ export function AccountSettingsPanel({
                 </label>
 
                 <label>
-                  <span>Avatar URL</span>
-                  <input
-                    name="avatarUrl"
-                    value={avatarUrl}
-                    onChange={(event) => setAvatarUrl(event.currentTarget.value)}
-                    placeholder="https://example.com/my-avatar.jpg"
-                    maxLength={500}
-                  />
+                  <span>Avatar</span>
+                  <div className="accountAvatarControls">
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      name="avatarFile"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      onChange={(event) => {
+                        void handleAvatarUpload(event);
+                      }}
+                      disabled={isUploadingAvatar}
+                    />
+                    <p className="accountAvatarHint">Uploads are resized to 256x256 WebP and stored locally.</p>
+                    {avatarPreview ? (
+                      <button
+                        type="button"
+                        className="accountAvatarRemoveButton"
+                        onClick={() => {
+                          void handleAvatarRemove();
+                        }}
+                        disabled={isUploadingAvatar}
+                      >
+                        Remove avatar
+                      </button>
+                    ) : null}
+                  </div>
                 </label>
 
                 <label>
@@ -220,7 +305,7 @@ export function AccountSettingsPanel({
                 ) : (
                   <div className="accountAvatarPreviewFallback" aria-hidden="true">👤</div>
                 )}
-                <p>Avatar preview</p>
+                <p>{isUploadingAvatar ? "Uploading avatar..." : "Avatar preview"}</p>
               </div>
             </div>
 
@@ -237,6 +322,8 @@ export function AccountSettingsPanel({
             </label>
 
             <button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save details"}</button>
+      {avatarMessage ? <p className="authMessage">{avatarMessage}</p> : null}
+      {avatarError ? <p className="authMessage">{avatarError}</p> : null}
             {saveMessage ? <p className="authMessage">{saveMessage}</p> : null}
             {saveError ? <p className="authMessage">{saveError}</p> : null}
         </form>
