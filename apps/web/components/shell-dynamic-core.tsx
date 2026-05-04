@@ -3465,7 +3465,7 @@ function ShellDynamicInner({
                         onClick={() => router.push(`/u/${encodeURIComponent(user.name)}`)}
                       >
                         {user.avatarUrl ? (
-                          <Image src={user.avatarUrl} alt="" width={88} height={88} className="chatAvatar" loading="lazy" sizes="44px" />
+                          <Image src={user.avatarUrl} alt="" width={88} height={88} className="chatAvatar" loading="lazy" sizes="44px" unoptimized />
                         ) : (
                           <div className="avatar">{user.name.slice(0, 1)}</div>
                         )}
@@ -3491,7 +3491,7 @@ function ShellDynamicInner({
                         onClick={() => router.push(`/u/${encodeURIComponent(message.user.name)}`)}
                       >
                         {message.user.avatarUrl ? (
-                          <Image src={message.user.avatarUrl} alt="" width={88} height={88} className="chatAvatar" loading="lazy" sizes="44px" />
+                          <Image src={message.user.avatarUrl} alt="" width={88} height={88} className="chatAvatar" loading="lazy" sizes="44px" unoptimized />
                         ) : (
                           <div className="avatar">{message.user.name.slice(0, 1)}</div>
                         )}
