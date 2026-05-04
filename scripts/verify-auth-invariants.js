@@ -30,6 +30,7 @@ const files = {
   profileRoute: path.join(ROOT, "apps/web/app/api/auth/profile/route.ts"),
   profileAvatarRoute: path.join(ROOT, "apps/web/app/api/auth/profile/avatar/route.ts"),
   avatarStorage: path.join(ROOT, "apps/web/lib/avatar-storage.ts"),
+  avatarCropModal: path.join(ROOT, "apps/web/components/avatar-crop-modal.tsx"),
   changePasswordRoute: path.join(ROOT, "apps/web/app/api/auth/change-password/route.ts"),
   forgotPasswordRoute: path.join(ROOT, "apps/web/app/api/auth/forgot-password/route.ts"),
   resetPasswordRoute: path.join(ROOT, "apps/web/app/api/auth/reset-password/route.ts"),
@@ -75,6 +76,7 @@ function main() {
   const profileRouteSource = readFileStrict(files.profileRoute, ROOT);
   const profileAvatarRouteSource = readFileStrict(files.profileAvatarRoute, ROOT);
   const avatarStorageSource = readFileStrict(files.avatarStorage, ROOT);
+  const avatarCropModalSource = readFileStrict(files.avatarCropModal, ROOT);
   const resetPasswordRouteSource = readFileStrict(files.resetPasswordRoute, ROOT);
   const sendVerificationRouteSource = readFileStrict(files.sendVerificationRoute, ROOT);
   const verifyEmailRouteSource = readFileStrict(files.verifyEmailRoute, ROOT);
@@ -116,6 +118,7 @@ function main() {
   assertContains(accountPanelSource, "User details", "Account panel has User details tab", failures);
   assertContains(accountPanelSource, "Security", "Account panel has Security tab", failures);
   assertContains(accountPanelSource, "name=\"avatarFile\"", "Account panel includes avatar upload field", failures);
+  assertContains(accountPanelSource, "AvatarCropModal", "Account panel imports the avatar crop modal", failures);
   assertContains(accountPanelSource, '"/api/auth/profile/avatar"', "Account panel uploads avatars through the avatar API route", failures);
   assertContains(accountPanelSource, "name=\"bio\"", "Account panel includes bio field", failures);
   assertContains(accountPanelSource, "name=\"location\"", "Account panel includes location field", failures);
@@ -152,7 +155,13 @@ function main() {
   assertContains(profileAvatarRouteSource, 'avatarUrl: nextAvatarUrl', "Avatar API stores managed avatar URLs on the user record", failures);
   assertContains(avatarStorageSource, "randomUUID", "Avatar storage uses UUID filenames", failures);
 
-  // --- Login API route ---
+  // --- Avatar crop modal ---
+  assertContains(avatarCropModalSource, "createPortal", "Avatar crop modal uses a React portal to escape parent stacking contexts", failures);
+  assertContains(avatarCropModalSource, "react-easy-crop", "Avatar crop modal uses react-easy-crop for pan/zoom", failures);
+  assertContains(avatarCropModalSource, "getCroppedBlob", "Avatar crop modal produces a cropped blob before upload", failures);
+  assertContains(avatarCropModalSource, "avatarCropModalOverlay", "Avatar crop modal applies overlay CSS class", failures);
+  assertContains(globalCssSource, "avatarCropModalOverlay", "CSS defines the avatar crop modal overlay", failures);
+  assertContains(globalCssSource, "avatarCropArea", "CSS defines the avatar crop area container", failures);
   assertContains(loginRouteSource, "export async function POST", "Login API exposes POST handler", failures);
   assertContains(loginRouteSource, "verifySameOrigin(request)", "Login API enforces same-origin CSRF protection", failures);
   assertContains(loginRouteSource, "rateLimitOrResponse(request, `auth:login:${normalizedEmail}`, 10, 15 * 60 * 1000)", "Login API applies per-identifier auth rate limiting", failures);

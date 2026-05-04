@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { AuthAccountActions } from "@/components/auth-account-actions";
 import { AuthChangePasswordForm } from "@/components/auth-change-password-form";
+import { AvatarCropModal } from "@/components/avatar-crop-modal";
 import { BlockedVideosInfiniteList } from "@/components/blocked-videos-infinite-list";
 import { UpgradeToEmailForm } from "@/components/upgrade-to-email-form";
 import type { HiddenVideoEntry } from "@/lib/catalog-data";
@@ -46,6 +47,7 @@ export function AccountSettingsPanel({
   const [avatarMessage, setAvatarMessage] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
 
   const avatarPreview = useMemo(() => {
     const trimmed = avatarUrl.trim();
@@ -141,40 +143,45 @@ export function AccountSettingsPanel({
     }
   }
 
-  async function handleAvatarUpload(event: React.ChangeEvent<HTMLInputElement>) {
+  function handleAvatarFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
     if (!file) {
       return;
     }
-
     setAvatarMessage(null);
     setAvatarError(null);
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") {
+        setCropSrc(reader.result);
+      }
+    });
+    reader.readAsDataURL(file);
+    if (avatarInputRef.current) {
+      avatarInputRef.current.value = "";
+    }
+  }
+
+  async function handleCroppedBlob(blob: Blob) {
+    setCropSrc(null);
     setIsUploadingAvatar(true);
-
     const formData = new FormData();
-    formData.append("avatar", file);
-
+    formData.append("avatar", blob, "avatar.webp");
     try {
       const response = await fetchWithAuthRetry("/api/auth/profile/avatar", {
         method: "POST",
         body: formData,
       });
-
       const payload = (await response.json().catch(() => null)) as { user?: Partial<AccountUser>; error?: string } | null;
-
       if (!response.ok || !payload?.user) {
         setAvatarError(payload?.error ?? "Could not upload your avatar.");
         return;
       }
-
       setAvatarUrl(payload.user.avatarUrl ?? "");
-      setAvatarMessage("Avatar uploaded.");
+      setAvatarMessage("Avatar saved.");
     } catch {
       setAvatarError("Could not upload your avatar.");
     } finally {
-      if (avatarInputRef.current) {
-        avatarInputRef.current.value = "";
-      }
       setIsUploadingAvatar(false);
     }
   }
@@ -261,29 +268,17 @@ export function AccountSettingsPanel({
                 <label>
                   <span>Avatar</span>
                   <div className="accountAvatarControls">
-                    <input
-                      ref={avatarInputRef}
-                      type="file"
-                      name="avatarFile"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      onChange={(event) => {
-                        void handleAvatarUpload(event);
-                      }}
-                      disabled={isUploadingAvatar}
-                    />
-                    <p className="accountAvatarHint">Uploads are resized to 256x256 WebP and stored locally.</p>
-                    {avatarPreview ? (
-                      <button
-                        type="button"
-                        className="accountAvatarRemoveButton"
-                        onClick={() => {
-                          void handleAvatarRemove();
-                        }}
+                    <label className={`accountAvatarUploadButton${isUploadingAvatar ? " accountAvatarUploadButtonDisabled" : ""}`}>
+                      <input
+                        ref={avatarInputRef}
+                        type="file"
+                        name="avatarFile"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        onChange={handleAvatarFileChange}
                         disabled={isUploadingAvatar}
-                      >
-                        Remove avatar
-                      </button>
-                    ) : null}
+                      />
+                      {isUploadingAvatar ? "Uploading..." : "Choose image"}
+                    </label>
                   </div>
                 </label>
 
@@ -305,7 +300,19 @@ export function AccountSettingsPanel({
                 ) : (
                   <div className="accountAvatarPreviewFallback" aria-hidden="true">👤</div>
                 )}
-                <p>{isUploadingAvatar ? "Uploading avatar..." : "Avatar preview"}</p>
+                {isUploadingAvatar ? <p>Uploading avatar...</p> : null}
+                {avatarPreview ? (
+                  <button
+                    type="button"
+                    className="accountAvatarRemoveButton"
+                    onClick={() => {
+                      void handleAvatarRemove();
+                    }}
+                    disabled={isUploadingAvatar}
+                  >
+                    Remove avatar
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -354,6 +361,13 @@ export function AccountSettingsPanel({
           />
         </div>
       )}
+      {cropSrc ? (
+        <AvatarCropModal
+          imageSrc={cropSrc}
+          onConfirm={(blob) => { void handleCroppedBlob(blob); }}
+          onClose={() => { setCropSrc(null); }}
+        />
+      ) : null}
     </>
   );
 }
