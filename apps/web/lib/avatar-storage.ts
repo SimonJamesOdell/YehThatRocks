@@ -23,6 +23,13 @@ function resolveWebAppRoot() {
 }
 
 function resolveAvatarDirectory() {
+  // In production the container mounts a host volume at AVATAR_STORAGE_PATH.
+  // nginx serves /avatars/ directly from that path, so the app only needs to
+  // write there — no dependency on Next.js's public directory resolution.
+  if (process.env.AVATAR_STORAGE_PATH) {
+    return process.env.AVATAR_STORAGE_PATH;
+  }
+
   return path.join(resolveWebAppRoot(), "public", "avatars");
 }
 
