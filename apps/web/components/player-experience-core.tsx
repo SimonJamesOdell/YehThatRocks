@@ -31,6 +31,11 @@ import {
   resolveVerifiedPlaybackFailurePresentation,
   type ReportUnavailableResult,
 } from "@/components/player-experience-playback-failure-utils";
+import { useAdminSession } from "@/components/use-admin-session";
+import { useAdminVideoEdit } from "@/components/use-admin-video-edit";
+import { useFavouriteState } from "@/components/use-favourite-state";
+import { useLyricsAvailability } from "@/components/use-lyrics-availability";
+import { usePlaylistSequence } from "@/components/use-playlist-sequence";
 
 type PlayerExperienceProps = {
   currentVideo: VideoRecord;
@@ -52,24 +57,6 @@ type PlayerExperienceProps = {
   routeLoadingMessage?: string;
 };
 
-type AdminEditableVideo = {
-  id: number;
-  videoId: string;
-  title: string;
-  parsedArtist: string | null;
-  parsedTrack: string | null;
-  parsedVideoType: string | null;
-  parseConfidence: number | null;
-  channelTitle: string | null;
-  description: string | null;
-  updatedAt: string | Date | null;
-};
-
-type PlaylistPayload = {
-  id: string;
-  videos: VideoRecord[];
-};
-
 type PlaylistSummary = {
   id: string;
   name: string;
@@ -79,10 +66,6 @@ type PlaylistSummary = {
 type PlayerPreferencesResponse = {
   autoplayEnabled?: boolean | null;
   volume?: number | null;
-};
-
-type LyricsAvailabilityResponse = {
-  available?: boolean;
 };
 
 type YouTubePlayerStateChangeEvent = {
@@ -178,7 +161,6 @@ const PLAYER_LOAD_REFRESH_HINT_DELAY_MS = 2000;
 const PLAYER_AUTO_RECONNECT_DELAY_MS = 2000;
 const MANUAL_TRANSITION_MASK_TIMEOUT_MS = 8000;
 const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
-const ADMIN_SESSION_REVALIDATE_INTERVAL_MS = 30_000;
 const maxEndedChoiceVideos = 12;
 const ENDED_CHOICE_BATCH_SIZE = maxEndedChoiceVideos;
 const ENDED_CHOICE_INITIAL_PREFETCH_COUNT = 24;
@@ -324,19 +306,24 @@ export function PlayerExperience({
   const hasLeftInitialRequestedVideoRef = useRef(false);
   const isBootstrappingHistoryRef = useRef(true);
   const previousVideoIdRef = useRef<string | null>(null);
-  const favouriteSaveTimeoutRef = useRef<number | null>(null);
   const footerPlaylistMenuRef = useRef<HTMLDivElement | null>(null);
   const shareToChatResetTimeoutRef = useRef<number | null>(null);
   const playerPreferencesSaveTimeoutRef = useRef<number | null>(null);
-  const lyricsAvailabilityByVideoRef = useRef<Map<string, boolean>>(new Map());
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
   const [isPlayerPreferencesServerHydrated, setIsPlayerPreferencesServerHydrated] = useState(() => !isLoggedIn);
   const [copied, setCopied] = useState(false);
   const [shareToChatState, setShareToChatState] = useState<"idle" | "sending" | "sent" | "error">("idle");
-  const [favouriteSaveState, setFavouriteSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [isCurrentVideoFavourited, setIsCurrentVideoFavourited] = useState(Number(currentVideo.favourited ?? 0) > 0);
-  const [removeFavouriteState, setRemoveFavouriteState] = useState<"idle" | "removing">("idle");
-  const [showRemoveFavouriteConfirm, setShowRemoveFavouriteConfirm] = useState(false);
+  const {
+    isCurrentVideoFavourited,
+    setIsCurrentVideoFavourited,
+    favouriteSaveState,
+    removeFavouriteState,
+    setRemoveFavouriteState,
+    showRemoveFavouriteConfirm,
+    setShowRemoveFavouriteConfirm,
+    handleAddFavourite,
+    handleRemoveFavourite,
+  } = useFavouriteState({ currentVideo, isLoggedIn });
   const [playlistDropAnimation, setPlaylistDropAnimation] = useState<{
     key: number;
     thumbnailUrl: string;
@@ -397,7 +384,6 @@ export function PlayerExperience({
     const [showShareMenu, setShowShareMenu] = useState(false);
     const [showShareModal, setShowShareModal] = useState(false);
     const [shareModalCopied, setShareModalCopied] = useState(false);
-    const [lyricsAvailableForCurrentVideo, setLyricsAvailableForCurrentVideo] = useState<boolean | null>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isScrubbing, setIsScrubbing] = useState(false);
     const progressIntervalRef = useRef<number | null>(null);
@@ -429,94 +415,17 @@ export function PlayerExperience({
   const watchHistoryLevelRef = useRef<Map<string, number>>(new Map());
   const watchHistoryRefreshInFlightRef = useRef<Promise<boolean> | null>(null);
   const watchHistoryRefreshBlockedUntilRef = useRef(0);
-  const [playlistQueueIds, setPlaylistQueueIds] = useState<string[]>([]);
-  const [playlistQueueOwnerId, setPlaylistQueueOwnerId] = useState<string | null>(null);
-  const [playlistRefreshTick, setPlaylistRefreshTick] = useState(0);
+  const {
+    playlistQueueIds,
+    setPlaylistQueueIds,
+    playlistQueueOwnerId,
+    setPlaylistQueueOwnerId,
+  } = usePlaylistSequence({ activePlaylistId, isLoggedIn });
   const [routeAutoplayQueueIds, setRouteAutoplayQueueIds] = useState<string[]>([]);
   const [topFallbackVideos, setTopFallbackVideos] = useState<VideoRecord[]>([]);
-  const [isAdminSessionActive, setIsAdminSessionActive] = useState(initialIsAdmin);
-  const isAdmin = isLoggedIn && isAdminSessionActive;
-  const [showAdminVideoEditModal, setShowAdminVideoEditModal] = useState(false);
-  const [adminEditVideoRowId, setAdminEditVideoRowId] = useState<number | null>(null);
-  const [adminEditTitle, setAdminEditTitle] = useState("");
-  const [adminEditChannelTitle, setAdminEditChannelTitle] = useState("");
+  const isAdmin = useAdminSession({ isLoggedIn, initialIsAdmin });
   const [localTitleOverride, setLocalTitleOverride] = useState<string | null>(null);
   const [localChannelTitleOverride, setLocalChannelTitleOverride] = useState<string | null>(null);
-  const [adminEditParsedArtist, setAdminEditParsedArtist] = useState("");
-  const [adminEditParsedTrack, setAdminEditParsedTrack] = useState("");
-  const [adminEditParsedVideoType, setAdminEditParsedVideoType] = useState("");
-  const [adminEditParseConfidence, setAdminEditParseConfidence] = useState("");
-  const [adminEditDescription, setAdminEditDescription] = useState("");
-  const [isAdminEditLoading, setIsAdminEditLoading] = useState(false);
-  const [isAdminEditSaving, setIsAdminEditSaving] = useState(false);
-  const [isAdminDeleting, setIsAdminDeleting] = useState(false);
-  const [showAdminDeleteConfirmModal, setShowAdminDeleteConfirmModal] = useState(false);
-
-  useEffect(() => {
-    setIsAdminSessionActive(initialIsAdmin);
-  }, [initialIsAdmin]);
-
-  const revalidateAdminSession = useCallback(async () => {
-    if (!isLoggedIn) {
-      setIsAdminSessionActive(false);
-      return;
-    }
-
-    try {
-      const response = await fetchWithAuthRetry("/api/admin/dashboard", {
-        method: "GET",
-        cache: "no-store",
-      });
-
-      if (response.ok) {
-        setIsAdminSessionActive(true);
-        return;
-      }
-
-      if (response.status === 401 || response.status === 403) {
-        setIsAdminSessionActive(false);
-      }
-    } catch {
-      // Keep current capability state on transient network failures.
-    }
-  }, [isLoggedIn]);
-
-  useEffect(() => {
-    void revalidateAdminSession();
-  }, [revalidateAdminSession]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const handleFocus = () => {
-      void revalidateAdminSession();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        void revalidateAdminSession();
-      }
-    };
-
-    window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    const intervalId = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
-        void revalidateAdminSession();
-      }
-    }, ADMIN_SESSION_REVALIDATE_INTERVAL_MS);
-
-    return () => {
-      window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.clearInterval(intervalId);
-    };
-  }, [revalidateAdminSession]);
-  const [adminEditError, setAdminEditError] = useState<string | null>(null);
-  const [adminEditStatus, setAdminEditStatus] = useState<string | null>(null);
   const endedChoiceOverlayRef = useRef<HTMLDivElement | null>(null);
   const endedChoicePrefetchRafRef = useRef<number | null>(null);
   const endedChoiceRowHeightRef = useRef(220);
@@ -531,6 +440,52 @@ export function PlayerExperience({
   const endedChoicePrewarmVideoIdRef = useRef<string | null>(null);
   const endedChoicePostPrimeQueuedRef = useRef(false);
   const pointerPositionRef = useRef<{ x: number; y: number } | null>(null);
+
+  const {
+    showAdminVideoEditModal,
+    setShowAdminVideoEditModal,
+    adminEditVideoRowId,
+    adminEditTitle,
+    setAdminEditTitle,
+    adminEditChannelTitle,
+    setAdminEditChannelTitle,
+    adminEditParsedArtist,
+    setAdminEditParsedArtist,
+    adminEditParsedTrack,
+    setAdminEditParsedTrack,
+    adminEditParsedVideoType,
+    setAdminEditParsedVideoType,
+    adminEditParseConfidence,
+    setAdminEditParseConfidence,
+    adminEditDescription,
+    setAdminEditDescription,
+    isAdminEditLoading,
+    isAdminEditSaving,
+    isAdminDeleting,
+    setIsAdminDeleting,
+    showAdminDeleteConfirmModal,
+    setShowAdminDeleteConfirmModal,
+    adminEditError,
+    setAdminEditError,
+    adminEditStatus,
+    setAdminEditStatus,
+    handleOpenAdminVideoEdit,
+    handleSaveAdminVideoEdit,
+    closeAdminVideoEditModal,
+  } = useAdminVideoEdit({
+    videoId: currentVideo.id,
+    isAdmin,
+    playerFrameRef,
+    pointerPositionRef,
+    onSaveSuccess: (title, channelTitle) => {
+      setLocalTitleOverride(title);
+      setLocalChannelTitleOverride(channelTitle);
+    },
+    onShowControls: () => setShowControls(true),
+  });
+
+  const lyricsAvailableForCurrentVideo = useLyricsAvailability(currentVideo.id);
+
   const currentVideoRef = useRef(currentVideo);
   const autoplayEnabledRef = useRef(autoplayEnabled);
   const volumeRef = useRef(volume);
@@ -554,9 +509,6 @@ export function PlayerExperience({
 
   useEffect(() => {
     currentVideoRef.current = currentVideo;
-    setIsCurrentVideoFavourited(Number(currentVideo.favourited ?? 0) > 0);
-    setRemoveFavouriteState("idle");
-    setShowRemoveFavouriteConfirm(false);
     setLocalTitleOverride(null);
     setLocalChannelTitleOverride(null);
     setEndedChoiceLoading(false);
@@ -705,55 +657,6 @@ export function PlayerExperience({
 
     void loadFooterPlaylistMenu();
   }, [showFooterPlaylistMenu]);
-
-  useEffect(() => {
-    const videoId = currentVideo.id;
-
-    if (!videoId) {
-      setLyricsAvailableForCurrentVideo(null);
-      return;
-    }
-
-    const cachedAvailability = lyricsAvailabilityByVideoRef.current.get(videoId);
-    if (cachedAvailability !== undefined) {
-      setLyricsAvailableForCurrentVideo(cachedAvailability);
-      return;
-    }
-
-    let cancelled = false;
-    const controller = new AbortController();
-    setLyricsAvailableForCurrentVideo(null);
-
-    async function loadLyricsAvailability() {
-      try {
-        const response = await fetch(`/api/lyrics?v=${encodeURIComponent(videoId)}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          return;
-        }
-
-        const payload = (await response.json().catch(() => null)) as LyricsAvailabilityResponse | null;
-        const isAvailable = Boolean(payload?.available);
-        lyricsAvailabilityByVideoRef.current.set(videoId, isAvailable);
-
-        if (!cancelled) {
-          setLyricsAvailableForCurrentVideo(isAvailable);
-        }
-      } catch {
-        // Keep button available when availability cannot be determined due to transient errors.
-      }
-    }
-
-    void loadLyricsAvailability();
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [currentVideo.id]);
 
   const playlistCurrentIndex = playlistQueueIds.findIndex((videoId) => videoId === currentVideo.id);
   const effectivePlaylistIndex =
@@ -1325,80 +1228,6 @@ export function PlayerExperience({
       hasLeftInitialRequestedVideoRef.current = true;
     }
   }, [currentVideo.id]);
-
-  useEffect(() => {
-    const handlePlaylistsUpdated = () => {
-      setPlaylistRefreshTick((current) => current + 1);
-    };
-
-    const unsubscribe = listenToAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, handlePlaylistsUpdated);
-
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isLoggedIn || !activePlaylistId) {
-      setPlaylistQueueIds([]);
-      setPlaylistQueueOwnerId(null);
-      return;
-    }
-
-    const playlistId = activePlaylistId;
-
-    let cancelled = false;
-
-    // Prevent stale tracks from previous playlist driving next/autoplay while new playlist loads.
-    setPlaylistQueueIds([]);
-    setPlaylistQueueOwnerId(null);
-
-    async function loadPlaylistSequence() {
-      try {
-        const response = await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          if (!cancelled) {
-            setPlaylistQueueIds([]);
-            setPlaylistQueueOwnerId(null);
-          }
-          return;
-        }
-
-        const payload = (await response.json().catch(() => null)) as PlaylistPayload | null;
-
-        if (!payload || !Array.isArray(payload.videos)) {
-          if (!cancelled) {
-            setPlaylistQueueIds([]);
-            setPlaylistQueueOwnerId(null);
-          }
-          return;
-        }
-
-        const sequenceIds = payload.videos
-          .map((video) => video.id)
-          .filter((id): id is string => Boolean(id));
-
-        if (!cancelled) {
-          setPlaylistQueueIds(sequenceIds);
-          setPlaylistQueueOwnerId(playlistId);
-        }
-      } catch {
-        if (!cancelled) {
-          setPlaylistQueueIds([]);
-          setPlaylistQueueOwnerId(null);
-        }
-      }
-    }
-
-    void loadPlaylistSequence();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activePlaylistId, isLoggedIn, playlistRefreshTick]);
 
   function persistResumeSnapshot(wasPlaying: boolean, explicitTime?: number) {
     if (typeof window === "undefined") {
@@ -4335,60 +4164,6 @@ export function PlayerExperience({
     }
   }
 
-  async function handleAddFavourite() {
-    setFavouriteSaveState("saving");
-    try {
-      const response = await fetchWithAuthRetry("/api/favourites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoId: currentVideo.id, action: "add" }),
-      });
-
-      if (response.ok) {
-        setIsCurrentVideoFavourited(true);
-        dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
-      }
-
-      setFavouriteSaveState(response.ok ? "saved" : "error");
-    } catch {
-      setFavouriteSaveState("error");
-    }
-    if (favouriteSaveTimeoutRef.current !== null) {
-      window.clearTimeout(favouriteSaveTimeoutRef.current);
-    }
-    favouriteSaveTimeoutRef.current = window.setTimeout(() => {
-      setFavouriteSaveState("idle");
-      favouriteSaveTimeoutRef.current = null;
-    }, 2000);
-  }
-
-  async function handleRemoveFavourite() {
-    if (!isLoggedIn || removeFavouriteState === "removing") {
-      return;
-    }
-
-    setRemoveFavouriteState("removing");
-
-    try {
-      const response = await fetchWithAuthRetry("/api/favourites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoId: currentVideo.id, action: "remove" }),
-      });
-
-      if (!response.ok) {
-        return;
-      }
-
-      setIsCurrentVideoFavourited(false);
-      setShowRemoveFavouriteConfirm(false);
-      setFavouriteSaveState("idle");
-      dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
-    } finally {
-      setRemoveFavouriteState("idle");
-    }
-  }
-
   function handleOpenLyrics() {
     if (lyricsUnavailableForCurrentVideo) {
       return;
@@ -4539,151 +4314,6 @@ export function PlayerExperience({
       const overlayVolumeValue = isMuted
         ? 0
         : Math.max(0, Math.min(100, toSafeNumber(volume, 100)));
-
-      async function handleOpenAdminVideoEdit() {
-        if (!isAdmin) {
-          return;
-        }
-
-        setShowAdminVideoEditModal(true);
-        setIsAdminEditLoading(true);
-        setAdminEditError(null);
-        setAdminEditStatus(null);
-
-        try {
-          const response = await fetchWithAuthRetry(`/api/admin/videos?q=${encodeURIComponent(currentVideo.id)}`, {
-            method: "GET",
-            cache: "no-store",
-          });
-
-          if (!response.ok) {
-            if (response.status === 401 || response.status === 403) {
-              setAdminEditError("Admin session expired. Please sign in again.");
-              return;
-            }
-            setAdminEditError("Could not load video details.");
-            return;
-          }
-
-          const payload = (await response.json().catch(() => null)) as { videos?: AdminEditableVideo[] } | null;
-          const row = Array.isArray(payload?.videos)
-            ? payload.videos.find((video) => video.videoId === currentVideo.id) ?? null
-            : null;
-
-          if (!row) {
-            setAdminEditError("Video record not found.");
-            return;
-          }
-
-          setAdminEditVideoRowId(row.id);
-          setAdminEditTitle(row.title ?? "");
-          setAdminEditChannelTitle(row.channelTitle ?? "");
-          setAdminEditParsedArtist(row.parsedArtist ?? "");
-          setAdminEditParsedTrack(row.parsedTrack ?? "");
-          setAdminEditParsedVideoType(row.parsedVideoType ?? "");
-          setAdminEditParseConfidence(
-            row.parseConfidence === null || row.parseConfidence === undefined
-              ? ""
-              : String(row.parseConfidence),
-          );
-          setAdminEditDescription(row.description ?? "");
-        } catch {
-          setAdminEditError("Could not load video details.");
-        } finally {
-          setIsAdminEditLoading(false);
-        }
-      }
-
-      async function handleSaveAdminVideoEdit() {
-        if (!isAdmin || !adminEditVideoRowId) {
-          return;
-        }
-
-        setIsAdminEditSaving(true);
-        setAdminEditError(null);
-        setAdminEditStatus(null);
-
-        const confidenceValue = adminEditParseConfidence.trim();
-        let parseConfidence: number | null = null;
-
-        if (confidenceValue.length > 0) {
-          const parsed = Number(confidenceValue);
-          if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
-            setAdminEditError("Parse confidence must be between 0 and 1.");
-            setIsAdminEditSaving(false);
-            return;
-          }
-          parseConfidence = parsed;
-        }
-
-        try {
-          const response = await fetchWithAuthRetry("/api/admin/videos", {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              id: adminEditVideoRowId,
-              title: adminEditTitle,
-              channelTitle: adminEditChannelTitle,
-              parsedArtist: adminEditParsedArtist,
-              parsedTrack: adminEditParsedTrack,
-              parsedVideoType: adminEditParsedVideoType,
-              parseConfidence,
-              description: adminEditDescription,
-            }),
-          });
-
-          if (!response.ok) {
-            if (response.status === 401 || response.status === 403) {
-              setAdminEditError("Admin session expired. Please sign in again.");
-              return;
-            }
-            setAdminEditError("Could not save video changes.");
-            return;
-          }
-
-          setAdminEditStatus("Saved.");
-          setLocalTitleOverride(adminEditTitle);
-          setLocalChannelTitleOverride(adminEditChannelTitle);
-          closeAdminVideoEditModal();
-          router.refresh();
-        } catch {
-          setAdminEditError("Could not save video changes.");
-        } finally {
-          setIsAdminEditSaving(false);
-        }
-      }
-
-      function closeAdminVideoEditModal() {
-        setShowAdminVideoEditModal(false);
-
-        if (typeof window === "undefined") {
-          return;
-        }
-
-        window.requestAnimationFrame(() => {
-          const frame = playerFrameRef.current;
-          if (!frame) {
-            return;
-          }
-
-          const isHoveringFrame = frame.matches(":hover");
-          const pointer = pointerPositionRef.current;
-          const frameRect = frame.getBoundingClientRect();
-          const pointerInsideFrame = Boolean(
-            pointer
-            && pointer.x >= frameRect.left
-            && pointer.x <= frameRect.right
-            && pointer.y >= frameRect.top
-            && pointer.y <= frameRect.bottom,
-          );
-
-          if (isHoveringFrame || pointerInsideFrame) {
-            setShowControls(true);
-          }
-        });
-      }
 
       async function handleAdminDeleteCurrentVideo() {
         if (!isAdmin || isAdminDeleting) {

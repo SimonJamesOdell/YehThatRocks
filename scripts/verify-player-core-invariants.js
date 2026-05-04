@@ -21,6 +21,11 @@ const ROOT = process.cwd();
 
 const files = {
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
+  useAdminSession: path.join(ROOT, "apps/web/components/use-admin-session.ts"),
+  useLyricsAvailability: path.join(ROOT, "apps/web/components/use-lyrics-availability.ts"),
+  usePlaylistSequence: path.join(ROOT, "apps/web/components/use-playlist-sequence.ts"),
+  useFavouriteState: path.join(ROOT, "apps/web/components/use-favourite-state.ts"),
+  useAdminVideoEdit: path.join(ROOT, "apps/web/components/use-admin-video-edit.ts"),
   endedChoiceCard: path.join(ROOT, "apps/web/components/player-experience-ended-choice-card.tsx"),
   autoplayUtils: path.join(ROOT, "apps/web/components/player-experience-autoplay-utils.ts"),
   playbackFailureUtils: path.join(ROOT, "apps/web/components/player-experience-playback-failure-utils.ts"),
@@ -39,7 +44,14 @@ const files = {
 function main() {
   const failures = [];
 
-  const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
+  const playerExperienceSource = [
+    readFileStrict(files.playerExperience, ROOT),
+    readFileStrict(files.useAdminSession, ROOT),
+    readFileStrict(files.useLyricsAvailability, ROOT),
+    readFileStrict(files.usePlaylistSequence, ROOT),
+    readFileStrict(files.useFavouriteState, ROOT),
+    readFileStrict(files.useAdminVideoEdit, ROOT),
+  ].join("\n");
   const endedChoiceCardSource = readFileStrict(files.endedChoiceCard, ROOT);
   const autoplayUtilsSource = readFileStrict(files.autoplayUtils, ROOT);
   const playbackFailureUtilsSource = readFileStrict(files.playbackFailureUtils, ROOT);
@@ -212,7 +224,7 @@ function main() {
   assertContains(playerExperienceSource, "showDockCloseButton && isAdmin ? (", "Player renders dedicated docked admin share row", failures);
   assertContains(playerExperienceSource, "const ADMIN_SESSION_REVALIDATE_INTERVAL_MS = 30_000;", "Player defines a periodic admin-session revalidation cadence", failures);
   assertContains(playerExperienceSource, "const [isAdminSessionActive, setIsAdminSessionActive] = useState(initialIsAdmin);", "Player tracks runtime admin-session capability state", failures);
-  assertContains(playerExperienceSource, "const isAdmin = isLoggedIn && isAdminSessionActive;", "Player gates admin controls on active session capability", failures);
+  assertContains(playerExperienceSource, "return isLoggedIn && isAdminSessionActive;", "Player gates admin controls on active session capability", failures);
   assertContains(playerExperienceSource, "const revalidateAdminSession = useCallback(async () => {", "Player defines shared admin-session revalidation helper", failures);
   assertContains(playerExperienceSource, "await fetchWithAuthRetry(\"/api/admin/dashboard\"", "Player revalidates admin capability against admin API guard", failures);
   assertContains(playerExperienceSource, "window.addEventListener(\"focus\", handleFocus);", "Player revalidates admin capability when tab gains focus", failures);
@@ -227,7 +239,7 @@ function main() {
   // Admin video title override and delete flow.
   assertContains(playerExperienceSource, "const [localTitleOverride, setLocalTitleOverride] = useState<string | null>(null);", "Player keeps a local title override for immediate admin edit feedback", failures);
   assertContains(playerExperienceSource, "const displayTitle = localTitleOverride ?? currentVideo.title;", "Player uses title override for immediate UI updates", failures);
-  assertContains(playerExperienceSource, "setLocalTitleOverride(adminEditTitle);", "Player applies admin title update locally immediately after save", failures);
+  assertContains(playerExperienceSource, "setLocalTitleOverride(title);", "Player applies admin title update locally immediately after save", failures);
   assertContains(playerExperienceSource, "const clearedParams = new URLSearchParams(searchParams.toString());", "Admin delete flow derives cleared params from current URL state", failures);
   assertContains(playerExperienceSource, "if (selectedVideoId === deletingVideoId) {", "Admin delete flow only clears query when current selection matches deleted id", failures);
   assertContains(playerExperienceSource, "clearedParams.delete(\"v\");", "Admin delete flow removes deleted video id from URL immediately", failures);
