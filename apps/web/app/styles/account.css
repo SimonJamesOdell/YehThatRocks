@@ -24,14 +24,171 @@
 }
 
 .accountAvatarControls {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
 }
 
-.accountAvatarHint {
+.accountAvatarUploadButton {
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.accountAvatarUploadButton input[type="file"] {
+  display: none;
+}
+
+.accountAvatarUploadButton:not(.accountAvatarUploadButtonDisabled):hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.accountAvatarUploadButtonDisabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ── Avatar crop modal ──────────────────────────────────────── */
+
+.avatarCropModalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(6, 7, 9, 0.78);
+  backdrop-filter: blur(7px);
+}
+
+.avatarCropModalContent {
+  width: min(480px, 96vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(22, 24, 28, 0.99), rgba(13, 15, 19, 0.99));
+  box-shadow: 0 28px 72px rgba(0, 0, 0, 0.55);
+}
+
+.avatarCropModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.avatarCropModalHeader h2 {
   margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.avatarCropCloseButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 1.4rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.avatarCropCloseButton:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.avatarCropArea {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: #111;
+}
+
+.avatarCropZoomRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px 6px;
+}
+
+.avatarCropZoomLabel {
   font-size: 0.82rem;
   color: rgba(255, 220, 212, 0.72);
+  white-space: nowrap;
+}
+
+.avatarCropZoomSlider {
+  flex: 1;
+  accent-color: rgba(220, 22, 5, 0.9);
+}
+
+.avatarCropActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 20px 18px;
+}
+
+.avatarCropCancelButton {
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.avatarCropCancelButton:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.avatarCropConfirmButton {
+  padding: 9px 20px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(220, 22, 5, 0.82);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.avatarCropConfirmButton:not(:disabled):hover {
+  background: rgba(220, 22, 5, 1);
+}
+
+.avatarCropCancelButton:disabled,
+.avatarCropConfirmButton:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .accountAvatarRemoveButton {
