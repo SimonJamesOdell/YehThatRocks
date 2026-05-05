@@ -4535,6 +4535,7 @@ export function PlayerExperience({
                           type="button"
                           className="overlayIconBtn overlayAdminEditBtn"
                           onClick={() => {
+                            pauseActivePlayback();
                             void handleOpenAdminVideoEdit();
                           }}
                           aria-label="Edit video record"
