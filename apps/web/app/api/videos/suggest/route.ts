@@ -556,7 +556,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "No videos were found in that playlist." }, { status: 400 });
   }
 
-  const jobKey = `${authResult.auth.userId}:${source.playlistId}`;
+  const jobKey = `public:${source.playlistId}`;
   const alreadyRunning = playlistBatchJobs.has(jobKey);
   startPlaylistBatchIngestion({
     jobKey,
