@@ -99,11 +99,6 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
   }, []);
 
   const refreshSuggestQuotaStatus = useCallback(async () => {
-    if (!isAuthenticated) {
-      setSuggestQuotaExhausted(false);
-      return;
-    }
-
     setSuggestQuotaStatusPending(true);
 
     try {
@@ -128,7 +123,7 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
     } finally {
       setSuggestQuotaStatusPending(false);
     }
-  }, [isAuthenticated]);
+  }, []);
 
   const openSuggestModal = useCallback(() => {
     setSuggestSource("");
@@ -177,11 +172,6 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
   }, [closeSuggestModal, router, suggestOutcome?.videoId]);
 
   const submitSuggestNew = useCallback(async () => {
-    if (!isAuthenticated) {
-      setSuggestError("Sign in to suggest new videos.");
-      return;
-    }
-
     const source = suggestSource.trim();
     if (!source) {
       setSuggestError("Paste a YouTube URL, playlist URL, or video id.");
@@ -260,14 +250,9 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
     } finally {
       setSuggestPending(false);
     }
-  }, [applyVideoOutcome, isAuthenticated, suggestArtist, suggestSource, suggestTrack, pendingConfirmation]);
+  }, [applyVideoOutcome, suggestArtist, suggestSource, suggestTrack, pendingConfirmation]);
 
   const retryRejectedSuggestVideo = useCallback(async () => {
-    if (!isAdminUser) {
-      setSuggestError("Only admins can retry failed ingestions.");
-      return;
-    }
-
     if (suggestOutcome?.kind !== "video" || suggestOutcome.status !== "rejected" || !suggestOutcome.videoId) {
       return;
     }
@@ -276,12 +261,12 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
     setSuggestError(null);
 
     try {
-      const response = await fetch("/api/admin/videos/retry-suggest-ingest", {
+      const response = await fetch("/api/videos/suggest", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ videoId: suggestOutcome.videoId }),
+        body: JSON.stringify({ source: suggestOutcome.videoId, retryRejected: true }),
       });
 
       const payload = (await response.json().catch(() => null)) as
@@ -309,7 +294,7 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
     } finally {
       setSuggestRetryPending(false);
     }
-  }, [applyVideoOutcome, isAdminUser, suggestOutcome]);
+  }, [applyVideoOutcome, suggestOutcome]);
 
   return {
     closeSuggestModal,

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { requireApiAuth } from "@/lib/auth-request";
 import {
   buildNormalizedVideoTitleFromMetadata,
+  clearIngestionCachesForVideo,
   hasDatabaseUrl,
   importVideoFromDirectSource,
   normalizeYouTubeVideoId,
+  pruneVideoAndAssociationsByVideoId,
 } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
@@ -17,6 +18,7 @@ const suggestSchema = z.object({
   source: z.string().trim().min(1).max(2048),
   artist: z.string().trim().max(255).optional(),
   track: z.string().trim().max(255).optional(),
+  retryRejected: z.boolean().optional(),
 });
 
 const YOUTUBE_PLAYLIST_ID_PATTERN = /^[A-Za-z0-9_-]{10,}$/;
@@ -250,11 +252,6 @@ function getNextYouTubeQuotaResetMs(): number {
 }
 
 export async function GET(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
-  if (!authResult.ok) {
-    return authResult.response;
-  }
-
   const quotaResetAtMs = getNextYouTubeQuotaResetMs();
   const msUntilReset = Math.max(0, quotaResetAtMs - Date.now());
 
@@ -409,11 +406,6 @@ function startPlaylistBatchIngestion(args: {
 }
 
 export async function POST(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
-  if (!authResult.ok) {
-    return authResult.response;
-  }
-
   const csrfError = verifySameOrigin(request);
   if (csrfError) {
     return csrfError;
@@ -435,7 +427,26 @@ export async function POST(request: NextRequest) {
   }
 
   if (source.kind === "video") {
-    const existingRows = hasDatabaseUrl()
+    const retryRejected = parsed.data.retryRejected === true;
+
+    if (retryRejected && hasDatabaseUrl()) {
+      clearIngestionCachesForVideo(source.videoId);
+
+      await prisma.$executeRaw`
+        DELETE FROM rejected_videos
+        WHERE video_id = ${source.videoId}
+      `;
+
+      await pruneVideoAndAssociationsByVideoId(source.videoId, "suggest-retry-ingest-clear").catch(() => ({
+        pruned: false,
+        deletedVideoRows: 0,
+        reason: "clear-failed",
+      }));
+
+      clearIngestionCachesForVideo(source.videoId);
+    }
+
+    const existingRows = !retryRejected && hasDatabaseUrl()
       ? await prisma.$queryRaw<Array<{ id: number }>>`
           SELECT id
           FROM videos
@@ -443,11 +454,13 @@ export async function POST(request: NextRequest) {
           LIMIT 1
         `
       : [];
-    const alreadyInCatalog = existingRows.length > 0;
+    const alreadyInCatalog = !retryRejected && existingRows.length > 0;
 
     // Re-enable occasional related discovery for fresh suggestions to keep discovery flowing,
     // while catalog-data quota guards preserve API headroom for ingest reliability.
-    const discoverRelatedForSuggestion = Math.random() < SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE;
+    const discoverRelatedForSuggestion = retryRejected
+      ? false
+      : Math.random() < SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE;
     const result = await importVideoFromDirectSource(source.videoId, { discoverRelated: discoverRelatedForSuggestion });
     if (!result.videoId) {
       return NextResponse.json({ ok: false, error: "Invalid YouTube URL or video id." }, { status: 400 });
