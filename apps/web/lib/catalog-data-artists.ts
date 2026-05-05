@@ -26,7 +26,7 @@ import {
   type RankedVideoRow,
 } from "@/lib/catalog-data-utils";
 import {
-  AVAILABLE_SITE_VIDEOS_JOIN,
+  AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE,
   ensureArtistSearchPrefixIndex,
   getArtistColumnMap,
   getArtistNameNormalizationExpr,
@@ -36,6 +36,7 @@ import {
   getVideoArtistNormalizationIndexHintClause,
   hasArtistStatsProjection,
   hasArtistStatsThumbnailColumn,
+  hasGenreAllColumn,
 } from "@/lib/catalog-data-db";
 
 // ── Cache constants ────────────────────────────────────────────────────────────
@@ -363,17 +364,15 @@ export async function refreshArtistProjectionForName(artistName: string) {
       }
     }
 
-    // AVAILABLE_SITE_VIDEOS_JOIN already deduplicates via SELECT DISTINCT video_id,
-    // so each video appears at most once — COUNT(v.id) is equivalent to
-    // COUNT(DISTINCT v.videoId) with no extra cost.
+    // EXISTS short-circuits per row and avoids materialising ~266k available video IDs.
     const [countRows, thumbnailRows] = await Promise.all([
       prisma.$queryRawUnsafe<Array<{ videoCount: number | null }>>(
         `
           SELECT COUNT(v.id) AS videoCount
           FROM videos v${videoArtistIndexHint}
-          ${AVAILABLE_SITE_VIDEOS_JOIN}
           WHERE ${videoArtistNormExpr} = ?
             AND v.videoId IS NOT NULL
+            ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
         `,
         normalizedArtist,
       ),
@@ -381,9 +380,9 @@ export async function refreshArtistProjectionForName(artistName: string) {
         `
           SELECT v.videoId AS thumbnailVideoId
           FROM videos v${videoArtistIndexHint}
-          ${AVAILABLE_SITE_VIDEOS_JOIN}
           WHERE ${videoArtistNormExpr} = ?
             AND v.videoId IS NOT NULL
+            ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
           ORDER BY v.id ASC
           LIMIT 1
         `,
@@ -622,10 +621,10 @@ export async function refreshArtistThumbnailForName(artistName: string, badVideo
     `
       SELECT v.videoId AS thumbnailVideoId
       FROM videos v${videoArtistIndexHint}
-      ${AVAILABLE_SITE_VIDEOS_JOIN}
       WHERE ${videoArtistNormExpr} = ?
         AND v.videoId IS NOT NULL
         ${bad ? "AND v.videoId <> ?" : ""}
+        ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
       ORDER BY v.id ASC
       LIMIT 1
     `,
@@ -824,10 +823,10 @@ export async function findArtistsFromVideoMetadata(search: string, limit: number
           SUM(COALESCE(v.favourited, 0)) AS artist_score,
           COUNT(*) AS artist_count
         FROM videos v
-        ${AVAILABLE_SITE_VIDEOS_JOIN}
         WHERE v.videoId IS NOT NULL
           AND COALESCE(v.approved, 0) = 1
           AND COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) IS NOT NULL
+          ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
         GROUP BY artist_name
       ) ranked
       WHERE ranked.artist_name LIKE ?
@@ -873,11 +872,11 @@ export async function getArtistVideoPoolByNormalizedName(normalizedArtist: strin
       `
         SELECT v.id, v.videoId
         FROM videos v${videoArtistIndexHint}
-        ${AVAILABLE_SITE_VIDEOS_JOIN}
         WHERE ${videoArtistNormExpr} = ?
           AND v.videoId IS NOT NULL
           AND COALESCE(v.approved, 0) = 1
           ${nullCheck}
+          ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
         ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id DESC
         LIMIT ${materializedLimit}
       `,
@@ -970,23 +969,56 @@ export async function getSameGenreRelatedPoolByArtist(normalizedArtist: string, 
     const genre = currentArtistGenreRows[0]?.genre?.trim();
     if (!genre) return [] as RankedVideoRow[];
 
-    const genrePredicate = artistColumns.genreColumns
-      .map((column) => `a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', ?, '%')`)
-      .join(" OR ");
-    const genreParams = artistColumns.genreColumns.map(() => genre);
+    // Use MATCH AGAINST on genre_all (single FULLTEXT seek) when available and term ≥ 3 chars,
+    // fall back to single-column LIKE on genre_all, or 6× LIKE as last resort.
+    const genreAllExists = await hasGenreAllColumn();
+    const useFulltext = genreAllExists && genre.length >= 3;
 
-    const sameGenreArtistRows = await prisma.$queryRawUnsafe<Array<{ normalizedArtist: string | null }>>(
-      `
-        SELECT DISTINCT ${artistNameNormExpr} AS normalizedArtist
-        FROM artists a
-        WHERE ${artistNameNormExpr} IS NOT NULL
-          AND ${artistNameNormExpr} <> ?
-          AND (${genrePredicate})
-        LIMIT 160
-      `,
-      normalizedArtist,
-      ...genreParams,
-    );
+    let sameGenreArtistRows: Array<{ normalizedArtist: string | null }>;
+    if (useFulltext) {
+      sameGenreArtistRows = await prisma.$queryRawUnsafe<Array<{ normalizedArtist: string | null }>>(
+        `
+          SELECT DISTINCT ${artistNameNormExpr} AS normalizedArtist
+          FROM artists a
+          WHERE ${artistNameNormExpr} IS NOT NULL
+            AND ${artistNameNormExpr} <> ?
+            AND MATCH(a.genre_all) AGAINST (? IN BOOLEAN MODE)
+          LIMIT 160
+        `,
+        normalizedArtist,
+        genre,
+      );
+    } else if (genreAllExists) {
+      sameGenreArtistRows = await prisma.$queryRawUnsafe<Array<{ normalizedArtist: string | null }>>(
+        `
+          SELECT DISTINCT ${artistNameNormExpr} AS normalizedArtist
+          FROM artists a
+          WHERE ${artistNameNormExpr} IS NOT NULL
+            AND ${artistNameNormExpr} <> ?
+            AND a.genre_all LIKE ?
+          LIMIT 160
+        `,
+        normalizedArtist,
+        `%${genre}%`,
+      );
+    } else {
+      const genrePredicate = artistColumns.genreColumns
+        .map((column) => `a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', ?, '%')`)
+        .join(" OR ");
+      const genreParams = artistColumns.genreColumns.map(() => genre);
+      sameGenreArtistRows = await prisma.$queryRawUnsafe<Array<{ normalizedArtist: string | null }>>(
+        `
+          SELECT DISTINCT ${artistNameNormExpr} AS normalizedArtist
+          FROM artists a
+          WHERE ${artistNameNormExpr} IS NOT NULL
+            AND ${artistNameNormExpr} <> ?
+            AND (${genrePredicate})
+          LIMIT 160
+        `,
+        normalizedArtist,
+        ...genreParams,
+      );
+    }
 
     const sameGenreArtistKeys = [...new Set(
       sameGenreArtistRows
@@ -1004,10 +1036,10 @@ export async function getSameGenreRelatedPoolByArtist(normalizedArtist: string, 
         SELECT /*+ MAX_EXECUTION_TIME(800) */
           v.videoId, v.title, COALESCE(v.parsedArtist, NULL) AS channelTitle, v.favourited, v.description
         FROM videos v
-        ${AVAILABLE_SITE_VIDEOS_JOIN}
         WHERE v.videoId IS NOT NULL
           AND COALESCE(v.approved, 0) = 1
           AND ${videoArtistNormExpr} IN (${placeholders})
+          ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
         ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id DESC
         LIMIT ${materializedLimit}
       `,
@@ -1150,7 +1182,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
                    ${hasThumbnailColumn ? "s.thumbnail_video_id" : "NULL"} AS thumbnailVideoId
             FROM artist_stats s
             WHERE s.first_letter = ?
-              AND LOWER(s.display_name) LIKE ?
+              AND s.display_name LIKE ?
               AND s.video_count > 0
             ORDER BY s.display_name ASC
             LIMIT ${safeLimit}
@@ -1199,6 +1231,9 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
 
     const nameCol = escapeSqlIdentifier(columns.name);
     const artistNameNormExpr = getArtistNameNormalizationExpr("a", columns);
+    const artistPrefixFilterExpr = columns.normalizedName
+      ? `a.${escapeSqlIdentifier(columns.normalizedName)}`
+      : `a.${nameCol}`;
     const countrySelect = columns.country ? `a.${escapeSqlIdentifier(columns.country)} AS country` : "NULL AS country";
     const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
     const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
@@ -1213,7 +1248,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
             SELECT a.${nameCol} AS name, NULL AS country, ${genreExpr} AS genre1
             FROM artists a
             WHERE a.${nameCol} IS NOT NULL AND a.${nameCol} <> ''
-              AND ${artistNameNormExpr} LIKE ?
+              AND ${artistPrefixFilterExpr} LIKE ?
             ORDER BY a.${nameCol} ASC
           `,
           `${letterFilterPrefix}%`,
@@ -1226,10 +1261,10 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
               COUNT(DISTINCT v.videoId) AS videoCount,
               SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.id ASC), ',', 1) AS thumbnailVideoId
             FROM videos v
-            ${AVAILABLE_SITE_VIDEOS_JOIN}
             WHERE ${videoArtistNormExpr} <> ''
               AND v.videoId IS NOT NULL
               AND ${videoArtistNormExpr} LIKE ?
+              ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
             GROUP BY ${videoArtistNormExpr}
           `,
           `${letterFilterPrefix}%`,
@@ -1318,7 +1353,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
         INNER JOIN (${videoCountSubquery}) vc ON vc.artistKey = ${artistNameNormExpr}
         WHERE vc.videoCount > 0
           AND a.${nameCol} IS NOT NULL AND a.${nameCol} <> ''
-          AND ${artistNameNormExpr} LIKE ?
+          AND ${artistPrefixFilterExpr} LIKE ?
         ORDER BY a.${nameCol} ASC
         LIMIT ${safeLimit}
         OFFSET ${safeOffset}
@@ -1368,7 +1403,41 @@ export async function getArtistBySlug(slug: string) {
     const slugTerms = slug.trim().toLowerCase().split("-")
       .map((part) => part.trim()).filter((part) => part.length > 0).slice(0, 8);
 
-    if (slugTerms.length > 0) {
+    // Use FULLTEXT for slug terms ≥ 3 chars — the migration-backed index eliminates
+    // the LOWER(artist) LIKE '%term%' full-table scan. Short terms (< 3 chars) are
+    // below MySQL's ft_min_word_len and are silently ignored by FULLTEXT, so we
+    // only include them in the expression when they meet the threshold. The JS
+    // exact-slug check below handles any broadening from omitted short terms.
+    // For slugs where all terms are short (e.g. "ac-dc"), fall back to LIKE.
+    const longerTerms = slugTerms.filter((term) => term.length >= 3);
+
+    if (longerTerms.length > 0) {
+      const columns = await getArtistColumnMap();
+      const nameCol = escapeSqlIdentifier(columns.name);
+      const genreExpr = columns.genreColumns.length > 0
+        ? `COALESCE(${columns.genreColumns.map((column) => `a.${escapeSqlIdentifier(column)}`).join(", ")})`
+        : "NULL";
+
+      const matchExpr = longerTerms.map((term) => `+${term}*`).join(" ");
+      const narrowed = await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+        `
+          SELECT a.${nameCol} AS name, NULL AS country, ${genreExpr} AS genre1
+          FROM artists a
+          WHERE a.${nameCol} IS NOT NULL AND a.${nameCol} <> ''
+            AND MATCH(a.${nameCol}) AGAINST(? IN BOOLEAN MODE)
+          LIMIT 400
+        `,
+        matchExpr,
+      );
+
+      const fastMatch = narrowed.find((artist) => slugify(artist.name) === slug);
+      if (fastMatch) {
+        const mapped = await hydrateArtistCountryByName(mapArtist(fastMatch));
+        artistSingleSlugCache.set(slug, { expiresAt: Date.now() + ARTIST_SINGLE_SLUG_CACHE_TTL_MS, artist: mapped });
+        return mapped;
+      }
+    } else if (slugTerms.length > 0) {
+      // All terms are shorter than ft_min_word_len — fall back to LOWER LIKE.
       const columns = await getArtistColumnMap();
       const nameCol = escapeSqlIdentifier(columns.name);
       const genreExpr = columns.genreColumns.length > 0
@@ -1377,7 +1446,6 @@ export async function getArtistBySlug(slug: string) {
 
       const termPredicates = slugTerms.map(() => `LOWER(a.${nameCol}) LIKE ?`).join(" AND ");
       const termParams = slugTerms.map((term) => `%${term}%`);
-
       const narrowed = await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
         `
           SELECT a.${nameCol} AS name, NULL AS country, ${genreExpr} AS genre1
@@ -1501,10 +1569,10 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
           v.favourited,
           v.description
         FROM videos v${videoArtistIndexHint}
-        ${AVAILABLE_SITE_VIDEOS_JOIN}
         WHERE ${videoArtistNormExpr} = ?
           AND v.videoId IS NOT NULL
           AND COALESCE(v.approved, 0) = 1
+          ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
           AND NOT EXISTS (
             SELECT 1
             FROM videos v_conflict

@@ -29,6 +29,8 @@ import {
   getVideoArtistNormalizationColumn,
   getVideoArtistNormalizationExpr,
   getVideoArtistNormalizationIndexHintClause,
+  hasGenreAllColumn,
+  hasVideoTitleFulltextIndex,
 } from "@/lib/catalog-data-db";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -339,7 +341,8 @@ export async function getArtistsByGenre(genre: string) {
   }
 
   try {
-    const useFulltext = genre.trim().length >= 3;
+    const genreAllExists = await hasGenreAllColumn();
+    const useFulltext = genreAllExists && genre.trim().length >= 3;
 
     const artists = useFulltext
       ? await prisma.$queryRaw<Array<{ name: string; country: string | null; genre1: string | null }>>`
@@ -348,19 +351,26 @@ export async function getArtistsByGenre(genre: string) {
           FROM artists a
           WHERE MATCH(a.genre_all) AGAINST (${genre} IN BOOLEAN MODE)
         `
-      : await prisma.$queryRaw<Array<{ name: string; country: string | null; genre1: string | null }>>`
-          SELECT a.artist AS name, a.country,
-                 COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
-          FROM artists a
-          WHERE (
-            a.genre1 LIKE CONCAT('%', ${genre}, '%') OR
-            a.genre2 LIKE CONCAT('%', ${genre}, '%') OR
-            a.genre3 LIKE CONCAT('%', ${genre}, '%') OR
-            a.genre4 LIKE CONCAT('%', ${genre}, '%') OR
-            a.genre5 LIKE CONCAT('%', ${genre}, '%') OR
-            a.genre6 LIKE CONCAT('%', ${genre}, '%')
-          )
-        `;
+      : genreAllExists
+        ? await prisma.$queryRaw<Array<{ name: string; country: string | null; genre1: string | null }>>`
+            SELECT a.artist AS name, a.country,
+                   COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
+            FROM artists a
+            WHERE a.genre_all LIKE CONCAT('%', ${genre}, '%')
+          `
+        : await prisma.$queryRaw<Array<{ name: string; country: string | null; genre1: string | null }>>`
+            SELECT a.artist AS name, a.country,
+                   COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
+            FROM artists a
+            WHERE (
+              a.genre1 LIKE CONCAT('%', ${genre}, '%') OR
+              a.genre2 LIKE CONCAT('%', ${genre}, '%') OR
+              a.genre3 LIKE CONCAT('%', ${genre}, '%') OR
+              a.genre4 LIKE CONCAT('%', ${genre}, '%') OR
+              a.genre5 LIKE CONCAT('%', ${genre}, '%') OR
+              a.genre6 LIKE CONCAT('%', ${genre}, '%')
+            )
+          `;
 
     const mappedArtists = artists.length > 0
       ? artists.map(mapArtist).sort((a, b) => a.name.localeCompare(b.name))
@@ -457,15 +467,33 @@ export async function getVideosByGenre(
 
       if (artistColumns.genreColumns.length > 0) {
         const artistNameColumn = escapeSqlIdentifier(artistColumns.name);
-        const genrePredicates = artistColumns.genreColumns
-          .map((column) => `a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', ?, '%')`)
-          .join(" OR ");
-        const genreParams = artistColumns.genreColumns.map(() => genre);
+        const genreAllExists = await hasGenreAllColumn();
+        const useFulltext = genreAllExists && genre.trim().length >= 3;
 
-        const artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
-          `SELECT a.${artistNameColumn} AS artistName FROM artists a WHERE (${genrePredicates}) LIMIT 64`,
-          ...genreParams,
-        );
+        let artistGenreRows: Array<{ artistName: string | null }>;
+        if (useFulltext) {
+          // Single FULLTEXT index seek — avoids 6× full-table LIKE scans
+          artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
+            `SELECT a.${artistNameColumn} AS artistName FROM artists a WHERE MATCH(a.genre_all) AGAINST (? IN BOOLEAN MODE) LIMIT 64`,
+            genre,
+          );
+        } else if (genreAllExists) {
+          // genre_all exists but term too short for FULLTEXT minimum word length — single-column LIKE
+          artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
+            `SELECT a.${artistNameColumn} AS artistName FROM artists a WHERE a.genre_all LIKE ? LIMIT 64`,
+            `%${genre}%`,
+          );
+        } else {
+          // Fallback: 6× LIKE on individual genre columns
+          const genrePredicates = artistColumns.genreColumns
+            .map((column) => `a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', ?, '%')`)
+            .join(" OR ");
+          const genreParams = artistColumns.genreColumns.map(() => genre);
+          artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
+            `SELECT a.${artistNameColumn} AS artistName FROM artists a WHERE (${genrePredicates}) LIMIT 64`,
+            ...genreParams,
+          );
+        }
 
         const normalizedGenreArtistNames = [...new Set(
           artistGenreRows
@@ -566,23 +594,46 @@ export async function getVideosByGenre(
         }
       }
 
-      const normalizedGenreNeedle = `%${genre.trim().toLowerCase()}%`;
-      const textMatchedVideos = await prisma.$queryRaw<RankedVideoRow[]>`
-        SELECT v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
-        FROM videos v
-        WHERE v.videoId IS NOT NULL
-          AND COALESCE(v.approved, 0) = 1
-          AND (
-            LOWER(v.title) LIKE ${normalizedGenreNeedle}
-            OR LOWER(COALESCE(v.description, '')) LIKE ${normalizedGenreNeedle}
-            OR LOWER(COALESCE(v.parsedArtist, '')) LIKE ${normalizedGenreNeedle}
-            OR LOWER(COALESCE(v.parsedTrack, '')) LIKE ${normalizedGenreNeedle}
-          )
-          AND EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND sv.status = 'available')
-          AND NOT EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status <> 'available'))
-        ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
-        LIMIT ${fetchQueryLimit}
-      `;
+      const genreTerm = genre.trim();
+      const hasVideoFT = await hasVideoTitleFulltextIndex();
+      const useVideoFulltext = hasVideoFT && genreTerm.length >= 3;
+
+      let textMatchedVideos: RankedVideoRow[];
+      if (useVideoFulltext) {
+        // MATCH AGAINST on the (title, parsedArtist, parsedTrack) FULLTEXT index —
+        // avoids 4× LOWER() LIKE '%term%' full-table scans (~2.8M rows examined per call)
+        textMatchedVideos = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
+          `SELECT v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
+           FROM videos v
+           WHERE MATCH(v.title, v.parsedArtist, v.parsedTrack) AGAINST (? IN BOOLEAN MODE)
+             AND v.videoId IS NOT NULL
+             AND COALESCE(v.approved, 0) = 1
+             AND EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND sv.status = 'available')
+             AND NOT EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status <> 'available'))
+           ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
+           LIMIT ${fetchQueryLimit}`,
+          genreTerm,
+        );
+      } else {
+        // Fallback: term too short for FULLTEXT or index absent.
+        // LOWER() removed — utf8mb4_unicode_ci comparison is already case-insensitive.
+        // description column excluded — it's large and rarely differentiates genre results.
+        const likeNeedle = `%${genreTerm}%`;
+        textMatchedVideos = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
+          `SELECT v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
+           FROM videos v
+           WHERE v.videoId IS NOT NULL
+             AND COALESCE(v.approved, 0) = 1
+             AND (v.title LIKE ? OR v.parsedArtist LIKE ? OR v.parsedTrack LIKE ?)
+             AND EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND sv.status = 'available')
+             AND NOT EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status <> 'available'))
+           ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
+           LIMIT ${fetchQueryLimit}`,
+          likeNeedle,
+          likeNeedle,
+          likeNeedle,
+        );
+      }
       considerRows(textMatchedVideos);
 
       if (canResolveWindow()) {

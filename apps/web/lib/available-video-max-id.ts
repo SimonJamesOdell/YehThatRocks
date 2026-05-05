@@ -72,16 +72,15 @@ async function readStateRow(): Promise<MaxIdStateRow | null> {
 }
 
 async function computeAndPersistAuthoritativeMaxId() {
+  // Query from site_videos using the (status, video_id) composite index so MySQL
+  // can do a single backward index seek rather than scanning all 7M+ videos rows
+  // with a correlated EXISTS subquery. MAX(sv.video_id) equals MAX(v.id WHERE available)
+  // because site_videos.video_id is a FK to videos.id.
   const rows = await prisma.$queryRaw<Array<{ maxId: bigint | number | null }>>`
-    SELECT MAX(v.id) AS maxId
-    FROM videos v
-    WHERE v.videoId IS NOT NULL
-      AND EXISTS (
-        SELECT 1
-        FROM site_videos sv
-        WHERE sv.video_id = v.id
-          AND sv.status = 'available'
-      )
+    SELECT MAX(sv.video_id) AS maxId
+    FROM site_videos sv
+    WHERE sv.status = 'available'
+      AND sv.video_id IS NOT NULL
   `;
 
   const maxId = normalizeMaxId(rows[0]?.maxId ?? 0);

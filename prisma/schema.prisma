@@ -50,6 +50,7 @@ model Artist {
   genre5  String? @db.VarChar(255)
   genre6  String? @db.VarChar(255)
 
+  @@fulltext([name], map: "idx_artists_artist_fulltext")
   @@index([artistNameNorm], map: "idx_artists_artist_name_norm")
   @@map("artists")
 }

@@ -17,6 +17,8 @@ const files = {
   searchFlagsRoute: path.join(ROOT, "apps/web/app/api/search-flags/route.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   catalogDataArtists: path.join(ROOT, "apps/web/lib/catalog-data-artists.ts"),
+  catalogDataGenres: path.join(ROOT, "apps/web/lib/catalog-data-genres.ts"),
+  availableVideoMaxId: path.join(ROOT, "apps/web/lib/available-video-max-id.ts"),
   searchFlagData: path.join(ROOT, "apps/web/lib/search-flag-data.ts"),
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
   searchFlagButton: path.join(ROOT, "apps/web/components/search-flag-button.tsx"),
@@ -26,6 +28,8 @@ const files = {
   adminVideoEditModal: path.join(ROOT, "apps/web/components/admin-video-edit-modal.tsx"),
   adminVideoEditButton: path.join(ROOT, "apps/web/components/admin-video-edit-button.tsx"),
   adminVideoDeleteButton: path.join(ROOT, "apps/web/components/admin-video-delete-button.tsx"),
+  adminMetadataQuality: path.join(ROOT, "apps/web/lib/admin-metadata-quality.ts"),
+  adminDashboardRoute: path.join(ROOT, "apps/web/app/api/admin/dashboard/route.ts"),
   appRoot: path.join(ROOT, "apps/web/app"),
 };
 
@@ -37,6 +41,10 @@ function main() {
   const searchFlagsRouteSource = readFileStrict(files.searchFlagsRoute, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const catalogDataArtistsSource = readFileStrict(files.catalogDataArtists, ROOT);
+  const catalogDataGenresSource = readFileStrict(files.catalogDataGenres, ROOT);
+  const availableVideoMaxIdSource = readFileStrict(files.availableVideoMaxId, ROOT);
+  const adminMetadataQualitySource = readFileStrict(files.adminMetadataQuality, ROOT);
+  const adminDashboardRouteSource = readFileStrict(files.adminDashboardRoute, ROOT);
   const searchFlagDataSource = readFileStrict(files.searchFlagData, ROOT);
   const shellDynamicSource = [
     readFileStrict(files.shellDynamic, ROOT),
@@ -207,6 +215,41 @@ function main() {
   assertContains(globalCssSource, "top: 8px;", "Admin edit button is positioned on the top corner row", failures);
   assertContains(globalCssSource, "right: 40px;", "Admin edit button is positioned to the left of the block button", failures);
   assertContains(globalCssSource, ".searchResultAdminDeleteBtn", "CSS includes admin delete button styling", failures);
+
+  // --- getArtistBySlug: FULLTEXT-backed slug resolution (migration-guaranteed index) ---
+  assertContains(catalogDataArtistsSource, "MATCH(a.", "getArtistBySlug uses FULLTEXT MATCH AGAINST for indexed slug resolution", failures);
+  assertContains(catalogDataArtistsSource, "AGAINST(? IN BOOLEAN MODE)", "getArtistBySlug uses BOOLEAN MODE for wildcard FULLTEXT queries", failures);
+  assertContains(catalogDataArtistsSource, "longerTerms = slugTerms.filter((term) => term.length >= 3)", "getArtistBySlug filters slug terms below ft_min_word_len before FULLTEXT query", failures);
+  assertContains(catalogDataArtistsSource, "LOWER(a.", "getArtistBySlug retains LOWER LIKE fallback for all-short-term slugs", failures);
+
+  // --- getVideosByArtist: correlated EXISTS replaces DISTINCT subquery JOIN (Hotspot 3) ---
+  assertContains(catalogDataArtistsSource, "AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE", "getVideosByArtist uses correlated EXISTS to avoid materialising 266k available video IDs", failures);
+  assertNotContains(catalogDataArtistsSource, "AVAILABLE_SITE_VIDEOS_JOIN", "getVideosByArtist no longer uses DISTINCT subquery JOIN in per-artist queries", failures);
+
+  // --- genre queries: FULLTEXT on genre_all replaces 6× LIKE scan (Hotspot 4) ---
+  assertContains(catalogDataGenresSource, "hasGenreAllColumn", "genre queries use hasGenreAllColumn() for FULLTEXT strategy decision", failures);
+  assertContains(catalogDataGenresSource, "MATCH(a.genre_all)", "getVideosByGenre uses FULLTEXT MATCH AGAINST on genre_all for ≥3-char genres", failures);
+  assertContains(catalogDataArtistsSource, "hasGenreAllColumn", "getSameGenreRelatedPoolByArtist uses hasGenreAllColumn() for genre FULLTEXT strategy", failures);
+  assertContains(catalogDataArtistsSource, "MATCH(a.genre_all)", "getSameGenreRelatedPoolByArtist uses FULLTEXT MATCH AGAINST on genre_all for related artists", failures);
+
+  // --- getAvailableVideoMaxId: MAX from site_videos index instead of 7M-row videos scan (Hotspot 5) ---
+  assertContains(availableVideoMaxIdSource, "FROM site_videos sv", "authoritative max-id query reads from site_videos to use (status, video_id) index", failures);
+  assertNotContains(availableVideoMaxIdSource, "FROM videos v", "authoritative max-id query no longer scans the full 7M-row videos table with EXISTS", failures);
+
+  // --- getVideosByGenre textMatchedVideos: FULLTEXT MATCH replaces 4× LOWER() LIKE (Hotspot 6) ---
+  assertContains(catalogDataGenresSource, "hasVideoTitleFulltextIndex", "getVideosByGenre text-match fallback uses hasVideoTitleFulltextIndex() for FULLTEXT strategy decision", failures);
+  assertContains(catalogDataGenresSource, "MATCH(v.title, v.parsedArtist, v.parsedTrack)", "getVideosByGenre text-match uses FULLTEXT index to avoid 4× LOWER() LIKE full-table scans", failures);
+  assertNotContains(catalogDataGenresSource, "LOWER(v.title) LIKE", "getVideosByGenre no longer uses LOWER(v.title) LIKE which defeats all BTree indexes", failures);
+  assertNotContains(catalogDataGenresSource, "LOWER(COALESCE(v.description", "getVideosByGenre no longer scans the large description column with LOWER() LIKE", failures);
+
+  // --- metadata quality aggregation: extracted lib with 15-min cache (Hotspot 7) ---
+  assertContains(adminMetadataQualitySource, "METADATA_QUALITY_CACHE_TTL_MS = 15 * 60 * 1000", "metadata quality cache TTL is 15 minutes to reduce per-worker full-scan frequency", failures);
+  assertContains(adminMetadataQualitySource, "getMetadataQualityStats", "metadata quality lib exports getMetadataQualityStats for shared caching", failures);
+  assertContains(adminMetadataQualitySource, "resetMetadataQualityCache", "metadata quality lib exports resetMetadataQualityCache for test isolation", failures);
+  assertContains(adminMetadataQualitySource, "FROM site_videos", "metadata quality status query reads from site_videos (uses status index)", failures);
+  assertContains(adminMetadataQualitySource, "FROM videos", "metadata quality metadata query reads from videos table", failures);
+  assertContains(adminDashboardRouteSource, "getMetadataQualityStats", "dashboard route delegates metadata quality to the shared lib", failures);
+  assertNotContains(adminDashboardRouteSource, "METADATA_QUALITY_CACHE_TTL_MS", "dashboard route no longer inlines the metadata quality cache TTL", failures);
 
   finishInvariantCheck({
     failures,

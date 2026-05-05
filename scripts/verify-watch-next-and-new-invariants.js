@@ -33,6 +33,7 @@ const files = {
   queueDomain: path.join(ROOT, "apps/web/domains/queue/temporary-queue.ts"),
   playlistDomain: path.join(ROOT, "apps/web/domains/playlist/playlist-step-target.ts"),
   playerEvents: path.join(ROOT, "apps/web/lib/player-events.ts"),
+  randomCatalogPool: path.join(ROOT, "apps/web/lib/random-catalog-pool.ts"),
   appRoot: path.join(ROOT, "apps/web/app"),
 };
 
@@ -50,9 +51,11 @@ function main() {
   const shellDynamicRenderingSource = readFileStrict(files.shellDynamicRendering, ROOT);
   const shellDynamicHelpersSource = readFileStrict(files.shellDynamicHelpers, ROOT);
   const currentVideoRouteServiceSource = readFileStrict(files.currentVideoRouteService, ROOT);
+  const randomCatalogPoolSource = readFileStrict(files.randomCatalogPool, ROOT);
   const currentVideoRouteSource = [
     readFileStrict(files.currentVideoRoute, ROOT),
     currentVideoRouteServiceSource,
+    randomCatalogPoolSource,
   ].join('\n');
   const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
   const autoplayUtilsSource = readFileStrict(files.autoplayUtils, ROOT);
@@ -162,9 +165,12 @@ function main() {
   assertContains(currentVideoRouteSource, "getTopVideos(300)", "Current-video route widens fallback with Top candidates", failures);
   assertContains(currentVideoRouteSource, "getNewestVideos(200, 0)", "Current-video route widens fallback with New candidates", failures);
   assertContains(currentVideoRouteSource, "getUnseenCatalogVideos({", "Current-video route widens fallback with unseen catalog candidates", failures);
-  assertContains(currentVideoRouteSource, "const RANDOM_CATALOG_MAX_ID_CACHE_TTL_MS = 60_000;", "Current-video route caches the available random-catalog max-id", failures);
-  assertContains(currentVideoRouteSource, "let randomCatalogMaxIdCache", "Current-video route stores a cached random-catalog max-id entry", failures);
-  assertContains(currentVideoRouteSource, "let randomCatalogMaxIdInFlight", "Current-video route deduplicates concurrent random-catalog max-id lookups", failures);
+  assertContains(currentVideoRouteSource, "RANDOM_CATALOG_POOL_TTL_MS", "Random catalog pool declares a TTL constant", failures);
+  assertContains(currentVideoRouteSource, "_randomCatalogPool", "Random catalog pool stores a cached pool array", failures);
+  assertContains(currentVideoRouteSource, "_randomCatalogPoolInFlight", "Random catalog pool deduplicates concurrent build requests", failures);
+  assertContains(currentVideoRouteSource, "getRandomCatalogPool", "Current-video route uses the random catalog pool module", failures);
+  assertContains(currentVideoRouteSource, "getRandomVideoIdPool", "Current-video service accepts a pool getter for dependency injection", failures);
+  assertContains(currentVideoRouteSource, "WHERE v.videoId IN", "Random catalog pool fetch uses IN-clause point lookups instead of id-range scans", failures);
   assertContains(currentVideoRouteSource, "const CURRENT_VIDEO_CACHE_MAX_ENTRIES = 300;", "Current-video route bounds current-video payload cache growth", failures);
   assertContains(currentVideoRouteSource, "const CURRENT_VIDEO_PENDING_CACHE_MAX_ENTRIES = 300;", "Current-video route bounds pending payload cache growth", failures);
   assertContains(currentVideoRouteSource, "const CURRENT_VIDEO_RELATED_POOL_CACHE_MAX_ENTRIES = 120;", "Current-video route bounds related pool cache growth", failures);
