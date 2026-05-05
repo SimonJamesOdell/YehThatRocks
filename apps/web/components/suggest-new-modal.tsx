@@ -101,9 +101,6 @@ export function SuggestNewModal({
           <>
             {!isConfirmationStep ? (
               <>
-                <p className="suggestNewModalHints">
-                  Accepted formats: <strong>watch URLs</strong>, <strong>short URLs</strong>, <strong>video IDs</strong>, and <strong>playlist URLs</strong>.
-                </p>
                 <label className="newFlagModalField suggestNewModalField" htmlFor="suggest-new-source">
                   YouTube URL or Video ID
                 </label>
