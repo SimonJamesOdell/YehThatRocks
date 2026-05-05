@@ -62,12 +62,17 @@ fi
 
 cd "$REPO_DIR"
 
+# Resolve avatar host storage path from env file (with durable default outside repo).
+AVATAR_HOST_PATH_FROM_ENV_FILE="$(grep -E '^AVATAR_HOST_PATH=' "$ENV_FILE" | tail -n 1 | cut -d'=' -f2- || true)"
+AVATAR_HOST_PATH_FROM_ENV_FILE="${AVATAR_HOST_PATH_FROM_ENV_FILE//\"/}"
+AVATAR_HOST_PATH_FROM_ENV_FILE="${AVATAR_HOST_PATH_FROM_ENV_FILE//\'/}"
+
 # Ensure the avatar storage directory exists and is owned by the nextjs user
 # (UID/GID 1001) that runs inside the container. Docker bind mounts create the
 # directory as root if it doesn't already exist, and chown is idempotent so
 # running it on every deploy keeps permissions correct after any container
 # rebuild.
-AVATAR_DIR="${REPO_DIR}/avatars"
+AVATAR_DIR="${AVATAR_HOST_PATH:-${AVATAR_HOST_PATH_FROM_ENV_FILE:-/srv/yehthatrocks-data/avatars}}"
 if [ -d "$AVATAR_DIR" ] || mkdir -p "$AVATAR_DIR"; then
   chown -R 1001:1001 "$AVATAR_DIR" || echo "[deploy] WARNING: could not chown $AVATAR_DIR — avatar uploads may fail" >&2
 fi
