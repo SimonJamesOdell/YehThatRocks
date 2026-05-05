@@ -56,18 +56,27 @@ export type WatchNextStreamCacheEntry = {
 export async function fetchRandomCatalogVideosForCurrentVideo(params: {
   currentVideoId: string;
   count: number;
-  getAvailableRandomCatalogMaxId: () => Promise<number>;
+  getRandomVideoIdPool: () => Promise<readonly string[]>;
   genericArtistLabels: Set<string>;
 }): Promise<WatchNextVideo[]> {
   const requested = Math.max(1, Math.min(2_000, Math.floor(params.count)));
-  const maxId = await params.getAvailableRandomCatalogMaxId();
-  if (!Number.isFinite(maxId) || maxId <= 0) {
+
+  const pool = await params.getRandomVideoIdPool();
+  const eligible = pool.filter((id) => id !== params.currentVideoId);
+  if (eligible.length === 0) {
     return [];
   }
 
-  const randomStartId = Math.max(1, Math.floor(Math.random() * maxId));
-  const queryLimit = Math.max(80, requested * 2);
-  const selectSql = `
+  // Pick a random window from the pre-shuffled pool rather than running a DB
+  // range scan from a random ID. This avoids the O(N) id-gap scan that caused
+  // Hotspot 2 (67M rows examined when the random start lands in a sparse area).
+  const batchSize = Math.min(eligible.length, Math.max(80, requested * 2));
+  const maxStart = Math.max(0, eligible.length - batchSize);
+  const startIdx = Math.floor(Math.random() * (maxStart + 1));
+  const selectedIds = eligible.slice(startIdx, startIdx + batchSize);
+
+  const placeholders = selectedIds.map(() => "?").join(", ");
+  const fetchSql = `
     SELECT
       v.id AS dbId,
       v.videoId AS id,
@@ -76,62 +85,19 @@ export async function fetchRandomCatalogVideosForCurrentVideo(params: {
       COALESCE(v.favourited, 0) AS favourited,
       v.description AS description
     FROM videos v
-    WHERE v.videoId IS NOT NULL
-      AND v.videoId <> ?
-      AND v.id >= ?
-      AND EXISTS (
-        SELECT 1
-        FROM site_videos sv
-        WHERE sv.video_id = v.id
-          AND sv.status = 'available'
-      )
-    ORDER BY v.id ASC
-    LIMIT ?
+    WHERE v.videoId IN (${placeholders})
   `;
 
-  const wrapSql = `
-    SELECT
-      v.id AS dbId,
-      v.videoId AS id,
-      v.title AS title,
-      COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
-      COALESCE(v.favourited, 0) AS favourited,
-      v.description AS description
-    FROM videos v
-    WHERE v.videoId IS NOT NULL
-      AND v.videoId <> ?
-      AND v.id < ?
-      AND EXISTS (
-        SELECT 1
-        FROM site_videos sv
-        WHERE sv.video_id = v.id
-          AND sv.status = 'available'
-      )
-    ORDER BY v.id ASC
-    LIMIT ?
-  `;
-
-  const firstRows = await prisma.$queryRawUnsafe<Array<{
+  const fetched = await prisma.$queryRawUnsafe<Array<{
     dbId: number;
     id: string;
     title: string;
     channelTitle: string | null;
     favourited: number | null;
     description: string | null;
-  }>>(selectSql, params.currentVideoId, randomStartId, queryLimit);
+  }>>(fetchSql, ...selectedIds);
 
-  const remaining = Math.max(0, queryLimit - firstRows.length);
-  const wrapRows = remaining > 0
-    ? await prisma.$queryRawUnsafe<Array<{
-      dbId: number;
-      id: string;
-      title: string;
-      channelTitle: string | null;
-      favourited: number | null;
-      description: string | null;
-    }>>(wrapSql, params.currentVideoId, randomStartId, remaining)
-    : [];
-  const rows = uniqueVideosById([...firstRows, ...wrapRows]).slice(0, requested);
+  const rows = uniqueVideosById(fetched).slice(0, requested);
 
   const repairedArtists = rows
     .map((row) => {

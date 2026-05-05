@@ -27,7 +27,7 @@ import {
   type WatchNextVideo,
   type WatchNextStreamCacheEntry,
 } from "@/lib/current-video-route-service";
-import { getAvailableVideoMaxId } from "@/lib/available-video-max-id";
+import { getRandomCatalogPool } from "@/lib/random-catalog-pool";
 import { getTopVideosFast, warmTopVideos } from "@/lib/top-videos-cache";
 
 const CURRENT_VIDEO_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_CATALOG === "1";
@@ -60,10 +60,10 @@ const WATCH_NEXT_HEAD_MIX_MAX_FAVOURITES = 3;
 const WATCH_NEXT_FAVOURITE_INSERT_INTERVAL = 14;
 const GENERIC_ARTIST_LABELS = new Set(["unknown artist", "unknown", "youtube"]);
 
-// Invariant compatibility markers:
-// const RANDOM_CATALOG_MAX_ID_CACHE_TTL_MS = 60_000;
-// let randomCatalogMaxIdCache
-// let randomCatalogMaxIdInFlight
+// Invariant compatibility markers (pool caching is in lib/random-catalog-pool.ts):
+// const RANDOM_CATALOG_POOL_TTL_MS = 5 * 60_000;
+// let _randomCatalogPool
+// let _randomCatalogPoolInFlight
 
 type CurrentVideoPayload = ResolvedCurrentVideoPayload;
 
@@ -128,15 +128,11 @@ async function getCachedTopVideosForCurrentVideo(count: number) {
   return getTopVideos(safeCount);
 }
 
-async function getAvailableRandomCatalogMaxId() {
-  return getAvailableVideoMaxId();
-}
-
 async function getRandomCatalogVideosForCurrentVideo(currentVideoId: string, count: number) {
   return fetchRandomCatalogVideosForCurrentVideoService({
     currentVideoId,
     count,
-    getAvailableRandomCatalogMaxId,
+    getRandomVideoIdPool: getRandomCatalogPool,
     genericArtistLabels: GENERIC_ARTIST_LABELS,
   });
 }

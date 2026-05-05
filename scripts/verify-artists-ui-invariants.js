@@ -90,6 +90,11 @@ function main() {
   assertContains(catalogDataSource, "if (artistSlugLookupCache && artistSlugLookupCache.expiresAt > now)", "Catalog data reuses cached slug lookup map", failures);
   assertContains(catalogDataSource, "const fastMatch = narrowed.find((artist) => slugify(artist.name) === slug);", "Catalog data keeps exact slugify match check in slug fast path", failures);
   assertContains(catalogDataSource, "if (!artistSlugLookupInFlight)", "Catalog data deduplicates concurrent fallback slug-map rebuilds", failures);
+  assertContains(catalogDataArtistsSource, "const artistPrefixFilterExpr = columns.normalizedName", "Artist letter browse builds a dedicated prefix filter expression", failures);
+  assertContains(catalogDataArtistsSource, "AND s.display_name LIKE ?", "Artist stats letter browse uses index-friendly display_name prefix LIKE", failures);
+  assertContains(catalogDataArtistsSource, "AND ${artistPrefixFilterExpr} LIKE ?", "Artist letter browse uses index-friendly prefix LIKE for artists table filtering", failures);
+  assertNotContains(catalogDataArtistsSource, "AND LOWER(s.display_name) LIKE ?", "Artist stats letter browse no longer wraps display_name in LOWER for prefix scans", failures);
+  assertNotContains(catalogDataArtistsSource, "AND ${artistNameNormExpr} LIKE ?", "Artist letter browse no longer relies on LOWER/TRIM normalization expression for prefix filtering", failures);
   assertContains(schemaSource, '@@index([slug], map: "artist_stats_slug_idx")', "Artist stats schema keeps a direct slug index", failures);
   assertContains(performanceIndexesSource, "index_name IN ('idx_site_videos_video_id_status', 'site_videos_video_id_status_idx')", "Performance index script avoids recreating duplicate site_videos availability index", failures);
   assertContains(performanceIndexesSource, "CREATE INDEX artist_stats_slug_idx ON artist_stats (slug)", "Performance index script can backfill the artist slug index on existing databases", failures);

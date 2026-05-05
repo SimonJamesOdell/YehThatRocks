@@ -35,6 +35,19 @@ export const AVAILABLE_SITE_VIDEOS_JOIN = `
         ) available_sv ON available_sv.video_id = v.id
 `;
 
+// Prefer this over AVAILABLE_SITE_VIDEOS_JOIN for per-artist queries (WHERE parsedArtist_norm = ?).
+// EXISTS short-circuits per row and avoids materialising ~266k available video IDs as a derived
+// table — MySQL can satisfy availability via the (status, video_id) index with a single seek per
+// outer row. For tight-filter queries (small artist roster) this is far cheaper.
+export const AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE = `
+      AND EXISTS (
+        SELECT 1
+        FROM site_videos sv
+        WHERE sv.video_id = v.id
+          AND sv.status = 'available'
+      )
+`;
+
 const TABLE_SCHEMA_CACHE_MAX_ENTRIES = Math.max(
   16,
   Math.min(512, Number(process.env.TABLE_SCHEMA_CACHE_MAX_ENTRIES || "128")),
@@ -52,6 +65,8 @@ let hasCheckedVideoChannelTitleColumn = false;
 let videoChannelTitleColumnAvailable = false;
 
 let parsedArtistNormIndexAvailableCache: boolean | undefined;
+
+let genreAllColumnAvailableCache: boolean | undefined;
 
 let artistStatsProjectionAvailabilityCache:
   | { checkedAt: number; available: boolean }
@@ -262,8 +277,60 @@ export async function getArtistColumnMap() {
   const country = available.has("country") ? "country" : available.has("origin") ? "origin" : null;
   const genreColumns = ["genre1", "genre2", "genre3", "genre4", "genre5", "genre6"].filter((column) => available.has(column));
 
+  // Also detect genre_all presence (used for FULLTEXT genre search).
+  if (genreAllColumnAvailableCache === undefined) {
+    genreAllColumnAvailableCache = available.has("genre_all");
+  }
+
   artistColumnMapCache = { name, normalizedName, country, genreColumns };
   return artistColumnMapCache;
+}
+
+// Returns true when the artists table has a `genre_all` FULLTEXT column (a
+// concatenation of genre1–genre6). When present, a single MATCH … AGAINST or
+// single-column LIKE replaces 6× full-table LIKE scans.
+export async function hasGenreAllColumn(): Promise<boolean> {
+  if (genreAllColumnAvailableCache !== undefined) return genreAllColumnAvailableCache;
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ Field: string }>>(
+      "SHOW COLUMNS FROM artists LIKE 'genre_all'",
+    );
+    genreAllColumnAvailableCache = rows.length > 0;
+  } catch {
+    genreAllColumnAvailableCache = false;
+  }
+
+  return genreAllColumnAvailableCache;
+}
+
+let videoTitleFulltextIndexAvailableCache: boolean | undefined;
+
+// Returns true when the videos table has a FULLTEXT index on (title, parsedArtist, parsedTrack).
+// When present, MATCH … AGAINST replaces costly 4× LOWER() LIKE '%term%' full-table scans.
+export async function hasVideoTitleFulltextIndex(): Promise<boolean> {
+  if (videoTitleFulltextIndexAvailableCache !== undefined) return videoTitleFulltextIndexAvailableCache;
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ INDEX_NAME: string }>>(
+      `SELECT INDEX_NAME
+       FROM information_schema.STATISTICS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'videos'
+         AND INDEX_TYPE = 'FULLTEXT'
+         AND COLUMN_NAME = 'title'
+       LIMIT 1`,
+    );
+    videoTitleFulltextIndexAvailableCache = rows.length > 0;
+  } catch {
+    videoTitleFulltextIndexAvailableCache = false;
+  }
+
+  return videoTitleFulltextIndexAvailableCache;
+}
+
+export function resetVideoTitleFulltextIndexCache() {
+  videoTitleFulltextIndexAvailableCache = undefined;
 }
 
 function isDuplicateSchemaError(error: unknown): boolean {
