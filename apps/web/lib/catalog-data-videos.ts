@@ -79,6 +79,7 @@ const VIDEO_CACHE_MAX_ENTRIES = Math.max(
   Math.min(8_000, Number(process.env.VIDEO_CACHE_MAX_ENTRIES || "1500")),
 );
 const RANKED_SLICE_CACHE_MAX_ENTRIES = 8;
+const ENABLE_LEGACY_APPROVAL_BOOTSTRAP = process.env.ENABLE_LEGACY_APPROVAL_BOOTSTRAP === "1";
 
 // ── Cache variables ───────────────────────────────────────────────────────────
 
@@ -148,6 +149,12 @@ export function clearVideosCaches() {
 // ── Private helpers ───────────────────────────────────────────────────────────
 
 async function maybeBackfillLegacyApprovedVideos() {
+  // Safety default: never auto-approve pending videos in modern deployments.
+  // This legacy bootstrap can be explicitly enabled only for one-off migrations.
+  if (!ENABLE_LEGACY_APPROVAL_BOOTSTRAP) {
+    return false;
+  }
+
   if (legacyApprovalBootstrapAttempted) {
     return false;
   }
