@@ -1204,7 +1204,7 @@ export function PlayerExperience({
   const suppressUnavailablePlaybackSurface = endedChoiceFromUnavailable || Boolean(unavailableOverlayMessage) || playerClosedByEndOfVideo || (showEndedChoiceOverlay && pathname !== "/");
   const showDockCloseButton = isDockedDesktop && pathname !== "/";
   const isDockedNewRoute = showDockCloseButton && pathname === "/new";
-  const hasActivePlayback = isPlaying || safeCurrentTime > 0;
+  const hasActivePlayback = isPlaying || hasPlaybackStarted || safeCurrentTime > 0;
   const showRouteLikeLoadingCopy = isRouteResolving || isManualTransitionMaskVisible;
   const showPlayerLoadingOverlay = isLoggedIn && (
     isManualTransitionMaskVisible
