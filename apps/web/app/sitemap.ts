@@ -42,7 +42,7 @@ export default async function sitemap({ id }: { id: number }): Promise<MetadataR
 
   // Artist pages: id 1–4 map to offsets 0, 45k, 90k, 135k
   const offset = (id - 1) * ARTIST_SITEMAP_PAGE_SIZE;
-  const slugs = await getArtistSlugsForSitemap(offset, ARTIST_SITEMAP_PAGE_SIZE, ARTIST_MIN_VIDEO_COUNT);
+  const slugs = await getArtistSlugsForSitemap(offset, ARTIST_SITEMAP_PAGE_SIZE, ARTIST_MIN_VIDEO_COUNT).catch(() => [] as string[]);
 
   return slugs.map((slug) => ({
     url: `${SITE_ORIGIN}/artist/${slug}`,
