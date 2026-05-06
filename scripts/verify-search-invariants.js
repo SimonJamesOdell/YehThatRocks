@@ -136,9 +136,9 @@ function main() {
   assertContains(catalogDataSource, "videos: await getTopVideos(),", "searchCatalog returns top videos for empty query", failures);
   assertContains(catalogDataSource, "artists: await getArtists(),", "searchCatalog returns all artists for empty query", failures);
 
-  // Fallback to seed data on DB failure
-  assertContains(catalogDataSource, "searchSeedCatalog(query)", "searchCatalog falls back to seed catalog when DB query fails", failures);
-  assertContains(catalogDataSource, "console.error(\"[searchCatalog] query failed, falling back to seed:\"", "searchCatalog logs DB query failure before falling back", failures);
+  // Hard-fail behavior on DB/search failure (no seed fallbacks).
+  assertContains(catalogDataSource, "console.error(\"[searchCatalog] query failed\"", "searchCatalog logs DB query failure", failures);
+  assertNotContains(catalogDataSource, "searchSeedCatalog(query)", "searchCatalog does not fall back to seed catalog", failures);
   assertContains(catalogDataSource, "getSearchRankingSignals({", "searchCatalog consults stored search-flag signals before returning results", failures);
   assertContains(catalogDataSource, "rankingSignals.suppressedVideoIds.has(video.videoId)", "searchCatalog suppresses consensus-bad videos for the current query", failures);
   assertContains(catalogDataSource, "rankingSignals.penaltyByVideoId.get(video.videoId)", "searchCatalog demotes repeatedly-flagged videos in ranking", failures);
@@ -151,9 +151,9 @@ function main() {
   assertContains(catalogDataSource, "const inFlight = artistSearchInFlight.get(searchCacheKey);", "Catalog data reuses in-flight artist search work", failures);
   assertContains(catalogDataSource, "artistSearchCache.set(searchCacheKey", "Catalog data writes artist search cache after query completion", failures);
 
-  // Partial fallback: seed used only when DB returns empty results
-  assertContains(catalogDataSource, "videos.length > 0 ? videos.map(mapVideo) : searchSeedCatalog(query).videos", "searchCatalog falls back to seed videos when DB returns zero results", failures);
-  assertContains(catalogDataSource, "artists.length > 0 ? artists.map(mapArtist) : searchSeedCatalog(query).artists", "searchCatalog falls back to seed artists when DB returns zero results", failures);
+  // Canonical-only result mapping (no seed substitutions when DB returns zero rows).
+  assertContains(catalogDataSource, "videos: videos.map(mapVideo)", "searchCatalog returns canonical mapped videos", failures);
+  assertContains(catalogDataSource, "artists: artists.map(mapArtist)", "searchCatalog returns canonical mapped artists", failures);
 
   // --- Search flag persistence and UI wiring ---
   assertContains(searchFlagDataSource, "CREATE TABLE IF NOT EXISTS search_result_flags", "Search flag data layer creates persistence table on demand", failures);

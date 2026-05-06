@@ -10,72 +10,10 @@ import {
   mapPlaylistVideo,
   normalizeYouTubeVideoId,
   escapeSqlIdentifier,
-  seedVideos,
 } from "@/lib/catalog-data-utils";
 import { loadTableColumns, pickColumn } from "@/lib/catalog-data-db";
 
-// ── Preview store (no-database mode) ─────────────────────────────────────────
-
-type PreviewStore = {
-  favouriteIdsByUser: Map<number, Set<string>>;
-  playlistsByUser: Map<number, PlaylistDetail[]>;
-};
-
-const PREVIEW_DEFAULT_USER_ID = 1;
-
-const seedPlaylists: PlaylistDetail[] = [
-  {
-    id: "1",
-    name: "Late Night Riffs",
-    videos: [seedVideos[0], seedVideos[2], seedVideos[4]] as PlaylistVideoRecord[],
-  },
-  {
-    id: "2",
-    name: "Cathedral Echoes",
-    videos: [seedVideos[3], seedVideos[0], seedVideos[1]] as PlaylistVideoRecord[],
-  },
-  {
-    id: "3",
-    name: "Gym Violence",
-    videos: [seedVideos[4], seedVideos[2], seedVideos[1]] as PlaylistVideoRecord[],
-  },
-];
-
-declare global {
-  // eslint-disable-next-line no-var
-  var __yehPreviewStore: PreviewStore | undefined;
-}
-
-function createPreviewStore(): PreviewStore {
-  return {
-    favouriteIdsByUser: new Map([
-      [PREVIEW_DEFAULT_USER_ID, new Set(seedVideos.slice(0, 3).map((video) => video.id))],
-    ]),
-    playlistsByUser: new Map([
-      [
-        PREVIEW_DEFAULT_USER_ID,
-        seedPlaylists.map((playlist) => ({
-          ...playlist,
-          videos: [...playlist.videos],
-        })),
-      ],
-    ]),
-  };
-}
-
-function getPreviewStore(): PreviewStore {
-  if (!globalThis.__yehPreviewStore) {
-    globalThis.__yehPreviewStore = createPreviewStore();
-  }
-
-  return globalThis.__yehPreviewStore;
-}
-
 // ── Private helpers ───────────────────────────────────────────────────────────
-
-function getSeedPlaylists() {
-  return getPreviewStore().playlistsByUser.get(PREVIEW_DEFAULT_USER_ID) ?? [];
-}
 
 function toPlaylistSummary(playlist: PlaylistDetail): PlaylistSummary {
   return {

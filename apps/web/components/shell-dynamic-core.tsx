@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Suspense, memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 
 import { AuthLoginForm } from "@/components/auth-login-form";
@@ -18,6 +18,7 @@ import { PlayerExperience } from "@/components/player-experience";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { OverlayScrollContainerProvider } from "@/components/overlay-scroll-container-context";
+import { useLiveSearchParams } from "@/components/use-live-search-params";
 import { useTemporaryQueueController } from "@/components/use-temporary-queue-controller";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { useDesktopIntro } from "@/components/use-desktop-intro";
@@ -123,9 +124,9 @@ const UNDOCK_SETTLE_DURATION_MS = 220;
 const FOOTER_REVEAL_DURATION_MS = 240;
 // Duration of the primaryActionsReturn CSS animation (must stay in sync with player-actions.css).
 const FOOTER_REVEAL_ANIMATION_MS = 180;
-// Start the footer fade this many ms after the undock movement begins so it
-// finishes right as the video reaches its final position.
-const FOOTER_EARLY_REVEAL_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - FOOTER_REVEAL_ANIMATION_MS - 20);
+// Start the footer fade well before the undock movement ends so the controls
+// are already occupying their final layout slot when the player lands.
+const FOOTER_EARLY_REVEAL_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - FOOTER_REVEAL_ANIMATION_MS - 140);
 
 function isCategoriesOverlayPath(pathname: string) {
   return pathname === "/categories" || pathname.startsWith("/categories/");
@@ -223,7 +224,7 @@ function ShellDynamicInner({
 }: ShellDynamicProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useLiveSearchParams();
   const searchParamsKey = searchParams.toString();
   const requestedVideoId = searchParams.get("v") || null;
   const activePlaylistId = searchParams.get("pl");

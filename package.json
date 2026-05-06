@@ -58,6 +58,7 @@
     "verify:hidden-videos": "node scripts/verify-hidden-videos-invariants.js",
     "verify:search": "node scripts/verify-search-invariants.js",
     "verify:classification": "node scripts/verify-classification-invariants.js",
+    "verify:no-seed-fallbacks": "node scripts/verify-no-seed-fallbacks-invariants.js",
     "verify:delivery-cache": "node scripts/verify-cache-delivery-invariants.js",
     "verify:budget-guardrails": "node scripts/verify-budget-guardrails.js",
     "verify:queue-behavior": "npm -w web run test -- components/use-next-track-decision.test.ts components/use-temporary-queue-controller.component.test.tsx",
@@ -70,7 +71,7 @@
     "reddit:subreddit-share:dry-run": "node scripts/reddit-subreddit-autoshare.js --dry-run",
     "verify:magazine": "node scripts/verify-magazine-invariants.js",
     "verify:shell-decomposition": "node scripts/verify-shell-decomposition-invariants.js",
-    "verify:ui-regressions": "npm run verify:artists-ui && npm run verify:top100-ui && npm run verify:playlists-ui && npm run verify:core-experience && npm run verify:player-core && npm run verify:overlay-routing && npm run verify:new-videos && npm run verify:categories && npm run verify:thumbnail-preflight && npm run verify:auth && npm run verify:admin && npm run verify:favourites && npm run verify:history-ui && npm run verify:watch-next-and-new && npm run verify:hidden-videos && npm run verify:search && npm run verify:classification && npm run verify:delivery-cache && npm run verify:budget-guardrails && npm run verify:queue-behavior && npm run verify:magazine && npm run verify:shell-decomposition",
+    "verify:ui-regressions": "npm run verify:artists-ui && npm run verify:top100-ui && npm run verify:playlists-ui && npm run verify:core-experience && npm run verify:player-core && npm run verify:overlay-routing && npm run verify:new-videos && npm run verify:categories && npm run verify:thumbnail-preflight && npm run verify:auth && npm run verify:admin && npm run verify:favourites && npm run verify:history-ui && npm run verify:watch-next-and-new && npm run verify:hidden-videos && npm run verify:search && npm run verify:classification && npm run verify:no-seed-fallbacks && npm run verify:delivery-cache && npm run verify:budget-guardrails && npm run verify:queue-behavior && npm run verify:magazine && npm run verify:shell-decomposition",
     "verify:invariants": "npm run verify:compile && npm run verify:ui-regressions",
     "verify:invariants:api": "npm run verify:core-experience:api && npm run verify:playlists:api && npm run verify:categories:api && npm run verify:auth:api"
   },

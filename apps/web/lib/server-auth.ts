@@ -2,8 +2,11 @@ import { cookies } from "next/headers";
 
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { isTokenValidationError, verifyToken } from "@/lib/auth-jwt";
+import { withSoftTimeout } from "@/lib/catalog-data-utils";
 import { prisma } from "@/lib/db";
 import type { PrismaWithVerifiedUser, VerifiedUser } from "@/lib/prisma-types";
+
+const SERVER_AUTH_LOOKUP_TIMEOUT_MS = 2_500;
 
 export type ServerAuthState =
   | { status: "authenticated"; user: VerifiedUser }
@@ -18,18 +21,22 @@ async function resolveAuthenticatedUserByAccessToken(accessToken?: string | null
   try {
     const payload = await verifyToken(accessToken, "access");
     try {
-      const user = await (prisma as PrismaWithVerifiedUser).user.findUnique({
-        where: { id: payload.uid },
-        select: {
-          id: true,
-          email: true,
-          emailVerifiedAt: true,
-          screenName: true,
-          avatarUrl: true,
-          bio: true,
-          location: true,
-        },
-      });
+      const user = await withSoftTimeout(
+        `server-auth:user:${payload.uid}`,
+        SERVER_AUTH_LOOKUP_TIMEOUT_MS,
+        () => (prisma as PrismaWithVerifiedUser).user.findUnique({
+          where: { id: payload.uid },
+          select: {
+            id: true,
+            email: true,
+            emailVerifiedAt: true,
+            screenName: true,
+            avatarUrl: true,
+            bio: true,
+            location: true,
+          },
+        }),
+      );
 
       if (!user) {
         return { status: "unauthenticated" };

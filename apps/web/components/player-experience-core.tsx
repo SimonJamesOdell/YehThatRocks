@@ -2,10 +2,11 @@
 
 import { ChangeEvent, startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type UIEvent } from "react";
 import { createPortal } from "react-dom";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { buildSharedVideoMessage } from "@/lib/chat-shared-video";
+import { AutoplaySettingsEditor } from "@/components/autoplay-settings-editor";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
@@ -36,6 +37,8 @@ import { useAdminVideoEdit } from "@/components/use-admin-video-edit";
 import { useFavouriteState } from "@/components/use-favourite-state";
 import { useLyricsAvailability } from "@/components/use-lyrics-availability";
 import { usePlaylistSequence } from "@/components/use-playlist-sequence";
+import { LIVE_SEARCH_PARAMS_EVENT, useLiveSearchParams } from "@/components/use-live-search-params";
+import { type AutoplayMixSettings } from "@/lib/player-preferences-shared";
 
 type PlayerExperienceProps = {
   currentVideo: VideoRecord;
@@ -66,6 +69,8 @@ type PlaylistSummary = {
 type PlayerPreferencesResponse = {
   autoplayEnabled?: boolean | null;
   volume?: number | null;
+  autoplayMix?: AutoplayMixSettings | null;
+  autoplayGenreFilters?: string[] | null;
 };
 
 type YouTubePlayerStateChangeEvent = {
@@ -281,7 +286,7 @@ export function PlayerExperience({
 }: PlayerExperienceProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useLiveSearchParams();
   const requestedVideoId = searchParams.get("v");
   const activePlaylistId = searchParams.get("pl");
   const rawPlaylistItemIndex = searchParams.get("pli");
@@ -307,6 +312,7 @@ export function PlayerExperience({
   const isBootstrappingHistoryRef = useRef(true);
   const previousVideoIdRef = useRef<string | null>(null);
   const footerPlaylistMenuRef = useRef<HTMLDivElement | null>(null);
+  const autoplayMenuRef = useRef<HTMLDivElement | null>(null);
   const shareToChatResetTimeoutRef = useRef<number | null>(null);
   const playerPreferencesSaveTimeoutRef = useRef<number | null>(null);
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
@@ -337,6 +343,8 @@ export function PlayerExperience({
   } | null>(null);
   const [footerPlaylistAddState, setFooterPlaylistAddState] = useState<"idle" | "saving" | "added" | "error">("idle");
   const [showFooterPlaylistMenu, setShowFooterPlaylistMenu] = useState(false);
+  const [showAutoplayMenu, setShowAutoplayMenu] = useState(false);
+  const [showAutoplayConfigureModal, setShowAutoplayConfigureModal] = useState(false);
   const [footerPlaylistMenuLoading, setFooterPlaylistMenuLoading] = useState(false);
   const [footerPlaylistMenuPlaylists, setFooterPlaylistMenuPlaylists] = useState<PlaylistSummary[]>([]);
   const [footerOpenAfterSelect, setFooterOpenAfterSelect] = useState(false);
@@ -621,6 +629,23 @@ export function PlayerExperience({
   }, [showShareModal]);
 
   useEffect(() => {
+    if (!showAutoplayConfigureModal) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowAutoplayConfigureModal(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [showAutoplayConfigureModal]);
+
+  useEffect(() => {
     if (!showFooterPlaylistMenu) {
       return;
     }
@@ -649,6 +674,36 @@ export function PlayerExperience({
       window.removeEventListener("keydown", handleEscape);
     };
   }, [showFooterPlaylistMenu]);
+
+  useEffect(() => {
+    if (!showAutoplayMenu) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!autoplayMenuRef.current) {
+        return;
+      }
+
+      if (event.target instanceof Node && !autoplayMenuRef.current.contains(event.target)) {
+        setShowAutoplayMenu(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowAutoplayMenu(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [showAutoplayMenu]);
 
   useEffect(() => {
     if (!showFooterPlaylistMenu) {
@@ -689,7 +744,7 @@ export function PlayerExperience({
 
     async function loadTopFallbackPool() {
       try {
-        const response = await fetch(`/api/videos/top?count=${AUTOPLAY_FALLBACK_POOL_SIZE}`, {
+        const response = await fetch(`/api/current-video?v=${encodeURIComponent(currentVideo.id)}&count=${AUTOPLAY_FALLBACK_POOL_SIZE}`, {
           cache: "no-store",
         });
 
@@ -699,12 +754,15 @@ export function PlayerExperience({
 
         const payload = (await response.json().catch(() => null)) as
           | {
+              relatedVideos?: VideoRecord[];
               videos?: VideoRecord[];
             }
           | null;
 
-        const ids = Array.isArray(payload?.videos)
-          ? payload.videos.filter((video): video is VideoRecord => Boolean(video?.id))
+        const ids = Array.isArray(payload?.relatedVideos)
+          ? payload.relatedVideos.filter((video): video is VideoRecord => Boolean(video?.id))
+          : Array.isArray(payload?.videos)
+            ? payload.videos.filter((video): video is VideoRecord => Boolean(video?.id))
           : [];
 
         if (!cancelled) {
@@ -720,7 +778,7 @@ export function PlayerExperience({
     return () => {
       cancelled = true;
     };
-  }, [autoplayEnabled]);
+  }, [autoplayEnabled, currentVideo.id]);
 
   const extractVideoIds = useCallback((videos: VideoRecord[] | undefined) => (
     Array.isArray(videos)
@@ -883,12 +941,12 @@ export function PlayerExperience({
     let receivedSyncedQueue = false;
 
     const handleRouteQueueSync = (event: Event) => {
-      if (routeAutoplaySource.type !== "new") {
+      if (routeAutoplaySource.type !== "new" && routeAutoplaySource.type !== "top100") {
         return;
       }
 
       const detail = (event as CustomEvent<{ source?: string; videoIds?: string[] }>).detail;
-      if (detail?.source !== "new" || !Array.isArray(detail.videoIds)) {
+      if (detail?.source !== routeAutoplaySource.type || !Array.isArray(detail.videoIds)) {
         return;
       }
 
@@ -896,7 +954,7 @@ export function PlayerExperience({
       setRouteAutoplayQueueIds(Array.from(new Set(detail.videoIds.filter((videoId): videoId is string => Boolean(videoId)))));
     };
 
-    if (typeof window !== "undefined" && routeAutoplaySource.type === "new") {
+    if (typeof window !== "undefined" && (routeAutoplaySource.type === "new" || routeAutoplaySource.type === "top100")) {
       window.addEventListener(ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT, handleRouteQueueSync as EventListener);
     }
 
@@ -923,29 +981,30 @@ export function PlayerExperience({
 
     return () => {
       cancelled = true;
-      if (typeof window !== "undefined" && routeAutoplaySource.type === "new") {
+      if (typeof window !== "undefined" && (routeAutoplaySource.type === "new" || routeAutoplaySource.type === "top100")) {
         window.removeEventListener(ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT, handleRouteQueueSync as EventListener);
       }
     };
   }, [activePlaylistId, fetchAutoplaySourceVideoIds, fetchHiddenVideoIdSet, isDockedDesktop, pathname]);
 
   useEffect(() => {
-    const shouldHydrateNonDockedNewQueue =
+    const nonDockedRouteQueueSource =
       !isDockedDesktop &&
-      pathname === "/new" &&
-      !activePlaylistId &&
-      autoplayEnabled;
+      (pathname === "/new" || pathname === "/top100") &&
+      !activePlaylistId;
 
-    if (!shouldHydrateNonDockedNewQueue) {
+    if (!nonDockedRouteQueueSource) {
       return;
     }
+
+    const routeSourceType = pathname === "/new" ? "new" : "top100";
 
     let cancelled = false;
     let receivedSyncedQueue = false;
 
     const handleRouteQueueSync = (event: Event) => {
       const detail = (event as CustomEvent<{ source?: string; videoIds?: string[] }>).detail;
-      if (detail?.source !== "new" || !Array.isArray(detail.videoIds)) {
+      if (detail?.source !== routeSourceType || !Array.isArray(detail.videoIds)) {
         return;
       }
 
@@ -961,7 +1020,7 @@ export function PlayerExperience({
       try {
         const [hiddenSet, rawIds] = await Promise.all([
           fetchHiddenVideoIdSet(),
-          fetchAutoplaySourceVideoIds({ type: "new" }),
+          fetchAutoplaySourceVideoIds({ type: routeSourceType }),
         ]);
 
         const dedupedVisibleIds = Array.from(new Set(rawIds.filter((videoId) => !hiddenSet.has(videoId))));
@@ -984,7 +1043,7 @@ export function PlayerExperience({
         window.removeEventListener(ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT, handleRouteQueueSync as EventListener);
       }
     };
-  }, [activePlaylistId, autoplayEnabled, fetchAutoplaySourceVideoIds, fetchHiddenVideoIdSet, isDockedDesktop, pathname]);
+  }, [activePlaylistId, fetchAutoplaySourceVideoIds, fetchHiddenVideoIdSet, isDockedDesktop, pathname]);
 
   function getRandomWatchNextId() {
     const queueIds = Array.from(new Set(queue.map((video) => video.id))).filter((videoId) => videoId !== currentVideo.id);
@@ -1028,14 +1087,14 @@ export function PlayerExperience({
     temporaryQueue,
     currentVideoId: currentVideo.id,
     isDockedDesktop,
-    shouldUseRouteQueueRegardlessOfDocked: autoplayEnabled && pathname === "/new",
+    shouldUseRouteQueueRegardlessOfDocked: pathname === "/new" || pathname === "/top100",
     routeAutoplayQueueIds,
     getRandomWatchNextId,
   });
 
   async function resolveAutoplayRecoveryTarget() {
     try {
-      const response = await fetch(`/api/videos/top?count=${AUTOPLAY_FALLBACK_POOL_SIZE}`, {
+      const response = await fetch(`/api/current-video?v=${encodeURIComponent(currentVideoRef.current.id)}&count=${AUTOPLAY_FALLBACK_POOL_SIZE}`, {
         cache: "no-store",
       });
 
@@ -1045,14 +1104,18 @@ export function PlayerExperience({
 
       const payload = (await response.json().catch(() => null)) as
         | {
+            relatedVideos?: VideoRecord[];
             videos?: VideoRecord[];
           }
         | null;
 
       const currentId = currentVideoRef.current.id;
-      const fallbackIds = Array.isArray(payload?.videos)
-        ? Array.from(new Set(payload.videos.map((video) => video.id))).filter((videoId) => Boolean(videoId) && videoId !== currentId)
-        : [];
+      const fallbackPool = Array.isArray(payload?.relatedVideos)
+        ? payload.relatedVideos
+        : Array.isArray(payload?.videos)
+          ? payload.videos
+          : [];
+      const fallbackIds = Array.from(new Set(fallbackPool.map((video) => video.id))).filter((videoId) => Boolean(videoId) && videoId !== currentId);
 
       if (fallbackIds.length === 0) {
         return null;
@@ -1132,7 +1195,7 @@ export function PlayerExperience({
       && !hasLeftInitialRequestedVideoRef.current
       && !hasPlaybackStartedRef.current,
   );
-  const endedChoiceSeedVideos = useMemo(() => {
+  const endedChoiceCandidateVideos = useMemo(() => {
     const deduped = new Map<string, NextChoiceVideo>();
 
     for (const video of [...queue, ...topFallbackVideos]) {
@@ -1151,7 +1214,7 @@ export function PlayerExperience({
   const endedChoiceVideos = useMemo(() => {
     const deduped = new Map<string, NextChoiceVideo>();
 
-    for (const video of [...endedChoiceSeedVideos.slice(0, ENDED_CHOICE_BATCH_SIZE), ...endedChoiceRemoteVideos]) {
+    for (const video of [...endedChoiceCandidateVideos.slice(0, ENDED_CHOICE_BATCH_SIZE), ...endedChoiceRemoteVideos]) {
       if (!video?.id || video.id === currentVideo.id || endedChoiceDismissedIds.includes(video.id) || deduped.has(video.id)) {
         continue;
       }
@@ -1160,7 +1223,7 @@ export function PlayerExperience({
     }
 
     return [...deduped.values()];
-  }, [endedChoiceSeedVideos, endedChoiceRemoteVideos, currentVideo.id, endedChoiceDismissedIds]);
+  }, [endedChoiceCandidateVideos, endedChoiceRemoteVideos, currentVideo.id, endedChoiceDismissedIds]);
 
   const hasSeenEndedChoiceVideos = isLoggedIn && endedChoiceVideos.some((video) => seenVideoIds?.has(video.id));
   const visibleEndedChoiceVideos = isLoggedIn && endedChoiceHideSeen
@@ -1204,6 +1267,13 @@ export function PlayerExperience({
   const suppressUnavailablePlaybackSurface = endedChoiceFromUnavailable || Boolean(unavailableOverlayMessage) || playerClosedByEndOfVideo || (showEndedChoiceOverlay && pathname !== "/");
   const showDockCloseButton = isDockedDesktop && pathname !== "/";
   const isDockedNewRoute = showDockCloseButton && pathname === "/new";
+  const isDockedTop100Route = showDockCloseButton && pathname === "/top100";
+  const routeAutoplaySource = resolveRouteAutoplaySource(pathname);
+  const isDockedRouteListAutoplayActive = showDockCloseButton
+    && autoplayEnabled
+    && Boolean(routeAutoplaySource)
+    && !hasActivePlaylistIntent
+    && routeAutoplayQueueIds.length > 0;
   const hasActivePlayback = isPlaying || hasPlaybackStarted || safeCurrentTime > 0;
   const showRouteLikeLoadingCopy = isRouteResolving || isManualTransitionMaskVisible;
   const showPlayerLoadingOverlay = isLoggedIn && (
@@ -2341,7 +2411,9 @@ export function PlayerExperience({
   }, [pathname]);
 
   useEffect(() => {
-    if (pathname === "/") {
+    const isRouteListOverlay = pathname === "/new" || pathname === "/top100";
+
+    if (pathname === "/" || isRouteListOverlay) {
       autoplayRouteTransitionRef.current = false;
       return;
     }
@@ -3194,6 +3266,7 @@ export function PlayerExperience({
       clearPlaylist?: boolean;
       playlistId?: string | null;
       playlistItemIndex?: number | null;
+      useNativeHistory?: boolean;
     },
   ) {
     const runtimePathname = typeof window !== "undefined" && window.location.pathname
@@ -3216,7 +3289,16 @@ export function PlayerExperience({
       }
     }
 
-    router.push(`${navigationPathname}?${params.toString()}`, { scroll: false });
+    const nextHref = `${navigationPathname}?${params.toString()}`;
+
+    if (options?.useNativeHistory && typeof window !== "undefined") {
+      window.history.pushState(window.history.state, "", nextHref);
+      window.dispatchEvent(new CustomEvent(LIVE_SEARCH_PARAMS_EVENT));
+      window.dispatchEvent(new PopStateEvent("popstate"));
+      return;
+    }
+
+    router.push(nextHref, { scroll: false });
   }
 
   function triggerEndOfVideoAction(options?: { forceAutoplayAdvance?: boolean }) {
@@ -3786,8 +3868,8 @@ export function PlayerExperience({
     });
   }
 
-  function handleDockedNewRouteNextTrack() {
-    if (!isDockedNewRoute || footerActionsBlocked || routeAutoplayQueueIds.length === 0) {
+  function handleDockedRouteListNextTrack() {
+    if ((!isDockedNewRoute && !isDockedTop100Route) || footerActionsBlocked || routeAutoplayQueueIds.length === 0) {
       return;
     }
 
@@ -3807,6 +3889,7 @@ export function PlayerExperience({
       clearPlaylist: true,
       playlistId: activePlaylistId,
       playlistItemIndex: null,
+      useNativeHistory: true,
     });
   }
 
@@ -4112,39 +4195,39 @@ export function PlayerExperience({
     }
   }
 
-  async function handleToggleAutoplay() {
-    const enablingAutoplay = !autoplayEnabled;
-
-    const persistAutoplayPreference = async (value: boolean) => {
-      if (!isLoggedIn || !isPlayerPreferencesServerHydrated) {
-        return;
-      }
-
-      try {
-        await fetch("/api/player-preferences", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            autoplayEnabled: value,
-          }),
-        });
-      } catch {
-        // Preserve immediate toggle behavior even if background persistence fails.
-      }
-    };
-
-    if (!enablingAutoplay) {
-      setAutoplayEnabled(false);
-      window.localStorage.setItem(AUTOPLAY_KEY, "false");
-      void persistAutoplayPreference(false);
+  async function persistAutoplayPreference(value: boolean) {
+    if (!isLoggedIn || !isPlayerPreferencesServerHydrated) {
       return;
     }
 
-    setAutoplayEnabled(true);
-    window.localStorage.setItem(AUTOPLAY_KEY, "true");
-    void persistAutoplayPreference(true);
+    try {
+      await fetch("/api/player-preferences", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          autoplayEnabled: value,
+        }),
+      });
+    } catch {
+      // Preserve immediate toggle behavior even if background persistence fails.
+    }
+  }
+
+  async function handleSetAutoplayEnabled(value: boolean) {
+    if (!isLoggedIn) {
+      return;
+    }
+
+    setAutoplayEnabled(value);
+    setShowAutoplayMenu(false);
+    window.localStorage.setItem(AUTOPLAY_KEY, value ? "true" : "false");
+    void persistAutoplayPreference(value);
+
+    if (!value) {
+      return;
+    }
 
     const autoplaySource = resolveRouteAutoplaySource(pathname);
 
@@ -4171,6 +4254,14 @@ export function PlayerExperience({
       params.set("v", currentVideo.id);
       router.push(`/?${params.toString()}`);
     }
+  }
+
+  function handleAutoplayMenuButtonClick() {
+    if (!isLoggedIn) {
+      return;
+    }
+
+    setShowAutoplayMenu((current) => !current);
   }
 
   function handleOpenLyrics() {
@@ -4987,6 +5078,43 @@ export function PlayerExperience({
             </div>
           ) : null}
 
+          {showAutoplayConfigureModal && typeof document !== "undefined"
+            ? createPortal(
+                <div
+                  className="shareModalBackdrop autoplayConfigureBackdrop"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Configure autoplay"
+                  onClick={() => setShowAutoplayConfigureModal(false)}
+                >
+                  <div className="shareModal autoplayConfigureModal" onClick={(event) => event.stopPropagation()}>
+                    <div className="shareModalHeader">
+                      <strong>Configure Autoplay</strong>
+                      <button
+                        type="button"
+                        className="overlayIconBtn"
+                        onClick={() => setShowAutoplayConfigureModal(false)}
+                        aria-label="Close configure autoplay modal"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
+                    <AutoplaySettingsEditor
+                      title="Sources"
+                      className="autoplaySettingsModalBody"
+                      onSaved={() => {
+                        setShowAutoplayConfigureModal(false);
+                      }}
+                    />
+                  </div>
+                </div>,
+                document.body,
+              )
+            : null}
+
           {showAdminVideoEditModal ? (
             <div
               className="shareModalBackdrop"
@@ -5419,26 +5547,62 @@ export function PlayerExperience({
               </button>
             ) : null}
             {isLoggedIn ? (
-              <button
-                type="button"
-                className={autoplayEnabled ? "primaryActionToggleButton primaryActionAutoplayButton primaryActionToggleButtonActive" : "primaryActionToggleButton primaryActionAutoplayButton"}
-                onClick={handleToggleAutoplay}
-                disabled={footerActionsBlocked}
-                aria-label={autoplayEnabled ? "Disable autoplay" : "Enable autoplay"}
-                title={autoplayEnabled ? "Disable autoplay" : "Enable autoplay"}
-              >
-                <span className="primaryActionGlyph" aria-hidden="true">⇮</span>
-                <span>{autoplayEnabled ? "On" : "Off"}</span>
-              </button>
+              <div className="primaryActionIconButtonWrap primaryActionAutoplayWrap" ref={autoplayMenuRef}>
+                <button
+                  type="button"
+                  className={autoplayEnabled ? "primaryActionToggleButton primaryActionAutoplayButton primaryActionToggleButtonActive" : "primaryActionToggleButton primaryActionAutoplayButton"}
+                  onClick={handleAutoplayMenuButtonClick}
+                  disabled={footerActionsBlocked}
+                  aria-label="Autoplay options"
+                  title="Autoplay options"
+                >
+                  <span className="primaryActionGlyph" aria-hidden="true">⇮</span>
+                  <span>{autoplayEnabled ? "On" : "Off"}</span>
+                </button>
+                {showAutoplayMenu ? (
+                  <div className="primaryActionPlaylistMenu" role="menu" aria-label="Autoplay options">
+                    <button
+                      type="button"
+                      className="primaryActionPlaylistMenuAction"
+                      onClick={() => {
+                        void handleSetAutoplayEnabled(true);
+                      }}
+                    >
+                      Autoplay ON
+                    </button>
+                    <button
+                      type="button"
+                      className="primaryActionPlaylistMenuAction"
+                      onClick={() => {
+                        void handleSetAutoplayEnabled(false);
+                      }}
+                    >
+                      Autoplay OFF
+                    </button>
+                    {!isDockedRouteListAutoplayActive ? (
+                      <button
+                        type="button"
+                        className="primaryActionPlaylistMenuAction"
+                        onClick={() => {
+                          setShowAutoplayMenu(false);
+                          setShowAutoplayConfigureModal(true);
+                        }}
+                      >
+                        Configure Autoplay
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
             ) : null}
-            {isDockedNewRoute ? (
+            {isDockedNewRoute || isDockedTop100Route ? (
               <button
                 type="button"
                 className="primaryActionToggleButton primaryActionDockedNextButton"
-                onClick={handleDockedNewRouteNextTrack}
+                onClick={handleDockedRouteListNextTrack}
                 disabled={footerActionsBlocked || routeAutoplayQueueIds.length === 0}
-                aria-label="Next track in New"
-                title="Next track in New"
+                aria-label={isDockedTop100Route ? "Next track in Top 100" : "Next track in New"}
+                title={isDockedTop100Route ? "Next track in Top 100" : "Next track in New"}
               >
                 <span className="primaryNavGlyph" aria-hidden="true">⇥</span>
               </button>

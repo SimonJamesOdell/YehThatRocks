@@ -18,7 +18,7 @@ export { buildNormalizedVideoTitleFromMetadata };
 // ── Public exported types ──────────────────────────────────────────────────────
 
 export type DataSourceStatus = {
-  mode: "seed" | "database" | "database-error";
+  mode: "database" | "database-error";
   envConfigured: boolean;
   videoCount: number;
   artistCount: number;
@@ -140,22 +140,16 @@ export const CATALOG_DEBUG_ENABLED =
 
 export const ENABLE_SAME_GENRE_RELATED = process.env.RELATED_ENABLE_SAME_GENRE === "1";
 
-// ── Seed stubs (all return empty — live DB required) ──────────────────────────
-
-export const seedVideos: VideoRecord[] = [];
-export const seedArtists: ArtistRecord[] = [];
-export const seedGenres: string[] = [];
-export function getSeedRelatedVideos(_videoId: string): VideoRecord[] { return []; }
-export function getSeedVideoById(_videoId: string): VideoRecord | undefined { return undefined; }
-export function getSeedArtistBySlug(_slug: string): ArtistRecord | undefined { return undefined; }
-export function searchSeedCatalog(_query: string): { videos: VideoRecord[]; artists: ArtistRecord[]; genres: string[] } {
-  return { videos: [], artists: [], genres: [] };
-}
-
 // ── Utility functions ─────────────────────────────────────────────────────────
 
 export function hasDatabaseUrl() {
   return Boolean(process.env.DATABASE_URL);
+}
+
+export function requireDatabaseUrl(context: string) {
+  if (!hasDatabaseUrl()) {
+    throw new Error(`${context} requires a configured DATABASE_URL.`);
+  }
 }
 
 export function slugify(value: string) {

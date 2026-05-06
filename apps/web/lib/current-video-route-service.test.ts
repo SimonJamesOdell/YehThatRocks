@@ -1,7 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const getNewestVideosMock = vi.fn();
 const queryRawUnsafeMock = vi.fn();
 const executeRawMock = vi.fn();
+
+vi.mock("@/lib/catalog-data", () => ({
+  getCurrentVideo: vi.fn(),
+  getFavouriteVideos: vi.fn(),
+  getHiddenVideoIdsForUser: vi.fn(),
+  getNewestVideos: getNewestVideosMock,
+  getRelatedVideos: vi.fn(),
+  getSeenVideoIdsForUser: vi.fn(),
+  getTopVideos: vi.fn(),
+  getUnseenCatalogVideos: vi.fn(),
+  getVideoPlaybackDecision: vi.fn(),
+  pruneVideoAndAssociationsByVideoId: vi.fn(),
+}));
 
 vi.mock("@/lib/db", () => ({
   prisma: {
@@ -17,6 +31,7 @@ vi.mock("@/lib/catalog-metadata-utils", () => ({
 describe("fetchRandomCatalogVideosForCurrentVideo", () => {
   beforeEach(() => {
     vi.resetModules();
+    getNewestVideosMock.mockReset();
     queryRawUnsafeMock.mockReset();
     executeRawMock.mockReset();
   });
@@ -139,5 +154,61 @@ describe("fetchRandomCatalogVideosForCurrentVideo", () => {
     });
 
     expect(result[0].channelTitle).toBe("Inferred Artist");
+  });
+});
+
+describe("buildWatchNextRelatedStream", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    getNewestVideosMock.mockReset();
+    queryRawUnsafeMock.mockReset();
+    executeRawMock.mockReset();
+  });
+
+  it("applies autoplay genre filters and honors a 100 percent newest mix", async () => {
+    const { buildWatchNextRelatedStream } = await import("@/lib/current-video-route-service");
+
+    getNewestVideosMock.mockResolvedValueOnce([
+      { id: "new-1", title: "Doom One", channelTitle: "Band A", genre: "doom metal", favourited: 0, description: "" },
+      { id: "new-2", title: "Thrash One", channelTitle: "Band B", genre: "thrash metal", favourited: 0, description: "" },
+      { id: "new-3", title: "Doom Two", channelTitle: "Band C", genre: "epic doom", favourited: 0, description: "" },
+    ]);
+
+    const getTopPool = vi.fn().mockResolvedValue([
+      { id: "top-1", title: "Top Thrash", channelTitle: "Band D", genre: "thrash metal", favourited: 0, description: "" },
+    ]);
+    const getRandomPool = vi.fn().mockResolvedValue([
+      { id: "random-1", title: "Random Thrash", channelTitle: "Band E", genre: "thrash metal", favourited: 0, description: "" },
+    ]);
+
+    const result = await buildWatchNextRelatedStream({
+      currentVideoId: "current-video",
+      userId: 42,
+      offset: 0,
+      count: 6,
+      blockedIds: new Set(["current-video"]),
+      favouriteVideos: [
+        { id: "fav-1", title: "Favourite Thrash", channelTitle: "Band F", genre: "thrash metal", favourited: 1, description: "" },
+      ],
+      watchNextBatchSize: 6,
+      watchNextSourceSliceSize: 12,
+      watchNextTopPoolSize: 12,
+      watchNextNewestPoolSize: 12,
+      watchNextRandomPoolMin: 12,
+      watchNextMix: {
+        top100: 0,
+        favourites: 0,
+        newest: 100,
+        random: 0,
+      },
+      autoplayGenreFilters: ["doom"],
+      getTopPool,
+      getRandomPool,
+    });
+
+    expect(getNewestVideosMock).toHaveBeenCalledWith(12, 0);
+    expect(result.videos).toHaveLength(2);
+    expect(result.videos.map((video) => video.id).sort()).toEqual(["new-1", "new-3"]);
+    expect(result.videos.every((video) => video.genre.toLowerCase().includes("doom"))).toBe(true);
   });
 });

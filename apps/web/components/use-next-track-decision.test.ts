@@ -190,6 +190,27 @@ describe("useNextTrackDecision", () => {
     });
   });
 
+  it("uses route autoplay queue when route queue is enabled outside docked mode", () => {
+    const { result } = renderHook(() => useNextTrackDecision({
+      activePlaylistId: null,
+      hasActivePlaylistContext: false,
+      playlistQueueIds: [],
+      effectivePlaylistIndex: null,
+      temporaryQueue: [],
+      currentVideoId: "r2",
+      isDockedDesktop: false,
+      shouldUseRouteQueueRegardlessOfDocked: true,
+      routeAutoplayQueueIds: ["r1", "r2", "r3"],
+      getRandomWatchNextId: vi.fn(() => "rand"),
+    }));
+
+    expect(result.current.resolveNextTarget()).toEqual({
+      videoId: "r3",
+      playlistItemIndex: null,
+      clearPlaylist: true,
+    });
+  });
+
   it("falls back to random watch-next id when no queue source applies", () => {
     const { result } = renderHook(() => useNextTrackDecision({
       activePlaylistId: null,

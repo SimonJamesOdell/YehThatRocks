@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
@@ -10,9 +10,10 @@ import { SearchResultFavouriteButton } from "@/components/search-result-favourit
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { dispatchAppEvent, EVENT_NAMES } from "@/lib/events-contract";
+import { LIVE_SEARCH_PARAMS_EVENT, useLiveSearchParams } from "@/components/use-live-search-params";
 import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 
-type Top100VideoLinkProps = {
+type LeaderboardVideoLinkProps = {
   track: {
     id: string;
     title: string;
@@ -27,9 +28,9 @@ type Top100VideoLinkProps = {
   isSeen?: boolean;
   isActive?: boolean;
   rowVariant?: "default" | "new";
-  onHideVideo?: (track: Top100VideoLinkProps["track"]) => void;
+  onHideVideo?: (track: LeaderboardVideoLinkProps["track"]) => void;
   isHidePending?: boolean;
-  onFlagVideo?: (track: Top100VideoLinkProps["track"]) => void;
+  onFlagVideo?: (track: LeaderboardVideoLinkProps["track"]) => void;
   isFlagPending?: boolean;
 };
 
@@ -67,7 +68,7 @@ function canWarmTop100Video(videoId: string) {
   return true;
 }
 
-export function Top100VideoLink({
+export function LeaderboardVideoLink({
   track,
   index,
   isAuthenticated = true,
@@ -78,10 +79,9 @@ export function Top100VideoLink({
   isHidePending = false,
   onFlagVideo,
   isFlagPending = false,
-}: Top100VideoLinkProps) {
-  const router = useRouter();
+}: LeaderboardVideoLinkProps) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const searchParams = useLiveSearchParams();
   const hasWarmedRef = useRef(false);
   const clickFlashTimeoutRef = useRef<number | null>(null);
   const [isClickFlashing, setIsClickFlashing] = useState(false);
@@ -162,8 +162,10 @@ export function Top100VideoLink({
 
   const navigateToVideo = useCallback(() => {
     warmSelection();
-    router.push(videoHref, { scroll: false });
-  }, [router, videoHref, warmSelection]);
+    window.history.pushState(window.history.state, "", videoHref);
+    window.dispatchEvent(new CustomEvent(LIVE_SEARCH_PARAMS_EVENT));
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, [videoHref, warmSelection]);
 
   const openVideoFromCard = useCallback(() => {
     navigateToVideo();

@@ -120,8 +120,40 @@ export const seenTogglePreferenceMutationSchema = z.object({
 export const playerPreferenceMutationSchema = z.object({
   autoplayEnabled: z.boolean().optional(),
   volume: z.number().int().min(0).max(100).optional(),
-}).refine((value) => value.autoplayEnabled !== undefined || value.volume !== undefined, {
-  message: "autoplayEnabled or volume is required",
+  autoplayMix: z.object({
+    top100: z.number().int().min(0).max(100),
+    favourites: z.number().int().min(0).max(100),
+    newest: z.number().int().min(0).max(100),
+    random: z.number().int().min(0).max(100),
+  }).optional(),
+  autoplayGenreFilters: z.array(z.string().trim().min(1).max(80)).max(24).optional(),
+}).superRefine((value, ctx) => {
+  if (
+    value.autoplayEnabled === undefined
+    && value.volume === undefined
+    && value.autoplayMix === undefined
+    && value.autoplayGenreFilters === undefined
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "autoplayEnabled, volume, autoplayMix, or autoplayGenreFilters is required",
+    });
+  }
+
+  if (value.autoplayMix) {
+    const mixTotal = value.autoplayMix.top100
+      + value.autoplayMix.favourites
+      + value.autoplayMix.newest
+      + value.autoplayMix.random;
+
+    if (mixTotal !== 100) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["autoplayMix"],
+        message: "autoplayMix percentages must total exactly 100",
+      });
+    }
+  }
 });
 
 export const chatQuerySchema = z.object({

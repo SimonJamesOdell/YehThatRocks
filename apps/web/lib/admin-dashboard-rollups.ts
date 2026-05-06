@@ -460,6 +460,7 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
   const authIntervalClause = options.fullScan
     ? `INTERVAL ${HOURLY_RECENT_DAYS} DAY`
     : `INTERVAL 2 HOUR`;
+  const hourlyBucketSql = `STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s')`;
 
   await prisma.$executeRawUnsafe(`
     INSERT INTO admin_dashboard_analytics_hourly (
@@ -470,14 +471,14 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       return_visits
     )
     SELECT
-      STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s') AS bucket_start,
+      ${hourlyBucketSql} AS bucket_start,
       SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
       SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
       COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
       COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits
     FROM analytics_events
     WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${analyticsIntervalClause})
-    GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
+    GROUP BY ${hourlyBucketSql}
     ON DUPLICATE KEY UPDATE
       page_views = VALUES(page_views),
       video_views = VALUES(video_views),
@@ -492,11 +493,11 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       auth_events
     )
     SELECT
-      STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s') AS bucket_start,
+      ${hourlyBucketSql} AS bucket_start,
       COUNT(*) AS auth_events
     FROM auth_audit_logs
     WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${authIntervalClause})
-    GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
+    GROUP BY ${hourlyBucketSql}
     ON DUPLICATE KEY UPDATE
       auth_events = VALUES(auth_events),
       updated_at = CURRENT_TIMESTAMP(3)

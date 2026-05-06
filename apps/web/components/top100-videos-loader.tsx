@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
@@ -8,7 +8,10 @@ import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { OverlayHeader } from "@/components/overlay-header";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
-import { Top100VideoLink } from "@/components/top100-video-link";
+import { LeaderboardVideoLink } from "@/components/leaderboard-video-link";
+import { useActiveRowAutoScroll } from "@/components/use-active-row-auto-scroll";
+import { useOverlayScrollContainerRef } from "@/components/overlay-scroll-container-context";
+import { useLiveSearchParams } from "@/components/use-live-search-params";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
@@ -26,6 +29,7 @@ const TOP100_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-top100";
 const TOP100_TARGET_COUNT = 100;
 const TOP100_FETCH_SOURCE_COUNT = 180;
 const TOP100_FIRST_LOAD_TIMEOUT_MS = 6_500;
+const TOP100_ROUTE_QUEUE_SYNC_EVENT = "ytr:new-route-queue-sync";
 
 function readTop100SessionCache(options?: { allowStale?: boolean }) {
   if (typeof window === "undefined") {
@@ -69,7 +73,9 @@ export function Top100VideosLoader({
   hiddenVideoIds?: string[];
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useLiveSearchParams();
+  const activeVideoId = searchParams.get("v");
+  const overlayScrollContainerRef = useOverlayScrollContainerRef();
   const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
   const [videos, setVideos] = useState<VideoRecord[]>(() => filterHiddenVideos(readTop100SessionCache() ?? [], hiddenVideoIdSet));
   const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
@@ -95,6 +101,26 @@ export function Top100VideosLoader({
     });
     return rankMap;
   }, [videos]);
+
+  useActiveRowAutoScroll({
+    activeVideoId,
+    isLoading: isLoading,
+    visibleVideoCount: visibleVideos.length,
+    overlayScrollContainerRef,
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.dispatchEvent(new CustomEvent(TOP100_ROUTE_QUEUE_SYNC_EVENT, {
+      detail: {
+        source: "top100",
+        videoIds: visibleVideos.map((video) => video.id),
+      },
+    }));
+  }, [visibleVideos]);
 
   const handleHideVideo = useCallback((track: VideoRecord) => {
     if (!isAuthenticated || hidingVideoIds.includes(track.id)) {
@@ -325,12 +351,13 @@ export function Top100VideosLoader({
 
       <div className="trackStack spanTwoColumns">
       {visibleVideos.map((track, index) => (
-        <Top100VideoLink
+        <LeaderboardVideoLink
           key={track.id}
           track={track}
           index={videoRankById.get(track.id) ?? index}
           isAuthenticated={isAuthenticated}
           isSeen={seenVideoIdSet.has(track.id)}
+          isActive={track.id === activeVideoId}
           onHideVideo={handleHideVideo}
           isHidePending={hidingVideoIds.includes(track.id)}
         />

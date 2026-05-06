@@ -15,9 +15,7 @@ import {
   mapVideo,
   normalizeArtistKey,
   normalizeYouTubeVideoId,
-  seedArtists,
-  seedGenres,
-  seedVideos,
+  requireDatabaseUrl,
   withSoftTimeout,
   type GenreCard,
   type RankedVideoRow,
@@ -89,7 +87,7 @@ export async function clearGenreCardThumbnailForVideo(videoId: string) {
 // ── Genre queries ─────────────────────────────────────────────────────────────
 
 export async function getGenres() {
-  if (!hasDatabaseUrl()) return seedGenres;
+  requireDatabaseUrl("getGenres");
 
   const now = Date.now();
   if (genreListCache && genreListCache.expiresAt > now) return genreListCache.genres;
@@ -111,15 +109,16 @@ export async function getGenres() {
     const genres = fallbackRows.map((r) => r.genre);
     genreListCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, genres };
     return genres;
-  } catch {
-    return genreListCache?.genres ?? [];
+  } catch (error) {
+    if (genreListCache?.genres) {
+      return genreListCache.genres;
+    }
+    throw error;
   }
 }
 
 export async function getGenreCards(): Promise<GenreCard[]> {
-  if (!hasDatabaseUrl()) {
-    return seedGenres.map((genre) => ({ genre, previewVideoId: null }));
-  }
+  requireDatabaseUrl("getGenreCards");
 
   const now = Date.now();
   if (
@@ -323,9 +322,8 @@ export async function getGenreBySlug(slug: string) {
 // ── Artists by genre ──────────────────────────────────────────────────────────
 
 function getArtistsByGenreFallback(genre: string) {
-  return seedArtists.filter((artist) =>
-    artist.genre.toLowerCase().includes(genre.toLowerCase()),
-  );
+  void genre;
+  return [] as ArtistRecord[];
 }
 
 export async function getArtistsByGenre(genre: string) {
@@ -333,12 +331,7 @@ export async function getArtistsByGenre(genre: string) {
   const now = Date.now();
   const cached = genreArtistsCache.get(cacheKey);
   if (cached && cached.expiresAt > now) return cached.artists;
-
-  if (!hasDatabaseUrl()) {
-    const fallback = getArtistsByGenreFallback(genre);
-    genreArtistsCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, artists: fallback });
-    return fallback;
-  }
+  requireDatabaseUrl("getArtistsByGenre");
 
   try {
     const genreAllExists = await hasGenreAllColumn();
@@ -372,16 +365,15 @@ export async function getArtistsByGenre(genre: string) {
             )
           `;
 
-    const mappedArtists = artists.length > 0
-      ? artists.map(mapArtist).sort((a, b) => a.name.localeCompare(b.name))
-      : getArtistsByGenreFallback(genre);
+    const mappedArtists = artists.map(mapArtist).sort((a, b) => a.name.localeCompare(b.name));
 
     genreArtistsCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, artists: mappedArtists });
     return mappedArtists;
-  } catch {
-    const fallback = getArtistsByGenreFallback(genre);
-    genreArtistsCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, artists: fallback });
-    return fallback;
+  } catch (error) {
+    if (cached) {
+      return cached.artists;
+    }
+    throw error;
   }
 }
 
@@ -430,7 +422,6 @@ export async function getVideosByGenre(
   };
 
   const getGenreFallback = async () => {
-    if (!hasDatabaseUrl()) return seedVideos.slice(requestedOffset, requestedOffset + requestedLimit);
     return [];
   };
 
@@ -453,7 +444,7 @@ export async function getVideosByGenre(
     `;
   };
 
-  if (!hasDatabaseUrl()) return seedVideos;
+  requireDatabaseUrl("getVideosByGenre");
 
   try {
     return await withSoftTimeout(`getVideosByGenre:${cacheKey}`, CATEGORY_QUERY_TIMEOUT_MS, async () => {
@@ -671,9 +662,7 @@ export async function getVideosByGenre(
       storeGenreVideosInCache(fallback);
       return fallback;
     });
-  } catch {
-    const fallback = await getGenreFallback();
-    storeGenreVideosInCache(fallback);
-    return fallback;
+  } catch (error) {
+    throw error;
   }
 }

@@ -60,6 +60,11 @@ function main() {
   assertContains(newPageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "New page passes hidden ids into client loader", failures);
   assertNotContains(newPageSource, "getNewestVideos(", "New page does not block route open on server-side newest query", failures);
   assertContains(newVideosLoaderSource, 'loadingLabel="Loading new videos..."', "New route exposes a dedicated loading state", failures);
+  assertContains(newVideosLoaderSource, 'import { useLiveSearchParams } from "@/components/use-live-search-params";', "New videos loader reads active video from live search params", failures);
+  assertContains(newVideosLoaderSource, "const activeVideoId = searchParams.get(\"v\");", "New videos loader derives active video id from live search params", failures);
+  assertContains(newVideosLoaderSource, "const NEW_ROUTE_QUEUE_SYNC_EVENT = \"ytr:new-route-queue-sync\";", "New videos loader declares route queue sync event for player route-list next", failures);
+  assertContains(newVideosLoaderSource, "source: \"new\"", "New videos loader emits route queue sync payload tagged with new source", failures);
+  assertContains(newVideosLoaderSource, "isActive={track.id === activeVideoId}", "New videos loader marks the currently playing row as active", failures);
   assertContains(newVideosDataLoaderHookSource, "fetch(`/api/videos/newest?skip=${skip}&take=${take}`", "New videos data hook uses offset/take pagination for batch fetches", failures);
   assertContains(newVideosDataLoaderHookSource, "const payload = (await response.json()) as NewVideosApiPayload;", "New videos data hook parses newest API pagination metadata", failures);
   assertContains(newestRouteSource, "const probedVideos = await getNewestVideos(probeTake, skip, {", "Newest API probes one extra row to calculate hasMore", failures);

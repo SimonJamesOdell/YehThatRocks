@@ -127,8 +127,8 @@ registerFullCacheInvalidator(clearCatalogVideoCaches);
  * if (!normalized) {
  * videos: await getTopVideos(),
  * artists: await getArtists(),
- * searchSeedCatalog(query)
- * console.error("[searchCatalog] query failed, falling back to seed:"
+ * genres: (await getGenres()).slice(0, 6)
+ * console.error("[searchCatalog] query failed"
  * getSearchRankingSignals({
  * rankingSignals.suppressedVideoIds.has(video.videoId)
  * rankingSignals.penaltyByVideoId.get(video.videoId)
@@ -138,8 +138,8 @@ registerFullCacheInvalidator(clearCatalogVideoCaches);
  * const searchCacheKey = `s:${normalizedSearch}|l:${cappedLimit}|o:${orderByName ? 1 : 0}|p:${prefixOnly ? 1 : 0}|n:${nameOnly ? 1 : 0}`;
  * const inFlight = artistSearchInFlight.get(searchCacheKey);
  * artistSearchCache.set(searchCacheKey)
- * videos.length > 0 ? videos.map(mapVideo) : searchSeedCatalog(query).videos
- * artists.length > 0 ? artists.map(mapArtist) : searchSeedCatalog(query).artists
+ * videos: videos.map(mapVideo)
+ * artists: artists.map(mapArtist)
  * LIMIT 50
  * SELECT videoId, title
  * url: `/?v=${encodeURIComponent(r.videoId)}&resume=1`

@@ -183,8 +183,23 @@ function main() {
 
   // Docked route-queue invariants.
   assertContains(playerExperienceSource, "const [routeAutoplayQueueIds, setRouteAutoplayQueueIds] = useState<string[]>([]);", "Player tracks route-scoped autoplay queue ids", failures);
+  assertContains(playerExperienceSource, "const isRouteListOverlay = pathname === \"/new\" || pathname === \"/top100\";", "Player identifies New and Top100 as route-list overlays", failures);
+  assertContains(playerExperienceSource, "if (pathname === \"/\" || isRouteListOverlay)", "Player keeps autoplay progression enabled on route-list overlays", failures);
   assertContains(playerExperienceSource, "if (!isDockedDesktop || Boolean(activePlaylistId))", "Route queue activates only while docked and no playlist is active", failures);
   assertContains(playerExperienceSource, "resolveRouteAutoplaySource(pathname)", "Player resolves docked autoplay route context through extracted helper", failures);
+  assertContains(playerExperienceSource, "detail?.source !== routeAutoplaySource.type", "Route queue sync uses route-type-aware source validation", failures);
+  assertContains(playerExperienceSource, "(routeAutoplaySource.type === \"new\" || routeAutoplaySource.type === \"top100\")", "Route queue sync subscribes for both New and Top100 route list sources", failures);
+  assertContains(playerExperienceSource, "const routeSourceType = pathname === \"/new\" ? \"new\" : \"top100\";", "Non-docked route queue hydration resolves list source between New and Top100", failures);
+  assertContains(playerExperienceSource, "fetchAutoplaySourceVideoIds({ type: routeSourceType })", "Non-docked route queue hydration fetches source-specific route ids", failures);
+  assertContains(playerExperienceSource, "useNativeHistory?: boolean;", "Player navigation options support native-history query updates", failures);
+  assertContains(playerExperienceSource, 'if (options?.useNativeHistory && typeof window !== "undefined") {', "Player can switch to native history updates for query-only video changes", failures);
+  assertContains(playerExperienceSource, 'window.history.pushState(window.history.state, "", nextHref);', "Docked New next-track updates the URL through native history to avoid route reloads", failures);
+  assertContains(playerExperienceSource, 'window.dispatchEvent(new PopStateEvent("popstate"));', "Docked New next-track notifies search-param observers after native-history updates", failures);
+  assertContains(playerExperienceSource, "useNativeHistory: true,", "Docked New next-track opts into native-history navigation", failures);
+  assertContains(playerExperienceSource, "const isDockedTop100Route = showDockCloseButton && pathname === \"/top100\";", "Player tracks docked Top100 route state for list-navigation actions", failures);
+  assertContains(playerExperienceSource, "function handleDockedRouteListNextTrack()", "Player exposes a shared docked route-list next handler", failures);
+  assertContains(playerExperienceSource, "(!isDockedNewRoute && !isDockedTop100Route)", "Docked route-list next handler gates execution to New and Top100 routes", failures);
+  assertContains(playerExperienceSource, "isDockedTop100Route ? \"Next track in Top 100\" : \"Next track in New\"", "Docked route-list next button labels adapt to New vs Top100 routes", failures);
   assertContains(autoplayUtilsSource, "const onNewRoute = pathname === \"/new\";", "Docked autoplay recognizes New page list route", failures);
   assertContains(autoplayUtilsSource, "const onTop100Route = pathname === \"/top100\";", "Docked autoplay recognizes Top100 list route", failures);
   assertContains(autoplayUtilsSource, "const onFavouritesRoute = pathname === \"/favourites\";", "Docked autoplay recognizes Favourites list route", failures);

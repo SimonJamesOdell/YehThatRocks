@@ -25,11 +25,6 @@ import {
   slugify,
   getGenreSlug,
   normalizeArtistKey,
-  seedVideos,
-  seedArtists,
-  seedGenres,
-  searchSeedCatalog,
-  getSeedVideoById,
   escapeSqlIdentifier,
   ENABLE_SAME_GENRE_RELATED,
 } from "@/lib/catalog-data-utils";
@@ -46,6 +41,7 @@ import {
   findArtistsInDatabase,
   findArtistsFromVideoMetadata,
 } from "@/lib/catalog-data-artists";
+import { getGenres } from "@/lib/catalog-data-genres";
 import { getInteractiveTableCount } from "@/lib/interactive-table-counts";
 import {
   getVideoPlaybackDecision,
@@ -74,6 +70,8 @@ const RELATED_VIDEOS_CACHE_TTL_MS = 20_000;
 const RELATED_BASE_ROWS_CACHE_TTL_MS = 30_000;
 const REJECTED_VIDEO_CACHE_TTL_MS = 5 * 60_000;
 const SUGGEST_CACHE_TTL_MS = 10_000;
+const CURRENT_VIDEO_TIMEOUT_MS = 4_500;
+const DATA_SOURCE_STATUS_TIMEOUT_MS = 4_500;
 const VIDEO_CACHE_MAX_ENTRIES = Math.max(
   200,
   Math.min(8_000, Number(process.env.VIDEO_CACHE_MAX_ENTRIES || "1500")),
@@ -591,109 +589,115 @@ export async function getCurrentVideo(
   }
 
   try {
-    if (normalizedVideoId && !options?.skipPlaybackDecision) {
-      const decision = await getVideoPlaybackDecision(normalizedVideoId);
-      if (!decision.allowed) {
-        if (decision.reason === "unavailable") {
-          await pruneVideoAndAssociationsByVideoId(
-            normalizedVideoId,
-            "playback-decision-unavailable",
-          ).catch(() => undefined);
-        }
-        debugCatalog("getCurrentVideo:denied-requested-video", {
-          videoId: normalizedVideoId,
-          reason: decision.reason,
-        });
-        return null;
-      }
-    }
-
-    if (normalizedVideoId) {
-      // When the caller already verified playback eligibility externally (skipPlaybackDecision),
-      // include unapproved rows so that freshly-ingested pending-review videos are returned.
-      const storedVideo = await getStoredVideoById(normalizedVideoId, {
-        includeUnapproved: Boolean(options?.skipPlaybackDecision),
-      });
-
-      if (storedVideo) {
-        debugCatalog("getCurrentVideo:return-local-video", {
-          videoId: normalizedVideoId,
-        });
-        return mapVideo(storedVideo);
-      }
-    }
-
-    const videos = normalizedVideoId
-      ? await prisma.$queryRaw<RankedVideoRow[]>`
-          SELECT
-            videoId,
-            title,
-            NULL AS channelTitle,
-            favourited,
-            description
-          FROM videos
-          WHERE videoId = ${normalizedVideoId}
-            AND COALESCE(approved, 0) = 1
-            AND EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = videos.id
-                AND sv.status = 'available'
-            )
-            AND NOT EXISTS (
-              SELECT 1
-              FROM site_videos sv
-              WHERE sv.video_id = videos.id
-                AND (sv.status IS NULL OR sv.status <> 'available')
-            )
-          ORDER BY updated_at DESC, id DESC
-          LIMIT 1
-        `
-      : await (async () => {
-          const pool = await getRankedTopPool(50);
-          if (pool.length === 0) return pool;
-          const randomIndex = Math.floor(Math.random() * pool.length);
-          return [pool[randomIndex]];
-        })();
-
-    const video = videos[0];
-
-    if (video) {
-      debugCatalog("getCurrentVideo:return-query-video", {
-        videoId: video.videoId,
-      });
-      return mapVideo(video);
-    }
-
-    if (!normalizedVideoId) {
-      const backfilledLegacyApprovals = await maybeBackfillLegacyApprovedVideos();
-      if (backfilledLegacyApprovals) {
-        const retryPool = await getRankedTopPool(50);
-        if (retryPool.length > 0) {
-          const retryRandomIndex = Math.floor(Math.random() * retryPool.length);
-          const retryVideo = retryPool[retryRandomIndex];
-          if (retryVideo) {
-            debugCatalog("getCurrentVideo:return-query-video-after-backfill", {
-              videoId: retryVideo.videoId,
+    return await withSoftTimeout(
+      `getCurrentVideo:${normalizedVideoId ?? "random"}`,
+      CURRENT_VIDEO_TIMEOUT_MS,
+      async () => {
+        if (normalizedVideoId && !options?.skipPlaybackDecision) {
+          const decision = await getVideoPlaybackDecision(normalizedVideoId);
+          if (!decision.allowed) {
+            if (decision.reason === "unavailable") {
+              await pruneVideoAndAssociationsByVideoId(
+                normalizedVideoId,
+                "playback-decision-unavailable",
+              ).catch(() => undefined);
+            }
+            debugCatalog("getCurrentVideo:denied-requested-video", {
+              videoId: normalizedVideoId,
+              reason: decision.reason,
             });
-            return mapVideo(retryVideo);
+            return null;
           }
         }
-      }
-    }
 
-    debugCatalog("getCurrentVideo:return-seed-video", {
-      videoId: normalizedVideoId,
-      reason: "no-query-hit",
-    });
+        if (normalizedVideoId) {
+          // When the caller already verified playback eligibility externally (skipPlaybackDecision),
+          // include unapproved rows so that freshly-ingested pending-review videos are returned.
+          const storedVideo = await getStoredVideoById(normalizedVideoId, {
+            includeUnapproved: Boolean(options?.skipPlaybackDecision),
+          });
 
-    return resolveEmergencyBootstrapVideo();
+          if (storedVideo) {
+            debugCatalog("getCurrentVideo:return-local-video", {
+              videoId: normalizedVideoId,
+            });
+            return mapVideo(storedVideo);
+          }
+        }
+
+        const videos = normalizedVideoId
+          ? await prisma.$queryRaw<RankedVideoRow[]>`
+              SELECT
+                videoId,
+                title,
+                NULL AS channelTitle,
+                favourited,
+                description
+              FROM videos
+              WHERE videoId = ${normalizedVideoId}
+                AND COALESCE(approved, 0) = 1
+                AND EXISTS (
+                  SELECT 1
+                  FROM site_videos sv
+                  WHERE sv.video_id = videos.id
+                    AND sv.status = 'available'
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM site_videos sv
+                  WHERE sv.video_id = videos.id
+                    AND (sv.status IS NULL OR sv.status <> 'available')
+                )
+              ORDER BY updated_at DESC, id DESC
+              LIMIT 1
+            `
+          : await (async () => {
+              const pool = await getRankedTopPool(50);
+              if (pool.length === 0) return pool;
+              const randomIndex = Math.floor(Math.random() * pool.length);
+              return [pool[randomIndex]];
+            })();
+
+        const video = videos[0];
+
+        if (video) {
+          debugCatalog("getCurrentVideo:return-query-video", {
+            videoId: video.videoId,
+          });
+          return mapVideo(video);
+        }
+
+        if (!normalizedVideoId) {
+          const backfilledLegacyApprovals = await maybeBackfillLegacyApprovedVideos();
+          if (backfilledLegacyApprovals) {
+            const retryPool = await getRankedTopPool(50);
+            if (retryPool.length > 0) {
+              const retryRandomIndex = Math.floor(Math.random() * retryPool.length);
+              const retryVideo = retryPool[retryRandomIndex];
+              if (retryVideo) {
+                debugCatalog("getCurrentVideo:return-query-video-after-backfill", {
+                  videoId: retryVideo.videoId,
+                });
+                return mapVideo(retryVideo);
+              }
+            }
+          }
+        }
+
+        debugCatalog("getCurrentVideo:return-no-video", {
+          videoId: normalizedVideoId,
+          reason: "no-query-hit",
+        });
+
+        return normalizedVideoId ? null : resolveEmergencyBootstrapVideo();
+      },
+    );
   } catch {
-    debugCatalog("getCurrentVideo:return-seed-video-after-error", {
+    debugCatalog("getCurrentVideo:return-no-video-after-error", {
       videoId: normalizedVideoId,
     });
 
-    return resolveEmergencyBootstrapVideo();
+    return null;
   }
 }
 
@@ -705,8 +709,7 @@ export async function getVideoForSharing(videoId?: string) {
   }
 
   if (!hasDatabaseUrl()) {
-    const seedVideo = getSeedVideoById(normalizedVideoId);
-    return seedVideo?.id === normalizedVideoId ? seedVideo : null;
+    return null;
   }
 
   try {
@@ -723,11 +726,9 @@ export async function getVideoForSharing(videoId?: string) {
       return mapVideo(row);
     }
 
-    const seedVideo = getSeedVideoById(normalizedVideoId);
-    return seedVideo?.id === normalizedVideoId ? seedVideo : null;
+    return null;
   } catch {
-    const seedVideo = getSeedVideoById(normalizedVideoId);
-    return seedVideo?.id === normalizedVideoId ? seedVideo : null;
+    return null;
   }
 }
 
@@ -1438,12 +1439,12 @@ export async function getUnseenCatalogVideos(options?: {
 
 export async function getActiveVideoCount(): Promise<number> {
   if (!hasDatabaseUrl()) {
-    return seedVideos.length;
+    return 0;
   }
   try {
     return await prisma.video.count();
   } catch {
-    return seedVideos.length;
+    return 0;
   }
 }
 
@@ -1452,31 +1453,35 @@ export async function getDataSourceStatus(): Promise<DataSourceStatus> {
 
   if (!envConfigured) {
     return {
-      mode: "seed",
+      mode: "database-error",
       envConfigured: false,
-      videoCount: seedVideos.length,
-      artistCount: seedArtists.length,
-      genreCount: seedGenres.length,
-      detail: "DATABASE_URL not set. Using seeded preview data.",
+      videoCount: 0,
+      artistCount: 0,
+      genreCount: 0,
+      detail: "DATABASE_URL is not configured. Canonical catalog access is unavailable.",
     };
   }
 
   try {
-    const [videoCount, artistCount, genreCount] = await Promise.all([
-      getInteractiveTableCount({
-        cacheKey: "catalog-status-videos",
-        tableName: "videos",
-        fallback: seedVideos.length,
-        exactCount: () => prisma.video.count(),
-      }),
-      getInteractiveTableCount({
-        cacheKey: "catalog-status-artists",
-        tableName: "artists",
-        fallback: seedArtists.length,
-        exactCount: () => prisma.artist.count(),
-      }),
-      prisma.genre.count(),
-    ]);
+    const [videoCount, artistCount, genreCount] = await withSoftTimeout(
+      "getDataSourceStatus",
+      DATA_SOURCE_STATUS_TIMEOUT_MS,
+      () => Promise.all([
+        getInteractiveTableCount({
+          cacheKey: "catalog-status-videos",
+          tableName: "videos",
+          fallback: 0,
+          exactCount: () => prisma.video.count(),
+        }),
+        getInteractiveTableCount({
+          cacheKey: "catalog-status-artists",
+          tableName: "artists",
+          fallback: 0,
+          exactCount: () => prisma.artist.count(),
+        }),
+        prisma.genre.count(),
+      ]),
+    );
 
     return {
       mode: "database",
@@ -1491,10 +1496,10 @@ export async function getDataSourceStatus(): Promise<DataSourceStatus> {
     return {
       mode: "database-error",
       envConfigured: true,
-      videoCount: seedVideos.length,
-      artistCount: seedArtists.length,
-      genreCount: seedGenres.length,
-      detail: `⚠️ Database unreachable (${errorMsg}) - Limited to 5-video demo catalog. Check that Docker containers are running: docker-compose up -d db`,
+      videoCount: 0,
+      artistCount: 0,
+      genreCount: 0,
+      detail: `Database unreachable (${errorMsg}). Canonical catalog access is unavailable.`,
     };
   }
 }
@@ -1546,7 +1551,7 @@ export async function updateFavourite(
 
 export async function searchCatalog(query: string) {
   if (!hasDatabaseUrl()) {
-    return searchSeedCatalog(query);
+    throw new Error("searchCatalog requires a configured DATABASE_URL.");
   }
 
   const normalized = query.trim();
@@ -1555,7 +1560,7 @@ export async function searchCatalog(query: string) {
     return {
       videos: await getTopVideos(),
       artists: await getArtists(),
-      genres: seedGenres.slice(0, 6),
+      genres: (await getGenres()).slice(0, 6),
     };
   }
 
@@ -1668,33 +1673,34 @@ export async function searchCatalog(query: string) {
 
     videos = rankedVideos;
 
+    const genres = (await getGenres()).filter((genre) =>
+      genre.toLowerCase().includes(normalized.toLowerCase()),
+    );
+
     return {
-      videos: videos.length > 0
-        ? videos.map(mapVideo)
-        : searchSeedCatalog(query).videos,
-      artists: artists.length > 0
-        ? artists.map((a) => ({
-            id: normalizeArtistKey(a.name),
-            name: a.name,
-            genre: a.genre1 ?? "Rock / Metal",
-            country: a.country ?? null,
-            slug: slugify(a.name),
-            thumbnailVideoId: null,
-          }))
-        : searchSeedCatalog(query).artists,
-      genres: seedGenres.filter((genre) =>
-        genre.toLowerCase().includes(normalized.toLowerCase()),
-      ),
+      videos: videos.map(mapVideo),
+      artists: artists.map((a) => ({
+        id: normalizeArtistKey(a.name),
+        name: a.name,
+        genre: a.genre1 ?? "Rock / Metal",
+        country: a.country ?? null,
+        slug: slugify(a.name),
+        thumbnailVideoId: null,
+      })),
+      genres,
     };
   } catch (err) {
-    console.error("[searchCatalog] query failed, falling back to seed:", err);
-    return searchSeedCatalog(query);
+    console.error("[searchCatalog] query failed", err);
+    throw err;
   }
 }
 
 export async function suggestCatalog(query: string): Promise<SearchSuggestion[]> {
   const normalized = query.trim();
   if (normalized.length < 2) return [];
+  if (!hasDatabaseUrl()) {
+    throw new Error("suggestCatalog requires a configured DATABASE_URL.");
+  }
   const normalizedLower = normalized.toLowerCase();
 
   const now = Date.now();
@@ -1707,35 +1713,26 @@ export async function suggestCatalog(query: string): Promise<SearchSuggestion[]>
   const resolveSuggestions = (async () => {
     const prefixPattern = `${normalized}%`;
 
-    const [artistRows, trackRows] = await Promise.all([
-      hasDatabaseUrl()
-        ? findArtistsInDatabase({
-            limit: 4,
-            search: normalized,
-            orderByName: true,
-            prefixOnly: true,
-            nameOnly: true,
-          })
-        : seedArtists
-            .filter((a) => a.name.toLowerCase().startsWith(normalized.toLowerCase()))
-            .slice(0, 4),
-
-      hasDatabaseUrl()
-        ? prisma.$queryRaw<Array<{ videoId: string; title: string }>>`
-            SELECT videoId, title
-            FROM videos
-            WHERE title LIKE ${prefixPattern}
-              AND COALESCE(approved, 0) = 1
-            ORDER BY favourited DESC
-            LIMIT 4
-          `
-        : seedVideos
-            .filter((v) => v.title.toLowerCase().startsWith(normalized.toLowerCase()))
-            .map((v) => ({ videoId: v.id, title: v.title }))
-            .slice(0, 4),
+    const [artistRows, trackRows, genres] = await Promise.all([
+      findArtistsInDatabase({
+        limit: 4,
+        search: normalized,
+        orderByName: true,
+        prefixOnly: true,
+        nameOnly: true,
+      }),
+      prisma.$queryRaw<Array<{ videoId: string; title: string }>>`
+        SELECT videoId, title
+        FROM videos
+        WHERE title LIKE ${prefixPattern}
+          AND COALESCE(approved, 0) = 1
+        ORDER BY favourited DESC
+        LIMIT 4
+      `,
+      getGenres(),
     ]);
 
-    const genreSuggestions: SearchSuggestion[] = seedGenres
+    const genreSuggestions: SearchSuggestion[] = genres
       .filter((g) => g.toLowerCase().startsWith(normalized.toLowerCase()))
       .slice(0, 3)
       .map((g) => ({ type: "genre", label: g, url: `/categories/${getGenreSlug(g)}` }));

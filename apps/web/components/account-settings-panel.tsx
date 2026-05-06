@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { AuthAccountActions } from "@/components/auth-account-actions";
+import { AutoplaySettingsEditor } from "@/components/autoplay-settings-editor";
 import { AuthChangePasswordForm } from "@/components/auth-change-password-form";
 import { AvatarCropModal } from "@/components/avatar-crop-modal";
 import { BlockedVideosInfiniteList } from "@/components/blocked-videos-infinite-list";
@@ -27,7 +28,7 @@ type AccountSettingsPanelProps = {
   blockedPageSize?: number;
 };
 
-type AccountTab = "details" | "security" | "blocked";
+type AccountTab = "details" | "security" | "autoplay" | "blocked";
 
 export function AccountSettingsPanel({
   user,
@@ -242,6 +243,15 @@ export function AccountSettingsPanel({
         >
           Blocked videos
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "autoplay"}
+          className={activeTab === "autoplay" ? "activeTab" : undefined}
+          onClick={() => setActiveTab("autoplay")}
+        >
+          Autoplay
+        </button>
       </div>
 
       {activeTab === "details" ? (
@@ -352,13 +362,17 @@ export function AccountSettingsPanel({
             </div>
           ) : null}
         </div>
-      ) : (
+      ) : activeTab === "blocked" ? (
         <div role="tabpanel" aria-label="Blocked videos">
           <BlockedVideosInfiniteList
             initialBlockedVideos={initialBlockedVideos}
             initialHasMore={initialBlockedHasMore}
             pageSize={blockedPageSize}
           />
+        </div>
+      ) : (
+        <div role="tabpanel" aria-label="Autoplay settings">
+          <AutoplaySettingsEditor className="accountAutoplayPanel" title="Sources" />
         </div>
       )}
       {cropSrc ? (

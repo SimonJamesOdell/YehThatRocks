@@ -27,6 +27,13 @@ import {
   type WatchNextVideo,
   type WatchNextStreamCacheEntry,
 } from "@/lib/current-video-route-service";
+import {
+  DEFAULT_AUTOPLAY_MIX,
+  normalizeAutoplayGenreFilters,
+  normalizeAutoplayMix,
+  type AutoplayMixSettings,
+} from "@/lib/player-preferences-shared";
+import { getPlayerPreferencesForUser } from "@/lib/player-preference-data";
 import { getRandomCatalogPool } from "@/lib/random-catalog-pool";
 import { getTopVideosFast, warmTopVideos } from "@/lib/top-videos-cache";
 
@@ -144,6 +151,8 @@ async function buildWatchNextRelatedStream(params: {
   count: number;
   blockedIds: Set<string>;
   favouriteVideos: WatchNextVideo[];
+  autoplayMix: AutoplayMixSettings;
+  autoplayGenreFilters: string[];
 }) {
   return buildWatchNextRelatedStreamService({
     ...params,
@@ -152,6 +161,8 @@ async function buildWatchNextRelatedStream(params: {
     watchNextTopPoolSize: WATCH_NEXT_TOP_POOL_SIZE,
     watchNextNewestPoolSize: WATCH_NEXT_NEWEST_POOL_SIZE,
     watchNextRandomPoolMin: WATCH_NEXT_RANDOM_POOL_MIN,
+    watchNextMix: params.autoplayMix,
+    autoplayGenreFilters: params.autoplayGenreFilters,
     getTopPool: getCachedTopVideosForCurrentVideo,
     getRandomPool: getRandomCatalogVideosForCurrentVideo,
   });
@@ -161,9 +172,13 @@ function getWatchNextStreamCacheKey(params: {
   currentVideoId: string;
   userId?: number;
   blockedIds: Set<string>;
+  autoplayMix: AutoplayMixSettings;
+  autoplayGenreFilters: string[];
 }) {
   const blockedSignature = hashSeed(Array.from(params.blockedIds).sort().join("|")).toString(16);
-  return `${params.currentVideoId}:u:${params.userId ?? 0}:blocked:${blockedSignature}`;
+  const mixSignature = `${params.autoplayMix.top100}-${params.autoplayMix.favourites}-${params.autoplayMix.newest}-${params.autoplayMix.random}`;
+  const genresSignature = params.autoplayGenreFilters.join(",") || "all";
+  return `${params.currentVideoId}:u:${params.userId ?? 0}:blocked:${blockedSignature}:mix:${mixSignature}:genres:${genresSignature}`;
 }
 
 async function getWatchNextStreamSlice(params: {
@@ -173,11 +188,15 @@ async function getWatchNextStreamSlice(params: {
   count: number;
   blockedIds: Set<string>;
   favouriteVideos: WatchNextVideo[];
+  autoplayMix: AutoplayMixSettings;
+  autoplayGenreFilters: string[];
 }) {
   const cacheKey = getWatchNextStreamCacheKey({
     currentVideoId: params.currentVideoId,
     userId: params.userId,
     blockedIds: params.blockedIds,
+    autoplayMix: params.autoplayMix,
+    autoplayGenreFilters: params.autoplayGenreFilters,
   });
   const requiredSize = Math.max(
     WATCH_NEXT_BATCH_SIZE,
@@ -202,6 +221,8 @@ async function getWatchNextStreamSlice(params: {
       count: targetCount,
       blockedIds: new Set(params.blockedIds),
       favouriteVideos: params.favouriteVideos,
+      autoplayMix: params.autoplayMix,
+      autoplayGenreFilters: params.autoplayGenreFilters,
     }),
   });
 }
@@ -359,6 +380,20 @@ export async function GET(request: NextRequest) {
   const usePagedRelatedPool = isCustomRelatedRequest;
   const useUnifiedWatchNextPool = requestMode !== "ended-choice";
   const optionalAuth = await getOptionalApiAuth(request);
+  const playerPreferences = optionalAuth?.userId
+    ? await getPlayerPreferencesForUser({ userId: optionalAuth.userId }).catch(() => null)
+    : null;
+  const autoplayConfigEnabled = Boolean(playerPreferences?.autoplayEnabled);
+  const effectiveAutoplayMix = requestMode === "ended-choice"
+    ? { ...DEFAULT_AUTOPLAY_MIX }
+    : autoplayConfigEnabled
+      ? normalizeAutoplayMix(playerPreferences?.autoplayMix ?? DEFAULT_AUTOPLAY_MIX)
+      : { ...DEFAULT_AUTOPLAY_MIX };
+  const effectiveAutoplayGenreFilters = requestMode === "ended-choice"
+    ? []
+    : autoplayConfigEnabled
+      ? normalizeAutoplayGenreFilters(playerPreferences?.autoplayGenreFilters ?? [])
+      : [];
   const shouldFilterSeen = hideSeenOnly && Boolean(optionalAuth?.userId);
   const favouriteBlendRatio = requestMode === "ended-choice"
     ? ENDED_CHOICE_FAVOURITE_BLEND_RATIO
@@ -367,7 +402,9 @@ export async function GET(request: NextRequest) {
   const favouriteVideosPromise = optionalAuth?.userId
     ? getFavouriteVideos(optionalAuth.userId)
     : Promise.resolve([] as Awaited<ReturnType<typeof getFavouriteVideos>>);
-  const cacheKey = `${v ?? "__default__"}:u:${optionalAuth?.userId ?? 0}:hideSeen:${hideSeenOnly ? 1 : 0}`;
+  const autoplayMixSignature = `${effectiveAutoplayMix.top100}-${effectiveAutoplayMix.favourites}-${effectiveAutoplayMix.newest}-${effectiveAutoplayMix.random}`;
+  const autoplayGenresSignature = effectiveAutoplayGenreFilters.join(",") || "all";
+  const cacheKey = `${v ?? "__default__"}:u:${optionalAuth?.userId ?? 0}:hideSeen:${hideSeenOnly ? 1 : 0}:autoplay:${autoplayConfigEnabled ? 1 : 0}:mix:${autoplayMixSignature}:genres:${autoplayGenresSignature}`;
   const now = Date.now();
   pruneCurrentVideoRouteCaches(now);
 
@@ -439,6 +476,10 @@ export async function GET(request: NextRequest) {
     relatedPoolSize: CURRENT_VIDEO_RELATED_POOL_SIZE,
     favouriteVideosPromise: favouriteVideosPromise as Promise<WatchNextVideo[]>,
     getWatchNextStreamSlice,
+    watchNextStreamSettings: {
+      autoplayMix: effectiveAutoplayMix,
+      autoplayGenreFilters: effectiveAutoplayGenreFilters,
+    },
     getRelatedPoolForCurrentVideo,
     getCachedTopVideosForCurrentVideo,
     logEvent: logCurrentVideoRoute,

@@ -9,6 +9,7 @@ const files = {
   thumbnailComponent: path.join(ROOT, "apps/web/components/youtube-thumbnail-image.tsx"),
   categoriesFilterGrid: path.join(ROOT, "apps/web/components/categories-filter-grid.tsx"),
   categoryVideoCard: path.join(ROOT, "apps/web/components/artist-video-link.tsx"),
+  endedChoiceCard: path.join(ROOT, "apps/web/components/player-experience-ended-choice-card.tsx"),
   categoryVideosInfinite: path.join(ROOT, "apps/web/components/category-videos-infinite.tsx"),
   unavailableRoute: path.join(ROOT, "apps/web/app/api/videos/unavailable/route.ts"),
   categorySlugRoute: path.join(ROOT, "apps/web/app/api/categories/[slug]/route.ts"),
@@ -21,6 +22,7 @@ function main() {
   const thumbnailComponentSource = readFileStrict(files.thumbnailComponent, ROOT);
   const categoriesFilterGridSource = readFileStrict(files.categoriesFilterGrid, ROOT);
   const categoryVideoCardSource = readFileStrict(files.categoryVideoCard, ROOT);
+  const endedChoiceCardSource = readFileStrict(files.endedChoiceCard, ROOT);
   const categoryVideosInfiniteSource = readFileStrict(files.categoryVideosInfinite, ROOT);
   const unavailableRouteSource = readFileStrict(files.unavailableRoute, ROOT);
   const categorySlugRouteSource = readFileStrict(files.categorySlugRoute, ROOT);
@@ -45,9 +47,16 @@ function main() {
   assertContains(categoryVideoCardSource, "<YouTubeThumbnailImage", "Category video cards render shared thumbnail pre-flight component", failures);
   assertNotContains(categoryVideoCardSource, "i.ytimg.com/vi/", "Category video cards no longer render direct thumbnail URLs", failures);
 
+  assertContains(endedChoiceCardSource, 'import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";', "Ended-choice cards import shared thumbnail pre-flight component", failures);
+  assertContains(endedChoiceCardSource, "<YouTubeThumbnailImage", "Ended-choice cards render shared thumbnail pre-flight component", failures);
+  assertContains(endedChoiceCardSource, 'hideClosestSelector=".endedChoiceCardSlot"', "Ended-choice cards hide broken thumbnail slots via shared pre-flight component", failures);
+  assertNotContains(endedChoiceCardSource, "i.ytimg.com/vi/", "Ended-choice cards no longer render direct thumbnail URLs", failures);
+
   // Backend unavailable-report handling contract.
   assertContains(unavailableRouteSource, "const verification = await verifyYouTubeAvailability(videoId);", "Unavailable-report API re-verifies reported IDs before pruning", failures);
   assertContains(unavailableRouteSource, "if (verification.status !== \"unavailable\")", "Unavailable-report API avoids pruning when status is not confirmed unavailable", failures);
+  assertContains(unavailableRouteSource, "const replacementResult = await findAndReplaceUnavailableVideo(videoId)", "Unavailable-report API attempts server-side replacement before pruning", failures);
+  assertContains(unavailableRouteSource, "if (replacementResult.replaced && replacementResult.newVideoId)", "Unavailable-report API returns early when a replacement video is found", failures);
   assertContains(unavailableRouteSource, "const pruneResult = await pruneVideoAndAssociationsByVideoId(", "Unavailable-report API prunes unavailable videos and related associations", failures);
 
   // Categories hard-fail contract.

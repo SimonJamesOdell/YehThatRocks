@@ -13,7 +13,7 @@ const ROOT = process.cwd();
 
 const files = {
   top100Page: path.join(ROOT, "apps/web/app/(shell)/top100/page.tsx"),
-  top100Link: path.join(ROOT, "apps/web/components/top100-video-link.tsx"),
+  top100Link: path.join(ROOT, "apps/web/components/leaderboard-video-link.tsx"),
   top100Loader: path.join(ROOT, "apps/web/components/top100-videos-loader.tsx"),
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
@@ -54,7 +54,14 @@ function main() {
   assertContains(top100PageSource, "<Top100VideosLoader", "Top 100 page renders client videos loader", failures);
   assertContains(top100PageSource, "seenVideoIds={Array.from(seenVideoIds)}", "Top 100 page passes seen ids to loader", failures);
   assertContains(top100PageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "Top 100 page passes hidden ids to loader", failures);
-  assertContains(top100LoaderSource, 'import { Top100VideoLink } from "@/components/top100-video-link";', "Top 100 loader renders warmed link component", failures);
+  assertContains(top100LoaderSource, 'import { LeaderboardVideoLink } from "@/components/leaderboard-video-link";', "Top 100 loader renders warmed link component", failures);
+  assertContains(top100LoaderSource, 'import { useLiveSearchParams } from "@/components/use-live-search-params";', "Top 100 loader reads active video from live search params", failures);
+  assertContains(top100LoaderSource, "const activeVideoId = searchParams.get(\"v\");", "Top 100 loader derives active video id from live search params", failures);
+  assertContains(top100LoaderSource, "const TOP100_ROUTE_QUEUE_SYNC_EVENT = \"ytr:new-route-queue-sync\";", "Top 100 loader declares route queue sync event for player route-list next", failures);
+  assertContains(top100LoaderSource, "source: \"top100\"", "Top 100 loader emits route queue sync payload tagged with top100 source", failures);
+  assertContains(top100LoaderSource, "isActive={track.id === activeVideoId}", "Top 100 loader marks the currently playing row as active", failures);
+  assertContains(top100LoaderSource, 'import { useActiveRowAutoScroll } from "@/components/use-active-row-auto-scroll";', "Top 100 loader imports active-row auto-scroll hook", failures);
+  assertContains(top100LoaderSource, "useActiveRowAutoScroll({", "Top 100 loader delegates active-row auto-scroll behavior to shared hook", failures);
   assertContains(top100LoaderSource, "const TOP100_TARGET_COUNT = 100;", "Top 100 loader keeps a 100-item target list", failures);
   assertContains(top100LoaderSource, "const TOP100_FETCH_SOURCE_COUNT =", "Top 100 loader defines an expandable source fetch count", failures);
   assertContains(top100LoaderSource, "fetch(`/api/videos/top?count=${TOP100_FETCH_SOURCE_COUNT}`", "Top 100 loader fetches videos from top API using configured source count", failures);

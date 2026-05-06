@@ -21,6 +21,8 @@ const ROOT = process.cwd();
 
 const files = {
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
+  autoplaySettingsEditor: path.join(ROOT, "apps/web/components/autoplay-settings-editor.tsx"),
+  accountSettingsPanel: path.join(ROOT, "apps/web/components/account-settings-panel.tsx"),
   useAdminSession: path.join(ROOT, "apps/web/components/use-admin-session.ts"),
   useLyricsAvailability: path.join(ROOT, "apps/web/components/use-lyrics-availability.ts"),
   usePlaylistSequence: path.join(ROOT, "apps/web/components/use-playlist-sequence.ts"),
@@ -29,7 +31,10 @@ const files = {
   endedChoiceCard: path.join(ROOT, "apps/web/components/player-experience-ended-choice-card.tsx"),
   autoplayUtils: path.join(ROOT, "apps/web/components/player-experience-autoplay-utils.ts"),
   playbackFailureUtils: path.join(ROOT, "apps/web/components/player-experience-playback-failure-utils.ts"),
+  playerPreferencesRoute: path.join(ROOT, "apps/web/app/api/player-preferences/route.ts"),
   videosUnavailableRoute: path.join(ROOT, "apps/web/app/api/videos/unavailable/route.ts"),
+  playerPreferenceData: path.join(ROOT, "apps/web/lib/player-preference-data.ts"),
+  apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
   adminVideoDeleteButton: path.join(ROOT, "apps/web/components/admin-video-delete-button.tsx"),
   seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
   sharePreviewRoute: path.join(ROOT, "apps/web/app/api/videos/share-preview/route.ts"),
@@ -46,16 +51,23 @@ function main() {
 
   const playerExperienceSource = [
     readFileStrict(files.playerExperience, ROOT),
+    readFileStrict(files.autoplaySettingsEditor, ROOT),
+    readFileStrict(files.accountSettingsPanel, ROOT),
     readFileStrict(files.useAdminSession, ROOT),
     readFileStrict(files.useLyricsAvailability, ROOT),
     readFileStrict(files.usePlaylistSequence, ROOT),
     readFileStrict(files.useFavouriteState, ROOT),
     readFileStrict(files.useAdminVideoEdit, ROOT),
   ].join("\n");
+  const autoplaySettingsEditorSource = readFileStrict(files.autoplaySettingsEditor, ROOT);
+  const accountSettingsPanelSource = readFileStrict(files.accountSettingsPanel, ROOT);
   const endedChoiceCardSource = readFileStrict(files.endedChoiceCard, ROOT);
   const autoplayUtilsSource = readFileStrict(files.autoplayUtils, ROOT);
   const playbackFailureUtilsSource = readFileStrict(files.playbackFailureUtils, ROOT);
+  const playerPreferencesRouteSource = readFileStrict(files.playerPreferencesRoute, ROOT);
   const videosUnavailableRouteSource = readFileStrict(files.videosUnavailableRoute, ROOT);
+  const playerPreferenceDataSource = readFileStrict(files.playerPreferenceData, ROOT);
+  const apiSchemasSource = readFileStrict(files.apiSchemas, ROOT);
   const adminVideoDeleteButtonSource = readFileStrict(files.adminVideoDeleteButton, ROOT);
   const seenToggleRouteSource = readFileStrict(files.seenToggleRoute, ROOT);
   const sharePreviewRouteSource = readFileStrict(files.sharePreviewRoute, ROOT);
@@ -72,6 +84,26 @@ function main() {
   assertContains(playerExperienceSource, "const AUTOPLAY_KEY = \"yeh-player-autoplay\";", "Player persists autoplay preference key", failures);
   assertContains(playerExperienceSource, "const PLAYER_VOLUME_KEY = \"yeh-player-volume\";", "Player defines persisted volume preference key", failures);
   assertContains(playerExperienceSource, "const PLAYER_MUTED_KEY = \"yeh-player-muted\";", "Player defines persisted mute preference key", failures);
+  assertContains(autoplaySettingsEditorSource, 'title = "Sources"', "Autoplay settings editor defaults its header copy to Sources", failures);
+  assertContains(autoplaySettingsEditorSource, 'fetchWithAuthRetry("/api/player-preferences", {', "Autoplay settings editor loads persisted player preferences with auth retry", failures);
+  assertContains(autoplaySettingsEditorSource, 'fetch("/api/categories", {', "Autoplay settings editor loads available genre options", failures);
+  assertContains(autoplaySettingsEditorSource, "setMix((current) => rebalanceAutoplayMix(current, key, value));", "Autoplay settings editor rebalances source percentages when sliders change", failures);
+  assertContains(autoplaySettingsEditorSource, "autoplayMix: mix,", "Autoplay settings editor persists autoplay mix selections", failures);
+  assertContains(autoplaySettingsEditorSource, "autoplayGenreFilters: limitGenresEnabled ? selectedGenres : [],", "Autoplay settings editor persists autoplay genre filters only when the limiter is enabled", failures);
+  assertContains(accountSettingsPanelSource, '<AutoplaySettingsEditor className="accountAutoplayPanel" title="Sources" />', "Account settings exposes the autoplay editor with Sources heading", failures);
+  assertContains(playerPreferencesRouteSource, "playerPreferenceMutationSchema.safeParse", "Player preferences API validates mutations with the shared schema", failures);
+  assertContains(playerPreferencesRouteSource, "autoplayMix: parsed.data.autoplayMix,", "Player preferences API forwards autoplay mix updates to persistence", failures);
+  assertContains(playerPreferencesRouteSource, "autoplayGenreFilters: parsed.data.autoplayGenreFilters,", "Player preferences API forwards autoplay genre filter updates to persistence", failures);
+  assertContains(playerPreferenceDataSource, "autoplay_mix_top100 TINYINT UNSIGNED NULL", "Player preference storage persists Top 100 autoplay mix weight", failures);
+  assertContains(playerPreferenceDataSource, "autoplay_mix_favourites TINYINT UNSIGNED NULL", "Player preference storage persists favourites autoplay mix weight", failures);
+  assertContains(playerPreferenceDataSource, "autoplay_mix_newest TINYINT UNSIGNED NULL", "Player preference storage persists newest autoplay mix weight", failures);
+  assertContains(playerPreferenceDataSource, "autoplay_mix_random TINYINT UNSIGNED NULL", "Player preference storage persists random autoplay mix weight", failures);
+  assertContains(playerPreferenceDataSource, "autoplay_genre_filters TEXT NULL", "Player preference storage persists autoplay genre filters", failures);
+  assertContains(playerPreferenceDataSource, "const autoplayMix = input.autoplayMix ? normalizeAutoplayMix(input.autoplayMix) : null;", "Player preference storage normalizes autoplay mix before writing", failures);
+  assertContains(playerPreferenceDataSource, "normalizeAutoplayGenreFilters(input.autoplayGenreFilters)", "Player preference storage normalizes autoplay genre filters before writing", failures);
+  assertContains(apiSchemasSource, "autoplayMix: z.object({", "Player preference schema validates autoplay mix payloads", failures);
+  assertContains(apiSchemasSource, "autoplayGenreFilters: z.array(z.string().trim().min(1).max(80)).max(24).optional()", "Player preference schema validates autoplay genre filters payloads", failures);
+  assertContains(apiSchemasSource, 'message: "autoplayMix percentages must total exactly 100"', "Player preference schema enforces autoplay mix totals", failures);
   assertContains(playerExperienceSource, "temporaryQueue?: VideoRecord[];", "Player props accept temporary queue feed", failures);
   assertContains(playerExperienceSource, "temporaryQueue = [],", "Player defaults temporary queue to an empty list", failures);
   assertContains(playerExperienceSource, "import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent", "Player consumes centralized typed events module", failures);
@@ -164,6 +196,12 @@ function main() {
   assertContains(playerExperienceSource, "const endedChoiceGridVideos = useMemo(() => {", "Player derives a rendered end-choice grid list from filter state", failures);
   assertContains(playerExperienceSource, 'import { EndedChoiceCard } from "@/components/player-experience-ended-choice-card";', "Player imports extracted ended-choice card module", failures);
   assertContains(endedChoiceCardSource, "export const EndedChoiceCard = memo(function EndedChoiceCard({", "Ended-choice cards are memoized to reduce append-time re-render pressure", failures);
+  assertContains(endedChoiceCardSource, "role=\"button\"", "Ended-choice card outer wrapper uses button semantics without nesting a button element", failures);
+  assertContains(endedChoiceCardSource, "tabIndex={0}", "Ended-choice card outer wrapper remains keyboard-focusable", failures);
+  assertContains(endedChoiceCardSource, "onKeyDown={(event) => {", "Ended-choice card outer wrapper supports keyboard activation", failures);
+  assertContains(endedChoiceCardSource, 'import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";', "Ended-choice cards import shared thumbnail pre-flight component", failures);
+  assertContains(endedChoiceCardSource, "<YouTubeThumbnailImage", "Ended-choice cards render shared thumbnail pre-flight component", failures);
+  assertContains(endedChoiceCardSource, 'hideClosestSelector=".endedChoiceCardSlot"', "Ended-choice cards hide broken thumbnail slots from the chooser grid", failures);
   assertContains(playerExperienceSource, "startTransition(() => {", "Ended-choice remote append updates are scheduled as transitions", failures);
   assertContains(playerExperienceSource, "const endedChoiceRemoteVideosRef = useRef<VideoRecord[]>([]);", "Ended-choice append path tracks remote videos via ref snapshot", failures);
   assertContains(playerExperienceSource, "const endedChoiceRowHeightRef = useRef(220);", "Ended-choice scroll prefetch uses cached row-height measurement", failures);
