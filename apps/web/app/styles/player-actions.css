@@ -302,6 +302,10 @@
   z-index: 16;
 }
 
+.primaryActionAutoplayWrap {
+  z-index: 15;
+}
+
 .primaryActionPlaylistButton {
   font-weight: 800;
 }
@@ -365,6 +369,28 @@
   color: rgba(255, 223, 214, 0.86);
   font-family: var(--font-body), sans-serif;
   font-size: 0.82rem;
+}
+
+.autoplayConfigureModal {
+  width: min(760px, 96vw);
+}
+
+.autoplayConfigureBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+}
+
+.autoplayConfigureModal .shareModalHeader strong {
+  font-family: var(--font-display), cursive;
+  font-size: 1.1rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.autoplaySettingsModalBody {
+  margin-top: 6px;
 }
 
 .favouriteSavedToast {

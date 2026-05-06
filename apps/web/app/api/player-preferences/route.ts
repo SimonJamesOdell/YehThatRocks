@@ -49,6 +49,8 @@ export async function POST(request: NextRequest) {
     userId: authResult.auth.userId,
     autoplayEnabled: parsed.data.autoplayEnabled,
     volume: parsed.data.volume,
+    autoplayMix: parsed.data.autoplayMix,
+    autoplayGenreFilters: parsed.data.autoplayGenreFilters,
   });
 
   if (!result.ok) {

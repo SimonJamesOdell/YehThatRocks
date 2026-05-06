@@ -7,6 +7,7 @@ import type { VideoRecord } from "@/lib/catalog";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
+import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 
@@ -107,17 +108,29 @@ export const EndedChoiceCard = memo(function EndedChoiceCard({
           disabled={isHiding}
         >x</button>
       ) : null}
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         className={isSeen ? "playerEndedChoiceCard playerEndedChoiceCardSeen" : "playerEndedChoiceCard"}
         onClick={handleSelect}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") {
+            return;
+          }
+
+          event.preventDefault();
+          handleSelect();
+        }}
       >
         <div className="playerEndedChoiceThumbWrap">
-          <img
-            src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
+          <YouTubeThumbnailImage
+            videoId={video.id}
             alt=""
             className="playerEndedChoiceThumb"
+            format="mqdefault"
             loading="lazy"
+            hideClosestSelector=".endedChoiceCardSlot"
+            reportReason="thumbnail-load-error:ended-choice"
           />
           {isSeen && !isFavourited ? <span className="playerEndedChoiceSeenBadge">Seen</span> : null}
           {isFavourited ? (
@@ -148,7 +161,7 @@ export const EndedChoiceCard = memo(function EndedChoiceCard({
             </ArtistWikiLink>
           </span>
         </span>
-      </button>
+      </div>
       {isLoggedIn ? (
         <div className="endedChoiceCardActions">
           {!isFavourited ? (

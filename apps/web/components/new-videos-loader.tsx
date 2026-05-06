@@ -1,11 +1,11 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
-import { Top100VideoLink } from "@/components/top100-video-link";
+import { LeaderboardVideoLink } from "@/components/leaderboard-video-link";
 import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { SuggestNewModal } from "@/components/suggest-new-modal";
@@ -14,6 +14,7 @@ import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { OverlayHeader } from "@/components/overlay-header";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
 import { useActiveRowAutoScroll } from "@/components/use-active-row-auto-scroll";
+import { useLiveSearchParams } from "@/components/use-live-search-params";
 import { useNewVideosDataLoader } from "@/components/use-new-videos-data-loader";
 import { useNewVideosModeration } from "@/components/use-new-videos-moderation";
 import { useNewVideosScrollPrefetch } from "@/components/use-new-videos-scroll-prefetch";
@@ -72,7 +73,7 @@ const NewVideoRow = memo(function NewVideoRow({
   isFlagPending,
 }: NewVideoRowProps) {
   return (
-    <Top100VideoLink
+    <LeaderboardVideoLink
       key={track.id}
       track={track}
       index={index}
@@ -115,7 +116,7 @@ export function NewVideosLoader({
   hiddenVideoIds?: string[];
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useLiveSearchParams();
   const activeVideoId = searchParams.get("v");
   const previousActiveVideoIdRef = useRef<string | null>(activeVideoId);
   const endedActiveVideoIdRef = useRef<string | null>(null);

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAdminIdentity } from "@/lib/admin-auth";
 import { getOptionalApiAuth } from "@/lib/auth-request";
 import { prisma } from "@/lib/db";
-import { pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { findAndReplaceUnavailableVideo, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { isObviousCrawlerRequest } from "@/lib/crawler-guard";
 import { verifySameOrigin } from "@/lib/csrf";
 import { rateLimitOrResponse } from "@/lib/rate-limit";
@@ -462,6 +462,27 @@ export async function POST(request: NextRequest) {
     targetRows: ids.length,
   });
 
+  const replacementResult = await findAndReplaceUnavailableVideo(videoId).catch(() => ({
+    replaced: false as const,
+    reason: "replacement-failed",
+  }));
+
+  if (replacementResult.replaced && replacementResult.newVideoId) {
+    debugUnavailable("replaced-unavailable-video", {
+      videoId,
+      replacementVideoId: replacementResult.newVideoId,
+      verificationReason: verification.reason,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      replaced: true,
+      newVideoId: replacementResult.newVideoId,
+      reason: verification.reason,
+      classification: verification.classification,
+    });
+  }
+
   const pruneResult = await pruneVideoAndAssociationsByVideoId(
     videoId,
     `runtime-unavailable:${reason}|${verification.reason}`,
@@ -469,6 +490,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    replaced: false,
     pruned: pruneResult.pruned,
     deletedVideoRows: pruneResult.deletedVideoRows,
     reason: verification.reason,

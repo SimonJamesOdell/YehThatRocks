@@ -14,6 +14,13 @@ import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import type { VideoRecord } from "@/lib/catalog";
 import { prisma } from "@/lib/db";
 import {
+  DEFAULT_AUTOPLAY_MIX,
+  doesVideoMatchAutoplayGenres,
+  normalizeAutoplayGenreFilters,
+  normalizeAutoplayMix,
+  type AutoplayMixSettings,
+} from "@/lib/player-preferences-shared";
+import {
   blendRelatedWithFavourites,
   createSeededRandom,
   injectSparseFavourites,
@@ -156,6 +163,8 @@ export async function buildWatchNextRelatedStream(params: {
   watchNextTopPoolSize: number;
   watchNextNewestPoolSize: number;
   watchNextRandomPoolMin: number;
+  watchNextMix: AutoplayMixSettings;
+  autoplayGenreFilters: string[];
   getTopPool: (size: number) => Promise<WatchNextVideo[]>;
   getRandomPool: (currentVideoId: string, size: number) => Promise<WatchNextVideo[]>;
 }): Promise<{ videos: WatchNextVideo[]; hasMore: boolean }> {
@@ -172,11 +181,57 @@ export async function buildWatchNextRelatedStream(params: {
     ),
   ]);
 
+  const effectiveMix = normalizeAutoplayMix(params.watchNextMix);
+  const effectiveGenreFilters = normalizeAutoplayGenreFilters(params.autoplayGenreFilters);
+
+  const byGenre = (videos: WatchNextVideo[]) => {
+    if (effectiveGenreFilters.length === 0) {
+      return videos;
+    }
+
+    return videos.filter((video) => doesVideoMatchAutoplayGenres(video.genre, effectiveGenreFilters));
+  };
+
+  const sourceCountsForBatch = (() => {
+    const total = params.watchNextBatchSize;
+    const entries = [
+      { key: "favourites" as const, raw: (effectiveMix.favourites / 100) * total },
+      { key: "top" as const, raw: (effectiveMix.top100 / 100) * total },
+      { key: "newest" as const, raw: (effectiveMix.newest / 100) * total },
+      { key: "random" as const, raw: (effectiveMix.random / 100) * total },
+    ].map((entry) => ({ ...entry, floor: Math.floor(entry.raw), frac: entry.raw - Math.floor(entry.raw) }));
+
+    let remaining = total - entries.reduce((sum, entry) => sum + entry.floor, 0);
+    const byFrac = [...entries].sort((a, b) => b.frac - a.frac);
+    const extraByKey: Record<(typeof byFrac)[number]["key"], number> = {
+      favourites: 0,
+      top: 0,
+      newest: 0,
+      random: 0,
+    };
+
+    for (const entry of byFrac) {
+      if (remaining <= 0) {
+        break;
+      }
+
+      extraByKey[entry.key] += 1;
+      remaining -= 1;
+    }
+
+    return {
+      favourites: (entries.find((entry) => entry.key === "favourites")?.floor ?? 0) + extraByKey.favourites,
+      top: (entries.find((entry) => entry.key === "top")?.floor ?? 0) + extraByKey.top,
+      newest: (entries.find((entry) => entry.key === "newest")?.floor ?? 0) + extraByKey.newest,
+      random: (entries.find((entry) => entry.key === "random")?.floor ?? 0) + extraByKey.random,
+    };
+  })();
+
   const removeBlocked = (videos: WatchNextVideo[]) => videos.filter((video) => !params.blockedIds.has(video.id));
-  const topPool = removeBlocked(topPoolRaw);
-  const newestPool = removeBlocked(newestPoolRaw);
-  const randomPool = removeBlocked(randomPoolRaw);
-  const favouritePool = removeBlocked(params.favouriteVideos);
+  const topPool = byGenre(removeBlocked(topPoolRaw));
+  const newestPool = byGenre(removeBlocked(newestPoolRaw));
+  const randomPool = byGenre(removeBlocked(randomPoolRaw));
+  const favouritePool = byGenre(removeBlocked(params.favouriteVideos));
 
   const globalUsedIds = new Set(params.blockedIds);
   const stream: WatchNextVideo[] = [];
@@ -189,28 +244,28 @@ export async function buildWatchNextRelatedStream(params: {
 
     const favourites = pickBatchSourceVideos({
       source: favouritePool,
-      count: params.watchNextSourceSliceSize,
+      count: sourceCountsForBatch.favourites,
       blockedIds: batchBlockedIds,
       random: batchRandom,
       labels: { isFavouriteSource: true },
     });
     const top = pickBatchSourceVideos({
       source: topPool,
-      count: params.watchNextSourceSliceSize,
+      count: sourceCountsForBatch.top,
       blockedIds: batchBlockedIds,
       random: batchRandom,
       labels: { isTop100Source: true, sourceLabel: "Top100" },
     });
     const newest = pickBatchSourceVideos({
       source: newestPool,
-      count: params.watchNextSourceSliceSize,
+      count: sourceCountsForBatch.newest,
       blockedIds: batchBlockedIds,
       random: batchRandom,
       labels: { isNewSource: true, sourceLabel: "New" },
     });
     const randoms = pickBatchSourceVideos({
       source: randomPool,
-      count: params.watchNextSourceSliceSize,
+      count: sourceCountsForBatch.random,
       blockedIds: batchBlockedIds,
       random: batchRandom,
     });
@@ -340,6 +395,10 @@ export async function resolveCurrentVideoPayload(params: {
   preferUnseenForEndedChoice: boolean;
   favouriteBlendRatio: number;
   userId: number | undefined;
+  watchNextStreamSettings?: {
+    autoplayMix: AutoplayMixSettings;
+    autoplayGenreFilters: string[];
+  };
   relatedPoolSize: number;
   favouriteVideosPromise: Promise<WatchNextVideo[]>;
   getWatchNextStreamSlice: (p: {
@@ -349,6 +408,8 @@ export async function resolveCurrentVideoPayload(params: {
     count: number;
     blockedIds: Set<string>;
     favouriteVideos: WatchNextVideo[];
+    autoplayMix: AutoplayMixSettings;
+    autoplayGenreFilters: string[];
   }) => Promise<{ videos: WatchNextVideo[]; hasMore: boolean }>;
   getRelatedPoolForCurrentVideo: (
     currentVideoId: string,
@@ -449,6 +510,8 @@ export async function resolveCurrentVideoPayload(params: {
       count: params.requestedRelatedCount,
       blockedIds,
       favouriteVideos,
+          autoplayMix: params.watchNextStreamSettings?.autoplayMix ?? DEFAULT_AUTOPLAY_MIX,
+          autoplayGenreFilters: params.watchNextStreamSettings?.autoplayGenreFilters ?? [],
     });
 
     relatedVideos = videos;

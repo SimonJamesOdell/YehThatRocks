@@ -16,10 +16,8 @@ import {
   mapArtistProjectionRow,
   normalizeArtistKey,
   normalizeYouTubeVideoId,
+  requireDatabaseUrl,
   ROCK_METAL_GENRE_PATTERN,
-  seedArtists,
-  seedVideos,
-  getSeedArtistBySlug,
   slugify,
   mapVideo,
   ENABLE_SAME_GENRE_RELATED,
@@ -1067,7 +1065,7 @@ export async function getSameGenreRelatedPoolByArtist(normalizedArtist: string, 
 // ── Public artist queries ─────────────────────────────────────────────────────
 
 export async function getArtistSlugsForSitemap(offset: number, limit: number, minVideoCount = 2): Promise<string[]> {
-  if (!hasDatabaseUrl()) return seedArtists.map((a) => a.slug).slice(offset, offset + limit);
+  requireDatabaseUrl("getArtistSlugsForSitemap");
   try {
     if (await hasArtistStatsProjection()) {
       const rows = await prisma.$queryRawUnsafe<Array<{ slug: string }>>(
@@ -1082,13 +1080,13 @@ export async function getArtistSlugsForSitemap(offset: number, limit: number, mi
       SELECT slug FROM artists WHERE slug IS NOT NULL ORDER BY slug ASC LIMIT ${limit} OFFSET ${offset}
     `;
     return rows.map((r) => r.slug);
-  } catch {
-    return [];
+  } catch (error) {
+    throw error;
   }
 }
 
 export async function getArtists() {
-  if (!hasDatabaseUrl()) return seedArtists;
+  requireDatabaseUrl("getArtists");
 
   const now = Date.now();
   if (artistsListCache && artistsListCache.expiresAt > now) return artistsListCache.rows;
@@ -1115,9 +1113,12 @@ export async function getArtists() {
       }
 
       const artists = await findArtistsInDatabase({ limit: 24, orderByName: true });
-      return artists.length > 0 ? artists.map(mapArtist) : seedArtists;
-    } catch {
-      return seedArtists;
+      return artists.length > 0 ? artists.map(mapArtist) : [];
+    } catch (error) {
+      if (artistsListCache?.rows?.length) {
+        return artistsListCache.rows;
+      }
+      throw error;
     }
   };
 
@@ -1143,23 +1144,8 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
   const letterFilterPrefix = normalizedFilterPrefix || normalizedLetter.toLowerCase();
   const projectionPageCacheKey = `${normalizedLetter}:${letterFilterPrefix}:${safeOffset}:${safeLimit}`;
 
-  const countFromSeed = (artistName: string) => {
-    const normalizedName = artistName.trim().toLowerCase();
-    return seedVideos.filter((video) =>
-      video.channelTitle.toLowerCase().includes(normalizedName) ||
-      video.title.toLowerCase().includes(normalizedName),
-    ).length;
-  };
-
   if (!/^[A-Z]$/.test(normalizedLetter)) return [];
-
-  if (!hasDatabaseUrl()) {
-    return seedArtists
-      .filter((artist) => artist.name.trim().toLowerCase().startsWith(letterFilterPrefix))
-      .slice(safeOffset, safeOffset + safeLimit)
-      .map((artist) => ({ ...artist, videoCount: countFromSeed(artist.name) }))
-      .filter((artist) => artist.videoCount > 0);
-  }
+  requireDatabaseUrl("getArtistsByLetter");
 
   try {
     if (await hasArtistStatsProjection()) {
@@ -1369,17 +1355,13 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
     }));
     scheduleArtistStatsLetterBackfill(normalizedLetter, mappedRows);
     return mappedRows;
-  } catch {
-    return seedArtists
-      .filter((artist) => artist.name.trim().toLowerCase().startsWith(letterFilterPrefix))
-      .slice(safeOffset, safeOffset + safeLimit)
-      .map((artist) => ({ ...artist, videoCount: countFromSeed(artist.name) }))
-      .filter((artist) => artist.videoCount > 0);
+  } catch (error) {
+    throw error;
   }
 }
 
 export async function getArtistBySlug(slug: string) {
-  if (!hasDatabaseUrl()) return getSeedArtistBySlug(slug);
+  requireDatabaseUrl("getArtistBySlug");
 
   try {
     if (await hasArtistStatsProjection()) {
@@ -1394,7 +1376,7 @@ export async function getArtistBySlug(slug: string) {
 
     const now = Date.now();
     if (artistSlugLookupCache && artistSlugLookupCache.expiresAt > now) {
-      return artistSlugLookupCache.rowsBySlug.get(slug) ?? getSeedArtistBySlug(slug);
+      return artistSlugLookupCache.rowsBySlug.get(slug) ?? null;
     }
 
     const singleCached = artistSingleSlugCache.get(slug);
@@ -1509,7 +1491,7 @@ export async function getArtistBySlug(slug: string) {
 
     const rowsBySlug = await artistSlugLookupInFlight;
     const matched = rowsBySlug.get(slug);
-    if (!matched) return getSeedArtistBySlug(slug);
+    if (!matched) return null;
 
     const hydrated = await hydrateArtistCountryByName(matched);
     artistSingleSlugCache.set(slug, {
@@ -1517,8 +1499,8 @@ export async function getArtistBySlug(slug: string) {
       artist: hydrated,
     });
     return hydrated;
-  } catch {
-    return getSeedArtistBySlug(slug);
+  } catch (error) {
+    throw error;
   }
 }
 
@@ -1526,6 +1508,7 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
   const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
   const normalizedArtist = normalizeArtistKey(artistName);
   if (!normalizedArtist) return [] as VideoRecord[];
+  requireDatabaseUrl("getVideosByArtist");
 
   const cacheKey = `${normalizedArtist}:${safeLimit}`;
   const now = Date.now();
@@ -1536,17 +1519,6 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
   if (inFlight) return inFlight;
 
   const resolveVideos = async () => {
-    if (!hasDatabaseUrl()) {
-      const fallback = seedVideos
-        .filter((video) =>
-          video.channelTitle.toLowerCase().includes(normalizedArtist) ||
-          video.title.toLowerCase().includes(normalizedArtist),
-        )
-        .slice(0, safeLimit);
-      artistVideosCache.set(cacheKey, { expiresAt: Date.now() + ARTIST_VIDEOS_CACHE_TTL_MS, videos: fallback });
-      return fallback;
-    }
-
     type ArtistVideoRow = {
       videoId: string;
       title: string;
@@ -1616,15 +1588,8 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
       })();
 
       return mapped;
-    } catch {
-      const fallback = seedVideos
-        .filter((video) =>
-          video.channelTitle.toLowerCase().includes(normalizedArtist) ||
-          video.title.toLowerCase().includes(normalizedArtist),
-        )
-        .slice(0, safeLimit);
-      artistVideosCache.set(cacheKey, { expiresAt: Date.now() + ARTIST_VIDEOS_CACHE_TTL_MS, videos: fallback });
-      return fallback;
+    } catch (error) {
+      throw error;
     }
   };
 
