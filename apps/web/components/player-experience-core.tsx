@@ -149,9 +149,10 @@ const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.e
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
 const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. Please choose another track.";
 const BROKEN_UPSTREAM_OVERLAY_MESSAGE = "This video is no longer available on YouTube and has been removed from the catalog.";
+const SEARCHING_ALTERNATIVE_OVERLAY_MESSAGE = "This video is unavailable. Searching for an alternative upload\u2026";
 const COPYRIGHT_CLAIM_OVERLAY_MESSAGE = "This video is no longer available due to a copyright claim on YouTube.";
 const REMOVED_PRIVATE_OVERLAY_MESSAGE = "This video is unavailable on YouTube because it was removed, deleted, or made private.";
-const BROKEN_UPSTREAM_AUTOADVANCE_MS = 6000;
+const BROKEN_UPSTREAM_AUTOADVANCE_MS = 20000;
 const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstream video provider for this track. This is not a YehThatRocks failure. Please try the refresh button and if that does not work, choose another track.";
 const DELETED_TRACK_OVERLAY_MESSAGE = "This track was removed from YehThatRocks.";
 const EARLY_PLAYBACK_VERIFICATION_MS = 700;
@@ -1544,6 +1545,15 @@ export function PlayerExperience({
       return;
     }
 
+    if (unavailableAutoActionTimeoutRef.current !== null) {
+      logPlayerDebug("bot-challenge:direct-iframe-mode-suppressed-unavailable-countdown", {
+        videoId: currentVideoRef.current.id,
+        trigger,
+        verificationReason,
+      });
+      return;
+    }
+
     if (overlayTimeoutRef.current) {
       window.clearTimeout(overlayTimeoutRef.current);
       overlayTimeoutRef.current = null;
@@ -2489,6 +2499,7 @@ export function PlayerExperience({
             skipped?: boolean;
             reason?: string;
             classification?: string;
+            newVideoId?: string;
           }
         | null;
 
@@ -2503,6 +2514,7 @@ export function PlayerExperience({
       const verificationReason = typeof payload?.reason === "string" ? payload.reason : null;
       const classification = typeof payload?.classification === "string" ? payload.classification : null;
       const skipped = payload?.skipped === true;
+      const newVideoId = typeof payload?.newVideoId === "string" && payload.newVideoId.length > 0 ? payload.newVideoId : null;
       reportedUnavailableVerificationReasonRef.current = verificationReason;
 
       return {
@@ -2510,6 +2522,7 @@ export function PlayerExperience({
         verificationReason,
         classification,
         skipped,
+        newVideoId,
       };
     } catch {
       // best-effort runtime reporting
@@ -3030,10 +3043,11 @@ export function PlayerExperience({
             }
 
             if (isDefinitiveBrokenUpstreamCode) {
-              autoplaySuppressedVideoIdRef.current = currentVideo.id;
+              const brokenVideoId = currentVideo.id;
+              autoplaySuppressedVideoIdRef.current = brokenVideoId;
               playAttemptedAtRef.current = null;
               pauseActivePlayback();
-              showUnavailableOverlayMessage(BROKEN_UPSTREAM_OVERLAY_MESSAGE, {
+              showUnavailableOverlayMessage(SEARCHING_ALTERNATIVE_OVERLAY_MESSAGE, {
                 autoAdvanceWhenAutoplay: true,
                 countdownMs: BROKEN_UPSTREAM_AUTOADVANCE_MS,
               });
@@ -3045,7 +3059,13 @@ export function PlayerExperience({
                   shouldSkip: reportResult.shouldSkip,
                   verificationReason: reportResult.verificationReason,
                   skipped: reportResult.skipped,
+                  newVideoId: reportResult.newVideoId,
                 });
+
+                if (reportResult.newVideoId && currentVideoRef.current.id === brokenVideoId) {
+                  clearUnavailableOverlayMessage();
+                  navigateToVideo(reportResult.newVideoId, { clearPlaylist: false });
+                }
               });
               return;
             }

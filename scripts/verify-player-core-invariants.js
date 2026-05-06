@@ -243,6 +243,9 @@ function main() {
   assertContains(playerExperienceSource, "autoAdvanceWhenAutoplay: true", "Player auto-advances unavailable tracks when autoplay is enabled", failures);
   assertContains(playerExperienceSource, "const response = await fetch(\"/api/videos/unavailable\", {", "Player reports unavailable videos to API", failures);
   assertContains(videosUnavailableRouteSource, "const optionalAuth = await getOptionalApiAuth(request);", "Unavailable-video API accepts optional auth for anonymous playback recovery", failures);
+  assertContains(playerExperienceSource, "SEARCHING_ALTERNATIVE_OVERLAY_MESSAGE", "Player shows searching-for-alternative message for broken upstream videos", failures);
+  assertContains(playerExperienceSource, "newVideoId", "Player extracts alternative video id from unavailable API response", failures);
+  assertContains(playerExperienceSource, "unavailableAutoActionTimeoutRef.current !== null", "Player guards direct-iframe mode against in-progress unavailable countdown", failures);
   assertContains(playerExperienceSource, "const activeVideoId = currentVideoRef.current.id;", "Player evaluates errors against active runtime video id", failures);
   assertContains(playerExperienceSource, "if (activeVideoId !== currentVideo.id) {", "Player ignores stale unavailable callbacks from replaced instances", failures);
   assertContains(playerExperienceSource, "const playbackAlreadyEstablished =", "Player skips unavailable handling once playback is established", failures);
