@@ -3,6 +3,7 @@ export type ReportUnavailableResult = {
   verificationReason: string | null;
   classification: string | null;
   skipped: boolean;
+  newVideoId?: string | null;
 };
 
 export type VerifiedPlaybackFailurePresentation = {
