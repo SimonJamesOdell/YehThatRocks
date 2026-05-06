@@ -4,6 +4,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { PrismaClient } = require("@prisma/client");
+const { isRockMetalGenre } = require("./lib/genre-scope");
 const { assertInvariant, finishInvariantCheck } = require("./lib/test-harness");
 
 function loadDatabaseEnv() {
@@ -226,6 +227,8 @@ async function main() {
       invalidVideoIdRows,
       unavailableThumbRows,
       withThumbRows,
+      canonicalGenreRows,
+      cardGenreRows,
     ] = await Promise.all([
       prisma.$queryRaw`SELECT COUNT(*) AS count FROM genres WHERE name IS NOT NULL AND TRIM(name) <> ''`,
       prisma.$queryRaw`SELECT COUNT(*) AS count FROM genre_cards`,
@@ -260,12 +263,28 @@ async function main() {
         WHERE thumbnail_video_id IS NOT NULL
           AND thumbnail_video_id <> ''
       `,
+      prisma.$queryRaw`
+        SELECT name
+        FROM genres
+        WHERE name IS NOT NULL AND TRIM(name) <> ''
+      `,
+      prisma.$queryRaw`
+        SELECT genre
+        FROM genre_cards
+        WHERE genre IS NOT NULL AND TRIM(genre) <> ''
+      `,
     ]);
 
     const genreCount = Number(genreCountRows[0]?.count ?? 0);
     const cardCount = Number(cardCountRows[0]?.count ?? 0);
     const withThumb = Number(withThumbRows[0]?.count ?? 0);
     const coverage = cardCount > 0 ? withThumb / cardCount : 0;
+    const nonScopedCanonicalGenres = canonicalGenreRows
+      .map((row) => String(row.name).trim())
+      .filter((genre) => genre && !isRockMetalGenre(genre));
+    const nonScopedCardGenres = cardGenreRows
+      .map((row) => String(row.genre).trim())
+      .filter((genre) => genre && !isRockMetalGenre(genre));
 
     console.log("Categories invariant audit\n");
     console.log(`genres=${genreCount} genre_cards=${cardCount} with_thumb=${withThumb} coverage=${(coverage * 100).toFixed(2)}%\n`);
@@ -274,6 +293,18 @@ async function main() {
     assertInvariant(duplicateRows.length === 0, "No duplicate genres in genre_cards", duplicateRows.length ? `examples=${JSON.stringify(duplicateRows.slice(0, 3))}` : "", failures);
     assertInvariant(invalidVideoIdRows.length === 0, "All thumbnail_video_id values use valid YouTube ID format", invalidVideoIdRows.length ? `examples=${JSON.stringify(invalidVideoIdRows.slice(0, 3))}` : "", failures);
     assertInvariant(unavailableThumbRows.length === 0, "All stored thumbnail videos resolve to available site_videos", unavailableThumbRows.length ? `examples=${JSON.stringify(unavailableThumbRows.slice(0, 3))}` : "", failures);
+    assertInvariant(
+      nonScopedCanonicalGenres.length === 0,
+      "Canonical genres are strictly rock/metal scoped",
+      nonScopedCanonicalGenres.length ? `examples=${JSON.stringify(nonScopedCanonicalGenres.slice(0, 8))}` : "",
+      failures,
+    );
+    assertInvariant(
+      nonScopedCardGenres.length === 0,
+      "genre_cards rows are strictly rock/metal scoped",
+      nonScopedCardGenres.length ? `examples=${JSON.stringify(nonScopedCardGenres.slice(0, 8))}` : "",
+      failures,
+    );
     assertInvariant(
       coverage >= minCoverage,
       "Thumbnail coverage meets threshold",

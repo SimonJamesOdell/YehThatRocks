@@ -24,6 +24,7 @@
 
 const { PrismaClient } = require("@prisma/client");
 const { hasFlag } = require("./lib/cli");
+const { partitionGenresByScope } = require("./lib/genre-scope");
 const { loadDatabaseEnv } = require("./lib/runtime");
 
 loadDatabaseEnv();
@@ -125,8 +126,39 @@ async function main() {
     WHERE name IS NOT NULL AND TRIM(name) <> ''
     ORDER BY name ASC
   `;
-  const genres = genreRows.map((r) => r.name.trim());
-  console.log(`Found ${genres.length} canonical genres.`);
+  const canonicalGenres = genreRows.map((r) => r.name.trim());
+  const { allowed: genres, disallowed: disallowedCanonicalGenres } = partitionGenresByScope(canonicalGenres);
+  console.log(`Found ${canonicalGenres.length} canonical genres.`);
+  console.log(`In-scope rock/metal genres: ${genres.length}`);
+  if (disallowedCanonicalGenres.length > 0) {
+    console.log(`Out-of-scope genres to remove: ${disallowedCanonicalGenres.length}`);
+    console.log(`Sample removals: ${disallowedCanonicalGenres.slice(0, 12).join(", ")}`);
+  }
+
+  const existingCardRows = await prisma.$queryRaw`
+    SELECT genre FROM genre_cards
+    WHERE genre IS NOT NULL AND TRIM(genre) <> ''
+  `;
+  const { disallowed: disallowedCardGenres } = partitionGenresByScope(existingCardRows.map((r) => r.genre));
+
+  if (!isDryRun) {
+    if (disallowedCanonicalGenres.length > 0) {
+      console.log("\nRemoving out-of-scope rows from genres...");
+      for (const genre of disallowedCanonicalGenres) {
+        await prisma.$executeRaw`DELETE FROM genres WHERE name = ${genre}`;
+      }
+    }
+    if (disallowedCardGenres.length > 0) {
+      console.log("Removing out-of-scope rows from genre_cards...");
+      for (const genre of disallowedCardGenres) {
+        await prisma.$executeRaw`DELETE FROM genre_cards WHERE genre = ${genre}`;
+      }
+    }
+  }
+
+  if (genres.length === 0) {
+    throw new Error("No in-scope rock/metal genres remain after filtering.");
+  }
 
   // 2. Load artist_stats entries that have an AVAILABLE video thumbnail.
   //    We join to videos + site_videos so we never store a stale/unavailable ID.

@@ -37,6 +37,8 @@
     "repair:video-metadata:apply": "node scripts/repair-video-metadata.js --apply --confirm=REPAIR_VIDEO_METADATA",
     "prune:unavailable:all": "node scripts/audit-video-embedability.js --all --limit=1000 --concurrency=8 --exhaustive --prune-unavailable",
     "rebuild:artist-stats": "node scripts/rebuild-artist-stats.js",
+    "prune:genres": "node scripts/prune-non-rock-metal-genres.js --dry-run",
+    "prune:genres:apply": "node scripts/prune-non-rock-metal-genres.js --confirm=PRUNE_NON_ROCK_METAL",
     "backfill:related": "node scripts/backfill-related-links.js",
     "verify:categories": "node scripts/verify-categories-invariants.js",
     "verify:categories:api": "node scripts/verify-categories-invariants.js --check-api",
