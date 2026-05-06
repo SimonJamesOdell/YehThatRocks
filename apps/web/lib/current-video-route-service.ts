@@ -34,6 +34,17 @@ import {
 
 const WATCH_NEXT_BATCH_BUILD_LIMIT = 200;
 
+const WATCH_NEXT_DEBUG_ENABLED = process.env.NODE_ENV === "development";
+
+function logWatchNextService(event: string, detail?: Record<string, unknown>) {
+  if (!WATCH_NEXT_DEBUG_ENABLED) {
+    return;
+  }
+
+  const payload = detail ? ` ${JSON.stringify(detail)}` : "";
+  console.log(`[watch-next-service] ${event}${payload}`);
+}
+
 // Algorithm constants for resolveCurrentVideoPayload — kept here to avoid
 // coupling the service to the route's constant declarations.
 const RESOLVE_RELATED_POOL_QUERY_EXPANSION_CAP = 60_000;
@@ -48,6 +59,14 @@ export type ResolvedCurrentVideoPayload = {
   currentVideo: Awaited<ReturnType<typeof getCurrentVideo>>;
   relatedVideos: WatchNextVideo[];
   hasMore?: boolean;
+  watchNextAdvisory?: WatchNextAdvisory;
+};
+
+export type WatchNextAdvisory = {
+  genreFilterActive: boolean;
+  genreFilters: string[];
+  constrainedByGenreFilter: boolean;
+  emptyDueToGenreFilter: boolean;
 };
 
 export type CurrentVideoResolveResult =
@@ -58,6 +77,7 @@ export type WatchNextStreamCacheEntry = {
   expiresAt: number;
   videos: WatchNextVideo[];
   hasMore: boolean;
+  advisory?: WatchNextAdvisory;
 };
 
 export async function fetchRandomCatalogVideosForCurrentVideo(params: {
@@ -167,7 +187,7 @@ export async function buildWatchNextRelatedStream(params: {
   autoplayGenreFilters: string[];
   getTopPool: (size: number) => Promise<WatchNextVideo[]>;
   getRandomPool: (currentVideoId: string, size: number) => Promise<WatchNextVideo[]>;
-}): Promise<{ videos: WatchNextVideo[]; hasMore: boolean }> {
+}): Promise<{ videos: WatchNextVideo[]; hasMore: boolean; advisory: WatchNextAdvisory }> {
   const targetCount = Math.max(1, params.count);
   const targetTotal = params.offset + targetCount;
   const seedBase = `${params.currentVideoId}:u:${params.userId ?? 0}:o:${params.offset}:c:${params.count}`;
@@ -232,6 +252,39 @@ export async function buildWatchNextRelatedStream(params: {
   const newestPool = byGenre(removeBlocked(newestPoolRaw));
   const randomPool = byGenre(removeBlocked(randomPoolRaw));
   const favouritePool = byGenre(removeBlocked(params.favouriteVideos));
+  const rawTotalCount = topPoolRaw.length + newestPoolRaw.length + randomPoolRaw.length + params.favouriteVideos.length;
+  const filteredTotalCount = topPool.length + newestPool.length + randomPool.length + favouritePool.length;
+  const genreFilterActive = effectiveGenreFilters.length > 0;
+  const constrainedByGenreFilter = genreFilterActive && filteredTotalCount < rawTotalCount;
+  const emptyDueToGenreFilter = genreFilterActive && filteredTotalCount === 0 && rawTotalCount > 0;
+  const advisory: WatchNextAdvisory = {
+    genreFilterActive,
+    genreFilters: effectiveGenreFilters,
+    constrainedByGenreFilter,
+    emptyDueToGenreFilter,
+  };
+
+  logWatchNextService("build:pools", {
+    currentVideoId: params.currentVideoId,
+    userId: params.userId ?? null,
+    targetCount,
+    targetTotal,
+    blockedCount: params.blockedIds.size,
+    effectiveMix,
+    effectiveGenreFilters,
+    rawCounts: {
+      top: topPoolRaw.length,
+      newest: newestPoolRaw.length,
+      random: randomPoolRaw.length,
+      favourites: params.favouriteVideos.length,
+    },
+    filteredCounts: {
+      top: topPool.length,
+      newest: newestPool.length,
+      random: randomPool.length,
+      favourites: favouritePool.length,
+    },
+  });
 
   const globalUsedIds = new Set(params.blockedIds);
   const stream: WatchNextVideo[] = [];
@@ -272,6 +325,20 @@ export async function buildWatchNextRelatedStream(params: {
 
     let batch = [...favourites, ...top, ...newest, ...randoms];
 
+    logWatchNextService("build:batch", {
+      currentVideoId: params.currentVideoId,
+      batchNumber,
+      streamLength: stream.length,
+      requestedSourceCounts: sourceCountsForBatch,
+      selectedCounts: {
+        favourites: favourites.length,
+        top: top.length,
+        newest: newest.length,
+        random: randoms.length,
+      },
+      batchLengthBeforeTopOff: batch.length,
+    });
+
     if (batch.length < params.watchNextBatchSize) {
       const topOff = pickBatchSourceVideos({
         source: interleaveVideoBuckets([randomPool, newestPool, topPool]),
@@ -280,9 +347,21 @@ export async function buildWatchNextRelatedStream(params: {
         random: batchRandom,
       });
       batch = [...batch, ...topOff];
+
+      logWatchNextService("build:topoff", {
+        currentVideoId: params.currentVideoId,
+        batchNumber,
+        topOffCount: topOff.length,
+        batchLengthAfterTopOff: batch.length,
+      });
     }
 
     if (batch.length === 0) {
+      logWatchNextService("build:empty-batch", {
+        currentVideoId: params.currentVideoId,
+        batchNumber,
+        requestedSourceCounts: sourceCountsForBatch,
+      });
       canContinue = false;
       break;
     }
@@ -301,7 +380,18 @@ export async function buildWatchNextRelatedStream(params: {
   const videos = stream.slice(sliceStart, sliceEnd);
   const hasMore = sliceEnd < stream.length || canContinue;
 
-  return { videos, hasMore };
+  logWatchNextService("build:result", {
+    currentVideoId: params.currentVideoId,
+    totalStreamLength: stream.length,
+    sliceStart,
+    sliceEnd,
+    returnedCount: videos.length,
+    hasMore,
+    canContinue,
+    advisory,
+  });
+
+  return { videos, hasMore, advisory };
 }
 
 export async function resolveWatchNextStreamSlice(params: {
@@ -316,8 +406,8 @@ export async function resolveWatchNextStreamSlice(params: {
   watchNextStreamCache: Map<string, WatchNextStreamCacheEntry>;
   watchNextStreamInflight: Map<string, Promise<WatchNextStreamCacheEntry>>;
   pruneCaches: () => void;
-  buildStream: (targetCount: number) => Promise<{ videos: WatchNextVideo[]; hasMore: boolean }>;
-}): Promise<{ videos: WatchNextVideo[]; hasMore: boolean }> {
+  buildStream: (targetCount: number) => Promise<{ videos: WatchNextVideo[]; hasMore: boolean; advisory: WatchNextAdvisory }>;
+}): Promise<{ videos: WatchNextVideo[]; hasMore: boolean; advisory?: WatchNextAdvisory }> {
   params.pruneCaches();
 
   const now = Date.now();
@@ -333,6 +423,7 @@ export async function resolveWatchNextStreamSlice(params: {
       return {
         videos: cached.videos.slice(start, end),
         hasMore: end < cached.videos.length || cached.hasMore,
+        advisory: cached.advisory,
       };
     }
   }
@@ -345,6 +436,7 @@ export async function resolveWatchNextStreamSlice(params: {
     return {
       videos: inflightEntry.videos.slice(start, end),
       hasMore: end < inflightEntry.videos.length || inflightEntry.hasMore,
+      advisory: inflightEntry.advisory,
     };
   }
 
@@ -360,6 +452,7 @@ export async function resolveWatchNextStreamSlice(params: {
       expiresAt: Date.now() + params.watchNextStreamCacheTtlMs,
       videos: stream.videos,
       hasMore: stream.hasMore,
+      advisory: stream.advisory,
     };
     params.watchNextStreamCache.set(params.cacheKey, entry);
     return entry;
@@ -374,6 +467,7 @@ export async function resolveWatchNextStreamSlice(params: {
     return {
       videos: entry.videos.slice(start, end),
       hasMore: end < entry.videos.length || entry.hasMore,
+      advisory: entry.advisory,
     };
   } finally {
     if (params.watchNextStreamInflight.get(params.cacheKey) === pending) {
@@ -410,7 +504,7 @@ export async function resolveCurrentVideoPayload(params: {
     favouriteVideos: WatchNextVideo[];
     autoplayMix: AutoplayMixSettings;
     autoplayGenreFilters: string[];
-  }) => Promise<{ videos: WatchNextVideo[]; hasMore: boolean }>;
+  }) => Promise<{ videos: WatchNextVideo[]; hasMore: boolean; advisory?: WatchNextAdvisory }>;
   getRelatedPoolForCurrentVideo: (
     currentVideoId: string,
     userId: number | undefined,
@@ -488,6 +582,7 @@ export async function resolveCurrentVideoPayload(params: {
 
   let relatedVideos: WatchNextVideo[] = [];
   let hasMoreForCustomRequest: boolean | undefined;
+  let watchNextAdvisory: WatchNextAdvisory | undefined;
   let earlyTopVideosForPadding: WatchNextVideo[] | undefined;
   const favouriteVideos = await params.favouriteVideosPromise;
   const favouriteVideoIdSet = new Set(favouriteVideos.map((video) => video.id));
@@ -503,7 +598,7 @@ export async function resolveCurrentVideoPayload(params: {
       }
     }
 
-    const { videos, hasMore } = await params.getWatchNextStreamSlice({
+    const { videos, hasMore, advisory } = await params.getWatchNextStreamSlice({
       currentVideoId: currentVideo.id,
       userId: params.userId,
       offset: params.requestedRelatedOffset,
@@ -516,6 +611,7 @@ export async function resolveCurrentVideoPayload(params: {
 
     relatedVideos = videos;
     hasMoreForCustomRequest = hasMore;
+            watchNextAdvisory = advisory;
   } else if (params.usePagedRelatedPool) {
     const poolSizeTarget = Math.max(48, params.requestedRelatedOffset + params.requestedRelatedCount + 24);
     const relatedPool = await params.getRelatedPoolForCurrentVideo(
@@ -637,6 +733,7 @@ export async function resolveCurrentVideoPayload(params: {
     currentVideo,
     relatedVideos: paddedRelatedVideos,
     hasMore: params.isCustomRelatedRequest ? hasMoreForCustomRequest : undefined,
+    watchNextAdvisory,
   };
 
   params.onPayloadResolved(normalizedPayload, currentVideo.id);

@@ -45,7 +45,7 @@ const CURRENT_VIDEO_CACHE_MAX_ENTRIES = 300;
 const CURRENT_VIDEO_PENDING_CACHE_MAX_ENTRIES = 300;
 const CURRENT_VIDEO_RELATED_POOL_CACHE_MAX_ENTRIES = 120;
 const WATCH_NEXT_STREAM_CACHE_MAX_ENTRIES = 120;
-const CURRENT_VIDEO_RESOLVER_TIMEOUT_MS = 2_500;
+const CURRENT_VIDEO_RESOLVER_TIMEOUT_MS = 6_000;
 const CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS = 1;
 const CURRENT_VIDEO_RELATED_POOL_CACHE_TTL_MS = 30_000;
 const CURRENT_VIDEO_RELATED_POOL_SIZE = 100;
@@ -129,19 +129,28 @@ async function getCachedTopVideosForCurrentVideo(count: number) {
 
   const cached = await getTopVideosFast(safeCount, CURRENT_VIDEO_TOP_CACHE_WAIT_MS);
   if (cached.length > 0) {
+    logCurrentVideoRoute("top-pool:cache-hit", { count: safeCount, resultCount: cached.length });
     return cached;
   }
 
-  return getTopVideos(safeCount);
+  const topVideos = await getTopVideos(safeCount);
+  logCurrentVideoRoute("top-pool:db", { count: safeCount, resultCount: topVideos.length });
+  return topVideos;
 }
 
 async function getRandomCatalogVideosForCurrentVideo(currentVideoId: string, count: number) {
-  return fetchRandomCatalogVideosForCurrentVideoService({
+  const videos = await fetchRandomCatalogVideosForCurrentVideoService({
     currentVideoId,
     count,
     getRandomVideoIdPool: getRandomCatalogPool,
     genericArtistLabels: GENERIC_ARTIST_LABELS,
   });
+  logCurrentVideoRoute("random-pool:resolved", {
+    currentVideoId,
+    requestedCount: count,
+    resultCount: videos.length,
+  });
+  return videos;
 }
 
 async function buildWatchNextRelatedStream(params: {
@@ -154,6 +163,17 @@ async function buildWatchNextRelatedStream(params: {
   autoplayMix: AutoplayMixSettings;
   autoplayGenreFilters: string[];
 }) {
+  logCurrentVideoRoute("watch-next-stream:build:start", {
+    currentVideoId: params.currentVideoId,
+    userId: params.userId ?? null,
+    offset: params.offset,
+    count: params.count,
+    blockedCount: params.blockedIds.size,
+    favouriteCount: params.favouriteVideos.length,
+    autoplayMix: params.autoplayMix,
+    autoplayGenreFilters: params.autoplayGenreFilters,
+  });
+
   return buildWatchNextRelatedStreamService({
     ...params,
     watchNextBatchSize: WATCH_NEXT_BATCH_SIZE,
@@ -407,6 +427,22 @@ export async function GET(request: NextRequest) {
   const cacheKey = `${v ?? "__default__"}:u:${optionalAuth?.userId ?? 0}:hideSeen:${hideSeenOnly ? 1 : 0}:autoplay:${autoplayConfigEnabled ? 1 : 0}:mix:${autoplayMixSignature}:genres:${autoplayGenresSignature}`;
   const now = Date.now();
   pruneCurrentVideoRouteCaches(now);
+
+  logCurrentVideoRoute("request:params", {
+    requestedVideoId: v,
+    requestMode,
+    requestedRelatedCount,
+    requestedRelatedOffset,
+    isCustomRelatedRequest,
+    useUnifiedWatchNextPool,
+    userId: optionalAuth?.userId ?? null,
+    hideSeenOnly,
+    shouldFilterSeen,
+    autoplayConfigEnabled,
+    effectiveAutoplayMix,
+    effectiveAutoplayGenreFilters,
+    cacheKey,
+  });
 
   if (!isCustomRelatedRequest) {
     const cachedPending = currentVideoPendingCache.get(cacheKey);

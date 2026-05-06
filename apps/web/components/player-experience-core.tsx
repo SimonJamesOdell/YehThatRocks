@@ -744,7 +744,7 @@ export function PlayerExperience({
 
     async function loadTopFallbackPool() {
       try {
-        const response = await fetch(`/api/current-video?v=${encodeURIComponent(currentVideo.id)}&count=${AUTOPLAY_FALLBACK_POOL_SIZE}`, {
+        const response = await fetch(`/api/videos/top?count=${AUTOPLAY_FALLBACK_POOL_SIZE}`, {
           cache: "no-store",
         });
 
@@ -754,18 +754,21 @@ export function PlayerExperience({
 
         const payload = (await response.json().catch(() => null)) as
           | {
-              relatedVideos?: VideoRecord[];
               videos?: VideoRecord[];
+              pending?: boolean;
             }
           | null;
 
-        const ids = Array.isArray(payload?.relatedVideos)
-          ? payload.relatedVideos.filter((video): video is VideoRecord => Boolean(video?.id))
-          : Array.isArray(payload?.videos)
-            ? payload.videos.filter((video): video is VideoRecord => Boolean(video?.id))
+        // Server may return { pending: true } while busy — do not wipe the existing pool.
+        if (!payload || (payload as { pending?: boolean }).pending) {
+          return;
+        }
+
+        const ids = Array.isArray(payload?.videos)
+          ? payload.videos.filter((video): video is VideoRecord => Boolean(video?.id))
           : [];
 
-        if (!cancelled) {
+        if (!cancelled && ids.length > 0) {
           setTopFallbackVideos(ids);
         }
       } catch {
@@ -1086,6 +1089,7 @@ export function PlayerExperience({
     effectivePlaylistIndex,
     temporaryQueue,
     currentVideoId: currentVideo.id,
+    autoplayEnabled,
     isDockedDesktop,
     shouldUseRouteQueueRegardlessOfDocked: pathname === "/new" || pathname === "/top100",
     routeAutoplayQueueIds,
@@ -3359,8 +3363,8 @@ export function PlayerExperience({
     }
 
     if (!autoplayEnabledRef.current) {
-      // When autoplay is off and player is in docked position, close the player instead of showing overlay
-      const shouldCloseDockedSurface = false && isDockedDesktop && pathname !== "/";
+      // When autoplay is off and player is in docked position, close the player instead of showing overlay.
+      const shouldCloseDockedSurface = pathname !== "/";
 
       if (shouldCloseDockedSurface) {
         setPlayerClosedByEndOfVideo(true);
@@ -4232,6 +4236,11 @@ export function PlayerExperience({
     const autoplaySource = resolveRouteAutoplaySource(pathname);
 
     if (autoplaySource) {
+      if (autoplaySource.type === "new" || autoplaySource.type === "top100") {
+        autoplayRouteTransitionRef.current = false;
+        return;
+      }
+
       autoplayRouteTransitionRef.current = true;
       const { playlistId, firstVideoId } = await buildRouteAutoplayPlaylist(autoplaySource);
       const targetVideoId = firstVideoId ?? currentVideo.id;
@@ -4830,23 +4839,25 @@ export function PlayerExperience({
 
               {allowDirectIframeInteraction ? (
                 <div className="playerPolicyBlocker" role="alert" aria-live="polite">
-                  <h2 className="playerPolicyBlockerHeader">Well hot-damn...</h2>
-                  <p className="playerPolicyBlockerEyebrow">Playback blocked by upstream policy</p>
-                  <strong className="playerPolicyBlockerTitle">This video cannot play inside the embedded player right now</strong>
-                  <p className="playerPolicyBlockerBody">
-                    Sorry, this is caused by YouTube policy controls, not a YehThatRocks platform failure.
-                    Watching on YouTube for a moment often lifts the block entirely, so normal embedded playback will
-                    probably be back when you return. If not, please try again later. In the meantime you can still
-                    browse our catalog and your favourites to find tracks you want to watch, you will just have to
-                    watch them through YouTube directly instead of in our awesome player.
-                  </p>
-                  <button
-                    type="button"
-                    className="playerPolicyBlockerButton"
-                    onClick={handleOpenCurrentTrackOnYouTube}
-                  >
-                    Watch on YouTube
-                  </button>
+                  <div className="playerPolicyBlockerContent">
+                    <h2 className="playerPolicyBlockerHeader">Well hot-damn...</h2>
+                    <p className="playerPolicyBlockerEyebrow">Playback blocked by upstream policy</p>
+                    <strong className="playerPolicyBlockerTitle">This video cannot play inside the embedded player right now</strong>
+                    <p className="playerPolicyBlockerBody">
+                      Sorry, this is caused by YouTube policy controls, not a YehThatRocks platform failure.
+                      Watching on YouTube for a moment often lifts the block entirely, so normal embedded playback will
+                      probably be back when you return. If not, please try again later. In the meantime you can still
+                      browse our catalog and your favourites to find tracks you want to watch, you will just have to
+                      watch them through YouTube directly instead of in our awesome player.
+                    </p>
+                    <button
+                      type="button"
+                      className="playerPolicyBlockerButton"
+                      onClick={handleOpenCurrentTrackOnYouTube}
+                    >
+                      Watch on YouTube
+                    </button>
+                  </div>
                 </div>
               ) : null}
 

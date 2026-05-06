@@ -12,6 +12,7 @@ export const EVENT_NAMES = {
   VIDEO_ENDED: "ytr:video-ended",
   TEMP_QUEUE_DEQUEUE: "ytr:temp-queue-dequeue",
   WATCH_HISTORY_UPDATED: "ytr:watch-history-updated",
+  AUTOPLAY_SETTINGS_UPDATED: "ytr:autoplay-settings-updated",
 
   // Playlists
   PLAYLISTS_UPDATED: "ytr:playlists-updated",
@@ -49,6 +50,7 @@ export type EventPayloads = {
   [EVENT_NAMES.VIDEO_ENDED]: { videoId: string; reason?: QueueRemovalReason };
   [EVENT_NAMES.TEMP_QUEUE_DEQUEUE]: { videoId: string; reason?: QueueRemovalReason };
   [EVENT_NAMES.WATCH_HISTORY_UPDATED]: { videoId: string };
+  [EVENT_NAMES.AUTOPLAY_SETTINGS_UPDATED]: null;
   [EVENT_NAMES.PLAYLISTS_UPDATED]: null;
   [EVENT_NAMES.PLAYLIST_CHOOSER_STATE]: { isOpen: boolean };
   [EVENT_NAMES.PLAYLIST_RAIL_SYNC]: {
@@ -204,6 +206,7 @@ export function createEventSubscriptions() {
 export const VIDEO_ENDED_EVENT = EVENT_NAMES.VIDEO_ENDED;
 export const TEMP_QUEUE_DEQUEUE_EVENT = EVENT_NAMES.TEMP_QUEUE_DEQUEUE;
 export const WATCH_HISTORY_UPDATED_EVENT = EVENT_NAMES.WATCH_HISTORY_UPDATED;
+export const AUTOPLAY_SETTINGS_UPDATED_EVENT = EVENT_NAMES.AUTOPLAY_SETTINGS_UPDATED;
 
 // Playlists
 export const PLAYLISTS_UPDATED_EVENT = EVENT_NAMES.PLAYLISTS_UPDATED;

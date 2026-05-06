@@ -93,17 +93,22 @@ payload `videoId` always identifies the specific entry to drop.
 
 | Autoplay | Playlist | Route docked | Behaviour |
 |---|---|---|---|
-| OFF | — | — | Playback stops at end of video → ended-choice overlay |
+| OFF | — | home (`/`) | Playback stops at end of video → ended-choice overlay |
+| OFF | — | overlay route open | Playback stops at end of video → player closes |
 | ON | active | any | Playlist sequencing (priority 1 overrides route queue) |
-| ON | none | not docked | Random fallback from Watch Next pool (priority 4) |
+| ON | none | `/new` or `/top100` open | Route-local progression only within the visible page list |
+| ON | none | not docked elsewhere | Random fallback from Watch Next pool (priority 4) |
 | ON | none | docked on supported route | Route-contextual queue (priority 3) then random fallback (priority 4) |
 
 Supported routes for route-queue autoplay: `/new`, `/top100`, `/favourites`,
 `/categories/[slug]`, `/artist/[slug]`.
 
 ### Enabling autoplay from a route overlay
-When the user enables autoplay while already on a supported route overlay, the
-system immediately builds a playlist for that route context and navigates to its
+When the user enables autoplay while already on `/new` or `/top100`, the player
+stays on that page and advances only within the route list.
+
+When the user enables autoplay while already on another supported route overlay,
+the system may still build a playlist for that route context and navigate to its
 first video so autoplay can sequence from the correct starting point.
 
 ### Auto-advance suspension
@@ -125,12 +130,14 @@ domain-test suite. Any refactor must preserve them.
    all lower-priority steps from evaluating.
 3. **Queue deduplication.** Adding a track that is already in the queue must
    be a no-op (same reference returned).
-4. **Route-queue gated on desktop-docked + autoplay ON.** The route-queue step
-   must not resolve when either condition is false.
-5. **Random fallback gated on autoplay ON.** It must not resolve when autoplay
+4. **Route-queue gated on autoplay ON.** The route-queue step must not resolve
+   when autoplay is off.
+5. **`/new` and `/top100` stay route-local.** When those pages are open,
+   autoplay must not fall back to a random Watch Next pick.
+6. **Random fallback gated on autoplay ON.** It must not resolve when autoplay
    is off, regardless of queue/playlist state.
-6. **`manual-next` reason on user Next.** When the user presses Next and the
+7. **`manual-next` reason on user Next.** When the user presses Next and the
    current video was in the temporary queue, a `TEMP_QUEUE_DEQUEUE_EVENT` with
    `reason: "manual-next"` must be dispatched before navigating.
-7. **Playlist-step wraps.** Next on the last track wraps to index 0; prev on
+8. **Playlist-step wraps.** Next on the last track wraps to index 0; prev on
    index 0 wraps to the last track. No out-of-bounds access.

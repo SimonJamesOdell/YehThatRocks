@@ -26,6 +26,7 @@ export type ResolveNextTrackTargetOptions = {
   effectivePlaylistIndex: number | null;
   temporaryQueue: VideoRecord[];
   currentVideoId: string;
+  autoplayEnabled: boolean;
   isDockedDesktop: boolean;
   shouldUseRouteQueueRegardlessOfDocked: boolean;
   routeAutoplayQueueIds: string[];
@@ -150,6 +151,10 @@ export function resolveNextTrackTarget(options: ResolveNextTrackTargetOptions): 
     {
       state: "route-queue",
       evaluate: () => {
+        if (!options.autoplayEnabled) {
+          return { status: "unresolved" };
+        }
+
         const target = resolveRouteQueueTarget({
           isDockedDesktop: options.isDockedDesktop,
           shouldUseRouteQueueRegardlessOfDocked: options.shouldUseRouteQueueRegardlessOfDocked,
@@ -165,6 +170,14 @@ export function resolveNextTrackTarget(options: ResolveNextTrackTargetOptions): 
     {
       state: "random-fallback",
       evaluate: () => {
+        if (!options.autoplayEnabled) {
+          return { status: "unresolved" };
+        }
+
+        if (options.shouldUseRouteQueueRegardlessOfDocked) {
+          return { status: "blocked" };
+        }
+
         const target = resolveRandomFallbackTarget(options.getRandomWatchNextId);
 
         return target

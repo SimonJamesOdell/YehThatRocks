@@ -196,6 +196,14 @@
   pointer-events: none;
 }
 
+.playerPolicyBlockerContent {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+}
+
 .playerPolicyBlockerHeader {
   margin: 0;
   font-family: var(--font-display), "Metal Mania", cursive;
@@ -302,6 +310,20 @@
 
   .playerChromeDockedDesktop .videoUnavailableOverlayBody {
     font-size: 1.16rem;
+  }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerPolicyBlockerContent {
+    transform: scale(
+      calc(1 / var(--player-dock-scale-x, 1)),
+      calc(1 / var(--player-dock-scale-y, 1))
+    );
+    transform-origin: center;
+    transition: transform 520ms cubic-bezier(0.2, 0.92, 0.34, 1);
+  }
+
+  .playerChromeDockedDesktop.playerChromeUndocking .playerPolicyBlockerContent,
+  .playerChromeDockedDesktop.playerChromeUndockSettling .playerPolicyBlockerContent {
+    transform: scale(1, 1);
   }
 }
 

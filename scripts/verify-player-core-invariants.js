@@ -220,6 +220,9 @@ function main() {
   assertContains(playerExperienceSource, 'className={`newPageSeenToggle playerEndedChoiceSeenToggle${endedChoiceHideSeen ? " newPageSeenToggleActive" : ""}`}', "Player reuses the New page seen-toggle styling in the end chooser", failures);
   assertContains(playerExperienceSource, 'No unseen choices right now. Try more choices or watch again.', "Player shows an empty state when the chooser is filtered to no unseen videos", failures);
   assertContains(playerExperienceSource, "autoplayEnabledRef.current &&", "Player only auto-advances when autoplay is enabled", failures);
+  assertContains(playerExperienceSource, 'const shouldCloseDockedSurface = pathname !== "/";', "Player closes the playback surface instead of opening ended-choice on overlay routes when autoplay is off", failures);
+  assertContains(playerExperienceSource, 'if (autoplaySource.type === "new" || autoplaySource.type === "top100") {', "Enabling autoplay on New or Top100 keeps playback local to the open route", failures);
+  assertContains(playerExperienceSource, "autoplayRouteTransitionRef.current = false;", "Local route-list autoplay clears transition suspension instead of forcing a route change", failures);
 
   // Extracted helper-module invariants.
   assertContains(playerExperienceSource, "@/components/player-experience-autoplay-utils", "Player imports extracted route autoplay helpers", failures);

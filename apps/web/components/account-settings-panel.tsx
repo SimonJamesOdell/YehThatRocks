@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { AuthAccountActions } from "@/components/auth-account-actions";
 import { AutoplaySettingsEditor } from "@/components/autoplay-settings-editor";
@@ -36,6 +37,7 @@ export function AccountSettingsPanel({
   initialBlockedHasMore,
   blockedPageSize = 24,
 }: AccountSettingsPanelProps) {
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<AccountTab>("details");
   const [screenName, setScreenName] = useState(user.screenName ?? "");
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? "");
@@ -58,6 +60,13 @@ export function AccountSettingsPanel({
 
     return trimmed;
   }, [avatarUrl]);
+
+  useEffect(() => {
+    const requestedTab = searchParams.get("tab");
+    if (requestedTab === "details" || requestedTab === "security" || requestedTab === "autoplay" || requestedTab === "blocked") {
+      setActiveTab(requestedTab);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const controller = new AbortController();
