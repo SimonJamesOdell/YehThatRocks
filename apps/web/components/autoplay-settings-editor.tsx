@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { dispatchAppEvent, EVENT_NAMES } from "@/lib/events-contract";
 import {
   DEFAULT_AUTOPLAY_MIX,
   rebalanceAutoplayMix,
@@ -161,6 +162,7 @@ export function AutoplaySettingsEditor({
         throw new Error("Could not save autoplay settings.");
       }
 
+      dispatchAppEvent(EVENT_NAMES.AUTOPLAY_SETTINGS_UPDATED, null);
       setSavedMessage("Autoplay settings saved.");
       onSaved?.();
     } catch (error) {

@@ -210,5 +210,56 @@ describe("buildWatchNextRelatedStream", () => {
     expect(result.videos).toHaveLength(2);
     expect(result.videos.map((video) => video.id).sort()).toEqual(["new-1", "new-3"]);
     expect(result.videos.every((video) => video.genre.toLowerCase().includes("doom"))).toBe(true);
+    expect(result.advisory.genreFilterActive).toBe(true);
+    expect(result.advisory.constrainedByGenreFilter).toBe(true);
+    expect(result.advisory.emptyDueToGenreFilter).toBe(false);
+  });
+
+  it("returns advisory when genre filters eliminate all watch-next sources", async () => {
+    const { buildWatchNextRelatedStream } = await import("@/lib/current-video-route-service");
+
+    getNewestVideosMock.mockResolvedValueOnce([
+      { id: "new-1", title: "Thrash One", channelTitle: "Band A", genre: "thrash metal", favourited: 0, description: "" },
+      { id: "new-2", title: "Death One", channelTitle: "Band B", genre: "death metal", favourited: 0, description: "" },
+    ]);
+
+    const getTopPool = vi.fn().mockResolvedValue([
+      { id: "top-1", title: "Top Thrash", channelTitle: "Band C", genre: "thrash metal", favourited: 0, description: "" },
+    ]);
+    const getRandomPool = vi.fn().mockResolvedValue([
+      { id: "random-1", title: "Random Death", channelTitle: "Band D", genre: "death metal", favourited: 0, description: "" },
+    ]);
+
+    const result = await buildWatchNextRelatedStream({
+      currentVideoId: "current-video",
+      userId: 77,
+      offset: 0,
+      count: 10,
+      blockedIds: new Set(["current-video"]),
+      favouriteVideos: [
+        { id: "fav-1", title: "Favourite Thrash", channelTitle: "Band E", genre: "thrash metal", favourited: 1, description: "" },
+      ],
+      watchNextBatchSize: 10,
+      watchNextSourceSliceSize: 12,
+      watchNextTopPoolSize: 12,
+      watchNextNewestPoolSize: 12,
+      watchNextRandomPoolMin: 12,
+      watchNextMix: {
+        top100: 25,
+        favourites: 25,
+        newest: 25,
+        random: 25,
+      },
+      autoplayGenreFilters: ["avant garde"],
+      getTopPool,
+      getRandomPool,
+    });
+
+    expect(result.videos).toHaveLength(0);
+    expect(result.hasMore).toBe(false);
+    expect(result.advisory.genreFilterActive).toBe(true);
+    expect(result.advisory.constrainedByGenreFilter).toBe(true);
+    expect(result.advisory.emptyDueToGenreFilter).toBe(true);
+    expect(result.advisory.genreFilters).toEqual(["avant garde"]);
   });
 });

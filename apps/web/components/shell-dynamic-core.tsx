@@ -1,11 +1,9 @@
 "use client";
-
 import Link from "next/link";
 import Image from "next/image";
 import { Suspense, memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
-
 import { AuthLoginForm } from "@/components/auth-login-form";
 import { AuthModal } from "@/components/auth-modal";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
@@ -18,7 +16,7 @@ import { PlayerExperience } from "@/components/player-experience";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { OverlayScrollContainerProvider } from "@/components/overlay-scroll-container-context";
-import { useLiveSearchParams } from "@/components/use-live-search-params";
+import { LIVE_SEARCH_PARAMS_EVENT, useLiveSearchParams } from "@/components/use-live-search-params";
 import { useTemporaryQueueController } from "@/components/use-temporary-queue-controller";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { useDesktopIntro } from "@/components/use-desktop-intro";
@@ -34,19 +32,23 @@ import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { dedupeVideos, filterHiddenVideos } from "@/lib/video-list-utils";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
-import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, OVERLAY_OPEN_REQUEST_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT } from "@/lib/events-contract";
+import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, OVERLAY_OPEN_REQUEST_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT } from "@/lib/events-contract";
 import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
-
 applyRuntimeBootstrapPatches({ safePerformanceMeasure: true });
-
 type CurrentVideoResolvePayload = {
   currentVideo?: VideoRecord;
   relatedVideos?: VideoRecord[];
   pending?: boolean;
   denied?: { message?: string; reason?: string; videoId?: string };
+  watchNextAdvisory?: WatchNextAdvisory;
 };
-
+type WatchNextAdvisory = {
+  genreFilterActive: boolean;
+  genreFilters: string[];
+  constrainedByGenreFilter: boolean;
+  emptyDueToGenreFilter: boolean;
+};
 type LyricsRailPayload = {
   artistName: string | null;
   trackName: string | null;
@@ -56,25 +58,20 @@ type LyricsRailPayload = {
   source: string | null;
   cached: boolean;
 };
-
 const DESKTOP_INTRO_LOGO_SRC = "/assets/images/yeh_main_logo.png?v=20260424-4";
-
 function formatChatTimestamp(value: string | null) {
   if (!value) {
     return "Now";
   }
-
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     return "Now";
   }
-
   return parsed.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
 }
-
 type ShellDynamicProps = {
   initialVideo: VideoRecord;
   initialRelatedVideos: VideoRecord[];
@@ -85,7 +82,6 @@ type ShellDynamicProps = {
   isAdmin: boolean;
   children: ReactNode;
 };
-
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
 const LAST_RANDOM_START_VIDEO_ID_KEY = "ytr:last-random-start-video-id";
 const CURRENT_VIDEO_PREFETCH_TTL_MS = 25_000;
@@ -110,7 +106,7 @@ const RELATED_BACKGROUND_PREFETCH_DELAY_FAST_MS = 280;
 const RELATED_BOOTSTRAP_MIN_VISIBLE = 8;
 const RELATED_LOADING_HINT_SHOW_DELAY_MS = 220;
 const RELATED_LOADING_HINT_HIDE_DELAY_MS = 320;
-const RELATED_FETCH_TIMEOUT_MS = 4_000;
+const RELATED_FETCH_TIMEOUT_MS = 8_000;
 const RELATED_COLD_FETCH_RETRY_ATTEMPTS = 3;
 const RELATED_COLD_FETCH_RETRY_BASE_DELAY_MS = 250;
 const WATCH_NEXT_HIDE_ANIMATION_MS = 240;
@@ -127,41 +123,32 @@ const FOOTER_REVEAL_ANIMATION_MS = 180;
 // Start the footer fade well before the undock movement ends so the controls
 // are already occupying their final layout slot when the player lands.
 const FOOTER_EARLY_REVEAL_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - FOOTER_REVEAL_ANIMATION_MS - 140);
-
 function isCategoriesOverlayPath(pathname: string) {
   return pathname === "/categories" || pathname.startsWith("/categories/");
 }
-
 function isArtistsOverlayPath(pathname: string) {
   return pathname === "/artists" || pathname.startsWith("/artists/");
 }
-
 function dedupeRelatedRailVideos(videos: VideoRecord[], currentVideoId: string) {
   return dedupeVideos(videos).filter((video) => video.id !== currentVideoId);
 }
-
 function matchesPlaylistVideoOrder(a: PlaylistRailVideo[], b: PlaylistRailVideo[]) {
   if (a.length !== b.length) {
     return false;
   }
-
   for (let index = 0; index < a.length; index += 1) {
     if (a[index]?.id !== b[index]?.id) {
       return false;
     }
   }
-
   return true;
 }
-
 function sortVideosBySeen(videos: VideoRecord[], seenVideoIdSet: Set<string>) {
   if (seenVideoIdSet.size === 0) {
     return videos;
   }
-
   const unseen: VideoRecord[] = [];
   const seen: VideoRecord[] = [];
-
   for (const video of videos) {
     if (seenVideoIdSet.has(video.id)) {
       seen.push(video);
@@ -169,32 +156,32 @@ function sortVideosBySeen(videos: VideoRecord[], seenVideoIdSet: Set<string>) {
       unseen.push(video);
     }
   }
-
   return [...unseen, ...seen];
 }
-
 function isFavouriteVideo(video: VideoRecord) {
   return Number(video.favourited ?? 0) > 0;
 }
-
 function logFlow(event: string, detail?: Record<string, unknown>) {
   if (!FLOW_DEBUG_ENABLED) {
     return;
   }
-
   const payload = detail ? ` ${JSON.stringify(detail)}` : "";
   console.log(`[flow/shell] ${event}${payload}`);
 }
-
+function logWatchNext(event: string, detail?: Record<string, unknown>) {
+  if (process.env.NODE_ENV !== "development") {
+    return;
+  }
+  const payload = detail ? ` ${JSON.stringify(detail)}` : "";
+  console.log(`[watch-next] ${event}${payload}`);
+}
 function finiteNumberOrNull(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
-
 function finitePercentOrNull(value: number | null | undefined) {
   const numeric = finiteNumberOrNull(value);
   return numeric === null ? null : Math.max(0, Math.min(100, numeric));
 }
-
 function isRouteActive(href: string, pathname: string) {
   if (href === pathname) return true;
   // /artists nav item should also highlight for /artist/[slug]
@@ -203,7 +190,6 @@ function isRouteActive(href: string, pathname: string) {
   if (href !== "/" && pathname.startsWith(href + "/")) return true;
   return false;
 }
-
 function isProtectedOverlayPath(pathname: string) {
   return pathname === "/favourites"
     || pathname === "/history"
@@ -211,7 +197,6 @@ function isProtectedOverlayPath(pathname: string) {
     || pathname === "/playlists"
     || pathname.startsWith("/playlists/");
 }
-
 function ShellDynamicInner({
   initialVideo,
   initialRelatedVideos,
@@ -233,16 +218,13 @@ function ShellDynamicInner({
     if (!rawIndex) {
       return null;
     }
-
     const parsedIndex = Number.parseInt(rawIndex, 10);
     if (!Number.isFinite(parsedIndex) || parsedIndex < 0) {
       return null;
     }
-
     return parsedIndex;
   })();
   const initialHydratedRelatedVideos = dedupeRelatedRailVideos(dedupeVideos(initialRelatedVideos), initialVideo.id);
-
   const [currentVideo, setCurrentVideo] = useState(initialVideo);
   const [relatedVideos, setRelatedVideos] = useState<VideoRecord[]>(initialHydratedRelatedVideos);
   const [displayedRelatedVideos, setDisplayedRelatedVideos] = useState<VideoRecord[]>(initialHydratedRelatedVideos);
@@ -251,6 +233,7 @@ function ShellDynamicInner({
   const [showLoadingMoreRelatedHint, setShowLoadingMoreRelatedHint] = useState(false);
   const [hasMoreRelated, setHasMoreRelated] = useState(true);
   const [watchNextLoadFailed, setWatchNextLoadFailed] = useState(false);
+  const [watchNextAdvisory, setWatchNextAdvisory] = useState<WatchNextAdvisory | null>(null);
   const seenVideoIdsRef = useRef<Set<string>>(new Set(initialSeenVideoIds));
   const hiddenVideoIdsRef = useRef<Set<string>>(new Set(initialHiddenVideoIds));
   const activeVideoId = requestedVideoId ?? currentVideo.id;
@@ -280,6 +263,7 @@ function ShellDynamicInner({
     key: WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY,
     isAuthenticated,
   });
+  const [watchNextRefreshTick, setWatchNextRefreshTick] = useState(0);
   const [seenVideoRefreshTick, setSeenVideoRefreshTick] = useState(0);
   const [clickedRelatedVideoId, setClickedRelatedVideoId] = useState<string | null>(null);
   const [isResolvingInitialVideo, setIsResolvingInitialVideo] = useState(
@@ -343,7 +327,6 @@ function ShellDynamicInner({
   const shouldRunFooterRevealRef = useRef(false);
   const earlyFooterRevealFiredRef = useRef(false);
   const dockTransitionTimeoutRef = useRef<number | null>(null);
-
   const {
     temporaryQueueVideos,
     temporaryQueueVideoIdSet,
@@ -351,7 +334,6 @@ function ShellDynamicInner({
     handleRemoveFromTemporaryQueue,
     handleClearTemporaryQueue,
   } = useTemporaryQueueController(currentVideo.id);
-
   const isCategoriesRoute = isCategoriesOverlayPath(pathname);
   const isArtistsRoute = pathname === "/artists" || pathname.startsWith("/artist/") || pathname.startsWith("/artists/");
   const previousPathname = previousPathnameRef.current;
@@ -384,13 +366,13 @@ function ShellDynamicInner({
   const isWaitingForClientHydration = !hasClientMounted;
   const isWaitingForStartupVideoUrlSync =
     !requestedVideoId
+    && isResolvingInitialVideo
     && startupHydratedVideoIdRef.current !== null;
   const isWatchNextVideoSelectionPending =
     isWaitingForClientHydration
     || isWaitingForStartupVideoUrlSync
     || isResolvingInitialVideo
     || isResolvingRequestedVideo
-    || Boolean(requestedVideoId && startupHydratedVideoIdRef.current === requestedVideoId)
     || Boolean(requestedVideoId && requestedVideoId !== currentVideo.id);
   const isArtistsIndexRoute = pathname === "/artists";
   const shouldDockDesktopPlayer = shouldShowOverlayPanel && !isMagazineOverlayRoute;
@@ -418,13 +400,11 @@ function ShellDynamicInner({
     } as CSSProperties)
     : undefined;
   const isMobileCommunityCollapsed = isMobileViewport && !isMobileCommunityOpen;
-
   // ── Auth callbacks (needed by hooks below) ───────────────────────────────
   const refreshAuthSession = useCallback(async () => {
     if (refreshPromiseRef.current) {
       return refreshPromiseRef.current;
     }
-
     const refreshPromise = (async () => {
       try {
         const response = await fetch("/api/auth/refresh", {
@@ -435,13 +415,11 @@ function ShellDynamicInner({
           },
           body: "{}",
         });
-
         return response.ok;
       } catch {
         return false;
       }
     })();
-
     refreshPromiseRef.current = refreshPromise;
     try {
       return await refreshPromise;
@@ -449,54 +427,42 @@ function ShellDynamicInner({
       refreshPromiseRef.current = null;
     }
   }, []);
-
   const fetchWithAuthRetry = useCallback(
     async (input: string, init?: RequestInit) => {
       const requestInit: RequestInit = {
         credentials: "same-origin",
         ...init,
       };
-
       let response = await fetch(input, requestInit);
-
       if (response.status !== 401 && response.status !== 403) {
         return response;
       }
-
       const didRefresh = await refreshAuthSession();
-
       if (!didRefresh) {
         return response;
       }
-
       response = await fetch(input, requestInit);
       return response;
     },
     [refreshAuthSession],
   );
-
   const checkAuthState = useCallback(async () => {
     const isDocumentVisible = typeof document === "undefined" || document.visibilityState === "visible";
     const resolveAuthState = async () => {
       try {
         const response = await fetchWithAuthRetry("/api/auth/me");
-
         if (response.status === 401 || response.status === 403) {
           return "unauthenticated" as const;
         }
-
         if (!response.ok) {
           return "unavailable" as const;
         }
-
         return "authenticated" as const;
       } catch {
         return "unavailable" as const;
       }
     };
-
     let resolvedState = await resolveAuthState();
-
     // Tabs resuming from sleep can produce one-off network/auth hiccups.
     // Retry once before showing a blocking auth-unavailable modal.
     if (resolvedState === "unavailable" && isAuthenticated) {
@@ -507,7 +473,6 @@ function ShellDynamicInner({
       });
       resolvedState = await resolveAuthState();
     }
-
     // When refresh rotates in a parallel request, one /api/auth/me probe can briefly
     // read stale cookies and report 401. Retry once before forcing a sign-out.
     if (resolvedState === "unauthenticated" && isAuthenticated) {
@@ -518,33 +483,28 @@ function ShellDynamicInner({
       });
       resolvedState = await resolveAuthState();
     }
-
     // Background tabs and wake-from-sleep transitions can briefly fail auth probes
     // without any real server outage. Avoid showing a blocking modal until the page
     // is foregrounded again and another visible check can confirm the failure.
     if (resolvedState === "unavailable" && isAuthenticated && !isDocumentVisible) {
       return "authenticated" as const;
     }
-
     if (resolvedState === "unauthenticated") {
       setAuthStatus("clear");
       setAuthStatusMessage(null);
       setIsAuthenticated(false);
       return "unauthenticated" as const;
     }
-
     if (resolvedState === "unavailable") {
       setAuthStatus("unavailable");
       setAuthStatusMessage("The auth server is probably being updated. Please wait a moment and try again.");
       return "unavailable" as const;
     }
-
     setAuthStatus("clear");
     setAuthStatusMessage(null);
     setIsAuthenticated(true);
     return "authenticated" as const;
   }, [fetchWithAuthRetry, isAuthenticated]);
-
   // ── Custom hooks ──────────────────────────────────────────────────────────
   const {
     isDesktopIntroActive,
@@ -559,7 +519,6 @@ function ShellDynamicInner({
     startPreparedDesktopIntroSequence,
     shouldReplayDesktopIntroOnHomeRef,
   } = useDesktopIntro({ pathname });
-
   const {
     searchValue, setSearchValue,
     suggestions, showSuggestions, setShowSuggestions,
@@ -567,7 +526,6 @@ function ShellDynamicInner({
     searchComboboxRef,
     handleSearchInput, handleSearchKeyDown, handleSuggestionClick,
   } = useSearchAutocomplete({ currentVideoId: currentVideo.id, router });
-
   const {
     rightRailMode, setRightRailMode,
     playlistRailData, isPlaylistRailLoading, playlistRailError,
@@ -604,7 +562,6 @@ function ShellDynamicInner({
     fetchWithAuthRetry,
     checkAuthState,
   });
-
   const {
     chatMode, setChatMode,
     chatMessages, onlineUsers, chatDraft, setChatDraft,
@@ -620,39 +577,32 @@ function ShellDynamicInner({
     fetchWithAuthRetry,
     checkAuthState,
   });
-
   const isShellInitialUiSettled =
     !isDesktopIntroActive
     && !isWatchNextVideoSelectionPending
     && hasBootstrappedWatchNext
     && relatedTransitionPhase === "idle";
-
   const {
     isPerformanceQuickLaunchVisible,
     isPerformanceModalOpen, setIsPerformanceModalOpen,
     performanceMetrics, performanceRuntime, performanceMetricsGeneratedAt,
     isLoadingPerformanceMetrics, performanceMetricsError,
   } = usePerformanceMetrics({ isShellInitialUiSettled });
-
   useEffect(() => {
     setHasClientMounted(true);
   }, []);
-
   useEffect(() => {
     previousPathnameRef.current = pathname;
   }, [pathname]);
-
   // Analytics: fire page_view on initial load and every route path change.
   const analyticsLastPathnameRef = useRef<string | null>(null);
   useEffect(() => {
     if (!pathname || analyticsLastPathnameRef.current === pathname) {
       return;
     }
-
     analyticsLastPathnameRef.current = pathname;
     void trackPageView();
   }, [pathname]);
-
   // Analytics: fire video_view each time the active video changes
   const analyticsLastVideoIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -661,17 +611,14 @@ function ShellDynamicInner({
       void trackVideoView(activeVideoId);
     }
   }, [activeVideoId]);
-
   const handleBrandLogoClick = useCallback(() => {
     // Force startup resolver to run again after logo navigation clears ?v.
     hasResolvedInitialVideoRef.current = false;
     startupHydratedVideoIdRef.current = null;
     shouldReplayDesktopIntroOnHomeRef.current = true;
-
     if (pathname === "/" && !requestedVideoId) {
       setStartupSelectionRefreshTick((value) => value + 1);
     }
-
     if (pathname === "/") {
       shouldReplayDesktopIntroOnHomeRef.current = false;
       void startPreparedDesktopIntroSequence();
@@ -681,7 +628,6 @@ function ShellDynamicInner({
     if (!pendingOverlayCloseVideoId) {
       return;
     }
-
     const retryHref = pendingOverlayCloseHref ?? `/?v=${encodeURIComponent(pendingOverlayCloseVideoId)}&resume=1`;
     setPendingOverlayOpenKind("video");
     router.replace(retryHref);
@@ -698,21 +644,16 @@ function ShellDynamicInner({
     if (pendingOverlayRouteKey) {
       return pendingOverlayRouteKey;
     }
-
     if (disableOverlayDropAnimation && isCategoriesRoute) {
       return "categories-overlay";
     }
-
     const filteredParams = new URLSearchParams();
-
     for (const [key, value] of searchParams.entries()) {
       if (key === "v" || key === "resume" || (pathname === "/admin" && key === "tab")) {
         continue;
       }
-
       filteredParams.append(key, value);
     }
-
     const filteredQuery = filteredParams.toString();
     return filteredQuery ? `${pathname}?${filteredQuery}` : pathname;
   })();
@@ -726,12 +667,10 @@ function ShellDynamicInner({
   const routeLoadingMessage = routeLoadingLabel === "Loading video"
     ? "connecting to upstream video provider..."
     : `${routeLoadingLabel}...`;
-
   const handleOverlayVideoLinkClickCapture = useCallback((event: ReactMouseEvent<HTMLElement>) => {
     if (!shouldShowOverlayPanel || isOverlayClosing) {
       return;
     }
-
     if (
       event.defaultPrevented
       || event.button !== 0
@@ -742,13 +681,11 @@ function ShellDynamicInner({
     ) {
       return;
     }
-
     const target = event.target as Element | null;
     const anchor = target?.closest("a") as HTMLAnchorElement | null;
     if (!anchor) {
       return;
     }
-
     if (anchor.dataset.overlayClose === "true") {
       const closeHref = anchor.getAttribute("href") ?? "/";
       event.preventDefault();
@@ -757,39 +694,30 @@ function ShellDynamicInner({
       }));
       return;
     }
-
     const url = new URL(anchor.href, window.location.href);
     if (url.origin !== window.location.origin || url.pathname !== "/") {
       return;
     }
-
     const targetVideoId = url.searchParams.get("v");
     if (!targetVideoId) return;
-
     if (pathname === "/new" && target?.closest(".rightRail")) {
       event.preventDefault();
       url.searchParams.delete("resume");
       window.dispatchEvent(new CustomEvent(OVERLAY_CLOSE_REQUEST_EVENT, { detail: { href: `${url.pathname}${url.search}${url.hash}` } }));
       return;
     }
-
     event.preventDefault();
-
     const params = new URLSearchParams(searchParams.toString());
     params.set("v", targetVideoId);
     params.delete('resume');
-
     const nextQuery = params.toString();
     router.push(nextQuery ? `${pathname}?${nextQuery}` : pathname);
   }, [isOverlayClosing, pathname, router, searchParams, shouldShowOverlayPanel]);
-
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-
     const mediaQuery = window.matchMedia("(max-width: 760px)");
-
     const syncViewportState = () => {
       const isMobile = mediaQuery.matches;
       setIsMobileViewport(isMobile);
@@ -797,46 +725,36 @@ function ShellDynamicInner({
         setIsMobileCommunityOpen(false);
       }
     };
-
     syncViewportState();
-
     if (typeof mediaQuery.addEventListener === "function") {
       mediaQuery.addEventListener("change", syncViewportState);
       return () => {
         mediaQuery.removeEventListener("change", syncViewportState);
       };
     }
-
     mediaQuery.addListener(syncViewportState);
     return () => {
       mediaQuery.removeListener(syncViewportState);
     };
   }, []);
-
   useEffect(() => {
     if (!isAdminOverlayRoute) {
       return;
     }
-
     setChatMode("global");
   }, [isAdminOverlayRoute]);
-
   useEffect(() => {
     if (!isMagazineOverlayRoute) {
       return;
     }
-
     setChatMode("magazine");
   }, [isMagazineOverlayRoute]);
-
   useEffect(() => {
     if (typeof window === "undefined" || !isAdminOverlayRoute) {
       return;
     }
-
     window.dispatchEvent(new Event(ADMIN_OVERLAY_ENTER_EVENT));
   }, [isAdminOverlayRoute]);
-
   useEffect(() => {
     if (shouldShowOverlayPanel) {
       if (typeof window !== "undefined" && undockSettleTimeoutRef.current !== null) {
@@ -861,21 +779,17 @@ function ShellDynamicInner({
       setIsMobileCommunityOpen(false);
       return;
     }
-
     setIsOverlayClosing(false);
-
     if (!shouldRunFooterRevealRef.current) {
       setIsUndockSettling(false);
       setIsFooterRevealActive(false);
       return;
     }
-
     shouldRunFooterRevealRef.current = false;
     setIsUndockSettling(true);
     // Do not reset isFooterRevealActive here — the early reveal timer may have
     // already started it during the movement animation. We only reset if the
     // early reveal did not fire (see fallback path below).
-
     // Lock the player chrome height now so that layout changes during the
     // settle/footer-reveal window (e.g. primaryActions entering the flow) cannot
     // cause a visible reflow.  We measure before the state flush so we get the
@@ -885,21 +799,17 @@ function ShellDynamicInner({
       const lockedHeight = chrome.getBoundingClientRect().height;
       chrome.style.height = `${lockedHeight}px`;
     }
-
     if (typeof window !== "undefined") {
       if (undockSettleTimeoutRef.current !== null) {
         window.clearTimeout(undockSettleTimeoutRef.current);
       }
-
       if (footerRevealTimeoutRef.current !== null) {
         window.clearTimeout(footerRevealTimeoutRef.current);
         footerRevealTimeoutRef.current = null;
       }
-
       undockSettleTimeoutRef.current = window.setTimeout(() => {
         setIsUndockSettling(false);
         undockSettleTimeoutRef.current = null;
-
         if (earlyFooterRevealFiredRef.current) {
           // Early reveal already ran during the movement animation — the footer
           // animation has completed. Just release the height lock.
@@ -924,24 +834,20 @@ function ShellDynamicInner({
       }, UNDOCK_SETTLE_DURATION_MS);
     }
   }, [shouldShowOverlayPanel]);
-
   useEffect(() => {
     if (pathname !== "/" && pendingOverlayOpenKind !== null) {
       setPendingOverlayOpenKind(null);
     }
   }, [pathname, pendingOverlayOpenKind]);
-
   useEffect(() => {
     if (!pendingOverlayCloseVideoId) {
       return;
     }
-
     if (pathname !== "/") {
       setPendingOverlayCloseVideoId(null);
       setPendingOverlayCloseHref(null);
       return;
     }
-
     if (
       requestedVideoId !== pendingOverlayCloseVideoId
       || currentVideo.id !== pendingOverlayCloseVideoId
@@ -950,7 +856,6 @@ function ShellDynamicInner({
     ) {
       return;
     }
-
     setPendingOverlayCloseVideoId(null);
     setPendingOverlayCloseHref(null);
     setPendingOverlayOpenKind(null);
@@ -962,73 +867,57 @@ function ShellDynamicInner({
     pendingOverlayCloseVideoId,
     requestedVideoId,
   ]);
-
   useEffect(() => {
     if (!pendingOverlayRouteKey || pathname === "/") {
       return;
     }
-
     setPendingOverlayRouteKey(null);
   }, [pathname, pendingOverlayRouteKey]);
-
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-
     const handleOverlayOpenRequest = (event: Event) => {
       const openEvent = event as CustomEvent<{ href?: string; kind?: string }>;
       const href = openEvent.detail?.href;
       if (!href) {
         return;
       }
-
       const openUrl = new URL(href, window.location.origin);
       if (openUrl.origin !== window.location.origin) {
         return;
       }
-
       const kind = openEvent.detail?.kind === "wiki" || openUrl.pathname.endsWith("/wiki") ? "wiki" : "video";
       setPendingOverlayOpenKind(kind);
-
       const optimisticRouteKey = (() => {
         if (isCategoriesOverlayPath(openUrl.pathname) && isCategoriesRoute) {
           return "categories-overlay";
         }
-
         const inputParams = new URLSearchParams(openUrl.search);
         const filteredParams = new URLSearchParams();
-
         for (const [key, value] of inputParams.entries()) {
           if (key === "v" || key === "resume" || (openUrl.pathname === "/admin" && key === "tab")) {
             continue;
           }
-
           filteredParams.append(key, value);
         }
-
         const filteredQuery = filteredParams.toString();
         return filteredQuery ? `${openUrl.pathname}?${filteredQuery}` : openUrl.pathname;
       })();
-
       setPendingOverlayRouteKey(optimisticRouteKey);
-
       const node = favouritesBlindInnerRef.current;
       if (node) {
         node.scrollTop = 0;
       }
-
       if (overlayOpenTimeoutRef.current !== null) {
         window.clearTimeout(overlayOpenTimeoutRef.current);
       }
-
       overlayOpenTimeoutRef.current = window.setTimeout(() => {
         overlayOpenTimeoutRef.current = null;
         setPendingOverlayOpenKind((current) => (pathname === "/" ? null : current));
         setPendingOverlayRouteKey((current) => (pathname === "/" ? null : current));
       }, 4500);
     };
-
     window.addEventListener(OVERLAY_OPEN_REQUEST_EVENT, handleOverlayOpenRequest);
     return () => {
       window.removeEventListener(OVERLAY_OPEN_REQUEST_EVENT, handleOverlayOpenRequest);
@@ -1039,32 +928,27 @@ function ShellDynamicInner({
       setPendingOverlayRouteKey(null);
     };
   }, [pathname]);
-
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-
     const handleOverlayCloseRequest = (event: Event) => {
       const closeEvent = event as CustomEvent<{ href?: string }>;
       const href = closeEvent.detail?.href;
       if (!href) {
         return;
       }
-
       const closeUrl = new URL(href, window.location.origin);
       if (closeUrl.origin !== window.location.origin) {
         window.location.assign(closeUrl.toString());
         return;
       }
-
       const fallbackHomeHref = `/?v=${encodeURIComponent(currentVideo.id)}&resume=1`;
       const nextHref = closeUrl.pathname === "/"
         ? `${closeUrl.pathname}${closeUrl.search}${closeUrl.hash}`
         : fallbackHomeHref;
       const targetVideoId = closeUrl.pathname === "/" ? closeUrl.searchParams.get("v") : null;
       const shouldHoldOverlayForVideoSwitch = Boolean(targetVideoId && targetVideoId !== currentVideo.id);
-
       if (shouldHoldOverlayForVideoSwitch && targetVideoId) {
         setPendingOverlayOpenKind("video");
         setPendingOverlayCloseVideoId(targetVideoId);
@@ -1073,7 +957,6 @@ function ShellDynamicInner({
         setPendingOverlayCloseVideoId(null);
         setPendingOverlayCloseHref(null);
       }
-
       if (!shouldShowOverlayPanel || isMagazineOverlayRoute) {
         setIsOverlayClosing(false);
         shouldRunFooterRevealRef.current = false;
@@ -1082,17 +965,14 @@ function ShellDynamicInner({
         router.push(nextHref);
         return;
       }
-
       if (overlayCloseTimeoutRef.current !== null) {
         window.clearTimeout(overlayCloseTimeoutRef.current);
         overlayCloseTimeoutRef.current = null;
       }
-
       setIsOverlayClosing(true);
       shouldRunFooterRevealRef.current = true;
       earlyFooterRevealFiredRef.current = false;
       const shouldNavigateDuringCloseAnimation = pathname === "/new" && shouldHoldOverlayForVideoSwitch;
-
       // Schedule the footer reveal to start early so it completes as the undock animation finishes.
       if (footerRevealEarlyTimeoutRef.current !== null) {
         window.clearTimeout(footerRevealEarlyTimeoutRef.current);
@@ -1102,52 +982,42 @@ function ShellDynamicInner({
         earlyFooterRevealFiredRef.current = true;
         setIsFooterRevealActive(true);
       }, FOOTER_EARLY_REVEAL_DELAY_MS);
-
       const frame = playerChromeRef.current?.querySelector(".playerFrame, .playerLoadingFallback") as HTMLElement | null;
       let didNavigate = false;
       const finishCloseNavigation = () => {
         if (didNavigate) {
           return;
         }
-
         didNavigate = true;
         if (overlayCloseTimeoutRef.current !== null) {
           window.clearTimeout(overlayCloseTimeoutRef.current);
           overlayCloseTimeoutRef.current = null;
         }
-
         router.push(nextHref);
       };
-
       if (shouldNavigateDuringCloseAnimation) {
         finishCloseNavigation();
         return;
       }
-
       const handleFrameTransitionEnd = (transitionEvent: TransitionEvent) => {
         if (transitionEvent.propertyName !== "transform") {
           return;
         }
-
         if (frame && transitionEvent.target !== frame) {
           return;
         }
-
         frame?.removeEventListener("transitionend", handleFrameTransitionEnd);
         finishCloseNavigation();
       };
-
       frame?.addEventListener("transitionend", handleFrameTransitionEnd);
       overlayCloseTimeoutRef.current = window.setTimeout(() => {
         frame?.removeEventListener("transitionend", handleFrameTransitionEnd);
         finishCloseNavigation();
       }, DOCK_MOVE_DURATION_MS + 120);
     };
-
     const handleDockHideRequest = () => {
       setIsDockHidden(true);
     };
-
     window.addEventListener(OVERLAY_CLOSE_REQUEST_EVENT, handleOverlayCloseRequest);
     window.addEventListener(DOCK_HIDE_REQUEST_EVENT, handleDockHideRequest);
     return () => {
@@ -1157,35 +1027,29 @@ function ShellDynamicInner({
         window.clearTimeout(overlayCloseTimeoutRef.current);
         overlayCloseTimeoutRef.current = null;
       }
-
       if (footerRevealTimeoutRef.current !== null) {
         window.clearTimeout(footerRevealTimeoutRef.current);
         footerRevealTimeoutRef.current = null;
       }
-
       if (footerRevealEarlyTimeoutRef.current !== null) {
         window.clearTimeout(footerRevealEarlyTimeoutRef.current);
         footerRevealEarlyTimeoutRef.current = null;
       }
-
       if (undockSettleTimeoutRef.current !== null) {
         window.clearTimeout(undockSettleTimeoutRef.current);
         undockSettleTimeoutRef.current = null;
       }
-
       setIsFooterRevealActive(false);
       setIsUndockSettling(false);
       shouldRunFooterRevealRef.current = false;
       earlyFooterRevealFiredRef.current = false;
     };
   }, [currentVideo.id, isMagazineOverlayRoute, pathname, router, shouldShowOverlayPanel]);
-
   useEffect(() => {
     if (requestedVideoId) {
       setIsDockHidden(false);
     }
   }, [requestedVideoId]);
-
   useEffect(() => {
     // If the user moves between overlay routes (e.g. /new -> /top100),
     // ensure a previously hidden docked player becomes visible again.
@@ -1193,29 +1057,24 @@ function ShellDynamicInner({
       setIsDockHidden(false);
     }
   }, [pathname, shouldDockDesktopPlayer]);
-
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-
     if (dockTransitionTimeoutRef.current !== null) {
       window.clearTimeout(dockTransitionTimeoutRef.current);
       dockTransitionTimeoutRef.current = null;
     }
-
     if (!shouldDockDesktopPlayer) {
       setIsDockTransitioning(false);
       setIsDockHidden(false);
       return;
     }
-
     setIsDockTransitioning(true);
     dockTransitionTimeoutRef.current = window.setTimeout(() => {
       setIsDockTransitioning(false);
       dockTransitionTimeoutRef.current = null;
     }, DOCK_CONTROLS_FADE_DELAY_MS);
-
     return () => {
       if (dockTransitionTimeoutRef.current !== null) {
         window.clearTimeout(dockTransitionTimeoutRef.current);
@@ -1223,7 +1082,6 @@ function ShellDynamicInner({
       }
     };
   }, [shouldDockDesktopPlayer, shouldDockUnderArtistsAlphabet]);
-
   useEffect(() => {
     setIsAuthenticated(isLoggedIn);
     if (!isLoggedIn) {
@@ -1231,106 +1089,86 @@ function ShellDynamicInner({
       setAuthStatusMessage(null);
       return;
     }
-
     if (initialAuthStatus === "unavailable") {
       setAuthStatus("unavailable");
       setAuthStatusMessage("The auth server is probably being updated. Please wait a moment and try again.");
       return;
     }
-
     setAuthStatus("clear");
     setAuthStatusMessage(null);
   }, [initialAuthStatus, isLoggedIn]);
-
   useEffect(() => {
     if (authStatus !== "unavailable" || !authStatusMessage) {
       setIsAuthUnavailableDialogDismissed(false);
     }
   }, [authStatus, authStatusMessage]);
-
   useEffect(() => {
     if (isAuthenticated || seenVideoIdsRef.current.size === 0) {
       return;
     }
-
     seenVideoIdsRef.current = new Set<string>();
     setSeenVideoRefreshTick((value) => value + 1);
   }, [isAuthenticated]);
-
   useEffect(() => {
     if (pathname !== "/top100" && pathname !== "/history") {
       return;
     }
-
     const node = favouritesBlindInnerRef.current;
     if (!node) {
       return;
     }
-
     node.scrollTop = 0;
     const frameId = window.requestAnimationFrame(() => {
       if (favouritesBlindInnerRef.current) {
         favouritesBlindInnerRef.current.scrollTop = 0;
       }
     });
-
     return () => {
       window.cancelAnimationFrame(frameId);
     };
   }, [pathname]);
-
   useEffect(() => {
     if (!pathname.endsWith("/wiki")) {
       return;
     }
-
     const node = favouritesBlindInnerRef.current;
     if (!node) {
       return;
     }
-
     node.scrollTop = 0;
     const frameId = window.requestAnimationFrame(() => {
       if (favouritesBlindInnerRef.current) {
         favouritesBlindInnerRef.current.scrollTop = 0;
       }
     });
-
     return () => {
       window.cancelAnimationFrame(frameId);
     };
   }, [pathname]);
-
   useEffect(() => {
     if (!shouldDockUnderArtistsAlphabet || typeof window === "undefined") {
       setArtistsPanelDockOffset(0);
       return;
     }
-
     const syncArtistsPanelOffset = () => {
       const panel = document.querySelector(".artistsLetterPanel") as HTMLElement | null;
       if (!panel) {
         setArtistsPanelDockOffset(0);
         return;
       }
-
       setArtistsPanelDockOffset(panel.offsetHeight + 8);
     };
-
     syncArtistsPanelOffset();
     window.addEventListener("resize", syncArtistsPanelOffset);
     return () => {
       window.removeEventListener("resize", syncArtistsPanelOffset);
     };
   }, [shouldDockUnderArtistsAlphabet, pathname]);
-
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-
     let rafId: number | null = null;
-
     const syncPlayerDockScale = () => {
       if (!shouldDockDesktopPlayer || window.innerWidth < 1181) {
         setPlayerDockScaleX(1);
@@ -1338,18 +1176,15 @@ function ShellDynamicInner({
         setPlayerDockHeightPx(0);
         return;
       }
-
       const chrome = playerChromeRef.current;
       const leftRail = document.querySelector(".leftRail") as HTMLElement | null;
       if (!chrome || !leftRail) {
         return;
       }
-
       const frame = chrome.querySelector(".playerFrame, .playerLoadingFallback") as HTMLElement | null;
       if (!frame) {
         return;
       }
-
       const baseFrameWidth = frame.offsetWidth;
       const baseFrameHeight = frame.offsetHeight;
       const railRect = leftRail.getBoundingClientRect();
@@ -1358,11 +1193,9 @@ function ShellDynamicInner({
         rafId = window.requestAnimationFrame(syncPlayerDockScale);
         return;
       }
-
       const targetWidth = railRect.width;
       // Lock scaling to final rail width while preserving aspect ratio via uniform scale.
       let uniformScale = Math.max(0.2, Math.min(1, targetWidth / baseFrameWidth));
-
       // On ultrawide (21:9+) with the artists alphabet panel visible, drive scale by
       // available vertical height instead of rail width — the rail is too narrow on
       // ultrawide which produces a tiny player. The player may be wider than the rail
@@ -1388,7 +1221,6 @@ function ShellDynamicInner({
         }
         // If availableHeight >= baseFrameHeight the width-based scale from above is fine.
       }
-
       setPlayerDockScaleX(uniformScale);
       setPlayerDockScaleY(uniformScale);
       setPlayerDockHeightPx(baseFrameHeight * uniformScale);
@@ -1397,7 +1229,6 @@ function ShellDynamicInner({
         console.log("[dockScale]", { uniformScale, baseFrameWidth, baseFrameHeight, railWidth: railRect.width, windowW: window.innerWidth, windowH: window.innerHeight, isUltrawide: window.innerWidth / window.innerHeight > 21 / 9, shouldDockUnderArtistsAlphabet });
       }
     };
-
     syncPlayerDockScale();
     // Safety-net: if the synchronous call above scheduled a RAF that gets cancelled
     // by a dep change (e.g. mid-navigation state flush), a delayed retry ensures the
@@ -1410,7 +1241,6 @@ function ShellDynamicInner({
       if (rafId !== null) window.cancelAnimationFrame(rafId);
     };
   }, [activeVideoId, isResolvingInitialVideo, isResolvingRequestedVideo, pathname, shouldDockDesktopPlayer, shouldDockUnderArtistsAlphabet]);
-
   // Separate effect: on ultrawide when artists alphabet panel becomes visible,
   // re-run the scale calculation after the DOM has fully settled.
   // The main syncPlayerDockScale may fire before the panel is rendered and produce
@@ -1423,10 +1253,8 @@ function ShellDynamicInner({
     if (!isUltrawide) {
       return;
     }
-
     let rafId: number | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
     const applyUltrawideArtistsScale = () => {
       const chrome = playerChromeRef.current;
       if (!chrome) return;
@@ -1452,39 +1280,32 @@ function ShellDynamicInner({
         setPlayerDockHeightPx(baseFrameHeight * scale);
       }
     };
-
     // Run immediately (catches cases where panel is already present), then again
     // after a short delay to cover slow page renders and CSS transitions.
     rafId = window.requestAnimationFrame(applyUltrawideArtistsScale);
     timeoutId = setTimeout(applyUltrawideArtistsScale, 300);
-
     return () => {
       if (rafId !== null) window.cancelAnimationFrame(rafId);
       if (timeoutId !== null) clearTimeout(timeoutId);
     };
   }, [shouldDockUnderArtistsAlphabet, pathname]);
-
   useEffect(() => {
     if (requestedVideoId) {
       return;
     }
-
     // Don't inject a ?v= into the URL while the user is browsing the magazine —
     // wait until they leave the magazine overlay before selecting a startup video.
     if (isMagazineOverlayRoute) {
       return;
     }
-
     // Don't re-run startup if we already resolved a video in this session
     // (e.g. user navigated to a route without ?v= after startup completed)
     if (hasResolvedInitialVideoRef.current) {
       return;
     }
-
     let cancelled = false;
     setIsResolvingInitialVideo(true);
     const previousVideoId = window.sessionStorage.getItem(LAST_RANDOM_START_VIDEO_ID_KEY);
-
     const navigateToVideo = (nextVideoId: string | undefined, source: string) => {
       if (!nextVideoId || cancelled) {
         logFlow("startup-selection:skipped", {
@@ -1494,7 +1315,6 @@ function ShellDynamicInner({
         });
         return;
       }
-
       window.sessionStorage.setItem(LAST_RANDOM_START_VIDEO_ID_KEY, nextVideoId);
       logFlow("startup-selection:navigate", {
         source,
@@ -1502,8 +1322,12 @@ function ShellDynamicInner({
         previousVideoId,
       });
       router.replace(`${pathname}?${new URLSearchParams({ ...Object.fromEntries(searchParams.entries()), v: nextVideoId }).toString()}`);
+      // Ensure custom live-search listeners observe startup URL sync even when
+      // router updates are coalesced/deferred by the browser.
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent(LIVE_SEARCH_PARAMS_EVENT));
+      }, 0);
     };
-
     const resolveStartupCandidate = (selectedVideo: VideoRecord, relatedVideos: VideoRecord[], source: string) => {
       setCurrentVideo(selectedVideo);
       setRelatedVideos(relatedVideos);
@@ -1517,7 +1341,6 @@ function ShellDynamicInner({
         expiresAt: Date.now() + CURRENT_VIDEO_PREFETCH_TTL_MS,
         payload: { currentVideo: selectedVideo, relatedVideos },
       });
-
       navigateToVideo(selectedVideo.id, source);
       return true;
     };
@@ -1526,36 +1349,30 @@ function ShellDynamicInner({
       relatedCount: initialHydratedRelatedVideos.length,
     });
     resolveStartupCandidate(initialVideo, initialHydratedRelatedVideos, "server-initial");
-
     return () => {
       cancelled = true;
     };
   }, [initialHydratedRelatedVideos, initialVideo, pathname, requestedVideoId, router, searchParamsKey, startupSelectionRefreshTick]);
-
   useEffect(() => {
     logFlow("requested-video:effect", {
       requestedVideoId,
       lastRequestedVideoId: lastVideoIdRef.current,
       currentVideoId: currentVideo.id,
     });
-
     if (!requestedVideoId) {
       deniedRequestedVideoIdRef.current = null;
       setIsResolvingRequestedVideo(false);
       return;
     }
-
     if (deniedRequestedVideoIdRef.current === requestedVideoId) {
       setIsResolvingRequestedVideo(false);
       return;
     }
-
     // Guard against duplicate effect executions for the same requested id
     // while a resolve is already in flight (can happen during rapid rerenders).
     if (requestedVideoId === lastVideoIdRef.current && isResolvingRequestedVideo) {
       return;
     }
-
     if (
       requestedVideoId === lastVideoIdRef.current &&
       currentVideo.id === requestedVideoId &&
@@ -1568,15 +1385,12 @@ function ShellDynamicInner({
       }
       return;
     }
-
     let ignore = false;
     let retryTimeoutId: number | null = null;
     lastVideoIdRef.current = requestedVideoId;
     setIsResolvingRequestedVideo(true);
     let hasOptimisticVideo = false;
-
     setDeniedPlaybackMessage(null);
-
     if (typeof window !== "undefined") {
       const rawPendingSelection = window.sessionStorage.getItem(PENDING_VIDEO_SELECTION_KEY);
       if (rawPendingSelection) {
@@ -1609,7 +1423,6 @@ function ShellDynamicInner({
         }
       }
     }
-
     if (!hasOptimisticVideo) {
       const relatedMatch = relatedVideos.find((video) => video.id === requestedVideoId);
       if (relatedMatch) {
@@ -1617,12 +1430,12 @@ function ShellDynamicInner({
         hasOptimisticVideo = true;
       }
     }
-
     if (!hasOptimisticVideo) {
       const cached = prefetchedCurrentVideoPayloadRef.current.get(requestedVideoId);
       if (cached && cached.expiresAt > Date.now() && cached.payload.currentVideo?.id === requestedVideoId) {
         setCurrentVideo(cached.payload.currentVideo);
         setRelatedVideos(cached.payload.relatedVideos ?? []);
+        setWatchNextAdvisory(cached.payload.watchNextAdvisory ?? null);
         if (startupHydratedVideoIdRef.current === requestedVideoId) {
           startupHydratedVideoIdRef.current = null;
         }
@@ -1634,7 +1447,6 @@ function ShellDynamicInner({
         return;
       }
     }
-
     const resolveRequestedVideo = async (attempt = 1): Promise<void> => {
       try {
         const currentVideoParams = new URLSearchParams();
@@ -1642,14 +1454,11 @@ function ShellDynamicInner({
         if (isAuthenticated && watchNextHideSeen) {
           currentVideoParams.set("hideSeen", "1");
         }
-
         const response = await fetch(`/api/current-video?${currentVideoParams.toString()}`);
         const data = response.ok ? ((await response.json()) as CurrentVideoResolvePayload) : null;
-
         if (ignore) {
           return;
         }
-
         logFlow("requested-video:response", {
           requestedVideoId,
           resolvedVideoId: data?.currentVideo?.id,
@@ -1657,7 +1466,6 @@ function ShellDynamicInner({
           ok: response.ok,
           attempt,
         });
-
         if (data?.denied?.message) {
           if (data.denied.reason === "unavailable") {
             setForcedUnavailableMessage(String(data.denied.message));
@@ -1675,10 +1483,8 @@ function ShellDynamicInner({
             hasResolvedInitialVideoRef.current = true;
             setIsResolvingInitialVideo(false);
           }
-
           return;
         }
-
         if (data?.currentVideo?.id) {
           if (startupHydratedVideoIdRef.current === requestedVideoId) {
             startupHydratedVideoIdRef.current = null;
@@ -1690,6 +1496,7 @@ function ShellDynamicInner({
           setDeniedPlaybackMessage(null);
           setCurrentVideo(data.currentVideo);
           setRelatedVideos(data.relatedVideos ?? []);
+          setWatchNextAdvisory(data.watchNextAdvisory ?? null);
           setIsResolvingRequestedVideo(false);
           if (!hasResolvedInitialVideoRef.current) {
             hasResolvedInitialVideoRef.current = true;
@@ -1697,7 +1504,6 @@ function ShellDynamicInner({
           }
           return;
         }
-
         if (data?.pending) {
           logFlow("requested-video:pending", {
             requestedVideoId,
@@ -1708,18 +1514,15 @@ function ShellDynamicInner({
         if (ignore) {
           return;
         }
-
         logFlow("requested-video:error", {
           requestedVideoId,
           error: error instanceof Error ? error.message : String(error),
           attempt,
         });
       }
-
       if (ignore) {
         return;
       }
-
       if (attempt >= REQUESTED_VIDEO_RETRY_MAX_ATTEMPTS) {
         logFlow("requested-video:halted", {
           requestedVideoId,
@@ -1731,7 +1534,6 @@ function ShellDynamicInner({
         setIsResolvingRequestedVideo(false);
         return;
       }
-
       const delayMs = attempt <= REQUESTED_VIDEO_RETRY_FAST_ATTEMPTS
         ? Math.min(2400, 350 * attempt)
         : REQUESTED_VIDEO_RETRY_SLOW_DELAY_MS;
@@ -1739,9 +1541,7 @@ function ShellDynamicInner({
         void resolveRequestedVideo(attempt + 1);
       }, delayMs);
     };
-
     void resolveRequestedVideo();
-
     return () => {
       ignore = true;
       if (retryTimeoutId !== null) {
@@ -1749,135 +1549,107 @@ function ShellDynamicInner({
       }
     };
   }, [requestedVideoId]);
-
   useEffect(() => {
     if (!deniedPlaybackMessage) {
       return;
     }
-
     const timeoutId = window.setTimeout(() => {
       setDeniedPlaybackMessage(null);
     }, 7000);
-
     return () => {
       window.clearTimeout(timeoutId);
     };
   }, [deniedPlaybackMessage]);
-
   useEffect(() => {
     setDeniedPlaybackMessage(null);
     setForcedUnavailableMessage(null);
   }, [pathname, searchParamsKey]);
-
   const retryAuthStateCheck = useCallback(async () => {
     if (isRetryingAuthStatus) {
       return;
     }
-
     setIsRetryingAuthStatus(true);
-
     try {
       await checkAuthState();
     } finally {
       setIsRetryingAuthStatus(false);
     }
   }, [checkAuthState, isRetryingAuthStatus]);
-
   useEffect(() => {
     if (authStatus !== "unavailable" || !authStatusMessage) {
       return;
     }
-
     const intervalId = window.setInterval(() => {
       void retryAuthStateCheck();
     }, 4000);
-
     return () => {
       window.clearInterval(intervalId);
     };
   }, [authStatus, authStatusMessage, retryAuthStateCheck]);
-
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-
     const handleLyricsOverlayOpen = (event: Event) => {
       const detail = (event as CustomEvent<{ videoId?: string }>).detail;
       const targetVideoId = detail?.videoId || activeVideoId;
-
       if (isLyricsOverlayOpen && lyricsOverlayVideoId === targetVideoId) {
         setIsLyricsOverlayOpen(false);
         return;
       }
-
       setLyricsOverlayVideoId(targetVideoId);
       setLyricsOverlayError(null);
       setLyricsOverlayData(null);
       setIsLyricsOverlayOpen(true);
     };
-
     window.addEventListener(RIGHT_RAIL_LYRICS_OPEN_EVENT, handleLyricsOverlayOpen);
     return () => {
       window.removeEventListener(RIGHT_RAIL_LYRICS_OPEN_EVENT, handleLyricsOverlayOpen);
     };
   }, [activeVideoId, isLyricsOverlayOpen, lyricsOverlayVideoId]);
-
   useEffect(() => {
     if (!isLyricsOverlayOpen) {
       return;
     }
-
     setLyricsOverlayVideoId(activeVideoId);
   }, [activeVideoId, isLyricsOverlayOpen]);
-
   useEffect(() => {
     if (!isLyricsOverlayOpen || !lyricsOverlayVideoId) {
       return;
     }
-
     let cancelled = false;
-
     const loadLyrics = async () => {
       setIsLyricsOverlayLoading(true);
       setLyricsOverlayError(null);
-
       try {
         const response = await fetch(`/api/lyrics?v=${encodeURIComponent(lyricsOverlayVideoId)}`, {
           cache: "no-store",
         });
-
         if (cancelled) {
           return;
         }
-
         if (!response.ok) {
           const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null;
           setLyricsOverlayData(null);
           setLyricsOverlayError(errorPayload?.error ?? `Could not fetch lyrics right now (HTTP ${response.status}).`);
           return;
         }
-
         const payload = (await response.json().catch(() => null)) as LyricsRailPayload | null;
-
         if (!payload) {
           setLyricsOverlayData(null);
           setLyricsOverlayError("Lyrics were fetched but the response could not be read.");
           return;
         }
-
         if (typeof payload.available !== "boolean") {
           setLyricsOverlayData(null);
           setLyricsOverlayError("Lyrics were fetched but the response format was invalid.");
           return;
         }
-
         if (payload.available && (!payload.lyrics || payload.lyrics.trim().length === 0)) {
           setLyricsOverlayData(null);
           setLyricsOverlayError("Lyrics were fetched but could not be displayed.");
           return;
         }
-
         if (!cancelled) {
           setLyricsOverlayData(payload);
           setLyricsOverlayError(null);
@@ -1893,14 +1665,11 @@ function ShellDynamicInner({
         }
       }
     };
-
     void loadLyrics();
-
     return () => {
       cancelled = true;
     };
   }, [isLyricsOverlayOpen, lyricsOverlayVideoId]);
-
   const sourceRelatedVideos = useMemo(() => dedupeVideos(relatedVideos), [relatedVideos]);
   const uniqueRelatedVideos = useMemo(() => filterHiddenVideos(
     dedupeRelatedRailVideos(sourceRelatedVideos, currentVideo.id),
@@ -1927,38 +1696,30 @@ function ShellDynamicInner({
   );
   const hidingRelatedVideoIdSet = useMemo(() => new Set(hidingRelatedVideoIds), [hidingRelatedVideoIds]);
   const hiddenMutationPendingVideoIdSet = useMemo(() => new Set(hiddenMutationPendingVideoIds), [hiddenMutationPendingVideoIds]);
-
   useEffect(() => {
     hidingRelatedVideoIdsRef.current = hidingRelatedVideoIds;
   }, [hidingRelatedVideoIds]);
-
   useEffect(() => {
     hiddenMutationPendingVideoIdsRef.current = hiddenMutationPendingVideoIds;
   }, [hiddenMutationPendingVideoIds]);
-
   useEffect(() => {
     if (hasBootstrappedWatchNext) {
       return;
     }
-
     if (rightRailMode !== "watch-next") {
       return;
     }
-
     if (isWatchNextVideoSelectionPending || relatedTransitionPhase !== "idle") {
       return;
     }
-
     const currentSignature = displayedRelatedVideos.map((video) => video.id).join("|");
     const nextSignature = sourceRelatedVideos.map((video) => video.id).join("|");
     if (currentSignature !== nextSignature) {
       return;
     }
-
     if (!shouldDisableRelatedRailTransition && displayedRelatedVideos.length > 0) {
       setRelatedTransitionPhase("fading-in");
     }
-
     setHasBootstrappedWatchNext(true);
   }, [
     displayedRelatedVideos,
@@ -1969,7 +1730,6 @@ function ShellDynamicInner({
     shouldDisableRelatedRailTransition,
     sourceRelatedVideos,
   ]);
-
   const shouldShowWatchNextBootstrapLoader = rightRailMode === "watch-next"
     && (!hasBootstrappedWatchNext || isWatchNextVideoSelectionPending);
   // When watchNextLoadFailed, hide spinner so error/retry renders cleanly.
@@ -1984,42 +1744,53 @@ function ShellDynamicInner({
   const shouldShowWatchNextEmptyState = visibleWatchNextVideos.length === 0
     && !shouldShowWatchNextRailLoader
     && !shouldShowWatchNextUnseenEmptyState;
-
+  const shouldShowWatchNextGenreConstrainedHint = Boolean(
+    watchNextAdvisory?.genreFilterActive
+    && watchNextAdvisory?.constrainedByGenreFilter
+    && visibleWatchNextVideos.length > 0,
+  );
+  const shouldShowWatchNextGenreConstrainedEmptyState = Boolean(
+    shouldShowWatchNextEmptyState
+    && watchNextAdvisory?.genreFilterActive
+    && watchNextAdvisory?.emptyDueToGenreFilter,
+  );
   useEffect(() => {
     relatedVideosRef.current = relatedVideos;
   }, [relatedVideos]);
-
   useEffect(() => {
     const handleWatchHistoryUpdated = (event: Event) => {
       if (!isAuthenticated) {
         return;
       }
-
       const customEvent = event as CustomEvent<{ videoId?: string }>;
       const payloadVideoId = customEvent.detail?.videoId;
       const fallbackVideoId = currentVideo.id;
       const resolvedVideoId = payloadVideoId && /^[A-Za-z0-9_-]{11}$/.test(payloadVideoId)
         ? payloadVideoId
         : fallbackVideoId;
-
       if (!resolvedVideoId || seenVideoIdsRef.current.has(resolvedVideoId)) {
         return;
       }
-
       seenVideoIdsRef.current.add(resolvedVideoId);
       setSeenVideoRefreshTick((value) => value + 1);
     };
-
     window.addEventListener(WATCH_HISTORY_UPDATED_EVENT, handleWatchHistoryUpdated as EventListener);
     return () => {
       window.removeEventListener(WATCH_HISTORY_UPDATED_EVENT, handleWatchHistoryUpdated as EventListener);
     };
   }, [currentVideo.id, isAuthenticated]);
-
+  useEffect(() => {
+    const handleAutoplaySettingsUpdated = () => {
+      setWatchNextRefreshTick((value) => value + 1);
+    };
+    window.addEventListener(AUTOPLAY_SETTINGS_UPDATED_EVENT, handleAutoplaySettingsUpdated);
+    return () => {
+      window.removeEventListener(AUTOPLAY_SETTINGS_UPDATED_EVENT, handleAutoplaySettingsUpdated);
+    };
+  }, []);
   const activePlaylistSummary = activePlaylistId
     ? playlistRailSummaries.find((playlist) => playlist.id === activePlaylistId) ?? null
     : null;
-
   const loadMoreRelatedVideos = useCallback(async (requestedCount = RELATED_LOAD_BATCH_SIZE) => {
     if (
       relatedLoadInFlightRef.current
@@ -2027,18 +1798,27 @@ function ShellDynamicInner({
       || rightRailMode !== "watch-next"
       || isWatchNextVideoSelectionPending
     ) {
+      logWatchNext("load:skipped", {
+        currentVideoId: currentVideo.id,
+        requestedCount,
+        inFlight: relatedLoadInFlightRef.current,
+        hasMoreRelated,
+        rightRailMode,
+        isWatchNextVideoSelectionPending,
+      });
       return;
     }
-
     if (dedupeRelatedRailVideos(dedupeVideos(relatedVideosRef.current), currentVideo.id).length >= RELATED_MAX_VIDEOS) {
       setHasMoreRelated(false);
+      logWatchNext("load:max-reached", {
+        currentVideoId: currentVideo.id,
+        maxVideos: RELATED_MAX_VIDEOS,
+      });
       return;
     }
-
     relatedLoadInFlightRef.current = true;
     setIsLoadingMoreRelated(true);
     setWatchNextLoadFailed(false);
-
     try {
       const existing = dedupeRelatedRailVideos(dedupeVideos(relatedVideosRef.current), currentVideo.id);
       const isFirstColdFetch = relatedFetchOffsetRef.current === null && existing.length === 0;
@@ -2047,7 +1827,16 @@ function ShellDynamicInner({
       }
       const batchCount = Math.max(1, Math.min(30, Math.floor(requestedCount)));
       const requestedBatchCount = Math.max(1, Math.min(40, Math.floor(requestedCount)));
-
+      logWatchNext("load:start", {
+        currentVideoId: currentVideo.id,
+        requestedCount,
+        batchCount,
+        requestedBatchCount,
+        existingCount: existing.length,
+        isFirstColdFetch,
+        offset: relatedFetchOffsetRef.current,
+        url: typeof window === "undefined" ? null : window.location.href,
+      });
       const params = new URLSearchParams();
       params.set("v", currentVideo.id);
       if (isAuthenticated && watchNextHideSeen) {
@@ -2058,49 +1847,85 @@ function ShellDynamicInner({
         params.set("requestedCount", String(requestedBatchCount));
         params.set("offset", String(relatedFetchOffsetRef.current));
       }
-
       const tryFetchPayload = async () => {
         const abortController = new AbortController();
+        const fetchStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
         const timeoutId = window.setTimeout(() => {
           abortController.abort();
         }, RELATED_FETCH_TIMEOUT_MS);
-
         try {
           const response = await fetch(`/api/current-video?${params.toString()}`, {
             cache: "no-store",
             signal: abortController.signal,
           });
-
+          const elapsedMs = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - fetchStartedAt);
+          logWatchNext("fetch:response", {
+            currentVideoId: currentVideo.id,
+            status: response.status,
+            ok: response.ok,
+            elapsedMs,
+            request: params.toString(),
+          });
           if (!response.ok) {
             throw new Error("watch-next-load-failed");
           }
-
           const json = (await response.json()) as CurrentVideoResolvePayload & { hasMore?: boolean };
-
+          logWatchNext("fetch:payload", {
+            currentVideoId: currentVideo.id,
+            pending: Boolean(json?.pending),
+            relatedCount: Array.isArray(json?.relatedVideos) ? json.relatedVideos.length : null,
+            hasMore: typeof json?.hasMore === "boolean" ? json.hasMore : null,
+            denied: json?.denied ?? null,
+          });
           // If server is busy (timeout/cooldown), { pending: true } is retryable, not a silent fail.
           if (json && typeof json === "object" && "pending" in json && (json as { pending?: boolean }).pending) {
             throw new Error("watch-next-server-busy");
           }
-
           return json;
+        } catch (error) {
+          const elapsedMs = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - fetchStartedAt);
+          logWatchNext("fetch:error", {
+            currentVideoId: currentVideo.id,
+            elapsedMs,
+            request: params.toString(),
+            error: error instanceof Error ? error.message : String(error),
+            aborted: abortController.signal.aborted,
+          });
+          throw error;
         } finally {
           window.clearTimeout(timeoutId);
         }
       };
-
       let payload: (CurrentVideoResolvePayload & { hasMore?: boolean }) | null = null;
       const maxAttempts = isFirstColdFetch ? RELATED_COLD_FETCH_RETRY_ATTEMPTS : 1;
-
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
+          logWatchNext("fetch:attempt", {
+            currentVideoId: currentVideo.id,
+            attempt,
+            maxAttempts,
+            request: params.toString(),
+          });
           payload = await tryFetchPayload();
           break;
-        } catch {
+        } catch (error) {
           if (attempt >= maxAttempts) {
+            logWatchNext("fetch:attempt-failed-final", {
+              currentVideoId: currentVideo.id,
+              attempt,
+              maxAttempts,
+              error: error instanceof Error ? error.message : String(error),
+            });
             throw new Error("watch-next-load-exhausted");
           }
-
           const retryDelayMs = Math.min(3_000, RELATED_COLD_FETCH_RETRY_BASE_DELAY_MS * (2 ** (attempt - 1)));
+          logWatchNext("fetch:attempt-retry", {
+            currentVideoId: currentVideo.id,
+            attempt,
+            maxAttempts,
+            retryDelayMs,
+            error: error instanceof Error ? error.message : String(error),
+          });
           await new Promise<void>((resolve) => {
             window.setTimeout(() => {
               resolve();
@@ -2108,22 +1933,29 @@ function ShellDynamicInner({
           });
         }
       }
-
       if (!payload) {
         throw new Error("watch-next-load-empty-payload");
       }
-
       const resolvedPayload = payload;
       const nextVideos = Array.isArray(resolvedPayload.relatedVideos) ? resolvedPayload.relatedVideos : [];
       const payloadHasMore = resolvedPayload.hasMore !== false;
+      setWatchNextAdvisory(resolvedPayload.watchNextAdvisory ?? null);
       relatedFetchOffsetRef.current = (relatedFetchOffsetRef.current ?? existing.length) + nextVideos.length;
       watchNextAutoRecoverAttemptRef.current = 0;
-
+      logWatchNext("load:success", {
+        currentVideoId: currentVideo.id,
+        nextVideosCount: nextVideos.length,
+        payloadHasMore,
+        nextOffset: relatedFetchOffsetRef.current,
+      });
       if (nextVideos.length === 0 && !payloadHasMore) {
         setHasMoreRelated(false);
+        logWatchNext("load:completed", {
+          currentVideoId: currentVideo.id,
+          reason: "empty-tail",
+        });
         return;
       }
-
       startTransition(() => {
         setRelatedVideos((previous) => {
           const merged = dedupeRelatedRailVideos(dedupeVideos([...previous, ...nextVideos]), currentVideo.id)
@@ -2131,26 +1963,40 @@ function ShellDynamicInner({
           return merged;
         });
       });
-
       if (!payloadHasMore) {
         setHasMoreRelated(false);
+        logWatchNext("load:completed", {
+          currentVideoId: currentVideo.id,
+          reason: "hasMore-false",
+        });
         return;
       }
-
-    } catch {
+    } catch (error) {
       const existingAfterFailure = dedupeRelatedRailVideos(dedupeVideos(relatedVideosRef.current), currentVideo.id);
+      logWatchNext("load:failed", {
+        currentVideoId: currentVideo.id,
+        error: error instanceof Error ? error.message : String(error),
+        existingAfterFailure: existingAfterFailure.length,
+      });
       if (existingAfterFailure.length === 0) {
         // Reset the offset back to null so the next attempt (auto-recover or manual)
         // is treated as a fresh cold-start and gets the full retry budget.
         relatedFetchOffsetRef.current = null;
         setWatchNextLoadFailed(true);
+        logWatchNext("load:failed-empty-rail", {
+          currentVideoId: currentVideo.id,
+          autoRecoverAttempt: watchNextAutoRecoverAttemptRef.current,
+        });
       }
     } finally {
       relatedLoadInFlightRef.current = false;
       setIsLoadingMoreRelated(false);
+      logWatchNext("load:finally", {
+        currentVideoId: currentVideo.id,
+        inFlight: relatedLoadInFlightRef.current,
+      });
     }
   }, [currentVideo.id, hasMoreRelated, isWatchNextVideoSelectionPending, rightRailMode]);
-
   useEffect(() => {
     // Cold-start trigger: fire the first Watch Next fetch as soon as selection is
     // settled and the rail is still empty. Other triggers guard on idle phase,
@@ -2159,40 +2005,39 @@ function ShellDynamicInner({
       isWatchNextVideoSelectionPending
       || rightRailMode !== "watch-next"
       || !hasMoreRelated
-      || relatedVideos.length > 0
+      || visibleWatchNextVideos.length > 0
     ) {
       return;
     }
-
     void loadMoreRelatedVideos();
-  }, [hasMoreRelated, isWatchNextVideoSelectionPending, loadMoreRelatedVideos, relatedVideos.length, rightRailMode]);
-
+  }, [
+    hasMoreRelated,
+    isWatchNextVideoSelectionPending,
+    loadMoreRelatedVideos,
+    rightRailMode,
+    visibleWatchNextVideos.length,
+  ]);
   const handleWatchNextTrackClick = useCallback((trackId: string) => {
     setClickedRelatedVideoId(trackId);
     if (relatedClickFlashTimeoutRef.current !== null) {
       window.clearTimeout(relatedClickFlashTimeoutRef.current);
     }
-
     relatedClickFlashTimeoutRef.current = window.setTimeout(() => {
       setClickedRelatedVideoId((activeId) => (activeId === trackId ? null : activeId));
       relatedClickFlashTimeoutRef.current = null;
     }, 240);
   }, []);
-
   const commitWatchNextHide = useCallback((videoId: string) => {
     setHidingRelatedVideoIds((previous) => {
       if (previous.includes(videoId)) {
         return previous;
       }
-
       return [...previous, videoId];
     });
-
     const existingTimeoutId = relatedHideTimeoutsRef.current.get(videoId);
     if (existingTimeoutId !== undefined) {
       window.clearTimeout(existingTimeoutId);
     }
-
     const timeoutId = window.setTimeout(() => {
       setDisplayedRelatedVideos((previous) => previous.filter((video) => video.id !== videoId));
       setRelatedVideos((previous) => previous.filter((video) => video.id !== videoId));
@@ -2200,49 +2045,39 @@ function ShellDynamicInner({
       setHidingRelatedVideoIds((previous) => previous.filter((candidateId) => candidateId !== videoId));
       relatedHideTimeoutsRef.current.delete(videoId);
     }, WATCH_NEXT_HIDE_ANIMATION_MS);
-
     relatedHideTimeoutsRef.current.set(videoId, timeoutId);
   }, []);
-
   const handleHideFromWatchNext = useCallback((track: VideoRecord) => {
     if (!isAuthenticated) {
       setPlaylistMutationTone("error");
       setPlaylistMutationMessage("Sign in to hide tracks from Watch Next.");
       return;
     }
-
     if (
       hidingRelatedVideoIdsRef.current.includes(track.id)
       || hiddenMutationPendingVideoIdsRef.current.includes(track.id)
     ) {
       return;
     }
-
     setWatchNextHideConfirmTrack(track);
   }, [isAuthenticated, setPlaylistMutationMessage, setPlaylistMutationTone]);
-
   const confirmHideFromWatchNext = useCallback(async () => {
     const track = watchNextHideConfirmTrack;
-
     if (!track) {
       return;
     }
-
     if (!isAuthenticated) {
       setPlaylistMutationTone("error");
       setPlaylistMutationMessage("Sign in to hide tracks from Watch Next.");
       return;
     }
-
     if (
       hidingRelatedVideoIdsRef.current.includes(track.id)
       || hiddenMutationPendingVideoIdsRef.current.includes(track.id)
     ) {
       return;
     }
-
     setWatchNextHideConfirmTrack(null);
-
     const result = await mutateHiddenVideo({
       action: "hide",
       videoId: track.id,
@@ -2260,7 +2095,6 @@ function ShellDynamicInner({
         setHiddenMutationPendingVideoIds((previous) => previous.filter((videoId) => videoId !== track.id));
       },
     });
-
     if (!result.ok) {
       setPlaylistMutationTone("error");
       setPlaylistMutationMessage(result.message);
@@ -2273,7 +2107,6 @@ function ShellDynamicInner({
     setPlaylistMutationTone,
     watchNextHideConfirmTrack,
   ]);
-
   const maybeLoadMoreIfNearEnd = useCallback(() => {
     if (
       relatedLoadInFlightRef.current
@@ -2284,12 +2117,10 @@ function ShellDynamicInner({
     ) {
       return;
     }
-
     const node = relatedStackRef.current;
     if (!node) {
       return;
     }
-
     const remainingPx = node.scrollHeight - (node.scrollTop + node.clientHeight);
     const oneSectionAheadPx = Math.ceil(node.clientHeight * 1.1);
     const loadAheadPx = Math.max(RELATED_LOAD_AHEAD_PX, RELATED_LOAD_AHEAD_AGGRESSIVE_PX, oneSectionAheadPx);
@@ -2301,20 +2132,16 @@ function ShellDynamicInner({
       void loadMoreRelatedVideos(requestedCount);
     }
   }, [hasMoreRelated, isWatchNextVideoSelectionPending, loadMoreRelatedVideos, relatedTransitionPhase, rightRailMode]);
-
   const handleRelatedScroll = useCallback(() => {
     hasUserScrolledWatchNextRef.current = true;
-
     if (relatedScrollRafRef.current !== null) {
       return;
     }
-
     relatedScrollRafRef.current = window.requestAnimationFrame(() => {
       relatedScrollRafRef.current = null;
       maybeLoadMoreIfNearEnd();
     });
   }, [maybeLoadMoreIfNearEnd]);
-
   useEffect(() => {
     return () => {
       if (relatedScrollRafRef.current !== null) {
@@ -2323,19 +2150,24 @@ function ShellDynamicInner({
       }
     };
   }, []);
-
   useEffect(() => {
     relatedLoadInFlightRef.current = false;
     relatedFetchOffsetRef.current = null;
     watchNextAutoRecoverAttemptRef.current = 0;
     hasUserScrolledWatchNextRef.current = false;
+    setRelatedVideos([]);
+    setDisplayedRelatedVideos([]);
     setHasBootstrappedWatchNext(false);
     setIsLoadingMoreRelated(false);
     setShowLoadingMoreRelatedHint(false);
     setHasMoreRelated(true);
     setWatchNextLoadFailed(false);
-  }, [currentVideo.id]);
-
+    setWatchNextAdvisory(null);
+    logWatchNext("video:reset-state", {
+      currentVideoId: currentVideo.id,
+      refreshTick: watchNextRefreshTick,
+    });
+  }, [currentVideo.id, watchNextRefreshTick]);
   useEffect(() => {
     if (
       !watchNextLoadFailed
@@ -2345,32 +2177,35 @@ function ShellDynamicInner({
     ) {
       return;
     }
-
     if (watchNextAutoRecoverAttemptRef.current >= 3) {
       return;
     }
-
     const retryAttempt = watchNextAutoRecoverAttemptRef.current + 1;
     watchNextAutoRecoverAttemptRef.current = retryAttempt;
     // Delays: 800ms, 3s, 10s. The 10s attempt outlasts the server's 8s resolver-failure cooldown.
     const retryDelays = [800, 3_000, 10_000];
     const retryDelayMs = retryDelays[retryAttempt - 1] ?? 10_000;
-
+    logWatchNext("auto-recover:scheduled", {
+      currentVideoId: currentVideo.id,
+      retryAttempt,
+      retryDelayMs,
+    });
     const timeoutId = window.setTimeout(() => {
+      logWatchNext("auto-recover:running", {
+        currentVideoId: currentVideo.id,
+        retryAttempt,
+      });
       void loadMoreRelatedVideos();
     }, retryDelayMs);
-
     return () => {
       window.clearTimeout(timeoutId);
     };
   }, [hasMoreRelated, loadMoreRelatedVideos, rightRailMode, visibleWatchNextVideos.length, watchNextLoadFailed]);
-
   useEffect(() => {
     if (rightRailMode !== "watch-next") {
       setShowLoadingMoreRelatedHint(false);
       return;
     }
-
     let timeoutId: number | null = null;
     if (isLoadingMoreRelated) {
       if (!showLoadingMoreRelatedHint) {
@@ -2383,14 +2218,12 @@ function ShellDynamicInner({
         setShowLoadingMoreRelatedHint(false);
       }, RELATED_LOADING_HINT_HIDE_DELAY_MS);
     }
-
     return () => {
       if (timeoutId !== null) {
         window.clearTimeout(timeoutId);
       }
     };
   }, [isLoadingMoreRelated, rightRailMode, showLoadingMoreRelatedHint]);
-
   useEffect(() => {
     if (
       isOverlayRoute
@@ -2404,10 +2237,8 @@ function ShellDynamicInner({
     ) {
       return;
     }
-
     const targetRunway = Math.min(RELATED_BACKGROUND_PREFETCH_TARGET_AGGRESSIVE, RELATED_MAX_VIDEOS);
     const hasReachedBaselineRunway = displayedRenderableRelatedVideos.length >= RELATED_BACKGROUND_PREFETCH_TARGET;
-
     if (
       displayedRenderableRelatedVideos.length === 0
       || (displayedRenderableRelatedVideos.length >= targetRunway && hasReachedBaselineRunway)
@@ -2415,12 +2246,10 @@ function ShellDynamicInner({
     ) {
       return;
     }
-
     const timeoutId = window.setTimeout(() => {
       if (document.visibilityState !== "visible" || !hasUserScrolledWatchNextRef.current) {
         return;
       }
-
       const remainingForTarget = RELATED_BACKGROUND_PREFETCH_TARGET - displayedRenderableRelatedVideos.length;
       const remainingForAggressiveTarget = targetRunway - displayedRenderableRelatedVideos.length;
       const prefetchCount = Math.max(
@@ -2429,7 +2258,6 @@ function ShellDynamicInner({
       );
       void loadMoreRelatedVideos(prefetchCount);
     }, Math.min(RELATED_BACKGROUND_PREFETCH_DELAY_MS, RELATED_BACKGROUND_PREFETCH_DELAY_FAST_MS));
-
     return () => {
       window.clearTimeout(timeoutId);
     };
@@ -2443,7 +2271,6 @@ function ShellDynamicInner({
     relatedTransitionPhase,
     rightRailMode,
   ]);
-
   useEffect(() => {
     // Straightforward flow:
     // 1) Wait for requested video id to settle
@@ -2453,7 +2280,6 @@ function ShellDynamicInner({
     const nextIds = sourceRelatedVideos.map((video) => video.id);
     const currentSignature = currentIds.join("|");
     const nextSignature = nextIds.join("|");
-
     // Disabled transitions: immediately apply new videos with no transition state.
     if (shouldDisableRelatedRailTransition) {
       if (currentSignature !== nextSignature) {
@@ -2464,10 +2290,8 @@ function ShellDynamicInner({
       }
       return;
     }
-
     const hasFinalizedVideoSelection = !requestedVideoId || requestedVideoId === currentVideo.id;
     const shouldShowLoadingState = isWatchNextVideoSelectionPending || !hasFinalizedVideoSelection;
-
     // During selection/URL resolution: clear stale cards and keep loader visible.
     if (shouldShowLoadingState) {
       if (relatedStackRef.current) {
@@ -2484,7 +2308,6 @@ function ShellDynamicInner({
       }
       return;
     }
-
     // Video is finalized but data is still not ready: stay in loading state.
     if (sourceRelatedVideos.length === 0) {
       if (displayedRelatedVideos.length > 0) {
@@ -2495,7 +2318,6 @@ function ShellDynamicInner({
       }
       return;
     }
-
     // Avoid flashing a single card on startup. Keep loading until a usable
     // minimum is ready, or until the server indicates there is no more data.
     if (
@@ -2514,11 +2336,9 @@ function ShellDynamicInner({
       }
       return;
     }
-
     // Fresh data arrived for a finalized video: render it.
     if (currentSignature !== nextSignature) {
       const isAppendOnlyUpdate = detectAppendOnly(currentIds, nextIds);
-
       if (isAppendOnlyUpdate) {
         // Append-only: no animation needed — defer the card list update so
         // it does not block user interaction (scrolling, clicks, etc.).
@@ -2528,16 +2348,13 @@ function ShellDynamicInner({
         });
         return;
       }
-
       setDisplayedRelatedVideos(sourceRelatedVideos);
-
       if (!hasBootstrappedWatchNext) {
         setHasBootstrappedWatchNext(true);
       }
       setRelatedTransitionPhase("fading-in");
       return;
     }
-
     // If data is already shown, ensure we end up idle.
     if (relatedTransitionPhase === "loading" || relatedTransitionPhase === "fading-out") {
       setRelatedTransitionPhase("idle");
@@ -2555,25 +2372,21 @@ function ShellDynamicInner({
     shouldDisableRelatedRailTransition,
     sourceRelatedVideos,
   ]);
-
   useEffect(() => {
     if (shouldDisableRelatedRailTransition) {
       setRelatedTransitionPhase("idle");
       return;
     }
-
     if (relatedTransitionTimeoutRef.current !== null) {
       window.clearTimeout(relatedTransitionTimeoutRef.current);
       relatedTransitionTimeoutRef.current = null;
     }
-
     if (relatedTransitionPhase === "fading-in") {
       const delayMs = RELATED_FADE_IN_BASE_MS + RELATED_FADE_STAGGER_MS * Math.max(0, displayedRelatedVideos.length - 1);
       relatedTransitionTimeoutRef.current = window.setTimeout(() => {
         setRelatedTransitionPhase("idle");
       }, delayMs);
     }
-
     return () => {
       if (relatedTransitionTimeoutRef.current !== null) {
         window.clearTimeout(relatedTransitionTimeoutRef.current);
@@ -2581,59 +2394,48 @@ function ShellDynamicInner({
       }
     };
   }, [displayedRelatedVideos.length, relatedTransitionPhase, shouldDisableRelatedRailTransition]);
-
   useEffect(() => {
     const hideTimeouts = relatedHideTimeoutsRef.current;
-
     return () => {
       if (relatedClickFlashTimeoutRef.current !== null) {
         window.clearTimeout(relatedClickFlashTimeoutRef.current);
         relatedClickFlashTimeoutRef.current = null;
       }
-
       for (const timeoutId of hideTimeouts.values()) {
         window.clearTimeout(timeoutId);
       }
       hideTimeouts.clear();
     };
   }, []);
-
   const prewarmRelatedThumbnail = useCallback((videoId: string) => {
     if (typeof window === "undefined") {
       return;
     }
-
     if (prewarmedThumbnailIdsRef.current.has(videoId)) {
       return;
     }
-
     prewarmedThumbnailIdsRef.current.add(videoId);
     const img = new window.Image();
     img.decoding = "async";
     img.src = `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
   }, []);
-
   const prefetchCurrentVideoPayload = useCallback((videoId: string) => {
     if (Date.now() < prefetchBlockedUntilRef.current) {
       return;
     }
-
     const cached = prefetchedCurrentVideoPayloadRef.current.get(videoId);
     if (cached && cached.expiresAt > Date.now()) {
       return;
     }
-
     if (inFlightCurrentVideoPrefetchRef.current.has(videoId)) {
       return;
     }
-
     inFlightCurrentVideoPrefetchRef.current.add(videoId);
     const prefetchParams = new URLSearchParams();
     prefetchParams.set("v", videoId);
     if (isAuthenticated && watchNextHideSeen) {
       prefetchParams.set("hideSeen", "1");
     }
-
     void fetch(`/api/current-video?${prefetchParams.toString()}`, {
       cache: "no-store",
     })
@@ -2647,7 +2449,6 @@ function ShellDynamicInner({
           prefetchBlockedUntilRef.current = Date.now() + backoffMs;
           return;
         }
-
         const data = (await response.json()) as CurrentVideoResolvePayload;
         if (!data.currentVideo?.id) {
           prefetchFailureCountRef.current = Math.min(prefetchFailureCountRef.current + 1, 6);
@@ -2658,7 +2459,6 @@ function ShellDynamicInner({
           prefetchBlockedUntilRef.current = Date.now() + backoffMs;
           return;
         }
-
         if (data.currentVideo.id === videoId) {
           prefetchFailureCountRef.current = 0;
           prefetchBlockedUntilRef.current = 0;
@@ -2666,7 +2466,6 @@ function ShellDynamicInner({
             expiresAt: Date.now() + CURRENT_VIDEO_PREFETCH_TTL_MS,
             payload: data,
           });
-
           for (const related of (data.relatedVideos ?? []).slice(0, 6)) {
             prewarmRelatedThumbnail(related.id);
           }
@@ -2684,15 +2483,12 @@ function ShellDynamicInner({
         inFlightCurrentVideoPrefetchRef.current.delete(videoId);
       });
   }, [isAuthenticated, prewarmRelatedThumbnail, watchNextHideSeen]);
-
   const prefetchRelatedSelection = useCallback((video: VideoRecord) => {
     prewarmRelatedThumbnail(video.id);
-
     if (!prefetchedRelatedIdsRef.current.has(video.id)) {
       prefetchedRelatedIdsRef.current.add(video.id);
       prefetchCurrentVideoPayload(video.id);
     }
-
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(
         PENDING_VIDEO_SELECTION_KEY,
@@ -2707,82 +2503,65 @@ function ShellDynamicInner({
       );
     }
   }, [prefetchCurrentVideoPayload, prewarmRelatedThumbnail]);
-
   useEffect(() => {
     for (const video of displayedRelatedVideos.slice(0, 6)) {
       prewarmRelatedThumbnail(video.id);
     }
   }, [displayedRelatedVideos]);
-
   useEffect(() => {
     if (isOverlayRoute) {
       return;
     }
-
     const topTargets = sourceRelatedVideos
       .filter((video) => video.id !== currentVideo.id)
       .slice(0, 3);
     if (topTargets.length === 0) {
       return;
     }
-
     let cancelled = false;
     const timeoutId = window.setTimeout(() => {
       if (cancelled) {
         return;
       }
-
       for (const target of topTargets) {
         prefetchCurrentVideoPayload(target.id);
       }
     }, 120);
-
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
   }, [currentVideo.id, isOverlayRoute, sourceRelatedVideos]);
-
   useEffect(() => {
     if (!isAuthenticated) {
       return;
     }
-
     let cancelled = false;
-
     const runCheckAuthState = async () => {
       const result = await checkAuthState();
-
       if (cancelled || result !== "authenticated") {
         return;
       }
-
       setAuthStatus("clear");
       setAuthStatusMessage(null);
     };
-
     void runCheckAuthState();
     const intervalId = window.setInterval(() => {
       if (document.visibilityState !== "visible") {
         return;
       }
-
       void runCheckAuthState();
     }, 60_000);
-
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         void runCheckAuthState();
       }
     };
-
     const onWindowOnline = () => {
       void runCheckAuthState();
     };
-
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("online", onWindowOnline);
-
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
@@ -2790,16 +2569,13 @@ function ShellDynamicInner({
       window.removeEventListener("online", onWindowOnline);
     };
   }, [checkAuthState, isAuthenticated]);
-
   useEffect(() => {
     if (isAuthenticated) {
       return;
     }
-
     if (!isProtectedOverlayPath(pathname)) {
       return;
     }
-
     const params = new URLSearchParams(searchParams.toString());
     params.set("v", currentVideo.id);
     params.set("resume", "1");
@@ -2808,92 +2584,79 @@ function ShellDynamicInner({
     const query = params.toString();
     router.replace(query ? `/?${query}` : "/");
   }, [currentVideo.id, isAuthenticated, pathname, router, searchParams]);
-
   // Always show all nav items; unauthenticated clicks on protected routes are
   // intercepted client-side to open the auth modal.
   const visibleNavItems = navItems.filter((item) => item.href !== "/");
-
   const protectedNavHrefs = new Set(["/favourites", "/playlists", "/history", "/account"]);
-
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-
   function openAuthModal() {
     setIsAuthModalOpen(true);
   }
-
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-
     const handleAuthSuccess = () => {
       setIsAuthenticated(true);
       setAuthStatus("clear");
       setAuthStatusMessage(null);
       setIsAuthModalOpen(false);
     };
-
     window.addEventListener("ytr:auth-success", handleAuthSuccess);
-
     return () => {
       window.removeEventListener("ytr:auth-success", handleAuthSuccess);
     };
   }, []);
-
   function getNavHref(href: string) {
     const params = new URLSearchParams();
     params.set("v", currentVideo.id);
     params.set("resume", "1");
-
     if (href === "/artists") {
       params.set("letter", activeArtistLetter);
     }
-
     return `${href}?${params.toString()}`;
   }
-
+  function openAutoplaySettingsOverlay() {
+    if (!isAuthenticated) {
+      openAuthModal();
+      return;
+    }
+    const accountHref = `${getNavHref("/account")}&tab=autoplay`;
+    router.push(accountHref);
+  }
   function getUserProfileHref(screenName: string, userId: number | null | undefined) {
     const trimmedScreenName = screenName.trim();
     const hasStableUserId = typeof userId === "number" && Number.isInteger(userId) && userId > 0;
     const hasUsableScreenName = trimmedScreenName.length > 0 && trimmedScreenName.toLowerCase() !== "anonymous";
-
     if (!hasStableUserId && !hasUsableScreenName) {
       return null;
     }
-
     const slug = hasStableUserId ? `user-${userId}` : trimmedScreenName;
     const params = new URLSearchParams();
     params.set("v", currentVideo.id);
     params.set("resume", "1");
     return `/u/${encodeURIComponent(slug)}?${params.toString()}`;
   }
-
   function requestOverlayOpen(href: string, kind: "video" | "wiki" = "video") {
     if (typeof window === "undefined") {
       return;
     }
-
     window.dispatchEvent(new CustomEvent(OVERLAY_OPEN_REQUEST_EVENT, {
       detail: { href, kind },
     }));
   }
-
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-
     const targetHrefs = visibleNavItems
       .filter((item) => !isRouteActive(item.href, pathname))
       .map((item) => getNavHref(item.href));
-
     if (targetHrefs.length === 0) {
       return;
     }
-
     let cancelled = false;
     let idleId: number | null = null;
-
     const requestIdle = (window as Window & {
       requestIdleCallback?: (callback: () => void, opts?: { timeout: number }) => number;
       cancelIdleCallback?: (id: number) => void;
@@ -2902,17 +2665,14 @@ function ShellDynamicInner({
       requestIdleCallback?: (callback: () => void, opts?: { timeout: number }) => number;
       cancelIdleCallback?: (id: number) => void;
     }).cancelIdleCallback;
-
     const warmRoutes = () => {
       if (cancelled) {
         return;
       }
-
       for (const href of targetHrefs) {
         router.prefetch(href);
       }
     };
-
     const timeoutId = window.setTimeout(() => {
       if (typeof requestIdle === "function") {
         idleId = requestIdle(() => {
@@ -2920,10 +2680,8 @@ function ShellDynamicInner({
         }, { timeout: 1500 });
         return;
       }
-
       warmRoutes();
     }, 1200);
-
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
@@ -2932,7 +2690,6 @@ function ShellDynamicInner({
       }
     };
   }, [activeArtistLetter, currentVideo.id, pathname, router, visibleNavItems]);
-
   const shellClassName = [
     shouldShowOverlayPanel ? "shell shellOverlayRoute" : "shell",
     isDesktopIntroPreload ? "shellDesktopIntroPreload" : "",
@@ -2940,7 +2697,6 @@ function ShellDynamicInner({
     desktopIntroPhase === "moving" ? "shellDesktopIntroMoving" : "",
     desktopIntroPhase === "revealing" ? "shellDesktopIntroRevealing" : "",
   ].filter(Boolean).join(" ");
-
   const shellStyle = isDesktopIntroActive
     ? ({
       "--desktop-intro-dx": `${desktopIntroDeltaX}px`,
@@ -2948,13 +2704,11 @@ function ShellDynamicInner({
       "--desktop-intro-scale": String(desktopIntroScale),
     } as CSSProperties)
     : undefined;
-
   return (
     <OverlayScrollContainerProvider overlayScrollContainerRef={favouritesBlindInnerRef}>
       <ArtistsLetterProvider initialLetter={activeArtistLetter} v={activeVideoId} resume={resumeParam}>
       <main className={shellClassName} style={shellStyle}>
       <div className="backdrop" />
-
       {isDesktopIntroPreload || isDesktopIntroActive ? (
         <div className="desktopIntroOverlay" aria-hidden="true">
           {isDesktopIntroLogoReady ? (
@@ -2980,7 +2734,6 @@ function ShellDynamicInner({
           )}
         </div>
       ) : null}
-
       <header className="topbar">
         <div className="brandLockup">
           <Link href="/" aria-label="Yeh That Rocks home" ref={brandLogoTargetRef} onClick={handleBrandLogoClick}>
@@ -2996,7 +2749,6 @@ function ShellDynamicInner({
           </Link>
           <h1 className="brandTagline">The world&apos;s loudest website</h1>
         </div>
-
         <div className="headerBar">
           <nav className="mainNav" aria-label="Primary">
             {visibleNavItems.map((item) => {
@@ -3094,7 +2846,6 @@ function ShellDynamicInner({
               </button>
             ) : null}
           </nav>
-
           <div className="searchWrap">
             <div className="searchBar">
               <div className="searchCombobox" ref={searchComboboxRef} role="combobox" aria-expanded={showSuggestions} aria-haspopup="listbox">
@@ -3158,7 +2909,6 @@ function ShellDynamicInner({
           </div>
         </div>
       </header>
-
       {isPerformanceQuickLaunchVisible ? (
         <button
           type="button"
@@ -3170,7 +2920,6 @@ function ShellDynamicInner({
           <span aria-hidden="true">💻</span>
         </button>
       ) : null}
-
       {isPerformanceModalOpen ? (
         <div
           className="performanceModalOverlay"
@@ -3194,7 +2943,6 @@ function ShellDynamicInner({
                 ×
               </button>
             </div>
-
             <div className="performanceDialGrid">
               <PerformanceDial label="Memory" value={performanceMetrics?.memoryUsagePercent} color="#ffc14d" />
               <PerformanceDial label="Swap" value={performanceMetrics?.swapUsagePercent} color="#f5d96b" />
@@ -3212,7 +2960,6 @@ function ShellDynamicInner({
               <PerformanceDial label="Disk" value={performanceMetrics?.diskUsagePercent} color="#7ce0a3" />
               <PerformanceDial label="Network" value={performanceMetrics?.networkUsagePercent} color="#5fc1ff" />
             </div>
-
             {performanceRuntime ? (
               <div className="performanceProfileGrid">
                 <section className="performanceProfileCard">
@@ -3236,7 +2983,6 @@ function ShellDynamicInner({
                     </div>
                   </dl>
                 </section>
-
                 <section className="performanceProfileCard">
                   <h3>Prisma (rolling window)</h3>
                   <dl>
@@ -3265,7 +3011,6 @@ function ShellDynamicInner({
                       <dd>{Math.round(finiteNumberOrNull(performanceRuntime.prisma?.totalsSinceBoot?.totalQueries) ?? 0)}</dd>
                     </div>
                   </dl>
-
                   {Array.isArray(performanceRuntime.prisma?.topOperations) && performanceRuntime.prisma.topOperations.length > 0 ? (
                     <div className="performanceTopOperations">
                       <strong>Top DB operations by total time</strong>
@@ -3287,7 +3032,6 @@ function ShellDynamicInner({
                       </div>
                     </div>
                   ) : null}
-
                   {Array.isArray(performanceRuntime.prisma?.topQueryFingerprints) && performanceRuntime.prisma.topQueryFingerprints.length > 0 ? (
                     <div className="performanceTopOperations">
                       <strong>Top SQL fingerprints by total time</strong>
@@ -3312,7 +3056,6 @@ function ShellDynamicInner({
                 </section>
               </div>
             ) : null}
-
             <div className="performanceModalMeta">
               {isLoadingPerformanceMetrics ? <p>Refreshing metrics...</p> : null}
               {!isLoadingPerformanceMetrics && performanceMetricsGeneratedAt ? <p>Updated {new Date(performanceMetricsGeneratedAt).toLocaleTimeString()}</p> : null}
@@ -3321,7 +3064,6 @@ function ShellDynamicInner({
           </section>
         </div>
       ) : null}
-
       {authStatus === "unavailable" && authStatusMessage && !isAuthUnavailableDialogDismissed ? (
         <div className="authStatusModalOverlay">
           <section
@@ -3351,7 +3093,6 @@ function ShellDynamicInner({
           </section>
         </div>
       ) : null}
-
       <section
         className={[
           "heroGrid",
@@ -3367,7 +3108,6 @@ function ShellDynamicInner({
             resume={resumeParam}
           />
         ) : null}
-
         <aside
           id={isMobileViewport ? "mobile-community-rail" : undefined}
           className={[
@@ -3412,7 +3152,6 @@ function ShellDynamicInner({
                           openAuthModal();
                           return;
                         }
-
                         setChatMode("online");
                       }}
                     >
@@ -3420,7 +3159,6 @@ function ShellDynamicInner({
                     </button>
                   </>
               </div>
-
               <div className="chatList" ref={chatListRef}>
                 {isChatLoading ? <p className="chatStatus">Loading chat...</p> : null}
                 {!isChatLoading && chatMode === "global" && chatMessages.length === 0 ? (
@@ -3478,7 +3216,6 @@ function ShellDynamicInner({
                     onlineUsers.map((user) => {
                       const profileHref = getUserProfileHref(user.name, user.id);
                       const isProfileClickable = Boolean(profileHref);
-
                       return (
                       <article
                         key={user.id}
@@ -3556,7 +3293,6 @@ function ShellDynamicInner({
                   })
                 )}
               </div>
-
               {chatMode === "global" ? (
                 isAuthenticated ? (
                   <>
@@ -3592,7 +3328,6 @@ function ShellDynamicInner({
             return railContent;
           })()}
         </aside>
-
         <section className="playerStage">
           <div ref={playerChromeRef} className={playerChromeClassName} style={playerChromeStyle}>
             <div className="playerDockLayer">
@@ -3609,7 +3344,6 @@ function ShellDynamicInner({
                   </button>
                 </div>
               ) : null}
-
               <Suspense fallback={<div className="playerLoadingFallback" />}>
                 <PlayerExperience
                   currentVideo={currentVideo}
@@ -3632,7 +3366,6 @@ function ShellDynamicInner({
                 />
               </Suspense>
             </div>
-
             {shouldShowOverlayPanel || isAdminOverlayRoute ? (
               <section
                 className={overlayPanelClassName}
@@ -3668,7 +3401,6 @@ function ShellDynamicInner({
                               Close
                             </a>
                           </OverlayHeader>
-
                           <div className="categoriesCatalogStage">
                             <div className="categoriesLoaderOverlay" role="status" aria-live="polite" aria-label="Loading categories">
                               <div className="playerBootLoader categoriesLoaderBootLoader">
@@ -3697,7 +3429,6 @@ function ShellDynamicInner({
                               Close
                             </a>
                           </OverlayHeader>
-
                           <div className="routeContractRow artistLoadingCenter" role="status" aria-live="polite" aria-label="Loading artists">
                             <span className="playerBootBars" aria-hidden="true">
                               <span />
@@ -3733,15 +3464,12 @@ function ShellDynamicInner({
                         </div>
                       )
                     );
-
                     if (!isOverlayRoute) {
                       return loadingFallback;
                     }
-
                     if (children == null) {
                       return loadingFallback;
                     }
-
                     return (
                       <Suspense
                         fallback={loadingFallback}
@@ -3755,7 +3483,6 @@ function ShellDynamicInner({
             ) : null}
           </div>
         </section>
-
         {isAdminOverlayRoute ? null : (
           <aside
             ref={watchNextRailRef}
@@ -3785,7 +3512,6 @@ function ShellDynamicInner({
                     ×
                   </button>
                 </div>
-
                 <div className="rightRailLyricsOverlayBody">
                   {isLyricsOverlayLoading ? (
                     <p className="rightRailStatus">Loading lyrics...</p>
@@ -3838,7 +3564,6 @@ function ShellDynamicInner({
                 </button>
               ) : null}
             </div>
-
           {rightRailMode === "watch-next" && isAuthenticated ? (
             <div className="rightRailWatchNextHeader">
               <button
@@ -3851,7 +3576,6 @@ function ShellDynamicInner({
               </button>
             </div>
           ) : null}
-
           <HideVideoConfirmModal
             isOpen={watchNextHideConfirmTrack !== null}
             video={watchNextHideConfirmTrack}
@@ -3861,7 +3585,6 @@ function ShellDynamicInner({
               void confirmHideFromWatchNext();
             }}
           />
-
           {rightRailMode === "watch-next" ? (
             <div
               ref={relatedStackRef}
@@ -3879,7 +3602,6 @@ function ShellDynamicInner({
                   {playlistMutationMessage}
                 </p>
               ) : null}
-
               {watchNextLoadFailed && visibleWatchNextVideos.length === 0 ? (
                 <div className="rightRailStatus rightRailStatusError" role="status" aria-live="polite">
                   <p>Watch Next is taking too long to load. Retrying now.</p>
@@ -3894,7 +3616,6 @@ function ShellDynamicInner({
                   </button>
                 </div>
               ) : null}
-
               {shouldShowWatchNextRailLoader ? (
                 <div className="relatedLoadingState" role="status" aria-live="polite" aria-busy="true">
                   <div className="playerBootBars" aria-hidden="true">
@@ -3925,17 +3646,44 @@ function ShellDynamicInner({
                       onTrackClick={handleWatchNextTrackClick}
                     />
                   ))}
-
+                  {shouldShowWatchNextGenreConstrainedHint ? (
+                    <div className="rightRailStatus rightRailStatusInfo" role="status" aria-live="polite">
+                      <p>
+                        Genre limit is active. Watch Next is showing fewer options for this account.
+                      </p>
+                      <button
+                        type="button"
+                        className="newPageSeenToggle"
+                        onClick={openAutoplaySettingsOverlay}
+                      >
+                        Configure autoplay
+                      </button>
+                    </div>
+                  ) : null}
                   {shouldShowWatchNextUnseenEmptyState ? (
                     <p className="rightRailStatus">No unseen videos in Watch Next right now.</p>
                   ) : null}
-
-                  {shouldShowWatchNextEmptyState ? (
+                  {shouldShowWatchNextGenreConstrainedEmptyState ? (
+                    <div className="rightRailStatus rightRailStatusInfo" role="status" aria-live="polite">
+                      <p>
+                        No Watch Next videos match your current autoplay genre limit.
+                      </p>
+                      <p>
+                        Open autoplay settings and disable limit-by-genre or widen your genre selection.
+                      </p>
+                      <button
+                        type="button"
+                        className="newPageSeenToggle"
+                        onClick={openAutoplaySettingsOverlay}
+                      >
+                        Open autoplay settings
+                      </button>
+                    </div>
+                  ) : null}
+                  {shouldShowWatchNextEmptyState && !shouldShowWatchNextGenreConstrainedEmptyState ? (
                     <p className="rightRailStatus">No Watch Next videos available right now.</p>
                   ) : null}
-
                   <div ref={relatedLoadMoreSentinelRef} className="relatedLoadMoreSentinel" aria-hidden="true" />
-
                   {showLoadingMoreRelatedHint && visibleWatchNextVideos.length > 0 ? (
                     <div className="relatedLoadingState" role="status" aria-live="polite" aria-label="Loading more suggestions">
                       <div className="playerBootBars" aria-hidden="true">
@@ -3967,7 +3715,6 @@ function ShellDynamicInner({
                   </div>
                 ) : null}
               </div>
-
               <div className="relatedStackPlaylistBody">
                 {temporaryQueueVideos.length > 0 ? (
                   temporaryQueueVideos.map((track, index) => (
@@ -3989,7 +3736,6 @@ function ShellDynamicInner({
                       >
                         ×
                       </button>
-
                       <Link
                         href={`/?v=${track.id}`}
                         className={`relatedCard linkedCard relatedCardTransition rightRailPlaylistTrackCard${track.id === currentVideo.id ? " relatedCardActive" : ""}${clickedRelatedVideoId === track.id ? " relatedCardClickFlash" : ""}`}
@@ -4058,7 +3804,6 @@ function ShellDynamicInner({
                   </div>
                 </div>
               ) : null}
-
               {activePlaylistId && showDeleteActivePlaylistConfirm ? (
                 <div
                   className="rightRailDeleteConfirmBackdrop"
@@ -4109,7 +3854,6 @@ function ShellDynamicInner({
                   </div>
                 </div>
               ) : null}
-
               {confirmDeleteRailPlaylist ? (
                 <div
                   className="rightRailDeleteConfirmBackdrop"
@@ -4159,9 +3903,7 @@ function ShellDynamicInner({
                   </div>
                 </div>
               ) : null}
-
               <div className="relatedStackPlaylistBody" ref={playlistStackBodyRef}>
-
               {!activePlaylistId ? (
                 isPlaylistSummaryLoading ? (
                   <div className="relatedLoadingState" role="status" aria-live="polite" aria-busy="true">
@@ -4179,7 +3921,6 @@ function ShellDynamicInner({
                   playlistRailSummaries.map((playlist) => {
                     const hasLeadThumbnail = playlist.itemCount > 0 && playlist.leadVideoId !== "__placeholder__";
                     const isDeleting = playlistBeingDeletedId === playlist.id;
-
                     return (
                       <Link
                         key={playlist.id}
@@ -4388,11 +4129,10 @@ function ShellDynamicInner({
     </OverlayScrollContainerProvider>
   );
 }
-
 export function ShellDynamic(props: ShellDynamicProps) {
   return (
     <Suspense>
       <ShellDynamicInner {...props} />
     </Suspense>
   );
-}
+}

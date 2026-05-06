@@ -206,6 +206,8 @@ function main() {
   assertContains(autoplayUtilsSource, "const onCategoryRoute = pathname.startsWith(\"/categories/\");", "Docked autoplay recognizes Category detail list route", failures);
   assertContains(autoplayUtilsSource, "const onArtistRoute = pathname.startsWith(\"/artist/\");", "Docked autoplay recognizes Artist detail list route", failures);
   assertContains(playerNextTrackDomainSource, "if (isDockedDesktop && routeAutoplayQueueIds.length > 0)", "Next target prioritizes the route queue when docked on list pages", failures);
+  assertContains(playerNextTrackDomainSource, "if (!options.autoplayEnabled)", "Next target resolution gates route-queue and random fallback on autoplay state", failures);
+  assertContains(playerNextTrackDomainSource, "if (options.shouldUseRouteQueueRegardlessOfDocked) {", "Next target blocks random fallback when route-local progression is required", failures);
   assertContains(playerNextTrackDomainSource, "const currentIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId === currentVideoId);", "Route queue next selection is based on current video position", failures);
   assertContains(playerNextTrackDomainSource, "const nextIndex = currentIndex >= 0", "Route queue next selection advances in list order", failures);
   assertContains(playerNextTrackDomainSource, "const randomWatchNextId = getRandomWatchNextId();", "Random watch-next fallback still exists when no route queue target is available", failures);
@@ -213,6 +215,10 @@ function main() {
   // Watch Next seen-toggle and hide-confirm (shell surface).
   assertContains(shellDynamicSource, "useSeenTogglePreference", "Watch Next shell uses shared seen-toggle persistence hook", failures);
   assertContains(shellDynamicSource, "key: WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY", "Watch Next shell stores preference under Watch Next key", failures);
+  assertContains(shellDynamicSource, "const [watchNextRefreshTick, setWatchNextRefreshTick] = useState(0);", "Watch Next tracks explicit refresh ticks for autoplay-settings changes", failures);
+  assertContains(shellDynamicSource, "window.addEventListener(AUTOPLAY_SETTINGS_UPDATED_EVENT, handleAutoplaySettingsUpdated);", "Watch Next listens for autoplay-settings refresh events", failures);
+  assertContains(shellDynamicSource, "setRelatedVideos([]);", "Watch Next clears stale source videos before reloading after autoplay-settings changes", failures);
+  assertContains(shellDynamicSource, "setDisplayedRelatedVideos([]);", "Watch Next clears stale rendered videos before reloading after autoplay-settings changes", failures);
   assertContains(shellDynamicSource, "const [watchNextHideConfirmTrack, setWatchNextHideConfirmTrack] = useState<VideoRecord | null>(null);", "Watch Next shell tracks hide-confirm modal target video", failures);
   assertContains(shellDynamicSource, "<HideVideoConfirmModal", "Watch Next shell renders hide-confirm modal", failures);
   assertContains(shellDynamicSource, "void confirmHideFromWatchNext();", "Watch Next shell confirms exclusion via shared modal callback", failures);

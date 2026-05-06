@@ -16,6 +16,7 @@ export function useNextTrackDecision({
   effectivePlaylistIndex,
   temporaryQueue,
   currentVideoId,
+  autoplayEnabled,
   isDockedDesktop,
   shouldUseRouteQueueRegardlessOfDocked,
   routeAutoplayQueueIds,
@@ -48,6 +49,7 @@ export function useNextTrackDecision({
       effectivePlaylistIndex,
       temporaryQueue,
       currentVideoId,
+      autoplayEnabled,
       isDockedDesktop,
       shouldUseRouteQueueRegardlessOfDocked,
       routeAutoplayQueueIds,
@@ -55,6 +57,7 @@ export function useNextTrackDecision({
     });
   }, [
     activePlaylistId,
+    autoplayEnabled,
     currentVideoId,
     effectivePlaylistIndex,
     getRandomWatchNextId,

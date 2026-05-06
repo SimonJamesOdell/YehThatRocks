@@ -26,6 +26,7 @@ describe("useNextTrackDecision", () => {
       currentVideoId: "p1",
       isDockedDesktop: true,
       autoplayEnabled: true,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: ["r1", "r2"],
       getRandomWatchNextId: vi.fn(() => "rand"),
     }));
@@ -47,6 +48,7 @@ describe("useNextTrackDecision", () => {
       currentVideoId: "q1",
       isDockedDesktop: true,
       autoplayEnabled: true,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: ["r1", "r2"],
       getRandomWatchNextId: vi.fn(() => "rand"),
     }));
@@ -70,6 +72,7 @@ describe("useNextTrackDecision", () => {
       currentVideoId: "r1",
       isDockedDesktop: true,
       autoplayEnabled: true,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: ["r1", "r2"],
       getRandomWatchNextId: randomPicker,
     }));
@@ -92,6 +95,7 @@ describe("useNextTrackDecision", () => {
       currentVideoId: "v3",
       isDockedDesktop: false,
       autoplayEnabled: false,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: [],
       getRandomWatchNextId: vi.fn(() => "rand"),
     }));
@@ -115,6 +119,7 @@ describe("useNextTrackDecision", () => {
       currentVideoId: "v1",
       isDockedDesktop: true,
       autoplayEnabled: true,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: ["r1"],
       getRandomWatchNextId: randomPicker,
     }));
@@ -135,6 +140,7 @@ describe("useNextTrackDecision", () => {
       currentVideoId: "q1",
       isDockedDesktop: false,
       autoplayEnabled: false,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: [],
       getRandomWatchNextId: vi.fn(() => "rand"),
     }));
@@ -158,6 +164,7 @@ describe("useNextTrackDecision", () => {
       currentVideoId: "other",
       isDockedDesktop: false,
       autoplayEnabled: false,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: [],
       getRandomWatchNextId: vi.fn(() => "rand"),
     }));
@@ -179,6 +186,7 @@ describe("useNextTrackDecision", () => {
       currentVideoId: "r2",
       isDockedDesktop: true,
       autoplayEnabled: true,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: ["r1", "r2", "r3"],
       getRandomWatchNextId: vi.fn(() => "rand"),
     }));
@@ -199,6 +207,7 @@ describe("useNextTrackDecision", () => {
       temporaryQueue: [],
       currentVideoId: "r2",
       isDockedDesktop: false,
+      autoplayEnabled: true,
       shouldUseRouteQueueRegardlessOfDocked: true,
       routeAutoplayQueueIds: ["r1", "r2", "r3"],
       getRandomWatchNextId: vi.fn(() => "rand"),
@@ -220,7 +229,8 @@ describe("useNextTrackDecision", () => {
       temporaryQueue: [],
       currentVideoId: "v1",
       isDockedDesktop: false,
-      autoplayEnabled: false,
+      autoplayEnabled: true,
+      shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: [],
       getRandomWatchNextId: vi.fn(() => "rand"),
     }));
@@ -230,5 +240,47 @@ describe("useNextTrackDecision", () => {
       playlistItemIndex: null,
       clearPlaylist: true,
     });
+  });
+
+  it("does not auto-advance when autoplay is off and no higher-priority source applies", () => {
+    const randomPicker = vi.fn(() => "rand");
+
+    const { result } = renderHook(() => useNextTrackDecision({
+      activePlaylistId: null,
+      hasActivePlaylistContext: false,
+      playlistQueueIds: [],
+      effectivePlaylistIndex: null,
+      temporaryQueue: [],
+      currentVideoId: "v1",
+      isDockedDesktop: false,
+      autoplayEnabled: false,
+      shouldUseRouteQueueRegardlessOfDocked: false,
+      routeAutoplayQueueIds: [],
+      getRandomWatchNextId: randomPicker,
+    }));
+
+    expect(result.current.resolveNextTarget()).toBeNull();
+    expect(randomPicker).not.toHaveBeenCalled();
+  });
+
+  it("blocks random fallback when /new or /top100 requires route-local progression", () => {
+    const randomPicker = vi.fn(() => "rand");
+
+    const { result } = renderHook(() => useNextTrackDecision({
+      activePlaylistId: null,
+      hasActivePlaylistContext: false,
+      playlistQueueIds: [],
+      effectivePlaylistIndex: null,
+      temporaryQueue: [],
+      currentVideoId: "v1",
+      isDockedDesktop: false,
+      autoplayEnabled: true,
+      shouldUseRouteQueueRegardlessOfDocked: true,
+      routeAutoplayQueueIds: [],
+      getRandomWatchNextId: randomPicker,
+    }));
+
+    expect(result.current.resolveNextTarget()).toBeNull();
+    expect(randomPicker).not.toHaveBeenCalled();
   });
 });
