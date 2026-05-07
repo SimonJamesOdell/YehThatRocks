@@ -1432,7 +1432,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                   : analyticsZoomLevel === "weekly"
                     ? "User analytics · rolling weekly buckets"
                     : analyticsZoomLevel === "daily"
-                      ? ""
+                      ? "User analytics · fixed daily buckets (UTC)"
                       : "User analytics · recent hourly buckets"}
             </span>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -1521,7 +1521,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                 : analyticsZoomLevel === "weekly"
                   ? "Click a bucket to zoom into daily traffic for that week window."
                   : analyticsZoomLevel === "daily"
-                    ? ""
+                    ? "* Today is a partial UTC day."
                     : "Showing the latest 24 hourly buckets."}
           </p>
 
