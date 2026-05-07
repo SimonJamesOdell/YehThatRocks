@@ -4,8 +4,7 @@ LEFT JOIN (
   FROM videos v
   INNER JOIN site_videos sv ON sv.video_id = v.id AND sv.status = 'available'
   WHERE (
-    LOWER(REPLACE(REPLACE(TRIM(COALESCE(v.genre, '')), '-', ' '), '_', ' ')) LIKE '%post doom%'
-    OR LOWER(COALESCE(v.title, '')) LIKE '%post-doom%'
+    LOWER(COALESCE(v.title, '')) LIKE '%post-doom%'
     OR LOWER(COALESCE(v.title, '')) LIKE '%post doom%'
     OR LOWER(COALESCE(v.description, '')) LIKE '%post-doom%'
     OR LOWER(COALESCE(v.description, '')) LIKE '%post doom%'
