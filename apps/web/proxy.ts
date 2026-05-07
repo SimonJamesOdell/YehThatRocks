@@ -58,8 +58,10 @@ function sanitizedAuthHeaders(request: NextRequest) {
   return requestHeaders;
 }
 
-function withSecurityHeaders(response: NextResponse) {
-  response.headers.set("X-Frame-Options", "DENY");
+function withSecurityHeaders(response: NextResponse, pathname = "") {
+  if (!pathname.startsWith("/embed/")) {
+    response.headers.set("X-Frame-Options", "DENY");
+  }
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
@@ -81,12 +83,14 @@ export async function proxy(request: NextRequest) {
 
   const isBrowserPageRequest = request.method === "GET" || request.method === "HEAD";
   const isShareRoute = pathname.startsWith("/s/") || pathname.startsWith("/share/");
+  const isEmbedRoute = pathname.startsWith("/embed/");
   const isMetadataCrawler = isMetadataCrawlerRequest(request);
   const shouldRedirectToDesktopOnly =
     isBrowserPageRequest
     && !pathname.startsWith("/api")
     && pathname !== "/desktop-only"
     && !isShareRoute
+    && !isEmbedRoute
     && !isMetadataCrawler
     && isMobileOrTabletRequest(request);
 
@@ -94,7 +98,7 @@ export async function proxy(request: NextRequest) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/desktop-only";
     redirectUrl.search = "";
-    return withSecurityHeaders(NextResponse.redirect(redirectUrl));
+    return withSecurityHeaders(NextResponse.redirect(redirectUrl), pathname);
   }
 
   // For browser page navigations (non-API), silently refresh when the access
@@ -103,7 +107,8 @@ export async function proxy(request: NextRequest) {
   const isBrowserPageNav =
     isBrowserPageRequest
     && !pathname.startsWith("/api")
-    && pathname !== "/desktop-only";
+    && pathname !== "/desktop-only"
+    && !isEmbedRoute;
 
   if (isBrowserPageNav) {
     const { accessToken: maybeAccess, refreshToken } = readAuthCookies(request);
@@ -121,7 +126,7 @@ export async function proxy(request: NextRequest) {
       silentRefreshUrl.pathname = "/api/auth/silent-refresh";
       const next = pathname + (request.nextUrl.search ?? "");
       silentRefreshUrl.search = `?next=${encodeURIComponent(next)}`;
-      return withSecurityHeaders(NextResponse.redirect(silentRefreshUrl));
+      return withSecurityHeaders(NextResponse.redirect(silentRefreshUrl), pathname);
     }
   }
 
@@ -145,6 +150,7 @@ export async function proxy(request: NextRequest) {
           headers: requestHeaders,
         },
       }),
+      pathname,
     );
   }
 
@@ -155,6 +161,7 @@ export async function proxy(request: NextRequest) {
           headers: requestHeaders,
         },
       }),
+      pathname,
     );
   }
 
@@ -171,6 +178,7 @@ export async function proxy(request: NextRequest) {
             headers: requestHeaders,
           },
         }),
+        pathname,
       );
     } catch {
       // Invalid token falls through to unauthorized response.
@@ -184,6 +192,7 @@ export async function proxy(request: NextRequest) {
       },
       { status: 401 },
     ),
+    pathname,
   );
 }
 
