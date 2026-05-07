@@ -913,7 +913,7 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
     `;
 
     const seed = seedRows[0];
-    const query = [seed?.parsedArtist?.trim() || "", seed?.parsedTrack?.trim() || "", seed?.title?.trim() || ""]
+    const query = [seed?.parsedArtist?.trim() || "", seed?.parsedTrack?.trim() || "", seed?.title?.trim() || "", "rock metal music video"]
       .join(" ")
       .replace(/\s+/g, " ")
       .trim()
