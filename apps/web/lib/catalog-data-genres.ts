@@ -28,6 +28,7 @@ import {
   getVideoArtistNormalizationExpr,
   getVideoArtistNormalizationIndexHintClause,
   hasGenreAllColumn,
+  hasVideoGenreColumn,
   hasVideoTitleFulltextIndex,
 } from "@/lib/catalog-data-db";
 
@@ -463,6 +464,11 @@ export async function getVideosByGenre(
 
   const getStrictGenreColumnVideos = async () => {
     if (!normalizedGenre) {
+      return [] as RankedVideoRow[];
+    }
+
+    const videoGenreColumnExists = await hasVideoGenreColumn();
+    if (!videoGenreColumnExists) {
       return [] as RankedVideoRow[];
     }
 

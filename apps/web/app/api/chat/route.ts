@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireAdminApiAuth } from "@/lib/admin-auth";
 import { getOptionalApiAuth, requireApiAuth } from "@/lib/auth-request";
 import { chatQuerySchema, createChatMessageSchema } from "@/lib/api-schemas";
+import { deleteChatMessageSchema } from "@/lib/api-schemas";
 import { chatChannel, chatEvents } from "@/lib/chat-events";
 import {
+  deleteChatMessageById,
   fetchChatMessages,
   fetchOnlineUsers,
   insertChatMessage,
@@ -140,4 +143,45 @@ export async function POST(request: NextRequest) {
 
   chatEvents.emit(chatChannel(mode, mode === "video" ? (videoId ?? null) : null), mapped);
   return NextResponse.json({ ok: true, message: mapped }, { status: 201 });
+}
+
+export async function DELETE(request: NextRequest) {
+  const authResult = await requireAdminApiAuth(request);
+
+  if (!authResult.ok) {
+    return authResult.response;
+  }
+
+  const csrfError = verifySameOrigin(request);
+  if (csrfError) {
+    return csrfError;
+  }
+
+  const bodyResult = await parseRequestJson(request);
+
+  if (!bodyResult.ok) {
+    return bodyResult.response;
+  }
+
+  const parsedBody = deleteChatMessageSchema.safeParse(bodyResult.data);
+
+  if (!parsedBody.success) {
+    return NextResponse.json({ error: parsedBody.error.flatten() }, { status: 400 });
+  }
+
+  const deletion = await deleteChatMessageById(parsedBody.data.messageId);
+
+  if (!deletion.deleted) {
+    return NextResponse.json({ error: "Message not found" }, { status: 404 });
+  }
+
+  chatEvents.emit(
+    chatChannel(deletion.mode, deletion.mode === "video" ? deletion.videoId : null),
+    {
+      type: "message-deleted",
+      messageId: parsedBody.data.messageId,
+    },
+  );
+
+  return NextResponse.json({ ok: true });
 }

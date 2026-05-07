@@ -99,6 +99,7 @@ let artistVideoColumnMapCache:
   | undefined;
 
 let videoArtistNormalizationColumnCache: string | null | undefined;
+let videoGenreColumnAvailableCache: boolean | undefined;
 
 // ── Schema introspection ──────────────────────────────────────────────────────
 
@@ -327,6 +328,28 @@ export async function hasVideoTitleFulltextIndex(): Promise<boolean> {
   }
 
   return videoTitleFulltextIndexAvailableCache;
+}
+
+// Returns true when the videos table has a `genre` column.
+// Some legacy/live schemas omit this column, so callers must guard direct `v.genre` SQL.
+export async function hasVideoGenreColumn(): Promise<boolean> {
+  if (videoGenreColumnAvailableCache !== undefined) return videoGenreColumnAvailableCache;
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ Field: string }>>(
+      "SHOW COLUMNS FROM videos LIKE 'genre'",
+    );
+    videoGenreColumnAvailableCache = rows.length > 0;
+  } catch {
+    try {
+      await prisma.$queryRawUnsafe("SELECT genre FROM videos LIMIT 1");
+      videoGenreColumnAvailableCache = true;
+    } catch {
+      videoGenreColumnAvailableCache = false;
+    }
+  }
+
+  return videoGenreColumnAvailableCache;
 }
 
 export function resetVideoTitleFulltextIndexCache() {

@@ -40,10 +40,17 @@ export type ChatStateResult = {
   chatError: string | null;
   isChatLoading: boolean;
   isChatSubmitting: boolean;
+  deletingMessageIds: number[];
   flashingChatTabs: Record<FlashableChatMode, boolean>;
   chatListRef: React.RefObject<HTMLDivElement | null>;
   latestMagazineTracks: typeof magazineDraftEdition.tracks;
   handleChatSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  handleDeleteChatMessage: (messageId: number) => Promise<void>;
+};
+
+type ChatDeleteEvent = {
+  type: "message-deleted";
+  messageId: number;
 };
 
 // ── Hook ───────────────────────────────────────────────────────────────────
@@ -81,6 +88,7 @@ export function useChatState({
   const [chatError, setChatError] = useState<string | null>(null);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
+  const [deletingMessageIds, setDeletingMessageIds] = useState<number[]>([]);
   const [flashingChatTabs, setFlashingChatTabs] = useState<Record<FlashableChatMode, boolean>>({
     global: false,
   });
@@ -200,7 +208,24 @@ export function useChatState({
 
     const handleIncomingMessage = (event: MessageEvent<string>) => {
       try {
-        const message = JSON.parse(event.data) as ChatMessage;
+        const payload = JSON.parse(event.data) as ChatMessage | ChatDeleteEvent;
+
+        if (
+          typeof payload === "object"
+          && payload !== null
+          && "type" in payload
+          && payload.type === "message-deleted"
+        ) {
+          const messageId = Number(payload.messageId);
+          if (!Number.isInteger(messageId) || messageId <= 0) {
+            return;
+          }
+          setChatMessages((current) => current.filter((message) => message.id !== messageId));
+          setDeletingMessageIds((current) => current.filter((id) => id !== messageId));
+          return;
+        }
+
+        const message = payload as ChatMessage;
 
         const incomingMode: FlashableChatMode | null = message.room === "global"
           ? "global"
@@ -262,6 +287,7 @@ export function useChatState({
     setOnlineUsers([]);
     setIsChatLoading(false);
     setIsChatSubmitting(false);
+    setDeletingMessageIds([]);
     if (!isMagazineOverlayRoute) {
       setChatMode("global");
     }
@@ -362,6 +388,48 @@ export function useChatState({
     }
   }
 
+  async function handleDeleteChatMessage(messageId: number) {
+    if (!Number.isInteger(messageId) || messageId <= 0) {
+      return;
+    }
+
+    if (deletingMessageIds.includes(messageId)) {
+      return;
+    }
+
+    setDeletingMessageIds((current) => [...current, messageId]);
+    setChatError(null);
+
+    try {
+      const response = await fetchWithAuthRetry("/api/chat", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ messageId }),
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        void checkAuthState();
+        onAuthLost?.();
+        setChatError("Only admins can delete chat comments.");
+        return;
+      }
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        setChatError(payload?.error ?? "Unable to delete message.");
+        return;
+      }
+
+      setChatMessages((current) => current.filter((message) => message.id !== messageId));
+    } catch {
+      setChatError("Unable to delete message.");
+    } finally {
+      setDeletingMessageIds((current) => current.filter((id) => id !== messageId));
+    }
+  }
+
   return {
     chatMode,
     setChatMode,
@@ -372,9 +440,11 @@ export function useChatState({
     chatError,
     isChatLoading,
     isChatSubmitting,
+    deletingMessageIds,
     flashingChatTabs,
     chatListRef,
     latestMagazineTracks,
     handleChatSubmit,
+    handleDeleteChatMessage,
   };
 }

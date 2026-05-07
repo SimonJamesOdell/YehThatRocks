@@ -167,6 +167,10 @@ export const createChatMessageSchema = z.object({
   content: z.string().trim().min(1).max(200),
 });
 
+export const deleteChatMessageSchema = z.object({
+  messageId: z.coerce.number().int().positive(),
+});
+
 export const adminRetrySuggestIngestSchema = z.object({
   videoId: z.string().trim().regex(/^[A-Za-z0-9_-]{11}$/),
 });

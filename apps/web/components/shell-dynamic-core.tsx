@@ -565,9 +565,9 @@ function ShellDynamicInner({
   const {
     chatMode, setChatMode,
     chatMessages, onlineUsers, chatDraft, setChatDraft,
-    chatError, isChatLoading, isChatSubmitting,
+    chatError, isChatLoading, isChatSubmitting, deletingMessageIds,
     flashingChatTabs, chatListRef, latestMagazineTracks,
-    handleChatSubmit,
+    handleChatSubmit, handleDeleteChatMessage,
   } = useChatState({
     initialPathname: pathname,
     isAuthenticated,
@@ -3278,7 +3278,29 @@ function ShellDynamicInner({
                           <div className="messageMeta">
                             <strong>{message.user.name}</strong>
                             {isUserOnline ? <span className="chatOnlineBadge" title="Online now">● Online</span> : null}
-                            <span>{formatChatTimestamp(message.createdAt)}</span>
+                            <span className="chatMessageMetaRight">
+                              <span className="chatMessageTimestamp">{formatChatTimestamp(message.createdAt)}</span>
+                              {isAdmin ? (
+                                <button
+                                  type="button"
+                                  className="chatDeleteButton"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    if (!window.confirm("Delete this chat comment?")) {
+                                      return;
+                                    }
+                                    void handleDeleteChatMessage(message.id);
+                                  }}
+                                  onKeyDown={(event) => {
+                                    event.stopPropagation();
+                                  }}
+                                  disabled={deletingMessageIds.includes(message.id)}
+                                  aria-label={`Delete chat comment from ${message.user.name}`}
+                                >
+                                  {deletingMessageIds.includes(message.id) ? "Deleting..." : "Delete"}
+                                </button>
+                              ) : null}
+                            </span>
                           </div>
                           {sharedVideo ? (
                             <>
@@ -4135,4 +4157,4 @@ export function ShellDynamic(props: ShellDynamicProps) {
       <ShellDynamicInner {...props} />
     </Suspense>
   );
-}
+}
