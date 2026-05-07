@@ -55,6 +55,7 @@ apps/web/.tmp-*.ts
 # Local development/debug files
 debug-*.mjs
 scripts/tmp-*
+scripts/.genre-backfill-checkpoint.json
 
 # Local setup scripts
 audit.ps1
