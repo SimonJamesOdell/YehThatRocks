@@ -71,6 +71,10 @@ function normalizeText(value) {
     .trim();
 }
 
+function normalizeGenreKey(value) {
+  return normalizeText(value).replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 function tokenizeGenre(genre) {
   return normalizeText(genre)
     .split(/[^a-z0-9]+/)
@@ -190,10 +194,20 @@ async function main() {
 
   for (const genre of genres) {
     const gLow = genre.toLowerCase();
+    const gNorm = normalizeGenreKey(genre);
 
     // Strategy 1: exact match
-    if (statsBestByGenre.has(gLow)) {
-      results.set(genre, statsBestByGenre.get(gLow).vid);
+    let exact = statsBestByGenre.get(gLow)?.vid ?? null;
+    if (!exact) {
+      for (const [sKey, { vid }] of statsBestByGenre) {
+        if (normalizeGenreKey(sKey) === gNorm) {
+          exact = vid;
+          break;
+        }
+      }
+    }
+    if (exact) {
+      results.set(genre, exact);
       continue;
     }
 
@@ -201,7 +215,14 @@ async function main() {
     //   e.g. "Black" → "Black Metal", "Black Metal (early)"
     let found = null;
     for (const [sKey, { vid }] of statsBestByGenre) {
-      if (sKey.startsWith(gLow + " ") || sKey.startsWith(gLow + "(") || sKey === gLow) {
+      const sNorm = normalizeGenreKey(sKey);
+      if (
+        sKey.startsWith(gLow + " ")
+        || sKey.startsWith(gLow + "(")
+        || sKey === gLow
+        || sNorm.startsWith(gNorm + " ")
+        || sNorm === gNorm
+      ) {
         found = vid;
         break;
       }
@@ -211,7 +232,7 @@ async function main() {
     // Strategy 3: artist_stats genre contains canonical name as a word
     //   e.g. "Metal" → "Heavy Metal", "Death Metal"
     for (const [sKey, { vid }] of statsBestByGenre) {
-      if (sKey.includes(gLow)) {
+      if (sKey.includes(gLow) || normalizeGenreKey(sKey).includes(gNorm)) {
         found = vid;
         break;
       }
@@ -222,7 +243,12 @@ async function main() {
     //   e.g. "Metal" is short; "Death Metal" canonical matches "Death" if that
     //   existed — rarely used but catches short artist_stats tags
     for (const [sKey, { vid }] of statsBestByGenre) {
-      if (gLow.startsWith(sKey + " ") || gLow.startsWith(sKey + "(")) {
+      const sNorm = normalizeGenreKey(sKey);
+      if (
+        gLow.startsWith(sKey + " ")
+        || gLow.startsWith(sKey + "(")
+        || gNorm.startsWith(sNorm + " ")
+      ) {
         found = vid;
         break;
       }
@@ -277,11 +303,12 @@ async function main() {
 
     for (const genre of missing) {
       const gLow = genre.toLowerCase();
+      const gNorm = normalizeGenreKey(genre);
 
       // Strategy 5: exact match on any genre column
       let vid = null;
       for (const [nameLow, genreTags] of artByName) {
-        if (genreTags.some((tag) => tag === gLow)) {
+        if (genreTags.some((tag) => tag === gLow || normalizeGenreKey(tag) === gNorm)) {
           vid = artistBestVideo.get(nameLow);
           if (vid) break;
         }
@@ -290,7 +317,7 @@ async function main() {
       // Strategy 6: genre column contains canonical name (e.g. "Country Rock" for "Country")
       if (!vid) {
         for (const [nameLow, genreTags] of artByName) {
-          if (genreTags.some((tag) => tag.includes(gLow))) {
+          if (genreTags.some((tag) => tag.includes(gLow) || normalizeGenreKey(tag).includes(gNorm))) {
             vid = artistBestVideo.get(nameLow);
             if (vid) break;
           }

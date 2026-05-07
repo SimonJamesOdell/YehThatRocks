@@ -57,6 +57,19 @@ function resetGenreCardCaches() {
   genreListCache = undefined;
 }
 
+function normalizeGenreTerm(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeRegexLiteral(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function clearGenreCaches() {
   genreArtistsCache.clear();
   genreVideosCache.clear();
@@ -388,6 +401,10 @@ export async function getVideosByGenre(
   },
 ) {
   const cacheKey = genre.trim().toLowerCase();
+  const normalizedGenre = normalizeGenreTerm(genre);
+  const normalizedGenrePattern = normalizedGenre.length > 0
+    ? `(^|[^a-z0-9])${escapeRegexLiteral(normalizedGenre).replace(/ /g, "[^a-z0-9]+")}([^a-z0-9]|$)`
+    : "";
   const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
   const requestedLimit = Math.max(1, Math.min(120, Number.isFinite(options?.limit) ? Number(options?.limit) : 24));
   const minRequiredRows = requestedOffset + requestedLimit;
@@ -444,10 +461,55 @@ export async function getVideosByGenre(
     `;
   };
 
+  const getStrictGenreColumnVideos = async () => {
+    if (!normalizedGenre) {
+      return [] as RankedVideoRow[];
+    }
+
+    const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
+
+    return prisma.$queryRawUnsafe<RankedVideoRow[]>(
+      `SELECT
+         v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
+       FROM videos v
+       WHERE v.videoId IS NOT NULL
+         AND v.genre IS NOT NULL
+         AND TRIM(v.genre) <> ''
+         AND COALESCE(v.approved, 0) = 1
+         AND EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND sv.status = 'available')
+         AND NOT EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status <> 'available'))
+         AND (
+           ${normalizedGenreSqlExpr} = ?
+           OR LOWER(v.genre) REGEXP ?
+         )
+       ORDER BY
+         CASE
+           WHEN ${normalizedGenreSqlExpr} = ? THEN 0
+           ELSE 1
+         END,
+         v.favourited DESC,
+         COALESCE(v.viewCount, 0) DESC,
+         v.videoId ASC
+       LIMIT ${fetchQueryLimit}`,
+      normalizedGenre,
+      normalizedGenrePattern,
+      normalizedGenre,
+    );
+  };
+
   requireDatabaseUrl("getVideosByGenre");
 
   try {
     return await withSoftTimeout(`getVideosByGenre:${cacheKey}`, CATEGORY_QUERY_TIMEOUT_MS, async () => {
+      const strictGenreVideos = await getStrictGenreColumnVideos();
+      considerRows(strictGenreVideos);
+
+      if (canResolveWindow()) {
+        const resolved = resolveFromBestRows();
+        storeGenreVideosInCache(resolved);
+        return resolved;
+      }
+
       const keywordVideos = await getGenreKeywordVideos();
       considerRows(keywordVideos);
 
