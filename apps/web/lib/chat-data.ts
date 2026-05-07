@@ -479,3 +479,45 @@ export async function insertChatMessage(params: {
 
   return mapChatMessage(message, userById);
 }
+
+export async function deleteChatMessageById(messageId: number): Promise<
+  | { deleted: true; mode: "global" | "video"; videoId: string | null }
+  | { deleted: false }
+> {
+  const columns = await getMessageColumns();
+
+  const idCol = escapeIdentifier(columns.id);
+  const roomCol = escapeIdentifier(columns.room);
+  const videoIdCol = escapeIdentifier(columns.videoId);
+
+  const existing = await prisma.$queryRawUnsafe<Array<{ room: string | null; videoId: string | null }>>(
+    `
+      SELECT
+        m.${roomCol} AS room,
+        m.${videoIdCol} AS videoId
+      FROM messages m
+      WHERE m.${idCol} = ?
+      LIMIT 1
+    `,
+    messageId,
+  );
+
+  if (existing.length === 0) {
+    return { deleted: false };
+  }
+
+  const room = existing[0]?.room;
+  const mode: "global" | "video" = room === "video" ? "video" : "global";
+  const videoId = mode === "video" ? (existing[0]?.videoId ?? null) : null;
+
+  const deletedRows = await prisma.$executeRawUnsafe(
+    `DELETE FROM messages WHERE ${idCol} = ?`,
+    messageId,
+  );
+
+  if (Number(deletedRows ?? 0) <= 0) {
+    return { deleted: false };
+  }
+
+  return { deleted: true, mode, videoId };
+}

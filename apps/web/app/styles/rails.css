@@ -307,6 +307,39 @@
   font-size: 0.64rem;
 }
 
+.chatMessageMetaRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chatMessageTimestamp {
+  color: rgba(255, 182, 170, 0.58);
+  font-weight: 400;
+  font-size: 0.64rem;
+}
+
+.chatDeleteButton {
+  border: 1px solid rgba(255, 121, 108, 0.55);
+  background: rgba(110, 15, 10, 0.35);
+  color: #ffd6cf;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.chatDeleteButton:hover {
+  background: rgba(180, 25, 14, 0.45);
+}
+
+.chatDeleteButton:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .chatOnlineBadge {
   font-size: 0.78rem;
   font-weight: 500;
