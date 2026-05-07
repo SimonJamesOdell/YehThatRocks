@@ -1,3 +1,5 @@
+import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+
 export type FrontendLoaderJsonResult<T> =
   | {
       ok: true;
@@ -46,7 +48,7 @@ export async function fetchJsonWithLoaderContract<T>(
     init,
     timeoutMs,
     failureMessage,
-    fetcher = fetch,
+    fetcher = fetchWithAuthRetry,
     maxAttempts = 3,
     initialDelayMs = 700,
     backoffMultiplier = 2,

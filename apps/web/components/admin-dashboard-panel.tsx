@@ -1086,11 +1086,25 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       return;
     }
 
+    let authErrorRetries = 0;
+    const MAX_AUTH_ERROR_RETRIES = 2;
+    const AUTH_ERROR_RETRY_DELAY_MS = 1200;
+
     const refreshVideoModerationQueues = async () => {
       try {
         await Promise.all([loadPendingVideos(), loadRecentlyApprovedVideos()]);
+        authErrorRetries = 0; // Reset on success
       } catch (pollError) {
         if (isAuthResponseError(pollError)) {
+          // Retry on auth errors (could be transient token refresh issue)
+          if (authErrorRetries < MAX_AUTH_ERROR_RETRIES) {
+            authErrorRetries += 1;
+            setTimeout(() => {
+              void refreshVideoModerationQueues();
+            }, AUTH_ERROR_RETRY_DELAY_MS);
+            return;
+          }
+          // After retries, only show error if still persisting
           setError("Unauthorized. Please sign in again.");
           return;
         }
