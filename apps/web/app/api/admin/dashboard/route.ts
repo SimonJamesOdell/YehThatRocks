@@ -55,6 +55,24 @@ function addUtcMonths(date: Date, months: number) {
   return next;
 }
 
+function addUtcDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function startOfUtcDay(date: Date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function toUtcDayKey(date: Date) {
+  return startOfUtcDay(date).toISOString().slice(0, 10);
+}
+
+function formatUtcDateLabel(date: Date) {
+  return date.toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
 function countMonthsInclusive(start: Date, end: Date) {
   return Math.max(1, ((end.getUTCFullYear() - start.getUTCFullYear()) * 12) + (end.getUTCMonth() - start.getUTCMonth()) + 1);
 }
@@ -153,6 +171,64 @@ function buildRollingAnalyticsSeriesFromRollup(
     label: buildRangeLabel(bucket.bucketStart, bucket.bucketEnd, mode, bucketMonths),
     ...metrics[index],
   }));
+}
+
+function buildCalendarDailyAnalyticsSeriesFromRollup(
+  nowDate: Date,
+  rows: Array<{
+    day: Date;
+    pageViews: bigint | number;
+    videoViews: bigint | number;
+    uniqueVisitors: bigint | number;
+    returnVisits: bigint | number;
+    authEvents: bigint | number;
+  }>,
+  options?: { bucketCount?: number },
+): AnalyticsSeriesBucket[] {
+  const bucketCount = options?.bucketCount ?? 12;
+  const todayStart = startOfUtcDay(nowDate);
+  const todayKey = toUtcDayKey(nowDate);
+  const dayMetricByKey = new Map<string, {
+    pageViews: number;
+    videoViews: number;
+    uniqueVisitors: number;
+    returnVisits: number;
+    authEvents: number;
+  }>();
+
+  for (const row of rows) {
+    const rowDay = row.day instanceof Date ? row.day : new Date(row.day);
+    const dayKey = toUtcDayKey(rowDay);
+    dayMetricByKey.set(dayKey, {
+      pageViews: toNumber(row.pageViews),
+      videoViews: toNumber(row.videoViews),
+      uniqueVisitors: toNumber(row.uniqueVisitors),
+      returnVisits: toNumber(row.returnVisits),
+      authEvents: toNumber(row.authEvents),
+    });
+  }
+
+  return Array.from({ length: bucketCount }, (_, index) => {
+    const reverseIndex = bucketCount - index - 1;
+    const bucketStart = addUtcDays(todayStart, -reverseIndex);
+    const dayKey = toUtcDayKey(bucketStart);
+    const isTodayBucket = dayKey === todayKey;
+    const bucketEnd = isTodayBucket ? nowDate : addUtcDays(bucketStart, 1);
+    const metrics = dayMetricByKey.get(dayKey) ?? {
+      pageViews: 0,
+      videoViews: 0,
+      uniqueVisitors: 0,
+      returnVisits: 0,
+      authEvents: 0,
+    };
+
+    return {
+      bucketStart: bucketStart.toISOString(),
+      bucketEnd: bucketEnd.toISOString(),
+      label: `${formatUtcDateLabel(bucketStart)}${isTodayBucket ? " *" : ""}`,
+      ...metrics,
+    };
+  });
 }
 
 const ADMIN_DASHBOARD_CACHE_TTL_MS = 30_000;
@@ -395,7 +471,7 @@ export async function GET(request: NextRequest) {
   const weeklySeries = buildRollingAnalyticsSeriesFromRollup(nowDate, "weekly", effectiveDailySeriesRows, {
     bucketCount: 12,
   });
-  const dailySeries = buildRollingAnalyticsSeriesFromRollup(nowDate, "daily", effectiveDailySeriesRows, {
+  const dailySeries = buildCalendarDailyAnalyticsSeriesFromRollup(nowDate, effectiveDailySeriesRows, {
     bucketCount: 12,
   });
 
