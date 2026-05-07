@@ -153,6 +153,7 @@ const SEARCHING_ALTERNATIVE_OVERLAY_MESSAGE = "This video is unavailable. Search
 const COPYRIGHT_CLAIM_OVERLAY_MESSAGE = "This video is no longer available due to a copyright claim on YouTube.";
 const REMOVED_PRIVATE_OVERLAY_MESSAGE = "This video is unavailable on YouTube because it was removed, deleted, or made private.";
 const BROKEN_UPSTREAM_AUTOADVANCE_MS = 20000;
+const BOT_BLOCK_CONFIRMATION_DELAY_MS = 3200;
 const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstream video provider for this track. This is not a YehThatRocks failure. Please try the refresh button and if that does not work, choose another track.";
 const DELETED_TRACK_OVERLAY_MESSAGE = "This track was removed from YehThatRocks.";
 const EARLY_PLAYBACK_VERIFICATION_MS = 700;
@@ -305,6 +306,7 @@ export function PlayerExperience({
   const playerLoadRefreshHintTimeoutRef = useRef<number | null>(null);
   const playerAutoReconnectTimeoutRef = useRef<number | null>(null);
   const manualTransitionMaskTimeoutRef = useRef<number | null>(null);
+  const botBlockConfirmationTimeoutRef = useRef<number | null>(null);
   const playlistDropAnimationTimeoutRef = useRef<number | null>(null);
   const hasAutoReconnectAttemptedRef = useRef(false);
   const isPlayerReadyRef = useRef(false);
@@ -383,6 +385,7 @@ export function PlayerExperience({
   const [showPlayerRefreshHint, setShowPlayerRefreshHint] = useState(false);
   const [playerReloadNonce, setPlayerReloadNonce] = useState(0);
   const [allowDirectIframeInteraction, setAllowDirectIframeInteraction] = useState(false);
+  const [isBotBlockConfirmationPending, setIsBotBlockConfirmationPending] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
@@ -1281,8 +1284,15 @@ export function PlayerExperience({
     && routeAutoplayQueueIds.length > 0;
   const hasActivePlayback = isPlaying || hasPlaybackStarted || safeCurrentTime > 0;
   const showRouteLikeLoadingCopy = isRouteResolving || isManualTransitionMaskVisible;
+  const playerLoadingLabel = isBotBlockConfirmationPending
+    ? "Verifying playback status"
+    : (showRouteLikeLoadingCopy ? routeLoadingLabel : "Loading video player");
+  const playerLoadingMessage = isBotBlockConfirmationPending
+    ? "checking if playback can start..."
+    : (showRouteLikeLoadingCopy ? routeLoadingMessage : "connecting to upstream video provider...");
   const showPlayerLoadingOverlay = isLoggedIn && (
     isManualTransitionMaskVisible
+      || isBotBlockConfirmationPending
       || ((!isPlayerReady || isRouteResolving) && !hasActivePlayback)
   );
   const playerFrameClassName = [
@@ -1362,6 +1372,26 @@ export function PlayerExperience({
     setUnavailableOverlayRequiresOk(false);
     setUnavailableAutoAdvanceMs(null);
     setUnavailableAutoAdvanceSeconds(null);
+  }
+
+  function clearManualTransitionMask() {
+    if (manualTransitionMaskTimeoutRef.current !== null) {
+      window.clearTimeout(manualTransitionMaskTimeoutRef.current);
+      manualTransitionMaskTimeoutRef.current = null;
+    }
+
+    setIsManualTransitionMaskVisible(false);
+  }
+
+  function clearBotBlockConfirmationTimer(options?: { clearPendingState?: boolean }) {
+    if (botBlockConfirmationTimeoutRef.current !== null) {
+      window.clearTimeout(botBlockConfirmationTimeoutRef.current);
+      botBlockConfirmationTimeoutRef.current = null;
+    }
+
+    if (options?.clearPendingState !== false) {
+      setIsBotBlockConfirmationPending(false);
+    }
   }
 
   function acknowledgeDeletedOverlay() {
@@ -1508,6 +1538,9 @@ export function PlayerExperience({
       return;
     }
 
+    clearManualTransitionMask();
+    clearBotBlockConfirmationTimer();
+
     setIsPlayerReady(true);
     setShowPlayerRefreshHint(false);
     setIsPlaying(true);
@@ -1554,27 +1587,66 @@ export function PlayerExperience({
       return;
     }
 
-    if (overlayTimeoutRef.current) {
-      window.clearTimeout(overlayTimeoutRef.current);
-      overlayTimeoutRef.current = null;
+    if (isBotBlockConfirmationPending) {
+      logPlayerDebug("bot-challenge:direct-iframe-mode-pending-confirmation", {
+        videoId: currentVideoRef.current.id,
+        trigger,
+        verificationReason,
+      });
+      return;
     }
 
-    clearUnavailableOverlayMessage();
-    setShowNowPlayingOverlay(false);
-    setShowControls(false);
-    setShowShareMenu(false);
-    setShowPlayerRefreshHint(false);
-    playbackStallStartedAtRef.current = null;
-    playbackStallLastTimeRef.current = null;
-    playbackStallLastObservedAtRef.current = null;
-    allowDirectIframeInteractionRef.current = true;
-    setAllowDirectIframeInteraction(true);
+    clearBotBlockConfirmationTimer();
+    setAllowDirectIframeInteraction(false);
+    allowDirectIframeInteractionRef.current = false;
+    setIsBotBlockConfirmationPending(true);
 
-    logPlayerDebug("bot-challenge:direct-iframe-mode", {
-      videoId: currentVideoRef.current.id,
-      trigger,
-      verificationReason,
-    });
+    const targetVideoId = currentVideoRef.current.id;
+    botBlockConfirmationTimeoutRef.current = window.setTimeout(() => {
+      botBlockConfirmationTimeoutRef.current = null;
+
+      if (currentVideoRef.current.id !== targetVideoId) {
+        setIsBotBlockConfirmationPending(false);
+        return;
+      }
+
+      if (hasActivePlaybackForCurrentVideo()) {
+        setIsBotBlockConfirmationPending(false);
+        restoreVisiblePlaybackStateFromRuntime("direct-iframe-confirmation-cancelled-active-playback");
+        logPlayerDebug("bot-challenge:direct-iframe-mode-cancelled-active-playback", {
+          videoId: currentVideoRef.current.id,
+          trigger,
+          verificationReason,
+        });
+        return;
+      }
+
+      setIsBotBlockConfirmationPending(false);
+
+      if (overlayTimeoutRef.current) {
+        window.clearTimeout(overlayTimeoutRef.current);
+        overlayTimeoutRef.current = null;
+      }
+
+      clearUnavailableOverlayMessage();
+      clearManualTransitionMask();
+      setShowNowPlayingOverlay(false);
+      setShowControls(false);
+      setShowShareMenu(false);
+      setShowPlayerRefreshHint(false);
+      playbackStallStartedAtRef.current = null;
+      playbackStallLastTimeRef.current = null;
+      playbackStallLastObservedAtRef.current = null;
+      allowDirectIframeInteractionRef.current = true;
+      setAllowDirectIframeInteraction(true);
+
+      logPlayerDebug("bot-challenge:direct-iframe-mode", {
+        videoId: currentVideoRef.current.id,
+        trigger,
+        verificationReason,
+        confirmationDelayMs: BOT_BLOCK_CONFIRMATION_DELAY_MS,
+      });
+    }, BOT_BLOCK_CONFIRMATION_DELAY_MS);
   }
 
   function applyVerifiedPlaybackFailurePresentation(
@@ -2265,11 +2337,9 @@ export function PlayerExperience({
     setShowControls(false);
     resetPlaybackStallWatchdog();
     setAllowDirectIframeInteraction(false);
-    setIsManualTransitionMaskVisible(false);
-    if (manualTransitionMaskTimeoutRef.current !== null) {
-      window.clearTimeout(manualTransitionMaskTimeoutRef.current);
-      manualTransitionMaskTimeoutRef.current = null;
-    }
+    allowDirectIframeInteractionRef.current = false;
+    clearBotBlockConfirmationTimer();
+    clearManualTransitionMask();
     logFlow("current-video:changed", {
       currentVideoId: currentVideo.id,
       queueSize: queue.length,
@@ -2404,6 +2474,8 @@ export function PlayerExperience({
     // If playback recovered while the policy blocker was visible, drop back to normal player UI.
     setAllowDirectIframeInteraction(false);
     allowDirectIframeInteractionRef.current = false;
+    clearBotBlockConfirmationTimer();
+    clearManualTransitionMask();
     restoreVisiblePlaybackStateFromRuntime("direct-iframe-cleared-active-playback");
     logPlayerDebug("bot-challenge:direct-iframe-mode-cleared-active-playback", {
       videoId: currentVideo.id,
@@ -2558,6 +2630,9 @@ export function PlayerExperience({
     setHasPlaybackStarted(false);
     hasPlaybackStartedRef.current = false;
     setAllowDirectIframeInteraction(false);
+    allowDirectIframeInteractionRef.current = false;
+    clearBotBlockConfirmationTimer();
+    clearManualTransitionMask();
     reportedUnavailableVideoIdRef.current = null;
     reportedUnavailableVerificationReasonRef.current = null;
     autoplaySuppressedVideoIdRef.current = null;
@@ -2788,6 +2863,9 @@ export function PlayerExperience({
               }
 
               setAllowDirectIframeInteraction(false);
+              allowDirectIframeInteractionRef.current = false;
+              clearBotBlockConfirmationTimer();
+              clearManualTransitionMask();
               clearUnavailableOverlayMessage();
               clearStuckPlaybackRetryTimer();
               clearStuckPlaybackWatchdogTimer();
@@ -3261,6 +3339,11 @@ export function PlayerExperience({
       if (manualTransitionMaskTimeoutRef.current !== null) {
         window.clearTimeout(manualTransitionMaskTimeoutRef.current);
         manualTransitionMaskTimeoutRef.current = null;
+      }
+
+      if (botBlockConfirmationTimeoutRef.current !== null) {
+        window.clearTimeout(botBlockConfirmationTimeoutRef.current);
+        botBlockConfirmationTimeoutRef.current = null;
       }
 
       clearStuckPlaybackRetryTimer();
@@ -4614,14 +4697,14 @@ export function PlayerExperience({
               ) : null}
 
               {showPlayerLoadingOverlay && !allowDirectIframeInteraction ? (
-                <div className="playerBootLoader" role="status" aria-live="polite" aria-label={showRouteLikeLoadingCopy ? routeLoadingLabel : "Loading video player"}>
+                <div className="playerBootLoader" role="status" aria-live="polite" aria-label={playerLoadingLabel}>
                   <div className="playerBootBars" aria-hidden="true">
                     <span />
                     <span />
                     <span />
                     <span />
                   </div>
-                  <p>{showRouteLikeLoadingCopy ? routeLoadingMessage : "connecting to upstream video provider..."}</p>
+                  <p>{playerLoadingMessage}</p>
                   {!showRouteLikeLoadingCopy && showPlayerRefreshHint ? (
                     <div className="playerBootRefreshWrap">
                       <button
