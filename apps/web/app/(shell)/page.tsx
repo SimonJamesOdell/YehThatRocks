@@ -86,8 +86,60 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
   };
 }
 
+const SITE_ORIGIN_STATIC = "https://yehthatrocks.com";
+
 export default function Home() {
-  // The shell layout owns the player; the home route shows only the player (no overlay).
-  return null;
+  // The shell layout owns the persistent player. The home route adds SEO-visible
+  // content that is visually hidden but readable by search engines and screen readers.
+  const websiteJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "YehThatRocks",
+    url: SITE_ORIGIN_STATIC,
+    description:
+      "Stream and discover rock and metal music videos. 266,000+ videos across 153 genres including Heavy Metal, Thrash, Doom, Prog, Classic Rock, and more.",
+    potentialAction: {
+      "@type": "SearchAction",
+      target: {
+        "@type": "EntryPoint",
+        urlTemplate: `${SITE_ORIGIN_STATIC}/artists?q={search_term_string}`,
+      },
+      "query-input": "required name=search_term_string",
+    },
+  };
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
+      />
+      <div className="seoLandingContent">
+        <h1>YehThatRocks — Rock &amp; Metal Music Video Discovery</h1>
+        <p>
+          Stream over 266,000 rock and metal music videos across 153 genres. Discover new tracks,
+          browse by artist or genre, and follow community-curated playlists.
+        </p>
+        <nav aria-label="Browse by genre">
+          <ul>
+            <li><a href="/categories/heavy-metal">Heavy Metal</a></li>
+            <li><a href="/categories/thrash-metal">Thrash Metal</a></li>
+            <li><a href="/categories/classic-rock">Classic Rock</a></li>
+            <li><a href="/categories/doom-metal">Doom Metal</a></li>
+            <li><a href="/categories/progressive-metal">Progressive Metal</a></li>
+            <li><a href="/categories/death-metal">Death Metal</a></li>
+            <li><a href="/categories/black-metal">Black Metal</a></li>
+            <li><a href="/categories/power-metal">Power Metal</a></li>
+            <li><a href="/categories">All genres →</a></li>
+          </ul>
+        </nav>
+        <p>
+          <a href="/top100">Top 100 most-played videos</a> ·{" "}
+          <a href="/new">New additions</a> ·{" "}
+          <a href="/artists">Browse 140,000+ artists A–Z</a>
+        </p>
+      </div>
+    </>
+  );
 }
 

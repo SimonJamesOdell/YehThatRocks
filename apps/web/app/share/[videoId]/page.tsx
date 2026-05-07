@@ -107,10 +107,42 @@ export default async function ShareVideoPage({ params }: SharePageProps) {
   const normalizedVideoId = normalizeYouTubeVideoId(videoId);
   const targetHref = normalizedVideoId ? `/?v=${encodeURIComponent(normalizedVideoId)}&resume=1` : "/";
 
+  // Build VideoObject JSON-LD for Google rich results (video search thumbnails)
+  let videoJsonLd: Record<string, unknown> | null = null;
+  if (normalizedVideoId) {
+    const requestHeaders = await headers();
+    const host = requestHeaders.get("x-forwarded-host") || requestHeaders.get("host") || "yehthatrocks.com";
+    const proto = requestHeaders.get("x-forwarded-proto") || "https";
+    const siteOrigin = `${proto}://${host}`;
+    const meta = await resolveShareMetadataForOrigin(normalizedVideoId, undefined, siteOrigin).catch(() => null);
+    if (meta) {
+      videoJsonLd = {
+        "@context": "https://schema.org",
+        "@type": "VideoObject",
+        name: meta.safeVideoTitle,
+        description: meta.shareDescription,
+        thumbnailUrl: [meta.primaryImageUrl, meta.secondaryImageUrl],
+        embedUrl: `https://www.youtube.com/embed/${encodeURIComponent(normalizedVideoId)}`,
+        contentUrl: meta.playUrl,
+        url: meta.shareUrl,
+        uploadDate: new Date().toISOString().slice(0, 10),
+        publisher: {
+          "@type": "Organization",
+          name: "YehThatRocks",
+          url: siteOrigin,
+        },
+      };
+    }
+  }
+
   return (
-    <ServiceFailurePanel
-      mainAriaLabel="Opening shared video"
-      panelAriaLabel="Opening shared video"
+    <>
+      {videoJsonLd ? (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(videoJsonLd) }} />
+      ) : null}
+      <ServiceFailurePanel
+        mainAriaLabel="Opening shared video"
+        panelAriaLabel="Opening shared video"
       eyebrow="Share link"
       title="Opening video..."
       lead="If you are not redirected, use the button below."
@@ -118,5 +150,6 @@ export default async function ShareVideoPage({ params }: SharePageProps) {
       prePanelContent={<ShareRedirect targetHref={targetHref} />}
       actions={<Link href={targetHref} className="linkedCard">Open video</Link>}
     />
+    </>
   );
 }
