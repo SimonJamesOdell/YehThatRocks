@@ -411,7 +411,7 @@ VOICE RULES:
 - No hedging: never write arguably, perhaps, maybe, potentially, in many ways, seems to, appears to.
 - Never use the pattern: not X, it's Y.
 - Never copy source phrasing.
-- Do not invent specific facts (dates, chart positions, lineup details). Write about the music as you hear it.
+- Do not invent specific facts (dates, chart positions). If a "Band lineup" section is included in the track context, use those member names when writing about instruments or roles. Do not invent member names if no lineup is provided.
 
 COPYRIGHT RULES:
 - The news item supplies the hook only. Do not summarise it.
@@ -433,13 +433,76 @@ OUTPUT JSON ONLY:
 
 The body must contain 10-14 blocks. Use 3-4 h2 headings. Each p block must be a full paragraph of 4-6 sentences. End with a paragraph that tells readers exactly where to find this track on YehThatRocks.`;
 
-function buildUserPrompt(video, news) {
-  return [
+/**
+ * Fetch current band members from MusicBrainz for a given artist name.
+ * Returns an array of { name, roles } objects, or an empty array on failure.
+ */
+async function fetchBandMembers(artistName) {
+  try {
+    const searchUrl = `https://musicbrainz.org/ws/2/artist/?query=artist:${encodeURIComponent(artistName)}&limit=5&fmt=json`;
+    const searchRes = await fetch(searchUrl, {
+      headers: {
+        "User-Agent": "YehThatRocksMagazineBot/1.0 (https://yehthatrocks.com)",
+        "Accept": "application/json",
+      },
+    });
+    if (!searchRes.ok) return [];
+    const searchData = await searchRes.json();
+
+    const artists = searchData?.artists || [];
+    // Pick best match that is a Group/band with a high confidence score
+    const match = artists.find((a) => a.type === "Group" && (a.score ?? 0) >= 80);
+    if (!match) return [];
+
+    // Respect MusicBrainz rate limit: max 1 req/sec
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+
+    const relUrl = `https://musicbrainz.org/ws/2/artist/${match.id}?inc=artist-rels&fmt=json`;
+    const relRes = await fetch(relUrl, {
+      headers: {
+        "User-Agent": "YehThatRocksMagazineBot/1.0 (https://yehthatrocks.com)",
+        "Accept": "application/json",
+      },
+    });
+    if (!relRes.ok) return [];
+    const relData = await relRes.json();
+
+    const relations = relData?.relations || [];
+    const members = [];
+    for (const rel of relations) {
+      // "member of band" from the band's view: direction is "backward", rel.artist is the member
+      if (rel.type !== "member of band" || rel.direction !== "backward") continue;
+      if (rel.ended === true || rel.end) continue; // skip past members
+      const memberName = rel.artist?.name;
+      if (!memberName) continue;
+      const roles = Array.isArray(rel.attributes) ? rel.attributes : [];
+      members.push({ name: memberName, roles });
+    }
+    return members;
+  } catch {
+    return [];
+  }
+}
+
+function buildUserPrompt(video, news, members) {
+  const lines = [
     `Track context:`,
     `Artist: ${video.artist}`,
     `Track: ${video.track}`,
     `Genre: ${video.genre}`,
     `Video ID: ${video.videoId}`,
+  ];
+
+  if (members && members.length > 0) {
+    lines.push("");
+    lines.push("Band lineup (use these real names when writing about instruments or roles):");
+    for (const m of members) {
+      const roleStr = m.roles.length > 0 ? ` (${m.roles.join(", ")})` : "";
+      lines.push(`- ${m.name}${roleStr}`);
+    }
+  }
+
+  lines.push(
     "",
     "Use these source facts:",
     `Source publication: ${news.source}`,
@@ -449,7 +512,9 @@ function buildUserPrompt(video, news) {
     `Source summary: ${news.summary || "No summary available."}`,
     "",
     "Write one full article in the required JSON format.",
-  ].join("\n");
+  );
+
+  return lines.join("\n");
 }
 
 function normalizeBlocks(body) {
@@ -506,14 +571,14 @@ function validateArticleShape(article) {
   };
 }
 
-async function generateArticle({ apiKey, model, video, news }) {
+async function generateArticle({ apiKey, model, video, news, members }) {
   const completion = await groqRequest(apiKey, {
     model,
     temperature: 0.7,
     max_tokens: 4000,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: buildUserPrompt(video, news) },
+      { role: "user", content: buildUserPrompt(video, news, members) },
     ],
   });
 
@@ -541,12 +606,12 @@ async function generateArticle({ apiKey, model, video, news }) {
   return validateArticleShape(parsed);
 }
 
-async function generateArticleWithRetries({ apiKey, model, video, news, maxAttempts }) {
+async function generateArticleWithRetries({ apiKey, model, video, news, members, maxAttempts }) {
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      return await generateArticle({ apiKey, model, video, news });
+      return await generateArticle({ apiKey, model, video, news, members });
     } catch (error) {
       lastError = error;
       if (attempt === maxAttempts) {
@@ -727,11 +792,23 @@ async function run() {
       }
 
       const slug = buildArticleSlug(selection.video, selection.news);
+      const bandMembers = await fetchBandMembers(selection.video.artist);
+      if (bandMembers.length > 0) {
+        console.error(
+          JSON.stringify({
+            event: "band-members-fetched",
+            artist: selection.video.artist,
+            count: bandMembers.length,
+            members: bandMembers.map((m) => `${m.name}${m.roles.length > 0 ? ` (${m.roles.join(", ")})` : ""}`),
+          }),
+        );
+      }
       const article = await generateArticleWithRetries({
         apiKey: groqApiKey,
         model: writerModel,
         video: selection.video,
         news: selection.news,
+        members: bandMembers,
         maxAttempts,
       });
 
