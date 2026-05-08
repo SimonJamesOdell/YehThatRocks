@@ -1431,7 +1431,7 @@
 .favouritesBlind {
   position: absolute;
   inset: 0;
-  z-index: 15;
+  z-index: 26;
   background: linear-gradient(180deg, rgba(12, 4, 4, 0.96), rgba(7, 2, 2, 0.98));
   border-top-left-radius: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.14);
