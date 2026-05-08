@@ -1303,7 +1303,9 @@
 /* Sidebar with thumbnails */
 .magazineArticleSidebarThumb {
   width: 100%;
-  height: 54px;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  min-height: 92px;
   object-fit: cover;
   border-radius: 6px;
   margin-bottom: 4px;
