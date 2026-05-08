@@ -363,3 +363,25 @@ model LyricsCache {
   @@index([updatedAt])
   @@map("lyrics_cache")
 }
+
+model MagazineArticle {
+  id             Int      @id @default(autoincrement())
+  slug           String   @unique @db.VarChar(255)
+  title          String   @db.VarChar(400)
+  kicker         String?  @db.VarChar(255)
+  deck           String?  @db.Text
+  artist         String   @db.VarChar(255)
+  trackName      String   @map("track_name") @db.VarChar(255)
+  genre          String   @db.VarChar(255)
+  videoId        String   @map("video_id") @db.VarChar(32)
+  body           String   @db.LongText
+  seoDescription String?  @map("seo_description") @db.VarChar(500)
+  seoKeywords    String?  @map("seo_keywords") @db.VarChar(500)
+  status         String   @default("published") @db.VarChar(20)
+  publishedAt    DateTime @default(now()) @map("published_at") @db.DateTime(3)
+  createdAt      DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  @@index([status, publishedAt(sort: Desc)], map: "idx_magazine_articles_status_published")
+  @@map("magazine_articles")
+}

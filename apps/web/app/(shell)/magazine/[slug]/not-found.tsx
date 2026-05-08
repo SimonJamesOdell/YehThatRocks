@@ -4,14 +4,10 @@ import { OverlayHeader } from "@/components/overlay-header";
 
 export default function MagazineArticleNotFound() {
   return (
-    <main className="magazinePage" role="main" aria-label="Article not found">
-      <OverlayHeader className="magazineOverlayBar" close={false}>
-        <div className="magazineOverlayBarBody">
-          <strong className="magazineOverlayBarTitle">Magazine</strong>
-        </div>
-        <CloseLink />
-      </OverlayHeader>
+    <>
+      <OverlayHeader title="Magazine" closeSlot={<CloseLink />} />
 
+      <main className="magazinePage" role="main" aria-label="Article not found">
       <section className="magazineNotFoundPanel" role="status" aria-live="polite" aria-label="Article not found">
         <p className="serviceFailureEyebrow">404</p>
         <h2 className="serviceFailureTitle">Article not found</h2>
@@ -24,6 +20,7 @@ export default function MagazineArticleNotFound() {
           </Link>
         </div>
       </section>
-    </main>
+      </main>
+    </>
   );
 }
