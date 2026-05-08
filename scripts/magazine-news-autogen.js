@@ -159,6 +159,61 @@ function parseDatabaseUrl(urlStr) {
   };
 }
 
+/**
+ * Checks whether a YouTube video is publicly available via the oEmbed endpoint.
+ * Returns true (available), false (definitively unavailable), or null (network error / unknown).
+ */
+async function checkYouTubeOEmbed(videoId) {
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => resolve(null), 4000);
+    const url = `https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${encodeURIComponent(videoId)}&format=json`;
+    https
+      .get(url, (res) => {
+        clearTimeout(timeoutId);
+        res.resume(); // consume body to free socket
+        if (res.statusCode === 200) resolve(true);
+        else if (res.statusCode >= 400 && res.statusCode < 500) resolve(false);
+        else resolve(null);
+      })
+      .on("error", () => {
+        clearTimeout(timeoutId);
+        resolve(null);
+      });
+  });
+}
+
+/**
+ * Checks all published magazine articles and deletes any whose YouTube video
+ * is definitively no longer available. Run in parallel for speed.
+ */
+async function pruneStaleArticles(conn) {
+  const [rows] = await conn.query(
+    "SELECT id, slug, video_id FROM magazine_articles WHERE status = 'published'",
+  );
+  if (!Array.isArray(rows) || rows.length === 0) return 0;
+
+  const checks = await Promise.allSettled(
+    rows.map(async (row) => ({
+      id: row.id,
+      slug: String(row.slug || ""),
+      videoId: String(row.video_id || ""),
+      available: await checkYouTubeOEmbed(String(row.video_id || "")),
+    })),
+  );
+
+  const toDelete = checks
+    .filter((r) => r.status === "fulfilled" && r.value.available === false)
+    .map((r) => r.value);
+
+  for (const art of toDelete) {
+    await conn.execute("DELETE FROM magazine_articles WHERE id = ?", [art.id]);
+    console.error(
+      JSON.stringify({ event: "pruned-stale-article", slug: art.slug, videoId: art.videoId }),
+    );
+  }
+  return toDelete.length;
+}
+
 async function getPlayableCandidates(conn, limit) {
   const [videoColumns] = await conn.query("SHOW COLUMNS FROM videos");
   const colSet = new Set(videoColumns.map((c) => String(c.Field || "").trim()));
@@ -571,6 +626,11 @@ async function run() {
   const conn = await mysql.createConnection(dbConf);
 
   try {
+    // Prune existing articles whose YouTube videos are no longer available
+    if (!dryRun) {
+      await pruneStaleArticles(conn);
+    }
+
     const videos = await getPlayableCandidates(conn, poolLimit);
     if (videos.length === 0) {
       throw new Error("No playable video candidates found");
@@ -614,6 +674,19 @@ async function run() {
 
     const results = [];
     for (const selection of selected) {
+      // Pre-flight: confirm the video is still available on YouTube before spending AI tokens
+      const videoAvailable = await checkYouTubeOEmbed(selection.video.videoId);
+      if (videoAvailable === false) {
+        console.error(
+          JSON.stringify({
+            event: "skipped-unavailable-video",
+            videoId: selection.video.videoId,
+            artist: selection.video.artist,
+          }),
+        );
+        continue;
+      }
+
       const slug = buildArticleSlug(selection.video, selection.news);
       const article = await generateArticleWithRetries({
         apiKey: groqApiKey,
