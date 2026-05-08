@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 
 import { getArtistSlugsForSitemap, getGenres, getGenreSlug } from "@/lib/catalog-data";
+import { getAllPublishedSlugs } from "@/lib/magazine-data";
 
 const SITE_ORIGIN =
   process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") ||
@@ -16,6 +17,7 @@ export async function generateSitemaps() {
   return [
     { id: 0 },
     ...Array.from({ length: ARTIST_SITEMAP_PAGES }, (_, i) => ({ id: i + 1 })),
+    { id: 4 }, // magazine articles
   ];
 }
 
@@ -29,6 +31,7 @@ export default async function sitemap({ id }: { id: number }): Promise<MetadataR
       { url: `${SITE_ORIGIN}/top100`, priority: 0.9, changeFrequency: "weekly" },
       { url: `${SITE_ORIGIN}/artists`, priority: 0.8, changeFrequency: "weekly" },
       { url: `${SITE_ORIGIN}/new`, priority: 0.8, changeFrequency: "daily" },
+      { url: `${SITE_ORIGIN}/magazine`, priority: 0.8, changeFrequency: "daily" },
     ];
 
     const categoryRoutes: MetadataRoute.Sitemap = genres.map((genre) => ({
@@ -40,7 +43,17 @@ export default async function sitemap({ id }: { id: number }): Promise<MetadataR
     return [...staticRoutes, ...categoryRoutes];
   }
 
-  // Artist pages: id 1–4 map to offsets 0, 45k, 90k, 135k
+  // Magazine article pages
+  if (id === 4) {
+    const slugs = await getAllPublishedSlugs().catch(() => [] as string[]);
+    return slugs.map((slug) => ({
+      url: `${SITE_ORIGIN}/magazine/${slug}`,
+      priority: 0.8,
+      changeFrequency: "monthly" as const,
+    }));
+  }
+
+  // Artist pages: id 1–3 map to offsets 0, 45k, 90k
   const offset = (id - 1) * ARTIST_SITEMAP_PAGE_SIZE;
   const slugs = await getArtistSlugsForSitemap(offset, ARTIST_SITEMAP_PAGE_SIZE, ARTIST_MIN_VIDEO_COUNT).catch(() => [] as string[]);
 

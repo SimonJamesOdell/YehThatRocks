@@ -9,7 +9,7 @@ type MagazineTrackPageProps = {
   params: Promise<{ slug: string }>;
 };
 
-export const revalidate = 3600;
+export const revalidate = false;
 
 export async function generateStaticParams() {
   const slugs = await getAllPublishedSlugs();

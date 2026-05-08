@@ -131,13 +131,28 @@ async function querySlugs(): Promise<string[]> {
 // ── Public API ────────────────────────────────────────────────────────────
 
 /**
- * Returns published articles, newest first.
- * Falls back to seed articles if the DB is unavailable or the table is empty.
+ * Returns published articles, newest first, with a thumbnail preflight filter.
+ * Probes the hqdefault thumbnail for each candidate — hqdefault reliably returns
+ * 404 for deleted/private videos, unlike mqdefault which always returns 200.
+ * Over-fetches by a small buffer so filtering doesn't reduce the result below limit.
+ * Falls back to seed articles if the DB is unavailable or all candidates fail.
  */
 export async function getPublishedArticles(limit = 20): Promise<MagazineArticle[]> {
   try {
-    const rows = await queryArticles(limit);
-    return rows.length > 0 ? rows : SEED_ARTICLES.slice(0, limit);
+    // Over-fetch to buffer for articles that fail the thumbnail health check.
+    const fetchLimit = Math.min(limit + 6, 30);
+    const rows = await queryArticles(fetchLimit);
+    if (rows.length === 0) return SEED_ARTICLES.slice(0, limit);
+
+    // Run hqdefault HEAD checks in parallel for all candidates.
+    const checked = await Promise.all(
+      rows.map(async (article) => ({
+        article,
+        ok: await checkHqThumbnailHealth(article.videoId),
+      })),
+    );
+    const healthy = checked.filter((r) => r.ok).map((r) => r.article).slice(0, limit);
+    return healthy.length > 0 ? healthy : SEED_ARTICLES.slice(0, limit);
   } catch {
     return SEED_ARTICLES.slice(0, limit);
   }
@@ -172,6 +187,41 @@ export async function getAllPublishedSlugs(): Promise<string[]> {
 
 /** The seed articles — used by the left rail and auth gate as static previews. */
 export { SEED_ARTICLES };
+
+// ── Thumbnail health check ────────────────────────────────────────────────
+
+// Per-process cache: videoId → { ok, checkedAt }. 30-min TTL.
+// hqdefault reliably returns 404 for deleted/private/unavailable videos;
+// mqdefault (and lower) always returns 200 with a generic placeholder.
+const _thumbHealthCache = new Map<string, { ok: boolean; at: number }>();
+const THUMB_HEALTH_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * HEAD-checks the hqdefault thumbnail URL for a YouTube video.
+ * Returns true if the thumbnail is available, false on a definitive 4xx.
+ * Returns true (fail-open) on network errors or timeouts so a transient
+ * YouTube hiccup doesn't suppress valid articles.
+ * Results are cached for 30 minutes per server process.
+ */
+async function checkHqThumbnailHealth(videoId: string): Promise<boolean> {
+  const hit = _thumbHealthCache.get(videoId);
+  if (hit && Date.now() - hit.at < THUMB_HEALTH_TTL_MS) return hit.ok;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(
+      `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`,
+      { method: "HEAD", signal: controller.signal, cache: "no-store" },
+    );
+    clearTimeout(timer);
+    const ok = res.status < 400;
+    _thumbHealthCache.set(videoId, { ok, at: Date.now() });
+    return ok;
+  } catch {
+    // Network error or timeout — fail-open, do not suppress the article.
+    return true;
+  }
+}
 
 // ── Video availability preflight ──────────────────────────────────────────
 
