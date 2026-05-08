@@ -299,11 +299,11 @@
 }
 
 .primaryActionPlaylistWrap {
-  z-index: 16;
+  z-index: 9;
 }
 
 .primaryActionAutoplayWrap {
-  z-index: 15;
+  z-index: 8;
 }
 
 .primaryActionPlaylistButton {
