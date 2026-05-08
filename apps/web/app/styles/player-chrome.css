@@ -1000,6 +1000,72 @@
   text-decoration: underline;
 }
 
+.magazineAdminDeleteButton {
+  border: 1px solid rgba(255, 120, 110, 0.65);
+  background: rgba(70, 8, 8, 0.74);
+  color: rgba(255, 228, 224, 0.96);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.magazineAdminDeleteButton:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.magazineAdminDeleteButton:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.magazineAdminDeleteError {
+  margin: 0;
+  color: rgba(255, 138, 126, 0.92);
+  font-size: 0.78rem;
+}
+
+.magazineAdminGenerateWrap {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.magazineAdminGenerateButton {
+  border: 1px solid rgba(255, 120, 110, 0.65);
+  background: linear-gradient(180deg, rgba(177, 34, 29, 0.88), rgba(95, 10, 8, 0.95));
+  color: rgba(255, 240, 236, 0.98);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.magazineAdminGenerateButton:hover:not(:disabled) {
+  filter: brightness(1.09);
+}
+
+.magazineAdminGenerateButton:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.magazineAdminGenerateStatus,
+.magazineAdminGenerateError {
+  margin: 0;
+  font-size: 0.76rem;
+}
+
+.magazineAdminGenerateStatus {
+  color: rgba(223, 245, 214, 0.9);
+}
+
+.magazineAdminGenerateError {
+  color: rgba(255, 138, 126, 0.92);
+}
+
 .magazineArticle {
   padding: 22px;
   display: grid;
