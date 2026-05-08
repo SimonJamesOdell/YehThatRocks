@@ -172,3 +172,64 @@ export async function getAllPublishedSlugs(): Promise<string[]> {
 
 /** The seed articles — used by the left rail and auth gate as static previews. */
 export { SEED_ARTICLES };
+
+// ── Video availability preflight ──────────────────────────────────────────
+
+/**
+ * Checks whether a YouTube video is still publicly available via the oEmbed endpoint.
+ * Returns true (available), false (definitively unavailable), null (network/timeout — unknown).
+ */
+async function checkYouTubeOEmbed(videoId: string): Promise<boolean | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(
+      `https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${encodeURIComponent(videoId)}&format=json`,
+      { signal: controller.signal, cache: "no-store" },
+    );
+    clearTimeout(timer);
+    if (res.status === 200) return true;
+    if (res.status >= 400 && res.status < 500) return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// In-process cooldown so the preflight doesn't run on every listing request.
+let _lastPruneMs = 0;
+const PRUNE_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * Checks all published articles' videos via the YouTube oEmbed API and deletes
+ * any article whose video is definitively no longer available.
+ * Rate-limited to once per hour within the same server process.
+ * Returns the number of articles deleted.
+ */
+export async function pruneUnavailableArticles(): Promise<number> {
+  const now = Date.now();
+  if (now - _lastPruneMs < PRUNE_COOLDOWN_MS) return 0;
+  _lastPruneMs = now;
+
+  const rows = await prisma.$queryRaw<{ id: number; videoId: string }[]>`
+    SELECT id, video_id AS videoId FROM magazine_articles WHERE status = 'published'
+  `;
+  if (rows.length === 0) return 0;
+
+  const checks = await Promise.allSettled(
+    rows.map(async (row) => ({ id: row.id, available: await checkYouTubeOEmbed(row.videoId) })),
+  );
+
+  const toDelete = checks
+    .filter(
+      (r): r is PromiseFulfilledResult<{ id: number; available: boolean | null }> =>
+        r.status === "fulfilled",
+    )
+    .filter((r) => r.value.available === false)
+    .map((r) => r.value.id);
+
+  if (toDelete.length === 0) return 0;
+
+  await prisma.magazineArticle.deleteMany({ where: { id: { in: toDelete } } });
+  return toDelete.length;
+}
