@@ -96,7 +96,7 @@ function main() {
   assertContains(useChatStateSource, "node.scrollTop = node.scrollHeight;", "useChatState auto-scrolls chat list on new message", failures);
   assertContains(useChatStateSource, "chatListRef", "useChatState owns the chat list scroll ref", failures);
   assertContains(useChatStateSource, "triggerChatTabFlash", "useChatState owns the chat-tab flash helper", failures);
-  assertContains(useChatStateSource, "const latestMagazineTracks = useMemo(", "useChatState derives magazine track list", failures);
+  assertContains(useChatStateSource, "const [latestMagazineTracks, setLatestMagazineTracks]", "useChatState manages magazine track list state", failures);
 
   assertContains(shellDynamicSource, "useChatState(", "Shell imports and calls useChatState hook", failures);
   assertContains(shellDynamicSource, "from \"@/components/use-chat-state\"", "Shell imports useChatState from its own module", failures);

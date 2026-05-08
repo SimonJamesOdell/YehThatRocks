@@ -259,6 +259,17 @@ if wait_for_public_health "$STATUS_URL" "$HEALTH_TIMEOUT_SEC"; then
     REPO_DIR="$REPO_DIR" ENV_FILE="$ENV_FILE" COMPOSE_FILE="$COMPOSE_FILE" \
       bash "$REPO_DIR/deploy/verify-live-schema.sh" || echo "[deploy] WARNING: schema verification failed — run: bash deploy/verify-live-schema.sh" >&2
   fi
+
+  # Install/refresh magazine autogen systemd timer (runs every 6 hours)
+  if [ -d "$REPO_DIR/deploy/systemd" ] && command -v systemctl >/dev/null 2>&1; then
+    echo "[deploy] installing magazine-autogen systemd timer"
+    cp "$REPO_DIR/deploy/systemd/magazine-autogen.service" /etc/systemd/system/magazine-autogen.service
+    cp "$REPO_DIR/deploy/systemd/magazine-autogen.timer" /etc/systemd/system/magazine-autogen.timer
+    systemctl daemon-reload
+    systemctl enable --now magazine-autogen.timer
+    echo "[deploy] magazine-autogen.timer enabled (every 6h)"
+  fi
+
   exit 0
 fi
 

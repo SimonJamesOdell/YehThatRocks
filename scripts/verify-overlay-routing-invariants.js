@@ -177,7 +177,7 @@ function main() {
   assertContains(shellDynamicSource, "if (!isMagazineOverlayRoute) {", "Magazine tab navigation is guarded by !isMagazineOverlayRoute to prevent stray ?v= injection when already on a magazine route", failures);
   assertContains(shellDynamicSource, "const response = await fetchWithAuthRetry(`/api/chat?${params.toString()}`);", "Shell loads chat via authenticated API call", failures);
   assertContains(shellDynamicSource, "const response = await fetchWithAuthRetry(\"/api/chat\", {", "Shell posts chat messages via authenticated API call", failures);
-  assertContains(shellDynamicSource, "const latestMagazineTracks = useMemo(() => magazineDraftEdition.tracks, []);", "Shell hydrates magazine rail entries from magazine draft data", failures);
+  assertContains(shellDynamicSource, "const response = await fetch(\"/api/magazine/latest?limit=8\", { cache: \"no-store\" });", "Shell hydrates magazine rail entries from latest magazine API data", failures);
   assertContains(shellDynamicSource, 'className={isAdminOverlayRoute ? "railTabs railTabsAdminOverlay" : "railTabs"}', "Shell uses dedicated admin overlay rail tab layout class", failures);
   assertContains(shellDynamicSource, "setChatMode(\"online\");", "Shell keeps Who's Online tab selectable in chat rail", failures);
   assertNotContains(shellDynamicSource, '<span className="tabLabel activeTab">Global Chat</span>', "Shell no longer hard-locks admin rail to a non-interactive Global Chat label", failures);

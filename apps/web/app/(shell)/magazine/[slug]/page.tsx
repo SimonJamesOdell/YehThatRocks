@@ -1,130 +1,151 @@
-import Image from "next/image";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { CloseLink } from "@/components/close-link";
 import { OverlayHeader } from "@/components/overlay-header";
-import { getMagazineTrackBySlug, magazineDraftEdition } from "@/lib/magazine-draft";
+import { getArticleBySlug, getAllPublishedSlugs, getPublishedArticles, type MagazineBlock } from "@/lib/magazine-data";
 
 type MagazineTrackPageProps = {
   params: Promise<{ slug: string }>;
 };
 
+export const revalidate = 3600;
+
 export async function generateStaticParams() {
-  return magazineDraftEdition.tracks.map((track) => ({ slug: track.slug }));
+  const slugs = await getAllPublishedSlugs();
+  return slugs.map((slug) => ({ slug }));
+}
+
+export async function generateMetadata({ params }: MagazineTrackPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const article = await getArticleBySlug(slug);
+  if (!article) return {};
+
+  const ogImage = `https://i.ytimg.com/vi/${article.videoId}/maxresdefault.jpg`;
+  const title = `${article.title} | Yeh Magazine`;
+  const description = article.seoDescription ?? article.deck ?? undefined;
+
+  return {
+    title,
+    description,
+    keywords: article.seoKeywords ?? undefined,
+    openGraph: {
+      title,
+      description,
+      images: [{ url: ogImage, width: 1280, height: 720, alt: `${article.artist} - ${article.trackName}` }],
+      type: "article",
+      publishedTime: article.publishedAt.toISOString(),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [ogImage],
+    },
+  };
+}
+
+function renderBlock(block: MagazineBlock, index: number) {
+  switch (block.type) {
+    case "h2":
+      return <h2 key={index}>{block.text}</h2>;
+    case "quote":
+      return (
+        <blockquote key={index} className="magazineArticleQuote">
+          <p>{block.text}</p>
+          {block.attribution ? <cite>{block.attribution}</cite> : null}
+        </blockquote>
+      );
+    case "p":
+    default:
+      return <p key={index}>{block.text}</p>;
+  }
 }
 
 export default async function MagazineTrackPage({ params }: MagazineTrackPageProps) {
   const { slug } = await params;
-  const track = getMagazineTrackBySlug(slug);
+  const article = await getArticleBySlug(slug);
 
-  if (!track) {
+  if (!article) {
     notFound();
   }
 
-  const relatedTracks = magazineDraftEdition.tracks.filter((editionTrack) => editionTrack.slug !== track.slug).slice(0, 3);
+  const allArticles = await getPublishedArticles(20);
+  const relatedArticles = allArticles.filter((a) => a.slug !== article.slug).slice(0, 4);
 
   return (
-    <main className="magazinePage" role="main" aria-label="Magazine article">
-      <OverlayHeader className="magazineOverlayBar" close={false}>
-        <div className="magazineOverlayBarBody">
-          <strong className="magazineOverlayBarTitle">Magazine</strong>
-          <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">
+    <>
+      <OverlayHeader
+        breadcrumb={(
+          <>
             <Link href="/magazine" className="categoryHeaderBreadcrumbLink">Magazine</Link>
             <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">&gt;</span>
-            <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{track.artist} - {track.title}</span>
-          </span>
-        </div>
-        <CloseLink />
-      </OverlayHeader>
+            <span className="categoryHeaderBreadcrumbCurrent magazineHeaderBreadcrumbCurrent" aria-current="page">
+              {article.title}
+            </span>
+          </>
+        )}
+      />
 
-      <header className="magazineArticleHero panel">
-        <Link href="/magazine" className="magazineTextLink">Back to magazine</Link>
-        <div className="magazineArticleHeroBrand">
-          <Image
-            src="/assets/images/yeh_main_logo.png?v=20260424-4"
-            alt="Yeh That Rocks"
-            width={420}
-            height={128}
-            unoptimized
-            className="magazineArticleHeroLogo"
-          />
-          <p className="magazineArticleHeroTagline">The world&apos;s loudest website</p>
-        </div>
-        <p className="magazineKicker">{magazineDraftEdition.kicker}</p>
-        <h1>{track.artist} - {track.title}</h1>
-        <p className="magazineSummary">
-          A focused editorial breakdown built to move from discovery to immediate listening in the Yeh watch shell.
-        </p>
-        <div className="magazineArticleMetaStrip" aria-label="Article details">
-          <span>Genre: {track.genre}</span>
-          <span>Edition: {magazineDraftEdition.title}</span>
-          <span>Published: {magazineDraftEdition.publishedDate}</span>
-        </div>
-      </header>
+      <main className="magazinePage" role="main" aria-label="Magazine article">
+        <div className="magazineArticleLayout">
+          <article className="magazineArticle panel">
+            <img
+              src={`https://i.ytimg.com/vi/${article.videoId}/maxresdefault.jpg`}
+              alt={`${article.artist} - ${article.trackName}`}
+              className="magazineArticleThumb"
+              loading="eager"
+            />
 
-      <div className="magazineArticleLayout">
-        <article className="magazineArticle panel">
-          <img
-            src={`https://i.ytimg.com/vi/${track.videoId}/maxresdefault.jpg`}
-            alt={`${track.artist} - ${track.title} thumbnail`}
-            className="magazineArticleThumb"
-            loading="eager"
-          />
-
-          <section className="magazineArticleQuickFacts" aria-label="Quick facts">
-            <div>
-              <h2>Quick take</h2>
-              <p>{track.takeaway}</p>
+            <div className="magazineArticleBody">
+              {article.body.map((block, i) => renderBlock(block, i))}
             </div>
-            <div>
-              <h2>Track lane</h2>
-              <p>{track.genre}</p>
-            </div>
-            <div>
-              <h2>Listener profile</h2>
-              <p>Ideal for heavy listeners building momentum into longer watch-next sessions.</p>
-            </div>
-          </section>
 
-          <section className="magazineArticleBlock">
-            <h2>Why it fits this edition</h2>
-            <p>
-              This slot balances accessibility with weight: an immediate hook, a memorable riff spine,
-              and enough replay pull to transition into deeper catalog exploration.
-            </p>
-          </section>
-
-          <section className="magazineArticleBlock">
-            <h2>What to queue next</h2>
-            <p>
-              Use this track as an onboarding anchor, then move into adjacent subgenres to maintain energy while broadening
-              discovery across artist links and related videos.
-            </p>
-          </section>
-
-          <div className="magazineArticleActions">
-            <Link href={`/?v=${track.videoId}&resume=1`} className="magazineWatchCta" data-overlay-close="true">Watch now in YehThatRocks</Link>
-            <Link href="/magazine" className="magazineTextLink">Open full edition</Link>
-          </div>
-        </article>
-
-        <aside className="magazineArticleSidebar panel" aria-label="Edition navigation">
-          <h2>In this edition</h2>
-          <div className="magazineArticleSidebarList">
-            {relatedTracks.map((relatedTrack) => (
-              <Link key={relatedTrack.slug} href={`/magazine/${relatedTrack.slug}`} className="magazineArticleSidebarItem">
-                <strong>{relatedTrack.artist} - {relatedTrack.title}</strong>
-                <span>{relatedTrack.genre}</span>
+            <div className="magazineArticleActions">
+              <Link
+                href={`/?v=${article.videoId}&resume=1`}
+                className="magazineWatchCta"
+                data-overlay-close="true"
+              >
+                Watch now in YehThatRocks
               </Link>
-            ))}
-          </div>
-          <div className="magazineArticleSidebarActions">
-            <Link href="/magazine" className="magazinePrimaryCta">Browse all stories</Link>
-            <Link href={`/?v=${track.videoId}&resume=1`} className="magazineTextLink" data-overlay-close="true">Jump to player</Link>
-          </div>
-        </aside>
-      </div>
-    </main>
+              <Link href="/magazine" className="magazineTextLink">
+                Back to magazine
+              </Link>
+            </div>
+          </article>
+
+          {relatedArticles.length > 0 ? (
+            <aside className="magazineArticleSidebar panel" aria-label="More articles">
+              <h2>More articles</h2>
+              <div className="magazineArticleSidebarList">
+                {relatedArticles.map((related) => (
+                  <Link
+                    key={related.slug}
+                    href={`/magazine/${related.slug}`}
+                    className="magazineArticleSidebarItem"
+                  >
+                    <img
+                      src={`https://i.ytimg.com/vi/${related.videoId}/mqdefault.jpg`}
+                      alt={`${related.artist} - ${related.trackName}`}
+                      className="magazineArticleSidebarThumb"
+                      loading="lazy"
+                    />
+                    <div className="magazineArticleSidebarMeta">
+                      <strong>{related.artist}</strong>
+                      <span>{related.trackName}</span>
+                      <small>{related.genre}</small>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+              <div className="magazineArticleSidebarActions">
+                <Link href="/magazine" className="magazinePrimaryCta">All articles</Link>
+              </div>
+            </aside>
+          ) : null}
+        </div>
+      </main>
+    </>
   );
 }

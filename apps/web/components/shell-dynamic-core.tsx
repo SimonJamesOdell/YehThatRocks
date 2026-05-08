@@ -3127,7 +3127,14 @@ function ShellDynamicInner({
                     <button
                       type="button"
                       className={`${chatMode === "global" ? "activeTab" : ""} ${flashingChatTabs.global ? "attentionPulse" : ""}`.trim() || undefined}
-                      onClick={() => setChatMode("global")}
+                      onClick={() => {
+                        setChatMode("global");
+                        if (isMagazineOverlayRoute) {
+                          window.dispatchEvent(new CustomEvent(OVERLAY_CLOSE_REQUEST_EVENT, {
+                            detail: { href: `/?v=${encodeURIComponent(currentVideo.id)}&resume=1` },
+                          }));
+                        }
+                      }}
                     >
                       Chat
                     </button>
@@ -3153,6 +3160,11 @@ function ShellDynamicInner({
                           return;
                         }
                         setChatMode("online");
+                        if (isMagazineOverlayRoute) {
+                          window.dispatchEvent(new CustomEvent(OVERLAY_CLOSE_REQUEST_EVENT, {
+                            detail: { href: `/?v=${encodeURIComponent(currentVideo.id)}&resume=1` },
+                          }));
+                        }
                       }}
                     >
                       Who&apos;s Online

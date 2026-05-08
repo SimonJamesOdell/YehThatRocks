@@ -1,0 +1,21 @@
+CREATE TABLE `magazine_articles` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `slug` VARCHAR(255) NOT NULL,
+  `title` VARCHAR(400) NOT NULL,
+  `kicker` VARCHAR(255) NULL,
+  `deck` TEXT NULL,
+  `artist` VARCHAR(255) NOT NULL,
+  `track_name` VARCHAR(255) NOT NULL,
+  `genre` VARCHAR(255) NOT NULL,
+  `video_id` VARCHAR(32) NOT NULL,
+  `body` LONGTEXT NOT NULL,
+  `seo_description` VARCHAR(500) NULL,
+  `seo_keywords` VARCHAR(500) NULL,
+  `status` VARCHAR(20) NOT NULL DEFAULT 'published',
+  `published_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `magazine_articles_slug_key` (`slug`),
+  INDEX `idx_magazine_articles_status_published` (`status`, `published_at` DESC)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

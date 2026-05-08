@@ -1,7 +1,14 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { magazineDraftEdition } from "@/lib/magazine-draft";
+
+type MagazineRailTrack = {
+  slug: string;
+  videoId: string;
+  title: string;
+  artist: string;
+  genre: string;
+};
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -43,7 +50,7 @@ export type ChatStateResult = {
   deletingMessageIds: number[];
   flashingChatTabs: Record<FlashableChatMode, boolean>;
   chatListRef: React.RefObject<HTMLDivElement | null>;
-  latestMagazineTracks: typeof magazineDraftEdition.tracks;
+  latestMagazineTracks: MagazineRailTrack[];
   handleChatSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   handleDeleteChatMessage: (messageId: number) => Promise<void>;
 };
@@ -99,7 +106,7 @@ export function useChatState({
     global: null,
   });
 
-  const latestMagazineTracks = useMemo(() => magazineDraftEdition.tracks, []);
+  const [latestMagazineTracks, setLatestMagazineTracks] = useState<MagazineRailTrack[]>([]);
 
   // Computed from external params + internal chatMode (avoids circular dependency if caller derived this from chatMode).
   const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute) && (isAuthenticated || chatMode === "global");
@@ -119,12 +126,14 @@ export function useChatState({
   }, [isAdminOverlayRoute]);
 
   // Sync chat mode to magazine overlay route.
+  // When entering magazine: switch to magazine tab.
+  // When leaving magazine: reset to global (unless user already switched to another tab).
   useEffect(() => {
-    if (!isMagazineOverlayRoute) {
-      return;
+    if (isMagazineOverlayRoute) {
+      setChatMode("magazine");
+    } else {
+      setChatMode((prev) => (prev === "magazine" ? "global" : prev));
     }
-
-    setChatMode("magazine");
   }, [isMagazineOverlayRoute]);
 
   // Load chat history whenever mode / auth changes.
@@ -199,6 +208,38 @@ export function useChatState({
       if (intervalId !== undefined) window.clearInterval(intervalId);
     };
   }, [chatMode, checkAuthState, fetchWithAuthRetry, onAuthLost, shouldRunChat]);
+
+  // Load the latest magazine rail cards from the API instead of static fallback data.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadLatestMagazine = async () => {
+      try {
+        const response = await fetch("/api/magazine/latest?limit=8", { cache: "no-store" });
+        if (!response.ok) {
+          if (!cancelled) {
+            setLatestMagazineTracks([]);
+          }
+          return;
+        }
+
+        const payload = (await response.json()) as { articles?: MagazineRailTrack[] };
+        if (!cancelled) {
+          setLatestMagazineTracks(Array.isArray(payload.articles) ? payload.articles : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setLatestMagazineTracks([]);
+        }
+      }
+    };
+
+    void loadLatestMagazine();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isMagazineOverlayRoute]);
 
   // Real-time SSE subscription for global chat.
   useEffect(() => {
