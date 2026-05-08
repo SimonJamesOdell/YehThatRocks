@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { MagazineGenerateNowButton } from "@/components/magazine-generate-now-button";
 import { OverlayHeader } from "@/components/overlay-header";
 import { MagazineLatestArticleCard } from "@/components/magazine-latest-article-card";
 import { requireAdminUserAuthState } from "@/lib/admin-auth";
@@ -48,7 +47,6 @@ export default async function MagazineLandingPage() {
         <section className="magazineSectionBlock panel" aria-label="Latest articles">
           <div className="magazineSectionHeader">
             <h2>Latest Articles</h2>
-            {isAdmin ? <MagazineGenerateNowButton /> : null}
           </div>
           <div className="magazineTrackGrid">
             {restArticles.map((article) => (
