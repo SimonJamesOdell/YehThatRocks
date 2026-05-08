@@ -356,6 +356,18 @@
   pointer-events: none;
 }
 
+.relatedStackFadingOut .relatedCardFavouriteAction {
+  animation: relatedRailFadeOut 210ms ease forwards;
+  animation-delay: calc(var(--related-index, 0) * 46ms);
+  pointer-events: none;
+}
+
+.relatedStackFadingOut .relatedFavouriteBadgeOverlay {
+  animation: relatedRailFadeOut 210ms ease forwards;
+  animation-delay: calc(var(--related-index, 0) * 46ms);
+  pointer-events: none;
+}
+
 .relatedStackFadingIn .relatedCardTransition {
   opacity: 0;
   animation: relatedRailFadeIn 230ms ease forwards;
@@ -375,6 +387,18 @@
 }
 
 .relatedStackFadingIn .relatedCardHideButton {
+  opacity: 0;
+  animation: relatedRailFadeIn 230ms ease forwards;
+  animation-delay: calc(var(--related-index, 0) * 46ms);
+}
+
+.relatedStackFadingIn .relatedCardFavouriteAction {
+  opacity: 0;
+  animation: relatedRailFadeIn 230ms ease forwards;
+  animation-delay: calc(var(--related-index, 0) * 46ms);
+}
+
+.relatedStackFadingIn .relatedFavouriteBadgeOverlay {
   opacity: 0;
   animation: relatedRailFadeIn 230ms ease forwards;
   animation-delay: calc(var(--related-index, 0) * 46ms);
