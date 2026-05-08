@@ -1,10 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export function MagazineGenerateNowButton() {
-  const router = useRouter();
   const [isRunning, setIsRunning] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,8 +33,7 @@ export function MagazineGenerateNowButton() {
         return;
       }
 
-      setStatus("Generation triggered. Refreshing...");
-      router.refresh();
+      setStatus("Generation triggered.");
     } catch {
       setError("Generation failed");
       setStatus(null);
