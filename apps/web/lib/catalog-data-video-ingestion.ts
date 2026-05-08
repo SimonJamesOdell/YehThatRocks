@@ -1780,8 +1780,9 @@ async function searchYouTubeForReplacementVideoId(
  * Replaces all database references from `oldVideoId` to `newVideoId` in-place.
  *
  * The `videos` row's integer primary key stays the same, so FK-based associations
- * (playlist items, site_videos, videosbyartist) are preserved automatically.
- * Tables that store the YouTube videoId string are updated individually.
+ * (playlist items, site_videos, videosbyartist, Top 100 ordering derived from video rows)
+ * are preserved automatically. Tables that store the YouTube videoId string are
+ * updated individually so user-facing references continue to resolve.
  *
  * Returns { replaced: true } on success, or { replaced: false, reason } when the
  * new ID already exists in the catalog or the old ID has no DB row.
@@ -1832,6 +1833,8 @@ export async function replaceVideoIdInDatabase(
   await prisma.$executeRaw`UPDATE watch_history SET video_id = ${normalizedNew} WHERE video_id = ${normalizedOld}`.catch(() => undefined);
   await prisma.$executeRaw`UPDATE hidden_videos SET video_id = ${normalizedNew} WHERE video_id = ${normalizedOld}`.catch(() => undefined);
   await prisma.$executeRaw`UPDATE messages SET video_id = ${normalizedNew} WHERE video_id = ${normalizedOld}`.catch(() => undefined);
+  await prisma.$executeRaw`UPDATE analytics_events SET video_id = ${normalizedNew} WHERE video_id = ${normalizedOld}`.catch(() => undefined);
+  await prisma.$executeRaw`UPDATE magazine_articles SET video_id = ${normalizedNew} WHERE video_id = ${normalizedOld}`.catch(() => undefined);
 
   clearIngestionCachesForVideo(normalizedOld);
   clearIngestionCachesForVideo(normalizedNew);

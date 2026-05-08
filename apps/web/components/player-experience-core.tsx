@@ -1694,6 +1694,28 @@ export function PlayerExperience({
     });
   }
 
+  function navigateToReplacementVideoIfFound(
+    trigger: string,
+    reportedVideoId: string,
+    reportResult: ReportUnavailableResult,
+  ) {
+    if (!reportResult.newVideoId || currentVideoRef.current.id !== reportedVideoId) {
+      return false;
+    }
+
+    logPlayerDebug("playback-failure:replacement-found", {
+      trigger,
+      reportedVideoId,
+      replacementVideoId: reportResult.newVideoId,
+      verificationReason: reportResult.verificationReason,
+      classification: reportResult.classification,
+    });
+
+    clearUnavailableOverlayMessage();
+    navigateToVideo(reportResult.newVideoId, { clearPlaylist: false });
+    return true;
+  }
+
   function resetPlaybackStallWatchdog(lastTime?: number | null) {
     playbackStallStartedAtRef.current = null;
     playbackStallLastTimeRef.current = typeof lastTime === "number" ? lastTime : null;
@@ -1834,6 +1856,10 @@ export function PlayerExperience({
           trigger,
         });
 
+        if (navigateToReplacementVideoIfFound("runtime-block-check", targetVideoId, reportResult)) {
+          return;
+        }
+
         applyVerifiedPlaybackFailurePresentation(trigger, "yt-player-upstream-connect-timeout", reportResult);
       })();
     }, STUCK_PLAYBACK_CHECK_MS);
@@ -1880,6 +1906,10 @@ export function PlayerExperience({
           currentPosition,
           state,
         });
+
+        if (navigateToReplacementVideoIfFound("early-playback-verification", targetVideoId, reportResult)) {
+          return;
+        }
 
         applyVerifiedPlaybackFailurePresentation("early-playback-verification", runtimeReason, reportResult);
       })();
@@ -3110,7 +3140,10 @@ export function PlayerExperience({
               // codes 101/150 regardless of the server report result — so show the notice
               // immediately and report in the background instead of awaiting the server's
               // sequential oEmbed → embed → watch-page verification (up to ~6 s).
-              void reportUnavailableFromPlayer(reason);
+              const restrictedVideoId = currentVideo.id;
+              void reportUnavailableFromPlayer(reason).then((reportResult) => {
+                void navigateToReplacementVideoIfFound("on-error-restricted", restrictedVideoId, reportResult);
+              });
               applyVerifiedPlaybackFailurePresentation("on-error-restricted", reason, {
                 shouldSkip: false,
                 verificationReason: null,
@@ -3140,15 +3173,16 @@ export function PlayerExperience({
                   newVideoId: reportResult.newVideoId,
                 });
 
-                if (reportResult.newVideoId && currentVideoRef.current.id === brokenVideoId) {
-                  clearUnavailableOverlayMessage();
-                  navigateToVideo(reportResult.newVideoId, { clearPlaylist: false });
-                }
+                void navigateToReplacementVideoIfFound("on-error-broken-upstream", brokenVideoId, reportResult);
               });
               return;
             }
 
             const reportResult = await reportUnavailableFromPlayer(reason);
+
+            if (navigateToReplacementVideoIfFound("on-error", activeVideoId, reportResult)) {
+              return;
+            }
 
             const postReportPlayer = playerRef.current;
             const postReportState =
