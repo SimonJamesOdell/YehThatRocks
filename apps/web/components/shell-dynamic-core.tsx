@@ -26,6 +26,7 @@ import { useChatState, type ChatMode, type ChatMessage, type OnlineUser } from "
 import { usePlaylistRail, type RightRailMode, type PlaylistRailVideo, type PlaylistRailPayload, type PlaylistRailSummary } from "@/components/use-playlist-rail";
 import { PerformanceDial, SharedVideoMessageCard, WatchNextCard } from "@/components/shell-dynamic-rendering";
 import { navItems, type VideoRecord } from "@/lib/catalog";
+import { MagazineGenerateNowButton } from "@/components/magazine-generate-now-button";
 import { detectAppendOnly, filterSeenFromWatchNext } from "@/components/shell-dynamic-helpers";
 import { fetchWithAuthRetry as fetchWithAuthRetryClient } from "@/lib/client-auth-fetch";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
@@ -3185,6 +3186,7 @@ function ShellDynamicInner({
                     <>
                       <div className="magazineRailHeader">
                         <strong>Latest Articles</strong>
+                         {isAdmin ? <MagazineGenerateNowButton /> : null}
                       </div>
                       {latestMagazineTracks.map((track) => (
                         <article
