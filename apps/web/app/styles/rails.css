@@ -437,6 +437,24 @@
   line-height: 1.35;
 }
 
+.magazineRailAdminActions {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+
+.magazineRailAdminActions .magazineAdminDeleteButton {
+  min-height: 30px;
+  padding: 4px 10px;
+}
+
+.magazineRailAdminDeleteError {
+  margin: 0;
+  color: rgba(255, 138, 126, 0.92);
+  font-size: 0.74rem;
+  line-height: 1.25;
+}
+
 .chatSharedVideoCard {
   display: grid;
   grid-template-columns: 84px minmax(0, 1fr);
