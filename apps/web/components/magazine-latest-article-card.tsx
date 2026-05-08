@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 type MagazineLatestArticleCardProps = {
@@ -18,7 +17,6 @@ type MagazineLatestArticleCardProps = {
 };
 
 export function MagazineLatestArticleCard({ article, isAdmin }: MagazineLatestArticleCardProps) {
-  const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDeleted, setIsDeleted] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -48,7 +46,6 @@ export function MagazineLatestArticleCard({ article, isAdmin }: MagazineLatestAr
       }
 
       setIsDeleted(true);
-      router.refresh();
     } catch {
       setDeleteError("Delete failed");
     } finally {

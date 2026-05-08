@@ -3260,7 +3260,9 @@ function ShellDynamicInner({
                                         return;
                                       }
                                       setDeletedMagazineSlugs((current) => ({ ...current, [track.slug]: true }));
-                                      router.refresh();
+                                      if (pathname === `/magazine/${track.slug}`) {
+                                        router.replace("/magazine");
+                                      }
                                     } catch {
                                       setMagazineDeleteErrors((current) => ({
                                         ...current,
