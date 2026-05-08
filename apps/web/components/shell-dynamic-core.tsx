@@ -578,6 +578,9 @@ function ShellDynamicInner({
     fetchWithAuthRetry,
     checkAuthState,
   });
+  const [deletingMagazineSlugs, setDeletingMagazineSlugs] = useState<Record<string, boolean>>({});
+  const [deletedMagazineSlugs, setDeletedMagazineSlugs] = useState<Record<string, boolean>>({});
+  const [magazineDeleteErrors, setMagazineDeleteErrors] = useState<Record<string, string>>({});
   const isShellInitialUiSettled =
     !isDesktopIntroActive
     && !isWatchNextVideoSelectionPending
@@ -635,6 +638,7 @@ function ShellDynamicInner({
     router.refresh();
   }, [pendingOverlayCloseHref, pendingOverlayCloseVideoId, router]);
   const isLeftRailSuppressed = shouldOccludeLeftRail || isMobileCommunityCollapsed;
+  const visibleMagazineTracks = latestMagazineTracks.filter((track) => !deletedMagazineSlugs[track.slug]);
   const artistLetterParam = searchParams.get("letter");
   const activeArtistLetter =
     artistLetterParam && /^[A-Za-z]$/.test(artistLetterParam)
@@ -3180,7 +3184,7 @@ function ShellDynamicInner({
                   </p>
                 ) : null}
                 {chatMode === "magazine" ? (
-                  latestMagazineTracks.length === 0 ? (
+                  visibleMagazineTracks.length === 0 ? (
                     <p className="chatStatus">No magazine articles are available yet.</p>
                   ) : (
                     <>
@@ -3188,7 +3192,7 @@ function ShellDynamicInner({
                         <strong>Latest Articles</strong>
                          {isAdmin ? <MagazineGenerateNowButton /> : null}
                       </div>
-                      {latestMagazineTracks.map((track) => (
+                      {visibleMagazineTracks.map((track) => (
                         <article
                           key={track.slug}
                           className="magazineRailCard magazineRailCardClickable"
@@ -3218,6 +3222,65 @@ function ShellDynamicInner({
                               <span>{track.genre}</span>
                             </div>
                             <p>{track.title}</p>
+                            {isAdmin ? (
+                              <div className="magazineRailAdminActions">
+                                <button
+                                  type="button"
+                                  className="magazineAdminDeleteButton"
+                                  disabled={Boolean(deletingMagazineSlugs[track.slug])}
+                                  onClick={async (event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    if (deletingMagazineSlugs[track.slug]) {
+                                      return;
+                                    }
+                                    const confirmed = window.confirm(`Delete article "${track.title}"?`);
+                                    if (!confirmed) {
+                                      return;
+                                    }
+                                    setDeletingMagazineSlugs((current) => ({ ...current, [track.slug]: true }));
+                                    setMagazineDeleteErrors((current) => {
+                                      const next = { ...current };
+                                      delete next[track.slug];
+                                      return next;
+                                    });
+                                    try {
+                                      const response = await fetch(`/api/admin/magazine/${encodeURIComponent(track.slug)}`, {
+                                        method: "DELETE",
+                                        headers: {
+                                          "Content-Type": "application/json",
+                                        },
+                                      });
+                                      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+                                      if (!response.ok) {
+                                        setMagazineDeleteErrors((current) => ({
+                                          ...current,
+                                          [track.slug]: payload?.error ?? "Delete failed",
+                                        }));
+                                        return;
+                                      }
+                                      setDeletedMagazineSlugs((current) => ({ ...current, [track.slug]: true }));
+                                      router.refresh();
+                                    } catch {
+                                      setMagazineDeleteErrors((current) => ({
+                                        ...current,
+                                        [track.slug]: "Delete failed",
+                                      }));
+                                    } finally {
+                                      setDeletingMagazineSlugs((current) => ({ ...current, [track.slug]: false }));
+                                    }
+                                  }}
+                                  onKeyDown={(event) => {
+                                    event.stopPropagation();
+                                  }}
+                                >
+                                  {deletingMagazineSlugs[track.slug] ? "Deleting..." : "Delete"}
+                                </button>
+                                {magazineDeleteErrors[track.slug] ? (
+                                  <p className="magazineRailAdminDeleteError">{magazineDeleteErrors[track.slug]}</p>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </div>
                         </article>
                       ))}
