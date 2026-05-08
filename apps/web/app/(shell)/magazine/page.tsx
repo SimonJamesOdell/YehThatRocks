@@ -37,7 +37,7 @@ export default async function MagazineLandingPage() {
             {leadArticle.deck ? <p>{leadArticle.deck}</p> : null}
             <div className="magazineTrackActions">
               <Link href={`/magazine/${leadArticle.slug}`} className="magazinePrimaryCta">Read article</Link>
-              <Link href={`/?v=${leadArticle.videoId}&resume=1`} className="magazineWatchCta" data-overlay-close="true">Play in Yeh</Link>
+              <Link href={`/?v=${leadArticle.videoId}&resume=1`} className="magazineWatchCta" data-overlay-close="true">Play Now</Link>
             </div>
           </div>
         </section>
