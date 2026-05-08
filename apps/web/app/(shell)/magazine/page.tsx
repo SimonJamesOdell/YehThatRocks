@@ -1,6 +1,9 @@
 import Link from "next/link";
 
+import { MagazineGenerateNowButton } from "@/components/magazine-generate-now-button";
 import { OverlayHeader } from "@/components/overlay-header";
+import { MagazineLatestArticleCard } from "@/components/magazine-latest-article-card";
+import { requireAdminUserAuthState } from "@/lib/admin-auth";
 import { getPublishedArticles } from "@/lib/magazine-data";
 
 export const revalidate = 3600;
@@ -11,6 +14,8 @@ export const metadata = {
 };
 
 export default async function MagazineLandingPage() {
+  const adminAuth = await requireAdminUserAuthState();
+  const isAdmin = adminAuth.status === "authorized";
   const articles = await getPublishedArticles(20);
   const [leadArticle, ...restArticles] = articles;
 
@@ -43,26 +48,11 @@ export default async function MagazineLandingPage() {
         <section className="magazineSectionBlock panel" aria-label="Latest articles">
           <div className="magazineSectionHeader">
             <h2>Latest Articles</h2>
+            {isAdmin ? <MagazineGenerateNowButton /> : null}
           </div>
           <div className="magazineTrackGrid">
             {restArticles.map((article) => (
-              <article key={article.slug} className="magazineTrackCard panel">
-                <img
-                  src={`https://i.ytimg.com/vi/${article.videoId}/hqdefault.jpg`}
-                  alt={`${article.artist} - ${article.trackName}`}
-                  loading="lazy"
-                  className="magazineTrackThumb"
-                />
-                <div className="magazineTrackBody">
-                  <p className="magazineTrackGenre">{article.genre}</p>
-                  <h3>{article.title}</h3>
-                  {article.deck ? <p>{article.deck}</p> : null}
-                  <div className="magazineTrackActions">
-                    <Link href={`/magazine/${article.slug}`} className="magazineTextLink">Read article</Link>
-                    <Link href={`/?v=${article.videoId}&resume=1`} className="magazineWatchCta" data-overlay-close="true">Watch now</Link>
-                  </div>
-                </div>
-              </article>
+              <MagazineLatestArticleCard key={article.slug} article={article} isAdmin={isAdmin} />
             ))}
           </div>
         </section>
