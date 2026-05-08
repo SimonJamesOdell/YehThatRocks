@@ -183,6 +183,31 @@ async function checkYouTubeOEmbed(videoId) {
 }
 
 /**
+ * Probes the HQ YouTube thumbnail endpoint.
+ * hqdefault.jpg returns 404 for unavailable/private/deleted videos,
+ * while lower-quality variants can return generic placeholder 200s.
+ * Returns true (available), false (definitively unavailable), or null (network error / unknown).
+ */
+async function checkYouTubeHqThumbnail(videoId) {
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => resolve(null), 4000);
+    const url = `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
+    https
+      .get(url, (res) => {
+        clearTimeout(timeoutId);
+        res.resume(); // consume body to free socket
+        if (res.statusCode === 200) resolve(true);
+        else if (res.statusCode >= 400 && res.statusCode < 500) resolve(false);
+        else resolve(null);
+      })
+      .on("error", () => {
+        clearTimeout(timeoutId);
+        resolve(null);
+      });
+  });
+}
+
+/**
  * Checks all published magazine articles and deletes any whose YouTube video
  * is definitively no longer available. Run in parallel for speed.
  */
@@ -680,6 +705,20 @@ async function run() {
         console.error(
           JSON.stringify({
             event: "skipped-unavailable-video",
+            videoId: selection.video.videoId,
+            artist: selection.video.artist,
+          }),
+        );
+        continue;
+      }
+
+      // Hard gate: require a positive HQ thumbnail probe before generation.
+      // This avoids low-quality placeholder false-positives.
+      const hqThumbnailAvailable = await checkYouTubeHqThumbnail(selection.video.videoId);
+      if (hqThumbnailAvailable !== true) {
+        console.error(
+          JSON.stringify({
+            event: hqThumbnailAvailable === false ? "skipped-unavailable-hq-thumbnail" : "skipped-unverified-hq-thumbnail",
             videoId: selection.video.videoId,
             artist: selection.video.artist,
           }),
