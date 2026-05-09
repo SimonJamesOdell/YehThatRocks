@@ -61,3 +61,6 @@ scripts/.genre-backfill-checkpoint.json
 audit.ps1
 setup-and-fix.ps1
 fix-mysql-user.ps1
+
+# Local ship password hash
+.ship-password.json
