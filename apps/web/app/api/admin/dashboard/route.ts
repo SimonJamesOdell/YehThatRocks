@@ -49,51 +49,6 @@ type VisitorGeoPoint = {
   lastSeenAt: string;
 };
 
-type DashboardLocationRow = { location: string; count: bigint | number };
-type DashboardTrafficRow = { day: Date; count: bigint | number };
-type DashboardAnalyticsDailyRow = {
-  day: Date;
-  pageViews: bigint | number;
-  videoViews: bigint | number;
-  uniqueVisitors: bigint | number;
-};
-type DashboardHourlyRecentAuthRow = { bucketStart: Date | string; authEvents: bigint | number };
-type DashboardHourlyRecentAnalyticsRow = {
-  bucketStart: Date | string;
-  pageViews: bigint | number;
-  videoViews: bigint | number;
-  uniqueVisitors: bigint | number;
-  returnVisits: bigint | number;
-};
-type DashboardGeoVisitorRow = {
-  visitorId: string;
-  lat: bigint | number | string;
-  lng: bigint | number | string;
-  eventCount: bigint | number;
-  lastSeenAt: Date | string;
-};
-type DashboardAuthActionRow = { action: string; total: bigint | number; failed: bigint | number };
-type DashboardGroqDailyRow = { day: Date; classified: bigint | number; errors: bigint | number };
-type DashboardApiUsageDailyRow = {
-  day: Date;
-  youtubeCalls: bigint | number;
-  youtubeUnits: bigint | number;
-  youtubeErrors: bigint | number;
-  groqCalls: bigint | number;
-  groqUnits: bigint | number;
-  groqErrors: bigint | number;
-};
-type DashboardApiUsagePoint = {
-  day: string;
-  youtubeCalls: number;
-  youtubeUnits: number;
-  youtubeErrors: number;
-  groqCalls: number;
-  groqUnits: number;
-  groqErrors: number;
-  groqClassified: number;
-};
-
 function addUtcMonths(date: Date, months: number) {
   const next = new Date(date);
   next.setUTCMonth(next.getUTCMonth() + months);
@@ -520,8 +475,8 @@ export async function GET(request: NextRequest) {
     bucketCount: 12,
   });
 
-  const authByHour = new Map(hourlyRecentAuth.map((row: DashboardHourlyRecentAuthRow) => [toIsoBucketStart(row.bucketStart), toNumber(row.authEvents)]));
-  const hourlyRecent = hourlyRecentAnalytics.map((row: DashboardHourlyRecentAnalyticsRow) => {
+  const authByHour = new Map(hourlyRecentAuth.map((row) => [toIsoBucketStart(row.bucketStart), toNumber(row.authEvents)]));
+  const hourlyRecent = hourlyRecentAnalytics.map((row) => {
     const bucketStart = toIsoBucketStart(row.bucketStart);
     return {
       bucketStart,
@@ -546,7 +501,7 @@ export async function GET(request: NextRequest) {
   const auth24hRow = auth24h[0];
   const metadataRow = metadataQuality;
   const geoVisitors: VisitorGeoPoint[] = geoVisitorsRaw
-    .map((row: DashboardGeoVisitorRow) => {
+    .map((row) => {
       const lat = toNumber(row.lat);
       const lng = toNumber(row.lng);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -561,7 +516,7 @@ export async function GET(request: NextRequest) {
         lastSeenAt: row.lastSeenAt instanceof Date ? row.lastSeenAt.toISOString() : new Date(row.lastSeenAt).toISOString(),
       };
     })
-    .filter((row: VisitorGeoPoint | null): row is VisitorGeoPoint => Boolean(row));
+    .filter((row): row is VisitorGeoPoint => Boolean(row));
 
   const payload = {
     ok: true,
@@ -578,16 +533,16 @@ export async function GET(request: NextRequest) {
       artists,
       categories,
     },
-    locations: locations.map((row: DashboardLocationRow) => ({
+    locations: locations.map((row) => ({
       location: row.location,
       count: toNumber(row.count),
     })),
-    traffic: traffic.map((row: DashboardTrafficRow) => ({
+    traffic: traffic.map((row) => ({
       day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
       count: toNumber(row.count),
     })),
     analytics: {
-      daily: analyticsDaily.map((row: DashboardAnalyticsDailyRow) => ({
+      daily: analyticsDaily.map((row) => ({
         day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
         pageViews: toNumber(row.pageViews),
         videoViews: toNumber(row.videoViews),
@@ -604,7 +559,7 @@ export async function GET(request: NextRequest) {
         newVisitors: toNumber(analyticsNewVsRepeat[0]?.newVisitors),
         repeatVisitors: toNumber(analyticsNewVsRepeat[0]?.repeatVisitors),
       },
-      registrationsPerDay: registrationsPerDay.map((row: DashboardTrafficRow) => ({
+      registrationsPerDay: registrationsPerDay.map((row) => ({
         day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
         count: toNumber(row.count),
       })),
@@ -627,7 +582,7 @@ export async function GET(request: NextRequest) {
         uniqueIps: toNumber(auth24hRow?.uniqueIps),
         uniqueUsers: toNumber(auth24hRow?.uniqueUsers),
       },
-      authActionBreakdown: actionBreakdown.map((row: DashboardAuthActionRow) => ({
+      authActionBreakdown: actionBreakdown.map((row) => ({
         action: row.action,
         total: toNumber(row.total),
         failed: toNumber(row.failed),
@@ -639,13 +594,13 @@ export async function GET(request: NextRequest) {
         lowConfidence: toNumber(metadataRow?.lowConfidence),
         unknownType: toNumber(metadataRow?.unknownType),
       },
-      ingestVelocity: ingestVelocity.map((row: DashboardTrafficRow) => ({
+      ingestVelocity: ingestVelocity.map((row) => ({
         day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
         count: toNumber(row.count),
       })),
       groqSpend: {
         wikiCacheCount,
-        daily: groqDailySpend.map((row: DashboardGroqDailyRow) => ({
+        daily: groqDailySpend.map((row) => ({
           day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
           classified: toNumber(row.classified),
           errors: toNumber(row.errors),
@@ -653,14 +608,14 @@ export async function GET(request: NextRequest) {
       },
       apiUsage: (() => {
         const groqClassifiedByDay = new Map(
-          groqDailySpend.map((row: DashboardGroqDailyRow) => [
+          groqDailySpend.map((row) => [
             row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
             toNumber(row.classified),
           ]),
         );
 
-        const daily: DashboardApiUsagePoint[] = apiUsageDaily
-          .map((row: DashboardApiUsageDailyRow) => {
+        const daily = apiUsageDaily
+          .map((row) => {
             const day = row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day);
             return {
               day,
@@ -673,7 +628,7 @@ export async function GET(request: NextRequest) {
               groqClassified: groqClassifiedByDay.get(day) ?? 0,
             };
           })
-          .sort((a: DashboardApiUsagePoint, b: DashboardApiUsagePoint) => a.day.localeCompare(b.day));
+          .sort((a, b) => a.day.localeCompare(b.day));
 
         const totals7dRows = daily.slice(-7);
         const totals7d = totals7dRows.reduce(
