@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 
 type MagazineLatestArticleCardProps = {
   article: {
@@ -14,49 +13,9 @@ type MagazineLatestArticleCardProps = {
     title: string;
     deck: string | null;
   };
-  isAdmin: boolean;
 };
 
-export function MagazineLatestArticleCard({ article, isAdmin }: MagazineLatestArticleCardProps) {
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isDeleted, setIsDeleted] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  async function handleDelete() {
-    if (!isAdmin || isDeleting) return;
-
-    const confirmed = window.confirm(`Delete article \"${article.title}\"?`);
-    if (!confirmed) return;
-
-    setIsDeleting(true);
-    setDeleteError(null);
-
-    try {
-      const response = await fetch(`/api/admin/magazine/${encodeURIComponent(article.slug)}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-
-      if (!response.ok) {
-        setDeleteError(payload?.error ?? "Delete failed");
-        return;
-      }
-
-      setIsDeleted(true);
-    } catch {
-      setDeleteError("Delete failed");
-    } finally {
-      setIsDeleting(false);
-    }
-  }
-
-  if (isDeleted) {
-    return null;
-  }
+export function MagazineLatestArticleCard({ article }: MagazineLatestArticleCardProps) {
 
   const hasVideo = article.videoId !== null && article.videoId !== undefined;
   const artistSlug = String(article.artist || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -88,18 +47,7 @@ export function MagazineLatestArticleCard({ article, isAdmin }: MagazineLatestAr
           ) : (
             <Link href={`/artists/${artistSlug}`} className="magazineWatchCta" data-overlay-close="true">Explore artist</Link>
           )}
-          {isAdmin ? (
-            <button
-              type="button"
-              className="magazineAdminDeleteButton"
-              onClick={handleDelete}
-              disabled={isDeleting}
-            >
-              {isDeleting ? "Deleting..." : "Delete"}
-            </button>
-          ) : null}
         </div>
-        {deleteError ? <p className="magazineAdminDeleteError">{deleteError}</p> : null}
       </div>
     </article>
   );
