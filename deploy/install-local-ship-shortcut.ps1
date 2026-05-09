@@ -14,8 +14,8 @@ $profilePaths = @(
 
 $functionBlock = @"
 function ship {
-  param()
-  powershell -NoProfile -ExecutionPolicy Bypass -File '$RepoDir\\deploy\\ship-local.ps1'
+  param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
+  & '$RepoDir\\ship.cmd' @Args
 }
 "@
 
@@ -27,7 +27,9 @@ if (-not (Test-Path $TargetCmdDir)) {
 
 @"
 @echo off
-powershell -NoProfile -ExecutionPolicy Bypass -File "$RepoDir\deploy\ship-local.ps1"
+setlocal
+call "$RepoDir\ship.cmd" %*
+endlocal
 "@ | Set-Content -Path $cmdPath -Encoding ASCII
 
 Write-Host "Installed PATH command at $cmdPath" -ForegroundColor Green
