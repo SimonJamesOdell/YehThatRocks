@@ -70,6 +70,7 @@ export async function GET(request: NextRequest) {
       parseConfidence: true,
       channelTitle: true,
       description: true,
+      createdAt: true,
       updatedAt: true,
     },
   });
