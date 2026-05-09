@@ -9,6 +9,7 @@ type MagazineLatestArticleCardProps = {
     videoId: string;
     artist: string;
     trackName: string;
+    kicker: string | null;
     genre: string;
     title: string;
     deck: string | null;
@@ -66,7 +67,7 @@ export function MagazineLatestArticleCard({ article, isAdmin }: MagazineLatestAr
         className="magazineTrackThumb"
       />
       <div className="magazineTrackBody">
-        <p className="magazineTrackGenre">{article.genre}</p>
+        <p className="magazineTrackGenre">{article.kicker ?? article.genre}</p>
         <h3>{article.title}</h3>
         {article.deck ? <p>{article.deck}</p> : null}
         <div className="magazineTrackActions">

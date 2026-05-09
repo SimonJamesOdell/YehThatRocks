@@ -134,7 +134,7 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
                     <div className="magazineArticleSidebarMeta">
                       <strong>{related.artist}</strong>
                       <span>{related.trackName}</span>
-                      <small>{related.genre}</small>
+                      <small>{related.kicker ?? related.genre}</small>
                     </div>
                   </Link>
                 ))}
