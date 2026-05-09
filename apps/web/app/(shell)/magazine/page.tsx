@@ -39,8 +39,8 @@ export default async function MagazineLandingPage() {
             {leadArticle.kicker ? <p className="magazineSectionLabel">{leadArticle.kicker}</p> : null}
             <h2>{leadArticle.title}</h2>
             {leadArticle.deck ? <p>{leadArticle.deck}</p> : null}
-            <div className="magazineTrackActions magazineCoverStoryActions">
-              <Link href={`/?v=${leadArticle.videoId}&resume=1`} className="magazineWatchCta" data-overlay-close="true">Play Now</Link>
+            <div className="magazineCoverStoryActions">
+              <Link href={`/?v=${leadArticle.videoId}&resume=1`} className="magazineWatchCta" data-overlay-close="true">Watch Now</Link>
             </div>
           </div>
         </section>
