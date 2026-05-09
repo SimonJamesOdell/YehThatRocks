@@ -1,3 +1,4 @@
+[CmdletBinding(PositionalBinding = $false)]
 param(
   [string]$RepoDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
   [string]$ShipPassword = "",
