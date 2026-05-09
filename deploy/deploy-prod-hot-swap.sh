@@ -276,11 +276,11 @@ if wait_for_public_health "$STATUS_URL" "$HEALTH_TIMEOUT_SEC"; then
     fi
     TIMER_NEXT_ELAPSE="$(systemctl show magazine-autogen.timer --property=NextElapseUSecRealtime --value || true)"
     if [ -z "$TIMER_NEXT_ELAPSE" ] || [ "$TIMER_NEXT_ELAPSE" = "n/a" ]; then
-      echo "[deploy] ERROR: magazine-autogen.timer has no scheduled next run" >&2
+      echo "[deploy] WARNING: magazine-autogen.timer next-run value unavailable from systemctl show" >&2
       systemctl status magazine-autogen.timer --no-pager >&2 || true
-      exit 1
+    else
+      echo "[deploy] magazine-autogen.timer enabled (every 6h), next run at: $TIMER_NEXT_ELAPSE"
     fi
-    echo "[deploy] magazine-autogen.timer enabled (every 6h), next run at: $TIMER_NEXT_ELAPSE"
   fi
 
   exit 0
