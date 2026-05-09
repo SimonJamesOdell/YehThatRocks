@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { geoContains, geoNaturalEarth1, geoPath } from "d3-geo";
 import { feature } from "topojson-client";
 import { useCallback, useEffect, useMemo, useState } from "react";
