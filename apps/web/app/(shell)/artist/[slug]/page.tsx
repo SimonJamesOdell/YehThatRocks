@@ -42,6 +42,8 @@ type ArtistPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+type ArtistVideoRow = Awaited<ReturnType<typeof getVideosByArtist>>[number];
+
 export default async function ArtistPage({ params, searchParams }: ArtistPageProps) {
   const [{ hasAccessToken: isAuthenticated }, { seenVideoIds, hiddenVideoIds }] = await Promise.all([
     getShellRequestAuthState(),
@@ -66,12 +68,12 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
 
   const artistVideosRaw = await getVideosByArtist(artist.name);
   const { topVideoIds, newestVideoIds } = await getArtistRouteSourceVideoIds(
-    artistVideosRaw.map((video) => video.id),
+    artistVideosRaw.map((video: ArtistVideoRow) => video.id),
   );
 
   const artistVideos = artistVideosRaw
-    .filter((video) => !hiddenVideoIds.has(video.id))
-    .map((video) => {
+    .filter((video: ArtistVideoRow) => !hiddenVideoIds.has(video.id))
+    .map((video: ArtistVideoRow) => {
       const isTop100Source = topVideoIds.has(video.id);
       const isNewSource = newestVideoIds.has(video.id);
       const sourceLabel: "Top100" | "New" | undefined = isTop100Source ? "Top100" : isNewSource ? "New" : undefined;
@@ -84,8 +86,8 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
       };
     });
   const orderedArtistVideos = artistVideos
-    .filter((video) => !seenVideoIds.has(video.id))
-    .concat(artistVideos.filter((video) => seenVideoIds.has(video.id)));
+    .filter((video: ArtistVideoRow) => !seenVideoIds.has(video.id))
+    .concat(artistVideos.filter((video: ArtistVideoRow) => seenVideoIds.has(video.id)));
 
   const musicGroupJsonLd = {
     "@context": "https://schema.org",
