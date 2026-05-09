@@ -867,7 +867,6 @@
 .magazineCoverStoryBody {
   position: relative;
   z-index: 2;
-  pointer-events: none;
   padding: 20px;
   display: grid;
   gap: 10px;
@@ -877,6 +876,21 @@
 .magazineCoverStoryActions {
   position: relative;
   z-index: 3;
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.magazineCoverStoryBody > * {
+  pointer-events: none;
+}
+
+.magazineCoverStoryActions,
+.magazineCoverStoryActions * {
   pointer-events: auto;
 }
 
