@@ -231,7 +231,15 @@ type PerfWindowResetResponse = {
   };
 };
 
-export type AdminTab = "overview" | "performance" | "worldmap" | "api" | "categories" | "videos" | "artists" | "ambiguous";
+type AdminMagazineArticleRow = {
+  slug: string;
+  title: string;
+  videoId: string | null;
+  publishedAt: string;
+  externalLandings: number;
+};
+
+export type AdminTab = "overview" | "magazine" | "performance" | "worldmap" | "api" | "categories" | "videos" | "artists" | "ambiguous";
 
 async function readJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetchWithAuthRetry(input, init);
@@ -322,6 +330,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [revokingVideoId, setRevokingVideoId] = useState<string | null>(null);
   const [artists, setArtists] = useState<ArtistRow[]>([]);
   const [ambiguousVideos, setAmbiguousVideos] = useState<AmbiguousVideoRow[]>([]);
+  const [magazineArticles, setMagazineArticles] = useState<AdminMagazineArticleRow[]>([]);
+  const [deleteModalSlug, setDeleteModalSlug] = useState<string | null>(null);
 
   const [videoQuery, setVideoQuery] = useState("");
   const [videoImportSource, setVideoImportSource] = useState("");
@@ -881,6 +891,11 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     setAmbiguousVideos(ambiguousPayload.ambiguousVideos);
   }
 
+  async function loadMagazineArticles() {
+    const payload = await readJson<{ articles: AdminMagazineArticleRow[] }>("/api/admin/magazine");
+    setMagazineArticles(payload.articles);
+  }
+
   async function loadQuotaStatus() {
     try {
       const status = await readJson<QuotaBackfillStatus & { ok: boolean }>("/api/admin/videos/backfill-quota");
@@ -926,6 +941,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     try {
       if (activeTab === "overview") {
         await loadOverview();
+      } else if (activeTab === "magazine") {
+        await loadMagazineArticles();
       } else if (activeTab === "performance") {
         await loadOverview();
       } else if (activeTab === "worldmap") {
@@ -1303,6 +1320,19 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     }
   }
 
+  async function deleteMagazineArticle(slug: string) {
+    try {
+      await readJson(`/api/admin/magazine/${encodeURIComponent(slug)}`, {
+        method: "DELETE",
+      });
+      setSaveMessage(`Deleted magazine article ${slug}.`);
+      setDeleteModalSlug(null);
+      await loadMagazineArticles();
+    } catch (deleteError) {
+      setSaveMessage(deleteError instanceof Error ? deleteError.message : "Delete failed.");
+    }
+  }
+
   async function resetPerfWindow() {
     if (resettingPerfWindow) {
       return;
@@ -1648,6 +1678,119 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
           </svg>
 
         </div>
+      ) : null}
+
+      {activeTab === "magazine" ? (
+        <section className="panel featurePanel">
+          <div className="panelHeading">
+            <span>Magazine Articles</span>
+            <strong>{magazineArticles.length} rows</strong>
+          </div>
+          <div className="interactiveStack" style={{ gap: 8 }}>
+            {magazineArticles.length === 0 ? <p className="authMessage">No magazine articles found.</p> : null}
+            {magazineArticles.map((article) => (
+              <div
+                key={article.slug}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "72px minmax(0, 1fr) auto",
+                  alignItems: "center",
+                  gap: 10,
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  borderRadius: 10,
+                  padding: 8,
+                  background: "rgba(0,0,0,0.22)",
+                }}
+              >
+                {article.videoId ? (
+                  <img
+                    src={`https://i.ytimg.com/vi/${article.videoId}/mqdefault.jpg`}
+                    alt={article.title}
+                    style={{ width: 72, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)" }}
+                  />
+                ) : (
+                  <div style={{ width: 72, height: 40, borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)" }} />
+                )}
+
+                <div style={{ minWidth: 0, display: "grid", gap: 2 }}>
+                  <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{article.title}</strong>
+                  <span className="authMessage" style={{ margin: 0 }}>
+                    External landings (all time): {article.externalLandings.toLocaleString()}
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Link href={`/admin/magazine/${encodeURIComponent(article.slug)}`} className="navLink navLinkActive">
+                    Edit
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteModalSlug(article.slug)}
+                    style={{
+                      borderRadius: 999,
+                      border: "1px solid rgba(255, 105, 97, 0.72)",
+                      background: "rgba(102, 10, 10, 0.55)",
+                      color: "#ffd8d3",
+                      padding: "6px 11px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {deleteModalSlug ? (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Confirm article deletion"
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.62)",
+                display: "grid",
+                placeItems: "center",
+                zIndex: 160,
+                padding: 16,
+              }}
+            >
+              <div
+                style={{
+                  width: "min(520px, 100%)",
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  background: "linear-gradient(170deg, rgba(30,10,10,0.96), rgba(12,6,6,0.98))",
+                  boxShadow: "0 22px 52px rgba(0,0,0,0.45)",
+                  padding: 16,
+                  display: "grid",
+                  gap: 10,
+                }}
+              >
+                <h3 style={{ margin: 0 }}>Delete article?</h3>
+                <p className="authMessage" style={{ margin: 0 }}>
+                  This will permanently delete <strong>{deleteModalSlug}</strong>. This action cannot be undone.
+                </p>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <button type="button" onClick={() => setDeleteModalSlug(null)}>Cancel</button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteMagazineArticle(deleteModalSlug)}
+                    style={{
+                      border: "1px solid rgba(255, 105, 97, 0.72)",
+                      background: "rgba(102, 10, 10, 0.7)",
+                      color: "#ffd8d3",
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </section>
       ) : null}
 
       {activeTab === "performance" ? (
