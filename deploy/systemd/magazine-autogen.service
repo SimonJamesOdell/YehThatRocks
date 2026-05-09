@@ -5,11 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-EnvironmentFile=/srv/yehthatrocks/.env.production
-ExecStart=/usr/bin/curl -fsS \
-  -X POST \
-  -H "Authorization: Bearer ${CRON_SECRET}" \
-  "http://127.0.0.1:3000/api/cron/magazine-daily?count=1"
+WorkingDirectory=/srv/yehthatrocks
+EnvironmentFile=-/srv/yehthatrocks/.env.production
+ExecStart=/usr/bin/bash -lc 'PORT="${APP_PORT:-3000}"; COUNT="${MAGAZINE_DAILY_COUNT:-1}"; URL="http://127.0.0.1:${PORT}/api/cron/magazine-daily?count=${COUNT}"; if [ -n "${CRON_SECRET:-}" ]; then exec /usr/bin/curl -fsS --connect-timeout 10 --max-time 180 -X POST -H "Authorization: Bearer ${CRON_SECRET}" "$URL"; else exec /usr/bin/curl -fsS --connect-timeout 10 --max-time 180 -X POST "$URL"; fi'
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=magazine-autogen
