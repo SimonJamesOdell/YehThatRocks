@@ -140,7 +140,6 @@ async function loadFavouriteVideosForUser(userId: number): Promise<VideoRecord[]
       SELECT v.videoId, v.title, v.favourited, v.description
       FROM videos v
       WHERE v.videoId IN (${placeholders})
-        AND COALESCE(v.approved, 0) = 1
     `,
     ...youtubeIds,
   );
@@ -254,7 +253,6 @@ export async function getFavouriteVideosPage(
           WHERE f.userid = ?
             AND f.videoId IS NOT NULL
             AND hv.video_id IS NULL
-            AND COALESCE(v.approved, 0) = 1
           ORDER BY f.createdAt DESC, f.id DESC
           LIMIT ? OFFSET ?
         `,
@@ -274,7 +272,6 @@ export async function getFavouriteVideosPage(
           WHERE f.userid = ?
             AND f.videoId IS NOT NULL
             AND hv.video_id IS NULL
-            AND COALESCE(v.approved, 0) = 1
         `,
         userId,
         userId,
