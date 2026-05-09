@@ -267,7 +267,21 @@ if wait_for_public_health "$STATUS_URL" "$HEALTH_TIMEOUT_SEC"; then
     cp "$REPO_DIR/deploy/systemd/magazine-autogen.timer" /etc/systemd/system/magazine-autogen.timer
     systemctl daemon-reload
     systemctl enable --now magazine-autogen.timer
-    echo "[deploy] magazine-autogen.timer enabled (every 6h)"
+    echo "[deploy] validating magazine-autogen.service"
+    if systemctl start magazine-autogen.service; then
+      echo "[deploy] magazine-autogen.service smoke run passed"
+    else
+      echo "[deploy] ERROR: magazine-autogen.service smoke run failed" >&2
+      journalctl -u magazine-autogen.service -n 80 --no-pager >&2 || true
+      exit 1
+    fi
+    TIMER_NEXT_ELAPSE="$(systemctl show magazine-autogen.timer --property=NextElapseUSecRealtime --value || true)"
+    if [ -z "$TIMER_NEXT_ELAPSE" ] || [ "$TIMER_NEXT_ELAPSE" = "n/a" ]; then
+      echo "[deploy] ERROR: magazine-autogen.timer has no scheduled next run" >&2
+      systemctl status magazine-autogen.timer --no-pager >&2 || true
+      exit 1
+    fi
+    echo "[deploy] magazine-autogen.timer enabled (every 6h), next run at: $TIMER_NEXT_ELAPSE"
   fi
 
   exit 0
