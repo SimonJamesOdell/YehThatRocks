@@ -878,16 +878,20 @@
   position: relative;
   z-index: 3;
   margin-top: 4px;
-  display: flex;
-  flex-wrap: wrap;
+  display: inline-flex;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-start;
   gap: 10px;
-  pointer-events: auto;
+  justify-self: start;
+  pointer-events: none;
 }
 
-.magazineCoverStoryActions,
-.magazineCoverStoryActions * {
+.magazineCoverStoryActions {
+  pointer-events: none;
+}
+
+.magazineCoverStoryActions .magazineWatchCta {
   pointer-events: auto;
 }
 
