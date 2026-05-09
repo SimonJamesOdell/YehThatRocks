@@ -1041,7 +1041,22 @@ async function run() {
         }
       }
 
-      if (!slug) continue; // Safety check
+  if (!slug) continue; // Safety check
+
+      // Hard gate: require a positive maxresdefault thumbnail probe before generation.
+      // The article page displays maxresdefault.jpg, so we must confirm it exists.
+      // hqdefault can return 200 with a placeholder even for low-quality/unavailable videos.
+      const maxresThumbnailAvailable = await checkYouTubeMaxresThumbnail(selection.video.videoId);
+      if (maxresThumbnailAvailable !== true) {
+        console.error(
+          JSON.stringify({
+            event: maxresThumbnailAvailable === false ? "skipped-unavailable-maxres-thumbnail" : "skipped-unverified-maxres-thumbnail",
+            videoId: selection.video.videoId,
+            artist: selection.video.artist,
+          }),
+        );
+        continue;
+      }
 
       const article = await generateArticleWithRetries({
         apiKey: groqApiKey,

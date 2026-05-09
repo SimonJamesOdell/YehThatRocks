@@ -17,6 +17,7 @@ const files = {
   adminImportRoute: path.join(ROOT, "apps/web/app/api/admin/videos/import/route.ts"),
   adminPerformanceSamplesRoute: path.join(ROOT, "apps/web/app/api/admin/performance-samples/route.ts"),
   adminDashboardPanel: path.join(ROOT, "apps/web/components/admin-dashboard-panel.tsx"),
+  adminDashboardRollups: path.join(ROOT, "apps/web/lib/admin-dashboard-rollups.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   catalogDataIngestion: path.join(ROOT, "apps/web/lib/catalog-data-video-ingestion.ts"),
   currentVideoCache: path.join(ROOT, "apps/web/lib/current-video-cache.ts"),
@@ -36,6 +37,7 @@ function main() {
   const adminImportRouteSource = readFileStrict(files.adminImportRoute, ROOT);
   const adminPerformanceSamplesRouteSource = readFileStrict(files.adminPerformanceSamplesRoute, ROOT);
   const adminDashboardPanelSource = readFileStrict(files.adminDashboardPanel, ROOT);
+  const adminDashboardRollupsSource = readFileStrict(files.adminDashboardRollups, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const catalogDataIngestionSource = readFileStrict(files.catalogDataIngestion, ROOT);
   const currentVideoCacheSource = readFileStrict(files.currentVideoCache, ROOT);
@@ -95,6 +97,11 @@ function main() {
   assertContains(adminDashboardPanelSource, "window.setInterval(() => {", "Admin dashboard schedules periodic analytics refresh", failures);
   assertContains(adminDashboardPanelSource, "}, ANALYTICS_AUTO_REFRESH_MS);", "Admin dashboard interval uses the 5-minute refresh constant", failures);
   assertContains(adminDashboardPanelSource, "void refreshOverviewAnalytics();", "Admin dashboard manual refresh button reuses shared refresh helper", failures);
+  assertContains(adminDashboardRouteSource, "await ensureAdminDashboardRollupsFresh({ force: forceRefresh }).catch(() => undefined);", "Admin dashboard route refreshes rollups before overview payload assembly", failures);
+  assertContains(adminDashboardRouteSource, "readAdminDashboardRollups().catch(() => ({", "Admin dashboard route keeps rollup read invocation shape stable", failures);
+  assertContains(adminDashboardRollupsSource, "await ensureAdminDashboardRollupsFresh();", "Rollup reader performs freshness check before reading aggregates", failures);
+  assertContains(adminDashboardRollupsSource, "STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s') AS bucket_start,", "Hourly rollups keep DATETIME bucket_start expression used by current stable admin close behavior", failures);
+  assertContains(adminDashboardRollupsSource, "GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')", "Hourly rollups preserve current grouping expression used by stable state", failures);
 
   // Admin performance samples route parse style invariants.
   assertContains(adminPerformanceSamplesRouteSource, "const ms = Number.parseInt(process.env.SLOW_QUERY_LONG_TIME_THRESHOLD_MS, 10);", "Admin performance samples route parses slow-query threshold with Number.parseInt", failures);
