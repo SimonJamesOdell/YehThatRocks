@@ -1454,7 +1454,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                   : analyticsZoomLevel === "weekly"
                     ? "User analytics · rolling weekly buckets"
                     : analyticsZoomLevel === "daily"
-                      ? "User analytics · fixed daily buckets (UTC)"
+                        ? ""
                       : "User analytics · recent hourly buckets"}
             </span>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
