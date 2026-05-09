@@ -3196,10 +3196,14 @@ function ShellDynamicInner({
                         <article
                           key={track.slug}
                           className="magazineRailCard magazineRailCardClickable"
-                          onClick={() => router.push(`/magazine/${encodeURIComponent(track.slug)}`)}
+                          onClick={() => {
+                            window.scrollTo(0, 0);
+                            router.push(`/magazine/${encodeURIComponent(track.slug)}`);
+                          }}
                           onKeyDown={(event) => {
                             if (event.key === "Enter" || event.key === " ") {
                               event.preventDefault();
+                              window.scrollTo(0, 0);
                               router.push(`/magazine/${encodeURIComponent(track.slug)}`);
                             }
                           }}

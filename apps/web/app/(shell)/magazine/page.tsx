@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { OverlayHeader } from "@/components/overlay-header";
+import { ScrollToTop } from "@/components/scroll-to-top";
 import { MagazineLatestArticleCard } from "@/components/magazine-latest-article-card";
 import { requireAdminUserAuthState } from "@/lib/admin-auth";
 import { getPublishedArticles } from "@/lib/magazine-data";
@@ -20,6 +21,7 @@ export default async function MagazineLandingPage() {
 
   return (
     <>
+      <ScrollToTop />
       <OverlayHeader title="Magazine" />
 
       <main className="magazinePage" role="main" aria-label="Yeh Magazine">
