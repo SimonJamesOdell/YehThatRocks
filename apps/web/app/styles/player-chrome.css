@@ -867,6 +867,7 @@
 .magazineCoverStoryBody {
   position: relative;
   z-index: 2;
+  pointer-events: none;
   padding: 20px;
   display: grid;
   gap: 10px;
@@ -876,6 +877,7 @@
 .magazineCoverStoryActions {
   position: relative;
   z-index: 3;
+  pointer-events: auto;
 }
 
 .magazineCoverStoryBody h2,
