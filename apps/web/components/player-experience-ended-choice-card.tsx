@@ -131,6 +131,7 @@ export const EndedChoiceCard = memo(function EndedChoiceCard({
             loading="lazy"
             hideClosestSelector=".endedChoiceCardSlot"
             reportReason="thumbnail-load-error:ended-choice"
+            shouldReportUnavailable={false}
           />
           {isSeen && !isFavourited ? <span className="playerEndedChoiceSeenBadge">Seen</span> : null}
           {isFavourited ? (

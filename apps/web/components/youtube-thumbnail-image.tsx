@@ -14,6 +14,7 @@ type YouTubeThumbnailImageProps = {
   fetchPriority?: "high" | "low" | "auto";
   hideClosestSelector?: string;
   reportReason?: string;
+  shouldReportUnavailable?: boolean;
 };
 
 type ThumbState = "unknown" | "ready" | "broken";
@@ -67,6 +68,7 @@ export function YouTubeThumbnailImage({
   fetchPriority,
   hideClosestSelector = "[data-video-id]",
   reportReason = "thumbnail-load-error",
+  shouldReportUnavailable = true,
 }: YouTubeThumbnailImageProps) {
   const src = useMemo(() => buildThumbUrl(videoId, format), [videoId, format]);
   const probeUrl = useMemo(() => buildProbeUrl(videoId), [videoId]);
@@ -128,7 +130,9 @@ export function YouTubeThumbnailImage({
       return;
     }
 
-    reportUnavailable(videoId, reportReason);
+    if (shouldReportUnavailable) {
+      reportUnavailable(videoId, reportReason);
+    }
 
     const anchorElement = elementRef.current ?? brokenMarkerRef.current;
     const closest = hideClosestSelector && anchorElement
@@ -138,7 +142,7 @@ export function YouTubeThumbnailImage({
       closest.style.display = "none";
       closest.setAttribute("data-thumbnail-broken", "1");
     }
-  }, [hideClosestSelector, reportReason, state, videoId]);
+  }, [hideClosestSelector, reportReason, shouldReportUnavailable, state, videoId]);
 
   if (state === "broken") {
     return <span ref={brokenMarkerRef} aria-hidden="true" style={{ display: "none" }} />;
@@ -167,7 +171,9 @@ export function YouTubeThumbnailImage({
             closest.setAttribute("data-thumbnail-broken", "1");
           }
         }
-        reportUnavailable(videoId, reportReason);
+        if (shouldReportUnavailable) {
+          reportUnavailable(videoId, reportReason);
+        }
         thumbnailHealthCache.set(videoId, "broken");
         setThumbState({ videoId, state: "broken" });
       }}
