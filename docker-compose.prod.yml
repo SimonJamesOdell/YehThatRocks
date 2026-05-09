@@ -34,6 +34,7 @@ services:
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?set in .env.production}
       AVATAR_STORAGE_PATH: ${AVATAR_STORAGE_PATH:-/srv/yehthatrocks-data/avatars}
       APP_URL: ${APP_URL:?set in .env.production}
+      CRON_SECRET: ${CRON_SECRET:-}
       YOUTUBE_DATA_API_KEY: ${YOUTUBE_DATA_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
