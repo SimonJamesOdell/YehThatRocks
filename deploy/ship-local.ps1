@@ -1,5 +1,6 @@
 param(
   [string]$RepoDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
+  [string]$ShipPassword = "",
   [string]$Branch = "main",
   [string]$VpsHost = $(if ($env:YTR_VPS_HOST) { $env:YTR_VPS_HOST } else { "root@206.189.122.114" }),
   [string]$VpsRepoDir = "/srv/yehthatrocks",
@@ -21,6 +22,95 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+function Convert-SecureStringToPlainText([System.Security.SecureString]$Value) {
+  $ptr = [IntPtr]::Zero
+  try {
+    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
+    return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+  } finally {
+    if ($ptr -ne [IntPtr]::Zero) {
+      [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+    }
+  }
+}
+
+function Compute-ShipPasswordHash([string]$Password, [string]$SaltBase64) {
+  $saltBytes = [Convert]::FromBase64String($SaltBase64)
+  $passwordBytes = [Text.Encoding]::UTF8.GetBytes($Password)
+  $payload = New-Object byte[] ($saltBytes.Length + $passwordBytes.Length)
+  [Array]::Copy($saltBytes, 0, $payload, 0, $saltBytes.Length)
+  [Array]::Copy($passwordBytes, 0, $payload, $saltBytes.Length, $passwordBytes.Length)
+
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try {
+    $hash = $sha.ComputeHash($payload)
+    return [Convert]::ToBase64String($hash)
+  } finally {
+    $sha.Dispose()
+  }
+}
+
+function Ensure-ShipPasswordConfiguredAndValid([string]$RepoRoot, [string]$ProvidedPassword) {
+  $passwordFilePath = Join-Path $RepoRoot ".ship-password.json"
+
+  if (-not (Test-Path -LiteralPath $passwordFilePath)) {
+    Write-Host "No ship password configured yet." -ForegroundColor Yellow
+    Write-Host "Create one now. This first run will save the salted hash and then exit." -ForegroundColor Yellow
+
+    $firstEntry = Read-Host "Enter new ship password" -AsSecureString
+    $secondEntry = Read-Host "Confirm new ship password" -AsSecureString
+    $firstPlain = Convert-SecureStringToPlainText $firstEntry
+    $secondPlain = Convert-SecureStringToPlainText $secondEntry
+
+    if ([string]::IsNullOrWhiteSpace($firstPlain)) {
+      throw "Ship password cannot be empty."
+    }
+
+    if ($firstPlain -ne $secondPlain) {
+      throw "Ship password confirmation did not match."
+    }
+
+    $saltBytes = New-Object byte[] 32
+    [Security.Cryptography.RandomNumberGenerator]::Fill($saltBytes)
+    $saltBase64 = [Convert]::ToBase64String($saltBytes)
+    $hashBase64 = Compute-ShipPasswordHash -Password $firstPlain -SaltBase64 $saltBase64
+
+    $payload = @{
+      version = 1
+      salt = $saltBase64
+      hash = $hashBase64
+      createdAtUtc = (Get-Date).ToUniversalTime().ToString("o")
+    }
+
+    $json = $payload | ConvertTo-Json -Depth 4
+    Set-Content -LiteralPath $passwordFilePath -Value $json -Encoding UTF8
+
+    Write-Host "Ship password initialized at $passwordFilePath" -ForegroundColor Green
+    Write-Host "Re-run using: ship SECRET_PASSWORD" -ForegroundColor Green
+    exit 0
+  }
+
+  if ([string]::IsNullOrWhiteSpace($ProvidedPassword)) {
+    throw "Ship password required. Usage: ship SECRET_PASSWORD"
+  }
+
+  $record = Get-Content -LiteralPath $passwordFilePath -Raw | ConvertFrom-Json
+  if (-not $record.salt -or -not $record.hash) {
+    throw "Invalid ship password file format at $passwordFilePath"
+  }
+
+  $expectedHash = [string]$record.hash
+  $actualHash = Compute-ShipPasswordHash -Password $ProvidedPassword -SaltBase64 ([string]$record.salt)
+  $expectedBytes = [Convert]::FromBase64String($expectedHash)
+  $actualBytes = [Convert]::FromBase64String($actualHash)
+
+  if (-not [Security.Cryptography.CryptographicOperations]::FixedTimeEquals($expectedBytes, $actualBytes)) {
+    throw "Invalid ship password."
+  }
+}
+
+Ensure-ShipPasswordConfiguredAndValid -RepoRoot $RepoDir -ProvidedPassword $ShipPassword
 
 function Exec([string]$Command) {
   Write-Host "> $Command" -ForegroundColor Cyan
