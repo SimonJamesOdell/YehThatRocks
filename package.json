@@ -1,7 +1,7 @@
 {
   "name": "yehthatrocks",
   "private": true,
-  "packageManager": "npm@11.14.1",
+  "packageManager": "npm@10.9.2",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -85,12 +85,12 @@
     "maintain:deps:install": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-dependency-maintenance-task.ps1"
   },
   "devDependencies": {
-    "cross-env": "^10.1.0",
-    "prisma": "^7.8.0",
-    "turbo": "^2.9.12"
+    "cross-env": "^7.0.3",
+    "prisma": "^6.7.0",
+    "turbo": "^2.5.0"
   },
   "dependencies": {
-    "@prisma/client": "^7.8.0",
-    "mysql2": "^3.22.3"
+    "@prisma/client": "^6.19.3",
+    "mysql2": "^3.15.3"
   }
 }
