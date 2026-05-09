@@ -183,15 +183,16 @@ async function checkYouTubeOEmbed(videoId) {
 }
 
 /**
- * Probes the HQ YouTube thumbnail endpoint.
- * hqdefault.jpg returns 404 for unavailable/private/deleted videos,
- * while lower-quality variants can return generic placeholder 200s.
+ * Probes the maxresdefault YouTube thumbnail endpoint.
+ * This is the exact image the article page displays, so we gate on it directly.
+ * maxresdefault.jpg returns 404 for videos that were never uploaded in HD or are unavailable,
+ * while hqdefault can return placeholder 200s for those same videos.
  * Returns true (available), false (definitively unavailable), or null (network error / unknown).
  */
-async function checkYouTubeHqThumbnail(videoId) {
+async function checkYouTubeMaxresThumbnail(videoId) {
   return new Promise((resolve) => {
     const timeoutId = setTimeout(() => resolve(null), 4000);
-    const url = `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
+    const url = `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/maxresdefault.jpg`;
     https
       .get(url, (res) => {
         clearTimeout(timeoutId);
@@ -469,12 +470,18 @@ async function fetchBandMembers(artistName) {
 
     const relations = relData?.relations || [];
     const members = [];
+    // Matches characters outside Latin/Latin-Extended/common punctuation ranges.
+    // Filters out CJK, Cyrillic, Arabic, and other non-Latin scripts that English
+    // readers cannot read, which MusicBrainz returns in native script.
+    const nonLatinRe = /[^\u0000-\u024F\s'\-.,]/;
     for (const rel of relations) {
       // "member of band" from the band's view: direction is "backward", rel.artist is the member
       if (rel.type !== "member of band" || rel.direction !== "backward") continue;
       if (rel.ended === true || rel.end) continue; // skip past members
       const memberName = rel.artist?.name;
       if (!memberName) continue;
+      // Skip names that cannot be read by English-speaking users
+      if (nonLatinRe.test(memberName)) continue;
       const roles = Array.isArray(rel.attributes) ? rel.attributes : [];
       members.push({ name: memberName, roles });
     }
@@ -777,13 +784,14 @@ async function run() {
         continue;
       }
 
-      // Hard gate: require a positive HQ thumbnail probe before generation.
-      // This avoids low-quality placeholder false-positives.
-      const hqThumbnailAvailable = await checkYouTubeHqThumbnail(selection.video.videoId);
-      if (hqThumbnailAvailable !== true) {
+      // Hard gate: require a positive maxresdefault thumbnail probe before generation.
+      // The article page displays maxresdefault.jpg, so we must confirm it exists.
+      // hqdefault can return 200 with a placeholder even for low-quality/unavailable videos.
+      const maxresThumbnailAvailable = await checkYouTubeMaxresThumbnail(selection.video.videoId);
+      if (maxresThumbnailAvailable !== true) {
         console.error(
           JSON.stringify({
-            event: hqThumbnailAvailable === false ? "skipped-unavailable-hq-thumbnail" : "skipped-unverified-hq-thumbnail",
+            event: maxresThumbnailAvailable === false ? "skipped-unavailable-maxres-thumbnail" : "skipped-unverified-maxres-thumbnail",
             videoId: selection.video.videoId,
             artist: selection.video.artist,
           }),
