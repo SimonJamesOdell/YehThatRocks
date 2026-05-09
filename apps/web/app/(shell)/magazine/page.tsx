@@ -3,7 +3,6 @@ import Link from "next/link";
 import { OverlayHeader } from "@/components/overlay-header";
 import { ScrollToTop } from "@/components/scroll-to-top";
 import { MagazineLatestArticleCard } from "@/components/magazine-latest-article-card";
-import { requireAdminUserAuthState } from "@/lib/admin-auth";
 import { getPublishedArticles } from "@/lib/magazine-data";
 
 export const revalidate = 3600;
@@ -14,8 +13,6 @@ export const metadata = {
 };
 
 export default async function MagazineLandingPage() {
-  const adminAuth = await requireAdminUserAuthState();
-  const isAdmin = adminAuth.status === "authorized";
   const articles = await getPublishedArticles(20);
   const [leadArticle, ...restArticles] = articles;
 
@@ -52,7 +49,7 @@ export default async function MagazineLandingPage() {
           </div>
           <div className="magazineTrackGrid">
             {restArticles.map((article) => (
-              <MagazineLatestArticleCard key={article.slug} article={article} isAdmin={isAdmin} />
+              <MagazineLatestArticleCard key={article.slug} article={article} />
             ))}
           </div>
         </section>
