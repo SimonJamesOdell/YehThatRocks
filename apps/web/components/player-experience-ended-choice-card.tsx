@@ -7,7 +7,6 @@ import type { VideoRecord } from "@/lib/catalog";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
-import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 
@@ -123,15 +122,11 @@ export const EndedChoiceCard = memo(function EndedChoiceCard({
         }}
       >
         <div className="playerEndedChoiceThumbWrap">
-          <YouTubeThumbnailImage
-            videoId={video.id}
+          <img
+            src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
             alt=""
             className="playerEndedChoiceThumb"
-            format="mqdefault"
             loading="lazy"
-            hideClosestSelector=".endedChoiceCardSlot"
-            reportReason="thumbnail-load-error:ended-choice"
-            shouldReportUnavailable={false}
           />
           {isSeen && !isFavourited ? <span className="playerEndedChoiceSeenBadge">Seen</span> : null}
           {isFavourited ? (
