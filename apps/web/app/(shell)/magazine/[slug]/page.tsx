@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { OverlayHeader } from "@/components/overlay-header";
+import { MagazineArticleLandingTracker } from "@/components/magazine-article-landing-tracker";
 import { ScrollToTop } from "@/components/scroll-to-top";
 import { getArticleBySlug, getAllPublishedSlugs, getPublishedArticles, type MagazineBlock } from "@/lib/magazine-data";
 
@@ -92,6 +93,7 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
       />
 
       <main className="magazinePage" role="main" aria-label="Magazine article">
+        <MagazineArticleLandingTracker slug={article.slug} />
         <div className="magazineArticleLayout">
           <article className="magazineArticle panel">
             {hasVideo ? (

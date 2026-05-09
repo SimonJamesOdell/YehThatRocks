@@ -6,6 +6,7 @@ type DailyAnalyticsRollupRow = {
   videoViews: bigint | number;
   uniqueVisitors: bigint | number;
   returnVisits: bigint | number;
+  magazineExternalLandings: bigint | number;
   newVisitors: bigint | number;
   repeatVisitors: bigint | number;
   totalSessions: bigint | number;
@@ -114,6 +115,38 @@ async function buildRegistrationsDailyJoinSql(options?: { recentDays?: number })
   `;
 }
 
+async function buildMagazineExternalLandingsDailyJoinSql(options?: { recentDays?: number }) {
+  const tableExistsRows = await prisma.$queryRaw<Array<{ count: bigint | number }>>`
+    SELECT COUNT(*) AS count
+    FROM information_schema.tables
+    WHERE table_schema = DATABASE()
+      AND table_name = 'magazine_article_external_landings'
+  `.catch(() => []);
+
+  const tableExists = Number(tableExistsRows[0]?.count ?? 0) > 0;
+  if (!tableExists) {
+    return `
+      LEFT JOIN (
+        SELECT NULL AS day_date, 0 AS magazine_external_landings
+        WHERE 1 = 0
+      ) mag_landings ON mag_landings.day_date = metrics.day_date
+    `;
+  }
+
+  const recentClause = options?.recentDays != null
+    ? `WHERE landed_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${options.recentDays} DAY)`
+    : "";
+
+  return `
+    LEFT JOIN (
+      SELECT DATE(landed_at) AS day_date, COUNT(*) AS magazine_external_landings
+      FROM magazine_article_external_landings
+      ${recentClause}
+      GROUP BY DATE(landed_at)
+    ) mag_landings ON mag_landings.day_date = metrics.day_date
+  `;
+}
+
 async function ensureColumnExists(tableName: string, columnName: string, columnDefinitionSql: string) {
   const rows = await prisma.$queryRawUnsafe<Array<{ count: bigint | number }>>(
     `
@@ -137,6 +170,7 @@ async function ensureColumnExists(tableName: string, columnName: string, columnD
 
 async function ensureRollupTableShape() {
   await ensureColumnExists("admin_dashboard_analytics_daily", "return_visits", "BIGINT NOT NULL DEFAULT 0");
+  await ensureColumnExists("admin_dashboard_analytics_daily", "magazine_external_landings", "BIGINT NOT NULL DEFAULT 0");
   await ensureColumnExists("admin_dashboard_analytics_daily", "new_visitors", "BIGINT NOT NULL DEFAULT 0");
   await ensureColumnExists("admin_dashboard_analytics_daily", "repeat_visitors", "BIGINT NOT NULL DEFAULT 0");
   await ensureColumnExists("admin_dashboard_analytics_daily", "total_sessions", "BIGINT NOT NULL DEFAULT 0");
@@ -177,6 +211,7 @@ async function ensureRollupTables() {
       video_views BIGINT NOT NULL DEFAULT 0,
       unique_visitors BIGINT NOT NULL DEFAULT 0,
       return_visits BIGINT NOT NULL DEFAULT 0,
+      magazine_external_landings BIGINT NOT NULL DEFAULT 0,
       new_visitors BIGINT NOT NULL DEFAULT 0,
       repeat_visitors BIGINT NOT NULL DEFAULT 0,
       total_sessions BIGINT NOT NULL DEFAULT 0,
@@ -309,6 +344,7 @@ async function maybeBackfillDailyHistory() {
   if (dailyBackfillDone) return;
 
   const registrationsDailyJoinSql = await buildRegistrationsDailyJoinSql();
+  const magazineExternalLandingsDailyJoinSql = await buildMagazineExternalLandingsDailyJoinSql();
 
   const rows = await prisma.$queryRaw<Array<{ count: bigint | number }>>`
     SELECT COUNT(*) AS count FROM admin_dashboard_analytics_daily
@@ -323,6 +359,7 @@ async function maybeBackfillDailyHistory() {
         video_views,
         unique_visitors,
         return_visits,
+        magazine_external_landings,
         new_visitors,
         repeat_visitors,
         total_sessions,
@@ -335,6 +372,7 @@ async function maybeBackfillDailyHistory() {
         metrics.video_views,
         metrics.unique_visitors,
         metrics.return_visits,
+        COALESCE(mag_landings.magazine_external_landings, 0) AS magazine_external_landings,
         metrics.new_visitors,
         metrics.repeat_visitors,
         metrics.total_sessions,
@@ -359,11 +397,13 @@ async function maybeBackfillDailyHistory() {
         GROUP BY DATE(created_at)
       ) auth ON auth.day_date = metrics.day_date
       ${registrationsDailyJoinSql}
+      ${magazineExternalLandingsDailyJoinSql}
       ON DUPLICATE KEY UPDATE
         page_views = VALUES(page_views),
         video_views = VALUES(video_views),
         unique_visitors = VALUES(unique_visitors),
         return_visits = VALUES(return_visits),
+        magazine_external_landings = VALUES(magazine_external_landings),
         new_visitors = VALUES(new_visitors),
         repeat_visitors = VALUES(repeat_visitors),
         total_sessions = VALUES(total_sessions),
@@ -382,6 +422,7 @@ async function refreshRecentDailyRollups(options: { fullScan: boolean }) {
   // catch any late-arriving events or day-boundary edge cases.
   const intervalDays = options.fullScan ? DAILY_RECENT_DAYS : 1;
   const registrationsDailyJoinSql = await buildRegistrationsDailyJoinSql({ recentDays: intervalDays });
+  const magazineExternalLandingsDailyJoinSql = await buildMagazineExternalLandingsDailyJoinSql({ recentDays: intervalDays });
 
   await prisma.$executeRawUnsafe(`
     INSERT INTO admin_dashboard_analytics_daily (
@@ -390,6 +431,7 @@ async function refreshRecentDailyRollups(options: { fullScan: boolean }) {
       video_views,
       unique_visitors,
       return_visits,
+      magazine_external_landings,
       new_visitors,
       repeat_visitors,
       total_sessions,
@@ -402,6 +444,7 @@ async function refreshRecentDailyRollups(options: { fullScan: boolean }) {
       metrics.video_views,
       metrics.unique_visitors,
       metrics.return_visits,
+      COALESCE(mag_landings.magazine_external_landings, 0) AS magazine_external_landings,
       metrics.new_visitors,
       metrics.repeat_visitors,
       metrics.total_sessions,
@@ -428,11 +471,13 @@ async function refreshRecentDailyRollups(options: { fullScan: boolean }) {
       GROUP BY DATE(created_at)
     ) auth ON auth.day_date = metrics.day_date
     ${registrationsDailyJoinSql}
+    ${magazineExternalLandingsDailyJoinSql}
     ON DUPLICATE KEY UPDATE
       page_views = VALUES(page_views),
       video_views = VALUES(video_views),
       unique_visitors = VALUES(unique_visitors),
       return_visits = VALUES(return_visits),
+      magazine_external_landings = VALUES(magazine_external_landings),
       new_visitors = VALUES(new_visitors),
       repeat_visitors = VALUES(repeat_visitors),
       total_sessions = VALUES(total_sessions),
@@ -696,6 +741,7 @@ export async function readAdminDashboardRollups(): Promise<DashboardRollupRead> 
         video_views AS videoViews,
         unique_visitors AS uniqueVisitors,
         return_visits AS returnVisits,
+        magazine_external_landings AS magazineExternalLandings,
         new_visitors AS newVisitors,
         repeat_visitors AS repeatVisitors,
         total_sessions AS totalSessions,

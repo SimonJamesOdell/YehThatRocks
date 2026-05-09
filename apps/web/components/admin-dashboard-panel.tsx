@@ -22,6 +22,7 @@ type AnalyticsBucket = {
   videoViews: number;
   uniqueVisitors: number;
   returnVisits: number;
+  magazineExternalLandings: number;
   authEvents: number;
 };
 
@@ -80,6 +81,7 @@ type DashboardPayload = {
       videoViews: number;
       uniqueVisitors: number;
       returnVisits: number;
+      magazineExternalLandings: number;
       authEvents: number;
     }>;
     series: {
@@ -566,6 +568,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         videoViews: row.videoViews,
         uniqueVisitors: row.uniqueVisitors,
         returnVisits: row.returnVisits,
+        magazineExternalLandings: 0,
         authEvents: row.authEvents,
       } as AnalyticsBucket;
     });
@@ -595,7 +598,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     return filterBucketsWithinRange(analyticsSeries.daily, selectedWeeklyBucket);
   }, [analyticsSeries, analyticsZoomLevel, selectedAllTimeBucket, selectedMonthlyBucket, selectedWeeklyBucket, hourlySeries]);
 
-  const [analyticsSeriesOn, setAnalyticsSeriesOn] = useState({ pageViews: true, videoViews: true, visitors: true, returnVisits: true, authEvents: true });
+  const [analyticsSeriesOn, setAnalyticsSeriesOn] = useState({ pageViews: true, videoViews: true, visitors: true, returnVisits: true, magazineExternalLandings: true, authEvents: true });
   const analyticsGraph = useMemo(() => {
     const width = 680;
     const height = 220;
@@ -612,6 +615,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         videoViewsPath: "",
         visitorsPath: "",
         returnVisitsPath: "",
+        magazineExternalLandingsPath: "",
         authEventsPath: "",
         yTicks: [],
         xTicks: [],
@@ -620,11 +624,12 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       };
     }
 
-    const enabledSeriesMaxPerDay = (row: { pageViews: number; videoViews: number; uniqueVisitors: number; returnVisits: number; authEvents: number }) => Math.max(
+    const enabledSeriesMaxPerDay = (row: { pageViews: number; videoViews: number; uniqueVisitors: number; returnVisits: number; magazineExternalLandings: number; authEvents: number }) => Math.max(
       analyticsSeriesOn.pageViews ? row.pageViews : 0,
       analyticsSeriesOn.videoViews ? row.videoViews : 0,
       analyticsSeriesOn.visitors ? row.uniqueVisitors : 0,
       analyticsSeriesOn.returnVisits ? row.returnVisits : 0,
+      analyticsSeriesOn.magazineExternalLandings ? row.magazineExternalLandings : 0,
       analyticsSeriesOn.authEvents ? row.authEvents : 0,
     );
 
@@ -644,6 +649,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         yVideoViews: paddingTop + chartHeight - (item.videoViews / maxVal) * chartHeight,
         yVisitors: paddingTop + chartHeight - (item.uniqueVisitors / maxVal) * chartHeight,
         yReturnVisits: paddingTop + chartHeight - (item.returnVisits / maxVal) * chartHeight,
+        yMagazineExternalLandings: paddingTop + chartHeight - (item.magazineExternalLandings / maxVal) * chartHeight,
         yAuthEvents: paddingTop + chartHeight - (item.authEvents / maxVal) * chartHeight,
         bucketStart: item.bucketStart,
         bucketEnd: item.bucketEnd,
@@ -652,6 +658,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         videoViews: item.videoViews,
         uniqueVisitors: item.uniqueVisitors,
         returnVisits: item.returnVisits,
+        magazineExternalLandings: item.magazineExternalLandings,
         authEvents: item.authEvents,
       };
     });
@@ -686,6 +693,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       videoViewsPath: makePath(points.map((p) => p.yVideoViews)),
       visitorsPath: makePath(points.map((p) => p.yVisitors)),
       returnVisitsPath: makePath(points.map((p) => p.yReturnVisits)),
+      magazineExternalLandingsPath: makePath(points.map((p) => p.yMagazineExternalLandings)),
       authEventsPath: makePath(points.map((p) => p.yAuthEvents)),
     };
   }, [analyticsSeriesOn, displayedAnalyticsRows]);
@@ -1501,6 +1509,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                 { key: "videoViews", label: "Video Views", color: "#5fc1ff" },
                 { key: "visitors", label: "Unique Visitors", color: "#7ce0a3" },
                 { key: "returnVisits", label: "Return Visits", color: "#9e86ff" },
+                { key: "magazineExternalLandings", label: "Magazine External Landings", color: "#ff4d4d" },
                 { key: "authEvents", label: "Auth Events", color: "#ffd1c4" },
               ]) as Array<{ key: keyof typeof analyticsSeriesOn; label: string; color: string }>).map(({ key, label, color }) => (
                 <button
@@ -1542,7 +1551,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
           <svg
             viewBox={analyticsGraph.points.length > 0 ? `0 0 ${analyticsGraph.width} ${analyticsGraph.height}` : "0 0 680 250"}
             role="img"
-            aria-label="Analytics chart — page views, video views, unique visitors, return visits, auth events"
+            aria-label="Analytics chart — page views, video views, unique visitors, return visits, magazine external landings, auth events"
             style={{ width: "100%", height: "clamp(260px, 46vh, 620px)", borderRadius: 10, background: "rgba(255,255,255,0.04)" }}
           >
             {analyticsGraph.points.length === 0 ? (
@@ -1567,6 +1576,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                 {analyticsSeriesOn.videoViews && <path d={analyticsGraph.videoViewsPath} fill="none" stroke="#5fc1ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
                 {analyticsSeriesOn.visitors && <path d={analyticsGraph.visitorsPath} fill="none" stroke="#7ce0a3" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
                 {analyticsSeriesOn.returnVisits && <path d={analyticsGraph.returnVisitsPath} fill="none" stroke="#9e86ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+                {analyticsSeriesOn.magazineExternalLandings && <path d={analyticsGraph.magazineExternalLandingsPath} fill="none" stroke="#ff4d4d" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
                 {analyticsSeriesOn.authEvents && <path d={analyticsGraph.authEventsPath} fill="none" stroke="#ffd1c4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
                 {analyticsGraph.points.map((point) => (
                   <g
@@ -1581,6 +1591,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                           videoViews: point.videoViews,
                           uniqueVisitors: point.uniqueVisitors,
                           returnVisits: point.returnVisits,
+                          magazineExternalLandings: point.magazineExternalLandings,
                           authEvents: point.authEvents,
                         });
                         setSelectedMonthlyBucket(null);
@@ -1598,6 +1609,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                           videoViews: point.videoViews,
                           uniqueVisitors: point.uniqueVisitors,
                           returnVisits: point.returnVisits,
+                          magazineExternalLandings: point.magazineExternalLandings,
                           authEvents: point.authEvents,
                         });
                         setSelectedWeeklyBucket(null);
@@ -1614,6 +1626,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                           videoViews: point.videoViews,
                           uniqueVisitors: point.uniqueVisitors,
                           returnVisits: point.returnVisits,
+                          magazineExternalLandings: point.magazineExternalLandings,
                           authEvents: point.authEvents,
                         });
                         setAnalyticsZoomLevel("daily");
@@ -1625,8 +1638,9 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                     {analyticsSeriesOn.videoViews && <circle cx={point.x} cy={point.yVideoViews} r="3.5" fill="#5fc1ff" />}
                     {analyticsSeriesOn.visitors && <circle cx={point.x} cy={point.yVisitors} r="3.5" fill="#7ce0a3" />}
                     {analyticsSeriesOn.returnVisits && <circle cx={point.x} cy={point.yReturnVisits} r="3.5" fill="#9e86ff" />}
+                    {analyticsSeriesOn.magazineExternalLandings && <circle cx={point.x} cy={point.yMagazineExternalLandings} r="3.5" fill="#ff4d4d" />}
                     {analyticsSeriesOn.authEvents && <circle cx={point.x} cy={point.yAuthEvents} r="3.5" fill="#ffd1c4" />}
-                    <title>{`${point.label} (${new Date(point.bucketStart).toLocaleString()} - ${new Date(point.bucketEnd).toLocaleString()}) — Page views: ${point.pageViews}, Video views: ${point.videoViews}, Visitors: ${point.uniqueVisitors}, Return visits: ${point.returnVisits}, Auth events: ${point.authEvents}`}</title>
+                    <title>{`${point.label} (${new Date(point.bucketStart).toLocaleString()} - ${new Date(point.bucketEnd).toLocaleString()}) — Page views: ${point.pageViews}, Video views: ${point.videoViews}, Visitors: ${point.uniqueVisitors}, Return visits: ${point.returnVisits}, Magazine external landings: ${point.magazineExternalLandings}, Auth events: ${point.authEvents}`}</title>
                   </g>
                 ))}
               </>

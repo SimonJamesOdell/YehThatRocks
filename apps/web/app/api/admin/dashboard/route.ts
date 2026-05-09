@@ -38,6 +38,7 @@ type AnalyticsSeriesBucket = {
   videoViews: number;
   uniqueVisitors: number;
   returnVisits: number;
+  magazineExternalLandings: number;
   authEvents: number;
 };
 
@@ -114,6 +115,7 @@ function buildRollingAnalyticsSeriesFromRollup(
     videoViews: bigint | number;
     uniqueVisitors: bigint | number;
     returnVisits: bigint | number;
+    magazineExternalLandings: bigint | number;
     authEvents: bigint | number;
   }>,
   options?: { bucketCount?: number; bucketMonths?: number },
@@ -146,6 +148,7 @@ function buildRollingAnalyticsSeriesFromRollup(
     let videoViews = 0;
     let uniqueVisitors = 0;
     let returnVisits = 0;
+    let magazineExternalLandings = 0;
     let authEvents = 0;
 
     for (const row of rows) {
@@ -159,10 +162,11 @@ function buildRollingAnalyticsSeriesFromRollup(
       videoViews += toNumber(row.videoViews);
       uniqueVisitors += toNumber(row.uniqueVisitors);
       returnVisits += toNumber(row.returnVisits);
+      magazineExternalLandings += toNumber(row.magazineExternalLandings);
       authEvents += toNumber(row.authEvents);
     }
 
-    return { pageViews, videoViews, uniqueVisitors, returnVisits, authEvents };
+    return { pageViews, videoViews, uniqueVisitors, returnVisits, magazineExternalLandings, authEvents };
   });
 
   return bucketDefs.map((bucket, index) => ({
@@ -181,6 +185,7 @@ function buildCalendarDailyAnalyticsSeriesFromRollup(
     videoViews: bigint | number;
     uniqueVisitors: bigint | number;
     returnVisits: bigint | number;
+    magazineExternalLandings: bigint | number;
     authEvents: bigint | number;
   }>,
   options?: { bucketCount?: number },
@@ -193,6 +198,7 @@ function buildCalendarDailyAnalyticsSeriesFromRollup(
     videoViews: number;
     uniqueVisitors: number;
     returnVisits: number;
+    magazineExternalLandings: number;
     authEvents: number;
   }>();
 
@@ -204,6 +210,7 @@ function buildCalendarDailyAnalyticsSeriesFromRollup(
       videoViews: toNumber(row.videoViews),
       uniqueVisitors: toNumber(row.uniqueVisitors),
       returnVisits: toNumber(row.returnVisits),
+      magazineExternalLandings: toNumber(row.magazineExternalLandings),
       authEvents: toNumber(row.authEvents),
     });
   }
@@ -219,6 +226,7 @@ function buildCalendarDailyAnalyticsSeriesFromRollup(
       videoViews: 0,
       uniqueVisitors: 0,
       returnVisits: 0,
+      magazineExternalLandings: 0,
       authEvents: 0,
     };
 
@@ -383,7 +391,7 @@ export async function GET(request: NextRequest) {
       geoVisitors: [] as Array<{ visitorId: string; lat: bigint | number | string; lng: bigint | number | string; eventCount: bigint | number; lastSeenAt: Date | string }>,
       earliestAnalyticsAt: [] as Array<{ earliestAt: Date | null }>,
       earliestAuthAt: [] as Array<{ earliestAt: Date | null }>,
-      dailySeriesRows: [] as Array<{ day: Date; pageViews: bigint | number; videoViews: bigint | number; uniqueVisitors: bigint | number; returnVisits: bigint | number; authEvents: bigint | number }>,
+      dailySeriesRows: [] as Array<{ day: Date; pageViews: bigint | number; videoViews: bigint | number; uniqueVisitors: bigint | number; returnVisits: bigint | number; magazineExternalLandings: bigint | number; authEvents: bigint | number }>,
     })),
     readAdminHostMetricHistory(),
   ]);
@@ -407,6 +415,7 @@ export async function GET(request: NextRequest) {
     videoViews: bigint | number;
     uniqueVisitors: bigint | number;
     returnVisits: bigint | number;
+    magazineExternalLandings: bigint | number;
     authEvents: bigint | number;
   }> = dailySeriesRows.length > 0
     ? dailySeriesRows
@@ -416,6 +425,7 @@ export async function GET(request: NextRequest) {
         videoViews: bigint | number;
         uniqueVisitors: bigint | number;
         returnVisits: bigint | number;
+        magazineExternalLandings: bigint | number;
         authEvents: bigint | number;
       }>>`
         SELECT
@@ -424,6 +434,7 @@ export async function GET(request: NextRequest) {
           metrics.videoViews AS videoViews,
           metrics.uniqueVisitors AS uniqueVisitors,
           metrics.returnVisits AS returnVisits,
+          metrics.magazineExternalLandings AS magazineExternalLandings,
           COALESCE(auth.authEvents, 0) AS authEvents
         FROM (
           SELECT
@@ -431,7 +442,8 @@ export async function GET(request: NextRequest) {
             SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS pageViews,
             SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS videoViews,
             COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS uniqueVisitors,
-            COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS returnVisits
+            COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS returnVisits,
+            0 AS magazineExternalLandings
           FROM analytics_events
           GROUP BY DATE(created_at)
         ) metrics
