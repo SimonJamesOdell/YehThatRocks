@@ -92,8 +92,8 @@ function ExecNativeWithRetry(
 
 function ExecDockerBuildWithRetry(
   [string[]]$CommandArgs,
-  [int]$MaxAttempts = 3,
-  [int]$InitialDelaySeconds = 6
+  [int]$MaxAttempts = 5,
+  [int]$InitialDelaySeconds = 8
 ) {
   $display = "docker " + ($CommandArgs -join " ")
   $delaySeconds = [Math]::Max(1, $InitialDelaySeconds)
@@ -131,6 +131,9 @@ function ExecDockerBuildWithRetry(
     if (-not $retryable -or $attempt -ge $MaxAttempts) {
       throw ("Command failed with exit code {0}; command {1}" -f $exitCode, $display)
     }
+
+    Write-Host "Pruning Docker builder cache before retry..." -ForegroundColor DarkYellow
+    & docker builder prune -af | Out-Null
 
     Write-Warning ("Transient Docker build failure detected. Retrying in {0}s (attempt {1}/{2})..." -f $delaySeconds, $attempt, $MaxAttempts)
     Start-Sleep -Seconds $delaySeconds

@@ -80,7 +80,9 @@
     "magazine:autogen:dry-run": "node scripts/magazine-news-autogen.js --dry-run --count=1",
     "verify:ui-regressions": "npm run verify:artists-ui && npm run verify:top100-ui && npm run verify:playlists-ui && npm run verify:core-experience && npm run verify:player-core && npm run verify:overlay-routing && npm run verify:new-videos && npm run verify:categories && npm run verify:thumbnail-preflight && npm run verify:auth && npm run verify:admin && npm run verify:favourites && npm run verify:history-ui && npm run verify:watch-next-and-new && npm run verify:hidden-videos && npm run verify:search && npm run verify:classification && npm run verify:no-seed-fallbacks && npm run verify:delivery-cache && npm run verify:budget-guardrails && npm run verify:queue-behavior && npm run verify:magazine && npm run verify:shell-decomposition",
     "verify:invariants": "npm run verify:compile && npm run verify:ui-regressions",
-    "verify:invariants:api": "npm run verify:core-experience:api && npm run verify:playlists:api && npm run verify:categories:api && npm run verify:auth:api"
+    "verify:invariants:api": "npm run verify:core-experience:api && npm run verify:playlists:api && npm run verify:categories:api && npm run verify:auth:api",
+    "maintain:deps": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/maintain-dependencies.ps1",
+    "maintain:deps:install": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-dependency-maintenance-task.ps1"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",

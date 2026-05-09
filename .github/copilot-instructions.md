@@ -119,17 +119,18 @@ When the user says "prepare to ship", "prepare for release", "get ready to ship"
 
 ### Mandatory gate (non-negotiable order)
 
-1. **Run all invariants** — `npm run verify:invariants`. Every suite must pass. Fix failures before proceeding.
-2. **Security scan** — Scan all tracked files for real credential patterns:
+1. **Refresh dependencies first** — Run the local dependency maintenance process before release prep so any direct or workspace dependency updates are applied, tested, and either committed or rejected before shipping. Use `npm run maintain:deps` or the scheduled local task, and if a dependency update is needed, make it before continuing so the ship candidate is validated against current packages, not stale ones.
+2. **Run all invariants** — `npm run verify:invariants`. Every suite must pass. Fix failures before proceeding.
+3. **Security scan** — Scan all tracked files for real credential patterns:
    - High-confidence token formats: `AIza…`, `AKIA…`, `sk-…`, `ghp_…`, `ghs_…`, `-----BEGIN PRIVATE KEY`
    - Run: `git ls-files | ForEach-Object { $c = git show ":$_"; if ($c -match 'AIza[0-9A-Za-z_-]{35}|AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{32,}|ghp_[a-zA-Z0-9]{36}|-----BEGIN (RSA |EC )?PRIVATE KEY') { "$_`: MATCH" } }`
    - Check tracked files with secret extensions: `git ls-files | Where-Object { $_ -match '\.(env|pem|key|p12|pfx|cer|crt)$' }`
    - Report findings. Placeholder/example values (clearly labelled `change-me`, `__SET_…`) are acceptable. Real values are blockers.
-3. **Dependency CVEs** — Run `npm audit --audit-level=high`. Fix all `high` and `critical` findings. Document any accepted `moderate` findings with justification.
-4. **`.gitignore` audit** — Verify env files, keys/certs, SQL dumps, build artifacts, and local debug files are all covered. Add missing rules if needed.
-5. **Commit everything** — Stage and commit all pending tracked changes. The commit must include all modified files — check `git diff --cached --name-only` vs `git diff --name-only` to ensure nothing is left unstaged. Use a clear conventional commit message.
-6. **Push** — `git push origin main`.
-7. **Final clean-tree gate** — Run `git status --short --untracked-files=no`. The output MUST be empty. If it is not empty, fix the cause and repeat from step 5.
+4. **Dependency CVEs** — Run `npm audit --audit-level=high`. Fix all `high` and `critical` findings. Document any accepted `moderate` findings with justification.
+5. **`.gitignore` audit** — Verify env files, keys/certs, SQL dumps, build artifacts, and local debug files are all covered. Add missing rules if needed.
+6. **Commit everything** — Stage and commit all pending tracked changes. The commit must include all modified files — check `git diff --cached --name-only` vs `git diff --name-only` to ensure nothing is left unstaged. Use a clear conventional commit message.
+7. **Push** — `git push origin main`.
+8. **Final clean-tree gate** — Run `git status --short --untracked-files=no`. The output MUST be empty. If it is not empty, fix the cause and repeat from step 6.
 
 ### Completion evidence required
 
