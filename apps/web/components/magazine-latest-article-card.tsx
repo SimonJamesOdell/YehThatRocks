@@ -41,7 +41,6 @@ export function MagazineLatestArticleCard({ article }: MagazineLatestArticleCard
         <h3>{article.title}</h3>
         {article.deck ? <p>{article.deck}</p> : null}
         <div className="magazineTrackActions">
-          <Link href={`/magazine/${article.slug}`} className="magazineTextLink">Read article</Link>
           {hasVideo ? (
             <Link href={`/?v=${article.videoId}&resume=1`} className="magazineWatchCta" data-overlay-close="true">Watch now</Link>
           ) : (
