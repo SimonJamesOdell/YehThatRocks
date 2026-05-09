@@ -836,10 +836,25 @@
 }
 
 .magazineCoverStory {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   min-height: clamp(320px, 40vh, 520px);
   overflow: hidden;
+  transition: background 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+
+.magazineCoverStory:hover {
+  background: linear-gradient(180deg, rgba(170, 30, 17, 0.56), rgba(90, 9, 6, 0.7));
+  border-color: rgba(255, 116, 88, 0.78);
+  box-shadow: var(--glow);
+}
+
+.magazineCoverStoryLink {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
 }
 
 .magazineCoverStoryThumb {
@@ -850,10 +865,17 @@
 }
 
 .magazineCoverStoryBody {
+  position: relative;
+  z-index: 2;
   padding: 20px;
   display: grid;
   gap: 10px;
   align-content: center;
+}
+
+.magazineCoverStoryActions {
+  position: relative;
+  z-index: 3;
 }
 
 .magazineCoverStoryBody h2,
