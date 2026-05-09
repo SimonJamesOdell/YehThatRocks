@@ -21,7 +21,7 @@ export async function generateMetadata({ params }: MagazineTrackPageProps): Prom
   const article = await getArticleBySlug(slug);
   if (!article) return {};
 
-  const ogImage = `https://i.ytimg.com/vi/${article.videoId}/maxresdefault.jpg`;
+  const ogImage = article.videoId ? `https://i.ytimg.com/vi/${article.videoId}/maxresdefault.jpg` : undefined;
   const title = `${article.title} | Yeh Magazine`;
   const description = article.seoDescription ?? article.deck ?? undefined;
 
@@ -32,7 +32,7 @@ export async function generateMetadata({ params }: MagazineTrackPageProps): Prom
     openGraph: {
       title,
       description,
-      images: [{ url: ogImage, width: 1280, height: 720, alt: `${article.artist} - ${article.trackName}` }],
+      ...(ogImage ? { images: [{ url: ogImage, width: 1280, height: 720, alt: `${article.artist}${article.trackName ? ` - ${article.trackName}` : ""}` }] } : {}),
       type: "article",
       publishedTime: article.publishedAt.toISOString(),
     },
@@ -40,7 +40,7 @@ export async function generateMetadata({ params }: MagazineTrackPageProps): Prom
       card: "summary_large_image",
       title,
       description,
-      images: [ogImage],
+      ...(ogImage ? { images: [ogImage] } : {}),
     },
   };
 }
@@ -72,6 +72,8 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
 
   const allArticles = await getPublishedArticles(20);
   const relatedArticles = allArticles.filter((a) => a.slug !== article.slug).slice(0, 4);
+  const hasVideo = article.videoId !== null && article.videoId !== undefined;
+  const artistSlug = String(article.artist || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
   return (
     <>
@@ -90,25 +92,43 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
       <main className="magazinePage" role="main" aria-label="Magazine article">
         <div className="magazineArticleLayout">
           <article className="magazineArticle panel">
-            <img
-              src={`https://i.ytimg.com/vi/${article.videoId}/maxresdefault.jpg`}
-              alt={`${article.artist} - ${article.trackName}`}
-              className="magazineArticleThumb"
-              loading="eager"
-            />
+            {hasVideo ? (
+              <img
+                src={`https://i.ytimg.com/vi/${article.videoId}/maxresdefault.jpg`}
+                alt={`${article.artist}${article.trackName ? ` - ${article.trackName}` : ""}`}
+                className="magazineArticleThumb"
+                loading="eager"
+              />
+            ) : (
+              <div className="magazineArticleThumb magazineArticleThumbPlaceholder" style={{ backgroundColor: "#1a1a1a", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <p style={{ color: "#999", textAlign: "center", fontSize: "1.2rem", fontWeight: "bold" }}>
+                  {article.artist}
+                </p>
+              </div>
+            )}
 
             <div className="magazineArticleBody">
               {article.body.map((block, i) => renderBlock(block, i))}
             </div>
 
             <div className="magazineArticleActions">
-              <Link
-                href={`/?v=${article.videoId}&resume=1`}
-                className="magazineWatchCta"
-                data-overlay-close="true"
-              >
-                Watch now in YehThatRocks
-              </Link>
+              {hasVideo ? (
+                <Link
+                  href={`/?v=${article.videoId}&resume=1`}
+                  className="magazineWatchCta"
+                  data-overlay-close="true"
+                >
+                  Watch now in YehThatRocks
+                </Link>
+              ) : (
+                <Link
+                  href={`/artists/${artistSlug}`}
+                  className="magazineWatchCta"
+                  data-overlay-close="true"
+                >
+                  Explore {article.artist}
+                </Link>
+              )}
               <Link href="/magazine" className="magazineTextLink">
                 Back to magazine
               </Link>
@@ -119,25 +139,34 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
             <aside className="magazineArticleSidebar panel" aria-label="More articles">
               <h2>More articles</h2>
               <div className="magazineArticleSidebarList">
-                {relatedArticles.map((related) => (
-                  <Link
-                    key={related.slug}
-                    href={`/magazine/${related.slug}`}
-                    className="magazineArticleSidebarItem"
-                  >
-                    <img
-                      src={`https://i.ytimg.com/vi/${related.videoId}/mqdefault.jpg`}
-                      alt={`${related.artist} - ${related.trackName}`}
-                      className="magazineArticleSidebarThumb"
-                      loading="lazy"
-                    />
-                    <div className="magazineArticleSidebarMeta">
-                      <strong>{related.artist}</strong>
-                      <span>{related.trackName}</span>
-                      <small>{related.kicker ?? related.genre}</small>
-                    </div>
-                  </Link>
-                ))}
+                {relatedArticles.map((related) => {
+                  const relatedHasVideo = related.videoId !== null && related.videoId !== undefined;
+                  return (
+                    <Link
+                      key={related.slug}
+                      href={`/magazine/${related.slug}`}
+                      className="magazineArticleSidebarItem"
+                    >
+                      {relatedHasVideo ? (
+                        <img
+                          src={`https://i.ytimg.com/vi/${related.videoId}/mqdefault.jpg`}
+                          alt={`${related.artist}${related.trackName ? ` - ${related.trackName}` : ""}`}
+                          className="magazineArticleSidebarThumb"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="magazineArticleSidebarThumb" style={{ backgroundColor: "#1a1a1a", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <p style={{ color: "#999", fontSize: "0.75rem", textAlign: "center" }}>{related.artist}</p>
+                        </div>
+                      )}
+                      <div className="magazineArticleSidebarMeta">
+                        <strong>{related.artist}</strong>
+                        {related.trackName ? <span>{related.trackName}</span> : null}
+                        <small>{related.kicker ?? related.genre}</small>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
               <div className="magazineArticleSidebarActions">
                 <Link href="/magazine" className="magazinePrimaryCta">All articles</Link>

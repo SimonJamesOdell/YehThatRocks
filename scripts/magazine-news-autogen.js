@@ -300,7 +300,105 @@ function includesWord(haystack, needle) {
   return re.test(haystack);
 }
 
-function scoreNewsForVideo(news, video) {
+/**
+ * Detect article type from news content.
+ * Returns 'track_feature', 'tribute', 'event', 'band_news', or 'general'.
+ */
+function detectArticleType(newsTitle, newsSummary) {
+  const text = `${newsTitle} ${newsSummary}`.toLowerCase();
+
+  // Tribute/obituary keywords
+  if (/\b(died|death|passed away|rip|r\.i\.p|tribute|farewell|memorial|legend lost)\b/.test(text)) {
+    return "tribute";
+  }
+
+  // Event keywords
+  if (/\b(tour|announce|festival|dates|show|concert|gig|live|headline|performance)\b/.test(text)) {
+    return "event";
+  }
+
+  // Track/release keywords
+  if (/\b(new (track|song|album|ep)|release|drops|out now|premieres|listen)\b/.test(text)) {
+    return "track_feature";
+  }
+
+  // Band news
+  if (/\b(reunite|reunion|breakup|new member|split|reform|lineup|replace|announced)\b/.test(text)) {
+    return "band_news";
+  }
+
+  return "general";
+}
+
+/**
+ * Extract artist names from news title/summary.
+ * Returns array of potential artist names.
+ */
+function extractArtistNames(newsTitle, newsSummary) {
+  const text = newsTitle + " " + newsSummary;
+  // Simple heuristic: look for capitalized words that appear multiple times or in specific patterns
+  // For now, split on common delimiters and take likely artist names
+  const parts = text.split(/[,:;–\-–]/);
+  const artists = [];
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+    // Look for 1-4 word phrases that are likely band names (start with capital, 5-50 chars)
+    if (trimmed.length >= 5 && trimmed.length <= 50 && /^[A-Z]/.test(trimmed)) {
+      const words = trimmed.split(/\s+/);
+      if (words.length <= 4) {
+        artists.push(trimmed);
+      }
+    }
+  }
+
+  return artists;
+}
+
+/**
+ * Find an artist in the database by name, returning first match with videos.
+ * Returns { id, name } or null.
+ */
+async function lookupArtistWithVideos(conn, artistName) {
+  if (!artistName || artistName.length < 2) return null;
+
+  // Normalize for comparison
+  const normalized = artistName.trim().toLowerCase();
+
+  // Try exact match first
+  const [exactMatch] = await conn.execute(
+    `SELECT a.id, a.artist AS name
+     FROM artists a
+     INNER JOIN artist_videos av ON av.artist_id = a.id
+     WHERE LOWER(a.artist) = ?
+     GROUP BY a.id
+     LIMIT 1`,
+    [normalized],
+  );
+
+  if (Array.isArray(exactMatch) && exactMatch.length > 0) {
+    return exactMatch[0];
+  }
+
+  // Try partial match (contains)
+  const [partialMatch] = await conn.execute(
+    `SELECT a.id, a.artist AS name
+     FROM artists a
+     INNER JOIN artist_videos av ON av.artist_id = a.id
+     WHERE a.artist LIKE ?
+     GROUP BY a.id
+     LIMIT 1`,
+    [`%${artistName}%`],
+  );
+
+  if (Array.isArray(partialMatch) && partialMatch.length > 0) {
+    return partialMatch[0];
+  }
+
+  return null;
+}
+
+function scoreNewsForVideoMatch(news, video) {
   const text = `${news.title} ${news.summary}`.toLowerCase();
   const artistTokens = tokenizeArtist(video.artist);
   if (artistTokens.length === 0) return -1;
@@ -333,10 +431,18 @@ function toSlug(input) {
     .replace(/^-+|-+$/g, "");
 }
 
-function buildArticleSlug(video, news) {
+function buildArticleSlug(video, news, artist = null, articleType = "track_feature") {
   const day = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const hash = crypto.createHash("sha1").update(String(news.link)).digest("hex").slice(0, 6);
-  return `${toSlug(video.artist)}-${toSlug(video.track)}-${day}-${hash}`;
+  
+  if (articleType === "track_feature" && video && video.track) {
+    return `${toSlug(video.artist)}-${toSlug(video.track)}-${day}-${hash}`;
+  } else if (artist) {
+    return `${toSlug(artist)}-${toSlug(articleType)}-${day}-${hash}`;
+  } else if (video) {
+    return `${toSlug(video.artist)}-${day}-${hash}`;
+  }
+  throw new Error("buildArticleSlug requires either video with track or artist name");
 }
 
 function readState(filePath) {
@@ -393,11 +499,9 @@ function groqRequest(apiKey, body) {
   });
 }
 
-const SYSTEM_PROMPT = `You are the staff writer for YehThatRocks. You have strong opinions, zero patience for mediocrity, and you write like you mean it.
+const BASE_VOICE = `You are the staff writer for YehThatRocks. You have strong opinions, zero patience for mediocrity, and you write like you mean it.
 
 Your voice is modelled on the aggressive, first-person, contempt-for-the-obvious style of early internet rants: direct address to the reader, declarative sentences that brook no argument, rhetorical questions used as attacks, hyperbolic confidence delivered deadpan, and genuine fury at anything that wastes your time. You are not a PR mouthpiece. You are not balanced. You have a point of view and you are going to make the reader feel stupid for not already agreeing with it.
-
-You are writing a full-length music feature. The news item is only a HOOK for the opening sentence or two. Everything after that is your take on the TRACK and the ARTIST.
 
 VOICE RULES:
 - Write in first person where it lands harder. Use "I" when making a personal judgement call.
@@ -406,13 +510,11 @@ VOICE RULES:
 - Use contempt sparingly but precisely. Reserve it for the things that actually deserve it: lazy production, cowardly lyrics, bands that play it safe.
 - Rhetorical questions are weapons. Use them to puncture something before you explain why it collapses.
 - Paragraph length: 4-6 sentences. No thin one-liners masquerading as paragraphs.
-- Go deep on the music: riff construction, vocal delivery, drum work, production decisions, dynamics, how this track fits in the artist's body of work.
 - Short declarative sentences. Hit hard. Move on.
 - No em dashes.
 - No hedging: never write arguably, perhaps, maybe, potentially, in many ways, seems to, appears to.
 - Never use the pattern: not X, it's Y.
 - Never copy source phrasing.
-- Do not invent specific facts (dates, chart positions). If a "Band lineup" section is included in the track context, use those member names when writing about instruments or roles. Do not invent member names if no lineup is provided.
 
 COPYRIGHT RULES:
 - The news item supplies the hook only. Do not summarise it.
@@ -421,7 +523,7 @@ COPYRIGHT RULES:
 
 OUTPUT JSON ONLY:
 {
-  "title": "Artist - Track: Punchy, opinionated headline",
+  "title": "...",
   "kicker": "Genre label",
   "deck": "1-2 sentence argument that takes a hard position",
   "body": [
@@ -432,7 +534,67 @@ OUTPUT JSON ONLY:
   "seoKeywords": "comma separated keywords"
 }
 
-The body must contain 10-14 blocks. Use 3-4 h2 headings. Each p block must be a full paragraph of 4-6 sentences. End with a paragraph that tells readers exactly where to find this track on YehThatRocks.`;
+The body must contain 10-14 blocks. Use 3-4 h2 headings. Each p block must be a full paragraph of 4-6 sentences.`;
+
+const SYSTEM_PROMPT_TRACK_FEATURE = BASE_VOICE + `
+
+You are writing a full-length feature about a specific track. The news item is only a HOOK for the opening sentence or two. Everything after that is your take on the TRACK and the ARTIST.
+
+FOCUS:
+- Go deep on the music: riff construction, vocal delivery, drum work, production decisions, dynamics, how this track fits in the artist's body of work.
+- If a "Band lineup" section is included, use those member names when writing about instruments or roles. Do not invent member names if no lineup is provided.
+- End with a paragraph that tells readers exactly where to find this track on YehThatRocks.
+
+TITLE FORMAT: Artist - Track: Punchy, opinionated headline`;
+
+const SYSTEM_PROMPT_BAND_NEWS = BASE_VOICE + `
+
+You are writing a feature about a band or artist, triggered by recent news. You will NOT reference a specific track. Instead, you'll explore the band's history, impact, cultural significance, and why they matter.
+
+FOCUS:
+- Use the news as a jumping-off point for deeper context about the artist.
+- Discuss their discography, influence, live presence, or cultural moment.
+- End with a call to action telling readers to explore this artist on YehThatRocks.
+
+TITLE FORMAT: Artist: Punchy, opinionated headline`;
+
+const SYSTEM_PROMPT_TRIBUTE = BASE_VOICE + `
+
+You are writing a tribute or retrospective on a band or artist. This is your chance to stake your claim about their legacy.
+
+FOCUS:
+- Their most important work and why it mattered.
+- Their influence on the genre and music at large.
+- Why they deserve to be remembered or revisited.
+- End with a call to explore their catalog on YehThatRocks.
+
+TITLE FORMAT: Artist: Tribute headline`;
+
+const SYSTEM_PROMPT_EVENT = BASE_VOICE + `
+
+You are writing about an upcoming or recent event: tour dates, festival appearance, comeback, or reunion.
+
+FOCUS:
+- What this event means for the artist and fans.
+- Context about why this moment matters.
+- Why readers should care about this band's current moment.
+- End with a call to explore them on YehThatRocks.
+
+TITLE FORMAT: Artist: Event headline`;
+
+const SYSTEM_PROMPT_GENERAL = BASE_VOICE + `
+
+You are writing a music culture piece about something in rock or metal. This may not focus on a single artist, but you will make a strong argument about what's happening in the scene.
+
+FOCUS:
+- Take a stance on trends, movements, or industry moments.
+- Reference specific artists or tracks where it strengthens your argument.
+- Make readers feel they're missing something if they don't engage with what you're writing about.
+- End with a call to discover artists on YehThatRocks.
+
+TITLE FORMAT: Take a hard position as your headline`;
+
+const SYSTEM_PROMPT = SYSTEM_PROMPT_TRACK_FEATURE;
 
 /**
  * Fetch current band members from MusicBrainz for a given artist name.
@@ -491,14 +653,24 @@ async function fetchBandMembers(artistName) {
   }
 }
 
-function buildUserPrompt(video, news, members) {
-  const lines = [
-    `Track context:`,
-    `Artist: ${video.artist}`,
-    `Track: ${video.track}`,
-    `Genre: ${video.genre}`,
-    `Video ID: ${video.videoId}`,
-  ];
+function buildUserPrompt(video, news, members, articleType = "track_feature", artist = null) {
+  const lines = [];
+
+  if (articleType === "track_feature" && video) {
+    lines.push(
+      `Track context:`,
+      `Artist: ${video.artist}`,
+      `Track: ${video.track}`,
+      `Genre: ${video.genre}`,
+      `Video ID: ${video.videoId}`,
+    );
+  } else if (artist) {
+    lines.push(
+      `Artist context:`,
+      `Artist: ${artist.name || artist}`,
+      `Has videos on YehThatRocks: Yes`,
+    );
+  }
 
   if (members && members.length > 0) {
     lines.push("");
@@ -578,14 +750,20 @@ function validateArticleShape(article) {
   };
 }
 
-async function generateArticle({ apiKey, model, video, news, members }) {
+async function generateArticle({ apiKey, model, video, news, members, articleType = "track_feature", artist = null }) {
+  let systemPrompt = SYSTEM_PROMPT_TRACK_FEATURE;
+  if (articleType === "band_news") systemPrompt = SYSTEM_PROMPT_BAND_NEWS;
+  else if (articleType === "tribute") systemPrompt = SYSTEM_PROMPT_TRIBUTE;
+  else if (articleType === "event") systemPrompt = SYSTEM_PROMPT_EVENT;
+  else if (articleType === "general") systemPrompt = SYSTEM_PROMPT_GENERAL;
+
   const completion = await groqRequest(apiKey, {
     model,
     temperature: 0.7,
     max_tokens: 4000,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: buildUserPrompt(video, news, members) },
+      { role: "system", content: systemPrompt },
+      { role: "user", content: buildUserPrompt(video, news, members, articleType, artist) },
     ],
   });
 
@@ -613,12 +791,12 @@ async function generateArticle({ apiKey, model, video, news, members }) {
   return validateArticleShape(parsed);
 }
 
-async function generateArticleWithRetries({ apiKey, model, video, news, members, maxAttempts }) {
+async function generateArticleWithRetries({ apiKey, model, video, news, members, maxAttempts, articleType = "track_feature", artist = null }) {
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      return await generateArticle({ apiKey, model, video, news, members });
+      return await generateArticle({ apiKey, model, video, news, members, articleType, artist });
     } catch (error) {
       lastError = error;
       if (attempt === maxAttempts) {
@@ -630,7 +808,7 @@ async function generateArticleWithRetries({ apiKey, model, video, news, members,
   throw lastError instanceof Error ? lastError : new Error("Generation failed after retries");
 }
 
-async function saveArticle(conn, slug, video, article) {
+async function saveArticle(conn, slug, article, artist = null, track = null, genre = "Rock / Metal", videoId = null) {
   const [existing] = await conn.execute("SELECT id FROM magazine_articles WHERE slug = ? LIMIT 1", [slug]);
   if (Array.isArray(existing) && existing.length > 0) {
     await conn.execute(
@@ -643,10 +821,10 @@ async function saveArticle(conn, slug, video, article) {
         article.title,
         article.kicker,
         article.deck,
-        video.artist,
-        video.track,
-        video.genre,
-        video.videoId,
+        artist,
+        track || null,
+        genre,
+        videoId || null,
         JSON.stringify(article.body),
         article.seoDescription,
         article.seoKeywords,
@@ -665,10 +843,10 @@ async function saveArticle(conn, slug, video, article) {
       article.title,
       article.kicker,
       article.deck,
-      video.artist,
-      video.track,
-      video.genre,
-      video.videoId,
+      artist,
+      track || null,
+      genre,
+      videoId || null,
       JSON.stringify(article.body),
       article.seoDescription,
       article.seoKeywords,
@@ -738,10 +916,11 @@ async function run() {
       const key = String(item.link || "").trim().toLowerCase();
       if (!key || recentUsed.has(key)) continue;
 
+      // Try to match to a video (track feature)
       let best = null;
       let bestScore = -1;
       for (const video of videos) {
-        const score = scoreNewsForVideo(item, video);
+        const score = scoreNewsForVideoMatch(item, video);
         if (score > bestScore) {
           bestScore = score;
           best = video;
@@ -749,80 +928,137 @@ async function run() {
       }
 
       if (best && bestScore >= 75) {
-        candidates.push({ news: item, video: best, score: bestScore });
+        candidates.push({ news: item, video: best, score: bestScore, type: "track_feature" });
+      } else {
+        // No good video match; try to extract artist names and find matches
+        const artistNames = extractArtistNames(item.title, item.summary);
+        for (const artistName of artistNames) {
+          const artist = await lookupArtistWithVideos(conn, artistName);
+          if (artist) {
+            candidates.push({ news: item, artist, score: 50, type: "band_news" });
+            break; // Use first successful artist lookup
+          }
+        }
       }
     }
 
     if (candidates.length === 0) {
-      throw new Error("No suitable news-to-track matches found");
+      throw new Error("No suitable candidates found (video-matched or artist-matched)");
     }
 
     candidates.sort((a, b) => b.score - a.score);
 
     const selected = [];
     const usedVideoIdsThisRun = new Set();
+    const usedArtistsThisRun = new Set();
     for (const candidate of candidates) {
       if (selected.length >= count) break;
-      if (recentUsedVideoIds.has(candidate.video.videoId)) continue;
-      if (usedVideoIdsThisRun.has(candidate.video.videoId)) continue;
-      selected.push(candidate);
-      usedVideoIdsThisRun.add(candidate.video.videoId);
+
+      if (candidate.type === "track_feature") {
+        if (recentUsedVideoIds.has(candidate.video.videoId)) continue;
+        if (usedVideoIdsThisRun.has(candidate.video.videoId)) continue;
+        selected.push(candidate);
+        usedVideoIdsThisRun.add(candidate.video.videoId);
+      } else if (candidate.type === "band_news") {
+        if (usedArtistsThisRun.has(candidate.artist.id)) continue;
+        selected.push(candidate);
+        usedArtistsThisRun.add(candidate.artist.id);
+      }
     }
 
     const results = [];
     for (const selection of selected) {
-      // Pre-flight: confirm the video is still available on YouTube before spending AI tokens
-      const videoAvailable = await checkYouTubeOEmbed(selection.video.videoId);
-      if (videoAvailable === false) {
-        console.error(
-          JSON.stringify({
-            event: "skipped-unavailable-video",
-            videoId: selection.video.videoId,
-            artist: selection.video.artist,
-          }),
-        );
-        continue;
+      let video = null;
+      let artist = null;
+      let slug = null;
+      let bandMembers = [];
+      let articleType = "track_feature";
+      let artistName = null;
+      let trackName = null;
+      let genre = "Rock / Metal";
+      let videoId = null;
+
+      if (selection.type === "track_feature" && selection.video) {
+        video = selection.video;
+        videoId = video.videoId;
+        trackName = video.track;
+        genre = video.genre;
+        artistName = video.artist;
+
+        // Pre-flight: confirm the video is still available on YouTube before spending AI tokens
+        const videoAvailable = await checkYouTubeOEmbed(video.videoId);
+        if (videoAvailable === false) {
+          console.error(
+            JSON.stringify({
+              event: "skipped-unavailable-video",
+              videoId: video.videoId,
+              artist: video.artist,
+            }),
+          );
+          continue;
+        }
+
+        // Hard gate: require a positive maxresdefault thumbnail probe before generation.
+        // The article page displays maxresdefault.jpg, so we must confirm it exists.
+        // hqdefault can return 200 with a placeholder even for low-quality/unavailable videos.
+        const maxresThumbnailAvailable = await checkYouTubeMaxresThumbnail(video.videoId);
+        if (maxresThumbnailAvailable !== true) {
+          console.error(
+            JSON.stringify({
+              event: maxresThumbnailAvailable === false ? "skipped-unavailable-maxres-thumbnail" : "skipped-unverified-maxres-thumbnail",
+              videoId: video.videoId,
+              artist: video.artist,
+            }),
+          );
+          continue;
+        }
+
+        slug = buildArticleSlug(video, selection.news, null, "track_feature");
+        bandMembers = await fetchBandMembers(video.artist);
+        if (bandMembers.length > 0) {
+          console.error(
+            JSON.stringify({
+              event: "band-members-fetched",
+              artist: video.artist,
+              count: bandMembers.length,
+              members: bandMembers.map((m) => `${m.name}${m.roles.length > 0 ? ` (${m.roles.join(", ")})` : ""}`),
+            }),
+          );
+        }
+      } else if (selection.type === "band_news" && selection.artist) {
+        artist = selection.artist;
+        artistName = artist.name || artist.id;
+        slug = buildArticleSlug(null, selection.news, artistName, "band_news");
+        articleType = "band_news";
+        bandMembers = await fetchBandMembers(artistName);
+        if (bandMembers.length > 0) {
+          console.error(
+            JSON.stringify({
+              event: "band-members-fetched",
+              artist: artistName,
+              count: bandMembers.length,
+              members: bandMembers.map((m) => `${m.name}${m.roles.length > 0 ? ` (${m.roles.join(", ")})` : ""}`),
+            }),
+          );
+        }
       }
 
-      // Hard gate: require a positive maxresdefault thumbnail probe before generation.
-      // The article page displays maxresdefault.jpg, so we must confirm it exists.
-      // hqdefault can return 200 with a placeholder even for low-quality/unavailable videos.
-      const maxresThumbnailAvailable = await checkYouTubeMaxresThumbnail(selection.video.videoId);
-      if (maxresThumbnailAvailable !== true) {
-        console.error(
-          JSON.stringify({
-            event: maxresThumbnailAvailable === false ? "skipped-unavailable-maxres-thumbnail" : "skipped-unverified-maxres-thumbnail",
-            videoId: selection.video.videoId,
-            artist: selection.video.artist,
-          }),
-        );
-        continue;
-      }
+      if (!slug) continue; // Safety check
 
-      const slug = buildArticleSlug(selection.video, selection.news);
-      const bandMembers = await fetchBandMembers(selection.video.artist);
-      if (bandMembers.length > 0) {
-        console.error(
-          JSON.stringify({
-            event: "band-members-fetched",
-            artist: selection.video.artist,
-            count: bandMembers.length,
-            members: bandMembers.map((m) => `${m.name}${m.roles.length > 0 ? ` (${m.roles.join(", ")})` : ""}`),
-          }),
-        );
-      }
       const article = await generateArticleWithRetries({
         apiKey: groqApiKey,
         model: writerModel,
-        video: selection.video,
+        video,
         news: selection.news,
         members: bandMembers,
         maxAttempts,
+        articleType,
+        artist,
       });
 
       let dbAction = "dry-run";
       if (!dryRun) {
-        dbAction = await saveArticle(conn, slug, selection.video, article);
+        dbAction = await saveArticle(conn, slug, article, artistName, trackName, genre, videoId);
       }
 
       results.push({
@@ -832,9 +1068,10 @@ async function run() {
         source: selection.news.source,
         sourceTitle: selection.news.title,
         sourceUrl: selection.news.link,
-        artist: selection.video.artist,
-        track: selection.video.track,
-        videoId: selection.video.videoId,
+        artist: artistName,
+        track: trackName || null,
+        videoId: videoId || null,
+        articleType,
         title: article.title,
       });
     }
@@ -847,7 +1084,7 @@ async function run() {
       ];
       const usedVideoIds = [
         ...(state.usedVideoIds || []).filter((entry) => Number.isFinite(Date.parse(entry.usedAt)) && Date.parse(entry.usedAt) >= dedupeCutoff),
-        ...results.map((r) => ({ videoId: r.videoId, usedAt: now2, slug: r.slug })),
+        ...results.filter(r => r.videoId).map((r) => ({ videoId: r.videoId, usedAt: now2, slug: r.slug })),
       ];
       writeState(statePath, { usedSources, usedVideoIds });
     }
