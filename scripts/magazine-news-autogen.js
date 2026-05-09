@@ -365,13 +365,12 @@ async function lookupArtistWithVideos(conn, artistName) {
   // Normalize for comparison
   const normalized = artistName.trim().toLowerCase();
 
-  // Try exact match first
+  // Try exact match first in artists table, ensuring they have videos in videosbyartist
   const [exactMatch] = await conn.execute(
     `SELECT a.id, a.artist AS name
      FROM artists a
-     INNER JOIN artist_videos av ON av.artist_id = a.id
      WHERE LOWER(a.artist) = ?
-     GROUP BY a.id
+     AND EXISTS (SELECT 1 FROM videosbyartist WHERE artist = a.artist LIMIT 1)
      LIMIT 1`,
     [normalized],
   );
@@ -380,13 +379,12 @@ async function lookupArtistWithVideos(conn, artistName) {
     return exactMatch[0];
   }
 
-  // Try partial match (contains)
+  // Try partial match (contains) in artists table
   const [partialMatch] = await conn.execute(
     `SELECT a.id, a.artist AS name
      FROM artists a
-     INNER JOIN artist_videos av ON av.artist_id = a.id
      WHERE a.artist LIKE ?
-     GROUP BY a.id
+     AND EXISTS (SELECT 1 FROM videosbyartist WHERE artist = a.artist LIMIT 1)
      LIMIT 1`,
     [`%${artistName}%`],
   );
