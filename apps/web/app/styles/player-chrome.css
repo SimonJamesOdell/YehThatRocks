@@ -909,10 +909,12 @@
   grid-template-columns: 180px 1fr;
   grid-template-rows: 1fr auto;
   min-height: 240px;
-  transition: box-shadow 200ms ease;
+  transition: background 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
 }
 
 .magazineTrackCard:hover {
+  background: linear-gradient(180deg, rgba(170, 30, 17, 0.56), rgba(90, 9, 6, 0.7));
+  border-color: rgba(255, 116, 88, 0.78);
   box-shadow: var(--glow);
 }
 
