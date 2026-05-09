@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=/srv/yehthatrocks
 EnvironmentFile=-/srv/yehthatrocks/.env.production
-ExecStart=/usr/bin/bash -lc 'PORT="${APP_PORT:-3000}"; COUNT="${MAGAZINE_DAILY_COUNT:-1}"; URL="http://127.0.0.1:${PORT}/api/cron/magazine-daily?count=${COUNT}"; echo "[magazine-autogen] POSTing to ${URL}"; if [ -n "${CRON_SECRET:-}" ]; then /usr/bin/curl -fsSv --write-out "\n[magazine-autogen] HTTP %{http_code}\n" --connect-timeout 10 --max-time 180 -X POST -H "Authorization: Bearer ${CRON_SECRET}" "$URL"; else /usr/bin/curl -fsSv --write-out "\n[magazine-autogen] HTTP %{http_code}\n" --connect-timeout 10 --max-time 180 -X POST "$URL"; fi'
+ExecStart=/usr/bin/bash -lc 'PORT="$${APP_PORT:-3000}"; COUNT="$${MAGAZINE_DAILY_COUNT:-1}"; URL="http://127.0.0.1:$${PORT}/api/cron/magazine-daily?count=$${COUNT}"; echo "[magazine-autogen] POSTing to $${URL}"; if [ -n "$${CRON_SECRET:-}" ]; then /usr/bin/curl -fsSv --write-out "\n[magazine-autogen] HTTP %%{http_code}\n" --connect-timeout 10 --max-time 180 -X POST -H "Authorization: Bearer $${CRON_SECRET}" "$${URL}"; else /usr/bin/curl -fsSv --write-out "\n[magazine-autogen] HTTP %%{http_code}\n" --connect-timeout 10 --max-time 180 -X POST "$${URL}"; fi'
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=magazine-autogen
