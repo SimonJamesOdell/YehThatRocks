@@ -70,6 +70,7 @@ export function AdminTabLinks({
   return (
     <div className="accountTopBarActions">
       <Link href="/admin?tab=overview" className={tabClass("overview")}>Overview</Link>
+      <Link href="/admin?tab=magazine" className={tabClass("magazine")}>Magazine</Link>
       <Link href="/admin?tab=performance" className={tabClass("performance")}>Performance</Link>
       <Link href="/admin?tab=worldmap" className={tabClass("worldmap")}>Visitor Map</Link>
       <Link href="/admin?tab=api" className={tabClass("api")}>API Usage</Link>
