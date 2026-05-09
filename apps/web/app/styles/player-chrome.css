@@ -907,6 +907,7 @@
   overflow: hidden;
   display: grid;
   grid-template-columns: 180px 1fr;
+  grid-template-rows: auto auto;
   transition: box-shadow 200ms ease;
 }
 
@@ -917,12 +918,19 @@
 .magazineTrackLink {
   display: grid;
   grid-template-columns: 180px 1fr;
+  grid-column: 1 / -1;
+  grid-row: 1;
   text-decoration: none;
   color: inherit;
 }
 
 .magazineTrackLink:focus {
   outline: none;
+}
+
+.magazineTrackActions {
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .magazineTrackThumb {
