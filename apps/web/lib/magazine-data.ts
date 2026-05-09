@@ -13,9 +13,9 @@ export type MagazineArticle = {
   kicker: string | null;
   deck: string | null;
   artist: string;
-  trackName: string;
+  trackName: string | null;  // nullable for non-track articles
   genre: string;
-  videoId: string;
+  videoId: string | null;  // nullable for non-track articles
   body: MagazineBlock[];
   seoDescription: string | null;
   seoKeywords: string | null;
@@ -30,9 +30,9 @@ type RawArticleRow = {
   kicker: string | null;
   deck: string | null;
   artist: string;
-  track_name: string;
+  track_name: string | null;  // nullable for non-track articles
   genre: string;
-  video_id: string;
+  video_id: string | null;  // nullable for non-track articles
   body: string;
   seo_description: string | null;
   seo_keywords: string | null;
@@ -144,11 +144,12 @@ export async function getPublishedArticles(limit = 20): Promise<MagazineArticle[
     const rows = await queryArticles(fetchLimit);
     if (rows.length === 0) return SEED_ARTICLES.slice(0, limit);
 
-    // Run hqdefault HEAD checks in parallel for all candidates.
+    // Run hqdefault HEAD checks in parallel for all candidates that have videos.
+    // Non-video articles (videoId = null) are considered healthy by default.
     const checked = await Promise.all(
       rows.map(async (article) => ({
         article,
-        ok: await checkHqThumbnailHealth(article.videoId),
+        ok: article.videoId ? await checkHqThumbnailHealth(article.videoId) : true,
       })),
     );
     const healthy = checked.filter((r) => r.ok).map((r) => r.article).slice(0, limit);
@@ -261,13 +262,15 @@ export async function pruneUnavailableArticles(): Promise<number> {
   if (now - _lastPruneMs < PRUNE_COOLDOWN_MS) return 0;
   _lastPruneMs = now;
 
-  const rows = await prisma.$queryRaw<{ id: number; videoId: string }[]>`
+  const rows = await prisma.$queryRaw<{ id: number; videoId: string | null }[]>`
     SELECT id, video_id AS videoId FROM magazine_articles WHERE status = 'published'
   `;
   if (rows.length === 0) return 0;
 
   const checks = await Promise.allSettled(
-    rows.map(async (row) => ({ id: row.id, available: await checkYouTubeOEmbed(row.videoId) })),
+    rows
+      .filter((row) => row.videoId !== null) // Only check articles with videos
+      .map(async (row) => ({ id: row.id, available: await checkYouTubeOEmbed(row.videoId!) })),
   );
 
   const toDelete = checks

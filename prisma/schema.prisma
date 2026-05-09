@@ -371,9 +371,9 @@ model MagazineArticle {
   kicker         String?  @db.VarChar(255)
   deck           String?  @db.Text
   artist         String   @db.VarChar(255)
-  trackName      String   @map("track_name") @db.VarChar(255)
+  trackName      String?  @map("track_name") @db.VarChar(255)
   genre          String   @db.VarChar(255)
-  videoId        String   @map("video_id") @db.VarChar(32)
+  videoId        String?  @map("video_id") @db.VarChar(32)
   body           String   @db.LongText
   seoDescription String?  @map("seo_description") @db.VarChar(500)
   seoKeywords    String?  @map("seo_keywords") @db.VarChar(500)

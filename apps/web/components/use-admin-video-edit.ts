@@ -38,7 +38,7 @@ export type UseAdminVideoEditReturn = {
   adminEditDescription: string;
   setAdminEditDescription: React.Dispatch<React.SetStateAction<string>>;
   adminEditCreatedAt: string | Date | null;
-  isAdminEditDateRefreshing: boolean;
+  isAdminEditMetadataRefreshing: boolean;
   isAdminEditLoading: boolean;
   isAdminEditSaving: boolean;
   isAdminDeleting: boolean;
@@ -50,7 +50,7 @@ export type UseAdminVideoEditReturn = {
   adminEditStatus: string | null;
   setAdminEditStatus: React.Dispatch<React.SetStateAction<string | null>>;
   handleOpenAdminVideoEdit: () => Promise<void>;
-  handleRefetchAdminVideoDate: () => Promise<void>;
+  handleRefetchAdminVideoMetadata: () => Promise<void>;
   handleSaveAdminVideoEdit: () => Promise<void>;
   closeAdminVideoEditModal: () => void;
 };
@@ -84,7 +84,7 @@ export function useAdminVideoEdit({
   const [adminEditParseConfidence, setAdminEditParseConfidence] = useState("");
   const [adminEditDescription, setAdminEditDescription] = useState("");
   const [adminEditCreatedAt, setAdminEditCreatedAt] = useState<string | Date | null>(null);
-  const [isAdminEditDateRefreshing, setIsAdminEditDateRefreshing] = useState(false);
+  const [isAdminEditMetadataRefreshing, setIsAdminEditMetadataRefreshing] = useState(false);
   const [isAdminEditLoading, setIsAdminEditLoading] = useState(false);
   const [isAdminEditSaving, setIsAdminEditSaving] = useState(false);
   const [isAdminDeleting, setIsAdminDeleting] = useState(false);
@@ -147,17 +147,17 @@ export function useAdminVideoEdit({
     }
   }
 
-  async function handleRefetchAdminVideoDate() {
-    if (!isAdmin || !adminEditVideoRowId || isAdminEditDateRefreshing || isAdminEditLoading || isAdminEditSaving) {
+  async function handleRefetchAdminVideoMetadata() {
+    if (!isAdmin || !adminEditVideoRowId || isAdminEditMetadataRefreshing || isAdminEditLoading || isAdminEditSaving) {
       return;
     }
 
-    setIsAdminEditDateRefreshing(true);
+    setIsAdminEditMetadataRefreshing(true);
     setAdminEditError(null);
     setAdminEditStatus(null);
 
     try {
-      const response = await fetchWithAuthRetry("/api/admin/videos/refetch-date", {
+      const response = await fetchWithAuthRetry("/api/admin/videos/refetch-data", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -174,21 +174,32 @@ export function useAdminVideoEdit({
           setAdminEditError("Admin session expired. Please sign in again.");
           return;
         }
-        setAdminEditError(payload?.error ?? "Could not refetch date from YouTube.");
+        setAdminEditError(payload?.error ?? "Could not refresh metadata from YouTube.");
         return;
       }
 
       const payload = (await response.json().catch(() => null)) as {
         ok?: boolean;
-        video?: { createdAt?: string | Date | null };
+        video?: {
+          title?: string;
+          description?: string;
+          createdAt?: string | Date | null;
+          channelTitle?: string;
+          viewCount?: number;
+        };
       } | null;
 
-      setAdminEditCreatedAt(payload?.video?.createdAt ?? null);
-      setAdminEditStatus("Date refreshed from YouTube.");
+      if (payload?.video) {
+        if (payload.video.title) setAdminEditTitle(payload.video.title);
+        if (payload.video.description) setAdminEditDescription(payload.video.description);
+        if (payload.video.channelTitle) setAdminEditChannelTitle(payload.video.channelTitle);
+        if (payload.video.createdAt) setAdminEditCreatedAt(payload.video.createdAt);
+      }
+      setAdminEditStatus("Metadata refreshed from YouTube.");
     } catch {
-      setAdminEditError("Could not refetch date from YouTube.");
+      setAdminEditError("Could not refresh metadata from YouTube.");
     } finally {
-      setIsAdminEditDateRefreshing(false);
+      setIsAdminEditMetadataRefreshing(false);
     }
   }
 
@@ -301,7 +312,7 @@ export function useAdminVideoEdit({
     adminEditDescription,
     setAdminEditDescription,
     adminEditCreatedAt,
-    isAdminEditDateRefreshing,
+    isAdminEditMetadataRefreshing,
     isAdminEditLoading,
     isAdminEditSaving,
     isAdminDeleting,
@@ -313,7 +324,7 @@ export function useAdminVideoEdit({
     adminEditStatus,
     setAdminEditStatus,
     handleOpenAdminVideoEdit,
-    handleRefetchAdminVideoDate,
+    handleRefetchAdminVideoMetadata,
     handleSaveAdminVideoEdit,
     closeAdminVideoEditModal,
   };

@@ -472,7 +472,7 @@ export function PlayerExperience({
     adminEditDescription,
     setAdminEditDescription,
     adminEditCreatedAt,
-    isAdminEditDateRefreshing,
+    isAdminEditMetadataRefreshing,
     isAdminEditLoading,
     isAdminEditSaving,
     isAdminDeleting,
@@ -484,7 +484,7 @@ export function PlayerExperience({
     adminEditStatus,
     setAdminEditStatus,
     handleOpenAdminVideoEdit,
-    handleRefetchAdminVideoDate,
+    handleRefetchAdminVideoMetadata,
     handleSaveAdminVideoEdit,
     closeAdminVideoEditModal,
   } = useAdminVideoEdit({
@@ -5432,17 +5432,17 @@ export function PlayerExperience({
                     type="button"
                     className="adminVideoEditButton adminVideoEditButtonSecondary"
                     onClick={() => {
-                      void handleRefetchAdminVideoDate();
+                      void handleRefetchAdminVideoMetadata();
                     }}
-                    disabled={isAdminEditSaving || isAdminEditLoading || isAdminEditDateRefreshing || !adminEditVideoRowId}
+                    disabled={isAdminEditSaving || isAdminEditLoading || isAdminEditMetadataRefreshing || !adminEditVideoRowId}
                   >
-                    {isAdminEditDateRefreshing ? "Refetching date..." : "Refetch date from YouTube"}
+                    {isAdminEditMetadataRefreshing ? "Refreshing metadata..." : "Refresh metadata from YouTube"}
                   </button>
                   <button
                     type="button"
                     className="adminVideoEditButton adminVideoEditButtonSecondary"
                     onClick={closeAdminVideoEditModal}
-                    disabled={isAdminEditSaving || isAdminEditDateRefreshing}
+                    disabled={isAdminEditSaving || isAdminEditMetadataRefreshing}
                   >
                     Cancel
                   </button>
@@ -5455,7 +5455,7 @@ export function PlayerExperience({
                     disabled={
                       isAdminEditSaving
                       || isAdminEditLoading
-                      || isAdminEditDateRefreshing
+                      || isAdminEditMetadataRefreshing
                       || !adminEditVideoRowId
                     }
                   >
