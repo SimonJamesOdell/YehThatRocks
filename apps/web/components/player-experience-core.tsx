@@ -471,6 +471,8 @@ export function PlayerExperience({
     setAdminEditParseConfidence,
     adminEditDescription,
     setAdminEditDescription,
+    adminEditCreatedAt,
+    isAdminEditDateRefreshing,
     isAdminEditLoading,
     isAdminEditSaving,
     isAdminDeleting,
@@ -482,6 +484,7 @@ export function PlayerExperience({
     adminEditStatus,
     setAdminEditStatus,
     handleOpenAdminVideoEdit,
+    handleRefetchAdminVideoDate,
     handleSaveAdminVideoEdit,
     closeAdminVideoEditModal,
   } = useAdminVideoEdit({
@@ -5409,6 +5412,18 @@ export function PlayerExperience({
                         rows={4}
                       />
                     </label>
+                    <label className="adminVideoEditFieldFull">
+                      <span>Stored date</span>
+                      <input
+                        value={
+                          adminEditCreatedAt && Number.isFinite(Date.parse(String(adminEditCreatedAt)))
+                            ? new Date(adminEditCreatedAt).toISOString()
+                            : ""
+                        }
+                        readOnly
+                        placeholder="No stored date"
+                      />
+                    </label>
                   </div>
                 ) : null}
 
@@ -5416,8 +5431,18 @@ export function PlayerExperience({
                   <button
                     type="button"
                     className="adminVideoEditButton adminVideoEditButtonSecondary"
+                    onClick={() => {
+                      void handleRefetchAdminVideoDate();
+                    }}
+                    disabled={isAdminEditSaving || isAdminEditLoading || isAdminEditDateRefreshing || !adminEditVideoRowId}
+                  >
+                    {isAdminEditDateRefreshing ? "Refetching date..." : "Refetch date from YouTube"}
+                  </button>
+                  <button
+                    type="button"
+                    className="adminVideoEditButton adminVideoEditButtonSecondary"
                     onClick={closeAdminVideoEditModal}
-                    disabled={isAdminEditSaving}
+                    disabled={isAdminEditSaving || isAdminEditDateRefreshing}
                   >
                     Cancel
                   </button>
@@ -5427,7 +5452,12 @@ export function PlayerExperience({
                     onClick={() => {
                       void handleSaveAdminVideoEdit();
                     }}
-                    disabled={isAdminEditSaving || isAdminEditLoading || !adminEditVideoRowId}
+                    disabled={
+                      isAdminEditSaving
+                      || isAdminEditLoading
+                      || isAdminEditDateRefreshing
+                      || !adminEditVideoRowId
+                    }
                   >
                     {isAdminEditSaving ? "Saving..." : "Save changes"}
                   </button>

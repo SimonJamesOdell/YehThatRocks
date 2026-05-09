@@ -15,6 +15,7 @@ type AdminEditableVideo = {
   parseConfidence: number | null;
   channelTitle: string | null;
   description: string | null;
+  createdAt: string | Date | null;
   updatedAt: string | Date | null;
 };
 
@@ -36,6 +37,8 @@ export type UseAdminVideoEditReturn = {
   setAdminEditParseConfidence: React.Dispatch<React.SetStateAction<string>>;
   adminEditDescription: string;
   setAdminEditDescription: React.Dispatch<React.SetStateAction<string>>;
+  adminEditCreatedAt: string | Date | null;
+  isAdminEditDateRefreshing: boolean;
   isAdminEditLoading: boolean;
   isAdminEditSaving: boolean;
   isAdminDeleting: boolean;
@@ -47,6 +50,7 @@ export type UseAdminVideoEditReturn = {
   adminEditStatus: string | null;
   setAdminEditStatus: React.Dispatch<React.SetStateAction<string | null>>;
   handleOpenAdminVideoEdit: () => Promise<void>;
+  handleRefetchAdminVideoDate: () => Promise<void>;
   handleSaveAdminVideoEdit: () => Promise<void>;
   closeAdminVideoEditModal: () => void;
 };
@@ -79,6 +83,8 @@ export function useAdminVideoEdit({
   const [adminEditParsedVideoType, setAdminEditParsedVideoType] = useState("");
   const [adminEditParseConfidence, setAdminEditParseConfidence] = useState("");
   const [adminEditDescription, setAdminEditDescription] = useState("");
+  const [adminEditCreatedAt, setAdminEditCreatedAt] = useState<string | Date | null>(null);
+  const [isAdminEditDateRefreshing, setIsAdminEditDateRefreshing] = useState(false);
   const [isAdminEditLoading, setIsAdminEditLoading] = useState(false);
   const [isAdminEditSaving, setIsAdminEditSaving] = useState(false);
   const [isAdminDeleting, setIsAdminDeleting] = useState(false);
@@ -133,10 +139,56 @@ export function useAdminVideoEdit({
           : String(row.parseConfidence),
       );
       setAdminEditDescription(row.description ?? "");
+      setAdminEditCreatedAt(row.createdAt ?? null);
     } catch {
       setAdminEditError("Could not load video details.");
     } finally {
       setIsAdminEditLoading(false);
+    }
+  }
+
+  async function handleRefetchAdminVideoDate() {
+    if (!isAdmin || !adminEditVideoRowId || isAdminEditDateRefreshing || isAdminEditLoading || isAdminEditSaving) {
+      return;
+    }
+
+    setIsAdminEditDateRefreshing(true);
+    setAdminEditError(null);
+    setAdminEditStatus(null);
+
+    try {
+      const response = await fetchWithAuthRetry("/api/admin/videos/refetch-date", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: adminEditVideoRowId,
+          videoId,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        if (response.status === 401 || response.status === 403) {
+          setAdminEditError("Admin session expired. Please sign in again.");
+          return;
+        }
+        setAdminEditError(payload?.error ?? "Could not refetch date from YouTube.");
+        return;
+      }
+
+      const payload = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        video?: { createdAt?: string | Date | null };
+      } | null;
+
+      setAdminEditCreatedAt(payload?.video?.createdAt ?? null);
+      setAdminEditStatus("Date refreshed from YouTube.");
+    } catch {
+      setAdminEditError("Could not refetch date from YouTube.");
+    } finally {
+      setIsAdminEditDateRefreshing(false);
     }
   }
 
@@ -248,6 +300,8 @@ export function useAdminVideoEdit({
     setAdminEditParseConfidence,
     adminEditDescription,
     setAdminEditDescription,
+    adminEditCreatedAt,
+    isAdminEditDateRefreshing,
     isAdminEditLoading,
     isAdminEditSaving,
     isAdminDeleting,
@@ -259,6 +313,7 @@ export function useAdminVideoEdit({
     adminEditStatus,
     setAdminEditStatus,
     handleOpenAdminVideoEdit,
+    handleRefetchAdminVideoDate,
     handleSaveAdminVideoEdit,
     closeAdminVideoEditModal,
   };
