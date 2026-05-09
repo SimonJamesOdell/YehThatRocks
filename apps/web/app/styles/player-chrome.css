@@ -1223,7 +1223,7 @@
 .magazineArticleSidebarItem:hover {
   background: linear-gradient(180deg, rgba(170, 30, 17, 0.56), rgba(90, 9, 6, 0.7));
   border-color: rgba(255, 116, 88, 0.78);
-  box-shadow: var(--glow);
+  box-shadow: 0 0 24px rgba(255, 0, 0, 0.6);
 }
 
 .magazineArticleSidebarItem strong {
