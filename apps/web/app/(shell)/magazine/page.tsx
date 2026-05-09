@@ -24,6 +24,11 @@ export default async function MagazineLandingPage() {
       <main className="magazinePage" role="main" aria-label="Yeh Magazine">
       {leadArticle ? (
         <section className="magazineCoverStory panel" aria-label="Cover story">
+          <Link
+            href={`/magazine/${leadArticle.slug}`}
+            className="magazineCoverStoryLink"
+            aria-label={`Read article: ${leadArticle.title}`}
+          />
           <img
             src={`https://i.ytimg.com/vi/${leadArticle.videoId}/maxresdefault.jpg`}
             alt={`${leadArticle.artist} - ${leadArticle.trackName}`}
@@ -34,8 +39,7 @@ export default async function MagazineLandingPage() {
             {leadArticle.kicker ? <p className="magazineSectionLabel">{leadArticle.kicker}</p> : null}
             <h2>{leadArticle.title}</h2>
             {leadArticle.deck ? <p>{leadArticle.deck}</p> : null}
-            <div className="magazineTrackActions">
-              <Link href={`/magazine/${leadArticle.slug}`} className="magazinePrimaryCta">Read article</Link>
+            <div className="magazineTrackActions magazineCoverStoryActions">
               <Link href={`/?v=${leadArticle.videoId}&resume=1`} className="magazineWatchCta" data-overlay-close="true">Play Now</Link>
             </div>
           </div>
