@@ -3,6 +3,10 @@ import type { MetadataRoute } from "next";
 import { getArtistSlugsForSitemap, getGenres, getGenreSlug } from "@/lib/catalog-data";
 import { getAllPublishedSlugs } from "@/lib/magazine-data";
 
+// Regenerate the sitemap every 24 hours so newly published articles are picked
+// up without requiring a full redeploy. Artist/genre shards also benefit.
+export const revalidate = 86400;
+
 const SITE_ORIGIN =
   process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") ||
   "https://yehthatrocks.com";

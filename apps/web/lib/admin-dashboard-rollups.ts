@@ -470,7 +470,7 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       return_visits
     )
     SELECT
-      STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s') AS bucket_start,
+      DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') AS bucket_start,
       SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
       SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
       COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
@@ -492,7 +492,7 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       auth_events
     )
     SELECT
-      STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s') AS bucket_start,
+      DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') AS bucket_start,
       COUNT(*) AS auth_events
     FROM auth_audit_logs
     WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${authIntervalClause})
