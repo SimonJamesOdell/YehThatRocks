@@ -51,6 +51,34 @@ function Compute-ShipPasswordHash([string]$Password, [string]$SaltBase64) {
   }
 }
 
+function New-RandomBytes([int]$Length) {
+  $bytes = New-Object byte[] $Length
+  $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+  try {
+    $rng.GetBytes($bytes)
+    return $bytes
+  } finally {
+    $rng.Dispose()
+  }
+}
+
+function Test-FixedTimeByteArrayEquals([byte[]]$Left, [byte[]]$Right) {
+  if ($null -eq $Left -or $null -eq $Right) {
+    return $false
+  }
+
+  if ($Left.Length -ne $Right.Length) {
+    return $false
+  }
+
+  $diff = 0
+  for ($i = 0; $i -lt $Left.Length; $i++) {
+    $diff = $diff -bor ($Left[$i] -bxor $Right[$i])
+  }
+
+  return $diff -eq 0
+}
+
 function Ensure-ShipPasswordConfiguredAndValid([string]$RepoRoot, [string]$ProvidedPassword) {
   $passwordFilePath = Join-Path $RepoRoot ".ship-password.json"
 
@@ -71,8 +99,7 @@ function Ensure-ShipPasswordConfiguredAndValid([string]$RepoRoot, [string]$Provi
       throw "Ship password confirmation did not match."
     }
 
-    $saltBytes = New-Object byte[] 32
-    [Security.Cryptography.RandomNumberGenerator]::Fill($saltBytes)
+    $saltBytes = New-RandomBytes -Length 32
     $saltBase64 = [Convert]::ToBase64String($saltBytes)
     $hashBase64 = Compute-ShipPasswordHash -Password $firstPlain -SaltBase64 $saltBase64
 
@@ -105,7 +132,7 @@ function Ensure-ShipPasswordConfiguredAndValid([string]$RepoRoot, [string]$Provi
   $expectedBytes = [Convert]::FromBase64String($expectedHash)
   $actualBytes = [Convert]::FromBase64String($actualHash)
 
-  if (-not [Security.Cryptography.CryptographicOperations]::FixedTimeEquals($expectedBytes, $actualBytes)) {
+  if (-not (Test-FixedTimeByteArrayEquals -Left $expectedBytes -Right $actualBytes)) {
     throw "Invalid ship password."
   }
 }
