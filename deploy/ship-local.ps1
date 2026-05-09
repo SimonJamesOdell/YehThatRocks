@@ -120,7 +120,8 @@ function Ensure-ShipPasswordConfiguredAndValid([string]$RepoRoot, [string]$Provi
   }
 
   if ([string]::IsNullOrWhiteSpace($ProvidedPassword)) {
-    throw "Ship password required. Usage: ship SECRET_PASSWORD"
+    Write-Host "password required" -ForegroundColor Red
+    exit 1
   }
 
   $record = Get-Content -LiteralPath $passwordFilePath -Raw | ConvertFrom-Json
@@ -134,7 +135,8 @@ function Ensure-ShipPasswordConfiguredAndValid([string]$RepoRoot, [string]$Provi
   $actualBytes = [Convert]::FromBase64String($actualHash)
 
   if (-not (Test-FixedTimeByteArrayEquals -Left $expectedBytes -Right $actualBytes)) {
-    throw "Invalid ship password."
+    Write-Host "incorrect password" -ForegroundColor Red
+    exit 1
   }
 }
 
