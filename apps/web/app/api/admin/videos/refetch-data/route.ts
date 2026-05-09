@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireAdminApiAuth } from "@/lib/admin-auth";
+import {
+  buildNormalizedVideoTitleFromMetadata,
+  deriveAdminImportFallbackMetadata,
+  normalizePossiblyMojibakeText,
+} from "@/lib/catalog-metadata-utils";
 import { prisma } from "@/lib/db";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
@@ -24,6 +29,8 @@ type YouTubeVideoDetailsResponse = {
     };
   }>;
 };
+
+const PLAYBACK_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.PLAYBACK_MIN_CONFIDENCE || "0.8")));
 
 async function fetchYouTubeMetadata(videoId: string, apiKey: string) {
   const url = new URL("https://www.googleapis.com/youtube/v3/videos");
@@ -125,16 +132,50 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Could not fetch metadata from YouTube." }, { status: 502 });
   }
 
+  const normalizedTitle = metadata.title?.trim()
+    ? normalizePossiblyMojibakeText(metadata.title)
+    : null;
+  const normalizedChannelTitle = metadata.channelTitle?.trim()
+    ? normalizePossiblyMojibakeText(metadata.channelTitle)
+    : null;
+
+  const fallbackMetadata = normalizedTitle
+    ? deriveAdminImportFallbackMetadata(normalizedTitle, normalizedChannelTitle, PLAYBACK_MIN_CONFIDENCE)
+    : null;
+
+  const transformedTitle = fallbackMetadata && normalizedTitle
+    ? (buildNormalizedVideoTitleFromMetadata(normalizedTitle, fallbackMetadata.artist, fallbackMetadata.track) ?? normalizedTitle)
+    : normalizedTitle;
+
   const updated = await prisma.video.update({
     where: { id: row.id },
     data: {
-      ...metadata,
+      ...(metadata.description !== undefined ? { description: metadata.description } : {}),
+      ...(metadata.createdAt ? { createdAt: metadata.createdAt } : {}),
+      ...(normalizedChannelTitle ? { channelTitle: normalizedChannelTitle } : {}),
+      ...(Number.isFinite(metadata.viewCount) ? { viewCount: metadata.viewCount } : {}),
+      ...(transformedTitle ? { title: transformedTitle } : {}),
+      ...(fallbackMetadata
+        ? {
+            parsedArtist: fallbackMetadata.artist,
+            parsedTrack: fallbackMetadata.track,
+            parsedVideoType: fallbackMetadata.videoType,
+            parseMethod: "admin-direct-import-heuristic",
+            parseReason: `${fallbackMetadata.reason} Metadata refreshed from YouTube API.`,
+            parseConfidence: fallbackMetadata.confidence,
+            parsedAt: new Date(),
+          }
+        : {}),
       updatedAt: new Date(),
     },
     select: {
       id: true,
       videoId: true,
       title: true,
+      parsedArtist: true,
+      parsedTrack: true,
+      parsedVideoType: true,
+      parseConfidence: true,
       description: true,
       createdAt: true,
       channelTitle: true,
