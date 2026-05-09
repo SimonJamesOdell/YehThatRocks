@@ -4567,6 +4567,43 @@ export function PlayerExperience({
         }
 
         const deletingVideoId = currentVideo.id;
+
+        const navigateAfterCatalogDelete = (removedVideoId: string) => {
+          const remainingPlaylistIds = playlistQueueIds.filter((id) => id !== removedVideoId);
+          const playlistCarryIndex = Math.max(
+            0,
+            Math.min(
+              effectivePlaylistIndex ?? playlistQueueIds.findIndex((id) => id === removedVideoId),
+              Math.max(remainingPlaylistIds.length - 1, 0),
+            ),
+          );
+          const playlistCandidateId =
+            activePlaylistId && remainingPlaylistIds.length > 0
+              ? (remainingPlaylistIds[playlistCarryIndex] ?? remainingPlaylistIds[0] ?? null)
+              : null;
+          const preferredResolvedId =
+            resolvedNextTarget?.videoId && resolvedNextTarget.videoId !== removedVideoId
+              ? resolvedNextTarget.videoId
+              : null;
+          const temporaryQueueCandidateId =
+            temporaryQueue.find((video) => video.id !== removedVideoId)?.id ?? null;
+          const queueCandidateId = queue.find((video) => video.id !== removedVideoId)?.id ?? null;
+
+          const nextId = preferredResolvedId ?? playlistCandidateId ?? temporaryQueueCandidateId ?? queueCandidateId;
+          if (!nextId) {
+            return false;
+          }
+
+          const nextPlaylistIndex = remainingPlaylistIds.indexOf(nextId);
+          navigateToVideo(nextId, {
+            clearPlaylist: nextPlaylistIndex < 0,
+            playlistId: nextPlaylistIndex >= 0 ? activePlaylistId : null,
+            playlistItemIndex: nextPlaylistIndex >= 0 ? nextPlaylistIndex : null,
+          });
+
+          return true;
+        };
+
         setIsAdminDeleting(true);
         setShowAdminDeleteConfirmModal(false);
         setShowShareMenu(false);
@@ -4589,6 +4626,18 @@ export function PlayerExperience({
             const payload = (await response.json().catch(() => null)) as { error?: string; reason?: string } | null;
             if (response.status === 401 || response.status === 403) {
               showUnavailableOverlayMessage("Admin session expired. Please sign in again.");
+              return;
+            }
+            if (response.status === 404) {
+              dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
+              dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
+              dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId: deletingVideoId });
+              setPlaylistQueueIds((currentIds) => currentIds.filter((id) => id !== deletingVideoId));
+
+              const advanced = navigateAfterCatalogDelete(deletingVideoId);
+              if (!advanced) {
+                showDeletedOverlayConfirmation();
+              }
               return;
             }
             showUnavailableOverlayMessage(payload?.error || "Could not remove this video from the site.");
@@ -4641,7 +4690,10 @@ export function PlayerExperience({
             }
           }
 
-          showDeletedOverlayConfirmation();
+          const advanced = navigateAfterCatalogDelete(deletingVideoId);
+          if (!advanced) {
+            showDeletedOverlayConfirmation();
+          }
         } catch {
           showUnavailableOverlayMessage("Could not remove this video from the site.");
         } finally {
