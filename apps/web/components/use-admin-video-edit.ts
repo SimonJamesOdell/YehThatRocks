@@ -182,6 +182,10 @@ export function useAdminVideoEdit({
         ok?: boolean;
         video?: {
           title?: string;
+          parsedArtist?: string | null;
+          parsedTrack?: string | null;
+          parsedVideoType?: string | null;
+          parseConfidence?: number | null;
           description?: string;
           createdAt?: string | Date | null;
           channelTitle?: string;
@@ -191,6 +195,16 @@ export function useAdminVideoEdit({
 
       if (payload?.video) {
         if (payload.video.title) setAdminEditTitle(payload.video.title);
+        if (payload.video.parsedArtist !== undefined) setAdminEditParsedArtist(payload.video.parsedArtist ?? "");
+        if (payload.video.parsedTrack !== undefined) setAdminEditParsedTrack(payload.video.parsedTrack ?? "");
+        if (payload.video.parsedVideoType !== undefined) setAdminEditParsedVideoType(payload.video.parsedVideoType ?? "");
+        if (payload.video.parseConfidence !== undefined) {
+          setAdminEditParseConfidence(
+            payload.video.parseConfidence === null || payload.video.parseConfidence === undefined
+              ? ""
+              : String(payload.video.parseConfidence),
+          );
+        }
         if (payload.video.description) setAdminEditDescription(payload.video.description);
         if (payload.video.channelTitle) setAdminEditChannelTitle(payload.video.channelTitle);
         if (payload.video.createdAt) setAdminEditCreatedAt(payload.video.createdAt);
