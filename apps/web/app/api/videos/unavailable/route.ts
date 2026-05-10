@@ -428,8 +428,8 @@ export async function POST(request: NextRequest) {
       where: { videoId: { in: ids } },
       select: { videoId: true },
     });
-  const existingIds = new Set(existing.map((row: { videoId: number | null }) => row.videoId));
-  const missingIds = ids.filter((id: number) => !existingIds.has(id));
+    const existingIds = new Set(existing.map((row: { videoId: number | null }) => row.videoId));
+    const missingIds = ids.filter((id: number) => !existingIds.has(id));
 
     if (missingIds.length > 0) {
       const titleById = new Map(videos.map((video: { id: number; title: string | null }) => [video.id, video.title]));
