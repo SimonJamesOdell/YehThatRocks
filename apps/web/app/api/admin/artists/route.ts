@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { requireAdminApiAuth } from "@/lib/admin-auth";
+import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { prisma } from "@/lib/db";
-import { verifySameOrigin } from "@/lib/csrf";
-import { parseRequestJson } from "@/lib/request-json";
 
 const updateSchema = z.object({
   id: z.number().int().positive(),
@@ -31,7 +29,7 @@ type ArtistColumnMap = {
 };
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApiAuth(request);
+  const auth = await requireAuthOnly(request);
 
   if (!auth.ok) {
     return auth.response;
@@ -68,26 +66,13 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await requireAdminApiAuth(request);
+  const result = await withAuthAndBody(request, updateSchema);
 
-  if (!auth.ok) {
-    return auth.response;
+  if (!result.ok) {
+    return result.response;
   }
 
-  const csrf = verifySameOrigin(request);
-  if (csrf) {
-    return csrf;
-  }
-
-  const body = await parseRequestJson(request);
-  if (!body.ok) {
-    return body.response;
-  }
-
-  const parsed = updateSchema.safeParse(body.data);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = result.data;
 
   const data: {
     name?: string;
@@ -100,21 +85,21 @@ export async function PATCH(request: NextRequest) {
     genre6?: string | null;
   } = {};
 
-  if (parsed.data.name !== undefined) data.name = parsed.data.name;
-  if (parsed.data.country !== undefined) data.country = parsed.data.country || null;
-  if (parsed.data.genre1 !== undefined) data.genre1 = parsed.data.genre1 || null;
-  if (parsed.data.genre2 !== undefined) data.genre2 = parsed.data.genre2 || null;
-  if (parsed.data.genre3 !== undefined) data.genre3 = parsed.data.genre3 || null;
-  if (parsed.data.genre4 !== undefined) data.genre4 = parsed.data.genre4 || null;
-  if (parsed.data.genre5 !== undefined) data.genre5 = parsed.data.genre5 || null;
-  if (parsed.data.genre6 !== undefined) data.genre6 = parsed.data.genre6 || null;
+  if (parsed.name !== undefined) data.name = parsed.name;
+  if (parsed.country !== undefined) data.country = parsed.country || null;
+  if (parsed.genre1 !== undefined) data.genre1 = parsed.genre1 || null;
+  if (parsed.genre2 !== undefined) data.genre2 = parsed.genre2 || null;
+  if (parsed.genre3 !== undefined) data.genre3 = parsed.genre3 || null;
+  if (parsed.genre4 !== undefined) data.genre4 = parsed.genre4 || null;
+  if (parsed.genre5 !== undefined) data.genre5 = parsed.genre5 || null;
+  if (parsed.genre6 !== undefined) data.genre6 = parsed.genre6 || null;
 
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No editable fields provided" }, { status: 400 });
   }
   const updated = await prisma.artist
     .update({
-      where: { id: parsed.data.id },
+      where: { id: parsed.id },
       data,
       select: {
         id: true,
