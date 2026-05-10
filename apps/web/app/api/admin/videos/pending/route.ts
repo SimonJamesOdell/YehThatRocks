@@ -6,6 +6,7 @@ import { ensurePendingVideoQueueIndex, PENDING_VIDEO_APPROVAL_WHERE_CLAUSE } fro
 import { clearCatalogVideoCaches, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";
 import { prisma } from "@/lib/db";
+import { mapAdminPruneResultToDeleteResponse } from "@/lib/admin-prune-delete-response";
 
 const moderatePendingSchema = z.object({
   videoId: z.string().trim().min(1).max(64),
@@ -151,15 +152,18 @@ export async function POST(request: NextRequest) {
 
   const pruneResult = await pruneVideoAndAssociationsByVideoId(videoId, "admin-pending-remove");
 
-  if (pruneResult.reason === "not-found") {
-    return NextResponse.json({ error: "Video not found" }, { status: 404 });
-  }
+  const pruneResponse = mapAdminPruneResultToDeleteResponse(pruneResult, {
+    ok: true,
+    videoId,
+    action: "remove",
+    deletedVideoRows: pruneResult.deletedVideoRows,
+  });
 
-  if (!pruneResult.pruned) {
-    return NextResponse.json({ error: "Could not delete video", reason: pruneResult.reason }, { status: 409 });
+  if (!pruneResponse.deleted) {
+    return pruneResponse.response;
   }
 
   clearCurrentVideoRouteCaches();
 
-  return NextResponse.json({ ok: true, videoId, action: "remove", deletedVideoRows: pruneResult.deletedVideoRows });
+  return pruneResponse.response;
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { filterHiddenVideos, getArtistsByGenre, getGenreBySlug, getVideosByGenre } from "@/lib/catalog-data";
 import { getOptionalApiAuth } from "@/lib/auth-request";
+import { OPERATIONAL_RETRY_LATER_MESSAGE } from "@/lib/operational-error-copy";
 
 type CategoryRouteContext = {
   params: Promise<{ slug: string }>;
@@ -54,7 +55,7 @@ export async function GET(_request: NextRequest, context: CategoryRouteContext) 
 
     return NextResponse.json(
       {
-        error: "The system cannot serve this request right now. Please try again later.",
+        error: OPERATIONAL_RETRY_LATER_MESSAGE,
       },
       { status: 503 },
     );

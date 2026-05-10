@@ -55,6 +55,7 @@ import {
 } from "@/lib/catalog-data-favourites";
 import { fetchRecentlyWatchedIds, getSeenVideoIdsForUser } from "@/lib/catalog-data-history";
 import { getSearchRankingSignals } from "@/lib/search-flag-data";
+import { buildApprovedVideoPredicate } from "@/lib/catalog-data-internal-helpers";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -1287,6 +1288,7 @@ export async function getNewestVideos(
       return cacheMappedVideos(effectiveLegacyRows.map(mapVideo));
     } catch {
       try {
+        const approvedVideoPredicate = buildApprovedVideoPredicate();
         const fallbackRows = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
           `
             SELECT
@@ -1297,7 +1299,7 @@ export async function getNewestVideos(
               description
             FROM videos
             WHERE videoId IS NOT NULL
-              AND COALESCE(approved, 0) = 1
+              AND ${approvedVideoPredicate}
             ORDER BY id DESC
             LIMIT ?
             OFFSET ?
