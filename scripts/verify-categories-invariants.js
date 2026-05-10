@@ -4,6 +4,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { PrismaClient } = require("@prisma/client");
+const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
 const { isRockMetalGenre } = require("./lib/genre-scope");
 const { assertInvariant, finishInvariantCheck } = require("./lib/test-harness");
 
@@ -216,7 +217,10 @@ async function main() {
   const minCoverage = asNumber(readArg("min-coverage", "0.94"), 0.94);
   const maxApiDurationMs = asNumber(readArg("max-api-duration-ms", "350"), 350);
 
-  const prisma = new PrismaClient({ log: ["warn", "error"] });
+  const prisma = new PrismaClient({
+    adapter: new PrismaMariaDb(process.env.DATABASE_URL),
+    log: ["warn", "error"],
+  });
   const failures = [];
 
   try {
