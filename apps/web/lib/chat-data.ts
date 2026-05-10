@@ -104,7 +104,7 @@ export async function getMessageColumns(): Promise<MessageColumnMap> {
 
   cachedMessageColumnsPromise = (async () => {
     const columns = await prisma.$queryRawUnsafe<Array<{ Field: string }>>("SHOW COLUMNS FROM messages");
-    const available = new Set(columns.map((column) => column.Field));
+    const available = new Set<string>(columns.map((column: { Field: string }) => column.Field));
 
     const resolved: MessageColumnMap = {
       id: getFirstAvailableColumn(available, ["id"]) || "id",
@@ -136,12 +136,12 @@ async function getOnlineColumns(): Promise<OnlineColumnMap> {
 
   cachedOnlineColumnsPromise = (async () => {
     const columns = await prisma.$queryRawUnsafe<Array<{ Field: string; Type: string }>>("SHOW COLUMNS FROM online");
-    const available = new Set(columns.map((column) => column.Field));
-    const typeByField = new Map(columns.map((column) => [column.Field, column.Type.toLowerCase()]));
+    const available = new Set<string>(columns.map((column: { Field: string; Type: string }) => column.Field));
+    const typeByField = new Map<string, string>(columns.map((column: { Field: string; Type: string }) => [column.Field, column.Type.toLowerCase()]));
 
     const lastSeenColumn = getFirstAvailableColumn(available, ["last_seen", "lastSeen"]) || "lastSeen";
     const lastSeenTypeRaw = typeByField.get(lastSeenColumn) ?? "";
-    const lastSeenType = /(date|time|timestamp)/i.test(lastSeenTypeRaw) ? "datetime" : "epoch";
+    const lastSeenType = /(date|time|timestamp)/i.test(lastSeenTypeRaw as string) ? "datetime" : "epoch";
 
     const resolved: OnlineColumnMap = {
       userId: getFirstAvailableColumn(available, ["user_id", "userid", "userId"]) || "userId",
@@ -320,7 +320,7 @@ export async function fetchChatMessages(
   );
 
   const userIds = Array.from(
-    new Set(messages.map((message) => Number(message.userId)).filter((value) => Number.isInteger(value) && value > 0)),
+    new Set<number>(messages.map((message: ChatMessageRow) => Number(message.userId)).filter((value: number) => Number.isInteger(value) && value > 0)),
   );
 
   const users =
@@ -331,8 +331,8 @@ export async function fetchChatMessages(
         })
       : [];
 
-  const userById = new Map(users.map((user) => [user.id, user]));
-  return messages.reverse().map((row) => mapChatMessage(row, userById));
+  const userById = new Map<number, ChatUser>(users.map((user: ChatUser) => [user.id, user]));
+  return messages.reverse().map((row: ChatMessageRow) => mapChatMessage(row, userById));
 }
 
 export async function fetchOnlineUsers(currentUserId: number): Promise<OnlineUser[]> {
@@ -360,7 +360,7 @@ export async function fetchOnlineUsers(currentUserId: number): Promise<OnlineUse
   );
 
   const userIds = Array.from(
-    new Set(onlineRows.map((row) => Number(row.userId)).filter((value) => Number.isInteger(value) && value > 0)),
+    new Set<number>(onlineRows.map((row: OnlinePresenceRow) => Number(row.userId)).filter((value: number) => Number.isInteger(value) && value > 0)),
   );
 
   const users =
@@ -371,16 +371,16 @@ export async function fetchOnlineUsers(currentUserId: number): Promise<OnlineUse
         })
       : [];
 
-  const userById = new Map(users.map((user) => [user.id, user]));
+  const userById = new Map<number, ChatUser>(users.map((user: ChatUser) => [user.id, user]));
 
   return userIds
-    .map((id) => {
+    .map((id: number) => {
       const user = userById.get(id);
       if (!user) {
         return null;
       }
 
-      const presence = onlineRows.find((row) => Number(row.userId) === id);
+      const presence = onlineRows.find((row: OnlinePresenceRow) => Number(row.userId) === id);
       const rawLastSeen = presence?.lastSeen ?? null;
       const lastSeen =
         typeof rawLastSeen === "number"
@@ -396,7 +396,7 @@ export async function fetchOnlineUsers(currentUserId: number): Promise<OnlineUse
         lastSeen,
       };
     })
-    .filter((value): value is OnlineUser => Boolean(value));
+    .filter((value: OnlineUser | null): value is OnlineUser => Boolean(value));
 }
 
 export async function insertChatMessage(params: {

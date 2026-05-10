@@ -125,7 +125,7 @@ async function querySlugs(): Promise<string[]> {
     WHERE status = 'published'
     ORDER BY published_at DESC
   `;
-  return rows.map((r) => r.slug);
+  return rows.map((r: { slug: string }) => r.slug);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────
@@ -269,17 +269,17 @@ export async function pruneUnavailableArticles(): Promise<number> {
 
   const checks = await Promise.allSettled(
     rows
-      .filter((row) => row.videoId !== null) // Only check articles with videos
-      .map(async (row) => ({ id: row.id, available: await checkYouTubeOEmbed(row.videoId!) })),
+      .filter((row: { id: number; videoId: string | null }) => row.videoId !== null) // Only check articles with videos
+      .map(async (row: { id: number; videoId: string | null }) => ({ id: row.id, available: await checkYouTubeOEmbed(row.videoId!) })),
   );
 
   const toDelete = checks
     .filter(
-      (r): r is PromiseFulfilledResult<{ id: number; available: boolean | null }> =>
+      (r: PromiseSettledResult<{ id: number; available: boolean | null }>): r is PromiseFulfilledResult<{ id: number; available: boolean | null }> =>
         r.status === "fulfilled",
     )
-    .filter((r) => r.value.available === false)
-    .map((r) => r.value.id);
+    .filter((r: PromiseFulfilledResult<{ id: number; available: boolean | null }>) => r.value.available === false)
+    .map((r: PromiseFulfilledResult<{ id: number; available: boolean | null }>) => r.value.id);
 
   if (toDelete.length === 0) return 0;
 

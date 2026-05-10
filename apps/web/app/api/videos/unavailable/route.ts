@@ -428,8 +428,13 @@ export async function POST(request: NextRequest) {
       where: { videoId: { in: ids } },
       select: { videoId: true },
     });
-    const existingIds = new Set(existing.map((row) => row.videoId));
-    const missingIds = ids.filter((id) => !existingIds.has(id));
+<<<<<<< HEAD
+    const existingIds = new Set(existing.map((row: { videoId: number | null }) => row.videoId));
+    const missingIds = ids.filter((id: number) => !existingIds.has(id));
+=======
+    const existingIds = new Set(existing.map((row: { videoId: number | null }) => row.videoId));
+    const missingIds = ids.filter((id: number) => !existingIds.has(id));
+>>>>>>> 9d2964d (fix: prepare for deployment with invariant checks and security audit results)
 
     if (missingIds.length > 0) {
       const titleById = new Map(videos.map((video) => [video.id, video.title]));
