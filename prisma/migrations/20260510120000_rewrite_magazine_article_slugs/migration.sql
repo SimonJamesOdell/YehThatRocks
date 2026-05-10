@@ -4,9 +4,9 @@
 -- Step 1: Create temporary table to hold mapping of old -> new slugs
 CREATE TEMPORARY TABLE IF NOT EXISTS slug_mapping (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  old_slug VARCHAR(255) NOT NULL UNIQUE,
-  base_slug VARCHAR(255) NOT NULL,
-  final_slug VARCHAR(255) NOT NULL
+  old_slug VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL UNIQUE,
+  base_slug VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  final_slug VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL
 );
 
 -- Step 2: Generate clean base slugs from artist + track
@@ -29,16 +29,10 @@ CREATE TEMPORARY TABLE IF NOT EXISTS slug_occurrence (
 );
 
 INSERT INTO slug_occurrence (id, occurrence)
-SELECT ranked.id, ranked.occurrence
-FROM (
-  SELECT
-    sm.id,
-    @occurrence := IF(@current_base = sm.base_slug, @occurrence + 1, 1) AS occurrence,
-    @current_base := sm.base_slug AS _current_base
-  FROM slug_mapping sm
-  JOIN (SELECT @current_base := '', @occurrence := 0) vars
-  ORDER BY sm.base_slug, sm.id
-) AS ranked;
+SELECT
+  sm.id,
+  ROW_NUMBER() OVER (PARTITION BY sm.base_slug ORDER BY sm.id) AS occurrence
+FROM slug_mapping sm;
 
 UPDATE slug_mapping sm
 INNER JOIN slug_occurrence so ON so.id = sm.id
