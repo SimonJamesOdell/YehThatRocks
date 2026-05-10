@@ -151,7 +151,7 @@ export function AdminMagazineEditor({ slug }: AdminMagazineEditorProps) {
         </label>
 
         <p className="authMessage" style={{ margin: 0 }}>
-          Word count: {wordCount.toLocaleString()} • Use blank lines to separate paragraphs. Prefix headings with "## ". Prefix quotes with "> ".
+          Word count: {wordCount.toLocaleString()} • Use blank lines to separate paragraphs. Prefix headings with "## ". Prefix quotes with "&gt; ".
         </p>
 
         <div className="primaryActions compactActions">
