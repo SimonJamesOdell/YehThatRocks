@@ -46,12 +46,28 @@ export async function GET(request: NextRequest) {
         parsedArtist: string | null;
         parsedTrack: string | null;
         channelTitle: string | null;
+        durationSec: number | null;
         createdAt: Date | null;
         updatedAt: Date | null;
       }>>(
         `
-        SELECT id, videoId, title, parsedArtist, parsedTrack, channelTitle, created_at AS createdAt, updated_at AS updatedAt
-        FROM videos
+        SELECT
+          v.id,
+          v.videoId,
+          v.title,
+          v.parsedArtist,
+          v.parsedTrack,
+          v.channelTitle,
+          wh.durationSec AS durationSec,
+          v.created_at AS createdAt,
+          v.updated_at AS updatedAt
+        FROM videos v
+        LEFT JOIN (
+          SELECT video_id, MAX(last_duration_sec) AS durationSec
+          FROM watch_history
+          WHERE last_duration_sec > 0
+          GROUP BY video_id
+        ) wh ON wh.video_id = v.videoId
         WHERE ${PENDING_VIDEO_APPROVAL_WHERE_CLAUSE}
           AND (
             videoId LIKE CONCAT('%', ?, '%')
@@ -74,12 +90,28 @@ export async function GET(request: NextRequest) {
         parsedArtist: string | null;
         parsedTrack: string | null;
         channelTitle: string | null;
+        durationSec: number | null;
         createdAt: Date | null;
         updatedAt: Date | null;
       }>>(
         `
-        SELECT id, videoId, title, parsedArtist, parsedTrack, channelTitle, created_at AS createdAt, updated_at AS updatedAt
-        FROM videos
+        SELECT
+          v.id,
+          v.videoId,
+          v.title,
+          v.parsedArtist,
+          v.parsedTrack,
+          v.channelTitle,
+          wh.durationSec AS durationSec,
+          v.created_at AS createdAt,
+          v.updated_at AS updatedAt
+        FROM videos v
+        LEFT JOIN (
+          SELECT video_id, MAX(last_duration_sec) AS durationSec
+          FROM watch_history
+          WHERE last_duration_sec > 0
+          GROUP BY video_id
+        ) wh ON wh.video_id = v.videoId
         WHERE ${PENDING_VIDEO_APPROVAL_WHERE_CLAUSE}
         ORDER BY created_at DESC, id DESC
         LIMIT 100
