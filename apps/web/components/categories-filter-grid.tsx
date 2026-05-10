@@ -7,7 +7,15 @@ import { CloseLink } from "@/components/close-link";
 import { OverlayHeader } from "@/components/overlay-header";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import type { GenreCard } from "@/lib/catalog-data";
-import { getGenreSlug } from "@/lib/catalog-data";
+
+function getGenreSlug(genre: string) {
+  return genre
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
 
 type CategoriesFilterGridProps = {
   genreCards: GenreCard[];

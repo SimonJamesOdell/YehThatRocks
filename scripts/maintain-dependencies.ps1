@@ -22,6 +22,7 @@ function Invoke-Step {
 
 Invoke-Step -Name "refresh" -Action {
   npx --yes npm-check-updates -u
+  npx --yes npm-check-updates -u --packageFile apps/web/package.json
   npm install
 }
 

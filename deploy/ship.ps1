@@ -6,6 +6,8 @@ param(
   [string]$VpsRepoDir = "/srv/yehthatrocks",
   [switch]$PrepareOnly,
   [switch]$SkipGitPush,
+  # Skip automatic dependency refresh and stabilization before shipping.
+  [switch]$SkipAutoDependencyMaintenance,
   # Skip local transient cache cleanup before/after shipping.
   [switch]$SkipLocalCleanup,
   # Skip Docker cache pruning after shipping.
@@ -154,6 +156,13 @@ try {
 
   Exec "git fetch origin $Branch"
   Exec "git checkout $Branch"
+
+  if (-not $SkipAutoDependencyMaintenance) {
+    & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoDir "scripts/maintain-dependencies.ps1") -RepoRoot $RepoDir -Remote origin -Branch $Branch -SkipPush
+    if ($LASTEXITCODE -ne 0) {
+      throw "Automatic dependency maintenance failed."
+    }
+  }
 
   if (-not $SkipGitPush) {
     Exec "git push origin $Branch"
