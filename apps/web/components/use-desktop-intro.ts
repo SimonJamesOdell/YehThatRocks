@@ -245,6 +245,12 @@ export function useDesktopIntro({
       return;
     }
 
+    if (pathname !== "/") {
+      setIsDesktopIntroPreload(false);
+      setDesktopIntroPhase("disabled");
+      return;
+    }
+
     void startPreparedDesktopIntroSequence();
 
     const handleResize = () => {
@@ -260,7 +266,7 @@ export function useDesktopIntro({
       window.removeEventListener("resize", handleResize);
       clearDesktopIntroTimers();
     };
-  }, [clearDesktopIntroTimers, startPreparedDesktopIntroSequence, syncDesktopIntroTarget]);
+  }, [clearDesktopIntroTimers, pathname, startPreparedDesktopIntroSequence, syncDesktopIntroTarget]);
 
   // Replay the intro when the user navigates back to "/" via the brand logo.
   useEffect(() => {
