@@ -19,6 +19,10 @@ import { addPlaylistItemClient, createPlaylistClient, listPlaylistsClient } from
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { EndedChoiceCard } from "@/components/player-experience-ended-choice-card";
+import { resetEndedChoiceRuntimeState } from "@/components/player-experience-ended-choice-domain";
+import { buildUnavailableOverlayFlags } from "@/components/player-experience-unavailable-domain";
+import { buildSocialShareTargets, resolvePostDeleteNextVideo } from "@/components/player-experience-share-admin-domain";
+import { buildRootAutoplayFallbackParams, buildRouteAutoplayNavigationParams } from "@/components/player-experience-autoplay-domain";
 import {
   buildRouteAutoplayPlaylistName,
   buildRouteAutoplayTelemetryMode,
@@ -526,18 +530,22 @@ export function PlayerExperience({
     currentVideoRef.current = currentVideo;
     setLocalTitleOverride(null);
     setLocalChannelTitleOverride(null);
-    setEndedChoiceLoading(false);
-    setEndedChoiceRemoteVideos([]);
-    setEndedChoiceAnimateCards(true);
-    endedChoiceUserScrolledRef.current = false;
-    endedChoiceFetchingRef.current = false;
-    endedChoiceHasMoreRef.current = true;
-    endedChoiceSkipRef.current = 0;
-    endedChoiceAutoRetryBlockedUntilRef.current = 0;
-    endedChoiceNoProgressStreakRef.current = 0;
-    endedChoiceFailureStreakRef.current = 0;
-    endedChoicePrewarmVideoIdRef.current = null;
-    endedChoicePostPrimeQueuedRef.current = false;
+    resetEndedChoiceRuntimeState({
+      setEndedChoiceLoading,
+      setEndedChoiceRemoteVideos,
+      setEndedChoiceAnimateCards,
+      refs: {
+        endedChoiceUserScrolledRef,
+        endedChoiceFetchingRef,
+        endedChoiceHasMoreRef,
+        endedChoiceSkipRef,
+        endedChoiceAutoRetryBlockedUntilRef,
+        endedChoiceNoProgressStreakRef,
+        endedChoiceFailureStreakRef,
+        endedChoicePrewarmVideoIdRef,
+        endedChoicePostPrimeQueuedRef,
+      },
+    });
   }, [currentVideo]);
 
   useEffect(() => {
@@ -1162,43 +1170,7 @@ export function PlayerExperience({
   const displayTitle = localTitleOverride ?? currentVideo.title;
   const displayChannelTitle = localChannelTitleOverride ?? currentVideo.channelTitle;
   const hasArtistName = Boolean(displayChannelTitle && displayChannelTitle.trim().length > 0);
-  const socialShareTargets = [
-    {
-      id: "x",
-      label: "Share on X",
-      href: `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(displayTitle)}`,
-    },
-    {
-      id: "facebook",
-      label: "Share on Facebook",
-      href: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`,
-    },
-    {
-      id: "reddit",
-      label: "Share on Reddit",
-      href: `https://www.reddit.com/submit?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(displayTitle)}`,
-    },
-    {
-      id: "linkedin",
-      label: "Share on LinkedIn",
-      href: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`,
-    },
-    {
-      id: "whatsapp",
-      label: "Share on WhatsApp",
-      href: `https://api.whatsapp.com/send?text=${encodeURIComponent(`${displayTitle} ${shareUrl}`)}`,
-    },
-    {
-      id: "telegram",
-      label: "Share on Telegram",
-      href: `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(displayTitle)}`,
-    },
-    {
-      id: "email",
-      label: "Share by Email",
-      href: `mailto:?subject=${encodeURIComponent(displayTitle)}&body=${encodeURIComponent(`Check this out: ${shareUrl}`)}`,
-    },
-  ] as const;
+  const socialShareTargets = buildSocialShareTargets(shareUrl, displayTitle);
   const isInitialDeepLinkedSelection = Boolean(
     requestedVideoId
       && requestedVideoId === currentVideo.id
@@ -1254,12 +1226,22 @@ export function PlayerExperience({
   const footerActionsBlocked = Boolean(unavailableOverlayMessage) || showEndedChoiceOverlay || playlistChooserOpen;
   const lyricsUnavailableForCurrentVideo = lyricsAvailableForCurrentVideo === false;
   const lyricsButtonDisabled = footerActionsBlocked || lyricsUnavailableForCurrentVideo;
-  const isDeletedConfirmationOverlay = unavailableOverlayKind === "deleted";
-  const isUpstreamConnectivityOverlay = unavailableOverlayMessage === UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE;
-  const isBrokenUpstreamOverlay = unavailableOverlayMessage === BROKEN_UPSTREAM_OVERLAY_MESSAGE;
-  const isCopyrightClaimOverlay = unavailableOverlayMessage === COPYRIGHT_CLAIM_OVERLAY_MESSAGE;
-  const isRemovedOrPrivateOverlay = unavailableOverlayMessage === REMOVED_PRIVATE_OVERLAY_MESSAGE;
-  const isAutoAdvanceUnavailableOverlay = unavailableAutoAdvanceMs !== null;
+  const {
+    isDeletedConfirmationOverlay,
+    isUpstreamConnectivityOverlay,
+    isBrokenUpstreamOverlay,
+    isCopyrightClaimOverlay,
+    isRemovedOrPrivateOverlay,
+    isAutoAdvanceUnavailableOverlay,
+  } = buildUnavailableOverlayFlags({
+    unavailableOverlayKind,
+    unavailableOverlayMessage,
+    unavailableAutoAdvanceMs,
+    upstreamConnectivityOverlayMessage: UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE,
+    brokenUpstreamOverlayMessage: BROKEN_UPSTREAM_OVERLAY_MESSAGE,
+    copyrightClaimOverlayMessage: COPYRIGHT_CLAIM_OVERLAY_MESSAGE,
+    removedPrivateOverlayMessage: REMOVED_PRIVATE_OVERLAY_MESSAGE,
+  });
   const currentTrackYouTubeUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(currentVideo.id)}`;
   const footerSelectablePlaylists = activePlaylistId
     ? footerPlaylistMenuPlaylists.filter((playlist) => playlist.id !== activePlaylistId)
@@ -3918,6 +3900,10 @@ export function PlayerExperience({
     setEndedChoiceHideConfirmVideo(track);
   }, [endedChoiceHidingIds]);
 
+  const handleEndedChoiceBrokenThumbnail = useCallback((videoId: string) => {
+    setEndedChoiceDismissedIds((prev) => (prev.includes(videoId) ? prev : [...prev, videoId]));
+  }, []);
+
   const confirmEndedChoiceHide = useCallback(() => {
     const track = endedChoiceHideConfirmVideo;
 
@@ -4384,14 +4370,10 @@ export function PlayerExperience({
       autoplayRouteTransitionRef.current = true;
       const { playlistId, firstVideoId } = await buildRouteAutoplayPlaylist(autoplaySource);
       const targetVideoId = firstVideoId ?? currentVideo.id;
-      const params = new URLSearchParams();
-      params.set("v", targetVideoId);
-      params.set("resume", "1");
-
-      if (playlistId) {
-        params.set("pl", playlistId);
-        params.set("pli", "0");
-      }
+      const params = buildRouteAutoplayNavigationParams({
+        targetVideoId,
+        playlistId,
+      });
 
       router.push(`/?${params.toString()}`);
       return;
@@ -4399,8 +4381,7 @@ export function PlayerExperience({
 
     if (pathname !== "/") {
       autoplayRouteTransitionRef.current = true;
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("v", currentVideo.id);
+      const params = buildRootAutoplayFallbackParams(searchParams, currentVideo.id);
       router.push(`/?${params.toString()}`);
     }
   }
@@ -4572,32 +4553,20 @@ export function PlayerExperience({
         const deletingVideoId = currentVideo.id;
 
         const navigateAfterCatalogDelete = (removedVideoId: string) => {
-          const remainingPlaylistIds = playlistQueueIds.filter((id) => id !== removedVideoId);
-          const playlistCarryIndex = Math.max(
-            0,
-            Math.min(
-              effectivePlaylistIndex ?? playlistQueueIds.findIndex((id) => id === removedVideoId),
-              Math.max(remainingPlaylistIds.length - 1, 0),
-            ),
-          );
-          const playlistCandidateId =
-            activePlaylistId && remainingPlaylistIds.length > 0
-              ? (remainingPlaylistIds[playlistCarryIndex] ?? remainingPlaylistIds[0] ?? null)
-              : null;
-          const preferredResolvedId =
-            resolvedNextTarget?.videoId && resolvedNextTarget.videoId !== removedVideoId
-              ? resolvedNextTarget.videoId
-              : null;
-          const temporaryQueueCandidateId =
-            temporaryQueue.find((video) => video.id !== removedVideoId)?.id ?? null;
-          const queueCandidateId = queue.find((video) => video.id !== removedVideoId)?.id ?? null;
+          const { nextId, nextPlaylistIndex } = resolvePostDeleteNextVideo({
+            removedVideoId,
+            resolvedNextVideoId: resolvedNextTarget?.videoId ?? null,
+            playlistQueueIds,
+            activePlaylistId,
+            effectivePlaylistIndex,
+            temporaryQueue,
+            queue,
+          });
 
-          const nextId = preferredResolvedId ?? playlistCandidateId ?? temporaryQueueCandidateId ?? queueCandidateId;
           if (!nextId) {
             return false;
           }
 
-          const nextPlaylistIndex = remainingPlaylistIds.indexOf(nextId);
           navigateToVideo(nextId, {
             clearPlaylist: nextPlaylistIndex < 0,
             playlistId: nextPlaylistIndex >= 0 ? activePlaylistId : null,
@@ -5179,6 +5148,7 @@ export function PlayerExperience({
                       isLoggedIn={isLoggedIn}
                       onSelect={handleEndedChoiceSelect}
                       onHide={handleEndedChoiceHide}
+                      onBrokenThumbnail={handleEndedChoiceBrokenThumbnail}
                       onMeasure={index === 0 ? measureEndedChoiceCard : undefined}
                     />
                   );

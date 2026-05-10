@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { requireAdminApiAuth } from "@/lib/admin-auth";
+import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { clearCatalogVideoCaches, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";
 import { prisma } from "@/lib/db";
-import { verifySameOrigin } from "@/lib/csrf";
-import { parseRequestJson } from "@/lib/request-json";
 
 const updateSchema = z.object({
   id: z.number().int().positive(),
@@ -39,7 +37,7 @@ type VideoColumnMap = {
 };
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApiAuth(request);
+  const auth = await requireAuthOnly(request);
 
   if (!auth.ok) {
     return auth.response;
@@ -79,26 +77,13 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await requireAdminApiAuth(request);
+  const result = await withAuthAndBody(request, updateSchema);
 
-  if (!auth.ok) {
-    return auth.response;
+  if (!result.ok) {
+    return result.response;
   }
 
-  const csrf = verifySameOrigin(request);
-  if (csrf) {
-    return csrf;
-  }
-
-  const body = await parseRequestJson(request);
-  if (!body.ok) {
-    return body.response;
-  }
-
-  const parsed = updateSchema.safeParse(body.data);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = result.data;
 
   const data: {
     title?: string;
@@ -112,13 +97,13 @@ export async function PATCH(request: NextRequest) {
     parseMethod?: string;
   } = {};
 
-  if (parsed.data.title !== undefined) data.title = parsed.data.title;
-  if (parsed.data.parsedArtist !== undefined) data.parsedArtist = parsed.data.parsedArtist || null;
-  if (parsed.data.parsedTrack !== undefined) data.parsedTrack = parsed.data.parsedTrack || null;
-  if (parsed.data.parsedVideoType !== undefined) data.parsedVideoType = parsed.data.parsedVideoType || null;
-  if (parsed.data.parseConfidence !== undefined) data.parseConfidence = parsed.data.parseConfidence;
-  if (parsed.data.channelTitle !== undefined) data.channelTitle = parsed.data.channelTitle || null;
-  if (parsed.data.description !== undefined) data.description = parsed.data.description || null;
+  if (parsed.title !== undefined) data.title = parsed.title;
+  if (parsed.parsedArtist !== undefined) data.parsedArtist = parsed.parsedArtist || null;
+  if (parsed.parsedTrack !== undefined) data.parsedTrack = parsed.parsedTrack || null;
+  if (parsed.parsedVideoType !== undefined) data.parsedVideoType = parsed.parsedVideoType || null;
+  if (parsed.parseConfidence !== undefined) data.parseConfidence = parsed.parseConfidence;
+  if (parsed.channelTitle !== undefined) data.channelTitle = parsed.channelTitle || null;
+  if (parsed.description !== undefined) data.description = parsed.description || null;
 
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No editable fields provided" }, { status: 400 });
@@ -128,7 +113,7 @@ export async function PATCH(request: NextRequest) {
 
   const updated = await prisma.video
     .update({
-      where: { id: parsed.data.id },
+      where: { id: parsed.id },
       data,
       select: {
         id: true,
@@ -155,28 +140,15 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdminApiAuth(request);
+  const result = await withAuthAndBody(request, deleteSchema);
 
-  if (!auth.ok) {
-    return auth.response;
+  if (!result.ok) {
+    return result.response;
   }
 
-  const csrf = verifySameOrigin(request);
-  if (csrf) {
-    return csrf;
-  }
+  const parsed = result.data;
 
-  const body = await parseRequestJson(request);
-  if (!body.ok) {
-    return body.response;
-  }
-
-  const parsed = deleteSchema.safeParse(body.data);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.data.videoId, "admin-hard-delete");
+  const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.videoId, "admin-hard-delete");
 
   if (pruneResult.reason === "not-found") {
     return NextResponse.json({ error: "Video not found" }, { status: 404 });

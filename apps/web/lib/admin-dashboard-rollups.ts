@@ -522,7 +522,7 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits
     FROM analytics_events
     WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${analyticsIntervalClause})
-    GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
+    GROUP BY STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s')
     ON DUPLICATE KEY UPDATE
       page_views = VALUES(page_views),
       video_views = VALUES(video_views),
@@ -541,7 +541,7 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       COUNT(*) AS auth_events
     FROM auth_audit_logs
     WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${authIntervalClause})
-    GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')
+    GROUP BY STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s')
     ON DUPLICATE KEY UPDATE
       auth_events = VALUES(auth_events),
       updated_at = CURRENT_TIMESTAMP(3)

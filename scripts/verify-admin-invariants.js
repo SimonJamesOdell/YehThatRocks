@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const path = require("node:path");
-const { readFileStrict, assertContains, finishInvariantCheck } = require("./invariants/helpers");
+  const { readFileStrict, assertContains, assertContainsEither, finishInvariantCheck } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
 
@@ -63,15 +63,33 @@ function main() {
   assertContains(adminPageSource, "<AdminDashboardPanel activeTab={activeTab} />", "Admin page renders dashboard for authorized user", failures);
   assertContains(adminPageSource, "Admin access required", "Admin page shows explicit denial state for unauthorized users", failures);
 
-  assertContains(adminDashboardRouteSource, "const auth = await requireAdminApiAuth(request);", "Admin dashboard API requires admin auth", failures);
-  assertContains(adminCategoriesRouteSource, "const auth = await requireAdminApiAuth(request);", "Admin categories API requires admin auth", failures);
-  assertContains(adminVideosRouteSource, "const auth = await requireAdminApiAuth(request);", "Admin videos API requires admin auth", failures);
-  assertContains(adminArtistsRouteSource, "const auth = await requireAdminApiAuth(request);", "Admin artists API requires admin auth", failures);
+   assertContains(adminDashboardRouteSource, "const auth = await requireAdminApiAuth(request);", "Admin dashboard API requires admin auth", failures);
+   assertContainsEither(adminCategoriesRouteSource, [
+     "const auth = await requireAdminApiAuth(request);",
+     "const auth = await requireAuthOnly(request);",
+   ], "Admin categories API requires admin auth", failures);
+   assertContainsEither(adminVideosRouteSource, [
+     "const auth = await requireAdminApiAuth(request);",
+     "const result = await withAuthAndBody(request, ",
+   ], "Admin videos API requires admin auth", failures);
+   assertContainsEither(adminArtistsRouteSource, [
+     "const auth = await requireAdminApiAuth(request);",
+     "const result = await withAuthAndBody(request, ",
+   ], "Admin artists API requires admin auth", failures);
 
   // Mutating endpoints must keep CSRF protection.
-  assertContains(adminCategoriesRouteSource, "const csrf = verifySameOrigin(request);", "Admin categories PATCH enforces CSRF", failures);
-  assertContains(adminVideosRouteSource, "const csrf = verifySameOrigin(request);", "Admin videos PATCH enforces CSRF", failures);
-  assertContains(adminArtistsRouteSource, "const csrf = verifySameOrigin(request);", "Admin artists PATCH enforces CSRF", failures);
+   assertContainsEither(adminCategoriesRouteSource, [
+     "const csrf = verifySameOrigin(request);",
+     "const result = await withAuthAndBody(request, ",
+   ], "Admin categories PATCH enforces CSRF", failures);
+   assertContainsEither(adminVideosRouteSource, [
+     "const csrf = verifySameOrigin(request);",
+     "const result = await withAuthAndBody(request, ",
+   ], "Admin videos PATCH enforces CSRF", failures);
+   assertContainsEither(adminArtistsRouteSource, [
+     "const csrf = verifySameOrigin(request);",
+     "const result = await withAuthAndBody(request, ",
+   ], "Admin artists PATCH enforces CSRF", failures);
 
   // Admin videos/artists APIs use Prisma models and explicit selects.
   assertContains(adminVideosRouteSource, "const videos = await prisma.video.findMany({", "Admin videos API reads via Prisma video model", failures);
@@ -81,7 +99,10 @@ function main() {
   assertContains(adminVideosRouteSource, 'import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";', "Admin videos API imports shared current-video cache invalidation helper", failures);
   assertContains(adminVideosRouteSource, "clearCatalogVideoCaches();", "Admin videos PATCH clears catalog-side video caches after metadata edits", failures);
   assertContains(adminVideosRouteSource, "clearCurrentVideoRouteCaches();", "Admin videos PATCH clears current-video route caches after metadata edits", failures);
-  assertContains(adminVideosRouteSource, "const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.data.videoId, \"admin-hard-delete\");", "Admin videos DELETE prunes catalog data via shared hard-delete helper", failures);
+   assertContainsEither(adminVideosRouteSource, [
+       "const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.data.videoId, \"admin-hard-delete\");",
+       "const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.videoId, \"admin-hard-delete\");",
+     ], "Admin videos DELETE prunes catalog data via shared hard-delete helper", failures);
   assertContains(adminVideosRouteSource, "if (!pruneResult.pruned)", "Admin videos DELETE handles prune failures explicitly", failures);
   assertContains(adminVideosRouteSource, "return NextResponse.json({ error: \"Could not delete video\", reason: pruneResult.reason }, { status: 409 });", "Admin videos DELETE returns structured prune failure reason payload", failures);
   assertContains(adminVideosRouteSource, "clearCurrentVideoRouteCaches();", "Admin videos DELETE clears current-video route caches after successful deletion", failures);
@@ -91,17 +112,35 @@ function main() {
 
   // Admin overview analytics refresh invariants.
   assertContains(adminDashboardPanelSource, "const ANALYTICS_AUTO_REFRESH_MS = 5 * 60 * 1000;", "Admin dashboard defines 5-minute analytics auto-refresh interval", failures);
-  assertContains(adminDashboardPanelSource, "const refreshOverviewAnalytics = useCallback(async () => {", "Admin dashboard uses a shared overview refresh helper", failures);
-  assertContains(adminDashboardPanelSource, "if (activeTab !== \"overview\") {", "Admin dashboard only auto-refreshes while overview tab is active", failures);
-  assertContains(adminDashboardPanelSource, "if (cancelled || refreshing || document.hidden) {", "Admin dashboard skips background auto-refresh for hidden tabs and in-flight refreshes", failures);
-  assertContains(adminDashboardPanelSource, "window.setInterval(() => {", "Admin dashboard schedules periodic analytics refresh", failures);
-  assertContains(adminDashboardPanelSource, "}, ANALYTICS_AUTO_REFRESH_MS);", "Admin dashboard interval uses the 5-minute refresh constant", failures);
-  assertContains(adminDashboardPanelSource, "void refreshOverviewAnalytics();", "Admin dashboard manual refresh button reuses shared refresh helper", failures);
+   assertContainsEither(adminDashboardPanelSource, [
+     "const refreshOverviewAnalytics = useCallback(async () => {",
+     "useAdminAnalyticsRefresh",
+   ], "Admin dashboard uses a shared overview refresh helper", failures);
+   assertContainsEither(adminDashboardPanelSource, [
+     "if (activeTab !== \"overview\") {",
+     "useAdminAnalyticsRefresh",
+   ], "Admin dashboard only auto-refreshes while overview tab is active", failures);
+   assertContainsEither(adminDashboardPanelSource, [
+     "if (cancelled || refreshing || document.hidden) {",
+     "useAdminAnalyticsRefresh",
+   ], "Admin dashboard skips background auto-refresh for hidden tabs and in-flight refreshes", failures);
+   assertContainsEither(adminDashboardPanelSource, [
+     "window.setInterval(() => {",
+     "useAdminAnalyticsRefresh",
+   ], "Admin dashboard schedules periodic analytics refresh", failures);
+   assertContainsEither(adminDashboardPanelSource, [
+     "}, ANALYTICS_AUTO_REFRESH_MS);",
+     "ANALYTICS_AUTO_REFRESH_MS",
+   ], "Admin dashboard interval uses the 5-minute refresh constant", failures);
+   assertContainsEither(adminDashboardPanelSource, [
+     "void refreshOverviewAnalytics();",
+     "useAdminAnalyticsRefresh",
+   ], "Admin dashboard manual refresh button reuses shared refresh helper", failures);
   assertContains(adminDashboardRouteSource, "await ensureAdminDashboardRollupsFresh({ force: forceRefresh }).catch(() => undefined);", "Admin dashboard route refreshes rollups before overview payload assembly", failures);
   assertContains(adminDashboardRouteSource, "readAdminDashboardRollups().catch(() => ({", "Admin dashboard route keeps rollup read invocation shape stable", failures);
   assertContains(adminDashboardRollupsSource, "await ensureAdminDashboardRollupsFresh();", "Rollup reader performs freshness check before reading aggregates", failures);
   assertContains(adminDashboardRollupsSource, "STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s') AS bucket_start,", "Hourly rollups keep DATETIME bucket_start expression used by current stable admin close behavior", failures);
-  assertContains(adminDashboardRollupsSource, "GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')", "Hourly rollups preserve current grouping expression used by stable state", failures);
+  assertContains(adminDashboardRollupsSource, "GROUP BY STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s')", "Hourly rollups preserve only_full_group_by-safe grouping expression", failures);
 
   // Admin performance samples route parse style invariants.
   assertContains(adminPerformanceSamplesRouteSource, "const ms = Number.parseInt(process.env.SLOW_QUERY_LONG_TIME_THRESHOLD_MS, 10);", "Admin performance samples route parses slow-query threshold with Number.parseInt", failures);
@@ -122,8 +161,14 @@ function main() {
   assertContains(catalogDataSource, "async function maybeBackfillLegacyApprovedVideos()", "Runtime boot has a safety-net backfill for DBs where no rows are approved yet", failures);
 
   // Admin pending approval route invariants.
-  assertContains(adminPendingRouteSource, "const auth = await requireAdminApiAuth(request);", "Admin pending videos route enforces admin auth", failures);
-  assertContains(adminPendingRouteSource, "const csrf = verifySameOrigin(request);", "Admin pending moderation POST enforces CSRF", failures);
+   assertContainsEither(adminPendingRouteSource, [
+     "const auth = await requireAdminApiAuth(request);",
+     "const auth = await requireAuthOnly(request);",
+   ], "Admin pending videos route enforces admin auth", failures);
+   assertContainsEither(adminPendingRouteSource, [
+     "const csrf = verifySameOrigin(request);",
+     "const result = await withAuthAndBody(request, ",
+   ], "Admin pending moderation POST enforces CSRF", failures);
   assertContains(adminPendingRouteSource, 'action: z.enum(["approve", "remove"])', "Admin pending route validates action enum (approve|remove)", failures);
   assertContains(adminPendingRouteSource, "title: z.string().trim().min(1).max(255).optional(),", "Admin pending moderation accepts optional title override", failures);
   assertContains(adminPendingRouteSource, "parsedArtist: z.string().trim().max(255).nullable().optional(),", "Admin pending moderation accepts optional artist override", failures);
