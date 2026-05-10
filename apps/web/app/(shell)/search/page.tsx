@@ -20,6 +20,24 @@ type SearchPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+type SearchArtistResult = {
+  slug: string;
+  name: string;
+  genre: string;
+};
+
+type SearchVideoResult = {
+  id: string;
+  title: string;
+  channelTitle: string;
+};
+
+type SearchCatalogPageResult = {
+  artists: SearchArtistResult[];
+  genres: string[];
+  videos: SearchVideoResult[];
+};
+
 export default async function SearchPage({ searchParams }: SearchPageProps) {
   const [{ hasAccessToken: isAuthenticated, user, isAdmin: isAdminUser }, { seenVideoIds }] = await Promise.all([
     getShellRequestAuthState(),
@@ -27,7 +45,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   ]);
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const query = typeof resolvedSearchParams?.q === "string" ? resolvedSearchParams.q : "";
-  const results = await searchCatalog(query);
+  const results = (await searchCatalog(query)) as SearchCatalogPageResult;
   const uniqueArtists = Array.from(new Map(results.artists.map((artist) => [artist.slug, artist])).values());
   const uniqueGenres = Array.from(new Set(results.genres));
   const suppressedVideoIds = await getSuppressedSearchVideoIds({ userId: user?.id ?? null, query });
