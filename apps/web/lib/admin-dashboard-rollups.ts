@@ -117,7 +117,7 @@ async function getUsersCreatedAtColumn() {
       ORDER BY CASE column_name WHEN 'created_at' THEN 0 ELSE 1 END
       LIMIT 1
     `
-      .then((rows) => rows[0]?.columnName ?? null)
+      .then((rows: Array<{ columnName: string }>) => rows[0]?.columnName ?? null)
       .catch(() => null);
   }
 

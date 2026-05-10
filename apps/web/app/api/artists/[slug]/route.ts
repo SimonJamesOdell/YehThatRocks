@@ -26,11 +26,7 @@ export async function GET(_request: NextRequest, context: ArtistRouteContext) {
     matchingVideos = await filterHiddenVideos(matchingVideos, authResult.userId);
   }
 
-<<<<<<< HEAD
   const relatedArtists = (await getArtists()).filter((entry) => entry.slug !== artist.slug).slice(0, 4);
-=======
-  const relatedArtists = (await getArtists()).filter((entry) => entry.slug !== artist.slug).slice(0, 4);
->>>>>>> 9d2964d (fix: prepare for deployment with invariant checks and security audit results)
 
   return NextResponse.json({
     artist,

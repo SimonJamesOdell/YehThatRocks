@@ -119,8 +119,8 @@ async function loadFavouriteVideosForUser(userId: number): Promise<VideoRecord[]
   });
 
   const youtubeIds = favourites
-    .map((f) => f.videoId)
-    .filter((id): id is string => Boolean(id));
+    .map((f: { videoId: string | null }) => f.videoId)
+    .filter((id: string | null): id is string => Boolean(id));
 
   if (youtubeIds.length === 0) {
     favouriteVideosCache.set(userId, []);
@@ -153,10 +153,10 @@ async function loadFavouriteVideosForUser(userId: number): Promise<VideoRecord[]
   }
 
   const orderedVideos = youtubeIds
-    .map((id) => firstVideoById.get(id))
-    .filter((video): video is (typeof videos)[number] => Boolean(video));
+    .map((id: string) => firstVideoById.get(id))
+    .filter((video: (typeof videos)[number] | undefined): video is (typeof videos)[number] => Boolean(video));
 
-  const mapped = orderedVideos.map((video) =>
+  const mapped = orderedVideos.map((video: (typeof videos)[number]) =>
     mapVideo({
       ...video,
       channelTitle: null,
@@ -194,7 +194,7 @@ export async function getFavouriteVideosInternal(
     const inFlight = favouriteVideosInFlight.get(userId);
     if (inFlight) {
       markFavouriteVideosCacheMetric("inflight-reuse");
-      return inFlight.then((videos) => videos.map((video) => ({ ...video })));
+      return inFlight.then((videos: VideoRecord[]) => videos.map((video: VideoRecord) => ({ ...video })));
     }
   }
 
@@ -202,7 +202,7 @@ export async function getFavouriteVideosInternal(
   favouriteVideosInFlight.set(userId, pending);
 
   try {
-    return (await pending).map((video) => ({ ...video }));
+    return (await pending).map((video: VideoRecord) => ({ ...video }));
   } catch {
     markFavouriteVideosCacheMetric("db-error");
     return [];
@@ -280,7 +280,7 @@ export async function getFavouriteVideosPage(
 
     const hasMore = rows.length > limit;
     const visibleRows = hasMore ? rows.slice(0, limit) : rows;
-    const favourites = visibleRows.map((video) =>
+    const favourites = visibleRows.map((video: { videoId: string; title: string; favourited: number | bigint | null; description: string | null }) =>
       mapVideo({
         ...video,
         channelTitle: null,
@@ -315,7 +315,7 @@ export async function fetchFavouriteVideoIds(userId: number, limit = 1000): Prom
     });
 
     return new Set(
-      rows.map((row) => row.videoId).filter((id): id is string => Boolean(id)),
+      rows.map((row: { videoId: string | null }) => row.videoId).filter((id: string | null): id is string => Boolean(id)),
     );
   } catch {
     return new Set<string>();

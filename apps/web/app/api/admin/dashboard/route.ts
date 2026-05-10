@@ -516,7 +516,7 @@ export async function GET(request: NextRequest) {
   const auth24hRow = auth24h[0];
   const metadataRow = metadataQuality;
   const geoVisitors: VisitorGeoPoint[] = geoVisitorsRaw
-    .map((row) => {
+    .map((row: { visitorId: string; lat: bigint | number | string; lng: bigint | number | string; eventCount: bigint | number; lastSeenAt: Date | string }) => {
       const lat = toNumber(row.lat);
       const lng = toNumber(row.lng);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -531,7 +531,7 @@ export async function GET(request: NextRequest) {
         lastSeenAt: row.lastSeenAt instanceof Date ? row.lastSeenAt.toISOString() : new Date(row.lastSeenAt).toISOString(),
       };
     })
-    .filter((row): row is VisitorGeoPoint => Boolean(row));
+    .filter((row: VisitorGeoPoint | null): row is VisitorGeoPoint => Boolean(row));
 
   const payload = {
     ok: true,
@@ -548,16 +548,16 @@ export async function GET(request: NextRequest) {
       artists,
       categories,
     },
-    locations: locations.map((row) => ({
+    locations: locations.map((row: { location: string; count: bigint | number }) => ({
       location: row.location,
       count: toNumber(row.count),
     })),
-    traffic: traffic.map((row) => ({
+    traffic: traffic.map((row: { day: Date; count: bigint | number }) => ({
       day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
       count: toNumber(row.count),
     })),
     analytics: {
-      daily: analyticsDaily.map((row) => ({
+      daily: analyticsDaily.map((row: { day: Date; pageViews: bigint | number; videoViews: bigint | number; uniqueVisitors: bigint | number }) => ({
         day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
         pageViews: toNumber(row.pageViews),
         videoViews: toNumber(row.videoViews),
@@ -574,7 +574,7 @@ export async function GET(request: NextRequest) {
         newVisitors: toNumber(analyticsNewVsRepeat[0]?.newVisitors),
         repeatVisitors: toNumber(analyticsNewVsRepeat[0]?.repeatVisitors),
       },
-      registrationsPerDay: registrationsPerDay.map((row) => ({
+      registrationsPerDay: registrationsPerDay.map((row: { day: Date; count: bigint | number }) => ({
         day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
         count: toNumber(row.count),
       })),
@@ -597,7 +597,7 @@ export async function GET(request: NextRequest) {
         uniqueIps: toNumber(auth24hRow?.uniqueIps),
         uniqueUsers: toNumber(auth24hRow?.uniqueUsers),
       },
-      authActionBreakdown: actionBreakdown.map((row) => ({
+      authActionBreakdown: actionBreakdown.map((row: { action: string; total: bigint | number; failed: bigint | number }) => ({
         action: row.action,
         total: toNumber(row.total),
         failed: toNumber(row.failed),
@@ -609,13 +609,13 @@ export async function GET(request: NextRequest) {
         lowConfidence: toNumber(metadataRow?.lowConfidence),
         unknownType: toNumber(metadataRow?.unknownType),
       },
-      ingestVelocity: ingestVelocity.map((row) => ({
+      ingestVelocity: ingestVelocity.map((row: { day: Date; count: bigint | number }) => ({
         day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
         count: toNumber(row.count),
       })),
       groqSpend: {
         wikiCacheCount,
-        daily: groqDailySpend.map((row) => ({
+        daily: groqDailySpend.map((row: { day: Date; classified: bigint | number; errors: bigint | number }) => ({
           day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
           classified: toNumber(row.classified),
           errors: toNumber(row.errors),
@@ -623,14 +623,14 @@ export async function GET(request: NextRequest) {
       },
       apiUsage: (() => {
         const groqClassifiedByDay = new Map(
-          groqDailySpend.map((row) => [
+          groqDailySpend.map((row: { day: Date; classified: bigint | number; errors: bigint | number }) => [
             row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
             toNumber(row.classified),
           ]),
         );
 
         const daily = apiUsageDaily
-          .map((row) => {
+          .map((row: { day: Date; youtubeCalls: bigint | number; youtubeUnits: bigint | number; youtubeErrors: bigint | number; groqCalls: bigint | number; groqUnits: bigint | number; groqErrors: bigint | number }) => {
             const day = row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day);
             return {
               day,
@@ -643,11 +643,11 @@ export async function GET(request: NextRequest) {
               groqClassified: groqClassifiedByDay.get(day) ?? 0,
             };
           })
-          .sort((a, b) => a.day.localeCompare(b.day));
+          .sort((a: { day: string }, b: { day: string }) => a.day.localeCompare(b.day));
 
         const totals7dRows = daily.slice(-7);
         const totals7d = totals7dRows.reduce(
-          (acc, row) => {
+          (acc: { youtubeCalls: number; youtubeUnits: number; youtubeErrors: number; groqCalls: number; groqUnits: number; groqErrors: number; groqClassified: number }, row: { youtubeCalls: number; youtubeUnits: number; youtubeErrors: number; groqCalls: number; groqUnits: number; groqErrors: number; groqClassified: number }) => {
             acc.youtubeCalls += row.youtubeCalls;
             acc.youtubeUnits += row.youtubeUnits;
             acc.youtubeErrors += row.youtubeErrors;
