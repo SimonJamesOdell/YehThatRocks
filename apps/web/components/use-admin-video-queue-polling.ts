@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 type UseAdminVideoQueuePollingOptions = {
   activeTab: string;
@@ -6,6 +6,12 @@ type UseAdminVideoQueuePollingOptions = {
 };
 
 export function useAdminVideoQueuePolling({ activeTab, onRefresh }: UseAdminVideoQueuePollingOptions): void {
+  const refreshRef = useRef(onRefresh);
+
+  useEffect(() => {
+    refreshRef.current = onRefresh;
+  }, [onRefresh]);
+
   useEffect(() => {
     if (activeTab !== "videos") {
       return;
@@ -16,15 +22,17 @@ export function useAdminVideoQueuePolling({ activeTab, onRefresh }: UseAdminVide
     const AUTH_ERROR_RETRY_DELAY_MS = 1200;
     const VIDEOS_TAB_POLL_MS = 8_000;
 
+    let authRetryTimeoutId: number | null = null;
+
     const refreshVideoModerationQueues = async () => {
       try {
-        await onRefresh();
+        await refreshRef.current();
         authErrorRetries = 0; // Reset on success
       } catch (pollError) {
         const isAuthError = pollError instanceof Error && (pollError.message.includes("401") || pollError.message.includes("Unauthorized"));
         if (isAuthError && authErrorRetries < MAX_AUTH_ERROR_RETRIES) {
           authErrorRetries += 1;
-          setTimeout(() => {
+          authRetryTimeoutId = window.setTimeout(() => {
             void refreshVideoModerationQueues();
           }, AUTH_ERROR_RETRY_DELAY_MS);
         }
@@ -39,6 +47,9 @@ export function useAdminVideoQueuePolling({ activeTab, onRefresh }: UseAdminVide
 
     return () => {
       window.clearInterval(intervalId);
+      if (authRetryTimeoutId !== null) {
+        window.clearTimeout(authRetryTimeoutId);
+      }
     };
-  }, [activeTab, onRefresh]);
+  }, [activeTab]);
 }
