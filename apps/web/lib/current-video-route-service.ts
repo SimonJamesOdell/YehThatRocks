@@ -115,16 +115,18 @@ export async function fetchRandomCatalogVideosForCurrentVideo(params: {
     WHERE v.videoId IN (${placeholders})
   `;
 
-  const fetched = await prisma.$queryRawUnsafe<Array<{
+  type FetchedVideoRow = {
     dbId: number;
     id: string;
     title: string;
     channelTitle: string | null;
     favourited: number | null;
     description: string | null;
-  }>>(fetchSql, ...selectedIds);
+  };
 
-  const rows = uniqueVideosById(fetched).slice(0, requested);
+  const fetched = await prisma.$queryRawUnsafe<FetchedVideoRow[]>(fetchSql, ...selectedIds);
+
+  const rows = uniqueVideosById<FetchedVideoRow>(fetched).slice(0, requested);
 
   const repairedArtists = rows
     .map((row) => {

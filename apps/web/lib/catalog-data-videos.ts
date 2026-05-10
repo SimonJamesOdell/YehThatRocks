@@ -255,7 +255,7 @@ async function getRankedVideoIdSlice(mode: "top" | "newest", limit: number): Pro
           LIMIT ${fetchLimit}
         `;
 
-    const ids = Array.from(new Set(rows.map((row) => row.videoId).filter(Boolean))).slice(0, fetchLimit);
+    const ids = Array.from(new Set<string>(rows.map((row: { videoId: string | null }) => row.videoId).filter((id: string | null): id is string => Boolean(id)))).slice(0, fetchLimit);
 
     rankedVideoIdSliceCache.set(mode, {
       expiresAt: Date.now() + RANKED_VIDEO_ID_SLICE_CACHE_TTL_MS,
@@ -1130,7 +1130,7 @@ export async function getNewestVideos(
           break;
         }
 
-        const candidateIds = candidateRows.map((row) => row.id);
+        const candidateIds = candidateRows.map((row: { id: number }) => row.id);
         const placeholders = candidateIds.map(() => "?").join(", ");
         const availableRows = await prisma.$queryRawUnsafe<Array<{ videoId: number }>>(
           `
@@ -1141,7 +1141,7 @@ export async function getNewestVideos(
           `,
           ...candidateIds,
         );
-        const availableIds = new Set(availableRows.map((row) => Number(row.videoId)));
+        const availableIds = new Set<number>(availableRows.map((row: { videoId: number }) => Number(row.videoId)));
 
         for (const row of candidateRows) {
           if (!availableIds.has(row.id)) {
@@ -1514,24 +1514,22 @@ export async function updateFavourite(
   if (hasDatabaseUrl() && userId) {
     const normalizedVideoId = normalizeYouTubeVideoId(videoId) ?? videoId;
 
-    await prisma.$transaction(async (tx) => {
-      if (action === "add") {
-        const existing = await tx.favourite.findFirst({
-          where: { userid: userId, videoId: normalizedVideoId },
-          select: { id: true },
-        });
+    if (action === "add") {
+      const existing = await prisma.favourite.findFirst({
+        where: { userid: userId, videoId: normalizedVideoId },
+        select: { id: true },
+      });
 
-        if (!existing) {
-          await tx.favourite.create({
-            data: { userid: userId, videoId: normalizedVideoId },
-          });
-        }
-      } else {
-        await tx.favourite.deleteMany({
-          where: { userid: userId, videoId: normalizedVideoId },
+      if (!existing) {
+        await prisma.favourite.create({
+          data: { userid: userId, videoId: normalizedVideoId },
         });
       }
-    });
+    } else {
+      await prisma.favourite.deleteMany({
+        where: { userid: userId, videoId: normalizedVideoId },
+      });
+    }
 
     topPoolCache = undefined;
     const { invalidateTopVideosCache } = await import("@/lib/top-videos-cache");
@@ -1654,34 +1652,34 @@ export async function searchCatalog(query: string) {
 
     const rankingSignals = await getSearchRankingSignals({
       query: normalized,
-      candidateVideoIds: videos.map((video) => video.videoId),
+      candidateVideoIds: videos.map((video: RankedVideoRow) => video.videoId),
     });
 
     const rankedVideos = videos
-      .filter((video) => !rankingSignals.suppressedVideoIds.has(video.videoId))
-      .map((video, index) => ({
+      .filter((video: RankedVideoRow) => !rankingSignals.suppressedVideoIds.has(video.videoId))
+      .map((video: RankedVideoRow, index: number) => ({
         video,
         index,
         penalty: rankingSignals.penaltyByVideoId.get(video.videoId) ?? 0,
       }))
-      .sort((left, right) => {
+      .sort((left: { video: RankedVideoRow; index: number; penalty: number }, right: { video: RankedVideoRow; index: number; penalty: number }) => {
         if (left.penalty !== right.penalty) {
           return left.penalty - right.penalty;
         }
 
         return left.index - right.index;
       })
-      .map((entry) => entry.video);
+      .map((entry: { video: RankedVideoRow }) => entry.video);
 
     videos = rankedVideos;
 
-    const genres = (await getGenres()).filter((genre) =>
+    const genres = (await getGenres()).filter((genre: string) =>
       genre.toLowerCase().includes(normalized.toLowerCase()),
     );
 
     return {
       videos: videos.map(mapVideo),
-      artists: artists.map((a) => ({
+      artists: artists.map((a: { name: string; genre1: string | null; country: string | null }) => ({
         id: normalizeArtistKey(a.name),
         name: a.name,
         genre: a.genre1 ?? "Rock / Metal",
@@ -1735,17 +1733,17 @@ export async function suggestCatalog(query: string): Promise<SearchSuggestion[]>
     ]);
 
     const genreSuggestions: SearchSuggestion[] = genres
-      .filter((g) => g.toLowerCase().startsWith(normalized.toLowerCase()))
+      .filter((g: string) => g.toLowerCase().startsWith(normalized.toLowerCase()))
       .slice(0, 3)
-      .map((g) => ({ type: "genre", label: g, url: `/categories/${getGenreSlug(g)}` }));
+      .map((g: string) => ({ type: "genre", label: g, url: `/categories/${getGenreSlug(g)}` }));
 
-    const artistSuggestions: SearchSuggestion[] = artistRows.map((r) => ({
+    const artistSuggestions: SearchSuggestion[] = artistRows.map((r: { name: string }) => ({
       type: "artist",
       label: r.name,
       url: `/artist/${slugify(r.name)}`,
     }));
 
-    const trackSuggestions: SearchSuggestion[] = trackRows.map((r) => ({
+    const trackSuggestions: SearchSuggestion[] = trackRows.map((r: { title: string; videoId: string }) => ({
       type: "track",
       label: r.title,
       url: `/?v=${encodeURIComponent(r.videoId)}&resume=1`,

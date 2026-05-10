@@ -857,7 +857,7 @@ async function persistRelatedVideoCache(videoId: string, relatedIds: string[]) {
 
   if (existingVideos.length === 0) return;
 
-  const existingVideoIds = existingVideos.map((v) => v.videoId).filter((id): id is string => Boolean(id));
+  const existingVideoIds = existingVideos.map((v: { videoId: string | null }) => v.videoId).filter((id: string | null): id is string => Boolean(id));
   if (existingVideoIds.length === 0) return;
 
   const alreadyLinkedBack = await prisma.relatedCache.findMany({
@@ -865,10 +865,10 @@ async function persistRelatedVideoCache(videoId: string, relatedIds: string[]) {
     select: { videoId: true },
   });
 
-  const linkedBackSet = new Set(alreadyLinkedBack.map((row) => row.videoId).filter(Boolean));
+  const linkedBackSet = new Set<string>(alreadyLinkedBack.map((row: { videoId: string | null }) => row.videoId).filter((id: string | null): id is string => Boolean(id)));
   const reverseLinksToCreate = existingVideoIds
-    .filter((id) => !linkedBackSet.has(id))
-    .map((id) => ({ videoId: id, related: videoId, createdAt: now, updatedAt: now }));
+    .filter((id: string) => !linkedBackSet.has(id))
+    .map((id: string) => ({ videoId: id, related: videoId, createdAt: now, updatedAt: now }));
 
   if (reverseLinksToCreate.length > 0) {
     await prisma.relatedCache.createMany({ data: reverseLinksToCreate });
@@ -1021,8 +1021,8 @@ async function getExistingCatalogVideoIdSet(videoIds: string[]) {
   ]);
 
   return new Set<string>([
-    ...videoRows.map((row) => row.videoId).filter((id): id is string => Boolean(id)),
-    ...rejectedRows.map((row) => row.video_id),
+    ...videoRows.map((row: { videoId: string | null }) => row.videoId).filter((id: string | null): id is string => Boolean(id)),
+    ...rejectedRows.map((row: { video_id: string }) => row.video_id),
   ]);
 }
 
@@ -1237,7 +1237,7 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
 
   for (let i = 0; i < seeds.length; i += BACKFILL_CONCURRENCY) {
     const chunk = seeds.slice(i, i + BACKFILL_CONCURRENCY);
-    const results = await Promise.all(chunk.map(({ videoId }) => discoverRelatedVideosCascade(videoId, { maxDepth: 1 })));
+    const results = await Promise.all(chunk.map(({ videoId }: { videoId: string }) => discoverRelatedVideosCascade(videoId, { maxDepth: 1 })));
     for (const result of results) {
       totalFetchedNodes += result.fetchedNodes;
       totalDiscoveredNewVideos += result.discoveredNewVideos;
@@ -1415,9 +1415,9 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
     return { pruned: false, deletedVideoRows: 0, reason: "not-found" };
   }
 
-  const ids = matchingRows.map((row) => row.id);
+  const ids = matchingRows.map((row: { id: number }) => row.id);
   const parsedArtistsToRefresh = Array.from(
-    new Set(matchingRows.map((row) => row.parsedArtist?.trim()).filter((v): v is string => Boolean(v))),
+    new Set<string>(matchingRows.map((row: { parsedArtist: string | null }) => row.parsedArtist?.trim()).filter((v: string | undefined): v is string => Boolean(v))),
   );
 
   const [siteVideoColumns, playlistColumns, favouriteColumns, artistVideoColumns, messageColumns, relatedColumns, videoFkRefs] =

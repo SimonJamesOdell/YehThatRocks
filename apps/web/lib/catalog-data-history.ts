@@ -108,8 +108,8 @@ export async function fetchRecentlyWatchedIds(userId: number, limit = 300): Prom
       ORDER BY last_watched_at DESC
       LIMIT ${limit}
     `;
-    return new Set(
-      rows.map((r) => r.videoId).filter((id): id is string => Boolean(id)),
+    return new Set<string>(
+      rows.map((r: { videoId: string | null }) => r.videoId).filter((id: string | null): id is string => Boolean(id)),
     );
   } catch {
     return new Set<string>();
@@ -143,8 +143,8 @@ export async function getSeenVideoIdsForUser(userId: number): Promise<Set<string
       WHERE user_id = ${userId}
     `;
 
-    const ids = new Set(
-      rows.map((row) => row.videoId).filter((videoId): videoId is string => Boolean(videoId)),
+    const ids = new Set<string>(
+      rows.map((row: { videoId: string | null }) => row.videoId).filter((videoId: string | null): videoId is string => Boolean(videoId)),
     );
     seenVideoIdsCache.set(userId, ids);
     return ids;
@@ -279,8 +279,8 @@ export async function getWatchHistory(
     );
 
     return rows
-      .filter((row) => typeof row.videoId === "string" && row.videoId.length > 0)
-      .map((row) => {
+      .filter((row: { videoId: string | null }) => typeof row.videoId === "string" && row.videoId.length > 0)
+      .map((row: { videoId: string | null; title: string | null; parsedArtist: string | null; parsedTrack: string | null; channelTitle: string | null; favourited: number | bigint | null; description: string | null; lastWatchedAt: Date | string | null; watchCount: number | bigint | null; maxProgressPercent: number | bigint | null }) => {
         const videoTitle = row.title ?? "Unknown title";
         const normalizedTitle = videoTitle.trim().toLowerCase();
 
