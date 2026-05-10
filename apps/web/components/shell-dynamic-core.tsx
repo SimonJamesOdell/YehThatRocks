@@ -902,7 +902,7 @@ function ShellDynamicInner({
         return;
       }
       const fallbackHomeHref = `/?v=${encodeURIComponent(currentVideo.id)}&resume=1`;
-      const nextHref = closeUrl.pathname === "/"
+      const nextHref = closeUrl.pathname === "/" && closeUrl.searchParams.has("v")
         ? `${closeUrl.pathname}${closeUrl.search}${closeUrl.hash}`
         : fallbackHomeHref;
       const targetVideoId = closeUrl.pathname === "/" ? closeUrl.searchParams.get("v") : null;
