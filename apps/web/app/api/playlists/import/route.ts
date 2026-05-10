@@ -264,7 +264,7 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  const existingVideoIdSet = new Set(existingRows.map((row) => normalizeYouTubeVideoId(row.videoId) ?? row.videoId));
+  const existingVideoIdSet = new Set(existingRows.map((row: { videoId: string | null }) => normalizeYouTubeVideoId(row.videoId) ?? row.videoId));
   const missingVideoIds = playlistFetchResult.videoIds.filter((videoId) => !existingVideoIdSet.has(videoId));
 
   const ingestResult = await ingestMissingVideoIds(missingVideoIds);

@@ -6,7 +6,7 @@ import { recordAuthAudit } from "@/lib/auth-audit";
 export function isTransientDatabaseError(error: unknown): boolean {
   const lowerMessage = (
     error instanceof Prisma.PrismaClientKnownRequestError
-      ? error.message
+      ? (error as Prisma.PrismaClientKnownRequestError).message
       : error instanceof Error
         ? error.message
         : ""
