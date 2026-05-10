@@ -7,6 +7,7 @@ type MagazineRailTrack = {
   videoId: string;
   title: string;
   artist: string;
+  kicker?: string | null;
   genre: string;
 };
 
@@ -64,6 +65,7 @@ type ChatDeleteEvent = {
 
 export function useChatState({
   initialPathname,
+  pathname,
   isAuthenticated,
   isMagazineOverlayRoute,
   isAdminOverlayRoute,
@@ -74,6 +76,7 @@ export function useChatState({
 }: {
   /** Pathname at first render — sets initial chat mode. */
   initialPathname: string;
+  pathname: string;
   isAuthenticated: boolean;
   isMagazineOverlayRoute: boolean;
   isAdminOverlayRoute: boolean;
@@ -343,6 +346,19 @@ export function useChatState({
 
     node.scrollTop = node.scrollHeight;
   }, [chatMessages]);
+
+  useEffect(() => {
+    if (chatMode !== "magazine" || !(pathname === "/magazine" || pathname.startsWith("/magazine/"))) {
+      return;
+    }
+
+    const node = chatListRef.current;
+    if (!node) {
+      return;
+    }
+
+    node.scrollTop = 0;
+  }, [chatMode, latestMagazineTracks.length, pathname]);
 
   function triggerChatTabFlash(mode: FlashableChatMode) {
     const existingTimeoutId = flashTimeoutRef.current[mode];

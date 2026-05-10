@@ -4,7 +4,6 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const crypto = require("node:crypto");
 const https = require("node:https");
 const mysql = require("mysql2/promise");
 
@@ -333,10 +332,22 @@ function toSlug(input) {
     .replace(/^-+|-+$/g, "");
 }
 
-function buildArticleSlug(video, news) {
-  const day = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const hash = crypto.createHash("sha1").update(String(news.link)).digest("hex").slice(0, 6);
-  return `${toSlug(video.artist)}-${toSlug(video.track)}-${day}-${hash}`;
+async function buildArticleSlug(conn, video) {
+  const artistSlug = toSlug(video.artist);
+  const trackSlug = toSlug(video.track);
+  const baseSlug = [artistSlug, trackSlug].filter(Boolean).join("-") || "magazine-article";
+
+  let candidateSlug = baseSlug;
+  let suffix = 2;
+
+  while (true) {
+    const [existing] = await conn.execute("SELECT id FROM magazine_articles WHERE slug = ? LIMIT 1", [candidateSlug]);
+    if (!Array.isArray(existing) || existing.length === 0) {
+      return candidateSlug;
+    }
+    candidateSlug = `${baseSlug}-${suffix}`;
+    suffix += 1;
+  }
 }
 
 function readState(filePath) {
@@ -799,7 +810,7 @@ async function run() {
         continue;
       }
 
-      const slug = buildArticleSlug(selection.video, selection.news);
+      const slug = await buildArticleSlug(conn, selection.video);
       const bandMembers = await fetchBandMembers(selection.video.artist);
       if (bandMembers.length > 0) {
         console.error(

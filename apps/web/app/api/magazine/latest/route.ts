@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
         videoId: article.videoId,
         title: article.title,
         artist: article.artist,
+        kicker: article.kicker,
         genre: article.genre,
       })),
     });
