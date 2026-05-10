@@ -112,7 +112,7 @@ export async function getGenres() {
     `;
 
     if (rows.length > 0) {
-      const genres = rows.map((r) => r.genre);
+      const genres = rows.map((r: { genre: string }) => r.genre);
       genreListCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, genres };
       return genres;
     }
@@ -120,7 +120,7 @@ export async function getGenres() {
     const fallbackRows = await prisma.$queryRaw<Array<{ genre: string }>>`
       SELECT name AS genre FROM genres WHERE name IS NOT NULL AND TRIM(name) <> '' ORDER BY name ASC LIMIT 500
     `;
-    const genres = fallbackRows.map((r) => r.genre);
+    const genres = fallbackRows.map((r: { genre: string }) => r.genre);
     genreListCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, genres };
     return genres;
   } catch (error) {
@@ -168,7 +168,7 @@ export async function getGenreCards(): Promise<GenreCard[]> {
         LIMIT 1000
       `;
 
-      let cards: GenreCard[] = rows.map((row) => ({
+      let cards: GenreCard[] = rows.map((row: { genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }) => ({
         genre: row.genre,
         previewVideoId: row.thumbnailVideoId ?? row.thumbnail_video_id ?? null,
       }));
@@ -183,7 +183,7 @@ export async function getGenreCards(): Promise<GenreCard[]> {
           LIMIT 1000
         `;
         if (fallbackRows.length > 0) {
-          cards = fallbackRows.map((r) => ({
+          cards = fallbackRows.map((r: { genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }) => ({
             genre: r.genre,
             previewVideoId: r.thumbnailVideoId ?? r.thumbnail_video_id ?? null,
           }));
@@ -191,12 +191,12 @@ export async function getGenreCards(): Promise<GenreCard[]> {
           const genreRows = await prisma.$queryRaw<Array<{ genre: string }>>`
             SELECT name AS genre FROM genres WHERE name IS NOT NULL AND TRIM(name) <> '' ORDER BY name ASC LIMIT 1000
           `;
-          cards = genreRows.map((r) => ({ genre: r.genre, previewVideoId: null }));
+          cards = genreRows.map((r: { genre: string }) => ({ genre: r.genre, previewVideoId: null }));
         }
       }
 
       if (cards.length === 0) {
-        cards = (await getGenres()).map((genre) => ({ genre, previewVideoId: null }));
+        cards = (await getGenres()).map((genre: string) => ({ genre, previewVideoId: null }));
       }
 
       if (cards.some((card) => !card.previewVideoId)) {
@@ -293,7 +293,7 @@ export async function getGenreCards(): Promise<GenreCard[]> {
       }
 
       genreCardsCache = { expiresAt: now + GENRE_CARDS_CACHE_TTL_MS, cards };
-      genreListCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, genres: cards.map((c) => c.genre) };
+      genreListCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, genres: cards.map((c: GenreCard) => c.genre) };
       return cards;
     } catch {
       try {
@@ -305,7 +305,7 @@ export async function getGenreCards(): Promise<GenreCard[]> {
           LIMIT 1000
         `;
         if (rawFallbackRows.length > 0) {
-          const fallbackCards = rawFallbackRows.map((row) => ({
+          const fallbackCards = rawFallbackRows.map((row: { genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }) => ({
             genre: row.genre,
             previewVideoId: row.thumbnailVideoId ?? row.thumbnail_video_id ?? null,
           }));
@@ -316,7 +316,7 @@ export async function getGenreCards(): Promise<GenreCard[]> {
         // fall through
       }
 
-      const fallbackCards = (await getGenres()).map((genre) => ({ genre, previewVideoId: null }));
+      const fallbackCards = (await getGenres()).map((genre: string) => ({ genre, previewVideoId: null }));
       genreCardsCache = { expiresAt: now + 30_000, cards: fallbackCards };
       return fallbackCards;
     }
@@ -330,7 +330,7 @@ export async function getGenreCards(): Promise<GenreCard[]> {
 
 export async function getGenreBySlug(slug: string) {
   const genres = await getGenres();
-  return genres.find((genre) => getGenreSlug(genre) === slug);
+  return genres.find((genre: string) => getGenreSlug(genre) === slug);
 }
 
 // ── Artists by genre ──────────────────────────────────────────────────────────
@@ -379,7 +379,7 @@ export async function getArtistsByGenre(genre: string) {
             )
           `;
 
-    const mappedArtists = artists.map(mapArtist).sort((a, b) => a.name.localeCompare(b.name));
+    const mappedArtists = artists.map(mapArtist).sort((a: ArtistRecord, b: ArtistRecord) => a.name.localeCompare(b.name));
 
     genreArtistsCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, artists: mappedArtists });
     return mappedArtists;
@@ -556,8 +556,8 @@ export async function getVideosByGenre(
 
         const normalizedGenreArtistNames = [...new Set(
           artistGenreRows
-            .map((row) => normalizeArtistKey(row.artistName ?? ""))
-            .filter((name) => name.length > 0),
+            .map((row: { artistName: string | null }) => normalizeArtistKey(row.artistName ?? ""))
+            .filter((name: string) => name.length > 0),
         )];
 
         if (normalizedGenreArtistNames.length > 0) {
@@ -587,7 +587,7 @@ export async function getVideosByGenre(
       }
 
       const artists = options?.artists ?? (await getArtistsByGenre(genre));
-      const artistNames = [...new Set(artists.map((artist) => artist.name).filter(Boolean))].slice(0, 32);
+      const artistNames = [...new Set<string>(artists.map((artist: any) => String(artist.name ?? "")).filter((name: string) => name.length > 0))].slice(0, 32);
 
       if (artistNames.length === 0) {
         if (bestRows.length > 0) {
@@ -601,7 +601,7 @@ export async function getVideosByGenre(
       }
 
       const fulltextTerm = artistNames
-        .map((name) => (name.includes(" ") ? `"${name}"` : name))
+        .map((name: string) => (name.includes(" ") ? `"${name}"` : name))
         .join(" ");
 
       const videos = await prisma.$queryRaw<RankedVideoRow[]>`
@@ -624,8 +624,8 @@ export async function getVideosByGenre(
       }
 
       const normalizedArtistNames = artistNames
-        .map((name) => normalizeArtistKey(name))
-        .filter((name) => name.length > 0)
+        .map((name: string) => normalizeArtistKey(name))
+        .filter((name: string) => name.length > 0)
         .slice(0, 32);
 
       if (normalizedArtistNames.length > 0) {

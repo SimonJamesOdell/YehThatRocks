@@ -101,7 +101,7 @@ export async function getPlaylists(userId?: number): Promise<PlaylistSummary[]> 
       }
     })();
 
-    const legacyTotal = rowsByLegacySchema.reduce((sum, row) => {
+    const legacyTotal = rowsByLegacySchema.reduce((sum: number, row: PlaylistSummaryRow) => {
       const count =
         typeof row.itemCount === "bigint"
           ? Number(row.itemCount)
@@ -109,7 +109,7 @@ export async function getPlaylists(userId?: number): Promise<PlaylistSummary[]> 
       return sum + (Number.isFinite(count) ? count : 0);
     }, 0);
 
-    const mappedTotal = rowsByMappedSchema.reduce((sum, row) => {
+    const mappedTotal = rowsByMappedSchema.reduce((sum: number, row: PlaylistSummaryRow) => {
       const count =
         typeof row.itemCount === "bigint"
           ? Number(row.itemCount)
@@ -145,7 +145,7 @@ export async function getPlaylists(userId?: number): Promise<PlaylistSummary[]> 
       return [];
     }
 
-    return rows.map((row) => {
+    return rows.map((row: PlaylistSummaryRow) => {
       const lead =
         typeof row.leadVideoId === "string" && row.leadVideoId.length > 0
           ? row.leadVideoId
@@ -1060,7 +1060,7 @@ export async function removePlaylistItem(
 
     const target = playlistItemId
       ? itemRows.find(
-          (row) =>
+          (row: { rowId: number | bigint }) =>
             String(
               typeof row.rowId === "bigint" ? row.rowId.toString() : row.rowId,
             ) === playlistItemId,
@@ -1206,7 +1206,7 @@ export async function reorderPlaylistItems(
 
     const resolvedFromIndex = fromPlaylistItemId
       ? itemRows.findIndex(
-          (row) =>
+          (row: { rowId: number | bigint }) =>
             String(
               typeof row.rowId === "bigint" ? row.rowId.toString() : row.rowId,
             ) === fromPlaylistItemId,
@@ -1214,7 +1214,7 @@ export async function reorderPlaylistItems(
       : (fromIndex ?? -1);
     const resolvedToIndex = toPlaylistItemId
       ? itemRows.findIndex(
-          (row) =>
+          (row: { rowId: number | bigint }) =>
             String(
               typeof row.rowId === "bigint" ? row.rowId.toString() : row.rowId,
             ) === toPlaylistItemId,

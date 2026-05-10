@@ -91,8 +91,8 @@ async function loadHiddenVideoIdsForUser(userId: number): Promise<Set<string>> {
     WHERE user_id = ${userId}
   `;
 
-  const ids = new Set(
-    rows.map((row) => row.videoId).filter((videoId): videoId is string => Boolean(videoId)),
+  const ids = new Set<string>(
+    rows.map((row: { videoId: string | null }) => row.videoId).filter((videoId: string | null): videoId is string => Boolean(videoId)),
   );
   cacheHiddenVideoIdsForUser(userId, ids);
   return ids;
@@ -139,7 +139,7 @@ export async function getHiddenVideoMatchesForUser(
 
   const normalizedCandidates = [
     ...new Set(
-      candidateVideoIds.filter((id) => typeof id === "string" && id.length > 0),
+      candidateVideoIds.filter((id: string) => typeof id === "string" && id.length > 0),
     ),
   ];
   if (normalizedCandidates.length === 0) {
@@ -207,8 +207,8 @@ export async function getHiddenVideosForUser(
     );
 
     return rows
-      .filter((row) => typeof row.videoId === "string" && row.videoId.length > 0)
-      .map((row) => ({
+      .filter((row: { videoId: string | null }) => typeof row.videoId === "string" && row.videoId.length > 0)
+      .map((row: { videoId: string | null; title: string | null; parsedArtist: string | null; channelTitle: string | null; favourited: number | bigint | null; description: string | null; hiddenAt: Date | string | null }) => ({
         video: mapVideo({
           videoId: row.videoId as string,
           title: row.title ?? "Unknown title",
@@ -238,26 +238,24 @@ export async function hideVideoForUser(input: { userId: number; videoId: string 
   }
 
   try {
-    const removedFavourite = await prisma.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(
-        `
-          INSERT INTO hidden_videos (user_id, video_id)
-          VALUES (?, ?)
-          ON DUPLICATE KEY UPDATE video_id = VALUES(video_id)
-        `,
-        input.userId,
-        normalizedVideoId,
-      );
+    await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO hidden_videos (user_id, video_id)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE video_id = VALUES(video_id)
+      `,
+      input.userId,
+      normalizedVideoId,
+    );
 
-      const removed = await tx.favourite.deleteMany({
-        where: {
-          userid: input.userId,
-          videoId: normalizedVideoId,
-        },
-      });
-
-      return removed.count > 0;
+    const removed = await prisma.favourite.deleteMany({
+      where: {
+        userid: input.userId,
+        videoId: normalizedVideoId,
+      },
     });
+
+    const removedFavourite = removed.count > 0;
 
     updateCachedHiddenVideoIdsForUser(input.userId, normalizedVideoId, true);
 
