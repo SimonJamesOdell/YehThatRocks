@@ -49,14 +49,16 @@ END;
 
 -- Step 4: Update magazine_articles with new slugs
 UPDATE magazine_articles ma
-INNER JOIN slug_mapping sm ON ma.slug = sm.old_slug
+INNER JOIN slug_mapping sm
+  ON ma.slug COLLATE utf8mb4_unicode_ci = sm.old_slug COLLATE utf8mb4_unicode_ci
 SET ma.slug = sm.final_slug,
     ma.updated_at = NOW(3)
 WHERE ma.status = 'published';
 
 -- Step 5: Update magazine_article_external_landings to point to new slugs
 UPDATE magazine_article_external_landings mal
-INNER JOIN slug_mapping sm ON mal.article_slug = sm.old_slug
+INNER JOIN slug_mapping sm
+  ON mal.article_slug COLLATE utf8mb4_unicode_ci = sm.old_slug COLLATE utf8mb4_unicode_ci
 SET mal.article_slug = sm.final_slug
 WHERE 1=1;
 
