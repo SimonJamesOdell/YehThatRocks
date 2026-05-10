@@ -21,12 +21,31 @@ WHERE ma.status = 'published'
 ORDER BY ma.id;
 
 -- Step 3: Detect and handle collisions
--- For each base_slug that appears more than once, append numeric suffixes
+-- MariaDB cannot reopen the same temporary table multiple times in one UPDATE,
+-- so compute per-base_slug occurrence ranks in a second temporary table first.
+CREATE TEMPORARY TABLE IF NOT EXISTS slug_occurrence (
+  id INT PRIMARY KEY,
+  occurrence INT NOT NULL
+);
+
+INSERT INTO slug_occurrence (id, occurrence)
+SELECT ranked.id, ranked.occurrence
+FROM (
+  SELECT
+    sm.id,
+    @occurrence := IF(@current_base = sm.base_slug, @occurrence + 1, 1) AS occurrence,
+    @current_base := sm.base_slug AS _current_base
+  FROM slug_mapping sm
+  JOIN (SELECT @current_base := '', @occurrence := 0) vars
+  ORDER BY sm.base_slug, sm.id
+) AS ranked;
+
 UPDATE slug_mapping sm
-SET final_slug = CONCAT(base_slug, '-', (SELECT COUNT(*) FROM slug_mapping sm2 WHERE sm2.base_slug = sm.base_slug AND sm2.id < sm.id) + 2)
-WHERE base_slug IN (
-  SELECT base_slug FROM slug_mapping GROUP BY base_slug HAVING COUNT(*) > 1
-) AND id > (SELECT MIN(id) FROM slug_mapping sm2 WHERE sm2.base_slug = sm.base_slug);
+INNER JOIN slug_occurrence so ON so.id = sm.id
+SET sm.final_slug = CASE
+  WHEN so.occurrence = 1 THEN sm.base_slug
+  ELSE CONCAT(sm.base_slug, '-', so.occurrence)
+END;
 
 -- Step 4: Update magazine_articles with new slugs
 UPDATE magazine_articles ma
@@ -42,4 +61,5 @@ SET mal.article_slug = sm.final_slug
 WHERE 1=1;
 
 -- Step 6: Clean up
+DROP TEMPORARY TABLE IF EXISTS slug_occurrence;
 DROP TEMPORARY TABLE IF EXISTS slug_mapping;
