@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 
 import { normalizePrismaQueryFingerprint } from "@/lib/query-fingerprint";
 import { recordPrismaOperation, recordPrismaQueryFingerprint } from "@/lib/runtime-profiler";
@@ -76,19 +77,27 @@ function getPrismaDatabaseUrl() {
   try {
     const url = new URL(databaseUrl);
     const defaultConnectionLimit = getDefaultConnectionLimit();
-    const defaultPoolTimeout = process.env.NODE_ENV === "production" ? "30" : "25";
+    const defaultPoolTimeoutMs = process.env.NODE_ENV === "production" ? "30000" : "25000";
+    const defaultConnectTimeoutMs = process.env.NODE_ENV === "production" ? "5000" : "3500";
 
-    if (!url.searchParams.has("connection_limit")) {
+    if (!url.searchParams.has("connectionLimit")) {
       url.searchParams.set(
-        "connection_limit",
+        "connectionLimit",
         process.env.PRISMA_CONNECTION_LIMIT ?? defaultConnectionLimit,
       );
     }
 
-    if (!url.searchParams.has("pool_timeout")) {
+    if (!url.searchParams.has("acquireTimeout")) {
       url.searchParams.set(
-        "pool_timeout",
-        process.env.PRISMA_POOL_TIMEOUT ?? defaultPoolTimeout,
+        "acquireTimeout",
+        process.env.PRISMA_POOL_TIMEOUT_MS ?? defaultPoolTimeoutMs,
+      );
+    }
+
+    if (!url.searchParams.has("connectTimeout")) {
+      url.searchParams.set(
+        "connectTimeout",
+        process.env.PRISMA_CONNECT_TIMEOUT_MS ?? defaultConnectTimeoutMs,
       );
     }
 
@@ -117,10 +126,10 @@ function createPrismaClient() {
     });
   }
 
+  const adapter = new PrismaMariaDb(url);
+
   return new PrismaClient({
-    datasources: {
-      db: { url },
-    },
+    adapter,
     log: [
       {
         emit: "event",
@@ -134,30 +143,12 @@ export const prisma = global.__yehPrisma__ ?? createPrismaClient();
 
 if (process.env.DATABASE_URL && !global.__yehPrismaProfilingHookInstalled__) {
   const prismaWithProfilingHooks = prisma as PrismaClient & {
-    $use?: (middleware: (params: { model?: string; action: string }, next: (params: { model?: string; action: string }) => Promise<unknown>) => Promise<unknown>) => void;
     $on?: (eventType: "query", callback: (event: PrismaQueryEvent) => void) => void;
   };
 
-  if (typeof prismaWithProfilingHooks.$use === "function") {
-    prismaWithProfilingHooks.$use(async (params, next) => {
-      const startedAt = performance.now();
-
-      try {
-        return await next(params);
-      } finally {
-        const durationMs = performance.now() - startedAt;
-        const model = params.model ?? "$raw";
-        const operation = `${model}.${params.action}`;
-        recordPrismaOperation(operation, durationMs);
-      }
-    });
-  }
-
   if (typeof prismaWithProfilingHooks.$on === "function") {
     prismaWithProfilingHooks.$on("query", (event) => {
-      if (typeof prismaWithProfilingHooks.$use !== "function") {
-        recordPrismaOperation(normalizeQueryOperation(event.query), event.duration);
-      }
+      recordPrismaOperation(normalizeQueryOperation(event.query), event.duration);
 
       recordPrismaQueryFingerprint(normalizePrismaQueryFingerprint(event.query), event.duration);
     });

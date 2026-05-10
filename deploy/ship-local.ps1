@@ -17,6 +17,8 @@ param(
   # Skip Docker cache pruning after shipping.
   [switch]$SkipDockerPrune
   ,
+  # Skip automatic dependency refresh and stabilization before shipping.
+  [switch]$SkipAutoDependencyMaintenance,
   # Resume a previously failed ship run from persisted checkpoint state.
   [switch]$Resume
 )
@@ -679,6 +681,23 @@ try {
 
   Exec "git fetch origin $Branch"
   Exec "git checkout $Branch"
+
+  if (-not $SkipAutoDependencyMaintenance) {
+    ExecNative -Program "pwsh" -CommandArgs @(
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      (Join-Path $RepoDir "scripts/maintain-dependencies.ps1"),
+      "-RepoRoot",
+      $RepoDir,
+      "-Remote",
+      "origin",
+      "-Branch",
+      $Branch,
+      "-SkipPush"
+    )
+  }
 
   if (-not $SkipGitPush) {
     Exec "git push origin $Branch"

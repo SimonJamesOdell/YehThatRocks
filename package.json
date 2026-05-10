@@ -13,7 +13,7 @@
     "lint": "turbo lint",
     "tunnel:host": "powershell -ExecutionPolicy Bypass -File ./scripts/setup-ssh-tunnel-host.ps1",
     "prisma:format": "prisma format",
-    "prisma:generate": "cross-env PRISMA_GENERATE_NO_ENGINE= prisma generate",
+    "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:status": "prisma migrate status",
     "audit:embedability": "node scripts/audit-video-embedability.js",
@@ -86,11 +86,13 @@
   },
   "devDependencies": {
     "cross-env": "^10.1.0",
-    "prisma": "6.19.3",
+    "prisma": "^7.8.0",
     "turbo": "^2.9.12"
   },
   "dependencies": {
-    "@prisma/client": "6.19.3",
+    "@prisma/adapter-mariadb": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "dotenv": "^17.4.2",
     "mysql2": "^3.22.3"
   }
 }
