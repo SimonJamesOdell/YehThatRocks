@@ -25,6 +25,9 @@ import { useSearchAutocomplete, type SearchSuggestion } from "@/components/use-s
 import { useChatState, type ChatMode, type ChatMessage, type OnlineUser } from "@/components/use-chat-state";
 import { usePlaylistRail, type RightRailMode, type PlaylistRailVideo, type PlaylistRailPayload, type PlaylistRailSummary } from "@/components/use-playlist-rail";
 import { PerformanceDial, SharedVideoMessageCard, WatchNextCard } from "@/components/shell-dynamic-rendering";
+import { usePlayerDockingAnimation } from "@/components/use-player-docking-animation";
+import { useRouteChangeTracking } from "@/components/use-route-change-tracking";
+import { useOverlayEventHandling } from "@/components/use-overlay-event-handling";
 import { navItems, type VideoRecord } from "@/lib/catalog";
 import { MagazineGenerateNowButton } from "@/components/magazine-generate-now-button";
 import { detectAppendOnly, filterSeenFromWatchNext } from "@/components/shell-dynamic-helpers";
@@ -302,7 +305,6 @@ function ShellDynamicInner({
   const hasUserScrolledWatchNextRef = useRef(false);
   const relatedVideosRef = useRef<VideoRecord[]>([]);
   const watchNextRailRef = useRef<HTMLElement | null>(null);
-  const playerChromeRef = useRef<HTMLDivElement | null>(null);
   const favouritesBlindInnerRef = useRef<HTMLDivElement | null>(null);
   const previousPathnameRef = useRef<string | null>(null);
   const didArriveOnMagazineRouteRef = useRef(pathname === "/magazine" || pathname.startsWith("/magazine/"));
@@ -592,29 +594,23 @@ function ShellDynamicInner({
     performanceMetrics, performanceRuntime, performanceMetricsGeneratedAt,
     isLoadingPerformanceMetrics, performanceMetricsError,
   } = usePerformanceMetrics({ isShellInitialUiSettled });
+
+  // Client mounting hook
   useEffect(() => {
     setHasClientMounted(true);
   }, []);
-  useEffect(() => {
-    previousPathnameRef.current = pathname;
-  }, [pathname]);
-  // Analytics: fire page_view on initial load and every route path change.
-  const analyticsLastPathnameRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!pathname || analyticsLastPathnameRef.current === pathname) {
-      return;
-    }
-    analyticsLastPathnameRef.current = pathname;
-    void trackPageView();
-  }, [pathname]);
-  // Analytics: fire video_view each time the active video changes
-  const analyticsLastVideoIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (activeVideoId && activeVideoId !== analyticsLastVideoIdRef.current) {
-      analyticsLastVideoIdRef.current = activeVideoId;
-      void trackVideoView(activeVideoId);
-    }
-  }, [activeVideoId]);
+
+  // Use orchestration hook for route change tracking (pathname, analytics firing)
+  useRouteChangeTracking({
+    pathname,
+    activeVideoId,
+    onPathnameChange: (newPathname) => {
+      previousPathnameRef.current = newPathname;
+    },
+    onAnalyticsPageView: trackPageView,
+    onAnalyticsVideoView: trackVideoView,
+  });
+
   const handleBrandLogoClick = useCallback(() => {
     // Force startup resolver to run again after logo navigation clears ?v.
     hasResolvedInitialVideoRef.current = false;
@@ -760,85 +756,41 @@ function ShellDynamicInner({
     }
     window.dispatchEvent(new Event(ADMIN_OVERLAY_ENTER_EVENT));
   }, [isAdminOverlayRoute]);
+  // Use orchestration hook for player docking animations
+  const { playerChromeRef } = usePlayerDockingAnimation({
+    shouldShowOverlayPanel,
+    onSetIsUndockSettling: setIsUndockSettling,
+    onSetIsFooterRevealActive: setIsFooterRevealActive,
+  });
+
+  // Clean up and reset docking state when overlay panel is shown
   useEffect(() => {
-    if (shouldShowOverlayPanel) {
-      if (typeof window !== "undefined" && undockSettleTimeoutRef.current !== null) {
-        window.clearTimeout(undockSettleTimeoutRef.current);
-        undockSettleTimeoutRef.current = null;
-      }
-      if (typeof window !== "undefined" && footerRevealTimeoutRef.current !== null) {
-        window.clearTimeout(footerRevealTimeoutRef.current);
-        footerRevealTimeoutRef.current = null;
-      }
-      if (typeof window !== "undefined" && footerRevealEarlyTimeoutRef.current !== null) {
-        window.clearTimeout(footerRevealEarlyTimeoutRef.current);
-        footerRevealEarlyTimeoutRef.current = null;
-      }
-      // Release any height lock so docking can size freely.
-      if (playerChromeRef.current) {
-        playerChromeRef.current.style.height = "";
-      }
-      setIsUndockSettling(false);
-      setIsFooterRevealActive(false);
-      earlyFooterRevealFiredRef.current = false;
-      setIsMobileCommunityOpen(false);
+    if (!shouldShowOverlayPanel) {
       return;
     }
-    setIsOverlayClosing(false);
-    if (!shouldRunFooterRevealRef.current) {
-      setIsUndockSettling(false);
-      setIsFooterRevealActive(false);
-      return;
+
+    if (typeof window !== "undefined" && undockSettleTimeoutRef.current !== null) {
+      window.clearTimeout(undockSettleTimeoutRef.current);
+      undockSettleTimeoutRef.current = null;
     }
-    shouldRunFooterRevealRef.current = false;
-    setIsUndockSettling(true);
-    // Do not reset isFooterRevealActive here — the early reveal timer may have
-    // already started it during the movement animation. We only reset if the
-    // early reveal did not fire (see fallback path below).
-    // Lock the player chrome height now so that layout changes during the
-    // settle/footer-reveal window (e.g. primaryActions entering the flow) cannot
-    // cause a visible reflow.  We measure before the state flush so we get the
-    // height that the animation left the chrome at.
-    const chrome = playerChromeRef.current;
-    if (chrome) {
-      const lockedHeight = chrome.getBoundingClientRect().height;
-      chrome.style.height = `${lockedHeight}px`;
+    if (typeof window !== "undefined" && footerRevealTimeoutRef.current !== null) {
+      window.clearTimeout(footerRevealTimeoutRef.current);
+      footerRevealTimeoutRef.current = null;
     }
-    if (typeof window !== "undefined") {
-      if (undockSettleTimeoutRef.current !== null) {
-        window.clearTimeout(undockSettleTimeoutRef.current);
-      }
-      if (footerRevealTimeoutRef.current !== null) {
-        window.clearTimeout(footerRevealTimeoutRef.current);
-        footerRevealTimeoutRef.current = null;
-      }
-      undockSettleTimeoutRef.current = window.setTimeout(() => {
-        setIsUndockSettling(false);
-        undockSettleTimeoutRef.current = null;
-        if (earlyFooterRevealFiredRef.current) {
-          // Early reveal already ran during the movement animation — the footer
-          // animation has completed. Just release the height lock.
-          earlyFooterRevealFiredRef.current = false;
-          setIsFooterRevealActive(false);
-          if (chrome) {
-            chrome.style.height = "";
-          }
-        } else {
-          // Fallback: early reveal timer was cancelled or didn't fire (e.g. the
-          // overlay was closed very quickly). Trigger the reveal now.
-          setIsFooterRevealActive(true);
-          footerRevealTimeoutRef.current = window.setTimeout(() => {
-            setIsFooterRevealActive(false);
-            footerRevealTimeoutRef.current = null;
-            // Release the height lock after the footer has fully faded in.
-            if (chrome) {
-              chrome.style.height = "";
-            }
-          }, FOOTER_REVEAL_DURATION_MS);
-        }
-      }, UNDOCK_SETTLE_DURATION_MS);
+    if (typeof window !== "undefined" && footerRevealEarlyTimeoutRef.current !== null) {
+      window.clearTimeout(footerRevealEarlyTimeoutRef.current);
+      footerRevealEarlyTimeoutRef.current = null;
     }
+    // Release any height lock so docking can size freely.
+    if (playerChromeRef.current) {
+      playerChromeRef.current.style.height = "";
+    }
+    setIsUndockSettling(false);
+    setIsFooterRevealActive(false);
+    earlyFooterRevealFiredRef.current = false;
+    setIsMobileCommunityOpen(false);
   }, [shouldShowOverlayPanel]);
+
   useEffect(() => {
     if (pathname !== "/" && pendingOverlayOpenKind !== null) {
       setPendingOverlayOpenKind(null);

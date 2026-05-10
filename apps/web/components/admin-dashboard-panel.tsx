@@ -7,6 +7,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import worldAtlasCountries from "world-atlas/countries-110m.json";
 
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { useAdminHealthStreaming } from "@/components/use-admin-health-streaming";
+import { useAdminVideoQueuePolling } from "@/components/use-admin-video-queue-polling";
+import { useAdminAnalyticsRefresh } from "@/components/use-admin-analytics-refresh";
+import { useAdminApiTabPolling } from "@/components/use-admin-api-tab-polling";
 
 const HEALTH_FALLBACK_POLL_MS = 2_000;
 const ANALYTICS_AUTO_REFRESH_MS = 5 * 60 * 1000;
@@ -971,74 +975,36 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, refreshOverviewAnalytics]);
 
-  // Countdown ticker and auto-trigger for pre-reset backfill
-  useEffect(() => {
-    if (activeTab !== "api") {
-      return;
-    }
+  // Use orchestration hook for API tab polling
+  useAdminApiTabPolling({
+    activeTab,
+    quotaStatus,
+    onTickMsUntilReset: setMsUntilReset,
+    onLoadQuotaStatus: loadQuotaStatus,
+    onTriggerBackfill: triggerBackfill,
+  });
 
-    const POLL_INTERVAL_MS = 60_000;
-    const AUTO_TRIGGER_MS = 120_000; // 2 minutes before reset
-    let autoTriggered = false;
-
-    const tick = () => {
-      setMsUntilReset((prev) => (prev !== null ? Math.max(0, prev - 1000) : prev));
-    };
-
-    const tickInterval = window.setInterval(tick, 1_000);
-
-    const pollInterval = window.setInterval(() => {
-      void loadQuotaStatus();
-    }, POLL_INTERVAL_MS);
-
-    // Auto-trigger check
-    const autoCheckInterval = window.setInterval(() => {
-      setQuotaStatus((currentStatus) => {
-        if (
-          !autoTriggered &&
-          currentStatus &&
-          currentStatus.msUntilReset <= AUTO_TRIGGER_MS &&
-          currentStatus.recommendedBudget >= 500
-        ) {
-          autoTriggered = true;
-          void triggerBackfill(currentStatus.recommendedBudget);
-        }
-
-        return currentStatus;
-      });
-    }, 5_000);
-
-    return () => {
-      window.clearInterval(tickInterval);
-      window.clearInterval(pollInterval);
-      window.clearInterval(autoCheckInterval);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (activeTab !== "overview") {
-      return;
-    }
-
-
-    let cancelled = false;
-    let lastStreamMessageAt = 0;
-
-    const applyHealthPayload = (payload: AdminHealthStreamPayload) => {
+  // Use orchestration hook for health streaming
+  useAdminHealthStreaming({
+    activeTab,
+    onHealthPayload: (payload) => {
       if (!payload?.health) {
         return;
       }
 
+      const health = payload.health;
       const sanitizedHost = {
-        ...payload.health.host,
-        cpuUsagePercent: finiteOrNull(payload.health.host.cpuUsagePercent),
-        cpuAverageUsagePercent: finiteOrNull(payload.health.host.cpuAverageUsagePercent),
-        cpuPeakCoreUsagePercent: finiteOrNull(payload.health.host.cpuPeakCoreUsagePercent),
-        memoryUsagePercent: finiteOrNull(payload.health.host.memoryUsagePercent) ?? 0,
-        diskUsagePercent: finiteOrNull(payload.health.host.diskUsagePercent),
-        swapUsagePercent: finiteOrNull(payload.health.host.swapUsagePercent),
-        networkUsagePercent: finiteOrNull(payload.health.host.networkUsagePercent),
+        platform: health.host.platform || "unknown",
+        loadAvg: health.host.loadAvg || [],
+        totalMemMb: health.host.totalMemMb || 0,
+        freeMemMb: health.host.freeMemMb || 0,
+        cpuUsagePercent: finiteOrNull(health.host.cpuUsagePercent),
+        cpuAverageUsagePercent: finiteOrNull(health.host.cpuAverageUsagePercent),
+        cpuPeakCoreUsagePercent: finiteOrNull(health.host.cpuPeakCoreUsagePercent),
+        memoryUsagePercent: finiteOrNull(health.host.memoryUsagePercent) ?? 0,
+        diskUsagePercent: finiteOrNull(health.host.diskUsagePercent),
+        swapUsagePercent: finiteOrNull(health.host.swapUsagePercent),
+        networkUsagePercent: finiteOrNull(health.host.networkUsagePercent),
       };
 
       setDashboard((previous) => {
@@ -1049,7 +1015,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         return {
           ...previous,
           health: {
-            ...payload.health,
+            nodeUptimeSec: health.nodeUptimeSec,
+            memory: health.memory,
             host: sanitizedHost,
           },
           meta: {
@@ -1058,131 +1025,30 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
           },
         };
       });
-    };
+    },
+  });
 
-    const refreshHealth = async () => {
-      try {
-        const payload = await readNoStoreJson<AdminHealthStreamPayload>("/api/admin/dashboard/health");
-        if (cancelled) {
-          return;
-        }
-        applyHealthPayload(payload);
-      } catch {
-        // Ignore polling failures and keep the last known state.
-      }
-    };
-
-    const stream = new EventSource("/api/admin/dashboard/stream");
-
-    stream.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data) as AdminHealthStreamPayload;
-        if (!payload?.health || cancelled) {
-          return;
-        }
-
-        lastStreamMessageAt = Date.now();
-        applyHealthPayload(payload);
-      } catch {
-        // Ignore malformed payloads.
-      }
-    };
-
-    stream.onerror = () => {
-      void refreshHealth();
-    };
-
-    void refreshHealth();
-
-    const pollingTimer = window.setInterval(() => {
-      if (Date.now() - lastStreamMessageAt > HEALTH_FALLBACK_POLL_MS * 2) {
-        void refreshHealth();
-      }
-    }, HEALTH_FALLBACK_POLL_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(pollingTimer);
-      stream.close();
-    };
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (activeTab !== "videos") {
-      return;
-    }
-
-    let authErrorRetries = 0;
-    const MAX_AUTH_ERROR_RETRIES = 2;
-    const AUTH_ERROR_RETRY_DELAY_MS = 1200;
-
-    const refreshVideoModerationQueues = async () => {
+  // Use orchestration hook for video queue polling
+  useAdminVideoQueuePolling({
+    activeTab,
+    onRefresh: async () => {
       try {
         await Promise.all([loadPendingVideos(), loadRecentlyApprovedVideos()]);
-        authErrorRetries = 0; // Reset on success
       } catch (pollError) {
         if (isAuthResponseError(pollError)) {
-          // Retry on auth errors (could be transient token refresh issue)
-          if (authErrorRetries < MAX_AUTH_ERROR_RETRIES) {
-            authErrorRetries += 1;
-            setTimeout(() => {
-              void refreshVideoModerationQueues();
-            }, AUTH_ERROR_RETRY_DELAY_MS);
-            return;
-          }
-          // After retries, only show error if still persisting
           setError("Unauthorized. Please sign in again.");
-          return;
+          throw pollError;
         }
-
         // Keep the current admin data visible on transient polling failures.
       }
-    };
+    },
+  });
 
-    const VIDEOS_TAB_POLL_MS = 8_000;
-    void refreshVideoModerationQueues();
-    const intervalId = window.setInterval(() => {
-      void refreshVideoModerationQueues();
-    }, VIDEOS_TAB_POLL_MS);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (activeTab !== "overview") {
-      return;
-    }
-
-    let cancelled = false;
-    let refreshing = false;
-
-    const refreshIfVisible = async () => {
-      if (cancelled || refreshing || document.hidden) {
-        return;
-      }
-
-      refreshing = true;
-      try {
-        await refreshOverviewAnalytics();
-      } catch {
-        // Keep last known data; manual refresh remains available.
-      } finally {
-        refreshing = false;
-      }
-    };
-
-    const intervalId = window.setInterval(() => {
-      void refreshIfVisible();
-    }, ANALYTICS_AUTO_REFRESH_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [activeTab]);
+  // Use orchestration hook for analytics refresh
+  useAdminAnalyticsRefresh({
+    activeTab,
+    onRefresh: refreshOverviewAnalytics,
+  });
 
   async function patchJson(url: string, body: Record<string, unknown>) {
     await readJson(url, {

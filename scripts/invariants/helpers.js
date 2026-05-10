@@ -3,6 +3,7 @@ const {
   collectCssFiles,
   assertContains,
   assertNotContains,
+  assertContainsEither,
   assertCssRuleContains,
   assertCssRuleNotContains,
   assertFileDoesNotExist,
@@ -10,6 +11,7 @@ const {
 } = require("../lib/test-harness");
 
 module.exports = {
+    assertContainsEither,
   readFileStrict,
   collectCssFiles,
   assertContains,

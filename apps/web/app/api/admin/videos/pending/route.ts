@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { requireAdminApiAuth } from "@/lib/admin-auth";
+import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { ensurePendingVideoQueueIndex, PENDING_VIDEO_APPROVAL_WHERE_CLAUSE } from "@/lib/admin-pending-video-queue";
 import { clearCatalogVideoCaches, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";
 import { prisma } from "@/lib/db";
-import { verifySameOrigin } from "@/lib/csrf";
-import { parseRequestJson } from "@/lib/request-json";
 
 const moderatePendingSchema = z.object({
   videoId: z.string().trim().min(1).max(64),
@@ -18,7 +16,7 @@ const moderatePendingSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApiAuth(request);
+  const auth = await requireAuthOnly(request);
 
   if (!auth.ok) {
     return auth.response;
@@ -91,28 +89,14 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdminApiAuth(request);
+  const result = await withAuthAndBody(request, moderatePendingSchema);
 
-  if (!auth.ok) {
-    return auth.response;
+  if (!result.ok) {
+    return result.response;
   }
 
-  const csrf = verifySameOrigin(request);
-  if (csrf) {
-    return csrf;
-  }
-
-  const body = await parseRequestJson(request);
-  if (!body.ok) {
-    return body.response;
-  }
-
-  const parsed = moderatePendingSchema.safeParse(body.data);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const { videoId, action } = parsed.data;
+  const parsed = result.data;
+  const { videoId, action } = parsed;
 
   if (action === "approve") {
     const approveData: {
@@ -126,16 +110,16 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date(),
     };
 
-    if (parsed.data.title !== undefined) {
-      approveData.title = parsed.data.title;
+    if (parsed.title !== undefined) {
+      approveData.title = parsed.title;
     }
 
-    if (parsed.data.parsedArtist !== undefined) {
-      approveData.parsedArtist = parsed.data.parsedArtist;
+    if (parsed.parsedArtist !== undefined) {
+      approveData.parsedArtist = parsed.parsedArtist;
     }
 
-    if (parsed.data.parsedTrack !== undefined) {
-      approveData.parsedTrack = parsed.data.parsedTrack;
+    if (parsed.parsedTrack !== undefined) {
+      approveData.parsedTrack = parsed.parsedTrack;
     }
 
     const approvedRows = await prisma.video.updateMany({
