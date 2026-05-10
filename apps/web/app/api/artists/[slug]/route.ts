@@ -26,7 +26,9 @@ export async function GET(_request: NextRequest, context: ArtistRouteContext) {
     matchingVideos = await filterHiddenVideos(matchingVideos, authResult.userId);
   }
 
-  const relatedArtists = (await getArtists()).filter((entry) => entry.slug !== artist.slug).slice(0, 4);
+  const relatedArtists = (await getArtists())
+    .filter((entry: { slug: string }) => entry.slug !== artist.slug)
+    .slice(0, 4);
 
   return NextResponse.json({
     artist,
