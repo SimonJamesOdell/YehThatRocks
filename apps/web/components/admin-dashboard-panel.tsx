@@ -332,6 +332,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [pendingVideoDrafts, setPendingVideoDrafts] = useState<Record<number, PendingVideoDraft>>({});
   const [pendingPreviewSkipOffsets, setPendingPreviewSkipOffsets] = useState<Record<number, number>>({});
   const pendingPreviewIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const pendingPreviewCurrentTimeRef = useRef<number | null>(null);
   const [pendingVideoTotal, setPendingVideoTotal] = useState(0);
   const [recentlyApprovedVideos, setRecentlyApprovedVideos] = useState<RecentlyApprovedVideoRow[]>([]);
   const [videoModerationPane, setVideoModerationPane] = useState<"pending" | "recent">("pending");
@@ -913,6 +914,45 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       "*",
     );
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleYouTubeInfoDelivery = (event: MessageEvent) => {
+      if (typeof event.data !== "string") {
+        return;
+      }
+
+      if (!event.origin.includes("youtube.com")) {
+        return;
+      }
+
+      try {
+        const payload = JSON.parse(event.data) as {
+          event?: string;
+          info?: { currentTime?: number };
+        };
+
+        if (payload.event !== "infoDelivery") {
+          return;
+        }
+
+        const currentTime = payload.info?.currentTime;
+        if (typeof currentTime === "number" && Number.isFinite(currentTime)) {
+          pendingPreviewCurrentTimeRef.current = currentTime;
+        }
+      } catch {
+        // Ignore non-JSON/non-YouTube messages.
+      }
+    };
+
+    window.addEventListener("message", handleYouTubeInfoDelivery);
+    return () => {
+      window.removeEventListener("message", handleYouTubeInfoDelivery);
+    };
+  }, []);
 
   async function loadArtists() {
     const artistPayload = await readJson<{ artists: ArtistRow[] }>(
@@ -2132,6 +2172,13 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                                 src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0&autoplay=1&mute=0&playsinline=1&enablejsapi=1&start=${baseStartAtSec}`}
                                 title={`Pending video preview ${row.videoId}`}
                                 loading="lazy"
+                                onLoad={() => {
+                                  pendingPreviewCurrentTimeRef.current = baseStartAtSec;
+                                  // Re-seek after load to reliably honour midpoint starts.
+                                  window.setTimeout(() => {
+                                    seekPendingPreview(baseStartAtSec);
+                                  }, 180);
+                                }}
                                 referrerPolicy="strict-origin-when-cross-origin"
                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                                 allowFullScreen
@@ -2156,15 +2203,16 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const currentOffset = pendingPreviewSkipOffsets[row.id] ?? 0;
-                                  const nextOffset = currentOffset + 20;
-                                  const maxOffset = row.durationSec && row.durationSec > 0
-                                    ? Math.max(0, row.durationSec - 1 - baseStartAtSec)
-                                    : null;
-                                  const appliedOffset = maxOffset === null ? nextOffset : Math.min(nextOffset, maxOffset);
+                                  const knownCurrentTime = pendingPreviewCurrentTimeRef.current;
+                                  const safeCurrentTime =
+                                    typeof knownCurrentTime === "number" && Number.isFinite(knownCurrentTime)
+                                      ? knownCurrentTime
+                                      : baseStartAtSec;
+                                  const unclampedNextStartAtSec = safeCurrentTime + 20;
                                   const nextStartAtSec = maxStartAtSec === null
-                                    ? baseStartAtSec + appliedOffset
-                                    : Math.min(baseStartAtSec + appliedOffset, maxStartAtSec);
+                                    ? unclampedNextStartAtSec
+                                    : Math.min(unclampedNextStartAtSec, maxStartAtSec);
+                                  const appliedOffset = Math.max(0, Math.floor(nextStartAtSec - baseStartAtSec));
 
                                   setPendingPreviewSkipOffsets((current) => {
                                     return {
@@ -2173,6 +2221,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                                     };
                                   });
 
+                                  pendingPreviewCurrentTimeRef.current = nextStartAtSec;
                                   seekPendingPreview(nextStartAtSec);
                                 }}
                                 disabled={moderatingVideoId === row.videoId}
