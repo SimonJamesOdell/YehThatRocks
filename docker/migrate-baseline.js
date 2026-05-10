@@ -8,6 +8,7 @@
 
 const { execSync } = require('child_process');
 const { PrismaClient } = require('@prisma/client');
+const { PrismaMariaDb } = require('@prisma/adapter-mariadb');
 
 // All migrations that were applied to the DB before the prisma migrate workflow
 // was established (via db push or manual SQL). Order must be chronological.
@@ -30,6 +31,16 @@ function getDatabaseNameFromUrl() {
   }
   const url = new URL(raw);
   return url.pathname.replace(/^\//, '') || 'yeh';
+}
+
+function createPrismaClient() {
+  const raw = process.env.DATABASE_URL;
+  if (!raw || !raw.trim()) {
+    throw new Error('DATABASE_URL is not set');
+  }
+
+  const adapter = new PrismaMariaDb(raw);
+  return new PrismaClient({ adapter });
 }
 
 async function tableExists(prisma, dbName, tableName) {
@@ -119,7 +130,7 @@ async function migrationArtifactExists(prisma, dbName, migrationName) {
 }
 
 async function main() {
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
   try {
     const dbName = getDatabaseNameFromUrl();
     const hasMigrationsTable = await tableExists(prisma, dbName, '_prisma_migrations');
