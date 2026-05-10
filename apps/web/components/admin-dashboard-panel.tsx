@@ -190,6 +190,7 @@ type PendingVideoRow = {
   parsedArtist: string | null;
   parsedTrack: string | null;
   channelTitle: string | null;
+  durationSec: number | null;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -1034,6 +1035,10 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     onRefresh: async () => {
       try {
         await Promise.all([loadPendingVideos(), loadRecentlyApprovedVideos()]);
+        // Clear error on successful poll
+        if (error?.includes("Unauthorized")) {
+          setError(null);
+        }
       } catch (pollError) {
         if (isAuthResponseError(pollError)) {
           setError("Unauthorized. Please sign in again.");
@@ -2006,6 +2011,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                       // Only fall back to the server value when no draft exists yet.
                       const editableArtist = draft !== undefined ? (draft.parsedArtist ?? "") : (row.parsedArtist ?? "");
                       const editableTrack = draft !== undefined ? (draft.parsedTrack ?? "") : (row.parsedTrack ?? "");
+                      const startAtSec = row.durationSec && row.durationSec > 0 ? Math.floor(row.durationSec / 2) : 0;
 
                       return (
                         <div
@@ -2014,6 +2020,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                           style={{
                             width: "100%",
                             maxWidth: "none",
+                            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
                             gap: 14,
                             alignItems: "start",
                           }}
@@ -2075,6 +2082,29 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                               />
                             </label>
                             <p className="authMessage" style={{ margin: 0 }}>Channel: {row.channelTitle ?? "-"}</p>
+                          </div>
+                          <div style={{ display: "grid", gap: 10 }}>
+                            <div
+                              style={{
+                                position: "relative",
+                                width: "100%",
+                                aspectRatio: "16 / 9",
+                                borderRadius: 10,
+                                overflow: "hidden",
+                                background: "rgba(0,0,0,0.45)",
+                                border: "1px solid rgba(255,255,255,0.12)",
+                              }}
+                            >
+                              <iframe
+                                src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0&autoplay=1&mute=1&playsinline=1&start=${startAtSec}`}
+                                title={`Pending video preview ${row.videoId}`}
+                                loading="lazy"
+                                referrerPolicy="strict-origin-when-cross-origin"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                allowFullScreen
+                                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+                              />
+                            </div>
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                               <button
                                 type="button"
@@ -2091,27 +2121,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                                 Remove
                               </button>
                             </div>
-                          </div>
-                          <div
-                            style={{
-                              position: "relative",
-                              width: "100%",
-                              aspectRatio: "16 / 9",
-                              borderRadius: 10,
-                              overflow: "hidden",
-                              background: "rgba(0,0,0,0.45)",
-                              border: "1px solid rgba(255,255,255,0.12)",
-                            }}
-                          >
-                            <iframe
-                              src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0`}
-                              title={`Pending video preview ${row.videoId}`}
-                              loading="lazy"
-                              referrerPolicy="strict-origin-when-cross-origin"
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                              allowFullScreen
-                              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
-                            />
                           </div>
                         </div>
                       );
