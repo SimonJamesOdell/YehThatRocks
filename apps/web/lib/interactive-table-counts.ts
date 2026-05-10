@@ -60,7 +60,7 @@ async function readApproximateTableCount(tableName: string): Promise<number | nu
     `,
     tableName,
   )
-    .then((rows) => {
+    .then((rows: Array<{ tableRows: bigint | number | null }>) => {
       const value = toSafeCount(rows[0]?.tableRows ?? null);
       if (value === null) {
         return null;
