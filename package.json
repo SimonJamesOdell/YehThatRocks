@@ -40,7 +40,7 @@
     "prune:genres": "node scripts/prune-non-rock-metal-genres.js --dry-run",
     "prune:genres:apply": "node scripts/prune-non-rock-metal-genres.js --confirm=PRUNE_NON_ROCK_METAL",
     "backfill:related": "node scripts/backfill-related-links.js",
-      "backfill:genres": "node scripts/backfill-genres-from-musicbrainz.js",
+    "backfill:genres": "node scripts/backfill-genres-from-musicbrainz.js",
     "verify:categories": "node scripts/verify-categories-invariants.js",
     "verify:categories:api": "node scripts/verify-categories-invariants.js --check-api",
     "verify:artists-ui": "node scripts/verify-artists-ui-invariants.js",
@@ -48,9 +48,9 @@
     "verify:playlists-ui": "node scripts/verify-playlists-ui-invariants.js",
     "verify:playlists:api": "node scripts/verify-playlists-api-smoke.js",
     "verify:core-experience": "node scripts/verify-core-experience-invariants.js",
-      "verify:player-core": "node scripts/verify-player-core-invariants.js",
-      "verify:overlay-routing": "node scripts/verify-overlay-routing-invariants.js",
-      "verify:new-videos": "node scripts/verify-new-videos-invariants.js",
+    "verify:player-core": "node scripts/verify-player-core-invariants.js",
+    "verify:overlay-routing": "node scripts/verify-overlay-routing-invariants.js",
+    "verify:new-videos": "node scripts/verify-new-videos-invariants.js",
     "verify:core-experience:api": "node scripts/verify-core-experience-api-smoke.js",
     "verify:auth": "node scripts/verify-auth-invariants.js",
     "verify:admin": "node scripts/verify-admin-invariants.js",
@@ -86,11 +86,11 @@
   },
   "devDependencies": {
     "cross-env": "^10.1.0",
-    "prisma": "^7.8.0",
+    "prisma": "^6.19.3",
     "turbo": "^2.9.12"
   },
   "dependencies": {
-    "@prisma/client": "^7.8.0",
+    "@prisma/client": "^6.19.3",
     "mysql2": "^3.22.3"
   }
 }
