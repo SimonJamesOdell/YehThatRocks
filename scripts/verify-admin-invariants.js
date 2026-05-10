@@ -104,8 +104,14 @@ function main() {
     "const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.data.videoId, \"admin-hard-delete\");",
     "const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.videoId, \"admin-hard-delete\");",
   ], "Admin videos DELETE prunes catalog data via shared hard-delete helper", failures);
-  assertContains(adminVideosRouteSource, "if (!pruneResult.pruned)", "Admin videos DELETE handles prune failures explicitly", failures);
-  assertContains(adminVideosRouteSource, "return NextResponse.json({ error: \"Could not delete video\", reason: pruneResult.reason }, { status: 409 });", "Admin videos DELETE returns structured prune failure reason payload", failures);
+  assertContainsEither(adminVideosRouteSource, [
+    "if (!pruneResult.pruned)",
+    "const pruneResponse = mapAdminPruneResultToDeleteResponse(pruneResult, {",
+  ], "Admin videos DELETE handles prune failures explicitly", failures);
+  assertContainsEither(adminVideosRouteSource, [
+    "return NextResponse.json({ error: \"Could not delete video\", reason: pruneResult.reason }, { status: 409 });",
+    "mapAdminPruneResultToDeleteResponse",
+  ], "Admin videos DELETE returns structured prune failure reason payload", failures);
   assertContains(adminVideosRouteSource, "clearCurrentVideoRouteCaches();", "Admin videos DELETE clears current-video route caches after successful deletion", failures);
   assertContainsEither(adminVideosRouteSource, [
     "return NextResponse.json({ ok: true, deletedVideoRows: pruneResult.deletedVideoRows });",
