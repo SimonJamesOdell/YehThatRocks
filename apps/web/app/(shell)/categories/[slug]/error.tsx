@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { ServiceFailurePanel } from "@/components/service-failure-panel";
+import { OPERATIONAL_RETRY_LATER_MESSAGE } from "@/lib/operational-error-copy";
 
 type CategoryErrorProps = {
   error: Error;
@@ -20,7 +21,7 @@ export default function CategoryError({ error, reset }: CategoryErrorProps) {
       panelAriaLabel="Category unavailable"
       eyebrow="Category status"
       title="Category temporarily unavailable"
-      lead="The system cannot serve this request right now. Please try again later."
+      lead={OPERATIONAL_RETRY_LATER_MESSAGE}
       actions={(
         <>
           <button type="button" className="serviceFailureActionPrimary" onClick={reset}>

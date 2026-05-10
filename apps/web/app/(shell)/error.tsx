@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { ServiceFailurePanel } from "@/components/service-failure-panel";
+import { OPERATIONAL_RETRY_LATER_MESSAGE } from "@/lib/operational-error-copy";
 
 type ShellErrorProps = {
   error: Error;
@@ -20,7 +21,7 @@ export default function ShellError({ error, reset }: ShellErrorProps) {
       panelAriaLabel="Service unavailable"
       eyebrow="Service state"
       title="Service temporarily unavailable"
-      lead="The system cannot serve this request right now. Please try again later."
+      lead={OPERATIONAL_RETRY_LATER_MESSAGE}
       actions={(
         <>
           <button type="button" className="serviceFailureActionPrimary" onClick={reset}>

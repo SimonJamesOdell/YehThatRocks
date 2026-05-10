@@ -5,6 +5,7 @@ import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { clearCatalogVideoCaches, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";
 import { prisma } from "@/lib/db";
+import { mapAdminPruneResultToDeleteResponse } from "@/lib/admin-prune-delete-response";
 
 const updateSchema = z.object({
   id: z.number().int().positive(),
@@ -150,15 +151,16 @@ export async function DELETE(request: NextRequest) {
 
   const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.videoId, "admin-hard-delete");
 
-  if (pruneResult.reason === "not-found") {
-    return NextResponse.json({ error: "Video not found" }, { status: 404 });
-  }
+  const pruneResponse = mapAdminPruneResultToDeleteResponse(pruneResult, {
+    ok: true,
+    deletedVideoRows: pruneResult.deletedVideoRows,
+  });
 
-  if (!pruneResult.pruned) {
-    return NextResponse.json({ error: "Could not delete video", reason: pruneResult.reason }, { status: 409 });
+  if (!pruneResponse.deleted) {
+    return pruneResponse.response;
   }
 
   clearCurrentVideoRouteCaches();
 
-  return NextResponse.json({ ok: true, deletedVideoRows: pruneResult.deletedVideoRows });
+  return pruneResponse.response;
 }

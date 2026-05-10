@@ -36,6 +36,7 @@ import {
   hasArtistStatsThumbnailColumn,
   hasGenreAllColumn,
 } from "@/lib/catalog-data-db";
+import { getLowerTrimmedDatabaseValue, getTrimmedDatabaseValue } from "@/lib/catalog-data-internal-helpers";
 
 // ── Cache constants ────────────────────────────────────────────────────────────
 
@@ -321,8 +322,8 @@ function scheduleArtistStatsLetterBackfill(letter: string, rows: Array<ArtistRec
 }
 
 export async function refreshArtistProjectionForName(artistName: string) {
-  const displayName = artistName.trim();
-  if (!displayName || !hasDatabaseUrl()) return;
+  const displayName = getTrimmedDatabaseValue(artistName);
+  if (!displayName) return;
   if (!(await hasArtistStatsProjection())) return;
 
   const normalizedArtist = normalizeArtistKey(displayName);
@@ -465,8 +466,8 @@ export async function isKnownArtistName(artistName: string) {
 }
 
 export async function getArtistCatalogEvidence(artistName: string) {
-  const normalized = artistName.trim().toLowerCase();
-  if (!normalized || !hasDatabaseUrl()) {
+  const normalized = getLowerTrimmedDatabaseValue(artistName);
+  if (!normalized) {
     return { known: false, rockOrMetalGenreMatch: false };
   }
 
@@ -517,8 +518,8 @@ export async function upsertVerifiedExternalArtistCandidate(candidate: {
   genre?: string | null;
   thumbnailVideoId?: string | null;
 }) {
-  const displayName = candidate.name.trim();
-  if (!displayName || !hasDatabaseUrl()) return false;
+  const displayName = getTrimmedDatabaseValue(candidate.name);
+  if (!displayName) return false;
   if (!(await hasArtistStatsProjection())) return false;
 
   await refreshArtistProjectionForName(displayName).catch(() => undefined);
@@ -550,8 +551,8 @@ export async function upsertVerifiedExternalArtistCandidate(candidate: {
  * Never throws — failures are silently swallowed to avoid disrupting ingestion.
  */
 export async function maybeInsertNewArtist(artistName: string, genre: string | null) {
-  const displayName = artistName.trim();
-  if (!displayName || !hasDatabaseUrl()) return;
+  const displayName = getTrimmedDatabaseValue(artistName);
+  if (!displayName) return;
 
   const normalizedArtist = normalizeArtistKey(displayName);
 
@@ -601,8 +602,8 @@ export async function maybeInsertNewArtist(artistName: string, genre: string | n
 }
 
 export async function refreshArtistThumbnailForName(artistName: string, badVideoId?: string) {
-  const displayName = artistName.trim();
-  if (!displayName || !hasDatabaseUrl()) return null;
+  const displayName = getTrimmedDatabaseValue(artistName);
+  if (!displayName) return null;
   if (!(await hasArtistStatsProjection())) return null;
 
   const normalizedArtist = normalizeArtistKey(displayName);
