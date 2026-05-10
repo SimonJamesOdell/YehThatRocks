@@ -1,5 +1,3 @@
-import { getVideoForSharing, normalizeYouTubeVideoId } from "@/lib/catalog-data";
-
 export const SHARE_SITE_NAME = "YehThatRocks";
 export const SHARE_SITE_ORIGIN = "https://yehthatrocks.com";
 export const SHARE_DEFAULT_TITLE = "YehThatRocks | The World's LOUDEST Website";
@@ -16,6 +14,46 @@ export type ShareMetadataPayload = {
   primaryImageUrl: string;
   secondaryImageUrl: string;
 };
+
+function normalizeYouTubeVideoId(input?: string | null) {
+  if (!input) {
+    return null;
+  }
+
+  const candidate = input.trim();
+  if (!candidate) {
+    return null;
+  }
+
+  const idPattern = /^[A-Za-z0-9_-]{11}$/;
+  if (idPattern.test(candidate)) {
+    return candidate;
+  }
+
+  try {
+    const url = new URL(candidate);
+    if (url.hostname.includes("youtu.be")) {
+      const id = url.pathname.split("/").filter(Boolean)[0];
+      return id && idPattern.test(id) ? id : null;
+    }
+
+    if (url.hostname.includes("youtube.com")) {
+      const watchId = url.searchParams.get("v");
+      if (watchId && idPattern.test(watchId)) {
+        return watchId;
+      }
+
+      const pathId = url.pathname.split("/").filter(Boolean).at(-1);
+      if (pathId && idPattern.test(pathId)) {
+        return pathId;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
 
 function normalizeOrigin(origin?: string) {
   const rawOrigin = origin?.trim() || process.env.NEXT_PUBLIC_SITE_ORIGIN?.trim() || SHARE_SITE_ORIGIN;
@@ -88,9 +126,8 @@ export async function resolveShareMetadataForOrigin(
     return null;
   }
 
-  const selectedVideo = await getVideoForSharing(normalizedVideoId);
-  const oEmbed = selectedVideo?.title?.trim() ? null : await fetchYouTubeOEmbed(normalizedVideoId);
-  const resolvedTitle = selectedVideo?.title?.trim() || oEmbed?.title?.trim() || fallbackTitle?.trim() || "Watch this video";
+  const oEmbed = await fetchYouTubeOEmbed(normalizedVideoId);
+  const resolvedTitle = oEmbed?.title?.trim() || fallbackTitle?.trim() || "Watch this video";
   const safeVideoTitle = resolvedTitle;
   const shareTitle = `${safeVideoTitle} | ${SHARE_SITE_NAME}`;
   const shareDescription =
