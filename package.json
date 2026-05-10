@@ -86,11 +86,11 @@
   },
   "devDependencies": {
     "cross-env": "^10.1.0",
-    "prisma": "^6.19.3",
+    "prisma": "^7.8.0",
     "turbo": "^2.9.12"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3",
+    "@prisma/client": "^7.8.0",
     "mysql2": "^3.22.3"
   }
 }
