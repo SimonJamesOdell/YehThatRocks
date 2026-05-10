@@ -13,6 +13,7 @@ type YouTubeThumbnailImageProps = {
   decoding?: "async" | "auto" | "sync";
   fetchPriority?: "high" | "low" | "auto";
   hideClosestSelector?: string;
+  onBrokenThumbnail?: (videoId: string) => void;
   reportReason?: string;
   shouldReportUnavailable?: boolean;
 };
@@ -67,6 +68,7 @@ export function YouTubeThumbnailImage({
   decoding = "async",
   fetchPriority,
   hideClosestSelector = "[data-video-id]",
+  onBrokenThumbnail,
   reportReason = "thumbnail-load-error",
   shouldReportUnavailable = true,
 }: YouTubeThumbnailImageProps) {
@@ -78,7 +80,12 @@ export function YouTubeThumbnailImage({
   }));
   const elementRef = useRef<HTMLImageElement | null>(null);
   const brokenMarkerRef = useRef<HTMLSpanElement | null>(null);
+  const onBrokenThumbnailRef = useRef<typeof onBrokenThumbnail>(onBrokenThumbnail);
   const state = thumbState.videoId === videoId ? thumbState.state : thumbnailHealthCache.get(videoId) ?? "unknown";
+
+  useEffect(() => {
+    onBrokenThumbnailRef.current = onBrokenThumbnail;
+  }, [onBrokenThumbnail]);
 
   useEffect(() => {
     const cached = thumbnailHealthCache.get(videoId);
@@ -130,6 +137,8 @@ export function YouTubeThumbnailImage({
       return;
     }
 
+    onBrokenThumbnailRef.current?.(videoId);
+
     if (shouldReportUnavailable) {
       reportUnavailable(videoId, reportReason);
     }
@@ -174,6 +183,7 @@ export function YouTubeThumbnailImage({
         if (shouldReportUnavailable) {
           reportUnavailable(videoId, reportReason);
         }
+        onBrokenThumbnail?.(videoId);
         thumbnailHealthCache.set(videoId, "broken");
         setThumbState({ videoId, state: "broken" });
       }}

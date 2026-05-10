@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { requireAdminApiAuth } from "@/lib/admin-auth";
+import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { prisma } from "@/lib/db";
-import { verifySameOrigin } from "@/lib/csrf";
-import { parseRequestJson } from "@/lib/request-json";
 
 const updateSchema = z.object({
   id: z.number().int().positive(),
@@ -13,7 +11,7 @@ const updateSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApiAuth(request);
+  const auth = await requireAuthOnly(request);
 
   if (!auth.ok) {
     return auth.response;
@@ -34,33 +32,20 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await requireAdminApiAuth(request);
+  const result = await withAuthAndBody(request, updateSchema);
 
-  if (!auth.ok) {
-    return auth.response;
+  if (!result.ok) {
+    return result.response;
   }
 
-  const csrf = verifySameOrigin(request);
-  if (csrf) {
-    return csrf;
-  }
-
-  const body = await parseRequestJson(request);
-  if (!body.ok) {
-    return body.response;
-  }
-
-  const parsed = updateSchema.safeParse(body.data);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = result.data;
 
   const updated = await prisma.genreCard.update({
-    where: { id: parsed.data.id },
+    where: { id: parsed.id },
     data: {
-      ...(parsed.data.genre !== undefined ? { genre: parsed.data.genre } : {}),
-      ...(parsed.data.thumbnailVideoId !== undefined
-        ? { thumbnailVideoId: parsed.data.thumbnailVideoId || null }
+      ...(parsed.genre !== undefined ? { genre: parsed.genre } : {}),
+      ...(parsed.thumbnailVideoId !== undefined
+        ? { thumbnailVideoId: parsed.thumbnailVideoId || null }
         : {}),
     },
     select: {

@@ -47,9 +47,12 @@ function main() {
   assertContains(categoryVideoCardSource, "<YouTubeThumbnailImage", "Category video cards render shared thumbnail pre-flight component", failures);
   assertNotContains(categoryVideoCardSource, "i.ytimg.com/vi/", "Category video cards no longer render direct thumbnail URLs", failures);
 
-  // Temporarily disabled: ended-choice card preflight enforcement caused repeated
-  // player regressions during rollout. Keep all other thumbnail preflight
-  // contracts active while ended-choice behavior is stabilized.
+  assertContains(endedChoiceCardSource, 'import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";', "Ended-choice cards import shared thumbnail pre-flight component", failures);
+  assertContains(endedChoiceCardSource, "<YouTubeThumbnailImage", "Ended-choice cards render shared thumbnail pre-flight component", failures);
+  assertContains(endedChoiceCardSource, "reportReason=\"ended-choice-thumbnail-unavailable\"", "Ended-choice cards annotate unavailable reports with ended-choice-specific reason", failures);
+  assertNotContains(endedChoiceCardSource, "i.ytimg.com/vi/", "Ended-choice cards no longer render direct thumbnail URLs", failures);
+  assertContains(endedChoiceCardSource, "onBrokenThumbnail: (videoId: string) => void;", "Ended-choice card component accepts onBrokenThumbnail callback prop", failures);
+  assertContains(endedChoiceCardSource, "onBrokenThumbnail={onBrokenThumbnail}", "Ended-choice card passes callback to YouTubeThumbnailImage component", failures);
 
   // Backend unavailable-report handling contract.
   assertContains(unavailableRouteSource, "const verification = await verifyYouTubeAvailability(videoId);", "Unavailable-report API re-verifies reported IDs before pruning", failures);

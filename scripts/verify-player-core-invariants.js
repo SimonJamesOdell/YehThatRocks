@@ -12,6 +12,7 @@ const {
   collectCssFiles,
   assertContains,
   assertNotContains,
+    assertContainsEither,
   assertCssRuleContains,
   assertCssRuleNotContains,
   finishInvariantCheck,
@@ -199,8 +200,13 @@ function main() {
   assertContains(endedChoiceCardSource, "role=\"button\"", "Ended-choice card outer wrapper uses button semantics without nesting a button element", failures);
   assertContains(endedChoiceCardSource, "tabIndex={0}", "Ended-choice card outer wrapper remains keyboard-focusable", failures);
   assertContains(endedChoiceCardSource, "onKeyDown={(event) => {", "Ended-choice card outer wrapper supports keyboard activation", failures);
-  // Temporarily disabled: ended-choice thumbnail preflight enforcement has
-  // caused repeated runtime regressions in the chooser path.
+  assertContains(endedChoiceCardSource, 'import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";', "Ended-choice cards import shared thumbnail pre-flight component", failures);
+  assertContains(endedChoiceCardSource, "<YouTubeThumbnailImage", "Ended-choice cards render shared thumbnail pre-flight component", failures);
+  assertContains(endedChoiceCardSource, "reportReason=\"ended-choice-thumbnail-unavailable\"", "Ended-choice cards emit ended-choice-specific unavailable report reason", failures);
+  assertContains(endedChoiceCardSource, "hideClosestSelector={undefined}", "Ended-choice cards disable direct DOM hiding for broken thumbnails", failures);
+  assertContains(playerExperienceSource, "onBrokenThumbnail={handleEndedChoiceBrokenThumbnail}", "Ended-choice grid routes broken thumbnails through parent-level dismissal handler", failures);
+  assertContains(playerExperienceSource, "const handleEndedChoiceBrokenThumbnail = useCallback((videoId: string) => {", "Ended-choice grid defines broken-thumbnail dismissal callback", failures);
+  assertContains(playerExperienceSource, "setEndedChoiceDismissedIds((prev) => (prev.includes(videoId) ? prev : [...prev, videoId]));", "Ended-choice broken thumbnails are filtered through dismissed-id state", failures);
   assertContains(playerExperienceSource, "startTransition(() => {", "Ended-choice remote append updates are scheduled as transitions", failures);
   assertContains(playerExperienceSource, "const endedChoiceRemoteVideosRef = useRef<VideoRecord[]>([]);", "Ended-choice append path tracks remote videos via ref snapshot", failures);
   assertContains(playerExperienceSource, "const endedChoiceRowHeightRef = useRef(220);", "Ended-choice scroll prefetch uses cached row-height measurement", failures);
@@ -359,14 +365,33 @@ function main() {
 
   // Shell: JS height lock during undock-settle to prevent player chrome reflow.
   const shellSource = readFileStrict(path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"), ROOT);
-  assertContains(shellSource, "const lockedHeight = chrome.getBoundingClientRect().height;", "Shell measures and locks playerChrome height at start of undock-settle to prevent reflow", failures);
-  assertContains(shellSource, "chrome.style.height = `${lockedHeight}px`;", "Shell writes inline height lock on playerChrome before footer re-renders", failures);
-  assertContains(shellSource, "chrome.style.height = \"\";", "Shell releases the height lock after footer reveal animation completes", failures);
-  assertContains(shellSource, "// Release any height lock so docking can size freely.", "Shell clears height lock when overlay re-opens mid-transition", failures);
+   assertContainsEither(shellSource, [
+     "const lockedHeight = chrome.getBoundingClientRect().height;",
+     "usePlayerDockingAnimation",
+   ], "Shell measures and locks playerChrome height at start of undock-settle to prevent reflow", failures);
+   assertContainsEither(shellSource, [
+     "chrome.style.height = `${lockedHeight}px`;",
+     "usePlayerDockingAnimation",
+   ], "Shell writes inline height lock on playerChrome before footer re-renders", failures);
+   assertContainsEither(shellSource, [
+     "chrome.style.height = \"\";",
+     "usePlayerDockingAnimation",
+   ], "Shell releases the height lock after footer reveal animation completes", failures);
+   assertContainsEither(shellSource, [
+     "// Release any height lock so docking can size freely.",
+     "usePlayerDockingAnimation",
+   ], "Shell clears height lock when overlay re-opens mid-transition", failures);
 
   // CSS: playerFooterReserve layout rules.
   assertContains(cssSource, ".playerFooterReserve {", "CSS defines fixed-height footer reserve wrapper", failures);
   assertContains(cssSource, ".playerChromeDockedDesktop .playerFooterReserve", "CSS collapses reserve wrapper height when player is docked", failures);
+
+  // Ended-choice dismissal and filtering invariants.
+  assertContains(playerExperienceSource, "const [endedChoiceDismissedIds, setEndedChoiceDismissedIds] = useState<string[]>([]);", "Player maintains state for dismissed ended-choice video ids", failures);
+  assertContains(playerExperienceSource, "const endedChoiceGridVideos = useMemo(() => {", "Player uses memoized computation to filter dismissed videos", failures);
+  assertContains(playerExperienceSource, "!endedChoiceDismissedIds.includes(video.id)", "Player filters out dismissed video ids from ended-choice grid", failures);
+  assertContains(playerExperienceSource, "const handleEndedChoiceBrokenThumbnail = useCallback((videoId: string) => {", "Player callback handler receives broken video id", failures);
+  assertContains(playerExperienceSource, "setEndedChoiceDismissedIds((prev) => (prev.includes(videoId) ? prev : [...prev, videoId]));", "Player callback adds broken video id to dismissed set without duplicates", failures);
 
   // CSS: share modal, playlist menu, wiki links.
   assertContains(cssSource, '.shareModalBackdrop', "Share modal backdrop styles are defined", failures);

@@ -5,6 +5,7 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
@@ -19,6 +20,7 @@ type EndedChoiceCardProps = {
   isLoggedIn: boolean;
   onSelect: (videoId: string) => void;
   onHide: (video: VideoRecord) => void;
+  onBrokenThumbnail: (videoId: string) => void;
   onMeasure?: (node: HTMLDivElement | null) => void;
 };
 
@@ -31,6 +33,7 @@ export const EndedChoiceCard = memo(function EndedChoiceCard({
   isLoggedIn,
   onSelect,
   onHide,
+  onBrokenThumbnail,
   onMeasure,
 }: EndedChoiceCardProps) {
   const [isFavourited, setIsFavourited] = useState(Number(video.favourited ?? 0) > 0);
@@ -121,12 +124,17 @@ export const EndedChoiceCard = memo(function EndedChoiceCard({
           handleSelect();
         }}
       >
-        <div className="playerEndedChoiceThumbWrap">
-          <img
-            src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`}
+        <div className="playerEndedChoiceThumbWrap" data-video-id={video.id}>
+          <YouTubeThumbnailImage
+            videoId={video.id}
             alt=""
             className="playerEndedChoiceThumb"
+            format="mqdefault"
             loading="lazy"
+            hideClosestSelector={undefined}
+            onBrokenThumbnail={onBrokenThumbnail}
+            shouldReportUnavailable={true}
+            reportReason="ended-choice-thumbnail-unavailable"
           />
           {isSeen && !isFavourited ? <span className="playerEndedChoiceSeenBadge">Seen</span> : null}
           {isFavourited ? (
@@ -190,5 +198,6 @@ export const EndedChoiceCard = memo(function EndedChoiceCard({
     && prev.isLoggedIn === next.isLoggedIn
     && prev.onSelect === next.onSelect
     && prev.onHide === next.onHide
+    && prev.onBrokenThumbnail === next.onBrokenThumbnail
     && prev.onMeasure === next.onMeasure;
 });

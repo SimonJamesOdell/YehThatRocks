@@ -163,4 +163,27 @@ describe("admin-dashboard-rollups narrow-window gating", () => {
     );
     expect(geoUpsertCalls).toHaveLength(0);
   });
+
+  it("hourly rollup queries use only_full_group_by-safe SELECT and GROUP BY expressions", async () => {
+    const { refreshRecentHourlyRollupsForTest } = await import("@/lib/admin-dashboard-rollups");
+    await refreshRecentHourlyRollupsForTest({ fullScan: false });
+
+    const insertCalls = executeRawUnsafeMock.mock.calls.filter(([sql]: [string]) =>
+      /INSERT INTO admin_dashboard_analytics_hourly/i.test(sql),
+    );
+    expect(insertCalls).toHaveLength(1);
+    const [sql] = insertCalls[0] as [string];
+
+    // Extract SELECT expression and GROUP BY expression
+    const selectMatch = sql.match(/STR_TO_DATE\s*\(\s*DATE_FORMAT\s*\(\s*created_at\s*,\s*'%Y-%m-%d\s+%H:00:00'\s*\)\s*,\s*'%Y-%m-%d\s+%H:%i:%s'\s*\)\s+AS\s+bucket_start/i);
+    const groupByMatch = sql.match(/GROUP\s+BY\s+STR_TO_DATE\s*\(\s*DATE_FORMAT\s*\(\s*created_at\s*,\s*'%Y-%m-%d\s+%H:00:00'\s*\)\s*,\s*'%Y-%m-%d\s+%H:%i:%s'\s*\)/i);
+
+    expect(selectMatch).not.toBeNull();
+    expect(groupByMatch).not.toBeNull();
+
+    // Verify the SELECT and GROUP BY expressions match exactly
+    const selectExpr = selectMatch![0];
+    const groupByExpr = groupByMatch![0].replace(/^GROUP\s+BY\s+/i, "");
+    expect(selectExpr).toContain(groupByExpr);
+  });
 });
