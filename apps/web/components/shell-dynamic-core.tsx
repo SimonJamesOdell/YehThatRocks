@@ -573,6 +573,7 @@ function ShellDynamicInner({
     handleChatSubmit, handleDeleteChatMessage,
   } = useChatState({
     initialPathname: pathname,
+    pathname,
     isAuthenticated,
     isMagazineOverlayRoute,
     isAdminOverlayRoute,
@@ -3232,7 +3233,7 @@ function ShellDynamicInner({
                           <div className="magazineRailBody">
                             <div className="messageMeta">
                               <strong>{track.artist}</strong>
-                              <span>{track.genre}</span>
+                              <span>{track.kicker || track.genre}</span>
                             </div>
                             <p>{track.title}</p>
                             {magazineDeleteErrors[track.slug] ? (

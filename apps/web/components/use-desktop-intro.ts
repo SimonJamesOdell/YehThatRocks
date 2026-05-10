@@ -265,9 +265,11 @@ export function useDesktopIntro({
       return;
     }
 
-    if (DISABLE_DESKTOP_INTRO) {
+    if (DISABLE_DESKTOP_INTRO || pathname !== "/") {
       setIsDesktopIntroPreload(false);
-      setIsDesktopIntroLogoReady(true);
+      if (DISABLE_DESKTOP_INTRO) {
+        setIsDesktopIntroLogoReady(true);
+      }
       setDesktopIntroPhase("disabled");
       return;
     }
@@ -287,7 +289,7 @@ export function useDesktopIntro({
       window.removeEventListener("resize", handleResize);
       clearDesktopIntroTimers();
     };
-  }, [clearDesktopIntroTimers, startPreparedDesktopIntroSequence, syncDesktopIntroTarget]);
+  }, [clearDesktopIntroTimers, pathname, startPreparedDesktopIntroSequence, syncDesktopIntroTarget]);
 
   // Replay the intro when the user navigates back to "/" via the brand logo.
   useEffect(() => {
