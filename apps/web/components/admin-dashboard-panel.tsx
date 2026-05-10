@@ -1984,10 +1984,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
             </div>
             <div className="panelHeading">
               {videoModerationPane === "pending" ? (
-                <>
-                  <span>New Videos Pending Approval</span>
-                  <strong>{pendingVideoTotal} total</strong>
-                </>
+                null
               ) : (
                 <>
                   <span>Recently Approved</span>
@@ -1999,9 +1996,9 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
               {videoModerationPane === "pending" ? (
                 <>
                   {pendingVideos.length === 0 ? <p className="authMessage">No pending videos.</p> : null}
-                  {pendingVideos.slice(0, 50).map((row) => (
-                    // Keep user edits stable while the pending queue auto-refreshes.
+                  {pendingVideos.length > 0 ? (
                     (() => {
+                      const row = pendingVideos[0];
                       const draft = pendingVideoDrafts[row.id];
                       const editableTitle = draft?.title ?? row.title;
                       // If a draft exists for this row (user has edited it), use the draft
@@ -2011,105 +2008,115 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                       const editableTrack = draft !== undefined ? (draft.parsedTrack ?? "") : (row.parsedTrack ?? "");
 
                       return (
-                    <div key={`pending-${row.id}`} className="authForm">
-                      <p className="authMessage">{row.videoId}</p>
-                      <label>
-                        <span>Title</span>
-                        <input
-                          value={editableTitle}
-                          onChange={(event) => {
-                            const nextTitle = event.target.value;
-                            setPendingVideoDrafts((current) => ({
-                              ...current,
-                              [row.id]: {
-                                title: nextTitle,
-                                parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
-                                parsedTrack: current[row.id]?.parsedTrack ?? row.parsedTrack,
-                              },
-                            }));
+                        <div
+                          key={`pending-${row.id}`}
+                          className="authForm authFormWide"
+                          style={{
+                            width: "100%",
+                            maxWidth: "none",
+                            gap: 14,
+                            alignItems: "start",
                           }}
-                          placeholder="Video title"
-                        />
-                      </label>
-                      <label>
-                        <span>Artist (optional override)</span>
-                        <input
-                          value={editableArtist}
-                          onChange={(event) => {
-                            const nextArtist = event.target.value;
-                            setPendingVideoDrafts((current) => ({
-                              ...current,
-                              [row.id]: {
-                                title: current[row.id]?.title ?? row.title,
-                                parsedArtist: nextArtist || null,
-                                parsedTrack: current[row.id]?.parsedTrack ?? row.parsedTrack,
-                              },
-                            }));
-                          }}
-                          placeholder="Artist"
-                        />
-                      </label>
-                      <label>
-                        <span>Track (optional override)</span>
-                        <input
-                          value={editableTrack}
-                          onChange={(event) => {
-                            const nextTrack = event.target.value;
-                            setPendingVideoDrafts((current) => ({
-                              ...current,
-                              [row.id]: {
-                                title: current[row.id]?.title ?? row.title,
-                                parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
-                                parsedTrack: nextTrack || null,
-                              },
-                            }));
-                          }}
-                          placeholder="Track name"
-                        />
-                      </label>
-                      <p className="authMessage">Channel: {row.channelTitle ?? "-"}</p>
-                      <div
-                        style={{
-                          position: "relative",
-                          width: "100%",
-                          maxWidth: 480,
-                          aspectRatio: "16 / 9",
-                          borderRadius: 10,
-                          overflow: "hidden",
-                          background: "rgba(0,0,0,0.45)",
-                          border: "1px solid rgba(255,255,255,0.12)",
-                        }}
-                      >
-                        <iframe
-                          src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0`}
-                          title={`Pending video preview ${row.videoId}`}
-                          loading="lazy"
-                          referrerPolicy="strict-origin-when-cross-origin"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                          allowFullScreen
-                          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
-                        />
-                      </div>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button
-                          type="button"
-                          onClick={() => void moderatePendingVideo(row, "approve")}
-                          disabled={moderatingVideoId === row.videoId || editableTitle.trim().length === 0}
                         >
-                          Approve
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void moderatePendingVideo(row, "remove")}
-                          disabled={moderatingVideoId === row.videoId}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
+                          <div style={{ display: "grid", gap: 10 }}>
+                            <p className="authMessage" style={{ margin: 0 }}><strong>{row.videoId}</strong></p>
+                            <label>
+                              <span>Title</span>
+                              <input
+                                value={editableTitle}
+                                onChange={(event) => {
+                                  const nextTitle = event.target.value;
+                                  setPendingVideoDrafts((current) => ({
+                                    ...current,
+                                    [row.id]: {
+                                      title: nextTitle,
+                                      parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
+                                      parsedTrack: current[row.id]?.parsedTrack ?? row.parsedTrack,
+                                    },
+                                  }));
+                                }}
+                                placeholder="Video title"
+                              />
+                            </label>
+                            <label>
+                              <span>Artist (optional override)</span>
+                              <input
+                                value={editableArtist}
+                                onChange={(event) => {
+                                  const nextArtist = event.target.value;
+                                  setPendingVideoDrafts((current) => ({
+                                    ...current,
+                                    [row.id]: {
+                                      title: current[row.id]?.title ?? row.title,
+                                      parsedArtist: nextArtist || null,
+                                      parsedTrack: current[row.id]?.parsedTrack ?? row.parsedTrack,
+                                    },
+                                  }));
+                                }}
+                                placeholder="Artist"
+                              />
+                            </label>
+                            <label>
+                              <span>Track (optional override)</span>
+                              <input
+                                value={editableTrack}
+                                onChange={(event) => {
+                                  const nextTrack = event.target.value;
+                                  setPendingVideoDrafts((current) => ({
+                                    ...current,
+                                    [row.id]: {
+                                      title: current[row.id]?.title ?? row.title,
+                                      parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
+                                      parsedTrack: nextTrack || null,
+                                    },
+                                  }));
+                                }}
+                                placeholder="Track name"
+                              />
+                            </label>
+                            <p className="authMessage" style={{ margin: 0 }}>Channel: {row.channelTitle ?? "-"}</p>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <button
+                                type="button"
+                                onClick={() => void moderatePendingVideo(row, "approve")}
+                                disabled={moderatingVideoId === row.videoId || editableTitle.trim().length === 0}
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void moderatePendingVideo(row, "remove")}
+                                disabled={moderatingVideoId === row.videoId}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              position: "relative",
+                              width: "100%",
+                              aspectRatio: "16 / 9",
+                              borderRadius: 10,
+                              overflow: "hidden",
+                              background: "rgba(0,0,0,0.45)",
+                              border: "1px solid rgba(255,255,255,0.12)",
+                            }}
+                          >
+                            <iframe
+                              src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0`}
+                              title={`Pending video preview ${row.videoId}`}
+                              loading="lazy"
+                              referrerPolicy="strict-origin-when-cross-origin"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                              allowFullScreen
+                              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+                            />
+                          </div>
+                        </div>
                       );
                     })()
-                  ))}
+                  ) : null}
                 </>
               ) : (
                 <>
