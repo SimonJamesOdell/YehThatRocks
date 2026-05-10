@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { geoContains, geoNaturalEarth1, geoPath } from "d3-geo";
 import { feature } from "topojson-client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import worldAtlasCountries from "world-atlas/countries-110m.json";
 
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
@@ -330,6 +330,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [pendingVideos, setPendingVideos] = useState<PendingVideoRow[]>([]);
   const [pendingVideoDrafts, setPendingVideoDrafts] = useState<Record<number, PendingVideoDraft>>({});
+  const [pendingPreviewSkipOffsets, setPendingPreviewSkipOffsets] = useState<Record<number, number>>({});
+  const pendingPreviewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [pendingVideoTotal, setPendingVideoTotal] = useState(0);
   const [recentlyApprovedVideos, setRecentlyApprovedVideos] = useState<RecentlyApprovedVideoRow[]>([]);
   const [videoModerationPane, setVideoModerationPane] = useState<"pending" | "recent">("pending");
@@ -857,6 +859,19 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
 
       return next;
     });
+    setPendingPreviewSkipOffsets((current) => {
+      const liveIds = new Set(pendingPayload.pendingVideos.map((item) => item.id));
+      const next: Record<number, number> = {};
+
+      for (const [key, offset] of Object.entries(current)) {
+        const id = Number(key);
+        if (liveIds.has(id)) {
+          next[id] = offset;
+        }
+      }
+
+      return next;
+    });
   }
 
   async function loadRecentlyApprovedVideos() {
@@ -881,6 +896,22 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     } finally {
       setRevokingVideoId(null);
     }
+  }
+
+  function seekPendingPreview(seconds: number) {
+    const iframeWindow = pendingPreviewIframeRef.current?.contentWindow;
+    if (!iframeWindow) {
+      return;
+    }
+
+    iframeWindow.postMessage(
+      JSON.stringify({ event: "command", func: "seekTo", args: [seconds, true] }),
+      "*",
+    );
+    iframeWindow.postMessage(
+      JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+      "*",
+    );
   }
 
   async function loadArtists() {
@@ -2011,7 +2042,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                       // Only fall back to the server value when no draft exists yet.
                       const editableArtist = draft !== undefined ? (draft.parsedArtist ?? "") : (row.parsedArtist ?? "");
                       const editableTrack = draft !== undefined ? (draft.parsedTrack ?? "") : (row.parsedTrack ?? "");
-                      const startAtSec = row.durationSec && row.durationSec > 0 ? Math.floor(row.durationSec / 2) : 0;
+                      const baseStartAtSec = row.durationSec && row.durationSec > 0 ? Math.floor(row.durationSec / 2) : 0;
+                      const maxStartAtSec = row.durationSec && row.durationSec > 0 ? Math.max(0, row.durationSec - 1) : null;
 
                       return (
                         <div
@@ -2096,7 +2128,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                               }}
                             >
                               <iframe
-                                src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0&autoplay=1&mute=1&playsinline=1&start=${startAtSec}`}
+                                ref={pendingPreviewIframeRef}
+                                src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0&autoplay=1&mute=0&playsinline=1&enablejsapi=1&start=${baseStartAtSec}`}
                                 title={`Pending video preview ${row.videoId}`}
                                 loading="lazy"
                                 referrerPolicy="strict-origin-when-cross-origin"
@@ -2119,6 +2152,32 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                                 disabled={moderatingVideoId === row.videoId}
                               >
                                 Remove
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const currentOffset = pendingPreviewSkipOffsets[row.id] ?? 0;
+                                  const nextOffset = currentOffset + 20;
+                                  const maxOffset = row.durationSec && row.durationSec > 0
+                                    ? Math.max(0, row.durationSec - 1 - baseStartAtSec)
+                                    : null;
+                                  const appliedOffset = maxOffset === null ? nextOffset : Math.min(nextOffset, maxOffset);
+                                  const nextStartAtSec = maxStartAtSec === null
+                                    ? baseStartAtSec + appliedOffset
+                                    : Math.min(baseStartAtSec + appliedOffset, maxStartAtSec);
+
+                                  setPendingPreviewSkipOffsets((current) => {
+                                    return {
+                                      ...current,
+                                      [row.id]: appliedOffset,
+                                    };
+                                  });
+
+                                  seekPendingPreview(nextStartAtSec);
+                                }}
+                                disabled={moderatingVideoId === row.videoId}
+                              >
+                                Skip +20s
                               </button>
                             </div>
                           </div>
