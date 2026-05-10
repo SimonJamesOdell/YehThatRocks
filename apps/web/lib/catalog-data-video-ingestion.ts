@@ -50,6 +50,7 @@ import {
 import { markAvailableVideoMaxIdDirty, recordAvailableVideoIdCandidate } from "@/lib/available-video-max-id";
 import { clearGenreCardThumbnailForVideo } from "@/lib/catalog-data-genres";
 import { getMusicBrainzArtistData } from "@/lib/musicbrainz";
+import { getDatabaseNormalizedVideoId } from "@/lib/catalog-data-internal-helpers";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -875,8 +876,8 @@ async function persistRelatedVideoCache(videoId: string, relatedIds: string[]) {
 }
 
 async function hasStoredRelatedCache(videoId: string) {
-  const normalizedVideoId = normalizeYouTubeVideoId(videoId);
-  if (!normalizedVideoId || !hasDatabaseUrl()) return false;
+  const normalizedVideoId = getDatabaseNormalizedVideoId(videoId);
+  if (!normalizedVideoId) return false;
 
   const rows = await prisma.$queryRaw<Array<{ count: bigint | number }>>`
     SELECT COUNT(*) AS count FROM related WHERE videoId = ${normalizedVideoId}
@@ -1400,8 +1401,8 @@ export async function importVideoFromDirectSource(source: string, options?: { di
 }
 
 export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason = "runtime-prune") {
-  const normalizedVideoId = normalizeYouTubeVideoId(videoId);
-  if (!normalizedVideoId || !hasDatabaseUrl()) {
+  const normalizedVideoId = getDatabaseNormalizedVideoId(videoId);
+  if (!normalizedVideoId) {
     return { pruned: false, deletedVideoRows: 0, reason: "invalid-or-no-db" };
   }
 

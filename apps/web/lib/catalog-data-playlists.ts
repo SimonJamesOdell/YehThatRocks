@@ -12,6 +12,7 @@ import {
   escapeSqlIdentifier,
 } from "@/lib/catalog-data-utils";
 import { loadTableColumns, pickColumn } from "@/lib/catalog-data-db";
+import { hasDatabaseUserScope, mapPlaylistFallbackRowToDetail } from "@/lib/catalog-data-internal-helpers";
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
@@ -167,7 +168,7 @@ export async function getPlaylists(userId?: number): Promise<PlaylistSummary[]> 
 }
 
 export async function getPlaylistById(id: string, userId?: number): Promise<PlaylistDetail | null> {
-  if (!hasDatabaseUrl() || !userId) {
+  if (!hasDatabaseUserScope(userId)) {
     return null;
   }
 
@@ -577,15 +578,18 @@ export async function createPlaylist(name: string, videoIds: string[] = [], user
 }
 
 export async function addPlaylistItem(playlistId: string, videoId: string, userId?: number) {
-  if (hasDatabaseUrl() && userId) {
-    const numericPlaylistId = Number(playlistId);
-    const normalizedVideoId = normalizeYouTubeVideoId(videoId) ?? videoId;
+  if (!hasDatabaseUserScope(userId)) {
+    return null;
+  }
 
-    if (!Number.isInteger(numericPlaylistId)) {
-      return null;
-    }
+  const numericPlaylistId = Number(playlistId);
+  const normalizedVideoId = normalizeYouTubeVideoId(videoId) ?? videoId;
 
-    try {
+  if (!Number.isInteger(numericPlaylistId)) {
+    return null;
+  }
+
+  try {
       let ownerColumn: "userId" | "user_id" | null = null;
 
       try {
@@ -756,17 +760,10 @@ export async function addPlaylistItem(playlistId: string, videoId: string, userI
         return null;
       }
 
-      return {
-        id: String(typeof fallback.id === "bigint" ? Number(fallback.id) : fallback.id),
-        name: fallback.name ?? "Untitled Playlist",
-        videos: [],
-      };
-    } catch {
-      return null;
-    }
+      return mapPlaylistFallbackRowToDetail(fallback);
+  } catch {
+    return null;
   }
-
-  return null;
 }
 
 export async function addPlaylistItems(
@@ -774,7 +771,7 @@ export async function addPlaylistItems(
   videoIds: string[],
   userId?: number,
 ) {
-  if (!hasDatabaseUrl() || !userId) {
+  if (!hasDatabaseUserScope(userId)) {
     return null;
   }
 
@@ -962,11 +959,7 @@ export async function addPlaylistItems(
       return null;
     }
 
-    return {
-      id: String(typeof fallback.id === "bigint" ? Number(fallback.id) : fallback.id),
-      name: fallback.name ?? "Untitled Playlist",
-      videos: [],
-    };
+    return mapPlaylistFallbackRowToDetail(fallback);
   } catch {
     return null;
   }
@@ -978,7 +971,7 @@ export async function removePlaylistItem(
   userId?: number,
   playlistItemId?: string | null,
 ) {
-  if (!hasDatabaseUrl() || !userId) {
+  if (!hasDatabaseUserScope(userId)) {
     return null;
   }
 
@@ -1097,7 +1090,7 @@ export async function reorderPlaylistItems(
   fromPlaylistItemId?: string | null,
   toPlaylistItemId?: string | null,
 ) {
-  if (!hasDatabaseUrl() || !userId) {
+  if (!hasDatabaseUserScope(userId)) {
     return null;
   }
 

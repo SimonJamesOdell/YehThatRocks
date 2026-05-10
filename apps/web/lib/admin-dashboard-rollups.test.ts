@@ -109,6 +109,32 @@ describe("admin-dashboard-rollups narrow-window gating", () => {
     expect(sql).toContain("INTERVAL 21 DAY");
   });
 
+  it("keeps hourly bucket SELECT and GROUP BY expressions synchronized for only_full_group_by safety", async () => {
+    const { refreshRecentHourlyRollupsForTest } = await import("@/lib/admin-dashboard-rollups");
+    await refreshRecentHourlyRollupsForTest({ fullScan: false });
+
+    const analyticsInsertCalls = executeRawUnsafeMock.mock.calls.filter(([sql]: [string]) =>
+      /INSERT INTO admin_dashboard_analytics_hourly/i.test(sql),
+    );
+    const authInsertCalls = executeRawUnsafeMock.mock.calls.filter(([sql]: [string]) =>
+      /INSERT INTO admin_dashboard_auth_hourly/i.test(sql),
+    );
+
+    expect(analyticsInsertCalls).toHaveLength(1);
+    expect(authInsertCalls).toHaveLength(1);
+
+    const [analyticsSql] = analyticsInsertCalls[0] as [string];
+    const [authSql] = authInsertCalls[0] as [string];
+
+    const groupByExpr = "DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')";
+    const selectExpr = `STR_TO_DATE(${groupByExpr}, '%Y-%m-%d %H:%i:%s') AS bucket_start`;
+
+    expect(analyticsSql).toContain(selectExpr);
+    expect(analyticsSql).toContain(`GROUP BY ${groupByExpr}`);
+    expect(authSql).toContain(selectExpr);
+    expect(authSql).toContain(`GROUP BY ${groupByExpr}`);
+  });
+
   it("ensureAdminDashboardRollupsFresh skips refresh when in-memory TTL not expired", async () => {
     const { ensureAdminDashboardRollupsFresh, resetRollupsStateForTest } = await import("@/lib/admin-dashboard-rollups");
     resetRollupsStateForTest({ lastRefreshedAtMs: Date.now() });
@@ -145,6 +171,29 @@ describe("admin-dashboard-rollups narrow-window gating", () => {
     expect(sql).toContain("FROM analytics_events");
     expect(sql).toContain("WHERE has_geo_coords = 1");
     expect(sql).toContain("GROUP BY visitor_id");
+  });
+
+  it("refreshGeoVisitorRollup falls back to null-check geo predicate when indexed path fails", async () => {
+    executeRawUnsafeMock.mockReset();
+    executeRawUnsafeMock
+      .mockRejectedValueOnce(new Error("missing has_geo_coords column"))
+      .mockResolvedValue(undefined);
+
+    const { refreshGeoVisitorRollupForTest } = await import("@/lib/admin-dashboard-rollups");
+    await refreshGeoVisitorRollupForTest();
+
+    const upsertCalls = executeRawUnsafeMock.mock.calls.filter(([sql]: [string]) =>
+      /INSERT INTO admin_dashboard_geo_visitors/i.test(sql),
+    );
+    expect(upsertCalls).toHaveLength(2);
+
+    const [firstSql] = upsertCalls[0] as [string];
+    const [secondSql] = upsertCalls[1] as [string];
+
+    expect(firstSql).toContain("WHERE has_geo_coords = 1");
+    expect(secondSql).toContain("WHERE geo_lat IS NOT NULL");
+    expect(secondSql).toContain("AND geo_lng IS NOT NULL");
+    expect(secondSql).toContain("GROUP BY visitor_id");
   });
 
   it("skips geo rollup refresh when geo staleness TTL has not expired", async () => {

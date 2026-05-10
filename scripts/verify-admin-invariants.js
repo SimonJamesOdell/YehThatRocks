@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const path = require("node:path");
-  const { readFileStrict, assertContains, assertContainsEither, finishInvariantCheck } = require("./invariants/helpers");
+const { readFileStrict, assertContains, assertContainsEither, finishInvariantCheck } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
 
@@ -97,16 +97,20 @@ function main() {
   assertContains(adminVideosRouteSource, "description: true,", "Admin videos API includes description in GET payload", failures);
   assertContains(adminVideosRouteSource, 'import { clearCatalogVideoCaches, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";', "Admin videos API imports shared catalog cache invalidation helper", failures);
   assertContains(adminVideosRouteSource, 'import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";', "Admin videos API imports shared current-video cache invalidation helper", failures);
+  assertContains(adminVideosRouteSource, 'import { mapAdminPruneResultToDeleteResponse } from "@/lib/admin-prune-delete-response";', "Admin videos API imports shared prune-result response mapper", failures);
   assertContains(adminVideosRouteSource, "clearCatalogVideoCaches();", "Admin videos PATCH clears catalog-side video caches after metadata edits", failures);
   assertContains(adminVideosRouteSource, "clearCurrentVideoRouteCaches();", "Admin videos PATCH clears current-video route caches after metadata edits", failures);
-   assertContainsEither(adminVideosRouteSource, [
-       "const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.data.videoId, \"admin-hard-delete\");",
-       "const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.videoId, \"admin-hard-delete\");",
-     ], "Admin videos DELETE prunes catalog data via shared hard-delete helper", failures);
+  assertContainsEither(adminVideosRouteSource, [
+    "const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.data.videoId, \"admin-hard-delete\");",
+    "const pruneResult = await pruneVideoAndAssociationsByVideoId(parsed.videoId, \"admin-hard-delete\");",
+  ], "Admin videos DELETE prunes catalog data via shared hard-delete helper", failures);
   assertContains(adminVideosRouteSource, "if (!pruneResult.pruned)", "Admin videos DELETE handles prune failures explicitly", failures);
   assertContains(adminVideosRouteSource, "return NextResponse.json({ error: \"Could not delete video\", reason: pruneResult.reason }, { status: 409 });", "Admin videos DELETE returns structured prune failure reason payload", failures);
   assertContains(adminVideosRouteSource, "clearCurrentVideoRouteCaches();", "Admin videos DELETE clears current-video route caches after successful deletion", failures);
-  assertContains(adminVideosRouteSource, "return NextResponse.json({ ok: true, deletedVideoRows: pruneResult.deletedVideoRows });", "Admin videos DELETE returns deleted row count on success", failures);
+  assertContainsEither(adminVideosRouteSource, [
+    "return NextResponse.json({ ok: true, deletedVideoRows: pruneResult.deletedVideoRows });",
+    "deletedVideoRows: pruneResult.deletedVideoRows",
+  ], "Admin videos DELETE returns deleted row count on success", failures);
   assertContains(adminArtistsRouteSource, "const artists = await prisma.artist.findMany({", "Admin artists API reads via Prisma artist model", failures);
   assertContains(adminArtistsRouteSource, "orderBy: { name: \"asc\" }", "Admin artists API keeps alphabetical ordering", failures);
 
@@ -139,8 +143,14 @@ function main() {
   assertContains(adminDashboardRouteSource, "await ensureAdminDashboardRollupsFresh({ force: forceRefresh }).catch(() => undefined);", "Admin dashboard route refreshes rollups before overview payload assembly", failures);
   assertContains(adminDashboardRouteSource, "readAdminDashboardRollups().catch(() => ({", "Admin dashboard route keeps rollup read invocation shape stable", failures);
   assertContains(adminDashboardRollupsSource, "await ensureAdminDashboardRollupsFresh();", "Rollup reader performs freshness check before reading aggregates", failures);
-  assertContains(adminDashboardRollupsSource, "STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s') AS bucket_start,", "Hourly rollups keep DATETIME bucket_start expression used by current stable admin close behavior", failures);
-  assertContains(adminDashboardRollupsSource, "GROUP BY STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s')", "Hourly rollups preserve only_full_group_by-safe grouping expression", failures);
+  assertContainsEither(adminDashboardRollupsSource, [
+    "STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s') AS bucket_start,",
+    "const HOURLY_BUCKET_SELECT_EXPR = `STR_TO_DATE(${HOURLY_BUCKET_GROUP_BY_EXPR}, '%Y-%m-%d %H:%i:%s')`",
+  ], "Hourly rollups keep DATETIME bucket_start expression used by current stable admin close behavior", failures);
+  assertContainsEither(adminDashboardRollupsSource, [
+    "GROUP BY STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s')",
+    "const HOURLY_BUCKET_GROUP_BY_EXPR = \"DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')\"",
+  ], "Hourly rollups preserve current grouping expression used by stable state", failures);
 
   // Admin performance samples route parse style invariants.
   assertContains(adminPerformanceSamplesRouteSource, "const ms = Number.parseInt(process.env.SLOW_QUERY_LONG_TIME_THRESHOLD_MS, 10);", "Admin performance samples route parses slow-query threshold with Number.parseInt", failures);
@@ -161,14 +171,15 @@ function main() {
   assertContains(catalogDataSource, "async function maybeBackfillLegacyApprovedVideos()", "Runtime boot has a safety-net backfill for DBs where no rows are approved yet", failures);
 
   // Admin pending approval route invariants.
-   assertContainsEither(adminPendingRouteSource, [
-     "const auth = await requireAdminApiAuth(request);",
-     "const auth = await requireAuthOnly(request);",
-   ], "Admin pending videos route enforces admin auth", failures);
-   assertContainsEither(adminPendingRouteSource, [
-     "const csrf = verifySameOrigin(request);",
-     "const result = await withAuthAndBody(request, ",
-   ], "Admin pending moderation POST enforces CSRF", failures);
+  assertContainsEither(adminPendingRouteSource, [
+    "const auth = await requireAdminApiAuth(request);",
+    "const auth = await requireAuthOnly(request);",
+  ], "Admin pending videos route enforces admin auth", failures);
+  assertContainsEither(adminPendingRouteSource, [
+    "const csrf = verifySameOrigin(request);",
+    "const result = await withAuthAndBody(request, ",
+  ], "Admin pending moderation POST enforces CSRF", failures);
+  assertContains(adminPendingRouteSource, 'import { mapAdminPruneResultToDeleteResponse } from "@/lib/admin-prune-delete-response";', "Admin pending route imports shared prune-result response mapper", failures);
   assertContains(adminPendingRouteSource, 'action: z.enum(["approve", "remove"])', "Admin pending route validates action enum (approve|remove)", failures);
   assertContains(adminPendingRouteSource, "title: z.string().trim().min(1).max(255).optional(),", "Admin pending moderation accepts optional title override", failures);
   assertContains(adminPendingRouteSource, "parsedArtist: z.string().trim().max(255).nullable().optional(),", "Admin pending moderation accepts optional artist override", failures);

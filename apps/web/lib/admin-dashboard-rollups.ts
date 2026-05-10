@@ -63,6 +63,9 @@ const GEO_VISITOR_ROLLUP_INTERVAL_MS = Math.max(60_000, Number(process.env.ADMIN
 // Normal ticks use a narrow window (today+yesterday / last 2 hours) instead.
 const FULL_SCAN_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
+const HOURLY_BUCKET_GROUP_BY_EXPR = "DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')";
+const HOURLY_BUCKET_SELECT_EXPR = `STR_TO_DATE(${HOURLY_BUCKET_GROUP_BY_EXPR}, '%Y-%m-%d %H:%i:%s')`;
+
 let rollupsStarted = false;
 let rollupsInFlight: Promise<void> | null = null;
 let rollupsLastRefreshedAtMs = 0;
@@ -71,6 +74,37 @@ let lastFullHourlyRefreshMs = 0;
 let lastGeoVisitorRefreshMs = 0;
 let dailyBackfillDone = false;
 let usersCreatedAtColumnPromise: Promise<string | null> | null = null;
+
+const GEO_ROLLUP_INDEXED_PREDICATE_SQL = "has_geo_coords = 1";
+const GEO_ROLLUP_FALLBACK_PREDICATE_SQL = `geo_lat IS NOT NULL
+        AND geo_lng IS NOT NULL`;
+
+function buildGeoVisitorUpsertSql(geoPredicateSql: string) {
+  return `
+      INSERT INTO admin_dashboard_geo_visitors (
+        visitor_id,
+        avg_geo_lat,
+        avg_geo_lng,
+        event_count,
+        last_seen_at
+      )
+      SELECT
+        visitor_id,
+        AVG(geo_lat) AS avg_geo_lat,
+        AVG(geo_lng) AS avg_geo_lng,
+        COUNT(*) AS event_count,
+        MAX(created_at) AS last_seen_at
+      FROM analytics_events
+      WHERE ${geoPredicateSql}
+      GROUP BY visitor_id
+      ON DUPLICATE KEY UPDATE
+        avg_geo_lat = VALUES(avg_geo_lat),
+        avg_geo_lng = VALUES(avg_geo_lng),
+        event_count = VALUES(event_count),
+        last_seen_at = VALUES(last_seen_at),
+        updated_at = CURRENT_TIMESTAMP(3)
+    `;
+}
 
 async function getUsersCreatedAtColumn() {
   if (!usersCreatedAtColumnPromise) {
@@ -267,56 +301,9 @@ async function refreshGeoVisitorRollup() {
   // Prefer has_geo_coords (generated column + index) when present for better
   // grouping/filter performance; fall back to null checks for compatibility.
   try {
-    await prisma.$executeRawUnsafe(`
-      INSERT INTO admin_dashboard_geo_visitors (
-        visitor_id,
-        avg_geo_lat,
-        avg_geo_lng,
-        event_count,
-        last_seen_at
-      )
-      SELECT
-        visitor_id,
-        AVG(geo_lat) AS avg_geo_lat,
-        AVG(geo_lng) AS avg_geo_lng,
-        COUNT(*) AS event_count,
-        MAX(created_at) AS last_seen_at
-      FROM analytics_events
-      WHERE has_geo_coords = 1
-      GROUP BY visitor_id
-      ON DUPLICATE KEY UPDATE
-        avg_geo_lat = VALUES(avg_geo_lat),
-        avg_geo_lng = VALUES(avg_geo_lng),
-        event_count = VALUES(event_count),
-        last_seen_at = VALUES(last_seen_at),
-        updated_at = CURRENT_TIMESTAMP(3)
-    `);
+    await prisma.$executeRawUnsafe(buildGeoVisitorUpsertSql(GEO_ROLLUP_INDEXED_PREDICATE_SQL));
   } catch {
-    await prisma.$executeRawUnsafe(`
-      INSERT INTO admin_dashboard_geo_visitors (
-        visitor_id,
-        avg_geo_lat,
-        avg_geo_lng,
-        event_count,
-        last_seen_at
-      )
-      SELECT
-        visitor_id,
-        AVG(geo_lat) AS avg_geo_lat,
-        AVG(geo_lng) AS avg_geo_lng,
-        COUNT(*) AS event_count,
-        MAX(created_at) AS last_seen_at
-      FROM analytics_events
-      WHERE geo_lat IS NOT NULL
-        AND geo_lng IS NOT NULL
-      GROUP BY visitor_id
-      ON DUPLICATE KEY UPDATE
-        avg_geo_lat = VALUES(avg_geo_lat),
-        avg_geo_lng = VALUES(avg_geo_lng),
-        event_count = VALUES(event_count),
-        last_seen_at = VALUES(last_seen_at),
-        updated_at = CURRENT_TIMESTAMP(3)
-    `);
+    await prisma.$executeRawUnsafe(buildGeoVisitorUpsertSql(GEO_ROLLUP_FALLBACK_PREDICATE_SQL));
   }
 
   // Remove stale visitors no longer present in source with geo coordinates.
@@ -515,7 +502,7 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       return_visits
     )
     SELECT
-      STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s') AS bucket_start,
+      ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start,
       SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
       SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
       COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
@@ -537,7 +524,7 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       auth_events
     )
     SELECT
-      STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s') AS bucket_start,
+      ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start,
       COUNT(*) AS auth_events
     FROM auth_audit_logs
     WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${authIntervalClause})
