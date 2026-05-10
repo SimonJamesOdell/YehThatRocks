@@ -487,7 +487,10 @@ export async function GET(request: NextRequest) {
     bucketCount: 12,
   });
 
-  const authByHour = new Map(hourlyRecentAuth.map((row) => [toIsoBucketStart(row.bucketStart), toNumber(row.authEvents)]));
+  const authByHour = new Map(hourlyRecentAuth.map((row: { bucketStart: Date | string; authEvents: bigint | number }) => [
+    toIsoBucketStart(row.bucketStart),
+    toNumber(row.authEvents),
+  ]));
   const hourlyRecent = hourlyRecentAnalytics.map((row) => {
     const bucketStart = toIsoBucketStart(row.bucketStart);
     return {
