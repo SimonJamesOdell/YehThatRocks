@@ -387,7 +387,7 @@ export async function POST(request: NextRequest) {
     verificationReason: verification.reason,
     matchedVideoRows: videos.length,
   });
-  const ids = videos.map((v) => v.id);
+  const ids = videos.map((v: { id: number; title: string | null }) => v.id);
   const videoTitle = videos[0]?.title ?? "Unknown";
   const forcePrune = forcePruneCandidate && verification.status === "unavailable";
 
@@ -428,14 +428,14 @@ export async function POST(request: NextRequest) {
       where: { videoId: { in: ids } },
       select: { videoId: true },
     });
-    const existingIds = new Set(existing.map((row) => row.videoId));
-    const missingIds = ids.filter((id) => !existingIds.has(id));
+    const existingIds = new Set(existing.map((row: { videoId: string | null }) => row.videoId));
+    const missingIds = ids.filter((id: number) => !existingIds.has(id as any));
 
     if (missingIds.length > 0) {
-      const titleById = new Map(videos.map((video) => [video.id, video.title]));
+      const titleById = new Map(videos.map((video: { id: number; title: string | null }) => [video.id, video.title]));
 
       await prisma.siteVideo.createMany({
-        data: missingIds.map((id) => ({
+        data: missingIds.map((id: number) => ({
           videoId: id,
           title: truncate(
             `${titleById.get(id) ?? "Unknown"} [runtime-report-ignored:${reason}|${verification.reason}]`,

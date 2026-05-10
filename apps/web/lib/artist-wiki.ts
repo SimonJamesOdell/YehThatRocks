@@ -410,7 +410,7 @@ async function fetchMusicBrainzSource(artistName: string): Promise<ExternalSourc
 async function fetchCatalogSource(artistName: string): Promise<ExternalSource | null> {
   try {
     const videos = await getVideosByArtist(artistName);
-    const firstVideo = videos.find((video) => Boolean(video?.id));
+    const firstVideo = videos.find((video: any) => Boolean(video?.id));
 
     if (!firstVideo?.id) {
       return null;

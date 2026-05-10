@@ -884,7 +884,7 @@ export async function getArtistVideoPoolByNormalizedName(normalizedArtist: strin
 
     if (rankedRows.length === 0) return [] as RankedVideoRow[];
 
-    const rankedIds = rankedRows.map((row) => row.id);
+    const rankedIds = rankedRows.map((row: { id: number; videoId: string }) => row.id);
     const placeholders = rankedIds.map(() => "?").join(", ");
     const details = await prisma.$queryRawUnsafe<Array<{
       id: number;
@@ -902,11 +902,11 @@ export async function getArtistVideoPoolByNormalizedName(normalizedArtist: strin
       ...rankedIds,
     );
 
-    const detailById = new Map(details.map((row) => [row.id, row]));
+    const detailById = new Map(details.map((row: { id: number; videoId: string; title: string; channelTitle: string | null; favourited: number | null; description: string | null }) => [row.id, row]));
     const rows = rankedRows
-      .map((ranked) => detailById.get(ranked.id))
-      .filter((row): row is NonNullable<typeof row> => Boolean(row))
-      .map((row) => ({
+      .map((ranked: { id: number; videoId: string }) => detailById.get(ranked.id))
+      .filter((row: any): row is NonNullable<typeof row> => Boolean(row))
+      .map((row: any) => ({
         videoId: row.videoId,
         title: row.title,
         channelTitle: row.channelTitle,
@@ -1075,12 +1075,12 @@ export async function getArtistSlugsForSitemap(offset: number, limit: number, mi
         limit,
         offset,
       );
-      return rows.map((r) => r.slug);
+      return rows.map((r: { slug: string }) => r.slug);
     }
     const rows = await prisma.$queryRaw<Array<{ slug: string }>>`
       SELECT slug FROM artists WHERE slug IS NOT NULL ORDER BY slug ASC LIMIT ${limit} OFFSET ${offset}
     `;
-    return rows.map((r) => r.slug);
+    return rows.map((r: { slug: string }) => r.slug);
   } catch (error) {
     throw error;
   }
@@ -1180,7 +1180,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
         );
 
         if (projectedRows.length > 0 || safeOffset > 0) {
-          const mapped = projectedRows.map((row) => ({
+          const mapped = projectedRows.map((row: { displayName: string; slug: string; country: string | null; genre: string | null; videoCount: number | null; thumbnailVideoId: string | null }) => ({
             ...mapArtistProjectionRow(row),
             videoCount: Number(row.videoCount ?? 0),
           }));
@@ -1267,11 +1267,11 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
         }
 
         const rows = artists
-          .map((row) => {
+          .map((row: { name: string; country: string | null; genre1: string | null }) => {
             const key = normalizeArtistKey(row.name);
             return { ...mapArtist(row), videoCount: countByArtist.get(key) ?? 0, thumbnailVideoId: thumbnailByArtist.get(key) };
           })
-          .filter((artist) => artist.videoCount > 0);
+          .filter((artist: any) => artist.videoCount > 0);
 
         setArtistLetterCache(letterCacheKey, rows);
         scheduleArtistStatsLetterBackfill(normalizedLetter, rows);
@@ -1349,7 +1349,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
       `${letterFilterPrefix}%`,
     );
 
-    const mappedRows = rows.map((row) => ({
+    const mappedRows = rows.map((row: any) => ({
       ...mapArtist(row),
       videoCount: Number(row.videoCount ?? 0),
       thumbnailVideoId: row.thumbnailVideoId ?? undefined,
@@ -1413,7 +1413,7 @@ export async function getArtistBySlug(slug: string) {
         matchExpr,
       );
 
-      const fastMatch = narrowed.find((artist) => slugify(artist.name) === slug);
+      const fastMatch = narrowed.find((artist: any) => slugify(artist.name) === slug);
       if (fastMatch) {
         const mapped = await hydrateArtistCountryByName(mapArtist(fastMatch));
         artistSingleSlugCache.set(slug, { expiresAt: Date.now() + ARTIST_SINGLE_SLUG_CACHE_TTL_MS, artist: mapped });
@@ -1441,7 +1441,7 @@ export async function getArtistBySlug(slug: string) {
         ...termParams,
       );
 
-      const fastMatch = narrowed.find((artist) => slugify(artist.name) === slug);
+      const fastMatch = narrowed.find((artist: any) => slugify(artist.name) === slug);
       if (fastMatch) {
         const mapped = await hydrateArtistCountryByName(mapArtist(fastMatch));
         artistSingleSlugCache.set(slug, { expiresAt: Date.now() + ARTIST_SINGLE_SLUG_CACHE_TTL_MS, artist: mapped });
@@ -1477,7 +1477,7 @@ export async function getArtistBySlug(slug: string) {
             slugPrefix,
           );
 
-          matchedCandidate = candidates.find((artist) => slugify(artist.name) === slug);
+          matchedCandidate = candidates.find((artist: any) => slugify(artist.name) === slug);
           if (matchedCandidate || candidates.length < pageSize) break;
           offset += pageSize;
         }
@@ -1561,8 +1561,8 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
       const rows = await prisma.$queryRawUnsafe<ArtistVideoRow[]>(query, normalizedArtist, normalizedArtist);
 
       const mapped = rows
-        .map((row) => mapVideo({ ...row, channelTitle: row.parsedArtist }))
-        .filter((video, index, allVideos) => allVideos.findIndex((candidate) => candidate.id === video.id) === index);
+        .map((row: any) => mapVideo({ ...row, channelTitle: row.parsedArtist }))
+        .filter((video: any, index: number, allVideos: any[]) => allVideos.findIndex((candidate: any) => candidate.id === video.id) === index);
 
       artistVideosCache.set(cacheKey, { expiresAt: Date.now() + ARTIST_VIDEOS_CACHE_TTL_MS, videos: mapped });
 

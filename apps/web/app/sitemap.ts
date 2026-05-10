@@ -38,7 +38,7 @@ export default async function sitemap({ id }: { id: number }): Promise<MetadataR
       { url: `${SITE_ORIGIN}/magazine`, priority: 0.8, changeFrequency: "daily" },
     ];
 
-    const categoryRoutes: MetadataRoute.Sitemap = genres.map((genre) => ({
+    const categoryRoutes: MetadataRoute.Sitemap = genres.map((genre: string) => ({
       url: `${SITE_ORIGIN}/categories/${getGenreSlug(genre)}`,
       priority: 0.7,
       changeFrequency: "weekly" as const,

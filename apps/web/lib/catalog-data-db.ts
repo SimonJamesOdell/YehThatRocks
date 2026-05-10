@@ -164,7 +164,7 @@ export async function loadVideoForeignKeyRefs(): Promise<VideoForeignKeyRef[]> {
       `,
     );
 
-    videoForeignKeyRefsCache = refs.filter((row) => row.tableName && row.columnName);
+    videoForeignKeyRefsCache = refs.filter((row: any) => row.tableName && row.columnName) as VideoForeignKeyRef[];
     return videoForeignKeyRefsCache;
   } catch {
     videoForeignKeyRefsCache = [];
@@ -181,7 +181,7 @@ export async function ensureVideoMetadataColumnsAvailable() {
 
   try {
     const columns = await prisma.$queryRaw<Array<{ Field: string }>>`SHOW COLUMNS FROM videos`;
-    const names = new Set(columns.map((column) => column.Field));
+    const names = new Set(columns.map((column: any) => column.Field));
     videoMetadataColumnsAvailable = names.has("parsedArtist") && names.has("parsedTrack");
   } catch {
     videoMetadataColumnsAvailable = false;
@@ -271,7 +271,7 @@ export async function getArtistColumnMap() {
   }
 
   const columns = await prisma.$queryRawUnsafe<Array<{ Field: string }>>("SHOW COLUMNS FROM artists");
-  const available = new Set(columns.map((column) => column.Field));
+  const available = new Set(columns.map((column: any) => column.Field));
 
   const name = available.has("artist") ? "artist" : available.has("name") ? "name" : "artist";
   const normalizedName = ["artist_name_norm", "artist_norm", "normalized_artist", "name_normalized"].find((column) => available.has(column)) ?? null;
@@ -445,8 +445,8 @@ export async function getArtistVideoColumnMap() {
   }
 
   const columns = await prisma.$queryRawUnsafe<Array<{ Field: string; Type: string }>>("SHOW COLUMNS FROM videosbyartist");
-  const available = new Set(columns.map((column) => column.Field));
-  const typeByField = new Map(columns.map((column) => [column.Field, column.Type.toLowerCase()]));
+  const available = new Set(columns.map((column: any) => column.Field));
+  const typeByField = new Map(columns.map((column: any) => [column.Field, column.Type.toLowerCase()]));
 
   const artistName = available.has("artist")
     ? "artist"
@@ -466,7 +466,7 @@ export async function getArtistVideoColumnMap() {
         : "videoId";
 
   const videoRefType = typeByField.get(videoRef) ?? "";
-  const joinsOnVideoPrimaryId = videoRef === "video_id" || /(int|bigint|smallint|tinyint)/i.test(videoRefType);
+  const joinsOnVideoPrimaryId = videoRef === "video_id" || /(int|bigint|smallint|tinyint)/i.test(videoRefType as string);
 
   artistVideoColumnMapCache = { artistName, normalizedArtistName, videoRef, joinsOnVideoPrimaryId };
   return artistVideoColumnMapCache;
@@ -479,7 +479,7 @@ export async function getVideoArtistNormalizationColumn() {
 
   try {
     const columns = await prisma.$queryRawUnsafe<Array<{ Field: string }>>("SHOW COLUMNS FROM videos");
-    const available = new Set(columns.map((column) => column.Field));
+    const available = new Set(columns.map((column: any) => column.Field));
     videoArtistNormalizationColumnCache = [
       "parsed_artist_norm",
       "parsed_artist_normalized",
@@ -519,7 +519,7 @@ export async function getVideoArtistNormalizationIndexHintClause(normalizedColum
   if (parsedArtistNormIndexAvailableCache === undefined) {
     try {
       const rows = await prisma.$queryRawUnsafe<Array<{ Key_name: string }>>("SHOW INDEX FROM videos");
-      parsedArtistNormIndexAvailableCache = rows.some((row) => row.Key_name === PARSED_ARTIST_NORM_INDEX);
+      parsedArtistNormIndexAvailableCache = rows.some((row: { Key_name: string }) => row.Key_name === PARSED_ARTIST_NORM_INDEX);
     } catch {
       parsedArtistNormIndexAvailableCache = false;
     }

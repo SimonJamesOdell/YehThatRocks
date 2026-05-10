@@ -261,7 +261,7 @@ export async function GET(request: NextRequest) {
     ORDER BY sampled_at ASC
   `.catch(() => [] as PerfSampleRow[]);
 
-  const mapped = rows.map((row) => ({
+  const mapped = rows.map((row: PerfSampleRow) => ({
     sampledAt: row.sampled_at instanceof Date ? row.sampled_at.toISOString() : new Date(row.sampled_at).toISOString(),
     nodeUptimeSec: toNum(row.node_uptime_sec),
     heapUsedMb: toNum(row.heap_used_mb),
@@ -290,7 +290,7 @@ export async function GET(request: NextRequest) {
 
     const lines = [
       headers.join(","),
-      ...mapped.map((r) =>
+      ...mapped.map((r: { sampledAt: string; nodeUptimeSec: number | null; heapUsedMb: number | null; heapTotalMb: number | null; rssMb: number | null; prismaQueryCount: number | null; prismaQps: number | null; prismaAvgMs: number | null; prismaP95Ms: number | null; prismaTotalSinceBoot: number | null }) =>
         [
           r.sampledAt,
           r.nodeUptimeSec ?? "",

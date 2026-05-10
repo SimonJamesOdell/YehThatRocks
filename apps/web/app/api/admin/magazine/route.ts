@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    articles: rows.map((row) => ({
+    articles: rows.map((row: MagazineListRow) => ({
       slug: row.slug,
       title: row.title,
       videoId: row.videoId,

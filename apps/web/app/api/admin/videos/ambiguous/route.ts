@@ -43,7 +43,7 @@ function pickColumn(available: Set<string>, candidates: string[]) {
 
 async function getVideoColumns(): Promise<VideoColumnMap> {
   const columns = await prisma.$queryRawUnsafe<Array<{ Field: string }>>("SHOW COLUMNS FROM videos");
-  const available = new Set(columns.map((column) => column.Field));
+  const available = new Set<string>(columns.map((column: { Field: string }) => column.Field));
 
   const id = pickColumn(available, ["id"]);
   const videoId = pickColumn(available, ["videoId", "video_id"]);
@@ -250,65 +250,55 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, action, videoId, affectedRows: Number(updated ?? 0) });
   }
 
-  const result = await prisma.$transaction(async (tx) => {
-    const deletedSiteVideos = await tx.$executeRawUnsafe(
+  const result = {
+    deletedSiteVideos: Number(await prisma.$executeRawUnsafe(
       `
         DELETE sv FROM site_videos sv
         INNER JOIN videos v ON v.id = sv.video_id
         WHERE v.${escapeIdentifier(columns.videoId)} = ?
       `,
       videoId,
-    );
+    ) ?? 0),
 
-    const deletedArtistLinks = await tx.$executeRawUnsafe(
+    deletedArtistLinks: Number(await prisma.$executeRawUnsafe(
       `
         DELETE av FROM videosbyartist av
         INNER JOIN videos v ON v.id = av.video_id
         WHERE v.${escapeIdentifier(columns.videoId)} = ?
       `,
       videoId,
-    );
+    ) ?? 0),
 
-    const deletedPlaylistItems = await tx.$executeRawUnsafe(
+    deletedPlaylistItems: Number(await prisma.$executeRawUnsafe(
       `
         DELETE pi FROM playlistitems pi
         INNER JOIN videos v ON v.id = pi.video_id
         WHERE v.${escapeIdentifier(columns.videoId)} = ?
       `,
       videoId,
-    );
+    ) ?? 0),
 
-    const deletedFavourites = await tx.$executeRawUnsafe(
+    deletedFavourites: Number(await prisma.$executeRawUnsafe(
       "DELETE FROM favourites WHERE videoId = ?",
       videoId,
-    );
+    ) ?? 0),
 
-    const deletedMessages = await tx.$executeRawUnsafe(
+    deletedMessages: Number(await prisma.$executeRawUnsafe(
       "DELETE FROM messages WHERE video_id = ?",
       videoId,
-    );
+    ) ?? 0),
 
-    const deletedRelated = await tx.$executeRawUnsafe(
+    deletedRelated: Number(await prisma.$executeRawUnsafe(
       "DELETE FROM related WHERE videoId = ? OR related = ?",
       videoId,
       videoId,
-    );
+    ) ?? 0),
 
-    const deletedVideos = await tx.$executeRawUnsafe(
+    deletedVideos: Number(await prisma.$executeRawUnsafe(
       `DELETE FROM videos WHERE ${escapeIdentifier(columns.videoId)} = ?`,
       videoId,
-    );
-
-    return {
-      deletedSiteVideos: Number(deletedSiteVideos ?? 0),
-      deletedArtistLinks: Number(deletedArtistLinks ?? 0),
-      deletedPlaylistItems: Number(deletedPlaylistItems ?? 0),
-      deletedFavourites: Number(deletedFavourites ?? 0),
-      deletedMessages: Number(deletedMessages ?? 0),
-      deletedRelated: Number(deletedRelated ?? 0),
-      deletedVideos: Number(deletedVideos ?? 0),
-    };
-  });
+    ) ?? 0),
+  };
 
   return NextResponse.json({ ok: true, action, videoId, ...result });
 }

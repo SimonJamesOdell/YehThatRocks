@@ -616,7 +616,7 @@ export async function readAdminHostMetricHistory() {
     ORDER BY bucket_start ASC
   `.catch(() => []);
 
-  return rows.map((row) => ({
+  return rows.map((row: AdminHostMetricHistoryRow) => ({
     bucketStart: row.bucketStart instanceof Date ? row.bucketStart.toISOString() : new Date(row.bucketStart).toISOString(),
     cpuUsagePercent: finitePercentOrNull(row.cpuUsagePercent),
     memoryUsagePercent: finitePercentOrNull(row.memoryUsagePercent),
