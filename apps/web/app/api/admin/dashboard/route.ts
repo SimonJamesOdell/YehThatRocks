@@ -491,7 +491,7 @@ export async function GET(request: NextRequest) {
     toIsoBucketStart(row.bucketStart),
     toNumber(row.authEvents),
   ]));
-  const hourlyRecent = hourlyRecentAnalytics.map((row) => {
+  const hourlyRecent = hourlyRecentAnalytics.map((row: { bucketStart: Date | string; pageViews: bigint | number; videoViews: bigint | number; uniqueVisitors: bigint | number; returnVisits: bigint | number }) => {
     const bucketStart = toIsoBucketStart(row.bucketStart);
     return {
       bucketStart,
