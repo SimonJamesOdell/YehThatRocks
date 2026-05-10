@@ -282,6 +282,18 @@ async function getPlayableCandidates(conn, limit) {
     .filter((r) => r.videoId.length === 11 && r.artist.length > 1);
 }
 
+async function getPublishedArticleVideoIds(conn) {
+  const [rows] = await conn.query(
+    "SELECT DISTINCT video_id AS videoId FROM magazine_articles WHERE status = 'published' AND video_id IS NOT NULL",
+  );
+
+  return new Set(
+    (Array.isArray(rows) ? rows : [])
+      .map((row) => String(row.videoId || "").trim())
+      .filter((videoId) => videoId.length === 11),
+  );
+}
+
 function tokenizeArtist(artist) {
   return String(artist || "")
     .toLowerCase()
@@ -728,6 +740,8 @@ async function run() {
       await pruneStaleArticles(conn);
     }
 
+    const publishedVideoIds = await getPublishedArticleVideoIds(conn);
+
     const videos = await getPlayableCandidates(conn, poolLimit);
     if (videos.length === 0) {
       throw new Error("No playable video candidates found");
@@ -765,6 +779,17 @@ async function run() {
       if (selected.length >= count) break;
       if (recentUsedVideoIds.has(candidate.video.videoId)) continue;
       if (usedVideoIdsThisRun.has(candidate.video.videoId)) continue;
+      if (publishedVideoIds.has(candidate.video.videoId)) {
+        console.error(
+          JSON.stringify({
+            event: "skipped-duplicate-published-article",
+            videoId: candidate.video.videoId,
+            artist: candidate.video.artist,
+            track: candidate.video.track,
+          }),
+        );
+        continue;
+      }
       selected.push(candidate);
       usedVideoIdsThisRun.add(candidate.video.videoId);
     }
@@ -823,6 +848,7 @@ async function run() {
       let dbAction = "dry-run";
       if (!dryRun) {
         dbAction = await saveArticle(conn, slug, selection.video, article);
+        publishedVideoIds.add(selection.video.videoId);
       }
 
       results.push({

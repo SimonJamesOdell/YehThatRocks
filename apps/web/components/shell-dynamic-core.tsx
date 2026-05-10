@@ -3100,7 +3100,7 @@ function ShellDynamicInner({
                       className={chatMode === "magazine" ? "activeTab" : undefined}
                       onClick={() => {
                         setChatMode("magazine");
-                        favouritesBlindInnerRef.current?.scrollTo({ top: 0, behavior: "auto" });
+                        chatListRef.current?.scrollTo({ top: 0, behavior: "auto" });
                         if (!isMagazineOverlayRoute) {
                           router.push(`/magazine?v=${encodeURIComponent(currentVideo.id)}`, { scroll: true });
                         }
