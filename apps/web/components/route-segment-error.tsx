@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { ServiceFailurePanel } from "@/components/service-failure-panel";
+import { OPERATIONAL_RETRY_LATER_MESSAGE } from "@/lib/operational-error-copy";
 
 type RouteSegmentErrorProps = {
   error: Error;
@@ -25,7 +26,7 @@ export function RouteSegmentError({
   panelAriaLabel,
   eyebrow,
   title,
-  lead = "The system cannot serve this request right now. Please try again later.",
+  lead = OPERATIONAL_RETRY_LATER_MESSAGE,
   backHref,
   backLabel,
 }: RouteSegmentErrorProps) {

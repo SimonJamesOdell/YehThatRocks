@@ -15,6 +15,7 @@ import type { VideoRecord } from "@/lib/catalog";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
 import { dedupeVideos, filterHiddenVideos } from "@/lib/video-list-utils";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
+import { OPERATIONAL_RETRY_LATER_MESSAGE } from "@/lib/operational-error-copy";
 
 type CategoryVideosInfiniteProps = {
   slug: string;
@@ -98,7 +99,7 @@ export function CategoryVideosInfinite({
           method: "GET",
           cache: "no-store",
         },
-        failureMessage: "The system cannot serve this request right now. Please try again later.",
+        failureMessage: OPERATIONAL_RETRY_LATER_MESSAGE,
       });
 
       if (!result.ok) {
@@ -142,7 +143,7 @@ export function CategoryVideosInfinite({
         added: 0,
         hasMore: false,
         nextOffset: offset,
-        errorMessage: "The system cannot serve this request right now. Please try again later.",
+        errorMessage: OPERATIONAL_RETRY_LATER_MESSAGE,
       };
     }
   }, [hiddenVideoIdSet, pageSize, slug]);

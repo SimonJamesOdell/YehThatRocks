@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const path = require("node:path");
-const { readFileStrict, assertContains, assertNotContains, finishInvariantCheck } = require("./invariants/helpers");
+const { readFileStrict, assertContains, assertContainsEither, assertNotContains, finishInvariantCheck } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
 
@@ -64,9 +64,18 @@ function main() {
   // Categories hard-fail contract.
   assertContains(categorySlugRouteSource, "catch (error)", "Category slug API wraps request path in a hard-fail catch boundary", failures);
   assertContains(categorySlugRouteSource, "{ status: 503 }", "Category slug API returns 503 when canonical data cannot be served", failures);
-  assertContains(categorySlugRouteSource, "The system cannot serve this request right now. Please try again later.", "Category slug API returns explicit hard-fail retry message", failures);
-  assertContains(categoryErrorBoundarySource, "The system cannot serve this request right now. Please try again later.", "Category route error boundary shows hard-fail retry notification", failures);
-  assertContains(categoryVideosInfiniteSource, "failureMessage: \"The system cannot serve this request right now. Please try again later.\"", "Category infinite loader uses explicit hard-fail notification for API failures", failures);
+  assertContainsEither(categorySlugRouteSource, [
+    "The system cannot serve this request right now. Please try again later.",
+    "error: OPERATIONAL_RETRY_LATER_MESSAGE",
+  ], "Category slug API returns explicit hard-fail retry message", failures);
+  assertContainsEither(categoryErrorBoundarySource, [
+    "The system cannot serve this request right now. Please try again later.",
+    "lead={OPERATIONAL_RETRY_LATER_MESSAGE}",
+  ], "Category route error boundary shows hard-fail retry notification", failures);
+  assertContainsEither(categoryVideosInfiniteSource, [
+    "failureMessage: \"The system cannot serve this request right now. Please try again later.\"",
+    "failureMessage: OPERATIONAL_RETRY_LATER_MESSAGE",
+  ], "Category infinite loader uses explicit hard-fail notification for API failures", failures);
   assertContains(categoryVideosInfiniteSource, "setLoadError(\"The system cannot serve this request right now. Please try again later.\");", "Category infinite loader preserves explicit retry-later message for caught request failures", failures);
 
   finishInvariantCheck({
