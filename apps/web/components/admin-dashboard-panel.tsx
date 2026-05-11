@@ -365,6 +365,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [catalogReviewRemaining, setCatalogReviewRemaining] = useState(0);
   const [catalogReviewCurrentVideo, setCatalogReviewCurrentVideo] = useState<CatalogReviewVideoRow | null>(null);
   const [catalogReviewActionVideoId, setCatalogReviewActionVideoId] = useState<string | null>(null);
+  const [previousCatalogAction, setPreviousCatalogAction] = useState<{ action: "approve" | "remove"; videoId: string } | null>(null);
+  const [reversingCatalogAction, setReversingCatalogAction] = useState(false);
   const [recentlyApprovedVideos, setRecentlyApprovedVideos] = useState<RecentlyApprovedVideoRow[]>([]);
   const [videoModerationPane, setVideoModerationPane] = useState<"pending" | "recent">("pending");
   const [revokingVideoId, setRevokingVideoId] = useState<string | null>(null);
@@ -928,17 +930,19 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       return;
     }
 
-    setCatalogReviewActionVideoId(catalogReviewCurrentVideo.videoId);
+    const videoId = catalogReviewCurrentVideo.videoId;
+    setCatalogReviewActionVideoId(videoId);
+    setPreviousCatalogAction({ action, videoId });
 
     try {
       await postJson<{ ok: boolean; remaining?: number }>("/api/admin/videos/catalog-review", {
-        videoId: catalogReviewCurrentVideo.videoId,
+        videoId,
         action,
       });
 
       setSaveMessage(action === "approve"
-        ? `Kept ${catalogReviewCurrentVideo.videoId}.`
-        : `Removed ${catalogReviewCurrentVideo.videoId}.`);
+        ? `Kept ${videoId}.`
+        : `Removed ${videoId}.`);
 
       await Promise.all([
         loadCatalogReviewQueue(),
@@ -946,8 +950,32 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       ]);
     } catch (moderationError) {
       setSaveMessage(moderationError instanceof Error ? moderationError.message : "Catalog review action failed.");
+      setPreviousCatalogAction(null);
     } finally {
       setCatalogReviewActionVideoId(null);
+    }
+  }
+
+  async function reversePreviousCatalogAction() {
+    if (!previousCatalogAction) {
+      return;
+    }
+
+    setReversingCatalogAction(true);
+
+    try {
+      await postJson<{ ok: boolean; remaining?: number }>("/api/admin/videos/catalog-review-undo", {
+        videoId: previousCatalogAction.videoId,
+        reversedAction: previousCatalogAction.action,
+      });
+
+      setSaveMessage(`Reversed: ${previousCatalogAction.action === "approve" ? "moved back to queue" : "removed undo"} for ${previousCatalogAction.videoId}.`);
+      setPreviousCatalogAction(null);
+      await loadCatalogReviewQueue();
+    } catch (undoError) {
+      setSaveMessage(undoError instanceof Error ? undoError.message : "Reverse action failed.");
+    } finally {
+      setReversingCatalogAction(false);
     }
   }
 
@@ -2488,6 +2516,21 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                         >
                           Remove Video
                         </button>
+                        {previousCatalogAction ? (
+                          <button
+                            type="button"
+                            onClick={() => void reversePreviousCatalogAction()}
+                            disabled={reversingCatalogAction}
+                            style={{
+                              borderColor: "rgba(255,200,100,0.45)",
+                              background: "rgba(255,200,100,0.12)",
+                              color: "#ffc864",
+                              cursor: reversingCatalogAction ? "wait" : "pointer",
+                            }}
+                          >
+                            {reversingCatalogAction ? "Reversing..." : `Reverse ${previousCatalogAction.action}`}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => {
