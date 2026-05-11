@@ -951,6 +951,28 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     }
   }
 
+  async function refreshCatalogReviewMetadata() {
+    if (!catalogReviewCurrentVideo) {
+      return;
+    }
+
+    setCatalogReviewActionVideoId(catalogReviewCurrentVideo.videoId);
+
+    try {
+      await postJson<{ ok: boolean; video?: { id: number; videoId: string } }>('/api/admin/videos/refetch-data', {
+        id: catalogReviewCurrentVideo.id,
+        videoId: catalogReviewCurrentVideo.videoId,
+      });
+
+      setSaveMessage(`Refreshed metadata for ${catalogReviewCurrentVideo.videoId} from YouTube.`);
+      await loadCatalogReviewQueue();
+    } catch (refreshError) {
+      setSaveMessage(refreshError instanceof Error ? refreshError.message : "Metadata refresh failed.");
+    } finally {
+      setCatalogReviewActionVideoId(null);
+    }
+  }
+
   async function revokeApprovedVideo(videoId: string) {
     setRevokingVideoId(videoId);
     try {
@@ -2454,6 +2476,13 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                           disabled={catalogReviewActionVideoId === row.videoId}
                         >
                           Remove Video
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void refreshCatalogReviewMetadata()}
+                          disabled={catalogReviewActionVideoId === row.videoId}
+                        >
+                          Refresh Metadata
                         </button>
                         <button
                           type="button"
