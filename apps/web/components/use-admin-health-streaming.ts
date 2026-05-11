@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 const HEALTH_FALLBACK_POLL_MS = 2_000;
 
@@ -29,6 +29,12 @@ type UseAdminHealthStreamingOptions = {
 };
 
 export function useAdminHealthStreaming({ activeTab, onHealthPayload }: UseAdminHealthStreamingOptions): void {
+  const onHealthPayloadRef = useRef(onHealthPayload);
+
+  useEffect(() => {
+    onHealthPayloadRef.current = onHealthPayload;
+  }, [onHealthPayload]);
+
   useEffect(() => {
     if (activeTab !== "overview") {
       return;
@@ -43,7 +49,7 @@ export function useAdminHealthStreaming({ activeTab, onHealthPayload }: UseAdmin
         if (!response.ok || cancelled) return;
         const payload = (await response.json()) as AdminHealthStreamPayload;
         if (!cancelled && payload?.health) {
-          onHealthPayload(payload);
+          onHealthPayloadRef.current(payload);
         }
       } catch {
         // Ignore polling failures and keep the last known state.
@@ -60,7 +66,7 @@ export function useAdminHealthStreaming({ activeTab, onHealthPayload }: UseAdmin
         }
 
         lastStreamMessageAt = Date.now();
-        onHealthPayload(payload);
+        onHealthPayloadRef.current(payload);
       } catch {
         // Ignore malformed payloads.
       }
@@ -83,5 +89,5 @@ export function useAdminHealthStreaming({ activeTab, onHealthPayload }: UseAdmin
       window.clearInterval(pollingTimer);
       stream.close();
     };
-  }, [activeTab, onHealthPayload]);
+  }, [activeTab]);
 }

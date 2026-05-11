@@ -1082,48 +1082,69 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     onTriggerBackfill: triggerBackfill,
   });
 
+  const handleAdminHealthPayload = useCallback((payload: {
+    meta?: { generatedAt?: string };
+    health?: {
+      nodeUptimeSec: number;
+      memory: { rssMb: number; heapUsedMb: number; heapTotalMb: number };
+      host: {
+        platform: string;
+        loadAvg: number[];
+        totalMemMb: number;
+        freeMemMb: number;
+        cpuUsagePercent: number | null;
+        cpuAverageUsagePercent: number | null;
+        cpuPeakCoreUsagePercent: number | null;
+        memoryUsagePercent: number;
+        diskUsagePercent: number | null;
+        swapUsagePercent: number | null;
+        networkUsagePercent: number | null;
+      };
+    };
+  }) => {
+    if (!payload?.health) {
+      return;
+    }
+
+    const health = payload.health;
+    const sanitizedHost = {
+      platform: health.host.platform || "unknown",
+      loadAvg: health.host.loadAvg || [],
+      totalMemMb: health.host.totalMemMb || 0,
+      freeMemMb: health.host.freeMemMb || 0,
+      cpuUsagePercent: finiteOrNull(health.host.cpuUsagePercent),
+      cpuAverageUsagePercent: finiteOrNull(health.host.cpuAverageUsagePercent),
+      cpuPeakCoreUsagePercent: finiteOrNull(health.host.cpuPeakCoreUsagePercent),
+      memoryUsagePercent: finiteOrNull(health.host.memoryUsagePercent) ?? 0,
+      diskUsagePercent: finiteOrNull(health.host.diskUsagePercent),
+      swapUsagePercent: finiteOrNull(health.host.swapUsagePercent),
+      networkUsagePercent: finiteOrNull(health.host.networkUsagePercent),
+    };
+
+    setDashboard((previous) => {
+      if (!previous) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        health: {
+          nodeUptimeSec: health.nodeUptimeSec,
+          memory: health.memory,
+          host: sanitizedHost,
+        },
+        meta: {
+          ...previous.meta,
+          generatedAt: payload.meta?.generatedAt ?? previous.meta.generatedAt,
+        },
+      };
+    });
+  }, []);
+
   // Use orchestration hook for health streaming
   useAdminHealthStreaming({
     activeTab,
-    onHealthPayload: (payload) => {
-      if (!payload?.health) {
-        return;
-      }
-
-      const health = payload.health;
-      const sanitizedHost = {
-        platform: health.host.platform || "unknown",
-        loadAvg: health.host.loadAvg || [],
-        totalMemMb: health.host.totalMemMb || 0,
-        freeMemMb: health.host.freeMemMb || 0,
-        cpuUsagePercent: finiteOrNull(health.host.cpuUsagePercent),
-        cpuAverageUsagePercent: finiteOrNull(health.host.cpuAverageUsagePercent),
-        cpuPeakCoreUsagePercent: finiteOrNull(health.host.cpuPeakCoreUsagePercent),
-        memoryUsagePercent: finiteOrNull(health.host.memoryUsagePercent) ?? 0,
-        diskUsagePercent: finiteOrNull(health.host.diskUsagePercent),
-        swapUsagePercent: finiteOrNull(health.host.swapUsagePercent),
-        networkUsagePercent: finiteOrNull(health.host.networkUsagePercent),
-      };
-
-      setDashboard((previous) => {
-        if (!previous) {
-          return previous;
-        }
-
-        return {
-          ...previous,
-          health: {
-            nodeUptimeSec: health.nodeUptimeSec,
-            memory: health.memory,
-            host: sanitizedHost,
-          },
-          meta: {
-            ...previous.meta,
-            generatedAt: payload.meta?.generatedAt ?? previous.meta.generatedAt,
-          },
-        };
-      });
-    },
+    onHealthPayload: handleAdminHealthPayload,
   });
 
   // Use orchestration hook for video queue polling
