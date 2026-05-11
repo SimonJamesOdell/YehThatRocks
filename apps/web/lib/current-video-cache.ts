@@ -17,3 +17,13 @@ export function clearCurrentVideoRouteCaches() {
   currentVideoRelatedPoolCache.clear();
   currentVideoRelatedPoolInflight.clear();
 }
+
+export function getCurrentVideoCacheDiagnostics() {
+  return {
+    currentVideoCache: currentVideoCache.size,
+    currentVideoPendingCache: currentVideoPendingCache.size,
+    currentVideoInflight: currentVideoInflight.size,
+    currentVideoRelatedPoolCache: currentVideoRelatedPoolCache.size,
+    currentVideoRelatedPoolInflight: currentVideoRelatedPoolInflight.size,
+  };
+}
