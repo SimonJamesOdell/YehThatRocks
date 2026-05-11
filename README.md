@@ -31,6 +31,18 @@ This is a showcase of what **one experienced programmer** can do when AI removes
 
 For VPS deployment with Docker Compose and `systemd`, see [DEPLOY_VPS.md](DEPLOY_VPS.md).
 
+## Ship Prep Modes
+
+Use explicit commands depending on change size and risk:
+
+- Lightweight checks for minor, low-risk changes: `npm run prepare:ship:light`
+- Full ship gate for releases and higher-risk changes: `npm run prepare:ship:full`
+- Lightweight ship flow including commit: `npm run ship:light`
+- Full ship flow including commit: `npm run ship:full`
+
+`prepare:ship:full` includes dependency maintenance, full invariant coverage, API smoke checks, and `npm audit --audit-level=high`.
+`ship:*` runs the corresponding prep command and then creates a commit.
+
 ## Licence
 
 **YehThatRocks source code is not licensed for commercial use.**
