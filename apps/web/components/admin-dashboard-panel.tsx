@@ -2435,6 +2435,13 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                           Queued: {new Date(row.enqueuedAt).toLocaleString()}
                         </p>
                       ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void refreshCatalogReviewMetadata()}
+                        disabled={catalogReviewActionVideoId === row.videoId}
+                      >
+                        Refresh Metadata
+                      </button>
                     </div>
 
                     <div style={{ display: "grid", gap: 10 }}>
@@ -2480,13 +2487,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                           disabled={catalogReviewActionVideoId === row.videoId}
                         >
                           Remove Video
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void refreshCatalogReviewMetadata()}
-                          disabled={catalogReviewActionVideoId === row.videoId}
-                        >
-                          Refresh Metadata
                         </button>
                         <button
                           type="button"
