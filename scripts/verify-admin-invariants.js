@@ -12,7 +12,6 @@ const files = {
   adminDashboardRoute: path.join(ROOT, "apps/web/app/api/admin/dashboard/route.ts"),
   adminCategoriesRoute: path.join(ROOT, "apps/web/app/api/admin/categories/route.ts"),
   adminVideosRoute: path.join(ROOT, "apps/web/app/api/admin/videos/route.ts"),
-  adminArtistsRoute: path.join(ROOT, "apps/web/app/api/admin/artists/route.ts"),
   adminPendingRoute: path.join(ROOT, "apps/web/app/api/admin/videos/pending/route.ts"),
   adminImportRoute: path.join(ROOT, "apps/web/app/api/admin/videos/import/route.ts"),
   adminPerformanceSamplesRoute: path.join(ROOT, "apps/web/app/api/admin/performance-samples/route.ts"),
@@ -32,7 +31,6 @@ function main() {
   const adminDashboardRouteSource = readFileStrict(files.adminDashboardRoute, ROOT);
   const adminCategoriesRouteSource = readFileStrict(files.adminCategoriesRoute, ROOT);
   const adminVideosRouteSource = readFileStrict(files.adminVideosRoute, ROOT);
-  const adminArtistsRouteSource = readFileStrict(files.adminArtistsRoute, ROOT);
   const adminPendingRouteSource = readFileStrict(files.adminPendingRoute, ROOT);
   const adminImportRouteSource = readFileStrict(files.adminImportRoute, ROOT);
   const adminPerformanceSamplesRouteSource = readFileStrict(files.adminPerformanceSamplesRoute, ROOT);
@@ -72,11 +70,6 @@ function main() {
      "const auth = await requireAdminApiAuth(request);",
      "const result = await withAuthAndBody(request, ",
    ], "Admin videos API requires admin auth", failures);
-   assertContainsEither(adminArtistsRouteSource, [
-     "const auth = await requireAdminApiAuth(request);",
-     "const result = await withAuthAndBody(request, ",
-   ], "Admin artists API requires admin auth", failures);
-
   // Mutating endpoints must keep CSRF protection.
    assertContainsEither(adminCategoriesRouteSource, [
      "const csrf = verifySameOrigin(request);",
@@ -86,12 +79,7 @@ function main() {
      "const csrf = verifySameOrigin(request);",
      "const result = await withAuthAndBody(request, ",
    ], "Admin videos PATCH enforces CSRF", failures);
-   assertContainsEither(adminArtistsRouteSource, [
-     "const csrf = verifySameOrigin(request);",
-     "const result = await withAuthAndBody(request, ",
-   ], "Admin artists PATCH enforces CSRF", failures);
-
-  // Admin videos/artists APIs use Prisma models and explicit selects.
+  // Admin videos APIs use Prisma models and explicit selects.
   assertContains(adminVideosRouteSource, "const videos = await prisma.video.findMany({", "Admin videos API reads via Prisma video model", failures);
   assertContains(adminVideosRouteSource, "orderBy: [{ updatedAt: \"desc\" }, { id: \"desc\" }]", "Admin videos API keeps deterministic recency ordering", failures);
   assertContains(adminVideosRouteSource, "description: true,", "Admin videos API includes description in GET payload", failures);
@@ -117,9 +105,6 @@ function main() {
     "return NextResponse.json({ ok: true, deletedVideoRows: pruneResult.deletedVideoRows });",
     "deletedVideoRows: pruneResult.deletedVideoRows",
   ], "Admin videos DELETE returns deleted row count on success", failures);
-  assertContains(adminArtistsRouteSource, "const artists = await prisma.artist.findMany({", "Admin artists API reads via Prisma artist model", failures);
-  assertContains(adminArtistsRouteSource, "orderBy: { name: \"asc\" }", "Admin artists API keeps alphabetical ordering", failures);
-
   // Admin overview analytics refresh invariants.
   assertContains(adminDashboardPanelSource, "const ANALYTICS_AUTO_REFRESH_MS = 5 * 60 * 1000;", "Admin dashboard defines 5-minute analytics auto-refresh interval", failures);
    assertContainsEither(adminDashboardPanelSource, [

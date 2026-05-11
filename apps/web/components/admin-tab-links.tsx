@@ -10,6 +10,10 @@ type PendingCountPayload = {
   totalPending?: number;
 };
 
+type CatalogReviewCountPayload = {
+  remaining?: number;
+};
+
 const PENDING_COUNT_POLL_MS = 30_000;
 
 export function AdminTabLinks({
@@ -20,6 +24,7 @@ export function AdminTabLinks({
   enablePendingCount?: boolean;
 }) {
   const [pendingCount, setPendingCount] = useState<number | null>(null);
+  const [catalogReviewRemaining, setCatalogReviewRemaining] = useState<number | null>(null);
 
   useEffect(() => {
     if (!enablePendingCount) {
@@ -31,23 +36,42 @@ export function AdminTabLinks({
 
     const fetchPendingCount = async () => {
       try {
-        const response = await fetch("/api/admin/videos/pending", {
-          cache: "no-store",
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        });
+        const [pendingResponse, catalogReviewResponse] = await Promise.all([
+          fetch("/api/admin/videos/pending", {
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-store",
+            },
+          }),
+          fetch("/api/admin/videos/catalog-review", {
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-store",
+            },
+          }),
+        ]);
 
-        if (!response.ok) {
-          return;
+        if (pendingResponse.ok) {
+          const pendingPayload = (await pendingResponse.json()) as PendingCountPayload;
+          const fallbackCount = Array.isArray(pendingPayload.pendingVideos) ? pendingPayload.pendingVideos.length : 0;
+          const nextPendingCount = Number.isFinite(pendingPayload.totalPending)
+            ? Number(pendingPayload.totalPending)
+            : fallbackCount;
+
+          if (!cancelled) {
+            setPendingCount(nextPendingCount);
+          }
         }
 
-        const payload = (await response.json()) as PendingCountPayload;
-        const fallbackCount = Array.isArray(payload.pendingVideos) ? payload.pendingVideos.length : 0;
-        const nextCount = Number.isFinite(payload.totalPending) ? Number(payload.totalPending) : fallbackCount;
+        if (catalogReviewResponse.ok) {
+          const catalogReviewPayload = (await catalogReviewResponse.json()) as CatalogReviewCountPayload;
+          const nextCatalogReviewRemaining = Number.isFinite(catalogReviewPayload.remaining)
+            ? Number(catalogReviewPayload.remaining)
+            : 0;
 
-        if (!cancelled) {
-          setPendingCount(nextCount);
+          if (!cancelled) {
+            setCatalogReviewRemaining(nextCatalogReviewRemaining);
+          }
         }
       } catch {
         // Keep last known count if polling fails.
@@ -76,8 +100,7 @@ export function AdminTabLinks({
       <Link href="/admin?tab=api" className={tabClass("api")}>API Usage</Link>
       <Link href="/admin?tab=categories" className={tabClass("categories")}>Categories</Link>
       <Link href="/admin?tab=videos" className={tabClass("videos")}>New Videos {pendingCount !== null ? `(${pendingCount})` : ""}</Link>
-      <Link href="/admin?tab=artists" className={tabClass("artists")}>Artists</Link>
-      <Link href="/admin?tab=ambiguous" className={tabClass("ambiguous")}>Ambiguous</Link>
+      <Link href="/admin?tab=catalog-review" className={tabClass("catalog-review")}>Catalog Cleanup {catalogReviewRemaining !== null ? `(${catalogReviewRemaining})` : ""}</Link>
     </div>
   );
 }

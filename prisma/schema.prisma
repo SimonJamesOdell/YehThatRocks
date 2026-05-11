@@ -384,3 +384,19 @@ model MagazineArticle {
   @@index([status, publishedAt(sort: Desc)], map: "idx_magazine_articles_status_published")
   @@map("magazine_articles")
 }
+
+model AdminCatalogReviewQueue {
+  videoId    String   @id @map("video_id") @db.VarChar(32)
+  enqueuedAt DateTime @default(now()) @map("enqueued_at") @db.DateTime(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  @@index([enqueuedAt], map: "idx_admin_catalog_review_queue_enqueued_at")
+  @@map("admin_catalog_review_queue")
+}
+
+model AdminCatalogReviewQueueMeta {
+  id            Int      @id
+  initializedAt DateTime @default(now()) @map("initialized_at") @db.DateTime(3)
+
+  @@map("admin_catalog_review_queue_meta")
+}
