@@ -19,7 +19,41 @@ const schema = z.object({
 });
 
 const IP_GEO_CACHE_TTL_MS = 30 * 60 * 1000;
+const IP_GEO_CACHE_MAX_ENTRIES = Math.max(1_000, Number(process.env.IP_GEO_CACHE_MAX_ENTRIES || "12000"));
 const ipGeoCache = new Map<string, { lat: number; lng: number; expiresAt: number }>();
+
+export function getAnalyticsGeoCacheDiagnostics() {
+  const now = Date.now();
+  let expiredEntries = 0;
+
+  for (const value of ipGeoCache.values()) {
+    if (value.expiresAt <= now) {
+      expiredEntries += 1;
+    }
+  }
+
+  return {
+    size: ipGeoCache.size,
+    maxEntries: IP_GEO_CACHE_MAX_ENTRIES,
+    expiredEntries,
+  };
+}
+
+function pruneIpGeoCache(now: number) {
+  for (const [cacheKey, value] of ipGeoCache.entries()) {
+    if (value.expiresAt <= now) {
+      ipGeoCache.delete(cacheKey);
+    }
+  }
+
+  while (ipGeoCache.size > IP_GEO_CACHE_MAX_ENTRIES) {
+    const oldestKey = ipGeoCache.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    ipGeoCache.delete(oldestKey);
+  }
+}
 
 function extractClientIp(request: NextRequest): string | null {
   const candidates = [
@@ -90,6 +124,7 @@ async function inferGeoFromRequest(request: NextRequest): Promise<{ lat: number;
   }
 
   const now = Date.now();
+  pruneIpGeoCache(now);
   const cached = ipGeoCache.get(clientIp);
   if (cached && cached.expiresAt > now) {
     return { lat: cached.lat, lng: cached.lng };
