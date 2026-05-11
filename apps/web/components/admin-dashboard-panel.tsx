@@ -199,31 +199,17 @@ type PendingVideoDraft = {
   parsedArtist: string | null;
   parsedTrack: string | null;
 };
-type ArtistRow = {
-  id: number;
-  name: string;
-  country: string | null;
-  genre1: string | null;
-  genre2: string | null;
-  genre3: string | null;
-  genre4: string | null;
-  genre5: string | null;
-  genre6: string | null;
-};
-
-type AmbiguousVideoRow = {
+type CatalogReviewVideoRow = {
   id: number;
   videoId: string;
   title: string;
-  description: string | null;
   parsedArtist: string | null;
   parsedTrack: string | null;
-  parsedVideoType: string | null;
-  parseConfidence: number | null;
-  parseMethod: string | null;
-  parseReason: string | null;
   channelTitle: string | null;
+  durationSec: number | null;
+  createdAt: string | null;
   updatedAt: string | null;
+  enqueuedAt: string | null;
 };
 
 type PerfWindowResetResponse = {
@@ -245,7 +231,7 @@ type AdminMagazineArticleRow = {
   externalLandings: number;
 };
 
-export type AdminTab = "overview" | "magazine" | "performance" | "worldmap" | "api" | "categories" | "videos" | "artists" | "ambiguous";
+export type AdminTab = "overview" | "magazine" | "performance" | "worldmap" | "api" | "categories" | "videos" | "catalog-review";
 
 async function readJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetchWithAuthRetry(input, init);
@@ -333,20 +319,21 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [pendingPreviewSkipOffsets, setPendingPreviewSkipOffsets] = useState<Record<number, number>>({});
   const pendingPreviewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const pendingPreviewCurrentTimeRef = useRef<number | null>(null);
+  const catalogReviewPreviewIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const catalogReviewPreviewCurrentTimeRef = useRef<number | null>(null);
   const [pendingVideoTotal, setPendingVideoTotal] = useState(0);
+  const [catalogReviewRemaining, setCatalogReviewRemaining] = useState(0);
+  const [catalogReviewCurrentVideo, setCatalogReviewCurrentVideo] = useState<CatalogReviewVideoRow | null>(null);
+  const [catalogReviewActionVideoId, setCatalogReviewActionVideoId] = useState<string | null>(null);
   const [recentlyApprovedVideos, setRecentlyApprovedVideos] = useState<RecentlyApprovedVideoRow[]>([]);
   const [videoModerationPane, setVideoModerationPane] = useState<"pending" | "recent">("pending");
   const [revokingVideoId, setRevokingVideoId] = useState<string | null>(null);
-  const [artists, setArtists] = useState<ArtistRow[]>([]);
-  const [ambiguousVideos, setAmbiguousVideos] = useState<AmbiguousVideoRow[]>([]);
   const [magazineArticles, setMagazineArticles] = useState<AdminMagazineArticleRow[]>([]);
   const [deleteModalSlug, setDeleteModalSlug] = useState<string | null>(null);
 
   const [videoQuery, setVideoQuery] = useState("");
   const [videoImportSource, setVideoImportSource] = useState("");
   const [ingestingVideo, setIngestingVideo] = useState(false);
-  const [artistQuery, setArtistQuery] = useState("");
-  const [ambiguousQuery, setAmbiguousQuery] = useState("");
   const [moderatingVideoId, setModeratingVideoId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [refreshingAnalytics, setRefreshingAnalytics] = useState(false);
@@ -886,6 +873,44 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     }
   }
 
+  async function loadCatalogReviewQueue() {
+    const payload = await readJson<{
+      remaining: number;
+      currentVideo: CatalogReviewVideoRow | null;
+    }>("/api/admin/videos/catalog-review");
+
+    setCatalogReviewRemaining(Number(payload.remaining ?? 0));
+    setCatalogReviewCurrentVideo(payload.currentVideo ?? null);
+  }
+
+  async function moderateCatalogReviewVideo(action: "approve" | "remove") {
+    if (!catalogReviewCurrentVideo) {
+      return;
+    }
+
+    setCatalogReviewActionVideoId(catalogReviewCurrentVideo.videoId);
+
+    try {
+      await postJson<{ ok: boolean; remaining?: number }>("/api/admin/videos/catalog-review", {
+        videoId: catalogReviewCurrentVideo.videoId,
+        action,
+      });
+
+      setSaveMessage(action === "approve"
+        ? `Kept ${catalogReviewCurrentVideo.videoId}.`
+        : `Removed ${catalogReviewCurrentVideo.videoId}.`);
+
+      await Promise.all([
+        loadCatalogReviewQueue(),
+        action === "remove" ? loadVideos() : Promise.resolve(),
+      ]);
+    } catch (moderationError) {
+      setSaveMessage(moderationError instanceof Error ? moderationError.message : "Catalog review action failed.");
+    } finally {
+      setCatalogReviewActionVideoId(null);
+    }
+  }
+
   async function revokeApprovedVideo(videoId: string) {
     setRevokingVideoId(videoId);
     try {
@@ -901,6 +926,22 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
 
   function seekPendingPreview(seconds: number) {
     const iframeWindow = pendingPreviewIframeRef.current?.contentWindow;
+    if (!iframeWindow) {
+      return;
+    }
+
+    iframeWindow.postMessage(
+      JSON.stringify({ event: "command", func: "seekTo", args: [seconds, true] }),
+      "*",
+    );
+    iframeWindow.postMessage(
+      JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+      "*",
+    );
+  }
+
+  function seekCatalogReviewPreview(seconds: number) {
+    const iframeWindow = catalogReviewPreviewIframeRef.current?.contentWindow;
     if (!iframeWindow) {
       return;
     }
@@ -942,6 +983,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         const currentTime = payload.info?.currentTime;
         if (typeof currentTime === "number" && Number.isFinite(currentTime)) {
           pendingPreviewCurrentTimeRef.current = currentTime;
+          catalogReviewPreviewCurrentTimeRef.current = currentTime;
         }
       } catch {
         // Ignore non-JSON/non-YouTube messages.
@@ -953,20 +995,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       window.removeEventListener("message", handleYouTubeInfoDelivery);
     };
   }, []);
-
-  async function loadArtists() {
-    const artistPayload = await readJson<{ artists: ArtistRow[] }>(
-      `/api/admin/artists${artistQuery ? `?q=${encodeURIComponent(artistQuery)}` : ""}`,
-    );
-    setArtists(artistPayload.artists);
-  }
-
-  async function loadAmbiguousVideos() {
-    const ambiguousPayload = await readJson<{ ambiguousVideos: AmbiguousVideoRow[] }>(
-      `/api/admin/videos/ambiguous${ambiguousQuery ? `?q=${encodeURIComponent(ambiguousQuery)}` : ""}`,
-    );
-    setAmbiguousVideos(ambiguousPayload.ambiguousVideos);
-  }
 
   async function loadMagazineArticles() {
     const payload = await readJson<{ articles: AdminMagazineArticleRow[] }>("/api/admin/magazine");
@@ -1030,10 +1058,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         await loadCategories();
       } else if (activeTab === "videos") {
         await Promise.all([loadPendingVideos(), loadRecentlyApprovedVideos()]);
-      } else if (activeTab === "artists") {
-        await loadArtists();
-      } else if (activeTab === "ambiguous") {
-        await loadAmbiguousVideos();
+      } else if (activeTab === "catalog-review") {
+        await loadCatalogReviewQueue();
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load admin data.");
@@ -1105,7 +1131,11 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     activeTab,
     onRefresh: async () => {
       try {
-        await Promise.all([loadPendingVideos(), loadRecentlyApprovedVideos()]);
+        if (activeTab === "videos") {
+          await Promise.all([loadPendingVideos(), loadRecentlyApprovedVideos()]);
+        } else if (activeTab === "catalog-review") {
+          await loadCatalogReviewQueue();
+        }
         // Clear error on successful poll
         if (error?.includes("Unauthorized")) {
           setError(null);
@@ -1234,30 +1264,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       await Promise.all([loadPendingVideos(), loadVideos()]);
     } catch (moderationError) {
       setSaveMessage(moderationError instanceof Error ? moderationError.message : "Pending moderation action failed.");
-    } finally {
-      setModeratingVideoId(null);
-    }
-  }
-
-  async function saveArtist(row: ArtistRow) {
-    try {
-      await patchJson("/api/admin/artists", row);
-      setSaveMessage(`Saved artist ${row.name}.`);
-      await loadArtists();
-    } catch (saveError) {
-      setSaveMessage(saveError instanceof Error ? saveError.message : "Artist save failed.");
-    }
-  }
-
-  async function moderateAmbiguousVideo(videoId: string, action: "keep" | "delete") {
-    setModeratingVideoId(videoId);
-
-    try {
-      await postJson<{ ok: boolean }>("/api/admin/videos/ambiguous", { videoId, action });
-      setSaveMessage(action === "delete" ? `Deleted ${videoId}.` : `Kept ${videoId}.`);
-      await loadAmbiguousVideos();
-    } catch (moderationError) {
-      setSaveMessage(moderationError instanceof Error ? moderationError.message : "Moderation action failed.");
     } finally {
       setModeratingVideoId(null);
     }
@@ -2285,108 +2291,122 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         </>
       ) : null}
 
-      {activeTab === "artists" ? (
+      {activeTab === "catalog-review" ? (
         <section className="panel featurePanel">
           <div className="panelHeading">
-            <span>Edit Artists</span>
-            <strong>{artists.length} rows</strong>
+            <span>Catalog Cleanup Queue</span>
+            <strong>{catalogReviewRemaining} remaining</strong>
           </div>
           <div className="interactiveStack">
-            <label>
-              <span>Search</span>
-              <input value={artistQuery} onChange={(event) => setArtistQuery(event.target.value)} placeholder="artist, country, genre" />
-            </label>
-            <button type="button" onClick={() => void loadArtists()}>Refresh Artist Search</button>
-            {artists.slice(0, 25).map((row) => (
-              <div key={row.id} className="authForm">
-                <label>
-                  <span>Name</span>
-                  <input
-                    value={row.name}
-                    onChange={(event) => {
-                      const next = artists.map((item) => (item.id === row.id ? { ...item, name: event.target.value } : item));
-                      setArtists(next);
+            <p className="authMessage" style={{ margin: 0 }}>
+              Review each catalog video one-by-one. Keep removes it from this queue only. Remove hard-deletes it everywhere.
+            </p>
+            {!catalogReviewCurrentVideo ? (
+              <p className="authMessage">All queued videos are judged.</p>
+            ) : (
+              (() => {
+                const row = catalogReviewCurrentVideo;
+                const baseStartAtSec = row.durationSec && row.durationSec > 0 ? Math.floor(row.durationSec / 2) : 0;
+                const maxStartAtSec = row.durationSec && row.durationSec > 0 ? Math.max(0, row.durationSec - 1) : null;
+
+                return (
+                  <div
+                    className="authForm authFormWide"
+                    style={{
+                      width: "100%",
+                      maxWidth: "none",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: 14,
+                      alignItems: "start",
                     }}
-                  />
-                </label>
-                <label>
-                  <span>Country</span>
-                  <input
-                    value={row.country ?? ""}
-                    onChange={(event) => {
-                      const next = artists.map((item) => (item.id === row.id ? { ...item, country: event.target.value || null } : item));
-                      setArtists(next);
-                    }}
-                  />
-                </label>
-                <label>
-                  <span>Genre 1</span>
-                  <input
-                    value={row.genre1 ?? ""}
-                    onChange={(event) => {
-                      const next = artists.map((item) => (item.id === row.id ? { ...item, genre1: event.target.value || null } : item));
-                      setArtists(next);
-                    }}
-                  />
-                </label>
-                <button type="button" onClick={() => void saveArtist(row)}>Save Artist</button>
-              </div>
-            ))}
+                  >
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <p className="authMessage" style={{ margin: 0 }}><strong>{row.videoId}</strong></p>
+                      <p className="authMessage" style={{ margin: 0 }}>{row.title}</p>
+                      {row.parsedArtist ? <p className="authMessage" style={{ margin: 0 }}>Artist: {row.parsedArtist}</p> : null}
+                      {row.parsedTrack ? <p className="authMessage" style={{ margin: 0 }}>Track: {row.parsedTrack}</p> : null}
+                      {row.channelTitle ? <p className="authMessage" style={{ margin: 0 }}>Channel: {row.channelTitle}</p> : null}
+                      {row.enqueuedAt ? (
+                        <p className="authMessage" style={{ margin: 0 }}>
+                          Queued: {new Date(row.enqueuedAt).toLocaleString()}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div
+                        style={{
+                          position: "relative",
+                          width: "100%",
+                          aspectRatio: "16 / 9",
+                          borderRadius: 10,
+                          overflow: "hidden",
+                          background: "rgba(0,0,0,0.45)",
+                          border: "1px solid rgba(255,255,255,0.12)",
+                        }}
+                      >
+                        <iframe
+                          ref={catalogReviewPreviewIframeRef}
+                          src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0&autoplay=1&mute=0&playsinline=1&enablejsapi=1&start=${baseStartAtSec}`}
+                          title={`Catalog review preview ${row.videoId}`}
+                          loading="lazy"
+                          onLoad={() => {
+                            catalogReviewPreviewCurrentTimeRef.current = baseStartAtSec;
+                            window.setTimeout(() => {
+                              seekCatalogReviewPreview(baseStartAtSec);
+                            }, 180);
+                          }}
+                          referrerPolicy="strict-origin-when-cross-origin"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+                        />
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={() => void moderateCatalogReviewVideo("approve")}
+                          disabled={catalogReviewActionVideoId === row.videoId}
+                        >
+                          Keep Video
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void moderateCatalogReviewVideo("remove")}
+                          disabled={catalogReviewActionVideoId === row.videoId}
+                        >
+                          Remove Video
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const knownCurrentTime = catalogReviewPreviewCurrentTimeRef.current;
+                            const safeCurrentTime =
+                              typeof knownCurrentTime === "number" && Number.isFinite(knownCurrentTime)
+                                ? knownCurrentTime
+                                : baseStartAtSec;
+                            const unclampedNextStartAtSec = safeCurrentTime + 20;
+                            const nextStartAtSec = maxStartAtSec === null
+                              ? unclampedNextStartAtSec
+                              : Math.min(unclampedNextStartAtSec, maxStartAtSec);
+
+                            catalogReviewPreviewCurrentTimeRef.current = nextStartAtSec;
+                            seekCatalogReviewPreview(nextStartAtSec);
+                          }}
+                          disabled={catalogReviewActionVideoId === row.videoId}
+                        >
+                          Skip +20s
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()
+            )}
           </div>
         </section>
       ) : null}
 
-      {activeTab === "ambiguous" ? (
-        <section className="panel featurePanel">
-          <div className="panelHeading">
-            <span>Ambiguous Videos</span>
-            <strong>{ambiguousVideos.length} rows</strong>
-          </div>
-          <div className="interactiveStack">
-            <p className="authMessage">
-              Videos shown here are likely non-music or weakly classified. Choose Keep to approve, Delete to remove.
-            </p>
-            <label>
-              <span>Search</span>
-              <input
-                value={ambiguousQuery}
-                onChange={(event) => setAmbiguousQuery(event.target.value)}
-                placeholder="videoId, title, artist, track"
-              />
-            </label>
-            <button type="button" onClick={() => void loadAmbiguousVideos()}>Refresh Ambiguous List</button>
-            {ambiguousVideos.map((row) => (
-              <div key={row.id} className="authForm">
-                <p className="authMessage"><strong>{row.videoId}</strong></p>
-                <p className="authMessage">{row.title}</p>
-                {row.channelTitle ? <p className="authMessage">Channel: {row.channelTitle}</p> : null}
-                <p className="authMessage">
-                  Artist: {row.parsedArtist ?? "n/a"} | Track: {row.parsedTrack ?? "n/a"} | Type: {row.parsedVideoType ?? "n/a"} | Confidence: {row.parseConfidence ?? "n/a"}
-                </p>
-                {row.parseMethod || row.parseReason ? (
-                  <p className="authMessage">{row.parseMethod ?? ""} {row.parseReason ? `| ${row.parseReason}` : ""}</p>
-                ) : null}
-                <div className="primaryActions compactActions">
-                  <button
-                    type="button"
-                    onClick={() => void moderateAmbiguousVideo(row.videoId, "keep")}
-                    disabled={moderatingVideoId === row.videoId}
-                  >
-                    {moderatingVideoId === row.videoId ? "Working..." : "Keep"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void moderateAmbiguousVideo(row.videoId, "delete")}
-                    disabled={moderatingVideoId === row.videoId}
-                  >
-                    {moderatingVideoId === row.videoId ? "Working..." : "Delete"}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
     </div>
   );
 }

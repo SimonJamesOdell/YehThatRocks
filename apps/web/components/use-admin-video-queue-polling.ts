@@ -13,7 +13,7 @@ export function useAdminVideoQueuePolling({ activeTab, onRefresh }: UseAdminVide
   }, [onRefresh]);
 
   useEffect(() => {
-    if (activeTab !== "videos") {
+    if (activeTab !== "videos" && activeTab !== "catalog-review") {
       return;
     }
 
