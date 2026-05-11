@@ -2504,6 +2504,26 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button
                           type="button"
+                          onClick={() => {
+                            const knownCurrentTime = catalogReviewPreviewCurrentTimeRef.current;
+                            const safeCurrentTime =
+                              typeof knownCurrentTime === "number" && Number.isFinite(knownCurrentTime)
+                                ? knownCurrentTime
+                                : baseStartAtSec;
+                            const unclampedNextStartAtSec = safeCurrentTime + 20;
+                            const nextStartAtSec = maxStartAtSec === null
+                              ? unclampedNextStartAtSec
+                              : Math.min(unclampedNextStartAtSec, maxStartAtSec);
+
+                            catalogReviewPreviewCurrentTimeRef.current = nextStartAtSec;
+                            seekCatalogReviewPreview(nextStartAtSec);
+                          }}
+                          disabled={catalogReviewActionVideoId === row.videoId}
+                        >
+                          Skip +20s
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => void moderateCatalogReviewVideo("approve")}
                           disabled={catalogReviewActionVideoId === row.videoId}
                         >
@@ -2531,26 +2551,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                             {reversingCatalogAction ? "Reversing..." : `Reverse ${previousCatalogAction.action}`}
                           </button>
                         ) : null}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const knownCurrentTime = catalogReviewPreviewCurrentTimeRef.current;
-                            const safeCurrentTime =
-                              typeof knownCurrentTime === "number" && Number.isFinite(knownCurrentTime)
-                                ? knownCurrentTime
-                                : baseStartAtSec;
-                            const unclampedNextStartAtSec = safeCurrentTime + 20;
-                            const nextStartAtSec = maxStartAtSec === null
-                              ? unclampedNextStartAtSec
-                              : Math.min(unclampedNextStartAtSec, maxStartAtSec);
-
-                            catalogReviewPreviewCurrentTimeRef.current = nextStartAtSec;
-                            seekCatalogReviewPreview(nextStartAtSec);
-                          }}
-                          disabled={catalogReviewActionVideoId === row.videoId}
-                        >
-                          Skip +20s
-                        </button>
                       </div>
                     </div>
                   </div>
