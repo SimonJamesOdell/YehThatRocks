@@ -7,7 +7,7 @@ import { OverlayHeader } from "@/components/overlay-header";
 import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
 import { requireAdminUserAuthState } from "@/lib/admin-auth";
 
-const ADMIN_TABS: AdminTab[] = ["overview", "magazine", "performance", "worldmap", "api", "categories", "videos", "artists", "ambiguous"];
+const ADMIN_TABS: AdminTab[] = ["overview", "magazine", "performance", "worldmap", "api", "categories", "videos", "catalog-review"];
 
 function resolveAdminTab(tab: string | null | undefined): AdminTab {
   if (tab && ADMIN_TABS.includes(tab as AdminTab)) {
