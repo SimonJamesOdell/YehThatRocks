@@ -90,7 +90,7 @@ async function fetchYouTubeOEmbed(videoId: string): Promise<OEmbedPayload | null
       headers: {
         "user-agent": "YehThatRocksShareBot/1.0",
       },
-      cache: "force-cache",
+      cache: "no-store",
     });
 
     if (!response.ok) {

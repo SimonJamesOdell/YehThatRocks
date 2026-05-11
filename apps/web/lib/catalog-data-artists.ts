@@ -53,21 +53,25 @@ const ARTIST_PROJECTION_REFRESH_TTL_MS = 5 * 60 * 1000;
 const ARTISTS_LIST_CACHE_TTL_MS = 5 * 60 * 1000;
 const ARTIST_SLUG_LOOKUP_CACHE_TTL_MS = 5 * 60 * 1000;
 const ARTIST_SINGLE_SLUG_CACHE_TTL_MS = 5 * 60 * 1000;
-const ARTIST_VIDEOS_CACHE_TTL_MS = 60_000;
+const ARTIST_VIDEOS_CACHE_TTL_MS = 20_000;
 const KNOWN_ARTIST_MATCH_CACHE_TTL_MS = 10 * 60 * 1000;
 const ARTIST_CATALOG_EVIDENCE_CACHE_TTL_MS = 10 * 60 * 1000;
 const ARTIST_CACHE_MAX_ENTRIES = Math.max(
   200,
   Math.min(10_000, Number(process.env.ARTIST_CACHE_MAX_ENTRIES || "2000")),
 );
+const ARTIST_HEAVY_CACHE_MAX_ENTRIES = Math.max(
+  120,
+  Math.min(2_000, Number(process.env.ARTIST_HEAVY_CACHE_MAX_ENTRIES || "350")),
+);
 const BATCH_UPSERT_SIZE = 100;
 
 // ── Cache stores ──────────────────────────────────────────────────────────────
 
-const artistNormVideoPoolCache = new BoundedMap<string, { expiresAt: number; rows: RankedVideoRow[] }>(ARTIST_CACHE_MAX_ENTRIES);
-const artistNormVideoPoolInFlight = new BoundedMap<string, { limit: number; promise: Promise<RankedVideoRow[]> }>(ARTIST_CACHE_MAX_ENTRIES);
-const sameGenreRelatedPoolCache = new BoundedMap<string, { expiresAt: number; rows: RankedVideoRow[] }>(ARTIST_CACHE_MAX_ENTRIES);
-const sameGenreRelatedPoolInFlight = new BoundedMap<string, Promise<RankedVideoRow[]>>(ARTIST_CACHE_MAX_ENTRIES);
+const artistNormVideoPoolCache = new BoundedMap<string, { expiresAt: number; rows: RankedVideoRow[] }>(ARTIST_HEAVY_CACHE_MAX_ENTRIES);
+const artistNormVideoPoolInFlight = new BoundedMap<string, { limit: number; promise: Promise<RankedVideoRow[]> }>(ARTIST_HEAVY_CACHE_MAX_ENTRIES);
+const sameGenreRelatedPoolCache = new BoundedMap<string, { expiresAt: number; rows: RankedVideoRow[] }>(ARTIST_HEAVY_CACHE_MAX_ENTRIES);
+const sameGenreRelatedPoolInFlight = new BoundedMap<string, Promise<RankedVideoRow[]>>(ARTIST_HEAVY_CACHE_MAX_ENTRIES);
 const artistLetterCache = new BoundedMap<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>(ARTIST_CACHE_MAX_ENTRIES);
 const artistLetterInFlight = new BoundedMap<string, Promise<Array<ArtistRecord & { videoCount: number }>>>(ARTIST_CACHE_MAX_ENTRIES);
 const artistLetterPageCache = new BoundedMap<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>(ARTIST_CACHE_MAX_ENTRIES);
@@ -83,8 +87,8 @@ let artistsListInFlight: Promise<ArtistRecord[]> | undefined;
 let artistSlugLookupCache: { expiresAt: number; rowsBySlug: Map<string, ArtistRecord> } | undefined;
 let artistSlugLookupInFlight: Promise<Map<string, ArtistRecord>> | undefined;
 const artistSingleSlugCache = new BoundedMap<string, { expiresAt: number; artist: ArtistRecord }>(ARTIST_CACHE_MAX_ENTRIES);
-const artistVideosCache = new BoundedMap<string, { expiresAt: number; videos: VideoRecord[] }>(ARTIST_CACHE_MAX_ENTRIES);
-const artistVideosInFlight = new BoundedMap<string, Promise<VideoRecord[]>>(ARTIST_CACHE_MAX_ENTRIES);
+const artistVideosCache = new BoundedMap<string, { expiresAt: number; videos: VideoRecord[] }>(ARTIST_HEAVY_CACHE_MAX_ENTRIES);
+const artistVideosInFlight = new BoundedMap<string, Promise<VideoRecord[]>>(ARTIST_HEAVY_CACHE_MAX_ENTRIES);
 const knownArtistMatchCache = new BoundedMap<string, { expiresAt: number; known: boolean }>(ARTIST_CACHE_MAX_ENTRIES);
 const artistCatalogEvidenceCache = new BoundedMap<string, { expiresAt: number; known: boolean; rockOrMetalGenreMatch: boolean }>(ARTIST_CACHE_MAX_ENTRIES);
 let artistVideoStatsSourceCache: "videosbyartist" | "parsedArtist" | undefined;
@@ -131,6 +135,27 @@ export function invalidateArtistLookupCaches() {
   artistSlugLookupCache = undefined;
   artistSlugLookupInFlight = undefined;
   artistSingleSlugCache.clear();
+}
+
+export function getArtistCacheDiagnostics() {
+  return {
+    limits: {
+      defaultMaxEntries: ARTIST_CACHE_MAX_ENTRIES,
+      heavyMaxEntries: ARTIST_HEAVY_CACHE_MAX_ENTRIES,
+    },
+    sizes: {
+      artistNormVideoPoolCache: artistNormVideoPoolCache.size,
+      artistNormVideoPoolInFlight: artistNormVideoPoolInFlight.size,
+      sameGenreRelatedPoolCache: sameGenreRelatedPoolCache.size,
+      sameGenreRelatedPoolInFlight: sameGenreRelatedPoolInFlight.size,
+      artistLetterCache: artistLetterCache.size,
+      artistLetterPageCache: artistLetterPageCache.size,
+      artistSearchCache: artistSearchCache.size,
+      artistSingleSlugCache: artistSingleSlugCache.size,
+      artistVideosCache: artistVideosCache.size,
+      artistVideosInFlight: artistVideosInFlight.size,
+    },
+  };
 }
 
 // ── Artist stats projection ───────────────────────────────────────────────────

@@ -8,6 +8,9 @@ import { getAdminDashboardAuthAuditCounters } from "@/lib/admin-dashboard-auth-c
 import { buildAdminHealthPayload, readAdminHostMetricHistory } from "@/lib/admin-dashboard-health";
 import { ensureAdminDashboardRollupsFresh, readAdminDashboardRollups } from "@/lib/admin-dashboard-rollups";
 import { getMetadataQualityStats } from "@/lib/admin-metadata-quality";
+import { getAnalyticsGeoCacheDiagnostics } from "@/app/api/analytics/route";
+import { getArtistCacheDiagnostics } from "@/lib/catalog-data-artists";
+import { getCurrentVideoCacheDiagnostics } from "@/lib/current-video-cache";
 import { prisma } from "@/lib/db";
 import { getInteractiveTableCount } from "@/lib/interactive-table-counts";
 
@@ -515,6 +518,10 @@ export async function GET(request: NextRequest) {
 
   const auth24hRow = auth24h[0];
   const metadataRow = metadataQuality;
+  const memoryUsage = process.memoryUsage();
+  const artistCacheDiagnostics = getArtistCacheDiagnostics();
+  const currentVideoCacheDiagnostics = getCurrentVideoCacheDiagnostics();
+  const analyticsGeoCacheDiagnostics = getAnalyticsGeoCacheDiagnostics();
   const geoVisitors: VisitorGeoPoint[] = geoVisitorsRaw
     .map((row: { visitorId: string; lat: bigint | number | string; lng: bigint | number | string; eventCount: bigint | number; lastSeenAt: Date | string }) => {
       const lat = toNumber(row.lat);
@@ -681,6 +688,22 @@ export async function GET(request: NextRequest) {
           },
         };
       })(),
+      memoryDiagnostics: {
+        snapshotAt: new Date().toISOString(),
+        process: {
+          rssMb: Number((memoryUsage.rss / 1024 / 1024).toFixed(2)),
+          heapUsedMb: Number((memoryUsage.heapUsed / 1024 / 1024).toFixed(2)),
+          heapTotalMb: Number((memoryUsage.heapTotal / 1024 / 1024).toFixed(2)),
+          externalMb: Number((memoryUsage.external / 1024 / 1024).toFixed(2)),
+          arrayBuffersMb: Number(((memoryUsage.arrayBuffers ?? 0) / 1024 / 1024).toFixed(2)),
+        },
+        caches: {
+          currentVideo: currentVideoCacheDiagnostics,
+          artist: artistCacheDiagnostics,
+          analyticsGeo: analyticsGeoCacheDiagnostics,
+          wikiCacheCount,
+        },
+      },
     },
   };
 
