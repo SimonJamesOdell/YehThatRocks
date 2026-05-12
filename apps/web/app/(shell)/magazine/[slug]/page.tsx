@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 
 import { OverlayHeader } from "@/components/overlay-header";
 import { MagazineArticleLandingTracker } from "@/components/magazine-article-landing-tracker";
-import { ScrollToTop } from "@/components/scroll-to-top";
+import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { getArticleBySlug, getAllPublishedSlugs, getPublishedArticles, type MagazineBlock } from "@/lib/magazine-data";
 
 type MagazineTrackPageProps = {
@@ -79,7 +79,7 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
 
   return (
     <>
-      <ScrollToTop />
+      <OverlayScrollReset />
       <OverlayHeader
         breadcrumb={(
           <>
