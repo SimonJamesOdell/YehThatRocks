@@ -1030,13 +1030,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     );
   }
 
-  async function loadArtists() {
-    const artistPayload = await readJson<{ artists: ArtistRow[] }>(
-      `/api/admin/artists${artistQuery ? `?q=${encodeURIComponent(artistQuery)}` : ""}`,
-    );
-    setArtists(artistPayload.artists);
-  }
-
   function seekCatalogReviewPreview(seconds: number) {
     const iframeWindow = catalogReviewPreviewIframeRef.current?.contentWindow;
     if (!iframeWindow) {
