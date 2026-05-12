@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const path = require("node:path");
-const { readFileStrict, assertContains, assertContainsEither, finishInvariantCheck } = require("./invariants/helpers");
+const { readFileStrict, assertContains, assertNotContains, assertContainsEither, finishInvariantCheck } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
 
@@ -138,10 +138,9 @@ function main() {
     "STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s') AS bucket_start,",
     "const HOURLY_BUCKET_SELECT_EXPR = `STR_TO_DATE(${HOURLY_BUCKET_GROUP_BY_EXPR}, '%Y-%m-%d %H:%i:%s')`",
   ], "Hourly rollups keep DATETIME bucket_start expression used by current stable admin close behavior", failures);
-  assertContainsEither(adminDashboardRollupsSource, [
-    "GROUP BY STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s')",
-    "const HOURLY_BUCKET_GROUP_BY_EXPR = \"DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')\"",
-  ], "Hourly rollups preserve current grouping expression used by stable state", failures);
+  assertContains(adminDashboardRollupsSource, "const HOURLY_BUCKET_GROUP_BY_EXPR = \"DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')\";", "Hourly rollups define stable DATE_FORMAT grouping expression", failures);
+  assertContains(adminDashboardRollupsSource, "GROUP BY ${HOURLY_BUCKET_GROUP_BY_EXPR}", "Hourly rollups group by DATE_FORMAT expression for stable admin close behavior", failures);
+  assertNotContains(adminDashboardRollupsSource, "GROUP BY STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s')", "Hourly rollups must not group by STR_TO_DATE expression", failures);
 
   // Admin performance samples route parse style invariants.
   assertContains(adminPerformanceSamplesRouteSource, "const ms = Number.parseInt(process.env.SLOW_QUERY_LONG_TIME_THRESHOLD_MS, 10);", "Admin performance samples route parses slow-query threshold with Number.parseInt", failures);
