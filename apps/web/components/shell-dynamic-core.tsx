@@ -126,7 +126,7 @@ const FOOTER_REVEAL_DURATION_MS = 240;
 const FOOTER_REVEAL_ANIMATION_MS = 180;
 // Start the footer fade well before the undock movement ends so the controls
 // are already occupying their final layout slot when the player lands.
-const FOOTER_EARLY_REVEAL_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - FOOTER_REVEAL_ANIMATION_MS - 140);
+const FOOTER_EARLY_REVEAL_DELAY_MS = 0;
 function isCategoriesOverlayPath(pathname: string) {
   return pathname === "/categories" || pathname.startsWith("/categories/");
 }
@@ -945,6 +945,13 @@ function ShellDynamicInner({
         footerRevealEarlyTimeoutRef.current = null;
         earlyFooterRevealFiredRef.current = true;
         setIsFooterRevealActive(true);
+        if (footerRevealTimeoutRef.current !== null) {
+          window.clearTimeout(footerRevealTimeoutRef.current);
+        }
+        footerRevealTimeoutRef.current = window.setTimeout(() => {
+          setIsFooterRevealActive(false);
+          footerRevealTimeoutRef.current = null;
+        }, FOOTER_REVEAL_DURATION_MS);
       }, FOOTER_EARLY_REVEAL_DELAY_MS);
       const frame = playerChromeRef.current?.querySelector(".playerFrame, .playerLoadingFallback") as HTMLElement | null;
       let didNavigate = false;
@@ -1003,7 +1010,6 @@ function ShellDynamicInner({
         window.clearTimeout(undockSettleTimeoutRef.current);
         undockSettleTimeoutRef.current = null;
       }
-      setIsFooterRevealActive(false);
       setIsUndockSettling(false);
       shouldRunFooterRevealRef.current = false;
       earlyFooterRevealFiredRef.current = false;

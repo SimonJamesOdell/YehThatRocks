@@ -73,4 +73,30 @@ test.describe("core shell smoke", () => {
     await page.getByRole("link", { name: "Artists", exact: true }).click();
     await expectOverlayRoute(page, "artists");
   });
+
+  test("closing New reveals footer promptly during close flow", async ({ page }) => {
+    await page.goto("/");
+    await expectShellChrome(page);
+
+    const isDesktopUndockFlow = await page.evaluate(() => window.matchMedia("(min-width: 1181px)").matches);
+    test.skip(!isDesktopUndockFlow, "Footer undock reveal contract only applies to desktop docked flow");
+
+    await page.getByRole("link", { name: "New", exact: true }).click();
+    await expectOverlayRoute(page, "new");
+
+    const closeClickStartedAt = Date.now();
+    await page.getByRole("link", { name: "Close" }).click();
+    await expect(page).toHaveURL(/\/(\?.*)?$/);
+    await page.waitForFunction(() => {
+      const actions = document.querySelector(".playerFooterReserve .primaryActions") as HTMLElement | null;
+      if (!actions) {
+        return false;
+      }
+      const style = window.getComputedStyle(actions);
+      return style.visibility !== "hidden" && Number.parseFloat(style.opacity || "0") > 0.01;
+    }, undefined, { timeout: 1000 });
+    const revealLatencyMs = Date.now() - closeClickStartedAt;
+    expect(revealLatencyMs).toBeLessThanOrEqual(1500);
+    await expectShellChrome(page);
+  });
 });

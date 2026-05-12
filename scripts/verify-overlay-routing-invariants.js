@@ -79,6 +79,10 @@ function main() {
   assertContains(shellDynamicSource, "}, [pathname, shouldDockDesktopPlayer]);", "Shell re-evaluates dock visibility on overlay route changes", failures);
   assertContains(shellDynamicSource, '<div className="playerDockLayer">', "Shell keeps player content in a dedicated dock layer", failures);
   assertContains(shellDynamicSource, "const UNDOCK_SETTLE_DURATION_MS = 220;", "Shell defines an undock-settle duration", failures);
+  assertContains(shellDynamicSource, "const FOOTER_EARLY_REVEAL_DELAY_MS = 0;", "Shell triggers footer reveal immediately during undock", failures);
+  assertContains(shellDynamicSource, "footerRevealTimeoutRef.current = window.setTimeout(() => {", "Shell schedules deterministic footer reveal reset timeout", failures);
+  assertContains(shellDynamicSource, "setIsFooterRevealActive(false);", "Shell eventually clears footer reveal state after the reveal window", failures);
+  assertContains(shellDynamicSource, "}, FOOTER_REVEAL_DURATION_MS);", "Shell keeps footer reveal visibility window aligned with reveal duration", failures);
   assertContains(shellDynamicSource, "const [isUndockSettling, setIsUndockSettling] = useState(false);", "Shell tracks undock settle state", failures);
   assertContains(shellDynamicSource, 'isUndockSettling ? "playerChromeUndockSettling" : "",', "Shell applies undock-settle class to player chrome", failures);
 
@@ -128,15 +132,22 @@ function main() {
   assertContains(cssSource, "scrollbar-gutter: stable;", "Overlay scroll container reserves scrollbar gutter to avoid header reflow when content loads", failures);
 
   // CSS: undocking footer transitions.
+  assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .playerDockLayer {", "Undocking keeps a dedicated dock-layer handoff rule", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .playerDockLayer", "position: static;", "Undocking dock-layer handoff removes positioned ancestor so footer layer can anchor to player chrome", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .playerDockLayer", "padding-bottom: 74px;", "Undocking dock-layer handoff reserves footer height in layout", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .playerFooterReserve {", "Undocking footer is lifted to dedicated layer", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .playerFooterReserve", "position: absolute;", "Undocking footer layer is decoupled from frame transform layout", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .playerFooterReserve", "bottom: 0;", "Undocking footer layer stays pinned to chrome bottom", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .playerFooterReserve", "min-height: 74px;", "Undocking footer layer preserves stable final footer height", failures);
   assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions {", "Undocking footer actions keep a dedicated rule", failures);
-  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions", "position: relative;", "Undocking footer actions use in-flow relative positioning to avoid handoff reflow", failures);
-  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions", "padding: 2px 0;", "Undocking footer actions retain the tuned vertical padding", failures);
-  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions", "visibility: hidden;", "Undocking footer actions stay hidden while preserving geometry", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions", "position: relative !important;", "Undocking footer actions immediately switch to final non-docked layout", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions", "padding: 12px 0 !important;", "Undocking footer actions preserve the final non-docked vertical padding before reveal", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions", "visibility: hidden !important;", "Undocking footer actions stay hidden until reveal class is applied", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions", "transition: none !important;", "Undocking footer actions disable layout transitions to avoid docked-layout flash", failures);
   assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActionsMainRow {", "Undocking footer main row has dedicated layout override", failures);
   assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActionsMainRow", "display: contents;", "Undocking footer main row uses contents layout to match final geometry", failures);
-  assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking .primaryActions button,", "Undocking footer control sizing has dedicated overrides", failures);
-  assertContains(cssSource, "height: 10px;", "Undocking footer control height remains tuned to the current lock-in value", failures);
-  assertContains(cssSource, "min-height: 10px;", "Undocking footer control min-height remains tuned to the current lock-in value", failures);
+  assertContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking.playerChromeFooterReveal .primaryActions {", "Undocking footer reveal uses dedicated class-gated rule", failures);
+  assertCssRuleContains(cssSource, ".playerChromeDockedDesktop.playerChromeUndocking.playerChromeFooterReveal .primaryActions", "visibility: visible !important;", "Undocking footer reveal explicitly flips visibility only after final layout is active", failures);
   assertContains(cssSource, ".playerChrome:not(.playerChromeDockedDesktop) .primaryActions {", "Non-docked footer geometry has dedicated stable sizing rule", failures);
   assertCssRuleContains(cssSource, ".playerChrome:not(.playerChromeDockedDesktop) .primaryActions", "min-height: 74px;", "Non-docked footer preserves stable min-height during undock handoff", failures);
   assertContains(cssSource, ".playerChromeFooterReveal .primaryActions {", "Footer reveal keeps a dedicated animation rule", failures);
@@ -211,6 +222,12 @@ function main() {
   assertContains(shellDynamicSource, "shouldRenderDesktopIntro && isDesktopIntroPreload ? \"shellDesktopIntroPreload\" : \"\"", "Shell applies preload class only when intro should render", failures);
   assertContains(shellDynamicSource, "{shouldRenderDesktopIntro ? (", "Shell only mounts desktop intro overlay when intro should render", failures);
   assertContains(coreShellSmokeSource, "await expect(shell).not.toHaveClass(/shellDesktopIntroPreload/);", "Core smoke test asserts no preload class leak after close cycles", failures);
+  assertContains(coreShellSmokeSource, "closing New reveals footer promptly during close flow", "Core smoke suite includes explicit prompt footer reveal timing regression test", failures);
+  assertContains(coreShellSmokeSource, "const actions = document.querySelector(\".playerFooterReserve .primaryActions\") as HTMLElement | null;", "Core smoke test reads footer action element visibility during close flow", failures);
+  assertContains(coreShellSmokeSource, "return style.visibility !== \"hidden\" && Number.parseFloat(style.opacity || \"0\") > 0.01;", "Core smoke test computes footer visibility from rendered styles", failures);
+  assertContains(coreShellSmokeSource, "await expect(page).toHaveURL(/\\/(\\?.*)?$/);", "Core smoke test keeps close-flow assertion anchored to home-route completion", failures);
+  assertContains(coreShellSmokeSource, "const revealLatencyMs = Date.now() - closeClickStartedAt;", "Core smoke test measures close-click to footer-reveal latency", failures);
+  assertContains(coreShellSmokeSource, "expect(revealLatencyMs).toBeLessThanOrEqual(1500);", "Core smoke test enforces bounded prompt footer reveal timing window", failures);
 
   // Categories open/loading/reveal contract invariants.
   assertContains(categoriesFilterGridSource, 'const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);', "Categories grid tracks explicit loader visibility state", failures);

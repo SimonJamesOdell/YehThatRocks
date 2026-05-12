@@ -1832,6 +1832,29 @@
     background: #000;
   }
 
+  /* During undocking, reset positioning on the dock layer so the absolutely-positioned
+     footer anchors to playerChrome (position: relative) instead of playerDockLayer.
+     Reserve 74 px at the bottom to match the lifted footer layer. */
+  .playerChromeDockedDesktop.playerChromeUndocking .playerDockLayer {
+    position: static;
+    padding-bottom: 74px;
+  }
+
+  /* Lift the footer onto its own layer, anchored to the chrome bottom, so it can
+     fade in independently while the video transform animation is still running. */
+  .playerChromeDockedDesktop.playerChromeUndocking .playerFooterReserve {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    min-height: 74px;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+
   .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerFrame > iframe,
   .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerFrame .playerMount iframe {
     /* Slightly overscan the docked iframe so YouTube edge chrome cannot bleed in. */
@@ -1968,7 +1991,7 @@
     height: 42px;
   }
 
-  .playerChromeDockedDesktop .playerFooterReserve {
+  .playerChromeDockedDesktop:not(.playerChromeUndocking) .playerFooterReserve {
     min-height: 0;
   }
 
@@ -2005,20 +2028,30 @@
   }
 
   .playerChromeDockedDesktop.playerChromeUndocking .primaryActions {
-    position: relative;
-    left: auto;
-    top: auto;
-    width: 100%;
-    padding: 2px 0;
-    gap: 8px;
-    flex-wrap: wrap;
-    justify-content: center;
-    overflow: hidden;
-    transform: none;
-    transform-origin: center;
-    opacity: 0;
-    pointer-events: none;
-    visibility: hidden;
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    padding: 12px 0 !important;
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    align-items: center !important;
+    transform: none !important;
+    transform-origin: center !important;
+    overflow: visible !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+    transition: none !important;
+    z-index: auto !important;
+  }
+
+  /* When the early footer reveal fires during the undocking animation, fade the
+     controls in on their separate layer before the video movement completes. */
+  .playerChromeDockedDesktop.playerChromeUndocking.playerChromeFooterReveal .primaryActions {
+    visibility: visible !important;
+    animation: primaryActionsReturn 180ms ease-out both;
   }
 
   .playerChromeDockedDesktop.playerChromeUndocking .primaryActionsMainRow {
@@ -2036,19 +2069,10 @@
     display: inline-flex;
   }
 
-  .playerChromeDockedDesktop.playerChromeUndocking .primaryActions button,
-  .playerChromeDockedDesktop.playerChromeUndocking .primaryActionToggleButton,
-  .playerChromeDockedDesktop.playerChromeUndocking .primaryActions .primaryActionToggleButtonTrash {
-    height: 10px;
-    min-height: 10px;
-    padding: 0 12px;
-  }
-
   .playerChromeDockedDesktop.playerChromeUndocking .primaryActionNavIconButton,
   .playerChromeDockedDesktop.playerChromeUndocking .primaryActionIconButton {
     width: 56px;
     min-width: 56px;
-    min-height: 10px;
   }
 
   .playerChrome.playerChromeUndockSettling .primaryActions {
