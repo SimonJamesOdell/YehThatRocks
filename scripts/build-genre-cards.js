@@ -23,6 +23,7 @@
 "use strict";
 
 const { PrismaClient } = require("@prisma/client");
+const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
 const { hasFlag } = require("./lib/cli");
 const { partitionGenresByScope } = require("./lib/genre-scope");
 const { loadDatabaseEnv } = require("./lib/runtime");
@@ -115,7 +116,10 @@ function scoreVideoForGenre(genre, title, description) {
   return score;
 }
 
-const prisma = new PrismaClient({ log: ["warn", "error"] });
+const prisma = new PrismaClient({
+  adapter: new PrismaMariaDb(process.env.DATABASE_URL),
+  log: ["warn", "error"],
+});
 
 // ---------------------------------------------------------------------------
 // Main
