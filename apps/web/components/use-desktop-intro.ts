@@ -58,7 +58,8 @@ export function useDesktopIntro({
 }: {
   pathname: string;
 }): DesktopIntroState {
-  const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(!DISABLE_DESKTOP_INTRO);
+  type DesktopIntroWindow = Window & { __ytrDesktopIntroAutoPlayed?: boolean };
+  const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(false);
   const [isDesktopIntroLogoReady, setIsDesktopIntroLogoReady] = useState(DISABLE_DESKTOP_INTRO);
   const [desktopIntroPhase, setDesktopIntroPhase] = useState<DesktopIntroPhase>("disabled");
   const [desktopIntroDeltaX, setDesktopIntroDeltaX] = useState(0);
@@ -72,6 +73,7 @@ export function useDesktopIntro({
   const desktopIntroMeasureRafRef = useRef<number | null>(null);
   const desktopIntroPhaseRef = useRef<DesktopIntroPhase>("disabled");
   const desktopIntroLogoLoadIdRef = useRef(0);
+  const hasStartedAutoDesktopIntroRef = useRef(false);
   const shouldReplayDesktopIntroOnHomeRef = useRef(false);
 
   const isDesktopIntroActive =
@@ -273,6 +275,16 @@ export function useDesktopIntro({
       setDesktopIntroPhase("disabled");
       return;
     }
+
+    // Auto-run the intro only once per tab lifetime; explicit replays use shouldReplayDesktopIntroOnHomeRef.
+    const introWindow = window as DesktopIntroWindow;
+    if (hasStartedAutoDesktopIntroRef.current || introWindow.__ytrDesktopIntroAutoPlayed) {
+      setIsDesktopIntroPreload(false);
+      return;
+    }
+
+    hasStartedAutoDesktopIntroRef.current = true;
+    introWindow.__ytrDesktopIntroAutoPlayed = true;
 
     void startPreparedDesktopIntroSequence();
 
