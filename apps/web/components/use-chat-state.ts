@@ -112,7 +112,7 @@ export function useChatState({
   const [latestMagazineTracks, setLatestMagazineTracks] = useState<MagazineRailTrack[]>([]);
 
   // Computed from auth + chat mode so the chat state stays mounted while overlay pages are open.
-  const shouldRunChat = isAuthenticated || chatMode === "global";
+  const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute) && (isAuthenticated || chatMode === "global");
 
   // Keep the ref in sync for use inside event handlers.
   useEffect(() => {

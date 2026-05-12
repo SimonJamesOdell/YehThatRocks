@@ -91,8 +91,8 @@ function main() {
   assertContains(useChatStateSource, "const globalEvents = new EventSource(\"/api/chat/stream?mode=global\");", "useChatState subscribes to global chat stream", failures);
   assertContains(useChatStateSource, "fetchWithAuthRetry(`/api/chat?", "useChatState loads chat via authenticated API call", failures);
   assertContains(useChatStateSource, "fetchWithAuthRetry(\"/api/chat\",", "useChatState posts chat via authenticated API call", failures);
-  assertContains(useChatStateSource, "const shouldRunChat = isAuthenticated || chatMode === \"global\";", "useChatState stays mounted across overlay routes instead of shutting down on overlay open", failures);
-  assertNotContains(useChatStateSource, "!shouldShowOverlayPanel", "useChatState no longer gates chat lifecycle on overlay panel visibility", failures);
+  assertContains(useChatStateSource, "const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute) && (isAuthenticated || chatMode === \"global\");", "useChatState keeps chat mounted across overlay routes while preserving the magazine exception", failures);
+  assertContains(useChatStateSource, "isMagazineOverlayRoute", "useChatState preserves the magazine-route exception in the run gate", failures);
   assertContains(useChatStateSource, "setChatMode(\"magazine\");", "useChatState keeps magazine mode selectable", failures);
   assertContains(shellDynamicSource, "setChatMode(\"online\")", "shell JSX keeps online chat mode tab selectable", failures);
   assertContains(useChatStateSource, "node.scrollTop = node.scrollHeight;", "useChatState auto-scrolls chat list on new message", failures);
