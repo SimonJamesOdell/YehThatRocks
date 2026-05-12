@@ -764,6 +764,12 @@ function ShellDynamicInner({
     onSetIsFooterRevealActive: setIsFooterRevealActive,
   });
 
+  useEffect(() => {
+    if (!shouldShowOverlayPanel && isOverlayClosing) {
+      setIsOverlayClosing(false);
+    }
+  }, [isOverlayClosing, shouldShowOverlayPanel]);
+
   // Clean up and reset docking state when overlay panel is shown
   useEffect(() => {
     if (!shouldShowOverlayPanel) {
@@ -2648,14 +2654,15 @@ function ShellDynamicInner({
       }
     };
   }, [activeArtistLetter, currentVideo.id, pathname, router, visibleNavItems]);
+  const shouldRenderDesktopIntro = pathname === "/" && (isDesktopIntroPreload || isDesktopIntroActive);
   const shellClassName = [
     shouldShowOverlayPanel ? "shell shellOverlayRoute" : "shell",
-    isDesktopIntroPreload ? "shellDesktopIntroPreload" : "",
-    isDesktopIntroActive ? "shellDesktopIntroActive" : "",
-    desktopIntroPhase === "moving" ? "shellDesktopIntroMoving" : "",
-    desktopIntroPhase === "revealing" ? "shellDesktopIntroRevealing" : "",
+    shouldRenderDesktopIntro && isDesktopIntroPreload ? "shellDesktopIntroPreload" : "",
+    shouldRenderDesktopIntro && isDesktopIntroActive ? "shellDesktopIntroActive" : "",
+    shouldRenderDesktopIntro && desktopIntroPhase === "moving" ? "shellDesktopIntroMoving" : "",
+    shouldRenderDesktopIntro && desktopIntroPhase === "revealing" ? "shellDesktopIntroRevealing" : "",
   ].filter(Boolean).join(" ");
-  const shellStyle = isDesktopIntroActive
+  const shellStyle = shouldRenderDesktopIntro && isDesktopIntroActive
     ? ({
       "--desktop-intro-dx": `${desktopIntroDeltaX}px`,
       "--desktop-intro-dy": `${desktopIntroDeltaY}px`,
@@ -2667,7 +2674,7 @@ function ShellDynamicInner({
       <ArtistsLetterProvider initialLetter={activeArtistLetter} v={activeVideoId} resume={resumeParam}>
       <main className={shellClassName} style={shellStyle}>
       <div className="backdrop" />
-      {isDesktopIntroPreload || isDesktopIntroActive ? (
+      {shouldRenderDesktopIntro ? (
         <div className="desktopIntroOverlay" aria-hidden="true">
           {isDesktopIntroLogoReady ? (
             <Image

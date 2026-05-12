@@ -24,13 +24,15 @@ function toNumber(value: bigint | number | string | null | undefined) {
 }
 
 function toIsoBucketStart(value: Date | string) {
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
+  const parsed = value instanceof Date
+    ? value
+    : (() => {
+      const normalized = String(value).replace(" ", "T");
+      const withZone = normalized.endsWith("Z") ? normalized : `${normalized}Z`;
+      return new Date(withZone);
+    })();
 
-  const normalized = String(value).replace(" ", "T");
-  const withZone = normalized.endsWith("Z") ? normalized : `${normalized}Z`;
-  return new Date(withZone).toISOString();
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
 type AnalyticsSeriesBucket = {
@@ -490,21 +492,31 @@ export async function GET(request: NextRequest) {
     bucketCount: 12,
   });
 
-  const authByHour = new Map(hourlyRecentAuth.map((row: { bucketStart: Date | string; authEvents: bigint | number }) => [
-    toIsoBucketStart(row.bucketStart),
-    toNumber(row.authEvents),
-  ]));
-  const hourlyRecent = hourlyRecentAnalytics.map((row: { bucketStart: Date | string; pageViews: bigint | number; videoViews: bigint | number; uniqueVisitors: bigint | number; returnVisits: bigint | number }) => {
-    const bucketStart = toIsoBucketStart(row.bucketStart);
-    return {
-      bucketStart,
-      pageViews: toNumber(row.pageViews),
-      videoViews: toNumber(row.videoViews),
-      uniqueVisitors: toNumber(row.uniqueVisitors),
-      returnVisits: toNumber(row.returnVisits),
-      authEvents: authByHour.get(bucketStart) ?? 0,
-    };
-  });
+  const authByHour = new Map(
+    hourlyRecentAuth
+      .map((row: { bucketStart: Date | string; authEvents: bigint | number }) => {
+        const bucketStart = toIsoBucketStart(row.bucketStart);
+        return bucketStart ? [bucketStart, toNumber(row.authEvents)] as const : null;
+      })
+      .filter((entry): entry is readonly [string, number] => Boolean(entry)),
+  );
+  const hourlyRecent = hourlyRecentAnalytics
+    .map((row: { bucketStart: Date | string; pageViews: bigint | number; videoViews: bigint | number; uniqueVisitors: bigint | number; returnVisits: bigint | number }) => {
+      const bucketStart = toIsoBucketStart(row.bucketStart);
+      if (!bucketStart) {
+        return null;
+      }
+
+      return {
+        bucketStart,
+        pageViews: toNumber(row.pageViews),
+        videoViews: toNumber(row.videoViews),
+        uniqueVisitors: toNumber(row.uniqueVisitors),
+        returnVisits: toNumber(row.returnVisits),
+        authEvents: authByHour.get(bucketStart) ?? 0,
+      };
+    })
+    .filter((row): row is { bucketStart: string; pageViews: number; videoViews: number; uniqueVisitors: number; returnVisits: number; authEvents: number } => Boolean(row));
 
   const wikiCacheCount = await (async () => {
     try {
@@ -535,7 +547,10 @@ export async function GET(request: NextRequest) {
         lat,
         lng,
         eventCount: toNumber(row.eventCount),
-        lastSeenAt: row.lastSeenAt instanceof Date ? row.lastSeenAt.toISOString() : new Date(row.lastSeenAt).toISOString(),
+        lastSeenAt: (() => {
+          const parsed = row.lastSeenAt instanceof Date ? row.lastSeenAt : new Date(row.lastSeenAt);
+          return Number.isNaN(parsed.getTime()) ? new Date(0).toISOString() : parsed.toISOString();
+        })(),
       };
     })
     .filter((row: VisitorGeoPoint | null): row is VisitorGeoPoint => Boolean(row));

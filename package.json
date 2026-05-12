@@ -11,6 +11,11 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
+    "test:smoke:install": "playwright install chromium",
+    "test:smoke": "npm run test:smoke:quick",
+    "test:smoke:quick": "playwright test tests/smoke/core-shell.spec.ts",
+    "test:smoke:full": "playwright test",
+    "test:smoke:headed": "playwright test --headed --project=chromium",
     "tunnel:host": "powershell -ExecutionPolicy Bypass -File ./scripts/setup-ssh-tunnel-host.ps1",
     "prisma:format": "prisma format",
     "prisma:generate": "prisma generate",
@@ -82,6 +87,9 @@
     "verify:light": "npm run verify:core-experience && npm run verify:player-core && npm run verify:overlay-routing && npm run verify:queue-behavior",
     "verify:invariants": "npm run verify:compile && npm run verify:ui-regressions",
     "verify:invariants:api": "npm run verify:core-experience:api && npm run verify:playlists:api && npm run verify:categories:api && npm run verify:auth:api",
+    "verify:deps:quick": "npm run test:smoke:install && npm run test:smoke:quick",
+    "verify:deps:full": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify-deps-full.ps1",
+    "verify:deps-smoke": "npm run verify:deps:quick",
     "prepare:ship:light": "npm run verify:light",
     "prepare:ship:full": "npm run maintain:deps && npm run verify:invariants && npm run verify:invariants:api && npm audit --audit-level=high",
     "ship:commit": "git add -A && git commit -m \"chore: ship candidate\"",
@@ -91,8 +99,9 @@
     "maintain:deps:install": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-dependency-maintenance-task.ps1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "cross-env": "^10.1.0",
-    "prisma": "^7.8.0",
+    "prisma": "7.8.0",
     "turbo": "^2.9.12"
   },
   "dependencies": {

@@ -22,6 +22,7 @@ const files = {
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
   shellDynamicRendering: path.join(ROOT, "apps/web/components/shell-dynamic-rendering.tsx"),
+  coreShellSmoke: path.join(ROOT, "tests/smoke/core-shell.spec.ts"),
   shellLayout: path.join(ROOT, "apps/web/app/(shell)/layout.tsx"),
   shellErrorBoundary: path.join(ROOT, "apps/web/app/(shell)/error.tsx"),
   categoryErrorBoundary: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/error.tsx"),
@@ -51,6 +52,7 @@ function main() {
   ].join('\n');
   const shellDynamicRenderingSource = readFileStrict(files.shellDynamicRendering, ROOT);
   const shellLayoutSource = readFileStrict(files.shellLayout, ROOT);
+  const coreShellSmokeSource = readFileStrict(files.coreShellSmoke, ROOT);
   const shellErrorBoundarySource = readFileStrict(files.shellErrorBoundary, ROOT);
   const categoryErrorBoundarySource = readFileStrict(files.categoryErrorBoundary, ROOT);
   const shareVideoPageSource = readFileStrict(files.shareVideoPage, ROOT);
@@ -200,6 +202,15 @@ function main() {
   assertContains(shellDynamicSource, 'className="routeContractRow artistLoadingCenter" role="status" aria-live="polite" aria-label="Loading artists"', "Shell artists fallback renders loading animation after overlay opens", failures);
   assertContains(shellDynamicSource, '<span>Loading artists...</span>', "Shell artists fallback renders loading label", failures);
   assertNotContains(shellDynamicSource, 'key={overlayRouteKey}', "Shell overlay suspense no longer keys on route key to avoid remount animation replay", failures);
+
+  // Desktop intro preload guard invariants.
+  assertContains(shellDynamicSource, "const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(false);", "Desktop intro preload state defaults to false to avoid remount click-blocking", failures);
+  assertContains(shellDynamicSource, "if (hasStartedAutoDesktopIntroRef.current || introWindow.__ytrDesktopIntroAutoPlayed) {", "Desktop intro auto-run is guarded for already-played tabs", failures);
+  assertContains(shellDynamicSource, "setIsDesktopIntroPreload(false);", "Desktop intro guard clears preload state when auto-run is skipped", failures);
+  assertContains(shellDynamicSource, "const shouldRenderDesktopIntro = pathname === \"/\" && (isDesktopIntroPreload || isDesktopIntroActive);", "Desktop intro rendering is scoped to the home route", failures);
+  assertContains(shellDynamicSource, "shouldRenderDesktopIntro && isDesktopIntroPreload ? \"shellDesktopIntroPreload\" : \"\"", "Shell applies preload class only when intro should render", failures);
+  assertContains(shellDynamicSource, "{shouldRenderDesktopIntro ? (", "Shell only mounts desktop intro overlay when intro should render", failures);
+  assertContains(coreShellSmokeSource, "await expect(shell).not.toHaveClass(/shellDesktopIntroPreload/);", "Core smoke test asserts no preload class leak after close cycles", failures);
 
   // Categories open/loading/reveal contract invariants.
   assertContains(categoriesFilterGridSource, 'const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);', "Categories grid tracks explicit loader visibility state", failures);

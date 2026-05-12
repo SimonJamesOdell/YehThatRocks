@@ -27,7 +27,7 @@ Invoke-Step -Name "refresh" -Action {
 }
 
 Invoke-Step -Name "verify" -Action {
-  npm run verify:invariants
+  npm run verify:deps:full
 }
 
 Invoke-Step -Name "audit" -Action {
