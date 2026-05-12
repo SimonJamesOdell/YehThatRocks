@@ -1991,7 +1991,7 @@
     height: 42px;
   }
 
-  .playerChromeDockedDesktop:not(.playerChromeUndocking) .playerFooterReserve {
+  .playerChromeDockedDesktop .playerFooterReserve {
     min-height: 0;
   }
 

@@ -372,14 +372,15 @@ export async function GET(request: NextRequest) {
   const v = request.nextUrl.searchParams.get("v") ?? undefined;
   const requestMode = request.nextUrl.searchParams.get("mode") ?? "";
   const hideSeenOnly = request.nextUrl.searchParams.get("hideSeen") === "1";
-  const defaultRelatedCount = requestMode === "ended-choice" ? "10" : String(WATCH_NEXT_BATCH_SIZE);
+  const defaultRelatedCount = 10;
   const requestedCountParam = request.nextUrl.searchParams.get("requestedCount")
-    ?? request.nextUrl.searchParams.get("count")
-    ?? defaultRelatedCount;
-  const requestedRelatedCount = Math.max(
-    1,
-    Math.min(WATCH_NEXT_BATCH_SIZE, Number.parseInt(requestedCountParam, 10) || WATCH_NEXT_BATCH_SIZE),
-  );
+    ?? request.nextUrl.searchParams.get("count");
+  const requestedRelatedCount = requestedCountParam === null
+    ? defaultRelatedCount
+    : Math.max(
+      1,
+      Math.min(WATCH_NEXT_BATCH_SIZE, Number.parseInt(requestedCountParam, 10) || WATCH_NEXT_BATCH_SIZE),
+    );
   const requestedRelatedOffset = Math.max(
     0,
     Math.min(

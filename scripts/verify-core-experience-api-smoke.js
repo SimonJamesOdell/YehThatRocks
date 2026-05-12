@@ -251,18 +251,20 @@ async function main() {
     assertInvariant(overlap.length === 0, "Newest endpoint consecutive pages avoid duplicate ids", `duplicates=${overlap.join(",") || "none"}`, failures);
   }
 
-  // 5) Chat endpoints must reject unauthenticated requests.
+  // 5) Chat global mode is public; online mode remains auth-gated.
   const chatGetUrl = `${baseUrl}/api/chat?mode=global`;
   const chatPostUrl = `${baseUrl}/api/chat`;
+  const chatOnlineUrl = `${baseUrl}/api/chat?mode=online`;
   const chatStreamUrl = `${baseUrl}/api/chat/stream?mode=global`;
+  const chatOnlineStreamUrl = `${baseUrl}/api/chat/stream?mode=video&videoId=${encodeURIComponent(selectedVideoId)}`;
 
   const chatGet = await fetch(chatGetUrl, { method: "GET", cache: "no-store" }).catch((error) => ({ error }));
   if (chatGet?.error) {
     assertInvariant(false, "Chat GET endpoint reachable", String(chatGet.error), failures);
   } else {
     assertInvariant(
-      chatGet.status === 401 || chatGet.status === 403,
-      "Chat GET requires authentication",
+      chatGet.status >= 200 && chatGet.status < 300,
+      "Chat GET global mode is publicly readable",
       `status=${chatGet.status}`,
       failures,
     );
@@ -288,14 +290,38 @@ async function main() {
     );
   }
 
+  const chatOnline = await fetch(chatOnlineUrl, { method: "GET", cache: "no-store" }).catch((error) => ({ error }));
+  if (chatOnline?.error) {
+    assertInvariant(false, "Chat online endpoint reachable", String(chatOnline.error), failures);
+  } else {
+    assertInvariant(
+      chatOnline.status === 401 || chatOnline.status === 403,
+      "Chat online mode requires authentication",
+      `status=${chatOnline.status}`,
+      failures,
+    );
+  }
+
   const chatStream = await fetch(chatStreamUrl, { method: "GET", cache: "no-store" }).catch((error) => ({ error }));
   if (chatStream?.error) {
     assertInvariant(false, "Chat stream endpoint reachable", String(chatStream.error), failures);
   } else {
     assertInvariant(
-      chatStream.status === 401 || chatStream.status === 403,
-      "Chat stream requires authentication",
+      chatStream.status >= 200 && chatStream.status < 300,
+      "Chat stream global mode is publicly readable",
       `status=${chatStream.status}`,
+      failures,
+    );
+  }
+
+  const chatOnlineStream = await fetch(chatOnlineStreamUrl, { method: "GET", cache: "no-store" }).catch((error) => ({ error }));
+  if (chatOnlineStream?.error) {
+    assertInvariant(false, "Chat online stream endpoint reachable", String(chatOnlineStream.error), failures);
+  } else {
+    assertInvariant(
+      chatOnlineStream.status === 401 || chatOnlineStream.status === 403,
+      "Chat video stream requires authentication",
+      `status=${chatOnlineStream.status}`,
       failures,
     );
   }
