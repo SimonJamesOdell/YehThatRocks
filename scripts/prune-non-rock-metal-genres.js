@@ -2,6 +2,7 @@
 "use strict";
 
 const { PrismaClient } = require("@prisma/client");
+const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
 const { hasFlag } = require("./lib/cli");
 const { partitionGenresByScope } = require("./lib/genre-scope");
 const { loadDatabaseEnv } = require("./lib/runtime");
@@ -31,7 +32,10 @@ const isDryRun = hasFlag("dry-run");
 const confirmArg = process.argv.find((arg) => arg.startsWith("--confirm="));
 const confirmValue = confirmArg ? confirmArg.slice("--confirm=".length) : "";
 
-const prisma = new PrismaClient({ log: ["warn", "error"] });
+const prisma = new PrismaClient({
+  adapter: new PrismaMariaDb(process.env.DATABASE_URL),
+  log: ["warn", "error"],
+});
 
 async function main() {
   const [genreRows, cardRows] = await Promise.all([

@@ -304,18 +304,6 @@ export function Top100VideosLoader({
     };
   }, [hiddenVideoIdSet, initialLoadRetryNonce, videos.length]);
 
-  if (videos.length === 0) {
-    return (
-      <RouteLoaderContractRow
-        className="artistLoadingCenter"
-        isLoading={isLoading}
-        loadingLabel="Loading top 100..."
-        error={error ?? (!isLoading ? "Unable to load top 100 right now." : null)}
-        onRetry={!isLoading ? retryTop100Load : null}
-      />
-    );
-  }
-
   return (
     <>
       <OverlayHeader close={false}>
@@ -349,25 +337,37 @@ export function Top100VideosLoader({
 
       {message ? <p className="rightRailStatus">{message}</p> : null}
 
-      <div className="trackStack spanTwoColumns">
-      {visibleVideos.map((track, index) => (
-        <LeaderboardVideoLink
-          key={track.id}
-          track={track}
-          index={videoRankById.get(track.id) ?? index}
-          isAuthenticated={isAuthenticated}
-          isSeen={seenVideoIdSet.has(track.id)}
-          isActive={track.id === activeVideoId}
-          onHideVideo={handleHideVideo}
-          isHidePending={hidingVideoIds.includes(track.id)}
+      {videos.length === 0 ? (
+        <RouteLoaderContractRow
+          className="artistLoadingCenter"
+          isLoading={isLoading}
+          loadingLabel="Loading top 100..."
+          error={error ?? (!isLoading ? "Unable to load top 100 right now." : null)}
+          onRetry={!isLoading ? retryTop100Load : null}
         />
-      ))}
-      {visibleVideos.length === 0 ? (
-        <div style={{ padding: "20px", textAlign: "center", color: "#999" }}>No unseen videos in Top 100 right now.</div>
-      ) : null}
-      </div>
+      ) : (
+        <>
+          <div className="trackStack spanTwoColumns">
+            {visibleVideos.map((track, index) => (
+              <LeaderboardVideoLink
+                key={track.id}
+                track={track}
+                index={videoRankById.get(track.id) ?? index}
+                isAuthenticated={isAuthenticated}
+                isSeen={seenVideoIdSet.has(track.id)}
+                isActive={track.id === activeVideoId}
+                onHideVideo={handleHideVideo}
+                isHidePending={hidingVideoIds.includes(track.id)}
+              />
+            ))}
+            {visibleVideos.length === 0 ? (
+              <div style={{ padding: "20px", textAlign: "center", color: "#999" }}>No unseen videos in Top 100 right now.</div>
+            ) : null}
+          </div>
 
-      <RouteLoaderContractRow error={error} onRetry={error ? retryTop100Load : null} />
+          <RouteLoaderContractRow error={error} onRetry={error ? retryTop100Load : null} />
+        </>
+      )}
 
       <HideVideoConfirmModal
         isOpen={videoPendingHideConfirm !== null}
