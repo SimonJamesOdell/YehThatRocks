@@ -99,7 +99,7 @@
     "maintain:deps:install": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-dependency-maintenance-task.ps1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.60.0",
     "cross-env": "^10.1.0",
     "prisma": "7.8.0",
     "turbo": "^2.9.12"
