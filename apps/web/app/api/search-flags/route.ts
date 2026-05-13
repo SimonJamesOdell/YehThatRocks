@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { isAdminIdentity } from "@/lib/admin-auth";
 import { searchFlagSchema } from "@/lib/api-schemas";
-import { withAuthAndBody } from "@/lib/api-route-pipeline";
+import { requireApiAuth } from "@/lib/auth-request";
+import { verifySameOrigin } from "@/lib/csrf";
+import { parseRequestJson } from "@/lib/request-json";
 import {
   getSearchFlagConsensus,
   recordSearchFlag,
@@ -13,17 +15,32 @@ import {
 } from "@/lib/search-flags";
 
 export async function POST(request: NextRequest) {
-  const result = await withAuthAndBody(request, searchFlagSchema, { authMode: "user" });
-  if (!result.ok) {
-    return result.response;
+  const authResult = await requireApiAuth(request);
+  if (!authResult.ok) {
+    return authResult.response;
   }
 
-  const adminFlagger = isAdminIdentity(result.auth.userId, result.auth.email);
-  const { videoId, query, reason, correction } = result.data;
+  const csrfError = verifySameOrigin(request);
+  if (csrfError) {
+    return csrfError;
+  }
+
+  const bodyResult = await parseRequestJson<unknown>(request);
+  if (!bodyResult.ok) {
+    return bodyResult.response;
+  }
+
+  const parsed = searchFlagSchema.safeParse(bodyResult.data);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+
+  const adminFlagger = isAdminIdentity(authResult.auth.userId, authResult.auth.email);
+  const { videoId, query, reason, correction } = parsed.data;
 
   try {
     const saved = await recordSearchFlag({
-      userId: result.auth.userId,
+      userId: authResult.auth.userId,
       videoId,
       query,
       reason,

@@ -22,13 +22,12 @@ import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference
 import { useDesktopIntro } from "@/components/use-desktop-intro";
 import { usePerformanceMetrics } from "@/components/use-performance-metrics";
 import { useSearchAutocomplete, type SearchSuggestion } from "@/components/use-search-autocomplete";
-import { type ChatMode, type ChatMessage, type OnlineUser } from "@/components/use-chat-state";
+import { useChatState, type ChatMode, type ChatMessage, type OnlineUser } from "@/components/use-chat-state";
 import { usePlaylistRail, type RightRailMode, type PlaylistRailVideo, type PlaylistRailPayload, type PlaylistRailSummary } from "@/components/use-playlist-rail";
 import { PerformanceDial, SharedVideoMessageCard, WatchNextCard } from "@/components/shell-dynamic-rendering";
 import { usePlayerDockingAnimation } from "@/components/use-player-docking-animation";
 import { useRouteChangeTracking } from "@/components/use-route-change-tracking";
 import { useShellAdminState } from "@/components/use-shell-admin-state";
-import { useShellChatState } from "@/components/use-shell-chat-state";
 import { useShellKeyboardShortcuts } from "@/components/use-shell-keyboard-shortcuts";
 import { useShellOverlayEvents } from "@/components/use-shell-overlay-events";
 import { useShellOverlayPendingState } from "@/components/use-shell-overlay-pending-state";
@@ -570,12 +569,13 @@ function ShellDynamicInner({
     chatError, isChatLoading, isChatSubmitting, deletingMessageIds,
     flashingChatTabs, chatListRef, latestMagazineTracks,
     handleChatSubmit, handleDeleteChatMessage,
-  } = useShellChatState({
+  } = useChatState({
+    initialPathname: pathname,
     pathname,
     isAuthenticated,
     isMagazineOverlayRoute,
     isAdminOverlayRoute,
-    shouldShowOverlayPanel,
+    shouldShowOverlayPanel: shouldShowOverlayPanel && pathname !== "/new",
     fetchWithAuthRetry,
     checkAuthState,
   });
