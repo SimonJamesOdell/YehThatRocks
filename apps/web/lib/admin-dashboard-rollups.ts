@@ -63,10 +63,8 @@ const GEO_VISITOR_ROLLUP_INTERVAL_MS = Math.max(60_000, Number(process.env.ADMIN
 // Normal ticks use a narrow window (today+yesterday / last 2 hours) instead.
 const FULL_SCAN_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
-// Use the exact same expression in SELECT and GROUP BY to satisfy ONLY_FULL_GROUP_BY.
-const HOURLY_BUCKET_EXPR = "STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s')";
-const HOURLY_BUCKET_GROUP_BY_EXPR = HOURLY_BUCKET_EXPR;
-const HOURLY_BUCKET_SELECT_EXPR = HOURLY_BUCKET_EXPR;
+const HOURLY_BUCKET_GROUP_BY_EXPR = "DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')";
+const HOURLY_BUCKET_SELECT_EXPR = `STR_TO_DATE(${HOURLY_BUCKET_GROUP_BY_EXPR}, '%Y-%m-%d %H:%i:%s')`;
 
 let rollupsStarted = false;
 let rollupsInFlight: Promise<void> | null = null;
@@ -504,14 +502,22 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       return_visits
     )
     SELECT
-      ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start,
-      SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
-      SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
-      COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
-      COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits
-    FROM analytics_events
-    WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${analyticsIntervalClause})
-    GROUP BY ${HOURLY_BUCKET_GROUP_BY_EXPR}
+      STR_TO_DATE(hour_bucket, '%Y-%m-%d %H:%i:%s') AS bucket_start,
+      page_views,
+      video_views,
+      unique_visitors,
+      return_visits
+    FROM (
+      SELECT
+        ${HOURLY_BUCKET_GROUP_BY_EXPR} AS hour_bucket,
+        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
+        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits
+      FROM analytics_events
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${analyticsIntervalClause})
+      GROUP BY ${HOURLY_BUCKET_GROUP_BY_EXPR}
+    ) hourly
     ON DUPLICATE KEY UPDATE
       page_views = VALUES(page_views),
       video_views = VALUES(video_views),
@@ -526,11 +532,16 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       auth_events
     )
     SELECT
-      ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start,
-      COUNT(*) AS auth_events
-    FROM auth_audit_logs
-    WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${authIntervalClause})
-    GROUP BY ${HOURLY_BUCKET_GROUP_BY_EXPR}
+      STR_TO_DATE(hour_bucket, '%Y-%m-%d %H:%i:%s') AS bucket_start,
+      auth_events
+    FROM (
+      SELECT
+        ${HOURLY_BUCKET_GROUP_BY_EXPR} AS hour_bucket,
+        COUNT(*) AS auth_events
+      FROM auth_audit_logs
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${authIntervalClause})
+      GROUP BY ${HOURLY_BUCKET_GROUP_BY_EXPR}
+    ) hourly
     ON DUPLICATE KEY UPDATE
       auth_events = VALUES(auth_events),
       updated_at = CURRENT_TIMESTAMP(3)

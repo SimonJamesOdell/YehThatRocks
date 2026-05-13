@@ -7,6 +7,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+trap {
+  Write-Error $_
+  exit 1
+}
 
 function Invoke-Step {
   param(
@@ -131,4 +135,8 @@ try {
       # Best-effort cleanup.
     }
   }
+}
+
+if ($LASTEXITCODE -ne 0) {
+  exit $LASTEXITCODE
 }

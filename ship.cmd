@@ -11,4 +11,5 @@ goto collect_args
 
 :run_ship
 pwsh -NoProfile -ExecutionPolicy Bypass -File "%~dp0deploy\ship-local.ps1" -ShipPassword "%SHIP_PASSWORD%" %SHIP_ARGS%
-endlocal
+set "SHIP_EXIT=%ERRORLEVEL%"
+endlocal & exit /b %SHIP_EXIT%
