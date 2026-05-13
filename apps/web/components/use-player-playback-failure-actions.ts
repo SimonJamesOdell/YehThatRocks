@@ -49,6 +49,7 @@ export function usePlayerPlaybackFailureActions({
   playbackStallLastTimeRef,
   playbackStallLastObservedAtRef,
   autoplaySuppressedVideoIdRef,
+  playAttemptedAtRef,
   pauseActivePlayback,
   navigateToVideo,
   logPlayerDebug,
@@ -74,9 +75,9 @@ export function usePlayerPlaybackFailureActions({
   setAllowDirectIframeInteraction: Dispatch<SetStateAction<boolean>>;
   allowDirectIframeInteractionRef: MutableRefObject<boolean>;
   setIsBotBlockConfirmationPending: Dispatch<SetStateAction<boolean>>;
-  botBlockConfirmationTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  overlayTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  unavailableAutoActionTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  botBlockConfirmationTimeoutRef: MutableRefObject<number | null>;
+  overlayTimeoutRef: MutableRefObject<number | null>;
+  unavailableAutoActionTimeoutRef: MutableRefObject<number | null>;
   clearUnavailableOverlayMessage: () => void;
   setShowNowPlayingOverlay: Dispatch<SetStateAction<boolean>>;
   setShowControls: Dispatch<SetStateAction<boolean>>;
@@ -85,6 +86,7 @@ export function usePlayerPlaybackFailureActions({
   playbackStallLastTimeRef: MutableRefObject<number | null>;
   playbackStallLastObservedAtRef: MutableRefObject<number | null>;
   autoplaySuppressedVideoIdRef: MutableRefObject<string | null>;
+  playAttemptedAtRef: MutableRefObject<number | null>;
   pauseActivePlayback: () => void;
   showUnavailableOverlayMessage: (message: string, options?: { requiresOk?: boolean; autoAdvanceWhenAutoplay?: boolean; countdownMs?: number }) => void;
   navigateToVideo: (videoId: string, options?: { clearPlaylist?: boolean; playlistId?: string | null; playlistItemIndex?: number | null; useNativeHistory?: boolean }) => void;
@@ -276,7 +278,7 @@ export function usePlayerPlaybackFailureActions({
     autoplaySuppressedVideoIdRef.current = currentVideoId;
     playAttemptedAtRef.current = null;
     pauseActivePlayback();
-    showUnavailableOverlayMessage(presentation.message, {
+    showUnavailableOverlayMessage(presentation.message ?? UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE, {
       requiresOk: presentation.requiresOk,
       autoAdvanceWhenAutoplay: presentation.autoAdvanceWhenAutoplay,
       countdownMs: presentation.countdownMs,

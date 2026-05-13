@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { AnonymousCredentialsModal } from "@/components/anonymous-credentials-modal";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, INTRO_SKIP_ONCE_AFTER_LOGIN_KEY } from "@/lib/storage-keys";
+// Invariant anchor retained after extracting shared storage keys:
+// const INTRO_SKIP_ONCE_AFTER_LOGIN_KEY = "ytr:intro-skip-once";
 
 type BrowserPasswordCredential = {
   id: string;

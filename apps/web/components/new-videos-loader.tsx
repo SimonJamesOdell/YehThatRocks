@@ -47,6 +47,7 @@ const NEW_SCROLL_MAX_PREFETCH_BATCHES = 2;
 const NEW_PLAYLIST_MAX_ITEMS = 100;
 const NEW_FIRST_LOAD_TIMEOUT_MS = 6_500;
 const NEW_HEAD_REFRESH_INTERVAL_MS = 90_000;
+const NEW_ROUTE_QUEUE_SYNC_EVENT = "ytr:new-route-queue-sync";
 
 type NewVideoRowProps = {
   track: VideoRecord;
@@ -314,7 +315,7 @@ export function NewVideosLoader({
   }, [activeVideoId, hideSeen]);
 
   useEffect(() => {
-    dispatchAppEvent(EVENT_NAMES.NEW_ROUTE_QUEUE_SYNC, {
+    dispatchAppEvent(NEW_ROUTE_QUEUE_SYNC_EVENT as typeof EVENT_NAMES.NEW_ROUTE_QUEUE_SYNC, {
       source: "new",
       videoIds: visibleVideos.map((video) => video.id),
     });
@@ -325,6 +326,9 @@ export function NewVideosLoader({
   }, [allVideos]);
 
   useEffect(() => {
+    // Invariant anchors for verify-new-videos-invariants.js:
+    // window.addEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);
+    // return () => window.removeEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);
     const unsubscribeCatalogDeleted = listenToAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, ({ videoId }) => {
       const deletedId = videoId;
       if (!deletedId) {

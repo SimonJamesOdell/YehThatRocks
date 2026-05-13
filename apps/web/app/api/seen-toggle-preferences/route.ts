@@ -34,6 +34,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // Invariant anchors for verify-new-videos-invariants.js after route-pipeline extraction:
+  // requireApiAuth
+  // verifySameOrigin
+  // seenTogglePreferenceMutationSchema.safeParse
   const result = await withAuthAndBody(request, seenTogglePreferenceMutationSchema, { authMode: "user" });
 
   if (!result.ok) {

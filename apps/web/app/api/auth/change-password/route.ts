@@ -39,7 +39,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Password login is not enabled for this account" }, { status: 400 });
   }
 
-  const isValid = await verifyPassword(parsed.data.currentPassword, storedHash);
   const isValid = await verifyPassword(result.data.currentPassword, storedHash);
 
   if (!isValid) {
@@ -54,7 +53,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Current password is incorrect" }, { status: 401 });
   }
 
-  const passwordHash = await hashPassword(parsed.data.newPassword);
   const passwordHash = await hashPassword(result.data.newPassword);
 
   await prisma.user.update({

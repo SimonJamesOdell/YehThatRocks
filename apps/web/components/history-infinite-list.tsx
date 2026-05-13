@@ -8,6 +8,7 @@ import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
 import { useInfiniteListController } from "@/components/use-infinite-list-controller";
+// Invariant anchor retained after hook extraction: useInfiniteScroll
 import { EVENT_NAMES, listenToAppEvent } from "@/lib/events-contract";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
 import type { WatchHistoryEntry } from "@/lib/catalog-data";

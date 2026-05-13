@@ -86,10 +86,6 @@ export function CategoryVideosInfinite({
   const videosCountRef = useRef(initialVideos.length);
   const bufferWarmInFlightRef = useRef(false);
 
-  useEffect(() => {
-    videosCountRef.current = videos.length;
-  }, [videos.length]);
-
   const fetchCategoryPage = useCallback(async (offset: number) => {
     try {
       const params = new URLSearchParams();
@@ -172,6 +168,10 @@ export function CategoryVideosInfinite({
     ],
     fetchPage: fetchCategoryPage,
   });
+
+  useEffect(() => {
+    videosCountRef.current = videos.length;
+  }, [videos.length]);
 
   useEffect(() => {
     if (videos.length === 0) {

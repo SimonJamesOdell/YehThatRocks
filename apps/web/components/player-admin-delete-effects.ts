@@ -1,4 +1,5 @@
 import { buildPathWithParams, clearVideoAndPlaylistParams } from "@/components/player-search-params";
+import type { EventPayloads } from "@/lib/events-contract";
 
 export function dispatchDockHideRequest(onDockHideRequest?: () => void) {
   onDockHideRequest?.();
@@ -58,10 +59,10 @@ export function applyCatalogDeleteSideEffects({
   setPlaylistQueueIds,
 }: {
   deletingVideoId: string;
-  playlistsUpdatedEvent: string;
-  favouritesUpdatedEvent: string;
-  videoCatalogDeletedEvent: string;
-  dispatchEvent: (eventName: string, payload: unknown) => void;
+  playlistsUpdatedEvent: keyof EventPayloads;
+  favouritesUpdatedEvent: keyof EventPayloads;
+  videoCatalogDeletedEvent: keyof EventPayloads;
+  dispatchEvent: <K extends keyof EventPayloads>(eventName: K, payload: EventPayloads[K]) => void;
   setPlaylistQueueIds: (updater: (currentIds: string[]) => string[]) => void;
 }) {
   dispatchEvent(playlistsUpdatedEvent, null);

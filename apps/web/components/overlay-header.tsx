@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import { CloseLink } from "@/components/close-link";
 
-type OverlayHeaderProps = {
+export type OverlayHeaderProps = {
   className?: string;
   title?: ReactNode;
   breadcrumb?: ReactNode;

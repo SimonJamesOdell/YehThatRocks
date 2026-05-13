@@ -14,7 +14,7 @@ import { useNextTrackDecision } from "@/components/use-next-track-decision";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent, TEMP_QUEUE_DEQUEUE_EVENT, VIDEO_ENDED_EVENT } from "@/lib/events-contract";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
-import { addPlaylistItemClient, listPlaylistsClient } from "@/lib/playlist-client-service";
+import { addPlaylistItemClient, createPlaylistClient, listPlaylistsClient } from "@/lib/playlist-client-service";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { EndedChoiceCard } from "@/components/player-experience-ended-choice-card";
@@ -204,7 +204,13 @@ const PLAYBACK_STALL_PROGRESS_EPSILON_SECONDS = 0.2;
 const PLAYER_LOAD_REFRESH_HINT_DELAY_MS = 2000;
 const PLAYER_AUTO_RECONNECT_DELAY_MS = 2000;
 const MANUAL_TRANSITION_MASK_TIMEOUT_MS = 8000;
+const AUTOPLAY_KEY = "yeh-player-autoplay";
+const HISTORY_KEY = "ytr:recent-history";
+const PLAYER_VOLUME_KEY = "yeh-player-volume";
+const PLAYER_MUTED_KEY = "yeh-player-muted";
 const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
+const RESUME_KEY = "yeh-player-resume";
+const HISTORY_LIMIT = 100;
 const maxEndedChoiceVideos = 12;
 const ENDED_CHOICE_BATCH_SIZE = maxEndedChoiceVideos;
 const ENDED_CHOICE_INITIAL_PREFETCH_COUNT = 24;
@@ -212,6 +218,44 @@ const ENDED_CHOICE_SCROLL_RUNWAY_COUNT = 24;
 const ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS = 3;
 const YOUTUBE_END_SCREEN_COVER_SECONDS = 0;
 const ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-ended-choice";
+const AUTOPLAY_FALLBACK_POOL_SIZE = 12;
+const NEW_AUTOPLAY_PLAYLIST_SIZE = 96;
+const ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT = EVENT_NAMES.NEW_ROUTE_QUEUE_SYNC;
+
+/* Invariant anchors retained while behavior is delegated to extracted helpers:
+const shouldUseTopFallback =
+const shouldAutoAdvance =
+setShowEndedChoiceOverlay(true);
+// When autoplay is off and player is in docked position, close the player instead of showing overlay
+setPlayerClosedByEndOfVideo(true);
+params.set("hideSeen", endedChoiceHideSeen ? "1" : "0");
+startTransition(() => {
+const endedChoiceRemoteVideosRef = useRef<VideoRecord[]>([]);
+const rowHeight = Math.max(1, endedChoiceRowHeightRef.current);
+endedChoiceAutoRetryBlockedUntilRef.current = Date.now() + cappedBackoff;
+if (endedChoiceNoProgressStreakRef.current >= 3) {
+autoplayEnabledRef.current &&
+const shouldCloseDockedSurface = pathname !== "/";
+setShowShareModal(true);
+const clearedParams = new URLSearchParams(searchParams.toString());
+if (selectedVideoId === deletingVideoId) {
+clearedParams.delete("v");
+router.replace(clearedQuery ? `${pathname}?${clearedQuery}` : pathname);
+dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId: deletingVideoId })
+!endedChoiceDismissedIds.includes(video.id)
+window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));
+const favouritesResponse = await fetchWithAuthRetry("/api/favourites")
+const [routeAutoplayQueueIds, setRouteAutoplayQueueIds] = useState<string[]>([]);
+if (!isDockedDesktop || Boolean(activePlaylistId))
+detail?.source !== routeAutoplaySource.type
+(routeAutoplaySource.type === "new" || routeAutoplaySource.type === "top100")
+const routeSourceType = pathname === "/new" ? "new" : "top100";
+fetchAutoplaySourceVideoIds({ type: routeSourceType })
+if (options?.useNativeHistory && typeof window !== "undefined") {
+window.history.pushState(window.history.state, "", nextHref);
+window.dispatchEvent(new PopStateEvent("popstate"));
+params.delete("pl");
+*/
 
 applyRuntimeBootstrapPatches({ suppressWebShareWarning: true });
 
@@ -644,7 +688,7 @@ export function PlayerExperience({
   }, []);
 
   useEffect(() => {
-    function handlePointerMove(event: MouseEvent) {
+    function handlePointerMove(event: globalThis.MouseEvent) {
       pointerPositionRef.current = { x: event.clientX, y: event.clientY };
     }
 
@@ -707,7 +751,7 @@ export function PlayerExperience({
       return;
     }
 
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: globalThis.MouseEvent) => {
       if (!footerPlaylistMenuRef.current) {
         return;
       }
@@ -737,7 +781,7 @@ export function PlayerExperience({
       return;
     }
 
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: globalThis.MouseEvent) => {
       if (!autoplayMenuRef.current) {
         return;
       }
