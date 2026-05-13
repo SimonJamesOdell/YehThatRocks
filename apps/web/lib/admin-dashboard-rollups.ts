@@ -63,8 +63,10 @@ const GEO_VISITOR_ROLLUP_INTERVAL_MS = Math.max(60_000, Number(process.env.ADMIN
 // Normal ticks use a narrow window (today+yesterday / last 2 hours) instead.
 const FULL_SCAN_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
-const HOURLY_BUCKET_GROUP_BY_EXPR = "DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')";
-const HOURLY_BUCKET_SELECT_EXPR = `STR_TO_DATE(${HOURLY_BUCKET_GROUP_BY_EXPR}, '%Y-%m-%d %H:%i:%s')`;
+// Use the exact same expression in SELECT and GROUP BY to satisfy ONLY_FULL_GROUP_BY.
+const HOURLY_BUCKET_EXPR = "STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s')";
+const HOURLY_BUCKET_GROUP_BY_EXPR = HOURLY_BUCKET_EXPR;
+const HOURLY_BUCKET_SELECT_EXPR = HOURLY_BUCKET_EXPR;
 
 let rollupsStarted = false;
 let rollupsInFlight: Promise<void> | null = null;
