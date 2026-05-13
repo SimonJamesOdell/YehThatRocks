@@ -435,7 +435,9 @@ const VOICE_RULES = `VOICE RULES:
 - No hedging: never write arguably, perhaps, maybe, potentially, in many ways, seems to, appears to.
 - Never use the pattern: not X, it's Y.
 - Never copy source phrasing.
-- Do not invent specific facts. If band member names are provided, use them. Do not invent members if none are provided.`;
+- Do not invent specific facts. If band member names are provided, use them. Do not invent members if none are provided.
+- Do not add reader instructions about where/how to watch the track (no "click", "navigate", or "find it on").
+- Do not claim downloads or formats unless explicitly provided in input context (never invent FLAC/download availability).`;
 
 const SYSTEM_PROMPT = `You are the staff writer for YehThatRocks. You have strong opinions, zero patience for mediocrity, and you write like you mean it.
 
@@ -463,7 +465,7 @@ OUTPUT JSON ONLY:
   "seoKeywords": "comma separated keywords"
 }
 
-The body must contain 10-14 blocks. Use 3-4 h2 headings. Each p block must be a full paragraph of 4-6 sentences. End with a paragraph that tells readers exactly where to find this track on YehThatRocks.`;
+The body must contain 10-14 blocks. Use 3-4 h2 headings. Each p block must be a full paragraph of 4-6 sentences. Do not add closing "how to watch" instructions.`;
 
 /**
  * Fetch current band members from MusicBrainz for a given artist name.
@@ -573,6 +575,28 @@ function sanitizeText(input) {
     .trim();
 }
 
+function isRedundantClosingCta(text) {
+  const t = String(text || "").trim().toLowerCase();
+  if (!t) return false;
+
+  const watchNavPattern = /(yehthatrocks|video id|stream|watch|navigate|click|find\s+[^.]{0,80}\s+on\s+yehthatrocks)/i;
+  const downloadPattern = /(download|flac|high[- ]resolution|high[- ]res)/i;
+  return watchNavPattern.test(t) || downloadPattern.test(t);
+}
+
+function stripRedundantClosingCtaBlock(blocks) {
+  if (!Array.isArray(blocks) || blocks.length === 0) return blocks;
+
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const block = blocks[i];
+    if (!block || block.type !== "p") continue;
+    if (!isRedundantClosingCta(block.text)) return blocks;
+    return [...blocks.slice(0, i), ...blocks.slice(i + 1)];
+  }
+
+  return blocks;
+}
+
 function validateArticleShape(article) {
   const required = ["title", "kicker", "deck", "body", "seoDescription", "seoKeywords"];
   for (const field of required) {
@@ -581,7 +605,7 @@ function validateArticleShape(article) {
     }
   }
 
-  const blocks = normalizeBlocks(article.body);
+  const blocks = stripRedundantClosingCtaBlock(normalizeBlocks(article.body));
   if (blocks.length < 10) {
     throw new Error("Generated body is too short (need at least 10 blocks)");
   }
@@ -665,7 +689,7 @@ OUTPUT JSON ONLY:
   "seoKeywords": "band name, genre, history keywords"
 }
 
-The body must contain 10-14 blocks covering: formation/early days, key lineup evolution, major album era, influence/legacy, and current status. Each section should have 1-2 paragraphs of 4-6 sentences. Include how readers can watch this band's videos on YehThatRocks.`;
+The body must contain 10-14 blocks covering: formation/early days, key lineup evolution, major album era, influence/legacy, and current status. Each section should have 1-2 paragraphs of 4-6 sentences. Do not add closing "how to watch" instructions.`;
 
 const CURATED_PICKS_SYSTEM_PROMPT = `You are the staff writer for YehThatRocks creating a curated listicle: "Top Picks in [GENRE]" or "[THEME] Essential Tracks".
 
@@ -689,7 +713,7 @@ OUTPUT JSON ONLY:
   "seoKeywords": "genre, theme, artist names keywords"
 }
 
-The body must contain 14-18 blocks. Include 4-6 artist/track sections (h2 headings with 1-2 paragraphs each). End with a paragraph telling readers how to watch these tracks on YehThatRocks.`;
+The body must contain 14-18 blocks. Include 4-6 artist/track sections (h2 headings with 1-2 paragraphs each). Do not add closing "how to watch" instructions.`;
 
 async function generateArticleWithRetries({ apiKey, model, video, news, members, maxAttempts, mode, ...otherArgs }) {
   let lastError = null;
@@ -778,7 +802,7 @@ async function generateCuratedPicksArticle({ apiKey, model, genre, theme, artist
   
   lines.push(
     "",
-    "Write a curated listicle showcasing the best tracks in this genre/theme. Each artist gets 1-2 paragraphs explaining their significance and style. This is your opinionated curation, not a ranked countdown. Keep total body to 14-18 blocks (4-6 artist sections with 1-2 paragraphs each). End with how readers can explore these tracks and artists on YehThatRocks."
+    "Write a curated listicle showcasing the best tracks in this genre/theme. Each artist gets 1-2 paragraphs explaining their significance and style. This is your opinionated curation, not a ranked countdown. Keep total body to 14-18 blocks (4-6 artist sections with 1-2 paragraphs each). Do not add a final paragraph about where/how to watch or download."
   );
 
   const completion = await groqRequest(apiKey, {
