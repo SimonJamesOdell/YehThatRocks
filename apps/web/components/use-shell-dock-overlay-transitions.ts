@@ -1,18 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { usePlayerDockingAnimation } from "@/components/use-player-docking-animation";
 
 type OverlayOpenKind = "wiki" | "video" | null;
 
 type UseShellDockOverlayTransitionsParams = {
+  isOverlayClosing: boolean;
+  setIsOverlayClosing: (value: boolean) => void;
+  isUndockSettling: boolean;
+  setIsUndockSettling: (value: boolean) => void;
+  setIsFooterRevealActive: (value: boolean) => void;
   currentVideoId: string;
   isMagazineOverlayRoute: boolean;
   pathname: string;
   requestedVideoId: string | null;
   shouldShowOverlayPanel: boolean;
-  shouldDockDesktopPlayer: boolean;
-  shouldDockUnderArtistsAlphabet: boolean;
-  playerChromeRef: RefObject<HTMLElement | null>;
   setPendingOverlayOpenKind: (kind: OverlayOpenKind) => void;
   setPendingOverlayCloseVideoId: (videoId: string | null) => void;
   setPendingOverlayCloseHref: (href: string | null) => void;
@@ -21,18 +24,19 @@ type UseShellDockOverlayTransitionsParams = {
   dockMoveDurationMs: number;
   footerRevealDurationMs: number;
   footerEarlyRevealDelayMs: number;
-  dockControlsFadeDelayMs: number;
 };
 
 export function useShellDockOverlayTransitions({
+  isOverlayClosing,
+  setIsOverlayClosing,
+  isUndockSettling,
+  setIsUndockSettling,
+  setIsFooterRevealActive,
   currentVideoId,
   isMagazineOverlayRoute,
   pathname,
   requestedVideoId,
   shouldShowOverlayPanel,
-  shouldDockDesktopPlayer,
-  shouldDockUnderArtistsAlphabet,
-  playerChromeRef,
   setPendingOverlayOpenKind,
   setPendingOverlayCloseVideoId,
   setPendingOverlayCloseHref,
@@ -41,13 +45,12 @@ export function useShellDockOverlayTransitions({
   dockMoveDurationMs,
   footerRevealDurationMs,
   footerEarlyRevealDelayMs,
-  dockControlsFadeDelayMs,
 }: UseShellDockOverlayTransitionsParams) {
-  const [isOverlayClosing, setIsOverlayClosing] = useState(false);
-  const [isUndockSettling, setIsUndockSettling] = useState(false);
-  const [isFooterRevealActive, setIsFooterRevealActive] = useState(false);
-  const [isDockTransitioning, setIsDockTransitioning] = useState(false);
-  const [isDockHidden, setIsDockHidden] = useState(false);
+  const { playerChromeRef } = usePlayerDockingAnimation({
+    shouldShowOverlayPanel,
+    onSetIsUndockSettling: setIsUndockSettling,
+    onSetIsFooterRevealActive: setIsFooterRevealActive,
+  });
 
   const overlayCloseTimeoutRef = useRef<number | null>(null);
   const footerRevealTimeoutRef = useRef<number | null>(null);
@@ -55,7 +58,6 @@ export function useShellDockOverlayTransitions({
   const undockSettleTimeoutRef = useRef<number | null>(null);
   const shouldRunFooterRevealRef = useRef(false);
   const earlyFooterRevealFiredRef = useRef(false);
-  const dockTransitionTimeoutRef = useRef<number | null>(null);
 
   const handleOverlayCloseRequest = useCallback((href: string) => {
     const closeUrl = new URL(href, window.location.origin);
@@ -166,10 +168,6 @@ export function useShellDockOverlayTransitions({
     shouldShowOverlayPanel,
   ]);
 
-  const handleDockHideRequest = useCallback(() => {
-    setIsDockHidden(true);
-  }, []);
-
   useEffect(() => {
     if (!shouldShowOverlayPanel && isOverlayClosing) {
       setIsOverlayClosing(false);
@@ -228,57 +226,8 @@ export function useShellDockOverlayTransitions({
     };
   }, [currentVideoId, isMagazineOverlayRoute, pathname, shouldShowOverlayPanel]);
 
-  useEffect(() => {
-    if (requestedVideoId) {
-      setIsDockHidden(false);
-    }
-  }, [requestedVideoId]);
-
-  useEffect(() => {
-    if (shouldDockDesktopPlayer) {
-      setIsDockHidden(false);
-    }
-  }, [pathname, shouldDockDesktopPlayer]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    if (dockTransitionTimeoutRef.current !== null) {
-      window.clearTimeout(dockTransitionTimeoutRef.current);
-      dockTransitionTimeoutRef.current = null;
-    }
-
-    if (!shouldDockDesktopPlayer) {
-      setIsDockTransitioning(false);
-      setIsDockHidden(false);
-      return;
-    }
-
-    setIsDockTransitioning(true);
-    dockTransitionTimeoutRef.current = window.setTimeout(() => {
-      setIsDockTransitioning(false);
-      dockTransitionTimeoutRef.current = null;
-    }, dockControlsFadeDelayMs);
-
-    return () => {
-      if (dockTransitionTimeoutRef.current !== null) {
-        window.clearTimeout(dockTransitionTimeoutRef.current);
-        dockTransitionTimeoutRef.current = null;
-      }
-    };
-  }, [dockControlsFadeDelayMs, shouldDockDesktopPlayer, shouldDockUnderArtistsAlphabet]);
-
   return {
-    isOverlayClosing,
-    isUndockSettling,
-    isFooterRevealActive,
-    isDockTransitioning,
-    isDockHidden,
-    setIsUndockSettling,
-    setIsFooterRevealActive,
+    playerChromeRef,
     handleOverlayCloseRequest,
-    handleDockHideRequest,
   };
 }

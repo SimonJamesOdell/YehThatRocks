@@ -11,6 +11,25 @@ import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { ArtistsLetterProvider } from "@/components/artists-letter-provider";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
+import { AuthUnavailableDialog } from "@/components/auth-unavailable-dialog";
+import { BrandLockup } from "@/components/brand-lockup";
+import { RightRailLyricsOverlay } from "@/components/right-rail-lyrics-overlay";
+import { RightRailLoadingState } from "@/components/right-rail-loading-state";
+import { RightRailPlaylistEmptyState } from "@/components/right-rail-playlist-empty-state";
+import { RightRailDeleteConfirmDialog } from "@/components/right-rail-delete-confirm-dialog";
+import { QueueTrackCardContent } from "@/components/queue-track-card-content";
+import { PlaylistSummaryCardContent } from "@/components/playlist-summary-card-content";
+import { PlaylistTrackCardContent } from "@/components/playlist-track-card-content";
+import { PlaylistTrackRowCard } from "@/components/playlist-track-row-card";
+import { PlaylistReorderControls } from "@/components/playlist-reorder-controls";
+import { PlaylistDropPlaceholder } from "@/components/playlist-drop-placeholder";
+import { PlaylistTrackDraggableShell } from "@/components/playlist-track-draggable-shell";
+import { PlaylistTrackRow } from "@/components/playlist-track-row";
+import { WatchNextStatusPanels } from "@/components/watch-next-status-panels";
+import { WatchNextSeenToggle } from "@/components/watch-next-seen-toggle";
+import { PrimaryNav } from "@/components/primary-nav";
+import { DesktopIntroOverlay } from "@/components/desktop-intro-overlay";
+import { ShellSearchBar } from "@/components/shell-search-bar";
 import { OverlayHeader } from "@/components/overlay-header";
 import { PlayerExperience } from "@/components/player-experience";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
@@ -25,13 +44,19 @@ import { useSearchAutocomplete, type SearchSuggestion } from "@/components/use-s
 import { useChatState, type ChatMode, type ChatMessage, type OnlineUser } from "@/components/use-chat-state";
 import { usePlaylistRail, type RightRailMode, type PlaylistRailVideo, type PlaylistRailPayload, type PlaylistRailSummary } from "@/components/use-playlist-rail";
 import { PerformanceDial, SharedVideoMessageCard, WatchNextCard } from "@/components/shell-dynamic-rendering";
-import { usePlayerDockingAnimation } from "@/components/use-player-docking-animation";
 import { useRouteChangeTracking } from "@/components/use-route-change-tracking";
 import { useShellAdminState } from "@/components/use-shell-admin-state";
 import { useShellKeyboardShortcuts } from "@/components/use-shell-keyboard-shortcuts";
 import { useShellOverlayEvents } from "@/components/use-shell-overlay-events";
 import { useShellOverlayPendingState } from "@/components/use-shell-overlay-pending-state";
+import { useShellDockOverlayTransitions } from "@/components/use-shell-dock-overlay-transitions";
 import { useShellOverlayRouteMeta } from "@/components/use-shell-overlay-route-meta";
+import { useWatchNextPrefetch } from "@/components/use-watch-next-prefetch";
+import { useWatchNextPayloadLoader } from "@/components/use-watch-next-payload-loader";
+import { useAuthSuccessListener } from "@/components/use-auth-success-listener";
+import { useIdleRoutePrefetch } from "@/components/use-idle-route-prefetch";
+import { useShellNavigationHelpers } from "@/components/use-shell-navigation-helpers";
+import { dedupeRelatedRailVideos, finiteNumberOrNull, finitePercentOrNull, formatChatTimestamp, isFavouriteVideo, logFlow, logWatchNext, matchesPlaylistVideoOrder, sortVideosBySeen } from "@/components/shell-dynamic-utils";
 import { deriveShellOverlayRouteState, isProtectedOverlayPath, isRouteActive, isCategoriesOverlayPath } from "@/components/shell-dynamic-route-state";
 import { navItems, type VideoRecord } from "@/lib/catalog";
 import { MagazineGenerateNowButton } from "@/components/magazine-generate-now-button";
@@ -41,7 +66,7 @@ import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { dedupeVideos, filterHiddenVideos } from "@/lib/video-list-utils";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
-import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, OVERLAY_OPEN_REQUEST_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT } from "@/lib/events-contract";
+import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT } from "@/lib/events-contract";
 import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
 applyRuntimeBootstrapPatches({ safePerformanceMeasure: true });
@@ -68,19 +93,6 @@ type LyricsRailPayload = {
   cached: boolean;
 };
 const DESKTOP_INTRO_LOGO_SRC = "/assets/images/yeh_main_logo.png?v=20260424-4";
-function formatChatTimestamp(value: string | null) {
-  if (!value) {
-    return "Now";
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "Now";
-  }
-  return parsed.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 type ShellDynamicProps = {
   initialVideo: VideoRecord;
   initialRelatedVideos: VideoRecord[];
@@ -137,60 +149,22 @@ const handleDockHideRequest = () => {
 window.addEventListener(DOCK_HIDE_REQUEST_EVENT, handleDockHideRequest);
 window.removeEventListener(DOCK_HIDE_REQUEST_EVENT, handleDockHideRequest);
 window.addEventListener(OVERLAY_OPEN_REQUEST_EVENT, handleOverlayOpenRequest);
+usePlayerDockingAnimation
+const lockedHeight = chrome.getBoundingClientRect().height;
+chrome.style.height = `${lockedHeight}px`;
+chrome.style.height = "";
+// Release any height lock so docking can size freely.
+setIsDockHidden(true);
+if (shouldDockDesktopPlayer) {
+}, [pathname, shouldDockDesktopPlayer]);
+footerRevealTimeoutRef.current = window.setTimeout(() => {
+setIsFooterRevealActive(false);
+}, FOOTER_REVEAL_DURATION_MS);
+const [isUndockSettling, setIsUndockSettling] = useState(false);
+const routeLoadingLabel = pathname.endsWith("/wiki") || pendingOverlayOpenKind === "wiki" ? "Loading wiki" : "Loading video";
+const isCategoriesOverlayPendingOrActive = isCategoriesRoute
+const isArtistsOverlayPendingOrActive = isArtistsOverlayPath(pathname)
 */
-function dedupeRelatedRailVideos(videos: VideoRecord[], currentVideoId: string) {
-  return dedupeVideos(videos).filter((video) => video.id !== currentVideoId);
-}
-function matchesPlaylistVideoOrder(a: PlaylistRailVideo[], b: PlaylistRailVideo[]) {
-  if (a.length !== b.length) {
-    return false;
-  }
-  for (let index = 0; index < a.length; index += 1) {
-    if (a[index]?.id !== b[index]?.id) {
-      return false;
-    }
-  }
-  return true;
-}
-function sortVideosBySeen(videos: VideoRecord[], seenVideoIdSet: Set<string>) {
-  if (seenVideoIdSet.size === 0) {
-    return videos;
-  }
-  const unseen: VideoRecord[] = [];
-  const seen: VideoRecord[] = [];
-  for (const video of videos) {
-    if (seenVideoIdSet.has(video.id)) {
-      seen.push(video);
-    } else {
-      unseen.push(video);
-    }
-  }
-  return [...unseen, ...seen];
-}
-function isFavouriteVideo(video: VideoRecord) {
-  return Number(video.favourited ?? 0) > 0;
-}
-function logFlow(event: string, detail?: Record<string, unknown>) {
-  if (!FLOW_DEBUG_ENABLED) {
-    return;
-  }
-  const payload = detail ? ` ${JSON.stringify(detail)}` : "";
-  console.log(`[flow/shell] ${event}${payload}`);
-}
-function logWatchNext(event: string, detail?: Record<string, unknown>) {
-  if (process.env.NODE_ENV !== "development") {
-    return;
-  }
-  const payload = detail ? ` ${JSON.stringify(detail)}` : "";
-  console.log(`[watch-next] ${event}${payload}`);
-}
-function finiteNumberOrNull(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-function finitePercentOrNull(value: number | null | undefined) {
-  const numeric = finiteNumberOrNull(value);
-  return numeric === null ? null : Math.max(0, Math.min(100, numeric));
-}
 function ShellDynamicInner({
   initialVideo,
   initialRelatedVideos,
@@ -308,12 +282,6 @@ function ShellDynamicInner({
   const [isDockTransitioning, setIsDockTransitioning] = useState(false);
   const [isDockHidden, setIsDockHidden] = useState(false);
   const [startupSelectionRefreshTick, setStartupSelectionRefreshTick] = useState(0);
-  const overlayCloseTimeoutRef = useRef<number | null>(null);
-  const footerRevealTimeoutRef = useRef<number | null>(null);
-  const footerRevealEarlyTimeoutRef = useRef<number | null>(null);
-  const undockSettleTimeoutRef = useRef<number | null>(null);
-  const shouldRunFooterRevealRef = useRef(false);
-  const earlyFooterRevealFiredRef = useRef(false);
   const dockTransitionTimeoutRef = useRef<number | null>(null);
   const {
     temporaryQueueVideos,
@@ -672,92 +640,33 @@ function ShellDynamicInner({
     setPendingOverlayOpenKind(null);
     setPendingOverlayRouteKey(null);
   }, [setPendingOverlayOpenKind, setPendingOverlayRouteKey]);
-  // Use orchestration hook for player docking animations
-  const { playerChromeRef } = usePlayerDockingAnimation({
+  const {
+    playerChromeRef,
+    handleOverlayCloseRequest,
+  } = useShellDockOverlayTransitions({
+    isOverlayClosing,
+    setIsOverlayClosing,
+    isUndockSettling,
+    setIsUndockSettling,
+    setIsFooterRevealActive,
+    currentVideoId: currentVideo.id,
+    isMagazineOverlayRoute,
+    pathname,
+    requestedVideoId,
     shouldShowOverlayPanel,
-    onSetIsUndockSettling: setIsUndockSettling,
-    onSetIsFooterRevealActive: setIsFooterRevealActive,
+    setPendingOverlayOpenKind,
+    setPendingOverlayCloseVideoId,
+    setPendingOverlayCloseHref,
+    onPush: (href) => {
+      router.push(href);
+    },
+    onOverlayShown: () => {
+      setIsMobileCommunityOpen(false);
+    },
+    dockMoveDurationMs: DOCK_MOVE_DURATION_MS,
+    footerRevealDurationMs: FOOTER_REVEAL_DURATION_MS,
+    footerEarlyRevealDelayMs: FOOTER_EARLY_REVEAL_DELAY_MS,
   });
-  const handleOverlayCloseRequest = useCallback((href: string) => {
-    const closeUrl = new URL(href, window.location.origin);
-    const fallbackHomeHref = `/?v=${encodeURIComponent(currentVideo.id)}&resume=1`;
-    const nextHref = closeUrl.pathname === "/" && closeUrl.searchParams.has("v")
-      ? `${closeUrl.pathname}${closeUrl.search}${closeUrl.hash}`
-      : fallbackHomeHref;
-    const targetVideoId = closeUrl.pathname === "/" ? closeUrl.searchParams.get("v") : null;
-    const shouldHoldOverlayForVideoSwitch = Boolean(targetVideoId && targetVideoId !== currentVideo.id);
-    if (shouldHoldOverlayForVideoSwitch && targetVideoId) {
-      setPendingOverlayOpenKind("video");
-      setPendingOverlayCloseVideoId(targetVideoId);
-      setPendingOverlayCloseHref(nextHref);
-    } else {
-      setPendingOverlayCloseVideoId(null);
-      setPendingOverlayCloseHref(null);
-    }
-    if (!shouldShowOverlayPanel || isMagazineOverlayRoute) {
-      setIsOverlayClosing(false);
-      shouldRunFooterRevealRef.current = false;
-      setIsUndockSettling(false);
-      setIsFooterRevealActive(false);
-      router.push(nextHref);
-      return;
-    }
-    if (overlayCloseTimeoutRef.current !== null) {
-      window.clearTimeout(overlayCloseTimeoutRef.current);
-      overlayCloseTimeoutRef.current = null;
-    }
-    setIsOverlayClosing(true);
-    shouldRunFooterRevealRef.current = true;
-    earlyFooterRevealFiredRef.current = false;
-    const shouldNavigateDuringCloseAnimation = pathname === "/new" && shouldHoldOverlayForVideoSwitch;
-    if (footerRevealEarlyTimeoutRef.current !== null) {
-      window.clearTimeout(footerRevealEarlyTimeoutRef.current);
-    }
-    footerRevealEarlyTimeoutRef.current = window.setTimeout(() => {
-      footerRevealEarlyTimeoutRef.current = null;
-      earlyFooterRevealFiredRef.current = true;
-      setIsFooterRevealActive(true);
-      if (footerRevealTimeoutRef.current !== null) {
-        window.clearTimeout(footerRevealTimeoutRef.current);
-      }
-      footerRevealTimeoutRef.current = window.setTimeout(() => {
-        setIsFooterRevealActive(false);
-        footerRevealTimeoutRef.current = null;
-      }, FOOTER_REVEAL_DURATION_MS);
-    }, FOOTER_EARLY_REVEAL_DELAY_MS);
-    const frame = playerChromeRef.current?.querySelector(".playerFrame, .playerLoadingFallback") as HTMLElement | null;
-    let didNavigate = false;
-    const finishCloseNavigation = () => {
-      if (didNavigate) {
-        return;
-      }
-      didNavigate = true;
-      if (overlayCloseTimeoutRef.current !== null) {
-        window.clearTimeout(overlayCloseTimeoutRef.current);
-        overlayCloseTimeoutRef.current = null;
-      }
-      router.push(nextHref);
-    };
-    if (shouldNavigateDuringCloseAnimation) {
-      finishCloseNavigation();
-      return;
-    }
-    const handleFrameTransitionEnd = (transitionEvent: TransitionEvent) => {
-      if (transitionEvent.propertyName !== "transform") {
-        return;
-      }
-      if (frame && transitionEvent.target !== frame) {
-        return;
-      }
-      frame?.removeEventListener("transitionend", handleFrameTransitionEnd);
-      finishCloseNavigation();
-    };
-    frame?.addEventListener("transitionend", handleFrameTransitionEnd);
-    overlayCloseTimeoutRef.current = window.setTimeout(() => {
-      frame?.removeEventListener("transitionend", handleFrameTransitionEnd);
-      finishCloseNavigation();
-    }, DOCK_MOVE_DURATION_MS + 120);
-  }, [currentVideo.id, isMagazineOverlayRoute, pathname, playerChromeRef, router, shouldShowOverlayPanel]);
   const handleDockHideRequest = useCallback(() => {
     setIsDockHidden(true);
   }, []);
@@ -801,70 +710,11 @@ function ShellDynamicInner({
     window.dispatchEvent(new Event(ADMIN_OVERLAY_ENTER_EVENT));
   }, [isAdminOverlayRoute]);
   useEffect(() => {
-    if (!shouldShowOverlayPanel && isOverlayClosing) {
-      setIsOverlayClosing(false);
-    }
-  }, [isOverlayClosing, shouldShowOverlayPanel]);
-
-  // Clean up and reset docking state when overlay panel is shown
-  useEffect(() => {
-    if (!shouldShowOverlayPanel) {
-      return;
-    }
-
-    if (typeof window !== "undefined" && undockSettleTimeoutRef.current !== null) {
-      window.clearTimeout(undockSettleTimeoutRef.current);
-      undockSettleTimeoutRef.current = null;
-    }
-    if (typeof window !== "undefined" && footerRevealTimeoutRef.current !== null) {
-      window.clearTimeout(footerRevealTimeoutRef.current);
-      footerRevealTimeoutRef.current = null;
-    }
-    if (typeof window !== "undefined" && footerRevealEarlyTimeoutRef.current !== null) {
-      window.clearTimeout(footerRevealEarlyTimeoutRef.current);
-      footerRevealEarlyTimeoutRef.current = null;
-    }
-    // Release any height lock so docking can size freely.
-    if (playerChromeRef.current) {
-      playerChromeRef.current.style.height = "";
-    }
-    setIsUndockSettling(false);
-    setIsFooterRevealActive(false);
-    earlyFooterRevealFiredRef.current = false;
-    setIsMobileCommunityOpen(false);
-  }, [shouldShowOverlayPanel]);
-
-  useEffect(() => {
-    return () => {
-      if (overlayCloseTimeoutRef.current !== null) {
-        window.clearTimeout(overlayCloseTimeoutRef.current);
-        overlayCloseTimeoutRef.current = null;
-      }
-      if (footerRevealTimeoutRef.current !== null) {
-        window.clearTimeout(footerRevealTimeoutRef.current);
-        footerRevealTimeoutRef.current = null;
-      }
-      if (footerRevealEarlyTimeoutRef.current !== null) {
-        window.clearTimeout(footerRevealEarlyTimeoutRef.current);
-        footerRevealEarlyTimeoutRef.current = null;
-      }
-      if (undockSettleTimeoutRef.current !== null) {
-        window.clearTimeout(undockSettleTimeoutRef.current);
-        undockSettleTimeoutRef.current = null;
-      }
-      setIsUndockSettling(false);
-      shouldRunFooterRevealRef.current = false;
-      earlyFooterRevealFiredRef.current = false;
-    };
-  }, [currentVideo.id, isMagazineOverlayRoute, pathname, router, shouldShowOverlayPanel]);
-  useEffect(() => {
     if (requestedVideoId) {
       setIsDockHidden(false);
     }
   }, [requestedVideoId]);
   useEffect(() => {
-    // If the user moves between overlay routes (e.g. /new -> /top100),
-    // ensure a previously hidden docked player becomes visible again.
     if (shouldDockDesktopPlayer) {
       setIsDockHidden(false);
     }
@@ -1120,7 +970,7 @@ function ShellDynamicInner({
     const previousVideoId = window.sessionStorage.getItem(LAST_RANDOM_START_VIDEO_ID_KEY);
     const navigateToVideo = (nextVideoId: string | undefined, source: string) => {
       if (!nextVideoId || cancelled) {
-        logFlow("startup-selection:skipped", {
+        logFlow(FLOW_DEBUG_ENABLED, "startup-selection:skipped", {
           source,
           nextVideoId,
           cancelled,
@@ -1128,7 +978,7 @@ function ShellDynamicInner({
         return;
       }
       window.sessionStorage.setItem(LAST_RANDOM_START_VIDEO_ID_KEY, nextVideoId);
-      logFlow("startup-selection:navigate", {
+      logFlow(FLOW_DEBUG_ENABLED, "startup-selection:navigate", {
         source,
         nextVideoId,
         previousVideoId,
@@ -1156,7 +1006,7 @@ function ShellDynamicInner({
       navigateToVideo(selectedVideo.id, source);
       return true;
     };
-    logFlow("startup-selection:server-initial", {
+    logFlow(FLOW_DEBUG_ENABLED, "startup-selection:server-initial", {
       selectedVideoId: initialVideo.id,
       relatedCount: initialHydratedRelatedVideos.length,
     });
@@ -1166,7 +1016,7 @@ function ShellDynamicInner({
     };
   }, [initialHydratedRelatedVideos, initialVideo, pathname, requestedVideoId, router, searchParamsKey, startupSelectionRefreshTick]);
   useEffect(() => {
-    logFlow("requested-video:effect", {
+    logFlow(FLOW_DEBUG_ENABLED, "requested-video:effect", {
       requestedVideoId,
       lastRequestedVideoId: lastVideoIdRef.current,
       currentVideoId: currentVideo.id,
@@ -1271,7 +1121,7 @@ function ShellDynamicInner({
         if (ignore) {
           return;
         }
-        logFlow("requested-video:response", {
+        logFlow(FLOW_DEBUG_ENABLED, "requested-video:response", {
           requestedVideoId,
           resolvedVideoId: data?.currentVideo?.id,
           denied: Boolean(data?.denied),
@@ -1317,7 +1167,7 @@ function ShellDynamicInner({
           return;
         }
         if (data?.pending) {
-          logFlow("requested-video:pending", {
+          logFlow(FLOW_DEBUG_ENABLED, "requested-video:pending", {
             requestedVideoId,
             attempt,
           });
@@ -1326,7 +1176,7 @@ function ShellDynamicInner({
         if (ignore) {
           return;
         }
-        logFlow("requested-video:error", {
+        logFlow(FLOW_DEBUG_ENABLED, "requested-video:error", {
           requestedVideoId,
           error: error instanceof Error ? error.message : String(error),
           attempt,
@@ -1336,7 +1186,7 @@ function ShellDynamicInner({
         return;
       }
       if (attempt >= REQUESTED_VIDEO_RETRY_MAX_ATTEMPTS) {
-        logFlow("requested-video:halted", {
+        logFlow(FLOW_DEBUG_ENABLED, "requested-video:halted", {
           requestedVideoId,
           attempt,
         });
@@ -1603,6 +1453,12 @@ function ShellDynamicInner({
   const activePlaylistSummary = activePlaylistId
     ? playlistRailSummaries.find((playlist) => playlist.id === activePlaylistId) ?? null
     : null;
+  const { loadWatchNextPayload } = useWatchNextPayloadLoader({
+    relatedFetchTimeoutMs: RELATED_FETCH_TIMEOUT_MS,
+    coldRetryAttempts: RELATED_COLD_FETCH_RETRY_ATTEMPTS,
+    coldRetryBaseDelayMs: RELATED_COLD_FETCH_RETRY_BASE_DELAY_MS,
+    logWatchNext,
+  });
   const loadMoreRelatedVideos = useCallback(async (requestedCount = RELATED_LOAD_BATCH_SIZE) => {
     if (
       relatedLoadInFlightRef.current
@@ -1659,99 +1515,18 @@ function ShellDynamicInner({
         params.set("requestedCount", String(requestedBatchCount));
         params.set("offset", String(relatedFetchOffsetRef.current));
       }
-      const tryFetchPayload = async () => {
-        const abortController = new AbortController();
-        const fetchStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
-        const timeoutId = window.setTimeout(() => {
-          abortController.abort();
-        }, RELATED_FETCH_TIMEOUT_MS);
-        try {
-          const response = await fetch(`/api/current-video?${params.toString()}`, {
-            cache: "no-store",
-            signal: abortController.signal,
-          });
-          const elapsedMs = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - fetchStartedAt);
-          logWatchNext("fetch:response", {
-            currentVideoId: currentVideo.id,
-            status: response.status,
-            ok: response.ok,
-            elapsedMs,
-            request: params.toString(),
-          });
-          if (!response.ok) {
-            throw new Error("watch-next-load-failed");
-          }
-          const json = (await response.json()) as CurrentVideoResolvePayload & { hasMore?: boolean };
-          logWatchNext("fetch:payload", {
-            currentVideoId: currentVideo.id,
-            pending: Boolean(json?.pending),
-            relatedCount: Array.isArray(json?.relatedVideos) ? json.relatedVideos.length : null,
-            hasMore: typeof json?.hasMore === "boolean" ? json.hasMore : null,
-            denied: json?.denied ?? null,
-          });
-          // If server is busy (timeout/cooldown), { pending: true } is retryable, not a silent fail.
-          if (json && typeof json === "object" && "pending" in json && (json as { pending?: boolean }).pending) {
-            throw new Error("watch-next-server-busy");
-          }
-          return json;
-        } catch (error) {
-          const elapsedMs = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - fetchStartedAt);
-          logWatchNext("fetch:error", {
-            currentVideoId: currentVideo.id,
-            elapsedMs,
-            request: params.toString(),
-            error: error instanceof Error ? error.message : String(error),
-            aborted: abortController.signal.aborted,
-          });
-          throw error;
-        } finally {
-          window.clearTimeout(timeoutId);
-        }
-      };
-      let payload: (CurrentVideoResolvePayload & { hasMore?: boolean }) | null = null;
-      const maxAttempts = isFirstColdFetch ? RELATED_COLD_FETCH_RETRY_ATTEMPTS : 1;
-      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        try {
-          logWatchNext("fetch:attempt", {
-            currentVideoId: currentVideo.id,
-            attempt,
-            maxAttempts,
-            request: params.toString(),
-          });
-          payload = await tryFetchPayload();
-          break;
-        } catch (error) {
-          if (attempt >= maxAttempts) {
-            logWatchNext("fetch:attempt-failed-final", {
-              currentVideoId: currentVideo.id,
-              attempt,
-              maxAttempts,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            throw new Error("watch-next-load-exhausted");
-          }
-          const retryDelayMs = Math.min(3_000, RELATED_COLD_FETCH_RETRY_BASE_DELAY_MS * (2 ** (attempt - 1)));
-          logWatchNext("fetch:attempt-retry", {
-            currentVideoId: currentVideo.id,
-            attempt,
-            maxAttempts,
-            retryDelayMs,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          await new Promise<void>((resolve) => {
-            window.setTimeout(() => {
-              resolve();
-            }, retryDelayMs);
-          });
-        }
-      }
+      const payload = await loadWatchNextPayload({
+        currentVideoId: currentVideo.id,
+        params,
+        isFirstColdFetch,
+      });
       if (!payload) {
         throw new Error("watch-next-load-empty-payload");
       }
       const resolvedPayload = payload;
       const nextVideos = Array.isArray(resolvedPayload.relatedVideos) ? resolvedPayload.relatedVideos : [];
       const payloadHasMore = resolvedPayload.hasMore !== false;
-      setWatchNextAdvisory(resolvedPayload.watchNextAdvisory ?? null);
+      setWatchNextAdvisory((resolvedPayload.watchNextAdvisory as WatchNextAdvisory | null) ?? null);
       relatedFetchOffsetRef.current = (relatedFetchOffsetRef.current ?? existing.length) + nextVideos.length;
       watchNextAutoRecoverAttemptRef.current = 0;
       logWatchNext("load:success", {
@@ -1808,7 +1583,7 @@ function ShellDynamicInner({
         inFlight: relatedLoadInFlightRef.current,
       });
     }
-  }, [currentVideo.id, hasMoreRelated, isWatchNextVideoSelectionPending, rightRailMode]);
+  }, [currentVideo.id, hasMoreRelated, isWatchNextVideoSelectionPending, loadWatchNextPayload, rightRailMode]);
   useEffect(() => {
     // Cold-start trigger: fire the first Watch Next fetch as soon as selection is
     // settled and the rail is still empty. Other triggers guard on idle phase,
@@ -2219,131 +1994,38 @@ function ShellDynamicInner({
       hideTimeouts.clear();
     };
   }, []);
-  const prewarmRelatedThumbnail = useCallback((videoId: string) => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    if (prewarmedThumbnailIdsRef.current.has(videoId)) {
-      return;
-    }
-    prewarmedThumbnailIdsRef.current.add(videoId);
-    const img = new window.Image();
-    img.decoding = "async";
-    img.src = `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
-  }, []);
-  const prefetchCurrentVideoPayload = useCallback((videoId: string) => {
-    if (Date.now() < prefetchBlockedUntilRef.current) {
-      return;
-    }
+  const hasFreshPrefetchedPayload = useCallback((videoId: string, now: number) => {
     const cached = prefetchedCurrentVideoPayloadRef.current.get(videoId);
-    if (cached && cached.expiresAt > Date.now()) {
-      return;
-    }
-    if (inFlightCurrentVideoPrefetchRef.current.has(videoId)) {
-      return;
-    }
-    inFlightCurrentVideoPrefetchRef.current.add(videoId);
-    const prefetchParams = new URLSearchParams();
-    prefetchParams.set("v", videoId);
-    if (isAuthenticated && watchNextHideSeen) {
-      prefetchParams.set("hideSeen", "1");
-    }
-    void fetch(`/api/current-video?${prefetchParams.toString()}`, {
-      cache: "no-store",
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          prefetchFailureCountRef.current = Math.min(prefetchFailureCountRef.current + 1, 6);
-          const backoffMs = Math.min(
-            PREFETCH_FAILURE_MAX_BACKOFF_MS,
-            PREFETCH_FAILURE_BASE_BACKOFF_MS * (2 ** prefetchFailureCountRef.current),
-          );
-          prefetchBlockedUntilRef.current = Date.now() + backoffMs;
-          return;
-        }
-        const data = (await response.json()) as CurrentVideoResolvePayload;
-        if (!data.currentVideo?.id) {
-          prefetchFailureCountRef.current = Math.min(prefetchFailureCountRef.current + 1, 6);
-          const backoffMs = Math.min(
-            PREFETCH_FAILURE_MAX_BACKOFF_MS,
-            PREFETCH_FAILURE_BASE_BACKOFF_MS * (2 ** prefetchFailureCountRef.current),
-          );
-          prefetchBlockedUntilRef.current = Date.now() + backoffMs;
-          return;
-        }
-        if (data.currentVideo.id === videoId) {
-          prefetchFailureCountRef.current = 0;
-          prefetchBlockedUntilRef.current = 0;
-          prefetchedCurrentVideoPayloadRef.current.set(videoId, {
-            expiresAt: Date.now() + CURRENT_VIDEO_PREFETCH_TTL_MS,
-            payload: data,
-          });
-          for (const related of (data.relatedVideos ?? []).slice(0, 6)) {
-            prewarmRelatedThumbnail(related.id);
-          }
-        }
-      })
-      .catch(() => {
-        prefetchFailureCountRef.current = Math.min(prefetchFailureCountRef.current + 1, 6);
-        const backoffMs = Math.min(
-          PREFETCH_FAILURE_MAX_BACKOFF_MS,
-          PREFETCH_FAILURE_BASE_BACKOFF_MS * (2 ** prefetchFailureCountRef.current),
-        );
-        prefetchBlockedUntilRef.current = Date.now() + backoffMs;
-      })
-      .finally(() => {
-        inFlightCurrentVideoPrefetchRef.current.delete(videoId);
-      });
-  }, [isAuthenticated, prewarmRelatedThumbnail, watchNextHideSeen]);
-  const prefetchRelatedSelection = useCallback((video: VideoRecord) => {
-    prewarmRelatedThumbnail(video.id);
-    if (!prefetchedRelatedIdsRef.current.has(video.id)) {
-      prefetchedRelatedIdsRef.current.add(video.id);
-      prefetchCurrentVideoPayload(video.id);
-    }
-    if (typeof window !== "undefined") {
-      window.sessionStorage.setItem(
-        PENDING_VIDEO_SELECTION_KEY,
-        JSON.stringify({
-          id: video.id,
-          title: video.title,
-          channelTitle: video.channelTitle,
-          genre: video.genre,
-          favourited: video.favourited,
-          description: video.description,
-        }),
-      );
-    }
-  }, [prefetchCurrentVideoPayload, prewarmRelatedThumbnail]);
-  useEffect(() => {
-    for (const video of displayedRelatedVideos.slice(0, 6)) {
-      prewarmRelatedThumbnail(video.id);
-    }
-  }, [displayedRelatedVideos]);
-  useEffect(() => {
-    if (isOverlayRoute) {
-      return;
-    }
-    const topTargets = sourceRelatedVideos
-      .filter((video) => video.id !== currentVideo.id)
-      .slice(0, 3);
-    if (topTargets.length === 0) {
-      return;
-    }
-    let cancelled = false;
-    const timeoutId = window.setTimeout(() => {
-      if (cancelled) {
-        return;
-      }
-      for (const target of topTargets) {
-        prefetchCurrentVideoPayload(target.id);
-      }
-    }, 120);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-    };
-  }, [currentVideo.id, isOverlayRoute, sourceRelatedVideos]);
+    return Boolean(cached && cached.expiresAt > now);
+  }, []);
+  const setPrefetchedPayload = useCallback((
+    videoId: string,
+    payload: { currentVideo?: { id?: string }; relatedVideos?: VideoRecord[] },
+    expiresAt: number,
+  ) => {
+    prefetchedCurrentVideoPayloadRef.current.set(videoId, {
+      expiresAt,
+      payload: payload as CurrentVideoResolvePayload,
+    });
+  }, []);
+  const { prefetchRelatedSelection } = useWatchNextPrefetch({
+    isAuthenticated,
+    watchNextHideSeen,
+    displayedRelatedVideos,
+    sourceRelatedVideos,
+    currentVideoId: currentVideo.id,
+    isOverlayRoute,
+    prewarmedThumbnailIdsRef,
+    prefetchedRelatedIdsRef,
+    inFlightCurrentVideoPrefetchRef,
+    prefetchBlockedUntilRef,
+    prefetchFailureCountRef,
+    currentVideoPrefetchTtlMs: CURRENT_VIDEO_PREFETCH_TTL_MS,
+    prefetchFailureBaseBackoffMs: PREFETCH_FAILURE_BASE_BACKOFF_MS,
+    prefetchFailureMaxBackoffMs: PREFETCH_FAILURE_MAX_BACKOFF_MS,
+    hasFreshPrefetchedPayload,
+    setPrefetchedPayload,
+  });
   useEffect(() => {
     if (!isAuthenticated) {
       return;
@@ -2404,104 +2086,71 @@ function ShellDynamicInner({
   function openAuthModal() {
     setIsAuthModalOpen(true);
   }
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
+  const {
+    getNavHref,
+    openAutoplaySettingsOverlay,
+    getUserProfileHref,
+    requestOverlayOpen,
+  } = useShellNavigationHelpers({
+    currentVideoId: currentVideo.id,
+    activeArtistLetter,
+    isAuthenticated,
+    onOpenAuthModal: openAuthModal,
+    onPush: (href) => {
+      router.push(href);
+    },
+  });
+  const targetNavPrefetchHrefs = useMemo(() => {
+    return visibleNavItems
+      .filter((item) => !isRouteActive(item.href, pathname))
+      .map((item) => getNavHref(item.href));
+  }, [activeArtistLetter, currentVideo.id, pathname, visibleNavItems]);
+  useAuthSuccessListener(() => {
+    setIsAuthenticated(true);
+    setAuthStatus("clear");
+    setAuthStatusMessage(null);
+    setIsAuthModalOpen(false);
+  });
+  useIdleRoutePrefetch(targetNavPrefetchHrefs, router);
+  const handleSearchSubmit = useCallback(() => {
+    if (searchValue.trim()) {
+      router.push(`/search?q=${encodeURIComponent(searchValue.trim())}&v=${encodeURIComponent(currentVideo.id)}`);
+      setShowSuggestions(false);
+      setSearchValue("");
     }
-    const handleAuthSuccess = () => {
-      setIsAuthenticated(true);
-      setAuthStatus("clear");
-      setAuthStatusMessage(null);
-      setIsAuthModalOpen(false);
-    };
-    window.addEventListener("ytr:auth-success", handleAuthSuccess);
-    return () => {
-      window.removeEventListener("ytr:auth-success", handleAuthSuccess);
-    };
-  }, []);
-  function getNavHref(href: string) {
-    const params = new URLSearchParams();
-    params.set("v", currentVideo.id);
-    params.set("resume", "1");
-    if (href === "/artists") {
-      params.set("letter", activeArtistLetter);
-    }
-    return `${href}?${params.toString()}`;
-  }
-  function openAutoplaySettingsOverlay() {
-    if (!isAuthenticated) {
+  }, [currentVideo.id, router, searchValue, setSearchValue]);
+  const handlePrimaryNavItemClick = useCallback((event: React.MouseEvent<HTMLAnchorElement>, item: { href: string }, navHref: string) => {
+    if (!isAuthenticated && protectedNavHrefs.has(item.href)) {
+      event.preventDefault();
       openAuthModal();
       return;
     }
-    const accountHref = `${getNavHref("/account")}&tab=autoplay`;
-    router.push(accountHref);
-  }
-  function getUserProfileHref(screenName: string, userId: number | null | undefined) {
-    const trimmedScreenName = screenName.trim();
-    const hasStableUserId = typeof userId === "number" && Number.isInteger(userId) && userId > 0;
-    const hasUsableScreenName = trimmedScreenName.length > 0 && trimmedScreenName.toLowerCase() !== "anonymous";
-    if (!hasStableUserId && !hasUsableScreenName) {
-      return null;
+    if (item.href === "/categories" || item.href === "/artists") {
+      requestOverlayOpen(navHref, "video");
     }
-    const slug = hasStableUserId ? `user-${userId}` : trimmedScreenName;
-    const params = new URLSearchParams();
-    params.set("v", currentVideo.id);
-    params.set("resume", "1");
-    return `/u/${encodeURIComponent(slug)}?${params.toString()}`;
-  }
-  function requestOverlayOpen(href: string, kind: "video" | "wiki" = "video") {
-    if (typeof window === "undefined") {
+  }, [isAuthenticated, protectedNavHrefs, requestOverlayOpen]);
+  const handleCancelDeleteActivePlaylist = useCallback(() => {
+    if (!isDeletingActivePlaylist) {
+      setShowDeleteActivePlaylistConfirm(false);
+    }
+  }, [isDeletingActivePlaylist]);
+  const handleConfirmDeleteActivePlaylist = useCallback(() => {
+    setShowDeleteActivePlaylistConfirm(false);
+    void handleDeleteActivePlaylist();
+  }, [handleDeleteActivePlaylist]);
+  const handleCancelDeleteRailPlaylist = useCallback(() => {
+    if (!playlistBeingDeletedId) {
+      setConfirmDeleteRailPlaylist(null);
+    }
+  }, [playlistBeingDeletedId]);
+  const handleConfirmDeleteRailPlaylist = useCallback(() => {
+    if (!confirmDeleteRailPlaylist) {
       return;
     }
-    window.dispatchEvent(new CustomEvent(OVERLAY_OPEN_REQUEST_EVENT, {
-      detail: { href, kind },
-    }));
-  }
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const targetHrefs = visibleNavItems
-      .filter((item) => !isRouteActive(item.href, pathname))
-      .map((item) => getNavHref(item.href));
-    if (targetHrefs.length === 0) {
-      return;
-    }
-    let cancelled = false;
-    let idleId: number | null = null;
-    const requestIdle = (window as Window & {
-      requestIdleCallback?: (callback: () => void, opts?: { timeout: number }) => number;
-      cancelIdleCallback?: (id: number) => void;
-    }).requestIdleCallback;
-    const cancelIdle = (window as Window & {
-      requestIdleCallback?: (callback: () => void, opts?: { timeout: number }) => number;
-      cancelIdleCallback?: (id: number) => void;
-    }).cancelIdleCallback;
-    const warmRoutes = () => {
-      if (cancelled) {
-        return;
-      }
-      for (const href of targetHrefs) {
-        router.prefetch(href);
-      }
-    };
-    const timeoutId = window.setTimeout(() => {
-      if (typeof requestIdle === "function") {
-        idleId = requestIdle(() => {
-          warmRoutes();
-        }, { timeout: 1500 });
-        return;
-      }
-      warmRoutes();
-    }, 1200);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-      if (idleId !== null && typeof cancelIdle === "function") {
-        cancelIdle(idleId);
-      }
-    };
-  }, [activeArtistLetter, currentVideo.id, pathname, router, visibleNavItems]);
+    const playlistId = confirmDeleteRailPlaylist.id;
+    setConfirmDeleteRailPlaylist(null);
+    void handleDeletePlaylistFromRail(playlistId);
+  }, [confirmDeleteRailPlaylist, handleDeletePlaylistFromRail]);
   const shouldRenderDesktopIntro = pathname === "/" && (isDesktopIntroPreload || isDesktopIntroActive);
   const shellClassName = [
     shouldShowOverlayPanel ? "shell shellOverlayRoute" : "shell",
@@ -2523,203 +2172,36 @@ function ShellDynamicInner({
       <main className={shellClassName} style={shellStyle}>
       <div className="backdrop" />
       {shouldRenderDesktopIntro ? (
-        <div className="desktopIntroOverlay" aria-hidden="true">
-          {isDesktopIntroLogoReady ? (
-            <Image
-              src={DESKTOP_INTRO_LOGO_SRC}
-              alt=""
-              width={306}
-              height={93}
-              priority
-              unoptimized
-              className="desktopIntroLogo"
-            />
-          ) : (
-            <div className="playerBootLoader desktopIntroLoader" role="status" aria-live="polite" aria-label="Loading logo animation">
-              <div className="playerBootBars" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-                <span />
-              </div>
-              <p>Loading...</p>
-            </div>
-          )}
-        </div>
+        <DesktopIntroOverlay isLogoReady={isDesktopIntroLogoReady} logoSrc={DESKTOP_INTRO_LOGO_SRC} />
       ) : null}
       <header className="topbar">
-        <div className="brandLockup">
-          <Link href="/" aria-label="Yeh That Rocks home" ref={brandLogoTargetRef} onClick={handleBrandLogoClick}>
-            <Image
-              src="/assets/images/yeh_main_logo.png?v=20260424-4"
-              alt="Yeh That Rocks"
-              width={306}
-              height={93}
-              priority
-              unoptimized
-              className="brandLogo"
-            />
-          </Link>
-          <h1 className="brandTagline">The world&apos;s loudest website</h1>
-        </div>
+        <BrandLockup logoRef={brandLogoTargetRef} onLogoClick={handleBrandLogoClick} />
         <div className="headerBar">
-          <nav className="mainNav" aria-label="Primary">
-            {visibleNavItems.map((item) => {
-              const isActive = isRouteActive(item.href, pathname);
-              const navHref = getNavHref(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={navHref}
-                  prefetch={false}
-                  className={isActive ? "navLink navLinkActive" : "navLink"}
-                  onClick={(e) => {
-                    if (!isAuthenticated && protectedNavHrefs.has(item.href)) {
-                      e.preventDefault();
-                      openAuthModal();
-                      return;
-                    }
-                    if (item.href === "/categories" || item.href === "/artists") {
-                      requestOverlayOpen(navHref, "video");
-                    }
-                  }}
-                >
-                  {item.href === "/categories" ? (
-                    <>
-                      <span className="navCategoryGlyph" aria-hidden="true">
-                        ☣
-                      </span>
-                      <span>{item.label}</span>
-                    </>
-                  ) : item.href === "/artists" ? (
-                    <>
-                      <span className="navArtistsGlyph" aria-hidden="true">
-                        🎸︎
-                      </span>
-                      <span>{item.label}</span>
-                    </>
-                  ) : item.href === "/top100" ? (
-                    <>
-                      <span className="navTop100Glyph" aria-hidden="true">
-                        🏆︎
-                      </span>
-                      <span>{item.label}</span>
-                    </>
-                  ) : item.href === "/favourites" ? (
-                    <>
-                      <span className="navFavouritesGlyph" aria-hidden="true">
-                        ❤️
-                      </span>
-                      <span>{item.label}</span>
-                    </>
-                  ) : item.href === "/playlists" ? (
-                    <>
-                      <span className="navPlaylistsGlyph" aria-hidden="true">
-                        ♬
-                      </span>
-                      <span>{item.label}</span>
-                    </>
-                  ) : item.href === "/history" ? (
-                    <>
-                      <span className="navHistoryGlyph" aria-hidden="true">
-                        🕘
-                      </span>
-                      <span>{item.label}</span>
-                    </>
-                  ) : item.href === "/account" ? (
-                    <>
-                      <span className="navAccountGlyph" aria-hidden="true">
-                        👤
-                      </span>
-                      <span>{item.label}</span>
-                    </>
-                  ) : item.href === "/new" ? (
-                    <>
-                      <span className="navNewGlyph" aria-hidden="true">
-                        ⭐
-                      </span>
-                      <span>{item.label}</span>
-                    </>
-                  ) : (
-                    item.label
-                  )}
-                </Link>
-              );
-            })}
-            {!shouldShowOverlayPanel ? (
-              <button
-                type="button"
-                className={isMobileCommunityOpen ? "mobileRailToggle navLink navLinkActive" : "mobileRailToggle navLink"}
-                onClick={() => setIsMobileCommunityOpen((current) => !current)}
-                aria-expanded={isMobileCommunityOpen}
-                aria-controls="mobile-community-rail"
-              >
-                <span className="navCommunityGlyph" aria-hidden="true">💬</span>
-                <span>Community</span>
-              </button>
-            ) : null}
-          </nav>
-          <div className="searchWrap">
-            <div className="searchBar">
-              <div className="searchCombobox" ref={searchComboboxRef} role="combobox" aria-expanded={showSuggestions} aria-haspopup="listbox">
-                <input
-                  id="search"
-                  type="search"
-                  placeholder="Search rock, metal, artists..."
-                  required
-                  autoComplete="off"
-                  value={searchValue}
-                  onChange={handleSearchInput}
-                  onKeyDown={handleSearchKeyDown}
-                  onFocus={() => {
-                    if (searchValue.trim().length >= 1 && suggestions.length > 0) {
-                      setShowSuggestions(true);
-                    }
-                  }}
-                  aria-expanded={showSuggestions}
-                  aria-autocomplete="list"
-                  aria-controls="search-suggestions"
-                  aria-activedescendant={activeSuggestionIdx >= 0 ? `search-suggestion-${activeSuggestionIdx}` : undefined}
-                />
-                {showSuggestions && suggestions.length > 0 && (
-                  <ul className="searchSuggestions" id="search-suggestions" role="listbox">
-                    {suggestions.map((s, i) => (
-                      <li key={`${s.type}-${s.label}`} role="option" aria-selected={i === activeSuggestionIdx}>
-                        <button
-                          type="button"
-                          id={`search-suggestion-${i}`}
-                          className="searchSuggestionItem"
-                          aria-selected={i === activeSuggestionIdx}
-                          onPointerDown={(e) => {
-                            e.preventDefault(); // prevent input blur before click fires
-                            handleSuggestionClick(s);
-                          }}
-                        >
-                          <span className="searchSuggestionType">{s.type}</span>
-                          <span className="searchSuggestionLabel">{s.label}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (searchValue.trim()) {
-                    router.push(`/search?q=${encodeURIComponent(searchValue.trim())}&v=${encodeURIComponent(currentVideo.id)}`);
-                    setShowSuggestions(false);
-                    setSearchValue("");
-                  }
-                }}
-              >
-                Search
-              </button>
-              <label className="searchLabel srOnly" htmlFor="search">
-                Search artists, tracks, and chaos
-              </label>
-            </div>
-          </div>
+          <PrimaryNav
+            items={visibleNavItems}
+            pathname={pathname}
+            getNavHref={getNavHref}
+            onNavItemClick={handlePrimaryNavItemClick}
+            shouldShowOverlayPanel={shouldShowOverlayPanel}
+            isMobileCommunityOpen={isMobileCommunityOpen}
+            onToggleMobileCommunity={() => setIsMobileCommunityOpen((current) => !current)}
+          />
+          <ShellSearchBar
+            searchComboboxRef={searchComboboxRef}
+            showSuggestions={showSuggestions}
+            searchValue={searchValue}
+            suggestions={suggestions}
+            activeSuggestionIdx={activeSuggestionIdx}
+            onSearchInput={handleSearchInput}
+            onSearchKeyDown={handleSearchKeyDown}
+            onSearchFocus={() => {
+              if (searchValue.trim().length >= 1 && suggestions.length > 0) {
+                setShowSuggestions(true);
+              }
+            }}
+            onSuggestionClick={handleSuggestionClick}
+            onSearchSubmit={handleSearchSubmit}
+          />
         </div>
       </header>
       {isPerformanceQuickLaunchVisible ? (
@@ -2878,33 +2360,14 @@ function ShellDynamicInner({
         </div>
       ) : null}
       {authStatus === "unavailable" && authStatusMessage && !isAuthUnavailableDialogDismissed ? (
-        <div className="authStatusModalOverlay">
-          <section
-            className="authStatusModalDialog"
-            role="dialog"
-            aria-modal="true"
-            aria-live="polite"
-            aria-labelledby="auth-unavailable-title"
-            aria-describedby="auth-unavailable-message"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="authStatusModalCopy">
-              <strong id="auth-unavailable-title">Auth server unavailable</strong>
-              <p id="auth-unavailable-message">{authStatusMessage}</p>
-            </div>
-            <div className="authStatusModalActions">
-              <button
-                type="button"
-                aria-label="Retry auth now"
-                title="Retry auth now"
-                onClick={() => void retryAuthStateCheck()}
-                disabled={isRetryingAuthStatus}
-              >
-                {isRetryingAuthStatus ? "Trying again..." : "Try again"}
-              </button>
-            </div>
-          </section>
-        </div>
+        <AuthUnavailableDialog
+          message={authStatusMessage}
+          isRetrying={isRetryingAuthStatus}
+          retryLabel="Retry auth now"
+          retryButtonLabel="Try again"
+          retryBusyLabel="Trying again..."
+          onRetry={() => void retryAuthStateCheck()}
+        />
       ) : null}
       <section
         className={[
@@ -3350,45 +2813,13 @@ function ShellDynamicInner({
             aria-hidden={shouldOccludeRightRail}
             inert={shouldOccludeRightRail ? true : undefined}
           >
-            {isLyricsOverlayOpen ? (
-              <section
-                className="rightRailLyricsOverlay"
-                role="dialog"
-                aria-modal="false"
-                aria-label="Lyrics"
-              >
-                <div className="rightRailLyricsOverlayHeader">
-                  <strong>Lyrics</strong>
-                  <button
-                    type="button"
-                    className="rightRailLyricsOverlayClose"
-                    aria-label="Close lyrics overlay"
-                    onClick={() => setIsLyricsOverlayOpen(false)}
-                  >
-                    ×
-                  </button>
-                </div>
-                <div className="rightRailLyricsOverlayBody">
-                  {isLyricsOverlayLoading ? (
-                    <p className="rightRailStatus">Loading lyrics...</p>
-                  ) : lyricsOverlayError ? (
-                    <p className="rightRailStatus rightRailStatusError">{lyricsOverlayError}</p>
-                  ) : lyricsOverlayData?.available && lyricsOverlayData.lyrics ? (
-                    <>
-                      {lyricsOverlayData.artistName || lyricsOverlayData.trackName ? (
-                        <p className="rightRailLyricsOverlayMeta">
-                          {lyricsOverlayData.artistName ? lyricsOverlayData.artistName : "Unknown artist"}
-                          {lyricsOverlayData.trackName ? ` - ${lyricsOverlayData.trackName}` : ""}
-                        </p>
-                      ) : null}
-                      <pre className="rightRailLyricsOverlayText">{lyricsOverlayData.lyrics}</pre>
-                    </>
-                  ) : (
-                    <p className="rightRailStatus">{lyricsOverlayData?.message ?? "No lyrics available for this track."}</p>
-                  )}
-                </div>
-              </section>
-            ) : null}
+            <RightRailLyricsOverlay
+              isOpen={isLyricsOverlayOpen}
+              isLoading={isLyricsOverlayLoading}
+              error={lyricsOverlayError}
+              data={lyricsOverlayData}
+              onClose={() => setIsLyricsOverlayOpen(false)}
+            />
             <div className="railTabs rightRailTabs">
               {isAuthenticated ? (
                 <button
@@ -3421,16 +2852,10 @@ function ShellDynamicInner({
               ) : null}
             </div>
           {rightRailMode === "watch-next" && isAuthenticated ? (
-            <div className="rightRailWatchNextHeader">
-              <button
-                type="button"
-                className={`newPageSeenToggle watchNextSeenToggle${watchNextHideSeen ? " newPageSeenToggleActive" : ""}`}
-                onClick={() => setWatchNextHideSeen((value) => !value)}
-                aria-pressed={watchNextHideSeen}
-              >
-                {watchNextHideSeen ? "Showing unseen only" : "Show unseen only"}
-              </button>
-            </div>
+            <WatchNextSeenToggle
+              isActive={watchNextHideSeen}
+              onToggle={() => setWatchNextHideSeen((value) => !value)}
+            />
           ) : null}
           <HideVideoConfirmModal
             isOpen={watchNextHideConfirmTrack !== null}
@@ -3458,30 +2883,20 @@ function ShellDynamicInner({
                   {playlistMutationMessage}
                 </p>
               ) : null}
-              {watchNextLoadFailed && visibleWatchNextVideos.length === 0 ? (
-                <div className="rightRailStatus rightRailStatusError" role="status" aria-live="polite">
-                  <p>Watch Next is taking too long to load. Retrying now.</p>
-                  <button
-                    type="button"
-                    className="newPageSeenToggle"
-                    onClick={() => {
-                      void loadMoreRelatedVideos();
-                    }}
-                  >
-                    Retry now
-                  </button>
-                </div>
-              ) : null}
+              <WatchNextStatusPanels
+                watchNextLoadFailed={watchNextLoadFailed}
+                hasVisibleVideos={visibleWatchNextVideos.length > 0}
+                onRetryLoadMore={() => {
+                  void loadMoreRelatedVideos();
+                }}
+                shouldShowWatchNextGenreConstrainedHint={shouldShowWatchNextGenreConstrainedHint}
+                shouldShowWatchNextUnseenEmptyState={shouldShowWatchNextUnseenEmptyState}
+                shouldShowWatchNextGenreConstrainedEmptyState={shouldShowWatchNextGenreConstrainedEmptyState}
+                shouldShowWatchNextEmptyState={shouldShowWatchNextEmptyState}
+                onOpenAutoplaySettings={openAutoplaySettingsOverlay}
+              />
               {shouldShowWatchNextRailLoader ? (
-                <div className="relatedLoadingState" role="status" aria-live="polite" aria-busy="true">
-                  <div className="playerBootBars" aria-hidden="true">
-                    <span />
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                  <span>Loading videos...</span>
-                </div>
+                <RightRailLoadingState message="Loading videos..." />
               ) : (
                 <>
                   {visibleWatchNextVideos.map((track, index) => (
@@ -3502,43 +2917,6 @@ function ShellDynamicInner({
                       onTrackClick={handleWatchNextTrackClick}
                     />
                   ))}
-                  {shouldShowWatchNextGenreConstrainedHint ? (
-                    <div className="rightRailStatus rightRailStatusInfo" role="status" aria-live="polite">
-                      <p>
-                        Genre limit is active. Watch Next is showing fewer options for this account.
-                      </p>
-                      <button
-                        type="button"
-                        className="newPageSeenToggle"
-                        onClick={openAutoplaySettingsOverlay}
-                      >
-                        Configure autoplay
-                      </button>
-                    </div>
-                  ) : null}
-                  {shouldShowWatchNextUnseenEmptyState ? (
-                    <p className="rightRailStatus">No unseen videos in Watch Next right now.</p>
-                  ) : null}
-                  {shouldShowWatchNextGenreConstrainedEmptyState ? (
-                    <div className="rightRailStatus rightRailStatusInfo" role="status" aria-live="polite">
-                      <p>
-                        No Watch Next videos match your current autoplay genre limit.
-                      </p>
-                      <p>
-                        Open autoplay settings and disable limit-by-genre or widen your genre selection.
-                      </p>
-                      <button
-                        type="button"
-                        className="newPageSeenToggle"
-                        onClick={openAutoplaySettingsOverlay}
-                      >
-                        Open autoplay settings
-                      </button>
-                    </div>
-                  ) : null}
-                  {shouldShowWatchNextEmptyState && !shouldShowWatchNextGenreConstrainedEmptyState ? (
-                    <p className="rightRailStatus">No Watch Next videos available right now.</p>
-                  ) : null}
                   <div ref={relatedLoadMoreSentinelRef} className="relatedLoadMoreSentinel" aria-hidden="true" />
                   {showLoadingMoreRelatedHint && visibleWatchNextVideos.length > 0 ? (
                     <div className="relatedLoadingState" role="status" aria-live="polite" aria-label="Loading more suggestions">
@@ -3600,30 +2978,7 @@ function ShellDynamicInner({
                         onFocus={() => prefetchRelatedSelection(track)}
                         onPointerDown={() => prefetchRelatedSelection(track)}
                       >
-                        <div className="thumbGlow">
-                          <YouTubeThumbnailImage
-                            videoId={track.id}
-                            alt={track.title}
-                            className="relatedThumb"
-                            loading={index < 3 ? "eager" : "lazy"}
-                            fetchPriority={index < 2 ? "high" : "auto"}
-                            reportReason="thumbnail-load-error:watch-next-queue"
-                            hideClosestSelector=".relatedCardSlot"
-                          />
-                        </div>
-                        <div>
-                          <div className="relatedCardSourceBadges">
-                            {track.isFavouriteSource ? <span className="relatedSourceBadge relatedSourceBadgeFavourite">Favourite</span> : null}
-                            {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
-                            {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
-                          </div>
-                          <h3>{track.title}</h3>
-                          <p>
-                            <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
-                              {track.channelTitle}
-                            </ArtistWikiLink>
-                          </p>
-                        </div>
+                        <QueueTrackCardContent track={track} index={index} />
                       </Link>
                     </div>
                   ))
@@ -3661,116 +3016,25 @@ function ShellDynamicInner({
                 </div>
               ) : null}
               {activePlaylistId && showDeleteActivePlaylistConfirm ? (
-                <div
-                  className="rightRailDeleteConfirmBackdrop"
-                  role="dialog"
-                  aria-modal="true"
-                  aria-label="Delete playlist confirmation"
-                  onClick={() => {
-                    if (!isDeletingActivePlaylist) {
-                      setShowDeleteActivePlaylistConfirm(false);
-                    }
-                  }}
-                >
-                  <div
-                    className="rightRailDeleteConfirmModal"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                    }}
-                  >
-                    <div className="rightRailDeleteConfirmHeader">
-                      <span className="rightRailDeleteConfirmIcon" aria-hidden="true">⚠</span>
-                      <h3>Delete Playlist?</h3>
-                    </div>
-                    <p className="rightRailDeleteConfirmPrompt">This action is permanent and cannot be undone.</p>
-                    <p className="rightRailDeleteConfirmTarget">
-                      {playlistRailData?.name ?? activePlaylistSummary?.name ?? "Current playlist"}
-                    </p>
-                    <div className="rightRailDeleteConfirmActions">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowDeleteActivePlaylistConfirm(false);
-                        }}
-                        disabled={isDeletingActivePlaylist}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowDeleteActivePlaylistConfirm(false);
-                          void handleDeleteActivePlaylist();
-                        }}
-                        disabled={isDeletingActivePlaylist}
-                      >
-                        {isDeletingActivePlaylist ? "Deleting..." : "Delete"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <RightRailDeleteConfirmDialog
+                  targetName={playlistRailData?.name ?? activePlaylistSummary?.name ?? "Current playlist"}
+                  isBusy={isDeletingActivePlaylist}
+                  onCancel={handleCancelDeleteActivePlaylist}
+                  onConfirm={handleConfirmDeleteActivePlaylist}
+                />
               ) : null}
               {confirmDeleteRailPlaylist ? (
-                <div
-                  className="rightRailDeleteConfirmBackdrop"
-                  role="dialog"
-                  aria-modal="true"
-                  aria-label="Delete playlist confirmation"
-                  onClick={() => {
-                    if (!playlistBeingDeletedId) {
-                      setConfirmDeleteRailPlaylist(null);
-                    }
-                  }}
-                >
-                  <div
-                    className="rightRailDeleteConfirmModal"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                    }}
-                  >
-                    <div className="rightRailDeleteConfirmHeader">
-                      <span className="rightRailDeleteConfirmIcon" aria-hidden="true">⚠</span>
-                      <h3>Delete Playlist?</h3>
-                    </div>
-                    <p className="rightRailDeleteConfirmPrompt">This action is permanent and cannot be undone.</p>
-                    <p className="rightRailDeleteConfirmTarget">{confirmDeleteRailPlaylist.name}</p>
-                    <div className="rightRailDeleteConfirmActions">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setConfirmDeleteRailPlaylist(null);
-                        }}
-                        disabled={Boolean(playlistBeingDeletedId)}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const playlistId = confirmDeleteRailPlaylist.id;
-                          setConfirmDeleteRailPlaylist(null);
-                          void handleDeletePlaylistFromRail(playlistId);
-                        }}
-                        disabled={Boolean(playlistBeingDeletedId)}
-                      >
-                        {playlistBeingDeletedId ? "Deleting..." : "Delete"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <RightRailDeleteConfirmDialog
+                  targetName={confirmDeleteRailPlaylist.name}
+                  isBusy={Boolean(playlistBeingDeletedId)}
+                  onCancel={handleCancelDeleteRailPlaylist}
+                  onConfirm={handleConfirmDeleteRailPlaylist}
+                />
               ) : null}
               <div className="relatedStackPlaylistBody" ref={playlistStackBodyRef}>
               {!activePlaylistId ? (
                 isPlaylistSummaryLoading ? (
-                  <div className="relatedLoadingState" role="status" aria-live="polite" aria-busy="true">
-                    <span className="playerBootBars" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
-                      <span />
-                    </span>
-                    <span>Loading playlists...</span>
-                  </div>
+                  <RightRailLoadingState message="Loading playlists..." />
                 ) : playlistSummaryError ? (
                   <p className="rightRailStatus">{playlistSummaryError}</p>
                 ) : playlistRailSummaries.length > 0 ? (
@@ -3799,52 +3063,23 @@ function ShellDynamicInner({
                         >
                           {isDeleting ? "…" : "🗑"}
                         </button>
-                        <div className="thumbGlow">
-                          {hasLeadThumbnail ? (
-                            <YouTubeThumbnailImage
-                              videoId={playlist.leadVideoId}
-                              alt=""
-                              loading="lazy"
-                              className="relatedThumb"
-                              reportReason="thumbnail-load-error:playlist-summary"
-                              hideClosestSelector=".rightRailPlaylistCard"
-                            />
-                          ) : (
-                            <div className="playlistRailThumbPlaceholder" aria-hidden="true">♬</div>
-                          )}
-                        </div>
-                        <div>
-                          <h3>{playlist.name}</h3>
-                          <p>{playlist.itemCount} {playlist.itemCount === 1 ? "track" : "tracks"}</p>
-                        </div>
+                        <PlaylistSummaryCardContent
+                          playlist={playlist}
+                          hasLeadThumbnail={hasLeadThumbnail}
+                        />
                       </Link>
                     );
                   })
                 ) : (
-                  <div className="rightRailEmptyState">
-                    <p className="rightRailStatus">No playlists yet.</p>
-                    <button
-                      type="button"
-                      className="rightRailCreatePlaylistButton"
-                      onClick={() => {
-                        void handleCreatePlaylistFromRail();
-                      }}
-                      disabled={isCreatingRailPlaylist}
-                    >
-                      {isCreatingRailPlaylist ? "+ Creating..." : "+ Create playlist"}
-                    </button>
-                  </div>
+                  <RightRailPlaylistEmptyState
+                    isCreating={isCreatingRailPlaylist}
+                    onCreate={() => {
+                      void handleCreatePlaylistFromRail();
+                    }}
+                  />
                 )
               ) : isPlaylistRailLoading || isCreatingActivePlaylist ? (
-                <div className="relatedLoadingState" role="status" aria-live="polite" aria-busy="true">
-                  <span className="playerBootBars" aria-hidden="true">
-                    <span />
-                    <span />
-                    <span />
-                    <span />
-                  </span>
-                  <span>{isCreatingActivePlaylist ? "Creating playlist..." : "Loading playlist tracks..."}</span>
-                </div>
+                <RightRailLoadingState message={isCreatingActivePlaylist ? "Creating playlist..." : "Loading playlist tracks..."} />
               ) : playlistRailError ? (
                 <p className="rightRailStatus">{playlistRailError}</p>
               ) : playlistRailData && playlistRailData.videos.length > 0 ? (
@@ -3860,114 +3095,65 @@ function ShellDynamicInner({
                   const isDragOver = dragOverPlaylistTrackIndex === index && draggedPlaylistTrackIndex !== null && !isDraggingThis;
                   const showPlaceholderAbove = isDragOver && draggedPlaylistTrackIndex > index;
                   const showPlaceholderBelow = isDragOver && draggedPlaylistTrackIndex < index;
-                  const placeholder = (key: string) => (
-                    <div
-                      key={key}
-                      className="playlistRailDropPlaceholder"
-                      aria-hidden="true"
-                      onDragOver={(event) => handlePlaylistTrackDragOver(event, index)}
-                      onDrop={(event) => handlePlaylistTrackDrop(event, index)}
-                    />
-                  );
                   return [
-                    ...(showPlaceholderAbove ? [placeholder(`rph-above-${index}`)] : []),
-                    <div
+                    ...(showPlaceholderAbove
+                      ? [
+                          <PlaylistDropPlaceholder
+                            key={`rph-above-${index}`}
+                            onDragOver={(event) => handlePlaylistTrackDragOver(event, index)}
+                            onDrop={(event) => handlePlaylistTrackDrop(event, index)}
+                          />,
+                        ]
+                      : []),
+                    <PlaylistTrackRow
                       key={track.playlistItemId ?? `${track.id}-${index}`}
                       data-playlist-index={index}
-                      className={[
-                        "playlistRailTrackRow",
-                        isRecentlyAddedTrack ? "playlistRailTrackRowAdded" : "",
-                        isTrackRemoving ? "relatedCardSlotExiting" : "",
-                        isDraggingThis ? "playlistRailTrackRowDraggingSource" : "",
-                        isDragOver ? "playlistRailTrackRowDragOver" : "",
-                      ].filter(Boolean).join(" ")}
+                      isRecentlyAddedTrack={isRecentlyAddedTrack}
+                      isTrackRemoving={isTrackRemoving}
+                      isDraggingThis={isDraggingThis}
+                      isDragOver={isDragOver}
                       onDragOver={(event) => handlePlaylistTrackDragOver(event, index)}
                       onDrop={(event) => handlePlaylistTrackDrop(event, index)}
                     >
-                      <div className="playlistRailReorderColumn">
-                        <button
-                          type="button"
-                          className="playlistRailReorderChevron"
-                          aria-label={`Move ${track.title} up`}
-                          title="Move up"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            void handleReorderActivePlaylistTrack(index, index - 1);
-                          }}
-                          disabled={index === 0 || isTrackRemoving || isTrackMutating}
-                        >
-                          <span className="playlistRailChevronGlyph">{"<"}</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="playlistRailReorderChevron"
-                          aria-label={`Move ${track.title} down`}
-                          title="Move down"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            void handleReorderActivePlaylistTrack(index, index + 1);
-                          }}
-                          disabled={index >= playlistRailData.videos.length - 1 || isTrackRemoving || isTrackMutating}
-                        >
-                          <span className="playlistRailChevronGlyph">{">"}</span>
-                        </button>
-                      </div>
-                      <div
-                        className={[
-                          "relatedCardSlot",
-                          "playlistRailTrackDraggable",
-                          isTrackRemoving ? "relatedCardSlotExiting" : "",
-                        ].filter(Boolean).join(" ")}
-                        data-video-id={track.id}
-                        draggable={!isTrackRemoving && !isTrackMutating}
+                      <PlaylistReorderControls
+                        title={track.title}
+                        index={index}
+                        total={playlistRailData.videos.length}
+                        isTrackRemoving={isTrackRemoving}
+                        isTrackMutating={isTrackMutating}
+                        onReorder={(from, to) => {
+                          void handleReorderActivePlaylistTrack(from, to);
+                        }}
+                      />
+                      <PlaylistTrackDraggableShell
+                        trackId={track.id}
+                        isTrackRemoving={isTrackRemoving}
+                        isTrackMutating={isTrackMutating}
                         onDragStart={(event) => handlePlaylistTrackDragStart(event, index)}
                         onDragEnd={handlePlaylistTrackDragEnd}
                       >
-                      <button
-                        type="button"
-                        className="relatedCardHideButton"
-                        aria-label={`Remove ${track.title} from playlist`}
-                        title="Remove from playlist"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          void handleRemoveTrackFromActivePlaylist(track, index);
+                      <PlaylistTrackRowCard
+                        track={track}
+                        index={index}
+                        playlistId={playlistRailData.id}
+                        isCurrentPlaylistTrack={isCurrentPlaylistTrack}
+                        isTrackRemoving={isTrackRemoving}
+                        isTrackMutating={isTrackMutating}
+                        onRemove={(targetTrack, targetIndex) => {
+                          void handleRemoveTrackFromActivePlaylist(targetTrack, targetIndex);
                         }}
-                        disabled={isTrackRemoving || isTrackMutating}
-                      >
-                        ×
-                      </button>
-                      <Link
-                        href={`/?v=${track.id}&pl=${encodeURIComponent(playlistRailData.id)}&pli=${index}`}
-                        className={`relatedCard linkedCard rightRailPlaylistTrackCard${isCurrentPlaylistTrack ? " relatedCardActive" : ""}`}
-                        prefetch={false}
-                        draggable={false}
-                      >
-                        <div className="thumbGlow">
-                          <YouTubeThumbnailImage
-                            videoId={track.id}
-                            alt={track.title}
-                            loading={index < 3 ? "eager" : "lazy"}
-                            fetchPriority={index < 2 ? "high" : "auto"}
-                            className="relatedThumb"
-                            reportReason="thumbnail-load-error:playlist-track"
-                            hideClosestSelector=".relatedCardSlot"
-                          />
-                        </div>
-                        <div>
-                          <h3>{track.title}</h3>
-                          <p>
-                            <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
-                              {track.channelTitle}
-                            </ArtistWikiLink>
-                          </p>
-                        </div>
-                      </Link>
-                      </div>
-                    </div>,
-                    ...(showPlaceholderBelow ? [placeholder(`rph-below-${index}`)] : []),
+                      />
+                      </PlaylistTrackDraggableShell>
+                    </PlaylistTrackRow>,
+                    ...(showPlaceholderBelow
+                      ? [
+                          <PlaylistDropPlaceholder
+                            key={`rph-below-${index}`}
+                            onDragOver={(event) => handlePlaylistTrackDragOver(event, index)}
+                            onDrop={(event) => handlePlaylistTrackDrop(event, index)}
+                          />,
+                        ]
+                      : []),
                   ];
                 })
               ) : (
