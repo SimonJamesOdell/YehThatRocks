@@ -25,10 +25,12 @@ export const EVENT_NAMES = {
   RIGHT_RAIL_LYRICS_OPEN: "ytr:right-rail-lyrics-open",
 
   // Navigation and overlay
+  AUTH_SUCCESS: "ytr:auth-success",
   OVERLAY_OPEN_REQUEST: "ytr:overlay-open-request",
   OVERLAY_CLOSE_REQUEST: "ytr:overlay-close-request",
   DOCK_HIDE_REQUEST: "ytr:dock-hide-request",
   REQUEST_VIDEO_REPLAY: "ytr:request-video-replay",
+  NEW_ROUTE_QUEUE_SYNC: "ytr:new-route-queue-sync",
 
   // Admin and catalog
   ADMIN_OVERLAY_ENTER: "ytr:admin-overlay-enter",
@@ -71,6 +73,7 @@ export type EventPayloads = {
     trackId?: string;
   };
   [EVENT_NAMES.RIGHT_RAIL_LYRICS_OPEN]: { videoId: string };
+  [EVENT_NAMES.AUTH_SUCCESS]: null;
   [EVENT_NAMES.OVERLAY_OPEN_REQUEST]: {
     href: string;
     kind: "wiki" | "video";
@@ -78,6 +81,10 @@ export type EventPayloads = {
   [EVENT_NAMES.OVERLAY_CLOSE_REQUEST]: { href: string };
   [EVENT_NAMES.DOCK_HIDE_REQUEST]: null;
   [EVENT_NAMES.REQUEST_VIDEO_REPLAY]: { videoId: string };
+  [EVENT_NAMES.NEW_ROUTE_QUEUE_SYNC]: {
+    source: "new" | "top100";
+    videoIds: string[];
+  };
   [EVENT_NAMES.ADMIN_OVERLAY_ENTER]: null;
   [EVENT_NAMES.VIDEO_CATALOG_DELETED]: { videoId: string };
   [EVENT_NAMES.FAVOURITES_UPDATED]: null;
@@ -219,10 +226,12 @@ export const RIGHT_RAIL_MODE_EVENT = EVENT_NAMES.RIGHT_RAIL_MODE;
 export const RIGHT_RAIL_LYRICS_OPEN_EVENT = EVENT_NAMES.RIGHT_RAIL_LYRICS_OPEN;
 
 // Navigation and overlay
+export const AUTH_SUCCESS_EVENT = EVENT_NAMES.AUTH_SUCCESS;
 export const OVERLAY_OPEN_REQUEST_EVENT = EVENT_NAMES.OVERLAY_OPEN_REQUEST;
 export const OVERLAY_CLOSE_REQUEST_EVENT = EVENT_NAMES.OVERLAY_CLOSE_REQUEST;
 export const DOCK_HIDE_REQUEST_EVENT = EVENT_NAMES.DOCK_HIDE_REQUEST;
 export const REQUEST_VIDEO_REPLAY_EVENT = EVENT_NAMES.REQUEST_VIDEO_REPLAY;
+export const NEW_ROUTE_QUEUE_SYNC_EVENT = EVENT_NAMES.NEW_ROUTE_QUEUE_SYNC;
 
 // Admin and catalog
 export const ADMIN_OVERLAY_ENTER_EVENT = EVENT_NAMES.ADMIN_OVERLAY_ENTER;

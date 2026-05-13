@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
-import { useInfiniteScroll } from "@/components/use-infinite-scroll";
+import { useInfiniteListController } from "@/components/use-infinite-list-controller";
 import { EVENT_NAMES, listenToAppEvent } from "@/lib/events-contract";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
 import type { WatchHistoryEntry } from "@/lib/catalog-data";
@@ -104,23 +104,25 @@ export function HistoryInfiniteList({
   isAuthenticated = false,
 }: HistoryInfiniteListProps) {
   const router = useRouter();
-  const [history, setHistory] = useState<WatchHistoryEntry[]>(initialHistory);
   const [filterValue, setFilterValue] = useState("");
   const [isRefreshingInitialHistory, setIsRefreshingInitialHistory] = useState(initialHistory.length === 0);
   const [initialRefreshError, setInitialRefreshError] = useState<string | null>(null);
   const [initialRefreshRetryNonce, setInitialRefreshRetryNonce] = useState(0);
   const {
+    items: history,
+    setItems: setHistory,
     hasMore,
     isLoading,
     loadError,
     setLoadError,
     sentinelRef,
-    loadMore,
     retryLoadMore,
     resetPagination,
-  } = useInfiniteScroll({
+  } = useInfiniteListController<WatchHistoryEntry>({
+    initialItems: initialHistory,
     initialOffset: initialHistory.length,
     initialHasMore,
+    getItemKey: (entry) => `${entry.video.id}:${entry.lastWatchedAt}`,
     sentinelRootMargin: "600px 0px",
     fetchPage: useCallback(async (offset) => {
       const result = await fetchJsonWithLoaderContract<WatchHistoryPayload>({
@@ -133,7 +135,7 @@ export function HistoryInfiniteList({
 
       if (!result.ok) {
         return {
-          added: 0,
+          incoming: [],
           hasMore: false,
           nextOffset: offset,
           errorMessage: result.message,
@@ -142,24 +144,11 @@ export function HistoryInfiniteList({
 
       const payload = result.data;
       const incoming = Array.isArray(payload.history) ? payload.history : [];
-
-      let added = 0;
-      setHistory((current) => {
-        const seen = new Set(current.map((entry) => `${entry.video.id}:${entry.lastWatchedAt}`));
-        const uniqueIncoming = incoming.filter((entry) => !seen.has(`${entry.video.id}:${entry.lastWatchedAt}`));
-        added = uniqueIncoming.length;
-
-        if (added === 0) {
-          return current;
-        }
-
-        return [...current, ...uniqueIncoming];
-      });
-
       const nextOffset = Number(payload.nextOffset);
       return {
-        added,
+        incoming,
         hasMore: Boolean(payload.hasMore),
+        incomingCountForOffset: incoming.length,
         nextOffset: Number.isFinite(nextOffset) ? nextOffset : offset + incoming.length,
       };
     }, [pageSize]),

@@ -1,351 +1,46 @@
 "use client";
 
 import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { geoContains, geoNaturalEarth1, geoPath } from "d3-geo";
 import { feature } from "topojson-client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import worldAtlasCountries from "world-atlas/countries-110m.json";
 
-import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { useAdminHealthStreaming } from "@/components/use-admin-health-streaming";
 import { useAdminVideoQueuePolling } from "@/components/use-admin-video-queue-polling";
 import { useAdminAnalyticsRefresh } from "@/components/use-admin-analytics-refresh";
 import { useAdminApiTabPolling } from "@/components/use-admin-api-tab-polling";
+import { Dial } from "@/components/admin-dashboard-shared-ui";
+import { finiteOrNull, isAuthResponseError, readJson, readNoStoreJson, postJson } from "@/components/admin-dashboard-utils";
+import { useAdminAnalytics } from "@/components/use-admin-analytics";
+import { useAdminCategories } from "@/components/use-admin-categories";
+import { useAdminVideoModeration } from "@/components/use-admin-video-moderation";
+import { useAdminCatalogReview } from "@/components/use-admin-catalog-review";
+import { useAdminMagazine } from "@/components/use-admin-magazine";
+import {
+  AdminTab,
+  DashboardPayload,
+  AnalyticsBucket,
+  AnalyticsZoomLevel,
+  GeoVisitorPoint,
+  MapDateRange,
+  WorldAtlasCountryFeature,
+  AdminHealthStreamPayload,
+  CategoryRow,
+  VideoRow,
+  RecentlyApprovedVideoRow,
+  PendingVideoRow,
+  PendingVideoDraft,
+  CatalogReviewVideoRow,
+  AdminMagazineArticleRow,
+  PerfWindowResetResponse,
+  QuotaBackfillStatus,
+} from "@/components/admin-dashboard-types";
 
 const HEALTH_FALLBACK_POLL_MS = 2_000;
 const ANALYTICS_AUTO_REFRESH_MS = 5 * 60 * 1000;
 
-function finiteOrNull(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-type AnalyticsBucket = {
-  bucketStart: string;
-  bucketEnd: string;
-  label: string;
-  pageViews: number;
-  videoViews: number;
-  uniqueVisitors: number;
-  returnVisits: number;
-  magazineExternalLandings: number;
-  authEvents: number;
-};
-
-type AnalyticsZoomLevel = "allTime" | "monthly" | "weekly" | "daily" | "hourly";
-
-type GeoVisitorPoint = {
-  visitorId: string;
-  lat: number;
-  lng: number;
-  eventCount: number;
-  lastSeenAt: string;
-};
-
-type MapDateRange = "allTime" | "today" | "thisWeek" | "thisMonth" | "thisYear";
-
-type WorldAtlasCountryFeature = {
-  id: string | number;
-  properties?: { name?: string };
-  geometry: unknown;
-};
-
-type DashboardPayload = {
-  meta: { durationMs: number; generatedAt: string };
-  health: {
-    nodeUptimeSec: number;
-    memory: { rssMb: number; heapUsedMb: number; heapTotalMb: number };
-    host: {
-      platform: string;
-      loadAvg: number[];
-      totalMemMb: number;
-      freeMemMb: number;
-      cpuUsagePercent: number | null;
-      cpuAverageUsagePercent: number | null;
-      cpuPeakCoreUsagePercent: number | null;
-      memoryUsagePercent: number;
-      diskUsagePercent: number | null;
-      swapUsagePercent: number | null;
-      networkUsagePercent: number | null;
-    };
-  };
-  counts: {
-    users: number;
-    registeredUsers: number;
-    anonymousUsers: number;
-    videos: number;
-    artists: number;
-    categories: number;
-  };
-  locations: Array<{ location: string; count: number }>;
-  traffic: Array<{ day: string; count: number }>;
-  analytics: {
-    daily: Array<{ day: string; pageViews: number; videoViews: number; uniqueVisitors: number }>;
-    hourlyRecent: Array<{
-      bucketStart: string;
-      pageViews: number;
-      videoViews: number;
-      uniqueVisitors: number;
-      returnVisits: number;
-      magazineExternalLandings: number;
-      authEvents: number;
-    }>;
-    series: {
-      allTime: AnalyticsBucket[];
-      monthly: AnalyticsBucket[];
-      weekly: AnalyticsBucket[];
-      daily: AnalyticsBucket[];
-    };
-    newVsRepeat: { newVisitors: number; repeatVisitors: number };
-    registrationsPerDay: Array<{ day: string; count: number }>;
-    totals: { pageViews: number; videoViews: number; uniqueVisitors: number; sessions: number };
-    geoVisitors: GeoVisitorPoint[];
-  };
-  hostMetrics: {
-    minute: Array<{
-      bucketStart: string;
-      cpuUsagePercent: number | null;
-      memoryUsagePercent: number | null;
-      swapUsagePercent: number | null;
-      diskUsagePercent: number | null;
-      networkUsagePercent: number | null;
-    }>;
-  };
-  insights: {
-    auth24h: {
-      total: number;
-      success: number;
-      failed: number;
-      uniqueIps: number;
-      uniqueUsers: number;
-    };
-    authActionBreakdown: Array<{ action: string; total: number; failed: number }>;
-    metadataQuality: {
-      availableVideos: number;
-      checkFailedEntries: number;
-      missingMetadata: number;
-      lowConfidence: number;
-      unknownType: number;
-    };
-    ingestVelocity: Array<{ day: string; count: number }>;
-    groqSpend: {
-      wikiCacheCount: number;
-      daily: Array<{ day: string; classified: number; errors: number }>;
-    };
-    apiUsage: {
-      daily: Array<{
-        day: string;
-        youtubeCalls: number;
-        youtubeUnits: number;
-        youtubeErrors: number;
-        groqCalls: number;
-        groqUnits: number;
-        groqErrors: number;
-        groqClassified: number;
-      }>;
-      totals7d: {
-        youtubeCalls: number;
-        youtubeUnits: number;
-        youtubeErrors: number;
-        groqCalls: number;
-        groqUnits: number;
-        groqErrors: number;
-        groqClassified: number;
-        youtubeSuccessRate: number;
-        groqSuccessRate: number;
-      };
-    };
-    memoryDiagnostics: {
-      snapshotAt: string;
-      process: {
-        rssMb: number;
-        heapUsedMb: number;
-        heapTotalMb: number;
-        externalMb: number;
-        arrayBuffersMb: number;
-      };
-      caches: {
-        currentVideo: {
-          currentVideoCache: number;
-          currentVideoPendingCache: number;
-          currentVideoInflight: number;
-          currentVideoRelatedPoolCache: number;
-          currentVideoRelatedPoolInflight: number;
-        };
-        artist: {
-          limits: { defaultMaxEntries: number; heavyMaxEntries: number };
-          sizes: {
-            artistNormVideoPoolCache: number;
-            artistNormVideoPoolInFlight: number;
-            sameGenreRelatedPoolCache: number;
-            sameGenreRelatedPoolInFlight: number;
-            artistLetterCache: number;
-            artistLetterPageCache: number;
-            artistSearchCache: number;
-            artistSingleSlugCache: number;
-            artistVideosCache: number;
-            artistVideosInFlight: number;
-          };
-        };
-        analyticsGeo: {
-          size: number;
-          maxEntries: number;
-          expiredEntries: number;
-        };
-        wikiCacheCount: number;
-      };
-    };
-  };
-};
-
-type AdminHealthStreamPayload = {
-  health: DashboardPayload["health"];
-  meta: { generatedAt: string };
-};
-
-type CategoryRow = { id: number; genre: string; thumbnailVideoId: string | null; updatedAt: string };
-type VideoRow = {
-  id: number;
-  videoId: string;
-  title: string;
-  parsedArtist: string | null;
-  parsedTrack: string | null;
-  parsedVideoType: string | null;
-  parseConfidence: number | null;
-  channelTitle: string | null;
-  updatedAt: string | null;
-};
-type RecentlyApprovedVideoRow = {
-  id: number;
-  videoId: string;
-  title: string;
-  parsedArtist: string | null;
-  parsedTrack: string | null;
-  channelTitle: string | null;
-  updatedAt: string | null;
-};
-type PendingVideoRow = {
-  id: number;
-  videoId: string;
-  title: string;
-  parsedArtist: string | null;
-  parsedTrack: string | null;
-  channelTitle: string | null;
-  durationSec: number | null;
-  createdAt: string | null;
-  updatedAt: string | null;
-};
-type PendingVideoDraft = {
-  title: string;
-  parsedArtist: string | null;
-  parsedTrack: string | null;
-};
-type CatalogReviewVideoRow = {
-  id: number;
-  videoId: string;
-  title: string;
-  parsedArtist: string | null;
-  parsedTrack: string | null;
-  channelTitle: string | null;
-  durationSec: number | null;
-  createdAt: string | null;
-  updatedAt: string | null;
-  enqueuedAt: string | null;
-};
-
-type PerfWindowResetResponse = {
-  ok: boolean;
-  startedAt: string;
-  deletedSamples: number;
-  sampleIntervalSeconds: number;
-  slowLog: {
-    enabled: boolean;
-    warning: string | null;
-  };
-};
-
-type AdminMagazineArticleRow = {
-  slug: string;
-  title: string;
-  videoId: string | null;
-  publishedAt: string;
-  externalLandings: number;
-};
-
-export type AdminTab = "overview" | "magazine" | "performance" | "worldmap" | "api" | "categories" | "videos" | "catalog-review";
-
-async function readJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetchWithAuthRetry(input, init);
-
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(payload?.error || `Request failed (${response.status})`);
-  }
-
-  return response.json() as Promise<T>;
-}
-
-async function readNoStoreJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  return readJson<T>(input, {
-    ...init,
-    cache: "no-store",
-    headers: {
-      ...(init?.headers ?? {}),
-      "Cache-Control": "no-store",
-    },
-  });
-}
-
-function isAuthResponseError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  return (
-    error.message === "Unauthorized" ||
-    error.message === "Forbidden" ||
-    error.message.includes("(401)") ||
-    error.message.includes("(403)")
-  );
-}
-
-function Dial({ label, value, color, detail }: { label: string; value: number | null; color: string; detail?: string | null }) {
-  const radius = 34;
-  const stroke = 8;
-  const size = 90;
-  const circumference = 2 * Math.PI * radius;
-  const safeValue = value === null ? 0 : Math.max(0, Math.min(100, value));
-  const offset = circumference * (1 - safeValue / 100);
-  const dialWidthPx = 132;
-
-  return (
-    <div style={{ display: "grid", justifyItems: "center", gap: 6, width: dialWidthPx, minWidth: dialWidthPx }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${label} ${value === null ? "n/a" : `${Math.round(safeValue)} percent`}`}>
-        <circle cx={size / 2} cy={size / 2} r={radius} stroke="rgba(255,255,255,0.14)" strokeWidth={stroke} fill="none" />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={color}
-          strokeWidth={stroke}
-          fill="none"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-        <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle" fill="#fff" style={{ fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-          {value === null ? "n/a" : `${Math.round(safeValue)}%`}
-        </text>
-      </svg>
-      <span className="authMessage" style={{ margin: 0 }}>{label}</span>
-      {detail ? (
-        <span className="authMessage" style={{ margin: 0, width: "100%", textAlign: "center", whiteSpace: "pre-line", fontVariantNumeric: "tabular-nums" }}>
-          {detail}
-        </span>
-      ) : null}
-    </div>
-  );
-}
+export type { AdminTab };
 
 export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [loading, setLoading] = useState(true);

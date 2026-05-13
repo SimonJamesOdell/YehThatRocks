@@ -1,59 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { playerPreferenceMutationSchema } from "@/lib/api-schemas";
-import { requireApiAuth } from "@/lib/auth-request";
-import { verifySameOrigin } from "@/lib/csrf";
+import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import {
   getPlayerPreferencesForUser,
   setPlayerPreferencesForUser,
 } from "@/lib/player-preference-data";
-import { parseRequestJson } from "@/lib/request-json";
 
 export async function GET(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
+  const auth = await requireAuthOnly(request, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
+  if (!auth.ok) {
+    return auth.response;
   }
 
   const value = await getPlayerPreferencesForUser({
-    userId: authResult.auth.userId,
+    userId: auth.auth.userId,
   });
 
   return NextResponse.json(value);
 }
 
 export async function POST(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
-
-  if (!authResult.ok) {
-    return authResult.response;
-  }
-
-  const csrfError = verifySameOrigin(request);
-  if (csrfError) {
-    return csrfError;
-  }
-
-  const bodyResult = await parseRequestJson(request);
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const parsed = playerPreferenceMutationSchema.safeParse(bodyResult.data);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const result = await setPlayerPreferencesForUser({
-    userId: authResult.auth.userId,
-    autoplayEnabled: parsed.data.autoplayEnabled,
-    volume: parsed.data.volume,
-    autoplayMix: parsed.data.autoplayMix,
-    autoplayGenreFilters: parsed.data.autoplayGenreFilters,
-  });
+  const result = await withAuthAndBody(request, playerPreferenceMutationSchema, { authMode: "user" });
 
   if (!result.ok) {
+    return result.response;
+  }
+
+  const prefResult = await setPlayerPreferencesForUser({
+    userId: result.auth.userId,
+    autoplayEnabled: result.data.autoplayEnabled,
+    volume: result.data.volume,
+    autoplayMix: result.data.autoplayMix,
+    autoplayGenreFilters: result.data.autoplayGenreFilters,
+  });
+
+  if (!prefResult.ok) {
     return NextResponse.json({ ok: false, error: "Preference persistence unavailable" }, { status: 503 });
   }
 

@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { videoQualityFlagSchema } from "@/lib/api-schemas";
 import { isAdminIdentity } from "@/lib/admin-auth";
-import { requireApiAuth } from "@/lib/auth-request";
+import { withAuthAndBody } from "@/lib/api-route-pipeline";
 import { hideVideoAndPrunePlaylistsForUser, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
-import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
-import { parseRequestJson } from "@/lib/request-json";
 import {
   VIDEO_QUALITY_FLAG_MIN_CONFIDENCE,
   VIDEO_QUALITY_FLAG_MIN_USERS_FOR_ACTION,
@@ -76,42 +74,26 @@ async function getFlagStats(videoId: string, reason: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
-
-  if (!authResult.ok) {
-    return authResult.response;
+  const result = await withAuthAndBody(request, videoQualityFlagSchema, { authMode: "user" });
+  if (!result.ok) {
+    return result.response;
   }
 
-  const csrfError = verifySameOrigin(request);
-  if (csrfError) {
-    return csrfError;
-  }
-
-  const bodyResult = await parseRequestJson(request);
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const parsed = videoQualityFlagSchema.safeParse(bodyResult.data);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const { videoId, reason } = parsed.data;
-  const adminFlagger = isAdminIdentity(authResult.auth.userId, authResult.auth.email);
+  const { videoId, reason } = result.data;
+  const adminFlagger = isAdminIdentity(result.auth.userId, result.auth.email);
 
   try {
     await ensureVideoQualityFlagsTable();
 
     await prisma.$executeRaw`
       INSERT IGNORE INTO video_quality_flags (user_id, video_id, reason)
-      VALUES (${authResult.auth.userId}, ${videoId}, ${reason})
+      VALUES (${result.auth.userId}, ${videoId}, ${reason})
     `;
 
     let excludedForUser = false;
     if (!adminFlagger) {
       const hideResult = await hideVideoAndPrunePlaylistsForUser({
-        userId: authResult.auth.userId,
+        userId: result.auth.userId,
         videoId,
       });
       excludedForUser = hideResult.ok;

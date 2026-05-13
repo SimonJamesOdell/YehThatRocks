@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { favouriteMutationSchema } from "@/lib/api-schemas";
-import { requireApiAuth } from "@/lib/auth-request";
+import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { filterHiddenVideos, getFavouriteVideos, getFavouriteVideosPage, updateFavourite } from "@/lib/catalog-data";
-import { verifySameOrigin } from "@/lib/csrf";
-import { parseRequestJson } from "@/lib/request-json";
 
 export async function GET(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
+  const auth = await requireAuthOnly(request, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
+  if (!auth.ok) {
+    return auth.response;
   }
 
   const limitRaw = request.nextUrl.searchParams.get("limit");
@@ -18,9 +16,9 @@ export async function GET(request: NextRequest) {
   const hasPaging = limitRaw !== null || offsetRaw !== null;
 
   if (!hasPaging) {
-    let favourites = await getFavouriteVideos(authResult.auth.userId);
+    let favourites = await getFavouriteVideos(auth.auth.userId);
     // Filter out blocked videos from favourites
-    favourites = await filterHiddenVideos(favourites, authResult.auth.userId);
+    favourites = await filterHiddenVideos(favourites, auth.auth.userId);
 
     return NextResponse.json({
       favourites,
@@ -35,7 +33,7 @@ export async function GET(request: NextRequest) {
   const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(100, Math.floor(parsedLimit))) : 20;
   const offset = Number.isFinite(parsedOffset) ? Math.max(0, Math.floor(parsedOffset)) : 0;
 
-  const paged = await getFavouriteVideosPage(authResult.auth.userId, { limit, offset });
+  const paged = await getFavouriteVideosPage(auth.auth.userId, { limit, offset });
 
   return NextResponse.json({
     favourites: paged.favourites,
@@ -46,30 +44,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
+  const result = await withAuthAndBody(request, favouriteMutationSchema, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
+  if (!result.ok) {
+    return result.response;
   }
 
-  const csrfError = verifySameOrigin(request);
-
-  if (csrfError) {
-    return csrfError;
-  }
-
-  const bodyResult = await parseRequestJson(request);
-
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const parsed = favouriteMutationSchema.safeParse(bodyResult.data);
-
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const result = await updateFavourite(parsed.data.videoId, parsed.data.action, authResult.auth.userId);
-  return NextResponse.json(result);
+  const updated = await updateFavourite(result.data.videoId, result.data.action, result.auth.userId);
+  return NextResponse.json(updated);
 }

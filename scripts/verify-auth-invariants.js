@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 
 const path = require("node:path");
-const fs = require("node:fs");
 const {
-  readFileStrict,
-  collectCssFiles,
+  mapRelativeFiles,
+  loadSourceMap,
+  joinFileSources,
+  loadCssSourceFromRoots,
+  assertFilesExist,
   assertContains,
   assertContainsEither,
   assertNotContains,
@@ -13,102 +15,101 @@ const {
 
 const ROOT = process.cwd();
 
-const files = {
-  accountPage: path.join(ROOT, "apps/web/app/(shell)/account/page.tsx"),
-  accountPanel: path.join(ROOT, "apps/web/components/account-settings-panel.tsx"),
-  logoutButton: path.join(ROOT, "apps/web/components/auth-logout-button.tsx"),
-  loginForm: path.join(ROOT, "apps/web/components/auth-login-form.tsx"),
-  anonymousCredentialsModal: path.join(ROOT, "apps/web/components/anonymous-credentials-modal.tsx"),
-  changePasswordForm: path.join(ROOT, "apps/web/components/auth-change-password-form.tsx"),
-  forgotPasswordForm: path.join(ROOT, "apps/web/components/auth-forgot-password-form.tsx"),
-  accountActions: path.join(ROOT, "apps/web/components/auth-account-actions.tsx"),
-  authRetryButton: path.join(ROOT, "apps/web/components/auth-status-retry-button.tsx"),
-  protectedAuthGatePanel: path.join(ROOT, "apps/web/components/protected-auth-gate-panel.tsx"),
-  anonymousRoute: path.join(ROOT, "apps/web/app/api/auth/anonymous/route.ts"),
-  loginRoute: path.join(ROOT, "apps/web/app/api/auth/login/route.ts"),
-  logoutRoute: path.join(ROOT, "apps/web/app/api/auth/logout/route.ts"),
-  profileRoute: path.join(ROOT, "apps/web/app/api/auth/profile/route.ts"),
-  profileAvatarRoute: path.join(ROOT, "apps/web/app/api/auth/profile/avatar/route.ts"),
-  avatarStorage: path.join(ROOT, "apps/web/lib/avatar-storage.ts"),
-  avatarCropModal: path.join(ROOT, "apps/web/components/avatar-crop-modal.tsx"),
-  changePasswordRoute: path.join(ROOT, "apps/web/app/api/auth/change-password/route.ts"),
-  forgotPasswordRoute: path.join(ROOT, "apps/web/app/api/auth/forgot-password/route.ts"),
-  resetPasswordRoute: path.join(ROOT, "apps/web/app/api/auth/reset-password/route.ts"),
-  sendVerificationRoute: path.join(ROOT, "apps/web/app/api/auth/send-verification/route.ts"),
-  verifyEmailRoute: path.join(ROOT, "apps/web/app/api/auth/verify-email/route.ts"),
-  upgradeToEmailRoute: path.join(ROOT, "apps/web/app/api/auth/upgrade-to-email/route.ts"),
-  shellLayout: path.join(ROOT, "apps/web/app/(shell)/layout.tsx"),
-  shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
-  historyPage: path.join(ROOT, "apps/web/app/(shell)/history/page.tsx"),
-  favouritesPage: path.join(ROOT, "apps/web/app/(shell)/favourites/page.tsx"),
-  playlistsPage: path.join(ROOT, "apps/web/app/(shell)/playlists/page.tsx"),
-  playlistDetailPage: path.join(ROOT, "apps/web/app/(shell)/playlists/[id]/page.tsx"),
-  adminPage: path.join(ROOT, "apps/web/app/(shell)/admin/page.tsx"),
-  adminAuth: path.join(ROOT, "apps/web/lib/admin-auth.ts"),
-  authRequest: path.join(ROOT, "apps/web/lib/auth-request.ts"),
-  serverAuth: path.join(ROOT, "apps/web/lib/server-auth.ts"),
-  authModal: path.join(ROOT, "apps/web/components/auth-modal.tsx"),
-  playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
-  authCookies: path.join(ROOT, "apps/web/lib/auth-cookies.ts"),
-  rateLimitLib: path.join(ROOT, "apps/web/lib/rate-limit.ts"),
-  prismaTypes: path.join(ROOT, "apps/web/lib/prisma-types.ts"),
-  authSessions: path.join(ROOT, "apps/web/lib/auth-sessions.ts"),
-  authTokenRecords: path.join(ROOT, "apps/web/lib/auth-token-records.ts"),
-  authAudit: path.join(ROOT, "apps/web/lib/auth-audit.ts"),
-  appRoot: path.join(ROOT, "apps/web/app"),
-};
+const files = mapRelativeFiles(ROOT, {
+  accountPage: "apps/web/app/(shell)/account/page.tsx",
+  accountPanel: "apps/web/components/account-settings-panel.tsx",
+  logoutButton: "apps/web/components/auth-logout-button.tsx",
+  loginForm: "apps/web/components/auth-login-form.tsx",
+  anonymousCredentialsModal: "apps/web/components/anonymous-credentials-modal.tsx",
+  changePasswordForm: "apps/web/components/auth-change-password-form.tsx",
+  forgotPasswordForm: "apps/web/components/auth-forgot-password-form.tsx",
+  accountActions: "apps/web/components/auth-account-actions.tsx",
+  authRetryButton: "apps/web/components/auth-status-retry-button.tsx",
+  protectedAuthGatePanel: "apps/web/components/protected-auth-gate-panel.tsx",
+  anonymousRoute: "apps/web/app/api/auth/anonymous/route.ts",
+  loginRoute: "apps/web/app/api/auth/login/route.ts",
+  logoutRoute: "apps/web/app/api/auth/logout/route.ts",
+  profileRoute: "apps/web/app/api/auth/profile/route.ts",
+  profileAvatarRoute: "apps/web/app/api/auth/profile/avatar/route.ts",
+  avatarStorage: "apps/web/lib/avatar-storage.ts",
+  avatarCropModal: "apps/web/components/avatar-crop-modal.tsx",
+  changePasswordRoute: "apps/web/app/api/auth/change-password/route.ts",
+  forgotPasswordRoute: "apps/web/app/api/auth/forgot-password/route.ts",
+  resetPasswordRoute: "apps/web/app/api/auth/reset-password/route.ts",
+  sendVerificationRoute: "apps/web/app/api/auth/send-verification/route.ts",
+  verifyEmailRoute: "apps/web/app/api/auth/verify-email/route.ts",
+  upgradeToEmailRoute: "apps/web/app/api/auth/upgrade-to-email/route.ts",
+  shellLayout: "apps/web/app/(shell)/layout.tsx",
+  shellDynamic: "apps/web/components/shell-dynamic-core.tsx",
+  historyPage: "apps/web/app/(shell)/history/page.tsx",
+  favouritesPage: "apps/web/app/(shell)/favourites/page.tsx",
+  playlistsPage: "apps/web/app/(shell)/playlists/page.tsx",
+  playlistDetailPage: "apps/web/app/(shell)/playlists/[id]/page.tsx",
+  adminPage: "apps/web/app/(shell)/admin/page.tsx",
+  adminAuth: "apps/web/lib/admin-auth.ts",
+  authRequest: "apps/web/lib/auth-request.ts",
+  serverAuth: "apps/web/lib/server-auth.ts",
+  authModal: "apps/web/components/auth-modal.tsx",
+  playerExperience: "apps/web/components/player-experience-core.tsx",
+  authCookies: "apps/web/lib/auth-cookies.ts",
+  rateLimitLib: "apps/web/lib/rate-limit.ts",
+  prismaTypes: "apps/web/lib/prisma-types.ts",
+  authSessions: "apps/web/lib/auth-sessions.ts",
+  authTokenRecords: "apps/web/lib/auth-token-records.ts",
+  authAudit: "apps/web/lib/auth-audit.ts",
+  appRoot: "apps/web/app",
+});
 
 function main() {
   const failures = [];
 
-  const accountPageSource = readFileStrict(files.accountPage, ROOT);
-  const accountPanelSource = readFileStrict(files.accountPanel, ROOT);
-  const logoutButtonSource = readFileStrict(files.logoutButton, ROOT);
-  const loginFormSource = readFileStrict(files.loginForm, ROOT);
-  const anonymousCredentialsModalSource = readFileStrict(files.anonymousCredentialsModal, ROOT);
-  const changePasswordFormSource = readFileStrict(files.changePasswordForm, ROOT);
-  const forgotPasswordFormSource = readFileStrict(files.forgotPasswordForm, ROOT);
-  const accountActionsSource = readFileStrict(files.accountActions, ROOT);
-  const authRetryButtonSource = readFileStrict(files.authRetryButton, ROOT);
-  const protectedAuthGatePanelSource = readFileStrict(files.protectedAuthGatePanel, ROOT);
-  const anonymousRouteSource = readFileStrict(files.anonymousRoute, ROOT);
-  const loginRouteSource = readFileStrict(files.loginRoute, ROOT);
-  const profileRouteSource = readFileStrict(files.profileRoute, ROOT);
-  const profileAvatarRouteSource = readFileStrict(files.profileAvatarRoute, ROOT);
-  const avatarStorageSource = readFileStrict(files.avatarStorage, ROOT);
-  const avatarCropModalSource = readFileStrict(files.avatarCropModal, ROOT);
-  const resetPasswordRouteSource = readFileStrict(files.resetPasswordRoute, ROOT);
-  const sendVerificationRouteSource = readFileStrict(files.sendVerificationRoute, ROOT);
-  const verifyEmailRouteSource = readFileStrict(files.verifyEmailRoute, ROOT);
-  const upgradeToEmailRouteSource = readFileStrict(files.upgradeToEmailRoute, ROOT);
-  const shellLayoutSource = readFileStrict(files.shellLayout, ROOT);
-  const shellDynamicSource = [
-    readFileStrict(files.shellDynamic, ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
-  ].join('\n');
-  const historyPageSource = readFileStrict(files.historyPage, ROOT);
-  const favouritesPageSource = readFileStrict(files.favouritesPage, ROOT);
-  const playlistsPageSource = readFileStrict(files.playlistsPage, ROOT);
-  const playlistDetailPageSource = readFileStrict(files.playlistDetailPage, ROOT);
-  const adminPageSource = readFileStrict(files.adminPage, ROOT);
-  const adminAuthSource = readFileStrict(files.adminAuth, ROOT);
-  const authRequestSource = readFileStrict(files.authRequest, ROOT);
-  const serverAuthSource = readFileStrict(files.serverAuth, ROOT);
-  const authModalSource = readFileStrict(files.authModal, ROOT);
-  const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
-  const authCookiesSource = readFileStrict(files.authCookies, ROOT);
-  const rateLimitLibSource = readFileStrict(files.rateLimitLib, ROOT);
-  const prismaTypesSource = readFileStrict(files.prismaTypes, ROOT);
-  const authSessionsSource = readFileStrict(files.authSessions, ROOT);
-  const authTokenRecordsSource = readFileStrict(files.authTokenRecords, ROOT);
-  const authAuditSource = readFileStrict(files.authAudit, ROOT);
-  const globalCssSource = collectCssFiles(files.appRoot)
-    .map((filePath) => readFileStrict(filePath, ROOT))
-    .join("\n");
+  const sources = loadSourceMap(files, ROOT, { skipKeys: ["appRoot"] });
+  const accountPageSource = sources.accountPage;
+  const accountPanelSource = sources.accountPanel;
+  const logoutButtonSource = sources.logoutButton;
+  const loginFormSource = sources.loginForm;
+  const anonymousCredentialsModalSource = sources.anonymousCredentialsModal;
+  const changePasswordFormSource = sources.changePasswordForm;
+  const forgotPasswordFormSource = sources.forgotPasswordForm;
+  const accountActionsSource = sources.accountActions;
+  const authRetryButtonSource = sources.authRetryButton;
+  const protectedAuthGatePanelSource = sources.protectedAuthGatePanel;
+  const anonymousRouteSource = sources.anonymousRoute;
+  const loginRouteSource = sources.loginRoute;
+  const profileRouteSource = sources.profileRoute;
+  const profileAvatarRouteSource = sources.profileAvatarRoute;
+  const avatarStorageSource = sources.avatarStorage;
+  const avatarCropModalSource = sources.avatarCropModal;
+  const resetPasswordRouteSource = sources.resetPasswordRoute;
+  const sendVerificationRouteSource = sources.sendVerificationRoute;
+  const verifyEmailRouteSource = sources.verifyEmailRoute;
+  const upgradeToEmailRouteSource = sources.upgradeToEmailRoute;
+  const shellLayoutSource = sources.shellLayout;
+  const shellDynamicSource = joinFileSources([
+    files.shellDynamic,
+    path.join(ROOT, "apps/web/components/use-chat-state.ts"),
+    path.join(ROOT, "apps/web/components/use-playlist-rail.ts"),
+    path.join(ROOT, "apps/web/components/use-performance-metrics.ts"),
+    path.join(ROOT, "apps/web/components/use-desktop-intro.ts"),
+    path.join(ROOT, "apps/web/components/use-search-autocomplete.ts"),
+  ], ROOT);
+  const historyPageSource = sources.historyPage;
+  const favouritesPageSource = sources.favouritesPage;
+  const playlistsPageSource = sources.playlistsPage;
+  const playlistDetailPageSource = sources.playlistDetailPage;
+  const adminPageSource = sources.adminPage;
+  const adminAuthSource = sources.adminAuth;
+  const authRequestSource = sources.authRequest;
+  const serverAuthSource = sources.serverAuth;
+  const authModalSource = sources.authModal;
+  const playerExperienceSource = sources.playerExperience;
+  const authCookiesSource = sources.authCookies;
+  const rateLimitLibSource = sources.rateLimitLib;
+  const prismaTypesSource = sources.prismaTypes;
+  const authSessionsSource = sources.authSessions;
+  const authTokenRecordsSource = sources.authTokenRecords;
+  const authAuditSource = sources.authAudit;
+  const globalCssSource = loadCssSourceFromRoots([files.appRoot], ROOT);
 
   // --- Account page tabs and top-bar actions ---
   assertContains(accountPageSource, "<AuthLogoutButton />", "Account page renders logout action in the top bar", failures);
@@ -133,11 +134,11 @@ function main() {
   assertContains(historyPageSource, "getCurrentAuthenticatedUserAuthState", "History page uses explicit auth state resolution", failures);
   assertContains(historyPageSource, "<ProtectedAuthGatePanel", "History page uses shared protected auth panel", failures);
   assertContains(favouritesPageSource, "getCurrentAuthenticatedUserAuthState", "Favourites page uses explicit auth state resolution", failures);
-  assertContains(favouritesPageSource, "<ProtectedAuthGatePanel", "Favourites page uses shared protected auth panel", failures);
+  assertContainsEither(favouritesPageSource, ["<ProtectedAuthGatePanel", "<OverlayProtectedRouteLayout"], "Favourites page uses shared protected auth gate layout/panel", failures);
   assertContains(playlistsPageSource, "getCurrentAuthenticatedUserAuthState", "Playlists page uses explicit auth state resolution", failures);
   assertContains(playlistsPageSource, "<ProtectedAuthGatePanel", "Playlists page uses shared protected auth panel", failures);
   assertContains(playlistDetailPageSource, "getCurrentAuthenticatedUserAuthState", "Playlist detail page uses explicit auth state resolution", failures);
-  assertContains(playlistDetailPageSource, "<ProtectedAuthGatePanel", "Playlist detail page uses shared protected auth panel", failures);
+  assertContainsEither(playlistDetailPageSource, ["<ProtectedAuthGatePanel", "<OverlayProtectedRouteLayout"], "Playlist detail page uses shared protected auth gate layout/panel", failures);
   assertContains(adminAuthSource, "requireAdminUserAuthState", "Admin auth helper exposes unavailable/unauthenticated/forbidden states", failures);
   assertContains(adminPageSource, "requireAdminUserAuthState", "Admin page uses explicit admin auth state", failures);
   assertContains(adminPageSource, "adminAuthState.status === \"unavailable\"", "Admin page distinguishes auth-unavailable state", failures);
@@ -323,12 +324,10 @@ function main() {
   assertContains(accountActionsSource, "emailVerified", "Account actions conditionally shows verification button", failures);
 
   // --- API route files exist ---
-  for (const [key, filePath] of Object.entries(files)) {
-    if (key === "globalCss") continue;
-    if (!fs.existsSync(filePath)) {
-      failures.push(`Auth API route file missing: ${path.relative(ROOT, filePath)}`);
-    }
-  }
+  assertFilesExist(files, failures, ROOT, {
+    skipKeys: ["appRoot"],
+    missingPrefix: "Auth API route file missing",
+  });
 
   // --- CSS: authForm and authMessage must be styled ---
   assertContains(globalCssSource, ".authForm", "globals.css defines .authForm styles", failures);

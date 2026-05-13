@@ -1,50 +1,48 @@
 #!/usr/bin/env node
 
-const path = require("node:path");
 const {
-  readFileStrict,
-  collectCssFiles,
+  mapRelativeFiles,
+  loadSourceMap,
+  joinFileSources,
+  loadCssSourceFromRoots,
   assertContains,
+  assertContainsEither,
   assertNotContains,
   finishInvariantCheck,
 } = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 
-const files = {
-  favouritesPage: path.join(ROOT, "apps/web/app/(shell)/favourites/page.tsx"),
-  favouritesGrid: path.join(ROOT, "apps/web/components/favourites-grid.tsx"),
-  favouritesManager: path.join(ROOT, "apps/web/components/favourites-manager.tsx"),
-  searchResultFavouriteButton: path.join(ROOT, "apps/web/components/search-result-favourite-button.tsx"),
-  playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
-  useFavouriteState: path.join(ROOT, "apps/web/components/use-favourite-state.ts"),
-  clientAuthFetch: path.join(ROOT, "apps/web/lib/client-auth-fetch.ts"),
-  favouritesRoute: path.join(ROOT, "apps/web/app/api/favourites/route.ts"),
-  userProfilePage: path.join(ROOT, "apps/web/app/(shell)/u/[screenName]/page.tsx"),
-  userProfilePanel: path.join(ROOT, "apps/web/components/user-profile-panel.tsx"),
-  apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
-  appRoot: path.join(ROOT, "apps/web/app"),
-};
+const files = mapRelativeFiles(ROOT, {
+  favouritesPage: "apps/web/app/(shell)/favourites/page.tsx",
+  favouritesGrid: "apps/web/components/favourites-grid.tsx",
+  favouritesManager: "apps/web/components/favourites-manager.tsx",
+  searchResultFavouriteButton: "apps/web/components/search-result-favourite-button.tsx",
+  playerExperience: "apps/web/components/player-experience-core.tsx",
+  useFavouriteState: "apps/web/components/use-favourite-state.ts",
+  clientAuthFetch: "apps/web/lib/client-auth-fetch.ts",
+  favouritesRoute: "apps/web/app/api/favourites/route.ts",
+  userProfilePage: "apps/web/app/(shell)/u/[screenName]/page.tsx",
+  userProfilePanel: "apps/web/components/user-profile-panel.tsx",
+  apiSchemas: "apps/web/lib/api-schemas.ts",
+  appRoot: "apps/web/app",
+});
 
 function main() {
   const failures = [];
 
-  const favouritesPageSource = readFileStrict(files.favouritesPage, ROOT);
-  const favouritesGridSource = readFileStrict(files.favouritesGrid, ROOT);
-  const favouritesManagerSource = readFileStrict(files.favouritesManager, ROOT);
-  const searchResultFavouriteButtonSource = readFileStrict(files.searchResultFavouriteButton, ROOT);
-  const playerExperienceSource = [
-    readFileStrict(files.playerExperience, ROOT),
-    readFileStrict(files.useFavouriteState, ROOT),
-  ].join("\n");
-  const clientAuthFetchSource = readFileStrict(files.clientAuthFetch, ROOT);
-  const favouritesRouteSource = readFileStrict(files.favouritesRoute, ROOT);
-  const userProfilePageSource = readFileStrict(files.userProfilePage, ROOT);
-  const userProfilePanelSource = readFileStrict(files.userProfilePanel, ROOT);
-  const apiSchemasSource = readFileStrict(files.apiSchemas, ROOT);
-  const globalCssSource = collectCssFiles(files.appRoot)
-    .map((filePath) => readFileStrict(filePath, ROOT))
-    .join("\n");
+  const sources = loadSourceMap(files, ROOT, { skipKeys: ["appRoot"] });
+  const favouritesPageSource = sources.favouritesPage;
+  const favouritesGridSource = sources.favouritesGrid;
+  const favouritesManagerSource = sources.favouritesManager;
+  const searchResultFavouriteButtonSource = sources.searchResultFavouriteButton;
+  const playerExperienceSource = joinFileSources([files.playerExperience, files.useFavouriteState], ROOT);
+  const clientAuthFetchSource = sources.clientAuthFetch;
+  const favouritesRouteSource = sources.favouritesRoute;
+  const userProfilePageSource = sources.userProfilePage;
+  const userProfilePanelSource = sources.userProfilePanel;
+  const apiSchemasSource = sources.apiSchemas;
+  const globalCssSource = loadCssSourceFromRoots([files.appRoot], ROOT);
 
   // --- Favourites page: server-side auth and data loading ---
   assertContains(favouritesPageSource, "getCurrentAuthenticatedUser", "Favourites page resolves current authenticated user server-side", failures);
@@ -53,7 +51,7 @@ function main() {
   assertContains(favouritesPageSource, "const initialFavourites = favourites.slice(0, FAVOURITES_BATCH_SIZE)", "Favourites page slices server favourites for paginated initial batch", failures);
   assertContains(favouritesPageSource, "const totalCount = favourites.length", "Favourites page computes favourites total count for header", failures);
   assertContains(favouritesPageSource, "<FavouritesGrid", "Favourites page renders FavouritesGrid component", failures);
-  assertContains(favouritesPageSource, "isAuthenticated={hasAccessToken}", "Favourites page passes auth state to FavouritesGrid", failures);
+  assertContainsEither(favouritesPageSource, ["isAuthenticated={hasAccessToken}", "isAuthenticated={Boolean(user)}"], "Favourites page passes auth state to FavouritesGrid", failures);
   assertContains(favouritesPageSource, "initialFavourites={initialFavourites}", "Favourites page passes initial paginated favourites to FavouritesGrid", failures);
   assertContains(favouritesPageSource, "initialTotalCount={totalCount}", "Favourites page passes favourites total count to FavouritesGrid", failures);
   assertContains(favouritesPageSource, "initialHasMore={totalCount > initialFavourites.length}", "Favourites page passes initial hasMore to FavouritesGrid", failures);

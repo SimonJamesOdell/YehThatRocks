@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { addPlaylistItemSchema, addPlaylistItemsBulkSchema, removePlaylistItemSchema, reorderPlaylistItemsSchema } from "@/lib/api-schemas";
-import { requireApiAuth } from "@/lib/auth-request";
+import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { addPlaylistItem, addPlaylistItems, filterHiddenVideos, removePlaylistItem, reorderPlaylistItems } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
@@ -11,10 +11,10 @@ type PlaylistItemsRouteContext = {
 };
 
 export async function POST(request: NextRequest, context: PlaylistItemsRouteContext) {
-  const authResult = await requireApiAuth(request);
+  const auth = await requireAuthOnly(request, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
+  if (!auth.ok) {
+    return auth.response;
   }
 
   const csrfError = verifySameOrigin(request);
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest, context: PlaylistItemsRouteCont
   const singleParsed = addPlaylistItemSchema.safeParse(bodyResult.data);
 
   if (singleParsed.success) {
-    const playlist = await addPlaylistItem(id, singleParsed.data.videoId, authResult.auth.userId);
+    const playlist = await addPlaylistItem(id, singleParsed.data.videoId, auth.auth.userId);
 
     if (!playlist) {
       return NextResponse.json({ error: "Playlist or video not found" }, { status: 404 });
@@ -49,98 +49,62 @@ export async function POST(request: NextRequest, context: PlaylistItemsRouteCont
   }
 
   const uniqueVideoIds = Array.from(new Set(bulkParsed.data.videoIds));
-  const playlist = await addPlaylistItems(id, uniqueVideoIds, authResult.auth.userId);
+  const playlist = await addPlaylistItems(id, uniqueVideoIds, auth.auth.userId);
   if (!playlist) {
     return NextResponse.json({ error: "Playlist or videos not found" }, { status: 404 });
   }
 
-  playlist.videos = await filterHiddenVideos(playlist.videos, authResult.auth.userId);
+  playlist.videos = await filterHiddenVideos(playlist.videos, auth.auth.userId);
 
   return NextResponse.json(playlist, { status: 201 });
 }
 
 export async function DELETE(request: NextRequest, context: PlaylistItemsRouteContext) {
-  const authResult = await requireApiAuth(request);
+  const result = await withAuthAndBody(request, removePlaylistItemSchema, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
-  }
-
-  const csrfError = verifySameOrigin(request);
-
-  if (csrfError) {
-    return csrfError;
+  if (!result.ok) {
+    return result.response;
   }
 
   const { id } = await context.params;
-  const bodyResult = await parseRequestJson(request);
-
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const parsed = removePlaylistItemSchema.safeParse(bodyResult.data);
-
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
   const playlist = await removePlaylistItem(
     id,
-    parsed.data.playlistItemIndex ?? null,
-    authResult.auth.userId,
-    parsed.data.playlistItemId ?? null,
+    result.data.playlistItemIndex ?? null,
+    result.auth.userId,
+    result.data.playlistItemId ?? null,
   );
 
   if (!playlist) {
     return NextResponse.json({ error: "Playlist item not found" }, { status: 404 });
   }
 
-  playlist.videos = await filterHiddenVideos(playlist.videos, authResult.auth.userId);
+  playlist.videos = await filterHiddenVideos(playlist.videos, result.auth.userId);
 
   return NextResponse.json(playlist);
 }
 
 export async function PATCH(request: NextRequest, context: PlaylistItemsRouteContext) {
-  const authResult = await requireApiAuth(request);
+  const result = await withAuthAndBody(request, reorderPlaylistItemsSchema, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
-  }
-
-  const csrfError = verifySameOrigin(request);
-
-  if (csrfError) {
-    return csrfError;
+  if (!result.ok) {
+    return result.response;
   }
 
   const { id } = await context.params;
-  const bodyResult = await parseRequestJson(request);
-
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const parsed = reorderPlaylistItemsSchema.safeParse(bodyResult.data);
-
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
   const playlist = await reorderPlaylistItems(
     id,
-    parsed.data.fromIndex ?? null,
-    parsed.data.toIndex ?? null,
-    authResult.auth.userId,
-    parsed.data.fromPlaylistItemId ?? null,
-    parsed.data.toPlaylistItemId ?? null,
+    result.data.fromIndex ?? null,
+    result.data.toIndex ?? null,
+    result.auth.userId,
+    result.data.fromPlaylistItemId ?? null,
+    result.data.toPlaylistItemId ?? null,
   );
 
   if (!playlist) {
     return NextResponse.json({ error: "Playlist reorder failed" }, { status: 404 });
   }
 
-  playlist.videos = await filterHiddenVideos(playlist.videos, authResult.auth.userId);
+  playlist.videos = await filterHiddenVideos(playlist.videos, result.auth.userId);
 
   return NextResponse.json(playlist);
 }

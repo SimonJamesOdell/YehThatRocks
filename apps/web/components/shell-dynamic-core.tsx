@@ -22,12 +22,17 @@ import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference
 import { useDesktopIntro } from "@/components/use-desktop-intro";
 import { usePerformanceMetrics } from "@/components/use-performance-metrics";
 import { useSearchAutocomplete, type SearchSuggestion } from "@/components/use-search-autocomplete";
-import { useChatState, type ChatMode, type ChatMessage, type OnlineUser } from "@/components/use-chat-state";
+import { type ChatMode, type ChatMessage, type OnlineUser } from "@/components/use-chat-state";
 import { usePlaylistRail, type RightRailMode, type PlaylistRailVideo, type PlaylistRailPayload, type PlaylistRailSummary } from "@/components/use-playlist-rail";
 import { PerformanceDial, SharedVideoMessageCard, WatchNextCard } from "@/components/shell-dynamic-rendering";
 import { usePlayerDockingAnimation } from "@/components/use-player-docking-animation";
 import { useRouteChangeTracking } from "@/components/use-route-change-tracking";
-import { useOverlayEventHandling } from "@/components/use-overlay-event-handling";
+import { useShellAdminState } from "@/components/use-shell-admin-state";
+import { useShellChatState } from "@/components/use-shell-chat-state";
+import { useShellKeyboardShortcuts } from "@/components/use-shell-keyboard-shortcuts";
+import { useShellOverlayEvents } from "@/components/use-shell-overlay-events";
+import { useShellOverlayPendingState } from "@/components/use-shell-overlay-pending-state";
+import { deriveShellOverlayRouteState, isArtistsOverlayPath, isProtectedOverlayPath, isRouteActive, isCategoriesOverlayPath } from "@/components/shell-dynamic-route-state";
 import { navItems, type VideoRecord } from "@/lib/catalog";
 import { MagazineGenerateNowButton } from "@/components/magazine-generate-now-button";
 import { detectAppendOnly, filterSeenFromWatchNext } from "@/components/shell-dynamic-helpers";
@@ -127,12 +132,6 @@ const FOOTER_REVEAL_ANIMATION_MS = 180;
 // Start the footer fade well before the undock movement ends so the controls
 // are already occupying their final layout slot when the player lands.
 const FOOTER_EARLY_REVEAL_DELAY_MS = 0;
-function isCategoriesOverlayPath(pathname: string) {
-  return pathname === "/categories" || pathname.startsWith("/categories/");
-}
-function isArtistsOverlayPath(pathname: string) {
-  return pathname === "/artists" || pathname.startsWith("/artists/");
-}
 function dedupeRelatedRailVideos(videos: VideoRecord[], currentVideoId: string) {
   return dedupeVideos(videos).filter((video) => video.id !== currentVideoId);
 }
@@ -185,21 +184,6 @@ function finiteNumberOrNull(value: number | null | undefined) {
 function finitePercentOrNull(value: number | null | undefined) {
   const numeric = finiteNumberOrNull(value);
   return numeric === null ? null : Math.max(0, Math.min(100, numeric));
-}
-function isRouteActive(href: string, pathname: string) {
-  if (href === pathname) return true;
-  // /artists nav item should also highlight for /artist/[slug]
-  if (href === "/artists" && pathname.startsWith("/artist/")) return true;
-  // all other nav items: highlight for sub-paths
-  if (href !== "/" && pathname.startsWith(href + "/")) return true;
-  return false;
-}
-function isProtectedOverlayPath(pathname: string) {
-  return pathname === "/favourites"
-    || pathname === "/history"
-    || pathname === "/account"
-    || pathname === "/playlists"
-    || pathname.startsWith("/playlists/");
 }
 function ShellDynamicInner({
   initialVideo,
@@ -317,13 +301,8 @@ function ShellDynamicInner({
   const [isFooterRevealActive, setIsFooterRevealActive] = useState(false);
   const [isDockTransitioning, setIsDockTransitioning] = useState(false);
   const [isDockHidden, setIsDockHidden] = useState(false);
-  const [pendingOverlayOpenKind, setPendingOverlayOpenKind] = useState<"wiki" | "video" | null>(null);
-  const [pendingOverlayRouteKey, setPendingOverlayRouteKey] = useState<string | null>(null);
-  const [pendingOverlayCloseVideoId, setPendingOverlayCloseVideoId] = useState<string | null>(null);
-  const [pendingOverlayCloseHref, setPendingOverlayCloseHref] = useState<string | null>(null);
   const [startupSelectionRefreshTick, setStartupSelectionRefreshTick] = useState(0);
   const overlayCloseTimeoutRef = useRef<number | null>(null);
-  const overlayOpenTimeoutRef = useRef<number | null>(null);
   const footerRevealTimeoutRef = useRef<number | null>(null);
   const footerRevealEarlyTimeoutRef = useRef<number | null>(null);
   const undockSettleTimeoutRef = useRef<number | null>(null);
@@ -337,35 +316,35 @@ function ShellDynamicInner({
     handleRemoveFromTemporaryQueue,
     handleClearTemporaryQueue,
   } = useTemporaryQueueController(currentVideo.id);
-  const isCategoriesRoute = isCategoriesOverlayPath(pathname);
-  const isArtistsRoute = pathname === "/artists" || pathname.startsWith("/artist/") || pathname.startsWith("/artists/");
   const previousPathname = previousPathnameRef.current;
-  const previousWasCategoriesRoute = previousPathname === "/categories" || previousPathname?.startsWith("/categories/") === true;
-  const previousWasArtistsRoute = previousPathname === "/artists"
-    || previousPathname?.startsWith("/artist/") === true
-    || previousPathname?.startsWith("/artists/") === true;
-  const isAdminOverlayRoute = pathname === "/admin";
-  const isOverlayRoute = pathname !== "/";
-  const shouldShowOverlayPanel = (isOverlayRoute && !isAdminOverlayRoute) || pendingOverlayOpenKind !== null;
-  const disableOverlayDropAnimation =
-    (isCategoriesRoute && previousWasCategoriesRoute)
-    || (isArtistsRoute && previousWasArtistsRoute);
-  const isPlayerWidthOverlayRoute =
-  pathname === "/new"
-    || pathname === "/top100"
-    || pathname === "/history"
-    || pathname === "/search";
-  const overlayPanelClassName = [
-    "favouritesBlind",
-    disableOverlayDropAnimation ? "favouritesBlindNoDrop" : "",
-    isPlayerWidthOverlayRoute ? "favouritesBlindPlayerWidth" : "",
-    isOverlayClosing ? "favouritesBlindClosing" : "",
-  ].filter(Boolean).join(" ");
-  const isMagazineOverlayRoute = pathname === "/magazine" || pathname.startsWith("/magazine/");
+  const {
+    isCategoriesRoute,
+    isArtistsRoute,
+    previousWasCategoriesRoute,
+    previousWasArtistsRoute,
+    isAdminOverlayRoute,
+    isOverlayRoute,
+    shouldShowOverlayPanel,
+    disableOverlayDropAnimation,
+    isPlayerWidthOverlayRoute,
+    overlayPanelClassName,
+    isMagazineOverlayRoute,
+    shouldDisableRelatedRailTransition,
+    shouldOccludeLeftRail,
+    shouldOccludeRightRail,
+    isArtistsIndexRoute,
+    shouldDockDesktopPlayer,
+    shouldDockUnderArtistsAlphabet,
+    shouldKeepDockedDesktopPresentation,
+  } = deriveShellOverlayRouteState({
+    pathname,
+    previousPathname,
+    pendingOverlayOpenKind,
+    isOverlayClosing,
+    isUndockSettling,
+    isDockTransitioning,
+  });
   const shouldHidePlayerForMagazineGuest = !isAuthenticated && isMagazineOverlayRoute && didArriveOnMagazineRouteRef.current;
-  const shouldDisableRelatedRailTransition = pathname === "/new";
-  const shouldOccludeLeftRail = shouldShowOverlayPanel && !isMagazineOverlayRoute;
-  const shouldOccludeRightRail = shouldShowOverlayPanel && !isMagazineOverlayRoute && pathname !== "/new";
   const isWaitingForClientHydration = !hasClientMounted;
   const isWaitingForStartupVideoUrlSync =
     !requestedVideoId
@@ -377,10 +356,6 @@ function ShellDynamicInner({
     || isResolvingInitialVideo
     || isResolvingRequestedVideo
     || Boolean(requestedVideoId && requestedVideoId !== currentVideo.id);
-  const isArtistsIndexRoute = pathname === "/artists";
-  const shouldDockDesktopPlayer = shouldShowOverlayPanel && !isMagazineOverlayRoute;
-  const shouldDockUnderArtistsAlphabet = shouldDockDesktopPlayer && isArtistsIndexRoute;
-  const shouldKeepDockedDesktopPresentation = shouldDockDesktopPlayer || isOverlayClosing || isUndockSettling;
   const playerChromeClassName = [
     "playerChrome",
     shouldKeepDockedDesktopPresentation ? "playerChromeDockedDesktop" : "",
@@ -571,19 +546,28 @@ function ShellDynamicInner({
     chatError, isChatLoading, isChatSubmitting, deletingMessageIds,
     flashingChatTabs, chatListRef, latestMagazineTracks,
     handleChatSubmit, handleDeleteChatMessage,
-  } = useChatState({
-    initialPathname: pathname,
+  } = useShellChatState({
     pathname,
     isAuthenticated,
     isMagazineOverlayRoute,
     isAdminOverlayRoute,
-    shouldShowOverlayPanel: shouldShowOverlayPanel && pathname !== "/new",
+    shouldShowOverlayPanel,
     fetchWithAuthRetry,
     checkAuthState,
   });
-  const [deletingMagazineSlugs, setDeletingMagazineSlugs] = useState<Record<string, boolean>>({});
-  const [deletedMagazineSlugs, setDeletedMagazineSlugs] = useState<Record<string, boolean>>({});
-  const [magazineDeleteErrors, setMagazineDeleteErrors] = useState<Record<string, string>>({});
+  const {
+    deletingMagazineSlugs,
+    magazineDeleteErrors,
+    visibleMagazineTracks,
+    handleDeleteMagazineArticle,
+  } = useShellAdminState({
+    isAdmin,
+    latestMagazineTracks,
+    pathname,
+    onDeletedCurrentArticle: () => {
+      router.replace("/magazine");
+    },
+  });
   const isShellInitialUiSettled =
     !isDesktopIntroActive
     && !isWatchNextVideoSelectionPending
@@ -595,6 +579,28 @@ function ShellDynamicInner({
     performanceMetrics, performanceRuntime, performanceMetricsGeneratedAt,
     isLoadingPerformanceMetrics, performanceMetricsError,
   } = usePerformanceMetrics({ isShellInitialUiSettled });
+  const {
+    handleButtonLikeKeyDown,
+    handleStopPropagationKeyDown,
+  } = useShellKeyboardShortcuts();
+  const {
+    pendingOverlayOpenKind,
+    setPendingOverlayOpenKind,
+    pendingOverlayRouteKey,
+    setPendingOverlayRouteKey,
+    pendingOverlayCloseVideoId,
+    setPendingOverlayCloseVideoId,
+    pendingOverlayCloseHref,
+    setPendingOverlayCloseHref,
+    retryPendingOverlayVideoLoad,
+  } = useShellOverlayPendingState({
+    pathname,
+    requestedVideoId,
+    currentVideoId: currentVideo.id,
+    isResolvingInitialVideo,
+    isResolvingRequestedVideo,
+    router,
+  });
 
   // Client mounting hook
   useEffect(() => {
@@ -625,17 +631,7 @@ function ShellDynamicInner({
       void startPreparedDesktopIntroSequence();
     }
   }, [pathname, requestedVideoId, shouldReplayDesktopIntroOnHomeRef, startPreparedDesktopIntroSequence]);
-  const retryPendingOverlayVideoLoad = useCallback(() => {
-    if (!pendingOverlayCloseVideoId) {
-      return;
-    }
-    const retryHref = pendingOverlayCloseHref ?? `/?v=${encodeURIComponent(pendingOverlayCloseVideoId)}&resume=1`;
-    setPendingOverlayOpenKind("video");
-    router.replace(retryHref);
-    router.refresh();
-  }, [pendingOverlayCloseHref, pendingOverlayCloseVideoId, router]);
   const isLeftRailSuppressed = shouldOccludeLeftRail || isMobileCommunityCollapsed;
-  const visibleMagazineTracks = latestMagazineTracks.filter((track) => !deletedMagazineSlugs[track.slug]);
   const artistLetterParam = searchParams.get("letter");
   const activeArtistLetter =
     artistLetterParam && /^[A-Za-z]$/.test(artistLetterParam)
@@ -715,6 +711,106 @@ function ShellDynamicInner({
     const nextQuery = params.toString();
     router.push(nextQuery ? `${pathname}?${nextQuery}` : pathname);
   }, [isOverlayClosing, pathname, router, searchParams, shouldShowOverlayPanel]);
+  const handleOverlayOpenRequest = useCallback((kind: "wiki" | "video", optimisticRouteKey: string) => {
+    setPendingOverlayOpenKind(kind);
+    setPendingOverlayRouteKey(optimisticRouteKey);
+  }, [setPendingOverlayOpenKind, setPendingOverlayRouteKey]);
+  const resetPendingOverlayFromOpenTimeout = useCallback(() => {
+    setPendingOverlayOpenKind(null);
+    setPendingOverlayRouteKey(null);
+  }, [setPendingOverlayOpenKind, setPendingOverlayRouteKey]);
+  const handleOverlayCloseRequest = useCallback((href: string) => {
+    const closeUrl = new URL(href, window.location.origin);
+    const fallbackHomeHref = `/?v=${encodeURIComponent(currentVideo.id)}&resume=1`;
+    const nextHref = closeUrl.pathname === "/" && closeUrl.searchParams.has("v")
+      ? `${closeUrl.pathname}${closeUrl.search}${closeUrl.hash}`
+      : fallbackHomeHref;
+    const targetVideoId = closeUrl.pathname === "/" ? closeUrl.searchParams.get("v") : null;
+    const shouldHoldOverlayForVideoSwitch = Boolean(targetVideoId && targetVideoId !== currentVideo.id);
+    if (shouldHoldOverlayForVideoSwitch && targetVideoId) {
+      setPendingOverlayOpenKind("video");
+      setPendingOverlayCloseVideoId(targetVideoId);
+      setPendingOverlayCloseHref(nextHref);
+    } else {
+      setPendingOverlayCloseVideoId(null);
+      setPendingOverlayCloseHref(null);
+    }
+    if (!shouldShowOverlayPanel || isMagazineOverlayRoute) {
+      setIsOverlayClosing(false);
+      shouldRunFooterRevealRef.current = false;
+      setIsUndockSettling(false);
+      setIsFooterRevealActive(false);
+      router.push(nextHref);
+      return;
+    }
+    if (overlayCloseTimeoutRef.current !== null) {
+      window.clearTimeout(overlayCloseTimeoutRef.current);
+      overlayCloseTimeoutRef.current = null;
+    }
+    setIsOverlayClosing(true);
+    shouldRunFooterRevealRef.current = true;
+    earlyFooterRevealFiredRef.current = false;
+    const shouldNavigateDuringCloseAnimation = pathname === "/new" && shouldHoldOverlayForVideoSwitch;
+    if (footerRevealEarlyTimeoutRef.current !== null) {
+      window.clearTimeout(footerRevealEarlyTimeoutRef.current);
+    }
+    footerRevealEarlyTimeoutRef.current = window.setTimeout(() => {
+      footerRevealEarlyTimeoutRef.current = null;
+      earlyFooterRevealFiredRef.current = true;
+      setIsFooterRevealActive(true);
+      if (footerRevealTimeoutRef.current !== null) {
+        window.clearTimeout(footerRevealTimeoutRef.current);
+      }
+      footerRevealTimeoutRef.current = window.setTimeout(() => {
+        setIsFooterRevealActive(false);
+        footerRevealTimeoutRef.current = null;
+      }, FOOTER_REVEAL_DURATION_MS);
+    }, FOOTER_EARLY_REVEAL_DELAY_MS);
+    const frame = playerChromeRef.current?.querySelector(".playerFrame, .playerLoadingFallback") as HTMLElement | null;
+    let didNavigate = false;
+    const finishCloseNavigation = () => {
+      if (didNavigate) {
+        return;
+      }
+      didNavigate = true;
+      if (overlayCloseTimeoutRef.current !== null) {
+        window.clearTimeout(overlayCloseTimeoutRef.current);
+        overlayCloseTimeoutRef.current = null;
+      }
+      router.push(nextHref);
+    };
+    if (shouldNavigateDuringCloseAnimation) {
+      finishCloseNavigation();
+      return;
+    }
+    const handleFrameTransitionEnd = (transitionEvent: TransitionEvent) => {
+      if (transitionEvent.propertyName !== "transform") {
+        return;
+      }
+      if (frame && transitionEvent.target !== frame) {
+        return;
+      }
+      frame?.removeEventListener("transitionend", handleFrameTransitionEnd);
+      finishCloseNavigation();
+    };
+    frame?.addEventListener("transitionend", handleFrameTransitionEnd);
+    overlayCloseTimeoutRef.current = window.setTimeout(() => {
+      frame?.removeEventListener("transitionend", handleFrameTransitionEnd);
+      finishCloseNavigation();
+    }, DOCK_MOVE_DURATION_MS + 120);
+  }, [currentVideo.id, isMagazineOverlayRoute, pathname, playerChromeRef, router, shouldShowOverlayPanel]);
+  const handleDockHideRequest = useCallback(() => {
+    setIsDockHidden(true);
+  }, []);
+  useShellOverlayEvents({
+    pathname,
+    isCategoriesRoute,
+    overlayScrollContainerRef: favouritesBlindInnerRef,
+    onOpenRequest: handleOverlayOpenRequest,
+    onResetPendingOverlay: resetPendingOverlayFromOpenTimeout,
+    onCloseRequest: handleOverlayCloseRequest,
+    onDockHideRequest: handleDockHideRequest,
+  });
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -739,18 +835,6 @@ function ShellDynamicInner({
       mediaQuery.removeListener(syncViewportState);
     };
   }, []);
-  useEffect(() => {
-    if (!isAdminOverlayRoute) {
-      return;
-    }
-    setChatMode("global");
-  }, [isAdminOverlayRoute]);
-  useEffect(() => {
-    if (!isMagazineOverlayRoute) {
-      return;
-    }
-    setChatMode("magazine");
-  }, [isMagazineOverlayRoute]);
   useEffect(() => {
     if (typeof window === "undefined" || !isAdminOverlayRoute) {
       return;
@@ -799,201 +883,7 @@ function ShellDynamicInner({
   }, [shouldShowOverlayPanel]);
 
   useEffect(() => {
-    if (pathname !== "/" && pendingOverlayOpenKind !== null) {
-      setPendingOverlayOpenKind(null);
-    }
-  }, [pathname, pendingOverlayOpenKind]);
-  useEffect(() => {
-    if (!pendingOverlayCloseVideoId) {
-      return;
-    }
-    if (pathname !== "/") {
-      setPendingOverlayCloseVideoId(null);
-      setPendingOverlayCloseHref(null);
-      return;
-    }
-    if (
-      requestedVideoId !== pendingOverlayCloseVideoId
-      || currentVideo.id !== pendingOverlayCloseVideoId
-      || isResolvingInitialVideo
-      || isResolvingRequestedVideo
-    ) {
-      return;
-    }
-    setPendingOverlayCloseVideoId(null);
-    setPendingOverlayCloseHref(null);
-    setPendingOverlayOpenKind(null);
-  }, [
-    currentVideo.id,
-    isResolvingInitialVideo,
-    isResolvingRequestedVideo,
-    pathname,
-    pendingOverlayCloseVideoId,
-    requestedVideoId,
-  ]);
-  useEffect(() => {
-    if (!pendingOverlayRouteKey || pathname === "/") {
-      return;
-    }
-    setPendingOverlayRouteKey(null);
-  }, [pathname, pendingOverlayRouteKey]);
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const handleOverlayOpenRequest = (event: Event) => {
-      const openEvent = event as CustomEvent<{ href?: string; kind?: string }>;
-      const href = openEvent.detail?.href;
-      if (!href) {
-        return;
-      }
-      const openUrl = new URL(href, window.location.origin);
-      if (openUrl.origin !== window.location.origin) {
-        return;
-      }
-      const kind = openEvent.detail?.kind === "wiki" || openUrl.pathname.endsWith("/wiki") ? "wiki" : "video";
-      setPendingOverlayOpenKind(kind);
-      const optimisticRouteKey = (() => {
-        if (isCategoriesOverlayPath(openUrl.pathname) && isCategoriesRoute) {
-          return "categories-overlay";
-        }
-        const inputParams = new URLSearchParams(openUrl.search);
-        const filteredParams = new URLSearchParams();
-        for (const [key, value] of inputParams.entries()) {
-          if (key === "v" || key === "resume" || (openUrl.pathname === "/admin" && key === "tab")) {
-            continue;
-          }
-          filteredParams.append(key, value);
-        }
-        const filteredQuery = filteredParams.toString();
-        return filteredQuery ? `${openUrl.pathname}?${filteredQuery}` : openUrl.pathname;
-      })();
-      setPendingOverlayRouteKey(optimisticRouteKey);
-      const node = favouritesBlindInnerRef.current;
-      if (node) {
-        node.scrollTop = 0;
-      }
-      if (overlayOpenTimeoutRef.current !== null) {
-        window.clearTimeout(overlayOpenTimeoutRef.current);
-      }
-      overlayOpenTimeoutRef.current = window.setTimeout(() => {
-        overlayOpenTimeoutRef.current = null;
-        setPendingOverlayOpenKind((current) => (pathname === "/" ? null : current));
-        setPendingOverlayRouteKey((current) => (pathname === "/" ? null : current));
-      }, 4500);
-    };
-    window.addEventListener(OVERLAY_OPEN_REQUEST_EVENT, handleOverlayOpenRequest);
     return () => {
-      window.removeEventListener(OVERLAY_OPEN_REQUEST_EVENT, handleOverlayOpenRequest);
-      if (overlayOpenTimeoutRef.current !== null) {
-        window.clearTimeout(overlayOpenTimeoutRef.current);
-        overlayOpenTimeoutRef.current = null;
-      }
-      setPendingOverlayRouteKey(null);
-    };
-  }, [pathname]);
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const handleOverlayCloseRequest = (event: Event) => {
-      const closeEvent = event as CustomEvent<{ href?: string }>;
-      const href = closeEvent.detail?.href;
-      if (!href) {
-        return;
-      }
-      const closeUrl = new URL(href, window.location.origin);
-      if (closeUrl.origin !== window.location.origin) {
-        window.location.assign(closeUrl.toString());
-        return;
-      }
-      const fallbackHomeHref = `/?v=${encodeURIComponent(currentVideo.id)}&resume=1`;
-      const nextHref = closeUrl.pathname === "/" && closeUrl.searchParams.has("v")
-        ? `${closeUrl.pathname}${closeUrl.search}${closeUrl.hash}`
-        : fallbackHomeHref;
-      const targetVideoId = closeUrl.pathname === "/" ? closeUrl.searchParams.get("v") : null;
-      const shouldHoldOverlayForVideoSwitch = Boolean(targetVideoId && targetVideoId !== currentVideo.id);
-      if (shouldHoldOverlayForVideoSwitch && targetVideoId) {
-        setPendingOverlayOpenKind("video");
-        setPendingOverlayCloseVideoId(targetVideoId);
-        setPendingOverlayCloseHref(nextHref);
-      } else {
-        setPendingOverlayCloseVideoId(null);
-        setPendingOverlayCloseHref(null);
-      }
-      if (!shouldShowOverlayPanel || isMagazineOverlayRoute) {
-        setIsOverlayClosing(false);
-        shouldRunFooterRevealRef.current = false;
-        setIsUndockSettling(false);
-        setIsFooterRevealActive(false);
-        router.push(nextHref);
-        return;
-      }
-      if (overlayCloseTimeoutRef.current !== null) {
-        window.clearTimeout(overlayCloseTimeoutRef.current);
-        overlayCloseTimeoutRef.current = null;
-      }
-      setIsOverlayClosing(true);
-      shouldRunFooterRevealRef.current = true;
-      earlyFooterRevealFiredRef.current = false;
-      const shouldNavigateDuringCloseAnimation = pathname === "/new" && shouldHoldOverlayForVideoSwitch;
-      // Schedule the footer reveal to start early so it completes as the undock animation finishes.
-      if (footerRevealEarlyTimeoutRef.current !== null) {
-        window.clearTimeout(footerRevealEarlyTimeoutRef.current);
-      }
-      footerRevealEarlyTimeoutRef.current = window.setTimeout(() => {
-        footerRevealEarlyTimeoutRef.current = null;
-        earlyFooterRevealFiredRef.current = true;
-        setIsFooterRevealActive(true);
-        if (footerRevealTimeoutRef.current !== null) {
-          window.clearTimeout(footerRevealTimeoutRef.current);
-        }
-        footerRevealTimeoutRef.current = window.setTimeout(() => {
-          setIsFooterRevealActive(false);
-          footerRevealTimeoutRef.current = null;
-        }, FOOTER_REVEAL_DURATION_MS);
-      }, FOOTER_EARLY_REVEAL_DELAY_MS);
-      const frame = playerChromeRef.current?.querySelector(".playerFrame, .playerLoadingFallback") as HTMLElement | null;
-      let didNavigate = false;
-      const finishCloseNavigation = () => {
-        if (didNavigate) {
-          return;
-        }
-        didNavigate = true;
-        if (overlayCloseTimeoutRef.current !== null) {
-          window.clearTimeout(overlayCloseTimeoutRef.current);
-          overlayCloseTimeoutRef.current = null;
-        }
-        router.push(nextHref);
-      };
-      if (shouldNavigateDuringCloseAnimation) {
-        finishCloseNavigation();
-        return;
-      }
-      const handleFrameTransitionEnd = (transitionEvent: TransitionEvent) => {
-        if (transitionEvent.propertyName !== "transform") {
-          return;
-        }
-        if (frame && transitionEvent.target !== frame) {
-          return;
-        }
-        frame?.removeEventListener("transitionend", handleFrameTransitionEnd);
-        finishCloseNavigation();
-      };
-      frame?.addEventListener("transitionend", handleFrameTransitionEnd);
-      overlayCloseTimeoutRef.current = window.setTimeout(() => {
-        frame?.removeEventListener("transitionend", handleFrameTransitionEnd);
-        finishCloseNavigation();
-      }, DOCK_MOVE_DURATION_MS + 120);
-    };
-    const handleDockHideRequest = () => {
-      setIsDockHidden(true);
-    };
-    window.addEventListener(OVERLAY_CLOSE_REQUEST_EVENT, handleOverlayCloseRequest);
-    window.addEventListener(DOCK_HIDE_REQUEST_EVENT, handleDockHideRequest);
-    return () => {
-      window.removeEventListener(OVERLAY_CLOSE_REQUEST_EVENT, handleOverlayCloseRequest);
-      window.removeEventListener(DOCK_HIDE_REQUEST_EVENT, handleDockHideRequest);
       if (overlayCloseTimeoutRef.current !== null) {
         window.clearTimeout(overlayCloseTimeoutRef.current);
         overlayCloseTimeoutRef.current = null;
@@ -3166,13 +3056,10 @@ function ShellDynamicInner({
                             window.scrollTo(0, 0);
                             router.push(`/magazine/${encodeURIComponent(track.slug)}`);
                           }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              window.scrollTo(0, 0);
-                              router.push(`/magazine/${encodeURIComponent(track.slug)}`);
-                            }
-                          }}
+                          onKeyDown={handleButtonLikeKeyDown(() => {
+                            window.scrollTo(0, 0);
+                            router.push(`/magazine/${encodeURIComponent(track.slug)}`);
+                          })}
                           role="button"
                           tabIndex={0}
                           aria-label={`Open magazine article: ${track.artist} - ${track.title}`}
@@ -3195,50 +3082,9 @@ function ShellDynamicInner({
                               onClick={async (event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
-                                if (deletingMagazineSlugs[track.slug]) {
-                                  return;
-                                }
-                                const confirmed = window.confirm(`Delete article "${track.title}"?`);
-                                if (!confirmed) {
-                                  return;
-                                }
-                                setDeletingMagazineSlugs((current) => ({ ...current, [track.slug]: true }));
-                                setMagazineDeleteErrors((current) => {
-                                  const next = { ...current };
-                                  delete next[track.slug];
-                                  return next;
-                                });
-                                try {
-                                  const response = await fetch(`/api/admin/magazine/${encodeURIComponent(track.slug)}`, {
-                                    method: "DELETE",
-                                    headers: {
-                                      "Content-Type": "application/json",
-                                    },
-                                  });
-                                  const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-                                  if (!response.ok) {
-                                    setMagazineDeleteErrors((current) => ({
-                                      ...current,
-                                      [track.slug]: payload?.error ?? "Delete failed",
-                                    }));
-                                    return;
-                                  }
-                                  setDeletedMagazineSlugs((current) => ({ ...current, [track.slug]: true }));
-                                  if (pathname === `/magazine/${track.slug}`) {
-                                    router.replace("/magazine");
-                                  }
-                                } catch {
-                                  setMagazineDeleteErrors((current) => ({
-                                    ...current,
-                                    [track.slug]: "Delete failed",
-                                  }));
-                                } finally {
-                                  setDeletingMagazineSlugs((current) => ({ ...current, [track.slug]: false }));
-                                }
+                                await handleDeleteMagazineArticle(track);
                               }}
-                              onKeyDown={(event) => {
-                                event.stopPropagation();
-                              }}
+                              onKeyDown={handleStopPropagationKeyDown}
                             >
                               {deletingMagazineSlugs[track.slug] ? "…" : "✕"}
                             </button>
@@ -3269,12 +3115,7 @@ function ShellDynamicInner({
                         key={user.id}
                         className={isProfileClickable ? "chatMessage chatMessageClickable" : "chatMessage"}
                         onClick={isProfileClickable ? () => router.push(profileHref!) : undefined}
-                        onKeyDown={isProfileClickable ? (event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            router.push(profileHref!);
-                          }
-                        } : undefined}
+                        onKeyDown={isProfileClickable ? handleButtonLikeKeyDown(() => router.push(profileHref!)) : undefined}
                         role={isProfileClickable ? "button" : undefined}
                         tabIndex={isProfileClickable ? 0 : undefined}
                         aria-label={isProfileClickable ? `Open profile for ${user.name}` : undefined}
@@ -3307,12 +3148,7 @@ function ShellDynamicInner({
                         key={message.id}
                         className={isProfileClickable ? "chatMessage chatMessageClickable" : "chatMessage"}
                         onClick={isProfileClickable ? () => router.push(profileHref!) : undefined}
-                        onKeyDown={isProfileClickable ? (event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            router.push(profileHref!);
-                          }
-                        } : undefined}
+                        onKeyDown={isProfileClickable ? handleButtonLikeKeyDown(() => router.push(profileHref!)) : undefined}
                         role={isProfileClickable ? "button" : undefined}
                         tabIndex={isProfileClickable ? 0 : undefined}
                         aria-label={isProfileClickable ? `Open profile for ${message.user.name}` : undefined}
@@ -3339,9 +3175,7 @@ function ShellDynamicInner({
                                     }
                                     void handleDeleteChatMessage(message.id);
                                   }}
-                                  onKeyDown={(event) => {
-                                    event.stopPropagation();
-                                  }}
+                                  onKeyDown={handleStopPropagationKeyDown}
                                   disabled={deletingMessageIds.includes(message.id)}
                                   aria-label={`Delete chat comment from ${message.user.name}`}
                                 >

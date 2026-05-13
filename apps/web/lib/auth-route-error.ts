@@ -4,19 +4,23 @@ import { Prisma } from "@prisma/client";
 import { recordAuthAudit } from "@/lib/auth-audit";
 
 export function isTransientDatabaseError(error: unknown): boolean {
-  const lowerMessage = (
-    error instanceof Prisma.PrismaClientKnownRequestError
-      ? (error as Prisma.PrismaClientKnownRequestError).message
-      : error instanceof Error
-        ? error.message
-        : ""
-  ).toLowerCase();
+  // P2024: Timed out fetching a new connection from the connection pool
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return error.code === "P2024";
+  }
 
-  return (
-    lowerMessage.includes("timed out fetching a new connection from the connection pool") ||
-    lowerMessage.includes("can't reach database server") ||
-    lowerMessage.includes("too many connections")
-  );
+  // P1001: Can't reach database server
+  // P1002: Database server closed the connection
+  // P1008: Operations timed out
+  if (error instanceof Prisma.PrismaClientInitializationError) {
+    return (
+      error.errorCode === "P1001" ||
+      error.errorCode === "P1002" ||
+      error.errorCode === "P1008"
+    );
+  }
+
+  return false;
 }
 
 type AuthAuditAction = Parameters<typeof recordAuthAudit>[0]["action"];

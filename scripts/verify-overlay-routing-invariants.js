@@ -7,67 +7,76 @@
 
 const path = require("node:path");
 const {
-  readFileStrict,
-  collectCssFiles,
+  mapRelativeFiles,
+  loadSourceMap,
+  joinFileSources,
+  loadCssSourceFromRoots,
   assertContains,
   assertNotContains,
   assertCssRuleContains,
   assertCssRuleNotContains,
+  assertFileDoesNotExist,
   finishInvariantCheck,
 } = require("./invariants/helpers");
 
 const ROOT = process.cwd();
 
-const files = {
-  playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
-  shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
-  shellDynamicRendering: path.join(ROOT, "apps/web/components/shell-dynamic-rendering.tsx"),
-  coreShellSmoke: path.join(ROOT, "tests/smoke/core-shell.spec.ts"),
-  shellLayout: path.join(ROOT, "apps/web/app/(shell)/layout.tsx"),
-  shellErrorBoundary: path.join(ROOT, "apps/web/app/(shell)/error.tsx"),
-  categoryErrorBoundary: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/error.tsx"),
-  shareVideoPage: path.join(ROOT, "apps/web/app/share/[videoId]/page.tsx"),
-  serviceFailurePanel: path.join(ROOT, "apps/web/components/service-failure-panel.tsx"),
-  statusPerformanceRoute: path.join(ROOT, "apps/web/app/api/status/performance/route.ts"),
-  chatRoute: path.join(ROOT, "apps/web/app/api/chat/route.ts"),
-  apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
-  chatDataService: path.join(ROOT, "apps/web/lib/chat-data.ts"),
-  chatStreamRoute: path.join(ROOT, "apps/web/app/api/chat/stream/route.ts"),
-  categoriesFilterGrid: path.join(ROOT, "apps/web/components/categories-filter-grid.tsx"),
-  overlayScrollReset: path.join(ROOT, "apps/web/components/overlay-scroll-reset.tsx"),
-  appRoot: path.join(ROOT, "apps/web/app"),
-};
+const files = mapRelativeFiles(ROOT, {
+  playerExperience: "apps/web/components/player-experience-core.tsx",
+  shellDynamic: "apps/web/components/shell-dynamic-core.tsx",
+  shellDynamicRendering: "apps/web/components/shell-dynamic-rendering.tsx",
+  coreShellSmoke: "tests/smoke/core-shell.spec.ts",
+  shellLayout: "apps/web/app/(shell)/layout.tsx",
+  shellErrorBoundary: "apps/web/app/(shell)/error.tsx",
+  categoryErrorBoundary: "apps/web/app/(shell)/categories/[slug]/error.tsx",
+  shareVideoPage: "apps/web/app/share/[videoId]/page.tsx",
+  serviceFailurePanel: "apps/web/components/service-failure-panel.tsx",
+  statusPerformanceRoute: "apps/web/app/api/status/performance/route.ts",
+  chatRoute: "apps/web/app/api/chat/route.ts",
+  apiSchemas: "apps/web/lib/api-schemas.ts",
+  chatDataService: "apps/web/lib/chat-data.ts",
+  chatStreamRoute: "apps/web/app/api/chat/stream/route.ts",
+  categoriesFilterGrid: "apps/web/components/categories-filter-grid.tsx",
+  overlayScrollReset: "apps/web/components/overlay-scroll-reset.tsx",
+  appRoot: "apps/web/app",
+});
 
 function main() {
   const failures = [];
 
-  const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
-  const shellDynamicSource = [
-    readFileStrict(files.shellDynamic, ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
-  ].join('\n');
-  const shellDynamicRenderingSource = readFileStrict(files.shellDynamicRendering, ROOT);
-  const shellLayoutSource = readFileStrict(files.shellLayout, ROOT);
-  const coreShellSmokeSource = readFileStrict(files.coreShellSmoke, ROOT);
-  const shellErrorBoundarySource = readFileStrict(files.shellErrorBoundary, ROOT);
-  const categoryErrorBoundarySource = readFileStrict(files.categoryErrorBoundary, ROOT);
-  const shareVideoPageSource = readFileStrict(files.shareVideoPage, ROOT);
-  const serviceFailurePanelSource = readFileStrict(files.serviceFailurePanel, ROOT);
+  const sources = loadSourceMap(files, ROOT, { skipKeys: ["appRoot"] });
+  const playerExperienceSource = sources.playerExperience;
+  const shellDynamicSource = joinFileSources([
+    files.shellDynamic,
+    path.join(ROOT, "apps/web/components/use-chat-state.ts"),
+    path.join(ROOT, "apps/web/components/use-playlist-rail.ts"),
+    path.join(ROOT, "apps/web/components/use-performance-metrics.ts"),
+    path.join(ROOT, "apps/web/components/use-desktop-intro.ts"),
+    path.join(ROOT, "apps/web/components/use-search-autocomplete.ts"),
+  ], ROOT);
+  const shellDynamicRenderingSource = sources.shellDynamicRendering;
+  const shellLayoutSource = sources.shellLayout;
+  const coreShellSmokeSource = sources.coreShellSmoke;
+  const shellErrorBoundarySource = sources.shellErrorBoundary;
+  const categoryErrorBoundarySource = sources.categoryErrorBoundary;
+  const shareVideoPageSource = sources.shareVideoPage;
+  const serviceFailurePanelSource = sources.serviceFailurePanel;
   const shellRenderingSource = `${shellDynamicSource}\n${shellDynamicRenderingSource}`;
-  const statusPerformanceRouteSource = readFileStrict(files.statusPerformanceRoute, ROOT);
-  const chatRouteSource = readFileStrict(files.chatRoute, ROOT);
-  const apiSchemasSource = readFileStrict(files.apiSchemas, ROOT);
-  const chatDataServiceSource = readFileStrict(files.chatDataService, ROOT);
-  const chatStreamRouteSource = readFileStrict(files.chatStreamRoute, ROOT);
-  const categoriesFilterGridSource = readFileStrict(files.categoriesFilterGrid, ROOT);
-  const overlayScrollResetSource = readFileStrict(files.overlayScrollReset, ROOT);
-  const cssSource = collectCssFiles(files.appRoot)
-    .map((filePath) => readFileStrict(filePath, ROOT))
-    .join("\n");
+  const statusPerformanceRouteSource = sources.statusPerformanceRoute;
+  const chatRouteSource = sources.chatRoute;
+  const apiSchemasSource = sources.apiSchemas;
+  const chatDataServiceSource = sources.chatDataService;
+  const chatStreamRouteSource = sources.chatStreamRoute;
+  const categoriesFilterGridSource = sources.categoriesFilterGrid;
+  const overlayScrollResetSource = sources.overlayScrollReset;
+  const cssSource = loadCssSourceFromRoots([files.appRoot], ROOT);
+
+  // Route loading/page duplication guardrails.
+  assertFileDoesNotExist(path.join(ROOT, "apps/web/app/(shell)/top100/loading.tsx"), "Top100 route keeps loading state inside page flow (no duplicated loading.tsx)", failures, ROOT);
+  assertFileDoesNotExist(path.join(ROOT, "apps/web/app/(shell)/artists/loading.tsx"), "Artists route keeps loading state inside page flow (no duplicated loading.tsx)", failures, ROOT);
+  assertFileDoesNotExist(path.join(ROOT, "apps/web/app/(shell)/artists/[slug]/loading.tsx"), "Artists slug route keeps loading state inside page flow (no duplicated loading.tsx)", failures, ROOT);
+  assertFileDoesNotExist(path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/loading.tsx"), "Artist route keeps loading state inside page flow (no duplicated loading.tsx)", failures, ROOT);
+  assertFileDoesNotExist(path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/loading.tsx"), "Category route keeps loading state inside page flow (no duplicated loading.tsx)", failures, ROOT);
 
   // Dock-hide interaction invariants.
   assertContains(playerExperienceSource, 'window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));', "Dock close control dispatches hide-only event instead of navigating away", failures);

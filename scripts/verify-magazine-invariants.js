@@ -89,10 +89,12 @@ function main() {
   );
 
   // --- isMagazineOverlayRoute must be declared before shouldRunChat ---
-  const isMagazineIdx = shellDynamicSource.indexOf("const isMagazineOverlayRoute =");
+  const isMagazineIdxDirect = shellDynamicSource.indexOf("const isMagazineOverlayRoute =");
+  const isMagazineIdxDestructured = shellDynamicSource.indexOf("isMagazineOverlayRoute,");
+  const isMagazineIdx = isMagazineIdxDirect === -1 ? isMagazineIdxDestructured : isMagazineIdxDirect;
   const shouldRunChatIdx = shellDynamicSource.indexOf("const shouldRunChat =");
   if (isMagazineIdx === -1) {
-    failures.push("isMagazineOverlayRoute constant is missing from shell");
+    failures.push("isMagazineOverlayRoute derivation is missing from shell");
   } else if (shouldRunChatIdx === -1) {
     failures.push("shouldRunChat constant is missing from shell");
   } else if (isMagazineIdx > shouldRunChatIdx) {

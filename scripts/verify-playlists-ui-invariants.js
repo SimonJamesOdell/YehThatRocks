@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
-const path = require("node:path");
 const {
-  readFileStrict,
+  mapRelativeFiles,
+  loadSourceMap,
+  joinFileSources,
   assertContains,
   assertNotContains,
   assertMatches,
@@ -11,45 +12,36 @@ const {
 
 const ROOT = process.cwd();
 
-const files = {
-  packageJson: path.join(ROOT, "package.json"),
-  editor: path.join(ROOT, "apps/web/components/playlist-editor.tsx"),
-  editorApi: path.join(ROOT, "apps/web/app/api/playlists/[id]/items/route.ts"),
-  schemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
-  data: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
-  addButton: path.join(ROOT, "apps/web/components/add-to-playlist-button.tsx"),
-  shell: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
-  playlistRailHook: path.join(ROOT, "apps/web/components/use-playlist-rail.ts"),
-  player: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
-  playlistSequenceHook: path.join(ROOT, "apps/web/components/use-playlist-sequence.ts"),
-  css: path.join(ROOT, "apps/web/app/globals.css"),
-  playlistCss: path.join(ROOT, "apps/web/app/styles/playlist-ui.css"),
-  trackCardsCss: path.join(ROOT, "apps/web/app/styles/track-cards.css"),
-};
+const files = mapRelativeFiles(ROOT, {
+  packageJson: "package.json",
+  editor: "apps/web/components/playlist-editor.tsx",
+  editorApi: "apps/web/app/api/playlists/[id]/items/route.ts",
+  schemas: "apps/web/lib/api-schemas.ts",
+  data: "apps/web/lib/catalog-data-core.ts",
+  addButton: "apps/web/components/add-to-playlist-button.tsx",
+  shell: "apps/web/components/shell-dynamic-core.tsx",
+  playlistRailHook: "apps/web/components/use-playlist-rail.ts",
+  player: "apps/web/components/player-experience-core.tsx",
+  playlistSequenceHook: "apps/web/components/use-playlist-sequence.ts",
+  css: "apps/web/app/globals.css",
+  playlistCss: "apps/web/app/styles/playlist-ui.css",
+  trackCardsCss: "apps/web/app/styles/track-cards.css",
+});
 
 function main() {
   const failures = [];
 
-  const packageJsonSource = readFileStrict(files.packageJson, ROOT);
-  const editorSource = readFileStrict(files.editor, ROOT);
-  const editorApiSource = readFileStrict(files.editorApi, ROOT);
-  const schemasSource = readFileStrict(files.schemas, ROOT);
-  const dataSource = readFileStrict(files.data, ROOT);
-  const addButtonSource = readFileStrict(files.addButton, ROOT);
-  const playlistRailHookSource = readFileStrict(files.playlistRailHook, ROOT);
-  const shellSource = [
-    readFileStrict(files.shell, ROOT),
-    playlistRailHookSource,
-  ].join("\n");
-  const playerSource = [
-    readFileStrict(files.player, ROOT),
-    readFileStrict(files.playlistSequenceHook, ROOT),
-  ].join("\n");
-  const cssSource = [
-    readFileStrict(files.css, ROOT),
-    readFileStrict(files.playlistCss, ROOT),
-    readFileStrict(files.trackCardsCss, ROOT),
-  ].join("\n");
+  const sources = loadSourceMap(files, ROOT);
+  const packageJsonSource = sources.packageJson;
+  const editorSource = sources.editor;
+  const editorApiSource = sources.editorApi;
+  const schemasSource = sources.schemas;
+  const dataSource = sources.data;
+  const addButtonSource = sources.addButton;
+  const playlistRailHookSource = sources.playlistRailHook;
+  const shellSource = joinFileSources([files.shell, files.playlistRailHook], ROOT);
+  const playerSource = joinFileSources([files.player, files.playlistSequenceHook], ROOT);
+  const cssSource = joinFileSources([files.css, files.playlistCss, files.trackCardsCss], ROOT);
 
   // pickColumn ordering invariant: must iterate priority names first, not DB columns.
   // If this regresses to iterating columns first, sort_order is never selected (id wins)

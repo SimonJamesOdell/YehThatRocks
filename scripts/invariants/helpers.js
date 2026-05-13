@@ -1,5 +1,10 @@
 const {
   readFileStrict,
+  mapRelativeFiles,
+  loadSourceMap,
+  joinFileSources,
+  loadCssSourceFromRoots,
+  assertFilesExist,
   collectCssFiles,
   assertContains,
   assertContainsEither,
@@ -12,6 +17,11 @@ const {
 
 module.exports = {
   readFileStrict,
+  mapRelativeFiles,
+  loadSourceMap,
+  joinFileSources,
+  loadCssSourceFromRoots,
+  assertFilesExist,
   collectCssFiles,
   assertContains,
   assertContainsEither,

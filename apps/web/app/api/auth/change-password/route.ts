@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getRequestMetadata, recordAuthAudit } from "@/lib/auth-audit";
-import { requireApiAuth } from "@/lib/auth-request";
+import { withAuthAndBody } from "@/lib/api-route-pipeline";
 import { hashPassword, verifyPassword } from "@/lib/auth-password";
 import { revokeUserRefreshSessions } from "@/lib/auth-sessions";
-import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
-import { parseRequestJson } from "@/lib/request-json";
 import { z } from "zod";
 
 const changePasswordSchema = z.object({
@@ -16,32 +14,14 @@ const changePasswordSchema = z.object({
 
 export async function POST(request: NextRequest) {
   const requestMeta = getRequestMetadata(request.headers);
-  const authResult = await requireApiAuth(request);
+  const result = await withAuthAndBody(request, changePasswordSchema, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
-  }
-
-  const csrfError = verifySameOrigin(request);
-
-  if (csrfError) {
-    return csrfError;
-  }
-
-  const bodyResult = await parseRequestJson(request);
-
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const parsed = changePasswordSchema.safeParse(bodyResult.data);
-
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  if (!result.ok) {
+    return result.response;
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: authResult.auth.userId },
+    where: { id: result.auth.userId },
     select: {
       id: true,
       email: true,
@@ -60,6 +40,7 @@ export async function POST(request: NextRequest) {
   }
 
   const isValid = await verifyPassword(parsed.data.currentPassword, storedHash);
+  const isValid = await verifyPassword(result.data.currentPassword, storedHash);
 
   if (!isValid) {
     await recordAuthAudit({
@@ -74,6 +55,7 @@ export async function POST(request: NextRequest) {
   }
 
   const passwordHash = await hashPassword(parsed.data.newPassword);
+  const passwordHash = await hashPassword(result.data.newPassword);
 
   await prisma.user.update({
     where: { id: user.id },

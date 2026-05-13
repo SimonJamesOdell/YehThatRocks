@@ -9,6 +9,52 @@ function readFileStrict(filePath, root = process.cwd()) {
   return fs.readFileSync(filePath, "utf8");
 }
 
+function mapRelativeFiles(root, relativeFiles) {
+  return Object.fromEntries(
+    Object.entries(relativeFiles).map(([key, relativePath]) => [key, path.join(root, relativePath)]),
+  );
+}
+
+function loadSourceMap(fileMap, root = process.cwd(), options = {}) {
+  const { skipKeys = [] } = options;
+  const skipSet = new Set(skipKeys);
+
+  return Object.fromEntries(
+    Object.entries(fileMap)
+      .filter(([key]) => !skipSet.has(key))
+      .map(([key, filePath]) => [key, readFileStrict(filePath, root)]),
+  );
+}
+
+function joinFileSources(filePaths, root = process.cwd(), separator = "\n") {
+  return filePaths.map((filePath) => readFileStrict(filePath, root)).join(separator);
+}
+
+function loadCssSourceFromRoots(rootDirs, root = process.cwd()) {
+  return rootDirs
+    .flatMap((dirPath) => collectCssFiles(dirPath))
+    .map((filePath) => readFileStrict(filePath, root))
+    .join("\n");
+}
+
+function assertFilesExist(fileMap, failures, root = process.cwd(), options = {}) {
+  const {
+    skipKeys = [],
+    missingPrefix = "Missing file",
+  } = options;
+  const skipSet = new Set(skipKeys);
+
+  for (const [key, filePath] of Object.entries(fileMap)) {
+    if (skipSet.has(key)) {
+      continue;
+    }
+
+    if (!fs.existsSync(filePath)) {
+      addFailure(failures, `${missingPrefix}: ${path.relative(root, filePath)}`);
+    }
+  }
+}
+
 function collectCssFiles(dirPath, acc = []) {
   if (!fs.existsSync(dirPath)) {
     return acc;
@@ -154,6 +200,11 @@ function finishInvariantCheck({ failures, failureHeader, successMessage }) {
 
 module.exports = {
   readFileStrict,
+  mapRelativeFiles,
+  loadSourceMap,
+  joinFileSources,
+  loadCssSourceFromRoots,
+  assertFilesExist,
   collectCssFiles,
   assertContains,
   assertNotContains,

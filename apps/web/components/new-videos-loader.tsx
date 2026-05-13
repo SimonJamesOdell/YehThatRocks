@@ -28,7 +28,6 @@ import {
 } from "@/lib/video-quality-flags";
 
 const NEW_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-new";
-const NEW_ROUTE_QUEUE_SYNC_EVENT = "ytr:new-route-queue-sync";
 
 type NewVideosApiPayload = {
   videos?: VideoRecord[];
@@ -315,16 +314,10 @@ export function NewVideosLoader({
   }, [activeVideoId, hideSeen]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.dispatchEvent(new CustomEvent(NEW_ROUTE_QUEUE_SYNC_EVENT, {
-      detail: {
-        source: "new",
-        videoIds: visibleVideos.map((video) => video.id),
-      },
-    }));
+    dispatchAppEvent(EVENT_NAMES.NEW_ROUTE_QUEUE_SYNC, {
+      source: "new",
+      videoIds: visibleVideos.map((video) => video.id),
+    });
   }, [visibleVideos]);
 
   useEffect(() => {
@@ -332,17 +325,16 @@ export function NewVideosLoader({
   }, [allVideos]);
 
   useEffect(() => {
-    function handleCatalogDeleted(event: Event) {
-      const deletedId = (event as CustomEvent<{ videoId: string }>).detail?.videoId;
+    const unsubscribeCatalogDeleted = listenToAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, ({ videoId }) => {
+      const deletedId = videoId;
       if (!deletedId) {
         return;
       }
 
       removeVideoById(deletedId);
-    }
+    });
 
-    window.addEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);
-    return () => window.removeEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);
+    return () => unsubscribeCatalogDeleted();
   }, [removeVideoById]);
 
   useNewVideosScrollPrefetch({

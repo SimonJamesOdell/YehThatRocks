@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 
 /**
  * Rendered when a server component detects no valid access token but a
@@ -24,7 +25,7 @@ export function AuthRefreshReload() {
         });
 
         if (!cancelled && res.ok) {
-          window.dispatchEvent(new Event("ytr:auth-success"));
+          dispatchAppEvent(EVENT_NAMES.AUTH_SUCCESS, null);
           router.refresh();
         }
       } catch {

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireAdminApiAuth } from "@/lib/admin-auth";
-import { getOptionalApiAuth, requireApiAuth } from "@/lib/auth-request";
+import { getOptionalApiAuth } from "@/lib/auth-request";
+import { withAuthAndBody } from "@/lib/api-route-pipeline";
 import { chatQuerySchema, createChatMessageSchema } from "@/lib/api-schemas";
 import { deleteChatMessageSchema } from "@/lib/api-schemas";
 import { chatChannel, chatEvents } from "@/lib/chat-events";
@@ -12,9 +13,7 @@ import {
   insertChatMessage,
   touchOnlinePresenceThrottled,
 } from "@/lib/chat-data";
-import { verifySameOrigin } from "@/lib/csrf";
 import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
-import { parseRequestJson } from "@/lib/request-json";
 
 export async function GET(request: NextRequest) {
   const authContext = await getOptionalApiAuth(request);
@@ -61,38 +60,21 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
+  const result = await withAuthAndBody(request, createChatMessageSchema, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
+  if (!result.ok) {
+    return result.response;
   }
 
-  const csrfError = verifySameOrigin(request);
-  if (csrfError) {
-    return csrfError;
-  }
+  await touchOnlinePresenceThrottled(result.auth.userId).catch(() => undefined);
 
-  await touchOnlinePresenceThrottled(authResult.auth.userId).catch(() => undefined);
-
-  const bodyResult = await parseRequestJson(request);
-
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const parsedBody = createChatMessageSchema.safeParse(bodyResult.data);
-
-  if (!parsedBody.success) {
-    return NextResponse.json({ error: parsedBody.error.flatten() }, { status: 400 });
-  }
-
-  const { content, mode, videoId } = parsedBody.data;
+  const { content, mode, videoId } = result.data;
 
   if (mode === "global") {
     // Per-user: max 4 messages per 30 seconds (~1 every 7.5s sustained)
     const userRateLimited = rateLimitOrResponse(
       request,
-      `chat:global:user:${authResult.auth.userId}`,
+      `chat:global:user:${result.auth.userId}`,
       4,
       30 * 1000,
     );

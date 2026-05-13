@@ -9,7 +9,7 @@ import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { OverlayHeader } from "@/components/overlay-header";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
-import { useInfiniteScroll } from "@/components/use-infinite-scroll";
+import { useInfiniteListController } from "@/components/use-infinite-list-controller";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
@@ -70,7 +70,10 @@ export function CategoryVideosInfinite({
   pageSize = 48,
 }: CategoryVideosInfiniteProps) {
   const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
-  const [videos, setVideos] = useState<VideoRecord[]>(() => dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet)));
+  const initialVisibleVideos = useMemo(
+    () => dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet)),
+    [hiddenVideoIdSet, initialVideos],
+  );
   const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
   const [videoPendingHideConfirm, setVideoPendingHideConfirm] = useState<VideoRecord | null>(null);
   const [hideSeen, setHideSeen] = useSeenTogglePreference({
@@ -78,7 +81,7 @@ export function CategoryVideosInfinite({
     isAuthenticated,
   });
   const seenVideoIdSet = new Set(seenVideoIds);
-  const seenIdsRef = useRef(new Set(filterHiddenVideos(initialVideos, hiddenVideoIdSet).map((video) => video.id)));
+  const seenIdsRef = useRef(new Set(initialVisibleVideos.map((video) => video.id)));
   const chunkTriggerRef = useRef<HTMLDivElement | null>(null);
   const videosCountRef = useRef(initialVideos.length);
   const bufferWarmInFlightRef = useRef(false);
@@ -104,7 +107,7 @@ export function CategoryVideosInfinite({
 
       if (!result.ok) {
         return {
-          added: 0,
+          incoming: [],
           hasMore: false,
           nextOffset: offset,
           errorMessage: result.message,
@@ -122,17 +125,11 @@ export function CategoryVideosInfinite({
         return true;
       });
 
-      if (uniqueIncoming.length > 0) {
-        setVideos((current) => [...current, ...uniqueIncoming]);
-      }
-
       const nextOffset = Number(payload.nextOffset);
-      const serverHasMore = Boolean(payload.hasMore);
-      const resolvedHasMore = serverHasMore && uniqueIncoming.length > 0;
-
       return {
-        added: uniqueIncoming.length,
-        hasMore: resolvedHasMore,
+        incoming: uniqueIncoming,
+        hasMore: Boolean(payload.hasMore),
+        incomingCountForOffset: incoming.length,
         nextOffset: Number.isFinite(nextOffset)
           ? nextOffset
           : offset + incoming.length,
@@ -140,7 +137,7 @@ export function CategoryVideosInfinite({
     } catch {
       // Invariant marker: setLoadError("The system cannot serve this request right now. Please try again later.");
       return {
-        added: 0,
+        incoming: [],
         hasMore: false,
         nextOffset: offset,
         errorMessage: OPERATIONAL_RETRY_LATER_MESSAGE,
@@ -149,6 +146,8 @@ export function CategoryVideosInfinite({
   }, [hiddenVideoIdSet, pageSize, slug]);
 
   const {
+    items: videos,
+    setItems: setVideos,
     hasMore,
     hasMoreRef,
     isLoading,
@@ -156,9 +155,12 @@ export function CategoryVideosInfinite({
     setLoadError,
     sentinelRef,
     loadMore,
-  } = useInfiniteScroll({
+  } = useInfiniteListController<VideoRecord>({
+    initialItems: initialVisibleVideos,
     initialOffset: initialVideos.length,
     initialHasMore,
+    getItemKey: (video) => video.id,
+    stopOnNoUniqueIncoming: true,
     sentinelRootMargin: PREFETCH_ROOT_MARGIN,
     sentinelBackground: true,
     observerTargets: [

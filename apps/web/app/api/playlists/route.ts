@@ -1,49 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { createPlaylistSchema } from "@/lib/api-schemas";
-import { requireApiAuth } from "@/lib/auth-request";
+import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { createPlaylist, getPlaylists } from "@/lib/catalog-data";
-import { verifySameOrigin } from "@/lib/csrf";
-import { parseRequestJson } from "@/lib/request-json";
 
 export async function GET(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
+  const auth = await requireAuthOnly(request, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
+  if (!auth.ok) {
+    return auth.response;
   }
 
-  const playlists = await getPlaylists(authResult.auth.userId);
+  const playlists = await getPlaylists(auth.auth.userId);
   return NextResponse.json({ playlists });
 }
 
 export async function POST(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
+  const result = await withAuthAndBody(request, createPlaylistSchema, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
-  }
-
-  const csrfError = verifySameOrigin(request);
-
-  if (csrfError) {
-    return csrfError;
-  }
-
-  const bodyResult = await parseRequestJson(request);
-
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const parsed = createPlaylistSchema.safeParse(bodyResult.data);
-
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  if (!result.ok) {
+    return result.response;
   }
 
   try {
-    const playlist = await createPlaylist(parsed.data.name, parsed.data.videoIds, authResult.auth.userId);
+    const playlist = await createPlaylist(result.data.name, result.data.videoIds, result.auth.userId);
     return NextResponse.json(playlist, { status: 201 });
   } catch (error) {
     console.error("Failed to create playlist", error);

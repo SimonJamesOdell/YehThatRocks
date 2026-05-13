@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AnonymousCredentialsModal } from "@/components/anonymous-credentials-modal";
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, INTRO_SKIP_ONCE_AFTER_LOGIN_KEY } from "@/lib/storage-keys";
 
 type BrowserPasswordCredential = {
   id: string;
@@ -43,8 +45,6 @@ function canStoreBrowserCredential() {
   return "PasswordCredential" in window && typeof credentials?.store === "function";
 }
 
-const INTRO_SKIP_ONCE_AFTER_LOGIN_KEY = "ytr:intro-skip-once";
-const AUTO_LOGIN_SUPPRESS_ONCE_KEY = "ytr:auto-login-suppress-once";
 const ANONYMOUS_SCREEN_NAME_MIN_LENGTH = 2;
 const ANONYMOUS_SCREEN_NAME_MAX_LENGTH = 40;
 const ANONYMOUS_SUGGESTION_TIMEOUT_MS = 4000;
@@ -111,7 +111,7 @@ export function AuthLoginForm() {
   function redirectAfterAuth() {
     const videoParam = new URLSearchParams(window.location.search).get("v");
     const target = videoParam ? `/?v=${encodeURIComponent(videoParam)}` : "/";
-    window.dispatchEvent(new Event("ytr:auth-success"));
+    dispatchAppEvent(EVENT_NAMES.AUTH_SUCCESS, null);
     router.push(target);
     router.refresh();
   }
