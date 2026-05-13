@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
-import { Suspense, memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { Suspense, memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import { AuthLoginForm } from "@/components/auth-login-form";
@@ -31,7 +31,8 @@ import { useShellAdminState } from "@/components/use-shell-admin-state";
 import { useShellKeyboardShortcuts } from "@/components/use-shell-keyboard-shortcuts";
 import { useShellOverlayEvents } from "@/components/use-shell-overlay-events";
 import { useShellOverlayPendingState } from "@/components/use-shell-overlay-pending-state";
-import { deriveShellOverlayRouteState, isArtistsOverlayPath, isProtectedOverlayPath, isRouteActive, isCategoriesOverlayPath } from "@/components/shell-dynamic-route-state";
+import { useShellOverlayRouteMeta } from "@/components/use-shell-overlay-route-meta";
+import { deriveShellOverlayRouteState, isProtectedOverlayPath, isRouteActive, isCategoriesOverlayPath } from "@/components/shell-dynamic-route-state";
 import { navItems, type VideoRecord } from "@/lib/catalog";
 import { MagazineGenerateNowButton } from "@/components/magazine-generate-now-button";
 import { detectAppendOnly, filterSeenFromWatchNext } from "@/components/shell-dynamic-helpers";
@@ -643,79 +644,26 @@ function ShellDynamicInner({
       ? artistLetterParam.toUpperCase()
       : "A";
   const resumeParam = searchParams.get("resume") ?? undefined;
-  const overlayRouteKey = (() => {
-    if (pendingOverlayRouteKey) {
-      return pendingOverlayRouteKey;
-    }
-    if (disableOverlayDropAnimation && isCategoriesRoute) {
-      return "categories-overlay";
-    }
-    const filteredParams = new URLSearchParams();
-    for (const [key, value] of searchParams.entries()) {
-      if (key === "v" || key === "resume" || (pathname === "/admin" && key === "tab")) {
-        continue;
-      }
-      filteredParams.append(key, value);
-    }
-    const filteredQuery = filteredParams.toString();
-    return filteredQuery ? `${pathname}?${filteredQuery}` : pathname;
-  })();
-  const isCategoriesOverlayPendingOrActive = isCategoriesRoute
-    || pendingOverlayRouteKey === "categories-overlay"
-    || pendingOverlayRouteKey?.startsWith("/categories") === true;
-  const isArtistsOverlayPendingOrActive = isArtistsOverlayPath(pathname)
-    || pendingOverlayRouteKey === "artists-overlay"
-    || pendingOverlayRouteKey?.startsWith("/artists") === true;
-  const routeLoadingLabel = pathname.endsWith("/wiki") || pendingOverlayOpenKind === "wiki" ? "Loading wiki" : "Loading video";
-  const routeLoadingMessage = routeLoadingLabel === "Loading video"
-    ? "connecting to upstream video provider..."
-    : `${routeLoadingLabel}...`;
-  const handleOverlayVideoLinkClickCapture = useCallback((event: ReactMouseEvent<HTMLElement>) => {
-    if (!shouldShowOverlayPanel || isOverlayClosing) {
-      return;
-    }
-    if (
-      event.defaultPrevented
-      || event.button !== 0
-      || event.metaKey
-      || event.ctrlKey
-      || event.shiftKey
-      || event.altKey
-    ) {
-      return;
-    }
-    const target = event.target as Element | null;
-    const anchor = target?.closest("a") as HTMLAnchorElement | null;
-    if (!anchor) {
-      return;
-    }
-    if (anchor.dataset.overlayClose === "true") {
-      const closeHref = anchor.getAttribute("href") ?? "/";
-      event.preventDefault();
-      window.dispatchEvent(new CustomEvent(OVERLAY_CLOSE_REQUEST_EVENT, {
-        detail: { href: closeHref },
-      }));
-      return;
-    }
-    const url = new URL(anchor.href, window.location.href);
-    if (url.origin !== window.location.origin || url.pathname !== "/") {
-      return;
-    }
-    const targetVideoId = url.searchParams.get("v");
-    if (!targetVideoId) return;
-    if (pathname === "/new" && target?.closest(".rightRail")) {
-      event.preventDefault();
-      url.searchParams.delete("resume");
-      window.dispatchEvent(new CustomEvent(OVERLAY_CLOSE_REQUEST_EVENT, { detail: { href: `${url.pathname}${url.search}${url.hash}` } }));
-      return;
-    }
-    event.preventDefault();
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("v", targetVideoId);
-    params.delete('resume');
-    const nextQuery = params.toString();
-    router.push(nextQuery ? `${pathname}?${nextQuery}` : pathname);
-  }, [isOverlayClosing, pathname, router, searchParams, shouldShowOverlayPanel]);
+  const {
+    overlayRouteKey,
+    isCategoriesOverlayPendingOrActive,
+    isArtistsOverlayPendingOrActive,
+    routeLoadingLabel,
+    routeLoadingMessage,
+    handleOverlayVideoLinkClickCapture,
+  } = useShellOverlayRouteMeta({
+    pathname,
+    searchParamsString: searchParams.toString(),
+    pendingOverlayRouteKey,
+    pendingOverlayOpenKind,
+    disableOverlayDropAnimation,
+    isCategoriesRoute,
+    shouldShowOverlayPanel,
+    isOverlayClosing,
+    onPush: (href) => {
+      router.push(href);
+    },
+  });
   const handleOverlayOpenRequest = useCallback((kind: "wiki" | "video", optimisticRouteKey: string) => {
     setPendingOverlayOpenKind(kind);
     setPendingOverlayRouteKey(optimisticRouteKey);
