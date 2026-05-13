@@ -4,7 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent } from "react";
 import type { useRouter } from "next/navigation";
 import type { VideoRecord } from "@/lib/catalog";
-import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT } from "@/lib/events-contract";
+import {
+  EVENT_NAMES,
+  PLAYLISTS_UPDATED_EVENT,
+  RIGHT_RAIL_MODE_EVENT,
+  PLAYLIST_RAIL_SYNC_EVENT,
+  PLAYLIST_CREATION_PROGRESS_EVENT,
+  dispatchAppEvent,
+} from "@/lib/events-contract";
 
 type RouterInstance = ReturnType<typeof useRouter>;
 
@@ -673,7 +680,7 @@ export function usePlaylistRail({
         return;
       }
 
-      window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+      dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
       setPlaylistRailData(null);
       setPlaylistRailError(null);
       router.push(getClosePlaylistHref());
@@ -705,7 +712,7 @@ export function usePlaylistRail({
         return;
       }
 
-      window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+      dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
       setPlaylistRailSummaries((current) => current.filter((p) => p.id !== playlistId));
     } catch {
       // Silent failure
@@ -756,7 +763,7 @@ export function usePlaylistRail({
       }
 
       setPlaylistCreationPendingId(created.id);
-      window.dispatchEvent(new Event(PLAYLISTS_UPDATED_EVENT));
+      dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
       router.replace(getActivatePlaylistHref(created.id));
     } catch {
       setPlaylistMutationTone("error");

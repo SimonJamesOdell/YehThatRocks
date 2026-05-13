@@ -4,19 +4,17 @@ import {
   seenTogglePreferenceKeySchema,
   seenTogglePreferenceMutationSchema,
 } from "@/lib/api-schemas";
-import { requireApiAuth } from "@/lib/auth-request";
-import { verifySameOrigin } from "@/lib/csrf";
-import { parseRequestJson } from "@/lib/request-json";
+import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import {
   getSeenTogglePreferenceForUser,
   setSeenTogglePreferenceForUser,
 } from "@/lib/seen-toggle-preference-data";
 
 export async function GET(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
+  const auth = await requireAuthOnly(request, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
+  if (!auth.ok) {
+    return auth.response;
   }
 
   const parsedKey = seenTogglePreferenceKeySchema.safeParse(request.nextUrl.searchParams.get("key") ?? "");
@@ -25,7 +23,7 @@ export async function GET(request: NextRequest) {
   }
 
   const value = await getSeenTogglePreferenceForUser({
-    userId: authResult.auth.userId,
+    userId: auth.auth.userId,
     key: parsedKey.data,
   });
 
@@ -36,34 +34,19 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
-
-  if (!authResult.ok) {
-    return authResult.response;
-  }
-
-  const csrfError = verifySameOrigin(request);
-  if (csrfError) {
-    return csrfError;
-  }
-
-  const bodyResult = await parseRequestJson(request);
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const parsed = seenTogglePreferenceMutationSchema.safeParse(bodyResult.data);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const result = await setSeenTogglePreferenceForUser({
-    userId: authResult.auth.userId,
-    key: parsed.data.key,
-    value: parsed.data.value,
-  });
+  const result = await withAuthAndBody(request, seenTogglePreferenceMutationSchema, { authMode: "user" });
 
   if (!result.ok) {
+    return result.response;
+  }
+
+  const prefResult = await setSeenTogglePreferenceForUser({
+    userId: result.auth.userId,
+    key: result.data.key,
+    value: result.data.value,
+  });
+
+  if (!prefResult.ok) {
     return NextResponse.json({ ok: false, error: "Preference persistence unavailable" }, { status: 503 });
   }
 

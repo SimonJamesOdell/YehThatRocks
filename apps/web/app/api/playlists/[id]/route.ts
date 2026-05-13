@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { renamePlaylistSchema } from "@/lib/api-schemas";
-import { requireApiAuth } from "@/lib/auth-request";
+import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { deletePlaylist, filterHiddenVideos, getPlaylistById, getPlaylists, renamePlaylist } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
-import { parseRequestJson } from "@/lib/request-json";
 
 export const dynamic = "force-dynamic";
 
@@ -41,18 +40,18 @@ function toJsonSafeValue(value: unknown): unknown {
 }
 
 export async function GET(_request: NextRequest, context: PlaylistRouteContext) {
-  const authResult = await requireApiAuth(_request);
+  const auth = await requireAuthOnly(_request, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
+  if (!auth.ok) {
+    return auth.response;
   }
 
   const { id } = await context.params;
-  let playlist = await getPlaylistById(id, authResult.auth.userId);
+  let playlist = await getPlaylistById(id, auth.auth.userId);
 
   if (playlist) {
     // Filter out blocked videos from playlist
-    playlist.videos = await filterHiddenVideos(playlist.videos, authResult.auth.userId);
+    playlist.videos = await filterHiddenVideos(playlist.videos, auth.auth.userId);
     return withNoStore(NextResponse.json(toJsonSafeValue({
       ...playlist,
       itemCount: playlist.videos.length,
@@ -61,7 +60,7 @@ export async function GET(_request: NextRequest, context: PlaylistRouteContext) 
 
   // Some database shapes fail to resolve empty playlists in detail lookup.
   // Fall back to summary lookup so zero-track playlists still open correctly.
-  const playlistSummaries = await getPlaylists(authResult.auth.userId);
+  const playlistSummaries = await getPlaylists(auth.auth.userId);
   const matchingSummary = playlistSummaries.find((candidate) => candidate.id === id);
 
   if (!matchingSummary) {
@@ -77,10 +76,10 @@ export async function GET(_request: NextRequest, context: PlaylistRouteContext) 
 }
 
 export async function DELETE(request: NextRequest, context: PlaylistRouteContext) {
-  const authResult = await requireApiAuth(request);
+  const auth = await requireAuthOnly(request, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
+  if (!auth.ok) {
+    return auth.response;
   }
 
   const csrfError = verifySameOrigin(request);
@@ -90,7 +89,7 @@ export async function DELETE(request: NextRequest, context: PlaylistRouteContext
   }
 
   const { id } = await context.params;
-  const didDelete = await deletePlaylist(id, authResult.auth.userId);
+  const didDelete = await deletePlaylist(id, auth.auth.userId);
 
   if (!didDelete) {
     return NextResponse.json({ error: "Playlist not found" }, { status: 404 });
@@ -100,32 +99,14 @@ export async function DELETE(request: NextRequest, context: PlaylistRouteContext
 }
 
 export async function PATCH(request: NextRequest, context: PlaylistRouteContext) {
-  const authResult = await requireApiAuth(request);
+  const result = await withAuthAndBody(request, renamePlaylistSchema, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
-  }
-
-  const csrfError = verifySameOrigin(request);
-
-  if (csrfError) {
-    return csrfError;
-  }
-
-  const bodyResult = await parseRequestJson(request);
-
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const parsed = renamePlaylistSchema.safeParse(bodyResult.data);
-
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  if (!result.ok) {
+    return result.response;
   }
 
   const { id } = await context.params;
-  const renamed = await renamePlaylist(id, parsed.data.name, authResult.auth.userId);
+  const renamed = await renamePlaylist(id, result.data.name, result.auth.userId);
 
   if (!renamed) {
     return NextResponse.json({ error: "Playlist not found" }, { status: 404 });

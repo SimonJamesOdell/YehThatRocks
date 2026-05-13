@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { requireApiAuth } from "@/lib/auth-request";
+import { withAuthAndBody } from "@/lib/api-route-pipeline";
 import { addPlaylistItems, createPlaylist, hasDatabaseUrl, importVideoFromDirectSource, normalizeYouTubeVideoId } from "@/lib/catalog-data";
-import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
-import { parseRequestJson } from "@/lib/request-json";
 
 const importPlaylistSchema = z.object({
   source: z.string().trim().min(1).max(2048),
@@ -205,30 +203,13 @@ function buildDefaultImportedPlaylistName(sourceTitle: string | null) {
 }
 
 export async function POST(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
+  const result = await withAuthAndBody(request, importPlaylistSchema, { authMode: "user" });
 
-  if (!authResult.ok) {
-    return authResult.response;
+  if (!result.ok) {
+    return result.response;
   }
 
-  const csrfError = verifySameOrigin(request);
-  if (csrfError) {
-    return csrfError;
-  }
-
-  const bodyResult = await parseRequestJson(request);
-
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const parsed = importPlaylistSchema.safeParse(bodyResult.data);
-
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const playlistId = parsePlaylistIdFromSource(parsed.data.source);
+  const playlistId = parsePlaylistIdFromSource(result.data.source);
   if (!playlistId) {
     return NextResponse.json({ error: "Provide a valid YouTube playlist URL or playlist ID." }, { status: 400 });
   }
@@ -248,7 +229,7 @@ export async function POST(request: NextRequest) {
   }
 
   const sourcePlaylistTitle = await fetchPlaylistTitle(playlistId);
-  const requestedPlaylistName = parsed.data.name?.trim();
+  const requestedPlaylistName = result.data.name?.trim();
   const playlistName = (requestedPlaylistName && requestedPlaylistName.length >= 2
     ? requestedPlaylistName
     : buildDefaultImportedPlaylistName(sourcePlaylistTitle)).slice(0, 80);
@@ -277,8 +258,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const createdPlaylist = await createPlaylist(playlistName, [], authResult.auth.userId);
-    const updatedPlaylist = await addPlaylistItems(createdPlaylist.id, playlistVideoIds, authResult.auth.userId);
+    const createdPlaylist = await createPlaylist(playlistName, [], result.auth.userId);
+    const updatedPlaylist = await addPlaylistItems(createdPlaylist.id, playlistVideoIds, result.auth.userId);
 
     return NextResponse.json({
       ok: true,

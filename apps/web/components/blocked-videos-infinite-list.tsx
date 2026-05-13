@@ -5,7 +5,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
-import { useInfiniteScroll } from "@/components/use-infinite-scroll";
+import { useInfiniteListController } from "@/components/use-infinite-list-controller";
 import type { HiddenVideoEntry } from "@/lib/catalog-data";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
@@ -45,20 +45,23 @@ export function BlockedVideosInfiniteList({
   initialHasMore,
   pageSize = 24,
 }: BlockedVideosInfiniteListProps) {
-  const [blockedVideos, setBlockedVideos] = useState<HiddenVideoEntry[]>(initialBlockedVideos);
   const [filterValue, setFilterValue] = useState("");
   const [unblockingIds, setUnblockingIds] = useState<Set<string>>(new Set());
   const {
+    items: blockedVideos,
+    setItems: setBlockedVideos,
     hasMore,
     isLoading,
     loadError,
     setLoadError,
     sentinelRef,
-    loadMore,
     retryLoadMore,
-  } = useInfiniteScroll({
+  } = useInfiniteListController<HiddenVideoEntry>({
+    initialItems: initialBlockedVideos,
     initialOffset: initialBlockedVideos.length,
     initialHasMore,
+    getItemKey: (entry) => entry.video.id,
+    stopOnNoUniqueIncoming: true,
     sentinelRootMargin: "600px 0px",
     fetchPage: useCallback(async (offset) => {
       const result = await fetchJsonWithLoaderContract<BlockedVideosPayload>({
@@ -71,7 +74,7 @@ export function BlockedVideosInfiniteList({
 
       if (!result.ok) {
         return {
-          added: 0,
+          incoming: [],
           hasMore: false,
           nextOffset: offset,
           errorMessage: result.message,
@@ -81,31 +84,11 @@ export function BlockedVideosInfiniteList({
       const payload = result.data;
       const incoming = Array.isArray(payload.blockedVideos) ? payload.blockedVideos : [];
 
-      let added = 0;
-      setBlockedVideos((current) => {
-        const seen = new Set(current.map((entry) => entry.video.id));
-        const uniqueIncoming = incoming.filter((entry) => !seen.has(entry.video.id));
-        added = uniqueIncoming.length;
-
-        if (added === 0) {
-          return current;
-        }
-
-        return [...current, ...uniqueIncoming];
-      });
-
-      if (added === 0) {
-        return {
-          added: 0,
-          hasMore: false,
-          nextOffset: offset + incoming.length,
-        };
-      }
-
       const nextOffset = Number(payload.nextOffset);
       return {
-        added,
+        incoming,
         hasMore: Boolean(payload.hasMore),
+        incomingCountForOffset: incoming.length,
         nextOffset: Number.isFinite(nextOffset) ? nextOffset : offset + incoming.length,
       };
     }, [pageSize]),

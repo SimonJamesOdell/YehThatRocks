@@ -29,7 +29,6 @@ const TOP100_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-top100";
 const TOP100_TARGET_COUNT = 100;
 const TOP100_FETCH_SOURCE_COUNT = 180;
 const TOP100_FIRST_LOAD_TIMEOUT_MS = 6_500;
-const TOP100_ROUTE_QUEUE_SYNC_EVENT = "ytr:new-route-queue-sync";
 
 function readTop100SessionCache(options?: { allowStale?: boolean }) {
   if (typeof window === "undefined") {
@@ -110,16 +109,10 @@ export function Top100VideosLoader({
   });
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.dispatchEvent(new CustomEvent(TOP100_ROUTE_QUEUE_SYNC_EVENT, {
-      detail: {
-        source: "top100",
-        videoIds: visibleVideos.map((video) => video.id),
-      },
-    }));
+    dispatchAppEvent(EVENT_NAMES.NEW_ROUTE_QUEUE_SYNC, {
+      source: "top100",
+      videoIds: visibleVideos.map((video) => video.id),
+    });
   }, [visibleVideos]);
 
   const handleHideVideo = useCallback((track: VideoRecord) => {

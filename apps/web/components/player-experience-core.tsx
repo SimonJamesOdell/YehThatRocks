@@ -1,11 +1,10 @@
 "use client";
 
-import { ChangeEvent, startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type UIEvent } from "react";
+import { ChangeEvent, startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type UIEvent } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 
 import type { VideoRecord } from "@/lib/catalog";
-import { buildSharedVideoMessage } from "@/lib/chat-shared-video";
 import { AutoplaySettingsEditor } from "@/components/autoplay-settings-editor";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
@@ -15,19 +14,28 @@ import { useNextTrackDecision } from "@/components/use-next-track-decision";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent, TEMP_QUEUE_DEQUEUE_EVENT, VIDEO_ENDED_EVENT } from "@/lib/events-contract";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
-import { addPlaylistItemClient, createPlaylistClient, listPlaylistsClient } from "@/lib/playlist-client-service";
+import { addPlaylistItemClient, listPlaylistsClient } from "@/lib/playlist-client-service";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import { EndedChoiceCard } from "@/components/player-experience-ended-choice-card";
-import { resetEndedChoiceRuntimeState } from "@/components/player-experience-ended-choice-domain";
+import {
+  resetEndedChoiceRuntimeForReshuffle,
+  resetEndedChoiceRuntimeState,
+  showEndedChoiceOverlayState,
+} from "@/components/player-experience-ended-choice-domain";
 import { buildUnavailableOverlayFlags } from "@/components/player-experience-unavailable-domain";
-import { buildSocialShareTargets, resolvePostDeleteNextVideo } from "@/components/player-experience-share-admin-domain";
+import { buildSocialShareTargets } from "@/components/player-experience-share-admin-domain";
+import {
+  advanceOrShowDeletedOverlay,
+  applyCatalogDeleteSideEffects,
+  dispatchDockHideRequest,
+  handleDockedDeleteClose,
+  replaceDeletedSelectionIfSelected,
+} from "@/components/player-admin-delete-effects";
+import { navigateAfterCatalogDelete as navigateAfterCatalogDeleteFromAdmin } from "@/components/player-admin-delete-navigation";
 import { buildRootAutoplayFallbackParams, buildRouteAutoplayNavigationParams } from "@/components/player-experience-autoplay-domain";
 import {
-  buildRouteAutoplayPlaylistName,
-  buildRouteAutoplayTelemetryMode,
   resolveRouteAutoplaySource,
-  type NextChoiceVideo,
   type RouteAutoplaySource,
 } from "@/components/player-experience-autoplay-utils";
 import {
@@ -40,8 +48,43 @@ import { useAdminSession } from "@/components/use-admin-session";
 import { useAdminVideoEdit } from "@/components/use-admin-video-edit";
 import { useFavouriteState } from "@/components/use-favourite-state";
 import { useLyricsAvailability } from "@/components/use-lyrics-availability";
+import { useRouteAutoplayQueue } from "@/components/use-route-autoplay-queue";
+import { useTopFallbackVideos } from "@/components/use-top-fallback-videos";
+import { getRandomWatchNextId } from "@/components/get-random-watch-next-id";
+import { useEndedChoiceFetching } from "@/components/use-ended-choice-fetching";
+import { executeEndOfVideoDecision } from "@/components/execute-end-of-video-decision";
+import {
+  executeMuteToggleControl,
+  executePlayPauseControl,
+  executeSeekControl,
+  executeVolumeChangeControl,
+  executeWatchAgainControl,
+} from "@/components/player-controls";
+import {
+  shouldHideControlsOnBlur,
+  shouldHideControlsOnMouseLeave,
+  shouldShowControlsOnMouseEnter,
+} from "@/components/player-frame-interactions";
+import {
+  copyShareUrlForModal,
+  openShareTarget,
+  openShareToSocialsModal,
+} from "@/components/player-share-controls";
+import { shareCurrentVideoToChat } from "@/components/player-share-chat";
+import { openAdminDeleteConfirm, openAdminEditOverlay, toggleShareMenu } from "@/components/player-overlay-actions";
+import { buildVideoNavigationHref, navigateVideoHref } from "@/components/player-video-navigation";
+import { buildPathWithParams, clearPlaylistParams } from "@/components/player-search-params";
+import { buildEndedChoiceCandidateVideos, buildEndedChoiceVideos } from "@/components/build-ended-choice-videos";
+import { resolveEndOfVideoDecision } from "@/components/resolve-end-of-video-decision";
+import { resolveDockedRouteNextVideoId } from "@/components/resolve-docked-route-next-video-id";
+import {
+  computeEndedChoiceFirstVisibleIndex,
+  estimateEndedChoiceVisibleCount as estimateEndedChoiceVisibleCountFromLayout,
+  getEndedChoiceGridColumns,
+  shouldAutoPrimeEndedChoiceRunway as shouldAutoPrimeEndedChoiceRunwayFromLayout,
+} from "@/components/ended-choice-layout-utils";
 import { usePlaylistSequence } from "@/components/use-playlist-sequence";
-import { LIVE_SEARCH_PARAMS_EVENT, useLiveSearchParams } from "@/components/use-live-search-params";
+import { useLiveSearchParams } from "@/components/use-live-search-params";
 import { type AutoplayMixSettings } from "@/lib/player-preferences-shared";
 
 type PlayerExperienceProps = {
@@ -138,16 +181,6 @@ declare global {
   }
 }
 
-const AUTOPLAY_KEY = "yeh-player-autoplay";
-const PLAYER_VOLUME_KEY = "yeh-player-volume";
-const PLAYER_MUTED_KEY = "yeh-player-muted";
-const HISTORY_KEY = "yeh-player-history";
-const RESUME_KEY = "yeh-player-resume";
-const HISTORY_LIMIT = 20;
-const AUTOPLAY_FALLBACK_POOL_SIZE = 600;
-const NEW_AUTOPLAY_PLAYLIST_SIZE = 50;
-const ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT = "ytr:new-route-queue-sync";
-const RANDOM_NEXT_RECENT_EXCLUSION = 18;
 const UNAVAILABLE_PLAYER_CODES = new Set([5, 100, 101, 150]);
 const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_PLAYER === "1";
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
@@ -379,7 +412,6 @@ export function PlayerExperience({
   });
   const [endedChoiceLoading, setEndedChoiceLoading] = useState(false);
   const [endedChoiceRemoteVideos, setEndedChoiceRemoteVideos] = useState<VideoRecord[]>([]);
-  const endedChoiceRemoteVideosRef = useRef<VideoRecord[]>([]);
   const [playerClosedByEndOfVideo, setPlayerClosedByEndOfVideo] = useState(false);
   const [playlistChooserOpen, setPlaylistChooserOpen] = useState(false);
   const [overlayInstance, setOverlayInstance] = useState(0);
@@ -437,7 +469,20 @@ export function PlayerExperience({
     playlistQueueOwnerId,
     setPlaylistQueueOwnerId,
   } = usePlaylistSequence({ activePlaylistId, isLoggedIn });
-  const [routeAutoplayQueueIds, setRouteAutoplayQueueIds] = useState<string[]>([]);
+  const {
+    routeAutoplayQueueIds,
+    fetchHiddenVideoIdSet,
+    fetchAutoplaySourceVideoIds,
+    buildRouteAutoplayPlaylist,
+  } = useRouteAutoplayQueue({
+    activePlaylistId,
+    isDockedDesktop,
+    pathname,
+    isLoggedIn,
+    fetchWithAuthRetry,
+    newAutoplayPlaylistSize: NEW_AUTOPLAY_PLAYLIST_SIZE,
+    routeAutoplayQueueSyncEvent: ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT,
+  });
   const [topFallbackVideos, setTopFallbackVideos] = useState<VideoRecord[]>([]);
   const isAdmin = useAdminSession({ isLoggedIn, initialIsAdmin });
   const [localTitleOverride, setLocalTitleOverride] = useState<string | null>(null);
@@ -455,6 +500,17 @@ export function PlayerExperience({
   const endedChoiceOverlayVisibleRef = useRef(false);
   const endedChoicePrewarmVideoIdRef = useRef<string | null>(null);
   const endedChoicePostPrimeQueuedRef = useRef(false);
+  const endedChoiceRuntimeRefs = {
+    endedChoiceUserScrolledRef,
+    endedChoiceFetchingRef,
+    endedChoiceHasMoreRef,
+    endedChoiceSkipRef,
+    endedChoiceAutoRetryBlockedUntilRef,
+    endedChoiceNoProgressStreakRef,
+    endedChoiceFailureStreakRef,
+    endedChoicePrewarmVideoIdRef,
+    endedChoicePostPrimeQueuedRef,
+  };
   const pointerPositionRef = useRef<{ x: number; y: number } | null>(null);
 
   const {
@@ -534,17 +590,7 @@ export function PlayerExperience({
       setEndedChoiceLoading,
       setEndedChoiceRemoteVideos,
       setEndedChoiceAnimateCards,
-      refs: {
-        endedChoiceUserScrolledRef,
-        endedChoiceFetchingRef,
-        endedChoiceHasMoreRef,
-        endedChoiceSkipRef,
-        endedChoiceAutoRetryBlockedUntilRef,
-        endedChoiceNoProgressStreakRef,
-        endedChoiceFailureStreakRef,
-        endedChoicePrewarmVideoIdRef,
-        endedChoicePostPrimeQueuedRef,
-      },
+      refs: endedChoiceRuntimeRefs,
     });
   }, [currentVideo]);
 
@@ -556,10 +602,6 @@ export function PlayerExperience({
       }
     };
   }, []);
-
-  useEffect(() => {
-    endedChoiceRemoteVideosRef.current = endedChoiceRemoteVideos;
-  }, [endedChoiceRemoteVideos]);
 
   useEffect(() => {
     endedChoiceOverlayVisibleRef.current = showEndedChoiceOverlay;
@@ -750,352 +792,30 @@ export function PlayerExperience({
   const hasActivePlaylistIntent = Boolean(activePlaylistId);
   hasActivePlaylistSequenceRef.current = hasActivePlaylistSequence;
 
-  useEffect(() => {
-    if (!autoplayEnabled) {
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadTopFallbackPool() {
-      try {
-        const response = await fetch(`/api/videos/top?count=${AUTOPLAY_FALLBACK_POOL_SIZE}`, {
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          return;
-        }
-
-        const payload = (await response.json().catch(() => null)) as
-          | {
-              videos?: VideoRecord[];
-              pending?: boolean;
-            }
-          | null;
-
-        // Server may return { pending: true } while busy — do not wipe the existing pool.
-        if (!payload || (payload as { pending?: boolean }).pending) {
-          return;
-        }
-
-        const ids = Array.isArray(payload?.videos)
-          ? payload.videos.filter((video): video is VideoRecord => Boolean(video?.id))
-          : [];
-
-        if (!cancelled && ids.length > 0) {
-          setTopFallbackVideos(ids);
-        }
-      } catch {
-        // Keep existing fallback pool if loading fails.
-      }
-    }
-
-    void loadTopFallbackPool();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [autoplayEnabled, currentVideo.id]);
-
-  const extractVideoIds = useCallback((videos: VideoRecord[] | undefined) => (
-    Array.isArray(videos)
-      ? videos.map((video) => video?.id).filter((id): id is string => Boolean(id))
-      : []
-  ), []);
-
-  const fetchHiddenVideoIdSet = useCallback(async () => {
-    if (!isLoggedIn) {
-      return new Set<string>();
-    }
-
-    try {
-      const hiddenResponse = await fetchWithAuthRetry("/api/hidden-videos", { cache: "no-store" });
-      if (!hiddenResponse.ok) {
-        return new Set<string>();
-      }
-
-      const hiddenPayload = (await hiddenResponse.json().catch(() => null)) as { hiddenVideoIds?: string[] } | null;
-      return new Set(Array.isArray(hiddenPayload?.hiddenVideoIds) ? hiddenPayload.hiddenVideoIds : []);
-    } catch {
-      return new Set<string>();
-    }
-  }, [fetchWithAuthRetry, isLoggedIn]);
-
-  const fetchAutoplaySourceVideoIds = useCallback(async (source: RouteAutoplaySource) => {
-    if (source.type === "new") {
-      const response = await fetch(`/api/videos/newest?skip=0&take=${NEW_AUTOPLAY_PLAYLIST_SIZE}`, {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        return [] as string[];
-      }
-
-      const payload = (await response.json().catch(() => null)) as { videos?: VideoRecord[] } | null;
-      return extractVideoIds(payload?.videos);
-    }
-
-    if (source.type === "top100") {
-      const response = await fetch(`/api/videos/top?count=${NEW_AUTOPLAY_PLAYLIST_SIZE}`, {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        return [] as string[];
-      }
-
-      const payload = (await response.json().catch(() => null)) as { videos?: VideoRecord[] } | null;
-      return extractVideoIds(payload?.videos);
-    }
-
-    if (source.type === "favourites") {
-      const favouritesResponse = await fetchWithAuthRetry("/api/favourites", {
-        cache: "no-store",
-      });
-
-      if (!favouritesResponse.ok) {
-        return [] as string[];
-      }
-
-      const payload = (await favouritesResponse.json().catch(() => null)) as { favourites?: VideoRecord[] } | null;
-      return Array.isArray(payload?.favourites)
-        ? payload.favourites.map((video) => video?.id).filter((id): id is string => Boolean(id))
-        : [];
-    }
-
-    if (source.type === "category") {
-      const response = await fetch(
-        `/api/categories/${encodeURIComponent(source.slug)}?limit=96&offset=0`,
-        {
-          cache: "no-store",
-        },
-      );
-
-      if (!response.ok) {
-        return [] as string[];
-      }
-
-      const payload = (await response.json().catch(() => null)) as { videos?: VideoRecord[] } | null;
-      return extractVideoIds(payload?.videos);
-    }
-
-    const response = await fetch(`/api/artists/${encodeURIComponent(source.slug)}`, {
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      return [] as string[];
-    }
-
-    const payload = (await response.json().catch(() => null)) as { videos?: VideoRecord[] } | null;
-    return extractVideoIds(payload?.videos);
-  }, [extractVideoIds, fetchWithAuthRetry]);
-
-  const buildRouteAutoplayPlaylist = useCallback(async (source: RouteAutoplaySource) => {
-    if (!isLoggedIn) {
-      return { playlistId: null as string | null, firstVideoId: null as string | null };
-    }
-
-    try {
-      const [rawVideoIds, hiddenSet] = await Promise.all([
-        fetchAutoplaySourceVideoIds(source),
-        fetchHiddenVideoIdSet(),
-      ]);
-
-      const filteredVideoIds = Array.from(new Set(rawVideoIds.filter((videoId) => !hiddenSet.has(videoId)))).slice(
-        0,
-        NEW_AUTOPLAY_PLAYLIST_SIZE,
-      );
-      const firstVideoId = filteredVideoIds[0] ?? null;
-
-      if (!firstVideoId) {
-        return { playlistId: null as string | null, firstVideoId: null as string | null };
-      }
-
-      const createResponse = await createPlaylistClient(
-        {
-          name: buildRouteAutoplayPlaylistName(source),
-          videoIds: filteredVideoIds,
-        },
-        { telemetryContext: { component: "player-experience-core", mode: buildRouteAutoplayTelemetryMode(source) } },
-      );
-
-      if (!createResponse.ok) {
-        return { playlistId: null as string | null, firstVideoId };
-      }
-
-      const playlistPayload = createResponse.data as { id?: string };
-      const playlistId = typeof playlistPayload?.id === "string" ? playlistPayload.id : null;
-
-      if (playlistId) {
-        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-      }
-
-      return {
-        playlistId,
-        firstVideoId,
-      };
-    } catch {
-      return { playlistId: null as string | null, firstVideoId: null as string | null };
-    }
-  }, [fetchAutoplaySourceVideoIds, fetchHiddenVideoIdSet, isLoggedIn]);
-
-  useEffect(() => {
-    if (!isDockedDesktop || Boolean(activePlaylistId)) {
-      setRouteAutoplayQueueIds([]);
-      return;
-    }
-
-    const autoplaySource = resolveRouteAutoplaySource(pathname);
-
-    if (!autoplaySource) {
-      setRouteAutoplayQueueIds([]);
-      return;
-    }
-
-    let cancelled = false;
-    const routeAutoplaySource = autoplaySource;
-    let receivedSyncedQueue = false;
-
-    const handleRouteQueueSync = (event: Event) => {
-      if (routeAutoplaySource.type !== "new" && routeAutoplaySource.type !== "top100") {
-        return;
-      }
-
-      const detail = (event as CustomEvent<{ source?: string; videoIds?: string[] }>).detail;
-      if (detail?.source !== routeAutoplaySource.type || !Array.isArray(detail.videoIds)) {
-        return;
-      }
-
-      receivedSyncedQueue = true;
-      setRouteAutoplayQueueIds(Array.from(new Set(detail.videoIds.filter((videoId): videoId is string => Boolean(videoId)))));
-    };
-
-    if (typeof window !== "undefined" && (routeAutoplaySource.type === "new" || routeAutoplaySource.type === "top100")) {
-      window.addEventListener(ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT, handleRouteQueueSync as EventListener);
-    }
-
-    async function loadRouteAutoplayQueue() {
-      try {
-        const [hiddenSet, rawIds] = await Promise.all([
-          fetchHiddenVideoIdSet(),
-          fetchAutoplaySourceVideoIds(routeAutoplaySource),
-        ]);
-
-        const dedupedVisibleIds = Array.from(new Set(rawIds.filter((videoId) => !hiddenSet.has(videoId))));
-
-        if (!cancelled && !receivedSyncedQueue) {
-          setRouteAutoplayQueueIds(dedupedVisibleIds);
-        }
-      } catch {
-        if (!cancelled && !receivedSyncedQueue) {
-          setRouteAutoplayQueueIds([]);
-        }
-      }
-    }
-
-    void loadRouteAutoplayQueue();
-
-    return () => {
-      cancelled = true;
-      if (typeof window !== "undefined" && (routeAutoplaySource.type === "new" || routeAutoplaySource.type === "top100")) {
-        window.removeEventListener(ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT, handleRouteQueueSync as EventListener);
-      }
-    };
-  }, [activePlaylistId, fetchAutoplaySourceVideoIds, fetchHiddenVideoIdSet, isDockedDesktop, pathname]);
-
-  useEffect(() => {
-    const nonDockedRouteQueueSource =
-      !isDockedDesktop &&
-      (pathname === "/new" || pathname === "/top100") &&
-      !activePlaylistId;
-
-    if (!nonDockedRouteQueueSource) {
-      return;
-    }
-
-    const routeSourceType = pathname === "/new" ? "new" : "top100";
-
-    let cancelled = false;
-    let receivedSyncedQueue = false;
-
-    const handleRouteQueueSync = (event: Event) => {
-      const detail = (event as CustomEvent<{ source?: string; videoIds?: string[] }>).detail;
-      if (detail?.source !== routeSourceType || !Array.isArray(detail.videoIds)) {
-        return;
-      }
-
-      receivedSyncedQueue = true;
-      setRouteAutoplayQueueIds(Array.from(new Set(detail.videoIds.filter((videoId): videoId is string => Boolean(videoId)))));
-    };
-
-    if (typeof window !== "undefined") {
-      window.addEventListener(ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT, handleRouteQueueSync as EventListener);
-    }
-
-    async function loadRouteAutoplayQueue() {
-      try {
-        const [hiddenSet, rawIds] = await Promise.all([
-          fetchHiddenVideoIdSet(),
-          fetchAutoplaySourceVideoIds({ type: routeSourceType }),
-        ]);
-
-        const dedupedVisibleIds = Array.from(new Set(rawIds.filter((videoId) => !hiddenSet.has(videoId))));
-
-        if (!cancelled && !receivedSyncedQueue) {
-          setRouteAutoplayQueueIds(dedupedVisibleIds);
-        }
-      } catch {
-        if (!cancelled && !receivedSyncedQueue) {
-          setRouteAutoplayQueueIds([]);
-        }
-      }
-    }
-
-    void loadRouteAutoplayQueue();
-
-    return () => {
-      cancelled = true;
-      if (typeof window !== "undefined") {
-        window.removeEventListener(ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT, handleRouteQueueSync as EventListener);
-      }
-    };
-  }, [activePlaylistId, fetchAutoplaySourceVideoIds, fetchHiddenVideoIdSet, isDockedDesktop, pathname]);
-
-  function getRandomWatchNextId() {
-    const queueIds = Array.from(new Set(queue.map((video) => video.id))).filter((videoId) => videoId !== currentVideo.id);
-    const topFallbackVideoIds = Array.from(new Set(topFallbackVideos.map((video) => video.id))).filter(
-      (videoId) => Boolean(videoId) && videoId !== currentVideo.id,
-    );
-    const blendedCandidateIds = Array.from(new Set([...queueIds, ...topFallbackVideoIds]));
-
-    if (blendedCandidateIds.length === 0) {
-      return null;
-    }
-
-    // Avoid recently played videos when possible so random-next feels fresh.
-    const recentIds = Array.from(new Set([...historyStack].reverse()))
-      .filter((videoId) => videoId !== currentVideo.id)
-      .slice(0, RANDOM_NEXT_RECENT_EXCLUSION);
-    const recentIdSet = new Set(recentIds);
-    const freshBlendedIds = blendedCandidateIds.filter((videoId) => !recentIdSet.has(videoId));
-
-    // Keep related/queue tracks discoverable, but diversify with a larger quality pool.
-    const freshQueueIds = queueIds.filter((videoId) => !recentIdSet.has(videoId));
-    const shouldUseTopFallback = freshQueueIds.length < 5;
-
-    const selectionPool = shouldUseTopFallback
-      ? (freshBlendedIds.length > 0 ? freshBlendedIds : blendedCandidateIds)
-      : freshQueueIds;
-
-    if (selectionPool.length === 0) {
-      return null;
-    }
-
-    const randomIndex = Math.floor(Math.random() * selectionPool.length);
-    return selectionPool[randomIndex] ?? null;
-  }
+  useTopFallbackVideos({
+    autoplayEnabled,
+    currentVideoId: currentVideo.id,
+    fallbackPoolSize: AUTOPLAY_FALLBACK_POOL_SIZE,
+    setTopFallbackVideos,
+  });
+
+  const { fetchEndedChoiceSets } = useEndedChoiceFetching({
+    currentVideoId: currentVideo.id,
+    endedChoiceHideSeen,
+    endedChoiceRemoteVideos,
+    endedChoiceBatchSize: ENDED_CHOICE_BATCH_SIZE,
+    endedChoiceFetchingRef,
+    endedChoiceHasMoreRef,
+    endedChoiceSkipRef,
+    endedChoiceNoProgressStreakRef,
+    endedChoiceFailureStreakRef,
+    endedChoiceAutoRetryBlockedUntilRef,
+    endedChoicePostPrimeQueuedRef,
+    endedChoiceUserScrolledRef,
+    setEndedChoiceAnimateCards,
+    setEndedChoiceLoading,
+    setEndedChoiceRemoteVideos,
+  });
 
   const { resolvePlaylistStepTarget, resolveNextTarget, resolvedNextTarget } = useNextTrackDecision({
     activePlaylistId,
@@ -1108,51 +828,13 @@ export function PlayerExperience({
     isDockedDesktop,
     shouldUseRouteQueueRegardlessOfDocked: pathname === "/new" || pathname === "/top100",
     routeAutoplayQueueIds,
-    getRandomWatchNextId,
+    getRandomWatchNextId: () => getRandomWatchNextId({
+      queue,
+      topFallbackVideos,
+      historyStack,
+      currentVideoId: currentVideo.id,
+    }),
   });
-
-  async function resolveAutoplayRecoveryTarget() {
-    try {
-      const response = await fetch(`/api/current-video?v=${encodeURIComponent(currentVideoRef.current.id)}&count=${AUTOPLAY_FALLBACK_POOL_SIZE}`, {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        return null;
-      }
-
-      const payload = (await response.json().catch(() => null)) as
-        | {
-            relatedVideos?: VideoRecord[];
-            videos?: VideoRecord[];
-          }
-        | null;
-
-      const currentId = currentVideoRef.current.id;
-      const fallbackPool = Array.isArray(payload?.relatedVideos)
-        ? payload.relatedVideos
-        : Array.isArray(payload?.videos)
-          ? payload.videos
-          : [];
-      const fallbackIds = Array.from(new Set(fallbackPool.map((video) => video.id))).filter((videoId) => Boolean(videoId) && videoId !== currentId);
-
-      if (fallbackIds.length === 0) {
-        return null;
-      }
-
-      const recentIds = Array.from(new Set([...historyStack].reverse()))
-        .filter((videoId) => videoId !== currentId)
-        .slice(0, RANDOM_NEXT_RECENT_EXCLUSION);
-      const recentIdSet = new Set(recentIds);
-      const freshIds = fallbackIds.filter((videoId) => !recentIdSet.has(videoId));
-      const selectionPool = freshIds.length > 0 ? freshIds : fallbackIds;
-      const randomIndex = Math.floor(Math.random() * selectionPool.length);
-
-      return selectionPool[randomIndex] ?? null;
-    } catch {
-      return null;
-    }
-  }
 
   nextVideoIdRef.current = resolvedNextTarget?.videoId ?? null;
   nextPlaylistIndexRef.current = resolvedNextTarget?.playlistItemIndex ?? null;
@@ -1178,35 +860,22 @@ export function PlayerExperience({
       && !hasLeftInitialRequestedVideoRef.current
       && !hasPlaybackStartedRef.current,
   );
-  const endedChoiceCandidateVideos = useMemo(() => {
-    const deduped = new Map<string, NextChoiceVideo>();
+  const endedChoiceCandidateVideos = useMemo(() => buildEndedChoiceCandidateVideos({
+    queue,
+    topFallbackVideos,
+    currentVideoId: currentVideo.id,
+    endedChoiceDismissedIds,
+    endedChoiceReshuffleKey,
+    endedChoiceBatchSize: ENDED_CHOICE_BATCH_SIZE,
+  }), [queue, topFallbackVideos, currentVideo.id, endedChoiceDismissedIds, endedChoiceReshuffleKey]);
 
-    for (const video of [...queue, ...topFallbackVideos]) {
-      if (!video?.id || video.id === currentVideo.id || deduped.has(video.id)) {
-        continue;
-      }
-
-      deduped.set(video.id, video);
-    }
-
-    const all = [...deduped.values()].filter((video) => !endedChoiceDismissedIds.includes(video.id));
-    const offset = (endedChoiceReshuffleKey * ENDED_CHOICE_BATCH_SIZE) % Math.max(all.length, 1);
-    return [...all.slice(offset), ...all.slice(0, offset)];
-  }, [queue, topFallbackVideos, currentVideo.id, endedChoiceReshuffleKey, endedChoiceDismissedIds]);
-
-  const endedChoiceVideos = useMemo(() => {
-    const deduped = new Map<string, NextChoiceVideo>();
-
-    for (const video of [...endedChoiceCandidateVideos.slice(0, ENDED_CHOICE_BATCH_SIZE), ...endedChoiceRemoteVideos]) {
-      if (!video?.id || video.id === currentVideo.id || endedChoiceDismissedIds.includes(video.id) || deduped.has(video.id)) {
-        continue;
-      }
-
-      deduped.set(video.id, video);
-    }
-
-    return [...deduped.values()];
-  }, [endedChoiceCandidateVideos, endedChoiceRemoteVideos, currentVideo.id, endedChoiceDismissedIds]);
+  const endedChoiceVideos = useMemo(() => buildEndedChoiceVideos({
+    endedChoiceCandidateVideos,
+    endedChoiceBatchSize: ENDED_CHOICE_BATCH_SIZE,
+    endedChoiceRemoteVideos,
+    currentVideoId: currentVideo.id,
+    endedChoiceDismissedIds,
+  }), [endedChoiceCandidateVideos, endedChoiceRemoteVideos, currentVideo.id, endedChoiceDismissedIds]);
 
   const hasSeenEndedChoiceVideos = isLoggedIn && endedChoiceVideos.some((video) => seenVideoIds?.has(video.id));
   const visibleEndedChoiceVideos = isLoggedIn && endedChoiceHideSeen
@@ -3321,9 +2990,13 @@ export function PlayerExperience({
     if (pathname === "/") {
       setPlayerClosedByEndOfVideo((wasClosed) => {
         if (wasClosed) {
-          setShowEndedChoiceOverlay(true);
-          setShowControls(true);
-          setShowShareMenu(false);
+          showEndedChoiceOverlayState({
+            setEndedChoiceLoading,
+            setShowEndedChoiceOverlay,
+            setShowControls,
+            setShowShareMenu,
+            withLoading: false,
+          });
         }
         return false;
       });
@@ -3399,112 +3072,63 @@ export function PlayerExperience({
       ? window.location.pathname
       : pathname;
     const navigationPathname = runtimePathname || "/";
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("v", videoId);
+    const nextHref = buildVideoNavigationHref({
+      videoId,
+      pathname: navigationPathname,
+      baseSearchParams: new URLSearchParams(searchParams.toString()),
+      clearPlaylist: options?.clearPlaylist,
+      playlistId: options?.playlistId,
+      playlistItemIndex: options?.playlistItemIndex,
+    });
 
-    if (options?.clearPlaylist) {
-      params.delete("pl");
-      params.delete("pli");
-    } else if (options?.playlistId) {
-      params.set("pl", options.playlistId);
-
-      if (options.playlistItemIndex !== null && options.playlistItemIndex !== undefined) {
-        params.set("pli", String(options.playlistItemIndex));
-      } else {
-        params.delete("pli");
-      }
-    }
-
-    const nextHref = `${navigationPathname}?${params.toString()}`;
-
-    if (options?.useNativeHistory && typeof window !== "undefined") {
-      window.history.pushState(window.history.state, "", nextHref);
-      window.dispatchEvent(new CustomEvent(LIVE_SEARCH_PARAMS_EVENT));
-      window.dispatchEvent(new PopStateEvent("popstate"));
-      return;
-    }
-
-    router.push(nextHref, { scroll: false });
+    navigateVideoHref({
+      href: nextHref,
+      useNativeHistory: options?.useNativeHistory,
+      routerPush: (href) => {
+        router.push(href, { scroll: false });
+      },
+    });
   }
 
   function triggerEndOfVideoAction(options?: { forceAutoplayAdvance?: boolean }) {
-    const forceAutoplayAdvance = options?.forceAutoplayAdvance === true;
-    // Keep autoplay preference intact, but suspend auto-advance while on overlay routes.
-    const autoplayEnabledForCurrentTrack = autoplayEnabledRef.current && !autoplayRouteTransitionRef.current && currentVideo.id.length > 0;
-
-    const shouldAutoAdvance =
-      autoplayEnabledForCurrentTrack || forceAutoplayAdvance;
-
-    if (shouldAutoAdvance && nextVideoIdRef.current) {
-      pendingAutoAdvanceVideoIdRef.current = nextVideoIdRef.current;
-      navigateToVideo(nextVideoIdRef.current, {
-        clearPlaylist: nextClearPlaylistRef.current,
-        playlistId: activePlaylistIdRef.current,
-        playlistItemIndex: nextPlaylistIndexRef.current,
+    const showEndedChoiceOverlay = () => {
+      showEndedChoiceOverlayState({
+        setEndedChoiceLoading,
+        setShowEndedChoiceOverlay,
+        setShowControls,
+        setShowShareMenu,
       });
-      return;
-    }
+    };
 
-    if (shouldAutoAdvance && hasActivePlaylistIntent) {
-      // Wait for selected playlist queue to load, then continue sequencing there.
-      return;
-    }
+    const forceAutoplayAdvance = options?.forceAutoplayAdvance === true;
+    const decision = resolveEndOfVideoDecision({
+      forceAutoplayAdvance,
+      autoplayEnabled: autoplayEnabledRef.current,
+      autoplayRouteTransition: autoplayRouteTransitionRef.current,
+      currentVideoId: currentVideo.id,
+      nextVideoId: nextVideoIdRef.current,
+      nextClearPlaylist: nextClearPlaylistRef.current,
+      nextPlaylistIndex: nextPlaylistIndexRef.current,
+      hasActivePlaylistIntent,
+      pathname,
+    });
 
-    if (shouldAutoAdvance && !hasActivePlaylistIntent) {
-      const requestId = ++autoplayRecoveryRequestIdRef.current;
-      const endedVideoId = currentVideo.id;
-
-      void (async () => {
-        const recoveredVideoId = await resolveAutoplayRecoveryTarget();
-
-        if (requestId !== autoplayRecoveryRequestIdRef.current) {
-          return;
-        }
-
-        if (!recoveredVideoId) {
-          setEndedChoiceLoading(true);
-          setShowEndedChoiceOverlay(true);
-          setShowControls(true);
-          setShowShareMenu(false);
-          return;
-        }
-
-        if (currentVideoRef.current.id !== endedVideoId) {
-          return;
-        }
-
-        pendingAutoAdvanceVideoIdRef.current = recoveredVideoId;
-        navigateToVideo(recoveredVideoId, {
-          clearPlaylist: true,
-          playlistId: null,
-          playlistItemIndex: null,
-        });
-      })();
-
-      return;
-    }
-
-    if (!autoplayEnabledRef.current) {
-      // When autoplay is off and player is in docked position, close the player instead of showing overlay.
-      const shouldCloseDockedSurface = pathname !== "/";
-
-      if (shouldCloseDockedSurface) {
-        setPlayerClosedByEndOfVideo(true);
-        return;
-      }
-
-      setPlayerClosedByEndOfVideo(false);
-      setEndedChoiceLoading(true);
-      setShowEndedChoiceOverlay(true);
-      setShowControls(true);
-      setShowShareMenu(false);
-      return;
-    }
-
-    setEndedChoiceLoading(true);
-    setShowEndedChoiceOverlay(true);
-    setShowControls(true);
-    setShowShareMenu(false);
+    executeEndOfVideoDecision({
+      decision,
+      currentVideoId: currentVideo.id,
+      activePlaylistId: activePlaylistIdRef.current,
+      fallbackPoolSize: AUTOPLAY_FALLBACK_POOL_SIZE,
+      historyStack,
+      getNextRecoveryRequestId: () => ++autoplayRecoveryRequestIdRef.current,
+      getCurrentRecoveryRequestId: () => autoplayRecoveryRequestIdRef.current,
+      getCurrentVideoId: () => currentVideoRef.current.id,
+      setPendingAutoAdvanceVideoId: (videoId) => {
+        pendingAutoAdvanceVideoIdRef.current = videoId;
+      },
+      navigateToVideo,
+      showEndedChoiceOverlay,
+      setPlayerClosedByEndOfVideo,
+    });
   }
 
   const handleEndedChoiceSelect = useCallback((videoId: string) => {
@@ -3520,185 +3144,6 @@ export function PlayerExperience({
     });
   }, [activePlaylistId, navigateToVideo, playlistQueueIds]);
 
-  async function fetchEndedChoiceSets(
-    requestedCount: number,
-    options?: { background?: boolean; schedulePostPrimeBatch?: boolean },
-  ) {
-    const isBackground = options?.background === true;
-    const shouldSchedulePostPrimeBatch = options?.schedulePostPrimeBatch === true;
-    const applyRetryBackoff = (baseMs: number) => {
-      if (!isBackground) {
-        return;
-      }
-
-      const failureStreak = Math.max(1, endedChoiceFailureStreakRef.current);
-      const cappedBackoff = Math.min(15_000, baseMs * Math.min(8, failureStreak));
-      endedChoiceAutoRetryBlockedUntilRef.current = Date.now() + cappedBackoff;
-    };
-
-    if (isBackground && Date.now() < endedChoiceAutoRetryBlockedUntilRef.current) {
-      return;
-    }
-
-    if (requestedCount <= 0 || endedChoiceFetchingRef.current || !endedChoiceHasMoreRef.current) {
-      return;
-    }
-
-    const take = Math.max(1, Math.min(60, Math.floor(requestedCount)));
-    const skip = endedChoiceSkipRef.current;
-    endedChoiceFetchingRef.current = true;
-    if (!isBackground) {
-      setEndedChoiceLoading(true);
-    }
-
-    try {
-      const params = new URLSearchParams();
-      params.set("v", currentVideo.id);
-      params.set("count", String(take));
-      params.set("offset", String(skip));
-      params.set("mode", "ended-choice");
-      params.set("hideSeen", endedChoiceHideSeen ? "1" : "0");
-
-      const response = await fetch(`/api/current-video?${params.toString()}`, {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        endedChoiceFailureStreakRef.current += 1;
-        applyRetryBackoff(1_200);
-        return;
-      }
-
-      endedChoiceFailureStreakRef.current = 0;
-
-      const payload = (await response.json().catch(() => null)) as
-        | {
-            videos?: VideoRecord[];
-            relatedVideos?: VideoRecord[];
-            hasMore?: boolean;
-          }
-        | null;
-
-      const fetchedVideosRaw = Array.isArray(payload?.relatedVideos)
-        ? payload.relatedVideos
-        : Array.isArray(payload?.videos)
-          ? payload.videos
-          : [];
-      const fetchedVideos = fetchedVideosRaw.filter((video): video is VideoRecord => Boolean(video?.id) && video.id !== currentVideo.id);
-      const payloadHasMore = payload?.hasMore !== false;
-      endedChoiceSkipRef.current = skip + fetchedVideosRaw.length;
-
-      if (fetchedVideos.length === 0 && !payloadHasMore) {
-        endedChoiceHasMoreRef.current = false;
-        endedChoiceNoProgressStreakRef.current = 0;
-        return;
-      }
-
-      if (!payloadHasMore) {
-        endedChoiceHasMoreRef.current = false;
-      }
-
-      if (fetchedVideos.length === 0) {
-        endedChoiceNoProgressStreakRef.current += 1;
-        if (endedChoiceNoProgressStreakRef.current >= 3) {
-          // Repeated empty windows are a strong signal this pagination branch is exhausted.
-          endedChoiceHasMoreRef.current = false;
-        } else {
-          applyRetryBackoff(1_500);
-        }
-        return;
-      }
-
-      const existingIds = new Set(endedChoiceRemoteVideosRef.current.map((video) => video.id));
-      const uniqueToAdd = fetchedVideos.filter((video) => !existingIds.has(video.id));
-      const addedCount = uniqueToAdd.length;
-
-      if (addedCount > 0) {
-        startTransition(() => {
-          setEndedChoiceRemoteVideos((previous) => {
-            const previousIds = new Set(previous.map((video) => video.id));
-            const next = [...previous];
-
-            for (const video of uniqueToAdd) {
-              if (previousIds.has(video.id)) {
-                continue;
-              }
-
-              previousIds.add(video.id);
-              next.push(video);
-            }
-
-            return next;
-          });
-        });
-      }
-
-      if (addedCount <= 0) {
-        endedChoiceNoProgressStreakRef.current += 1;
-        if (endedChoiceNoProgressStreakRef.current >= 3) {
-          endedChoiceHasMoreRef.current = false;
-        } else {
-          applyRetryBackoff(1_200);
-        }
-        return;
-      }
-
-      endedChoiceNoProgressStreakRef.current = 0;
-      endedChoiceAutoRetryBlockedUntilRef.current = 0;
-
-      if (
-        shouldSchedulePostPrimeBatch
-        && !endedChoicePostPrimeQueuedRef.current
-        && endedChoiceHasMoreRef.current
-        && !endedChoiceUserScrolledRef.current
-      ) {
-        endedChoicePostPrimeQueuedRef.current = true;
-        window.setTimeout(() => {
-          void fetchEndedChoiceSets(ENDED_CHOICE_BATCH_SIZE, { background: true });
-        }, 90);
-      }
-
-      if (skip > 0 || endedChoiceUserScrolledRef.current) {
-        setEndedChoiceAnimateCards(false);
-      }
-    } catch {
-      endedChoiceFailureStreakRef.current += 1;
-      applyRetryBackoff(1_500);
-      // Ignore transient failures; next scroll/prefetch will retry.
-    } finally {
-      if (!isBackground) {
-        setEndedChoiceLoading(false);
-      }
-      endedChoiceFetchingRef.current = false;
-    }
-  }
-
-  function getEndedChoiceColumns() {
-    const width = endedChoiceOverlayRef.current?.clientWidth ?? window.innerWidth;
-    if (width <= 640) {
-      return 1;
-    }
-
-    if (width <= 920) {
-      return 2;
-    }
-
-    return 4;
-  }
-
-  function estimateEndedChoiceVisibleCount() {
-    const overlay = endedChoiceOverlayRef.current;
-    const columns = Math.max(1, getEndedChoiceColumns());
-
-    if (!overlay) {
-      return columns * 2;
-    }
-
-    const rowHeight = Math.max(1, endedChoiceRowHeightRef.current);
-    const rowsVisible = Math.max(1, Math.ceil(overlay.clientHeight / rowHeight) + 1);
-    return rowsVisible * columns;
-  }
-
   const measureEndedChoiceCard = useCallback((node: HTMLDivElement | null) => {
     if (!node) {
       return;
@@ -3709,18 +3154,6 @@ export function PlayerExperience({
       endedChoiceRowHeightRef.current = next;
     }
   }, []);
-
-  function computeCurrentEndedChoiceFirstVisibleIndex() {
-    const overlay = endedChoiceOverlayRef.current;
-    if (!overlay) {
-      return 0;
-    }
-
-    const columns = Math.max(1, getEndedChoiceColumns());
-    const rowHeight = Math.max(1, endedChoiceRowHeightRef.current);
-    const rowsScrolled = Math.max(0, Math.floor(overlay.scrollTop / rowHeight));
-    return Math.max(0, rowsScrolled * columns);
-  }
 
   function scheduleEndedChoicePrefetchCheck() {
     if (endedChoicePrefetchRafRef.current !== null) {
@@ -3738,8 +3171,20 @@ export function PlayerExperience({
         return;
       }
 
-      const firstVisibleIndex = computeCurrentEndedChoiceFirstVisibleIndex();
-      const visibleCount = estimateEndedChoiceVisibleCount();
+      const overlay = endedChoiceOverlayRef.current;
+      const columns = Math.max(1, getEndedChoiceGridColumns(overlay?.clientWidth ?? window.innerWidth));
+      const firstVisibleIndex = overlay
+        ? computeEndedChoiceFirstVisibleIndex({
+          overlayScrollTop: overlay.scrollTop,
+          rowHeight: endedChoiceRowHeightRef.current,
+          columns,
+        })
+        : 0;
+      const visibleCount = estimateEndedChoiceVisibleCountFromLayout({
+        overlayClientHeight: overlay?.clientHeight ?? null,
+        rowHeight: endedChoiceRowHeightRef.current,
+        columns,
+      });
       const currentRunway = endedChoiceGridVideos.length - (firstVisibleIndex + visibleCount);
 
       if (currentRunway < ENDED_CHOICE_SCROLL_RUNWAY_COUNT) {
@@ -3758,24 +3203,26 @@ export function PlayerExperience({
   }
 
   function shouldAutoPrimeEndedChoiceRunway() {
-    if (
-      !showEndedChoiceOverlay
-      || endedChoiceUserScrolledRef.current
-      || endedChoiceFetchingRef.current
-      || !endedChoiceHasMoreRef.current
-    ) {
-      return false;
-    }
-
     const overlay = endedChoiceOverlayRef.current;
-    const isScrollable = overlay ? overlay.scrollHeight > overlay.clientHeight + 4 : false;
-    const visibleCount = estimateEndedChoiceVisibleCount();
-    const lowRunway = endedChoiceGridVideos.length < visibleCount + ENDED_CHOICE_SCROLL_RUNWAY_COUNT;
-
-    const needsSeenRowFill = endedChoiceHideSeen
-      && (visibleEndedChoiceVideos.length === 0 || visibleEndedChoiceVideos.length % 4 !== 0);
-
-    return needsSeenRowFill || (!isScrollable && lowRunway);
+    const columns = Math.max(1, getEndedChoiceGridColumns(overlay?.clientWidth ?? window.innerWidth));
+    const visibleCount = estimateEndedChoiceVisibleCountFromLayout({
+      overlayClientHeight: overlay?.clientHeight ?? null,
+      rowHeight: endedChoiceRowHeightRef.current,
+      columns,
+    });
+    return shouldAutoPrimeEndedChoiceRunwayFromLayout({
+      showEndedChoiceOverlay,
+      endedChoiceUserScrolled: endedChoiceUserScrolledRef.current,
+      endedChoiceFetching: endedChoiceFetchingRef.current,
+      endedChoiceHasMore: endedChoiceHasMoreRef.current,
+      overlayScrollHeight: overlay?.scrollHeight ?? null,
+      overlayClientHeight: overlay?.clientHeight ?? null,
+      endedChoiceGridLength: endedChoiceGridVideos.length,
+      visibleCount,
+      endedChoiceScrollRunwayCount: ENDED_CHOICE_SCROLL_RUNWAY_COUNT,
+      endedChoiceHideSeen,
+      visibleEndedChoiceVideosLength: visibleEndedChoiceVideos.length,
+    });
   }
 
   useEffect(() => {
@@ -3877,16 +3324,11 @@ export function PlayerExperience({
   function handleEndedChoiceReshuffle() {
     setEndedChoiceGridExiting(true);
     setTimeout(() => {
-      endedChoiceUserScrolledRef.current = false;
-      setEndedChoiceAnimateCards(true);
-      endedChoiceHasMoreRef.current = true;
-      endedChoiceSkipRef.current = 0;
-      endedChoiceNoProgressStreakRef.current = 0;
-      endedChoiceFailureStreakRef.current = 0;
-      endedChoiceAutoRetryBlockedUntilRef.current = 0;
-      endedChoicePrewarmVideoIdRef.current = null;
-      endedChoicePostPrimeQueuedRef.current = false;
-      setEndedChoiceRemoteVideos([]);
+      resetEndedChoiceRuntimeForReshuffle({
+        setEndedChoiceRemoteVideos,
+        setEndedChoiceAnimateCards,
+        refs: endedChoiceRuntimeRefs,
+      });
       setEndedChoiceReshuffleKey((k) => k + 1);
       setEndedChoiceGridExiting(false);
     }, 280);
@@ -3925,14 +3367,28 @@ export function PlayerExperience({
     setEndedChoiceFromUnavailable(false);
     setPlayerClosedByEndOfVideo(false);
 
-    if (!playerRef.current) {
-      return;
-    }
+    executeWatchAgainControl({
+      player: playerRef.current,
+      onPlaybackUnlock: () => {
+        hasUserGesturePlaybackUnlockRef.current = true;
+      },
+      onPlayAttempt: notePlayAttempt,
+    });
+  }
 
-    playerRef.current.seekTo(0, true);
+  function executeManualNavigation(
+    videoId: string,
+    options?: {
+      clearPlaylist?: boolean;
+      playlistId?: string | null;
+      playlistItemIndex?: number | null;
+      useNativeHistory?: boolean;
+    },
+  ) {
+    showManualTransitionMask();
     hasUserGesturePlaybackUnlockRef.current = true;
-    notePlayAttempt();
-    playerRef.current.playVideo();
+    pendingAutoAdvanceVideoIdRef.current = videoId;
+    navigateToVideo(videoId, options);
   }
 
   function handlePrevious() {
@@ -3940,10 +3396,7 @@ export function PlayerExperience({
       const previousPlaylistTarget = resolvePlaylistStepTarget(-1);
 
       if (previousPlaylistTarget) {
-        showManualTransitionMask();
-        hasUserGesturePlaybackUnlockRef.current = true;
-        pendingAutoAdvanceVideoIdRef.current = previousPlaylistTarget.videoId;
-        navigateToVideo(previousPlaylistTarget.videoId, {
+        executeManualNavigation(previousPlaylistTarget.videoId, {
           playlistId: activePlaylistId,
           playlistItemIndex: previousPlaylistTarget.playlistItemIndex,
         });
@@ -3963,12 +3416,7 @@ export function PlayerExperience({
     const trimmedHistory = historyStack.slice(0, -1);
     setHistoryStack(trimmedHistory);
     window.sessionStorage.setItem(HISTORY_KEY, JSON.stringify(trimmedHistory));
-    showManualTransitionMask();
-    hasUserGesturePlaybackUnlockRef.current = true;
-    pendingAutoAdvanceVideoIdRef.current = previousId;
-    router.push(
-      `${pathname}?${new URLSearchParams({ ...Object.fromEntries(searchParams.entries()), v: previousId }).toString()}`,
-    );
+    executeManualNavigation(previousId);
   }
 
   function handleNext() {
@@ -3988,10 +3436,7 @@ export function PlayerExperience({
       }));
     }
 
-    showManualTransitionMask();
-    hasUserGesturePlaybackUnlockRef.current = true;
-    pendingAutoAdvanceVideoIdRef.current = nextTarget.videoId;
-    navigateToVideo(nextTarget.videoId, {
+    executeManualNavigation(nextTarget.videoId, {
       clearPlaylist: nextTarget.clearPlaylist,
       playlistId: activePlaylistId,
       playlistItemIndex: nextTarget.playlistItemIndex,
@@ -4003,19 +3448,16 @@ export function PlayerExperience({
       return;
     }
 
-    const currentIndex = routeAutoplayQueueIds.findIndex((videoId) => videoId === currentVideo.id);
-    const nextVideoId = currentIndex >= 0
-      ? (routeAutoplayQueueIds[(currentIndex + 1) % routeAutoplayQueueIds.length] ?? null)
-      : (routeAutoplayQueueIds[0] ?? null);
+    const nextVideoId = resolveDockedRouteNextVideoId({
+      routeAutoplayQueueIds,
+      currentVideoId: currentVideo.id,
+    });
 
     if (!nextVideoId) {
       return;
     }
 
-    showManualTransitionMask();
-    hasUserGesturePlaybackUnlockRef.current = true;
-    pendingAutoAdvanceVideoIdRef.current = nextVideoId;
-    navigateToVideo(nextVideoId, {
+    executeManualNavigation(nextVideoId, {
       clearPlaylist: true,
       playlistId: activePlaylistId,
       playlistItemIndex: null,
@@ -4042,14 +3484,11 @@ export function PlayerExperience({
         dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
 
         if (result.payload?.activePlaylistDeleted) {
-          const params = new URLSearchParams(searchParams.toString());
-          params.delete("pl");
-          params.delete("pli");
+          const params = clearPlaylistParams(new URLSearchParams(searchParams.toString()));
           activePlaylistIdRef.current = null;
           setPlaylistQueueIds([]);
           setPlaylistQueueOwnerId(null);
-          const query = params.toString();
-          router.replace(query ? `${pathname}?${query}` : pathname);
+          router.replace(buildPathWithParams(pathname, params));
         }
       }
     } catch {
@@ -4419,126 +3858,112 @@ export function PlayerExperience({
   function handleDockClose() {
     setShowShareMenu(false);
     pauseActivePlayback();
-    onDockHideRequest?.();
-    if (typeof window === "undefined") return;
-    window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));
+    dispatchDockHideRequest(onDockHideRequest);
   }
 
       async function handleShareToChat() {
-        if (!isLoggedIn) {
-          await handleCopyShareLink();
-          setShowShareMenu(false);
-          return;
-        }
-
-        const content = buildSharedVideoMessage(currentVideo.id);
-        if (!content) {
-          setShareToChatState("error");
-          return;
-        }
-
-        setShareToChatState("sending");
-        try {
-          const response = await fetch("/api/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              mode: "global",
-              content,
-            }),
-          });
-
-          if (!response.ok) {
-            throw new Error(`share-chat-failed:${response.status}`);
-          }
-
-          setShareToChatState("sent");
-        } catch {
-          setShareToChatState("error");
-        }
-
-        if (shareToChatResetTimeoutRef.current !== null) {
-          window.clearTimeout(shareToChatResetTimeoutRef.current);
-        }
-
-        shareToChatResetTimeoutRef.current = window.setTimeout(() => {
-          setShareToChatState("idle");
-          shareToChatResetTimeoutRef.current = null;
-        }, 1800);
-
-        setShowShareMenu(false);
+        await shareCurrentVideoToChat({
+          isLoggedIn,
+          currentVideoId: currentVideo.id,
+          copyShareLink: handleCopyShareLink,
+          setShowShareMenu,
+          setShareToChatState,
+          shareToChatResetTimeoutRef,
+        });
       }
 
-      async function handleShareToSocials() {
-        setShareModalCopied(false);
-        setShowShareModal(true);
-        setShowShareMenu(false);
+      function handleShareToSocials() {
+        openShareToSocialsModal({
+          setShareModalCopied,
+          setShowShareModal,
+          setShowShareMenu,
+        });
       }
 
       function handleShareTargetOpen(targetUrl: string) {
-        window.open(targetUrl, "_blank", "noopener,noreferrer");
+        openShareTarget(targetUrl);
+      }
+
+      function handleOpenAdminEditOverlay() {
+        openAdminEditOverlay({
+          pauseActivePlayback,
+          openAdminVideoEdit: handleOpenAdminVideoEdit,
+        });
+      }
+
+      function handleOpenAdminDeleteConfirmModal() {
+        openAdminDeleteConfirm({
+          setAdminEditError,
+          setAdminEditStatus,
+          setShowShareMenu,
+          setShowAdminDeleteConfirmModal,
+        });
+      }
+
+      function handleShareMenuToggle(event: MouseEvent<HTMLButtonElement>) {
+        event.stopPropagation();
+        toggleShareMenu({ setShowShareMenu });
       }
 
       async function handleCopyShareUrlForModal() {
-        await handleCopyShareLink();
-        setShareModalCopied(true);
-
-        window.setTimeout(() => {
-          setShareModalCopied(false);
-        }, 1600);
+        await copyShareUrlForModal({
+          copyShareLink: handleCopyShareLink,
+          setShareModalCopied,
+          resetDelayMs: 1600,
+        });
       }
 
       function handlePlayPause() {
-        if (!playerRef.current) return;
-        setShowEndedChoiceOverlay(false);
-        if (isPlaying) {
-          playerRef.current.pauseVideo();
-        } else {
-          hasUserGesturePlaybackUnlockRef.current = true;
-          notePlayAttempt();
-          playerRef.current.playVideo();
-        }
+        executePlayPauseControl({
+          player: playerRef.current,
+          isPlaying,
+          onHideEndedChoiceOverlay: () => setShowEndedChoiceOverlay(false),
+          onPlaybackUnlock: () => {
+            hasUserGesturePlaybackUnlockRef.current = true;
+          },
+          onPlayAttempt: notePlayAttempt,
+        });
       }
 
       function handleSeek(e: ChangeEvent<HTMLInputElement>) {
-        if (!playerRef.current) return;
-        const seconds = toSafeNumber(Number(e.target.value), 0);
-        playerRef.current.seekTo(seconds, true);
-        setCurrentTime(seconds);
-        resetPlaybackStallWatchdog(seconds);
+        executeSeekControl({
+          player: playerRef.current,
+          rawValue: Number(e.target.value),
+          toSafeNumber,
+          setCurrentTime,
+          resetPlaybackStallWatchdog,
+        });
       }
 
       function handleVolumeChange(e: ChangeEvent<HTMLInputElement>) {
-        const vol = toSafeNumber(Number(e.target.value), 0);
-
-        persistMutedPreferenceOnNextSyncRef.current = true;
-        setVolume(vol);
-        setIsMuted(vol <= 0);
-
-        if (!playerRef.current) {
-          return;
-        }
-
-        playerRef.current.setVolume(vol);
+        executeVolumeChangeControl({
+          player: playerRef.current,
+          rawValue: Number(e.target.value),
+          toSafeNumber,
+          onPersistMutedPreference: () => {
+            persistMutedPreferenceOnNextSyncRef.current = true;
+          },
+          setVolume,
+          setIsMuted,
+        });
       }
 
       function handleMuteToggle() {
-        if (!playerRef.current) return;
-        persistMutedPreferenceOnNextSyncRef.current = true;
-        if (isMuted) {
-          const restoredVolume = Math.max(1, toSafeNumber(lastNonZeroVolumeRef.current, 100));
-          playerRef.current.setVolume(restoredVolume);
-          setVolume(restoredVolume);
-          setIsMuted(false);
-        } else {
-          const currentVolume = Math.max(0, toSafeNumber(volumeRef.current, 100));
-          if (currentVolume > 0) {
-            lastNonZeroVolumeRef.current = currentVolume;
-          }
-          playerRef.current.setVolume(0);
-          setVolume(0);
-          setIsMuted(true);
-        }
+        executeMuteToggleControl({
+          player: playerRef.current,
+          isMuted,
+          lastNonZeroVolume: lastNonZeroVolumeRef.current,
+          currentVolume: volumeRef.current,
+          toSafeNumber,
+          onPersistMutedPreference: () => {
+            persistMutedPreferenceOnNextSyncRef.current = true;
+          },
+          setLastNonZeroVolume: (volume) => {
+            lastNonZeroVolumeRef.current = volume;
+          },
+          setVolume,
+          setIsMuted,
+        });
       }
 
       const overlayVolumeValue = isMuted
@@ -4552,8 +3977,7 @@ export function PlayerExperience({
 
         const deletingVideoId = currentVideo.id;
 
-        const navigateAfterCatalogDelete = (removedVideoId: string) => {
-          const { nextId, nextPlaylistIndex } = resolvePostDeleteNextVideo({
+        const navigateAfterCatalogDelete = (removedVideoId: string) => navigateAfterCatalogDeleteFromAdmin({
             removedVideoId,
             resolvedNextVideoId: resolvedNextTarget?.videoId ?? null,
             playlistQueueIds,
@@ -4561,20 +3985,8 @@ export function PlayerExperience({
             effectivePlaylistIndex,
             temporaryQueue,
             queue,
+            navigateToVideo,
           });
-
-          if (!nextId) {
-            return false;
-          }
-
-          navigateToVideo(nextId, {
-            clearPlaylist: nextPlaylistIndex < 0,
-            playlistId: nextPlaylistIndex >= 0 ? activePlaylistId : null,
-            playlistItemIndex: nextPlaylistIndex >= 0 ? nextPlaylistIndex : null,
-          });
-
-          return true;
-        };
 
         setIsAdminDeleting(true);
         setShowAdminDeleteConfirmModal(false);
@@ -4601,54 +4013,60 @@ export function PlayerExperience({
               return;
             }
             if (response.status === 404) {
-              dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-              dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
-              dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId: deletingVideoId });
-              setPlaylistQueueIds((currentIds) => currentIds.filter((id) => id !== deletingVideoId));
+              applyCatalogDeleteSideEffects({
+                deletingVideoId,
+                playlistsUpdatedEvent: EVENT_NAMES.PLAYLISTS_UPDATED,
+                favouritesUpdatedEvent: EVENT_NAMES.FAVOURITES_UPDATED,
+                videoCatalogDeletedEvent: EVENT_NAMES.VIDEO_CATALOG_DELETED,
+                dispatchEvent: dispatchAppEvent,
+                setPlaylistQueueIds,
+              });
 
-              const advanced = navigateAfterCatalogDelete(deletingVideoId);
-              if (!advanced) {
-                showDeletedOverlayConfirmation();
-              }
+              advanceOrShowDeletedOverlay({
+                deletingVideoId,
+                navigateAfterCatalogDelete,
+                showDeletedOverlayConfirmation,
+              });
               return;
             }
             showUnavailableOverlayMessage(payload?.error || "Could not remove this video from the site.");
             return;
           }
 
-          dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-          dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
-          dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId: deletingVideoId });
-          setPlaylistQueueIds((currentIds) => currentIds.filter((id) => id !== deletingVideoId));
+          applyCatalogDeleteSideEffects({
+            deletingVideoId,
+            playlistsUpdatedEvent: EVENT_NAMES.PLAYLISTS_UPDATED,
+            favouritesUpdatedEvent: EVENT_NAMES.FAVOURITES_UPDATED,
+            videoCatalogDeletedEvent: EVENT_NAMES.VIDEO_CATALOG_DELETED,
+            dispatchEvent: dispatchAppEvent,
+            setPlaylistQueueIds,
+          });
 
           // Clear the deleted selection from the URL immediately so the resolver
           // cannot briefly re-request the just-deleted video during transition.
-          const clearedParams = new URLSearchParams(searchParams.toString());
-          const selectedVideoId = clearedParams.get("v");
-          if (selectedVideoId === deletingVideoId) {
-            clearedParams.delete("v");
-            clearedParams.delete("pl");
-            clearedParams.delete("pli");
-            const clearedQuery = clearedParams.toString();
-            router.replace(clearedQuery ? `${pathname}?${clearedQuery}` : pathname);
-          }
+          replaceDeletedSelectionIfSelected({
+            deletingVideoId,
+            pathname,
+            searchParams: new URLSearchParams(searchParams.toString()),
+            replacePath: (nextPath) => {
+              router.replace(nextPath);
+            },
+          });
 
           // When in docked mode (player is a sidebar alongside a list page), close the
           // player immediately rather than navigating to the next video — the list page
           // handles its own removal animation via the ytr:video-catalog-deleted event.
-          if (isDockedDesktop) {
-            const params = typeof window !== "undefined"
+          if (handleDockedDeleteClose({
+            isDockedDesktop,
+            pathname,
+            searchParams: typeof window !== "undefined"
               ? new URLSearchParams(window.location.search)
-              : new URLSearchParams(searchParams.toString());
-            params.delete("v");
-            params.delete("pl");
-            params.delete("pli");
-            const query = params.toString();
-            router.replace(query ? `${pathname}?${query}` : pathname);
-            onDockHideRequest?.();
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));
-            }
+              : new URLSearchParams(searchParams.toString()),
+            replacePath: (nextPath) => {
+              router.replace(nextPath);
+            },
+            onDockHideRequest,
+          })) {
             return;
           }
 
@@ -4662,10 +4080,11 @@ export function PlayerExperience({
             }
           }
 
-          const advanced = navigateAfterCatalogDelete(deletingVideoId);
-          if (!advanced) {
-            showDeletedOverlayConfirmation();
-          }
+          advanceOrShowDeletedOverlay({
+            deletingVideoId,
+            navigateAfterCatalogDelete,
+            showDeletedOverlayConfirmation,
+          });
         } catch {
           showUnavailableOverlayMessage("Could not remove this video from the site.");
         } finally {
@@ -4678,13 +4097,13 @@ export function PlayerExperience({
       }
 
       function handlePlayerFrameBlurCapture(event: FocusEvent<HTMLDivElement>) {
-        const nextFocusedNode = event.relatedTarget;
-
-        if (!(nextFocusedNode instanceof Node) || !event.currentTarget.contains(nextFocusedNode)) {
-          if (isPlaying) {
-            setShowControls(false);
-            setShowShareMenu(false);
-          }
+        if (shouldHideControlsOnBlur({
+          nextFocusedNode: event.relatedTarget,
+          currentTarget: event.currentTarget,
+          isPlaying,
+        })) {
+          setShowControls(false);
+          setShowShareMenu(false);
         }
       }
 
@@ -4714,12 +4133,12 @@ export function PlayerExperience({
               ref={playerFrameRef}
               className={playerFrameClassName}
               onMouseEnter={() => {
-                if (!allowDirectIframeInteraction) {
+                if (shouldShowControlsOnMouseEnter({ allowDirectIframeInteraction })) {
                   setShowControls(true);
                 }
               }}
               onMouseLeave={() => {
-                if (isPlaying && !allowDirectIframeInteraction) {
+                if (shouldHideControlsOnMouseLeave({ isPlaying, allowDirectIframeInteraction })) {
                   setShowControls(false);
                   setShowShareMenu(false);
                 }
@@ -4795,10 +4214,7 @@ export function PlayerExperience({
                         <button
                           type="button"
                           className="overlayIconBtn overlayAdminEditBtn"
-                          onClick={() => {
-                            pauseActivePlayback();
-                            void handleOpenAdminVideoEdit();
-                          }}
+                          onClick={handleOpenAdminEditOverlay}
                           aria-label="Edit video record"
                           title="Edit video record"
                         >
@@ -4815,12 +4231,7 @@ export function PlayerExperience({
                       <button
                         type="button"
                         className="overlayIconBtn overlayAdminDeleteBtn"
-                        onClick={() => {
-                          setAdminEditError(null);
-                          setAdminEditStatus(null);
-                          setShowShareMenu(false);
-                          setShowAdminDeleteConfirmModal(true);
-                        }}
+                        onClick={handleOpenAdminDeleteConfirmModal}
                         aria-label="Remove video from site"
                         title="Remove video from site"
                         disabled={isAdminDeleting}
@@ -4851,10 +4262,7 @@ export function PlayerExperience({
                       <button
                         type="button"
                         className="overlayIconBtn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowShareMenu((v) => !v);
-                        }}
+                        onClick={handleShareMenuToggle}
                         aria-label="Share"
                       >
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

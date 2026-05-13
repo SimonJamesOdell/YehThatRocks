@@ -36,3 +36,37 @@ export function resetEndedChoiceRuntimeState(options: ResetEndedChoiceRuntimeSta
   options.refs.endedChoicePrewarmVideoIdRef.current = null;
   options.refs.endedChoicePostPrimeQueuedRef.current = false;
 }
+
+export function resetEndedChoiceRuntimeForReshuffle(options: {
+  setEndedChoiceRemoteVideos: Dispatch<SetStateAction<VideoRecord[]>>;
+  setEndedChoiceAnimateCards: Dispatch<SetStateAction<boolean>>;
+  refs: EndedChoiceRuntimeRefs;
+}) {
+  options.setEndedChoiceRemoteVideos([]);
+  options.setEndedChoiceAnimateCards(true);
+
+  options.refs.endedChoiceUserScrolledRef.current = false;
+  options.refs.endedChoiceHasMoreRef.current = true;
+  options.refs.endedChoiceSkipRef.current = 0;
+  options.refs.endedChoiceNoProgressStreakRef.current = 0;
+  options.refs.endedChoiceFailureStreakRef.current = 0;
+  options.refs.endedChoiceAutoRetryBlockedUntilRef.current = 0;
+  options.refs.endedChoicePrewarmVideoIdRef.current = null;
+  options.refs.endedChoicePostPrimeQueuedRef.current = false;
+}
+
+export function showEndedChoiceOverlayState(options: {
+  setEndedChoiceLoading: Dispatch<SetStateAction<boolean>>;
+  setShowEndedChoiceOverlay: Dispatch<SetStateAction<boolean>>;
+  setShowControls: Dispatch<SetStateAction<boolean>>;
+  setShowShareMenu: Dispatch<SetStateAction<boolean>>;
+  withLoading?: boolean;
+}) {
+  if (options.withLoading !== false) {
+    options.setEndedChoiceLoading(true);
+  }
+
+  options.setShowEndedChoiceOverlay(true);
+  options.setShowControls(true);
+  options.setShowShareMenu(false);
+}

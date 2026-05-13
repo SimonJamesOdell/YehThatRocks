@@ -44,9 +44,13 @@ function Wait-ForHttp {
 
 function Invoke-Npm {
   param(
-    [string[]]$Args,
+    [string[]]$NpmArgs,
     [hashtable]$ExtraEnv = @{}
   )
+
+  if (-not $NpmArgs -or $NpmArgs.Count -eq 0) {
+    throw "Invoke-Npm requires at least one npm argument."
+  }
 
   $snapshot = @{}
   foreach ($key in $ExtraEnv.Keys) {
@@ -55,9 +59,9 @@ function Invoke-Npm {
   }
 
   try {
-    & npm @Args
+    & npm @NpmArgs
     if ($LASTEXITCODE -ne 0) {
-      throw "npm $($Args -join ' ') failed with exit code $LASTEXITCODE"
+      throw "npm $($NpmArgs -join ' ') failed with exit code $LASTEXITCODE"
     }
   } finally {
     foreach ($key in $ExtraEnv.Keys) {
@@ -74,12 +78,12 @@ $devProcess = $null
 try {
   if (-not $SkipInvariants) {
     Invoke-Step -Name "verify:invariants" -Action {
-      Invoke-Npm -Args @("run", "verify:invariants")
+      Invoke-Npm -NpmArgs @("run", "verify:invariants")
     }
   }
 
   Invoke-Step -Name "test:smoke:install" -Action {
-    Invoke-Npm -Args @("run", "test:smoke:install")
+    Invoke-Npm -NpmArgs @("run", "test:smoke:install")
   }
 
   Invoke-Step -Name "start:test-server" -Action {
@@ -110,14 +114,14 @@ try {
   }
 
   Invoke-Step -Name "verify:invariants:api" -Action {
-    Invoke-Npm -Args @("run", "verify:core-experience:api", "--", "--base-url=$baseUrl")
-    Invoke-Npm -Args @("run", "verify:playlists:api", "--", "--base-url=$baseUrl")
-    Invoke-Npm -Args @("run", "verify:categories:api", "--", "--base-url=$baseUrl")
-    Invoke-Npm -Args @("run", "verify:auth:api", "--", "--base-url=$baseUrl")
+    Invoke-Npm -NpmArgs @("run", "verify:core-experience:api", "--", "--base-url=$baseUrl")
+    Invoke-Npm -NpmArgs @("run", "verify:playlists:api", "--", "--base-url=$baseUrl")
+    Invoke-Npm -NpmArgs @("run", "verify:categories:api", "--", "--base-url=$baseUrl")
+    Invoke-Npm -NpmArgs @("run", "verify:auth:api", "--", "--base-url=$baseUrl")
   }
 
   Invoke-Step -Name "test:smoke:full" -Action {
-    Invoke-Npm -Args @("run", "test:smoke:full") -ExtraEnv @{ PLAYWRIGHT_BASE_URL = $baseUrl }
+    Invoke-Npm -NpmArgs @("run", "test:smoke:full") -ExtraEnv @{ PLAYWRIGHT_BASE_URL = $baseUrl }
   }
 } finally {
   if ($devProcess -and -not $devProcess.HasExited) {

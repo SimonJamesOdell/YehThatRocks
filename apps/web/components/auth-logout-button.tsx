@@ -2,8 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-
-const AUTO_LOGIN_SUPPRESS_ONCE_KEY = "ytr:auto-login-suppress-once";
+import { AUTO_LOGIN_SUPPRESS_ONCE_KEY } from "@/lib/storage-keys";
 
 export function AuthLogoutButton() {
   const router = useRouter();

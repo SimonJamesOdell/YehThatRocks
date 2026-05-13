@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { addPlaylistItemClient, createPlaylistClient, listPlaylistsClient } from "@/lib/playlist-client-service";
+import { LAST_PLAYLIST_ID_KEY } from "@/lib/storage-keys";
 
 type AddToPlaylistButtonProps = {
   videoId: string;
@@ -14,8 +15,6 @@ type AddToPlaylistButtonProps = {
   className?: string;
   compact?: boolean;
 };
-
-const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
 
 type PlaylistSummary = {
   id: string;

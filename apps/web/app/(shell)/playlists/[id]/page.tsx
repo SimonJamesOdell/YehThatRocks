@@ -3,9 +3,8 @@ import { notFound } from "next/navigation";
 import { cookies } from "next/headers";
 
 import { CloseLink } from "@/components/close-link";
-import { OverlayHeader } from "@/components/overlay-header";
+import { OverlayProtectedRouteLayout } from "@/components/overlay-protected-route-layout";
 import { PlaylistEditor } from "@/components/playlist-editor";
-import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
 import { REFRESH_TOKEN_COOKIE } from "@/lib/auth-config";
 import { getPlaylistById } from "@/lib/catalog-data";
 import { getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
@@ -34,26 +33,28 @@ export default async function PlaylistDetailPage({ params, searchParams }: Playl
 
   if (!user) {
     return (
-      <>
-        <OverlayHeader close={false}>
-          <div className="categoryHeaderBreadcrumb">
-            <span className="categoryHeaderIcon whitePlaylistGlyph" aria-hidden="true">♬</span>
-            <Link href="/playlists" className="categoryHeaderBreadcrumbLink">Playlists</Link>
-            <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">/</span>
-            <span className="categoryHeaderBreadcrumbCurrent">Playlist</span>
-          </div>
-          <CloseLink />
-        </OverlayHeader>
-            <ProtectedAuthGatePanel
-              status={authState.status === "unavailable" ? "unavailable" : "unauthenticated"}
-          heading="Playlist access"
-          headingDetail="Login required"
-          unauthenticatedMessage="You need an authenticated session to open saved playlists."
-          className="panel featurePanel spanTwoColumns"
-          hasRefreshToken={hasRefreshToken}
-          unavailableMessage={authState.status === "unavailable" ? authState.message : undefined}
-        />
-      </>
+      <OverlayProtectedRouteLayout
+        authStatus={authState.status}
+        authMessage={authState.status === "unavailable" ? authState.message : undefined}
+        hasRefreshToken={hasRefreshToken}
+        headerProps={{
+          close: false,
+          children: (
+            <div className="categoryHeaderBreadcrumb">
+              <span className="categoryHeaderIcon whitePlaylistGlyph" aria-hidden="true">♬</span>
+              <Link href="/playlists" className="categoryHeaderBreadcrumbLink">Playlists</Link>
+              <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">/</span>
+              <span className="categoryHeaderBreadcrumbCurrent">Playlist</span>
+            </div>
+          ),
+        }}
+        gateHeading="Playlist access"
+        gateHeadingDetail="Login required"
+        gateMessage="You need an authenticated session to open saved playlists."
+        className="panel featurePanel spanTwoColumns"
+      >
+        <></>
+      </OverlayProtectedRouteLayout>
     );
   }
 
@@ -62,6 +63,25 @@ export default async function PlaylistDetailPage({ params, searchParams }: Playl
   }
 
   return (
-    <PlaylistEditor playlist={playlist} isAuthenticated={Boolean(user)} />
+    <OverlayProtectedRouteLayout
+      authStatus="authenticated"
+      hasRefreshToken={hasRefreshToken}
+      headerProps={{
+        close: false,
+        children: (
+          <div className="categoryHeaderBreadcrumb">
+            <span className="categoryHeaderIcon whitePlaylistGlyph" aria-hidden="true">♬</span>
+            <Link href="/playlists" className="categoryHeaderBreadcrumbLink">Playlists</Link>
+            <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">/</span>
+            <span className="categoryHeaderBreadcrumbCurrent">Playlist</span>
+          </div>
+        ),
+      }}
+      gateHeading="Playlist access"
+      gateHeadingDetail="Login required"
+      gateMessage="You need an authenticated session to open saved playlists."
+    >
+      <PlaylistEditor playlist={playlist} isAuthenticated={Boolean(user)} />
+    </OverlayProtectedRouteLayout>
   );
 }

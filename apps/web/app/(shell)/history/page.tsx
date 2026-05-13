@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 
 import { HistoryInfiniteList } from "@/components/history-infinite-list";
+import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { OverlayHeader } from "@/components/overlay-header";
 import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
 import { REFRESH_TOKEN_COOKIE } from "@/lib/auth-config";
@@ -22,6 +23,7 @@ export default async function HistoryPage() {
 
   return (
     <>
+      <OverlayScrollReset />
       <OverlayHeader
         icon={<span className="whiteHistoryGlyph" aria-hidden="true">🕘</span>}
         title="History"
@@ -29,7 +31,7 @@ export default async function HistoryPage() {
 
       {!user ? (
         <ProtectedAuthGatePanel
-            status={authState.status === "unavailable" ? "unavailable" : "unauthenticated"}
+          status={authState.status === "unavailable" ? "unavailable" : "unauthenticated"}
           heading="🕘 Watch history"
           headingDetail="Login required"
           unauthenticatedMessage="Sign in to view your watch history."
