@@ -33,12 +33,12 @@ export function usePlayerOverlayActions({
   currentVideoId: string;
   playerRef: MutableRefObject<{ getCurrentTime?: () => number; pauseVideo?: () => void; getPlayerState?: () => number; destroy?: () => void } | null>;
   currentTime: number;
-  overlayTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  unavailableOverlayTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  unavailableAutoActionTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  unavailableAutoCountdownIntervalRef: MutableRefObject<ReturnType<typeof setInterval> | null>;
-  manualTransitionMaskTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  botBlockConfirmationTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  overlayTimeoutRef: MutableRefObject<number | null>;
+  unavailableOverlayTimeoutRef: MutableRefObject<number | null>;
+  unavailableAutoActionTimeoutRef: MutableRefObject<number | null>;
+  unavailableAutoCountdownIntervalRef: MutableRefObject<number | null>;
+  manualTransitionMaskTimeoutRef: MutableRefObject<number | null>;
+  botBlockConfirmationTimeoutRef: MutableRefObject<number | null>;
   setShowNowPlayingOverlay: Dispatch<SetStateAction<boolean>>;
   setOverlayInstance: Dispatch<SetStateAction<number>>;
   setUnavailableOverlayMessage: Dispatch<SetStateAction<string | null>>;
@@ -65,7 +65,7 @@ export function usePlayerOverlayActions({
 
     const time =
       explicitTime ??
-      (canReadTime ? runtimePlayer.getCurrentTime() : undefined) ??
+      (canReadTime ? runtimePlayer?.getCurrentTime?.() : undefined) ??
       currentTime;
 
     window.sessionStorage.setItem(

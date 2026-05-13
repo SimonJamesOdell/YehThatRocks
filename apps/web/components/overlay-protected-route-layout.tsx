@@ -50,7 +50,7 @@ export function OverlayProtectedRouteLayout({
         <ProtectedAuthGatePanel
           status={authStatus === "unavailable" ? "unavailable" : "unauthenticated"}
           heading={gateHeading}
-          headingDetail={gateHeadingDetail}
+          headingDetail={gateHeadingDetail ?? ""}
           unauthenticatedMessage={gateMessage}
           hasRefreshToken={hasRefreshToken}
           unavailableMessage={authMessage}

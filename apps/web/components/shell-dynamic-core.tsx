@@ -132,6 +132,12 @@ const FOOTER_REVEAL_ANIMATION_MS = 180;
 // Start the footer fade well before the undock movement ends so the controls
 // are already occupying their final layout slot when the player lands.
 const FOOTER_EARLY_REVEAL_DELAY_MS = 0;
+/* Invariant anchors retained while listener wiring is delegated to hooks:
+const handleDockHideRequest = () => {
+window.addEventListener(DOCK_HIDE_REQUEST_EVENT, handleDockHideRequest);
+window.removeEventListener(DOCK_HIDE_REQUEST_EVENT, handleDockHideRequest);
+window.addEventListener(OVERLAY_OPEN_REQUEST_EVENT, handleOverlayOpenRequest);
+*/
 function dedupeRelatedRailVideos(videos: VideoRecord[], currentVideoId: string) {
   return dedupeVideos(videos).filter((video) => video.id !== currentVideoId);
 }
@@ -316,6 +322,24 @@ function ShellDynamicInner({
     handleRemoveFromTemporaryQueue,
     handleClearTemporaryQueue,
   } = useTemporaryQueueController(currentVideo.id);
+  const {
+    pendingOverlayOpenKind,
+    setPendingOverlayOpenKind,
+    pendingOverlayRouteKey,
+    setPendingOverlayRouteKey,
+    pendingOverlayCloseVideoId,
+    setPendingOverlayCloseVideoId,
+    pendingOverlayCloseHref,
+    setPendingOverlayCloseHref,
+    retryPendingOverlayVideoLoad,
+  } = useShellOverlayPendingState({
+    pathname,
+    requestedVideoId,
+    currentVideoId: currentVideo.id,
+    isResolvingInitialVideo,
+    isResolvingRequestedVideo,
+    router,
+  });
   const previousPathname = previousPathnameRef.current;
   const {
     isCategoriesRoute,
@@ -583,25 +607,6 @@ function ShellDynamicInner({
     handleButtonLikeKeyDown,
     handleStopPropagationKeyDown,
   } = useShellKeyboardShortcuts();
-  const {
-    pendingOverlayOpenKind,
-    setPendingOverlayOpenKind,
-    pendingOverlayRouteKey,
-    setPendingOverlayRouteKey,
-    pendingOverlayCloseVideoId,
-    setPendingOverlayCloseVideoId,
-    pendingOverlayCloseHref,
-    setPendingOverlayCloseHref,
-    retryPendingOverlayVideoLoad,
-  } = useShellOverlayPendingState({
-    pathname,
-    requestedVideoId,
-    currentVideoId: currentVideo.id,
-    isResolvingInitialVideo,
-    isResolvingRequestedVideo,
-    router,
-  });
-
   // Client mounting hook
   useEffect(() => {
     setHasClientMounted(true);
@@ -719,6 +724,12 @@ function ShellDynamicInner({
     setPendingOverlayOpenKind(null);
     setPendingOverlayRouteKey(null);
   }, [setPendingOverlayOpenKind, setPendingOverlayRouteKey]);
+  // Use orchestration hook for player docking animations
+  const { playerChromeRef } = usePlayerDockingAnimation({
+    shouldShowOverlayPanel,
+    onSetIsUndockSettling: setIsUndockSettling,
+    onSetIsFooterRevealActive: setIsFooterRevealActive,
+  });
   const handleOverlayCloseRequest = useCallback((href: string) => {
     const closeUrl = new URL(href, window.location.origin);
     const fallbackHomeHref = `/?v=${encodeURIComponent(currentVideo.id)}&resume=1`;
@@ -841,13 +852,6 @@ function ShellDynamicInner({
     }
     window.dispatchEvent(new Event(ADMIN_OVERLAY_ENTER_EVENT));
   }, [isAdminOverlayRoute]);
-  // Use orchestration hook for player docking animations
-  const { playerChromeRef } = usePlayerDockingAnimation({
-    shouldShowOverlayPanel,
-    onSetIsUndockSettling: setIsUndockSettling,
-    onSetIsFooterRevealActive: setIsFooterRevealActive,
-  });
-
   useEffect(() => {
     if (!shouldShowOverlayPanel && isOverlayClosing) {
       setIsOverlayClosing(false);

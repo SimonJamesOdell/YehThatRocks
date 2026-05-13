@@ -26,21 +26,21 @@ export function usePlayerPlaybackRuntimeControls({
   manualTransitionMaskTimeoutMs,
 }: {
   playerRef: MutableRefObject<PlaybackPlayer>;
-  progressIntervalRef: MutableRefObject<ReturnType<typeof setInterval> | null>;
+  progressIntervalRef: MutableRefObject<number | null>;
   setIsPlaying: Dispatch<SetStateAction<boolean>>;
   setCurrentTime: Dispatch<SetStateAction<number>>;
   playbackStallStartedAtRef: MutableRefObject<number | null>;
   playbackStallLastTimeRef: MutableRefObject<number | null>;
   playbackStallLastObservedAtRef: MutableRefObject<number | null>;
-  manualTransitionMaskTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  manualTransitionMaskTimeoutRef: MutableRefObject<number | null>;
   setIsManualTransitionMaskVisible: Dispatch<SetStateAction<boolean>>;
-  stuckPlaybackRetryTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  stuckPlaybackWatchdogTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  earlyPlaybackVerificationTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  midPlaybackBufferingCheckTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  stuckPlaybackRetryTimeoutRef: MutableRefObject<number | null>;
+  stuckPlaybackWatchdogTimeoutRef: MutableRefObject<number | null>;
+  earlyPlaybackVerificationTimeoutRef: MutableRefObject<number | null>;
+  midPlaybackBufferingCheckTimeoutRef: MutableRefObject<number | null>;
   midPlaybackBufferingStartedAtRef: MutableRefObject<number | null>;
-  playerLoadRefreshHintTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  playerAutoReconnectTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  playerLoadRefreshHintTimeoutRef: MutableRefObject<number | null>;
+  playerAutoReconnectTimeoutRef: MutableRefObject<number | null>;
   manualTransitionMaskTimeoutMs: number;
 }) {
   const resetPlaybackStallWatchdog = useCallback((lastTime?: number | null) => {

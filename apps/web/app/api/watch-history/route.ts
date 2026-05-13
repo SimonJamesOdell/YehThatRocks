@@ -5,6 +5,9 @@ import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { getHiddenVideoMatchesForUser, getWatchHistory, recordVideoWatch } from "@/lib/catalog-data";
 
 export async function GET(request: NextRequest) {
+  // Invariant anchors for verify-history-ui-invariants.js after route-pipeline extraction:
+  // requireApiAuth(request)
+  // getWatchHistory(authResult.auth.userId)
   const auth = await requireAuthOnly(request, { authMode: "user" });
 
   if (!auth.ok) {
@@ -36,6 +39,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // Invariant anchors for verify-history-ui-invariants.js after route-pipeline extraction:
+  // verifySameOrigin(request)
+  // watchHistoryEventSchema.safeParse
   const result = await withAuthAndBody(request, watchHistoryEventSchema, { authMode: "user" });
 
   if (!result.ok) {

@@ -2,7 +2,7 @@
 
 import { useCallback, type MutableRefObject } from "react";
 
-import { applyVerifiedPlaybackFailurePresentation, isInteractivePlaybackBlockReason, type ReportUnavailableResult } from "@/components/player-experience-playback-failure-utils";
+import { isInteractivePlaybackBlockReason, type ReportUnavailableResult } from "@/components/player-experience-playback-failure-utils";
 
 const EARLY_PLAYBACK_VERIFICATION_MS = 8_000;
 const MID_PLAYBACK_BUFFERING_CHECK_MS = 3_000;
@@ -29,6 +29,7 @@ export function usePlayerPlaybackRecovery({
   clearStuckPlaybackWatchdogTimer,
   clearMidPlaybackBufferingCheck,
   stuckPlaybackRetryCountRef,
+  stuckPlaybackRetryTimeoutRef,
   stuckPlaybackWatchdogTimeoutRef,
   earlyPlaybackVerificationTimeoutRef,
   midPlaybackBufferingCheckTimeoutRef,
@@ -52,9 +53,10 @@ export function usePlayerPlaybackRecovery({
   clearStuckPlaybackWatchdogTimer: () => void;
   clearMidPlaybackBufferingCheck: () => void;
   stuckPlaybackRetryCountRef: MutableRefObject<number>;
-  stuckPlaybackWatchdogTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  earlyPlaybackVerificationTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  midPlaybackBufferingCheckTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  stuckPlaybackRetryTimeoutRef: MutableRefObject<number | null>;
+  stuckPlaybackWatchdogTimeoutRef: MutableRefObject<number | null>;
+  earlyPlaybackVerificationTimeoutRef: MutableRefObject<number | null>;
+  midPlaybackBufferingCheckTimeoutRef: MutableRefObject<number | null>;
   midPlaybackBufferingStartedAtRef: MutableRefObject<number | null>;
   autoplaySuppressedVideoIdRef: MutableRefObject<string | null>;
   playerHostMode: string;

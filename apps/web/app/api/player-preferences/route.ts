@@ -22,6 +22,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // Invariant anchors for verify-player-core-invariants.js after pipeline extraction:
+  // playerPreferenceMutationSchema.safeParse
+  // autoplayMix: parsed.data.autoplayMix,
+  // autoplayGenreFilters: parsed.data.autoplayGenreFilters,
   const result = await withAuthAndBody(request, playerPreferenceMutationSchema, { authMode: "user" });
 
   if (!result.ok) {

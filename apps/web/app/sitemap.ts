@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 
 import { getArtistSlugsForSitemap, getGenres, getGenreSlug } from "@/lib/catalog-data";
+import { withSoftTimeout } from "@/lib/catalog-data-utils";
 import { getAllPublishedSlugs } from "@/lib/magazine-data";
 
 // Regenerate the sitemap every 24 hours so newly published articles are picked
@@ -16,6 +17,7 @@ const SITE_ORIGIN =
 const ARTIST_SITEMAP_PAGE_SIZE = 45_000;
 const ARTIST_SITEMAP_PAGES = 3;
 const ARTIST_MIN_VIDEO_COUNT = 2;
+const SITEMAP_QUERY_SOFT_TIMEOUT_MS = 2_500;
 
 export async function generateSitemaps() {
   return [
@@ -27,7 +29,11 @@ export async function generateSitemaps() {
 
 export default async function sitemap({ id }: { id: number }): Promise<MetadataRoute.Sitemap> {
   if (id === 0) {
-    const genres = await getGenres().catch(() => [] as string[]);
+    const genres = await withSoftTimeout(
+      "sitemap:getGenres",
+      SITEMAP_QUERY_SOFT_TIMEOUT_MS,
+      () => getGenres(),
+    ).catch(() => [] as string[]);
 
     const staticRoutes: MetadataRoute.Sitemap = [
       { url: SITE_ORIGIN, priority: 1.0, changeFrequency: "daily" },
@@ -49,7 +55,11 @@ export default async function sitemap({ id }: { id: number }): Promise<MetadataR
 
   // Magazine article pages
   if (id === 4) {
-    const slugs = await getAllPublishedSlugs().catch(() => [] as string[]);
+    const slugs = await withSoftTimeout(
+      "sitemap:getAllPublishedSlugs",
+      SITEMAP_QUERY_SOFT_TIMEOUT_MS,
+      () => getAllPublishedSlugs(),
+    ).catch(() => [] as string[]);
     return slugs.map((slug) => ({
       url: `${SITE_ORIGIN}/magazine/${slug}`,
       priority: 0.8,
@@ -59,7 +69,11 @@ export default async function sitemap({ id }: { id: number }): Promise<MetadataR
 
   // Artist pages: id 1–3 map to offsets 0, 45k, 90k
   const offset = (id - 1) * ARTIST_SITEMAP_PAGE_SIZE;
-  const slugs = await getArtistSlugsForSitemap(offset, ARTIST_SITEMAP_PAGE_SIZE, ARTIST_MIN_VIDEO_COUNT).catch(() => [] as string[]);
+  const slugs = await withSoftTimeout(
+    `sitemap:getArtistSlugsForSitemap:${id}`,
+    SITEMAP_QUERY_SOFT_TIMEOUT_MS,
+    () => getArtistSlugsForSitemap(offset, ARTIST_SITEMAP_PAGE_SIZE, ARTIST_MIN_VIDEO_COUNT),
+  ).catch(() => [] as string[]);
 
   return slugs.map((slug) => ({
     url: `${SITE_ORIGIN}/artist/${slug}`,

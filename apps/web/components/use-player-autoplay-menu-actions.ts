@@ -86,7 +86,7 @@ export function usePlayerAutoplayMenuActions({
 
     if (pathname !== "/") {
       autoplayRouteTransitionRef.current = true;
-      const params = buildRootAutoplayFallbackParams(searchParams, currentVideoId);
+      const params = buildRootAutoplayFallbackParams(new URLSearchParams(searchParams.toString()), currentVideoId);
       routerPush(`/?${params.toString()}`);
     }
   }, [

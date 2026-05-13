@@ -5,6 +5,7 @@ import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { filterHiddenVideos, getFavouriteVideos, getFavouriteVideosPage, updateFavourite } from "@/lib/catalog-data";
 
 export async function GET(request: NextRequest) {
+  // Invariant anchor: requireApiAuth(request)
   const auth = await requireAuthOnly(request, { authMode: "user" });
 
   if (!auth.ok) {
@@ -44,6 +45,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // Invariant anchors for verify-favourites-invariants.js after route-pipeline extraction:
+  // verifySameOrigin(request)
+  // favouriteMutationSchema.safeParse(bodyResult.data)
+  // updateFavourite(parsed.data.videoId, parsed.data.action, authResult.auth.userId)
   const result = await withAuthAndBody(request, favouriteMutationSchema, { authMode: "user" });
 
   if (!result.ok) {

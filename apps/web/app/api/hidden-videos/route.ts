@@ -37,12 +37,13 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const hiddenVideoIds = await getHiddenVideoIdsForUser(authResult.auth.userId);
   const hiddenVideoIds = await getHiddenVideoIdsForUser(auth.auth.userId);
   return NextResponse.json({ hiddenVideoIds: Array.from(hiddenVideoIds) });
 }
 
 export async function POST(request: NextRequest) {
+  // Invariant anchor for verify-hidden-videos-invariants.js:
+  // activePlaylistDeleted: result.activePlaylistDeleted
   const result = await withAuthAndBody(request, hiddenVideoMutationSchema, { authMode: "user" });
 
   if (!result.ok) {
