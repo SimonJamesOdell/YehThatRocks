@@ -261,29 +261,200 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     });
   }, [analyticsHourlyRecentRows]);
 
+  const padHourlyRows = useCallback((rows: AnalyticsBucket[]) => {
+    const targetCount = 24;
+    if (rows.length >= targetCount) {
+      return rows.slice(-targetCount);
+    }
+
+    const hourMs = 60 * 60 * 1000;
+    const missingCount = targetCount - rows.length;
+    const padded: AnalyticsBucket[] = [];
+
+    const earliestBucketStart = rows.length > 0
+      ? new Date(rows[0].bucketStart)
+      : (() => {
+          const now = new Date();
+          const flooredHour = new Date(Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth(),
+            now.getUTCDate(),
+            now.getUTCHours(),
+            0,
+            0,
+            0,
+          ));
+          return new Date(flooredHour.getTime() + hourMs);
+        })();
+
+    for (let index = missingCount; index >= 1; index -= 1) {
+      const bucketStart = new Date(earliestBucketStart.getTime() - index * hourMs);
+      const bucketEnd = new Date(bucketStart.getTime() + hourMs);
+
+      padded.push({
+        bucketStart: bucketStart.toISOString(),
+        bucketEnd: bucketEnd.toISOString(),
+        label: bucketStart.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        pageViews: 0,
+        videoViews: 0,
+        uniqueVisitors: 0,
+        returnVisits: 0,
+        magazineExternalLandings: 0,
+        authEvents: 0,
+      });
+    }
+
+    return [...padded, ...rows].slice(-targetCount);
+  }, []);
+
+  const padWeeklyRows = useCallback((rows: AnalyticsBucket[]) => {
+    const targetCount = 8;
+    if (rows.length >= targetCount) {
+      return rows.slice(-targetCount);
+    }
+
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    const missingCount = targetCount - rows.length;
+    const padded: AnalyticsBucket[] = [];
+
+    const earliestBucketStart = rows.length > 0
+      ? new Date(rows[0].bucketStart)
+      : (() => {
+          const now = new Date();
+          const day = now.getUTCDay();
+          const daysSinceMonday = (day + 6) % 7;
+          const mondayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+          mondayStart.setUTCDate(mondayStart.getUTCDate() - daysSinceMonday);
+          return mondayStart;
+        })();
+
+    for (let index = missingCount; index >= 1; index -= 1) {
+      const bucketStart = new Date(earliestBucketStart.getTime() - index * weekMs);
+      const bucketEnd = new Date(bucketStart.getTime() + weekMs);
+      const bucketEndMinusOne = new Date(bucketEnd.getTime() - 24 * 60 * 60 * 1000);
+      padded.push({
+        bucketStart: bucketStart.toISOString(),
+        bucketEnd: bucketEnd.toISOString(),
+        label: `${bucketStart.toISOString().slice(0, 10)} to ${bucketEndMinusOne.toISOString().slice(0, 10)}`,
+        pageViews: 0,
+        videoViews: 0,
+        uniqueVisitors: 0,
+        returnVisits: 0,
+        magazineExternalLandings: 0,
+        authEvents: 0,
+      });
+    }
+
+    return [...padded, ...rows].slice(-targetCount);
+  }, []);
+
+  const padMonthlyRows = useCallback((rows: AnalyticsBucket[]) => {
+    const targetCount = 6;
+    if (rows.length >= targetCount) {
+      return rows.slice(-targetCount);
+    }
+
+    const missingCount = targetCount - rows.length;
+    const padded: AnalyticsBucket[] = [];
+
+    const earliestBucketStart = rows.length > 0
+      ? new Date(rows[0].bucketStart)
+      : (() => {
+          const now = new Date();
+          return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+        })();
+
+    for (let index = missingCount; index >= 1; index -= 1) {
+      const bucketStart = new Date(Date.UTC(
+        earliestBucketStart.getUTCFullYear(),
+        earliestBucketStart.getUTCMonth() - index,
+        1,
+      ));
+      const bucketEnd = new Date(Date.UTC(
+        bucketStart.getUTCFullYear(),
+        bucketStart.getUTCMonth() + 1,
+        1,
+      ));
+
+      padded.push({
+        bucketStart: bucketStart.toISOString(),
+        bucketEnd: bucketEnd.toISOString(),
+        label: `${bucketStart.getUTCFullYear()}-${String(bucketStart.getUTCMonth() + 1).padStart(2, "0")}`,
+        pageViews: 0,
+        videoViews: 0,
+        uniqueVisitors: 0,
+        returnVisits: 0,
+        magazineExternalLandings: 0,
+        authEvents: 0,
+      });
+    }
+
+    return [...padded, ...rows].slice(-targetCount);
+  }, []);
+
+  const padAllTimeRows = useCallback((rows: AnalyticsBucket[]) => {
+    const targetCount = 5;
+    if (rows.length >= targetCount) {
+      return rows;
+    }
+
+    const missingCount = targetCount - rows.length;
+    const padded: AnalyticsBucket[] = [];
+
+    const earliestBucketStart = rows.length > 0
+      ? new Date(rows[0].bucketStart)
+      : (() => {
+          const now = new Date();
+          return new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+        })();
+
+    for (let index = missingCount; index >= 1; index -= 1) {
+      const year = earliestBucketStart.getUTCFullYear() - index;
+      const bucketStart = new Date(Date.UTC(year, 0, 1));
+      const bucketEnd = new Date(Date.UTC(year + 1, 0, 1));
+
+      padded.push({
+        bucketStart: bucketStart.toISOString(),
+        bucketEnd: bucketEnd.toISOString(),
+        label: String(year),
+        pageViews: 0,
+        videoViews: 0,
+        uniqueVisitors: 0,
+        returnVisits: 0,
+        magazineExternalLandings: 0,
+        authEvents: 0,
+      });
+    }
+
+    return [...padded, ...rows];
+  }, []);
+
   const displayedAnalyticsRows = useMemo(() => {
     if (!analyticsSeries) {
       return [] as AnalyticsBucket[];
     }
 
     if (analyticsZoomLevel === "allTime") {
-      return analyticsSeries.allTime;
+      return padAllTimeRows(analyticsSeries.allTime);
     }
 
     if (analyticsZoomLevel === "monthly") {
-      return filterBucketsWithinRange(analyticsSeries.monthly, selectedAllTimeBucket);
+      const monthlyRows = filterBucketsWithinRange(analyticsSeries.monthly, selectedAllTimeBucket);
+      return padMonthlyRows(monthlyRows);
     }
 
     if (analyticsZoomLevel === "weekly") {
-      return filterBucketsWithinRange(analyticsSeries.weekly, selectedMonthlyBucket);
+      const weeklyRows = filterBucketsWithinRange(analyticsSeries.weekly, selectedMonthlyBucket);
+      return padWeeklyRows(weeklyRows);
     }
 
     if (analyticsZoomLevel === "hourly") {
-      return hourlySeries;
+      return padHourlyRows(hourlySeries);
     }
 
-    return filterBucketsWithinRange(analyticsSeries.daily, selectedWeeklyBucket);
-  }, [analyticsSeries, analyticsZoomLevel, selectedAllTimeBucket, selectedMonthlyBucket, selectedWeeklyBucket, hourlySeries]);
+    const dailyRows = filterBucketsWithinRange(analyticsSeries.daily, selectedWeeklyBucket);
+    return dailyRows.slice(-14);
+  }, [analyticsSeries, analyticsZoomLevel, selectedAllTimeBucket, selectedMonthlyBucket, selectedWeeklyBucket, hourlySeries, padHourlyRows, padWeeklyRows, padMonthlyRows, padAllTimeRows]);
 
   const [analyticsSeriesOn, setAnalyticsSeriesOn] = useState({ pageViews: true, videoViews: true, visitors: true, returnVisits: true, magazineExternalLandings: true, authEvents: true });
   const analyticsGraph = useMemo(
@@ -296,9 +467,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const loadOverview = useCallback(async (forceRefresh = false) => {
     const query = forceRefresh ? `?refresh=1&t=${Date.now()}` : "";
     const url = `/api/admin/dashboard${query}`;
-    const dashboardPayload = forceRefresh
-      ? await readNoStoreJson<DashboardPayload>(url)
-      : await readJson<DashboardPayload>(url);
+    const dashboardPayload = await readNoStoreJson<DashboardPayload>(url);
     setDashboard(dashboardPayload);
   }, []);
 

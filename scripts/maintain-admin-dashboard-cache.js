@@ -45,7 +45,7 @@ async function ensureAdminDashboardCacheTable() {
 async function computeAdminDashboardData() {
   const startedAt = Date.now();
 
-  const [userCounts, videos, artists, categories] = await Promise.all([
+  const [userCounts, videos, artists, categories, hourlyAnalyticsRows, hourlyAuthRows] = await Promise.all([
     prisma.$queryRaw`
       SELECT
         COUNT(*) AS users,
@@ -56,11 +56,75 @@ async function computeAdminDashboardData() {
     prisma.video.count().catch(() => 0),
     prisma.artist.count().catch(() => 0),
     prisma.genreCard.count().catch(() => 0),
+    prisma.$queryRaw`
+      SELECT
+        bucket_start AS bucketStart,
+        page_views AS pageViews,
+        video_views AS videoViews,
+        unique_visitors AS uniqueVisitors,
+        return_visits AS returnVisits
+      FROM admin_dashboard_analytics_hourly
+      WHERE bucket_start >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
+      ORDER BY bucket_start ASC
+    `.catch(() => []),
+    prisma.$queryRaw`
+      SELECT
+        bucket_start AS bucketStart,
+        auth_events AS authEvents
+      FROM admin_dashboard_auth_hourly
+      WHERE bucket_start >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
+      ORDER BY bucket_start ASC
+    `.catch(() => []),
   ]);
 
   const users = toNumber(userCounts[0]?.users);
   const registeredUsers = toNumber(userCounts[0]?.registeredUsers);
   const anonymousUsers = toNumber(userCounts[0]?.anonymousUsers);
+
+  // Merge hourly analytics/auth into dashboard-compatible buckets
+  function toIsoString(value) {
+    const parsed = value instanceof Date ? value : new Date(value);
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+  }
+  function toSafeNumber(value) {
+    const numeric = Number(value ?? 0);
+    return Number.isFinite(numeric) ? numeric : 0;
+  }
+  const authByBucketStart = new Map();
+  const analyticsByBucketStart = new Map();
+  const bucketStarts = new Set();
+  for (const row of hourlyAuthRows) {
+    const bucketStartIso = toIsoString(row.bucketStart);
+    if (!bucketStartIso) continue;
+    authByBucketStart.set(bucketStartIso, toSafeNumber(row.authEvents));
+    bucketStarts.add(bucketStartIso);
+  }
+  for (const row of hourlyAnalyticsRows) {
+    const bucketStartIso = toIsoString(row.bucketStart);
+    if (!bucketStartIso) continue;
+    analyticsByBucketStart.set(bucketStartIso, {
+      pageViews: toSafeNumber(row.pageViews),
+      videoViews: toSafeNumber(row.videoViews),
+      uniqueVisitors: toSafeNumber(row.uniqueVisitors),
+      returnVisits: toSafeNumber(row.returnVisits),
+      magazineExternalLandings: toSafeNumber(row.magazineExternalLandings),
+    });
+    bucketStarts.add(bucketStartIso);
+  }
+  const hourlyRecent = Array.from(bucketStarts)
+    .map((bucketStartIso) => {
+      const analytics = analyticsByBucketStart.get(bucketStartIso);
+      return {
+        bucketStart: bucketStartIso,
+        pageViews: analytics?.pageViews ?? 0,
+        videoViews: analytics?.videoViews ?? 0,
+        uniqueVisitors: analytics?.uniqueVisitors ?? 0,
+        returnVisits: analytics?.returnVisits ?? 0,
+        magazineExternalLandings: analytics?.magazineExternalLandings ?? 0,
+        authEvents: authByBucketStart.get(bucketStartIso) ?? 0,
+      };
+    })
+    .sort((a, b) => a.bucketStart.localeCompare(b.bucketStart));
 
   const locations = await prisma.$queryRaw`
     SELECT location, COUNT(*) AS count
@@ -216,6 +280,7 @@ async function computeAdminDashboardData() {
         videoViews: toNumber(row.videoViews),
         uniqueVisitors: toNumber(row.uniqueVisitors),
       })),
+      hourlyRecent,
       newVsRepeat: {
         newVisitors: recentDailyRows.reduce((sum, row) => sum + toNumber(row.newVisitors), 0),
         repeatVisitors: recentDailyRows.reduce((sum, row) => sum + toNumber(row.repeatVisitors), 0),

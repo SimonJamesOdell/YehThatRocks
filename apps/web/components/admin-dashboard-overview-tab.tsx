@@ -211,17 +211,7 @@ export function AdminDashboardOverviewTab({
       ) : null}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-          {analyticsZoomLevel === "allTime"
-            ? "User analytics · all time overview"
-            : analyticsZoomLevel === "monthly"
-              ? "User analytics · rolling monthly buckets"
-              : analyticsZoomLevel === "weekly"
-                ? "User analytics · rolling weekly buckets"
-                : analyticsZoomLevel === "daily"
-                    ? ""
-                  : "User analytics · recent hourly buckets"}
-        </span>
+        <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }} />
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
           {([
             { key: "allTime", label: "All time" },
@@ -294,17 +284,7 @@ export function AdminDashboardOverviewTab({
         </div>
       </div>
 
-      <p className="authMessage" style={{ margin: 0 }}>
-        {analyticsZoomLevel === "allTime"
-          ? "Click a bucket to zoom into monthly traffic."
-          : analyticsZoomLevel === "monthly"
-            ? "Click a bucket to zoom into weekly traffic for that month window."
-            : analyticsZoomLevel === "weekly"
-              ? "Click a bucket to zoom into daily traffic for that week window."
-              : analyticsZoomLevel === "daily"
-                ? ""
-                : "Showing the latest 24 hourly buckets."}
-      </p>
+      <p className="authMessage" style={{ margin: 0 }} />
 
       <svg
         viewBox={analyticsGraph.points.length > 0 ? `0 0 ${analyticsGraph.width} ${analyticsGraph.height}` : "0 0 680 250"}
