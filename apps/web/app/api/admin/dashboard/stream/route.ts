@@ -2,7 +2,6 @@ import { NextRequest } from "next/server";
 
 import { requireAdminApiAuth } from "@/lib/admin-auth";
 import { buildAdminHealthPayload } from "@/lib/admin-dashboard-health";
-import { startAdminDashboardRollups } from "@/lib/admin-dashboard-rollups";
 
 function readPositiveNumberEnv(name: string, defaultValue: number, minValue: number) {
   const raw = process.env[name];
@@ -22,8 +21,6 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) {
     return auth.response;
   }
-
-  startAdminDashboardRollups();
 
   const encoder = new TextEncoder();
 

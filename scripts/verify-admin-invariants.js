@@ -135,21 +135,9 @@ function main() {
      "void refreshOverviewAnalytics();",
      "useAdminAnalyticsRefresh",
    ], "Admin dashboard manual refresh button reuses shared refresh helper", failures);
-  assertContains(adminDashboardRouteSource, "await ensureAdminDashboardRollupsFresh({ force: forceRefresh }).catch(() => undefined);", "Admin dashboard route refreshes rollups before overview payload assembly", failures);
-  assertContains(adminDashboardRouteSource, "startAdminDashboardRollups();", "Admin dashboard route starts rollup scheduler in admin-only context", failures);
-  assertContains(adminDashboardStreamRouteSource, "startAdminDashboardRollups();", "Admin dashboard stream route starts rollup scheduler in admin-only context", failures);
-  assertContains(adminDashboardRouteSource, "readAdminDashboardRollups().catch(() => ({", "Admin dashboard route keeps rollup read invocation shape stable", failures);
-  assertContains(adminDashboardRollupsSource, "await ensureAdminDashboardRollupsFresh();", "Rollup reader performs freshness check before reading aggregates", failures);
-  assertContains(adminDashboardRollupsSource, "void ensureAdminDashboardRollupsFresh({ force: true }).catch((error) => {", "Rollup scheduler performs an immediate forced warm-up refresh", failures);
-  assertContainsEither(adminDashboardRollupsSource, [
-    "STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s') AS bucket_start,",
-    "const HOURLY_BUCKET_SELECT_EXPR = `STR_TO_DATE(${HOURLY_BUCKET_GROUP_BY_EXPR}, '%Y-%m-%d %H:%i:%s')`",
-  ], "Hourly rollups keep DATETIME bucket_start expression used by current stable admin close behavior", failures);
-  assertContains(adminDashboardRollupsSource, "const HOURLY_BUCKET_GROUP_BY_EXPR = \"DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')\";", "Hourly rollups define stable DATE_FORMAT grouping expression", failures);
-  assertContains(adminDashboardRollupsSource, "GROUP BY ${HOURLY_BUCKET_GROUP_BY_EXPR}", "Hourly rollups group by DATE_FORMAT expression for stable admin close behavior", failures);
-  assertNotContains(adminDashboardRollupsSource, "GROUP BY STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s')", "Hourly rollups must not group by STR_TO_DATE expression", failures);
-  assertNotContains(dbSource, "admin-dashboard-rollups", "DB bootstrap must not import or start admin rollups globally", failures);
-  assertNotContains(dbSource, "startAdminDashboardRollups", "DB bootstrap must not trigger admin rollups outside admin routes", failures);
+  assertContains(adminDashboardRouteSource, "const cacheRows = await prisma.$queryRaw<Array<{ payload: string; computed_at: Date }>>`", "Admin dashboard route reads from pre-computed cache table", failures);
+  assertContains(adminDashboardRouteSource, "SELECT payload, computed_at FROM admin_dashboard_cache WHERE id = 1", "Admin dashboard route queries cache table", failures);
+  assertContains(adminDashboardRouteSource, "return NextResponse.json(payload);", "Admin dashboard route returns cached payload", failures);
 
   // Admin performance samples route parse style invariants.
   assertContains(adminPerformanceSamplesRouteSource, "const ms = Number.parseInt(process.env.SLOW_QUERY_LONG_TIME_THRESHOLD_MS, 10);", "Admin performance samples route parses slow-query threshold with Number.parseInt", failures);
