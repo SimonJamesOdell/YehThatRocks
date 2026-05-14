@@ -12,6 +12,7 @@ const DESKTOP_INTRO_MOVE_MS = 760;
 const DESKTOP_INTRO_REVEAL_MS = 820;
 const DESKTOP_INTRO_MAX_LOGO_WIDTH_PX = 1128;
 const DESKTOP_INTRO_VIEWPORT_WIDTH_RATIO = 1.128;
+const DESKTOP_INTRO_PLAYED_SESSION_KEY = "ytr:desktop-intro-played";
 const DISABLE_DESKTOP_INTRO = process.env.NEXT_PUBLIC_DISABLE_DESKTOP_INTRO === "1";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -44,11 +45,6 @@ export type DesktopIntroState = {
    * Call this from the brand-logo click handler.
    */
   startPreparedDesktopIntroSequence: () => Promise<void>;
-  /**
-   * Write true here before navigating home so that the next "/" render
-   * replays the intro. The hook resets the ref automatically once consumed.
-   */
-  shouldReplayDesktopIntroOnHomeRef: React.MutableRefObject<boolean>;
 };
 
 // ── Hook ───────────────────────────────────────────────────────────────────
@@ -74,7 +70,6 @@ export function useDesktopIntro({
   const desktopIntroPhaseRef = useRef<DesktopIntroPhase>("disabled");
   const desktopIntroLogoLoadIdRef = useRef(0);
   const hasStartedAutoDesktopIntroRef = useRef(false);
-  const shouldReplayDesktopIntroOnHomeRef = useRef(false);
 
   const isDesktopIntroActive =
     desktopIntroPhase === "hold"
@@ -276,15 +271,17 @@ export function useDesktopIntro({
       return;
     }
 
-    // Auto-run the intro only once per tab lifetime; explicit replays use shouldReplayDesktopIntroOnHomeRef.
+    // Auto-run the intro only once per tab session.
     const introWindow = window as DesktopIntroWindow;
-    if (hasStartedAutoDesktopIntroRef.current || introWindow.__ytrDesktopIntroAutoPlayed) {
+    const introPlayedInSession = window.sessionStorage.getItem(DESKTOP_INTRO_PLAYED_SESSION_KEY) === "1";
+    if (hasStartedAutoDesktopIntroRef.current || introWindow.__ytrDesktopIntroAutoPlayed || introPlayedInSession) {
       setIsDesktopIntroPreload(false);
       return;
     }
 
     hasStartedAutoDesktopIntroRef.current = true;
     introWindow.__ytrDesktopIntroAutoPlayed = true;
+    window.sessionStorage.setItem(DESKTOP_INTRO_PLAYED_SESSION_KEY, "1");
 
     void startPreparedDesktopIntroSequence();
 
@@ -302,20 +299,6 @@ export function useDesktopIntro({
       clearDesktopIntroTimers();
     };
   }, [clearDesktopIntroTimers, pathname, startPreparedDesktopIntroSequence, syncDesktopIntroTarget]);
-
-  // Replay the intro when the user navigates back to "/" via the brand logo.
-  useEffect(() => {
-    if (DISABLE_DESKTOP_INTRO) {
-      return;
-    }
-
-    if (pathname !== "/" || !shouldReplayDesktopIntroOnHomeRef.current) {
-      return;
-    }
-
-    shouldReplayDesktopIntroOnHomeRef.current = false;
-    void startPreparedDesktopIntroSequence();
-  }, [pathname, startPreparedDesktopIntroSequence]);
 
   const shellDesktopIntroStyle: CSSProperties | undefined = isDesktopIntroActive
     ? {
@@ -336,6 +319,5 @@ export function useDesktopIntro({
     brandLogoTargetRef,
     shellDesktopIntroStyle,
     startPreparedDesktopIntroSequence,
-    shouldReplayDesktopIntroOnHomeRef,
   };
 }

@@ -61,6 +61,7 @@ export function AuthAccountActions({ emailVerified, showLogout = true }: AuthAcc
             <button type="button" onClick={handleSendVerification} disabled={isPending}>
               {isPending ? "Sending..." : "Send verification email"}
             </button>
+            <p className="accountVerificationHint">Sorry, I haven't got round to make this work yet, I'll get to it eventually</p>
             {message ? <p className="authMessage">{message}</p> : null}
           </div>
         </div>

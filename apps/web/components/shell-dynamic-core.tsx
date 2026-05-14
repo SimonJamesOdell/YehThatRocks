@@ -486,8 +486,6 @@ function ShellDynamicInner({
     desktopIntroScale,
     brandLogoTargetRef,
     shellDesktopIntroStyle: _shellDesktopIntroStyle,
-    startPreparedDesktopIntroSequence,
-    shouldReplayDesktopIntroOnHomeRef,
   } = useDesktopIntro({ pathname });
   const {
     searchValue, setSearchValue,
@@ -596,15 +594,10 @@ function ShellDynamicInner({
     // Force startup resolver to run again after logo navigation clears ?v.
     hasResolvedInitialVideoRef.current = false;
     startupHydratedVideoIdRef.current = null;
-    shouldReplayDesktopIntroOnHomeRef.current = true;
     if (pathname === "/" && !requestedVideoId) {
       setStartupSelectionRefreshTick((value) => value + 1);
     }
-    if (pathname === "/") {
-      shouldReplayDesktopIntroOnHomeRef.current = false;
-      void startPreparedDesktopIntroSequence();
-    }
-  }, [pathname, requestedVideoId, shouldReplayDesktopIntroOnHomeRef, startPreparedDesktopIntroSequence]);
+  }, [pathname, requestedVideoId]);
   const isLeftRailSuppressed = shouldOccludeLeftRail || isMobileCommunityCollapsed;
   const artistLetterParam = searchParams.get("letter");
   const activeArtistLetter =
