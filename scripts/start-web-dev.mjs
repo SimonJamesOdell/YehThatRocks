@@ -104,6 +104,12 @@ async function initializeAdminCacheIfPossible(env) {
 }
 
 async function main() {
+  // Honour --port <n> passed by callers (e.g. ship/verify-deps-full).
+  const portArgIndex = process.argv.indexOf("--port");
+  const port = portArgIndex !== -1 && process.argv[portArgIndex + 1]
+    ? process.argv[portArgIndex + 1]
+    : "3000";
+
   const resolvedDatabaseUrl = await resolveDatabaseUrl();
   const env = {
     ...process.env,
@@ -112,7 +118,7 @@ async function main() {
 
   await initializeAdminCacheIfPossible(env);
 
-  const nextCode = await runCommand("next", ["dev", "--hostname", "0.0.0.0", "--port", "3000"], {
+  const nextCode = await runCommand("next", ["dev", "--hostname", "0.0.0.0", "--port", port], {
     cwd: WEB_CWD,
     env,
   });
