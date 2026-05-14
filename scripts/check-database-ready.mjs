@@ -92,7 +92,9 @@ function checkSchemaInitialized(host, port, user, password, database) {
   schemaMysql.on("close", (code) => {
     if (code === 0 && schemaOutput.includes("_prisma_migrations")) {
       console.log("✓ Database schema is initialized");
-      process.exit(0);
+      
+      // Initialize admin dashboard cache
+      initializeAdminDashboardCache();
     } else {
       console.error("❌ Database schema not initialized (Prisma migrations not applied)");
       console.error("");
@@ -102,6 +104,30 @@ function checkSchemaInitialized(host, port, user, password, database) {
       process.exit(1);
     }
   });
+
+function initializeAdminDashboardCache() {
+  console.log("🔄 Initializing admin dashboard cache...");
+  
+  const maintainProcess = spawn("node", ["scripts/maintain-admin-dashboard-cache.js"], {
+    stdio: "inherit",
+    cwd: process.cwd()
+  });
+  
+  maintainProcess.on("close", (code) => {
+    if (code === 0) {
+      console.log("✓ Admin dashboard cache initialized");
+      process.exit(0);
+    } else {
+      console.warn("⚠ Admin dashboard cache initialization failed (not critical for dev)");
+      process.exit(0);
+    }
+  });
+  
+  maintainProcess.on("error", (err) => {
+    console.warn(`⚠ Admin dashboard cache initialization error: ${err.message}`);
+    process.exit(0);
+  });
+}
   
   schemaMysql.on("error", (err) => {
     console.error("❌ Failed to check database schema!");
