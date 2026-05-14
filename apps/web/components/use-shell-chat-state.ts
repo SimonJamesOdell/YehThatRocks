@@ -8,6 +8,7 @@ export function useShellChatState({
   pathname,
   isAuthenticated,
   isMagazineOverlayRoute,
+  isForumOverlayRoute = false,
   isAdminOverlayRoute,
   shouldShowOverlayPanel,
   fetchWithAuthRetry,
@@ -16,6 +17,7 @@ export function useShellChatState({
   pathname: string;
   isAuthenticated: boolean;
   isMagazineOverlayRoute: boolean;
+  isForumOverlayRoute?: boolean;
   isAdminOverlayRoute: boolean;
   shouldShowOverlayPanel: boolean;
   fetchWithAuthRetry: (input: string, init?: RequestInit) => Promise<Response>;
@@ -26,6 +28,7 @@ export function useShellChatState({
     pathname,
     isAuthenticated,
     isMagazineOverlayRoute,
+    isForumOverlayRoute,
     isAdminOverlayRoute,
     shouldShowOverlayPanel: shouldShowOverlayPanel && pathname !== "/new",
     fetchWithAuthRetry,
