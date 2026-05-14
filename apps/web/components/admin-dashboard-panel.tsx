@@ -104,18 +104,25 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     network: true,
   });
   const cpuAvgPeakText =
-    finiteOrNull(dashboard?.health.host.cpuAverageUsagePercent) === null ||
-    finiteOrNull(dashboard?.health.host.cpuPeakCoreUsagePercent) === null
+    finiteOrNull(dashboard?.health?.host?.cpuAverageUsagePercent) === null ||
+    finiteOrNull(dashboard?.health?.host?.cpuPeakCoreUsagePercent) === null
       ? "Avg : n/a\nPeak : n/a"
-      : `Avg : ${Math.round(finiteOrNull(dashboard?.health.host.cpuAverageUsagePercent) ?? 0)}%\nPeak : ${Math.round(finiteOrNull(dashboard?.health.host.cpuPeakCoreUsagePercent) ?? 0)}%`;
+      : `Avg : ${Math.round(finiteOrNull(dashboard?.health?.host?.cpuAverageUsagePercent) ?? 0)}%\nPeak : ${Math.round(finiteOrNull(dashboard?.health?.host?.cpuPeakCoreUsagePercent) ?? 0)}%`;
 
-  const hostMetricRows = useMemo(() => (dashboard?.hostMetrics.minute ?? []).slice(), [dashboard]);
-  const orderedIngestVelocity = useMemo(() => (dashboard?.insights.ingestVelocity ?? []).slice().reverse(), [dashboard]);
-  const orderedGroqSpend = useMemo(() => (dashboard?.insights.groqSpend.daily ?? []).slice().reverse(), [dashboard]);
+  const hostMetricMinuteRows = dashboard?.hostMetrics.minute;
+  const ingestVelocityRows = dashboard?.insights.ingestVelocity;
+  const groqSpendDailyRows = dashboard?.insights.groqSpend.daily;
+  const geoVisitorRows = dashboard?.analytics.geoVisitors;
+  const apiUsageDailyRows = dashboard?.insights.apiUsage.daily;
+  const analyticsHourlyRecentRows = dashboard?.analytics.hourlyRecent;
+
+  const hostMetricRows = useMemo(() => (hostMetricMinuteRows ?? []).slice(), [hostMetricMinuteRows]);
+  const orderedIngestVelocity = useMemo(() => (ingestVelocityRows ?? []).slice().reverse(), [ingestVelocityRows]);
+  const orderedGroqSpend = useMemo(() => (groqSpendDailyRows ?? []).slice().reverse(), [groqSpendDailyRows]);
   const maxIngestCount = useMemo(() => Math.max(1, ...orderedIngestVelocity.map((item) => item.count)), [orderedIngestVelocity]);
   const maxGroqCount = useMemo(() => Math.max(1, ...orderedGroqSpend.map((item) => item.classified + item.errors)), [orderedGroqSpend]);
-  const worldMapVisitors = useMemo(() => (dashboard?.analytics.geoVisitors ?? []).slice(), [dashboard]);
-  const apiUsageRows = useMemo(() => (dashboard?.insights.apiUsage.daily ?? []).slice(), [dashboard]);
+  const worldMapVisitors = useMemo(() => (geoVisitorRows ?? []).slice(), [geoVisitorRows]);
+  const apiUsageRows = useMemo(() => (apiUsageDailyRows ?? []).slice(), [apiUsageDailyRows]);
   const apiUsageTotals7d = dashboard?.insights.apiUsage.totals7d;
   const filteredWorldMapVisitors = useMemo(() => {
     if (mapDateRange === "allTime") {
@@ -234,7 +241,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const analyticsSeries = dashboard?.analytics.series;
   const apiUsageGraph = useMemo(() => buildApiUsageGraph(apiUsageRows), [apiUsageRows]);
   const hourlySeries = useMemo(() => {
-    const recent = (dashboard?.analytics.hourlyRecent ?? []).slice(-24);
+    const recent = (analyticsHourlyRecentRows ?? []).slice(-24);
 
     return recent.map((row) => {
       const bucketStartDate = new Date(row.bucketStart);
@@ -252,7 +259,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         authEvents: row.authEvents,
       } as AnalyticsBucket;
     });
-  }, [dashboard]);
+  }, [analyticsHourlyRecentRows]);
 
   const displayedAnalyticsRows = useMemo(() => {
     if (!analyticsSeries) {
