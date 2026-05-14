@@ -9,6 +9,27 @@ $ErrorActionPreference = "Stop"
 
 Set-Location $RepoRoot
 
+function Invoke-Native {
+  param(
+    [string]$Program,
+    [string[]]$Args = @()
+  )
+
+  & $Program @Args
+  if ($LASTEXITCODE -ne 0) {
+    $display = "$Program " + ($Args -join " ")
+    throw "$display failed with exit code $LASTEXITCODE"
+  }
+}
+
+function Get-GitStatusTracked {
+  $output = & git status --short --untracked-files=no
+  if ($LASTEXITCODE -ne 0) {
+    throw "git status --short --untracked-files=no failed with exit code $LASTEXITCODE"
+  }
+  return $output
+}
+
 function Invoke-Step {
   param(
     [string]$Name,
@@ -21,33 +42,37 @@ function Invoke-Step {
 }
 
 Invoke-Step -Name "refresh" -Action {
-  npx --yes npm-check-updates -u
-  npx --yes npm-check-updates -u --packageFile apps/web/package.json
-  npm install
+  Invoke-Native -Program "npx" -Args @("--yes", "npm-check-updates", "-u")
+  Invoke-Native -Program "npx" -Args @("--yes", "npm-check-updates", "-u", "--packageFile", "apps/web/package.json")
+  Invoke-Native -Program "npm" -Args @("install")
 }
 
 Invoke-Step -Name "verify" -Action {
-  npm run verify:deps:full
+  Invoke-Native -Program "npm" -Args @("run", "verify:deps:full")
 }
 
 Invoke-Step -Name "audit" -Action {
-  npm audit --audit-level=high
+  Invoke-Native -Program "npm" -Args @("audit", "--audit-level=high")
 }
 
-$status = git status --short --untracked-files=no
+$status = Get-GitStatusTracked
 if (-not $status) {
   Write-Host "No dependency changes to commit." -ForegroundColor Yellow
   exit 0
 }
 
 Invoke-Step -Name "commit" -Action {
-  git add -A
-  git diff --cached --name-only | Out-Host
-  git commit -m "chore(deps): refresh dependencies"
+  Invoke-Native -Program "git" -Args @("add", "-A")
+  $staged = & git diff --cached --name-only
+  if ($LASTEXITCODE -ne 0) {
+    throw "git diff --cached --name-only failed with exit code $LASTEXITCODE"
+  }
+  $staged | Out-Host
+  Invoke-Native -Program "git" -Args @("commit", "-m", "chore(deps): refresh dependencies")
 }
 
 if (-not $SkipPush) {
   Invoke-Step -Name "push" -Action {
-    git push $Remote $Branch
+    Invoke-Native -Program "git" -Args @("push", $Remote, $Branch)
   }
 }

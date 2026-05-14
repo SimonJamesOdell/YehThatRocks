@@ -436,6 +436,40 @@ $cleanOutput
   }
 }
 
+function Remove-UntrackedEmptyDirectories([string]$RepoRoot) {
+  $cleanLines = (& git clean -nd)
+  if ($LASTEXITCODE -ne 0) {
+    throw "Unable to run git clean dry-run for empty directory pruning."
+  }
+
+  foreach ($line in $cleanLines) {
+    $match = [regex]::Match($line, '^Would remove (.+/)$')
+    if (-not $match.Success) {
+      continue
+    }
+
+    $relativePath = $match.Groups[1].Value.Trim()
+    if ([string]::IsNullOrWhiteSpace($relativePath)) {
+      continue
+    }
+
+    $relativePathWindows = $relativePath -replace '/', '\\'
+    $candidate = Join-Path $RepoRoot $relativePathWindows
+
+    if (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
+      continue
+    }
+
+    $children = @(Get-ChildItem -LiteralPath $candidate -Force -ErrorAction SilentlyContinue)
+    if ($children.Count -ne 0) {
+      continue
+    }
+
+    Write-Host "Removing untracked empty directory: $relativePath" -ForegroundColor DarkYellow
+    Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
 function Remove-PathIfPresent([string]$TargetPath) {
   if (-not (Test-Path -LiteralPath $TargetPath)) {
     return
@@ -473,8 +507,37 @@ function Clean-RepoTransientCaches([string]$RepoRoot, [switch]$SafeMode) {
 # Returns the PID of the process listening on port 3000, or $null.
 function Get-DevServerPid {
   $conn = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($conn) { return $conn.OwningProcess }
-  return $null
+  if (-not $conn) {
+    return $null
+  }
+
+  $listenerPid = $conn.OwningProcess
+  $listenerProcess = Get-Process -Id $listenerPid -ErrorAction SilentlyContinue
+  if (-not $listenerProcess) {
+    return $null
+  }
+
+  # Guard against non-dev listeners (for example WSL port relays) being treated as Next dev.
+  if ($listenerProcess.ProcessName -notmatch '^(node|npm|pnpm|yarn|bun)(\.exe)?$') {
+    return $null
+  }
+
+  return $listenerPid
+}
+
+function Get-Port3000ListenerInfo {
+  $conn = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $conn) {
+    return $null
+  }
+
+  $listenerPid = $conn.OwningProcess
+  $listenerProcess = Get-Process -Id $listenerPid -ErrorAction SilentlyContinue
+  if (-not $listenerProcess) {
+    return [pscustomobject]@{ Pid = $listenerPid; Name = "unknown" }
+  }
+
+  return [pscustomobject]@{ Pid = $listenerPid; Name = $listenerProcess.ProcessName }
 }
 
 # Kills the process on port 3000 (if any) and returns whether it was running.
@@ -641,6 +704,8 @@ $shipStatePath = [string]$shipStatePaths.StateFile
 $shipTarPath = [string]$shipStatePaths.TarFile
 try {
   if (-not $SkipLocalCleanup) {
+    Remove-UntrackedEmptyDirectories -RepoRoot $RepoDir
+
     $initialDevPid = Get-DevServerPid
     $devServerWasRunning = [bool]$initialDevPid
 
@@ -648,11 +713,17 @@ try {
       Write-Host "Dev server detected on port 3000 (PID $initialDevPid). Keeping it online and running safe cache cleanup..." -ForegroundColor DarkYellow
       Clean-RepoTransientCaches -RepoRoot $RepoDir -SafeMode
     } else {
+      $listenerInfo = Get-Port3000ListenerInfo
+      if ($listenerInfo -and -not $ForceFullCleanupStopDevServer) {
+        Write-Host "Port 3000 listener detected (PID $($listenerInfo.Pid), process '$($listenerInfo.Name)'). Not treating it as local dev server; running safe cache cleanup..." -ForegroundColor DarkYellow
+        Clean-RepoTransientCaches -RepoRoot $RepoDir -SafeMode
+      } else {
       if ($devServerWasRunning -and $ForceFullCleanupStopDevServer) {
         Write-Host "Force full cleanup requested; stopping dev server before cleanup..." -ForegroundColor DarkYellow
       }
-      $devServerWasRunning = Stop-DevServer
-      Clean-RepoTransientCaches -RepoRoot $RepoDir
+        $devServerWasRunning = Stop-DevServer
+        Clean-RepoTransientCaches -RepoRoot $RepoDir
+      }
     }
   }
 
