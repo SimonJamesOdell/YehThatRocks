@@ -357,6 +357,28 @@
   white-space: pre-wrap;
 }
 
+.forumSectionCard {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 12px 10px;
+}
+
+.forumSectionCard:hover {
+  background: rgba(220, 22, 5, 0.25) !important;
+}
+
+.forumSectionCard .messageMeta {
+  align-items: center;
+}
+
+.forumSectionCard .messageMeta strong {
+  font-family: var(--font-display), cursive;
+  letter-spacing: 0.03em;
+}
+
+.forumSectionCard p {
+  line-height: 1.4;
+}
+
 .magazineRailCard {
   display: grid;
   grid-template-columns: 84px minmax(0, 1fr);

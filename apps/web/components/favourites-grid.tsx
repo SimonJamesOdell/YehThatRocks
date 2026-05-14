@@ -6,12 +6,10 @@ import { memo, useCallback, useEffect, useMemo, useState, useTransition } from "
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
-import { CloseLink } from "@/components/close-link";
-import { OverlayHeader } from "@/components/overlay-header";
 import { useInfiniteScroll } from "@/components/use-infinite-scroll";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
-import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
+import { EVENT_NAMES, FAVOURITES_CREATE_PLAYLIST_FINISHED_EVENT, FAVOURITES_CREATE_PLAYLIST_REQUESTED_EVENT, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
 import { createPlaylistFromVideoList } from "@/lib/playlist-create-from-video-list";
 
 const FAVOURITES_BATCH_SIZE = 20;
@@ -132,7 +130,6 @@ export function FavouritesGrid({
   const searchParams = useSearchParams();
   const [favourites, setFavourites] = useState<VideoRecord[]>(initialFavourites);
   const [totalCount, setTotalCount] = useState(initialTotalCount);
-  const [filterValue, setFilterValue] = useState("");
   const [pendingVideoId, setPendingVideoId] = useState<string | null>(null);
   const [isCreatingPlaylistFromFavourites, setIsCreatingPlaylistFromFavourites] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -202,7 +199,7 @@ export function FavouritesGrid({
   });
 
   const filteredFavourites = useMemo(() => {
-    const needle = filterValue.trim().toLowerCase();
+    const needle = (searchParams.get("f") ?? "").trim().toLowerCase();
     if (!needle) {
       return favourites;
     }
@@ -212,7 +209,7 @@ export function FavouritesGrid({
       const artist = track.channelTitle.toLowerCase();
       return title.startsWith(needle) || artist.startsWith(needle);
     });
-  }, [filterValue, favourites]);
+  }, [favourites, searchParams]);
 
   useEffect(() => {
     if (!isAuthenticated || pathname !== "/favourites") {
@@ -271,6 +268,20 @@ export function FavouritesGrid({
       unsubscribe();
     };
   }, [isAuthenticated, pathname]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    const unsubscribe = listenToAppEvent(FAVOURITES_CREATE_PLAYLIST_REQUESTED_EVENT, () => {
+      void createPlaylistFromFavourites();
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [createPlaylistFromFavourites, isAuthenticated]);
 
   const removeFavourite = useCallback((videoId: string) => {
     if (!isAuthenticated) {
@@ -382,44 +393,12 @@ export function FavouritesGrid({
       });
     } finally {
       setIsCreatingPlaylistFromFavourites(false);
+      dispatchAppEvent(FAVOURITES_CREATE_PLAYLIST_FINISHED_EVENT, null);
     }
   }
 
   return (
     <>
-      <OverlayHeader className="categoriesHeaderBar" close={false}>
-        <div className="categoriesHeaderMain">
-          <strong><span className="whiteHeart" aria-hidden="true">❤️</span> Favourites ({totalCount})</strong>
-          <div className="categoriesFilterBar">
-            <input
-              type="text"
-              className="categoriesFilterInput"
-              placeholder="type to filter..."
-              value={filterValue}
-              onChange={(event) => setFilterValue(event.target.value)}
-              aria-label="Filter favourites by prefix"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-          <div className="categoriesHeaderActions">
-            {isAuthenticated ? (
-              <button
-                type="button"
-                className="newPageSeenToggle favouritesCreatePlaylistButton"
-                onClick={() => {
-                  void createPlaylistFromFavourites();
-                }}
-                disabled={totalCount === 0 || isCreatingPlaylistFromFavourites}
-              >
-                  {isCreatingPlaylistFromFavourites ? "+ Creating..." : "+ New Playlist"}
-              </button>
-            ) : null}
-          </div>
-        </div>
-        <CloseLink />
-      </OverlayHeader>
-
       {filteredFavourites.length > 0 ? (
         <>
           <div className="catalogGrid favouritesCatalogGrid">

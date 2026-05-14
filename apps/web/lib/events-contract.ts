@@ -19,6 +19,8 @@ export const EVENT_NAMES = {
   PLAYLIST_CHOOSER_STATE: "ytr:playlist-chooser-state",
   PLAYLIST_RAIL_SYNC: "ytr:playlist-rail-sync",
   PLAYLIST_CREATION_PROGRESS: "ytr:playlist-creation-progress",
+  FAVOURITES_CREATE_PLAYLIST_REQUESTED: "ytr:favourites-create-playlist-requested",
+  FAVOURITES_CREATE_PLAYLIST_FINISHED: "ytr:favourites-create-playlist-finished",
 
   // Right rail and UI
   RIGHT_RAIL_MODE: "ytr:right-rail-mode",
@@ -67,6 +69,8 @@ export type EventPayloads = {
     playlistId: string;
     phase: "done" | "failed";
   };
+  [EVENT_NAMES.FAVOURITES_CREATE_PLAYLIST_REQUESTED]: null;
+  [EVENT_NAMES.FAVOURITES_CREATE_PLAYLIST_FINISHED]: null;
   [EVENT_NAMES.RIGHT_RAIL_MODE]: {
     mode: "watch-next" | "playlist" | "queue";
     playlistId?: string;
@@ -220,6 +224,8 @@ export const PLAYLISTS_UPDATED_EVENT = EVENT_NAMES.PLAYLISTS_UPDATED;
 export const PLAYLIST_CHOOSER_STATE_EVENT = EVENT_NAMES.PLAYLIST_CHOOSER_STATE;
 export const PLAYLIST_RAIL_SYNC_EVENT = EVENT_NAMES.PLAYLIST_RAIL_SYNC;
 export const PLAYLIST_CREATION_PROGRESS_EVENT = EVENT_NAMES.PLAYLIST_CREATION_PROGRESS;
+export const FAVOURITES_CREATE_PLAYLIST_REQUESTED_EVENT = EVENT_NAMES.FAVOURITES_CREATE_PLAYLIST_REQUESTED;
+export const FAVOURITES_CREATE_PLAYLIST_FINISHED_EVENT = EVENT_NAMES.FAVOURITES_CREATE_PLAYLIST_FINISHED;
 
 // Right rail and UI
 export const RIGHT_RAIL_MODE_EVENT = EVENT_NAMES.RIGHT_RAIL_MODE;
