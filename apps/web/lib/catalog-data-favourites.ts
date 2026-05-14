@@ -18,7 +18,8 @@ type FavouriteVideosPage = {
 
 // ── Constants & caches ────────────────────────────────────────────────────────
 
-export const FAVOURITE_VIDEOS_CACHE_TTL_MS = 20_000;
+// Keep favourites reads fresh so adds/removes are visible immediately.
+export const FAVOURITE_VIDEOS_CACHE_TTL_MS = 0;
 export const USER_SCOPED_CACHE_MAX_ENTRIES = Math.max(
   100,
   Math.min(10_000, Number(process.env.USER_SCOPED_CACHE_MAX_ENTRIES || "1500")),

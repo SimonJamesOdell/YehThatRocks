@@ -66,6 +66,7 @@ import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { dedupeVideos, filterHiddenVideos } from "@/lib/video-list-utils";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
+import { FORUM_SECTIONS } from "@/lib/forum-sections";
 import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT } from "@/lib/events-contract";
 import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
@@ -321,6 +322,7 @@ function ShellDynamicInner({
     isPlayerWidthOverlayRoute,
     overlayPanelClassName,
     isMagazineOverlayRoute,
+    isForumOverlayRoute,
     shouldDisableRelatedRailTransition,
     shouldOccludeLeftRail,
     shouldOccludeRightRail,
@@ -541,6 +543,7 @@ function ShellDynamicInner({
     pathname,
     isAuthenticated,
     isMagazineOverlayRoute,
+    isForumOverlayRoute,
     isAdminOverlayRoute,
     shouldShowOverlayPanel: shouldShowOverlayPanel && pathname !== "/new",
     fetchWithAuthRetry,
@@ -2398,7 +2401,7 @@ function ShellDynamicInner({
                       className={`${chatMode === "global" ? "activeTab" : ""} ${flashingChatTabs.global ? "attentionPulse" : ""}`.trim() || undefined}
                       onClick={() => {
                         setChatMode("global");
-                        if (isMagazineOverlayRoute) {
+                        if (isMagazineOverlayRoute || isForumOverlayRoute) {
                           window.dispatchEvent(new CustomEvent(OVERLAY_CLOSE_REQUEST_EVENT, {
                             detail: { href: `/?v=${encodeURIComponent(currentVideo.id)}&resume=1` },
                           }));
@@ -2424,19 +2427,11 @@ function ShellDynamicInner({
                       type="button"
                       className={chatMode === "online" ? "activeTab" : undefined}
                       onClick={() => {
-                        if (!isAuthenticated) {
-                          openAuthModal();
-                          return;
-                        }
                         setChatMode("online");
-                        if (isMagazineOverlayRoute) {
-                          window.dispatchEvent(new CustomEvent(OVERLAY_CLOSE_REQUEST_EVENT, {
-                            detail: { href: `/?v=${encodeURIComponent(currentVideo.id)}&resume=1` },
-                          }));
-                        }
+                        router.push(`/forum?v=${encodeURIComponent(currentVideo.id)}`);
                       }}
                     >
-                      Who&apos;s Online
+                      Forum
                     </button>
                   </>
               </div>
@@ -2512,39 +2507,18 @@ function ShellDynamicInner({
                     </>
                   )
                 ) : chatMode === "online" ? (
-                  !isChatLoading && onlineUsers.length === 0 ? (
-                    <p className="chatStatus">No users currently online.</p>
-                  ) : (
-                    onlineUsers.map((user) => {
-                      const profileHref = getUserProfileHref(user.name, user.id);
-                      const isProfileClickable = Boolean(profileHref);
-                      return (
-                      <article
-                        key={user.id}
-                        className={isProfileClickable ? "chatMessage chatMessageClickable" : "chatMessage"}
-                        onClick={isProfileClickable ? () => router.push(profileHref!) : undefined}
-                        onKeyDown={isProfileClickable ? handleButtonLikeKeyDown(() => router.push(profileHref!)) : undefined}
-                        role={isProfileClickable ? "button" : undefined}
-                        tabIndex={isProfileClickable ? 0 : undefined}
-                        aria-label={isProfileClickable ? `Open profile for ${user.name}` : undefined}
-                      >
-                        {user.avatarUrl ? (
-                          <Image src={user.avatarUrl} alt="" width={88} height={88} className="chatAvatar" loading="lazy" sizes="44px" unoptimized />
-                        ) : (
-                          <div className="avatar">{user.name.slice(0, 1)}</div>
-                        )}
+                  <>
+                    {FORUM_SECTIONS.map((section) => (
+                      <article key={section.id} className="chatMessage forumSectionCard">
                         <div>
                           <div className="messageMeta">
-                            <strong>{user.name}</strong>
-                            <span className="chatOnlineBadge" title="Online now">● Online</span>
-                            <span>{user.lastSeen ? formatChatTimestamp(user.lastSeen) : "Now"}</span>
+                            <strong>{section.title}</strong>
                           </div>
-                          <p>Online now</p>
+                          <p>{section.description}</p>
                         </div>
                       </article>
-                      );
-                    })
-                  )
+                    ))}
+                  </>
                 ) : (
                   chatMessages.map((message) => {
                     const isUserOnline = onlineUsers.some((u) => u.name === message.user.name);

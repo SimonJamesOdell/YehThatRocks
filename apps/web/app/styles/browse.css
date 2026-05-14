@@ -113,10 +113,66 @@
   flex-shrink: 0;
 }
 
+.favouritesPageHeaderContent {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  justify-items: start;
+  flex-wrap: wrap;
+}
+
+.favouritesPageHeaderTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: clamp(1.55rem, 2vw, 2rem);
+  line-height: 1;
+}
+
+.favouritesPageHeart {
+  font-size: 1.65em;
+  margin-right: 0;
+}
+
+.favouritesPageHeaderCount {
+  color: rgba(255, 230, 222, 0.75);
+  font-family: var(--font-display), cursive;
+  font-size: 0.9em;
+  letter-spacing: 0.04em;
+}
+
+.favouritesHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  width: auto;
+}
+
+.favouritesHeaderFilterBar {
+  flex: 0 1 340px;
+  max-width: 340px;
+  min-width: 200px;
+}
+
+.favouritesPageHeaderDivider {
+  color: rgba(255, 230, 222, 0.3);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.favouritesHeaderAuthNote {
+  color: rgba(255, 230, 222, 0.76);
+  font-size: 0.84rem;
+  white-space: nowrap;
+}
+
 .favouritesCreatePlaylistButton {
-  min-height: 40px;
-  padding: 6px 16px;
+  min-height: 50px;
+  padding: 13px 26px;
   font-size: 0.95rem;
+  line-height: 1.1;
   white-space: nowrap;
 }
 
@@ -174,6 +230,16 @@
     width: 100%;
   }
 
+  .favouritesHeaderActions {
+    justify-content: flex-start;
+  }
+
+  .favouritesHeaderFilterBar {
+    max-width: none;
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+
   .favouritesCreatePlaylistButton {
     width: 100%;
   }
@@ -216,6 +282,96 @@
 
 .favouritesCardActionsRow {
   justify-content: flex-end;
+}
+
+.forumPage {
+  display: grid;
+  gap: 14px;
+}
+
+.forumSectionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.forumOverlayCard {
+  display: grid;
+  gap: 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px;
+}
+
+.forumOverlayCard h2 {
+  margin: 0;
+  font-family: var(--font-display), cursive;
+  font-size: 1.02rem;
+}
+
+.forumOverlayCard p {
+  margin: 0;
+  color: rgba(255, 230, 222, 0.78);
+  line-height: 1.35;
+}
+
+.forumContributePanel {
+  display: grid;
+  gap: 12px;
+}
+
+.forumContributeHeader {
+  display: grid;
+  gap: 4px;
+}
+
+.forumContributeHeader h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.forumContributeHeader p {
+  margin: 0;
+  color: rgba(255, 230, 222, 0.78);
+}
+
+.forumContributeForm {
+  display: grid;
+  gap: 10px;
+}
+
+.forumContributeForm label {
+  display: grid;
+  gap: 6px;
+}
+
+.forumContributeForm span {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 182, 170, 0.86);
+}
+
+.forumContributeForm input,
+.forumContributeForm textarea {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 247, 243, 0.94);
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.forumContributeForm textarea {
+  resize: vertical;
+}
+
+.forumAuthGate {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
 }
 
 .favouritesPlaylistCircleButton {

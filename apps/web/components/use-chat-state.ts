@@ -68,6 +68,7 @@ export function useChatState({
   pathname,
   isAuthenticated,
   isMagazineOverlayRoute,
+  isForumOverlayRoute,
   isAdminOverlayRoute,
   shouldShowOverlayPanel,
   fetchWithAuthRetry,
@@ -79,6 +80,7 @@ export function useChatState({
   pathname: string;
   isAuthenticated: boolean;
   isMagazineOverlayRoute: boolean;
+  isForumOverlayRoute: boolean;
   isAdminOverlayRoute: boolean;
   /** Whether the overlay panel is currently shown — used to decide if chat should run. */
   shouldShowOverlayPanel: boolean;
@@ -112,7 +114,7 @@ export function useChatState({
   const [latestMagazineTracks, setLatestMagazineTracks] = useState<MagazineRailTrack[]>([]);
 
   // Computed from auth + chat mode so the chat state stays mounted while overlay pages are open.
-  const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute) && (isAuthenticated || chatMode === "global");
+  const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute || isForumOverlayRoute) && (isAuthenticated || chatMode === "global" || chatMode === "online");
 
   // Keep the ref in sync for use inside event handlers.
   useEffect(() => {
@@ -138,6 +140,15 @@ export function useChatState({
       setChatMode((prev) => (prev === "magazine" ? "global" : prev));
     }
   }, [isMagazineOverlayRoute]);
+
+  // Sync chat mode to forum overlay route.
+  useEffect(() => {
+    if (isForumOverlayRoute) {
+      setChatMode("online");
+    } else {
+      setChatMode((prev) => (prev === "online" ? "global" : prev));
+    }
+  }, [isForumOverlayRoute]);
 
   // Load chat history whenever mode / auth changes.
   // For "online" mode we also keep a 30 s refresh so presence stays current.

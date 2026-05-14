@@ -19,6 +19,7 @@ export type ShellOverlayRouteState = {
   isPlayerWidthOverlayRoute: boolean;
   overlayPanelClassName: string;
   isMagazineOverlayRoute: boolean;
+  isForumOverlayRoute: boolean;
   shouldDisableRelatedRailTransition: boolean;
   shouldOccludeLeftRail: boolean;
   shouldOccludeRightRail: boolean;
@@ -85,11 +86,12 @@ export function deriveShellOverlayRouteState({
     isOverlayClosing ? "favouritesBlindClosing" : "",
   ].filter(Boolean).join(" ");
   const isMagazineOverlayRoute = pathname === "/magazine" || pathname.startsWith("/magazine/");
+  const isForumOverlayRoute = pathname === "/forum" || pathname.startsWith("/forum/");
   const shouldDisableRelatedRailTransition = pathname === "/new";
-  const shouldOccludeLeftRail = shouldShowOverlayPanel && !isMagazineOverlayRoute;
-  const shouldOccludeRightRail = shouldShowOverlayPanel && !isMagazineOverlayRoute && pathname !== "/new";
+  const shouldOccludeLeftRail = shouldShowOverlayPanel && !isMagazineOverlayRoute && !isForumOverlayRoute;
+  const shouldOccludeRightRail = shouldShowOverlayPanel && !isMagazineOverlayRoute && !isForumOverlayRoute && pathname !== "/new";
   const isArtistsIndexRoute = pathname === "/artists";
-  const shouldDockDesktopPlayer = shouldShowOverlayPanel && !isMagazineOverlayRoute;
+  const shouldDockDesktopPlayer = shouldShowOverlayPanel && !isMagazineOverlayRoute && !isForumOverlayRoute;
   const shouldDockUnderArtistsAlphabet = shouldDockDesktopPlayer && isArtistsIndexRoute;
   const shouldKeepDockedDesktopPresentation = shouldDockDesktopPlayer || isOverlayClosing || isUndockSettling;
 
@@ -109,6 +111,7 @@ export function deriveShellOverlayRouteState({
     isPlayerWidthOverlayRoute,
     overlayPanelClassName,
     isMagazineOverlayRoute,
+    isForumOverlayRoute,
     shouldDisableRelatedRailTransition,
     shouldOccludeLeftRail,
     shouldOccludeRightRail,

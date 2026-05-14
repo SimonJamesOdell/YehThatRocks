@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 
+import { FavouritesHeaderControls } from "@/components/favourites-header-controls";
 import { FavouritesGrid } from "@/components/favourites-grid";
 import { OverlayProtectedRouteLayout } from "@/components/overlay-protected-route-layout";
 import { REFRESH_TOKEN_COOKIE } from "@/lib/auth-config";
@@ -23,8 +24,15 @@ export default async function FavouritesPage() {
       authMessage={authState.status === "unavailable" ? authState.message : undefined}
       hasRefreshToken={hasRefreshToken}
       headerProps={{
-        icon: <span className="whiteHeart" aria-hidden="true">❤</span>,
-        title: "Favourites",
+        children: (
+          <div className="favouritesPageHeaderContent">
+            <strong className="favouritesPageHeaderTitle">
+              <span className="whiteHeart favouritesPageHeart" aria-hidden="true">❤</span>
+              Favourites <span className="favouritesPageHeaderCount">({totalCount})</span>
+            </strong>
+            <FavouritesHeaderControls isAuthenticated={Boolean(user)} />
+          </div>
+        ),
       }}
       gateHeading="❤ Favourites"
       gateHeadingDetail="Login required"
