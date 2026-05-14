@@ -8,11 +8,21 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
+import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, "..", "node_modules", ".prisma", "client");
 
-const prisma = new PrismaClient({ errorFormat: "pretty" });
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  console.error("✗ DATABASE_URL is not set. Cannot maintain admin dashboard cache without a database.");
+  process.exit(1);
+}
+
+const prisma = new PrismaClient({
+  adapter: new PrismaMariaDb(databaseUrl),
+  errorFormat: "pretty",
+});
 
 function toNumber(value) {
   if (typeof value === "bigint") return Number(value);
