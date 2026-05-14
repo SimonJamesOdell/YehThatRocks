@@ -12,12 +12,12 @@ Set-Location $RepoRoot
 function Invoke-Native {
   param(
     [string]$Program,
-    [string[]]$Args = @()
+    [string[]]$InvocationArguments = @()
   )
 
-  & $Program @Args
+  & $Program @InvocationArguments
   if ($LASTEXITCODE -ne 0) {
-    $display = "$Program " + ($Args -join " ")
+    $display = "$Program " + ($InvocationArguments -join " ")
     throw "$display failed with exit code $LASTEXITCODE"
   }
 }
@@ -42,17 +42,17 @@ function Invoke-Step {
 }
 
 Invoke-Step -Name "refresh" -Action {
-  Invoke-Native -Program "npx" -Args @("--yes", "npm-check-updates", "-u")
-  Invoke-Native -Program "npx" -Args @("--yes", "npm-check-updates", "-u", "--packageFile", "apps/web/package.json")
-  Invoke-Native -Program "npm" -Args @("install")
+  Invoke-Native -Program "npx" -InvocationArguments @("--yes", "--package", "npm-check-updates", "ncu", "-u")
+  Invoke-Native -Program "npx" -InvocationArguments @("--yes", "--package", "npm-check-updates", "ncu", "-u", "--packageFile", "apps/web/package.json")
+  Invoke-Native -Program "npm" -InvocationArguments @("install")
 }
 
 Invoke-Step -Name "verify" -Action {
-  Invoke-Native -Program "npm" -Args @("run", "verify:deps:full")
+  Invoke-Native -Program "npm" -InvocationArguments @("run", "verify:deps:full")
 }
 
 Invoke-Step -Name "audit" -Action {
-  Invoke-Native -Program "npm" -Args @("audit", "--audit-level=high")
+  Invoke-Native -Program "npm" -InvocationArguments @("audit", "--audit-level=high")
 }
 
 $status = Get-GitStatusTracked
@@ -62,17 +62,17 @@ if (-not $status) {
 }
 
 Invoke-Step -Name "commit" -Action {
-  Invoke-Native -Program "git" -Args @("add", "-A")
+  Invoke-Native -Program "git" -InvocationArguments @("add", "-A")
   $staged = & git diff --cached --name-only
   if ($LASTEXITCODE -ne 0) {
     throw "git diff --cached --name-only failed with exit code $LASTEXITCODE"
   }
   $staged | Out-Host
-  Invoke-Native -Program "git" -Args @("commit", "-m", "chore(deps): refresh dependencies")
+  Invoke-Native -Program "git" -InvocationArguments @("commit", "-m", "chore(deps): refresh dependencies")
 }
 
 if (-not $SkipPush) {
   Invoke-Step -Name "push" -Action {
-    Invoke-Native -Program "git" -Args @("push", $Remote, $Branch)
+    Invoke-Native -Program "git" -InvocationArguments @("push", $Remote, $Branch)
   }
 }
