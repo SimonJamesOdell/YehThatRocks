@@ -15,8 +15,10 @@ const files = {
   adminPendingRoute: path.join(ROOT, "apps/web/app/api/admin/videos/pending/route.ts"),
   adminImportRoute: path.join(ROOT, "apps/web/app/api/admin/videos/import/route.ts"),
   adminPerformanceSamplesRoute: path.join(ROOT, "apps/web/app/api/admin/performance-samples/route.ts"),
+  adminDashboardStreamRoute: path.join(ROOT, "apps/web/app/api/admin/dashboard/stream/route.ts"),
   adminDashboardPanel: path.join(ROOT, "apps/web/components/admin-dashboard-panel.tsx"),
   adminDashboardRollups: path.join(ROOT, "apps/web/lib/admin-dashboard-rollups.ts"),
+  db: path.join(ROOT, "apps/web/lib/db.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   catalogDataIngestion: path.join(ROOT, "apps/web/lib/catalog-data-video-ingestion.ts"),
   currentVideoCache: path.join(ROOT, "apps/web/lib/current-video-cache.ts"),
@@ -34,8 +36,10 @@ function main() {
   const adminPendingRouteSource = readFileStrict(files.adminPendingRoute, ROOT);
   const adminImportRouteSource = readFileStrict(files.adminImportRoute, ROOT);
   const adminPerformanceSamplesRouteSource = readFileStrict(files.adminPerformanceSamplesRoute, ROOT);
+  const adminDashboardStreamRouteSource = readFileStrict(files.adminDashboardStreamRoute, ROOT);
   const adminDashboardPanelSource = readFileStrict(files.adminDashboardPanel, ROOT);
   const adminDashboardRollupsSource = readFileStrict(files.adminDashboardRollups, ROOT);
+  const dbSource = readFileStrict(files.db, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const catalogDataIngestionSource = readFileStrict(files.catalogDataIngestion, ROOT);
   const currentVideoCacheSource = readFileStrict(files.currentVideoCache, ROOT);
@@ -132,8 +136,11 @@ function main() {
      "useAdminAnalyticsRefresh",
    ], "Admin dashboard manual refresh button reuses shared refresh helper", failures);
   assertContains(adminDashboardRouteSource, "await ensureAdminDashboardRollupsFresh({ force: forceRefresh }).catch(() => undefined);", "Admin dashboard route refreshes rollups before overview payload assembly", failures);
+  assertContains(adminDashboardRouteSource, "startAdminDashboardRollups();", "Admin dashboard route starts rollup scheduler in admin-only context", failures);
+  assertContains(adminDashboardStreamRouteSource, "startAdminDashboardRollups();", "Admin dashboard stream route starts rollup scheduler in admin-only context", failures);
   assertContains(adminDashboardRouteSource, "readAdminDashboardRollups().catch(() => ({", "Admin dashboard route keeps rollup read invocation shape stable", failures);
   assertContains(adminDashboardRollupsSource, "await ensureAdminDashboardRollupsFresh();", "Rollup reader performs freshness check before reading aggregates", failures);
+  assertContains(adminDashboardRollupsSource, "void ensureAdminDashboardRollupsFresh({ force: true }).catch((error) => {", "Rollup scheduler performs an immediate forced warm-up refresh", failures);
   assertContainsEither(adminDashboardRollupsSource, [
     "STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s') AS bucket_start,",
     "const HOURLY_BUCKET_SELECT_EXPR = `STR_TO_DATE(${HOURLY_BUCKET_GROUP_BY_EXPR}, '%Y-%m-%d %H:%i:%s')`",
@@ -141,6 +148,8 @@ function main() {
   assertContains(adminDashboardRollupsSource, "const HOURLY_BUCKET_GROUP_BY_EXPR = \"DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')\";", "Hourly rollups define stable DATE_FORMAT grouping expression", failures);
   assertContains(adminDashboardRollupsSource, "GROUP BY ${HOURLY_BUCKET_GROUP_BY_EXPR}", "Hourly rollups group by DATE_FORMAT expression for stable admin close behavior", failures);
   assertNotContains(adminDashboardRollupsSource, "GROUP BY STR_TO_DATE(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00'), '%Y-%m-%d %H:%i:%s')", "Hourly rollups must not group by STR_TO_DATE expression", failures);
+  assertNotContains(dbSource, "admin-dashboard-rollups", "DB bootstrap must not import or start admin rollups globally", failures);
+  assertNotContains(dbSource, "startAdminDashboardRollups", "DB bootstrap must not trigger admin rollups outside admin routes", failures);
 
   // Admin performance samples route parse style invariants.
   assertContains(adminPerformanceSamplesRouteSource, "const ms = Number.parseInt(process.env.SLOW_QUERY_LONG_TIME_THRESHOLD_MS, 10);", "Admin performance samples route parses slow-query threshold with Number.parseInt", failures);
