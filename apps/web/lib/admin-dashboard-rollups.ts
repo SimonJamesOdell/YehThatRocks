@@ -591,6 +591,31 @@ async function refreshRollupsNow(options?: { force?: boolean }) {
   rollupsLastRefreshedAtMs = Date.now();
 }
 
+function isTransientRollupRefreshError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  if (error.message.includes("pool timeout")) {
+    return true;
+  }
+
+  return (
+    error.message.includes("failed to retrieve a connection from pool")
+    || error.message.includes("Connection timed out")
+    || error.message.includes("error during connect")
+    || error.message.includes("Cannot connect to the Docker daemon")
+  );
+}
+
+function logRollupRefreshFailure(label: string, error: unknown) {
+  if (isTransientRollupRefreshError(error)) {
+    return;
+  }
+
+  console.error(label, error);
+}
+
 export async function ensureAdminDashboardRollupsFresh(options?: { force?: boolean }) {
   const force = Boolean(options?.force);
   if (!force && Date.now() - rollupsLastRefreshedAtMs < ROLLUP_INTERVAL_MS) {
@@ -627,13 +652,10 @@ export function startAdminDashboardRollups() {
   }
 
   rollupsStarted = true;
-  void ensureAdminDashboardRollupsFresh({ force: true }).catch((error) => {
-    console.error("Initial admin dashboard rollup refresh failed", error);
-  });
 
   const timer = setInterval(() => {
     void ensureAdminDashboardRollupsFresh().catch((error) => {
-      console.error("Scheduled admin dashboard rollup refresh failed", error);
+      logRollupRefreshFailure("Scheduled admin dashboard rollup refresh failed", error);
     });
   }, ROLLUP_INTERVAL_MS);
   timer.unref?.();
