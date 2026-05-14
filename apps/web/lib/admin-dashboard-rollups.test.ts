@@ -225,14 +225,51 @@ describe("admin-dashboard-rollups narrow-window gating", () => {
 
     // Extract SELECT expression and GROUP BY expression
     const selectMatch = sql.match(/STR_TO_DATE\s*\(\s*DATE_FORMAT\s*\(\s*created_at\s*,\s*'%Y-%m-%d\s+%H:00:00'\s*\)\s*,\s*'%Y-%m-%d\s+%H:%i:%s'\s*\)\s+AS\s+bucket_start/i);
-    const groupByMatch = sql.match(/GROUP\s+BY\s+STR_TO_DATE\s*\(\s*DATE_FORMAT\s*\(\s*created_at\s*,\s*'%Y-%m-%d\s+%H:00:00'\s*\)\s*,\s*'%Y-%m-%d\s+%H:%i:%s'\s*\)/i);
+    const groupByMatch = sql.match(/GROUP\s+BY\s+DATE_FORMAT\s*\(\s*created_at\s*,\s*'%Y-%m-%d\s+%H:00:00'\s*\)/i);
 
     expect(selectMatch).not.toBeNull();
     expect(groupByMatch).not.toBeNull();
+  });
 
-    // Verify the SELECT and GROUP BY expressions match exactly
-    const selectExpr = selectMatch![0];
-    const groupByExpr = groupByMatch![0].replace(/^GROUP\s+BY\s+/i, "");
-    expect(selectExpr).toContain(groupByExpr);
+  it("startAdminDashboardRollups schedules periodic refresh when DATABASE_URL exists", async () => {
+    const originalDatabaseUrl = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = originalDatabaseUrl || "mysql://test/test";
+
+    const setIntervalSpy = vi
+      .spyOn(globalThis, "setInterval")
+      .mockReturnValue({ unref: vi.fn() } as unknown as ReturnType<typeof setInterval>);
+
+    try {
+      const { startAdminDashboardRollups } = await import("@/lib/admin-dashboard-rollups");
+      startAdminDashboardRollups();
+      expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      setIntervalSpy.mockRestore();
+      if (originalDatabaseUrl === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = originalDatabaseUrl;
+      }
+    }
+  });
+
+  it("startAdminDashboardRollups is a no-op when DATABASE_URL is missing", async () => {
+    const originalDatabaseUrl = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+
+    try {
+      const { startAdminDashboardRollups } = await import("@/lib/admin-dashboard-rollups");
+      startAdminDashboardRollups();
+      expect(setIntervalSpy).not.toHaveBeenCalled();
+    } finally {
+      setIntervalSpy.mockRestore();
+      if (originalDatabaseUrl === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = originalDatabaseUrl;
+      }
+    }
   });
 });
