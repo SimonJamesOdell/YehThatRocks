@@ -482,14 +482,12 @@ function Remove-PathIfPresent([string]$TargetPath) {
 function Clean-RepoTransientCaches([string]$RepoRoot, [switch]$SafeMode) {
   $targets = if ($SafeMode) {
     @(
-      ".turbo\cache",
       "apps\web\.cache",
       "playwright-report",
       "test-results"
     )
   } else {
     @(
-      ".turbo\cache",
       ".next",
       "apps\web\.next",
       "apps\web\.cache",
