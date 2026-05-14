@@ -19,6 +19,8 @@ param(
   ,
   # Skip automatic dependency refresh and stabilization before shipping.
   [switch]$SkipAutoDependencyMaintenance,
+  # Skip migration validation checks before deployment.
+  [switch]$SkipMigrationValidation,
   # Resume a previously failed ship run from persisted checkpoint state.
   [switch]$Resume
 )
@@ -727,25 +729,29 @@ try {
 
   Ensure-CleanGitWorktree
 
-  Write-Host "Validating migrations for deployment safety..." -ForegroundColor Yellow
-  $validateMigrationsPath = [System.IO.Path]::Combine($RepoDir, "deploy", "validate-migrations.sh")
-  if (Test-Path -LiteralPath $validateMigrationsPath) {
-    $migrationValidationFailureMessage = "Migration validation did not complete successfully. Check the output above before deploying."
-    try {
-      # Convert Windows path to WSL/bash format for bash execution
-      $bashScript = bash -c "wslpath -u '$validateMigrationsPath' 2>/dev/null || echo '$validateMigrationsPath'"
-      & bash $bashScript
-      if ($LASTEXITCODE -ne 0) {
-        throw $migrationValidationFailureMessage
+  if (-not $SkipMigrationValidation) {
+    Write-Host "Validating migrations for deployment safety..." -ForegroundColor Yellow
+    $validateMigrationsPath = [System.IO.Path]::Combine($RepoDir, "deploy", "validate-migrations.sh")
+    if (Test-Path -LiteralPath $validateMigrationsPath) {
+      $migrationValidationFailureMessage = "Migration validation did not complete successfully. Check the output above before deploying."
+      try {
+        # Convert Windows path to WSL/bash format for bash execution
+        $bashScript = bash -c "wslpath -u '$validateMigrationsPath' 2>/dev/null || echo '$validateMigrationsPath'"
+        & bash $bashScript
+        if ($LASTEXITCODE -ne 0) {
+          throw $migrationValidationFailureMessage
+        }
+        Write-Host "All migration checks passed" -ForegroundColor Green
+      } catch {
+        Write-Host "Migration validation error:" -ForegroundColor Red
+        Write-Host $migrationValidationFailureMessage -ForegroundColor Red
+        throw "Deployment aborted: $migrationValidationFailureMessage"
       }
-      Write-Host "All migration checks passed" -ForegroundColor Green
-    } catch {
-      Write-Host "Migration validation error:" -ForegroundColor Red
-      Write-Host $migrationValidationFailureMessage -ForegroundColor Red
-      throw "Deployment aborted: $migrationValidationFailureMessage"
+    } else {
+      Write-Warning ("Migration validation script not found at {0}; continuing without this non-critical check." -f $validateMigrationsPath)
     }
   } else {
-    Write-Warning ("Migration validation script not found at {0}; continuing without this non-critical check." -f $validateMigrationsPath)
+    Write-Warning "Skipping migration validation checks (-SkipMigrationValidation)."
   }
 
   Exec "git fetch origin $Branch"

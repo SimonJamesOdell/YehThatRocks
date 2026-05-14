@@ -17,9 +17,14 @@ function ship {
   param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
   & '$RepoDir\\ship.cmd' @Args
 }
+function fast {
+  param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
+  & '$RepoDir\\fast.cmd' @Args
+}
 "@
 
-$cmdPath = Join-Path $TargetCmdDir "ship.cmd"
+$shipCmdPath = Join-Path $TargetCmdDir "ship.cmd"
+$fastCmdPath = Join-Path $TargetCmdDir "fast.cmd"
 
 if (-not (Test-Path $TargetCmdDir)) {
   New-Item -ItemType Directory -Path $TargetCmdDir -Force | Out-Null
@@ -30,9 +35,17 @@ if (-not (Test-Path $TargetCmdDir)) {
 setlocal
 call "$RepoDir\ship.cmd" %*
 endlocal
-"@ | Set-Content -Path $cmdPath -Encoding ASCII
+"@ | Set-Content -Path $shipCmdPath -Encoding ASCII
 
-Write-Host "Installed PATH command at $cmdPath" -ForegroundColor Green
+@"
+@echo off
+setlocal
+call "$RepoDir\fast.cmd" %*
+endlocal
+"@ | Set-Content -Path $fastCmdPath -Encoding ASCII
+
+Write-Host "Installed PATH command at $shipCmdPath" -ForegroundColor Green
+Write-Host "Installed PATH command at $fastCmdPath" -ForegroundColor Green
 
 foreach ($profilePath in $profilePaths) {
   $profileDir = Split-Path -Parent $profilePath
@@ -48,9 +61,14 @@ foreach ($profilePath in $profilePaths) {
   $existing = Get-Content -Raw -Path $profilePath
   if ($existing -notmatch "function\s+ship\s*\{") {
     Add-Content -Path $profilePath -Value "`r`n$functionBlock`r`n"
-    Write-Host "Added 'ship' function to $profilePath" -ForegroundColor Green
+    Write-Host "Added 'ship' and 'fast' functions to $profilePath" -ForegroundColor Green
   } else {
-    Write-Host "'ship' function already exists in $profilePath" -ForegroundColor Yellow
+    if ($existing -notmatch "function\s+fast\s*\{") {
+      Add-Content -Path $profilePath -Value "`r`nfunction fast {`r`n  param([Parameter(ValueFromRemainingArguments = \$true)][string[]]\$Args)`r`n  & '$RepoDir\\fast.cmd' @Args`r`n}`r`n"
+      Write-Host "Added 'fast' function to $profilePath" -ForegroundColor Green
+    } else {
+      Write-Host "'ship' and 'fast' functions already exist in $profilePath" -ForegroundColor Yellow
+    }
   }
 }
 
@@ -58,4 +76,4 @@ foreach ($profilePath in $profilePaths) {
 $env:YTR_VPS_HOST = $VpsHost
 Write-Host "Saved YTR_VPS_HOST=$VpsHost" -ForegroundColor Green
 
-Write-Host "Open a new PowerShell window, then run: ship" -ForegroundColor Cyan
+Write-Host "Open a new PowerShell window, then run: ship or fast" -ForegroundColor Cyan
