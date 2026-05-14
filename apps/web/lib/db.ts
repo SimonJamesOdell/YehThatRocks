@@ -155,20 +155,6 @@ if (process.env.DATABASE_URL && !global.__yehPrismaProfilingHookInstalled__) {
   }
 
   global.__yehPrismaProfilingHookInstalled__ = true;
-
-  setImmediate(() => {
-    void Promise.all([
-      import("@/lib/perf-sample-persistence"),
-      import("@/lib/admin-dashboard-rollups"),
-    ])
-      .then(([{ startPerfSampling }, { startAdminDashboardRollups }]) => {
-        startPerfSampling();
-        startAdminDashboardRollups();
-      })
-      .catch(() => {
-        // Best-effort telemetry startup.
-      });
-  });
 }
 
 if (!global.__yehPrismaShutdownHooks__) {

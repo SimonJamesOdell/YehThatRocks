@@ -3,8 +3,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { PrismaClient } = require("@prisma/client");
-const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
+const mysql = require("mysql2/promise");
 const { isRockMetalGenre } = require("./lib/genre-scope");
 const { assertInvariant, finishInvariantCheck } = require("./lib/test-harness");
 
@@ -56,6 +55,91 @@ function hasFlag(name) {
 function asNumber(value, fallback) {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getInvariantDatabaseUrl() {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    return databaseUrl;
+  }
+
+  try {
+    const url = new URL(databaseUrl);
+    if (!url.searchParams.has("connectionLimit")) {
+      url.searchParams.set("connectionLimit", process.env.PRISMA_CONNECTION_LIMIT || "10");
+    }
+    if (!url.searchParams.has("acquireTimeout")) {
+      url.searchParams.set("acquireTimeout", process.env.PRISMA_POOL_TIMEOUT_MS || "30000");
+    }
+    if (!url.searchParams.has("connectTimeout")) {
+      url.searchParams.set("connectTimeout", process.env.PRISMA_CONNECT_TIMEOUT_MS || "5000");
+    }
+
+    return url.toString();
+  } catch {
+    return databaseUrl;
+  }
+}
+
+function getMySqlConnectionConfig() {
+  const databaseUrl = getInvariantDatabaseUrl();
+  if (!databaseUrl) {
+    return null;
+  }
+
+  const parsed = new URL(databaseUrl);
+  return {
+    host: parsed.hostname,
+    port: Number(parsed.port || 3306),
+    user: decodeURIComponent(parsed.username),
+    password: decodeURIComponent(parsed.password),
+    database: parsed.pathname.replace(/^\//, ""),
+    connectTimeout: Number(parsed.searchParams.get("connectTimeout") || 5000),
+  };
+}
+
+function isTransientPoolError(error) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.message.includes("pool timeout")
+    || error.message.includes("failed to retrieve a connection from pool")
+    || error.message.includes("Connection timed out")
+  );
+}
+
+async function queryWithRetry(runQuery, queryName, attempts = 3) {
+  let attempt = 1;
+  let waitMs = 400;
+
+  while (attempt <= attempts) {
+    try {
+      return await runQuery();
+    } catch (error) {
+      const retryable = isTransientPoolError(error);
+      if (!retryable || attempt >= attempts) {
+        throw error;
+      }
+
+      console.warn(`[warn] ${queryName} transient DB timeout (attempt ${attempt}/${attempts}); retrying in ${waitMs}ms`);
+      await sleep(waitMs);
+      waitMs *= 2;
+      attempt += 1;
+    }
+  }
+
+  throw new Error(`Unexpected retry state for ${queryName}`);
+}
+
+async function runSqlQuery(connection, sql) {
+  const [rows] = await connection.query(sql);
+  return rows;
 }
 
 function getGenreSlug(value) {
@@ -217,39 +301,45 @@ async function main() {
   const minCoverage = asNumber(readArg("min-coverage", "0.94"), 0.94);
   const maxApiDurationMs = asNumber(readArg("max-api-duration-ms", "350"), 350);
 
-  const prisma = new PrismaClient({
-    adapter: new PrismaMariaDb(process.env.DATABASE_URL),
-    log: ["warn", "error"],
-  });
+  const mysqlConfig = getMySqlConnectionConfig();
+  if (!mysqlConfig) {
+    console.error("DATABASE_URL is not set. Add it to apps/web/.env.local or your shell.");
+    process.exit(1);
+  }
+
+  const connection = await mysql.createConnection(mysqlConfig);
   const failures = [];
 
   try {
-    const [
-      genreCountRows,
-      cardCountRows,
-      duplicateRows,
-      invalidVideoIdRows,
-      unavailableThumbRows,
-      withThumbRows,
-      canonicalGenreRows,
-      cardGenreRows,
-    ] = await Promise.all([
-      prisma.$queryRaw`SELECT COUNT(*) AS count FROM genres WHERE name IS NOT NULL AND TRIM(name) <> ''`,
-      prisma.$queryRaw`SELECT COUNT(*) AS count FROM genre_cards`,
-      prisma.$queryRaw`
+    const genreCountRows = await queryWithRetry(
+      () => runSqlQuery(connection, "SELECT COUNT(*) AS count FROM genres WHERE name IS NOT NULL AND TRIM(name) <> ''"),
+      "genres count",
+    );
+    const cardCountRows = await queryWithRetry(
+      () => runSqlQuery(connection, "SELECT COUNT(*) AS count FROM genre_cards"),
+      "genre_cards count",
+    );
+    const duplicateRows = await queryWithRetry(
+      () => runSqlQuery(connection, `
         SELECT genre, COUNT(*) AS c
         FROM genre_cards
         GROUP BY genre
         HAVING COUNT(*) > 1
-      `,
-      prisma.$queryRaw`
+      `),
+      "duplicate genre rows",
+    );
+    const invalidVideoIdRows = await queryWithRetry(
+      () => runSqlQuery(connection, `
         SELECT genre, thumbnail_video_id AS thumbnailVideoId
         FROM genre_cards
         WHERE thumbnail_video_id IS NOT NULL
           AND thumbnail_video_id NOT REGEXP '^[A-Za-z0-9_-]{11}$'
         LIMIT 20
-      `,
-      prisma.$queryRaw`
+      `),
+      "invalid thumbnail IDs",
+    );
+    const unavailableThumbRows = await queryWithRetry(
+      () => runSqlQuery(connection, `
         SELECT gc.genre, gc.thumbnail_video_id AS thumbnailVideoId
         FROM genre_cards gc
         LEFT JOIN videos v
@@ -260,24 +350,34 @@ async function main() {
           AND gc.thumbnail_video_id <> ''
           AND (v.id IS NULL OR sv.status <> 'available')
         LIMIT 20
-      `,
-      prisma.$queryRaw`
+      `),
+      "unavailable thumbnail videos",
+    );
+    const withThumbRows = await queryWithRetry(
+      () => runSqlQuery(connection, `
         SELECT COUNT(*) AS count
         FROM genre_cards
         WHERE thumbnail_video_id IS NOT NULL
           AND thumbnail_video_id <> ''
-      `,
-      prisma.$queryRaw`
+      `),
+      "thumbnail coverage count",
+    );
+    const canonicalGenreRows = await queryWithRetry(
+      () => runSqlQuery(connection, `
         SELECT name
         FROM genres
         WHERE name IS NOT NULL AND TRIM(name) <> ''
-      `,
-      prisma.$queryRaw`
+      `),
+      "canonical genre rows",
+    );
+    const cardGenreRows = await queryWithRetry(
+      () => runSqlQuery(connection, `
         SELECT genre
         FROM genre_cards
         WHERE genre IS NOT NULL AND TRIM(genre) <> ''
-      `,
-    ]);
+      `),
+      "genre_cards genre rows",
+    );
 
     const genreCount = Number(genreCountRows[0]?.count ?? 0);
     const cardCount = Number(cardCountRows[0]?.count ?? 0);
@@ -327,7 +427,7 @@ async function main() {
       successMessage: "\nAll category invariants passed.",
     });
   } finally {
-    await prisma.$disconnect();
+    await connection.end();
   }
 }
 

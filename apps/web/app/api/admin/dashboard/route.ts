@@ -6,7 +6,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiAuth } from "@/lib/admin-auth";
 import { getAdminDashboardAuthAuditCounters } from "@/lib/admin-dashboard-auth-counters";
 import { buildAdminHealthPayload, readAdminHostMetricHistory } from "@/lib/admin-dashboard-health";
-import { ensureAdminDashboardRollupsFresh, readAdminDashboardRollups } from "@/lib/admin-dashboard-rollups";
+import {
+  ensureAdminDashboardRollupsFresh,
+  readAdminDashboardRollups,
+  startAdminDashboardRollups,
+} from "@/lib/admin-dashboard-rollups";
 import { getMetadataQualityStats } from "@/lib/admin-metadata-quality";
 import { getAnalyticsGeoCacheDiagnostics } from "@/app/api/analytics/route";
 import { getArtistCacheDiagnostics } from "@/lib/catalog-data-artists";
@@ -262,6 +266,8 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) {
     return auth.response;
   }
+
+  startAdminDashboardRollups();
 
   const now = Date.now();
   const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
