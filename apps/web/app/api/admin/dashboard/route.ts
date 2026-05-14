@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiAuth } from "@/lib/admin-auth";
+import { getMetadataQualityStats } from "@/lib/admin-metadata-quality";
 import { prisma } from "@/lib/db";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function createEmptyDashboardPayload() {
   const nowIso = new Date().toISOString();
@@ -139,6 +143,201 @@ function asArray<T = unknown>(value: unknown, fallback: T[] = []): T[] {
   return Array.isArray(value) ? (value as T[]) : fallback;
 }
 
+type AnalyticsSeriesBucket = {
+  bucketStart: string;
+  bucketEnd: string;
+  label: string;
+  pageViews: number;
+  videoViews: number;
+  uniqueVisitors: number;
+  returnVisits: number;
+  magazineExternalLandings: number;
+  authEvents: number;
+};
+
+type HourlyAnalyticsRow = {
+  bucketStart: Date | string;
+  pageViews?: bigint | number;
+  videoViews?: bigint | number;
+  uniqueVisitors?: bigint | number;
+  returnVisits?: bigint | number;
+  magazineExternalLandings?: bigint | number;
+};
+
+type HourlyAuthRow = {
+  bucketStart: Date | string;
+  authEvents?: bigint | number;
+};
+
+function toUtcDayStart(date: Date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function parseIsoDay(day: string) {
+  const parsed = new Date(`${day}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
+function addUtcDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function startOfUtcWeek(date: Date) {
+  const day = date.getUTCDay();
+  const daysSinceMonday = (day + 6) % 7;
+  return addUtcDays(toUtcDayStart(date), -daysSinceMonday);
+}
+
+function toDayLabel(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function toMonthKey(date: Date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function toWeekKey(date: Date) {
+  return toDayLabel(startOfUtcWeek(date));
+}
+
+function aggregateSeriesBuckets(
+  rows: AnalyticsSeriesBucket[],
+  keyFn: (date: Date) => string,
+  bucketStartFn: (date: Date) => Date,
+  bucketEndFn: (start: Date) => Date,
+  labelFn: (start: Date, end: Date) => string,
+) {
+  const aggregates = new Map<string, AnalyticsSeriesBucket>();
+
+  for (const row of rows) {
+    const bucketDate = new Date(row.bucketStart);
+    if (!Number.isFinite(bucketDate.getTime())) {
+      continue;
+    }
+
+    const key = keyFn(bucketDate);
+    const bucketStartDate = bucketStartFn(bucketDate);
+    const existing = aggregates.get(key);
+    if (existing) {
+      existing.pageViews += row.pageViews;
+      existing.videoViews += row.videoViews;
+      existing.uniqueVisitors += row.uniqueVisitors;
+      existing.returnVisits += row.returnVisits;
+      existing.magazineExternalLandings += row.magazineExternalLandings;
+      existing.authEvents += row.authEvents;
+      continue;
+    }
+
+    const bucketEndDate = bucketEndFn(bucketStartDate);
+    aggregates.set(key, {
+      bucketStart: bucketStartDate.toISOString(),
+      bucketEnd: bucketEndDate.toISOString(),
+      label: labelFn(bucketStartDate, bucketEndDate),
+      pageViews: row.pageViews,
+      videoViews: row.videoViews,
+      uniqueVisitors: row.uniqueVisitors,
+      returnVisits: row.returnVisits,
+      magazineExternalLandings: row.magazineExternalLandings,
+      authEvents: row.authEvents,
+    });
+  }
+
+  return Array.from(aggregates.values()).sort((a, b) => a.bucketStart.localeCompare(b.bucketStart));
+}
+
+function buildDailySeriesFromRows(rows: Array<{ day?: string; pageViews?: number; videoViews?: number; uniqueVisitors?: number }>) {
+  return rows
+    .map((row, index) => {
+      const dayString = typeof row.day === "string" ? row.day : "";
+      const parsedDay = dayString ? parseIsoDay(dayString) : null;
+      const bucketStartDate = parsedDay ?? addUtcDays(toUtcDayStart(new Date()), index);
+      const bucketEndDate = addUtcDays(bucketStartDate, 1);
+
+      return {
+        bucketStart: bucketStartDate.toISOString(),
+        bucketEnd: bucketEndDate.toISOString(),
+        label: dayString || `Day ${index + 1}`,
+        pageViews: Number(row.pageViews ?? 0),
+        videoViews: Number(row.videoViews ?? 0),
+        uniqueVisitors: Number(row.uniqueVisitors ?? 0),
+        returnVisits: 0,
+        magazineExternalLandings: 0,
+        authEvents: 0,
+      } as AnalyticsSeriesBucket;
+    })
+    .sort((a, b) => a.bucketStart.localeCompare(b.bucketStart));
+}
+
+function toIsoString(value: Date | string) {
+  const parsed = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+}
+
+function toSafeNumber(value: unknown) {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function buildHourlyRecentRows(
+  analyticsRows: HourlyAnalyticsRow[],
+  authRows: HourlyAuthRow[],
+) {
+  const authByBucketStart = new Map<string, number>();
+  const analyticsByBucketStart = new Map<string, {
+    pageViews: number;
+    videoViews: number;
+    uniqueVisitors: number;
+    returnVisits: number;
+    magazineExternalLandings: number;
+  }>();
+  const bucketStarts = new Set<string>();
+
+  for (const row of authRows) {
+    const bucketStartIso = toIsoString(row.bucketStart);
+    if (!bucketStartIso) {
+      continue;
+    }
+
+    authByBucketStart.set(bucketStartIso, toSafeNumber(row.authEvents));
+    bucketStarts.add(bucketStartIso);
+  }
+
+  for (const row of analyticsRows) {
+    const bucketStartIso = toIsoString(row.bucketStart);
+    if (!bucketStartIso) {
+      continue;
+    }
+
+    analyticsByBucketStart.set(bucketStartIso, {
+      pageViews: toSafeNumber(row.pageViews),
+      videoViews: toSafeNumber(row.videoViews),
+      uniqueVisitors: toSafeNumber(row.uniqueVisitors),
+      returnVisits: toSafeNumber(row.returnVisits),
+      magazineExternalLandings: toSafeNumber(row.magazineExternalLandings),
+    });
+    bucketStarts.add(bucketStartIso);
+  }
+
+  const normalized = Array.from(bucketStarts)
+    .map((bucketStartIso) => {
+      const analytics = analyticsByBucketStart.get(bucketStartIso);
+      return {
+        bucketStart: bucketStartIso,
+        pageViews: analytics?.pageViews ?? 0,
+        videoViews: analytics?.videoViews ?? 0,
+        uniqueVisitors: analytics?.uniqueVisitors ?? 0,
+        returnVisits: analytics?.returnVisits ?? 0,
+        magazineExternalLandings: analytics?.magazineExternalLandings ?? 0,
+        authEvents: authByBucketStart.get(bucketStartIso) ?? 0,
+      };
+    })
+    .sort((a, b) => a.bucketStart.localeCompare(b.bucketStart));
+
+  return normalized;
+}
+
 function normalizeDashboardPayload(rawPayload: unknown) {
   const base = createEmptyDashboardPayload();
   const raw = asObject(rawPayload);
@@ -156,6 +355,7 @@ function normalizeDashboardPayload(rawPayload: unknown) {
   const rawMemoryCaches = asObject(rawMemoryDiagnostics.caches);
 
   const normalizedDaily = asArray<{ day?: string; pageViews?: number; videoViews?: number; uniqueVisitors?: number }>(rawAnalytics.daily);
+  const normalizedHourlyRecent = asArray(rawAnalytics.hourlyRecent, asArray(rawAnalytics.hourly));
   const normalizedSeries = {
     ...base.analytics.series,
     ...rawAnalyticsSeries,
@@ -166,36 +366,37 @@ function normalizeDashboardPayload(rawPayload: unknown) {
   };
 
   if (normalizedSeries.daily.length === 0 && normalizedDaily.length > 0) {
-    normalizedSeries.daily = normalizedDaily.map((row, index) => {
-      const dayString = typeof row.day === "string" ? row.day : "";
-      const start = dayString ? `${dayString}T00:00:00.000Z` : new Date(Date.now() + index * 86_400_000).toISOString();
-      const endDate = new Date(start);
-      endDate.setUTCDate(endDate.getUTCDate() + 1);
-
-      return {
-        bucketStart: start,
-        bucketEnd: endDate.toISOString(),
-        label: dayString || `Day ${index + 1}`,
-        pageViews: Number(row.pageViews ?? 0),
-        videoViews: Number(row.videoViews ?? 0),
-        uniqueVisitors: Number(row.uniqueVisitors ?? 0),
-        returnVisits: 0,
-        magazineExternalLandings: 0,
-        authEvents: 0,
-      };
-    });
+    normalizedSeries.daily = buildDailySeriesFromRows(normalizedDaily);
   }
 
   if (normalizedSeries.weekly.length === 0 && normalizedSeries.daily.length > 0) {
-    normalizedSeries.weekly = [...normalizedSeries.daily];
+    normalizedSeries.weekly = aggregateSeriesBuckets(
+      normalizedSeries.daily as AnalyticsSeriesBucket[],
+      (date) => toWeekKey(date),
+      (date) => startOfUtcWeek(date),
+      (start) => addUtcDays(start, 7),
+      (start, end) => `${toDayLabel(start)} to ${toDayLabel(addUtcDays(end, -1))}`,
+    );
   }
 
   if (normalizedSeries.monthly.length === 0 && normalizedSeries.daily.length > 0) {
-    normalizedSeries.monthly = [...normalizedSeries.daily];
+    normalizedSeries.monthly = aggregateSeriesBuckets(
+      normalizedSeries.daily as AnalyticsSeriesBucket[],
+      (date) => toMonthKey(date),
+      (date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)),
+      (start) => new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1)),
+      (start) => `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, "0")}`,
+    );
   }
 
   if (normalizedSeries.allTime.length === 0 && normalizedSeries.daily.length > 0) {
-    normalizedSeries.allTime = [...normalizedSeries.daily];
+    normalizedSeries.allTime = aggregateSeriesBuckets(
+      normalizedSeries.daily as AnalyticsSeriesBucket[],
+      (date) => String(date.getUTCFullYear()),
+      (date) => new Date(Date.UTC(date.getUTCFullYear(), 0, 1)),
+      (start) => new Date(Date.UTC(start.getUTCFullYear() + 1, 0, 1)),
+      (start) => String(start.getUTCFullYear()),
+    );
   }
 
   return {
@@ -219,7 +420,7 @@ function normalizeDashboardPayload(rawPayload: unknown) {
       ...base.analytics,
       ...rawAnalytics,
       daily: normalizedDaily,
-      hourlyRecent: asArray(rawAnalytics.hourlyRecent),
+      hourlyRecent: normalizedHourlyRecent,
       series: normalizedSeries,
       registrationsPerDay: asArray(rawAnalytics.registrationsPerDay),
       geoVisitors: asArray(rawAnalytics.geoVisitors),
@@ -280,6 +481,33 @@ export async function GET(request: NextRequest) {
 
   const cacheRow = cacheRows[0];
   const payload = normalizeDashboardPayload(JSON.parse(cacheRow.payload));
+  payload.insights.metadataQuality = await getMetadataQualityStats();
+
+  if (payload.analytics.hourlyRecent.length === 0) {
+    const [hourlyAnalyticsRows, hourlyAuthRows] = await Promise.all([
+      prisma.$queryRaw<HourlyAnalyticsRow[]>`
+        SELECT
+          bucket_start AS bucketStart,
+          page_views AS pageViews,
+          video_views AS videoViews,
+          unique_visitors AS uniqueVisitors,
+          return_visits AS returnVisits
+        FROM admin_dashboard_analytics_hourly
+        WHERE bucket_start >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
+        ORDER BY bucket_start ASC
+      `.catch(() => []),
+      prisma.$queryRaw<HourlyAuthRow[]>`
+        SELECT
+          bucket_start AS bucketStart,
+          auth_events AS authEvents
+        FROM admin_dashboard_auth_hourly
+        WHERE bucket_start >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
+        ORDER BY bucket_start ASC
+      `.catch(() => []),
+    ]);
+
+    payload.analytics.hourlyRecent = buildHourlyRecentRows(hourlyAnalyticsRows, hourlyAuthRows);
+  }
 
   return NextResponse.json(payload);
 }
