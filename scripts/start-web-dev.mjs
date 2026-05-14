@@ -104,11 +104,13 @@ async function initializeAdminCacheIfPossible(env) {
 }
 
 async function main() {
-  // Honour --port <n> passed by callers (e.g. ship/verify-deps-full).
-  const portArgIndex = process.argv.indexOf("--port");
-  const port = portArgIndex !== -1 && process.argv[portArgIndex + 1]
-    ? process.argv[portArgIndex + 1]
-    : "3000";
+  // Honour either `--port <n>` or positional `<n>` (npm can forward as positional).
+  const cliArgs = process.argv.slice(2);
+  const portArgIndex = cliArgs.indexOf("--port");
+  const positionalPort = cliArgs.find((arg) => /^\d+$/.test(arg));
+  const port = portArgIndex !== -1 && cliArgs[portArgIndex + 1]
+    ? cliArgs[portArgIndex + 1]
+    : positionalPort ?? "3000";
 
   const resolvedDatabaseUrl = await resolveDatabaseUrl();
   const env = {
