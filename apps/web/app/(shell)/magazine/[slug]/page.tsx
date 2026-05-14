@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { OverlayHeader } from "@/components/overlay-header";
 import { MagazineArticleLandingTracker } from "@/components/magazine-article-landing-tracker";
+import { MagazineArticleComments } from "@/components/magazine-article-comments";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { getArticleBySlug, getAllPublishedSlugs, getPublishedArticles, type MagazineBlock } from "@/lib/magazine-data";
 
@@ -177,6 +178,10 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
               </div>
             </aside>
           ) : null}
+
+          <div className="magazineArticleCommentsWrapper">
+            <MagazineArticleComments slug={article.slug} />
+          </div>
         </div>
       </main>
     </>

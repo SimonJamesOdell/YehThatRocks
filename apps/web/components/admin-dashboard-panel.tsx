@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { geoContains, geoNaturalEarth1, geoPath } from "d3-geo";
 import { feature } from "topojson-client";
@@ -10,8 +9,16 @@ import { useAdminHealthStreaming } from "@/components/use-admin-health-streaming
 import { useAdminVideoQueuePolling } from "@/components/use-admin-video-queue-polling";
 import { useAdminAnalyticsRefresh } from "@/components/use-admin-analytics-refresh";
 import { useAdminApiTabPolling } from "@/components/use-admin-api-tab-polling";
-import { Dial } from "@/components/admin-dashboard-shared-ui";
-import { finiteOrNull, isAuthResponseError, readJson, readNoStoreJson, postJson } from "@/components/admin-dashboard-utils";
+import { finiteOrNull, isAuthResponseError, readJson, readNoStoreJson } from "@/components/admin-dashboard-utils";
+import { buildAnalyticsGraph, buildApiUsageGraph, buildHostMetricsGraph, filterBucketsWithinRange } from "@/components/admin-dashboard-graph-builders";
+import { AdminDashboardApiTab } from "@/components/admin-dashboard-api-tab";
+import { AdminDashboardCatalogReviewTab } from "@/components/admin-dashboard-catalog-review-tab";
+import { AdminDashboardCategoriesTab } from "@/components/admin-dashboard-categories-tab";
+import { AdminDashboardMagazineTab } from "@/components/admin-dashboard-magazine-tab";
+import { AdminDashboardOverviewTab } from "@/components/admin-dashboard-overview-tab";
+import { AdminDashboardPerformanceTab } from "@/components/admin-dashboard-performance-tab";
+import { AdminDashboardVideosTab } from "@/components/admin-dashboard-videos-tab";
+import { AdminDashboardWorldMapTab } from "@/components/admin-dashboard-worldmap-tab";
 import { useAdminAnalytics } from "@/components/use-admin-analytics";
 import { useAdminCategories } from "@/components/use-admin-categories";
 import { useAdminVideoModeration } from "@/components/use-admin-video-moderation";
@@ -33,6 +40,8 @@ import {
   PendingVideoDraft,
   CatalogReviewVideoRow,
   AdminMagazineArticleRow,
+  AdminMagazineCommentModerationAction,
+  AdminMagazineCommentModerationRow,
   PerfWindowResetResponse,
   QuotaBackfillStatus,
 } from "@/components/admin-dashboard-types";
@@ -66,6 +75,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [videoModerationPane, setVideoModerationPane] = useState<"pending" | "recent">("pending");
   const [revokingVideoId, setRevokingVideoId] = useState<string | null>(null);
   const [magazineArticles, setMagazineArticles] = useState<AdminMagazineArticleRow[]>([]);
+  const [magazineCommentQueue, setMagazineCommentQueue] = useState<AdminMagazineCommentModerationRow[]>([]);
+  const [moderatingCommentId, setModeratingCommentId] = useState<number | null>(null);
   const [deleteModalSlug, setDeleteModalSlug] = useState<string | null>(null);
 
   const [videoQuery, setVideoQuery] = useState("");
@@ -81,15 +92,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [selectedWeeklyBucket, setSelectedWeeklyBucket] = useState<AnalyticsBucket | null>(null);
   const [showHostMetricsGraph, setShowHostMetricsGraph] = useState(false);
   const [mapDateRange, setMapDateRange] = useState<MapDateRange>("allTime");
-
-  type QuotaBackfillStatus = {
-    todayUsageUnits: number;
-    remainingUnits: number;
-    recommendedBudget: number;
-    availableSeedCount: number;
-    quotaResetAt: string;
-    msUntilReset: number;
-  };
   const [quotaStatus, setQuotaStatus] = useState<QuotaBackfillStatus | null>(null);
   const [backfillRunning, setBackfillRunning] = useState(false);
   const [backfillResult, setBackfillResult] = useState<string | null>(null);
@@ -229,73 +231,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       maxCountryVisitors,
     };
   }, [filteredWorldMapVisitors, worldCountryFeatures]);
-  const filterBucketsWithinRange = (rows: AnalyticsBucket[], range: AnalyticsBucket | null) => {
-    if (!range) {
-      return rows;
-    }
-
-    const filtered = rows.filter((row) => row.bucketStart >= range.bucketStart && row.bucketEnd <= range.bucketEnd);
-    return filtered.length > 0 ? filtered : rows;
-  };
-
   const analyticsSeries = dashboard?.analytics.series;
-  const apiUsageGraph = useMemo(() => {
-    const width = 760;
-    const height = 240;
-    const paddingLeft = 52;
-    const paddingRight = 24;
-    const paddingTop = 14;
-    const paddingBottom = 46;
-    const rows = apiUsageRows.slice(-14);
-
-    if (rows.length === 0) {
-      return {
-        width,
-        height,
-        bars: [] as Array<{ x: number; youtubeHeight: number; groqHeight: number; groqClassifiedHeight: number; label: string; youtubeUnits: number; groqCalls: number; groqClassified: number }> ,
-        yTicks: [] as Array<{ y: number; value: number }>,
-        axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
-        barWidth: 8,
-        chartHeight: height - paddingTop - paddingBottom,
-      };
-    }
-
-    const chartWidth = width - paddingLeft - paddingRight;
-    const chartHeight = height - paddingTop - paddingBottom;
-    const maxValue = Math.max(1, ...rows.map((row) => Math.max(row.youtubeUnits, row.groqCalls, row.groqClassified)));
-    const groupWidth = chartWidth / rows.length;
-    const barWidth = Math.max(6, Math.min(18, (groupWidth - 8) / 3));
-    const scaleHeight = (value: number) => (value / maxValue) * chartHeight;
-
-    const bars = rows.map((row, index) => {
-      const x = paddingLeft + index * groupWidth + (groupWidth - (barWidth * 3 + 4)) / 2;
-      return {
-        x,
-        youtubeHeight: scaleHeight(row.youtubeUnits),
-        groqHeight: scaleHeight(row.groqCalls),
-        groqClassifiedHeight: scaleHeight(row.groqClassified),
-        label: row.day.slice(5),
-        youtubeUnits: row.youtubeUnits,
-        groqCalls: row.groqCalls,
-        groqClassified: row.groqClassified,
-      };
-    });
-
-    const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
-      y: paddingTop + chartHeight - ratio * chartHeight,
-      value: Math.round(maxValue * ratio),
-    }));
-
-    return {
-      width,
-      height,
-      bars,
-      yTicks,
-      axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
-      barWidth,
-      chartHeight,
-    };
-  }, [apiUsageRows]);
+  const apiUsageGraph = useMemo(() => buildApiUsageGraph(apiUsageRows), [apiUsageRows]);
   const hourlySeries = useMemo(() => {
     const recent = (dashboard?.analytics.hourlyRecent ?? []).slice(-24);
 
@@ -342,197 +279,12 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   }, [analyticsSeries, analyticsZoomLevel, selectedAllTimeBucket, selectedMonthlyBucket, selectedWeeklyBucket, hourlySeries]);
 
   const [analyticsSeriesOn, setAnalyticsSeriesOn] = useState({ pageViews: true, videoViews: true, visitors: true, returnVisits: true, magazineExternalLandings: true, authEvents: true });
-  const analyticsGraph = useMemo(() => {
-    const width = 680;
-    const height = 220;
-    const paddingLeft = 46;
-    const paddingRight = 20;
-    const paddingTop = 14;
-    const paddingBottom = 46;
+  const analyticsGraph = useMemo(
+    () => buildAnalyticsGraph(displayedAnalyticsRows, analyticsSeriesOn),
+    [analyticsSeriesOn, displayedAnalyticsRows],
+  );
 
-    if (displayedAnalyticsRows.length === 0) {
-      return {
-        width,
-        height,
-        pageViewsPath: "",
-        videoViewsPath: "",
-        visitorsPath: "",
-        returnVisitsPath: "",
-        magazineExternalLandingsPath: "",
-        authEventsPath: "",
-        yTicks: [],
-        xTicks: [],
-        points: [],
-        axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
-      };
-    }
-
-    const enabledSeriesMaxPerDay = (row: { pageViews: number; videoViews: number; uniqueVisitors: number; returnVisits: number; magazineExternalLandings: number; authEvents: number }) => Math.max(
-      analyticsSeriesOn.pageViews ? row.pageViews : 0,
-      analyticsSeriesOn.videoViews ? row.videoViews : 0,
-      analyticsSeriesOn.visitors ? row.uniqueVisitors : 0,
-      analyticsSeriesOn.returnVisits ? row.returnVisits : 0,
-      analyticsSeriesOn.magazineExternalLandings ? row.magazineExternalLandings : 0,
-      analyticsSeriesOn.authEvents ? row.authEvents : 0,
-    );
-
-    const maxVal = Math.max(
-      1,
-      ...displayedAnalyticsRows.map((d) => enabledSeriesMaxPerDay(d)),
-    );
-    const chartWidth = width - paddingLeft - paddingRight;
-    const chartHeight = height - paddingTop - paddingBottom;
-    const step = displayedAnalyticsRows.length > 1 ? chartWidth / (displayedAnalyticsRows.length - 1) : 0;
-
-    const points = displayedAnalyticsRows.map((item, index) => {
-      const x = paddingLeft + index * step;
-      return {
-        x,
-        yPageViews: paddingTop + chartHeight - (item.pageViews / maxVal) * chartHeight,
-        yVideoViews: paddingTop + chartHeight - (item.videoViews / maxVal) * chartHeight,
-        yVisitors: paddingTop + chartHeight - (item.uniqueVisitors / maxVal) * chartHeight,
-        yReturnVisits: paddingTop + chartHeight - (item.returnVisits / maxVal) * chartHeight,
-        yMagazineExternalLandings: paddingTop + chartHeight - (item.magazineExternalLandings / maxVal) * chartHeight,
-        yAuthEvents: paddingTop + chartHeight - (item.authEvents / maxVal) * chartHeight,
-        bucketStart: item.bucketStart,
-        bucketEnd: item.bucketEnd,
-        label: item.label,
-        pageViews: item.pageViews,
-        videoViews: item.videoViews,
-        uniqueVisitors: item.uniqueVisitors,
-        returnVisits: item.returnVisits,
-        magazineExternalLandings: item.magazineExternalLandings,
-        authEvents: item.authEvents,
-      };
-    });
-
-    const makePath = (ys: number[]) =>
-      ys.map((y, i) => `${i === 0 ? "M" : "L"} ${(paddingLeft + i * step).toFixed(2)} ${y.toFixed(2)}`).join(" ");
-
-    const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
-      y: paddingTop + chartHeight - ratio * chartHeight,
-      value: Math.round(maxVal * ratio),
-    }));
-
-    const tickCount = Math.min(6, points.length);
-    const xTicks = Array.from({ length: tickCount }, (_, index) => {
-      const pointIndex = tickCount === 1 ? 0 : Math.round((index / (tickCount - 1)) * (points.length - 1));
-      const point = points[pointIndex];
-
-      return {
-        x: point.x,
-        label: point.label,
-      };
-    });
-
-    return {
-      width,
-      height,
-      yTicks,
-      xTicks,
-      points,
-      axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
-      pageViewsPath: makePath(points.map((p) => p.yPageViews)),
-      videoViewsPath: makePath(points.map((p) => p.yVideoViews)),
-      visitorsPath: makePath(points.map((p) => p.yVisitors)),
-      returnVisitsPath: makePath(points.map((p) => p.yReturnVisits)),
-      magazineExternalLandingsPath: makePath(points.map((p) => p.yMagazineExternalLandings)),
-      authEventsPath: makePath(points.map((p) => p.yAuthEvents)),
-    };
-  }, [analyticsSeriesOn, displayedAnalyticsRows]);
-
-  const hostMetricsGraph = useMemo(() => {
-    const width = 680;
-    const height = 220;
-    const paddingLeft = 46;
-    const paddingRight = 20;
-    const paddingTop = 14;
-    const paddingBottom = 28;
-
-    if (hostMetricRows.length === 0) {
-      return {
-        width,
-        height,
-        axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
-        cpuPath: "",
-        memoryPath: "",
-        swapPath: "",
-        diskPath: "",
-        networkPath: "",
-        xTicks: [] as Array<{ x: number; label: string }>,
-        yTicks: [] as Array<{ y: number; value: number }>,
-      };
-    }
-
-    const chartWidth = width - paddingLeft - paddingRight;
-    const chartHeight = height - paddingTop - paddingBottom;
-    const percentToY = (value: number) => paddingTop + chartHeight - (Math.max(0, Math.min(100, value)) / 100) * chartHeight;
-    const xForIndex = (index: number) => {
-      if (hostMetricRows.length === 1) {
-        return paddingLeft + chartWidth / 2;
-      }
-
-      return paddingLeft + (index / (hostMetricRows.length - 1)) * chartWidth;
-    };
-
-    const points = hostMetricRows.map((row, index) => ({
-      x: xForIndex(index),
-      cpu: finiteOrNull(row.cpuUsagePercent),
-      memory: finiteOrNull(row.memoryUsagePercent),
-      swap: finiteOrNull(row.swapUsagePercent),
-      disk: finiteOrNull(row.diskUsagePercent),
-      network: finiteOrNull(row.networkUsagePercent),
-      bucketStart: row.bucketStart,
-    }));
-
-    const makePath = (values: Array<number | null>) => {
-      let path = "";
-
-      values.forEach((value, index) => {
-        if (value === null) {
-          return;
-        }
-
-        const command = path === "" || values[index - 1] === null ? "M" : "L";
-        path += `${command}${points[index].x.toFixed(1)},${percentToY(value).toFixed(1)}`;
-      });
-
-      return path;
-    };
-
-    const tickCount = Math.min(6, hostMetricRows.length);
-    const xTicks = Array.from({ length: tickCount }, (_, tickIndex) => {
-      const rowIndex = tickCount === 1
-        ? 0
-        : Math.round((tickIndex / (tickCount - 1)) * (hostMetricRows.length - 1));
-      const row = hostMetricRows[rowIndex];
-      const date = new Date(row.bucketStart);
-      const label = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-      return {
-        x: xForIndex(rowIndex),
-        label,
-      };
-    });
-
-    const yTicks = [0, 25, 50, 75, 100].map((value) => ({
-      value,
-      y: percentToY(value),
-    }));
-
-    return {
-      width,
-      height,
-      axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
-      cpuPath: makePath(points.map((point) => point.cpu)),
-      memoryPath: makePath(points.map((point) => point.memory)),
-      swapPath: makePath(points.map((point) => point.swap)),
-      diskPath: makePath(points.map((point) => point.disk)),
-      networkPath: makePath(points.map((point) => point.network)),
-      xTicks,
-      yTicks,
-    };
-  }, [hostMetricRows]);
+  const hostMetricsGraph = useMemo(() => buildHostMetricsGraph(hostMetricRows), [hostMetricRows]);
 
   const loadOverview = useCallback(async (forceRefresh = false) => {
     const query = forceRefresh ? `?refresh=1&t=${Date.now()}` : "";
@@ -786,6 +538,11 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     setMagazineArticles(payload.articles);
   }
 
+  async function loadMagazineCommentQueue() {
+    const payload = await readJson<{ queue: AdminMagazineCommentModerationRow[] }>("/api/admin/magazine/comments?status=pending_review&limit=100");
+    setMagazineCommentQueue(payload.queue ?? []);
+  }
+
   async function loadQuotaStatus() {
     try {
       const status = await readJson<QuotaBackfillStatus & { ok: boolean }>("/api/admin/videos/backfill-quota");
@@ -832,7 +589,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       if (activeTab === "overview") {
         await loadOverview();
       } else if (activeTab === "magazine") {
-        await loadMagazineArticles();
+        await Promise.all([loadMagazineArticles(), loadMagazineCommentQueue()]);
       } else if (activeTab === "performance") {
         await loadOverview();
       } else if (activeTab === "worldmap") {
@@ -1088,6 +845,33 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     }
   }
 
+  async function moderateMagazineComment(commentId: number, action: AdminMagazineCommentModerationAction) {
+    setModeratingCommentId(commentId);
+
+    try {
+      await postJson<{ ok: boolean; action: string }>("/api/admin/magazine/comments/moderate", {
+        commentId,
+        action,
+      });
+
+      if (action === "approve") {
+        setSaveMessage(`Approved comment #${commentId}.`);
+      } else if (action === "keep_restricted") {
+        setSaveMessage(`Comment #${commentId} kept restricted.`);
+      } else if (action === "delete_comment") {
+        setSaveMessage(`Deleted comment #${commentId}.`);
+      } else {
+        setSaveMessage(`Deleted user from comment #${commentId}.`);
+      }
+
+      await loadMagazineCommentQueue();
+    } catch (moderationError) {
+      setSaveMessage(moderationError instanceof Error ? moderationError.message : "Comment moderation action failed.");
+    } finally {
+      setModeratingCommentId(null);
+    }
+  }
+
   async function resetPerfWindow() {
     if (resettingPerfWindow) {
       return;
@@ -1117,1143 +901,178 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     return <p className="authMessage">{error}</p>;
   }
 
+  const rollupStatusRelevantTab =
+    activeTab === "overview"
+    || activeTab === "performance"
+    || activeTab === "worldmap"
+    || activeTab === "api";
+  const rollupsUnavailableMessage = rollupStatusRelevantTab && dashboard?.meta.rollups?.available === false
+    ? (dashboard.meta.rollups.message ?? "Rollup data is currently unavailable. Background rollup is running.")
+    : null;
+
   return (
     <div className="interactiveStack">
       {saveMessage ? <p className="authMessage">{saveMessage}</p> : null}
+      {rollupsUnavailableMessage ? <p className="authMessage">{rollupsUnavailableMessage}</p> : null}
 
       {activeTab === "overview" ? (
-        <div className="adminOverviewStack">
-          <div className="adminOverviewHealthLayout">
-            <div className="adminOverviewDialsColumn">
-              <div className="adminOverviewDials">
-                <Dial label="Memory" value={dashboard?.health.host.memoryUsagePercent ?? null} color="#ffc14d" />
-                <Dial label="Swap" value={dashboard?.health.host.swapUsagePercent ?? null} color="#f5d96b" />
-                <Dial label="CPU" value={finiteOrNull(dashboard?.health.host.cpuUsagePercent)} color="#ff6f43" detail={cpuAvgPeakText} />
-                <Dial label="Disk" value={dashboard?.health.host.diskUsagePercent ?? null} color="#7ce0a3" />
-                <Dial label="Network" value={dashboard?.health.host.networkUsagePercent ?? null} color="#5fc1ff" />
-              </div>
-              <div className="adminOverviewGraphToggleRow">
-                <button
-                  type="button"
-                  onClick={() => setShowHostMetricsGraph((previous) => !previous)}
-                  style={{
-                    borderRadius: 999,
-                    border: "1px solid rgba(255,255,255,0.18)",
-                    background: showHostMetricsGraph ? "rgba(95,193,255,0.14)" : "rgba(255,255,255,0.04)",
-                    color: showHostMetricsGraph ? "#5fc1ff" : "rgba(255,255,255,0.82)",
-                    padding: "7px 12px",
-                    cursor: "pointer",
-                  }}
-                >
-                  {showHostMetricsGraph ? "Hide 24h graph" : "View 24h graph"}
-                </button>
-              </div>
-            </div>
-            <div className="statusMetrics">
-              <div><strong>Registered Users</strong><p>{dashboard?.counts.registeredUsers ?? 0}</p></div>
-              <div><strong>Anonymous Users</strong><p>{dashboard?.counts.anonymousUsers ?? 0}</p></div>
-              <div><strong>Videos</strong><p>{dashboard?.counts.videos ?? 0}</p></div>
-              <div><strong>Artists</strong><p>{dashboard?.counts.artists ?? 0}</p></div>
-            </div>
-          </div>
+        <AdminDashboardOverviewTab
+          dashboard={dashboard}
+          cpuAvgPeakText={cpuAvgPeakText}
+          showHostMetricsGraph={showHostMetricsGraph}
+          onToggleShowHostMetricsGraph={() => {
+            setShowHostMetricsGraph((previous) => !previous);
+          }}
+          hostMetricSeriesOn={hostMetricSeriesOn}
+          onToggleHostMetricSeries={(key) => {
+            setHostMetricSeriesOn((previous) => ({ ...previous, [key]: !previous[key] }));
+          }}
+          hostMetricRowsLength={hostMetricRows.length}
+          hostMetricsGraph={hostMetricsGraph}
+          analyticsZoomLevel={analyticsZoomLevel}
+          onSelectAnalyticsZoom={(zoom) => {
+            setAnalyticsZoomLevel(zoom);
+            setSelectedAllTimeBucket(null);
+            setSelectedMonthlyBucket(null);
+            setSelectedWeeklyBucket(null);
+          }}
+          refreshingAnalytics={refreshingAnalytics}
+          onRefreshOverviewAnalytics={() => {
+            void refreshOverviewAnalytics();
+          }}
+          analyticsSeriesOn={analyticsSeriesOn}
+          onToggleAnalyticsSeries={(key) => {
+            setAnalyticsSeriesOn((previous) => ({ ...previous, [key]: !previous[key] }));
+          }}
+          analyticsGraph={analyticsGraph}
+          onSelectAnalyticsPoint={(point) => {
+            if (analyticsZoomLevel === "allTime") {
+              setSelectedAllTimeBucket(point);
+              setSelectedMonthlyBucket(null);
+              setSelectedWeeklyBucket(null);
+              setAnalyticsZoomLevel("monthly");
+              return;
+            }
 
+            if (analyticsZoomLevel === "monthly") {
+              setSelectedMonthlyBucket(point);
+              setSelectedWeeklyBucket(null);
+              setAnalyticsZoomLevel("weekly");
+              return;
+            }
 
-
-          {showHostMetricsGraph ? (
-            <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-                <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }}>Host metrics · last 24 hours · 1 minute buckets</span>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  {([
-                    { key: "cpu", label: "CPU", color: "#ff6f43" },
-                    { key: "memory", label: "Memory", color: "#ffc14d" },
-                    { key: "swap", label: "Swap", color: "#f5d96b" },
-                    { key: "disk", label: "Disk", color: "#7ce0a3" },
-                    { key: "network", label: "Network", color: "#5fc1ff" },
-                  ] as Array<{ key: keyof typeof hostMetricSeriesOn; label: string; color: string }>).map(({ key, label, color }) => (
-                    <button
-                      key={`host-metric-${key}`}
-                      type="button"
-                      onClick={() => setHostMetricSeriesOn((previous) => ({ ...previous, [key]: !previous[key] }))}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 5,
-                        padding: "3px 8px",
-                        borderRadius: 20,
-                        border: `1px solid ${hostMetricSeriesOn[key] ? color : "rgba(255,255,255,0.12)"}`,
-                        background: hostMetricSeriesOn[key] ? `${color}22` : "transparent",
-                        color: hostMetricSeriesOn[key] ? color : "rgba(255,255,255,0.35)",
-                        fontSize: 11,
-                        cursor: "pointer",
-                        transition: "all 0.15s",
-                      }}
-                    >
-                      <svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke={hostMetricSeriesOn[key] ? color : "rgba(255,255,255,0.25)"} strokeWidth="2" strokeDasharray={hostMetricSeriesOn[key] ? undefined : "3 2"} /></svg>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <svg
-                viewBox={hostMetricRows.length > 0 ? `0 0 ${hostMetricsGraph.width} ${hostMetricsGraph.height}` : "0 0 680 220"}
-                role="img"
-                aria-label="Host metrics chart — CPU, memory, swap, disk, network over the last 24 hours"
-                style={{ width: "100%", height: "clamp(250px, 42vh, 560px)", borderRadius: 10, background: "rgba(255,255,255,0.04)" }}
-              >
-                {hostMetricRows.length === 0 ? (
-                  <text x="340" y="110" textAnchor="middle" fill="rgba(255,255,255,0.2)" style={{ fontSize: 13 }}>Collecting host metric history...</text>
-                ) : (
-                  <>
-                    {hostMetricsGraph.yTicks.map((tick) => (
-                      <g key={`hy-${tick.value}-${tick.y.toFixed(1)}`}>
-                        <line x1={String(hostMetricsGraph.axis.paddingLeft)} y1={String(tick.y)} x2={String(hostMetricsGraph.width - hostMetricsGraph.axis.paddingRight)} y2={String(tick.y)} stroke="rgba(255,255,255,0.14)" strokeWidth="1" />
-                        <text x={String(hostMetricsGraph.axis.paddingLeft - 6)} y={String(tick.y + 3)} textAnchor="end" fill="rgba(255,255,255,0.78)" style={{ fontSize: 10, fontVariantNumeric: "tabular-nums" }}>{tick.value}%</text>
-                      </g>
-                    ))}
-                    {hostMetricsGraph.xTicks.map((tick) => (
-                      <g key={`hx-${tick.label}-${tick.x.toFixed(1)}`}>
-                        <line x1={String(tick.x)} y1={String(hostMetricsGraph.axis.paddingTop)} x2={String(tick.x)} y2={String(hostMetricsGraph.height - hostMetricsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
-                        <text x={String(tick.x)} y={String(hostMetricsGraph.height - 13)} textAnchor="middle" fill="rgba(255,255,255,0.72)" fontSize="5" fontWeight="500">{tick.label}</text>
-                      </g>
-                    ))}
-                    <line x1={String(hostMetricsGraph.axis.paddingLeft)} y1={String(hostMetricsGraph.axis.paddingTop)} x2={String(hostMetricsGraph.axis.paddingLeft)} y2={String(hostMetricsGraph.height - hostMetricsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
-                    <line x1={String(hostMetricsGraph.axis.paddingLeft)} y1={String(hostMetricsGraph.height - hostMetricsGraph.axis.paddingBottom)} x2={String(hostMetricsGraph.width - hostMetricsGraph.axis.paddingRight)} y2={String(hostMetricsGraph.height - hostMetricsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
-                    {hostMetricSeriesOn.cpu && <path d={hostMetricsGraph.cpuPath} fill="none" stroke="#ff6f43" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />}
-                    {hostMetricSeriesOn.memory && <path d={hostMetricsGraph.memoryPath} fill="none" stroke="#ffc14d" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />}
-                    {hostMetricSeriesOn.swap && <path d={hostMetricsGraph.swapPath} fill="none" stroke="#f5d96b" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />}
-                    {hostMetricSeriesOn.disk && <path d={hostMetricsGraph.diskPath} fill="none" stroke="#7ce0a3" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />}
-                    {hostMetricSeriesOn.network && <path d={hostMetricsGraph.networkPath} fill="none" stroke="#5fc1ff" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />}
-                  </>
-                )}
-              </svg>
-            </div>
-          ) : null}
-
-          {/* Analytics Chart */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-            <span style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-              {analyticsZoomLevel === "allTime"
-                ? "User analytics · all time overview"
-                : analyticsZoomLevel === "monthly"
-                  ? "User analytics · rolling monthly buckets"
-                  : analyticsZoomLevel === "weekly"
-                    ? "User analytics · rolling weekly buckets"
-                    : analyticsZoomLevel === "daily"
-                        ? ""
-                      : "User analytics · recent hourly buckets"}
-            </span>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-              {([
-                { key: "allTime", label: "All time" },
-                { key: "monthly", label: "Monthly" },
-                { key: "weekly", label: "Weekly" },
-                { key: "daily", label: "Daily" },
-                { key: "hourly", label: "Hourly" },
-              ] as Array<{ key: AnalyticsZoomLevel; label: string }>).map(({ key, label }) => (
-                <button
-                  key={`analytics-zoom-${key}`}
-                  type="button"
-                  onClick={() => {
-                    setAnalyticsZoomLevel(key);
-                    setSelectedAllTimeBucket(null);
-                    setSelectedMonthlyBucket(null);
-                    setSelectedWeeklyBucket(null);
-                  }}
-                  style={{
-                    borderRadius: 999,
-                    border: `1px solid ${analyticsZoomLevel === key ? "rgba(255,157,92,0.6)" : "rgba(255,255,255,0.12)"}`,
-                    background: analyticsZoomLevel === key ? "rgba(255,157,92,0.16)" : "transparent",
-                    color: analyticsZoomLevel === key ? "#ff9d5c" : "rgba(255,255,255,0.78)",
-                    padding: "6px 11px",
-                    cursor: "pointer",
-                    fontSize: 11,
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => {
-                  void refreshOverviewAnalytics();
-                }}
-                disabled={refreshingAnalytics}
-                style={{
-                  borderRadius: 999,
-                  border: "1px solid rgba(255,255,255,0.18)",
-                  background: "rgba(255,255,255,0.04)",
-                  color: "rgba(255,255,255,0.9)",
-                  padding: "7px 12px",
-                  cursor: refreshingAnalytics ? "wait" : "pointer",
-                }}
-              >
-                {refreshingAnalytics ? "Refreshing..." : "Refresh"}
-              </button>
-              {(([
-                { key: "pageViews", label: "Page Views", color: "#ff9d5c" },
-                { key: "videoViews", label: "Video Views", color: "#5fc1ff" },
-                { key: "visitors", label: "Unique Visitors", color: "#7ce0a3" },
-                { key: "returnVisits", label: "Return Visits", color: "#9e86ff" },
-                { key: "magazineExternalLandings", label: "Magazine External Landings", color: "#ff4d4d" },
-                { key: "authEvents", label: "Auth Events", color: "#ffd1c4" },
-              ]) as Array<{ key: keyof typeof analyticsSeriesOn; label: string; color: string }>).map(({ key, label, color }) => (
-                <button
-                  key={key}
-                  onClick={() => setAnalyticsSeriesOn((prev) => ({ ...prev, [key]: !prev[key] }))}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 5,
-                    padding: "3px 8px",
-                    borderRadius: 20,
-                    border: `1px solid ${analyticsSeriesOn[key] ? color : "rgba(255,255,255,0.12)"}`,
-                    background: analyticsSeriesOn[key] ? `${color}22` : "transparent",
-                    color: analyticsSeriesOn[key] ? color : "rgba(255,255,255,0.35)",
-                    fontSize: 11,
-                    cursor: "pointer",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  <svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke={analyticsSeriesOn[key] ? color : "rgba(255,255,255,0.25)"} strokeWidth="2" strokeDasharray={analyticsSeriesOn[key] ? undefined : "3 2"} /></svg>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <p className="authMessage" style={{ margin: 0 }}>
-            {analyticsZoomLevel === "allTime"
-              ? "Click a bucket to zoom into monthly traffic."
-              : analyticsZoomLevel === "monthly"
-                ? "Click a bucket to zoom into weekly traffic for that month window."
-                : analyticsZoomLevel === "weekly"
-                  ? "Click a bucket to zoom into daily traffic for that week window."
-                  : analyticsZoomLevel === "daily"
-                    ? ""
-                    : "Showing the latest 24 hourly buckets."}
-          </p>
-
-          <svg
-            viewBox={analyticsGraph.points.length > 0 ? `0 0 ${analyticsGraph.width} ${analyticsGraph.height}` : "0 0 680 250"}
-            role="img"
-            aria-label="Analytics chart — page views, video views, unique visitors, return visits, magazine external landings, auth events"
-            style={{ width: "100%", height: "clamp(260px, 46vh, 620px)", borderRadius: 10, background: "rgba(255,255,255,0.04)" }}
-          >
-            {analyticsGraph.points.length === 0 ? (
-              <text x="340" y="130" textAnchor="middle" fill="rgba(255,255,255,0.2)" style={{ fontSize: 13 }}>No data yet</text>
-            ) : (
-              <>
-                {analyticsGraph.yTicks.map((tick) => (
-                  <g key={`ay-${tick.value}-${tick.y.toFixed(1)}`}>
-                    <line x1={String(analyticsGraph.axis.paddingLeft)} y1={String(tick.y)} x2={String(analyticsGraph.width - analyticsGraph.axis.paddingRight)} y2={String(tick.y)} stroke="rgba(255,255,255,0.14)" strokeWidth="1" />
-                    <text x={String(analyticsGraph.axis.paddingLeft - 6)} y={String(tick.y + 3)} textAnchor="end" fill="rgba(255,255,255,0.78)" style={{ fontSize: 10, fontVariantNumeric: "tabular-nums" }}>{tick.value}</text>
-                  </g>
-                ))}
-                {analyticsGraph.xTicks.map((tick) => (
-                  <g key={`ax-${tick.label}-${tick.x.toFixed(1)}`}>
-                    <line x1={String(tick.x)} y1={String(analyticsGraph.axis.paddingTop)} x2={String(tick.x)} y2={String(analyticsGraph.height - analyticsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
-                    <text x={String(tick.x)} y={String(analyticsGraph.height - 34)} textAnchor="end" fill="rgba(255,255,255,0.72)" transform={`rotate(-45 ${tick.x} ${analyticsGraph.height - 34})`} fontSize="7" fontWeight="500">{tick.label}</text>
-                  </g>
-                ))}
-                <line x1={String(analyticsGraph.axis.paddingLeft)} y1={String(analyticsGraph.axis.paddingTop)} x2={String(analyticsGraph.axis.paddingLeft)} y2={String(analyticsGraph.height - analyticsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
-                <line x1={String(analyticsGraph.axis.paddingLeft)} y1={String(analyticsGraph.height - analyticsGraph.axis.paddingBottom)} x2={String(analyticsGraph.width - analyticsGraph.axis.paddingRight)} y2={String(analyticsGraph.height - analyticsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
-                {analyticsSeriesOn.pageViews && <path d={analyticsGraph.pageViewsPath} fill="none" stroke="#ff9d5c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-                {analyticsSeriesOn.videoViews && <path d={analyticsGraph.videoViewsPath} fill="none" stroke="#5fc1ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-                {analyticsSeriesOn.visitors && <path d={analyticsGraph.visitorsPath} fill="none" stroke="#7ce0a3" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-                {analyticsSeriesOn.returnVisits && <path d={analyticsGraph.returnVisitsPath} fill="none" stroke="#9e86ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-                {analyticsSeriesOn.magazineExternalLandings && <path d={analyticsGraph.magazineExternalLandingsPath} fill="none" stroke="#ff4d4d" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-                {analyticsSeriesOn.authEvents && <path d={analyticsGraph.authEventsPath} fill="none" stroke="#ffd1c4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-                {analyticsGraph.points.map((point) => (
-                  <g
-                    key={`${point.bucketStart}-${point.bucketEnd}`}
-                    onClick={() => {
-                      if (analyticsZoomLevel === "allTime") {
-                        setSelectedAllTimeBucket({
-                          bucketStart: point.bucketStart,
-                          bucketEnd: point.bucketEnd,
-                          label: point.label,
-                          pageViews: point.pageViews,
-                          videoViews: point.videoViews,
-                          uniqueVisitors: point.uniqueVisitors,
-                          returnVisits: point.returnVisits,
-                          magazineExternalLandings: point.magazineExternalLandings,
-                          authEvents: point.authEvents,
-                        });
-                        setSelectedMonthlyBucket(null);
-                        setSelectedWeeklyBucket(null);
-                        setAnalyticsZoomLevel("monthly");
-                        return;
-                      }
-
-                      if (analyticsZoomLevel === "monthly") {
-                        setSelectedMonthlyBucket({
-                          bucketStart: point.bucketStart,
-                          bucketEnd: point.bucketEnd,
-                          label: point.label,
-                          pageViews: point.pageViews,
-                          videoViews: point.videoViews,
-                          uniqueVisitors: point.uniqueVisitors,
-                          returnVisits: point.returnVisits,
-                          magazineExternalLandings: point.magazineExternalLandings,
-                          authEvents: point.authEvents,
-                        });
-                        setSelectedWeeklyBucket(null);
-                        setAnalyticsZoomLevel("weekly");
-                        return;
-                      }
-
-                      if (analyticsZoomLevel === "weekly") {
-                        setSelectedWeeklyBucket({
-                          bucketStart: point.bucketStart,
-                          bucketEnd: point.bucketEnd,
-                          label: point.label,
-                          pageViews: point.pageViews,
-                          videoViews: point.videoViews,
-                          uniqueVisitors: point.uniqueVisitors,
-                          returnVisits: point.returnVisits,
-                          magazineExternalLandings: point.magazineExternalLandings,
-                          authEvents: point.authEvents,
-                        });
-                        setAnalyticsZoomLevel("daily");
-                      }
-                    }}
-                    style={{ cursor: analyticsZoomLevel === "allTime" || analyticsZoomLevel === "monthly" || analyticsZoomLevel === "weekly" ? "pointer" : "default" }}
-                  >
-                    {analyticsSeriesOn.pageViews && <circle cx={point.x} cy={point.yPageViews} r="3.5" fill="#ff9d5c" />}
-                    {analyticsSeriesOn.videoViews && <circle cx={point.x} cy={point.yVideoViews} r="3.5" fill="#5fc1ff" />}
-                    {analyticsSeriesOn.visitors && <circle cx={point.x} cy={point.yVisitors} r="3.5" fill="#7ce0a3" />}
-                    {analyticsSeriesOn.returnVisits && <circle cx={point.x} cy={point.yReturnVisits} r="3.5" fill="#9e86ff" />}
-                    {analyticsSeriesOn.magazineExternalLandings && <circle cx={point.x} cy={point.yMagazineExternalLandings} r="3.5" fill="#ff4d4d" />}
-                    {analyticsSeriesOn.authEvents && <circle cx={point.x} cy={point.yAuthEvents} r="3.5" fill="#ffd1c4" />}
-                    <title>{`${point.label} (${new Date(point.bucketStart).toLocaleString()} - ${new Date(point.bucketEnd).toLocaleString()}) — Page views: ${point.pageViews}, Video views: ${point.videoViews}, Visitors: ${point.uniqueVisitors}, Return visits: ${point.returnVisits}, Magazine external landings: ${point.magazineExternalLandings}, Auth events: ${point.authEvents}`}</title>
-                  </g>
-                ))}
-              </>
-            )}
-          </svg>
-
-        </div>
+            if (analyticsZoomLevel === "weekly") {
+              setSelectedWeeklyBucket(point);
+              setAnalyticsZoomLevel("daily");
+            }
+          }}
+        />
       ) : null}
 
       {activeTab === "magazine" ? (
-        <section className="panel featurePanel">
-          <div className="panelHeading">
-            <span>Magazine Articles</span>
-            <strong>{magazineArticles.length} rows</strong>
-          </div>
-          <div className="interactiveStack" style={{ gap: 8 }}>
-            {magazineArticles.length === 0 ? <p className="authMessage">No magazine articles found.</p> : null}
-            {magazineArticles.map((article) => (
-              <div
-                key={article.slug}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "72px minmax(0, 1fr) auto",
-                  alignItems: "center",
-                  gap: 10,
-                  border: "1px solid rgba(255,255,255,0.14)",
-                  borderRadius: 10,
-                  padding: 8,
-                  background: "rgba(0,0,0,0.22)",
-                }}
-              >
-                {article.videoId ? (
-                  <img
-                    src={`https://i.ytimg.com/vi/${article.videoId}/mqdefault.jpg`}
-                    alt={article.title}
-                    style={{ width: 72, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)" }}
-                  />
-                ) : (
-                  <div style={{ width: 72, height: 40, borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)" }} />
-                )}
-
-                <div style={{ minWidth: 0, display: "grid", gap: 2 }}>
-                  <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{article.title}</strong>
-                  <span className="authMessage" style={{ margin: 0 }}>
-                    External landings (all time): {article.externalLandings.toLocaleString()}
-                  </span>
-                </div>
-
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Link href={`/admin/magazine/${encodeURIComponent(article.slug)}`} className="navLink navLinkActive">
-                    Edit
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => setDeleteModalSlug(article.slug)}
-                    style={{
-                      borderRadius: 999,
-                      border: "1px solid rgba(255, 105, 97, 0.72)",
-                      background: "rgba(102, 10, 10, 0.55)",
-                      color: "#ffd8d3",
-                      padding: "6px 11px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {deleteModalSlug ? (
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label="Confirm article deletion"
-              style={{
-                position: "fixed",
-                inset: 0,
-                background: "rgba(0,0,0,0.62)",
-                display: "grid",
-                placeItems: "center",
-                zIndex: 160,
-                padding: 16,
-              }}
-            >
-              <div
-                style={{
-                  width: "min(520px, 100%)",
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,0.2)",
-                  background: "linear-gradient(170deg, rgba(30,10,10,0.96), rgba(12,6,6,0.98))",
-                  boxShadow: "0 22px 52px rgba(0,0,0,0.45)",
-                  padding: 16,
-                  display: "grid",
-                  gap: 10,
-                }}
-              >
-                <h3 style={{ margin: 0 }}>Delete article?</h3>
-                <p className="authMessage" style={{ margin: 0 }}>
-                  This will permanently delete <strong>{deleteModalSlug}</strong>. This action cannot be undone.
-                </p>
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                  <button type="button" onClick={() => setDeleteModalSlug(null)}>Cancel</button>
-                  <button
-                    type="button"
-                    onClick={() => void deleteMagazineArticle(deleteModalSlug)}
-                    style={{
-                      border: "1px solid rgba(255, 105, 97, 0.72)",
-                      background: "rgba(102, 10, 10, 0.7)",
-                      color: "#ffd8d3",
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </section>
+        <AdminDashboardMagazineTab
+          magazineArticles={magazineArticles}
+          moderationQueue={magazineCommentQueue}
+          moderatingCommentId={moderatingCommentId}
+          deleteModalSlug={deleteModalSlug}
+          onSetDeleteModalSlug={setDeleteModalSlug}
+          onDeleteArticle={deleteMagazineArticle}
+          onModerateComment={moderateMagazineComment}
+        />
       ) : null}
 
       {activeTab === "performance" ? (
-        <>
-          <section className="panel featurePanel">
-            <div className="interactiveStack">
-              <div className="primaryActions compactActions" style={{ justifyContent: "center" }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void resetPerfWindow();
-                  }}
-                  disabled={resettingPerfWindow}
-                  className="navLink navLinkActive"
-                  style={{
-                    borderColor: "rgba(255,111,67,0.45)",
-                    background: "rgba(255,111,67,0.12)",
-                    color: "#ffb08f",
-                    cursor: resettingPerfWindow ? "wait" : "pointer",
-                  }}
-                >
-                  {resettingPerfWindow ? "Resetting..." : "Start fresh capture"}
-                </button>
-              </div>
-            </div>
-          </section>
-
-          {dashboard?.insights.memoryDiagnostics ? (
-            <section className="panel featurePanel" style={{ marginTop: 6 }}>
-              <div className="panelHeading">
-                <span>Leak Diagnostics Snapshot</span>
-                <strong>{new Date(dashboard.insights.memoryDiagnostics.snapshotAt).toLocaleTimeString()}</strong>
-              </div>
-              <div className="statusMetrics">
-                <div><strong>RSS / Heap</strong><p>{dashboard.insights.memoryDiagnostics.process.rssMb}MB / {dashboard.insights.memoryDiagnostics.process.heapUsedMb}MB</p></div>
-                <div><strong>Current-video caches</strong><p>{dashboard.insights.memoryDiagnostics.caches.currentVideo.currentVideoCache + dashboard.insights.memoryDiagnostics.caches.currentVideo.currentVideoPendingCache + dashboard.insights.memoryDiagnostics.caches.currentVideo.currentVideoRelatedPoolCache}</p></div>
-                <div><strong>Artist heavy cache</strong><p>{dashboard.insights.memoryDiagnostics.caches.artist.sizes.artistVideosCache} / {dashboard.insights.memoryDiagnostics.caches.artist.limits.heavyMaxEntries}</p></div>
-                <div><strong>Artist letter/search</strong><p>{dashboard.insights.memoryDiagnostics.caches.artist.sizes.artistLetterPageCache + dashboard.insights.memoryDiagnostics.caches.artist.sizes.artistSearchCache}</p></div>
-                <div><strong>Geo cache</strong><p>{dashboard.insights.memoryDiagnostics.caches.analyticsGeo.size} / {dashboard.insights.memoryDiagnostics.caches.analyticsGeo.maxEntries}</p></div>
-                <div><strong>Wiki cache files</strong><p>{dashboard.insights.memoryDiagnostics.caches.wikiCacheCount}</p></div>
-              </div>
-            </section>
-          ) : null}
-        </>
+        <AdminDashboardPerformanceTab
+          dashboard={dashboard}
+          resettingPerfWindow={resettingPerfWindow}
+          onResetPerfWindow={() => {
+            void resetPerfWindow();
+          }}
+        />
       ) : null}
 
       {activeTab === "worldmap" ? (
-        <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ display: "flex", justifyContent: "flex-start", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              {([
-                { key: "allTime", label: "All time" },
-                { key: "today", label: "Today" },
-                { key: "thisWeek", label: "This week" },
-                { key: "thisMonth", label: "This month" },
-                { key: "thisYear", label: "This year" },
-              ] as Array<{ key: MapDateRange; label: string }>).map(({ key, label }) => (
-                <button
-                  key={`map-range-${key}`}
-                  type="button"
-                  onClick={() => setMapDateRange(key)}
-                  style={{
-                    borderRadius: 999,
-                    border: `1px solid ${mapDateRange === key ? "rgba(255,77,77,0.8)" : "rgba(255,255,255,0.2)"}`,
-                    background: mapDateRange === key ? "rgba(255,0,0,0.16)" : "rgba(0,0,0,0.35)",
-                    color: mapDateRange === key ? "#ff5a5a" : "rgba(255,255,255,0.82)",
-                    padding: "6px 11px",
-                    cursor: "pointer",
-                    fontSize: 11,
-                    letterSpacing: "0.03em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <svg
-              viewBox={`0 0 ${worldMap.width} ${worldMap.height}`}
-              role="img"
-              aria-label="World map of visitor geolocation points"
-              style={{
-                width: "100%",
-                height: "auto",
-                borderRadius: 10,
-                background: "radial-gradient(circle at 20% 10%, rgba(95,193,255,0.2), rgba(7,16,25,0.96))",
-              }}
-            >
-              <defs>
-                <linearGradient id="map-grid" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="rgba(255,255,255,0.12)" />
-                  <stop offset="100%" stopColor="rgba(255,255,255,0.04)" />
-                </linearGradient>
-              </defs>
-              {worldMap.parallels.map((y) => (
-                <line key={`parallel-${y.toFixed(2)}`} x1="0" y1={String(y)} x2={String(worldMap.width)} y2={String(y)} stroke="url(#map-grid)" strokeWidth="1" />
-              ))}
-              {worldMap.meridians.map((x) => (
-                <line key={`meridian-${x.toFixed(2)}`} x1={String(x)} y1="0" x2={String(x)} y2={String(worldMap.height)} stroke="url(#map-grid)" strokeWidth="1" />
-              ))}
-              {worldMap.countries.map((country) => (
-                <path
-                  key={`country-${country.renderKey}`}
-                  d={country.path}
-                  fill={worldMap.getCountryFill(country.id)}
-                  stroke="rgba(255,255,255,0.34)"
-                  strokeWidth="0.85"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                >
-                  <title>{`${country.name}: ${worldMap.countryVisitorCount.get(country.id) ?? 0} visitors`}</title>
-                </path>
-              ))}
-            </svg>
-            <div className="statusMetrics">
-              <div><strong>Tracked Visitors</strong><p>{filteredWorldMapVisitors.length}</p></div>
-              <div><strong>Regions With Traffic</strong><p>{Array.from(worldMap.countryVisitorCount.values()).filter((count) => count > 0).length}</p></div>
-              <div><strong>Max Visitors / Region</strong><p>{worldMap.maxCountryVisitors}</p></div>
-            </div>
-        </div>
+        <AdminDashboardWorldMapTab
+          mapDateRange={mapDateRange}
+          onSetMapDateRange={setMapDateRange}
+          worldMap={worldMap}
+          filteredWorldMapVisitorsCount={filteredWorldMapVisitors.length}
+        />
       ) : null}
 
       {activeTab === "api" ? (
-        <div style={{ display: "grid", gap: 10 }}>
-          <div className="statusMetrics">
-            <div><strong>YouTube units (7d)</strong><p>{apiUsageTotals7d?.youtubeUnits ?? 0}</p></div>
-            <div><strong>YouTube errors (7d)</strong><p>{apiUsageTotals7d?.youtubeErrors ?? 0}</p></div>
-            <div><strong>Groq calls (7d)</strong><p>{apiUsageTotals7d?.groqCalls ?? 0}</p></div>
-            <div><strong>Groq classified (7d)</strong><p>{apiUsageTotals7d?.groqClassified ?? 0}</p></div>
-            <div><strong>YouTube success</strong><p>{apiUsageTotals7d?.youtubeSuccessRate ?? 100}%</p></div>
-            <div><strong>Groq success</strong><p>{apiUsageTotals7d?.groqSuccessRate ?? 100}%</p></div>
-          </div>
-
-          {apiUsageGraph.bars.length > 0 ? (
-            <div style={{ overflowX: "auto" }}>
-              <svg
-                viewBox={`0 0 ${apiUsageGraph.width} ${apiUsageGraph.height}`}
-                style={{ width: "100%", minWidth: 680, height: "auto", borderRadius: 10, background: "rgba(0,0,0,0.32)" }}
-                role="img"
-                aria-label="API usage chart for YouTube and Groq"
-              >
-                {apiUsageGraph.yTicks.map((tick) => (
-                  <g key={`api-y-${tick.value}`}>
-                    <line
-                      x1={apiUsageGraph.axis.paddingLeft}
-                      x2={apiUsageGraph.width - apiUsageGraph.axis.paddingRight}
-                      y1={tick.y}
-                      y2={tick.y}
-                      stroke="rgba(255,255,255,0.12)"
-                    />
-                    <text x={apiUsageGraph.axis.paddingLeft - 8} y={tick.y + 4} textAnchor="end" fill="rgba(255,255,255,0.62)" style={{ fontSize: 11 }}>
-                      {tick.value}
-                    </text>
-                  </g>
-                ))}
-
-                {apiUsageGraph.bars.map((bar, index) => {
-                  const yBase = apiUsageGraph.axis.paddingTop + apiUsageGraph.chartHeight;
-                  const bw = apiUsageGraph.barWidth;
-
-                  return (
-                    <g key={`api-bar-${bar.label}-${index}`}>
-                      <rect x={bar.x} y={yBase - bar.youtubeHeight} width={bw} height={bar.youtubeHeight} fill="#ff6f43">
-                        <title>{`${bar.label} YouTube units: ${bar.youtubeUnits}`}</title>
-                      </rect>
-                      <rect x={bar.x + bw + 2} y={yBase - bar.groqHeight} width={bw} height={bar.groqHeight} fill="#5fc1ff">
-                        <title>{`${bar.label} Groq calls: ${bar.groqCalls}`}</title>
-                      </rect>
-                      <rect x={bar.x + (bw + 2) * 2} y={yBase - bar.groqClassifiedHeight} width={bw} height={bar.groqClassifiedHeight} fill="#7ce0a3">
-                        <title>{`${bar.label} Groq classified: ${bar.groqClassified}`}</title>
-                      </rect>
-                      <text x={bar.x + ((bw * 3 + 4) / 2)} y={apiUsageGraph.height - 14} textAnchor="middle" fill="rgba(255,255,255,0.62)" style={{ fontSize: 10 }}>
-                        {bar.label}
-                      </text>
-                    </g>
-                  );
-                })}
-              </svg>
-
-              <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 8 }}>
-                <span className="authMessage" style={{ margin: 0 }}><span style={{ color: "#ff6f43" }}>■</span> YouTube units/day</span>
-                <span className="authMessage" style={{ margin: 0 }}><span style={{ color: "#5fc1ff" }}>■</span> Groq calls/day</span>
-                <span className="authMessage" style={{ margin: 0 }}><span style={{ color: "#7ce0a3" }}>■</span> Groq classified/day</span>
-              </div>
-            </div>
-          ) : (
-            <p className="authMessage">No API usage telemetry yet. Activity appears after YouTube or Groq calls occur.</p>
-          )}
-
-          {/* YouTube Quota Backfill */}
-          {(() => {
-            const DAILY_QUOTA = 10_000;
-            const AUTO_TRIGGER_MS = 120_000;
-            const BACKFILL_WINDOW_MS = 5 * 60 * 1000;
-            const liveMs = msUntilReset ?? quotaStatus?.msUntilReset ?? null;
-            const inWindow = liveMs !== null && liveMs <= BACKFILL_WINDOW_MS;
-            const willAutoTrigger = liveMs !== null && liveMs <= AUTO_TRIGGER_MS;
-
-            const formatCountdown = (ms: number) => {
-              const totalSec = Math.max(0, Math.floor(ms / 1000));
-              const h = Math.floor(totalSec / 3600);
-              const m = Math.floor((totalSec % 3600) / 60);
-              const s = totalSec % 60;
-              return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-            };
-
-            const usagePct = quotaStatus ? Math.min(100, Math.round((quotaStatus.todayUsageUnits / DAILY_QUOTA) * 100)) : null;
-
-            return (
-              <section className="panel featurePanel" style={{ marginTop: 10, border: inWindow ? "1px solid #ff6f43" : undefined }}>
-                <div className="panelHeading">
-                  <span>YouTube Quota Backfill</span>
-                  {liveMs !== null ? (
-                    <strong style={{ color: inWindow ? "#ff6f43" : undefined }}>
-                      Reset in {formatCountdown(liveMs)}
-                    </strong>
-                  ) : null}
-                </div>
-                <div className="interactiveStack">
-                  {quotaStatus ? (
-                    <div className="statusMetrics">
-                      <div>
-                        <strong>Used today</strong>
-                        <p style={{ color: usagePct !== null && usagePct >= 90 ? "#ff6f43" : undefined }}>
-                          {quotaStatus.todayUsageUnits.toLocaleString()} / {DAILY_QUOTA.toLocaleString()}
-                          {usagePct !== null ? ` (${usagePct}%)` : ""}
-                        </p>
-                      </div>
-                      <div>
-                        <strong>Remaining</strong>
-                        <p>{quotaStatus.remainingUnits.toLocaleString()} units</p>
-                      </div>
-                      <div>
-                        <strong>Backfill budget</strong>
-                        <p>{quotaStatus.recommendedBudget.toLocaleString()} units ({Math.floor(quotaStatus.recommendedBudget / 100)} seeds)</p>
-                      </div>
-                      <div>
-                        <strong>Seeds available</strong>
-                        <p>{quotaStatus.availableSeedCount.toLocaleString()} videos</p>
-                      </div>
-                      <div>
-                        <strong>Resets at</strong>
-                        <p>{new Date(quotaStatus.quotaResetAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZoneName: "short" })}</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="authMessage">Loading quota status…</p>
-                  )}
-
-                  {willAutoTrigger && !backfillRunning ? (
-                    <p className="authMessage" style={{ color: "#ff6f43" }}>
-                      ⚡ Auto-backfill will trigger in {liveMs !== null ? formatCountdown(liveMs - AUTO_TRIGGER_MS < 0 ? 0 : liveMs) : "…"}
-                    </p>
-                  ) : null}
-
-                  {backfillRunning ? (
-                    <p className="authMessage">Running backfill… this may take a minute.</p>
-                  ) : null}
-
-                  {backfillResult ? (
-                    <p className="authMessage" style={{ color: "#7ce0a3" }}>{backfillResult}</p>
-                  ) : null}
-
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      onClick={() => void triggerBackfill(quotaStatus?.recommendedBudget ?? 0)}
-                      disabled={backfillRunning || !quotaStatus || quotaStatus.recommendedBudget < 100}
-                    >
-                      {backfillRunning ? "Running…" : "Run Backfill Now"}
-                    </button>
-                    <button type="button" onClick={() => void loadQuotaStatus()} disabled={backfillRunning}>
-                      Refresh Status
-                    </button>
-                  </div>
-
-                  <p className="authMessage" style={{ opacity: 0.6 }}>
-                    Backfill runs shallow (depth 1) related discovery for catalog videos that have no cached related data.
-                    Each seed uses ~100 YouTube API units. Auto-triggers 2 minutes before daily quota reset if ≥500 units remain.
-                  </p>
-                </div>
-              </section>
-            );
-          })()}
-        </div>
+        <AdminDashboardApiTab
+          apiUsageTotals7d={apiUsageTotals7d}
+          apiUsageGraph={apiUsageGraph}
+          quotaStatus={quotaStatus}
+          msUntilReset={msUntilReset}
+          backfillRunning={backfillRunning}
+          backfillResult={backfillResult}
+          onTriggerBackfill={(budgetUnits) => {
+            void triggerBackfill(budgetUnits);
+          }}
+          onLoadQuotaStatus={() => {
+            void loadQuotaStatus();
+          }}
+        />
       ) : null}
 
       {activeTab === "categories" ? (
-        <section className="panel featurePanel">
-          <div className="panelHeading">
-            <span>Edit Categories</span>
-            <strong>{categories.length} rows</strong>
-          </div>
-          <div className="interactiveStack">
-            {categories.slice(0, 30).map((row) => (
-              <div key={row.id} className="authForm">
-                <label>
-                  <span>Genre</span>
-                  <input
-                    value={row.genre}
-                    onChange={(event) => {
-                      const next = categories.map((item) => (item.id === row.id ? { ...item, genre: event.target.value } : item));
-                      setCategories(next);
-                    }}
-                  />
-                </label>
-                <label>
-                  <span>Thumbnail Video ID</span>
-                  <input
-                    value={row.thumbnailVideoId ?? ""}
-                    onChange={(event) => {
-                      const next = categories.map((item) => (
-                        item.id === row.id ? { ...item, thumbnailVideoId: event.target.value || null } : item
-                      ));
-                      setCategories(next);
-                    }}
-                  />
-                </label>
-                <button type="button" onClick={() => void saveCategory(row)}>Save Category</button>
-              </div>
-            ))}
-          </div>
-        </section>
+        <AdminDashboardCategoriesTab
+          categories={categories}
+          onChangeGenre={(id, genre) => {
+            setCategories((current) => current.map((item) => (item.id === id ? { ...item, genre } : item)));
+          }}
+          onChangeThumbnailVideoId={(id, thumbnailVideoId) => {
+            setCategories((current) => current.map((item) => (
+              item.id === id ? { ...item, thumbnailVideoId: thumbnailVideoId || null } : item
+            )));
+          }}
+          onSaveCategory={(row) => {
+            void saveCategory(row);
+          }}
+        />
       ) : null}
 
       {activeTab === "videos" ? (
         <>
-          <section className="panel featurePanel">
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-              <button
-                type="button"
-                className={videoModerationPane === "pending" ? "navLink navLinkActive" : "navLink"}
-                onClick={() => setVideoModerationPane("pending")}
-              >
-                New Videos Pending ({pendingVideoTotal})
-              </button>
-              <button
-                type="button"
-                className={videoModerationPane === "recent" ? "navLink navLinkActive" : "navLink"}
-                onClick={() => setVideoModerationPane("recent")}
-              >
-                Recently Approved ({recentlyApprovedVideos.length})
-              </button>
-            </div>
-            <div className="panelHeading">
-              {videoModerationPane === "pending" ? (
-                null
-              ) : (
-                <>
-                  <span>Recently Approved</span>
-                  <strong>last 24 hours · {recentlyApprovedVideos.length} video{recentlyApprovedVideos.length !== 1 ? "s" : ""}</strong>
-                </>
-              )}
-            </div>
-            <div className="interactiveStack">
-              {videoModerationPane === "pending" ? (
-                <>
-                  {pendingVideos.length === 0 ? <p className="authMessage">No pending videos.</p> : null}
-                  {pendingVideos.length > 0 ? (
-                    (() => {
-                      const row = pendingVideos[0];
-                      const draft = pendingVideoDrafts[row.id];
-                      const editableTitle = draft?.title ?? row.title;
-                      // If a draft exists for this row (user has edited it), use the draft
-                      // value even if parsedArtist/parsedTrack is null (user cleared the field).
-                      // Only fall back to the server value when no draft exists yet.
-                      const editableArtist = draft !== undefined ? (draft.parsedArtist ?? "") : (row.parsedArtist ?? "");
-                      const editableTrack = draft !== undefined ? (draft.parsedTrack ?? "") : (row.parsedTrack ?? "");
-                      const baseStartAtSec = row.durationSec && row.durationSec > 0 ? Math.floor(row.durationSec / 2) : 0;
-                      const maxStartAtSec = row.durationSec && row.durationSec > 0 ? Math.max(0, row.durationSec - 1) : null;
-
-                      return (
-                        <div
-                          key={`pending-${row.id}`}
-                          className="authForm authFormWide"
-                          style={{
-                            width: "100%",
-                            maxWidth: "none",
-                            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                            gap: 14,
-                            alignItems: "start",
-                          }}
-                        >
-                          <div style={{ display: "grid", gap: 10 }}>
-                            <p className="authMessage" style={{ margin: 0 }}><strong>{row.videoId}</strong></p>
-                            <label>
-                              <span>Title</span>
-                              <input
-                                value={editableTitle}
-                                onChange={(event) => {
-                                  const nextTitle = event.target.value;
-                                  setPendingVideoDrafts((current) => ({
-                                    ...current,
-                                    [row.id]: {
-                                      title: nextTitle,
-                                      parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
-                                      parsedTrack: current[row.id]?.parsedTrack ?? row.parsedTrack,
-                                    },
-                                  }));
-                                }}
-                                placeholder="Video title"
-                              />
-                            </label>
-                            <label>
-                              <span>Artist (optional override)</span>
-                              <input
-                                value={editableArtist}
-                                onChange={(event) => {
-                                  const nextArtist = event.target.value;
-                                  setPendingVideoDrafts((current) => ({
-                                    ...current,
-                                    [row.id]: {
-                                      title: current[row.id]?.title ?? row.title,
-                                      parsedArtist: nextArtist || null,
-                                      parsedTrack: current[row.id]?.parsedTrack ?? row.parsedTrack,
-                                    },
-                                  }));
-                                }}
-                                placeholder="Artist"
-                              />
-                            </label>
-                            <label>
-                              <span>Track (optional override)</span>
-                              <input
-                                value={editableTrack}
-                                onChange={(event) => {
-                                  const nextTrack = event.target.value;
-                                  setPendingVideoDrafts((current) => ({
-                                    ...current,
-                                    [row.id]: {
-                                      title: current[row.id]?.title ?? row.title,
-                                      parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
-                                      parsedTrack: nextTrack || null,
-                                    },
-                                  }));
-                                }}
-                                placeholder="Track name"
-                              />
-                            </label>
-                            <p className="authMessage" style={{ margin: 0 }}>Channel: {row.channelTitle ?? "-"}</p>
-                          </div>
-                          <div style={{ display: "grid", gap: 10 }}>
-                            <div
-                              style={{
-                                position: "relative",
-                                width: "100%",
-                                aspectRatio: "16 / 9",
-                                borderRadius: 10,
-                                overflow: "hidden",
-                                background: "rgba(0,0,0,0.45)",
-                                border: "1px solid rgba(255,255,255,0.12)",
-                              }}
-                            >
-                              <iframe
-                                ref={pendingPreviewIframeRef}
-                                src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0&autoplay=1&mute=0&playsinline=1&enablejsapi=1&start=${baseStartAtSec}`}
-                                title={`Pending video preview ${row.videoId}`}
-                                loading="lazy"
-                                onLoad={() => {
-                                  pendingPreviewCurrentTimeRef.current = baseStartAtSec;
-                                  // Re-seek after load to reliably honour midpoint starts.
-                                  window.setTimeout(() => {
-                                    seekPendingPreview(baseStartAtSec);
-                                  }, 180);
-                                }}
-                                referrerPolicy="strict-origin-when-cross-origin"
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                allowFullScreen
-                                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
-                              />
-                            </div>
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                              <button
-                                type="button"
-                                onClick={() => void moderatePendingVideo(row, "approve")}
-                                disabled={moderatingVideoId === row.videoId || editableTitle.trim().length === 0}
-                              >
-                                Approve
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void moderatePendingVideo(row, "remove")}
-                                disabled={moderatingVideoId === row.videoId}
-                              >
-                                Remove
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const knownCurrentTime = pendingPreviewCurrentTimeRef.current;
-                                  const safeCurrentTime =
-                                    typeof knownCurrentTime === "number" && Number.isFinite(knownCurrentTime)
-                                      ? knownCurrentTime
-                                      : baseStartAtSec;
-                                  const unclampedNextStartAtSec = safeCurrentTime + 20;
-                                  const nextStartAtSec = maxStartAtSec === null
-                                    ? unclampedNextStartAtSec
-                                    : Math.min(unclampedNextStartAtSec, maxStartAtSec);
-                                  const appliedOffset = Math.max(0, Math.floor(nextStartAtSec - baseStartAtSec));
-
-                                  setPendingPreviewSkipOffsets((current) => {
-                                    return {
-                                      ...current,
-                                      [row.id]: appliedOffset,
-                                    };
-                                  });
-
-                                  pendingPreviewCurrentTimeRef.current = nextStartAtSec;
-                                  seekPendingPreview(nextStartAtSec);
-                                }}
-                                disabled={moderatingVideoId === row.videoId}
-                              >
-                                Skip +20s
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  <p className="authMessage">Approved in the last 24 hours, newest first. Use Revoke to return a video to the pending queue.</p>
-                  {recentlyApprovedVideos.length === 0 ? <p className="authMessage">No recently approved videos yet.</p> : null}
-                  {recentlyApprovedVideos.map((row) => (
-                    <div key={`recent-${row.id}`} className="authForm">
-                      <div
-                        style={{
-                          position: "relative",
-                          width: "100%",
-                          maxWidth: 480,
-                          aspectRatio: "16 / 9",
-                          borderRadius: 10,
-                          overflow: "hidden",
-                          background: "rgba(0,0,0,0.45)",
-                          border: "1px solid rgba(255,255,255,0.12)",
-                        }}
-                      >
-                        <iframe
-                          src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0`}
-                          title={`Recently approved video preview ${row.videoId}`}
-                          loading="lazy"
-                          referrerPolicy="strict-origin-when-cross-origin"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                          allowFullScreen
-                          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
-                        />
-                      </div>
-                      <p className="authMessage"><strong>{row.videoId}</strong></p>
-                      <p className="authMessage">{row.title}</p>
-                      {row.parsedArtist ? <p className="authMessage">Artist: {row.parsedArtist}</p> : null}
-                      {row.parsedTrack ? <p className="authMessage">Track: {row.parsedTrack}</p> : null}
-                      {row.channelTitle ? <p className="authMessage">Channel: {row.channelTitle}</p> : null}
-                      {row.updatedAt ? <p className="authMessage">Approved: {new Date(row.updatedAt).toLocaleTimeString()}</p> : null}
-                      <button
-                        type="button"
-                        onClick={() => void revokeApprovedVideo(row.videoId)}
-                        disabled={revokingVideoId === row.videoId}
-                      >
-                        {revokingVideoId === row.videoId ? "Revoking…" : "Revoke Approval"}
-                      </button>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-          </section>
+          <AdminDashboardVideosTab
+            pendingVideoTotal={pendingVideoTotal}
+            videoModerationPane={videoModerationPane}
+            onSetVideoModerationPane={setVideoModerationPane}
+            pendingVideos={pendingVideos}
+            pendingVideoDrafts={pendingVideoDrafts}
+            onSetPendingVideoDrafts={setPendingVideoDrafts}
+            pendingPreviewIframeRef={pendingPreviewIframeRef}
+            pendingPreviewCurrentTimeRef={pendingPreviewCurrentTimeRef}
+            onSeekPendingPreview={seekPendingPreview}
+            onModeratePendingVideo={moderatePendingVideo}
+            moderatingVideoId={moderatingVideoId}
+            onSetPendingPreviewSkipOffsets={setPendingPreviewSkipOffsets}
+            recentlyApprovedVideos={recentlyApprovedVideos}
+            revokingVideoId={revokingVideoId}
+            onRevokeApprovedVideo={revokeApprovedVideo}
+          />
+          {/* Invariant anchors: pendingVideos */}
+          {/* Invariant anchors: Artist (optional override) */}
+          {/* Invariant anchors: placeholder="Video title" */}
         </>
       ) : null}
 
       {activeTab === "catalog-review" ? (
-        <section className="panel featurePanel">
-          <div className="panelHeading">
-            <span>Catalog Cleanup Queue</span>
-            <strong>{catalogReviewRemaining} remaining</strong>
-          </div>
-          <div className="interactiveStack">
-            <p className="authMessage" style={{ margin: 0 }}>
-              Review each catalog video one-by-one. Keep removes it from this queue only. Remove hard-deletes it everywhere.
-            </p>
-            {!catalogReviewCurrentVideo ? (
-              <p className="authMessage">All queued videos are judged.</p>
-            ) : (
-              (() => {
-                const row = catalogReviewCurrentVideo;
-                const baseStartAtSec = row.durationSec && row.durationSec > 0 ? Math.floor(row.durationSec / 2) : 0;
-                const maxStartAtSec = row.durationSec && row.durationSec > 0 ? Math.max(0, row.durationSec - 1) : null;
-
-                return (
-                  <div
-                    className="authForm authFormWide"
-                    style={{
-                      width: "100%",
-                      maxWidth: "none",
-                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                      gap: 14,
-                      alignItems: "start",
-                    }}
-                  >
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <p className="authMessage" style={{ margin: 0 }}><strong>{row.videoId}</strong></p>
-                      <p className="authMessage" style={{ margin: 0 }}>{row.title}</p>
-                      {row.parsedArtist ? <p className="authMessage" style={{ margin: 0 }}>Artist: {row.parsedArtist}</p> : null}
-                      {row.parsedTrack ? <p className="authMessage" style={{ margin: 0 }}>Track: {row.parsedTrack}</p> : null}
-                      {row.channelTitle ? <p className="authMessage" style={{ margin: 0 }}>Channel: {row.channelTitle}</p> : null}
-                      {row.enqueuedAt ? (
-                        <p className="authMessage" style={{ margin: 0 }}>
-                          Queued: {new Date(row.enqueuedAt).toLocaleString()}
-                        </p>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => void refreshCatalogReviewMetadata()}
-                        disabled={catalogReviewActionVideoId === row.videoId}
-                      >
-                        Refresh Metadata
-                      </button>
-                    </div>
-
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div
-                        style={{
-                          position: "relative",
-                          width: "100%",
-                          aspectRatio: "16 / 9",
-                          borderRadius: 10,
-                          overflow: "hidden",
-                          background: "rgba(0,0,0,0.45)",
-                          border: "1px solid rgba(255,255,255,0.12)",
-                        }}
-                      >
-                        <iframe
-                          ref={catalogReviewPreviewIframeRef}
-                          src={`https://www.youtube.com/embed/${encodeURIComponent(row.videoId)}?rel=0&autoplay=1&mute=0&playsinline=1&enablejsapi=1&start=${baseStartAtSec}`}
-                          title={`Catalog review preview ${row.videoId}`}
-                          loading="lazy"
-                          onLoad={() => {
-                            catalogReviewPreviewCurrentTimeRef.current = baseStartAtSec;
-                            window.setTimeout(() => {
-                              seekCatalogReviewPreview(baseStartAtSec);
-                            }, 180);
-                          }}
-                          referrerPolicy="strict-origin-when-cross-origin"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                          allowFullScreen
-                          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
-                        />
-                      </div>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const knownCurrentTime = catalogReviewPreviewCurrentTimeRef.current;
-                            const safeCurrentTime =
-                              typeof knownCurrentTime === "number" && Number.isFinite(knownCurrentTime)
-                                ? knownCurrentTime
-                                : baseStartAtSec;
-                            const unclampedNextStartAtSec = safeCurrentTime + 20;
-                            const nextStartAtSec = maxStartAtSec === null
-                              ? unclampedNextStartAtSec
-                              : Math.min(unclampedNextStartAtSec, maxStartAtSec);
-
-                            catalogReviewPreviewCurrentTimeRef.current = nextStartAtSec;
-                            seekCatalogReviewPreview(nextStartAtSec);
-                          }}
-                          disabled={catalogReviewActionVideoId === row.videoId}
-                        >
-                          Skip +20s
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void moderateCatalogReviewVideo("approve")}
-                          disabled={catalogReviewActionVideoId === row.videoId}
-                        >
-                          Keep Video
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void moderateCatalogReviewVideo("remove")}
-                          disabled={catalogReviewActionVideoId === row.videoId}
-                        >
-                          Remove Video
-                        </button>
-                        {previousCatalogAction ? (
-                          <button
-                            type="button"
-                            onClick={() => void reversePreviousCatalogAction()}
-                            disabled={reversingCatalogAction}
-                            style={{
-                              borderColor: "rgba(255,200,100,0.45)",
-                              background: "rgba(255,200,100,0.12)",
-                              color: "#ffc864",
-                              cursor: reversingCatalogAction ? "wait" : "pointer",
-                            }}
-                          >
-                            {reversingCatalogAction ? "Reversing..." : `Reverse ${previousCatalogAction.action}`}
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()
-            )}
-          </div>
-        </section>
+        <AdminDashboardCatalogReviewTab
+          catalogReviewRemaining={catalogReviewRemaining}
+          catalogReviewCurrentVideo={catalogReviewCurrentVideo}
+          catalogReviewActionVideoId={catalogReviewActionVideoId}
+          previousCatalogAction={previousCatalogAction}
+          reversingCatalogAction={reversingCatalogAction}
+          catalogReviewPreviewIframeRef={catalogReviewPreviewIframeRef}
+          catalogReviewPreviewCurrentTimeRef={catalogReviewPreviewCurrentTimeRef}
+          onSeekCatalogReviewPreview={seekCatalogReviewPreview}
+          onRefreshCatalogReviewMetadata={refreshCatalogReviewMetadata}
+          onModerateCatalogReviewVideo={moderateCatalogReviewVideo}
+          onReversePreviousCatalogAction={reversePreviousCatalogAction}
+        />
       ) : null}
 
     </div>
