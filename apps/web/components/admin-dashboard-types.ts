@@ -36,7 +36,15 @@ export type WorldAtlasCountryFeature = {
 
 // Dashboard Data Structures
 export type DashboardPayload = {
-  meta: { durationMs: number; generatedAt: string };
+  meta: {
+    durationMs: number;
+    generatedAt: string;
+    rollups?: {
+      available: boolean;
+      mode: "background";
+      message: string | null;
+    };
+  };
   health: {
     nodeUptimeSec: number;
     memory: { rssMb: number; heapUsedMb: number; heapTotalMb: number };
@@ -259,6 +267,27 @@ export type AdminMagazineArticleRow = {
   publishedAt: string;
   externalLandings: number;
 };
+
+export type AdminMagazineCommentModerationRow = {
+  id: number;
+  articleSlug: string;
+  userId: number;
+  content: string;
+  moderationStatus: string;
+  moderationLabel: string | null;
+  moderationReason: string | null;
+  moderationSource: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+  authorDisplayName: string;
+  authorEmail: string | null;
+};
+
+export type AdminMagazineCommentModerationAction =
+  | "approve"
+  | "keep_restricted"
+  | "delete_comment"
+  | "delete_user";
 
 // Performance Domain
 export type PerfWindowResetResponse = {

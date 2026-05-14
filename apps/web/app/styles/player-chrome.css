@@ -1205,8 +1205,19 @@
 .magazineArticleLayout {
   display: grid;
   grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
+  grid-template-rows: auto auto;
   gap: 14px;
   align-items: start;
+}
+
+.magazineArticle {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.magazineArticleSidebar {
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .magazineArticleThumb {
@@ -1474,6 +1485,277 @@
   .magazineArticleHeroTagline {
     left: 0;
     top: -8px;
+  }
+}
+
+/* Magazine comments */
+.magazineCommentsSection {
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(12, 8, 8, 0.8);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.25);
+}
+
+.magazineCommentsHeading {
+  margin: 8px 0 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(1.28rem, 2.35vw, 1.68rem);
+  letter-spacing: 0.02em;
+  color: rgba(255, 245, 240, 0.97);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.magazineCommentsHeading span {
+  font: inherit;
+  color: inherit;
+}
+
+.magazineCommentsHeadingStatus {
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.84rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 214, 201, 0.8);
+}
+
+.magazineCommentsComposer {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.magazineCommentsLabel {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 231, 224, 0.88);
+}
+
+.magazineCommentsTextarea {
+  width: 100%;
+  min-height: 100px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(10, 5, 5, 0.7);
+  color: rgba(255, 245, 240, 0.95);
+  padding: 11px 12px;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  resize: vertical;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.magazineCommentsTextarea::placeholder {
+  color: rgba(255, 200, 190, 0.5);
+}
+
+.magazineCommentsTextarea:hover:not(:disabled) {
+  border-color: rgba(255, 220, 210, 0.28);
+}
+
+.magazineCommentsTextarea:focus {
+  outline: none;
+  border-color: rgba(211, 67, 67, 0.6);
+  box-shadow: 0 0 0 3px rgba(170, 28, 28, 0.18);
+}
+
+.magazineCommentsTextarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.magazineCommentsComposerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.magazineCommentsCount {
+  margin: 0;
+  color: rgba(255, 220, 210, 0.76);
+  font-size: 0.9rem;
+}
+
+.magazineCommentsSubmitButton {
+  min-height: 42px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 1px solid rgba(226, 81, 81, 0.5);
+  background: linear-gradient(180deg, rgba(164, 34, 34, 0.8), rgba(86, 12, 12, 0.88));
+  color: rgba(255, 232, 224, 0.95);
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.93rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all 150ms ease;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
+}
+
+.magazineCommentsSubmitButton:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(191, 40, 40, 0.9), rgba(102, 15, 15, 0.96));
+  border-color: rgba(255, 175, 162, 0.7);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+}
+
+.magazineCommentsSubmitButton:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.magazineCommentsSubmitButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.magazineCommentsStatus {
+  margin: 0;
+}
+
+.magazineCommentsStatusInfo {
+  color: rgba(232, 247, 255, 0.9);
+}
+
+.magazineCommentsStatusError {
+  color: rgba(255, 148, 132, 0.95);
+}
+
+.magazineCommentsList {
+  display: grid;
+  gap: 12px;
+}
+
+.magazineCommentCard {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 13px 14px;
+  background: linear-gradient(180deg, rgba(24, 24, 26, 0.72), rgba(14, 14, 16, 0.76));
+  display: grid;
+  gap: 9px;
+  transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.magazineCommentCard:hover {
+  border-color: rgba(255, 158, 136, 0.7);
+  background: linear-gradient(180deg, rgba(105, 26, 21, 0.78), rgba(56, 14, 12, 0.82));
+  box-shadow: 0 8px 22px rgba(35, 8, 6, 0.35);
+}
+
+.magazineCommentCardOwn {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.magazineCommentCardLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.magazineCommentCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.magazineCommentAuthorMeta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.magazineCommentAvatar,
+.magazineCommentAvatarFallback {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  flex: 0 0 auto;
+}
+
+.magazineCommentAvatar {
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.magazineCommentAvatarFallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: rgba(255, 234, 226, 0.95);
+  background: linear-gradient(180deg, rgba(74, 74, 76, 0.8), rgba(34, 34, 36, 0.9));
+}
+
+.magazineCommentAuthor {
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.magazineCommentTimestamp {
+  margin: 0;
+  white-space: nowrap;
+  font-size: 0.74rem;
+}
+
+.magazineCommentBody {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.62;
+  color: rgba(255, 244, 239, 0.9);
+}
+
+.magazineCommentReviewNote {
+  margin: 0;
+  color: rgba(255, 211, 198, 0.86);
+}
+
+/* Comments wrapper in row 2, column 1 */
+.magazineArticleCommentsWrapper {
+  grid-column: 1;
+  grid-row: 2;
+  margin-top: 0;
+}
+
+@media (max-width: 680px) {
+  .magazineCommentsSection {
+    padding: 14px;
+  }
+
+  .magazineCommentsComposerRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .magazineCommentsSubmitButton {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .magazineCommentCardHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
   }
 }
 
