@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 export function AuthChangePasswordForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,7 +34,7 @@ export function AuthChangePasswordForm() {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        const payload = (await parseJsonOrNull(response)) as { error?: string } | null;
         setError(payload?.error ?? "Unable to change password.");
         return;
       }

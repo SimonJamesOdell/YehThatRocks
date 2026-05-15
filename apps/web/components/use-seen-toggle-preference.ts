@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { readPersistedBoolean, writePersistedBoolean } from "@/lib/persisted-boolean";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type UseSeenTogglePreferenceInput = {
   key: string;
@@ -48,7 +49,7 @@ export function useSeenTogglePreference({
           return;
         }
 
-        const payload = (await response.json().catch(() => null)) as { value?: boolean | null } | null;
+        const payload = (await parseJsonOrNull(response)) as { value?: boolean | null } | null;
 
         if (cancelled || typeof payload?.value !== "boolean") {
           return;

@@ -4,6 +4,7 @@ import { type RefObject, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type AdminEditableVideo = {
   id: number;
@@ -117,7 +118,7 @@ export function useAdminVideoEdit({
         return;
       }
 
-      const payload = (await response.json().catch(() => null)) as { videos?: AdminEditableVideo[] } | null;
+      const payload = (await parseJsonOrNull(response)) as { videos?: AdminEditableVideo[] } | null;
       const row = Array.isArray(payload?.videos)
         ? payload.videos.find((video) => video.videoId === videoId) ?? null
         : null;
@@ -169,7 +170,7 @@ export function useAdminVideoEdit({
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        const payload = (await parseJsonOrNull(response)) as { error?: string } | null;
         if (response.status === 401 || response.status === 403) {
           setAdminEditError("Admin session expired. Please sign in again.");
           return;
@@ -178,7 +179,7 @@ export function useAdminVideoEdit({
         return;
       }
 
-      const payload = (await response.json().catch(() => null)) as {
+      const payload = (await parseJsonOrNull(response)) as {
         ok?: boolean;
         video?: {
           title?: string;

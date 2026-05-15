@@ -4,6 +4,7 @@
  */
 
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 // Numeric helpers
 export function finiteOrNull(value: number | null | undefined): number | null {
@@ -29,7 +30,7 @@ export async function readJson<T>(input: RequestInfo | URL, init?: RequestInit):
   const response = await fetchWithAuthRetry(input, init);
 
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    const payload = (await parseJsonOrNull(response)) as { error?: string } | null;
     throw new Error(payload?.error || `Request failed (${response.status})`);
   }
 

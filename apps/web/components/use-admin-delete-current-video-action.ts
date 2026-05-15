@@ -5,6 +5,7 @@ import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction 
 import { resolvePostDeleteNextVideo } from "@/components/player-experience-share-admin-domain";
 import { EVENT_NAMES } from "@/lib/events-contract";
 import type { VideoRecord } from "@/lib/catalog";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type SearchParamsLike = {
   get: (name: string) => string | null;
@@ -125,7 +126,7 @@ export function useAdminDeleteCurrentVideoAction({
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string; reason?: string } | null;
+        const payload = (await parseJsonOrNull(response)) as { error?: string; reason?: string } | null;
         if (response.status === 401 || response.status === 403) {
           showUnavailableOverlayMessage("Admin session expired. Please sign in again.");
           return;

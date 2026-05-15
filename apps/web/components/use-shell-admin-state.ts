@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 export type ShellMagazineTrack = {
   slug: string;
@@ -62,7 +63,7 @@ export function useShellAdminState({
           "Content-Type": "application/json",
         },
       });
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      const payload = (await parseJsonOrNull(response)) as { error?: string } | null;
       if (!response.ok) {
         setMagazineDeleteErrors((current) => ({
           ...current,

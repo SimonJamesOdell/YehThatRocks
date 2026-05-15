@@ -3,6 +3,7 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 
 import { LIVE_SEARCH_PARAMS_EVENT } from "@/components/use-live-search-params";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 const AUTOPLAY_FALLBACK_POOL_SIZE = 12;
 const RANDOM_NEXT_RECENT_EXCLUSION = 5;
@@ -60,7 +61,7 @@ export function usePlayerNavigationActions({
         return null;
       }
 
-      const payload = (await response.json().catch(() => null)) as
+      const payload = (await parseJsonOrNull(response)) as
         | {
             relatedVideos?: Array<{ id: string }>;
             videos?: Array<{ id: string }>;

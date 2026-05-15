@@ -1,39 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 
 import { addPlaylistItemSchema, addPlaylistItemsBulkSchema, removePlaylistItemSchema, reorderPlaylistItemsSchema } from "@/lib/api-schemas";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { addPlaylistItem, addPlaylistItems, filterHiddenVideos, removePlaylistItem, reorderPlaylistItems } from "@/lib/catalog-data";
-import { verifySameOrigin } from "@/lib/csrf";
-import { parseRequestJson } from "@/lib/request-json";
 
 type PlaylistItemsRouteContext = {
   params: Promise<{ id: string }>;
 };
 
+const addPlaylistItemsRequestSchema = z.union([addPlaylistItemSchema, addPlaylistItemsBulkSchema]);
+
 export async function POST(request: NextRequest, context: PlaylistItemsRouteContext) {
-  const auth = await requireAuthOnly(request, { authMode: "user" });
+  const result = await withAuthAndBody(request, addPlaylistItemsRequestSchema, { authMode: "user" });
 
-  if (!auth.ok) {
-    return auth.response;
-  }
-
-  const csrfError = verifySameOrigin(request);
-
-  if (csrfError) {
-    return csrfError;
+  if (!result.ok) {
+    return result.response;
   }
 
   const { id } = await context.params;
-  const bodyResult = await parseRequestJson(request);
 
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const singleParsed = addPlaylistItemSchema.safeParse(bodyResult.data);
-
-  if (singleParsed.success) {
-    const playlist = await addPlaylistItem(id, singleParsed.data.videoId, auth.auth.userId);
+  if ("videoId" in result.data) {
+    const playlist = await addPlaylistItem(id, result.data.videoId, result.auth.userId);
 
     if (!playlist) {
       return NextResponse.json({ error: "Playlist or video not found" }, { status: 404 });
@@ -42,19 +30,13 @@ export async function POST(request: NextRequest, context: PlaylistItemsRouteCont
     return NextResponse.json(playlist, { status: 201 });
   }
 
-  const bulkParsed = addPlaylistItemsBulkSchema.safeParse(bodyResult.data);
-
-  if (!bulkParsed.success) {
-    return NextResponse.json({ error: bulkParsed.error.flatten() }, { status: 400 });
-  }
-
-  const uniqueVideoIds = Array.from(new Set(bulkParsed.data.videoIds));
-  const playlist = await addPlaylistItems(id, uniqueVideoIds, auth.auth.userId);
+  const uniqueVideoIds = Array.from(new Set(result.data.videoIds));
+  const playlist = await addPlaylistItems(id, uniqueVideoIds, result.auth.userId);
   if (!playlist) {
     return NextResponse.json({ error: "Playlist or videos not found" }, { status: 404 });
   }
 
-  playlist.videos = await filterHiddenVideos(playlist.videos, auth.auth.userId);
+  playlist.videos = await filterHiddenVideos(playlist.videos, result.auth.userId);
 
   return NextResponse.json(playlist, { status: 201 });
 }

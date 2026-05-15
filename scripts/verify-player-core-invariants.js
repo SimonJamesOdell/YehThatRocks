@@ -293,7 +293,10 @@ function main() {
   assertContains(playerExperienceSource, "if (selectedVideoId === deletingVideoId) {", "Admin delete flow only clears query when current selection matches deleted id", failures);
   assertContains(playerExperienceSource, "clearedParams.delete(\"v\");", "Admin delete flow removes deleted video id from URL immediately", failures);
   assertContains(playerExperienceSource, "router.replace(clearedQuery ? `${pathname}?${clearedQuery}` : pathname);", "Admin delete flow updates URL immediately after successful deletion", failures);
-  assertContains(playerExperienceSource, "const payload = (await response.json().catch(() => null)) as { error?: string; reason?: string } | null;", "Admin delete flow parses structured API delete failure payload", failures);
+  assertContainsEither(playerExperienceSource, [
+    "const payload = (await response.json().catch(() => null)) as { error?: string; reason?: string } | null;",
+    "const payload = await parseJsonOrNull<{ error?: string; reason?: string }>(response);",
+  ], "Admin delete flow parses structured API delete failure payload", failures);
   assertContains(playerExperienceSource, "showUnavailableOverlayMessage(payload?.error || \"Could not remove this video from the site.\");", "Admin delete flow surfaces API-provided delete failure error", failures);
   assertContains(playerExperienceSource, 'dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId: deletingVideoId })', "Main player delete dispatches catalog-deleted event", failures);
   assertContains(adminVideoDeleteButtonSource, 'dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId });', "Admin search-card delete dispatches catalog-deleted event using typed dispatch", failures);

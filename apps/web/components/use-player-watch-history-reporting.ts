@@ -3,6 +3,7 @@
 import { useCallback, type MutableRefObject } from "react";
 
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 export function usePlayerWatchHistoryReporting({
   currentVideoIdRef,
@@ -136,7 +137,7 @@ export function usePlayerWatchHistoryReporting({
       if (!response.ok) {
         watchHistoryLevelRef.current.set(activeVideoId, currentLevel);
       } else {
-        const payload = (await response.json().catch(() => null)) as { ok?: boolean } | null;
+        const payload = (await parseJsonOrNull(response)) as { ok?: boolean } | null;
         if (!payload?.ok) {
           watchHistoryLevelRef.current.set(activeVideoId, currentLevel);
           return;

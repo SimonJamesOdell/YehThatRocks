@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnonymousCredentialsModal } from "@/components/anonymous-credentials-modal";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type AnonymousAccountCreatorProps = {
   onSuccess?: () => void;
@@ -30,11 +31,11 @@ export function AnonymousAccountCreator({ onSuccess }: AnonymousAccountCreatorPr
       });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        const data = (await parseJsonOrNull(response)) as { error?: string } | null;
         throw new Error(data?.error || "Failed to create anonymous account");
       }
 
-      const data = (await response.json().catch(() => null)) as {
+      const data = (await parseJsonOrNull(response)) as {
         credentials?: { username: string; password: string };
       } | null;
 

@@ -2,6 +2,8 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { parseJsonOrNull } from "@/lib/parse-json";
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 
 export function AuthRegisterForm() {
   const router = useRouter();
@@ -38,11 +40,12 @@ export function AuthRegisterForm() {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        const payload = (await parseJsonOrNull(response)) as { error?: string } | null;
         setError(payload?.error ?? "Registration failed. Please try again.");
         return;
       }
 
+      dispatchAppEvent(EVENT_NAMES.AUTH_SUCCESS, null);
       router.push("/");
       router.refresh();
     } finally {

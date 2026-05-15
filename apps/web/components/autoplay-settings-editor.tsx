@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { dispatchAppEvent, EVENT_NAMES } from "@/lib/events-contract";
+import { parseJsonOrNull } from "@/lib/parse-json";
 import {
   DEFAULT_AUTOPLAY_MIX,
   rebalanceAutoplayMix,
@@ -72,9 +73,9 @@ export function AutoplaySettingsEditor({
           throw new Error("Could not load your autoplay settings.");
         }
 
-        const prefsPayload = (await prefsResponse.json().catch(() => null)) as PlayerPreferencesResponse | null;
+        const prefsPayload = await parseJsonOrNull<PlayerPreferencesResponse>(prefsResponse);
         const categoriesPayload = categoriesResponse.ok
-          ? ((await categoriesResponse.json().catch(() => null)) as CategoriesResponse | null)
+          ? await parseJsonOrNull<CategoriesResponse>(categoriesResponse)
           : null;
 
         if (cancelled) {

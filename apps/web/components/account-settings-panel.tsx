@@ -10,6 +10,7 @@ import { BlockedVideosInfiniteList } from "@/components/blocked-videos-infinite-
 import { UpgradeToEmailForm } from "@/components/upgrade-to-email-form";
 import type { HiddenVideoEntry } from "@/lib/catalog-data";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type AccountUser = {
   id: number;
@@ -74,7 +75,7 @@ export function AccountSettingsPanel({
           return;
         }
 
-        const payload = (await response.json().catch(() => null)) as { user?: Partial<AccountUser> } | null;
+        const payload = await parseJsonOrNull<{ user?: Partial<AccountUser> }>(response);
         if (controller.signal.aborted || !payload?.user) {
           return;
         }
@@ -118,7 +119,7 @@ export function AccountSettingsPanel({
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: { fieldErrors?: Record<string, string[]> } | string } | null;
+        const payload = await parseJsonOrNull<{ error?: { fieldErrors?: Record<string, string[]> } | string }>(response);
 
         if (typeof payload?.error === "string") {
           setSaveError(payload.error);
@@ -128,7 +129,7 @@ export function AccountSettingsPanel({
         return;
       }
 
-      const payload = (await response.json().catch(() => null)) as { user?: Partial<AccountUser> } | null;
+      const payload = await parseJsonOrNull<{ user?: Partial<AccountUser> }>(response);
       if (payload?.user) {
         setScreenName(payload.user.screenName ?? "");
         setAvatarUrl(payload.user.avatarUrl ?? "");
@@ -173,7 +174,7 @@ export function AccountSettingsPanel({
         method: "POST",
         body: formData,
       });
-      const payload = (await response.json().catch(() => null)) as { user?: Partial<AccountUser>; error?: string } | null;
+      const payload = await parseJsonOrNull<{ user?: Partial<AccountUser>; error?: string }>(response);
       if (!response.ok || !payload?.user) {
         setAvatarError(payload?.error ?? "Could not upload your avatar.");
         return;
@@ -197,7 +198,7 @@ export function AccountSettingsPanel({
         method: "DELETE",
       });
 
-      const payload = (await response.json().catch(() => null)) as { user?: Partial<AccountUser>; error?: string } | null;
+      const payload = await parseJsonOrNull<{ user?: Partial<AccountUser>; error?: string }>(response);
 
       if (!response.ok || !payload?.user) {
         setAvatarError(payload?.error ?? "Could not remove your avatar.");

@@ -11,6 +11,7 @@ import {
 } from "@/components/player-experience-autoplay-utils";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { createPlaylistClient } from "@/lib/playlist-client-service";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 export function useRouteAutoplayQueue({
   activePlaylistId,
@@ -48,7 +49,7 @@ export function useRouteAutoplayQueue({
         return new Set<string>();
       }
 
-      const hiddenPayload = (await hiddenResponse.json().catch(() => null)) as { hiddenVideoIds?: string[] } | null;
+      const hiddenPayload = await parseJsonOrNull<{ hiddenVideoIds?: string[] }>(hiddenResponse);
       return new Set(Array.isArray(hiddenPayload?.hiddenVideoIds) ? hiddenPayload.hiddenVideoIds : []);
     } catch {
       return new Set<string>();
@@ -65,7 +66,7 @@ export function useRouteAutoplayQueue({
         return [] as string[];
       }
 
-      const payload = (await response.json().catch(() => null)) as { videos?: VideoRecord[] } | null;
+      const payload = await parseJsonOrNull<{ videos?: VideoRecord[] }>(response);
       return extractVideoIds(payload?.videos);
     }
 
@@ -78,7 +79,7 @@ export function useRouteAutoplayQueue({
         return [] as string[];
       }
 
-      const payload = (await response.json().catch(() => null)) as { videos?: VideoRecord[] } | null;
+      const payload = await parseJsonOrNull<{ videos?: VideoRecord[] }>(response);
       return extractVideoIds(payload?.videos);
     }
 
@@ -91,7 +92,7 @@ export function useRouteAutoplayQueue({
         return [] as string[];
       }
 
-      const payload = (await favouritesResponse.json().catch(() => null)) as { favourites?: VideoRecord[] } | null;
+      const payload = await parseJsonOrNull<{ favourites?: VideoRecord[] }>(favouritesResponse);
       return Array.isArray(payload?.favourites)
         ? payload.favourites.map((video) => video?.id).filter((id): id is string => Boolean(id))
         : [];
@@ -109,7 +110,7 @@ export function useRouteAutoplayQueue({
         return [] as string[];
       }
 
-      const payload = (await response.json().catch(() => null)) as { videos?: VideoRecord[] } | null;
+      const payload = await parseJsonOrNull<{ videos?: VideoRecord[] }>(response);
       return extractVideoIds(payload?.videos);
     }
 
@@ -121,7 +122,7 @@ export function useRouteAutoplayQueue({
       return [] as string[];
     }
 
-    const payload = (await response.json().catch(() => null)) as { videos?: VideoRecord[] } | null;
+    const payload = await parseJsonOrNull<{ videos?: VideoRecord[] }>(response);
     return extractVideoIds(payload?.videos);
   }, [extractVideoIds, fetchWithAuthRetry, newAutoplayPlaylistSize]);
 

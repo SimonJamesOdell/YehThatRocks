@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type MagazineArticleCommentsProps = {
   slug: string;
@@ -57,7 +58,7 @@ export function MagazineArticleComments({ slug }: MagazineArticleCommentsProps) 
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        const payload = (await parseJsonOrNull(response)) as { error?: string } | null;
         throw new Error(payload?.error || `Request failed (${response.status})`);
       }
 
@@ -102,7 +103,7 @@ export function MagazineArticleComments({ slug }: MagazineArticleCommentsProps) 
       }
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        const payload = (await parseJsonOrNull(response)) as { error?: string } | null;
         throw new Error(payload?.error || `Request failed (${response.status})`);
       }
 

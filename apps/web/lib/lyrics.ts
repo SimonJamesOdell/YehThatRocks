@@ -1,5 +1,6 @@
 import { getVideoForSharing, normalizeYouTubeVideoId } from "@/lib/catalog-data";
 import { prisma } from "@/lib/db";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type LyricsSearchRecord = {
   id?: number;
@@ -181,7 +182,7 @@ async function fetchLyricsFromLrclib(artistName: string, trackName: string): Pro
     return { state: "fetch-error", status: response.status };
   }
 
-  const payload = (await response.json().catch(() => null)) as LyricsSearchRecord[] | null;
+  const payload = (await parseJsonOrNull(response)) as LyricsSearchRecord[] | null;
   if (!payload) {
     return { state: "fetch-error" };
   }

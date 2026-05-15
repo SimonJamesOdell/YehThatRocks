@@ -1,8 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 
-import { requireAuthOnly } from "@/lib/api-route-pipeline";
-import { verifySameOrigin } from "@/lib/csrf";
+import { withAuthAndCsrf } from "@/lib/api-route-pipeline";
 
 const SITEMAP_PATHS = [
   "/sitemap/0.xml",
@@ -14,14 +13,9 @@ const SITEMAP_PATHS = [
 ] as const;
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAuthOnly(request);
-  if (!auth.ok) {
-    return auth.response;
-  }
-
-  const csrfError = verifySameOrigin(request);
-  if (csrfError) {
-    return csrfError;
+  const result = await withAuthAndCsrf(request);
+  if (!result.ok) {
+    return result.response;
   }
 
   for (const path of SITEMAP_PATHS) {

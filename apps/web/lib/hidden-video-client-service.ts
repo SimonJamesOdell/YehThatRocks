@@ -1,4 +1,5 @@
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 export type HiddenVideoMutationAction = "hide" | "unhide";
 
@@ -130,7 +131,7 @@ export async function mutateHiddenVideo<TPayload = Record<string, unknown>>(
       body: JSON.stringify({ videoId }),
     });
 
-    const payload = (await response.json().catch(() => null)) as TPayload | null;
+    const payload = (await parseJsonOrNull(response)) as TPayload | null;
 
     if (response.status === 401 || response.status === 403) {
       rollbackIfNeeded();

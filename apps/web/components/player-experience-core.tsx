@@ -86,6 +86,7 @@ import {
 import { usePlaylistSequence } from "@/components/use-playlist-sequence";
 import { useLiveSearchParams } from "@/components/use-live-search-params";
 import { type AutoplayMixSettings } from "@/lib/player-preferences-shared";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type PlayerExperienceProps = {
   currentVideo: VideoRecord;
@@ -1873,7 +1874,7 @@ export function PlayerExperience({
       if (!response.ok) {
         watchHistoryLevelRef.current.set(activeVideoId, currentLevel);
       } else {
-        const payload = (await response.json().catch(() => null)) as { ok?: boolean } | null;
+        const payload = await parseJsonOrNull<{ ok?: boolean }>(response);
         if (!payload?.ok) {
           watchHistoryLevelRef.current.set(activeVideoId, currentLevel);
           return;
@@ -1942,7 +1943,7 @@ export function PlayerExperience({
           return;
         }
 
-        const payload = (await response.json().catch(() => null)) as PlayerPreferencesResponse | null;
+        const payload = await parseJsonOrNull<PlayerPreferencesResponse>(response);
 
         if (cancelled || !payload) {
           return;
@@ -2293,15 +2294,13 @@ export function PlayerExperience({
         }),
       });
 
-      const payload = (await response.json().catch(() => null)) as
-        | {
-            ok?: boolean;
-            skipped?: boolean;
-            reason?: string;
-            classification?: string;
-            newVideoId?: string;
-          }
-        | null;
+      const payload = await parseJsonOrNull<{
+        ok?: boolean;
+        skipped?: boolean;
+        reason?: string;
+        classification?: string;
+        newVideoId?: string;
+      }>(response);
 
       logPlayerDebug("report-unavailable:response", {
         videoId: currentVideo.id,
@@ -4051,7 +4050,7 @@ export function PlayerExperience({
           });
 
           if (!response.ok) {
-            const payload = (await response.json().catch(() => null)) as { error?: string; reason?: string } | null;
+            const payload = await parseJsonOrNull<{ error?: string; reason?: string }>(response);
             if (response.status === 401 || response.status === 403) {
               showUnavailableOverlayMessage("Admin session expired. Please sign in again.");
               return;

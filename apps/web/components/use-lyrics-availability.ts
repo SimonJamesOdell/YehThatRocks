@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type LyricsAvailabilityResponse = {
   available?: boolean;
@@ -37,7 +38,7 @@ export function useLyricsAvailability(videoId: string): boolean | null {
           return;
         }
 
-        const payload = (await response.json().catch(() => null)) as LyricsAvailabilityResponse | null;
+        const payload = (await parseJsonOrNull(response)) as LyricsAvailabilityResponse | null;
         const isAvailable = Boolean(payload?.available);
         cacheRef.current.set(videoId, isAvailable);
 

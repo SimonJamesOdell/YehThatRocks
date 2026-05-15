@@ -90,6 +90,12 @@ function main() {
   assertContains(schemasSource, "reorderPlaylistItemsSchema", "Reorder playlist items schema exists", failures);
   assertContains(editorApiSource, "export async function DELETE", "Playlist items route supports DELETE", failures);
   assertContains(editorApiSource, "export async function PATCH", "Playlist items route supports PATCH reorder", failures);
+  assertContains(editorApiSource, 'import { z } from "zod";', "Playlist items route imports zod for unified POST schema", failures);
+  assertContains(editorApiSource, "const addPlaylistItemsRequestSchema = z.union([addPlaylistItemSchema, addPlaylistItemsBulkSchema]);", "Playlist items route defines union schema for single and bulk adds", failures);
+  assertContains(editorApiSource, "const result = await withAuthAndBody(request, addPlaylistItemsRequestSchema, { authMode: \"user\" });", "Playlist items POST uses shared auth/body pipeline wrapper", failures);
+  assertContains(editorApiSource, "if (\"videoId\" in result.data)", "Playlist items POST branches between single and bulk payload using validated union data", failures);
+  assertNotContains(editorApiSource, 'import { verifySameOrigin } from "@/lib/csrf";', "Playlist items route avoids manual CSRF wiring in favor of pipeline wrapper", failures);
+  assertNotContains(editorApiSource, 'import { parseRequestJson } from "@/lib/request-json";', "Playlist items route avoids manual body parsing in favor of pipeline wrapper", failures);
   assertContains(editorApiSource, "removePlaylistItem(", "Playlist items route calls removePlaylistItem", failures);
   assertContains(editorApiSource, "reorderPlaylistItems(", "Playlist items route calls reorderPlaylistItems", failures);
   assertContains(dataSource, "export async function removePlaylistItem", "Data layer removePlaylistItem exists", failures);
