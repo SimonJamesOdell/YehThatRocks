@@ -106,8 +106,8 @@ function main() {
   // --- shouldRunChat allows chat to load on magazine routes ---
   assertContains(
     shellDynamicSource,
-    "const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute) && (isAuthenticated || chatMode === \"global\");",
-    "shouldRunChat permits chat to load on magazine routes when chatMode is 'global'",
+    "const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute || isForumOverlayRoute) && (isAuthenticated || chatMode === \"global\" || chatMode === \"online\");",
+    "shouldRunChat permits chat to load on magazine/forum routes while preserving guest global/online tabs",
     failures,
   );
 

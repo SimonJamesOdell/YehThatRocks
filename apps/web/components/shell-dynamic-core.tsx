@@ -545,7 +545,18 @@ function ShellDynamicInner({
     isMagazineOverlayRoute,
     isForumOverlayRoute,
     isAdminOverlayRoute,
-    shouldShowOverlayPanel: shouldShowOverlayPanel && pathname !== "/new",
+    // Keep chat/comments rail state mounted on core browse overlays so closing
+    // those routes does not force a full chat reload.
+    shouldShowOverlayPanel:
+      shouldShowOverlayPanel
+      && pathname !== "/new"
+      && pathname !== "/top100"
+      && pathname !== "/favourites"
+      && pathname !== "/history"
+      && pathname !== "/account"
+      && (pathname !== "/artists" && !pathname.startsWith("/artists/") && !pathname.startsWith("/artist/"))
+      && (pathname !== "/categories" && !pathname.startsWith("/categories/"))
+      && !pathname.startsWith("/playlists"),
     fetchWithAuthRetry,
     checkAuthState,
   });

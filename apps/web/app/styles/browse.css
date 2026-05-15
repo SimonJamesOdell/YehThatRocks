@@ -593,22 +593,74 @@
   margin-bottom: 14px;
 }
 
+.playlistsHeaderTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .playlistsHeaderTitle {
   display: inline-flex;
   align-items: center;
   gap: 28px;
 }
 
-.playlistsHeaderCreateButton {
-  min-width: 34px;
-  width: 34px;
-  height: 34px;
-  padding: 0;
+.playlistsHeaderTitle .whitePlaylistGlyph {
+  font-size: 1.3em;
+}
+
+.playlistsHeaderActions {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  font-size: 1.35rem;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.playlistsHeaderActionButton {
+  min-height: 34px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  white-space: nowrap;
+  font-size: 0.84rem;
   line-height: 1;
+}
+
+.playlistsHeaderImportButton {
+  min-width: 92px;
+}
+
+.playlistsCreateModalPanel {
+  width: min(92vw, 430px);
+}
+
+.playlistsCreateModalPanel .playlistsNameInput {
+  width: 100%;
+  max-width: none;
+}
+
+.playlistsCreateModalActions {
+  margin-top: 4px;
+  justify-content: flex-end;
+}
+
+.playlistsCreateModalActions button {
+  min-width: 112px;
+}
+
+.playlistsCreateModalActions .newFlagModalActionBtn {
+  min-height: 42px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 188, 170, 0.5);
+  background: linear-gradient(180deg, var(--btn-blood-start), var(--btn-blood-end));
+  color: var(--text);
+  box-shadow: var(--glow);
+}
+
+.playlistsCreateModalActions .newFlagModalActionBtn:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
 
 .playlistsNameInput {

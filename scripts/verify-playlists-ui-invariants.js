@@ -14,6 +14,7 @@ const ROOT = process.cwd();
 
 const files = mapRelativeFiles(ROOT, {
   packageJson: "package.json",
+  playlistsGrid: "apps/web/components/playlists-grid.tsx",
   editor: "apps/web/components/playlist-editor.tsx",
   editorApi: "apps/web/app/api/playlists/[id]/items/route.ts",
   schemas: "apps/web/lib/api-schemas.ts",
@@ -25,6 +26,7 @@ const files = mapRelativeFiles(ROOT, {
   playlistSequenceHook: "apps/web/components/use-playlist-sequence.ts",
   css: "apps/web/app/globals.css",
   playlistCss: "apps/web/app/styles/playlist-ui.css",
+  browseCss: "apps/web/app/styles/browse.css",
   trackCardsCss: "apps/web/app/styles/track-cards.css",
 });
 
@@ -33,6 +35,7 @@ function main() {
 
   const sources = loadSourceMap(files, ROOT);
   const packageJsonSource = sources.packageJson;
+  const playlistsGridSource = sources.playlistsGrid;
   const editorSource = sources.editor;
   const editorApiSource = sources.editorApi;
   const schemasSource = sources.schemas;
@@ -41,7 +44,24 @@ function main() {
   const playlistRailHookSource = sources.playlistRailHook;
   const shellSource = joinFileSources([files.shell, files.playlistRailHook], ROOT);
   const playerSource = joinFileSources([files.player, files.playlistSequenceHook], ROOT);
-  const cssSource = joinFileSources([files.css, files.playlistCss, files.trackCardsCss], ROOT);
+  const cssSource = joinFileSources([files.css, files.playlistCss, files.browseCss, files.trackCardsCss], ROOT);
+
+  // Playlists page grid invariants.
+  assertContains(playlistsGridSource, "function normalizePlaylistSummaries(rows: unknown): PlaylistSummary[]", "Playlists grid defines summary normalization helper", failures);
+  assertContains(playlistsGridSource, "const deduped = new Map<string, PlaylistSummary>();", "Playlists grid dedupes summaries by stable string id", failures);
+  assertContains(playlistsGridSource, "setPlaylists(normalizePlaylistSummaries(response.data));", "Playlists grid normalizes refreshed playlist responses", failures);
+  assertContains(playlistsGridSource, "const [createModalMessage, setCreateModalMessage] = useState<string | null>(null);", "Playlists grid tracks create-modal scoped status text", failures);
+  assertContains(playlistsGridSource, "{createModalMessage ? <p className=\"newFlagModalStatus\">{createModalMessage}</p> : null}", "Create modal renders validation and mutation status inside the modal", failures);
+  assertContains(playlistsGridSource, "className=\"suggestNewModalPanel playlistsCreateModalPanel\"", "Create modal uses dedicated playlist create panel class", failures);
+  assertContains(playlistsGridSource, "className=\"newFlagModalActions playlistsCreateModalActions\"", "Create modal uses dedicated action-row class", failures);
+  assertContains(playlistsGridSource, "className=\"suggestNewModalClose\"", "Create modal exposes top-right close button", failures);
+  assertContains(playlistsGridSource, "+ New Playlist", "Playlists header create button uses labeled action text", failures);
+  assertContains(playlistsGridSource, "<span aria-hidden=\"true\">⇪</span> Import", "Playlists header import button keeps icon and text label", failures);
+
+  // Playlists page styling invariants.
+  assertContains(cssSource, ".playlistsCreateModalPanel {", "CSS defines dedicated playlist create modal panel sizing", failures);
+  assertContains(cssSource, ".playlistsCreateModalActions {", "CSS defines dedicated create modal action alignment", failures);
+  assertContains(cssSource, ".playlistsCreateModalActions .newFlagModalActionBtn {", "Create modal action button has scoped red style override", failures);
 
   // pickColumn ordering invariant: must iterate priority names first, not DB columns.
   // If this regresses to iterating columns first, sort_order is never selected (id wins)

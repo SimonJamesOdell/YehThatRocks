@@ -9,16 +9,51 @@ import { OverlayHeader } from "@/components/overlay-header";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { createPlaylistClient, importPlaylistClient, listPlaylistsClient } from "@/lib/playlist-client-service";
 import type { PlaylistSummary } from "@/lib/catalog-data";
+import type { PlaylistMutationPayload } from "@/lib/playlist-client-service";
 
 type PlaylistsGridProps = {
   initialPlaylists: PlaylistSummary[];
   isAuthenticated: boolean;
 };
 
+function normalizePlaylistSummaries(rows: unknown): PlaylistSummary[] {
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+
+  const deduped = new Map<string, PlaylistSummary>();
+
+  for (const row of rows) {
+    if (!row || typeof row !== "object") {
+      continue;
+    }
+
+    const rawId = (row as { id?: unknown }).id;
+
+    if (rawId === undefined || rawId === null) {
+      continue;
+    }
+
+    const id = String(rawId);
+    const rawName = (row as { name?: unknown }).name;
+    const rawItemCount = (row as { itemCount?: unknown }).itemCount;
+    const rawLeadVideoId = (row as { leadVideoId?: unknown }).leadVideoId;
+
+    deduped.set(id, {
+      id,
+      name: typeof rawName === "string" && rawName.trim() ? rawName : "Untitled Playlist",
+      itemCount: typeof rawItemCount === "number" && Number.isFinite(rawItemCount) ? rawItemCount : 0,
+      leadVideoId: typeof rawLeadVideoId === "string" ? rawLeadVideoId : "",
+    });
+  }
+
+  return [...deduped.values()];
+}
+
 export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGridProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [playlists, setPlaylists] = useState<PlaylistSummary[]>(initialPlaylists);
+  const [playlists, setPlaylists] = useState<PlaylistSummary[]>(() => normalizePlaylistSummaries(initialPlaylists));
   const [name, setName] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -27,6 +62,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
   const [importSource, setImportSource] = useState("");
   const [importName, setImportName] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [createModalMessage, setCreateModalMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const currentVideoId = searchParams.get("v");
@@ -70,7 +106,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
         }
 
         if (!cancelled) {
-          setPlaylists(response.data as PlaylistSummary[]);
+          setPlaylists(normalizePlaylistSummaries(response.data));
         }
       } catch {
         // Keep server-rendered playlists when refresh fails.
@@ -109,6 +145,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
     }
 
     setName("");
+    setCreateModalMessage(null);
     setMessage(null);
     setShowCreateModal(true);
   }
@@ -123,6 +160,19 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
     setImportName("");
     setMessage(null);
     setShowImportModal(true);
+  }
+
+  function toPlaylistSummary(payload: PlaylistMutationPayload, fallbackName: string): PlaylistSummary | null {
+    if (!payload.id) {
+      return null;
+    }
+
+    return {
+      id: payload.id,
+      name: payload.name ?? fallbackName,
+      itemCount: typeof payload.itemCount === "number" ? payload.itemCount : 0,
+      leadVideoId: payload.videos?.[0]?.id ?? "",
+    };
   }
 
   function importPlaylistFromYouTube() {
@@ -185,7 +235,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
         });
 
         if (refreshResponse.ok) {
-          setPlaylists(refreshResponse.data as PlaylistSummary[]);
+          setPlaylists(normalizePlaylistSummaries(refreshResponse.data));
           dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
         }
       } catch {
@@ -196,19 +246,19 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
 
   function createPlaylist() {
     if (!isAuthenticated) {
-      setMessage("Sign in to create playlists.");
+      setCreateModalMessage("Sign in to create playlists.");
       return;
     }
 
     const trimmedName = name.trim();
 
     if (trimmedName.length < 2) {
-      setMessage("Playlist name must be at least 2 characters.");
+      setCreateModalMessage("Playlist name must be at least 2 characters.");
       return;
     }
 
     startTransition(async () => {
-      setMessage(null);
+      setCreateModalMessage(null);
 
       try {
         const response = await createPlaylistClient({
@@ -223,17 +273,29 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
         );
 
         if (!response.ok && (response.error.code === "unauthorized" || response.error.code === "forbidden")) {
-          setMessage("Sign in to create playlists.");
+          setCreateModalMessage("Sign in to create playlists.");
           return;
         }
 
         if (!response.ok) {
-          setMessage("Could not create playlist. Please try again.");
+          setCreateModalMessage("Could not create playlist. Please try again.");
           return;
         }
 
+        const createdPlaylist = toPlaylistSummary(response.data as PlaylistMutationPayload, trimmedName);
+
         setName("");
+        setCreateModalMessage(null);
         setShowCreateModal(false);
+
+        if (createdPlaylist) {
+          setPlaylists((current) => [
+            createdPlaylist,
+            ...current.filter((playlist) => String(playlist.id) !== createdPlaylist.id),
+          ]);
+        }
+
+        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
 
         const refreshResponse = await listPlaylistsClient({
           telemetryContext: {
@@ -243,11 +305,21 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
         });
 
         if (refreshResponse.ok) {
-          setPlaylists(refreshResponse.data as PlaylistSummary[]);
+          const refreshedPlaylists = normalizePlaylistSummaries(refreshResponse.data);
+
+          if (createdPlaylist && !refreshedPlaylists.some((playlist) => playlist.id === createdPlaylist.id)) {
+            setPlaylists([
+              createdPlaylist,
+              ...refreshedPlaylists.filter((playlist) => playlist.id !== createdPlaylist.id),
+            ]);
+          } else {
+            setPlaylists(refreshedPlaylists);
+          }
+
           dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
         }
       } catch {
-        setMessage("Could not create playlist. Please try again.");
+        setCreateModalMessage("Could not create playlist. Please try again.");
       }
     });
   }
@@ -297,34 +369,33 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
     <>
       <OverlayHeader
         className="playlistsHeaderBar"
-        close={false}
-        actions={(
-          <>
+      >
+        <div className="playlistsHeaderTitleRow">
+          <div className="playlistsHeaderTitle">
+            <strong><span className="whitePlaylistGlyph" aria-hidden="true">♬</span> Playlists</strong>
+          </div>
+          <div className="playlistsHeaderActions">
             <button
               type="button"
-              className="playlistsPrimaryButton playlistsHeaderCreateButton"
+              className="playlistsPrimaryButton playlistsHeaderActionButton"
               onClick={openCreateModal}
               disabled={isPending}
               aria-label="Create playlist"
               title="Create playlist"
             >
-              +
+              + New Playlist
             </button>
             <button
               type="button"
-              className="playlistsPrimaryButton playlistsHeaderCreateButton"
+              className="playlistsPrimaryButton playlistsHeaderActionButton playlistsHeaderImportButton"
               onClick={openImportModal}
               disabled={isPending}
-              aria-label="Import YouTube playlist"
-              title="Import YouTube playlist"
+              aria-label="Import playlist"
+              title="Import playlist"
             >
-              ⇪
+              <span aria-hidden="true">⇪</span> Import
             </button>
-          </>
-        )}
-      >
-        <div className="playlistsHeaderTitle">
-          <strong><span className="whitePlaylistGlyph" aria-hidden="true">♬</span> Playlists</strong>
+          </div>
         </div>
       </OverlayHeader>
 
@@ -413,6 +484,56 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
       )}
 
       {message ? <p className="mutationMessage">{message}</p> : null}
+
+      {isMounted && showCreateModal ? createPortal(
+        <div
+          className="suggestNewModalBackdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Create playlist"
+          onClick={() => setShowCreateModal(false)}
+        >
+          <div className="suggestNewModalPanel playlistsCreateModalPanel" onClick={(event) => event.stopPropagation()}>
+            <div className="suggestNewModalHeader">
+              <button
+                type="button"
+                className="suggestNewModalClose"
+                aria-label="Close create playlist modal"
+                title="Close"
+                onClick={() => setShowCreateModal(false)}
+                disabled={isPending}
+              >
+                ×
+              </button>
+              <h3>Create Playlist</h3>
+              <p className="suggestNewModalMeta">Give your playlist a name, then add tracks from anywhere in the app.</p>
+            </div>
+
+            <label className="newFlagModalField suggestNewModalField" htmlFor="create-playlist-name">
+              Playlist name
+            </label>
+            <input
+              className="suggestNewModalInput playlistsNameInput"
+              id="create-playlist-name"
+              value={name}
+              onChange={(event) => setName(event.currentTarget.value)}
+              placeholder="New loud playlist"
+              disabled={isPending}
+              maxLength={80}
+              autoFocus
+            />
+
+            {createModalMessage ? <p className="newFlagModalStatus">{createModalMessage}</p> : null}
+
+            <div className="newFlagModalActions playlistsCreateModalActions">
+              <button type="button" className="newFlagModalActionBtn" onClick={createPlaylist} disabled={isPending}>
+                {isPending ? "Creating..." : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
 
       {isMounted && showImportModal ? createPortal(
         <div
