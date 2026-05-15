@@ -1,4 +1,5 @@
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 export const PLAYLIST_CLIENT_TELEMETRY_EVENT = "ytr:playlist-client-telemetry";
 
@@ -151,7 +152,7 @@ async function requestJson<T>(
       };
     }
 
-    const data = (await response.json().catch(() => null)) as T;
+    const data = (await parseJsonOrNull(response)) as T;
     emitTelemetry(operation, true, durationMs, response.status, null, options?.telemetryContext);
 
     return {

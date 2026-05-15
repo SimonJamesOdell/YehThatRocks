@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { EVENT_NAMES, listenToAppEvent } from "@/lib/events-contract";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type PlaylistPayload = {
   id: string;
@@ -66,7 +67,7 @@ export function usePlaylistSequence({
           return;
         }
 
-        const payload = (await response.json().catch(() => null)) as PlaylistPayload | null;
+        const payload = (await parseJsonOrNull(response)) as PlaylistPayload | null;
 
         if (!payload || !Array.isArray(payload.videos)) {
           if (!cancelled) {

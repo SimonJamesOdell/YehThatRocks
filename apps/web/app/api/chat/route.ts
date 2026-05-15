@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { requireAdminApiAuth } from "@/lib/admin-auth";
 import { getOptionalApiAuth } from "@/lib/auth-request";
 import { withAuthAndBody } from "@/lib/api-route-pipeline";
 import { chatQuerySchema, createChatMessageSchema } from "@/lib/api-schemas";
 import { deleteChatMessageSchema } from "@/lib/api-schemas";
 import { chatChannel, chatEvents } from "@/lib/chat-events";
-import { verifySameOrigin } from "@/lib/csrf";
 import {
   deleteChatMessageById,
   fetchChatMessages,
@@ -15,7 +13,6 @@ import {
   touchOnlinePresenceThrottled,
 } from "@/lib/chat-data";
 import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
-import { parseRequestJson } from "@/lib/request-json";
 
 export async function GET(request: NextRequest) {
   const authContext = await getOptionalApiAuth(request);
@@ -134,30 +131,13 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const authResult = await requireAdminApiAuth(request);
+  const result = await withAuthAndBody(request, deleteChatMessageSchema);
 
-  if (!authResult.ok) {
-    return authResult.response;
+  if (!result.ok) {
+    return result.response;
   }
 
-  const csrfError = verifySameOrigin(request);
-  if (csrfError) {
-    return csrfError;
-  }
-
-  const bodyResult = await parseRequestJson(request);
-
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const parsedBody = deleteChatMessageSchema.safeParse(bodyResult.data);
-
-  if (!parsedBody.success) {
-    return NextResponse.json({ error: parsedBody.error.flatten() }, { status: 400 });
-  }
-
-  const deletion = await deleteChatMessageById(parsedBody.data.messageId);
+  const deletion = await deleteChatMessageById(result.data.messageId);
 
   if (!deletion.deleted) {
     return NextResponse.json({ error: "Message not found" }, { status: 404 });
@@ -167,7 +147,7 @@ export async function DELETE(request: NextRequest) {
     chatChannel(deletion.mode, deletion.mode === "video" ? deletion.videoId : null),
     {
       type: "message-deleted",
-      messageId: parsedBody.data.messageId,
+      messageId: result.data.messageId,
     },
   );
 

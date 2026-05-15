@@ -10,6 +10,7 @@ import type { VideoRecord } from "@/lib/catalog";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { EVENT_NAMES, FAVOURITES_CREATE_PLAYLIST_FINISHED_EVENT, FAVOURITES_CREATE_PLAYLIST_REQUESTED_EVENT, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
 import { createPlaylistFromVideoList } from "@/lib/playlist-create-from-video-list";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 const FAVOURITES_BATCH_SIZE = 100;
 
@@ -170,7 +171,7 @@ export function FavouritesGrid({
           throw new Error("favourites-load-failed");
         }
 
-        const payload = (await response.json().catch(() => null)) as FavouritesPayload | null;
+        const payload = (await parseJsonOrNull(response)) as FavouritesPayload | null;
         const incoming = Array.isArray(payload?.favourites) ? payload.favourites : [];
         const hasMore =
           typeof payload?.hasMore === "boolean"

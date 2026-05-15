@@ -20,6 +20,7 @@ const files = mapRelativeFiles(ROOT, {
   accountPanel: "apps/web/components/account-settings-panel.tsx",
   logoutButton: "apps/web/components/auth-logout-button.tsx",
   loginForm: "apps/web/components/auth-login-form.tsx",
+  registerForm: "apps/web/components/auth-register-form.tsx",
   anonymousCredentialsModal: "apps/web/components/anonymous-credentials-modal.tsx",
   changePasswordForm: "apps/web/components/auth-change-password-form.tsx",
   forgotPasswordForm: "apps/web/components/auth-forgot-password-form.tsx",
@@ -68,6 +69,7 @@ function main() {
   const accountPanelSource = sources.accountPanel;
   const logoutButtonSource = sources.logoutButton;
   const loginFormSource = sources.loginForm;
+  const registerFormSource = sources.registerForm;
   const anonymousCredentialsModalSource = sources.anonymousCredentialsModal;
   const changePasswordFormSource = sources.changePasswordForm;
   const forgotPasswordFormSource = sources.forgotPasswordForm;
@@ -221,6 +223,10 @@ function main() {
   assertContains(loginFormSource, "async function handleAnonymousEntry()", "Login form exposes anonymous-entry handler", failures);
   assertContains(loginFormSource, "await assignAvailableAnonymousSuggestion();", "Anonymous CTA always prepares anonymous screen name suggestions", failures);
   assertContains(loginFormSource, "setIsAnonymousFlowOpen(true);", "Anonymous CTA always opens anonymous account creation flow", failures);
+  assertContains(registerFormSource, 'import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";', "Register form imports shared auth success event contract", failures);
+  assertContains(registerFormSource, "dispatchAppEvent(EVENT_NAMES.AUTH_SUCCESS, null);", "Register form emits AUTH_SUCCESS so auth modal closes after signup", failures);
+  assertContains(shellDynamicSource, "useAuthSuccessListener(() => {", "Shell subscribes to AUTH_SUCCESS events", failures);
+  assertContains(shellDynamicSource, "setIsAuthModalOpen(false);", "Shell closes auth modal when auth success event fires", failures);
 
   // --- Shared auth state handling ---
   assertContains(authRequestSource, 'code: "AUTH_UNAVAILABLE"', "API auth helper returns dedicated auth-unavailable code", failures);

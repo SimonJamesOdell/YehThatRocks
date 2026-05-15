@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 export function MagazineGenerateNowButton() {
   const [isRunning, setIsRunning] = useState(false);
@@ -22,7 +23,7 @@ export function MagazineGenerateNowButton() {
         },
       });
 
-      const payload = (await response.json().catch(() => null)) as {
+      const payload = (await parseJsonOrNull(response)) as {
         ok?: boolean;
         error?: string;
       } | null;

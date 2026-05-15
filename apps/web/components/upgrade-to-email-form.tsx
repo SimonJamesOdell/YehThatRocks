@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type UpgradeToEmailFormProps = {
   onSuccess?: () => void;
@@ -29,7 +30,7 @@ export function UpgradeToEmailForm({ onSuccess, onCancel }: UpgradeToEmailFormPr
         });
 
         if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as { error?: string } | null;
+          const data = (await parseJsonOrNull(response)) as { error?: string } | null;
           throw new Error(data?.error || "Failed to upgrade account");
         }
 

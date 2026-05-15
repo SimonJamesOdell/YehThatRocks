@@ -1,4 +1,5 @@
 import type { VideoRecord } from "@/lib/catalog";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 const RANDOM_NEXT_RECENT_EXCLUSION = 5;
 
@@ -20,7 +21,7 @@ export async function resolveAutoplayRecoveryTarget({
       return null;
     }
 
-    const payload = (await response.json().catch(() => null)) as
+    const payload = (await parseJsonOrNull(response)) as
       | {
           relatedVideos?: VideoRecord[];
           videos?: VideoRecord[];

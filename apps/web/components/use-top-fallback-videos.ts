@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 export function useTopFallbackVideos({
   autoplayEnabled,
@@ -32,7 +33,7 @@ export function useTopFallbackVideos({
           return;
         }
 
-        const payload = (await response.json().catch(() => null)) as
+        const payload = (await parseJsonOrNull(response)) as
           | {
               videos?: VideoRecord[];
               pending?: boolean;

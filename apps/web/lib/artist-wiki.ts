@@ -4,6 +4,7 @@ import path from "node:path";
 import { getVideosByArtist } from "@/lib/catalog-data";
 import { slugifyArtistName } from "@/lib/artist-routing";
 import { getMusicBrainzArtistData } from "@/lib/musicbrainz";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 const WIKI_CACHE_VERSION = 3;
 const WIKI_CACHE_DIR = path.join(process.cwd(), ".cache", "artist-wiki");
@@ -339,7 +340,7 @@ async function fetchWikipediaSource(artistName: string): Promise<ExternalSource 
       return null;
     }
 
-    const searchPayload = (await searchResponse.json().catch(() => null)) as unknown[] | null;
+    const searchPayload = await parseJsonOrNull<unknown[]>(searchResponse);
     const titles = Array.isArray(searchPayload?.[1]) ? (searchPayload?.[1] as string[]) : [];
     const urls = Array.isArray(searchPayload?.[3]) ? (searchPayload?.[3] as string[]) : [];
 
@@ -364,11 +365,11 @@ async function fetchWikipediaSource(artistName: string): Promise<ExternalSource 
       };
     }
 
-    const summaryPayload = (await summaryResponse.json().catch(() => null)) as {
+    const summaryPayload = await parseJsonOrNull<{
       extract?: string;
       thumbnail?: { source?: string };
       originalimage?: { source?: string };
-    } | null;
+    }>(summaryResponse);
 
     const summaryImage = normalizeImageUrl(summaryPayload?.originalimage?.source)
       || normalizeImageUrl(summaryPayload?.thumbnail?.source)
@@ -569,7 +570,7 @@ async function generateWikiDocument(artistName: string, slug: string): Promise<A
           continue;
         }
 
-        const completion = (await response.json().catch(() => null)) as GroqCompletionResponse | null;
+        const completion = (await parseJsonOrNull(response)) as GroqCompletionResponse | null;
         const content = completion?.choices?.[0]?.message?.content;
 
         if (!content) {

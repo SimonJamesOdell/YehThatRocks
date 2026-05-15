@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type MagazineRailTrack = {
   slug: string;
@@ -186,7 +187,7 @@ export function useChatState({
         }
 
         if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          const payload = (await parseJsonOrNull(response)) as { error?: string } | null;
           if (!cancelled) {
             setChatError(payload?.error ?? "Chat failed to load.");
           }
@@ -434,7 +435,7 @@ export function useChatState({
       }
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        const payload = (await parseJsonOrNull(response)) as { error?: string } | null;
         setChatError(payload?.error ?? "Unable to send message.");
         return;
       }
@@ -485,7 +486,7 @@ export function useChatState({
       }
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        const payload = (await parseJsonOrNull(response)) as { error?: string } | null;
         setChatError(payload?.error ?? "Unable to delete message.");
         return;
       }

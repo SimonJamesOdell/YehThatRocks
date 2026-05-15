@@ -51,6 +51,8 @@ export interface RouteAuthOptions {
   authMode?: "admin" | "user";
 }
 
+export type AuthAndCsrfOutcome = AuthOnlyResult | AuthAndBodyError;
+
 /**
  * Pipelines: auth check → CSRF validation (for mutations) → JSON parse → schema validation.
  * Returns discriminated union of { ok: true, auth, data } or { ok: false, response }.
@@ -154,4 +156,27 @@ export async function withAuthAndBody<T>(
     auth: authResult.auth,
     data: validationResult.data as T,
   };
+}
+
+/**
+ * Pipelines: auth check -> CSRF validation.
+ *
+ * Use for mutation handlers that do not accept a JSON body.
+ * Keeps no-body mutation routes aligned with the shared auth/csrf pipeline.
+ */
+export async function withAuthAndCsrf(
+  request: NextRequest,
+  options: RouteAuthOptions = {}
+): Promise<AuthAndCsrfOutcome> {
+  const auth = await requireAuthOnly(request, options);
+  if (!auth.ok) {
+    return auth;
+  }
+
+  const csrfError = verifySameOrigin(request);
+  if (csrfError) {
+    return { ok: false, response: csrfError };
+  }
+
+  return auth;
 }

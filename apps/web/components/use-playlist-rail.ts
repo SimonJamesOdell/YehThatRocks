@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent } from "react";
 import type { useRouter } from "next/navigation";
 import type { VideoRecord } from "@/lib/catalog";
+import { parseJsonOrNull } from "@/lib/parse-json";
 import {
   EVENT_NAMES,
   PLAYLISTS_UPDATED_EVENT,
@@ -929,7 +930,7 @@ export function usePlaylistRail({
         return;
       }
 
-      const updatedPlaylist = (await response.json().catch(() => null)) as PlaylistRailPayload | null;
+      const updatedPlaylist = (await parseJsonOrNull(response)) as PlaylistRailPayload | null;
 
       setPlaylistRailSummaries((previous) =>
         previous.map((summary) =>
@@ -1030,7 +1031,7 @@ export function usePlaylistRail({
         return;
       }
 
-      const updatedPlaylist = (await response.json().catch(() => null)) as PlaylistRailPayload | null;
+      const updatedPlaylist = (await parseJsonOrNull(response)) as PlaylistRailPayload | null;
 
       if (updatedPlaylist?.id === activePlaylistId && Array.isArray(updatedPlaylist.videos)) {
         setPlaylistRailData(updatedPlaylist);

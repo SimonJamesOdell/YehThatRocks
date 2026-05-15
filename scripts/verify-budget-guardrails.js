@@ -106,6 +106,13 @@ const apiDuplicationPatternBudgets = [
   },
 ];
 
+const bannedSourcePatterns = [
+  {
+    name: "silent response.json catch fallback",
+    regex: /response\.json\(\)\.catch\(\(\)\s*=>\s*null\)/g,
+  },
+];
+
 function toRelative(filePath) {
   return path.relative(ROOT, filePath).replace(/\\/g, "/");
 }
@@ -293,6 +300,21 @@ function evaluateApiDuplicationBudgets(warnings, failures) {
   }
 }
 
+function evaluateBannedSourcePatterns(failures) {
+  const sourceRoot = path.join(ROOT, "apps/web");
+  const sourceFiles = walkFiles(sourceRoot, new Set([".ts", ".tsx"]))
+    .filter((filePath) => !filePath.includes(`${path.sep}.next${path.sep}`));
+
+  for (const pattern of bannedSourcePatterns) {
+    const metrics = countPatternMatchesInFiles(sourceFiles, pattern.regex);
+    if (metrics.total > 0) {
+      failures.push(
+        `Banned source pattern detected: ${pattern.name} (${metrics.total} occurrences across ${metrics.fileCount} files)`,
+      );
+    }
+  }
+}
+
 function main() {
   const warnings = [];
   const failures = [];
@@ -300,6 +322,7 @@ function main() {
   evaluateFolderLineBudgets(warnings, failures);
   evaluateTopRouteBundleBudgets(warnings, failures);
   evaluateApiDuplicationBudgets(warnings, failures);
+  evaluateBannedSourcePatterns(failures);
 
   if (warnings.length > 0) {
     console.warn("Budget guardrail warnings:");

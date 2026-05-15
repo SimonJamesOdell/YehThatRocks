@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type AdminEditableVideo = {
   id: number;
@@ -59,7 +60,7 @@ export function AdminVideoEditModal({ isOpen, videoId, onClose, onSaveComplete }
         return;
       }
 
-      const payload = (await response.json().catch(() => null)) as { videos?: AdminEditableVideo[] } | null;
+      const payload = (await parseJsonOrNull(response)) as { videos?: AdminEditableVideo[] } | null;
       const row = Array.isArray(payload?.videos)
         ? payload.videos.find((video) => video.videoId === videoId) ?? null
         : null;

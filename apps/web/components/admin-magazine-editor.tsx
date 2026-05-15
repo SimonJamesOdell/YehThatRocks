@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type AdminMagazineEditorProps = {
   slug: string;
@@ -20,7 +21,7 @@ async function readJson<T>(input: RequestInfo | URL, init?: RequestInit): Promis
   const response = await fetchWithAuthRetry(input, init);
 
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    const payload = (await parseJsonOrNull(response)) as { error?: string } | null;
     throw new Error(payload?.error || `Request failed (${response.status})`);
   }
 

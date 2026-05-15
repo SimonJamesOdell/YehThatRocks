@@ -10,6 +10,7 @@ import { CloseLink } from "@/components/close-link";
 import { OverlayHeader } from "@/components/overlay-header";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import type { PlaylistDetail } from "@/lib/catalog-data";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type PlaylistEditorProps = {
   playlist: PlaylistDetail;
@@ -239,7 +240,7 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
           return;
         }
 
-        const updatedPlaylist = (await response.json().catch(() => null)) as { videos?: Array<{ id: string }> } | null;
+        const updatedPlaylist = (await parseJsonOrNull(response)) as { videos?: Array<{ id: string }> } | null;
 
         if (Array.isArray(updatedPlaylist?.videos) && matchesPlaylistVideoOrder(updatedPlaylist.videos, reordered)) {
           setPlaylistVideos(updatedPlaylist.videos as typeof playlist.videos);

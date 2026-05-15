@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AnonymousCredentialsModal } from "@/components/anonymous-credentials-modal";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, INTRO_SKIP_ONCE_AFTER_LOGIN_KEY } from "@/lib/storage-keys";
+import { parseJsonOrNull } from "@/lib/parse-json";
 // Invariant anchor retained after extracting shared storage keys:
 // const INTRO_SKIP_ONCE_AFTER_LOGIN_KEY = "ytr:intro-skip-once";
 
@@ -201,7 +202,7 @@ export function AuthLoginForm() {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        const payload = await parseJsonOrNull<{ error?: string }>(response);
         setError(payload?.error ?? "Login failed. Please try again.");
         return false;
       }
@@ -239,7 +240,7 @@ export function AuthLoginForm() {
       cache: "no-store",
     }, ANONYMOUS_SUGGESTION_TIMEOUT_MS);
 
-    const payload = (await response.json().catch(() => null)) as AnonymousAvailabilityResponse | null;
+    const payload = await parseJsonOrNull<AnonymousAvailabilityResponse>(response);
 
     return {
       ok: response.ok,
@@ -257,7 +258,7 @@ export function AuthLoginForm() {
         cache: "no-store",
       }, ANONYMOUS_SUGGESTION_TIMEOUT_MS);
 
-      const payload = (await response.json().catch(() => null)) as AnonymousAvailabilityResponse | null;
+      const payload = await parseJsonOrNull<AnonymousAvailabilityResponse>(response);
 
       if (!response.ok || !payload?.screenName) {
         setAnonymousAvailability("idle");
@@ -360,7 +361,7 @@ export function AuthLoginForm() {
         body: JSON.stringify({ screenName }),
       });
 
-      const payload = (await response.json().catch(() => null)) as AnonymousCreateResponse | null;
+      const payload = (await parseJsonOrNull(response)) as AnonymousCreateResponse | null;
 
       if (!response.ok || !payload?.credentials) {
         setAnonymousAvailability(response.status === 409 ? "taken" : anonymousAvailability);

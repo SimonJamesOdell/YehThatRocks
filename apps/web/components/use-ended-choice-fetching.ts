@@ -3,6 +3,7 @@
 import { startTransition, useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 export function useEndedChoiceFetching({
   currentVideoId,
@@ -88,7 +89,7 @@ export function useEndedChoiceFetching({
 
       endedChoiceFailureStreakRef.current = 0;
 
-      const payload = (await response.json().catch(() => null)) as
+      const payload = (await parseJsonOrNull(response)) as
         | {
             videos?: VideoRecord[];
             relatedVideos?: VideoRecord[];

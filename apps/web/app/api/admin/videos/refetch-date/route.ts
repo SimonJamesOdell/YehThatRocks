@@ -5,6 +5,7 @@ import { requireAdminApiAuth } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 const refetchMetadataSchema = z.object({
   id: z.number().int().positive(),
@@ -41,7 +42,7 @@ async function fetchYouTubeMetadata(videoId: string, apiKey: string) {
     return null;
   }
 
-  const payload = (await response.json().catch(() => null)) as YouTubeVideoDetailsResponse | null;
+  const payload = (await parseJsonOrNull(response)) as YouTubeVideoDetailsResponse | null;
   const item = payload?.items?.[0];
   if (!item) {
     return null;

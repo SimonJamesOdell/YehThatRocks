@@ -13,6 +13,7 @@ import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
 import { parseRequestJson } from "@/lib/request-json";
 import { recordExternalApiUsage } from "@/lib/api-usage-telemetry";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 const suggestSchema = z.object({
   source: z.string().trim().min(1).max(2048),
@@ -186,7 +187,7 @@ async function fetchPlaylistVideoIds(playlistId: string) {
     }).catch(() => null);
 
     if (!response?.ok) {
-      const errorPayload = await response?.json().catch(() => null);
+      const errorPayload = response ? await parseJsonOrNull<unknown>(response) : null;
       const quotaExhausted = isYouTubeQuotaErrorPayload(errorPayload);
       if (quotaExhausted) {
         markYouTubeQuotaExhaustedNow();
@@ -217,12 +218,10 @@ async function fetchPlaylistVideoIds(playlistId: string) {
       statusCode: response.status,
     });
 
-    const payload = (await response.json().catch(() => null)) as
-      | {
-          items?: Array<{ contentDetails?: { videoId?: string } }>;
-          nextPageToken?: string;
-        }
-      | null;
+    const payload = await parseJsonOrNull<{
+      items?: Array<{ contentDetails?: { videoId?: string } }>;
+      nextPageToken?: string;
+    }>(response);
 
     for (const item of payload?.items ?? []) {
       const normalizedVideoId = normalizeYouTubeVideoId(item.contentDetails?.videoId);

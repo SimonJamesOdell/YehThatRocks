@@ -70,6 +70,7 @@ import { FORUM_SECTIONS } from "@/lib/forum-sections";
 import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT } from "@/lib/events-contract";
 import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
+import { parseJsonOrNull } from "@/lib/parse-json";
 applyRuntimeBootstrapPatches({ safePerformanceMeasure: true });
 type CurrentVideoResolvePayload = {
   currentVideo?: VideoRecord;
@@ -1298,12 +1299,12 @@ function ShellDynamicInner({
           return;
         }
         if (!response.ok) {
-          const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null;
+          const errorPayload = await parseJsonOrNull<{ error?: string }>(response);
           setLyricsOverlayData(null);
           setLyricsOverlayError(errorPayload?.error ?? `Could not fetch lyrics right now (HTTP ${response.status}).`);
           return;
         }
-        const payload = (await response.json().catch(() => null)) as LyricsRailPayload | null;
+        const payload = await parseJsonOrNull<LyricsRailPayload>(response);
         if (!payload) {
           setLyricsOverlayData(null);
           setLyricsOverlayError("Lyrics were fetched but the response could not be read.");

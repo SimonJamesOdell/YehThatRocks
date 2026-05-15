@@ -1,3 +1,4 @@
+import { parseJsonOrNull } from "@/lib/parse-json";
 export const SHARE_SITE_NAME = "YehThatRocks";
 export const SHARE_SITE_ORIGIN = "https://yehthatrocks.com";
 export const SHARE_DEFAULT_TITLE = "YehThatRocks | The World's LOUDEST Website";
@@ -97,7 +98,7 @@ async function fetchYouTubeOEmbed(videoId: string): Promise<OEmbedPayload | null
       return null;
     }
 
-    const payload = (await response.json().catch(() => null)) as OEmbedPayload | null;
+    const payload = (await parseJsonOrNull(response)) as OEmbedPayload | null;
 
     if (!payload) {
       return null;

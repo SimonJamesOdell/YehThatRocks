@@ -5,6 +5,7 @@ import { useCallback, useState } from "react";
 import type { VideoRecord } from "@/lib/catalog";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import type { VideoQualityFlagReason } from "@/lib/video-quality-flags";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type UseNewVideosModerationOptions = {
   isAuthenticated: boolean;
@@ -97,7 +98,7 @@ export function useNewVideosModeration({
         return;
       }
 
-      const payload = (await response.json().catch(() => null)) as
+      const payload = (await parseJsonOrNull(response)) as
         | {
           ok?: boolean;
           actedGlobally?: boolean;

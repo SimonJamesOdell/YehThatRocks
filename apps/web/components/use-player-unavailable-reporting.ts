@@ -3,6 +3,7 @@
 import { useCallback, type MutableRefObject } from "react";
 
 import type { ReportUnavailableResult } from "@/components/player-experience-playback-failure-utils";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 export function usePlayerUnavailableReporting({
   currentVideoId,
@@ -43,7 +44,7 @@ export function usePlayerUnavailableReporting({
         }),
       });
 
-      const payload = (await response.json().catch(() => null)) as
+      const payload = (await parseJsonOrNull(response)) as
         | {
             ok?: boolean;
             skipped?: boolean;

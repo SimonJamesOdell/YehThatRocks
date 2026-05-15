@@ -1,4 +1,5 @@
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 export type FrontendLoaderJsonResult<T> =
   | {
@@ -94,7 +95,7 @@ export async function fetchJsonWithLoaderContract<T>(
         };
       }
 
-      const data = (await response.json().catch(() => null)) as T | null;
+      const data = (await parseJsonOrNull(response)) as T | null;
       if (data === null) {
         return {
           ok: false,

@@ -16,6 +16,7 @@
 
 import { BoundedMap } from "@/lib/bounded-map";
 import { slugifyArtistName } from "@/lib/artist-routing";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -176,7 +177,7 @@ export async function getMusicBrainzArtistData(
       return null;
     }
 
-    const payload = (await response.json().catch(() => null)) as {
+    const payload = (await parseJsonOrNull(response)) as {
       artists?: MusicBrainzApiArtist[];
     } | null;
 

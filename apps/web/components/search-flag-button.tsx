@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 import {
   SEARCH_FLAG_REASONS,
@@ -44,7 +45,7 @@ export function SearchFlagButton({ videoId, title, searchQuery }: SearchFlagButt
         return;
       }
 
-      const payload = (await response.json().catch(() => null)) as
+      const payload = (await parseJsonOrNull(response)) as
         | { ok?: boolean; appliedImmediately?: boolean }
         | null;
 

@@ -4,6 +4,7 @@ import type { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 type RouterInstance = ReturnType<typeof useRouter>;
 
@@ -108,7 +109,7 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
         cache: "no-store",
       });
 
-      const payload = (await response.json().catch(() => null)) as
+      const payload = (await parseJsonOrNull(response)) as
         | {
           ok?: boolean;
           quotaExhausted?: boolean;
@@ -195,7 +196,7 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
         }),
       });
 
-      const payload = (await response.json().catch(() => null)) as
+      const payload = (await parseJsonOrNull(response)) as
         | {
           ok?: boolean;
           error?: string;
@@ -269,7 +270,7 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
         body: JSON.stringify({ source: suggestOutcome.videoId, retryRejected: true }),
       });
 
-      const payload = (await response.json().catch(() => null)) as
+      const payload = (await parseJsonOrNull(response)) as
         | {
           ok?: boolean;
           error?: string;

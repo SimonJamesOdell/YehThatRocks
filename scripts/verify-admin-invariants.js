@@ -11,6 +11,7 @@ const files = {
   adminPage: path.join(ROOT, "apps/web/app/(shell)/admin/page.tsx"),
   adminDashboardRoute: path.join(ROOT, "apps/web/app/api/admin/dashboard/route.ts"),
   adminCategoriesRoute: path.join(ROOT, "apps/web/app/api/admin/categories/route.ts"),
+  adminSitemapRevalidateRoute: path.join(ROOT, "apps/web/app/api/admin/sitemap/revalidate/route.ts"),
   adminVideosRoute: path.join(ROOT, "apps/web/app/api/admin/videos/route.ts"),
   adminPendingRoute: path.join(ROOT, "apps/web/app/api/admin/videos/pending/route.ts"),
   adminImportRoute: path.join(ROOT, "apps/web/app/api/admin/videos/import/route.ts"),
@@ -22,6 +23,7 @@ const files = {
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   catalogDataIngestion: path.join(ROOT, "apps/web/lib/catalog-data-video-ingestion.ts"),
   currentVideoCache: path.join(ROOT, "apps/web/lib/current-video-cache.ts"),
+  apiRoutePipeline: path.join(ROOT, "apps/web/lib/api-route-pipeline.ts"),
 };
 
 function main() {
@@ -32,6 +34,7 @@ function main() {
   const adminPageSource = readFileStrict(files.adminPage, ROOT);
   const adminDashboardRouteSource = readFileStrict(files.adminDashboardRoute, ROOT);
   const adminCategoriesRouteSource = readFileStrict(files.adminCategoriesRoute, ROOT);
+  const adminSitemapRevalidateRouteSource = readFileStrict(files.adminSitemapRevalidateRoute, ROOT);
   const adminVideosRouteSource = readFileStrict(files.adminVideosRoute, ROOT);
   const adminPendingRouteSource = readFileStrict(files.adminPendingRoute, ROOT);
   const adminImportRouteSource = readFileStrict(files.adminImportRoute, ROOT);
@@ -43,6 +46,7 @@ function main() {
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const catalogDataIngestionSource = readFileStrict(files.catalogDataIngestion, ROOT);
   const currentVideoCacheSource = readFileStrict(files.currentVideoCache, ROOT);
+  const apiRoutePipelineSource = readFileStrict(files.apiRoutePipeline, ROOT);
 
   // Admin identity and auth guard invariants.
   assertContains(adminAuthSource, 'const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "simonjamesodell@live.co.uk").trim().toLowerCase();', "Admin auth pins owner email with env override", failures);
@@ -79,6 +83,11 @@ function main() {
      "const csrf = verifySameOrigin(request);",
      "const result = await withAuthAndBody(request, ",
    ], "Admin categories PATCH enforces CSRF", failures);
+  assertContains(adminSitemapRevalidateRouteSource, 'import { withAuthAndCsrf } from "@/lib/api-route-pipeline";', "Admin sitemap revalidate route imports shared no-body auth/csrf wrapper", failures);
+  assertContains(adminSitemapRevalidateRouteSource, "const result = await withAuthAndCsrf(request);", "Admin sitemap revalidate route uses shared no-body auth/csrf wrapper", failures);
+  assertNotContains(adminSitemapRevalidateRouteSource, "verifySameOrigin(request)", "Admin sitemap revalidate route avoids manual CSRF checks after wrapper migration", failures);
+  assertContains(adminSitemapRevalidateRouteSource, "revalidatePath(path);", "Admin sitemap revalidate route still revalidates each configured sitemap path", failures);
+  assertContains(apiRoutePipelineSource, "export async function withAuthAndCsrf(", "API route pipeline exports no-body mutation wrapper", failures);
    assertContainsEither(adminVideosRouteSource, [
      "const csrf = verifySameOrigin(request);",
      "const result = await withAuthAndBody(request, ",

@@ -260,19 +260,21 @@ function main() {
   assertContains(categoriesFilterGridSource, 'style={{ "--category-cascade-index": index } as CSSProperties}', "Categories cards provide per-card cascade index variable", failures);
   assertContains(categoriesFilterGridSource, 'className={`categoriesLoaderOverlay${isLoaderFadingOut ? " categoriesLoaderOverlayFading" : ""}`}', "Categories loader overlay supports fade-out class state", failures);
 
-  // Chat API invariants — route layer (auth, CSRF, rate-limit, response contract).
-  assertContains(chatRouteSource, "const authResult = await requireApiAuth(request);", "Chat REST API requires authenticated session", failures);
+  // Chat API invariants — route layer (pipeline auth/csrf/body validation, rate-limit, response contract).
+  assertContains(chatRouteSource, "const result = await withAuthAndBody(request, createChatMessageSchema, { authMode: \"user\" });", "Chat POST uses shared auth/body pipeline wrapper", failures);
+  assertContains(chatRouteSource, "const result = await withAuthAndBody(request, deleteChatMessageSchema);", "Chat DELETE uses shared auth/body pipeline wrapper", failures);
   assertContains(chatRouteSource, "import { chatQuerySchema, createChatMessageSchema } from \"@/lib/api-schemas\";", "Chat route imports shared chat schemas", failures);
   assertContains(chatRouteSource, "chatQuerySchema.safeParse", "Chat GET validates request data with shared query schema", failures);
-  assertContains(chatRouteSource, "createChatMessageSchema.safeParse", "Chat POST validates request body with shared message schema", failures);
+  assertContains(chatRouteSource, "import { withAuthAndBody } from \"@/lib/api-route-pipeline\";", "Chat route imports shared auth/body pipeline helper", failures);
   assertContains(apiSchemasSource, "mode: z.enum([\"global\", \"video\", \"online\"]).default(\"global\"),", "Chat GET schema validates supported chat modes", failures);
   assertContains(apiSchemasSource, "mode: z.enum([\"global\", \"video\"]),", "Chat POST schema restricts writable modes", failures);
   assertContains(apiSchemasSource, "content: z.string().trim().min(1).max(200),", "Chat POST enforces message length limits", failures);
-  assertContains(chatRouteSource, "verifySameOrigin(request)", "Chat POST verifies same-origin to prevent CSRF", failures);
+  assertNotContains(chatRouteSource, 'import { verifySameOrigin } from "@/lib/csrf";', "Chat route avoids manual CSRF wiring by using pipeline wrapper", failures);
+  assertNotContains(chatRouteSource, 'import { parseRequestJson } from "@/lib/request-json";', "Chat route avoids manual body parsing by using pipeline wrapper", failures);
   assertContains(chatRouteSource, "rateLimitOrResponse(", "Chat POST applies per-user rate limit for global messages", failures);
   assertContains(chatRouteSource, "rateLimitSharedOrResponse(", "Chat POST applies room-level rate limit for global messages", failures);
   assertContains(chatRouteSource, "if (mode === \"video\")", "Chat POST applies dedicated rate limiting branch for video mode", failures);
-  assertContains(chatRouteSource, "`chat:video:user:${authResult.auth.userId}:${videoId}`", "Chat POST applies per-user per-video rate limit key", failures);
+  assertContains(chatRouteSource, "`chat:video:user:${result.auth.userId}:${videoId}`", "Chat POST applies per-user per-video rate limit key", failures);
   assertContains(chatRouteSource, "`chat:video:room:${videoId}`", "Chat POST applies per-video room-level rate limit key", failures);
   assertContains(chatRouteSource, "chatEvents.emit(chatChannel(mode, mode === \"video\" ? (videoId ?? null) : null), mapped);", "Chat POST emits events to room channel", failures);
   assertContains(chatRouteSource, "return NextResponse.json({ ok: true, message: mapped }, { status: 201 });", "Chat POST returns created message payload", failures);

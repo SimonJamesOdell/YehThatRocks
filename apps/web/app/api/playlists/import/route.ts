@@ -4,6 +4,7 @@ import { z } from "zod";
 import { withAuthAndBody } from "@/lib/api-route-pipeline";
 import { addPlaylistItems, createPlaylist, hasDatabaseUrl, importVideoFromDirectSource, normalizeYouTubeVideoId } from "@/lib/catalog-data";
 import { prisma } from "@/lib/db";
+import { parseJsonOrNull } from "@/lib/parse-json";
 
 const importPlaylistSchema = z.object({
   source: z.string().trim().min(1).max(2048),
@@ -74,7 +75,7 @@ async function fetchPlaylistTitle(playlistId: string): Promise<string | null> {
     return null;
   }
 
-  const payload = (await response.json().catch(() => null)) as
+  const payload = (await parseJsonOrNull(response)) as
     | {
         items?: Array<{ snippet?: { title?: string } }>;
       }
@@ -114,7 +115,7 @@ async function fetchPlaylistVideoIds(playlistId: string) {
       return { ok: false as const, error: "Could not read playlist from YouTube." };
     }
 
-    const payload = (await response.json().catch(() => null)) as
+    const payload = (await parseJsonOrNull(response)) as
       | {
           items?: Array<{ contentDetails?: { videoId?: string } }>;
           nextPageToken?: string;
