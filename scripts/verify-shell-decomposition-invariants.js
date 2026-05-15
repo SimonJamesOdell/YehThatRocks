@@ -91,7 +91,7 @@ function main() {
   assertContains(useChatStateSource, "const globalEvents = new EventSource(\"/api/chat/stream?mode=global\");", "useChatState subscribes to global chat stream", failures);
   assertContains(useChatStateSource, "fetchWithAuthRetry(`/api/chat?", "useChatState loads chat via authenticated API call", failures);
   assertContains(useChatStateSource, "fetchWithAuthRetry(\"/api/chat\",", "useChatState posts chat via authenticated API call", failures);
-  assertContains(useChatStateSource, "const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute) && (isAuthenticated || chatMode === \"global\");", "useChatState keeps chat mounted across overlay routes while preserving the magazine exception", failures);
+  assertContains(useChatStateSource, "const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute || isForumOverlayRoute) && (isAuthenticated || chatMode === \"global\" || chatMode === \"online\");", "useChatState keeps chat mounted across overlay routes while preserving magazine/forum exceptions", failures);
   assertContains(useChatStateSource, "isMagazineOverlayRoute", "useChatState preserves the magazine-route exception in the run gate", failures);
   assertContains(useChatStateSource, "setChatMode(\"magazine\");", "useChatState keeps magazine mode selectable", failures);
   assertContains(shellDynamicSource, "setChatMode(\"online\")", "shell JSX keeps online chat mode tab selectable", failures);

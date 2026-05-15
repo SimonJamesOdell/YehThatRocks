@@ -194,6 +194,15 @@ function main() {
 
   // Chat UI invariants.
   assertContains(shellDynamicSource, "const globalEvents = new EventSource(\"/api/chat/stream?mode=global\");", "Shell subscribes to global chat stream", failures);
+  assertContains(shellDynamicSource, "shouldShowOverlayPanel:", "Shell passes a computed overlay gate to chat state hook", failures);
+  assertContains(shellDynamicSource, "&& pathname !== \"/new\"", "Shell keeps chat rail mounted while New overlay is open", failures);
+  assertContains(shellDynamicSource, "&& pathname !== \"/top100\"", "Shell keeps chat rail mounted while Top 100 overlay is open", failures);
+  assertContains(shellDynamicSource, "&& pathname !== \"/favourites\"", "Shell keeps chat rail mounted while Favourites overlay is open", failures);
+  assertContains(shellDynamicSource, "&& pathname !== \"/history\"", "Shell keeps chat rail mounted while History overlay is open", failures);
+  assertContains(shellDynamicSource, "&& pathname !== \"/account\"", "Shell keeps chat rail mounted while Account overlay is open", failures);
+  assertContains(shellDynamicSource, "&& !pathname.startsWith(\"/playlists\")", "Shell keeps chat rail mounted while playlists overlays are open", failures);
+  assertContains(shellDynamicSource, "&& (pathname !== \"/artists\" && !pathname.startsWith(\"/artists/\") && !pathname.startsWith(\"/artist/\"))", "Shell keeps chat rail mounted while artist overlays are open", failures);
+  assertContains(shellDynamicSource, "&& (pathname !== \"/categories\" && !pathname.startsWith(\"/categories/\"))", "Shell keeps chat rail mounted while category overlays are open", failures);
   assertContains(shellDynamicSource, 'setChatMode("magazine");', "Shell keeps Magazine tab selectable in chat rail", failures);
   assertContains(shellDynamicSource, 'router.push(`/magazine?v=${encodeURIComponent(currentVideo.id)}`, { scroll: true });', "Magazine tab still navigates to /magazine with video ID when not on a magazine route", failures);
   assertContains(shellDynamicSource, "if (!isMagazineOverlayRoute) {", "Magazine tab navigation is guarded by !isMagazineOverlayRoute to prevent stray ?v= injection when already on a magazine route", failures);
@@ -225,7 +234,8 @@ function main() {
 
   // Desktop intro preload guard invariants.
   assertContains(shellDynamicSource, "const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(false);", "Desktop intro preload state defaults to false to avoid remount click-blocking", failures);
-  assertContains(shellDynamicSource, "if (hasStartedAutoDesktopIntroRef.current || introWindow.__ytrDesktopIntroAutoPlayed) {", "Desktop intro auto-run is guarded for already-played tabs", failures);
+  assertContains(shellDynamicSource, "const introPlayedInSession = window.sessionStorage.getItem(DESKTOP_INTRO_PLAYED_SESSION_KEY) === \"1\";", "Desktop intro auto-run checks session marker before replaying", failures);
+  assertContains(shellDynamicSource, "if (hasStartedAutoDesktopIntroRef.current || introWindow.__ytrDesktopIntroAutoPlayed || introPlayedInSession) {", "Desktop intro auto-run is guarded for already-played tabs", failures);
   assertContains(shellDynamicSource, "setIsDesktopIntroPreload(false);", "Desktop intro guard clears preload state when auto-run is skipped", failures);
   assertContains(shellDynamicSource, "const shouldRenderDesktopIntro = pathname === \"/\" && (isDesktopIntroPreload || isDesktopIntroActive);", "Desktop intro rendering is scoped to the home route", failures);
   assertContains(shellDynamicSource, "shouldRenderDesktopIntro && isDesktopIntroPreload ? \"shellDesktopIntroPreload\" : \"\"", "Shell applies preload class only when intro should render", failures);
