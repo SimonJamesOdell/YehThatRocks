@@ -360,6 +360,7 @@
 .forumSectionCard {
   grid-template-columns: minmax(0, 1fr);
   padding: 12px 10px;
+  transition: background 0.12s;
 }
 
 .forumSectionCard:hover {

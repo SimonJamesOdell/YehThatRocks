@@ -2,17 +2,16 @@
 
 import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { memo, useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
-import { useInfiniteScroll } from "@/components/use-infinite-scroll";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { EVENT_NAMES, FAVOURITES_CREATE_PLAYLIST_FINISHED_EVENT, FAVOURITES_CREATE_PLAYLIST_REQUESTED_EVENT, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
 import { createPlaylistFromVideoList } from "@/lib/playlist-create-from-video-list";
 
-const FAVOURITES_BATCH_SIZE = 20;
+const FAVOURITES_BATCH_SIZE = 100;
 
 type FavouritesPayload = {
   favourites?: VideoRecord[];
@@ -122,152 +121,135 @@ const FavouritesGridCard = memo(function FavouritesGridCard({
 export function FavouritesGrid({
   initialFavourites,
   initialTotalCount,
-  initialHasMore,
   isAuthenticated,
 }: FavouritesGridProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const hydrationRunRef = useRef(0);
   const [favourites, setFavourites] = useState<VideoRecord[]>(initialFavourites);
   const [totalCount, setTotalCount] = useState(initialTotalCount);
+  const [isHydratingFavourites, setIsHydratingFavourites] = useState(false);
+  const [hydrationError, setHydrationError] = useState<string | null>(null);
   const [pendingVideoId, setPendingVideoId] = useState<string | null>(null);
   const [isCreatingPlaylistFromFavourites, setIsCreatingPlaylistFromFavourites] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const {
-    hasMore,
-    isLoading: isLoadingMore,
-    loadError,
-    sentinelRef,
-    retryLoadMore,
-    resetPagination,
-  } = useInfiniteScroll({
-    initialOffset: initialFavourites.length,
-    initialHasMore,
-    isEnabled: isAuthenticated && pathname === "/favourites",
-    sentinelRootMargin: "700px 0px",
-    fetchPage: useCallback(async (offset) => {
-      const response = await fetchWithAuthRetry(
-        `/api/favourites?limit=${FAVOURITES_BATCH_SIZE}&offset=${offset}`,
-        {
-          method: "GET",
-          cache: "no-store",
-        },
-      );
+  const deferredFilter = useDeferredValue((searchParams.get("f") ?? "").trim().toLowerCase());
 
-      if (!response.ok) {
-        return {
-          added: 0,
-          hasMore: false,
-          nextOffset: offset,
-          errorMessage: "Could not load more favourites. Please try again.",
-        };
-      }
+  const loadAllFavouritesInChunks = useCallback(async () => {
+    if (!isAuthenticated || pathname !== "/favourites") {
+      return null;
+    }
 
-      const payload = (await response.json().catch(() => null)) as FavouritesPayload | null;
-      const incoming = Array.isArray(payload?.favourites) ? payload.favourites : [];
+    const runId = hydrationRunRef.current + 1;
+    hydrationRunRef.current = runId;
+    setIsHydratingFavourites(true);
+    setHydrationError(null);
 
-      let added = 0;
-      setFavourites((current) => {
-        const seen = new Set(current.map((video) => video.id));
-        const uniqueIncoming = incoming.filter((video) => !seen.has(video.id));
-        added = uniqueIncoming.length;
+    const seenIds = new Set<string>();
+    const collected: VideoRecord[] = [];
+    let offset = 0;
+    let knownTotal = 0;
 
-        if (added === 0) {
-          return current;
+    try {
+      while (true) {
+        const response = await fetchWithAuthRetry(
+          `/api/favourites?limit=${FAVOURITES_BATCH_SIZE}&offset=${offset}`,
+          {
+            method: "GET",
+            cache: "no-store",
+          },
+        );
+
+        if (runId !== hydrationRunRef.current) {
+          return null;
         }
 
-        return [...current, ...uniqueIncoming];
-      });
+        if (!response.ok) {
+          throw new Error("favourites-load-failed");
+        }
 
-      if (typeof payload?.totalCount === "number" && Number.isFinite(payload.totalCount)) {
-        setTotalCount(Math.max(0, Math.floor(payload.totalCount)));
-      }
-
-      const nextOffset = Number(payload?.nextOffset);
-      return {
-        added,
-        hasMore:
+        const payload = (await response.json().catch(() => null)) as FavouritesPayload | null;
+        const incoming = Array.isArray(payload?.favourites) ? payload.favourites : [];
+        const hasMore =
           typeof payload?.hasMore === "boolean"
             ? payload.hasMore
-            : incoming.length === FAVOURITES_BATCH_SIZE,
-        nextOffset: Number.isFinite(nextOffset)
+            : incoming.length === FAVOURITES_BATCH_SIZE;
+
+        if (typeof payload?.totalCount === "number" && Number.isFinite(payload.totalCount)) {
+          knownTotal = Math.max(0, Math.floor(payload.totalCount));
+        }
+
+        for (const video of incoming) {
+          if (seenIds.has(video.id)) {
+            continue;
+          }
+
+          seenIds.add(video.id);
+          collected.push(video);
+        }
+
+        if (runId !== hydrationRunRef.current) {
+          return null;
+        }
+
+        setFavourites([...collected]);
+        setTotalCount(Math.max(knownTotal, collected.length));
+
+        if (!hasMore || incoming.length === 0) {
+          break;
+        }
+
+        const nextOffset = Number(payload?.nextOffset);
+        offset = Number.isFinite(nextOffset)
           ? Math.max(offset + incoming.length, Math.floor(nextOffset))
-          : offset + incoming.length,
-      };
-    }, []),
-  });
+          : offset + incoming.length;
+      }
+
+      return collected;
+    } catch {
+      if (runId === hydrationRunRef.current) {
+        setHydrationError("Could not load your full favourites list. Please retry.");
+      }
+      return null;
+    } finally {
+      if (runId === hydrationRunRef.current) {
+        setIsHydratingFavourites(false);
+      }
+    }
+  }, [isAuthenticated, pathname]);
 
   const filteredFavourites = useMemo(() => {
-    const needle = (searchParams.get("f") ?? "").trim().toLowerCase();
-    if (!needle) {
+    if (!deferredFilter) {
       return favourites;
     }
 
     return favourites.filter((track) => {
       const title = track.title.toLowerCase();
       const artist = track.channelTitle.toLowerCase();
-      return title.startsWith(needle) || artist.startsWith(needle);
+      return title.includes(deferredFilter) || artist.includes(deferredFilter);
     });
-  }, [favourites, searchParams]);
+  }, [deferredFilter, favourites]);
 
   useEffect(() => {
     if (!isAuthenticated || pathname !== "/favourites") {
       return;
     }
 
-    let isCancelled = false;
-
-    async function refreshFavourites() {
-      try {
-        const response = await fetchWithAuthRetry(
-          `/api/favourites?limit=${FAVOURITES_BATCH_SIZE}&offset=0`,
-          {
-          method: "GET",
-          cache: "no-store",
-          },
-        );
-
-        if (!response.ok) {
-          return;
-        }
-
-        const payload = (await response.json().catch(() => null)) as FavouritesPayload | null;
-        const windowFavourites = Array.isArray(payload?.favourites) ? payload.favourites : [];
-        const nextOffset = Number(payload?.nextOffset);
-        const nextTotalCount =
-          typeof payload?.totalCount === "number" && Number.isFinite(payload.totalCount)
-            ? Math.max(0, Math.floor(payload.totalCount))
-            : windowFavourites.length;
-
-        if (!isCancelled) {
-          setFavourites(windowFavourites);
-          setTotalCount(nextTotalCount);
-          resetPagination({
-            hasMore: typeof payload?.hasMore === "boolean" ? payload.hasMore : windowFavourites.length < nextTotalCount,
-            offset: Number.isFinite(nextOffset)
-              ? Math.max(windowFavourites.length, Math.floor(nextOffset))
-              : windowFavourites.length,
-          });
-        }
-      } catch {
-        // Keep the initial server-provided favourites if refresh fails.
-      }
-    }
-
-    void refreshFavourites();
+    void loadAllFavouritesInChunks();
 
     const handleFavouritesUpdated = () => {
-      void refreshFavourites();
+      void loadAllFavouritesInChunks();
     };
 
     const unsubscribe = listenToAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, handleFavouritesUpdated);
 
     return () => {
-      isCancelled = true;
+      hydrationRunRef.current += 1;
       unsubscribe();
     };
-  }, [isAuthenticated, pathname]);
+  }, [isAuthenticated, loadAllFavouritesInChunks, pathname]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -334,28 +316,9 @@ export function FavouritesGrid({
   async function createPlaylistFromFavourites() {
     let sourceFavourites = favourites;
 
-    if (hasMore) {
-      try {
-        const response = await fetchWithAuthRetry("/api/favourites", {
-          method: "GET",
-          cache: "no-store",
-        });
-
-        if (response.ok) {
-          const payload = (await response.json().catch(() => null)) as FavouritesPayload | null;
-          if (Array.isArray(payload?.favourites) && payload.favourites.length > 0) {
-            sourceFavourites = payload.favourites;
-            setFavourites(payload.favourites);
-            setTotalCount(payload.favourites.length);
-            resetPagination({
-              hasMore: false,
-              offset: payload.favourites.length,
-            });
-          }
-        }
-      } catch {
-        // Fall back to the currently loaded favourites if full refresh fails.
-      }
+    const latestFavourites = await loadAllFavouritesInChunks();
+    if (Array.isArray(latestFavourites) && latestFavourites.length > 0) {
+      sourceFavourites = latestFavourites;
     }
 
     setIsCreatingPlaylistFromFavourites(true);
@@ -419,23 +382,24 @@ export function FavouritesGrid({
               );
             })}
           </div>
-          {loadError ? (
+          {hydrationError ? (
             <div className="favouritesEmptyState" role="status" aria-live="polite">
-              <p>{loadError}</p>
+              <p>{hydrationError}</p>
               <button
                 type="button"
                 className="newPageSeenToggle"
                 onClick={() => {
-                  retryLoadMore();
+                  void loadAllFavouritesInChunks();
                 }}
-                disabled={isLoadingMore || !hasMore}
+                disabled={isHydratingFavourites}
               >
                 Retry
               </button>
             </div>
           ) : null}
-          {isLoadingMore ? <p className="mutationMessage">Loading more favourites...</p> : null}
-          {hasMore ? <div ref={sentinelRef} aria-hidden="true" /> : null}
+          {isHydratingFavourites && favourites.length < totalCount ? (
+            <p className="mutationMessage">Loading favourites {favourites.length}/{totalCount}...</p>
+          ) : null}
         </>
       ) : (
         <div className="favouritesEmptyState" role="status" aria-live="polite">

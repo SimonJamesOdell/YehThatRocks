@@ -302,6 +302,12 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.03);
   padding: 12px;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.forumOverlayCard:hover {
+  background: rgba(220, 22, 5, 0.26);
+  border-color: rgba(255, 126, 102, 0.52);
 }
 
 .forumOverlayCard h2 {
