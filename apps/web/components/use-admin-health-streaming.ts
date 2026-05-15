@@ -23,6 +23,44 @@ type AdminHealthStreamPayload = {
   };
 };
 
+type AdminCpuDialPayload = {
+  generatedAt?: string;
+  cpuUsagePercent?: number | null;
+  cpuAverageUsagePercent?: number | null;
+  cpuPeakCoreUsagePercent?: number | null;
+};
+
+function finiteOrNull(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+export function mergeCpuDialIntoHealthPayload(
+  currentPayload: AdminHealthStreamPayload,
+  cpuPayload: AdminCpuDialPayload,
+): AdminHealthStreamPayload {
+  const health = currentPayload.health;
+  if (!health) {
+    return currentPayload;
+  }
+
+  return {
+    ...currentPayload,
+    meta: {
+      ...currentPayload.meta,
+      generatedAt: cpuPayload.generatedAt ?? currentPayload.meta?.generatedAt,
+    },
+    health: {
+      ...health,
+      host: {
+        ...health.host,
+        cpuUsagePercent: finiteOrNull(cpuPayload.cpuUsagePercent),
+        cpuAverageUsagePercent: finiteOrNull(cpuPayload.cpuAverageUsagePercent),
+        cpuPeakCoreUsagePercent: finiteOrNull(cpuPayload.cpuPeakCoreUsagePercent),
+      },
+    },
+  };
+}
+
 type UseAdminHealthStreamingOptions = {
   activeTab: string;
   onHealthPayload: (payload: AdminHealthStreamPayload) => void;
@@ -30,6 +68,7 @@ type UseAdminHealthStreamingOptions = {
 
 export function useAdminHealthStreaming({ activeTab, onHealthPayload }: UseAdminHealthStreamingOptions): void {
   const onHealthPayloadRef = useRef(onHealthPayload);
+  const lastHealthPayloadRef = useRef<AdminHealthStreamPayload | null>(null);
 
   useEffect(() => {
     onHealthPayloadRef.current = onHealthPayload;
@@ -66,11 +105,30 @@ export function useAdminHealthStreaming({ activeTab, onHealthPayload }: UseAdmin
         }
 
         lastStreamMessageAt = Date.now();
+        lastHealthPayloadRef.current = payload;
         onHealthPayloadRef.current(payload);
       } catch {
         // Ignore malformed payloads.
       }
     };
+
+    const handleCpuMessage = (event: MessageEvent<string>) => {
+      try {
+        if (cancelled || !lastHealthPayloadRef.current?.health) {
+          return;
+        }
+
+        const cpuPayload = JSON.parse(event.data) as AdminCpuDialPayload;
+        lastStreamMessageAt = Date.now();
+        const mergedPayload = mergeCpuDialIntoHealthPayload(lastHealthPayloadRef.current, cpuPayload);
+        lastHealthPayloadRef.current = mergedPayload;
+        onHealthPayloadRef.current(mergedPayload);
+      } catch {
+        // Ignore malformed CPU payloads.
+      }
+    };
+
+    stream.addEventListener("cpu", handleCpuMessage as EventListener);
 
     stream.onerror = () => {
       void refreshHealth();
@@ -87,6 +145,7 @@ export function useAdminHealthStreaming({ activeTab, onHealthPayload }: UseAdmin
     return () => {
       cancelled = true;
       window.clearInterval(pollingTimer);
+      stream.removeEventListener("cpu", handleCpuMessage as EventListener);
       stream.close();
     };
   }, [activeTab]);

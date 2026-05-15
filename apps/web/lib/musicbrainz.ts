@@ -24,7 +24,7 @@ const APP_CONTACT = process.env.MUSICBRAINZ_APP_CONTACT || "https://yehthatrocks
 const REQUESTS_PER_SECOND = 1; // stay conservative; 1/s is always safe for anonymous + named apps
 const REQUEST_INTERVAL_MS = Math.ceil(1000 / REQUESTS_PER_SECOND);
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const CACHE_MAX_ENTRIES = 2_000;
+const CACHE_MAX_ENTRIES = 1_200;
 const FETCH_TIMEOUT_MS = 5_000;
 
 // ── Rock/metal genre detection ────────────────────────────────────────────────

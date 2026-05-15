@@ -9,6 +9,7 @@ import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
 import { parseRequestJson } from "@/lib/request-json";
 import { requireApiAuth } from "@/lib/auth-request";
+import { clearServerAuthStateCacheForUserId } from "@/lib/server-auth";
 
 export async function POST(request: NextRequest) {
   const requestMeta = getRequestMetadata(request.headers);
@@ -117,6 +118,8 @@ export async function POST(request: NextRequest) {
         screenName: true,
       },
     });
+
+    clearServerAuthStateCacheForUserId(upgraded.id);
 
     // Send verification email
     try {

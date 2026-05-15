@@ -42,6 +42,13 @@ type HostHealthMetrics = {
   networkUsagePercent: number | null;
 };
 
+export type AdminCpuDialSnapshot = {
+  generatedAt: string;
+  cpuUsagePercent: number | null;
+  cpuAverageUsagePercent: number | null;
+  cpuPeakCoreUsagePercent: number | null;
+};
+
 type AdminHealthPayload = {
   meta: {
     generatedAt: string;
@@ -92,7 +99,8 @@ const CPU_24H_WINDOW_MS = 24 * 60 * 60 * 1000;
 const CPU_BUCKET_MS = 60 * 1000;
 const ADMIN_HOST_METRIC_SAMPLE_MS = readPositiveNumberEnv("ADMIN_HOST_METRIC_SAMPLE_INTERVAL_MS", CPU_BUCKET_MS, CPU_BUCKET_MS);
 const ADMIN_CPU_LIVE_SAMPLE_MS = readPositiveNumberEnv("ADMIN_CPU_LIVE_SAMPLE_MS", 250, 100);
-const ADMIN_HEALTH_CACHE_MS = readPositiveNumberEnv("ADMIN_HEALTH_CACHE_MS", 1000, 100);
+// Full host-health payloads can be cached longer because live CPU fields are patched in on read.
+const ADMIN_HEALTH_CACHE_MS = readPositiveNumberEnv("ADMIN_HEALTH_CACHE_MS", 3_000, 250);
 
 let adminHealthPayloadCache: {
   expiresAt: number;
@@ -136,6 +144,22 @@ function getLiveCpuHostFields() {
     cpuUsagePercent: finitePercentOrNull(latestLiveCpuMetrics.currentPercent),
     cpuAverageUsagePercent: finitePercentOrNull(latestLiveCpuMetrics.averagePercent),
     cpuPeakCoreUsagePercent: finitePercentOrNull(latestLiveCpuMetrics.peakCorePercent),
+  };
+}
+
+export function getAdminCpuDialSnapshot(): AdminCpuDialSnapshot | null {
+  startLiveCpuSampling();
+  const liveCpuHostFields = getLiveCpuHostFields();
+
+  if (!liveCpuHostFields) {
+    return null;
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    cpuUsagePercent: liveCpuHostFields.cpuUsagePercent,
+    cpuAverageUsagePercent: liveCpuHostFields.cpuAverageUsagePercent,
+    cpuPeakCoreUsagePercent: liveCpuHostFields.cpuPeakCoreUsagePercent,
   };
 }
 

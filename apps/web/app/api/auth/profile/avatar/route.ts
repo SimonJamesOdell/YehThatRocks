@@ -5,6 +5,7 @@ import { deleteManagedAvatar, storeOptimizedAvatar, validateAvatarUpload } from 
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
 import type { PrismaWithProfileUser } from "@/lib/prisma-types";
+import { clearServerAuthStateCacheForUserId } from "@/lib/server-auth";
 
 export const runtime = "nodejs";
 
@@ -101,6 +102,8 @@ export async function POST(request: NextRequest) {
       select: profileUserSelect,
     });
 
+    clearServerAuthStateCacheForUserId(updatedUser.id);
+
     await deleteManagedAvatar(existingUser.avatarUrl);
 
     return NextResponse.json(buildProfileResponse(updatedUser));
@@ -139,6 +142,8 @@ export async function DELETE(request: NextRequest) {
     },
     select: profileUserSelect,
   });
+
+  clearServerAuthStateCacheForUserId(updatedUser.id);
 
   await deleteManagedAvatar(existingUser.avatarUrl);
 

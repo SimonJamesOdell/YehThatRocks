@@ -96,7 +96,7 @@ const REJECTED_VIDEO_CACHE_TTL_MS = 5 * 60_000;
 const BACKFILL_CONCURRENCY = Math.max(1, Math.min(5, Number(process.env.RELATED_BACKFILL_CONCURRENCY || "2")));
 const INGESTION_CACHE_MAX_ENTRIES = Math.max(
   200,
-  Math.min(5_000, Number(process.env.INGESTION_CACHE_MAX_ENTRIES || "2000")),
+  Math.min(5_000, Number(process.env.INGESTION_CACHE_MAX_ENTRIES || "1200")),
 );
 
 // ── Types ─────────────────────────────────────────────────────────────────────

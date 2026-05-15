@@ -58,11 +58,11 @@ const KNOWN_ARTIST_MATCH_CACHE_TTL_MS = 10 * 60 * 1000;
 const ARTIST_CATALOG_EVIDENCE_CACHE_TTL_MS = 10 * 60 * 1000;
 const ARTIST_CACHE_MAX_ENTRIES = Math.max(
   200,
-  Math.min(10_000, Number(process.env.ARTIST_CACHE_MAX_ENTRIES || "2000")),
+  Math.min(10_000, Number(process.env.ARTIST_CACHE_MAX_ENTRIES || "1200")),
 );
 const ARTIST_HEAVY_CACHE_MAX_ENTRIES = Math.max(
   120,
-  Math.min(2_000, Number(process.env.ARTIST_HEAVY_CACHE_MAX_ENTRIES || "350")),
+  Math.min(2_000, Number(process.env.ARTIST_HEAVY_CACHE_MAX_ENTRIES || "220")),
 );
 const BATCH_UPSERT_SIZE = 100;
 
