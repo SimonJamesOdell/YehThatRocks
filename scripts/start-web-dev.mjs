@@ -7,6 +7,7 @@
  */
 
 import { spawn } from "node:child_process";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import mysql from "mysql2/promise";
@@ -15,6 +16,28 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, "..");
 const WEB_CWD = path.join(REPO_ROOT, "apps", "web");
 const MAINTAIN_SCRIPT = path.join(REPO_ROOT, "scripts", "maintain-admin-dashboard-cache.js");
+
+async function removePathIfExists(targetPath) {
+  try {
+    await fs.rm(targetPath, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resetNextDevCache() {
+  const nextDevPath = path.join(WEB_CWD, ".next", "dev");
+  const turboCachePath = path.join(WEB_CWD, ".next", "cache", "turbopack");
+
+  // Turbopack cache files can become inconsistent after interrupted compaction.
+  const devRemoved = await removePathIfExists(nextDevPath);
+  const turboRemoved = await removePathIfExists(turboCachePath);
+
+  if (devRemoved || turboRemoved) {
+    console.log("🧹 Cleared Next dev cache before startup");
+  }
+}
 
 function toSafeUrl(url) {
   try {
@@ -119,6 +142,7 @@ async function main() {
   };
 
   await initializeAdminCacheIfPossible(env);
+  await resetNextDevCache();
 
   const nextCode = await runCommand("next", ["dev", "--hostname", "0.0.0.0", "--port", port], {
     cwd: WEB_CWD,
