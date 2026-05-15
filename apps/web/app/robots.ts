@@ -13,6 +13,12 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ["/api/", "/account/", "/admin/"],
       },
     ],
-    sitemap: `${SITE_ORIGIN}/sitemap.xml`,
+    sitemap: [
+      `${SITE_ORIGIN}/sitemap/0.xml`,
+      `${SITE_ORIGIN}/sitemap/1.xml`,
+      `${SITE_ORIGIN}/sitemap/2.xml`,
+      `${SITE_ORIGIN}/sitemap/3.xml`,
+      `${SITE_ORIGIN}/sitemap/4.xml`,
+    ],
   };
 }
