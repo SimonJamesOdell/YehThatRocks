@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { mapAdminPruneResultToDeleteResponse } from "@/lib/admin-prune-delete-response";
+import { applyCatalogReviewQueueCountDelta, getCatalogReviewQueueCount } from "@/lib/admin-catalog-review-count";
+import { fetchCatalogReviewCurrentVideo } from "@/lib/admin-catalog-review-current-video";
 import { ensureCatalogReviewQueueReady } from "@/lib/admin-catalog-review-queue";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
@@ -13,19 +15,6 @@ const moderateCatalogReviewSchema = z.object({
   action: z.enum(["approve", "remove"]),
 });
 
-type CatalogReviewVideoRow = {
-  id: number;
-  videoId: string;
-  title: string;
-  parsedArtist: string | null;
-  parsedTrack: string | null;
-  channelTitle: string | null;
-  durationSec: number | null;
-  createdAt: Date | null;
-  updatedAt: Date | null;
-  enqueuedAt: Date;
-};
-
 export async function GET(request: NextRequest) {
   const auth = await requireAuthOnly(request);
 
@@ -35,40 +24,12 @@ export async function GET(request: NextRequest) {
 
   await ensureCatalogReviewQueueReady();
 
-  const totalRows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(`
-    SELECT COUNT(*) AS total
-    FROM admin_catalog_review_queue
-  `);
-  const remaining = Number(totalRows[0]?.total ?? 0);
-
-  const currentVideoRows = await prisma.$queryRawUnsafe<CatalogReviewVideoRow[]>(`
-    SELECT
-      v.id,
-      v.videoId,
-      v.title,
-      v.parsedArtist,
-      v.parsedTrack,
-      v.channelTitle,
-      wh.durationSec AS durationSec,
-      v.created_at AS createdAt,
-      v.updated_at AS updatedAt,
-      q.enqueued_at AS enqueuedAt
-    FROM admin_catalog_review_queue q
-    INNER JOIN videos v
-      ON v.videoId COLLATE utf8mb4_unicode_ci = q.video_id COLLATE utf8mb4_unicode_ci
-    LEFT JOIN (
-      SELECT video_id, MAX(last_duration_sec) AS durationSec
-      FROM watch_history
-      WHERE last_duration_sec > 0
-      GROUP BY video_id
-    ) wh ON wh.video_id = v.videoId
-    ORDER BY q.enqueued_at ASC, q.video_id ASC
-    LIMIT 1
-  `);
+  const remaining = await getCatalogReviewQueueCount();
+  const currentVideo = await fetchCatalogReviewCurrentVideo();
 
   return NextResponse.json({
     remaining,
-    currentVideo: currentVideoRows[0] ?? null,
+    currentVideo,
   });
 }
 
@@ -93,16 +54,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Video is not in the catalog review queue" }, { status: 404 });
     }
 
-    const remainingRows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(`
-      SELECT COUNT(*) AS total
-      FROM admin_catalog_review_queue
-    `);
+    const remaining = await applyCatalogReviewQueueCountDelta(queueDelete > 0 ? -1 : 0);
 
     return NextResponse.json({
       ok: true,
       action: "approve",
       videoId,
-      remaining: Number(remainingRows[0]?.total ?? 0),
+      remaining,
     });
   }
 
@@ -118,23 +76,20 @@ export async function POST(request: NextRequest) {
     return pruneResponse.response;
   }
 
-  await prisma.$executeRawUnsafe(
+  const queueDelete = await prisma.$executeRawUnsafe(
     `DELETE FROM admin_catalog_review_queue WHERE video_id = ?`,
     videoId,
   );
 
   clearCurrentVideoRouteCaches();
 
-  const remainingRows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(`
-    SELECT COUNT(*) AS total
-    FROM admin_catalog_review_queue
-  `);
+  const remaining = await applyCatalogReviewQueueCountDelta(queueDelete > 0 ? -1 : 0);
 
   return NextResponse.json({
     ok: true,
     action: "remove",
     videoId,
     deletedVideoRows: pruneResult.deletedVideoRows,
-    remaining: Number(remainingRows[0]?.total ?? 0),
+    remaining,
   });
 }

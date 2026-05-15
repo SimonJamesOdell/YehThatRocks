@@ -44,14 +44,51 @@ type RuntimeProfilingSnapshot = {
   prisma: PrismaProfilingSnapshot;
 };
 
+type SnapshotCacheEntry = {
+  expiresAt: number;
+  snapshot: RuntimeProfilingSnapshot;
+};
+
 const PROFILING_WINDOW_MS = 5 * 60 * 1000;
-const MAX_PRISMA_EVENTS = 8_000;
 const MAX_TOP_OPERATIONS = 8;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function readPositiveIntEnv(name: string, fallback: number, min: number, max: number) {
+  const parsed = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return clamp(Math.floor(parsed), min, max);
+}
+
+const MAX_PRISMA_OPERATION_EVENTS = readPositiveIntEnv(
+  "PRISMA_PROFILER_MAX_OPERATION_EVENTS",
+  4_000,
+  500,
+  20_000,
+);
+const MAX_PRISMA_FINGERPRINT_EVENTS = readPositiveIntEnv(
+  "PRISMA_PROFILER_MAX_FINGERPRINT_EVENTS",
+  2_500,
+  500,
+  20_000,
+);
+const RUNTIME_PROFILING_SNAPSHOT_TTL_MS = readPositiveIntEnv(
+  "RUNTIME_PROFILING_SNAPSHOT_TTL_MS",
+  3_000,
+  250,
+  10_000,
+);
 
 const prismaEvents: TimedEvent[] = [];
 const prismaFingerprintEvents: TimedEvent[] = [];
 let totalPrismaQueriesSinceBoot = 0;
 let totalPrismaDurationMsSinceBoot = 0;
+let runtimeProfilingSnapshotCache: SnapshotCacheEntry | null = null;
 
 function round(value: number, digits = 2) {
   if (!Number.isFinite(value)) {
@@ -72,14 +109,14 @@ function percentile(values: number[], percentileValue: number) {
   return sorted[index] ?? 0;
 }
 
-function pruneEvents(events: TimedEvent[], now = Date.now()) {
+function pruneEvents(events: TimedEvent[], maxEvents: number, now = Date.now()) {
   const cutoff = now - PROFILING_WINDOW_MS;
   while (events.length > 0 && events[0] && events[0].atMs < cutoff) {
     events.shift();
   }
 
-  if (events.length > MAX_PRISMA_EVENTS) {
-    events.splice(0, events.length - MAX_PRISMA_EVENTS);
+  if (events.length > maxEvents) {
+    events.splice(0, events.length - maxEvents);
   }
 }
 
@@ -132,6 +169,10 @@ function buildFingerprintAggregates(events: TimedEvent[]): QueryFingerprintAggre
   }));
 }
 
+function clearRuntimeProfilingSnapshotCache() {
+  runtimeProfilingSnapshotCache = null;
+}
+
 export function recordPrismaOperation(operation: string, durationMs: number) {
   const safeDurationMs = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
   const event: TimedEvent = {
@@ -143,7 +184,8 @@ export function recordPrismaOperation(operation: string, durationMs: number) {
   prismaEvents.push(event);
   totalPrismaQueriesSinceBoot += 1;
   totalPrismaDurationMsSinceBoot += safeDurationMs;
-  pruneEvents(prismaEvents, event.atMs);
+  pruneEvents(prismaEvents, MAX_PRISMA_OPERATION_EVENTS, event.atMs);
+  clearRuntimeProfilingSnapshotCache();
 }
 
 export function recordPrismaQueryFingerprint(fingerprint: string, durationMs: number) {
@@ -160,7 +202,8 @@ export function recordPrismaQueryFingerprint(fingerprint: string, durationMs: nu
   };
 
   prismaFingerprintEvents.push(event);
-  pruneEvents(prismaFingerprintEvents, event.atMs);
+  pruneEvents(prismaFingerprintEvents, MAX_PRISMA_FINGERPRINT_EVENTS, event.atMs);
+  clearRuntimeProfilingSnapshotCache();
 }
 
 export function resetRuntimeProfiling() {
@@ -168,12 +211,17 @@ export function resetRuntimeProfiling() {
   prismaFingerprintEvents.length = 0;
   totalPrismaQueriesSinceBoot = 0;
   totalPrismaDurationMsSinceBoot = 0;
+  clearRuntimeProfilingSnapshotCache();
 }
 
 export function getRuntimeProfilingSnapshot(): RuntimeProfilingSnapshot {
   const now = Date.now();
-  pruneEvents(prismaEvents, now);
-  pruneEvents(prismaFingerprintEvents, now);
+  if (runtimeProfilingSnapshotCache && runtimeProfilingSnapshotCache.expiresAt > now) {
+    return runtimeProfilingSnapshotCache.snapshot;
+  }
+
+  pruneEvents(prismaEvents, MAX_PRISMA_OPERATION_EVENTS, now);
+  pruneEvents(prismaFingerprintEvents, MAX_PRISMA_FINGERPRINT_EVENTS, now);
 
   const windowSec = PROFILING_WINDOW_MS / 1000;
   const durations = prismaEvents.map((event) => event.durationMs);
@@ -181,7 +229,7 @@ export function getRuntimeProfilingSnapshot(): RuntimeProfilingSnapshot {
 
   const memory = process.memoryUsage();
 
-  return {
+  const snapshot: RuntimeProfilingSnapshot = {
     node: {
       uptimeSec: round(process.uptime(), 1),
       rssMb: round(memory.rss / 1024 / 1024, 1),
@@ -202,4 +250,11 @@ export function getRuntimeProfilingSnapshot(): RuntimeProfilingSnapshot {
       },
     },
   };
+
+  runtimeProfilingSnapshotCache = {
+    snapshot,
+    expiresAt: now + RUNTIME_PROFILING_SNAPSHOT_TTL_MS,
+  };
+
+  return snapshot;
 }

@@ -24,7 +24,7 @@ import { clearFavouritesCacheForUser } from "@/lib/catalog-data-favourites";
 
 const USER_SCOPED_CACHE_MAX_ENTRIES = Math.max(
   100,
-  Math.min(10_000, Number(process.env.USER_SCOPED_CACHE_MAX_ENTRIES || "1500")),
+  Math.min(10_000, Number(process.env.USER_SCOPED_CACHE_MAX_ENTRIES || "1000")),
 );
 
 const HIDDEN_VIDEO_IDS_CACHE_TTL_MS = 20_000;

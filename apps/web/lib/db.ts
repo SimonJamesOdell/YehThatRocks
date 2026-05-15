@@ -3,11 +3,13 @@ import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 
 import { normalizePrismaQueryFingerprint } from "@/lib/query-fingerprint";
 import { recordPrismaOperation, recordPrismaQueryFingerprint } from "@/lib/runtime-profiler";
+import { startServerMemoryPressureGuard } from "@/lib/memory-pressure-guard";
 
 declare global {
   var __yehPrisma__: PrismaClient | undefined;
   var __yehPrismaShutdownHooks__: boolean | undefined;
   var __yehPrismaProfilingHookInstalled__: boolean | undefined;
+  var __yehMemoryPressureGuardStarted__: boolean | undefined;
 }
 
 type PrismaQueryEvent = {
@@ -170,6 +172,11 @@ if (!global.__yehPrismaShutdownHooks__) {
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
   global.__yehPrismaShutdownHooks__ = true;
+}
+
+if (process.env.NODE_ENV === "production" && !global.__yehMemoryPressureGuardStarted__) {
+  startServerMemoryPressureGuard();
+  global.__yehMemoryPressureGuardStarted__ = true;
 }
 
 if (process.env.NODE_ENV !== "production") {

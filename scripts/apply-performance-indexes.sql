@@ -163,4 +163,23 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
-ANALYZE TABLE videos, site_videos, related;
+-- watch_history: covering index for the catalog-review correlated duration subquery.
+-- Allows "WHERE video_id = ? AND last_duration_sec > 0" + MAX() to be satisfied via
+-- an index-only scan instead of hitting the clustered index rows.
+SET @idx_exists := (
+  SELECT COUNT(*)
+  FROM information_schema.statistics
+  WHERE table_schema = @schema_name
+    AND table_name = 'watch_history'
+    AND index_name = 'idx_watch_history_video_id_duration_sec'
+);
+SET @sql := IF(
+  @idx_exists = 0,
+  'CREATE INDEX idx_watch_history_video_id_duration_sec ON watch_history (video_id, last_duration_sec)',
+  'SELECT ''idx_watch_history_video_id_duration_sec already exists'' AS info'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+ANALYZE TABLE videos, site_videos, related, watch_history;

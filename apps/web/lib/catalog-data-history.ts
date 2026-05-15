@@ -14,7 +14,7 @@ import { ensureVideoChannelTitleColumnAvailable } from "@/lib/catalog-data-db";
 
 const USER_SCOPED_CACHE_MAX_ENTRIES = Math.max(
   100,
-  Math.min(10_000, Number(process.env.USER_SCOPED_CACHE_MAX_ENTRIES || "1500")),
+  Math.min(10_000, Number(process.env.USER_SCOPED_CACHE_MAX_ENTRIES || "1000")),
 );
 
 const SEEN_VIDEO_IDS_CACHE_TTL_MS = 20_000;

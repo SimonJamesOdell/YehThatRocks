@@ -1,10 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiAuth } from "@/lib/admin-auth";
 import { getMetadataQualityStats } from "@/lib/admin-metadata-quality";
+import {
+  getCachedDashboardResponsePayload,
+  getDashboardResponseInFlight,
+  setCachedDashboardResponsePayload,
+  setDashboardResponseInFlight,
+} from "@/lib/admin-dashboard-response-cache";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+async function loadDashboardPayloadFromCacheTable(): Promise<Record<string, unknown>> {
+  // Read from pre-computed cache table — no side effects, super fast
+  const cacheRows = await prisma.$queryRaw<Array<{ payload: string; computed_at: Date }>>`
+    SELECT payload, computed_at FROM admin_dashboard_cache WHERE id = 1
+  `.catch(() => []);
+
+  if (cacheRows.length === 0) {
+    return createEmptyDashboardPayload();
+  }
+
+  const cacheRow = cacheRows[0];
+  const payload = normalizeDashboardPayload(JSON.parse(cacheRow.payload));
+  payload.insights.metadataQuality = await getMetadataQualityStats();
+
+  if (payload.analytics.hourlyRecent.length === 0) {
+    const [hourlyAnalyticsRows, hourlyAuthRows] = await Promise.all([
+      prisma.$queryRaw<HourlyAnalyticsRow[]>`
+        SELECT
+          bucket_start AS bucketStart,
+          page_views AS pageViews,
+          video_views AS videoViews,
+          unique_visitors AS uniqueVisitors,
+          return_visits AS returnVisits
+        FROM admin_dashboard_analytics_hourly
+        WHERE bucket_start >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
+        ORDER BY bucket_start ASC
+      `.catch(() => []),
+      prisma.$queryRaw<HourlyAuthRow[]>`
+        SELECT
+          bucket_start AS bucketStart,
+          auth_events AS authEvents
+        FROM admin_dashboard_auth_hourly
+        WHERE bucket_start >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
+        ORDER BY bucket_start ASC
+      `.catch(() => []),
+    ]);
+
+    payload.analytics.hourlyRecent = buildHourlyRecentRows(hourlyAnalyticsRows, hourlyAuthRows);
+  }
+
+  return payload as Record<string, unknown>;
+}
 
 function createEmptyDashboardPayload() {
   const nowIso = new Date().toISOString();
@@ -470,44 +519,33 @@ export async function GET(request: NextRequest) {
     return auth.response;
   }
 
-  // Read from pre-computed cache table — no side effects, super fast
-  const cacheRows = await prisma.$queryRaw<Array<{ payload: string; computed_at: Date }>>`
-    SELECT payload, computed_at FROM admin_dashboard_cache WHERE id = 1
-  `.catch(() => []);
+  const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
 
-  if (cacheRows.length === 0) {
-    return NextResponse.json(createEmptyDashboardPayload());
+  if (!forceRefresh) {
+    const cachedPayload = getCachedDashboardResponsePayload();
+    if (cachedPayload) {
+      return NextResponse.json(cachedPayload);
+    }
+
+    const inFlight = getDashboardResponseInFlight();
+    if (inFlight) {
+      const payload = await inFlight;
+      return NextResponse.json(payload);
+    }
   }
 
-  const cacheRow = cacheRows[0];
-  const payload = normalizeDashboardPayload(JSON.parse(cacheRow.payload));
-  payload.insights.metadataQuality = await getMetadataQualityStats();
-
-  if (payload.analytics.hourlyRecent.length === 0) {
-    const [hourlyAnalyticsRows, hourlyAuthRows] = await Promise.all([
-      prisma.$queryRaw<HourlyAnalyticsRow[]>`
-        SELECT
-          bucket_start AS bucketStart,
-          page_views AS pageViews,
-          video_views AS videoViews,
-          unique_visitors AS uniqueVisitors,
-          return_visits AS returnVisits
-        FROM admin_dashboard_analytics_hourly
-        WHERE bucket_start >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
-        ORDER BY bucket_start ASC
-      `.catch(() => []),
-      prisma.$queryRaw<HourlyAuthRow[]>`
-        SELECT
-          bucket_start AS bucketStart,
-          auth_events AS authEvents
-        FROM admin_dashboard_auth_hourly
-        WHERE bucket_start >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
-        ORDER BY bucket_start ASC
-      `.catch(() => []),
-    ]);
-
-    payload.analytics.hourlyRecent = buildHourlyRecentRows(hourlyAnalyticsRows, hourlyAuthRows);
+  const loadPayload = loadDashboardPayloadFromCacheTable();
+  if (!forceRefresh) {
+    setDashboardResponseInFlight(loadPayload);
   }
+
+  const payload = await loadPayload.finally(() => {
+    if (!forceRefresh) {
+      setDashboardResponseInFlight(null);
+    }
+  });
+
+  setCachedDashboardResponsePayload(payload);
 
   return NextResponse.json(payload);
 }

@@ -7,6 +7,7 @@ import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
 import type { PrismaWithProfileUser } from "@/lib/prisma-types";
 import { parseRequestJson } from "@/lib/request-json";
+import { clearServerAuthStateCacheForUserId } from "@/lib/server-auth";
 
 const profileSchema = z.object({
   screenName: z.string().trim().min(2).max(80),
@@ -99,6 +100,8 @@ export async function PATCH(request: NextRequest) {
       location: true,
     },
   });
+
+  clearServerAuthStateCacheForUserId(refreshedUser.id);
 
   return NextResponse.json({
     ok: true,

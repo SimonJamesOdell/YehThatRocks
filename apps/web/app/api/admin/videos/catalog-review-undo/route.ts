@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { applyCatalogReviewQueueCountDelta } from "@/lib/admin-catalog-review-count";
 import { ensureCatalogReviewQueueReady } from "@/lib/admin-catalog-review-queue";
 import { withAuthAndBody } from "@/lib/api-route-pipeline";
 import { prisma } from "@/lib/db";
@@ -53,17 +54,13 @@ export async function POST(request: NextRequest) {
       `INSERT INTO admin_catalog_review_queue (video_id, enqueued_at) VALUES (?, NOW())`,
       videoId,
     );
-
-    const remainingRows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(`
-      SELECT COUNT(*) AS total
-      FROM admin_catalog_review_queue
-    `);
+    const remaining = await applyCatalogReviewQueueCountDelta(1);
 
     return NextResponse.json({
       ok: true,
       action: "undo-approve",
       videoId,
-      remaining: Number(remainingRows[0]?.total ?? 0),
+      remaining,
     });
   }
 

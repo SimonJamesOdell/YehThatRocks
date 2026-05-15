@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 
 import { requireAdminApiAuth } from "@/lib/admin-auth";
-import { buildAdminHealthPayload } from "@/lib/admin-dashboard-health";
+import { buildAdminHealthPayload, getAdminCpuDialSnapshot } from "@/lib/admin-dashboard-health";
 
 function readPositiveNumberEnv(name: string, defaultValue: number, minValue: number) {
   const raw = process.env[name];
@@ -13,7 +13,17 @@ function readPositiveNumberEnv(name: string, defaultValue: number, minValue: num
   return Math.max(minValue, parsed);
 }
 
-const STREAM_INTERVAL_MS = readPositiveNumberEnv("ADMIN_DASHBOARD_STREAM_MS", 125, 125);
+const LEGACY_STREAM_INTERVAL_MS = readPositiveNumberEnv("ADMIN_DASHBOARD_STREAM_MS", 125, 125);
+const CPU_STREAM_INTERVAL_MS = readPositiveNumberEnv(
+  "ADMIN_DASHBOARD_CPU_STREAM_MS",
+  LEGACY_STREAM_INTERVAL_MS,
+  125,
+);
+const FULL_STREAM_INTERVAL_MS = readPositiveNumberEnv(
+  "ADMIN_DASHBOARD_FULL_STREAM_MS",
+  Math.max(1000, LEGACY_STREAM_INTERVAL_MS * 4),
+  500,
+);
 
 export async function GET(request: NextRequest) {
   const auth = await requireAdminApiAuth(request);
@@ -28,7 +38,8 @@ export async function GET(request: NextRequest) {
     async start(controller) {
       let closed = false;
       let sendInFlight = false;
-      let metricsTimer: ReturnType<typeof setInterval> | null = null;
+      let fullMetricsTimer: ReturnType<typeof setInterval> | null = null;
+      let cpuMetricsTimer: ReturnType<typeof setInterval> | null = null;
       let heartbeat: ReturnType<typeof setInterval> | null = null;
 
       const stopStream = () => {
@@ -37,9 +48,14 @@ export async function GET(request: NextRequest) {
         }
 
         closed = true;
-        if (metricsTimer) {
-          clearInterval(metricsTimer);
-          metricsTimer = null;
+        if (fullMetricsTimer) {
+          clearInterval(fullMetricsTimer);
+          fullMetricsTimer = null;
+        }
+
+        if (cpuMetricsTimer) {
+          clearInterval(cpuMetricsTimer);
+          cpuMetricsTimer = null;
         }
 
         if (heartbeat) {
@@ -78,11 +94,33 @@ export async function GET(request: NextRequest) {
         }
       };
 
-      await sendHealth();
+      const sendCpuDial = () => {
+        if (closed) {
+          return;
+        }
 
-      metricsTimer = setInterval(() => {
+        const cpuSnapshot = getAdminCpuDialSnapshot();
+        if (!cpuSnapshot) {
+          return;
+        }
+
+        try {
+          controller.enqueue(encoder.encode(`event: cpu\ndata: ${JSON.stringify(cpuSnapshot)}\n\n`));
+        } catch {
+          stopStream();
+        }
+      };
+
+      await sendHealth();
+      sendCpuDial();
+
+      fullMetricsTimer = setInterval(() => {
         void sendHealth();
-      }, STREAM_INTERVAL_MS);
+      }, FULL_STREAM_INTERVAL_MS);
+
+      cpuMetricsTimer = setInterval(() => {
+        sendCpuDial();
+      }, CPU_STREAM_INTERVAL_MS);
 
       heartbeat = setInterval(() => {
         try {
