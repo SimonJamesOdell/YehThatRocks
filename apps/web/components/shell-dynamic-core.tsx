@@ -67,7 +67,7 @@ import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { dedupeVideos, filterHiddenVideos } from "@/lib/video-list-utils";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
 import { FORUM_SECTIONS } from "@/lib/forum-sections";
-import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT } from "@/lib/events-contract";
+import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT, EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
 import { parseJsonOrNull } from "@/lib/parse-json";
@@ -2414,9 +2414,7 @@ function ShellDynamicInner({
                       onClick={() => {
                         setChatMode("global");
                         if (isMagazineOverlayRoute || isForumOverlayRoute) {
-                          window.dispatchEvent(new CustomEvent(OVERLAY_CLOSE_REQUEST_EVENT, {
-                            detail: { href: `/?v=${encodeURIComponent(currentVideo.id)}&resume=1` },
-                          }));
+                          dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href: `/?v=${encodeURIComponent(currentVideo.id)}&resume=1` });
                         }
                       }}
                     >

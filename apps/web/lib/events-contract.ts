@@ -33,6 +33,7 @@ export const EVENT_NAMES = {
   DOCK_HIDE_REQUEST: "ytr:dock-hide-request",
   REQUEST_VIDEO_REPLAY: "ytr:request-video-replay",
   NEW_ROUTE_QUEUE_SYNC: "ytr:new-route-queue-sync",
+  URL_SEARCH_PARAMS_CHANGED: "ytr:url-search-params-changed",
 
   // Admin and catalog
   ADMIN_OVERLAY_ENTER: "ytr:admin-overlay-enter",
@@ -89,6 +90,7 @@ export type EventPayloads = {
     source: "new" | "top100";
     videoIds: string[];
   };
+  [EVENT_NAMES.URL_SEARCH_PARAMS_CHANGED]: null;
   [EVENT_NAMES.ADMIN_OVERLAY_ENTER]: null;
   [EVENT_NAMES.VIDEO_CATALOG_DELETED]: { videoId: string };
   [EVENT_NAMES.FAVOURITES_UPDATED]: null;
@@ -238,6 +240,7 @@ export const OVERLAY_CLOSE_REQUEST_EVENT = EVENT_NAMES.OVERLAY_CLOSE_REQUEST;
 export const DOCK_HIDE_REQUEST_EVENT = EVENT_NAMES.DOCK_HIDE_REQUEST;
 export const REQUEST_VIDEO_REPLAY_EVENT = EVENT_NAMES.REQUEST_VIDEO_REPLAY;
 export const NEW_ROUTE_QUEUE_SYNC_EVENT = EVENT_NAMES.NEW_ROUTE_QUEUE_SYNC;
+export const URL_SEARCH_PARAMS_CHANGED_EVENT = EVENT_NAMES.URL_SEARCH_PARAMS_CHANGED;
 
 // Admin and catalog
 export const ADMIN_OVERLAY_ENTER_EVENT = EVENT_NAMES.ADMIN_OVERLAY_ENTER;

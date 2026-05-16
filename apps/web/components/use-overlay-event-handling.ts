@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { OVERLAY_OPEN_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT } from "@/lib/events-contract";
 
 type OverlayOpenDetails = {
   href?: string;
@@ -17,8 +18,6 @@ type UseOverlayEventHandlingOptions = {
   onResetPendingOverlay: () => void;
 };
 
-const OVERLAY_OPEN_REQUEST_EVENT = "ytr:overlay-open-request";
-const OVERLAY_CLOSE_REQUEST_EVENT = "ytr:overlay-close-request";
 
 function isCategoriesOverlayPath(pathname: string): boolean {
   return pathname === "/categories" || pathname.startsWith("/categories/");

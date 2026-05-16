@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 
 import { ArtistWikiLink } from "@/components/artist-wiki-link";

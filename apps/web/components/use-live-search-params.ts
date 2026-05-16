@@ -3,7 +3,8 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-export const LIVE_SEARCH_PARAMS_EVENT = "ytr:url-search-params-changed";
+import { EVENT_NAMES } from "@/lib/events-contract";
+export const LIVE_SEARCH_PARAMS_EVENT = EVENT_NAMES.URL_SEARCH_PARAMS_CHANGED;
 
 function readWindowSearchParams(fallback: string) {
   if (typeof window === "undefined") {

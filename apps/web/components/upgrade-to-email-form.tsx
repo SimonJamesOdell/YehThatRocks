@@ -21,7 +21,7 @@ export function UpgradeToEmailForm({ onSuccess, onCancel }: UpgradeToEmailFormPr
     setError(null);
     setMessage(null);
 
-    startTransition(async () => {
+    async function handleUpgradeTransition() {
       try {
         const response = await fetch("/api/auth/upgrade-to-email", {
           method: "POST",
@@ -43,7 +43,8 @@ export function UpgradeToEmailForm({ onSuccess, onCancel }: UpgradeToEmailFormPr
       } catch (err) {
         setError(err instanceof Error ? err.message : "An error occurred");
       }
-    });
+    }
+    startTransition(handleUpgradeTransition);
   };
 
   return (

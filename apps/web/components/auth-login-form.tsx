@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { AnonymousCredentialsModal } from "@/components/anonymous-credentials-modal";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
-import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, INTRO_SKIP_ONCE_AFTER_LOGIN_KEY } from "@/lib/storage-keys";
+import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, INTRO_SKIP_ONCE_AFTER_LOGIN_KEY, ANONYMOUS_USERNAME_KEY } from "@/lib/storage-keys";
 import { parseJsonOrNull } from "@/lib/parse-json";
 // Invariant anchor retained after extracting shared storage keys:
 // const INTRO_SKIP_ONCE_AFTER_LOGIN_KEY = "ytr:intro-skip-once";
@@ -370,7 +370,7 @@ export function AuthLoginForm() {
       }
 
       if (typeof window !== "undefined") {
-        window.localStorage.setItem("ytr:anonymous-username", payload.credentials.username);
+        window.localStorage.setItem(ANONYMOUS_USERNAME_KEY, payload.credentials.username);
       }
 
       setIsAnonymousFlowOpen(false);

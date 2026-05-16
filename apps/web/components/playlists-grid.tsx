@@ -189,7 +189,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
       return;
     }
 
-    startTransition(async () => {
+    async function handleImportPlaylistTransition() {
       setMessage(null);
 
       try {
@@ -241,7 +241,8 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
       } catch {
         setMessage("Could not import playlist from YouTube.");
       }
-    });
+    }
+    startTransition(handleImportPlaylistTransition);
   }
 
   function createPlaylist() {
@@ -257,7 +258,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
       return;
     }
 
-    startTransition(async () => {
+    async function handleCreatePlaylistTransition() {
       setCreateModalMessage(null);
 
       try {
@@ -321,7 +322,8 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
       } catch {
         setCreateModalMessage("Could not create playlist. Please try again.");
       }
-    });
+    }
+    startTransition(handleCreatePlaylistTransition);
   }
 
   function openPlaylist(playlistId: string) {
@@ -336,7 +338,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
       return;
     }
 
-    startTransition(async () => {
+    async function handleRemovePlaylistTransition() {
       setPendingDeleteId(playlistId);
       setMessage(null);
 
@@ -362,7 +364,8 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
       } finally {
         setPendingDeleteId(null);
       }
-    });
+    }
+    startTransition(handleRemovePlaylistTransition);
   }
 
   return (
