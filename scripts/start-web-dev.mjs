@@ -152,7 +152,7 @@ async function main() {
   const positionalPort = cliArgs.find((arg) => /^\d+$/.test(arg));
   const port = portArgIndex !== -1 && cliArgs[portArgIndex + 1]
     ? cliArgs[portArgIndex + 1]
-    : positionalPort ?? "3200";
+    : positionalPort ?? "3000";
   const portNumber = Number(port);
 
   if (!Number.isInteger(portNumber) || portNumber <= 0 || portNumber > 65535) {

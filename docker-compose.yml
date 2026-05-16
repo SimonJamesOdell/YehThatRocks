@@ -22,11 +22,11 @@ services:
   web:
     build: .
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       DATABASE_URL: "mysql://yeh:yehthatrocks@db:3306/yeh"
       AUTH_JWT_SECRET: "docker-dev-secret-change-me-in-production-min-32-chars"
-      APP_URL: "http://localhost:3000"
+      APP_URL: "http://localhost:3001"
       NODE_ENV: production
     depends_on:
       db:

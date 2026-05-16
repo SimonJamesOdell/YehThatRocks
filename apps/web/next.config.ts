@@ -32,6 +32,7 @@ const nextConfig: NextConfig = {
     root: path.join(__dirname, "../..")
   },
   experimental: {
+    turbopackFileSystemCacheForDev: false,
     optimizePackageImports: ["lucide-react"]
   }
 };
