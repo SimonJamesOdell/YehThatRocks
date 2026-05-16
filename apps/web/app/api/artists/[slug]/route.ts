@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { filterHiddenVideos, getArtistBySlug, getArtists, getTopVideos } from "@/lib/catalog-data";
+import { filterHiddenVideos, getArtistBySlug, getArtists, getVideosByArtist } from "@/lib/catalog-data";
 import { getOptionalApiAuth } from "@/lib/auth-request";
 
 type ArtistRouteContext = {
@@ -15,10 +15,7 @@ export async function GET(_request: NextRequest, context: ArtistRouteContext) {
     return NextResponse.json({ error: "Artist not found" }, { status: 404 });
   }
 
-  const topVideos = await getTopVideos();
-  let matchingVideos = topVideos.filter((video) => {
-    return video.channelTitle.toLowerCase().includes(artist.name.toLowerCase());
-  });
+  let matchingVideos = await getVideosByArtist(artist.name);
 
   // Filter blocked videos if user is authenticated
   const authResult = await getOptionalApiAuth(_request);
@@ -32,6 +29,7 @@ export async function GET(_request: NextRequest, context: ArtistRouteContext) {
 
   return NextResponse.json({
     artist,
+    videoCount: matchingVideos.length,
     videos: matchingVideos,
     relatedArtists
   });

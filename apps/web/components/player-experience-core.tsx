@@ -2,11 +2,14 @@
 
 import { ChangeEvent, startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type UIEvent } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 import type { VideoRecord } from "@/lib/catalog";
+import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import { AutoplaySettingsEditor } from "@/components/autoplay-settings-editor";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { getArtistPagePath, withVideoContext } from "@/lib/artist-routing";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { RemoveFavouriteConfirmModal } from "@/components/remove-favourite-confirm-modal";
@@ -299,6 +302,39 @@ function formatPlaybackTime(value: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function toTitleCaseWords(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (match) => match.toUpperCase());
+}
+
+function inferTrackFromTitle(title: string, artist: string) {
+  const trimmedTitle = title.trim();
+  const trimmedArtist = artist.trim();
+  if (!trimmedTitle || !trimmedArtist) {
+    return trimmedTitle;
+  }
+
+  const separators = [" - ", " — ", " | "];
+  for (const separator of separators) {
+    const split = trimmedTitle.split(separator).map((part) => part.trim()).filter(Boolean);
+    if (split.length < 2) {
+      continue;
+    }
+
+    const [left, right] = split;
+    if (left.toLowerCase() === trimmedArtist.toLowerCase()) {
+      return right;
+    }
+
+    if (right.toLowerCase() === trimmedArtist.toLowerCase()) {
+      return left;
+    }
+  }
+
+  return trimmedTitle;
+}
+
 function buildGeneratedPlaylistName() {
   const now = new Date();
   const datePart = now.toLocaleDateString(undefined, {
@@ -532,6 +568,7 @@ export function PlayerExperience({
   const isAdmin = useAdminSession({ isLoggedIn, initialIsAdmin });
   const [localTitleOverride, setLocalTitleOverride] = useState<string | null>(null);
   const [localChannelTitleOverride, setLocalChannelTitleOverride] = useState<string | null>(null);
+  const [overlayArtistVideoCount, setOverlayArtistVideoCount] = useState<number | null>(null);
   const endedChoiceOverlayRef = useRef<HTMLDivElement | null>(null);
   const endedChoicePrefetchRafRef = useRef<number | null>(null);
   const endedChoiceRowHeightRef = useRef(220);
@@ -897,6 +934,27 @@ export function PlayerExperience({
   const displayTitle = localTitleOverride ?? currentVideo.title;
   const displayChannelTitle = localChannelTitleOverride ?? currentVideo.channelTitle;
   const hasArtistName = Boolean(displayChannelTitle && displayChannelTitle.trim().length > 0);
+  const currentVideoMetadata = currentVideo as VideoRecord & {
+    parsedArtist?: string | null;
+    parsedTrack?: string | null;
+  };
+  const metadataArtist =
+    currentVideoMetadata.parsedArtist?.trim()
+    || displayChannelTitle?.trim()
+    || inferArtistFromTitle(displayTitle)?.trim()
+    || "Unknown Artist";
+  const metadataTrack =
+    currentVideoMetadata.parsedTrack?.trim()
+    || inferTrackFromTitle(displayTitle, metadataArtist)
+    || displayTitle.trim();
+  const overlayArtistLabel = metadataArtist.toUpperCase();
+  const overlayTrackLabel = toTitleCaseWords(metadataTrack);
+  const artistPagePath = getArtistPagePath(metadataArtist);
+  const overlayArtistHref = artistPagePath ? withVideoContext(artistPagePath, currentVideo.id) : null;
+  const overlayArtistSlug = artistPagePath?.split("/")[2] ?? null;
+  const overlayArtistVideoCountLabel = overlayArtistVideoCount === null
+    ? null
+    : `${overlayArtistVideoCount.toLocaleString("en-US")} videos`;
   const socialShareTargets = buildSocialShareTargets(shareUrl, displayTitle);
   const isInitialDeepLinkedSelection = Boolean(
     requestedVideoId
@@ -969,6 +1027,49 @@ export function PlayerExperience({
     && footerPlaylistMenuPlaylists.some((playlist) => playlist.id === footerLastPlaylistId)
       ? footerLastPlaylistId
       : null;
+
+  useEffect(() => {
+    if (!overlayArtistSlug) {
+      setOverlayArtistVideoCount(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/artists/${encodeURIComponent(overlayArtistSlug)}`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          if (!cancelled) {
+            setOverlayArtistVideoCount(null);
+          }
+          return;
+        }
+
+        const payload = await parseJsonOrNull<{
+          videoCount?: number | null;
+          videos?: Array<{ id?: string }>;
+        }>(response);
+        const resolvedCount = Number(payload?.videoCount);
+        const fallbackCount = Array.isArray(payload?.videos) ? payload.videos.length : null;
+
+        if (!cancelled) {
+          setOverlayArtistVideoCount(Number.isFinite(resolvedCount) ? resolvedCount : fallbackCount);
+        }
+      } catch {
+        if (!cancelled) {
+          setOverlayArtistVideoCount(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [overlayArtistSlug]);
+
   // Also suppress the player on overlay pages when the user is waiting to choose the next video
   // (video ended with autoplay off). On "/", the choice overlay is shown instead.
   const suppressUnavailablePlaybackSurface = endedChoiceFromUnavailable || Boolean(unavailableOverlayMessage) || playerClosedByEndOfVideo || (showEndedChoiceOverlay && pathname !== "/");
@@ -4252,7 +4353,22 @@ export function PlayerExperience({
                 <div className="overlayTop">
                   {!isFullscreen ? (
                     <div className="overlayTitleRow">
-                      <p className="overlayTitle">{displayTitle}</p>
+                      <div className="overlayTitleStack">
+                        <p className="overlayTitle">
+                          {overlayArtistHref ? (
+                            <Link href={overlayArtistHref} className="overlayArtistLink">
+                              {overlayArtistLabel}
+                            </Link>
+                          ) : (
+                            <span>{overlayArtistLabel}</span>
+                          )}
+                          <span aria-hidden="true"> - </span>
+                          <span>{overlayTrackLabel}</span>
+                        </p>
+                        {overlayArtistVideoCountLabel ? (
+                          <p className="overlayArtistVideoCount">{overlayArtistVideoCountLabel}</p>
+                        ) : null}
+                      </div>
                       {isAdmin ? (
                         <button
                           type="button"
