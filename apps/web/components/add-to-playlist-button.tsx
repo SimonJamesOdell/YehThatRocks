@@ -1,13 +1,14 @@
 "use client";
 
+
 import Image from "next/image";
+import { useState, useCallback, useEffect, useRef, useTransition, type CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, useTransition, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { addPlaylistItemClient, createPlaylistClient, listPlaylistsClient } from "@/lib/playlist-client-service";
-import { LAST_PLAYLIST_ID_KEY } from "@/lib/storage-keys";
+import { LAST_PLAYLIST_ID_KEY, OPEN_PLAYLIST_AFTER_ADD_KEY } from "@/lib/storage-keys";
 
 type AddToPlaylistButtonProps = {
   videoId: string;
@@ -23,27 +24,27 @@ type PlaylistSummary = {
   leadVideoId?: string;
 };
 
+
 export function AddToPlaylistButton({
   videoId,
   isAuthenticated = true,
   className,
-  compact = false,
+  compact,
 }: AddToPlaylistButtonProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
   const activePlaylistId = searchParams.get("pl");
-  const [isAdded, setIsAdded] = useState(false);
+  const [isPending, startTransition] = useTransition();
   const [menuOpen, setMenuOpen] = useState(false);
   const [chooserOpen, setChooserOpen] = useState(false);
+  const [isAdded, setIsAdded] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>(undefined);
   const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
   const [playlistsLoaded, setPlaylistsLoaded] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>(undefined);
-  const [isPending, startTransition] = useTransition();
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const triggerButtonRef = useRef<HTMLButtonElement | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerButtonRef = useRef<HTMLButtonElement>(null);
 
   const updateMenuPosition = useCallback(() => {
     const trigger = triggerButtonRef.current;
@@ -52,29 +53,18 @@ export function AddToPlaylistButton({
     }
 
     const rect = trigger.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const measuredWidth = menuRef.current?.getBoundingClientRect().width ?? 0;
-    const measuredHeight = menuRef.current?.getBoundingClientRect().height ?? 0;
-    const menuWidth = Math.max(220, measuredWidth);
-    const menuHeight = Math.max(120, measuredHeight);
-    const gap = 10;
-
-    const desiredLeft = rect.right + gap;
-    const maxLeft = Math.max(8, viewportWidth - menuWidth - 8);
-    const left = Math.min(desiredLeft, maxLeft);
-
-    let top = rect.top + (rect.height / 2) - (menuHeight / 2);
-    if (top + menuHeight > viewportHeight - 8) {
-      top = Math.max(8, viewportHeight - menuHeight - 8);
-    }
-    if (top < 8) {
-      top = 8;
-    }
+    const viewportMargin = 10;
+    const estimatedMenuWidth = 260;
+    const nextLeft = Math.max(
+      viewportMargin,
+      Math.min(rect.left, window.innerWidth - estimatedMenuWidth - viewportMargin),
+    );
 
     setMenuStyle({
-      left,
-      top,
+      position: "fixed",
+      top: rect.bottom + 8,
+      left: nextLeft,
+      zIndex: 1300,
     });
   }, []);
 
@@ -252,11 +242,9 @@ export function AddToPlaylistButton({
 
   function markAdded(message?: string) {
     setIsAdded(true);
-    setStatusMessage(message ?? "Added");
 
     window.setTimeout(() => {
       setIsAdded(false);
-      setStatusMessage((current) => (current === message || (!message && current === "Added") ? null : current));
     }, 1800);
   }
 
@@ -344,8 +332,9 @@ export function AddToPlaylistButton({
         }
 
         markAdded("Added");
-      } catch {
-        // Silent failure
+      } catch (err) {
+        // Log error for observability
+        console.error("[AddToPlaylist] Failed to create playlist:", err);
       }
     });
   }
@@ -361,16 +350,14 @@ export function AddToPlaylistButton({
         const loadedPlaylists = await ensurePlaylistsLoaded();
         setChooserOpen(true);
         if (typeof window !== "undefined") {
-          window.sessionStorage.setItem("ytr:open-playlist-after-add", openAfter ? "1" : "0");
+          window.sessionStorage.setItem(OPEN_PLAYLIST_AFTER_ADD_KEY, openAfter ? "1" : "0");
         }
         if (loadedPlaylists.length === 0) {
-          setStatusMessage("No existing playlists");
-          window.setTimeout(() => {
-            setStatusMessage((current) => (current === "No existing playlists" ? null : current));
-          }, 1800);
+          // Keep behavior unchanged for empty state: chooser opens and shows static empty message.
         }
-      } catch {
-        // Silent failure for card-level quick-add actions.
+      } catch (err) {
+        // Log error for observability
+        console.error("[AddToPlaylist] Failed to open existing chooser:", err);
       }
     });
   }
@@ -393,8 +380,9 @@ export function AddToPlaylistButton({
         }
 
         markAdded("Added");
-      } catch {
-        // Silent failure for card-level quick-add actions.
+      } catch (err) {
+        // Log error for observability
+        console.error("[AddToPlaylist] Failed to add to current playlist:", err);
       }
     });
   }
@@ -421,8 +409,9 @@ export function AddToPlaylistButton({
         }
 
         markAdded("Added");
-      } catch {
-        // Silent failure for card-level quick-add actions.
+      } catch (err) {
+        // Log error for observability
+        console.error("[AddToPlaylist] Failed to add to chosen playlist:", err);
       }
     });
   }
@@ -432,7 +421,7 @@ export function AddToPlaylistButton({
       return;
     }
 
-    const shouldOpen = typeof window !== "undefined" && window.sessionStorage.getItem("ytr:open-playlist-after-add") === "1";
+    const shouldOpen = typeof window !== "undefined" && window.sessionStorage.getItem(OPEN_PLAYLIST_AFTER_ADD_KEY) === "1";
     setChooserOpen(false);
     startTransition(async () => {
       try {
@@ -444,14 +433,14 @@ export function AddToPlaylistButton({
         if (typeof window !== "undefined") {
           window.localStorage.setItem(LAST_PLAYLIST_ID_KEY, playlistId);
           if (shouldOpen) {
-            window.sessionStorage.removeItem("ytr:open-playlist-after-add");
+            window.sessionStorage.removeItem(OPEN_PLAYLIST_AFTER_ADD_KEY);
             setActivePlaylist(playlistId);
           }
         }
 
         markAdded("Added");
-      } catch {
-        // Silent failure for card-level quick-add actions.
+      } catch (err) {
+        console.error("[AddToPlaylist] Failed to add to selected playlist:", err);
       }
     });
   }

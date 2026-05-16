@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 "use strict";
 
+const { assertInvariant } = require("./smoke-assertions");
+
 function readArg(name, fallback) {
   const raw = process.argv.find((arg) => arg.startsWith(`--${name}=`));
   if (!raw) {
@@ -26,7 +28,6 @@ function assertInvariant(condition, description, details, failures) {
     return;
   }
 
-  failures.push({ description, details });
   console.error(`[fail] ${description}`);
   if (details) {
     console.error(`       ${details}`);

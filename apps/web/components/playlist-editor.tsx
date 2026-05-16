@@ -72,7 +72,7 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
       return;
     }
 
-    startTransition(async () => {
+    async function handleSaveNameTransition() {
       setError(null);
 
       try {
@@ -101,7 +101,8 @@ export function PlaylistEditor({ playlist, isAuthenticated }: PlaylistEditorProp
       } catch {
         setError("Could not rename playlist. Please try again.");
       }
-    });
+    }
+    startTransition(handleSaveNameTransition);
   }
 
   function removeTrack(index: number) {

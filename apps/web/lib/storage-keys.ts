@@ -1,3 +1,5 @@
+export const OPEN_PLAYLIST_AFTER_ADD_KEY = "ytr:open-playlist-after-add";
+export const ANONYMOUS_USERNAME_KEY = "ytr:anonymous-username";
 export const PENDING_VIDEO_SELECTION_KEY = "ytr:pending-video-selection";
 export const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
 export const RESUME_KEY = "yeh-player-resume";

@@ -1,3 +1,4 @@
+const { assertInvariant } = require("./smoke-assertions");
 #!/usr/bin/env node
 "use strict";
 
@@ -16,18 +17,6 @@ function asNumber(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function assertInvariant(condition, description, details, failures) {
-  if (condition) {
-    console.log(`[ok] ${description}`);
-    return;
-  }
-
-  failures.push({ description, details });
-  console.error(`[fail] ${description}`);
-  if (details) {
-    console.error(`       ${details}`);
-  }
-}
 
 function splitSetCookieHeader(raw) {
   if (!raw) {
