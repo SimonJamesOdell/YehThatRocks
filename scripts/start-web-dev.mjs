@@ -8,6 +8,7 @@
 
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import mysql from "mysql2/promise";
@@ -126,6 +127,24 @@ async function initializeAdminCacheIfPossible(env) {
   }
 }
 
+function isPortInUse(host, port) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+
+    const finish = (value) => {
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(value);
+    };
+
+    socket.setTimeout(900);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+    socket.connect(port, host);
+  });
+}
+
 async function main() {
   // Honour either `--port <n>` or positional `<n>` (npm can forward as positional).
   const cliArgs = process.argv.slice(2);
@@ -134,6 +153,18 @@ async function main() {
   const port = portArgIndex !== -1 && cliArgs[portArgIndex + 1]
     ? cliArgs[portArgIndex + 1]
     : positionalPort ?? "3000";
+  const portNumber = Number(port);
+
+  if (!Number.isInteger(portNumber) || portNumber <= 0 || portNumber > 65535) {
+    console.error(`❌ Invalid port: ${port}`);
+    process.exit(1);
+  }
+
+  if (await isPortInUse("127.0.0.1", portNumber)) {
+    console.error(`❌ Port ${portNumber} is already in use.`);
+    console.error("Refusing to clear Next dev cache or launch a second dev server on the same port.");
+    process.exit(1);
+  }
 
   const resolvedDatabaseUrl = await resolveDatabaseUrl();
   const env = {
