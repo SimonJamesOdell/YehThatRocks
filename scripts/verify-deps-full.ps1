@@ -46,6 +46,43 @@ function Wait-ForHttp {
   throw "Timed out waiting for server at $Url after $TimeoutSeconds seconds."
 }
 
+function Get-HttpStatusCode {
+  param(
+    [string]$Url
+  )
+
+  try {
+    $resp = Invoke-WebRequest -Uri $Url -Method Get -UseBasicParsing -TimeoutSec 5 -SkipHttpErrorCheck
+    return [int]$resp.StatusCode
+  } catch {
+    return $null
+  }
+}
+
+function Test-PortInUse {
+  param(
+    [string]$HostName,
+    [int]$Port,
+    [int]$TimeoutMs = 1000
+  )
+
+  $client = New-Object System.Net.Sockets.TcpClient
+  try {
+    $iar = $client.BeginConnect($HostName, $Port, $null, $null)
+    $connected = $iar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
+    if (-not $connected) {
+      return $false
+    }
+
+    $client.EndConnect($iar)
+    return $true
+  } catch {
+    return $false
+  } finally {
+    $client.Close()
+  }
+}
+
 function Invoke-Npm {
   param(
     [string[]]$NpmArgs,
@@ -91,6 +128,20 @@ try {
   }
 
   Invoke-Step -Name "start:test-server" -Action {
+    $statusCode = Get-HttpStatusCode -Url "$baseUrl/api/status"
+    if ($null -ne $statusCode) {
+      if ($statusCode -ge 200 -and $statusCode -lt 300) {
+        Write-Host "[start:test-server] reusing existing healthy server at $baseUrl (status=$statusCode)" -ForegroundColor Yellow
+        return
+      }
+
+      throw "Port $Port already serves $baseUrl/api/status with status $statusCode. Refusing to start another dev server on the same port."
+    }
+
+    if (Test-PortInUse -HostName "127.0.0.1" -Port $Port) {
+      throw "Port $Port is already in use by a non-HTTP or unresponsive process. Refusing to start another dev server."
+    }
+
     $npmCmd = (Get-Command npm.cmd -ErrorAction SilentlyContinue)
     if (-not $npmCmd) {
       $npmCmd = (Get-Command npm -ErrorAction SilentlyContinue)

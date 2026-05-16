@@ -1,5 +1,5 @@
-const { assertInvariant } = require("./smoke-assertions");
 #!/usr/bin/env node
+const { assertInvariant } = require("./smoke-assertions");
 "use strict";
 
 function readArg(name, fallback) {

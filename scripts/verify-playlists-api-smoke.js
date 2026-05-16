@@ -22,18 +22,6 @@ function isYouTubeId(value) {
   return typeof value === "string" && /^[A-Za-z0-9_-]{11}$/.test(value);
 }
 
-function assertInvariant(condition, description, details, failures) {
-  if (condition) {
-    console.log(`[ok] ${description}`);
-    return;
-  }
-
-  console.error(`[fail] ${description}`);
-  if (details) {
-    console.error(`       ${details}`);
-  }
-}
-
 async function fetchJson(url, init, timeoutMs) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
