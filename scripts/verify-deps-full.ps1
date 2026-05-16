@@ -111,6 +111,22 @@ function Invoke-Npm {
   }
 }
 
+function Invoke-NodeScript {
+  param(
+    [string]$ScriptPath,
+    [string[]]$ScriptArgs = @()
+  )
+
+  if (-not (Test-Path $ScriptPath)) {
+    throw "Node script not found: $ScriptPath"
+  }
+
+  & node $ScriptPath @ScriptArgs
+  if ($LASTEXITCODE -ne 0) {
+    throw "node $ScriptPath $($ScriptArgs -join ' ') failed with exit code $LASTEXITCODE"
+  }
+}
+
 Set-Location $RepoRoot
 
 $baseUrl = "http://127.0.0.1:$Port"
@@ -169,10 +185,10 @@ try {
   }
 
   Invoke-Step -Name "verify:invariants:api" -Action {
-    Invoke-Npm -NpmArgs @("run", "verify:core-experience:api", "--", "--base-url=$baseUrl")
-    Invoke-Npm -NpmArgs @("run", "verify:playlists:api", "--", "--base-url=$baseUrl")
-    Invoke-Npm -NpmArgs @("run", "verify:categories:api", "--", "--base-url=$baseUrl")
-    Invoke-Npm -NpmArgs @("run", "verify:auth:api", "--", "--base-url=$baseUrl")
+    Invoke-NodeScript -ScriptPath "scripts/verify-core-experience-api-smoke.js" -ScriptArgs @("--base-url=$baseUrl")
+    Invoke-NodeScript -ScriptPath "scripts/verify-playlists-api-smoke.js" -ScriptArgs @("--base-url=$baseUrl")
+    Invoke-NodeScript -ScriptPath "scripts/verify-categories-invariants.js" -ScriptArgs @("--check-api", "--base-url=$baseUrl")
+    Invoke-NodeScript -ScriptPath "scripts/verify-auth-api-smoke.js" -ScriptArgs @("--base-url=$baseUrl")
   }
 
   Invoke-Step -Name "test:smoke:full" -Action {
