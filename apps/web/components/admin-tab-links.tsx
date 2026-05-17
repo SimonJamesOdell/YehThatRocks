@@ -96,7 +96,6 @@ export function AdminTabLinks({
       <Link href="/admin?tab=overview" className={tabClass("overview")}>Overview</Link>
       <Link href="/admin?tab=magazine" className={tabClass("magazine")}>Magazine</Link>
       <Link href="/admin?tab=performance" className={tabClass("performance")}>Performance</Link>
-      <Link href="/admin?tab=api" className={tabClass("api")}>API Usage</Link>
       <Link href="/admin?tab=categories" className={tabClass("categories")}>Categories</Link>
       <Link href="/admin?tab=videos" className={tabClass("videos")}>New Videos {pendingCount !== null ? `(${pendingCount})` : ""}</Link>
       <Link href="/admin?tab=catalog-review" className={tabClass("catalog-review")}>Catalog Cleanup {catalogReviewRemaining !== null ? `(${catalogReviewRemaining})` : ""}</Link>

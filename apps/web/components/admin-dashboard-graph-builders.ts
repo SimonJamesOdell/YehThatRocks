@@ -1,7 +1,6 @@
 import { finiteOrNull } from "@/components/admin-dashboard-utils";
 import type { AnalyticsBucket, DashboardPayload } from "@/components/admin-dashboard-types";
 
-type ApiUsageRow = DashboardPayload["insights"]["apiUsage"]["daily"][number];
 type HostMetricRow = DashboardPayload["hostMetrics"]["minute"][number];
 
 type AnalyticsSeriesOn = {
@@ -20,73 +19,6 @@ export function filterBucketsWithinRange(rows: AnalyticsBucket[], range: Analyti
 
   const filtered = rows.filter((row) => row.bucketStart >= range.bucketStart && row.bucketEnd <= range.bucketEnd);
   return filtered.length > 0 ? filtered : rows;
-}
-
-export function buildApiUsageGraph(apiUsageRows: ApiUsageRow[]) {
-  const width = 760;
-  const height = 240;
-  const paddingLeft = 52;
-  const paddingRight = 24;
-  const paddingTop = 14;
-  const paddingBottom = 46;
-  const rows = apiUsageRows.slice(-14);
-
-  if (rows.length === 0) {
-    return {
-      width,
-      height,
-      bars: [] as Array<{
-        x: number;
-        youtubeHeight: number;
-        groqHeight: number;
-        groqClassifiedHeight: number;
-        label: string;
-        youtubeUnits: number;
-        groqCalls: number;
-        groqClassified: number;
-      }>,
-      yTicks: [] as Array<{ y: number; value: number }>,
-      axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
-      barWidth: 8,
-      chartHeight: height - paddingTop - paddingBottom,
-    };
-  }
-
-  const chartWidth = width - paddingLeft - paddingRight;
-  const chartHeight = height - paddingTop - paddingBottom;
-  const maxValue = Math.max(1, ...rows.map((row) => Math.max(row.youtubeUnits, row.groqCalls, row.groqClassified)));
-  const groupWidth = chartWidth / rows.length;
-  const barWidth = Math.max(6, Math.min(18, (groupWidth - 8) / 3));
-  const scaleHeight = (value: number) => (value / maxValue) * chartHeight;
-
-  const bars = rows.map((row, index) => {
-    const x = paddingLeft + index * groupWidth + (groupWidth - (barWidth * 3 + 4)) / 2;
-    return {
-      x,
-      youtubeHeight: scaleHeight(row.youtubeUnits),
-      groqHeight: scaleHeight(row.groqCalls),
-      groqClassifiedHeight: scaleHeight(row.groqClassified),
-      label: row.day.slice(5),
-      youtubeUnits: row.youtubeUnits,
-      groqCalls: row.groqCalls,
-      groqClassified: row.groqClassified,
-    };
-  });
-
-  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
-    y: paddingTop + chartHeight - ratio * chartHeight,
-    value: Math.round(maxValue * ratio),
-  }));
-
-  return {
-    width,
-    height,
-    bars,
-    yTicks,
-    axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
-    barWidth,
-    chartHeight,
-  };
 }
 
 export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], analyticsSeriesOn: AnalyticsSeriesOn) {

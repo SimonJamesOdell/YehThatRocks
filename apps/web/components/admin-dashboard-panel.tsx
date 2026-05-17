@@ -4,10 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAdminHealthStreaming } from "@/components/use-admin-health-streaming";
 import { useAdminVideoQueuePolling } from "@/components/use-admin-video-queue-polling";
 import { useAdminAnalyticsRefresh } from "@/components/use-admin-analytics-refresh";
-import { useAdminApiTabPolling } from "@/components/use-admin-api-tab-polling";
 import { finiteOrNull, isAuthResponseError, readJson, readNoStoreJson } from "@/components/admin-dashboard-utils";
-import { buildAnalyticsGraph, buildApiUsageGraph, buildHostMetricsGraph, filterBucketsWithinRange } from "@/components/admin-dashboard-graph-builders";
-import { AdminDashboardApiTab } from "@/components/admin-dashboard-api-tab";
+import { buildAnalyticsGraph, buildHostMetricsGraph, filterBucketsWithinRange } from "@/components/admin-dashboard-graph-builders";
 import { AdminDashboardCatalogReviewTab } from "@/components/admin-dashboard-catalog-review-tab";
 import { AdminDashboardCategoriesTab } from "@/components/admin-dashboard-categories-tab";
 import { AdminDashboardMagazineTab } from "@/components/admin-dashboard-magazine-tab";
@@ -35,7 +33,6 @@ import {
   AdminMagazineCommentModerationAction,
   AdminMagazineCommentModerationRow,
   PerfWindowResetResponse,
-  QuotaBackfillStatus,
 } from "@/components/admin-dashboard-types";
 
 const HEALTH_FALLBACK_POLL_MS = 2_000;
@@ -83,10 +80,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [selectedMonthlyBucket, setSelectedMonthlyBucket] = useState<AnalyticsBucket | null>(null);
   const [selectedWeeklyBucket, setSelectedWeeklyBucket] = useState<AnalyticsBucket | null>(null);
   const [showHostMetricsGraph, setShowHostMetricsGraph] = useState(false);
-  const [quotaStatus, setQuotaStatus] = useState<QuotaBackfillStatus | null>(null);
-  const [backfillRunning, setBackfillRunning] = useState(false);
-  const [backfillResult, setBackfillResult] = useState<string | null>(null);
-  const [msUntilReset, setMsUntilReset] = useState<number | null>(null);
   const [hostMetricSeriesOn, setHostMetricSeriesOn] = useState({
     cpu: true,
     memory: true,
@@ -103,7 +96,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const hostMetricMinuteRows = dashboard?.hostMetrics.minute;
   const ingestVelocityRows = dashboard?.insights.ingestVelocity;
   const groqSpendDailyRows = dashboard?.insights.groqSpend.daily;
-  const apiUsageDailyRows = dashboard?.insights.apiUsage.daily;
   const analyticsHourlyRecentRows = dashboard?.analytics.hourlyRecent;
 
   const hostMetricRows = useMemo(() => (hostMetricMinuteRows ?? []).slice(), [hostMetricMinuteRows]);
@@ -111,10 +103,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const orderedGroqSpend = useMemo(() => (groqSpendDailyRows ?? []).slice().reverse(), [groqSpendDailyRows]);
   const maxIngestCount = useMemo(() => Math.max(1, ...orderedIngestVelocity.map((item) => item.count)), [orderedIngestVelocity]);
   const maxGroqCount = useMemo(() => Math.max(1, ...orderedGroqSpend.map((item) => item.classified + item.errors)), [orderedGroqSpend]);
-  const apiUsageRows = useMemo(() => (apiUsageDailyRows ?? []).slice(), [apiUsageDailyRows]);
-  const apiUsageTotals7d = dashboard?.insights.apiUsage.totals7d;
   const analyticsSeries = dashboard?.analytics.series;
-  const apiUsageGraph = useMemo(() => buildApiUsageGraph(apiUsageRows), [apiUsageRows]);
   const hourlySeries = useMemo(() => {
     const recent = (analyticsHourlyRecentRows ?? []).slice(-24);
 
@@ -594,44 +583,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     setMagazineCommentQueue(payload.queue ?? []);
   }
 
-  async function loadQuotaStatus() {
-    try {
-      const status = await readJson<QuotaBackfillStatus & { ok: boolean }>("/api/admin/videos/backfill-quota");
-      setQuotaStatus(status);
-      setMsUntilReset(status.msUntilReset);
-    } catch {
-      // non-fatal
-    }
-  }
-
-  async function triggerBackfill(budgetUnits: number) {
-    if (backfillRunning || budgetUnits < 100) {
-      return;
-    }
-
-    setBackfillRunning(true);
-    setBackfillResult(null);
-
-    try {
-      const result = await postJson<{
-        ok: boolean;
-        seedsAttempted: number;
-        fetchedNodes: number;
-        discoveredNewVideos: number;
-        unitsEstimated: number;
-      }>("/api/admin/videos/backfill-quota", { budgetUnits });
-
-      setBackfillResult(
-        `Backfill complete — ${result.seedsAttempted} seeds, ${result.discoveredNewVideos} new videos found, ~${result.unitsEstimated} units used.`,
-      );
-    } catch (backfillError) {
-      setBackfillResult(backfillError instanceof Error ? backfillError.message : "Backfill failed.");
-    } finally {
-      setBackfillRunning(false);
-      void loadQuotaStatus();
-    }
-  }
-
   async function loadActiveTab() {
     setLoading(true);
     setError(null);
@@ -643,8 +594,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         await Promise.all([loadMagazineArticles(), loadMagazineCommentQueue()]);
       } else if (activeTab === "performance") {
         await loadOverview();
-      } else if (activeTab === "api") {
-        await Promise.all([loadOverview(), loadQuotaStatus()]);
       } else if (activeTab === "categories") {
         await loadCategories();
       } else if (activeTab === "videos") {
@@ -663,15 +612,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     void loadActiveTab();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, refreshOverviewAnalytics]);
-
-  // Use orchestration hook for API tab polling
-  useAdminApiTabPolling({
-    activeTab,
-    quotaStatus,
-    onTickMsUntilReset: setMsUntilReset,
-    onLoadQuotaStatus: loadQuotaStatus,
-    onTriggerBackfill: triggerBackfill,
-  });
 
   const handleAdminHealthPayload = useCallback((payload: {
     meta?: { generatedAt?: string };
@@ -952,8 +892,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
 
   const rollupStatusRelevantTab =
     activeTab === "overview"
-    || activeTab === "performance"
-    || activeTab === "api";
+    || activeTab === "performance";
   const rollupsUnavailableMessage = rollupStatusRelevantTab && dashboard?.meta.rollups?.available === false
     ? (dashboard.meta.rollups.message ?? "Rollup data is currently unavailable. Background rollup is running.")
     : null;
@@ -1035,23 +974,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
           resettingPerfWindow={resettingPerfWindow}
           onResetPerfWindow={() => {
             void resetPerfWindow();
-          }}
-        />
-      ) : null}
-
-      {activeTab === "api" ? (
-        <AdminDashboardApiTab
-          apiUsageTotals7d={apiUsageTotals7d}
-          apiUsageGraph={apiUsageGraph}
-          quotaStatus={quotaStatus}
-          msUntilReset={msUntilReset}
-          backfillRunning={backfillRunning}
-          backfillResult={backfillResult}
-          onTriggerBackfill={(budgetUnits) => {
-            void triggerBackfill(budgetUnits);
-          }}
-          onLoadQuotaStatus={() => {
-            void loadQuotaStatus();
           }}
         />
       ) : null}
