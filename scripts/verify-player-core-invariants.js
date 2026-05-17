@@ -256,6 +256,10 @@ function main() {
   assertContains(playerExperienceSource, "const playbackAlreadyEstablished =", "Player skips unavailable handling once playback is established", failures);
   assertContains(playerExperienceSource, "setUnavailableOverlayMessage(null);", "Player clears stale unavailable overlay once playback starts", failures);
   assertContains(playerExperienceSource, "setPlayerHostMode(\"youtube\");", "Player retries restricted videos with youtube host fallback", failures);
+  assertContains(playerExperienceSource, "const EARLY_PLAYBACK_VERIFICATION_MS = 3500;", "Player allows a 3.5s startup grace window before early unavailability verification", failures);
+  assertContains(playerExperienceSource, "const STUCK_PLAYBACK_CHECK_MS = 5000;", "Player waits 5s before treating startup buffering as stuck playback", failures);
+  assertContains(playerExperienceSource, "const STUCK_PLAYBACK_RETRY_DELAYS_MS = [500, 1500, 3000] as const;", "Player uses progressive stuck-playback retry delays to reduce premature failure classification", failures);
+  assertContains(playerExperienceSource, "}, EARLY_PLAYBACK_VERIFICATION_MS);", "Forced-unavailable overlay path is delayed by the shared early-playback verification window", failures);
 
   // Share modal and footer playlist quick-add.
   assertContains(playerExperienceSource, "const [showShareModal, setShowShareModal] = useState(false);", "Player tracks modal share state", failures);
