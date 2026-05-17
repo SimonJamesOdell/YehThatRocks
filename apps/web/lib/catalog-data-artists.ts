@@ -1164,13 +1164,14 @@ export async function getArtists() {
 
 export async function getArtistsByLetter(letter: string, limit = 120, offset = 0, filterPrefix = ""): Promise<Array<ArtistRecord & { videoCount: number }>> {
   const normalizedLetter = letter.trim().toUpperCase();
+  const isNumericBucket = normalizedLetter === "#";
   const normalizedFilterPrefix = filterPrefix.trim().toLowerCase();
   const safeLimit = Math.max(1, Math.min(limit, 300));
   const safeOffset = Math.max(0, Math.floor(offset));
-  const letterFilterPrefix = normalizedFilterPrefix || normalizedLetter.toLowerCase();
+  const letterFilterPrefix = normalizedFilterPrefix || (isNumericBucket ? "" : normalizedLetter.toLowerCase());
   const projectionPageCacheKey = `${normalizedLetter}:${letterFilterPrefix}:${safeOffset}:${safeLimit}`;
 
-  if (!/^[A-Z]$/.test(normalizedLetter)) return [];
+  if (!/^(?:[A-Z]|#)$/.test(normalizedLetter)) return [];
   requireDatabaseUrl("getArtistsByLetter");
 
   try {
@@ -1184,6 +1185,18 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
 
       const hasThumbnailColumn = await hasArtistStatsThumbnailColumn();
       const queryPromise = (async () => {
+        const projectionFilterClause = isNumericBucket
+          ? "s.display_name REGEXP '^[0-9]'"
+          : "s.first_letter = ?";
+        const projectionPrefixClause = letterFilterPrefix ? "AND s.display_name LIKE ?" : "";
+        const projectionParams: unknown[] = [];
+        if (!isNumericBucket) {
+          projectionParams.push(normalizedLetter);
+        }
+        if (letterFilterPrefix) {
+          projectionParams.push(`${letterFilterPrefix}%`);
+        }
+
         const projectedRows = await prisma.$queryRawUnsafe<Array<{
           displayName: string; slug: string; country: string | null; genre: string | null;
           videoCount: number | null; thumbnailVideoId: string | null;
@@ -1193,15 +1206,14 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
                    s.video_count AS videoCount,
                    ${hasThumbnailColumn ? "s.thumbnail_video_id" : "NULL"} AS thumbnailVideoId
             FROM artist_stats s
-            WHERE s.first_letter = ?
-              AND s.display_name LIKE ?
+            WHERE ${projectionFilterClause}
+              ${projectionPrefixClause}
               AND s.video_count > 0
             ORDER BY s.display_name ASC
             LIMIT ${safeLimit}
             OFFSET ${safeOffset}
           `,
-          normalizedLetter,
-          `${letterFilterPrefix}%`,
+          ...projectionParams,
         );
 
         if (projectedRows.length > 0 || safeOffset > 0) {
@@ -1255,16 +1267,31 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
 
     if (statsSource === "parsedArtist") {
       const buildRowsPromise = (async () => {
+        const artistPrefixClause = letterFilterPrefix ? `AND ${artistPrefixFilterExpr} LIKE ?` : "";
+        const artistNumericClause = isNumericBucket ? `AND ${artistPrefixFilterExpr} REGEXP '^[0-9]'` : "";
+        const artistParams: unknown[] = [];
+        if (letterFilterPrefix) {
+          artistParams.push(`${letterFilterPrefix}%`);
+        }
+
         const artists = await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
           `
             SELECT a.${nameCol} AS name, NULL AS country, ${genreExpr} AS genre1
             FROM artists a
             WHERE a.${nameCol} IS NOT NULL AND a.${nameCol} <> ''
-              AND ${artistPrefixFilterExpr} LIKE ?
+              ${artistNumericClause}
+              ${artistPrefixClause}
             ORDER BY a.${nameCol} ASC
           `,
-          `${letterFilterPrefix}%`,
+          ...artistParams,
         );
+
+        const parsedArtistPrefixClause = letterFilterPrefix ? `AND ${videoArtistNormExpr} LIKE ?` : "";
+        const parsedArtistNumericClause = isNumericBucket ? `AND ${videoArtistNormExpr} REGEXP '^[0-9]'` : "";
+        const parsedArtistParams: unknown[] = [];
+        if (letterFilterPrefix) {
+          parsedArtistParams.push(`${letterFilterPrefix}%`);
+        }
 
         const parsedArtistCounts = await prisma.$queryRawUnsafe<Array<{ artistKey: string | null; videoCount: number | null; thumbnailVideoId: string | null }>>(
           `
@@ -1275,11 +1302,12 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
             FROM videos v
             WHERE ${videoArtistNormExpr} <> ''
               AND v.videoId IS NOT NULL
-              AND ${videoArtistNormExpr} LIKE ?
+              ${parsedArtistNumericClause}
+              ${parsedArtistPrefixClause}
               ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
             GROUP BY ${videoArtistNormExpr}
           `,
-          `${letterFilterPrefix}%`,
+          ...parsedArtistParams,
         );
 
         const countByArtist = new Map<string, number>();
@@ -1315,6 +1343,12 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
       }
     }
 
+    const artistPrefixClause = letterFilterPrefix ? `AND ${artistPrefixFilterExpr} LIKE ?` : "";
+    const artistNumericClause = isNumericBucket ? `AND ${artistPrefixFilterExpr} REGEXP '^[0-9]'` : "";
+    const videoPrefixClause = letterFilterPrefix ? `AND ${videoArtistNormExpr} LIKE ?` : "";
+    const videoNumericClause = isNumericBucket ? `AND ${videoArtistNormExpr} REGEXP '^[0-9]'` : "";
+    const queryParams: unknown[] = [];
+
     let videoCountSubquery = `
       SELECT
         ${videoArtistNormExpr} AS artistKey,
@@ -1323,9 +1357,14 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
       FROM videos v
       WHERE ${videoArtistNormExpr} <> ''
         AND v.videoId IS NOT NULL
-        AND ${videoArtistNormExpr} LIKE ?
+        ${videoNumericClause}
+        ${videoPrefixClause}
       GROUP BY ${videoArtistNormExpr}
     `;
+
+    if (letterFilterPrefix) {
+      queryParams.push(`${letterFilterPrefix}%`);
+    }
 
     if (statsSource === "videosbyartist") {
       const artistVideoColumns = await getArtistVideoColumnMap();
@@ -1336,6 +1375,9 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
       const vaVideoRefCol = escapeSqlIdentifier(artistVideoColumns.videoRef);
       const joinVideoExpr = artistVideoColumns.joinsOnVideoPrimaryId ? "v.id" : "v.videoId";
 
+      const vaPrefixClause = letterFilterPrefix ? `AND ${vaArtistNormExpr} LIKE ?` : "";
+      const vaNumericClause = isNumericBucket ? `AND ${vaArtistNormExpr} REGEXP '^[0-9]'` : "";
+
       videoCountSubquery = `
         SELECT
           ${vaArtistNormExpr} AS artistKey,
@@ -1344,7 +1386,8 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
         FROM videosbyartist va
         INNER JOIN videos v ON ${joinVideoExpr} = va.${vaVideoRefCol}
         WHERE ${vaArtistNormExpr} <> ''
-          AND ${vaArtistNormExpr} LIKE ?
+          ${vaNumericClause}
+          ${vaPrefixClause}
           AND EXISTS (
             SELECT 1 FROM site_videos sv
             WHERE sv.video_id = v.id AND sv.status = 'available'
@@ -1352,6 +1395,10 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
           AND v.videoId IS NOT NULL
         GROUP BY ${vaArtistNormExpr}
       `;
+    }
+
+    if (letterFilterPrefix) {
+      queryParams.push(`${letterFilterPrefix}%`);
     }
 
     const rows = await prisma.$queryRawUnsafe<Array<{
@@ -1365,13 +1412,13 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
         INNER JOIN (${videoCountSubquery}) vc ON vc.artistKey = ${artistNameNormExpr}
         WHERE vc.videoCount > 0
           AND a.${nameCol} IS NOT NULL AND a.${nameCol} <> ''
-          AND ${artistPrefixFilterExpr} LIKE ?
+          ${artistNumericClause}
+          ${artistPrefixClause}
         ORDER BY a.${nameCol} ASC
         LIMIT ${safeLimit}
         OFFSET ${safeOffset}
       `,
-      `${letterFilterPrefix}%`,
-      `${letterFilterPrefix}%`,
+      ...queryParams,
     );
 
     const mappedRows = rows.map((row: any) => ({

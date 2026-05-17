@@ -16,6 +16,7 @@ const files = {
   results: path.join(ROOT, "apps/web/components/artists-letter-results.tsx"),
   provider: path.join(ROOT, "apps/web/components/artists-letter-provider.tsx"),
   events: path.join(ROOT, "apps/web/lib/artists-letter-events.ts"),
+  artistsApiRoute: path.join(ROOT, "apps/web/app/api/artists/route.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   catalogDataArtists: path.join(ROOT, "apps/web/lib/catalog-data-artists.ts"),
   schema: path.join(ROOT, "prisma/schema.prisma"),
@@ -33,6 +34,7 @@ function main() {
   const resultsSource = readFileStrict(files.results, ROOT);
   const providerSource = readFileStrict(files.provider, ROOT);
   const eventsSource = readFileStrict(files.events, ROOT);
+  const artistsApiRouteSource = readFileStrict(files.artistsApiRoute, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const catalogDataArtistsSource = readFileStrict(files.catalogDataArtists, ROOT);
   const schemaSource = readFileStrict(files.schema, ROOT);
@@ -46,9 +48,11 @@ function main() {
   assertContains(eventsSource, "updateArtistsLetterInUrl", "Artist letter URL update helper exists", failures);
   assertContains(providerSource, "ArtistsLetterProvider", "Artists letter provider exists", failures);
   assertContains(providerSource, "useArtistsLetterContext", "Artists letter context hook exists", failures);
+  assertContains(eventsSource, "return /^(?:[A-Z]|#)$/.test(letter);", "Artist letter validation accepts A-Z and # buckets", failures);
 
   // Letter nav must do client-side in-place updates via context.
   assertContains(navSource, "useArtistsLetterContext", "Letter nav consumes shared artists context", failures);
+  assertContains(navSource, "const ALPHABET = [...\"ABCDEFGHIJKLMNOPQRSTUVWXYZ\", \"#\"];", "Letter nav exposes # bucket alongside A-Z", failures);
   assertContains(navSource, "selectLetter(normalized)", "Letter nav updates selected letter through context", failures);
   assertContains(navSource, "onClick={(event) => onLetterClick(event, letter)}", "Letter nav intercepts link click for smooth in-place change", failures);
 
@@ -91,8 +95,12 @@ function main() {
   assertContains(catalogDataSource, "const fastMatch = narrowed.find((artist) => slugify(artist.name) === slug);", "Catalog data keeps exact slugify match check in slug fast path", failures);
   assertContains(catalogDataSource, "if (!artistSlugLookupInFlight)", "Catalog data deduplicates concurrent fallback slug-map rebuilds", failures);
   assertContains(catalogDataArtistsSource, "const artistPrefixFilterExpr = columns.normalizedName", "Artist letter browse builds a dedicated prefix filter expression", failures);
+  assertContains(catalogDataArtistsSource, "const isNumericBucket = normalizedLetter === \"#\";", "Artist letter browse recognizes # as numeric bucket", failures);
+  assertContains(catalogDataArtistsSource, "if (!/^(?:[A-Z]|#)$/.test(normalizedLetter)) return [];", "Artist letter browse validates A-Z and # buckets", failures);
+  assertContains(catalogDataArtistsSource, "REGEXP '^[0-9]'", "Artist letter browse maps # bucket to numeric-leading names", failures);
   assertContains(catalogDataArtistsSource, "AND s.display_name LIKE ?", "Artist stats letter browse uses index-friendly display_name prefix LIKE", failures);
   assertContains(catalogDataArtistsSource, "AND ${artistPrefixFilterExpr} LIKE ?", "Artist letter browse uses index-friendly prefix LIKE for artists table filtering", failures);
+  assertContains(artistsApiRouteSource, "if (!/^(?:[A-Z]|#)$/.test(letterParam))", "Artists API accepts # as valid letter filter", failures);
   assertNotContains(catalogDataArtistsSource, "AND LOWER(s.display_name) LIKE ?", "Artist stats letter browse no longer wraps display_name in LOWER for prefix scans", failures);
   assertNotContains(catalogDataArtistsSource, "AND ${artistNameNormExpr} LIKE ?", "Artist letter browse no longer relies on LOWER/TRIM normalization expression for prefix filtering", failures);
   assertContains(schemaSource, '@@index([slug], map: "artist_stats_slug_idx")', "Artist stats schema keeps a direct slug index", failures);
