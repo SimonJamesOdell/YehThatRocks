@@ -14,6 +14,8 @@ import {
 } from "@/lib/chat-data";
 import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
 
+const HTTP_FORBIDDEN = 403;
+
 export async function GET(request: NextRequest) {
   const authContext = await getOptionalApiAuth(request);
 
@@ -29,15 +31,22 @@ export async function GET(request: NextRequest) {
   const { mode, videoId } = parsedQuery.data;
 
   if (mode === "online" && !authContext) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: HTTP_FORBIDDEN });
   }
 
-  if (authContext) {
-    await touchOnlinePresenceThrottled(authContext.userId).catch(() => undefined);
+  const authUserId = authContext?.userId;
+  const hasValidAuthUserId = typeof authUserId === "number" && Number.isInteger(authUserId) && authUserId > 0;
+
+  if (hasValidAuthUserId) {
+    await touchOnlinePresenceThrottled(authUserId).catch(() => undefined);
   }
 
   if (mode === "online") {
-    const onlineUsers = await fetchOnlineUsers(authContext!.userId);
+    if (!hasValidAuthUserId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: HTTP_FORBIDDEN });
+    }
+
+    const onlineUsers = await fetchOnlineUsers(authUserId);
     return NextResponse.json({
       mode,
       videoId: null,

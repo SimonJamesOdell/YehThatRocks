@@ -4,8 +4,9 @@ import { readAuthCookies } from "@/lib/auth-cookies";
 import { isTokenValidationError, verifyToken } from "@/lib/auth-jwt";
 
 export type AuthContext = {
-  userId: number;
-  email: string;
+  userId: number | null; // Allow null for guest users
+  email?: string; // Optional for guest users
+  isGuest?: boolean; // Indicates if the user is a guest
 };
 
 function createUnauthorizedResponse() {
@@ -29,10 +30,8 @@ export async function requireApiAuth(request: NextRequest): Promise<
   const { accessToken } = readAuthCookies(request);
 
   if (!accessToken) {
-    return {
-      ok: false,
-      response: createUnauthorizedResponse(),
-    };
+    // Allow unauthenticated users to watch videos
+    return { ok: true, auth: { userId: null, isGuest: true } };
   }
 
   try {
@@ -43,6 +42,7 @@ export async function requireApiAuth(request: NextRequest): Promise<
       auth: {
         userId: payload.uid,
         email: payload.email,
+        isGuest: payload.isGuest,
       },
     };
   } catch (error) {
@@ -67,6 +67,7 @@ export async function getOptionalApiAuth(request: NextRequest): Promise<AuthCont
     return {
       userId: payload.uid,
       email: payload.email,
+      isGuest: payload.isGuest,
     };
   } catch {
     return null;

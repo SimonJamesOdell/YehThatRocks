@@ -16,6 +16,7 @@ type AuthTokenPayload = {
   uid: number;
   email: string;
   remember?: boolean;
+  isGuest?: boolean; // Added to support guest users
 };
 
 const encoder = new TextEncoder();
@@ -71,7 +72,12 @@ export async function verifyToken(token: string, expectedType: TokenType) {
     throw new Error("Invalid token payload");
   }
 
-  return { uid, email, remember: Boolean(payload.remember) };
+  return {
+    uid,
+    email,
+    remember: Boolean(payload.remember),
+    isGuest: Boolean(payload.isGuest), // Added to include isGuest in the returned payload
+  };
 }
 
 export function isTokenValidationError(error: unknown) {

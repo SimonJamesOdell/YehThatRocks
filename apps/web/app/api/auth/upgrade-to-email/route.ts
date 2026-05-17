@@ -11,6 +11,8 @@ import { parseRequestJson } from "@/lib/request-json";
 import { requireApiAuth } from "@/lib/auth-request";
 import { clearServerAuthStateCacheForUserId } from "@/lib/server-auth";
 
+const HTTP_FORBIDDEN = 403;
+
 export async function POST(request: NextRequest) {
   const requestMeta = getRequestMetadata(request.headers);
   const csrfError = verifySameOrigin(request);
@@ -22,6 +24,12 @@ export async function POST(request: NextRequest) {
   const authResult = await requireApiAuth(request);
   if (!authResult.ok) {
     return authResult.response;
+  }
+
+  const userId = authResult.auth.userId;
+
+  if (typeof userId !== "number" || !Number.isInteger(userId) || userId <= 0) {
+    return NextResponse.json({ error: "Authentication context is invalid." }, { status: HTTP_FORBIDDEN });
   }
 
   if (!process.env.DATABASE_URL) {
@@ -49,7 +57,7 @@ export async function POST(request: NextRequest) {
       await recordAuthAudit({
         action: "upgrade",
         success: false,
-        userId: authResult.auth.userId,
+        userId,
         detail: "Invalid upgrade payload",
         ...requestMeta,
       });
@@ -60,7 +68,7 @@ export async function POST(request: NextRequest) {
 
     // Verify the user is anonymous
     const user = await prisma.user.findUnique({
-      where: { id: authResult.auth.userId },
+      where: { id: userId },
       select: { id: true, email: true },
     });
 
@@ -68,7 +76,7 @@ export async function POST(request: NextRequest) {
       await recordAuthAudit({
         action: "upgrade",
         success: false,
-        userId: authResult.auth.userId,
+        userId,
         detail: "User not found",
         ...requestMeta,
       });
@@ -79,7 +87,7 @@ export async function POST(request: NextRequest) {
       await recordAuthAudit({
         action: "upgrade",
         success: false,
-        userId: authResult.auth.userId,
+        userId,
         detail: "Account already has email and is not anonymous",
         ...requestMeta,
       });
@@ -98,7 +106,7 @@ export async function POST(request: NextRequest) {
       await recordAuthAudit({
         action: "upgrade",
         success: false,
-        userId: authResult.auth.userId,
+        userId,
         email,
         detail: "Email already registered",
         ...requestMeta,
@@ -108,7 +116,7 @@ export async function POST(request: NextRequest) {
 
     // Upgrade the account
     const upgraded = await prisma.user.update({
-      where: { id: authResult.auth.userId },
+      where: { id: userId },
       data: {
         email,
       },
@@ -151,7 +159,7 @@ export async function POST(request: NextRequest) {
       logMessage: "[auth-upgrade] unhandled error",
       auditFailureLogMessage: "[auth-upgrade] failed to write auth audit",
       unknownMessage: "Unknown error",
-      auditUserId: authResult.auth.userId,
+      auditUserId: userId,
       auditDetail: (message) => `Upgrade failed: ${message}`,
       response: (message) => ({
         status: 500,

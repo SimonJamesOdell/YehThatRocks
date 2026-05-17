@@ -14,6 +14,8 @@ import {
   SEARCH_FLAG_REASON_LABELS,
 } from "@/lib/search-flags";
 
+const HTTP_FORBIDDEN = 403;
+
 export async function POST(request: NextRequest) {
   const authResult = await requireApiAuth(request);
   if (!authResult.ok) {
@@ -35,12 +37,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const adminFlagger = isAdminIdentity(authResult.auth.userId, authResult.auth.email);
+  const userId = authResult.auth.userId;
+
+  if (typeof userId !== "number" || !Number.isInteger(userId) || userId <= 0) {
+    return NextResponse.json({ error: "Authentication context is invalid." }, { status: HTTP_FORBIDDEN });
+  }
+
+  const userEmail = authResult.auth.email ?? "";
+  const adminFlagger = isAdminIdentity(userId, userEmail);
   const { videoId, query, reason, correction } = parsed.data;
 
   try {
     const saved = await recordSearchFlag({
-      userId: authResult.auth.userId,
+      userId,
       videoId,
       query,
       reason,

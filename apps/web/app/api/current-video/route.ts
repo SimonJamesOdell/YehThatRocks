@@ -497,6 +497,10 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const optionalUserId = typeof optionalAuth?.userId === "number"
+    ? optionalAuth.userId
+    : undefined;
+
   const resolvePayloadPromise = resolveCurrentVideoPayloadService({
     requestedVideoId: v,
     requestMode,
@@ -509,7 +513,7 @@ export async function GET(request: NextRequest) {
     shouldFilterSeen,
     preferUnseenForEndedChoice,
     favouriteBlendRatio,
-    userId: optionalAuth?.userId,
+    userId: optionalUserId,
     relatedPoolSize: CURRENT_VIDEO_RELATED_POOL_SIZE,
     favouriteVideosPromise: favouriteVideosPromise as Promise<WatchNextVideo[]>,
     getWatchNextStreamSlice,
@@ -532,7 +536,7 @@ export async function GET(request: NextRequest) {
         // (cuts Watch Next fill latency from several seconds to near-zero on warm cache).
         getRelatedPoolForCurrentVideo(
           resolvedVideoId,
-          optionalAuth?.userId,
+          optionalUserId,
           CURRENT_VIDEO_RELATED_POOL_SIZE,
         ).catch(() => undefined);
       }

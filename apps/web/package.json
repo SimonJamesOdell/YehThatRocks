@@ -25,6 +25,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@next/eslint-plugin-next": "^16.2.6",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/d3-geo": "^3.1.0",
@@ -32,8 +33,11 @@
     "@types/nodemailer": "^8.0.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "eslint": "^10.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.3",
+    "@typescript-eslint/parser": "^8.59.3",
+    "eslint": "^10.4.0",
     "eslint-config-next": "16.2.6",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^29.1.1",
     "typescript": "^6.0.3",
     "vite": "^8.0.13",

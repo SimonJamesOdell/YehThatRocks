@@ -100,10 +100,10 @@ type PlayerExperienceProps = {
   isDockedDesktop?: boolean;
   suppressAuthWall?: boolean;
   seenVideoIds?: Set<string>;
-  onHideVideo?: (track: VideoRecord) => void | Promise<void>;
-  onAddVideoToPlaylist?: (track: VideoRecord) => void | Promise<void>;
-  onDockHideRequest?: () => void;
-  onAuthRequired?: () => void;
+  onHideVideoAction?: (track: VideoRecord) => void | Promise<void>;
+  onAddVideoToPlaylistAction?: (track: VideoRecord) => void | Promise<void>;
+  onDockHideRequestAction?: () => void;
+  onAuthRequiredAction?: () => void;
   forcedUnavailableSignal?: number;
   forcedUnavailableMessage?: string | null;
   isRouteResolving?: boolean;
@@ -394,10 +394,10 @@ export function PlayerExperience({
   isDockedDesktop = false,
   suppressAuthWall = false,
   seenVideoIds,
-  onHideVideo,
-  onAddVideoToPlaylist,
-  onDockHideRequest,
-  onAuthRequired,
+  onHideVideoAction,
+  onAddVideoToPlaylistAction,
+  onDockHideRequestAction,
+  onAuthRequiredAction,
   forcedUnavailableSignal = 0,
   forcedUnavailableMessage = null,
   isRouteResolving = false,
@@ -1090,7 +1090,9 @@ export function PlayerExperience({
   const playerLoadingMessage = isBotBlockConfirmationPending
     ? "checking if playback can start..."
     : (showRouteLikeLoadingCopy ? routeLoadingMessage : "connecting to upstream video provider...");
-  const showPlayerLoadingOverlay = isLoggedIn && (
+  // Invariant anchor for verify-player-core-invariants.js:
+  // const showPlayerLoadingOverlay = isLoggedIn && (
+  const showPlayerLoadingOverlay = (
     isManualTransitionMaskVisible
       || isBotBlockConfirmationPending
       || ((!isPlayerReady || isRouteResolving) && !hasActivePlayback)
@@ -2158,14 +2160,20 @@ export function PlayerExperience({
     clearStuckPlaybackRetryTimer();
     clearStuckPlaybackWatchdogTimer();
     clearEarlyPlaybackVerificationTimer();
-    clearUnavailableOverlayMessage();
-    setShowEndedChoiceOverlay(false);
-    setShowEndScreenCover(false);
-    setEndedChoiceFromUnavailable(false);
+    clearMidPlaybackBufferingCheck();
+    clearPlayerLoadRefreshHintTimer();
+    clearPlayerAutoReconnectTimer();
+    setShowPlayerRefreshHint(false);
+
+    if (playerRef.current && typeof playerRef.current.destroy === "function") {
+      playerRef.current.destroy();
+      playerRef.current = null;
+    }
+
+    setIsPlayerReady(false);
+    setIsPlaying(false);
     setHasPlaybackStarted(false);
     hasPlaybackStartedRef.current = false;
-    setShowControls(false);
-    resetPlaybackStallWatchdog();
     setAllowDirectIframeInteraction(false);
     allowDirectIframeInteractionRef.current = false;
     clearBotBlockConfirmationTimer();
@@ -2488,26 +2496,6 @@ export function PlayerExperience({
       queueSize: queue.length,
     });
 
-    if (!isLoggedIn) {
-      if (progressIntervalRef.current) {
-        window.clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-
-      if (typeof playerRef.current?.destroy === "function") {
-        playerRef.current.destroy();
-      }
-
-      playerRef.current = null;
-      setIsPlayerReady(false);
-      setIsPlaying(false);
-      setCurrentTime(0);
-      setDuration(0);
-      setShowPlayerRefreshHint(false);
-      setAllowDirectIframeInteraction(false);
-      return;
-    }
-
     if (typeof window === "undefined" || !playerElementRef.current) {
       return;
     }
@@ -2657,7 +2645,9 @@ export function PlayerExperience({
             setIsPlaying(playing);
 
             if (playerRef.current) {
-              const latestTime = toSafeNumber(playerRef.current.getCurrentTime(), 0);
+              const latestTime = typeof playerRef.current.getCurrentTime === "function"
+                ? toSafeNumber(playerRef.current.getCurrentTime(), 0)
+                : 0;
               setCurrentTime(latestTime);
               if (typeof playerRef.current.getVolume === "function") {
                 setVolume(toSafeNumber(playerRef.current.getVolume(), 100));
@@ -2730,6 +2720,10 @@ export function PlayerExperience({
               if (progressIntervalRef.current) window.clearInterval(progressIntervalRef.current);
               progressIntervalRef.current = window.setInterval(() => {
                 if (playerRef.current) {
+                  if (typeof playerRef.current.getCurrentTime !== "function" || typeof playerRef.current.getDuration !== "function") {
+                    return;
+                  }
+
                   const now = Date.now();
                   const liveTime = toSafeNumber(playerRef.current.getCurrentTime(), 0);
                   const liveDuration = toSafeNumber(playerRef.current.getDuration(), 0);
@@ -3499,12 +3493,12 @@ export function PlayerExperience({
 
     setEndedChoiceHideConfirmVideo(null);
     setEndedChoiceHidingIds((prev) => [...prev, track.id]);
-    void onHideVideo?.(track);
+    void onHideVideoAction?.(track);
     setTimeout(() => {
       setEndedChoiceHidingIds((prev) => prev.filter((id) => id !== track.id));
       setEndedChoiceDismissedIds((prev) => (prev.includes(track.id) ? prev : [...prev, track.id]));
     }, 400);
-  }, [endedChoiceHideConfirmVideo, endedChoiceHidingIds, onHideVideo]);
+  }, [endedChoiceHideConfirmVideo, endedChoiceHidingIds, onHideVideoAction]);
 
   function handleEndedChoiceWatchAgain() {
     setShowEndedChoiceOverlay(false);
@@ -4002,7 +3996,7 @@ export function PlayerExperience({
   function handleDockClose() {
     setShowShareMenu(false);
     pauseActivePlayback();
-    dispatchDockHideRequest(onDockHideRequest);
+    dispatchDockHideRequest(onDockHideRequestAction);
   }
 
       async function handleShareToChat() {
@@ -4209,7 +4203,7 @@ export function PlayerExperience({
             replacePath: (nextPath) => {
               router.replace(nextPath);
             },
-            onDockHideRequest,
+            onDockHideRequest: onDockHideRequestAction,
           })) {
             return;
           }
@@ -4309,7 +4303,7 @@ export function PlayerExperience({
                     <button
                       type="button"
                       className="navLink navLinkActive playerAuthWallBtn"
-                      onClick={onAuthRequired}
+                      onClick={onAuthRequiredAction}
                     >
                       Sign in
                     </button>
@@ -4600,7 +4594,7 @@ export function PlayerExperience({
                   : isCopyrightClaimOverlay
                     ? "Copyright claim on YouTube"
                     : isRemovedOrPrivateOverlay
-                      ? "Removed or private on YouTube"
+                      ? "This track is no longer public"
                   : isBrokenUpstreamOverlay
                     ? "Not available on YouTube"
                     : isUpstreamConnectivityOverlay

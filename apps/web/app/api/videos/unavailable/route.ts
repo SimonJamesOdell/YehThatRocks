@@ -361,7 +361,11 @@ export async function POST(request: NextRequest) {
   }
 
   const reason = parsed.data.reason?.trim() ?? "runtime-player-error";
-  const adminReporter = optionalAuth ? isAdminIdentity(optionalAuth.userId, optionalAuth.email) : false;
+  const optionalUserId = typeof optionalAuth?.userId === "number" ? optionalAuth.userId : null;
+  const optionalUserEmail = optionalAuth?.email ?? "";
+  const adminReporter = optionalUserId !== null
+    ? isAdminIdentity(optionalUserId, optionalUserEmail)
+    : false;
   const forcePruneCandidate = adminReporter && shouldForcePruneFromRuntimeReason(reason);
 
   debugUnavailable("incoming-report", {

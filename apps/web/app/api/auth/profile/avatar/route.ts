@@ -7,6 +7,8 @@ import { prisma } from "@/lib/db";
 import type { PrismaWithProfileUser } from "@/lib/prisma-types";
 import { clearServerAuthStateCacheForUserId } from "@/lib/server-auth";
 
+const HTTP_FORBIDDEN = 403;
+
 export const runtime = "nodejs";
 
 const profileUserSelect = {
@@ -55,6 +57,12 @@ export async function POST(request: NextRequest) {
     return csrfError;
   }
 
+  const userId = authResult.auth.userId;
+
+  if (typeof userId !== "number" || !Number.isInteger(userId) || userId <= 0) {
+    return NextResponse.json({ error: "Authentication context is invalid." }, { status: HTTP_FORBIDDEN });
+  }
+
   let formData: FormData;
   try {
     formData = await request.formData();
@@ -73,7 +81,7 @@ export async function POST(request: NextRequest) {
   }
 
   const existingUser = await (prisma as PrismaWithProfileUser).user.findUnique({
-    where: { id: authResult.auth.userId },
+    where: { id: userId },
     select: {
       avatarUrl: true,
     },
@@ -95,7 +103,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const updatedUser = await (prisma as PrismaWithProfileUser).user.update({
-      where: { id: authResult.auth.userId },
+      where: { id: userId },
       data: {
         avatarUrl: nextAvatarUrl,
       },
@@ -126,8 +134,14 @@ export async function DELETE(request: NextRequest) {
     return csrfError;
   }
 
+  const userId = authResult.auth.userId;
+
+  if (typeof userId !== "number" || !Number.isInteger(userId) || userId <= 0) {
+    return NextResponse.json({ error: "Authentication context is invalid." }, { status: HTTP_FORBIDDEN });
+  }
+
   const existingUser = await (prisma as PrismaWithProfileUser).user.findUnique({
-    where: { id: authResult.auth.userId },
+    where: { id: userId },
     select: profileUserSelect,
   });
 
@@ -136,7 +150,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   const updatedUser = await (prisma as PrismaWithProfileUser).user.update({
-    where: { id: authResult.auth.userId },
+    where: { id: userId },
     data: {
       avatarUrl: null,
     },

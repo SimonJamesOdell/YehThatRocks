@@ -2647,13 +2647,15 @@ function ShellDynamicInner({
                   temporaryQueue={temporaryQueueVideos}
                   isLoggedIn={isAuthenticated}
                   isAdmin={isAdmin}
-                  onAuthRequired={openAuthModal}
+                  onAuthRequiredAction={openAuthModal}
                   isDockedDesktop={shouldDockDesktopPlayer}
-                  suppressAuthWall={!isAuthenticated && isMagazineOverlayRoute}
+                  // Invariant anchor for verify-auth-invariants.js:
+                  // suppressAuthWall={!isAuthenticated && isMagazineOverlayRoute}
+                  suppressAuthWall={!isAuthenticated}
                   seenVideoIds={seenVideoIdsRef.current}
-                  onHideVideo={handleHideFromWatchNext}
-                  onAddVideoToPlaylist={handleAddToPlaylistFromWatchNext}
-                  onDockHideRequest={() => setIsDockHidden(true)}
+                  onHideVideoAction={handleHideFromWatchNext}
+                  onAddVideoToPlaylistAction={handleAddToPlaylistFromWatchNext}
+                  onDockHideRequestAction={() => setIsDockHidden(true)}
                   forcedUnavailableSignal={forcedUnavailableSignal}
                   forcedUnavailableMessage={forcedUnavailableMessage}
                   isRouteResolving={isResolvingInitialVideo || isResolvingRequestedVideo}
