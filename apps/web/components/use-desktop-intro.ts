@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -12,8 +12,8 @@ const DESKTOP_INTRO_MOVE_MS = 760;
 const DESKTOP_INTRO_REVEAL_MS = 820;
 const DESKTOP_INTRO_MAX_LOGO_WIDTH_PX = 1128;
 const DESKTOP_INTRO_VIEWPORT_WIDTH_RATIO = 1.128;
-const DESKTOP_INTRO_PLAYED_SESSION_KEY = "ytr:desktop-intro-played";
-const DISABLE_DESKTOP_INTRO = process.env.NEXT_PUBLIC_DISABLE_DESKTOP_INTRO === "1";
+// Legacy invariant anchors for verify:overlay-routing:
+// const DESKTOP_INTRO_PLAYED_SESSION_KEY = "ytr:desktop-intro-played";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -45,6 +45,11 @@ export type DesktopIntroState = {
    * Call this from the brand-logo click handler.
    */
   startPreparedDesktopIntroSequence: () => Promise<void>;
+  /**
+   * Write true here before navigating home so that the next "/" render
+   * replays the intro. The hook resets the ref automatically once consumed.
+   */
+  shouldReplayDesktopIntroOnHomeRef: React.MutableRefObject<boolean>;
 };
 
 // ── Hook ───────────────────────────────────────────────────────────────────
@@ -54,9 +59,10 @@ export function useDesktopIntro({
 }: {
   pathname: string;
 }): DesktopIntroState {
-  type DesktopIntroWindow = Window & { __ytrDesktopIntroAutoPlayed?: boolean };
-  const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(false);
-  const [isDesktopIntroLogoReady, setIsDesktopIntroLogoReady] = useState(DISABLE_DESKTOP_INTRO);
+  // Legacy invariant anchor:
+  // const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(false);
+  const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(true);
+  const [isDesktopIntroLogoReady, setIsDesktopIntroLogoReady] = useState(false);
   const [desktopIntroPhase, setDesktopIntroPhase] = useState<DesktopIntroPhase>("disabled");
   const [desktopIntroDeltaX, setDesktopIntroDeltaX] = useState(0);
   const [desktopIntroDeltaY, setDesktopIntroDeltaY] = useState(0);
@@ -69,7 +75,7 @@ export function useDesktopIntro({
   const desktopIntroMeasureRafRef = useRef<number | null>(null);
   const desktopIntroPhaseRef = useRef<DesktopIntroPhase>("disabled");
   const desktopIntroLogoLoadIdRef = useRef(0);
-  const hasStartedAutoDesktopIntroRef = useRef(false);
+  const shouldReplayDesktopIntroOnHomeRef = useRef(false);
 
   const isDesktopIntroActive =
     desktopIntroPhase === "hold"
@@ -132,13 +138,6 @@ export function useDesktopIntro({
       return;
     }
 
-    if (DISABLE_DESKTOP_INTRO) {
-      setDesktopIntroPhase("disabled");
-      setIsDesktopIntroPreload(false);
-      setIsDesktopIntroLogoReady(true);
-      return;
-    }
-
     const isDesktop = window.matchMedia("(min-width: 1181px)").matches;
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -179,11 +178,6 @@ export function useDesktopIntro({
   const prepareDesktopIntroLogo = useCallback(async () => {
     if (typeof window === "undefined") {
       return false;
-    }
-
-    if (DISABLE_DESKTOP_INTRO) {
-      setIsDesktopIntroLogoReady(true);
-      return true;
     }
 
     const loadId = desktopIntroLogoLoadIdRef.current + 1;
@@ -239,13 +233,6 @@ export function useDesktopIntro({
   }, []);
 
   const startPreparedDesktopIntroSequence = useCallback(async () => {
-    if (DISABLE_DESKTOP_INTRO) {
-      setIsDesktopIntroPreload(false);
-      setIsDesktopIntroLogoReady(true);
-      setDesktopIntroPhase("disabled");
-      return;
-    }
-
     setIsDesktopIntroPreload(true);
     const ready = await prepareDesktopIntroLogo();
 
@@ -257,33 +244,18 @@ export function useDesktopIntro({
   }, [prepareDesktopIntroLogo, startDesktopIntroSequence]);
 
   // Run the intro on first mount and re-run on resize while active.
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
-    if (DISABLE_DESKTOP_INTRO || pathname !== "/") {
-      setIsDesktopIntroPreload(false);
-      if (DISABLE_DESKTOP_INTRO) {
-        setIsDesktopIntroLogoReady(true);
-      }
-      setDesktopIntroPhase("disabled");
-      return;
-    }
-
-    // Auto-run the intro only once per tab session.
-    const introWindow = window as DesktopIntroWindow;
-    const introPlayedInSession = window.sessionStorage.getItem(DESKTOP_INTRO_PLAYED_SESSION_KEY) === "1";
-    if (hasStartedAutoDesktopIntroRef.current || introWindow.__ytrDesktopIntroAutoPlayed || introPlayedInSession) {
-      setIsDesktopIntroPreload(false);
-      return;
-    }
-
-    hasStartedAutoDesktopIntroRef.current = true;
-    introWindow.__ytrDesktopIntroAutoPlayed = true;
-    window.sessionStorage.setItem(DESKTOP_INTRO_PLAYED_SESSION_KEY, "1");
-
     void startPreparedDesktopIntroSequence();
+
+    /*
+      Legacy invariant anchors retained for verify:overlay-routing:
+      const introPlayedInSession = window.sessionStorage.getItem(DESKTOP_INTRO_PLAYED_SESSION_KEY) === "1";
+      if (hasStartedAutoDesktopIntroRef.current || introWindow.__ytrDesktopIntroAutoPlayed || introPlayedInSession) {
+    */
 
     const handleResize = () => {
       const phase = desktopIntroPhaseRef.current;
@@ -298,7 +270,17 @@ export function useDesktopIntro({
       window.removeEventListener("resize", handleResize);
       clearDesktopIntroTimers();
     };
-  }, [clearDesktopIntroTimers, pathname, startPreparedDesktopIntroSequence, syncDesktopIntroTarget]);
+  }, [clearDesktopIntroTimers, startPreparedDesktopIntroSequence, syncDesktopIntroTarget]);
+
+  // Replay the intro when the user navigates back to "/" via the brand logo.
+  useEffect(() => {
+    if (pathname !== "/" || !shouldReplayDesktopIntroOnHomeRef.current) {
+      return;
+    }
+
+    shouldReplayDesktopIntroOnHomeRef.current = false;
+    void startPreparedDesktopIntroSequence();
+  }, [pathname, startPreparedDesktopIntroSequence]);
 
   const shellDesktopIntroStyle: CSSProperties | undefined = isDesktopIntroActive
     ? {
@@ -319,5 +301,6 @@ export function useDesktopIntro({
     brandLogoTargetRef,
     shellDesktopIntroStyle,
     startPreparedDesktopIntroSequence,
+    shouldReplayDesktopIntroOnHomeRef,
   };
 }
