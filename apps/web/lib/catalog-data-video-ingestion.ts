@@ -585,6 +585,12 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
     `;
 
     const existingMeta = existing[0];
+
+    // Never overwrite metadata that has been explicitly curated by an admin.
+    if (existingMeta?.parseMethod === "admin-manual") {
+      return;
+    }
+
     const existingConfidence = Number(existingMeta?.parseConfidence ?? NaN);
     const existingVideoType = (existingMeta?.parsedVideoType ?? "").trim().toLowerCase();
     const hasSufficientMetadata =

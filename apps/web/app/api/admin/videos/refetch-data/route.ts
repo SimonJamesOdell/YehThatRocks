@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
 
   const row = await prisma.video.findUnique({
     where: { id: parsed.data.id },
-    select: { id: true, videoId: true },
+    select: { id: true, videoId: true, parseMethod: true },
   });
 
   if (!row || row.videoId !== parsed.data.videoId) {
@@ -147,15 +147,19 @@ export async function POST(request: NextRequest) {
     ? (buildNormalizedVideoTitleFromMetadata(normalizedTitle, fallbackMetadata.artist, fallbackMetadata.track) ?? normalizedTitle)
     : normalizedTitle;
 
+  // Respect admin-curated metadata: skip overwriting identity fields (artist, track,
+  // channelTitle, confidence) when the admin has manually set them.
+  const isAdminManual = row.parseMethod === "admin-manual";
+
   const updated = await prisma.video.update({
     where: { id: row.id },
     data: {
       ...(metadata.description !== undefined ? { description: metadata.description } : {}),
       ...(metadata.createdAt ? { createdAt: metadata.createdAt } : {}),
-      ...(normalizedChannelTitle ? { channelTitle: normalizedChannelTitle } : {}),
+      ...(!isAdminManual && normalizedChannelTitle ? { channelTitle: normalizedChannelTitle } : {}),
       ...(Number.isFinite(metadata.viewCount) ? { viewCount: metadata.viewCount } : {}),
       ...(transformedTitle ? { title: transformedTitle } : {}),
-      ...(fallbackMetadata
+      ...(!isAdminManual && fallbackMetadata
         ? {
             parsedArtist: fallbackMetadata.artist,
             parsedTrack: fallbackMetadata.track,
