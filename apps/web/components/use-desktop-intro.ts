@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -257,7 +257,7 @@ export function useDesktopIntro({
   }, [prepareDesktopIntroLogo, startDesktopIntroSequence]);
 
   // Run the intro on first mount and re-run on resize while active.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
