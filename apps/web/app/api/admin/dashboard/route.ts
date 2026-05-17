@@ -104,7 +104,6 @@ function createEmptyDashboardPayload() {
       newVsRepeat: { newVisitors: 0, repeatVisitors: 0 },
       registrationsPerDay: [],
       totals: { pageViews: 0, videoViews: 0, uniqueVisitors: 0, sessions: 0 },
-      geoVisitors: [],
     },
     hostMetrics: { minute: [] },
     insights: {
@@ -167,11 +166,6 @@ function createEmptyDashboardPayload() {
               artistVideosCache: 0,
               artistVideosInFlight: 0,
             },
-          },
-          analyticsGeo: {
-            size: 0,
-            maxEntries: 0,
-            expiredEntries: 0,
           },
           wikiCacheCount: 0,
         },
@@ -472,7 +466,6 @@ function normalizeDashboardPayload(rawPayload: unknown) {
       hourlyRecent: normalizedHourlyRecent,
       series: normalizedSeries,
       registrationsPerDay: asArray(rawAnalytics.registrationsPerDay),
-      geoVisitors: asArray(rawAnalytics.geoVisitors),
     },
     hostMetrics: {
       minute: asArray(asObject(raw.hostMetrics).minute),

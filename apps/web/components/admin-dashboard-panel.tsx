@@ -1,10 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { geoContains, geoNaturalEarth1, geoPath } from "d3-geo";
-import { feature } from "topojson-client";
-import worldAtlasCountries from "world-atlas/countries-110m.json";
-
 import { useAdminHealthStreaming } from "@/components/use-admin-health-streaming";
 import { useAdminVideoQueuePolling } from "@/components/use-admin-video-queue-polling";
 import { useAdminAnalyticsRefresh } from "@/components/use-admin-analytics-refresh";
@@ -18,7 +14,6 @@ import { AdminDashboardMagazineTab } from "@/components/admin-dashboard-magazine
 import { AdminDashboardOverviewTab } from "@/components/admin-dashboard-overview-tab";
 import { AdminDashboardPerformanceTab } from "@/components/admin-dashboard-performance-tab";
 import { AdminDashboardVideosTab } from "@/components/admin-dashboard-videos-tab";
-import { AdminDashboardWorldMapTab } from "@/components/admin-dashboard-worldmap-tab";
 import { useAdminAnalytics } from "@/components/use-admin-analytics";
 import { useAdminCategories } from "@/components/use-admin-categories";
 import { useAdminVideoModeration } from "@/components/use-admin-video-moderation";
@@ -29,9 +24,6 @@ import {
   DashboardPayload,
   AnalyticsBucket,
   AnalyticsZoomLevel,
-  GeoVisitorPoint,
-  MapDateRange,
-  WorldAtlasCountryFeature,
   AdminHealthStreamPayload,
   CategoryRow,
   VideoRow,
@@ -91,7 +83,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [selectedMonthlyBucket, setSelectedMonthlyBucket] = useState<AnalyticsBucket | null>(null);
   const [selectedWeeklyBucket, setSelectedWeeklyBucket] = useState<AnalyticsBucket | null>(null);
   const [showHostMetricsGraph, setShowHostMetricsGraph] = useState(false);
-  const [mapDateRange, setMapDateRange] = useState<MapDateRange>("allTime");
   const [quotaStatus, setQuotaStatus] = useState<QuotaBackfillStatus | null>(null);
   const [backfillRunning, setBackfillRunning] = useState(false);
   const [backfillResult, setBackfillResult] = useState<string | null>(null);
@@ -112,7 +103,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const hostMetricMinuteRows = dashboard?.hostMetrics.minute;
   const ingestVelocityRows = dashboard?.insights.ingestVelocity;
   const groqSpendDailyRows = dashboard?.insights.groqSpend.daily;
-  const geoVisitorRows = dashboard?.analytics.geoVisitors;
   const apiUsageDailyRows = dashboard?.insights.apiUsage.daily;
   const analyticsHourlyRecentRows = dashboard?.analytics.hourlyRecent;
 
@@ -121,123 +111,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const orderedGroqSpend = useMemo(() => (groqSpendDailyRows ?? []).slice().reverse(), [groqSpendDailyRows]);
   const maxIngestCount = useMemo(() => Math.max(1, ...orderedIngestVelocity.map((item) => item.count)), [orderedIngestVelocity]);
   const maxGroqCount = useMemo(() => Math.max(1, ...orderedGroqSpend.map((item) => item.classified + item.errors)), [orderedGroqSpend]);
-  const worldMapVisitors = useMemo(() => (geoVisitorRows ?? []).slice(), [geoVisitorRows]);
   const apiUsageRows = useMemo(() => (apiUsageDailyRows ?? []).slice(), [apiUsageDailyRows]);
   const apiUsageTotals7d = dashboard?.insights.apiUsage.totals7d;
-  const filteredWorldMapVisitors = useMemo(() => {
-    if (mapDateRange === "allTime") {
-      return worldMapVisitors;
-    }
-
-    const now = new Date();
-    const since = new Date(now);
-    if (mapDateRange === "today") {
-      since.setHours(0, 0, 0, 0);
-    } else if (mapDateRange === "thisWeek") {
-      const day = since.getDay();
-      const daysSinceMonday = (day + 6) % 7;
-      since.setDate(since.getDate() - daysSinceMonday);
-      since.setHours(0, 0, 0, 0);
-    } else if (mapDateRange === "thisMonth") {
-      since.setDate(1);
-      since.setHours(0, 0, 0, 0);
-    } else {
-      since.setMonth(0, 1);
-      since.setHours(0, 0, 0, 0);
-    }
-
-    return worldMapVisitors.filter((visitor) => {
-      const seenAt = new Date(visitor.lastSeenAt);
-      return Number.isFinite(seenAt.getTime()) && seenAt >= since;
-    });
-  }, [mapDateRange, worldMapVisitors]);
-  const worldCountryFeatures = useMemo(() => {
-    try {
-      const topo = worldAtlasCountries as {
-        objects?: { countries?: unknown };
-      };
-      if (!topo.objects?.countries) {
-        return [] as WorldAtlasCountryFeature[];
-      }
-
-      const collection = feature(topo as never, topo.objects.countries as never) as {
-        features?: WorldAtlasCountryFeature[];
-      };
-      return collection.features ?? [];
-    } catch {
-      return [] as WorldAtlasCountryFeature[];
-    }
-  }, []);
-  const worldMap = useMemo(() => {
-    const width = 880;
-    const height = 340;
-    const projection = geoNaturalEarth1().fitExtent(
-      [[10, 10], [width - 10, height - 10]],
-      { type: "Sphere" } as never,
-    );
-    const pathGenerator = geoPath(projection);
-
-    const countries = worldCountryFeatures
-      .map((country, index) => {
-        const path = pathGenerator(country as never);
-        if (!path) {
-          return null;
-        }
-
-        const normalizedId = String(country.id ?? "unknown");
-        const countryName = String(country.properties?.name ?? country.id ?? "Unknown");
-        const renderKey = `${normalizedId}-${countryName}-${index}`;
-
-        return {
-          id: normalizedId,
-          name: countryName,
-          renderKey,
-          geometry: country,
-          path,
-        };
-      })
-      .filter((country): country is { id: string; name: string; renderKey: string; geometry: WorldAtlasCountryFeature; path: string } => Boolean(country));
-
-    const countryVisitorCount = new Map<string, number>();
-    for (const point of filteredWorldMapVisitors) {
-      if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) {
-        continue;
-      }
-
-      const containingCountry = countries.find((country) => geoContains(country.geometry as never, [point.lng, point.lat]));
-      if (!containingCountry) {
-        continue;
-      }
-
-      countryVisitorCount.set(
-        containingCountry.id,
-        (countryVisitorCount.get(containingCountry.id) ?? 0) + 1,
-      );
-    }
-
-    const maxCountryVisitors = Math.max(1, ...Array.from(countryVisitorCount.values()));
-
-    const getCountryFill = (countryId: string) => {
-      const visitorCount = countryVisitorCount.get(countryId) ?? 0;
-      const ratio = visitorCount <= 0 ? 0 : visitorCount / maxCountryVisitors;
-      const red = Math.round(255 * ratio);
-      return `rgb(${red},0,0)`;
-    };
-
-    const meridians = Array.from({ length: 11 }, (_, index) => (index * width) / 10);
-    const parallels = Array.from({ length: 7 }, (_, index) => (index * height) / 6);
-
-    return {
-      width,
-      height,
-      meridians,
-      parallels,
-      countries,
-      countryVisitorCount,
-      getCountryFill,
-      maxCountryVisitors,
-    };
-  }, [filteredWorldMapVisitors, worldCountryFeatures]);
   const analyticsSeries = dashboard?.analytics.series;
   const apiUsageGraph = useMemo(() => buildApiUsageGraph(apiUsageRows), [apiUsageRows]);
   const hourlySeries = useMemo(() => {
@@ -768,8 +643,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         await Promise.all([loadMagazineArticles(), loadMagazineCommentQueue()]);
       } else if (activeTab === "performance") {
         await loadOverview();
-      } else if (activeTab === "worldmap") {
-        await loadOverview();
       } else if (activeTab === "api") {
         await Promise.all([loadOverview(), loadQuotaStatus()]);
       } else if (activeTab === "categories") {
@@ -1080,7 +953,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const rollupStatusRelevantTab =
     activeTab === "overview"
     || activeTab === "performance"
-    || activeTab === "worldmap"
     || activeTab === "api";
   const rollupsUnavailableMessage = rollupStatusRelevantTab && dashboard?.meta.rollups?.available === false
     ? (dashboard.meta.rollups.message ?? "Rollup data is currently unavailable. Background rollup is running.")
@@ -1164,15 +1036,6 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
           onResetPerfWindow={() => {
             void resetPerfWindow();
           }}
-        />
-      ) : null}
-
-      {activeTab === "worldmap" ? (
-        <AdminDashboardWorldMapTab
-          mapDateRange={mapDateRange}
-          onSetMapDateRange={setMapDateRange}
-          worldMap={worldMap}
-          filteredWorldMapVisitorsCount={filteredWorldMapVisitors.length}
         />
       ) : null}
 

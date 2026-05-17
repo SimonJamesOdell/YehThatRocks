@@ -18,22 +18,6 @@ export type AnalyticsBucket = {
 
 export type AnalyticsZoomLevel = "allTime" | "monthly" | "weekly" | "daily" | "hourly";
 
-export type GeoVisitorPoint = {
-  visitorId: string;
-  lat: number;
-  lng: number;
-  eventCount: number;
-  lastSeenAt: string;
-};
-
-export type MapDateRange = "allTime" | "today" | "thisWeek" | "thisMonth" | "thisYear";
-
-export type WorldAtlasCountryFeature = {
-  id: string | number;
-  properties?: { name?: string };
-  geometry: unknown;
-};
-
 // Dashboard Data Structures
 export type DashboardPayload = {
   meta: {
@@ -92,7 +76,7 @@ export type DashboardPayload = {
     newVsRepeat: { newVisitors: number; repeatVisitors: number };
     registrationsPerDay: Array<{ day: string; count: number }>;
     totals: { pageViews: number; videoViews: number; uniqueVisitors: number; sessions: number };
-    geoVisitors: GeoVisitorPoint[];
+
   };
   hostMetrics: {
     minute: Array<{
@@ -178,12 +162,7 @@ export type DashboardPayload = {
             artistSingleSlugCache: number;
             artistVideosCache: number;
             artistVideosInFlight: number;
-          };
-        };
-        analyticsGeo: {
-          size: number;
-          maxEntries: number;
-          expiredEntries: number;
+          };  
         };
         wikiCacheCount: number;
       };
@@ -312,4 +291,4 @@ export type QuotaBackfillStatus = {
 };
 
 // Tab Routing
-export type AdminTab = "overview" | "magazine" | "performance" | "worldmap" | "api" | "categories" | "videos" | "catalog-review";
+export type AdminTab = "overview" | "magazine" | "performance" | "api" | "categories" | "videos" | "catalog-review";

@@ -45,7 +45,6 @@ export function AdminDashboardPerformanceTab({
             <div><strong>Current-video caches</strong><p>{dashboard.insights.memoryDiagnostics.caches.currentVideo.currentVideoCache + dashboard.insights.memoryDiagnostics.caches.currentVideo.currentVideoPendingCache + dashboard.insights.memoryDiagnostics.caches.currentVideo.currentVideoRelatedPoolCache}</p></div>
             <div><strong>Artist heavy cache</strong><p>{dashboard.insights.memoryDiagnostics.caches.artist.sizes.artistVideosCache} / {dashboard.insights.memoryDiagnostics.caches.artist.limits.heavyMaxEntries}</p></div>
             <div><strong>Artist letter/search</strong><p>{dashboard.insights.memoryDiagnostics.caches.artist.sizes.artistLetterPageCache + dashboard.insights.memoryDiagnostics.caches.artist.sizes.artistSearchCache}</p></div>
-            <div><strong>Geo cache</strong><p>{dashboard.insights.memoryDiagnostics.caches.analyticsGeo.size} / {dashboard.insights.memoryDiagnostics.caches.analyticsGeo.maxEntries}</p></div>
             <div><strong>Wiki cache files</strong><p>{dashboard.insights.memoryDiagnostics.caches.wikiCacheCount}</p></div>
           </div>
         </section>
