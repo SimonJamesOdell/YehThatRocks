@@ -159,60 +159,6 @@ describe("admin-dashboard-rollups narrow-window gating", () => {
     expect(insertCalls.length).toBeGreaterThan(0);
   });
 
-  it("refreshGeoVisitorRollup uses indexed geo predicate and visitor grouping", async () => {
-    const { refreshGeoVisitorRollupForTest } = await import("@/lib/admin-dashboard-rollups");
-    await refreshGeoVisitorRollupForTest();
-
-    const upsertCalls = executeRawUnsafeMock.mock.calls.filter(([sql]: [string]) =>
-      /INSERT INTO admin_dashboard_geo_visitors/i.test(sql),
-    );
-    expect(upsertCalls).toHaveLength(1);
-    const [sql] = upsertCalls[0] as [string];
-    expect(sql).toContain("FROM analytics_events");
-    expect(sql).toContain("WHERE has_geo_coords = 1");
-    expect(sql).toContain("GROUP BY visitor_id");
-  });
-
-  it("refreshGeoVisitorRollup falls back to null-check geo predicate when indexed path fails", async () => {
-    executeRawUnsafeMock.mockReset();
-    executeRawUnsafeMock
-      .mockRejectedValueOnce(new Error("missing has_geo_coords column"))
-      .mockResolvedValue(undefined);
-
-    const { refreshGeoVisitorRollupForTest } = await import("@/lib/admin-dashboard-rollups");
-    await refreshGeoVisitorRollupForTest();
-
-    const upsertCalls = executeRawUnsafeMock.mock.calls.filter(([sql]: [string]) =>
-      /INSERT INTO admin_dashboard_geo_visitors/i.test(sql),
-    );
-    expect(upsertCalls).toHaveLength(2);
-
-    const [firstSql] = upsertCalls[0] as [string];
-    const [secondSql] = upsertCalls[1] as [string];
-
-    expect(firstSql).toContain("WHERE has_geo_coords = 1");
-    expect(secondSql).toContain("WHERE geo_lat IS NOT NULL");
-    expect(secondSql).toContain("AND geo_lng IS NOT NULL");
-    expect(secondSql).toContain("GROUP BY visitor_id");
-  });
-
-  it("skips geo rollup refresh when geo staleness TTL has not expired", async () => {
-    const { ensureAdminDashboardRollupsFresh, resetRollupsStateForTest } = await import("@/lib/admin-dashboard-rollups");
-    resetRollupsStateForTest({
-      lastRefreshedAtMs: 0,
-      lastGeoVisitorRefreshMs: Date.now(),
-      lastFullDailyRefreshMs: Date.now(),
-      lastFullHourlyRefreshMs: Date.now(),
-    });
-
-    await ensureAdminDashboardRollupsFresh();
-
-    const geoUpsertCalls = executeRawUnsafeMock.mock.calls.filter(([sql]: [string]) =>
-      /INSERT INTO admin_dashboard_geo_visitors/i.test(sql),
-    );
-    expect(geoUpsertCalls).toHaveLength(0);
-  });
-
   it("hourly rollup queries use only_full_group_by-safe SELECT and GROUP BY expressions", async () => {
     const { refreshRecentHourlyRollupsForTest } = await import("@/lib/admin-dashboard-rollups");
     await refreshRecentHourlyRollupsForTest({ fullScan: false });

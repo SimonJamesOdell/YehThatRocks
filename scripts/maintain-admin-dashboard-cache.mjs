@@ -210,24 +210,6 @@ async function computeAdminDashboardData() {
     ORDER BY day_date ASC
   `.catch(() => []);
 
-  // Get geo visitors
-  const geoVisitors = (await prisma.$queryRaw`
-    SELECT
-      visitor_id AS visitorId,
-      avg_geo_lat AS lat,
-      avg_geo_lng AS lng,
-      event_count AS eventCount,
-      last_seen_at AS lastSeenAt
-    FROM admin_dashboard_geo_visitors
-    LIMIT 1000
-  `.catch(() => [])).map((row) => ({
-    visitorId: row.visitorId,
-    lat: toNumber(row.lat),
-    lng: toNumber(row.lng),
-    eventCount: toNumber(row.eventCount),
-    lastSeenAt: row.lastSeenAt instanceof Date ? row.lastSeenAt.toISOString() : String(row.lastSeenAt),
-  }));
-
   const recentCutoffMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
   const recentDailyRows = dailyAnalyticsRows.filter((row) => {
     const rowDate = row.day instanceof Date ? row.day : new Date(row.day);
@@ -285,7 +267,6 @@ async function computeAdminDashboardData() {
         uniqueVisitors: recentDailyRows.reduce((sum, row) => sum + toNumber(row.uniqueVisitors), 0),
         sessions: recentDailyRows.reduce((sum, row) => sum + toNumber(row.totalSessions), 0),
       },
-      geoVisitors,
     },
     insights: {
       auth24h: {
