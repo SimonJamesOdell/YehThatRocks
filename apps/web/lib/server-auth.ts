@@ -4,12 +4,12 @@ import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { isTokenValidationError, verifyToken } from "@/lib/auth-jwt";
 import { withSoftTimeout } from "@/lib/catalog-data-utils";
 import { prisma } from "@/lib/db";
+import { readPositiveIntEnv } from "@/lib/number-utils";
 import type { PrismaWithVerifiedUser, VerifiedUser } from "@/lib/prisma-types";
 import {
   getCacheEntry,
   pruneCacheToMaxEntries,
   pruneExpiringCacheEntries,
-  readPositiveIntEnv,
   setCacheEntry,
   type ServerAuthCacheState,
 } from "@/lib/server-auth-cache";

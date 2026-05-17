@@ -31,7 +31,7 @@ import { PrimaryNav } from "@/components/primary-nav";
 import { DesktopIntroOverlay } from "@/components/desktop-intro-overlay";
 import { ShellSearchBar } from "@/components/shell-search-bar";
 import { OverlayHeader } from "@/components/overlay-header";
-import { PlayerExperience } from "@/components/player-experience";
+import { PlayerExperience } from "@/components/player-experience-core";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { OverlayScrollContainerProvider } from "@/components/overlay-scroll-container-context";
@@ -1491,7 +1491,7 @@ function ShellDynamicInner({
       });
       return;
     }
-    if (dedupeRelatedRailVideos(dedupeVideos(relatedVideosRef.current), currentVideo.id).length >= RELATED_MAX_VIDEOS) {
+    if (dedupeRelatedRailVideos(relatedVideosRef.current, currentVideo.id).length >= RELATED_MAX_VIDEOS) {
       setHasMoreRelated(false);
       logWatchNext("load:max-reached", {
         currentVideoId: currentVideo.id,
@@ -1503,7 +1503,7 @@ function ShellDynamicInner({
     setIsLoadingMoreRelated(true);
     setWatchNextLoadFailed(false);
     try {
-      const existing = dedupeRelatedRailVideos(dedupeVideos(relatedVideosRef.current), currentVideo.id);
+      const existing = dedupeRelatedRailVideos(relatedVideosRef.current, currentVideo.id);
       const isFirstColdFetch = relatedFetchOffsetRef.current === null && existing.length === 0;
       if (relatedFetchOffsetRef.current === null || relatedFetchOffsetRef.current < existing.length) {
         relatedFetchOffsetRef.current = existing.length;
@@ -1560,7 +1560,7 @@ function ShellDynamicInner({
       }
       startTransition(() => {
         setRelatedVideos((previous) => {
-          const merged = dedupeRelatedRailVideos(dedupeVideos([...previous, ...nextVideos]), currentVideo.id)
+          const merged = dedupeRelatedRailVideos([...previous, ...nextVideos], currentVideo.id)
             .slice(0, RELATED_MAX_VIDEOS);
           return merged;
         });

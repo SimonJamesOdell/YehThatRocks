@@ -55,6 +55,34 @@ export interface RouteAuthOptions {
 
 export type AuthAndCsrfOutcome = AuthOnlyResult | AuthAndBodyError;
 
+type RouteAuthMode = NonNullable<RouteAuthOptions["authMode"]>;
+
+async function resolveValidatedAuth(
+  request: NextRequest,
+  authMode: RouteAuthMode,
+): Promise<AuthOnlyOutcome> {
+  const authResult =
+    authMode === "admin"
+      ? await requireAdminApiAuth(request)
+      : await requireApiAuth(request);
+
+  if (!authResult.ok) {
+    return { ok: false, response: authResult.response };
+  }
+
+  const userId = authResult.auth.userId;
+  const email = authResult.auth.email ?? "";
+
+  if (typeof userId !== "number" || !Number.isInteger(userId) || userId <= 0) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Forbidden" }, { status: HTTP_FORBIDDEN }),
+    };
+  }
+
+  return { ok: true, auth: { userId, email } };
+}
+
 /**
  * Pipelines: auth check → CSRF validation (for mutations) → JSON parse → schema validation.
  * Returns discriminated union of { ok: true, auth, data } or { ok: false, response }.
@@ -82,26 +110,7 @@ export async function requireAuthOnly(
 ): Promise<AuthOnlyOutcome> {
   const { authMode = "admin" } = options;
 
-  const authResult =
-    authMode === "admin"
-      ? await requireAdminApiAuth(request)
-      : await requireApiAuth(request);
-
-  if (!authResult.ok) {
-    return { ok: false, response: authResult.response };
-  }
-
-  const userId = authResult.auth.userId;
-  const email = authResult.auth.email ?? "";
-
-  if (typeof userId !== "number" || !Number.isInteger(userId) || userId <= 0) {
-    return {
-      ok: false,
-      response: NextResponse.json({ error: "Forbidden" }, { status: HTTP_FORBIDDEN }),
-    };
-  }
-
-  return { ok: true, auth: { userId, email } };
+  return resolveValidatedAuth(request, authMode);
 }
 
 /**
@@ -124,23 +133,9 @@ export async function withAuthAndBody<T>(
   const { authMode = "admin" } = options;
 
   // Step 1: Auth check
-  const authResult =
-    authMode === "admin"
-      ? await requireAdminApiAuth(request)
-      : await requireApiAuth(request);
-
-  if (!authResult.ok) {
-    return { ok: false, response: authResult.response };
-  }
-
-  const userId = authResult.auth.userId;
-  const email = authResult.auth.email ?? "";
-
-  if (typeof userId !== "number" || !Number.isInteger(userId) || userId <= 0) {
-    return {
-      ok: false,
-      response: NextResponse.json({ error: "Forbidden" }, { status: HTTP_FORBIDDEN }),
-    };
+  const auth = await resolveValidatedAuth(request, authMode);
+  if (!auth.ok) {
+    return auth;
   }
 
   // Step 2: Detect if this is a mutation and check CSRF
@@ -175,7 +170,7 @@ export async function withAuthAndBody<T>(
 
   return {
     ok: true,
-    auth: { userId, email },
+    auth: auth.auth,
     data: validationResult.data as T,
   };
 }

@@ -1,14 +1,11 @@
 import { prisma } from "@/lib/db";
+import { hasDatabaseUrl } from "@/lib/catalog-data-utils";
 import {
   SEARCH_FLAG_MIN_USERS_FOR_ACTION,
   type SearchFlagReason,
   normalizeSearchFlagCorrection,
   normalizeSearchFlagQuery,
 } from "@/lib/search-flags";
-
-function hasDatabaseUrl() {
-  return Boolean(process.env.DATABASE_URL);
-}
 
 type SearchFlagAggregateRow = {
   video_id: string;

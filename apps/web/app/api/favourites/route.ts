@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { favouriteMutationSchema } from "@/lib/api-schemas";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { filterHiddenVideos, getFavouriteVideos, getFavouriteVideosPage, updateFavourite } from "@/lib/catalog-data";
+import { parseClampedIntParam } from "@/lib/request-query";
 
 export async function GET(request: NextRequest) {
   // Invariant anchor: requireApiAuth(request)
@@ -29,10 +30,15 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const parsedLimit = Number(limitRaw ?? "20");
-  const parsedOffset = Number(offsetRaw ?? "0");
-  const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(100, Math.floor(parsedLimit))) : 20;
-  const offset = Number.isFinite(parsedOffset) ? Math.max(0, Math.floor(parsedOffset)) : 0;
+  const limit = parseClampedIntParam(request.nextUrl.searchParams, "limit", {
+    defaultValue: 20,
+    min: 1,
+    max: 100,
+  });
+  const offset = parseClampedIntParam(request.nextUrl.searchParams, "offset", {
+    defaultValue: 0,
+    min: 0,
+  });
 
   const paged = await getFavouriteVideosPage(auth.auth.userId, { limit, offset });
 

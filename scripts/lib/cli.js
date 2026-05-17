@@ -33,6 +33,11 @@ function parseArg(name, fallback, argv = process.argv) {
   return raw.slice(prefix.length);
 }
 
+function readArg(name, fallback, argv = process.argv) {
+  const value = parseArg(name, fallback, argv);
+  return value || fallback;
+}
+
 function asNumber(value, fallback = 0, options = {}) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
@@ -54,4 +59,5 @@ module.exports = {
   asNumber,
   hasFlag,
   parseArg,
+  readArg,
 };

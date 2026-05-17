@@ -1,14 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
-
-function parseArg(name, fallback) {
-  const flag = `--${name}`;
-  const hit = process.argv.find((entry) => entry.startsWith(`${flag}=`));
-  if (!hit) {
-    return fallback;
-  }
-  return hit.slice(flag.length + 1);
-}
+const { parseArg } = require("./lib/cli");
 
 function sanitizeSqlString(value) {
   return value.replace(/'/g, "''");

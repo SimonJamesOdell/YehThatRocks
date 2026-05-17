@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 
 import { prisma } from "@/lib/db";
+import { clampPercent, finitePercentOrNull, readPositiveNumberEnv } from "@/lib/number-utils";
 
 type NetworkSample = {
   ts: number;
@@ -107,32 +108,14 @@ let adminHealthPayloadCache: {
   payload: AdminHealthPayload;
 } | null = null;
 
-function readPositiveNumberEnv(name: string, defaultValue: number, minValue: number) {
-  const raw = process.env[name];
-  const parsed = Number(raw ?? defaultValue);
-  if (!Number.isFinite(parsed)) {
-    return defaultValue;
-  }
-
-  return Math.max(minValue, parsed);
-}
-
 const METRIC_SAMPLE_MS = readPositiveNumberEnv("ADMIN_METRIC_SAMPLE_MS", 200, 50);
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function clampPercent(value: number) {
-  return Math.max(0, Math.min(100, value));
-}
-
 function getCurrentBucketStartMs(now = Date.now()) {
   return Math.floor(now / CPU_BUCKET_MS) * CPU_BUCKET_MS;
-}
-
-function finitePercentOrNull(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? clampPercent(value) : null;
 }
 
 function getLiveCpuHostFields() {
@@ -252,7 +235,7 @@ function buildCpuUsageMetrics(start: CpuSnapshot, end: CpuSnapshot): CpuUsageMet
 
   const now = Date.now();
   const cutoff = now - CPU_24H_WINDOW_MS;
-  const currentBucketStartMs = Math.floor(now / CPU_BUCKET_MS) * CPU_BUCKET_MS;
+  const currentBucketStartMs = getCurrentBucketStartMs(now);
   cpuMinuteHistory = cpuMinuteHistory.filter((entry) => entry.bucketStartMs >= cutoff);
 
   const clampedSamplePeak = clampPercent(samplePeakCorePercent);
@@ -340,6 +323,7 @@ async function computeNetworkUsagePercent() {
   const now = Date.now();
   const current: NetworkSample = { ts: now, totalBytes };
   const prev = previousNetworkSample;
+  const maxBytesPerSec = Number(process.env.ADMIN_NETWORK_DIAL_MAX_BYTES_PER_SEC || "12500000");
   previousNetworkSample = current;
 
   if (!prev || now <= prev.ts || totalBytes < prev.totalBytes) {
@@ -353,7 +337,6 @@ async function computeNetworkUsagePercent() {
 
     previousNetworkSample = { ts: sampledNow, totalBytes: sampledTotalBytes };
     const bytesPerSec = (sampledTotalBytes - totalBytes) / ((sampledNow - now) / 1000);
-    const maxBytesPerSec = Number(process.env.ADMIN_NETWORK_DIAL_MAX_BYTES_PER_SEC || "12500000");
     if (!Number.isFinite(bytesPerSec) || !Number.isFinite(maxBytesPerSec) || maxBytesPerSec <= 0) {
       return null;
     }
@@ -362,7 +345,6 @@ async function computeNetworkUsagePercent() {
   }
 
   const bytesPerSec = (totalBytes - prev.totalBytes) / ((now - prev.ts) / 1000);
-  const maxBytesPerSec = Number(process.env.ADMIN_NETWORK_DIAL_MAX_BYTES_PER_SEC || "12500000");
   if (!Number.isFinite(bytesPerSec) || !Number.isFinite(maxBytesPerSec) || maxBytesPerSec <= 0) {
     return null;
   }

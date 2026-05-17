@@ -4,6 +4,7 @@ import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { normalizePrismaQueryFingerprint } from "@/lib/query-fingerprint";
 import { recordPrismaOperation, recordPrismaQueryFingerprint } from "@/lib/runtime-profiler";
 import { startServerMemoryPressureGuard } from "@/lib/memory-pressure-guard";
+import { clamp } from "@/lib/number-utils";
 
 declare global {
   var __yehPrisma__: PrismaClient | undefined;
@@ -40,10 +41,6 @@ function normalizeQueryOperation(query: string) {
   }
 
   return "SQL.OTHER";
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
 }
 
 function getWorkerCount() {

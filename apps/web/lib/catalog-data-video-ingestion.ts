@@ -51,6 +51,7 @@ import { markAvailableVideoMaxIdDirty, recordAvailableVideoIdCandidate } from "@
 import { clearGenreCardThumbnailForVideo } from "@/lib/catalog-data-genres";
 import { getMusicBrainzArtistData } from "@/lib/musicbrainz";
 import { getDatabaseNormalizedVideoId } from "@/lib/catalog-data-internal-helpers";
+import { PLAYBACK_MIN_CONFIDENCE } from "@/lib/playback-config";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -87,7 +88,6 @@ const RELATED_DISCOVERY_SEED_FANOUT = Math.max(1, Math.min(8, Number(process.env
 const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim() || undefined;
 const GROQ_MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-120b";
 const GROQ_RETRY_COOLDOWN_MS = Math.max(300_000, Number(process.env.GROQ_RETRY_COOLDOWN_MS || String(6 * 60 * 60 * 1000)));
-const PLAYBACK_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.PLAYBACK_MIN_CONFIDENCE || "0.8")));
 const PLAYBACK_DECISION_CACHE_TTL_MS = 15_000;
 const ALLOWED_VIDEO_TYPES = new Set(["official", "lyric", "live", "cover", "remix", "fan"]);
 const NON_MUSIC_SIGNAL_PATTERN = /\b(instagram|tiktok|facebook|whatsapp|snapchat|podcast|interview|prank|challenge|reaction|vlog|tutorial|gameplay|livestream|stream highlights?|shorts?|sermon|khutbah|tafsir|quran|qur'an|recitation|dua|nasheed|bhajan|kirtan|pravachan|speech|lecture|talk show|news bulletin)\b/i;

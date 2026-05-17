@@ -4,6 +4,7 @@ import { z } from "zod";
 import { applyCatalogReviewQueueCountDelta } from "@/lib/admin-catalog-review-count";
 import { ensureCatalogReviewQueueReady } from "@/lib/admin-catalog-review-queue";
 import { withAuthAndBody } from "@/lib/api-route-pipeline";
+import { clearCatalogVideoCaches, clearIngestionCachesForVideo, importVideoFromDirectSource } from "@/lib/catalog-data";
 import { prisma } from "@/lib/db";
 
 const catalogReviewUndoSchema = z.object({
@@ -64,10 +65,33 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // reversedAction === "remove"
-  // Cannot undo a "remove" because the video was hard-deleted
-  return NextResponse.json(
-    { error: "Cannot undo a remove action — the video was permanently deleted" },
-    { status: 400 },
+  clearIngestionCachesForVideo(videoId);
+
+  const importResult = await importVideoFromDirectSource(videoId, {
+    discoverRelated: false,
+  });
+
+  if (!importResult.videoId) {
+    return NextResponse.json(
+      { error: "Invalid YouTube URL or video id." },
+      { status: 400 },
+    );
+  }
+
+  const queueInsert = await prisma.$executeRawUnsafe(
+    `INSERT IGNORE INTO admin_catalog_review_queue (video_id, enqueued_at) VALUES (?, NOW())`,
+    videoId,
   );
+
+  clearCatalogVideoCaches();
+
+  const remaining = await applyCatalogReviewQueueCountDelta(queueInsert > 0 ? 1 : 0);
+
+  return NextResponse.json({
+    ok: true,
+    action: "undo-remove",
+    videoId,
+    remaining,
+    decision: importResult.decision,
+  });
 }

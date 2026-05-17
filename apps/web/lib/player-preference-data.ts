@@ -1,14 +1,11 @@
 import { prisma } from "@/lib/db";
+import { hasDatabaseUrl } from "@/lib/catalog-data-utils";
 import {
   DEFAULT_AUTOPLAY_MIX,
   normalizeAutoplayGenreFilters,
   normalizeAutoplayMix,
   type AutoplayMixSettings,
 } from "@/lib/player-preferences-shared";
-
-function hasDatabaseUrl() {
-  return Boolean(process.env.DATABASE_URL);
-}
 
 let hasEnsuredPlayerPreferencesTable = false;
 let ensurePlayerPreferencesTablePromise: Promise<void> | null = null;

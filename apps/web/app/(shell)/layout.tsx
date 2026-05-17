@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ShellDynamic } from "@/components/shell-dynamic";
+import { ShellDynamic } from "@/components/shell-dynamic-core";
 import { ServiceFailurePanel } from "@/components/service-failure-panel";
 import { getCurrentVideo, getDataSourceStatus } from "@/lib/catalog-data";
 import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";

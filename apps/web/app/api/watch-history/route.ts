@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { watchHistoryEventSchema } from "@/lib/api-schemas";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { getHiddenVideoMatchesForUser, getWatchHistory, recordVideoWatch } from "@/lib/catalog-data";
+import { parseClampedIntParam } from "@/lib/request-query";
 
 export async function GET(request: NextRequest) {
   // Invariant anchors for verify-history-ui-invariants.js after route-pipeline extraction:
@@ -14,10 +15,15 @@ export async function GET(request: NextRequest) {
     return auth.response;
   }
 
-  const requestedLimit = Number(request.nextUrl.searchParams.get("limit") ?? "50");
-  const requestedOffset = Number(request.nextUrl.searchParams.get("offset") ?? "0");
-  const limit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(requestedLimit) ? requestedLimit : 50)));
-  const offset = Math.max(0, Math.floor(Number.isFinite(requestedOffset) ? requestedOffset : 0));
+  const limit = parseClampedIntParam(request.nextUrl.searchParams, "limit", {
+    defaultValue: 50,
+    min: 1,
+    max: 200,
+  });
+  const offset = parseClampedIntParam(request.nextUrl.searchParams, "offset", {
+    defaultValue: 0,
+    min: 0,
+  });
 
   const historyWindow = await getWatchHistory(auth.auth.userId, {
     limit: limit + 1,

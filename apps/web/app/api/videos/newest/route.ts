@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getNewestVideos } from "@/lib/catalog-data";
+import { clamp } from "@/lib/number-utils";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -8,8 +9,8 @@ export async function GET(request: NextRequest) {
   const takeParam = searchParams.get("take");
 
   const skip = Math.max(0, Number(skipParam ?? "0"));
-  const take = Math.max(1, Math.min(200, Number(takeParam ?? "50")));
-  const probeTake = Math.min(201, take + 1);
+  const take = clamp(Number(takeParam ?? "50"), 1, 200);
+  const probeTake = clamp(take + 1, 0, 201);
 
   try {
     const probedVideos = await getNewestVideos(probeTake, skip, {

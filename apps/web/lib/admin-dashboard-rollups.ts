@@ -64,6 +64,14 @@ let lastFullHourlyRefreshMs = 0;
 let dailyBackfillDone = false;
 let usersCreatedAtColumnPromise: Promise<string | null> | null = null;
 
+function buildRecentClauseSql(columnName: string, recentDays?: number) {
+  if (recentDays == null) {
+    return "";
+  }
+
+  return `WHERE ${columnName} >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${recentDays} DAY)`;
+}
+
 async function getUsersCreatedAtColumn() {
   if (!usersCreatedAtColumnPromise) {
     usersCreatedAtColumnPromise = prisma.$queryRaw<Array<{ columnName: string }>>`
@@ -93,9 +101,7 @@ async function buildRegistrationsDailyJoinSql(options?: { recentDays?: number })
     `;
   }
 
-  const recentClause = options?.recentDays != null
-    ? `WHERE ${usersCreatedAtColumn} >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${options.recentDays} DAY)`
-    : "";
+  const recentClause = buildRecentClauseSql(usersCreatedAtColumn, options?.recentDays);
 
   return `
     LEFT JOIN (
@@ -125,9 +131,7 @@ async function buildMagazineExternalLandingsDailyJoinSql(options?: { recentDays?
     `;
   }
 
-  const recentClause = options?.recentDays != null
-    ? `WHERE landed_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${options.recentDays} DAY)`
-    : "";
+  const recentClause = buildRecentClauseSql("landed_at", options?.recentDays);
 
   return `
     LEFT JOIN (

@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { Prisma, PrismaClient } = require("@prisma/client");
+const { parseArg } = require("./lib/cli");
 
 if (!process.env.DATABASE_URL) {
   const envPath = path.resolve(process.cwd(), "apps/web/.env.local");
@@ -16,14 +17,6 @@ if (!process.env.DATABASE_URL) {
 }
 
 const prisma = new PrismaClient();
-
-function parseArg(name, fallback) {
-  const raw = process.argv.find((arg) => arg.startsWith(`--${name}=`));
-  if (!raw) {
-    return fallback;
-  }
-  return raw.slice(name.length + 3);
-}
 
 const limit = Number(parseArg("limit", "200"));
 const offset = Number(parseArg("offset", "0"));

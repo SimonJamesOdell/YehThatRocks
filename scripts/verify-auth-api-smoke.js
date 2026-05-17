@@ -1,21 +1,7 @@
 #!/usr/bin/env node
 const { assertInvariant } = require("./smoke-assertions");
+const { asNumber, readArg } = require("./lib/cli");
 "use strict";
-
-function readArg(name, fallback) {
-  const raw = process.argv.find((arg) => arg.startsWith(`--${name}=`));
-  if (!raw) {
-    return fallback;
-  }
-
-  const value = raw.slice(name.length + 3);
-  return value || fallback;
-}
-
-function asNumber(value, fallback) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
 
 
 function splitSetCookieHeader(raw) {

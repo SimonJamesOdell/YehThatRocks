@@ -4,11 +4,12 @@
  */
 
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { finiteNumberOrNull } from "@/lib/number-utils";
 import { parseJsonOrNull } from "@/lib/parse-json";
 
 // Numeric helpers
 export function finiteOrNull(value: number | null | undefined): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  return finiteNumberOrNull(value);
 }
 
 // Error handling

@@ -1,8 +1,5 @@
 import { prisma } from "@/lib/db";
-
-function hasDatabaseUrl() {
-  return Boolean(process.env.DATABASE_URL);
-}
+import { hasDatabaseUrl } from "@/lib/catalog-data-utils";
 
 let hasEnsuredSeenTogglePreferencesTable = false;
 let ensureSeenTogglePreferencesTablePromise: Promise<void> | null = null;

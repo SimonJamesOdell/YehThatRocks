@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { findAndReplaceUnavailableVideo, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { isObviousCrawlerRequest } from "@/lib/crawler-guard";
 import { verifySameOrigin } from "@/lib/csrf";
+import { truncate } from "@/lib/catalog-data-utils";
 import { rateLimitOrResponse } from "@/lib/rate-limit";
 import { parseRequestJson } from "@/lib/request-json";
 
@@ -57,10 +58,6 @@ function debugUnavailable(event: string, detail?: Record<string, unknown>) {
 
   const payload = detail ? ` ${JSON.stringify(detail)}` : "";
   console.log(`[api/videos/unavailable] ${event}${payload}`);
-}
-
-function truncate(value: string, maxLength: number) {
-  return value.length > maxLength ? value.slice(0, maxLength) : value;
 }
 
 function containsAgeRestrictionMarker(html: string) {

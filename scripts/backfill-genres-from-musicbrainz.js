@@ -28,6 +28,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { PrismaClient } = require("@prisma/client");
 const { isRockMetalGenre } = require("./lib/genre-scope");
+const { parseArg } = require("./lib/cli");
 
 // ---------------------------------------------------------------------------
 // Config helpers
@@ -46,11 +47,6 @@ function loadDatabaseEnv() {
     if (process.env[key]) continue;
     process.env[key] = rawValue.replace(/^"/, "").replace(/"$/, "");
   }
-}
-
-function parseArg(name, fallback) {
-  const raw = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return raw ? raw.slice(name.length + 3) : fallback;
 }
 
 function flag(name) {
