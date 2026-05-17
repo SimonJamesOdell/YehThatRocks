@@ -1,5 +1,7 @@
 type DashboardResponsePayload = Record<string, unknown>;
 
+import { clamp } from "@/lib/number-utils";
+
 type CacheEntry = {
   expiresAt: number;
   payload: DashboardResponsePayload;
@@ -8,10 +10,6 @@ type CacheEntry = {
 const DEFAULT_TTL_MS = 1_000;
 const MIN_TTL_MS = 250;
 const MAX_TTL_MS = 10_000;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
 
 export function readDashboardResponseCacheTtlMs(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.ADMIN_DASHBOARD_RESPONSE_CACHE_TTL_MS;

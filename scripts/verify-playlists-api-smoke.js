@@ -2,21 +2,7 @@
 "use strict";
 
 const { assertInvariant } = require("./smoke-assertions");
-
-function readArg(name, fallback) {
-  const raw = process.argv.find((arg) => arg.startsWith(`--${name}=`));
-  if (!raw) {
-    return fallback;
-  }
-
-  const value = raw.slice(name.length + 3);
-  return value || fallback;
-}
-
-function asNumber(value, fallback) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
+const { asNumber, readArg } = require("./lib/cli");
 
 function isYouTubeId(value) {
   return typeof value === "string" && /^[A-Za-z0-9_-]{11}$/.test(value);

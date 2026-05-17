@@ -5,6 +5,7 @@ import { memo, useCallback, useEffect, useState, type CSSProperties, type MouseE
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
+import { finitePercentOrNull } from "@/components/shell-dynamic-utils";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchWithAuthRetry as fetchWithAuthRetryClient } from "@/lib/client-auth-fetch";
@@ -311,12 +312,6 @@ export const WatchNextCard = memo(function WatchNextCard({
     && prev.onPrefetch === next.onPrefetch
     && prev.onTrackClick === next.onTrackClick;
 });
-
-function finitePercentOrNull(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.max(0, Math.min(100, value))
-    : null;
-}
 
 export function PerformanceDial({
   label,

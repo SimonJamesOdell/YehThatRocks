@@ -9,6 +9,7 @@ import { createSeenVideoIdCache } from "@/lib/seen-video-id-cache";
 import type { WatchHistoryEntry } from "@/lib/catalog-data-utils";
 import { hasDatabaseUrl, mapVideo, normalizeYouTubeVideoId } from "@/lib/catalog-data-utils";
 import { ensureVideoChannelTitleColumnAvailable } from "@/lib/catalog-data-db";
+import { clamp } from "@/lib/number-utils";
 
 // ── Constants & caches ────────────────────────────────────────────────────────
 
@@ -181,9 +182,9 @@ export async function recordVideoWatch(input: {
     return { ok: false as const };
   }
 
-  const positionSec = Math.max(0, Math.min(86_400, Math.floor(Number(input.positionSec ?? 0))));
-  const durationSec = Math.max(0, Math.min(86_400, Math.floor(Number(input.durationSec ?? 0))));
-  const progressPercent = Math.max(0, Math.min(100, Number(input.progressPercent ?? 0)));
+  const positionSec = clamp(Math.floor(Number(input.positionSec ?? 0)), 0, 86_400);
+  const durationSec = clamp(Math.floor(Number(input.durationSec ?? 0)), 0, 86_400);
+  const progressPercent = clamp(Number(input.progressPercent ?? 0), 0, 100);
   const now = new Date();
 
   try {
@@ -236,7 +237,7 @@ export async function getWatchHistory(
     return [];
   }
 
-  const limit = Math.max(1, Math.min(200, Math.floor(options?.limit ?? 50)));
+  const limit = clamp(Math.floor(options?.limit ?? 50), 1, 200);
   const offset = Math.max(0, Math.floor(options?.offset ?? 0));
   const hasChannelTitleColumn = await ensureVideoChannelTitleColumnAvailable();
   const channelTitleExpr = hasChannelTitleColumn ? "NULLIF(TRIM(v.channelTitle), '')" : "NULL";

@@ -4,40 +4,13 @@ import { renamePlaylistSchema } from "@/lib/api-schemas";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { deletePlaylist, filterHiddenVideos, getPlaylistById, getPlaylists, renamePlaylist } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
+import { toJsonSafeValue } from "@/lib/json-safe";
 
 export const dynamic = "force-dynamic";
-
-function withNoStore(response: NextResponse) {
-  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  response.headers.set("Pragma", "no-cache");
-  response.headers.set("Expires", "0");
-  return response;
-}
 
 type PlaylistRouteContext = {
   params: Promise<{ id: string }>;
 };
-
-function toJsonSafeValue(value: unknown): unknown {
-  if (typeof value === "bigint") {
-    const asNumber = Number(value);
-    return Number.isSafeInteger(asNumber) ? asNumber : value.toString();
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((entry) => toJsonSafeValue(entry));
-  }
-
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
-      key,
-      toJsonSafeValue(entry),
-    ]);
-    return Object.fromEntries(entries);
-  }
-
-  return value;
-}
 
 export async function GET(_request: NextRequest, context: PlaylistRouteContext) {
   const auth = await requireAuthOnly(_request, { authMode: "user" });
@@ -52,10 +25,14 @@ export async function GET(_request: NextRequest, context: PlaylistRouteContext) 
   if (playlist) {
     // Filter out blocked videos from playlist
     playlist.videos = await filterHiddenVideos(playlist.videos, auth.auth.userId);
-    return withNoStore(NextResponse.json(toJsonSafeValue({
+    const response = NextResponse.json(toJsonSafeValue({
       ...playlist,
       itemCount: playlist.videos.length,
-    })));
+    }));
+    response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    response.headers.set("Pragma", "no-cache");
+    response.headers.set("Expires", "0");
+    return response;
   }
 
   // Some database shapes fail to resolve empty playlists in detail lookup.
@@ -64,15 +41,23 @@ export async function GET(_request: NextRequest, context: PlaylistRouteContext) 
   const matchingSummary = playlistSummaries.find((candidate) => candidate.id === id);
 
   if (!matchingSummary) {
-    return withNoStore(NextResponse.json({ error: "Playlist not found" }, { status: 404 }));
+    const response = NextResponse.json({ error: "Playlist not found" }, { status: 404 });
+    response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    response.headers.set("Pragma", "no-cache");
+    response.headers.set("Expires", "0");
+    return response;
   }
 
-  return withNoStore(NextResponse.json(toJsonSafeValue({
+  const response = NextResponse.json(toJsonSafeValue({
     id: matchingSummary.id,
     name: matchingSummary.name,
     videos: [],
     itemCount: matchingSummary.itemCount,
-  })));
+  }));
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
 }
 
 export async function DELETE(request: NextRequest, context: PlaylistRouteContext) {

@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { PrismaClient } = require("@prisma/client");
+const { parseArg } = require("./lib/cli");
 
 function loadDatabaseEnv() {
   const envPath = path.resolve(process.cwd(), "apps/web/.env.local");
@@ -29,14 +30,6 @@ function loadDatabaseEnv() {
 
     process.env[key] = rawValue.replace(/^"/, "").replace(/"$/, "");
   }
-}
-
-function parseArg(name, fallback) {
-  const raw = process.argv.find((arg) => arg.startsWith(`--${name}=`));
-  if (!raw) {
-    return fallback;
-  }
-  return raw.slice(name.length + 3);
 }
 
 function normalizeVideoId(value) {

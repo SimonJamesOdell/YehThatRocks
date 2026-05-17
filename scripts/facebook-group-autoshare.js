@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { PrismaClient } = require("@prisma/client");
+const { parseArg } = require("./lib/cli");
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
@@ -33,14 +34,6 @@ function loadEnvFile(filePath) {
 function loadEnv() {
   loadEnvFile(path.resolve(process.cwd(), "apps/web/.env.local"));
   loadEnvFile(path.resolve(process.cwd(), ".env"));
-}
-
-function parseArg(name, fallback) {
-  const raw = process.argv.find((arg) => arg.startsWith(`--${name}=`));
-  if (!raw) {
-    return fallback;
-  }
-  return raw.slice(name.length + 3);
 }
 
 function toPositiveInt(value, fallback) {

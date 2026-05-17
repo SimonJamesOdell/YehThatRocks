@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+import { finiteOrNull } from "@/components/admin-dashboard-utils";
+
 const HEALTH_FALLBACK_POLL_MS = 2_000;
 
 type AdminHealthStreamPayload = {
@@ -29,10 +31,6 @@ type AdminCpuDialPayload = {
   cpuAverageUsagePercent?: number | null;
   cpuPeakCoreUsagePercent?: number | null;
 };
-
-function finiteOrNull(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
 
 export function mergeCpuDialIntoHealthPayload(
   currentPayload: AdminHealthStreamPayload,

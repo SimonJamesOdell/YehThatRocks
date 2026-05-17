@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { hiddenVideoMutationSchema } from "@/lib/api-schemas";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { getHiddenVideoIdsForUser, getHiddenVideosForUser, hideVideoAndPrunePlaylistsForUser, unhideVideoForUser } from "@/lib/catalog-data";
+import { parseClampedIntParam } from "@/lib/request-query";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuthOnly(request, { authMode: "user" });
@@ -16,10 +17,15 @@ export async function GET(request: NextRequest) {
   const hasPaging = limitRaw !== null || offsetRaw !== null;
 
   if (hasPaging) {
-    const parsedLimit = Number(limitRaw ?? "24");
-    const parsedOffset = Number(offsetRaw ?? "0");
-    const pageSize = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(100, Math.floor(parsedLimit))) : 24;
-    const offset = Number.isFinite(parsedOffset) ? Math.max(0, Math.floor(parsedOffset)) : 0;
+    const pageSize = parseClampedIntParam(request.nextUrl.searchParams, "limit", {
+      defaultValue: 24,
+      min: 1,
+      max: 100,
+    });
+    const offset = parseClampedIntParam(request.nextUrl.searchParams, "offset", {
+      defaultValue: 0,
+      min: 0,
+    });
 
     const window = await getHiddenVideosForUser(auth.auth.userId, {
       limit: pageSize + 1,

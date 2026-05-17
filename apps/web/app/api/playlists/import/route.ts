@@ -5,26 +5,17 @@ import { withAuthAndBody } from "@/lib/api-route-pipeline";
 import { addPlaylistItems, createPlaylist, hasDatabaseUrl, importVideoFromDirectSource, normalizeYouTubeVideoId } from "@/lib/catalog-data";
 import { prisma } from "@/lib/db";
 import { parseJsonOrNull } from "@/lib/parse-json";
+import { maybeNormalizePlaylistId } from "@/lib/youtube-playlist";
 
 const importPlaylistSchema = z.object({
   source: z.string().trim().min(1).max(2048),
   name: z.string().trim().min(2).max(80).optional(),
 });
 
-const YOUTUBE_PLAYLIST_ID_PATTERN = /^[A-Za-z0-9_-]{10,}$/;
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || "";
 const MAX_PLAYLIST_ITEMS = 1000;
 const MAX_PAGES = 20;
 const INGEST_CONCURRENCY = 4;
-
-function maybeNormalizePlaylistId(value?: string | null) {
-  const trimmed = value?.trim();
-  if (!trimmed || !YOUTUBE_PLAYLIST_ID_PATTERN.test(trimmed)) {
-    return null;
-  }
-
-  return trimmed;
-}
 
 function parsePlaylistIdFromSource(source: string) {
   const trimmed = source.trim();

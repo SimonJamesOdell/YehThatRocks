@@ -6,6 +6,7 @@ const path = require("node:path");
 const mysql = require("mysql2/promise");
 const { isRockMetalGenre } = require("./lib/genre-scope");
 const { assertInvariant, finishInvariantCheck } = require("./lib/test-harness");
+const { asNumber, readArg } = require("./lib/cli");
 
 function loadDatabaseEnv() {
   const envPath = path.resolve(process.cwd(), "apps/web/.env.local");
@@ -34,27 +35,8 @@ function loadDatabaseEnv() {
   }
 }
 
-function readArg(name, fallback) {
-  const raw = process.argv.find((arg) => arg.startsWith(`--${name}=`));
-  if (!raw) {
-    return fallback;
-  }
-
-  const value = raw.slice(name.length + 3);
-  if (!value) {
-    return fallback;
-  }
-
-  return value;
-}
-
 function hasFlag(name) {
   return process.argv.includes(`--${name}`);
-}
-
-function asNumber(value, fallback) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
 }
 
 function sleep(ms) {

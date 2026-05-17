@@ -457,7 +457,11 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
         reversedAction: previousCatalogAction.action,
       });
 
-      setSaveMessage(`Reversed: ${previousCatalogAction.action === "approve" ? "moved back to queue" : "removed undo"} for ${previousCatalogAction.videoId}.`);
+      setSaveMessage(
+        previousCatalogAction.action === "approve"
+          ? `Reversed: moved back to queue for ${previousCatalogAction.videoId}.`
+          : `Reversed: re-fetched and moved back to queue for ${previousCatalogAction.videoId}.`,
+      );
       setPreviousCatalogAction(null);
       await loadCatalogReviewQueue();
     } catch (undoError) {

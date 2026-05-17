@@ -12,6 +12,7 @@ const DESKTOP_INTRO_MOVE_MS = 760;
 const DESKTOP_INTRO_REVEAL_MS = 820;
 const DESKTOP_INTRO_MAX_LOGO_WIDTH_PX = 1128;
 const DESKTOP_INTRO_VIEWPORT_WIDTH_RATIO = 1.128;
+const DESKTOP_INTRO_PLAYED_SESSION_KEY = "ytr:desktop-intro-played";
 // Legacy invariant anchors for verify:overlay-routing:
 // const DESKTOP_INTRO_PLAYED_SESSION_KEY = "ytr:desktop-intro-played";
 
@@ -61,7 +62,7 @@ export function useDesktopIntro({
 }): DesktopIntroState {
   // Legacy invariant anchor:
   // const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(false);
-  const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(true);
+  const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(false);
   const [isDesktopIntroLogoReady, setIsDesktopIntroLogoReady] = useState(false);
   const [desktopIntroPhase, setDesktopIntroPhase] = useState<DesktopIntroPhase>("disabled");
   const [desktopIntroDeltaX, setDesktopIntroDeltaX] = useState(0);
@@ -75,6 +76,7 @@ export function useDesktopIntro({
   const desktopIntroMeasureRafRef = useRef<number | null>(null);
   const desktopIntroPhaseRef = useRef<DesktopIntroPhase>("disabled");
   const desktopIntroLogoLoadIdRef = useRef(0);
+  const hasStartedAutoDesktopIntroRef = useRef(false);
   const shouldReplayDesktopIntroOnHomeRef = useRef(false);
 
   const isDesktopIntroActive =
@@ -243,13 +245,28 @@ export function useDesktopIntro({
     startDesktopIntroSequence();
   }, [prepareDesktopIntroLogo, startDesktopIntroSequence]);
 
-  // Run the intro on first mount and re-run on resize while active.
+  // Run auto intro once per session on home and keep target sync during active phases.
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
-    void startPreparedDesktopIntroSequence();
+    const introWindow = window as Window & {
+      __ytrDesktopIntroAutoPlayed?: boolean;
+    };
+    const introPlayedInSession = window.sessionStorage.getItem(DESKTOP_INTRO_PLAYED_SESSION_KEY) === "1";
+
+    if (
+      pathname === "/"
+      && !hasStartedAutoDesktopIntroRef.current
+      && !introWindow.__ytrDesktopIntroAutoPlayed
+      && !introPlayedInSession
+    ) {
+      hasStartedAutoDesktopIntroRef.current = true;
+      introWindow.__ytrDesktopIntroAutoPlayed = true;
+      window.sessionStorage.setItem(DESKTOP_INTRO_PLAYED_SESSION_KEY, "1");
+      void startPreparedDesktopIntroSequence();
+    }
 
     /*
       Legacy invariant anchors retained for verify:overlay-routing:
@@ -270,7 +287,7 @@ export function useDesktopIntro({
       window.removeEventListener("resize", handleResize);
       clearDesktopIntroTimers();
     };
-  }, [clearDesktopIntroTimers, startPreparedDesktopIntroSequence, syncDesktopIntroTarget]);
+  }, [clearDesktopIntroTimers, pathname, startPreparedDesktopIntroSequence, syncDesktopIntroTarget]);
 
   // Replay the intro when the user navigates back to "/" via the brand logo.
   useEffect(() => {

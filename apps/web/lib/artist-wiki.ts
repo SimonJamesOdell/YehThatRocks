@@ -188,12 +188,16 @@ function extractFirstJsonObject(value: string) {
   return candidate.slice(start, end + 1);
 }
 
+function asObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
 function sanitizeWikiDocument(artistName: string, slug: string, model: string, candidate: unknown, fallbackSources: ExternalSource[]): ArtistWikiDocument {
-  const safe = (candidate && typeof candidate === "object" ? candidate : {}) as Record<string, unknown>;
-  const sectionsRaw = (safe.sections && typeof safe.sections === "object" ? safe.sections : {}) as Record<string, unknown>;
-  const membersRaw = (sectionsRaw.members && typeof sectionsRaw.members === "object" ? sectionsRaw.members : {}) as Record<string, unknown>;
-  const discographyRaw = (sectionsRaw.discography && typeof sectionsRaw.discography === "object" ? sectionsRaw.discography : {}) as Record<string, unknown>;
-  const futureRaw = (sectionsRaw.futureEnhancements && typeof sectionsRaw.futureEnhancements === "object" ? sectionsRaw.futureEnhancements : {}) as Record<string, unknown>;
+  const safe = asObject(candidate);
+  const sectionsRaw = asObject(safe.sections);
+  const membersRaw = asObject(sectionsRaw.members);
+  const discographyRaw = asObject(sectionsRaw.discography);
+  const futureRaw = asObject(sectionsRaw.futureEnhancements);
 
   const sourceCandidates = Array.isArray(safe.sources) ? safe.sources : [];
   const sources = sourceCandidates
@@ -624,7 +628,8 @@ async function writeCachedWiki(slug: string, wiki: ArtistWikiDocument) {
 }
 
 export async function getOrCreateArtistWiki(artistName: string, slugHint?: string) {
-  const slug = slugHint && slugHint.trim() ? slugHint.trim() : slugifyArtistName(artistName);
+  const trimmedSlugHint = slugHint?.trim();
+  const slug = trimmedSlugHint || slugifyArtistName(artistName);
 
   if (!slug) {
     return null;

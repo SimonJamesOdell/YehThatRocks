@@ -4,6 +4,8 @@ type TimedEvent = {
   durationMs: number;
 };
 
+import { readPositiveIntEnv } from "@/lib/number-utils";
+
 type OperationAggregate = {
   operation: string;
   count: number;
@@ -51,19 +53,6 @@ type SnapshotCacheEntry = {
 
 const PROFILING_WINDOW_MS = 5 * 60 * 1000;
 const MAX_TOP_OPERATIONS = 8;
-
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function readPositiveIntEnv(name: string, fallback: number, min: number, max: number) {
-  const parsed = Number(process.env[name] ?? fallback);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-
-  return clamp(Math.floor(parsed), min, max);
-}
 
 const MAX_PRISMA_OPERATION_EVENTS = readPositiveIntEnv(
   "PRISMA_PROFILER_MAX_OPERATION_EVENTS",

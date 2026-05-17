@@ -3,19 +3,6 @@ export type ServerAuthCacheState<T> = {
   value: T;
 };
 
-export function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
-
-export function readPositiveIntEnv(name: string, fallback: number, min: number, max: number) {
-  const parsed = Number(process.env[name] ?? fallback);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-
-  return clamp(Math.floor(parsed), min, max);
-}
-
 export function pruneExpiringCacheEntries<T>(
   entries: Map<string, ServerAuthCacheState<T>>,
   now = Date.now(),

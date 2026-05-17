@@ -1,5 +1,9 @@
 import type { VideoRecord } from "@/lib/catalog";
 import { dedupeVideos } from "@/lib/video-list-utils";
+import { finiteNumberOrNull, finitePercentOrNull } from "@/lib/number-utils";
+
+export { finiteNumberOrNull };
+export { finitePercentOrNull };
 
 export function formatChatTimestamp(value: string | null) {
   if (!value) {
@@ -33,15 +37,6 @@ export function logWatchNext(event: string, detail?: Record<string, unknown>) {
   }
   const payload = detail ? ` ${JSON.stringify(detail)}` : "";
   console.log(`[watch-next] ${event}${payload}`);
-}
-
-export function finiteNumberOrNull(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-export function finitePercentOrNull(value: number | null | undefined) {
-  const numeric = finiteNumberOrNull(value);
-  return numeric === null ? null : Math.max(0, Math.min(100, numeric));
 }
 
 export function dedupeRelatedRailVideos(videos: VideoRecord[], currentVideoId: string) {

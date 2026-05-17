@@ -14,6 +14,8 @@ import { prisma } from "@/lib/db";
 import { parseRequestJson } from "@/lib/request-json";
 import { recordExternalApiUsage } from "@/lib/api-usage-telemetry";
 import { parseJsonOrNull } from "@/lib/parse-json";
+import { maybeNormalizePlaylistId } from "@/lib/youtube-playlist";
+import { PLAYBACK_MIN_CONFIDENCE } from "@/lib/playback-config";
 
 const suggestSchema = z.object({
   source: z.string().trim().min(1).max(2048),
@@ -22,9 +24,7 @@ const suggestSchema = z.object({
   retryRejected: z.boolean().optional(),
 });
 
-const YOUTUBE_PLAYLIST_ID_PATTERN = /^[A-Za-z0-9_-]{10,}$/;
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || "";
-const PLAYBACK_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.PLAYBACK_MIN_CONFIDENCE || "0.8")));
 const SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE = Math.max(
   0,
   Math.min(1, Number(process.env.SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE || "0.08")),
@@ -94,19 +94,6 @@ function getRejectionReason(decision: { reason: string; message?: string }) {
     default:
       return "Rejected during ingestion/classification.";
   }
-}
-
-function maybeNormalizePlaylistId(value?: string | null) {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  if (!YOUTUBE_PLAYLIST_ID_PATTERN.test(trimmed)) {
-    return null;
-  }
-
-  return trimmed;
 }
 
 function parseYouTubeSource(source: string):

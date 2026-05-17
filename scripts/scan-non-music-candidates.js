@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { PrismaClient } = require("@prisma/client");
+const { parseArg } = require("./lib/cli");
 
 function loadDatabaseEnv() {
   const candidateEnvPaths = [
@@ -35,15 +36,6 @@ function loadDatabaseEnv() {
       process.env[key] = rawValue.replace(/^"/, "").replace(/"$/, "");
     }
   }
-}
-
-function parseArg(name, fallback) {
-  const flag = `--${name}`;
-  const hit = process.argv.find((entry) => entry.startsWith(`${flag}=`));
-  if (!hit) {
-    return fallback;
-  }
-  return hit.slice(flag.length + 1);
 }
 
 function escapeIdentifier(identifier) {

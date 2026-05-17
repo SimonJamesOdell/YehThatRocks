@@ -37,6 +37,7 @@ import {
   hasGenreAllColumn,
 } from "@/lib/catalog-data-db";
 import { getLowerTrimmedDatabaseValue, getTrimmedDatabaseValue } from "@/lib/catalog-data-internal-helpers";
+import { clamp } from "@/lib/number-utils";
 
 // ── Cache constants ────────────────────────────────────────────────────────────
 
@@ -743,7 +744,7 @@ export async function findArtistsInDatabase(options: {
 
   const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(" OR ")}` : "";
   const orderSql = orderByName ? `ORDER BY a.${nameCol} ASC` : "";
-  const cappedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+  const cappedLimit = clamp(Math.floor(limit), 1, 100);
   const searchCacheKey = `s:${normalizedSearch}|l:${cappedLimit}|o:${orderByName ? 1 : 0}|p:${prefixOnly ? 1 : 0}|n:${nameOnly ? 1 : 0}`;
 
   const executeQuery = async () => {
@@ -835,7 +836,7 @@ export async function findArtistsFromVideoMetadata(search: string, limit: number
     return [] as Array<{ name: string; country: string | null; genre1: string | null }>;
   }
 
-  const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+  const safeLimit = clamp(Math.floor(limit), 1, 100);
   const likePattern = `%${normalizedSearch}%`;
 
   return prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
@@ -867,7 +868,7 @@ export async function getArtistVideoPoolByNormalizedName(normalizedArtist: strin
   const normalizedArtistKey = normalizedArtist.trim();
   if (!normalizedArtistKey) return [];
 
-  const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+  const safeLimit = clamp(Math.floor(limit), 1, 500);
   const cacheKey = normalizedArtistKey;
   const now = Date.now();
 
@@ -961,7 +962,7 @@ export async function getArtistVideoPoolByNormalizedName(normalizedArtist: strin
 }
 
 export async function getSameGenreRelatedPoolByArtist(normalizedArtist: string, limit: number): Promise<RankedVideoRow[]> {
-  const safeLimit = Math.max(1, Math.min(160, Math.floor(limit)));
+  const safeLimit = clamp(Math.floor(limit), 1, 160);
   const cacheKey = normalizedArtist;
   const now = Date.now();
 
@@ -1166,7 +1167,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
   const normalizedLetter = letter.trim().toUpperCase();
   const isNumericBucket = normalizedLetter === "#";
   const normalizedFilterPrefix = filterPrefix.trim().toLowerCase();
-  const safeLimit = Math.max(1, Math.min(limit, 300));
+  const safeLimit = clamp(limit, 1, 300);
   const safeOffset = Math.max(0, Math.floor(offset));
   const letterFilterPrefix = normalizedFilterPrefix || (isNumericBucket ? "" : normalizedLetter.toLowerCase());
   const projectionPageCacheKey = `${normalizedLetter}:${letterFilterPrefix}:${safeOffset}:${safeLimit}`;
@@ -1578,7 +1579,7 @@ export async function getArtistBySlug(slug: string) {
 }
 
 export async function getVideosByArtist(artistName: string, limit = 500) {
-  const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+  const safeLimit = clamp(Math.floor(limit), 1, 500);
   const normalizedArtist = normalizeArtistKey(artistName);
   if (!normalizedArtist) return [] as VideoRecord[];
   if (!hasDatabaseUrl()) return [] as VideoRecord[];

@@ -4,9 +4,9 @@ import {
   getCacheEntry,
   pruneCacheToMaxEntries,
   pruneExpiringCacheEntries,
-  readPositiveIntEnv,
   setCacheEntry,
 } from "@/lib/server-auth-cache";
+import { readPositiveIntEnv } from "@/lib/number-utils";
 
 describe("server auth cache helpers", () => {
   it("stores and retrieves unexpired entries", () => {

@@ -2,16 +2,7 @@ import { NextRequest } from "next/server";
 
 import { requireAdminApiAuth } from "@/lib/admin-auth";
 import { buildAdminHealthPayload, getAdminCpuDialSnapshot } from "@/lib/admin-dashboard-health";
-
-function readPositiveNumberEnv(name: string, defaultValue: number, minValue: number) {
-  const raw = process.env[name];
-  const parsed = Number(raw ?? defaultValue);
-  if (!Number.isFinite(parsed)) {
-    return defaultValue;
-  }
-
-  return Math.max(minValue, parsed);
-}
+import { readPositiveNumberEnv } from "@/lib/number-utils";
 
 const LEGACY_STREAM_INTERVAL_MS = readPositiveNumberEnv("ADMIN_DASHBOARD_STREAM_MS", 125, 125);
 const CPU_STREAM_INTERVAL_MS = readPositiveNumberEnv(

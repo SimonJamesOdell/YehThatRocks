@@ -11,6 +11,7 @@ import { prisma } from "@/lib/db";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 import { parseJsonOrNull } from "@/lib/parse-json";
+import { PLAYBACK_MIN_CONFIDENCE } from "@/lib/playback-config";
 
 const refetchMetadataSchema = z.object({
   id: z.number().int().positive(),
@@ -30,8 +31,6 @@ type YouTubeVideoDetailsResponse = {
     };
   }>;
 };
-
-const PLAYBACK_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.PLAYBACK_MIN_CONFIDENCE || "0.8")));
 
 async function fetchYouTubeMetadata(videoId: string, apiKey: string) {
   const url = new URL("https://www.googleapis.com/youtube/v3/videos");

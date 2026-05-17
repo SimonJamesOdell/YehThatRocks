@@ -4,6 +4,8 @@ type MemorySnapshot = {
   rssBytes: number;
 };
 
+import { clamp } from "@/lib/number-utils";
+
 type MemoryPressureThresholds = {
   heapUsedRatioThreshold: number;
   rssMbThreshold: number;
@@ -28,10 +30,6 @@ let guardStarted = false;
 const guardState: MemoryReliefState = {
   lastReliefAtMs: 0,
 };
-
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
 
 function readNumberEnv(name: string, fallback: number) {
   const raw = Number(process.env[name] ?? fallback);
