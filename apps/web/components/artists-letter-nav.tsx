@@ -8,7 +8,7 @@ import {
 } from "@/lib/artists-letter-events";
 import { useArtistsLetterContext } from "@/components/artists-letter-provider";
 
-const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const ALPHABET = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "#"];
 
 type ArtistsLetterNavProps = {
   v?: string;

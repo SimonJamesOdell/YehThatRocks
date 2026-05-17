@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   const letterParam = (request.nextUrl.searchParams.get("letter") ?? "").trim().toUpperCase();
   const filterParam = (request.nextUrl.searchParams.get("filter") ?? "").trim();
 
-  if (!/^[A-Z]$/.test(letterParam)) {
+  if (!/^(?:[A-Z]|#)$/.test(letterParam)) {
     return NextResponse.json({ error: "Invalid letter" }, { status: 400 });
   }
 

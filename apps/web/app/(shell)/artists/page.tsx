@@ -24,7 +24,7 @@ type ArtistsPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const ALPHABET = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "#"];
 const ARTISTS_PAGE_CHUNK = 60;
 
 export default async function ArtistsPage({ searchParams }: ArtistsPageProps) {

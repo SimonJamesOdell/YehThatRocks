@@ -385,4 +385,60 @@ describe("getArtistsByLetter — prefix query strategy", () => {
     expect(artistSql).not.toContain("LOWER(TRIM(COALESCE(a.`artist`, ''))) LIKE ?");
     expect(artistParams).toEqual(["a%"]);
   });
+
+  it("supports # bucket by filtering projection rows to numeric-leading display names", async () => {
+    hasArtistStatsProjectionMock.mockResolvedValue(true);
+
+    queryRawUnsafeMock.mockResolvedValueOnce([
+      {
+        displayName: "3 Inches of Blood",
+        slug: "3-inches-of-blood",
+        country: "CA",
+        genre: "Heavy Metal",
+        videoCount: 7,
+        thumbnailVideoId: "abc12345678",
+      },
+    ]);
+
+    const { clearArtistCaches, getArtistsByLetter } = await import("@/lib/catalog-data-artists");
+    clearArtistCaches();
+
+    const rows = await getArtistsByLetter("#", 60, 0, "");
+
+    expect(rows.length).toBe(1);
+    const [sql, ...params] = queryRawUnsafeMock.mock.calls[0] as [string, ...unknown[]];
+    expect(sql).toContain("s.display_name REGEXP '^[0-9]'");
+    expect(sql).not.toContain("s.first_letter = ?");
+    expect(params).toEqual([]);
+  });
+
+  it("supports # bucket for parsedArtist fallback by filtering numeric-leading artist names", async () => {
+    hasArtistStatsProjectionMock.mockResolvedValue(false);
+    getArtistColumnMapMock.mockResolvedValue({
+      name: "artist",
+      normalizedName: null,
+      country: null,
+      genreColumns: ["genre1"],
+    });
+
+    queryRawUnsafeMock
+      .mockResolvedValueOnce([{ hasRows: 0 }])
+      .mockResolvedValueOnce([{ name: "3 Inches of Blood", country: null, genre1: "Heavy Metal" }])
+      .mockResolvedValueOnce([{ artistKey: "3 inches of blood", videoCount: 2, thumbnailVideoId: "abc12345678" }]);
+
+    const { clearArtistCaches, getArtistsByLetter } = await import("@/lib/catalog-data-artists");
+    clearArtistCaches();
+
+    const rows = await getArtistsByLetter("#", 60, 0, "");
+
+    expect(rows.length).toBe(1);
+    const [artistSql, ...artistParams] = queryRawUnsafeMock.mock.calls[1] as [string, ...unknown[]];
+    expect(artistSql).toContain("a.`artist` REGEXP '^[0-9]'");
+    expect(artistSql).not.toContain("a.`artist` LIKE ?");
+    expect(artistParams).toEqual([]);
+
+    const [countsSql, ...countsParams] = queryRawUnsafeMock.mock.calls[2] as [string, ...unknown[]];
+    expect(countsSql).toContain("REGEXP '^[0-9]'");
+    expect(countsParams).toEqual([]);
+  });
 });

@@ -1,5 +1,5 @@
 export function isValidArtistLetter(letter: string) {
-  return /^[A-Z]$/.test(letter);
+  return /^(?:[A-Z]|#)$/.test(letter);
 }
 
 export function normalizeArtistLetter(letter: string) {

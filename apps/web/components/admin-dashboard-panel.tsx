@@ -5,6 +5,7 @@ import { useAdminHealthStreaming } from "@/components/use-admin-health-streaming
 import { useAdminVideoQueuePolling } from "@/components/use-admin-video-queue-polling";
 import { useAdminAnalyticsRefresh } from "@/components/use-admin-analytics-refresh";
 import { finiteOrNull, isAuthResponseError, readJson, readNoStoreJson } from "@/components/admin-dashboard-utils";
+import { mergePendingQueuePreservingCurrentOrder } from "@/components/admin-pending-queue-order";
 import { buildAnalyticsGraph, buildHostMetricsGraph, filterBucketsWithinRange } from "@/components/admin-dashboard-graph-builders";
 import { AdminDashboardCatalogReviewTab } from "@/components/admin-dashboard-catalog-review-tab";
 import { AdminDashboardCategoriesTab } from "@/components/admin-dashboard-categories-tab";
@@ -361,7 +362,7 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     const pendingPayload = await readJson<{ pendingVideos: PendingVideoRow[]; totalPending?: number }>(
       "/api/admin/videos/pending",
     );
-    setPendingVideos(pendingPayload.pendingVideos);
+    setPendingVideos((current) => mergePendingQueuePreservingCurrentOrder(current, pendingPayload.pendingVideos));
     setPendingVideoTotal(Number(pendingPayload.totalPending ?? pendingPayload.pendingVideos.length));
     setPendingVideoDrafts((current) => {
       const liveIds = new Set(pendingPayload.pendingVideos.map((item) => item.id));
