@@ -27,6 +27,22 @@ export async function GET(request: NextRequest) {
   const remaining = await getCatalogReviewQueueCount();
   const currentVideo = await fetchCatalogReviewCurrentVideo();
 
+  // If the count is positive but no valid video is surfaceable, the queue
+  // contains only orphaned entries (videos deleted outside of this flow).
+  // Kick off a background cleanup so subsequent fetches return an accurate count.
+  if (remaining > 0 && !currentVideo) {
+    prisma
+      .$executeRawUnsafe(
+        `DELETE q FROM admin_catalog_review_queue q
+         LEFT JOIN videos v ON v.videoId = q.video_id
+         WHERE v.id IS NULL`,
+      )
+      .then(() => getCatalogReviewQueueCount({ forceRefresh: true }))
+      .catch(() => {
+        /* non-fatal */
+      });
+  }
+
   return NextResponse.json({
     remaining,
     currentVideo,

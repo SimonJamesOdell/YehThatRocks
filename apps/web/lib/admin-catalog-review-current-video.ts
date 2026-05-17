@@ -42,9 +42,15 @@ export type CatalogReviewCurrentVideo = {
  *    used, so the watch_history scan is bounded to at most a handful of rows.
  */
 export async function fetchCatalogReviewCurrentVideo(): Promise<CatalogReviewCurrentVideo | null> {
-  // Step 1: identify the next queued video_id (fast: covered by enqueued_at index)
+  // Step 1: identify the next queued video_id that still has a matching video.
+  // The JOIN skips orphaned queue entries (videos deleted outside of the catalog review
+  // flow) so they don't permanently block the queue.
   const queueRows = await prisma.$queryRawUnsafe<QueueEntryRow[]>(
-    `SELECT video_id, enqueued_at FROM admin_catalog_review_queue ORDER BY enqueued_at ASC, video_id ASC LIMIT 1`,
+    `SELECT q.video_id, q.enqueued_at
+     FROM admin_catalog_review_queue q
+     JOIN videos v ON v.videoId = q.video_id
+     ORDER BY q.enqueued_at ASC, q.video_id ASC
+     LIMIT 1`,
   );
 
   const entry = queueRows[0];
