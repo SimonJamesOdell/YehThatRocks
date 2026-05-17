@@ -121,20 +121,6 @@ function createEmptyDashboardPayload() {
         wikiCacheCount: 0,
         daily: [],
       },
-      apiUsage: {
-        daily: [],
-        totals7d: {
-          youtubeCalls: 0,
-          youtubeUnits: 0,
-          youtubeErrors: 0,
-          groqCalls: 0,
-          groqUnits: 0,
-          groqErrors: 0,
-          groqClassified: 0,
-          youtubeSuccessRate: 100,
-          groqSuccessRate: 100,
-        },
-      },
       memoryDiagnostics: {
         snapshotAt: nowIso,
         process: {
@@ -391,8 +377,6 @@ function normalizeDashboardPayload(rawPayload: unknown) {
   const rawAnalyticsSeries = asObject(rawAnalytics.series);
   const rawInsights = asObject(raw.insights);
   const rawGroqSpend = asObject(rawInsights.groqSpend);
-  const rawApiUsage = asObject(rawInsights.apiUsage);
-  const rawTotals7d = asObject(rawApiUsage.totals7d);
   const rawMemoryDiagnostics = asObject(rawInsights.memoryDiagnostics);
   const rawMemoryProcess = asObject(rawMemoryDiagnostics.process);
   const rawMemoryCaches = asObject(rawMemoryDiagnostics.caches);
@@ -479,15 +463,6 @@ function normalizeDashboardPayload(rawPayload: unknown) {
         ...base.insights.groqSpend,
         ...rawGroqSpend,
         daily: asArray(rawGroqSpend.daily),
-      },
-      apiUsage: {
-        ...base.insights.apiUsage,
-        ...rawApiUsage,
-        daily: asArray(rawApiUsage.daily),
-        totals7d: {
-          ...base.insights.apiUsage.totals7d,
-          ...rawTotals7d,
-        },
       },
       memoryDiagnostics: {
         ...base.insights.memoryDiagnostics,

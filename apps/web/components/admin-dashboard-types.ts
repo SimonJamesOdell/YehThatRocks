@@ -109,29 +109,6 @@ export type DashboardPayload = {
       wikiCacheCount: number;
       daily: Array<{ day: string; classified: number; errors: number }>;
     };
-    apiUsage: {
-      daily: Array<{
-        day: string;
-        youtubeCalls: number;
-        youtubeUnits: number;
-        youtubeErrors: number;
-        groqCalls: number;
-        groqUnits: number;
-        groqErrors: number;
-        groqClassified: number;
-      }>;
-      totals7d: {
-        youtubeCalls: number;
-        youtubeUnits: number;
-        youtubeErrors: number;
-        groqCalls: number;
-        groqUnits: number;
-        groqErrors: number;
-        groqClassified: number;
-        youtubeSuccessRate: number;
-        groqSuccessRate: number;
-      };
-    };
     memoryDiagnostics: {
       snapshotAt: string;
       process: {
@@ -280,15 +257,5 @@ export type PerfWindowResetResponse = {
   };
 };
 
-// Quota/Seeding Domain
-export type QuotaBackfillStatus = {
-  todayUsageUnits: number;
-  remainingUnits: number;
-  recommendedBudget: number;
-  availableSeedCount: number;
-  quotaResetAt: string;
-  msUntilReset: number;
-};
-
 // Tab Routing
-export type AdminTab = "overview" | "magazine" | "performance" | "api" | "categories" | "videos" | "catalog-review";
+export type AdminTab = "overview" | "magazine" | "performance" | "categories" | "videos" | "catalog-review";
