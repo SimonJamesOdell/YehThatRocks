@@ -15,6 +15,7 @@ const files = {
   adminVideosRoute: path.join(ROOT, "apps/web/app/api/admin/videos/route.ts"),
   adminPendingRoute: path.join(ROOT, "apps/web/app/api/admin/videos/pending/route.ts"),
   adminImportRoute: path.join(ROOT, "apps/web/app/api/admin/videos/import/route.ts"),
+  adminRefetchDataRoute: path.join(ROOT, "apps/web/app/api/admin/videos/refetch-data/route.ts"),
   adminPerformanceSamplesRoute: path.join(ROOT, "apps/web/app/api/admin/performance-samples/route.ts"),
   adminDashboardStreamRoute: path.join(ROOT, "apps/web/app/api/admin/dashboard/stream/route.ts"),
   adminDashboardPanel: path.join(ROOT, "apps/web/components/admin-dashboard-panel.tsx"),
@@ -38,6 +39,7 @@ function main() {
   const adminVideosRouteSource = readFileStrict(files.adminVideosRoute, ROOT);
   const adminPendingRouteSource = readFileStrict(files.adminPendingRoute, ROOT);
   const adminImportRouteSource = readFileStrict(files.adminImportRoute, ROOT);
+  const adminRefetchDataRouteSource = readFileStrict(files.adminRefetchDataRoute, ROOT);
   const adminPerformanceSamplesRouteSource = readFileStrict(files.adminPerformanceSamplesRoute, ROOT);
   const adminDashboardStreamRouteSource = readFileStrict(files.adminDashboardStreamRoute, ROOT);
   const adminDashboardPanelSource = readFileStrict(files.adminDashboardPanel, ROOT);
@@ -193,6 +195,24 @@ function main() {
   assertContains(catalogDataIngestionSource, "options?.forceApprove", "importVideoFromDirectSource conditionally sets approved=1 only when forceApprove is true", failures);
   assertContains(catalogDataIngestionSource, "unapprovedRows", "getVideoPlaybackDecision queries without approved filter for freshly-ingested videos", failures);
   assertContains(adminImportRouteSource, "forceApprove: true", "Admin import route explicitly force-approves imported videos so they appear in catalog immediately", failures);
+
+  // Admin metadata edit — save stamps parseMethod and parsedAt so the record is clearly
+  // marked as human-curated, and downstream automation can respect that intent.
+  assertContains(adminVideosRouteSource, 'data.parseMethod = "admin-manual";', "Admin videos PATCH stamps parseMethod=admin-manual on every metadata save", failures);
+  assertContains(adminVideosRouteSource, "data.parsedAt = new Date();", "Admin videos PATCH stamps parsedAt timestamp on every metadata save", failures);
+
+  // Background Groq re-classification must never overwrite admin-curated metadata.
+  // The guard must be applied before the hasSufficientMetadata check to handle edge cases
+  // where the admin saved with a blank videoType (which would otherwise cause re-classification).
+  assertContains(catalogDataIngestionSource, 'existingMeta?.parseMethod === "admin-manual"', "maybePersistRuntimeMetadata has an admin-manual guard", failures);
+  assertContains(catalogDataIngestionSource, '// Never overwrite metadata that has been explicitly curated by an admin.', "maybePersistRuntimeMetadata admin-manual guard has explanatory comment", failures);
+
+  // Refetch-from-YouTube must also respect admin-manual to avoid overwriting curated fields
+  // when the admin deliberately refreshes non-identity data (description, viewCount, etc.).
+  assertContains(adminRefetchDataRouteSource, "parseMethod: true", "Refetch-data route fetches parseMethod to enable admin-manual guard", failures);
+  assertContains(adminRefetchDataRouteSource, 'const isAdminManual = row.parseMethod === "admin-manual";', "Refetch-data route computes isAdminManual flag before update", failures);
+  assertContains(adminRefetchDataRouteSource, "!isAdminManual && fallbackMetadata", "Refetch-data route guards parsed metadata spread behind isAdminManual check", failures);
+  assertContains(adminRefetchDataRouteSource, "!isAdminManual && normalizedChannelTitle", "Refetch-data route guards channelTitle restore behind isAdminManual check", failures);
 
   finishInvariantCheck({
     failures,
