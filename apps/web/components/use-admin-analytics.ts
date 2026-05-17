@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useMemo, useState } from "react";
-import { AnalyticsBucket, AnalyticsZoomLevel, MapDateRange, DashboardPayload } from "@/components/admin-dashboard-types";
+import { AnalyticsBucket, AnalyticsZoomLevel, DashboardPayload } from "@/components/admin-dashboard-types";
 import { readJson, readNoStoreJson } from "@/components/admin-dashboard-utils";
 
 export function useAdminAnalytics() {
@@ -14,7 +14,7 @@ export function useAdminAnalytics() {
   const [selectedAllTimeBucket, setSelectedAllTimeBucket] = useState<AnalyticsBucket | null>(null);
   const [selectedMonthlyBucket, setSelectedMonthlyBucket] = useState<AnalyticsBucket | null>(null);
   const [selectedWeeklyBucket, setSelectedWeeklyBucket] = useState<AnalyticsBucket | null>(null);
-  const [mapDateRange, setMapDateRange] = useState<MapDateRange>("allTime");
+  const [mapDateRange, setMapDateRange] = useState("allTime");
   const [showHostMetricsGraph, setShowHostMetricsGraph] = useState(false);
   const [analyticsSeriesOn, setAnalyticsSeriesOn] = useState({
     pageViews: true,
