@@ -27,7 +27,7 @@ export default defineConfig({
     ? {
         command: "cross-env NEXT_PUBLIC_DISABLE_DESKTOP_INTRO=1 npm -w web run dev",
         url: baseURL,
-        reuseExistingServer: false,
+        reuseExistingServer: true,
         timeout: 180_000,
       }
     : undefined,

@@ -1534,6 +1534,7 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
   const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
   const normalizedArtist = normalizeArtistKey(artistName);
   if (!normalizedArtist) return [] as VideoRecord[];
+  if (!hasDatabaseUrl()) return [] as VideoRecord[];
   requireDatabaseUrl("getVideosByArtist");
 
   const cacheKey = `${normalizedArtist}:${safeLimit}`;

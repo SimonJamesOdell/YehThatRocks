@@ -8,6 +8,8 @@ import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
 import type { PrismaWithVerificationEmailUser } from "@/lib/prisma-types";
 
+const HTTP_FORBIDDEN = 403;
+
 export async function POST(request: NextRequest) {
   const requestMeta = getRequestMetadata(request.headers);
   const authResult = await requireApiAuth(request);
@@ -22,8 +24,14 @@ export async function POST(request: NextRequest) {
     return csrfError;
   }
 
+  const userId = authResult.auth.userId;
+
+  if (typeof userId !== "number" || !Number.isInteger(userId) || userId <= 0) {
+    return NextResponse.json({ error: "Authentication context is invalid." }, { status: HTTP_FORBIDDEN });
+  }
+
   const user = await (prisma as PrismaWithVerificationEmailUser).user.findUnique({
-    where: { id: authResult.auth.userId },
+    where: { id: userId },
     select: { id: true, email: true, emailVerifiedAt: true },
   });
 

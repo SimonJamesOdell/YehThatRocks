@@ -6,6 +6,8 @@ import { requireApiAuth } from "@/lib/auth-request";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
+const HTTP_FORBIDDEN = 403;
+
 /**
  * Result of a successful auth + body parse pipeline.
  * Contains authenticated user info and validated request body.
@@ -89,7 +91,17 @@ export async function requireAuthOnly(
     return { ok: false, response: authResult.response };
   }
 
-  return { ok: true, auth: authResult.auth };
+  const userId = authResult.auth.userId;
+  const email = authResult.auth.email ?? "";
+
+  if (typeof userId !== "number" || !Number.isInteger(userId) || userId <= 0) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Forbidden" }, { status: HTTP_FORBIDDEN }),
+    };
+  }
+
+  return { ok: true, auth: { userId, email } };
 }
 
 /**
@@ -119,6 +131,16 @@ export async function withAuthAndBody<T>(
 
   if (!authResult.ok) {
     return { ok: false, response: authResult.response };
+  }
+
+  const userId = authResult.auth.userId;
+  const email = authResult.auth.email ?? "";
+
+  if (typeof userId !== "number" || !Number.isInteger(userId) || userId <= 0) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Forbidden" }, { status: HTTP_FORBIDDEN }),
+    };
   }
 
   // Step 2: Detect if this is a mutation and check CSRF
@@ -153,7 +175,7 @@ export async function withAuthAndBody<T>(
 
   return {
     ok: true,
-    auth: authResult.auth,
+    auth: { userId, email },
     data: validationResult.data as T,
   };
 }

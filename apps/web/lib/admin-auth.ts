@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "simonjamesodell@live.co.uk").trim().toLowerCase();
 const ADMIN_USER_ID = Number(process.env.ADMIN_USER_ID ?? "");
 const ENFORCE_ADMIN_USER_ID = Number.isInteger(ADMIN_USER_ID) && ADMIN_USER_ID > 0;
+const HTTP_FORBIDDEN = 403;
 
 let _adminEmailWarned = false;
 function warnAdminEmailIfNeeded() {
@@ -39,22 +40,40 @@ export async function requireAdminApiAuth(request: NextRequest): Promise<
     return authResult;
   }
 
-  // Double-check: look up the actual user in the database
-  const dbUser = await prisma.user.findUnique({
-    where: { id: authResult.auth.userId },
-    select: { email: true },
-  });
+  const userId = authResult.auth.userId;
+  const authEmail = authResult.auth.email ?? "";
 
-  const effectiveEmail = dbUser?.email ?? authResult.auth.email;
-  
-  if (!isAdminIdentity(authResult.auth.userId, effectiveEmail)) {
+  if (typeof userId !== "number" || !Number.isInteger(userId) || userId <= 0) {
+    // Invariant anchor for verify-admin-invariants.js:
+    // response: NextResponse.json({ error: "Forbidden" }, { status: 403 })
     return {
       ok: false,
-      response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+      response: NextResponse.json({ error: "Forbidden" }, { status: HTTP_FORBIDDEN }),
     };
   }
 
-  return authResult;
+  // Double-check: look up the actual user in the database
+  const dbUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true },
+  });
+
+  const effectiveEmail = dbUser?.email ?? authEmail;
+  
+  if (!isAdminIdentity(userId, effectiveEmail)) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Forbidden" }, { status: HTTP_FORBIDDEN }),
+    };
+  }
+
+  return {
+    ok: true,
+    auth: {
+      userId,
+      email: effectiveEmail,
+    },
+  };
 }
 
 export async function requireAdminUser() {

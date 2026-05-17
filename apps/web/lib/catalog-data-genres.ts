@@ -345,6 +345,11 @@ export async function getArtistsByGenre(genre: string) {
   const now = Date.now();
   const cached = genreArtistsCache.get(cacheKey);
   if (cached && cached.expiresAt > now) return cached.artists;
+  if (!hasDatabaseUrl()) {
+    const fallbackArtists = getArtistsByGenreFallback(genre);
+    genreArtistsCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, artists: fallbackArtists });
+    return fallbackArtists;
+  }
   requireDatabaseUrl("getArtistsByGenre");
 
   try {
@@ -412,6 +417,10 @@ export async function getVideosByGenre(
   const useDefaultCacheWindow = !options?.artists && requestedOffset === 0 && requestedLimit === 24;
   const fetchQueryLimit = Math.max(requestedLimit + requestedOffset + 24, requestedLimit + 24);
   const now = Date.now();
+
+  if (!hasDatabaseUrl()) {
+    return [];
+  }
 
   if (useDefaultCacheWindow) {
     const cached = genreVideosCache.get(cacheKey);

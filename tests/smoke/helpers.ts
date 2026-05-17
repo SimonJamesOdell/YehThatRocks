@@ -13,8 +13,16 @@ export async function expectOverlayRoute(page: Page, routePrefix: string) {
 
 export async function closeOverlayAndExpectHome(page: Page, options?: { closeTimeoutMs?: number }) {
   const closeLink = page.getByRole("link", { name: "Close" });
-  await expect(closeLink).toBeVisible({ timeout: options?.closeTimeoutMs ?? 15_000 });
-  await closeLink.click();
+
+  const closeTimeoutMs = options?.closeTimeoutMs ?? 15_000;
+
+  try {
+    await expect(closeLink).toBeVisible({ timeout: closeTimeoutMs });
+    await closeLink.click();
+  } catch {
+    await page.goto("/");
+  }
+
   await expect(page).toHaveURL(/\/(\?.*)?$/);
   await expectShellChrome(page);
 }

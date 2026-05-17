@@ -9,6 +9,8 @@ import type { PrismaWithProfileUser } from "@/lib/prisma-types";
 import { parseRequestJson } from "@/lib/request-json";
 import { clearServerAuthStateCacheForUserId } from "@/lib/server-auth";
 
+const HTTP_FORBIDDEN = 403;
+
 const profileSchema = z.object({
   screenName: z.string().trim().min(2).max(80),
   bio: z.string().trim().max(1200),
@@ -22,8 +24,14 @@ export async function GET(request: NextRequest) {
     return authResult.response;
   }
 
+  const userId = authResult.auth.userId;
+
+  if (typeof userId !== "number" || !Number.isInteger(userId) || userId <= 0) {
+    return NextResponse.json({ error: "Authentication context is invalid." }, { status: HTTP_FORBIDDEN });
+  }
+
   const user = await (prisma as PrismaWithProfileUser).user.findUnique({
-    where: { id: authResult.auth.userId },
+    where: { id: userId },
     select: {
       id: true,
       email: true,
@@ -59,6 +67,12 @@ export async function PATCH(request: NextRequest) {
     return authResult.response;
   }
 
+  const userId = authResult.auth.userId;
+
+  if (typeof userId !== "number" || !Number.isInteger(userId) || userId <= 0) {
+    return NextResponse.json({ error: "Authentication context is invalid." }, { status: HTTP_FORBIDDEN });
+  }
+
   const csrfError = verifySameOrigin(request);
 
   if (csrfError) {
@@ -79,12 +93,12 @@ export async function PATCH(request: NextRequest) {
 
   const screenName = normalizeScreenName(parsed.data.screenName);
 
-  if (await isScreenNameTaken(screenName, authResult.auth.userId)) {
+  if (await isScreenNameTaken(screenName, userId)) {
     return NextResponse.json({ error: "Screen name is already taken" }, { status: 409 });
   }
 
   const refreshedUser = await (prisma as PrismaWithProfileUser).user.update({
-    where: { id: authResult.auth.userId },
+    where: { id: userId },
     data: {
       screenName,
       bio: parsed.data.bio.length > 0 ? parsed.data.bio : null,
