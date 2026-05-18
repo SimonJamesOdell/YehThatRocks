@@ -237,7 +237,9 @@ describe("getVideosByArtist — availability check strategy", () => {
   });
 
   it("retains FORCE INDEX hint for the parsedArtist_norm index", async () => {
-    queryRawUnsafeMock.mockResolvedValueOnce([]);
+    queryRawUnsafeMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
 
     const { clearArtistCaches, getVideosByArtist } = await import("@/lib/catalog-data-artists");
     clearArtistCaches();
@@ -249,7 +251,9 @@ describe("getVideosByArtist — availability check strategy", () => {
   });
 
   it("returns empty array when no videos match the artist", async () => {
-    queryRawUnsafeMock.mockResolvedValueOnce([]);
+    queryRawUnsafeMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
 
     const { clearArtistCaches, getVideosByArtist } = await import("@/lib/catalog-data-artists");
     clearArtistCaches();
