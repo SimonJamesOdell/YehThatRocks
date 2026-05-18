@@ -1565,7 +1565,62 @@ export async function getArtistBySlug(slug: string) {
 
     const rowsBySlug = await artistSlugLookupInFlight;
     const matched = rowsBySlug.get(slug);
-    if (!matched) return null;
+    if (!matched) {
+      // Fallback for newly curated artists that may not exist in the artists table yet.
+      // Resolve the slug directly from approved videos so artist links/counts keep working
+      // immediately after admin metadata edits.
+      const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
+      const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
+
+      const fallbackRows = await prisma.$queryRawUnsafe<Array<{
+        name: string | null;
+        thumbnailVideoId: string | null;
+      }>>(
+        `
+          SELECT
+            COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) AS name,
+            SUBSTRING_INDEX(
+              GROUP_CONCAT(v.videoId ORDER BY COALESCE(v.viewCount, 0) DESC, v.id ASC),
+              ',',
+              1
+            ) AS thumbnailVideoId
+          FROM videos v
+          WHERE ${videoArtistNormExpr} = ?
+            AND v.videoId IS NOT NULL
+            AND COALESCE(v.approved, 0) = 1
+            ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+          GROUP BY COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''))
+          ORDER BY COUNT(DISTINCT v.videoId) DESC, name ASC
+          LIMIT 1
+        `,
+        slug,
+      );
+
+      const fallback = fallbackRows[0];
+      const fallbackName = getTrimmedDatabaseValue(fallback?.name);
+      if (!fallbackName) return null;
+
+      const synthesized = mapArtist({
+        name: fallbackName,
+        country: null,
+        genre1: null,
+      });
+      const hydratedSynthesized = {
+        ...synthesized,
+        thumbnailVideoId: getTrimmedDatabaseValue(fallback?.thumbnailVideoId) ?? undefined,
+      };
+
+      // Backfill projection data in the background so future lookups and listings
+      // can resolve this artist through the normal indexed path.
+      void refreshArtistProjectionForName(fallbackName).catch(() => undefined);
+
+      artistSingleSlugCache.set(slug, {
+        expiresAt: Date.now() + ARTIST_SINGLE_SLUG_CACHE_TTL_MS,
+        artist: hydratedSynthesized,
+      });
+
+      return hydratedSynthesized;
+    }
 
     const hydrated = await hydrateArtistCountryByName(matched);
     artistSingleSlugCache.set(slug, {

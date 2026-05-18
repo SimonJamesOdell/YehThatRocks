@@ -221,6 +221,10 @@ function main() {
   assertContains(catalogDataArtistsSource, "AGAINST(? IN BOOLEAN MODE)", "getArtistBySlug uses BOOLEAN MODE for wildcard FULLTEXT queries", failures);
   assertContains(catalogDataArtistsSource, "longerTerms = slugTerms.filter((term) => term.length >= 3)", "getArtistBySlug filters slug terms below ft_min_word_len before FULLTEXT query", failures);
   assertContains(catalogDataArtistsSource, "LOWER(a.", "getArtistBySlug retains LOWER LIKE fallback for all-short-term slugs", failures);
+  assertContains(catalogDataArtistsSource, "Fallback for newly curated artists that may not exist in the artists table yet.", "getArtistBySlug documents fallback for curated artists missing in artists table", failures);
+  assertContains(catalogDataArtistsSource, "COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) AS name", "getArtistBySlug fallback resolves artist display name from videos metadata", failures);
+  assertContains(catalogDataArtistsSource, "GROUP_CONCAT(v.videoId ORDER BY COALESCE(v.viewCount, 0) DESC, v.id ASC)", "getArtistBySlug fallback derives a stable thumbnail candidate from artist videos", failures);
+  assertContains(catalogDataArtistsSource, "refreshArtistProjectionForName(fallbackName)", "getArtistBySlug fallback triggers projection refresh for long-term canonical lookup", failures);
 
   // --- getVideosByArtist: correlated EXISTS replaces DISTINCT subquery JOIN (Hotspot 3) ---
   assertContains(catalogDataArtistsSource, "AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE", "getVideosByArtist uses correlated EXISTS to avoid materialising 266k available video IDs", failures);
