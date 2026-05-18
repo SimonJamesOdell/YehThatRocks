@@ -27,8 +27,18 @@ export async function generateSitemaps() {
   ];
 }
 
-export default async function sitemap({ id }: { id: number }): Promise<MetadataRoute.Sitemap> {
-  if (id === 0) {
+function normalizeSitemapId(rawId: number | string): number {
+  if (typeof rawId === "number" && Number.isFinite(rawId)) {
+    return rawId;
+  }
+  const parsed = Number(rawId);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export default async function sitemap({ id }: { id: number | string }): Promise<MetadataRoute.Sitemap> {
+  const normalizedId = normalizeSitemapId(id);
+
+  if (normalizedId === 0) {
     const genres = await withSoftTimeout(
       "sitemap:getGenres",
       SITEMAP_QUERY_SOFT_TIMEOUT_MS,
@@ -54,7 +64,7 @@ export default async function sitemap({ id }: { id: number }): Promise<MetadataR
   }
 
   // Magazine article pages
-  if (id === 4) {
+  if (normalizedId === 4) {
     const slugs = await withSoftTimeout(
       "sitemap:getAllPublishedSlugs",
       SITEMAP_QUERY_SOFT_TIMEOUT_MS,
@@ -68,9 +78,9 @@ export default async function sitemap({ id }: { id: number }): Promise<MetadataR
   }
 
   // Artist pages: id 1–3 map to offsets 0, 45k, 90k
-  const offset = (id - 1) * ARTIST_SITEMAP_PAGE_SIZE;
+  const offset = (normalizedId - 1) * ARTIST_SITEMAP_PAGE_SIZE;
   const slugs = await withSoftTimeout(
-    `sitemap:getArtistSlugsForSitemap:${id}`,
+    `sitemap:getArtistSlugsForSitemap:${normalizedId}`,
     SITEMAP_QUERY_SOFT_TIMEOUT_MS,
     () => getArtistSlugsForSitemap(offset, ARTIST_SITEMAP_PAGE_SIZE, ARTIST_MIN_VIDEO_COUNT),
   ).catch(() => [] as string[]);
