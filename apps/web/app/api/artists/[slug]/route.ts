@@ -10,7 +10,21 @@ type ArtistRouteContext = {
 export async function GET(_request: NextRequest, context: ArtistRouteContext) {
   const { slug } = await context.params;
   const contextVideoId = (_request.nextUrl.searchParams.get("v") ?? "").trim();
-  const artist = await getArtistBySlug(slug);
+  let artist = await getArtistBySlug(slug);
+
+  if (!artist && contextVideoId) {
+    const contextStored = await getStoredVideoById(contextVideoId, { includeUnapproved: true });
+    const contextArtist = (contextStored?.parsedArtist ?? contextStored?.channelTitle ?? "").trim();
+    if (contextArtist && slugify(contextArtist) === slug) {
+      artist = {
+        name: contextArtist,
+        slug,
+        country: "Unknown",
+        genre: "Rock / Metal",
+        thumbnailVideoId: contextVideoId,
+      };
+    }
+  }
 
   if (!artist) {
     return NextResponse.json({ error: "Artist not found" }, { status: 404 });
