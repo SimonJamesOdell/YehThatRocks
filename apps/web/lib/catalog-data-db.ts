@@ -480,12 +480,28 @@ export async function getVideoArtistNormalizationColumn() {
   try {
     const columns = await prisma.$queryRawUnsafe<Array<{ Field: string }>>("SHOW COLUMNS FROM videos");
     const available = new Set(columns.map((column: any) => column.Field));
-    videoArtistNormalizationColumnCache = [
+    const detectedColumn = [
       "parsed_artist_norm",
       "parsed_artist_normalized",
       "normalized_parsed_artist",
       "parsedArtistNormalized",
     ].find((column) => available.has(column)) ?? null;
+
+    if (!detectedColumn) {
+      videoArtistNormalizationColumnCache = null;
+      return videoArtistNormalizationColumnCache;
+    }
+
+    // Some environments have the normalized column present but effectively empty
+    // (for example after partial migrations/imports). In that case, using it for
+    // equality lookups returns zero rows even when parsedArtist is populated.
+    // Detect this once and fall back to parsedArtist normalization for correctness.
+    const normalizedCol = escapeSqlIdentifier(detectedColumn);
+    const rows = await prisma.$queryRawUnsafe<Array<{ c: number }>>(
+      `SELECT COUNT(*) AS c FROM videos v WHERE v.${normalizedCol} IS NOT NULL AND TRIM(v.${normalizedCol}) <> '' LIMIT 1`,
+    );
+    const populatedCount = Number(rows[0]?.c ?? 0);
+    videoArtistNormalizationColumnCache = populatedCount > 0 ? detectedColumn : null;
   } catch {
     try {
       await prisma.$queryRawUnsafe("SELECT parsed_artist_norm FROM videos LIMIT 1");
@@ -589,6 +605,7 @@ export async function getFastVideoByVideoIdRows(
       v.title,
       NULL AS channelTitle,
       NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
+      NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
       COALESCE(v.favourited, 0) AS favourited,
       v.description
     FROM videos v FORCE INDEX (videos_videoId_key)
@@ -606,6 +623,7 @@ export async function getFastVideoByVideoIdRows(
       v.title,
       NULL AS channelTitle,
       NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
+      NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
       COALESCE(v.favourited, 0) AS favourited,
       v.description
     FROM videos v

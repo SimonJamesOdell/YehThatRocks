@@ -12,6 +12,8 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(8).max(128),
 });
 
+const HTTP_UNAUTHORIZED = 401;
+
 export async function POST(request: NextRequest) {
   const requestMeta = getRequestMetadata(request.headers);
   const result = await withAuthAndBody(request, changePasswordSchema, { authMode: "user" });
@@ -50,7 +52,7 @@ export async function POST(request: NextRequest) {
       detail: "Change-password current password mismatch",
       ...requestMeta,
     });
-    return NextResponse.json({ error: "Current password is incorrect" }, { status: 401 });
+    return NextResponse.json({ error: "Current password is incorrect" }, { status: HTTP_UNAUTHORIZED });
   }
 
   const passwordHash = await hashPassword(result.data.newPassword);
