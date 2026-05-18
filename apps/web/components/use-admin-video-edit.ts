@@ -10,6 +10,7 @@ type AdminEditableVideo = {
   id: number;
   videoId: string;
   title: string;
+  approved: boolean;
   parsedArtist: string | null;
   parsedTrack: string | null;
   parsedVideoType: string | null;
@@ -26,6 +27,8 @@ export type UseAdminVideoEditReturn = {
   adminEditVideoRowId: number | null;
   adminEditTitle: string;
   setAdminEditTitle: React.Dispatch<React.SetStateAction<string>>;
+  adminEditApproved: boolean;
+  setAdminEditApproved: React.Dispatch<React.SetStateAction<boolean>>;
   adminEditChannelTitle: string;
   setAdminEditChannelTitle: React.Dispatch<React.SetStateAction<string>>;
   adminEditParsedArtist: string;
@@ -68,8 +71,8 @@ export function useAdminVideoEdit({
   isAdmin: boolean;
   playerFrameRef: RefObject<HTMLDivElement | null>;
   pointerPositionRef: RefObject<{ x: number; y: number } | null>;
-  /** Called after a successful save with the new title and channelTitle */
-  onSaveSuccess: (title: string, channelTitle: string) => void;
+  /** Called after a successful save with the latest editable metadata values */
+  onSaveSuccess: (title: string, channelTitle: string, parsedArtist: string, parsedTrack: string) => void;
   /** Called from closeAdminVideoEditModal when the pointer is hovering the player */
   onShowControls: () => void;
 }): UseAdminVideoEditReturn {
@@ -78,6 +81,7 @@ export function useAdminVideoEdit({
   const [showAdminVideoEditModal, setShowAdminVideoEditModal] = useState(false);
   const [adminEditVideoRowId, setAdminEditVideoRowId] = useState<number | null>(null);
   const [adminEditTitle, setAdminEditTitle] = useState("");
+  const [adminEditApproved, setAdminEditApproved] = useState(false);
   const [adminEditChannelTitle, setAdminEditChannelTitle] = useState("");
   const [adminEditParsedArtist, setAdminEditParsedArtist] = useState("");
   const [adminEditParsedTrack, setAdminEditParsedTrack] = useState("");
@@ -130,6 +134,7 @@ export function useAdminVideoEdit({
 
       setAdminEditVideoRowId(row.id);
       setAdminEditTitle(row.title ?? "");
+      setAdminEditApproved(Boolean(row.approved));
       setAdminEditChannelTitle(row.channelTitle ?? "");
       setAdminEditParsedArtist(row.parsedArtist ?? "");
       setAdminEditParsedTrack(row.parsedTrack ?? "");
@@ -249,6 +254,7 @@ export function useAdminVideoEdit({
         body: JSON.stringify({
           id: adminEditVideoRowId,
           title: adminEditTitle,
+          approved: adminEditApproved,
           channelTitle: adminEditChannelTitle,
           parsedArtist: adminEditParsedArtist,
           parsedTrack: adminEditParsedTrack,
@@ -268,7 +274,7 @@ export function useAdminVideoEdit({
       }
 
       setAdminEditStatus("Saved.");
-      onSaveSuccess(adminEditTitle, adminEditChannelTitle);
+      onSaveSuccess(adminEditTitle, adminEditChannelTitle, adminEditParsedArtist, adminEditParsedTrack);
       closeAdminVideoEditModal();
       router.refresh();
     } catch {
@@ -314,6 +320,8 @@ export function useAdminVideoEdit({
     adminEditVideoRowId,
     adminEditTitle,
     setAdminEditTitle,
+    adminEditApproved,
+    setAdminEditApproved,
     adminEditChannelTitle,
     setAdminEditChannelTitle,
     adminEditParsedArtist,

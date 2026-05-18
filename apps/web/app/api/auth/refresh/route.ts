@@ -6,6 +6,8 @@ import { verifySameOrigin } from "@/lib/csrf";
 import { isTokenValidationError, signAccessToken, signRefreshToken, verifyToken } from "@/lib/auth-jwt";
 import { rotateRefreshSession } from "@/lib/auth-sessions";
 
+const HTTP_UNAUTHORIZED = 401;
+
 function shouldClearCookiesOnRefreshFailure(error: unknown) {
   if (isTokenValidationError(error)) {
     return true;
@@ -44,7 +46,7 @@ export async function POST(request: NextRequest) {
       detail: "Missing refresh token",
       ...requestMeta,
     });
-    return NextResponse.json({ error: "Missing refresh token" }, { status: 401 });
+    return NextResponse.json({ error: "Missing refresh token" }, { status: HTTP_UNAUTHORIZED });
   }
 
   try {
@@ -93,7 +95,7 @@ export async function POST(request: NextRequest) {
     });
 
     const response = shouldClearCookies
-      ? NextResponse.json({ error: "Invalid refresh token" }, { status: 401 })
+      ? NextResponse.json({ error: "Invalid refresh token" }, { status: HTTP_UNAUTHORIZED })
       : NextResponse.json({ error: "Refresh temporarily unavailable" }, { status: 503 });
 
     if (shouldClearCookies) {

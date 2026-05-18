@@ -1569,8 +1569,16 @@ export async function getArtistBySlug(slug: string) {
       // Fallback for newly curated artists that may not exist in the artists table yet.
       // Resolve the slug directly from approved videos so artist links/counts keep working
       // immediately after admin metadata edits.
+      const slugTerms = slug.trim().toLowerCase().split("-")
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0)
+        .slice(0, 8);
+      if (slugTerms.length === 0) return null;
+
       const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
       const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
+      const fallbackMatchPredicates = slugTerms.map(() => `${videoArtistNormExpr} LIKE ?`).join(" AND ");
+      const fallbackMatchParams = slugTerms.map((term) => `%${term}%`);
 
       const fallbackRows = await prisma.$queryRawUnsafe<Array<{
         name: string | null;
@@ -1585,19 +1593,20 @@ export async function getArtistBySlug(slug: string) {
               1
             ) AS thumbnailVideoId
           FROM videos v
-          WHERE ${videoArtistNormExpr} = ?
+          WHERE ${videoArtistNormExpr} <> ''
+            AND ${fallbackMatchPredicates}
             AND v.videoId IS NOT NULL
             AND COALESCE(v.approved, 0) = 1
             ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
           GROUP BY COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''))
           ORDER BY COUNT(DISTINCT v.videoId) DESC, name ASC
-          LIMIT 1
+          LIMIT 200
         `,
-        slug,
+        ...fallbackMatchParams,
       );
 
-      const fallback = fallbackRows[0];
-      const fallbackName = getTrimmedDatabaseValue(fallback?.name);
+      const fallback = fallbackRows.find((row) => slugify(row.name ?? "") === slug) ?? fallbackRows[0];
+      const fallbackName = fallback?.name ? getTrimmedDatabaseValue(fallback.name) : null;
       if (!fallbackName) return null;
 
       const synthesized = mapArtist({
@@ -1607,7 +1616,7 @@ export async function getArtistBySlug(slug: string) {
       });
       const hydratedSynthesized = {
         ...synthesized,
-        thumbnailVideoId: getTrimmedDatabaseValue(fallback?.thumbnailVideoId) ?? undefined,
+        thumbnailVideoId: fallback?.thumbnailVideoId ? getTrimmedDatabaseValue(fallback.thumbnailVideoId) ?? undefined : undefined,
       };
 
       // Backfill projection data in the background so future lookups and listings
@@ -1660,7 +1669,6 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
     try {
       const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
       const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
-      const conflictingArtistNormExpr = getVideoArtistNormalizationExpr("v_conflict", videoArtistNormColumn);
       const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
 
       const query = `
@@ -1675,19 +1683,45 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
           AND v.videoId IS NOT NULL
           AND COALESCE(v.approved, 0) = 1
           ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
-          AND NOT EXISTS (
-            SELECT 1
-            FROM videos v_conflict
-            WHERE v_conflict.videoId = v.videoId
-              AND v_conflict.videoId IS NOT NULL
-              AND ${conflictingArtistNormExpr} <> ''
-              AND ${conflictingArtistNormExpr} <> ?
-          )
         ORDER BY COALESCE(v.viewCount, 0) DESC, v.id ASC
         LIMIT ${safeLimit}
       `;
 
-      const rows = await prisma.$queryRawUnsafe<ArtistVideoRow[]>(query, normalizedArtist, normalizedArtist);
+      let rows = await prisma.$queryRawUnsafe<ArtistVideoRow[]>(query, normalizedArtist);
+
+      // Some canonical artist names include punctuation/formatting variants that do
+      // not exactly match parsed_artist_norm. If exact lookup misses, fall back to a
+      // slug-term match so artist pages still resolve for metadata-correct videos.
+      if (rows.length === 0) {
+        const slugTerms = slugify(artistName)
+          .split("-")
+          .map((part) => part.trim())
+          .filter((part) => part.length > 0)
+          .slice(0, 8);
+
+        if (slugTerms.length > 0) {
+          const relaxedPredicates = slugTerms.map(() => `${videoArtistNormExpr} LIKE ?`).join(" AND ");
+          const relaxedParams = slugTerms.map((term) => `%${term}%`);
+          const relaxedQuery = `
+            SELECT
+              v.videoId,
+              v.title,
+              NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
+              v.favourited,
+              v.description
+            FROM videos v${videoArtistIndexHint}
+            WHERE ${videoArtistNormExpr} <> ''
+              AND ${relaxedPredicates}
+              AND v.videoId IS NOT NULL
+              AND COALESCE(v.approved, 0) = 1
+              ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+            ORDER BY COALESCE(v.viewCount, 0) DESC, v.id ASC
+            LIMIT ${safeLimit}
+          `;
+
+          rows = await prisma.$queryRawUnsafe<ArtistVideoRow[]>(relaxedQuery, ...relaxedParams);
+        }
+      }
 
       const mapped = rows
         .map((row: any) => mapVideo({ ...row, channelTitle: row.parsedArtist }))

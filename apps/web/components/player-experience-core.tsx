@@ -568,6 +568,8 @@ export function PlayerExperience({
   const isAdmin = useAdminSession({ isLoggedIn, initialIsAdmin });
   const [localTitleOverride, setLocalTitleOverride] = useState<string | null>(null);
   const [localChannelTitleOverride, setLocalChannelTitleOverride] = useState<string | null>(null);
+  const [localParsedArtistOverride, setLocalParsedArtistOverride] = useState<string | null>(null);
+  const [localParsedTrackOverride, setLocalParsedTrackOverride] = useState<string | null>(null);
   const [overlayArtistVideoCount, setOverlayArtistVideoCount] = useState<number | null>(null);
   const endedChoiceOverlayRef = useRef<HTMLDivElement | null>(null);
   const endedChoicePrefetchRafRef = useRef<number | null>(null);
@@ -601,6 +603,8 @@ export function PlayerExperience({
     adminEditVideoRowId,
     adminEditTitle,
     setAdminEditTitle,
+    adminEditApproved,
+    setAdminEditApproved,
     adminEditChannelTitle,
     setAdminEditChannelTitle,
     adminEditParsedArtist,
@@ -634,9 +638,11 @@ export function PlayerExperience({
     isAdmin,
     playerFrameRef,
     pointerPositionRef,
-    onSaveSuccess: (title, channelTitle) => {
+    onSaveSuccess: (title, channelTitle, parsedArtist, parsedTrack) => {
       setLocalTitleOverride(title);
       setLocalChannelTitleOverride(channelTitle);
+      setLocalParsedArtistOverride(parsedArtist);
+      setLocalParsedTrackOverride(parsedTrack);
     },
     onShowControls: () => setShowControls(true),
   });
@@ -668,6 +674,8 @@ export function PlayerExperience({
     currentVideoRef.current = currentVideo;
     setLocalTitleOverride(null);
     setLocalChannelTitleOverride(null);
+    setLocalParsedArtistOverride(null);
+    setLocalParsedTrackOverride(null);
     resetEndedChoiceRuntimeState({
       setEndedChoiceLoading,
       setEndedChoiceRemoteVideos,
@@ -931,22 +939,29 @@ export function PlayerExperience({
   const elapsedLabel = formatPlaybackTime(safeCurrentTime);
   const durationLabel = formatPlaybackTime(safeDuration);
   const shareUrl = buildCanonicalShareUrl(currentVideo.id);
-  const displayTitle = localTitleOverride ?? currentVideo.title;
+  const rawDisplayTitle = localTitleOverride ?? currentVideo.title;
   const displayChannelTitle = localChannelTitleOverride ?? currentVideo.channelTitle;
-  const hasArtistName = Boolean(displayChannelTitle && displayChannelTitle.trim().length > 0);
   const currentVideoMetadata = currentVideo as VideoRecord & {
     parsedArtist?: string | null;
     parsedTrack?: string | null;
   };
-  const metadataArtist =
-    currentVideoMetadata.parsedArtist?.trim()
+  const parsedArtistCandidate =
+    localParsedArtistOverride?.trim()
+    || currentVideoMetadata.parsedArtist?.trim()
     || displayChannelTitle?.trim()
-    || inferArtistFromTitle(displayTitle)?.trim()
-    || "Unknown Artist";
-  const metadataTrack =
-    currentVideoMetadata.parsedTrack?.trim()
-    || inferTrackFromTitle(displayTitle, metadataArtist)
-    || displayTitle.trim();
+    || inferArtistFromTitle(rawDisplayTitle)?.trim()
+    || "";
+  const metadataArtist = parsedArtistCandidate || "Unknown Artist";
+  const parsedTrackCandidate =
+    localParsedTrackOverride?.trim()
+    || currentVideoMetadata.parsedTrack?.trim()
+    || inferTrackFromTitle(rawDisplayTitle, metadataArtist)
+    || "";
+  const displayTitle = parsedArtistCandidate && parsedTrackCandidate
+    ? `${parsedArtistCandidate} - ${parsedTrackCandidate}`
+    : rawDisplayTitle;
+  const hasArtistName = metadataArtist !== "Unknown Artist";
+  const metadataTrack = parsedTrackCandidate || rawDisplayTitle.trim();
   const overlayArtistLabel = metadataArtist.toUpperCase();
   const overlayTrackLabel = toTitleCaseWords(metadataTrack);
   const artistPagePath = getArtistPagePath(metadataArtist);
@@ -1037,7 +1052,9 @@ export function PlayerExperience({
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch(`/api/artists/${encodeURIComponent(overlayArtistSlug)}`, {
+        const query = new URLSearchParams();
+        query.set("v", currentVideo.id);
+        const response = await fetch(`/api/artists/${encodeURIComponent(overlayArtistSlug)}?${query.toString()}`, {
           cache: "no-store",
         });
 
@@ -1068,7 +1085,7 @@ export function PlayerExperience({
     return () => {
       cancelled = true;
     };
-  }, [overlayArtistSlug]);
+  }, [overlayArtistSlug, currentVideo.id]);
 
   // Also suppress the player on overlay pages when the user is waiting to choose the next video
   // (video ended with autoplay off). On "/", the choice overlay is shown instead.
@@ -4901,6 +4918,16 @@ export function PlayerExperience({
                       />
                     </label>
                     <label>
+                      <span>Approval status</span>
+                      <select
+                        value={adminEditApproved ? "approved" : "pending"}
+                        onChange={(event) => setAdminEditApproved(event.currentTarget.value === "approved")}
+                      >
+                        <option value="approved">Approved</option>
+                        <option value="pending">Pending review</option>
+                      </select>
+                    </label>
+                    <label>
                       <span>Parsed artist</span>
                       <input
                         value={adminEditParsedArtist}
@@ -5285,11 +5312,11 @@ export function PlayerExperience({
             </button>
             {!showDockCloseButton && hasArtistName ? (
               <ArtistWikiLink
-                artistName={displayChannelTitle}
+                artistName={metadataArtist}
                 videoId={currentVideo.id}
                 asButton
                 className="primaryActionToggleButton primaryActionWikiButton"
-                title={`Open ${displayChannelTitle} wiki`}
+                title={`Open ${metadataArtist} wiki`}
                 disabled={footerActionsBlocked}
               >
                 <span className="primaryActionWikiLabel">wiki</span>

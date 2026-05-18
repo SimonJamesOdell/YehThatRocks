@@ -10,6 +10,7 @@ import { mapAdminPruneResultToDeleteResponse } from "@/lib/admin-prune-delete-re
 const updateSchema = z.object({
   id: z.number().int().positive(),
   title: z.string().trim().min(1).max(255).optional(),
+  approved: z.boolean().optional(),
   parsedArtist: z.string().trim().max(255).nullable().optional(),
   parsedTrack: z.string().trim().max(255).nullable().optional(),
   parsedVideoType: z.string().trim().max(50).nullable().optional(),
@@ -63,6 +64,7 @@ export async function GET(request: NextRequest) {
       id: true,
       videoId: true,
       title: true,
+      approved: true,
       parsedArtist: true,
       parsedTrack: true,
       parsedVideoType: true,
@@ -88,6 +90,7 @@ export async function PATCH(request: NextRequest) {
 
   const data: {
     title?: string;
+    approved?: boolean;
     parsedArtist?: string | null;
     parsedTrack?: string | null;
     parsedVideoType?: string | null;
@@ -99,6 +102,7 @@ export async function PATCH(request: NextRequest) {
   } = {};
 
   if (parsed.title !== undefined) data.title = parsed.title;
+  if (parsed.approved !== undefined) data.approved = parsed.approved;
   if (parsed.parsedArtist !== undefined) data.parsedArtist = parsed.parsedArtist || null;
   if (parsed.parsedTrack !== undefined) data.parsedTrack = parsed.parsedTrack || null;
   if (parsed.parsedVideoType !== undefined) data.parsedVideoType = parsed.parsedVideoType || null;
@@ -120,6 +124,7 @@ export async function PATCH(request: NextRequest) {
         id: true,
         videoId: true,
         title: true,
+        approved: true,
         parsedArtist: true,
         parsedTrack: true,
         parsedVideoType: true,

@@ -339,6 +339,7 @@ export function mapVideo(video: {
 
   const inferredChannelTitle = inferArtistFromTitle(video.title);
   const parsedArtist = video.parsedArtist?.trim() || "";
+  const parsedTrack = video.parsedTrack?.trim() || "";
   const channelTitle = video.channelTitle?.trim() || "";
 
   const displayArtist =
@@ -351,6 +352,8 @@ export function mapVideo(video: {
     id: video.videoId,
     title: video.title,
     channelTitle: displayArtist,
+    parsedArtist: parsedArtist || null,
+    parsedTrack: parsedTrack || null,
     genre: "Rock / Metal",
     favourited: Number.isFinite(favouritedValue) ? favouritedValue : 0,
     description: video.description ?? "Legacy video entry from the retained Yeh database.",

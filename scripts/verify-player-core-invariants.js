@@ -246,6 +246,12 @@ function main() {
   assertContains(playerExperienceSource, "const isInitialDeepLinkedSelection = Boolean(", "Player detects first-load deep-linked selections", failures);
   assertContains(playerExperienceSource, "&& !isInitialDeepLinkedSelection", "Player suppresses autoplay on initial deep-link until user interaction", failures);
   assertContains(playerExperienceSource, "autoAdvanceWhenAutoplay: true", "Player auto-advances unavailable tracks when autoplay is enabled", failures);
+
+  // Admin metadata editor approval-status invariants.
+  assertContains(playerExperienceSource, "adminEditApproved", "Admin metadata editor tracks editable approved state", failures);
+  assertContains(playerExperienceSource, '<span>Approval status</span>', "Admin metadata editor renders approval status field", failures);
+  assertContains(playerExperienceSource, 'value={adminEditApproved ? "approved" : "pending"}', "Admin metadata editor reflects approved state in UI control", failures);
+  assertContains(playerExperienceSource, "approved: adminEditApproved,", "Admin metadata editor save payload includes approved status", failures);
   assertContains(playerExperienceSource, "const response = await fetch(\"/api/videos/unavailable\", {", "Player reports unavailable videos to API", failures);
   assertContains(videosUnavailableRouteSource, "const optionalAuth = await getOptionalApiAuth(request);", "Unavailable-video API accepts optional auth for anonymous playback recovery", failures);
   assertContains(playerExperienceSource, "SEARCHING_ALTERNATIVE_OVERLAY_MESSAGE", "Player shows searching-for-alternative message for broken upstream videos", failures);
@@ -291,7 +297,10 @@ function main() {
 
   // Admin video title override and delete flow.
   assertContains(playerExperienceSource, "const [localTitleOverride, setLocalTitleOverride] = useState<string | null>(null);", "Player keeps a local title override for immediate admin edit feedback", failures);
-  assertContains(playerExperienceSource, "const displayTitle = localTitleOverride ?? currentVideo.title;", "Player uses title override for immediate UI updates", failures);
+  assertContainsEither(playerExperienceSource, [
+    "const displayTitle = localTitleOverride ?? currentVideo.title;",
+    "const rawDisplayTitle = localTitleOverride ?? currentVideo.title;",
+  ], "Player uses title override for immediate UI updates", failures);
   assertContains(playerExperienceSource, "setLocalTitleOverride(title);", "Player applies admin title update locally immediately after save", failures);
   assertContains(playerExperienceSource, "const clearedParams = new URLSearchParams(searchParams.toString());", "Admin delete flow derives cleared params from current URL state", failures);
   assertContains(playerExperienceSource, "if (selectedVideoId === deletingVideoId) {", "Admin delete flow only clears query when current selection matches deleted id", failures);

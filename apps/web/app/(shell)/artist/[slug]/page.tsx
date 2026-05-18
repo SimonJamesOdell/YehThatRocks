@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { ArtistVideosGridClient } from "@/components/artist-videos-grid-client";
-import { getArtistBySlug, getArtistRouteSourceVideoIds, getVideosByArtist } from "@/lib/catalog-data";
+import { getArtistBySlug, getArtistRouteSourceVideoIds, getStoredVideoById, getVideosByArtist, mapVideo, slugify } from "@/lib/catalog-data";
 import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
 
 const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
@@ -66,13 +66,22 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
   if (resume) artistsParams.set("resume", resume);
   const artistsHref = artistsParams.toString() ? `/artists?${artistsParams.toString()}` : "/artists";
 
-  const artistVideosRaw = await getVideosByArtist(artist.name);
+  const contextVideoId = (v ?? "").trim();
+  let artistVideosRaw = await getVideosByArtist(artist.name);
+  if (contextVideoId && !artistVideosRaw.some((video: ArtistVideoRow) => video.id === contextVideoId)) {
+    const contextStored = await getStoredVideoById(contextVideoId, { includeUnapproved: true });
+    const contextArtist = (contextStored?.parsedArtist ?? contextStored?.channelTitle ?? "").trim();
+    if (contextStored && contextArtist && slugify(contextArtist) === artist.slug) {
+      artistVideosRaw = [mapVideo(contextStored), ...artistVideosRaw];
+    }
+  }
+
   const { topVideoIds, newestVideoIds } = await getArtistRouteSourceVideoIds(
     artistVideosRaw.map((video: ArtistVideoRow) => video.id),
   );
 
   const artistVideos = artistVideosRaw
-    .filter((video: ArtistVideoRow) => !hiddenVideoIds.has(video.id))
+    .filter((video: ArtistVideoRow) => !hiddenVideoIds.has(video.id) || (contextVideoId.length > 0 && video.id === contextVideoId))
     .map((video: ArtistVideoRow) => {
       const isTop100Source = topVideoIds.has(video.id);
       const isNewSource = newestVideoIds.has(video.id);

@@ -147,6 +147,7 @@ function main() {
   assertContains(catalogDataHistorySource, "const seenVideoIdsInFlight = new BoundedMap", "History catalog bounds in-flight seen cache", failures);
   assertContains(catalogDataFavouritesSource, "const favouriteVideosInFlight = new BoundedMap", "Favourites catalog bounds in-flight favourites cache", failures);
   assertContains(catalogDataDbSource, "const tableColumnsCache = new BoundedMap", "Catalog DB schema helper bounds table-column cache", failures);
+  assertContains(catalogDataDbSource, "NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,", "Catalog DB fast video lookup selects parsedTrack for refresh-stable display metadata", failures);
   assertContains(catalogDataVideoIngestionSource, "const rejectedVideoCache = new BoundedMap", "Video ingestion bounds rejected-video cache", failures);
 
   // Runtime bootstrap patching invariants.

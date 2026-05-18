@@ -12,6 +12,8 @@ import { prisma } from "@/lib/db";
 import { rateLimitOrResponse } from "@/lib/rate-limit";
 import { parseRequestJson } from "@/lib/request-json";
 
+const HTTP_UNAUTHORIZED = 401;
+
 function normalizeLoginSecret(value: string) {
   return value
     .normalize("NFKC")
@@ -96,7 +98,7 @@ export async function POST(request: NextRequest) {
         detail: "User not found",
         ...requestMeta,
       });
-      return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+      return NextResponse.json({ error: "Invalid email or password" }, { status: HTTP_UNAUTHORIZED });
     }
 
     const storedHash = user.passwordHash;
@@ -110,7 +112,7 @@ export async function POST(request: NextRequest) {
         detail: "Password login unavailable",
         ...requestMeta,
       });
-      return NextResponse.json({ error: "Password login is not enabled for this account" }, { status: 401 });
+      return NextResponse.json({ error: "Password login is not enabled for this account" }, { status: HTTP_UNAUTHORIZED });
     }
 
     const candidatePasswords = new Set<string>();
@@ -145,7 +147,7 @@ export async function POST(request: NextRequest) {
         detail: "Invalid password",
         ...requestMeta,
       });
-      return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+      return NextResponse.json({ error: "Invalid email or password" }, { status: HTTP_UNAUTHORIZED });
     }
 
     const accessToken = await signAccessToken(user.id, user.email ?? normalizedEmail);

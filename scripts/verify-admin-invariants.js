@@ -98,6 +98,7 @@ function main() {
   assertContains(adminVideosRouteSource, "const videos = await prisma.video.findMany({", "Admin videos API reads via Prisma video model", failures);
   assertContains(adminVideosRouteSource, "orderBy: [{ updatedAt: \"desc\" }, { id: \"desc\" }]", "Admin videos API keeps deterministic recency ordering", failures);
   assertContains(adminVideosRouteSource, "description: true,", "Admin videos API includes description in GET payload", failures);
+  assertContains(adminVideosRouteSource, "approved: true,", "Admin videos API includes approved status in GET payload", failures);
   assertContains(adminVideosRouteSource, 'import { clearCatalogVideoCaches, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";', "Admin videos API imports shared catalog cache invalidation helper", failures);
   assertContains(adminVideosRouteSource, 'import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";', "Admin videos API imports shared current-video cache invalidation helper", failures);
   assertContains(adminVideosRouteSource, 'import { mapAdminPruneResultToDeleteResponse } from "@/lib/admin-prune-delete-response";', "Admin videos API imports shared prune-result response mapper", failures);
@@ -200,6 +201,8 @@ function main() {
   // marked as human-curated, and downstream automation can respect that intent.
   assertContains(adminVideosRouteSource, 'data.parseMethod = "admin-manual";', "Admin videos PATCH stamps parseMethod=admin-manual on every metadata save", failures);
   assertContains(adminVideosRouteSource, "data.parsedAt = new Date();", "Admin videos PATCH stamps parsedAt timestamp on every metadata save", failures);
+  assertContains(adminVideosRouteSource, "approved: z.boolean().optional(),", "Admin videos PATCH schema accepts optional approved status", failures);
+  assertContains(adminVideosRouteSource, "if (parsed.approved !== undefined) data.approved = parsed.approved;", "Admin videos PATCH persists approved status edits", failures);
 
   // Background Groq re-classification must never overwrite admin-curated metadata.
   // The guard must be applied before the hasSufficientMetadata check to handle edge cases
