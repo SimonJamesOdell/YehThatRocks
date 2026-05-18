@@ -62,7 +62,12 @@ export function useShellDockOverlayTransitions({
   const handleOverlayCloseRequest = useCallback((href: string) => {
     const closeUrl = new URL(href, window.location.origin);
     const fallbackHomeHref = `/?v=${encodeURIComponent(currentVideoId)}&resume=1`;
-    const nextHref = closeUrl.pathname === "/" && closeUrl.searchParams.has("v")
+    const isRootVideoCloseTarget = closeUrl.pathname === "/" && closeUrl.searchParams.has("v");
+    const isNewPageCloseTarget = closeUrl.pathname === "/new";
+    const isTop100PageCloseTarget = closeUrl.pathname === "/top100";
+    const isFavouritesPageCloseTarget = closeUrl.pathname === "/favourites";
+    const isOverlayToOverlayCloseTarget = closeUrl.pathname !== "/";
+    const nextHref = isRootVideoCloseTarget || isNewPageCloseTarget || isTop100PageCloseTarget || isFavouritesPageCloseTarget
       ? `${closeUrl.pathname}${closeUrl.search}${closeUrl.hash}`
       : fallbackHomeHref;
 
@@ -79,6 +84,15 @@ export function useShellDockOverlayTransitions({
     }
 
     if (!shouldShowOverlayPanel || isMagazineOverlayRoute) {
+      setIsOverlayClosing(false);
+      shouldRunFooterRevealRef.current = false;
+      setIsUndockSettling(false);
+      setIsFooterRevealActive(false);
+      onPush(nextHref);
+      return;
+    }
+
+    if (isOverlayToOverlayCloseTarget) {
       setIsOverlayClosing(false);
       shouldRunFooterRevealRef.current = false;
       setIsUndockSettling(false);
@@ -129,6 +143,7 @@ export function useShellDockOverlayTransitions({
         window.clearTimeout(overlayCloseTimeoutRef.current);
         overlayCloseTimeoutRef.current = null;
       }
+
       onPush(nextHref);
     };
 
@@ -165,6 +180,9 @@ export function useShellDockOverlayTransitions({
     setPendingOverlayCloseHref,
     setPendingOverlayCloseVideoId,
     setPendingOverlayOpenKind,
+    setIsFooterRevealActive,
+    setIsOverlayClosing,
+    setIsUndockSettling,
     shouldShowOverlayPanel,
   ]);
 

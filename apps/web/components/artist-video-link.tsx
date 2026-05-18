@@ -178,40 +178,68 @@ export function ArtistVideoLink({
               <span className="artistVideoFavouriteBadgeRemoveGlyph" aria-hidden="true">x</span>
             </button>
           ) : null}
+          {useCornerActions ? (
+            <div className="actionRow categoryVideoActions">
+              {!isFavourited ? (
+                <div
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  <SearchResultFavouriteButton
+                    videoId={video.id}
+                    title={video.title}
+                    isAuthenticated={isAuthenticated}
+                    className="categoryVideoFavouriteButton"
+                    onSaved={() => setIsFavourited(true)}
+                  />
+                </div>
+              ) : null}
+              <div
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+              >
+                <AddToPlaylistButton
+                  videoId={video.id}
+                  isAuthenticated={isAuthenticated}
+                  compact
+                  className="categoryVideoPlaylistAddButton"
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
         <div className="relatedCardSourceBadges artistVideoSourceBadges">
           {video.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
           {video.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
         </div>
-        <h3 className="categoryVideoTitle">{video.title}</h3>
+        <h3 className="categoryVideoTitle">{video.parsedTrack ?? video.title}</h3>
       </Link>
-      <div className="actionRow categoryVideoActions">
-        {!isFavourited ? (
+      {!useCornerActions ? (
+        <div className="actionRow categoryVideoActions">
+          {!isFavourited ? (
+            <div
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              <SearchResultFavouriteButton
+                videoId={video.id}
+                title={video.title}
+                isAuthenticated={isAuthenticated}
+                onSaved={() => setIsFavourited(true)}
+              />
+            </div>
+          ) : null}
           <div
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
           >
-            <SearchResultFavouriteButton
+            <AddToPlaylistButton
               videoId={video.id}
-              title={video.title}
               isAuthenticated={isAuthenticated}
-              className={useCornerActions ? "categoryVideoFavouriteButton" : undefined}
-              onSaved={() => setIsFavourited(true)}
             />
           </div>
-        ) : null}
-        <div
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <AddToPlaylistButton
-            videoId={video.id}
-            isAuthenticated={isAuthenticated}
-            compact={useCornerActions}
-            className={useCornerActions ? "categoryVideoPlaylistAddButton" : undefined}
-          />
         </div>
-      </div>
+      ) : null}
     </article>
   );
 }

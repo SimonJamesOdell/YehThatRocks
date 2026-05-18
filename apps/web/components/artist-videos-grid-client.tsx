@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { ArtistVideoLink } from "@/components/artist-video-link";
 import { ArtistCreatePlaylistButton } from "@/components/artist-create-playlist-button";
@@ -10,6 +11,7 @@ import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { OverlayHeader } from "@/components/overlay-header";
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 import type { VideoRecord } from "@/lib/catalog";
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 
 const ARTIST_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-artist";
@@ -29,6 +31,7 @@ export function ArtistVideosGridClient({
   seenVideoIds,
   isAuthenticated,
 }: ArtistVideosGridClientProps) {
+  const searchParams = useSearchParams();
   const [videos, setVideos] = useState<VideoRecord[]>(initialVideos);
   const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
   const [videoPendingHideConfirm, setVideoPendingHideConfirm] = useState<VideoRecord | null>(null);
@@ -41,6 +44,48 @@ export function ArtistVideosGridClient({
     () => (isAuthenticated && hideSeen ? videos.filter((video) => !seenVideoIdSet.has(video.id)) : videos),
     [hideSeen, isAuthenticated, seenVideoIdSet, videos],
   );
+  const openedFrom = searchParams.get("from")?.trim() ?? "";
+  const sourceRoute = openedFrom === "new"
+    ? "/new"
+    : openedFrom === "top100"
+      ? "/top100"
+      : openedFrom === "favourites"
+        ? "/favourites"
+        : null;
+  const wasOpenedFromSourceRoute = sourceRoute !== null;
+  const returnToParam = searchParams.get("returnTo")?.trim() ?? "";
+  const videoId = searchParams.get("v")?.trim() ?? "";
+  const closeToSourceHref = useMemo(() => {
+    if (sourceRoute && returnToParam.startsWith(sourceRoute) && !returnToParam.startsWith("//")) {
+      return returnToParam;
+    }
+
+    if (!sourceRoute) {
+      return "/";
+    }
+
+    if (videoId) {
+      return `${sourceRoute}?v=${encodeURIComponent(videoId)}&resume=1`;
+    }
+
+    return sourceRoute;
+  }, [returnToParam, sourceRoute, videoId]);
+
+  const handleCloseToSource = useCallback((event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (
+      event.defaultPrevented
+      || event.button !== 0
+      || event.metaKey
+      || event.ctrlKey
+      || event.shiftKey
+      || event.altKey
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href: closeToSourceHref });
+  }, [closeToSourceHref]);
 
   const handleHideVideo = useCallback((video: VideoRecord) => {
     if (!isAuthenticated || hidingVideoIds.includes(video.id)) {
@@ -103,7 +148,18 @@ export function ArtistVideosGridClient({
             hideSeenOnly={hideSeen}
           />
         </div>
-        <CloseLink />
+        {wasOpenedFromSourceRoute ? (
+          <Link
+            href={closeToSourceHref}
+            className="favouritesBlindClose"
+            data-overlay-close="true"
+            onClick={handleCloseToSource}
+          >
+            Close
+          </Link>
+        ) : (
+          <CloseLink />
+        )}
       </OverlayHeader>
 
       <div className="categoryVideoGrid artistVideoGrid">

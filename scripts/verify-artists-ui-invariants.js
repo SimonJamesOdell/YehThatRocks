@@ -25,6 +25,8 @@ const files = {
   artistWikiPage: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/wiki/page.tsx"),
   artistRouting: path.join(ROOT, "apps/web/lib/artist-routing.ts"),
   artistWikiLink: path.join(ROOT, "apps/web/components/artist-wiki-link.tsx"),
+  artistVideoLink: path.join(ROOT, "apps/web/components/artist-video-link.tsx"),
+  artistVideosGridClient: path.join(ROOT, "apps/web/components/artist-videos-grid-client.tsx"),
 };
 
 function main() {
@@ -43,6 +45,8 @@ function main() {
   const artistWikiPageSource = readFileStrict(files.artistWikiPage, ROOT);
   const artistRoutingSource = readFileStrict(files.artistRouting, ROOT);
   const artistWikiLinkSource = readFileStrict(files.artistWikiLink, ROOT);
+  const artistVideoLinkSource = readFileStrict(files.artistVideoLink, ROOT);
+  const artistVideosGridClientSource = readFileStrict(files.artistVideosGridClient, ROOT);
 
   // Shared artist letter utilities and context provider exist.
   assertContains(eventsSource, "updateArtistsLetterInUrl", "Artist letter URL update helper exists", failures);
@@ -123,6 +127,17 @@ function main() {
   assertContains(artistRoutingSource, 'return slug ? `/artist/${encodeURIComponent(slug)}/wiki` : null;', "Artist routing builds /artist/<slug>/wiki routes", failures);
   assertContains(artistWikiLinkSource, 'const targetHref = withVideoContext(href, videoId, true);', "Artist wiki link preserves current video context", failures);
   assertContains(artistWikiLinkSource, 'if (asButton) {', "Artist wiki link supports button rendering for footer controls", failures);
+
+  // Artist video card — parsedTrack display and thumbnail-anchored buttons.
+  assertContains(artistVideoLinkSource, "{video.parsedTrack ?? video.title}", "Artist video card title shows parsedTrack with title fallback", failures);
+  assertContains(catalogDataArtistsSource, "NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,", "getVideosByArtist primary query selects parsedTrack", failures);
+  assertContains(artistVideoLinkSource, "{useCornerActions ? (", "Artist video card conditionally renders corner actions", failures);
+  assertContains(artistVideoLinkSource, "className=\"actionRow categoryVideoActions\">", "Artist video card renders corner action row inside thumbwrap", failures);
+  assertContains(artistVideoLinkSource, "{!useCornerActions ? (", "Artist video card only renders external action row when not in corner-actions mode", failures);
+
+  // Artist grid close button must not carry an inline blue tint.
+  assertNotContains(artistVideosGridClientSource, "#1f64ff", "Artist grid source-route close button has no inline blue colour override", failures);
+  assertNotContains(artistVideosGridClientSource, "linear-gradient(180deg, #1f64ff", "Artist grid source-route close button has no inline blue gradient", failures);
 
   finishInvariantCheck({
     failures,

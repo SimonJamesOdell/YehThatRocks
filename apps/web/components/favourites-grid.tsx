@@ -5,14 +5,107 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
-import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { EVENT_NAMES, FAVOURITES_CREATE_PLAYLIST_FINISHED_EVENT, FAVOURITES_CREATE_PLAYLIST_REQUESTED_EVENT, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
 import { createPlaylistFromVideoList } from "@/lib/playlist-create-from-video-list";
 import { parseJsonOrNull } from "@/lib/parse-json";
+import { getArtistPagePath } from "@/lib/artist-routing";
 
 const FAVOURITES_BATCH_SIZE = 100;
+const artistVideoCountCache = new Map<string, number | null>();
+const artistVideoCountInFlight = new Map<string, Promise<number | null>>();
+
+function inferTrackFromTitle(title: string, artist: string) {
+  const trimmedTitle = title.trim();
+  const trimmedArtist = artist.trim();
+  if (!trimmedTitle || !trimmedArtist) {
+    return trimmedTitle;
+  }
+
+  const separators = [" - ", " — ", " | "];
+  for (const separator of separators) {
+    const split = trimmedTitle.split(separator).map((part) => part.trim()).filter(Boolean);
+    if (split.length < 2) {
+      continue;
+    }
+
+    const [left, right] = split;
+    if (left.toLowerCase() === trimmedArtist.toLowerCase()) {
+      return right;
+    }
+
+    if (right.toLowerCase() === trimmedArtist.toLowerCase()) {
+      return left;
+    }
+  }
+
+  return trimmedTitle;
+}
+
+function inferArtistTrackFromTitleFallback(title: string) {
+  const trimmedTitle = title.trim();
+  if (!trimmedTitle) {
+    return { artist: "", track: "" };
+  }
+
+  const separators = [" - ", " — ", " | "];
+  for (const separator of separators) {
+    const split = trimmedTitle.split(separator).map((part) => part.trim()).filter(Boolean);
+    if (split.length >= 2) {
+      return { artist: split[0] ?? "", track: split.slice(1).join(separator) };
+    }
+  }
+
+  return { artist: "", track: "" };
+}
+
+async function fetchArtistVideoCount(artistSlug: string, videoId: string): Promise<number | null> {
+  const cacheKey = `${artistSlug}:${videoId}`;
+  if (artistVideoCountCache.has(cacheKey)) {
+    return artistVideoCountCache.get(cacheKey) ?? null;
+  }
+
+  const existing = artistVideoCountInFlight.get(cacheKey);
+  if (existing) {
+    return existing;
+  }
+
+  const request = (async () => {
+    try {
+      const query = new URLSearchParams();
+      query.set("v", videoId);
+      const response = await fetch(`/api/artists/${encodeURIComponent(artistSlug)}?${query.toString()}`, {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        artistVideoCountCache.set(cacheKey, null);
+        return null;
+      }
+
+      const payload = await response.json() as {
+        videoCount?: number | null;
+        videos?: Array<{ id?: string }>;
+      };
+
+      const resolvedCount = Number(payload?.videoCount);
+      const fallbackCount = Array.isArray(payload?.videos) ? payload.videos.length : null;
+      const count = Number.isFinite(resolvedCount) ? resolvedCount : fallbackCount;
+      artistVideoCountCache.set(cacheKey, count);
+      return count;
+    } catch {
+      artistVideoCountCache.set(cacheKey, null);
+      return null;
+    } finally {
+      artistVideoCountInFlight.delete(cacheKey);
+    }
+  })();
+
+  artistVideoCountInFlight.set(cacheKey, request);
+  return request;
+}
 
 type FavouritesPayload = {
   favourites?: VideoRecord[];
@@ -35,6 +128,7 @@ type FavouritesGridCardProps = {
   isRemoving: boolean;
   isCreatingPlaylistFromFavourites: boolean;
   onOpenVideo: (videoId: string) => void;
+  onOpenArtistPage: (artistPagePath: string, videoId: string) => void;
   onRemoveFavourite: (videoId: string) => void;
 };
 
@@ -45,8 +139,63 @@ const FavouritesGridCard = memo(function FavouritesGridCard({
   isRemoving,
   isCreatingPlaylistFromFavourites,
   onOpenVideo,
+  onOpenArtistPage,
   onRemoveFavourite,
 }: FavouritesGridCardProps) {
+  const [artistVideoCount, setArtistVideoCount] = useState<number | null>(null);
+  const rawDisplayTitle = track.title;
+  const fallbackArtistTrack = inferArtistTrackFromTitleFallback(rawDisplayTitle);
+  const parsedArtistCandidate =
+    track.parsedArtist?.trim()
+    || track.channelTitle?.trim()
+    || inferArtistFromTitle(rawDisplayTitle)?.trim()
+    || fallbackArtistTrack.artist.trim()
+    || "";
+  const metadataArtist = parsedArtistCandidate || "Unknown Artist";
+  const parsedTrackCandidate =
+    track.parsedTrack?.trim()
+    || inferTrackFromTitle(rawDisplayTitle, metadataArtist)
+    || fallbackArtistTrack.track.trim()
+    || "";
+  const parsedArtistLabel = parsedArtistCandidate.toUpperCase();
+  const displayTitle = parsedArtistCandidate && parsedTrackCandidate
+    ? `${parsedArtistLabel} - ${parsedTrackCandidate}`
+    : rawDisplayTitle;
+  const parsedArtistPagePath = parsedArtistCandidate ? getArtistPagePath(parsedArtistCandidate) : null;
+  const artistSlug = parsedArtistPagePath?.split("/")[2] ?? null;
+  const artistVideoCountLabel = artistVideoCount === null
+    ? null
+    : `${artistVideoCount.toLocaleString("en-US")} videos`;
+
+  useEffect(() => {
+    if (!artistSlug) {
+      setArtistVideoCount(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const count = await fetchArtistVideoCount(artistSlug, track.id);
+      if (!cancelled) {
+        setArtistVideoCount(count);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [artistSlug, track.id]);
+
+  const handleOpenArtistPage = useCallback((event: React.MouseEvent<HTMLSpanElement>) => {
+    if (!parsedArtistPagePath) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    onOpenArtistPage(parsedArtistPagePath, track.id);
+  }, [onOpenArtistPage, parsedArtistPagePath, track.id]);
+
   return (
     <article
       className="catalogCard categoryCard favouritesCardCompact playlistCardInteractive"
@@ -86,24 +235,8 @@ const FavouritesGridCard = memo(function FavouritesGridCard({
         >
           {isRemoving ? "…" : "🗑"}
         </button>
-      </div>
-      <div className="relatedCardSourceBadges artistVideoSourceBadges">
-        {track.isFavouriteSource ? <span className="relatedSourceBadge relatedSourceBadgeFavourite">Favourite</span> : null}
-        {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
-        {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
-      </div>
-      <h3>
-        <span className="cardTitleLink playlistCardTitleStatic">
-          {track.title}
-        </span>
-      </h3>
-      <p>
-        <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
-          {track.channelTitle}
-        </ArtistWikiLink>
-      </p>
-      <div className="actionRow favouritesCardActionsRow">
         <div
+          className="favouritesPlaylistOverlayButtonWrap"
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
         >
@@ -115,6 +248,28 @@ const FavouritesGridCard = memo(function FavouritesGridCard({
           />
         </div>
       </div>
+      <div className="relatedCardSourceBadges artistVideoSourceBadges">
+        {track.isFavouriteSource ? <span className="relatedSourceBadge relatedSourceBadgeFavourite">Favourite</span> : null}
+        {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
+        {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
+      </div>
+      <h3>
+        <span className="cardTitleLink">
+          {parsedArtistCandidate && parsedTrackCandidate ? (
+            <>
+              <span
+                className={parsedArtistPagePath ? "leaderboardParsedArtistLink" : undefined}
+                onClick={handleOpenArtistPage}
+              >
+                {parsedArtistLabel}
+              </span>
+              <span aria-hidden="true"> - </span>
+              <span>{parsedTrackCandidate}</span>
+            </>
+          ) : displayTitle}
+        </span>
+      </h3>
+      {artistVideoCountLabel ? <p className="leaderboardArtistVideoCount">{artistVideoCountLabel}</p> : null}
     </article>
   );
 });
@@ -314,6 +469,18 @@ export function FavouritesGrid({
     router.push(`/?v=${encodeURIComponent(videoId)}&resume=1`);
   }, [router]);
 
+  const openArtistPageFromFavourites = useCallback((artistPagePath: string, videoId: string) => {
+    const returnToParams = new URLSearchParams(searchParams.toString());
+    returnToParams.set("v", videoId);
+    returnToParams.set("resume", "1");
+    const returnTo = returnToParams.toString() ? `${pathname}?${returnToParams.toString()}` : pathname;
+    const artistParams = new URLSearchParams();
+    artistParams.set("from", "favourites");
+    artistParams.set("returnTo", returnTo);
+    artistParams.set("v", videoId);
+    router.push(`${artistPagePath}?${artistParams.toString()}`);
+  }, [pathname, router, searchParams]);
+
   async function createPlaylistFromFavourites() {
     let sourceFavourites = favourites;
 
@@ -378,6 +545,7 @@ export function FavouritesGrid({
                   isRemoving={isRemoving}
                   isCreatingPlaylistFromFavourites={isCreatingPlaylistFromFavourites}
                   onOpenVideo={openVideo}
+                  onOpenArtistPage={openArtistPageFromFavourites}
                   onRemoveFavourite={removeFavourite}
                 />
               );

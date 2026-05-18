@@ -1,16 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
-import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
+import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { dispatchAppEvent, EVENT_NAMES } from "@/lib/events-contract";
 import { LIVE_SEARCH_PARAMS_EVENT, useLiveSearchParams } from "@/components/use-live-search-params";
+import { getArtistPagePath } from "@/lib/artist-routing";
+import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 
 type LeaderboardVideoLinkProps = {
@@ -18,6 +20,8 @@ type LeaderboardVideoLinkProps = {
     id: string;
     title: string;
     channelTitle: string;
+    parsedArtist?: string | null;
+    parsedTrack?: string | null;
     genre: string;
     favourited: number;
     description: string;
@@ -40,6 +44,81 @@ const TOP100_VIDEO_WARM_TTL_MS = 25_000;
 let top100WarmWindowStartedAt = 0;
 let top100WarmCountInWindow = 0;
 const top100WarmByVideoId = new Map<string, number>();
+const artistVideoCountCache = new Map<string, number | null>();
+const artistVideoCountInFlight = new Map<string, Promise<number | null>>();
+
+function inferTrackFromTitle(title: string, artist: string) {
+  const trimmedTitle = title.trim();
+  const trimmedArtist = artist.trim();
+  if (!trimmedTitle || !trimmedArtist) {
+    return trimmedTitle;
+  }
+
+  const separators = [" - ", " — ", " | "];
+  for (const separator of separators) {
+    const split = trimmedTitle.split(separator).map((part) => part.trim()).filter(Boolean);
+    if (split.length < 2) {
+      continue;
+    }
+
+    const [left, right] = split;
+    if (left.toLowerCase() === trimmedArtist.toLowerCase()) {
+      return right;
+    }
+
+    if (right.toLowerCase() === trimmedArtist.toLowerCase()) {
+      return left;
+    }
+  }
+
+  return trimmedTitle;
+}
+
+async function fetchArtistVideoCount(artistSlug: string, videoId: string): Promise<number | null> {
+  const cacheKey = `${artistSlug}:${videoId}`;
+  if (artistVideoCountCache.has(cacheKey)) {
+    return artistVideoCountCache.get(cacheKey) ?? null;
+  }
+
+  const existing = artistVideoCountInFlight.get(cacheKey);
+  if (existing) {
+    return existing;
+  }
+
+  const request = (async () => {
+    try {
+      const query = new URLSearchParams();
+      query.set("v", videoId);
+      const response = await fetch(`/api/artists/${encodeURIComponent(artistSlug)}?${query.toString()}`, {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        artistVideoCountCache.set(cacheKey, null);
+        return null;
+      }
+
+      const payload = await response.json() as {
+        videoCount?: number | null;
+        videos?: Array<{ id?: string }>;
+      };
+
+      const resolvedCount = Number(payload?.videoCount);
+      const fallbackCount = Array.isArray(payload?.videos) ? payload.videos.length : null;
+      const count = Number.isFinite(resolvedCount) ? resolvedCount : fallbackCount;
+      artistVideoCountCache.set(cacheKey, count);
+      return count;
+    } catch {
+      artistVideoCountCache.set(cacheKey, null);
+      return null;
+    } finally {
+      artistVideoCountInFlight.delete(cacheKey);
+    }
+  })();
+
+  artistVideoCountInFlight.set(cacheKey, request);
+  return request;
+}
 
 function canWarmTop100Selection() {
   const now = Date.now();
@@ -81,13 +160,36 @@ export function LeaderboardVideoLink({
   isFlagPending = false,
 }: LeaderboardVideoLinkProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useLiveSearchParams();
   const hasWarmedRef = useRef(false);
   const clickFlashTimeoutRef = useRef<number | null>(null);
   const [isClickFlashing, setIsClickFlashing] = useState(false);
   const [isFavourited, setIsFavourited] = useState(Number(track.favourited ?? 0) > 0);
   const [isRemovingFavourite, setIsRemovingFavourite] = useState(false);
+  const [artistVideoCount, setArtistVideoCount] = useState<number | null>(null);
   const hideButtonContextLabel = rowVariant === "new" ? "New" : "Top 100";
+  const rawDisplayTitle = track.title;
+  const parsedArtistCandidate =
+    track.parsedArtist?.trim()
+    || track.channelTitle?.trim()
+    || inferArtistFromTitle(rawDisplayTitle)?.trim()
+    || "";
+  const metadataArtist = parsedArtistCandidate || "Unknown Artist";
+  const parsedTrackCandidate =
+    track.parsedTrack?.trim()
+    || inferTrackFromTitle(rawDisplayTitle, metadataArtist)
+    || "";
+  const parsedArtistLabel = parsedArtistCandidate.toUpperCase();
+  const displayTitle = parsedArtistCandidate && parsedTrackCandidate
+    ? `${parsedArtistLabel} - ${parsedTrackCandidate}`
+    : rawDisplayTitle;
+  const artistPagePath = getArtistPagePath(metadataArtist);
+  const parsedArtistPagePath = parsedArtistCandidate ? getArtistPagePath(parsedArtistCandidate) : null;
+  const artistSlug = artistPagePath?.split("/")[2] ?? null;
+  const artistVideoCountLabel = artistVideoCount === null
+    ? null
+    : `${artistVideoCount.toLocaleString("en-US")} videos`;
 
   const videoHref = useMemo(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -108,6 +210,25 @@ export function LeaderboardVideoLink({
   useEffect(() => {
     setIsFavourited(Number(track.favourited ?? 0) > 0);
   }, [track.id, track.favourited]);
+
+  useEffect(() => {
+    if (!artistSlug) {
+      setArtistVideoCount(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const count = await fetchArtistVideoCount(artistSlug, track.id);
+      if (!cancelled) {
+        setArtistVideoCount(count);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [artistSlug, track.id]);
 
   const triggerClickFlash = useCallback(() => {
     setIsClickFlashing(true);
@@ -170,6 +291,46 @@ export function LeaderboardVideoLink({
   const openVideoFromCard = useCallback(() => {
     navigateToVideo();
   }, [navigateToVideo]);
+
+  const handleOpenParsedArtistPage = useCallback((event: ReactMouseEvent<HTMLSpanElement>) => {
+    if (!parsedArtistPagePath) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    if (rowVariant === "new" || rowVariant === "default") {
+      const params = new URLSearchParams();
+      params.set("from", rowVariant === "new" ? "new" : "top100");
+      params.set("returnTo", videoHref);
+      router.push(`${parsedArtistPagePath}?${params.toString()}`);
+      return;
+    }
+
+    router.push(parsedArtistPagePath);
+  }, [parsedArtistPagePath, router, rowVariant, videoHref]);
+
+  const handleOpenParsedArtistPageByKeyboard = useCallback((event: ReactKeyboardEvent<HTMLSpanElement>) => {
+    if (!parsedArtistPagePath) {
+      return;
+    }
+
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    if (rowVariant === "new" || rowVariant === "default") {
+      const params = new URLSearchParams();
+      params.set("from", rowVariant === "new" ? "new" : "top100");
+      params.set("returnTo", videoHref);
+      router.push(`${parsedArtistPagePath}?${params.toString()}`);
+      return;
+    }
+
+    router.push(parsedArtistPagePath);
+  }, [parsedArtistPagePath, router, rowVariant, videoHref]);
 
   const handleRemoveFavourite = useCallback(async (event: ReactMouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -312,13 +473,27 @@ export function LeaderboardVideoLink({
           ) : null}
         </div>
         <div className="leaderboardMeta">
-          <h3>{track.title}</h3>
-          <p>
-            <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
-              {track.channelTitle}
-            </ArtistWikiLink>
-            {rowVariant !== "new" ? ` · ${track.favourited.toLocaleString()} favourites` : ""}
-          </p>
+          <h3>
+            {parsedArtistCandidate && parsedTrackCandidate ? (
+              <>
+                <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
+                  <span
+                    role={parsedArtistPagePath ? "link" : undefined}
+                    tabIndex={parsedArtistPagePath ? 0 : undefined}
+                    onClick={handleOpenParsedArtistPage}
+                    onKeyDown={handleOpenParsedArtistPageByKeyboard}
+                  >
+                    {parsedArtistLabel}
+                  </span>
+                </ArtistWikiLink>
+                <span aria-hidden="true"> - </span>
+                <span>{parsedTrackCandidate}</span>
+              </>
+            ) : displayTitle}
+          </h3>
+          {artistVideoCountLabel ? (
+            <p className="leaderboardArtistVideoCount">{artistVideoCountLabel}</p>
+          ) : null}
         </div>
       </Link>
       <div className="top100CardAction">
