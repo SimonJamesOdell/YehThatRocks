@@ -54,7 +54,22 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
   const letter = typeof resolvedSearchParams?.letter === "string" ? resolvedSearchParams.letter : undefined;
   const v = typeof resolvedSearchParams?.v === "string" ? resolvedSearchParams.v : undefined;
   const resume = typeof resolvedSearchParams?.resume === "string" ? resolvedSearchParams.resume : undefined;
-  const artist = await getArtistBySlug(slug);
+  const contextVideoId = (v ?? "").trim();
+  let artist = await getArtistBySlug(slug);
+
+  if (!artist && contextVideoId) {
+    const contextStored = await getStoredVideoById(contextVideoId, { includeUnapproved: true });
+    const contextArtist = (contextStored?.parsedArtist ?? contextStored?.channelTitle ?? "").trim();
+    if (contextArtist && slugify(contextArtist) === slug) {
+      artist = {
+        name: contextArtist,
+        slug,
+        country: "Unknown",
+        genre: "Rock / Metal",
+        thumbnailVideoId: contextVideoId,
+      };
+    }
+  }
 
   if (!artist) {
     notFound();
@@ -66,7 +81,6 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
   if (resume) artistsParams.set("resume", resume);
   const artistsHref = artistsParams.toString() ? `/artists?${artistsParams.toString()}` : "/artists";
 
-  const contextVideoId = (v ?? "").trim();
   let artistVideosRaw = await getVideosByArtist(artist.name);
   if (contextVideoId && !artistVideosRaw.some((video: ArtistVideoRow) => video.id === contextVideoId)) {
     const contextStored = await getStoredVideoById(contextVideoId, { includeUnapproved: true });
