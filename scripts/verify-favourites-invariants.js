@@ -68,8 +68,9 @@ function main() {
   // --- FavouritesGrid: optimistic removal ---
   assertContains(favouritesGridSource, "setFavourites((current) => current.filter((track) => track.id !== videoId))", "FavouritesGrid removes track from local state optimistically", failures);
   assertContains(favouritesGridSource, "action: \"remove\"", "FavouritesGrid sends remove action to favourites API", failures);
-  assertContains(favouritesGridSource, 'import { ArtistWikiLink } from "@/components/artist-wiki-link";', "FavouritesGrid imports artist wiki link helper", failures);
-  assertContains(favouritesGridSource, '<ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">', "FavouritesGrid wraps artist names with wiki links", failures);
+  assertContains(favouritesGridSource, 'import { getArtistPagePath } from "@/lib/artist-routing";', "FavouritesGrid imports artist page path helper", failures);
+  assertContains(favouritesGridSource, 'className={parsedArtistPagePath ? "leaderboardParsedArtistLink" : undefined}', "FavouritesGrid renders artist label as artist-page link affordance", failures);
+  assertContains(favouritesGridSource, 'onOpenArtistPage(parsedArtistPagePath, track.id);', "FavouritesGrid opens artist page with current video context", failures);
   assertContains(favouritesGridSource, "relatedSourceBadge relatedSourceBadgeTop100", "FavouritesGrid renders Top100 source badges", failures);
   assertContains(favouritesGridSource, "relatedSourceBadge relatedSourceBadgeNew", "FavouritesGrid renders New source badges", failures);
   assertNotContains(favouritesGridSource, "videoSeenBadge", "Own favourites grid does not render seen badges", failures);
