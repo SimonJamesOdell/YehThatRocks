@@ -1662,6 +1662,7 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
       videoId: string;
       title: string;
       parsedArtist: string | null;
+      parsedTrack: string | null;
       favourited: number;
       description: string | null;
     };
@@ -1676,6 +1677,7 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
           v.videoId,
           v.title,
           NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
+          NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
           v.favourited,
           v.description
         FROM videos v${videoArtistIndexHint}
@@ -1707,6 +1709,7 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
               v.videoId,
               v.title,
               NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
+              NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
               v.favourited,
               v.description
             FROM videos v${videoArtistIndexHint}

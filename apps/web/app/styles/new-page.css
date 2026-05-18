@@ -662,6 +662,38 @@
   margin-bottom: 6px;
 }
 
+.trackCard.leaderboardCard.top100CardNewPersistentActions .leaderboardMeta h3 {
+  font-size: 1.18rem;
+  line-height: 1.22;
+}
+
+.leaderboardParsedArtistLink {
+  color: rgba(255, 236, 228, 0.95);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 141, 113, 0.72);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.leaderboardParsedArtistLink:hover,
+.leaderboardParsedArtistLink:focus-visible {
+  color: #fff;
+  text-decoration-color: rgba(255, 186, 166, 0.9);
+}
+
+.leaderboardArtistVideoCount {
+  margin: 3px 0 0;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.trackCard.leaderboardCard.top100CardNewPersistentActions .leaderboardArtistVideoCount {
+  font-size: 0.8rem;
+}
+
 .accountHistoryPanel {
   display: grid;
   gap: 16px;

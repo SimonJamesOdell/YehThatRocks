@@ -69,7 +69,7 @@ export function useActiveRowAutoScroll({
         return;
       }
 
-      const topGutterPx = 70;
+      const topGutterPx = 80; // Adjusted from 70 to 80 to include an additional 10px offset
       const containerRect = scrollContainer.getBoundingClientRect();
       const rowRect = activeRow.getBoundingClientRect();
       const rowOffsetInContent = scrollContainer.scrollTop + (rowRect.top - containerRect.top);

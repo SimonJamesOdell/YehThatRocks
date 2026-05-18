@@ -1,4 +1,3 @@
-
 .relatedCardSlot .relatedCard {
   grid-template-columns: 102px minmax(0, 1fr) 34px;
   column-gap: 10px;
@@ -617,24 +616,34 @@
   box-shadow: 0 10px 24px rgba(64, 10, 8, 0.46);
 }
 
+/* Revert previous change and only remove the 2px outline from the active card */
+/* Make the active card always have the same orange border as hover */
 .trackCard.leaderboardCard.top100CardActive {
-  position: relative;
-  z-index: 2;
-  overflow: hidden;
-  outline: 2px solid rgba(179, 18, 20, 0.95);
-  outline-offset: -2px;
-  animation: fireActiveOutline 1.8s ease-in-out infinite;
+  border-color: #b31214 !important;
 }
+
 
 .trackCard.leaderboardCard.top100CardActive::before {
   content: "";
   position: absolute;
   inset: 1px;
   border-radius: inherit;
-  background-color: rgba(75, 6, 8, 0.24);
-  animation: backgroundPulseOverlay 1.8s ease-in-out infinite;
+  background-color: rgba(75, 6, 8, 0.13); /* Slightly less intense */
+  animation: backgroundPulseOverlay 2.5s ease-in-out infinite;
   pointer-events: none;
   z-index: 0;
+}
+
+@keyframes backgroundPulseOverlay {
+  0% {
+    background-color: rgba(75, 6, 8, 0.13);
+  }
+  50% {
+    background-color: rgba(75, 6, 8, 0.19);
+  }
+  100% {
+    background-color: rgba(75, 6, 8, 0.13);
+  }
 }
 
 .trackCard.leaderboardCard.top100CardActive > * {
