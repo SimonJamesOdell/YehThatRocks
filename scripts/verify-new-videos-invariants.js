@@ -18,6 +18,8 @@ const files = {
   activeRowAutoScrollHook: path.join(ROOT, "apps/web/components/use-active-row-auto-scroll.ts"),
   newVideosScrollPrefetchHook: path.join(ROOT, "apps/web/components/use-new-videos-scroll-prefetch.ts"),
   newVideosModerationHook: path.join(ROOT, "apps/web/components/use-new-videos-moderation.ts"),
+  createPlaylistFromVideoListHelper: path.join(ROOT, "apps/web/lib/playlist-create-from-video-list.ts"),
+  playlistData: path.join(ROOT, "apps/web/lib/catalog-data-playlists.ts"),
   suggestNewModal: path.join(ROOT, "apps/web/components/suggest-new-modal.tsx"),
   suggestNewHook: path.join(ROOT, "apps/web/components/use-suggest-new-video.ts"),
   top100VideosLoader: path.join(ROOT, "apps/web/components/top100-videos-loader.tsx"),
@@ -40,6 +42,8 @@ function main() {
   const activeRowAutoScrollHookSource = readFileStrict(files.activeRowAutoScrollHook, ROOT);
   const newVideosScrollPrefetchHookSource = readFileStrict(files.newVideosScrollPrefetchHook, ROOT);
   const newVideosModerationHookSource = readFileStrict(files.newVideosModerationHook, ROOT);
+  const createPlaylistFromVideoListHelperSource = readFileStrict(files.createPlaylistFromVideoListHelper, ROOT);
+  const playlistDataSource = readFileStrict(files.playlistData, ROOT);
   const suggestNewModalSource = readFileStrict(files.suggestNewModal, ROOT);
   const suggestNewHookSource = readFileStrict(files.suggestNewHook, ROOT);
   const top100VideosLoaderSource = readFileStrict(files.top100VideosLoader, ROOT);
@@ -108,6 +112,15 @@ function main() {
   assertContains(newVideosLoaderSource, "await createPlaylistFromVideoList({", "New videos loader delegates playlist creation flow to shared helper", failures);
   assertNotContains(newVideosLoaderSource, "await createPlaylistClient(", "New videos loader does not duplicate low-level playlist creation orchestration", failures);
   assertNotContains(newVideosLoaderSource, "addPlaylistItemsClient(", "New videos loader does not duplicate low-level add-items orchestration", failures);
+  assertContains(createPlaylistFromVideoListHelperSource, "const addAllLikelyNoOp = addAllResponse.ok", "Shared playlist creation helper detects bulk add no-op responses", failures);
+  assertContains(createPlaylistFromVideoListHelperSource, "for (const videoId of videoIds)", "Shared playlist creation helper retries failed bulk add as single-item requests", failures);
+  assertContains(createPlaylistFromVideoListHelperSource, "addPlaylistItemClient(", "Shared playlist creation helper uses single-item fallback mutation path", failures);
+  assertContains(createPlaylistFromVideoListHelperSource, "single-item-fallback", "Shared playlist creation helper tags single-item fallback telemetry context", failures);
+  assertContains(playlistDataSource, "let ownerColumnUsed: \"userId\" | \"user_id\" | null = null;", "Playlist data layer tracks inserted owner-column shape before id resolution", failures);
+  assertContains(playlistDataSource, "Avoid LAST_INSERT_ID() here because pooled connections can return an ID", "Playlist data layer documents pooled-connection LAST_INSERT_ID risk", failures);
+  assertNotContains(playlistDataSource, "SELECT LAST_INSERT_ID() AS id", "Playlist data layer does not resolve created ids via pooled LAST_INSERT_ID query", failures);
+  assertContains(playlistDataSource, "WHERE userId = ${userId} AND name = ${name}", "Playlist data layer resolves created id by newest user/name row for legacy schema", failures);
+  assertContains(playlistDataSource, "WHERE user_id = ${userId} AND name = ${name}", "Playlist data layer resolves created id by newest user/name row for mapped schema", failures);
   assertContains(newVideosScrollPrefetchHookSource, "window.addEventListener(\"scroll\", onWindowScroll, { passive: true });", "New videos scroll prefetch hook prefetches ahead during active scrolling", failures);
   assertContains(newVideosScrollPrefetchHookSource, "overlay.addEventListener(\"scroll\", onOverlayScroll, { passive: true });", "New videos scroll prefetch hook prefetches from overlay container scrolling", failures);
   assertNotContains(newVideosLoaderSource, "IntersectionObserver(", "New videos loader does not perform autonomous observer-driven loading", failures);
