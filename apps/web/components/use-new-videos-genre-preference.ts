@@ -58,14 +58,14 @@ export function useNewVideosGenrePreference(isAuthenticated: boolean) {
   useEffect(() => {
     if (!isAuthenticated) {
       const local = readPersistedFilters();
-      setGenres(local);
+      setFilters(local);
       setIsServerHydrated(true);
       return;
     }
 
     let cancelled = false;
     const local = readPersistedFilters();
-    setGenres(local);
+    setFilters(local);
     setIsServerHydrated(false);
 
     const loadServerValue = async () => {
