@@ -3,25 +3,40 @@
 import { useEffect, useState } from "react";
 
 import { parseJsonOrNull } from "@/lib/parse-json";
-import { normalizeNewVideoGenreFilters } from "@/lib/new-video-genre-filters";
+import {
+  normalizeNewVideoGenreFilterState,
+  normalizeNewVideoGenreFilters,
+  type NewVideoGenreFilterState,
+} from "@/lib/new-video-genre-filters";
 
 const LOCAL_STORAGE_KEY = "ytr:new-videos-genre-filters";
 
 function readPersistedFilters() {
   if (typeof window === "undefined") {
-    return [] as string[];
+    return {
+      includeGenres: [],
+      excludeGenres: [],
+    } satisfies NewVideoGenreFilterState;
   }
 
   try {
     const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) return [] as string[];
-    return normalizeNewVideoGenreFilters(JSON.parse(raw));
+    if (!raw) {
+      return {
+        includeGenres: [],
+        excludeGenres: [],
+      } satisfies NewVideoGenreFilterState;
+    }
+    return normalizeNewVideoGenreFilterState(JSON.parse(raw));
   } catch {
-    return [] as string[];
+    return {
+      includeGenres: [],
+      excludeGenres: [],
+    } satisfies NewVideoGenreFilterState;
   }
 }
 
-function writePersistedFilters(filters: string[]) {
+function writePersistedFilters(filters: NewVideoGenreFilterState) {
   if (typeof window === "undefined") {
     return;
   }
@@ -34,7 +49,10 @@ function writePersistedFilters(filters: string[]) {
 }
 
 export function useNewVideosGenrePreference(isAuthenticated: boolean) {
-  const [genres, setGenres] = useState<string[]>([]);
+  const [filters, setFilters] = useState<NewVideoGenreFilterState>({
+    includeGenres: [],
+    excludeGenres: [],
+  });
   const [isServerHydrated, setIsServerHydrated] = useState(() => !isAuthenticated);
 
   useEffect(() => {
@@ -61,13 +79,21 @@ export function useNewVideosGenrePreference(isAuthenticated: boolean) {
           return;
         }
 
-        const payload = (await parseJsonOrNull(response)) as { genres?: string[] } | null;
+        const payload = (await parseJsonOrNull(response)) as {
+          includeGenres?: string[];
+          excludeGenres?: string[];
+          genres?: string[];
+        } | null;
         if (cancelled) {
           return;
         }
 
-        const next = normalizeNewVideoGenreFilters(payload?.genres ?? []);
-        setGenres(next);
+        const next = normalizeNewVideoGenreFilterState({
+          includeGenres: payload?.includeGenres,
+          excludeGenres: payload?.excludeGenres,
+          genres: payload?.genres,
+        });
+        setFilters(next);
         writePersistedFilters(next);
       } catch {
         // Fall back to local persisted values.
@@ -86,8 +112,8 @@ export function useNewVideosGenrePreference(isAuthenticated: boolean) {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    writePersistedFilters(genres);
-  }, [genres]);
+    writePersistedFilters(filters);
+  }, [filters]);
 
   useEffect(() => {
     if (!isAuthenticated || !isServerHydrated) {
@@ -99,15 +125,28 @@ export function useNewVideosGenrePreference(isAuthenticated: boolean) {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ genres }),
+      body: JSON.stringify({
+        includeGenres: filters.includeGenres,
+        excludeGenres: filters.excludeGenres,
+      }),
     }).catch(() => {
       // Keep UI responsive if server persistence is unavailable.
     });
-  }, [genres, isAuthenticated, isServerHydrated]);
+  }, [filters, isAuthenticated, isServerHydrated]);
+
+  const setGenres = (value: string[]) => {
+    setFilters({
+      includeGenres: normalizeNewVideoGenreFilters(value),
+      excludeGenres: [],
+    });
+  };
 
   return {
-    genres,
-    setGenres: (value: string[]) => setGenres(normalizeNewVideoGenreFilters(value)),
+    includeGenres: filters.includeGenres,
+    excludeGenres: filters.excludeGenres,
+    genres: filters.includeGenres,
+    setFilters: (value: NewVideoGenreFilterState) => setFilters(normalizeNewVideoGenreFilterState(value)),
+    setGenres,
     isServerHydrated,
   };
 }
