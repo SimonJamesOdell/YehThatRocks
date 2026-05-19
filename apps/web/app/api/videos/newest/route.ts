@@ -4,14 +4,18 @@ import { getNewestVideos } from "@/lib/catalog-data";
 import { clamp } from "@/lib/number-utils";
 import {
   doesVideoMatchNewGenreFilters,
-  parseNewVideoGenreFilterParam,
+  parseNewVideoGenreFilterStateFromParams,
 } from "@/lib/new-video-genre-filters";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const skipParam = searchParams.get("skip");
   const takeParam = searchParams.get("take");
-  const genreFilters = parseNewVideoGenreFilterParam(searchParams.get("genres"));
+  const genreFilters = parseNewVideoGenreFilterStateFromParams({
+    includeParam: searchParams.get("genresInclude"),
+    excludeParam: searchParams.get("genresExclude"),
+    legacyParam: searchParams.get("genres"),
+  });
 
   const skip = Math.max(0, Number(skipParam ?? "0"));
   const take = clamp(Number(takeParam ?? "50"), 1, 200);
@@ -41,7 +45,7 @@ export async function GET(request: NextRequest) {
         }
 
         for (const video of batch) {
-          if (doesVideoMatchNewGenreFilters(video.genre, genreFilters)) {
+          if (doesVideoMatchNewGenreFilters(video.genre, genreFilters.includeGenres, genreFilters.excludeGenres)) {
             filtered.push(video);
           }
         }
@@ -61,7 +65,8 @@ export async function GET(request: NextRequest) {
       };
     };
 
-    const probedVideos = genreFilters.length > 0
+    const hasActiveGenreFilters = genreFilters.includeGenres.length > 0 || genreFilters.excludeGenres.length > 0;
+    const probedVideos = hasActiveGenreFilters
       ? (await collectFilteredWindow()).filtered.slice(skip, skip + probeTake)
       : await getNewestVideos(probeTake, skip, {
           enforcePlaybackAvailability: true,

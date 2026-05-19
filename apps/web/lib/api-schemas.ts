@@ -117,8 +117,19 @@ export const seenTogglePreferenceMutationSchema = z.object({
   value: z.boolean(),
 });
 
+const newVideosGenreArraySchema = z.array(z.string().trim().min(1).max(80)).max(128);
+
 export const newVideosGenrePreferenceMutationSchema = z.object({
-  genres: z.array(z.string().trim().min(1).max(80)).max(24),
+  includeGenres: newVideosGenreArraySchema.optional(),
+  excludeGenres: newVideosGenreArraySchema.optional(),
+  genres: newVideosGenreArraySchema.optional(),
+}).superRefine((value, ctx) => {
+  if (value.includeGenres === undefined && value.excludeGenres === undefined && value.genres === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "includeGenres, excludeGenres, or genres is required",
+    });
+  }
 });
 
 export const playerPreferenceMutationSchema = z.object({

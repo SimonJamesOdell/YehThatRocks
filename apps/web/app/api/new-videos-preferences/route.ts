@@ -18,7 +18,11 @@ export async function GET(request: NextRequest) {
     userId: auth.auth.userId,
   });
 
-  return NextResponse.json({ genres });
+  return NextResponse.json({
+    includeGenres: genres.includeGenres,
+    excludeGenres: genres.excludeGenres,
+    genres: genres.includeGenres,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -30,6 +34,8 @@ export async function POST(request: NextRequest) {
 
   const prefResult = await setNewVideosGenrePreferenceForUser({
     userId: result.auth.userId,
+    includeGenres: result.data.includeGenres,
+    excludeGenres: result.data.excludeGenres,
     genres: result.data.genres,
   });
 

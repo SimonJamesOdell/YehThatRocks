@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/db";
 import { hasDatabaseUrl } from "@/lib/catalog-data-utils";
-import { normalizeNewVideoGenreFilters } from "@/lib/new-video-genre-filters";
+import {
+  normalizeNewVideoGenreFilterState,
+  type NewVideoGenreFilterState,
+} from "@/lib/new-video-genre-filters";
 
 let hasEnsuredNewVideosPreferencesTable = false;
 let ensureNewVideosPreferencesTablePromise: Promise<void> | null = null;
@@ -36,7 +39,10 @@ async function ensureNewVideosPreferencesTable() {
 
 export async function getNewVideosGenrePreferenceForUser(input: { userId: number }) {
   if (!hasDatabaseUrl()) {
-    return [] as string[];
+    return {
+      includeGenres: [],
+      excludeGenres: [],
+    } satisfies NewVideoGenreFilterState;
   }
 
   await ensureNewVideosPreferencesTable();
@@ -50,24 +56,39 @@ export async function getNewVideosGenrePreferenceForUser(input: { userId: number
 
   const raw = rows[0]?.genre_filters;
   if (!raw) {
-    return [] as string[];
+    return {
+      includeGenres: [],
+      excludeGenres: [],
+    } satisfies NewVideoGenreFilterState;
   }
 
   try {
-    return normalizeNewVideoGenreFilters(JSON.parse(raw));
+    return normalizeNewVideoGenreFilterState(JSON.parse(raw));
   } catch {
-    return [] as string[];
+    return {
+      includeGenres: [],
+      excludeGenres: [],
+    } satisfies NewVideoGenreFilterState;
   }
 }
 
-export async function setNewVideosGenrePreferenceForUser(input: { userId: number; genres: string[] }) {
+export async function setNewVideosGenrePreferenceForUser(input: {
+  userId: number;
+  includeGenres?: string[];
+  excludeGenres?: string[];
+  genres?: string[];
+}) {
   if (!hasDatabaseUrl()) {
     return { ok: false as const };
   }
 
   await ensureNewVideosPreferencesTable();
 
-  const genres = normalizeNewVideoGenreFilters(input.genres);
+  const filters = normalizeNewVideoGenreFilterState({
+    includeGenres: input.includeGenres,
+    excludeGenres: input.excludeGenres,
+    genres: input.genres,
+  });
 
   await prisma.$executeRaw`
     INSERT INTO user_new_videos_preferences (
@@ -76,7 +97,7 @@ export async function setNewVideosGenrePreferenceForUser(input: { userId: number
     )
     VALUES (
       ${input.userId},
-      ${JSON.stringify(genres)}
+      ${JSON.stringify(filters)}
     )
     ON DUPLICATE KEY UPDATE
       genre_filters = VALUES(genre_filters),

@@ -26,8 +26,8 @@ import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference
 import { useSuggestNewVideo } from "@/components/use-suggest-new-video";
 import {
   doesVideoMatchNewGenreFilters,
-  normalizeNewVideoGenreFilters,
-  parseNewVideoGenreFilterParam,
+  normalizeNewVideoGenreFilterState,
+  parseNewVideoGenreFilterStateFromParams,
 } from "@/lib/new-video-genre-filters";
 import { createPlaylistFromVideoList } from "@/lib/playlist-create-from-video-list";
 import {
@@ -135,8 +135,13 @@ export function NewVideosLoader({
   const router = useRouter();
   const searchParams = useLiveSearchParams();
   const activeVideoId = searchParams.get("v");
-  const queryGenreFilters = useMemo(
-    () => parseNewVideoGenreFilterParam(searchParams.get("genres")),
+  const queryGenreFilters = useMemo(() => parseNewVideoGenreFilterStateFromParams({
+    includeParam: searchParams.get("genresInclude"),
+    excludeParam: searchParams.get("genresExclude"),
+    legacyParam: searchParams.get("genres"),
+  }), [searchParams]);
+  const hasQueryGenreFilters = useMemo(
+    () => searchParams.has("genresInclude") || searchParams.has("genresExclude") || searchParams.has("genres"),
     [searchParams],
   );
   const previousActiveVideoIdRef = useRef<string | null>(activeVideoId);
@@ -161,11 +166,22 @@ export function NewVideosLoader({
     isAuthenticated,
   });
   const {
-    genres: persistedGenreFilters,
-    setGenres: setPersistedGenreFilters,
+    includeGenres: persistedIncludeGenres,
+    excludeGenres: persistedExcludeGenres,
+    setFilters: setPersistedGenreFilters,
   } = useNewVideosGenrePreference(isAuthenticated);
-  const selectedGenres = queryGenreFilters.length > 0 ? queryGenreFilters : persistedGenreFilters;
-  const selectedGenresKey = useMemo(() => selectedGenres.join("|"), [selectedGenres]);
+  const selectedGenreFilters = hasQueryGenreFilters
+    ? queryGenreFilters
+    : {
+      includeGenres: persistedIncludeGenres,
+      excludeGenres: persistedExcludeGenres,
+    };
+  const selectedGenres = selectedGenreFilters.includeGenres;
+  const excludedGenres = selectedGenreFilters.excludeGenres;
+  const selectedGenresKey = useMemo(
+    () => `${selectedGenres.join("|")}::${excludedGenres.join("|")}`,
+    [excludedGenres, selectedGenres],
+  );
   const {
     allVideos,
     allVideoIdsRef,
@@ -243,8 +259,8 @@ export function NewVideosLoader({
   const overlayScrollContainerRef = useOverlayScrollContainerRef();
   const seenVideoIdSet = clientSeenVideoIds;
   const genreFilteredVideos = useMemo(
-    () => allVideos.filter((video) => doesVideoMatchNewGenreFilters(video.genre, selectedGenres)),
-    [allVideos, selectedGenres],
+    () => allVideos.filter((video) => doesVideoMatchNewGenreFilters(video.genre, selectedGenres, excludedGenres)),
+    [allVideos, excludedGenres, selectedGenres],
   );
   const visibleVideos = useMemo(
     () => (isAuthenticated && hideSeen
@@ -259,6 +275,12 @@ export function NewVideosLoader({
     }),
     [genreFacets],
   );
+  const knownGenreUniverse = useMemo(() => {
+    const combined = [...actionableGenreFacets.map((facet) => facet.genre), ...selectedGenres, ...excludedGenres]
+      .map((genre) => genre.trim().toLowerCase())
+      .filter((genre) => genre.length > 0);
+    return [...new Set(combined)];
+  }, [actionableGenreFacets, excludedGenres, selectedGenres]);
 
   useEffect(() => {
     let cancelled = false;
@@ -302,20 +324,44 @@ export function NewVideosLoader({
   }, []);
 
   useEffect(() => {
-    if (queryGenreFilters.length > 0) {
-      const normalized = normalizeNewVideoGenreFilters(queryGenreFilters);
-      if (normalized.join("|") !== persistedGenreFilters.join("|")) {
-        setPersistedGenreFilters(normalized);
-      }
+    if (!hasQueryGenreFilters) {
+      return;
     }
-  }, [persistedGenreFilters, queryGenreFilters, setPersistedGenreFilters]);
 
-  const syncGenresToUrl = (nextGenres: string[]) => {
+    const normalized = normalizeNewVideoGenreFilterState(queryGenreFilters);
+    const persisted = normalizeNewVideoGenreFilterState({
+      includeGenres: persistedIncludeGenres,
+      excludeGenres: persistedExcludeGenres,
+    });
+
+    if (
+      normalized.includeGenres.join("|") !== persisted.includeGenres.join("|")
+      || normalized.excludeGenres.join("|") !== persisted.excludeGenres.join("|")
+    ) {
+      setPersistedGenreFilters(normalized);
+    }
+  }, [
+    hasQueryGenreFilters,
+    persistedExcludeGenres,
+    persistedIncludeGenres,
+    queryGenreFilters,
+    setPersistedGenreFilters,
+  ]);
+
+  const syncGenresToUrl = (nextFilters: { includeGenres: string[]; excludeGenres: string[] }) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (nextGenres.length > 0) {
-      params.set("genres", nextGenres.join(","));
+    params.delete("genres");
+
+    if (nextFilters.includeGenres.length > 0) {
+      params.set("genresInclude", nextFilters.includeGenres.join(","));
     } else {
-      params.delete("genres");
+      params.delete("genresInclude");
+    }
+
+    if (nextFilters.excludeGenres.length > 0) {
+      params.set("genresExclude", nextFilters.excludeGenres.join(","));
+    } else {
+      params.delete("genresExclude");
     }
 
     const nextUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
@@ -324,21 +370,63 @@ export function NewVideosLoader({
     window.dispatchEvent(new PopStateEvent("popstate"));
   };
 
-  const toggleGenreSelection = (genre: string) => {
+  const toggleGenreIncludeSelection = (genre: string) => {
     const normalized = genre.trim().toLowerCase();
-    const current = normalizeNewVideoGenreFilters(selectedGenres);
-    const next = current.includes(normalized)
-      ? current.filter((value) => value !== normalized)
-      : [...current, normalized];
+    const current = normalizeNewVideoGenreFilterState({
+      includeGenres: selectedGenres,
+      excludeGenres: excludedGenres,
+    });
+    const isAddingInclude = !current.includeGenres.includes(normalized);
+    const includeGenres = isAddingInclude
+      ? [...current.includeGenres, normalized]
+      : current.includeGenres.filter((value) => value !== normalized);
 
-    const normalizedNext = normalizeNewVideoGenreFilters(next);
-    setPersistedGenreFilters(normalizedNext);
-    syncGenresToUrl(normalizedNext);
+    const includeSet = new Set(includeGenres);
+    const nextExclude = isAddingInclude
+      ? knownGenreUniverse.filter((value) => !includeSet.has(value))
+      : current.excludeGenres.filter((value) => value !== normalized);
+
+    const next = normalizeNewVideoGenreFilterState({
+      includeGenres,
+      excludeGenres: nextExclude,
+    });
+
+    setPersistedGenreFilters(next);
+    syncGenresToUrl(next);
+  };
+
+  const toggleGenreExcludeSelection = (genre: string) => {
+    const normalized = genre.trim().toLowerCase();
+    const current = normalizeNewVideoGenreFilterState({
+      includeGenres: selectedGenres,
+      excludeGenres: excludedGenres,
+    });
+    const isAddingExclude = !current.excludeGenres.includes(normalized);
+    const excludeGenres = isAddingExclude
+      ? [...current.excludeGenres, normalized]
+      : current.excludeGenres.filter((value) => value !== normalized);
+
+    const excludeSet = new Set(excludeGenres);
+    const nextInclude = isAddingExclude
+      ? knownGenreUniverse.filter((value) => !excludeSet.has(value))
+      : current.includeGenres.filter((value) => value !== normalized);
+
+    const next = normalizeNewVideoGenreFilterState({
+      includeGenres: nextInclude,
+      excludeGenres,
+    });
+
+    setPersistedGenreFilters(next);
+    syncGenresToUrl(next);
   };
 
   const clearGenreSelection = () => {
-    setPersistedGenreFilters([]);
-    syncGenresToUrl([]);
+    const next = {
+      includeGenres: [],
+      excludeGenres: [],
+    };
+    setPersistedGenreFilters(next);
+    syncGenresToUrl(next);
   };
 
   useEffect(() => {
@@ -389,27 +477,29 @@ export function NewVideosLoader({
     }
 
     const overlayRoot = triggerRoot.closest(".favouritesBlind") as HTMLElement | null;
-    const triggerRect = triggerRoot.getBoundingClientRect();
     const containerRect = overlayRoot?.getBoundingClientRect();
-    const containerHorizontalPadding = 18;
+    const panelInsetPx = 8;
 
     if (!containerRect) {
       setGenrePanelStyle({
-        top: `${Math.round(triggerRect.bottom + 8)}px`,
-        left: "28px",
-        right: "28px",
+        top: "72px",
+        left: "12px",
+        right: "12px",
+        maxHeight: "calc(100dvh - 84px)",
       });
       return;
     }
 
-    const left = Math.max(8, Math.round(containerRect.left + containerHorizontalPadding));
-    const right = Math.max(8, Math.round(window.innerWidth - (containerRect.right - containerHorizontalPadding)));
-    const top = Math.max(72, Math.round(triggerRect.bottom + 8));
+    const left = Math.max(8, Math.round(containerRect.left));
+    const right = Math.max(8, Math.round(window.innerWidth - containerRect.right));
+    const top = Math.max(8, Math.round(containerRect.top + panelInsetPx - 10));
+    const maxHeight = Math.max(260, Math.round(containerRect.height - (panelInsetPx * 2) + 20));
 
     setGenrePanelStyle({
       top: `${top}px`,
       left: `${left}px`,
       right: `${right}px`,
+      maxHeight: `${maxHeight}px`,
     });
   }, [isGenreMenuOpen]);
 
@@ -644,16 +734,32 @@ export function NewVideosLoader({
         <div className="newPageGenreFilterOptions">
           {actionableGenreFacets.map((facet) => {
             const normalized = facet.genre.trim().toLowerCase();
-            const isSelected = selectedGenres.includes(normalized);
+            const isIncluded = selectedGenres.includes(normalized);
+            const isExcluded = excludedGenres.includes(normalized);
             return (
-              <label key={facet.genre} className="newPageGenreFilterOption">
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onChange={() => toggleGenreSelection(facet.genre)}
-                />
+              <div key={facet.genre} className="newPageGenreFilterOption">
                 <span>{facet.genre}</span>
-              </label>
+                <div className="newPageGenreFilterOptionChecks">
+                  <label className="newPageGenreFilterChoice">
+                    <span aria-hidden="true">&#10003;</span>
+                    <input
+                      type="checkbox"
+                      aria-label={`Include ${facet.genre}`}
+                      checked={isIncluded}
+                      onChange={() => toggleGenreIncludeSelection(facet.genre)}
+                    />
+                  </label>
+                  <label className="newPageGenreFilterChoice">
+                    <span aria-hidden="true">&#10005;</span>
+                    <input
+                      type="checkbox"
+                      aria-label={`Exclude ${facet.genre}`}
+                      checked={isExcluded}
+                      onChange={() => toggleGenreExcludeSelection(facet.genre)}
+                    />
+                  </label>
+                </div>
+              </div>
             );
           })}
         </div>
@@ -695,12 +801,14 @@ export function NewVideosLoader({
           <div className="newPageGenreFilterGroup" ref={genreFilterGroupRef}>
             <button
               type="button"
-              className={`newPageSeenToggle${selectedGenres.length > 0 ? " newPageSeenToggleActive" : ""}`}
+              className={`newPageSeenToggle${(selectedGenres.length > 0 || excludedGenres.length > 0) ? " newPageSeenToggleActive" : ""}`}
               onClick={() => setIsGenreMenuOpen((current) => !current)}
               aria-expanded={isGenreMenuOpen}
               aria-controls="new-genre-filter-panel"
             >
-              {selectedGenres.length > 0 ? `Genres: ${selectedGenres.length} selected` : "Genres: All"}
+              {(selectedGenres.length > 0 || excludedGenres.length > 0)
+                ? `Genres: +${selectedGenres.length} / -${excludedGenres.length}`
+                : "Genres: All"}
             </button>
             {isGenreMenuOpen && typeof document !== "undefined" && genreFilterPanel
               ? createPortal(genreFilterPanel, document.body)
