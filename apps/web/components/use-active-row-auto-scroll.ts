@@ -16,6 +16,7 @@ export function useActiveRowAutoScroll({
   overlayScrollContainerRef,
 }: UseActiveRowAutoScrollOptions) {
   const activeTrackAutoScrollRafRef = useRef<number | null>(null);
+  const activeTrackAutoScrollTimeoutRef = useRef<number | null>(null);
   const lastAutoScrolledActiveVideoIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -27,19 +28,50 @@ export function useActiveRowAutoScroll({
       return;
     }
 
-    // Mark immediately so incidental rerenders (e.g. list bookkeeping updates)
-    // do not restart this scroll operation for the same active id.
-    lastAutoScrolledActiveVideoIdRef.current = activeVideoId;
+    const clearScheduledScrollWork = () => {
+      if (activeTrackAutoScrollTimeoutRef.current !== null) {
+        window.clearTimeout(activeTrackAutoScrollTimeoutRef.current);
+        activeTrackAutoScrollTimeoutRef.current = null;
+      }
 
-    const timeoutId = window.setTimeout(() => {
+      if (activeTrackAutoScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(activeTrackAutoScrollRafRef.current);
+        activeTrackAutoScrollRafRef.current = null;
+      }
+    };
+
+    let cancelled = false;
+    let retryCount = 0;
+    const maxRetries = 10;
+    const retryDelayMs = 40;
+
+    const attemptAutoScroll = () => {
+      if (cancelled) {
+        return;
+      }
+
       const overlayContainer = overlayScrollContainerRef?.current;
       const scrollContainer = overlayContainer ?? document.scrollingElement as HTMLElement | null;
       if (!scrollContainer) {
+        if (retryCount < maxRetries) {
+          retryCount += 1;
+          activeTrackAutoScrollTimeoutRef.current = window.setTimeout(() => {
+            activeTrackAutoScrollTimeoutRef.current = null;
+            attemptAutoScroll();
+          }, retryDelayMs);
+        }
         return;
       }
 
       const activeRow = document.querySelector<HTMLElement>(".trackCard.top100CardActive");
       if (!activeRow) {
+        if (retryCount < maxRetries) {
+          retryCount += 1;
+          activeTrackAutoScrollTimeoutRef.current = window.setTimeout(() => {
+            activeTrackAutoScrollTimeoutRef.current = null;
+            attemptAutoScroll();
+          }, retryDelayMs);
+        }
         return;
       }
 
@@ -51,13 +83,11 @@ export function useActiveRowAutoScroll({
       const targetTop = Math.min(maxScrollTop, Math.max(0, rowOffsetInContent - topGutterPx));
 
       if (Math.abs(scrollContainer.scrollTop - targetTop) <= 1) {
+        lastAutoScrolledActiveVideoIdRef.current = activeVideoId;
         return;
       }
 
-      if (activeTrackAutoScrollRafRef.current !== null) {
-        window.cancelAnimationFrame(activeTrackAutoScrollRafRef.current);
-        activeTrackAutoScrollRafRef.current = null;
-      }
+      clearScheduledScrollWork();
 
       const startTop = scrollContainer.scrollTop;
       const scrollDelta = targetTop - startTop;
@@ -75,17 +105,20 @@ export function useActiveRowAutoScroll({
         }
 
         activeTrackAutoScrollRafRef.current = null;
+        lastAutoScrolledActiveVideoIdRef.current = activeVideoId;
       };
 
       activeTrackAutoScrollRafRef.current = window.requestAnimationFrame(animateScroll);
+    };
+
+    activeTrackAutoScrollTimeoutRef.current = window.setTimeout(() => {
+      activeTrackAutoScrollTimeoutRef.current = null;
+      attemptAutoScroll();
     }, 50);
 
     return () => {
-      window.clearTimeout(timeoutId);
-      if (activeTrackAutoScrollRafRef.current !== null) {
-        window.cancelAnimationFrame(activeTrackAutoScrollRafRef.current);
-        activeTrackAutoScrollRafRef.current = null;
-      }
+      cancelled = true;
+      clearScheduledScrollWork();
     };
   }, [activeVideoId, isLoading, overlayScrollContainerRef, visibleVideoCount]);
 }

@@ -291,7 +291,10 @@ export function LeaderboardVideoLink({
   }, [stagePendingSelection, track.id, triggerClickFlash]);
 
   const navigateToVideo = useCallback(() => {
-    if (rowVariant !== "new") {
+    if (rowVariant === "new") {
+      triggerClickFlash();
+      stagePendingSelection();
+    } else {
       warmSelection();
     }
 
@@ -305,6 +308,22 @@ export function LeaderboardVideoLink({
       dispatchAppEvent(EVENT_NAMES.MANUAL_VIDEO_NAVIGATION_REQUEST, {
         videoId: navigationAction.videoId,
       });
+
+      // Fallback for rare listener timing issues: if dispatch did not
+      // result in a URL update, navigate directly so selection is never dropped.
+      if (typeof window !== "undefined") {
+        const selectedVideoId = new URLSearchParams(window.location.search).get("v");
+        if (selectedVideoId !== navigationAction.videoId) {
+          navigateVideoHref({
+            href: videoHref,
+            useNativeHistory: true,
+            routerPush: (href) => {
+              router.push(href, { scroll: false });
+            },
+          });
+        }
+      }
+
       return;
     }
 
@@ -315,11 +334,33 @@ export function LeaderboardVideoLink({
         router.push(href, { scroll: false });
       },
     });
-  }, [router, rowVariant, track.id, videoHref, warmSelection]);
+  }, [router, rowVariant, stagePendingSelection, track.id, triggerClickFlash, videoHref, warmSelection]);
 
   const openVideoFromCard = useCallback(() => {
     navigateToVideo();
   }, [navigateToVideo]);
+
+  const handleNewRowActivation = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    if (event.defaultPrevented) {
+      return;
+    }
+
+    const target = event.target;
+    if (target instanceof Element && target.closest("button, a, input, select, textarea, label")) {
+      return;
+    }
+
+    const isPrimaryButton = event.button === 0 || event.button === undefined;
+    if (!isPrimaryButton || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      if (typeof window !== "undefined") {
+        window.open(videoHref, "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
+
+    event.preventDefault();
+    openVideoFromCard();
+  }, [openVideoFromCard, videoHref]);
 
   const handleOpenParsedArtistPage = useCallback((event: ReactMouseEvent<HTMLSpanElement>) => {
     if (!parsedArtistPagePath) {
@@ -449,11 +490,12 @@ export function LeaderboardVideoLink({
   return (
     <article
       className={`trackCard leaderboardCard top100CardWithPlaylistAction${isSeen ? " top100CardSeen" : ""}${isSeen && rowVariant === "new" ? " top100CardSeenNew" : ""}${isActive ? " top100CardActive" : ""}${isClickFlashing ? " top100CardClickFlash" : ""}${isAuthenticated ? " top100CardCornerActions" : ""}${rowVariant === "new" ? " top100CardNewPersistentActions" : ""}${rowVariant === "default" ? " top100CardAlwaysVisibleControls" : ""}`}
-      role={isNewRow ? undefined : "link"}
-      tabIndex={isNewRow ? undefined : 0}
+      role="link"
+      tabIndex={0}
       aria-label={`Play ${track.title}`}
       onClick={(event) => {
         if (isNewRow) {
+          handleNewRowActivation(event);
           return;
         }
 
@@ -469,15 +511,17 @@ export function LeaderboardVideoLink({
         openVideoFromCard();
       }}
       onKeyDown={(event) => {
-        if (isNewRow) {
-          return;
-        }
-
         if (event.key !== "Enter" && event.key !== " ") {
           return;
         }
 
         event.preventDefault();
+
+        if (isNewRow) {
+          openVideoFromCard();
+          return;
+        }
+
         openVideoFromCard();
       }}
     >
@@ -517,39 +561,7 @@ export function LeaderboardVideoLink({
         <div
           className="linkedCard leaderboardTrackLink"
           data-overlay-capture-skip="true"
-          role="link"
-          tabIndex={0}
           aria-current={isActive ? "true" : undefined}
-          onMouseDown={(event) => {
-            event.preventDefault();
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter" && event.key !== " ") {
-              return;
-            }
-
-            event.preventDefault();
-            event.stopPropagation();
-            navigateToVideo();
-          }}
-          onClick={(event) => {
-            if (event.defaultPrevented) {
-              return;
-            }
-
-            event.preventDefault();
-            event.stopPropagation();
-
-            const isPrimaryButton = event.button === 0 || event.button === undefined;
-            if (!isPrimaryButton || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-              if (typeof window !== "undefined") {
-                window.open(videoHref, "_blank", "noopener,noreferrer");
-              }
-              return;
-            }
-
-            navigateToVideo();
-          }}
         >
           {cardBody}
         </div>
