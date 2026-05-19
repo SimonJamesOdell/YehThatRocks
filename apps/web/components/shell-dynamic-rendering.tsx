@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
-import { memo, useCallback, useEffect, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
+import { useRouter } from "next/navigation";
+import { memo, useCallback, useEffect, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
@@ -9,9 +10,57 @@ import { finitePercentOrNull } from "@/components/shell-dynamic-utils";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchWithAuthRetry as fetchWithAuthRetryClient } from "@/lib/client-auth-fetch";
+import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
+import { getArtistPagePath } from "@/lib/artist-routing";
 
 import { REQUEST_VIDEO_REPLAY_EVENT, EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 export { REQUEST_VIDEO_REPLAY_EVENT };
+
+function inferTrackForWatchNext(title: string, artist: string): string {
+  const trimmedTitle = title.trim();
+  const trimmedArtist = artist.trim();
+  if (!trimmedTitle || !trimmedArtist) return trimmedTitle;
+  const separators = [" - ", " — ", " | "];
+  for (const separator of separators) {
+    const split = trimmedTitle.split(separator).map((part) => part.trim()).filter(Boolean);
+    if (split.length < 2) continue;
+    const [left, right] = split;
+    if (left.toLowerCase() === trimmedArtist.toLowerCase()) return right;
+    if (right.toLowerCase() === trimmedArtist.toLowerCase()) return left;
+  }
+  return trimmedTitle;
+}
+
+const watchNextArtistCountCache = new Map<string, number | null>();
+const watchNextArtistCountInFlight = new Map<string, Promise<number | null>>();
+
+async function fetchWatchNextArtistCount(artistSlug: string, videoId: string): Promise<number | null> {
+  const cacheKey = `${artistSlug}:${videoId}`;
+  if (watchNextArtistCountCache.has(cacheKey)) return watchNextArtistCountCache.get(cacheKey) ?? null;
+  const existing = watchNextArtistCountInFlight.get(cacheKey);
+  if (existing) return existing;
+  const request = (async () => {
+    try {
+      const query = new URLSearchParams();
+      query.set("v", videoId);
+      const response = await fetch(`/api/artists/${encodeURIComponent(artistSlug)}?${query.toString()}`, { cache: "no-store" });
+      if (!response.ok) { watchNextArtistCountCache.set(cacheKey, null); return null; }
+      const payload = await response.json() as { videoCount?: number | null; videos?: Array<{ id?: string }> };
+      const resolvedCount = Number(payload?.videoCount);
+      const fallbackCount = Array.isArray(payload?.videos) ? payload.videos.length : null;
+      const count = Number.isFinite(resolvedCount) ? resolvedCount : fallbackCount;
+      watchNextArtistCountCache.set(cacheKey, count);
+      return count;
+    } catch {
+      watchNextArtistCountCache.set(cacheKey, null);
+      return null;
+    } finally {
+      watchNextArtistCountInFlight.delete(cacheKey);
+    }
+  })();
+  watchNextArtistCountInFlight.set(cacheKey, request);
+  return request;
+}
 
 type SharedVideoPreview = {
   id: string;
@@ -134,12 +183,60 @@ export const WatchNextCard = memo(function WatchNextCard({
   onPrefetch,
   onTrackClick,
 }: WatchNextCardProps) {
+  const router = useRouter();
   const [isCardFavourited, setIsCardFavourited] = useState(isFavourite);
   const [isRemovingFavourite, setIsRemovingFavourite] = useState(false);
+  const [artistVideoCount, setArtistVideoCount] = useState<number | null>(null);
+
+  const rawDisplayTitle = track.title;
+  const parsedArtistCandidate =
+    track.parsedArtist?.trim()
+    || track.channelTitle?.trim()
+    || inferArtistFromTitle(rawDisplayTitle)?.trim()
+    || "";
+  const metadataArtist = parsedArtistCandidate || "Unknown Artist";
+  const parsedTrackCandidate =
+    track.parsedTrack?.trim()
+    || inferTrackForWatchNext(rawDisplayTitle, metadataArtist)
+    || "";
+  const parsedArtistLabel = parsedArtistCandidate.toUpperCase();
+  const parsedArtistPagePath = parsedArtistCandidate ? getArtistPagePath(parsedArtistCandidate) : null;
+  const artistSlug = parsedArtistPagePath?.split("/")[2] ?? null;
+  const artistVideoCountLabel = artistVideoCount === null
+    ? null
+    : `${artistVideoCount.toLocaleString("en-US")} videos`;
 
   useEffect(() => {
     setIsCardFavourited(isFavourite);
   }, [isFavourite, track.id]);
+
+  useEffect(() => {
+    if (!artistSlug) {
+      setArtistVideoCount(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const count = await fetchWatchNextArtistCount(artistSlug, track.id);
+      if (!cancelled) setArtistVideoCount(count);
+    })();
+    return () => { cancelled = true; };
+  }, [artistSlug, track.id]);
+
+  const handleOpenParsedArtistPage = useCallback((event: ReactMouseEvent<HTMLSpanElement>) => {
+    if (!parsedArtistPagePath) return;
+    event.preventDefault();
+    event.stopPropagation();
+    router.push(parsedArtistPagePath);
+  }, [parsedArtistPagePath, router]);
+
+  const handleOpenParsedArtistPageByKeyboard = useCallback((event: ReactKeyboardEvent<HTMLSpanElement>) => {
+    if (!parsedArtistPagePath) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    router.push(parsedArtistPagePath);
+  }, [parsedArtistPagePath, router]);
 
   const handleRemoveFavourite = useCallback(async (event: ReactMouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -241,13 +338,26 @@ export const WatchNextCard = memo(function WatchNextCard({
             {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
           </div>
           <h3>
-            {track.title}
+            {parsedArtistCandidate && parsedTrackCandidate ? (
+              <>
+                <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
+                  <span
+                    role={parsedArtistPagePath ? "link" : undefined}
+                    tabIndex={parsedArtistPagePath ? 0 : undefined}
+                    onClick={handleOpenParsedArtistPage}
+                    onKeyDown={handleOpenParsedArtistPageByKeyboard}
+                  >
+                    {parsedArtistLabel}
+                  </span>
+                </ArtistWikiLink>
+                <span aria-hidden="true"> - </span>
+                <span>{parsedTrackCandidate}</span>
+              </>
+            ) : track.title}
           </h3>
-          <p>
-            <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
-              {track.channelTitle}
-            </ArtistWikiLink>
-          </p>
+          {artistVideoCountLabel ? (
+            <p className="leaderboardArtistVideoCount">{artistVideoCountLabel}</p>
+          ) : null}
         </div>
       </Link>
       {isAuthenticated ? (
@@ -295,6 +405,8 @@ export const WatchNextCard = memo(function WatchNextCard({
   return prev.track.id === next.track.id
     && prev.track.title === next.track.title
     && prev.track.channelTitle === next.track.channelTitle
+    && prev.track.parsedArtist === next.track.parsedArtist
+    && prev.track.parsedTrack === next.track.parsedTrack
     && prev.track.sourceLabel === next.track.sourceLabel
     && prev.track.isFavouriteSource === next.track.isFavouriteSource
     && prev.track.isTop100Source === next.track.isTop100Source

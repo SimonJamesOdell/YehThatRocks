@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { applyCatalogReviewQueueCountDelta } from "@/lib/admin-catalog-review-count";
+import { getCatalogReviewQueueCount } from "@/lib/admin-catalog-review-count";
 import { ensureCatalogReviewQueueReady } from "@/lib/admin-catalog-review-queue";
 import { withAuthAndBody } from "@/lib/api-route-pipeline";
 import { clearCatalogVideoCaches, clearIngestionCachesForVideo, importVideoFromDirectSource } from "@/lib/catalog-data";
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       `INSERT INTO admin_catalog_review_queue (video_id, enqueued_at) VALUES (?, NOW())`,
       videoId,
     );
-    const remaining = await applyCatalogReviewQueueCountDelta(1);
+    const remaining = await getCatalogReviewQueueCount({ forceRefresh: true });
 
     return NextResponse.json({
       ok: true,
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
 
   clearCatalogVideoCaches();
 
-  const remaining = await applyCatalogReviewQueueCountDelta(queueInsert > 0 ? 1 : 0);
+  const remaining = await getCatalogReviewQueueCount({ forceRefresh: true });
 
   return NextResponse.json({
     ok: true,

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { mapAdminPruneResultToDeleteResponse } from "@/lib/admin-prune-delete-response";
-import { applyCatalogReviewQueueCountDelta, getCatalogReviewQueueCount } from "@/lib/admin-catalog-review-count";
+import { getCatalogReviewQueueCount } from "@/lib/admin-catalog-review-count";
 import { fetchCatalogReviewCurrentVideo } from "@/lib/admin-catalog-review-current-video";
 import { ensureCatalogReviewQueueReady } from "@/lib/admin-catalog-review-queue";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
   await ensureCatalogReviewQueueReady();
 
-  const remaining = await getCatalogReviewQueueCount();
+  const remaining = await getCatalogReviewQueueCount({ forceRefresh: true });
   const currentVideo = await fetchCatalogReviewCurrentVideo();
 
   // If the count is positive but no valid video is surfaceable, the queue
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Video is not in the catalog review queue" }, { status: 404 });
     }
 
-    const remaining = await applyCatalogReviewQueueCountDelta(queueDelete > 0 ? -1 : 0);
+    const remaining = await getCatalogReviewQueueCount({ forceRefresh: true });
 
     return NextResponse.json({
       ok: true,
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
 
   clearCurrentVideoRouteCaches();
 
-  const remaining = await applyCatalogReviewQueueCountDelta(queueDelete > 0 ? -1 : 0);
+  const remaining = await getCatalogReviewQueueCount({ forceRefresh: true });
 
   return NextResponse.json({
     ok: true,
