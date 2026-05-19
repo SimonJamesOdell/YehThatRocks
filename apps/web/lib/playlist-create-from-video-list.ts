@@ -1,7 +1,12 @@
 import type { useRouter } from "next/navigation";
 
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
-import { addPlaylistItemsClient, createPlaylistClient, type PlaylistMutationPayload } from "@/lib/playlist-client-service";
+import {
+  addPlaylistItemClient,
+  addPlaylistItemsClient,
+  createPlaylistClient,
+  type PlaylistMutationPayload,
+} from "@/lib/playlist-client-service";
 
 type RouterInstance = ReturnType<typeof useRouter>;
 
@@ -198,60 +203,97 @@ export async function createPlaylistFromVideoList<TVideo extends PlaylistVideoLi
       });
     }
 
-    void addPlaylistItemsClient(
-      { playlistId: createdPlaylistId, videoIds },
-      { telemetryContext: { component: telemetryComponent } },
-    )
-      .then((addAllResponse) => {
-        if (!addAllResponse.ok) {
+    void (async () => {
+      let addAllResponse = await addPlaylistItemsClient(
+        { playlistId: createdPlaylistId, videoIds },
+        { telemetryContext: { component: telemetryComponent } },
+      );
+
+      const addAllPayload = addAllResponse.ok
+        ? (addAllResponse.data as PlaylistMutationPayload | undefined)
+        : undefined;
+      const addAllLikelyNoOp = addAllResponse.ok
+        && Array.isArray(addAllPayload?.videos)
+        && addAllPayload.videos.length === 0
+        && videoIds.length > 0;
+
+      if (!addAllResponse.ok || addAllLikelyNoOp) {
+        let lastSuccessfulPayload: PlaylistMutationPayload | undefined;
+        let hadItemFailure = false;
+
+        for (const videoId of videoIds) {
+          const itemResponse = await addPlaylistItemClient(
+            { playlistId: createdPlaylistId, videoId },
+            { telemetryContext: { component: `${telemetryComponent}:single-item-fallback` } },
+          );
+
+          if (!itemResponse.ok) {
+            hadItemFailure = true;
+            continue;
+          }
+
+          lastSuccessfulPayload = itemResponse.data as PlaylistMutationPayload | undefined;
+        }
+
+        if (!lastSuccessfulPayload) {
           setStatus(addPartiallyFailedMessage);
           dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
           return;
         }
 
-        const updatedPlaylist = addAllResponse.data as PlaylistMutationPayload | undefined;
-        const finalVideos = Array.isArray(updatedPlaylist?.videos) ? updatedPlaylist.videos : sourceVideos;
-        const finalName = updatedPlaylist?.name ?? playlistName;
-        const finalItemCount = updatedPlaylist?.itemCount ?? finalVideos.length;
-
-        let shouldDispatchFinalSync = true;
-        if (optimisticMode.kind === "staggered" && optimisticMode.reconcileOnlyWhenChanged) {
-          const optimisticIds = sourceVideos.map((video) => video.id).join(",");
-          const serverIds = finalVideos.map((video) => video.id).join(",");
-          shouldDispatchFinalSync = serverIds !== optimisticIds || finalName !== playlistName;
+        if (hadItemFailure) {
+          setStatus(addPartiallyFailedMessage);
         }
 
-        if (shouldDispatchFinalSync) {
-          const syncDelayMs = optimisticMode.kind === "staggered" ? animationDoneMs : 0;
-          window.setTimeout(() => {
-            dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
-              playlist: {
-                id: createdPlaylistId,
-                name: finalName,
-                videos: finalVideos,
-                itemCount: finalItemCount,
-              },
-            });
-          }, syncDelayMs);
-        }
+        addAllResponse = {
+          ok: true,
+          status: 201,
+          data: lastSuccessfulPayload,
+        } as const;
+      }
 
-        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
+      const updatedPlaylist = addAllResponse.data as PlaylistMutationPayload | undefined;
+      const finalVideos = Array.isArray(updatedPlaylist?.videos) ? updatedPlaylist.videos : sourceVideos;
+      const finalName = updatedPlaylist?.name ?? playlistName;
+      const finalItemCount = updatedPlaylist?.itemCount ?? finalVideos.length;
 
-        if (onBuildSuccessMessage) {
-          const message = onBuildSuccessMessage({
-            playlistName: finalName,
-            addedCount: finalVideos.length,
-            requestedCount: videoIds.length,
+      let shouldDispatchFinalSync = true;
+      if (optimisticMode.kind === "staggered" && optimisticMode.reconcileOnlyWhenChanged) {
+        const optimisticIds = sourceVideos.map((video) => video.id).join(",");
+        const serverIds = finalVideos.map((video) => video.id).join(",");
+        shouldDispatchFinalSync = serverIds !== optimisticIds || finalName !== playlistName;
+      }
+
+      if (shouldDispatchFinalSync) {
+        const syncDelayMs = optimisticMode.kind === "staggered" ? animationDoneMs : 0;
+        window.setTimeout(() => {
+          dispatchAppEvent(EVENT_NAMES.PLAYLIST_RAIL_SYNC, {
+            playlist: {
+              id: createdPlaylistId,
+              name: finalName,
+              videos: finalVideos,
+              itemCount: finalItemCount,
+            },
           });
-          if (message) {
-            setStatus(message);
-          }
+        }, syncDelayMs);
+      }
+
+      dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
+
+      if (onBuildSuccessMessage) {
+        const message = onBuildSuccessMessage({
+          playlistName: finalName,
+          addedCount: finalVideos.length,
+          requestedCount: videoIds.length,
+        });
+        if (message) {
+          setStatus(message);
         }
-      })
-      .catch(() => {
-        setStatus(addFailedMessage);
-        dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
-      });
+      }
+    })().catch(() => {
+      setStatus(addFailedMessage);
+      dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null);
+    });
   } catch {
     if (dispatchCreationProgressDone && createdPlaylistIdForProgress) {
       dispatchAppEvent(EVENT_NAMES.PLAYLIST_CREATION_PROGRESS, {
