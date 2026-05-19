@@ -70,19 +70,10 @@ export async function getCatalogReviewQueueCount(options?: { forceRefresh?: bool
 }
 
 export async function applyCatalogReviewQueueCountDelta(delta: number): Promise<number> {
-  const normalizedDelta = Number.isFinite(delta) ? Math.trunc(delta) : 0;
-
-  if (!queueCountCache) {
-    return getCatalogReviewQueueCount({ forceRefresh: true });
-  }
-
-  const nextValue = Math.max(0, queueCountCache.value + normalizedDelta);
-  queueCountCache = {
-    value: nextValue,
-    expiresAt: Date.now() + CATALOG_REVIEW_QUEUE_COUNT_TTL_MS,
-  };
-
-  return nextValue;
+  void delta;
+  // Always reconcile with the database so UI counters cannot drift from truth.
+  // Keeping this function preserves API compatibility with any older call sites.
+  return getCatalogReviewQueueCount({ forceRefresh: true });
 }
 
 export function clearCatalogReviewQueueCountCache() {

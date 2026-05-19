@@ -1,0 +1,215 @@
+
+> verify:invariants
+> npm run verify:compile && npm run verify:ui-regressions
+
+
+> verify:compile
+> npm run build
+
+
+> build
+> turbo build
+
+
+   ÔÇó Packages in scope: @yeh/api-client, @yeh/config, @yeh/core, @yeh/schemas, @yeh/ui, web
+   ÔÇó Running build in 6 packages
+   ÔÇó Remote caching disabled
+
+web:build: cache hit, replaying logs 48a617e7d9551d69
+web:build: 
+web:build: > build
+web:build: > next build
+web:build: 
+web:build: Ôû▓ Next.js 16.2.6 (Turbopack)
+web:build: - Environments: .env.local
+web:build: - Experiments (use with caution):
+web:build:   ┬À optimizePackageImports
+web:build:   Ô¿» turbopackFileSystemCacheForDev
+web:build: 
+web:build:   Creating an optimized production build ...
+web:build: Ô£ô Compiled successfully in 6.4s
+web:build:   Running TypeScript ...
+web:build:   Finished TypeScript in 17.4s ...
+web:build:   Collecting page data using 15 workers ...
+web:build:   Generating static pages using 15 workers (0/127) ...
+web:build:   Generating static pages using 15 workers (31/127) 
+web:build:   Generating static pages using 15 workers (63/127) 
+web:build:   Generating static pages using 15 workers (95/127) 
+web:build: Ô£ô Generating static pages using 15 workers (127/127) in 604ms
+web:build:   Finalizing page optimization ...
+web:build: 
+web:build: Route (app)                                         Revalidate  Expire
+web:build: Ôöî ãÆ /
+web:build: Ôö£ Ôùï /_not-found
+web:build: Ôö£ ãÆ /account
+web:build: Ôö£ ãÆ /admin
+web:build: Ôö£ ãÆ /admin/magazine/[slug]
+web:build: Ôö£ ãÆ /api/admin/categories
+web:build: Ôö£ ãÆ /api/admin/dashboard
+web:build: Ôö£ ãÆ /api/admin/dashboard/health
+web:build: Ôö£ ãÆ /api/admin/dashboard/stream
+web:build: Ôö£ ãÆ /api/admin/magazine
+web:build: Ôö£ ãÆ /api/admin/magazine/[slug]
+web:build: Ôö£ ãÆ /api/admin/magazine/comments
+web:build: Ôö£ ãÆ /api/admin/magazine/comments/moderate
+web:build: Ôö£ ãÆ /api/admin/magazine/generate
+web:build: Ôö£ ãÆ /api/admin/performance-samples
+web:build: Ôö£ ãÆ /api/admin/sitemap/revalidate
+web:build: Ôö£ ãÆ /api/admin/videos
+web:build: Ôö£ ãÆ /api/admin/videos/catalog-review
+web:build: Ôö£ ãÆ /api/admin/videos/catalog-review-undo
+web:build: Ôö£ ãÆ /api/admin/videos/import
+web:build: Ôö£ ãÆ /api/admin/videos/pending
+web:build: Ôö£ ãÆ /api/admin/videos/recently-approved
+web:build: Ôö£ ãÆ /api/admin/videos/refetch-data
+web:build: Ôö£ ãÆ /api/admin/videos/refetch-date
+web:build: Ôö£ ãÆ /api/admin/videos/retry-suggest-ingest
+web:build: Ôö£ ãÆ /api/analytics
+web:build: Ôö£ ãÆ /api/artists
+web:build: Ôö£ ãÆ /api/artists/[slug]
+web:build: Ôö£ ãÆ /api/artists/prefetch
+web:build: Ôö£ ãÆ /api/artists/thumbnail
+web:build: Ôö£ ãÆ /api/auth/anonymous
+web:build: Ôö£ ãÆ /api/auth/change-password
+web:build: Ôö£ ãÆ /api/auth/forgot-password
+web:build: Ôö£ ãÆ /api/auth/login
+web:build: Ôö£ ãÆ /api/auth/logout
+web:build: Ôö£ ãÆ /api/auth/me
+web:build: Ôö£ ãÆ /api/auth/profile
+web:build: Ôö£ ãÆ /api/auth/profile/avatar
+web:build: Ôö£ ãÆ /api/auth/refresh
+web:build: Ôö£ ãÆ /api/auth/register
+web:build: Ôö£ ãÆ /api/auth/reset-password
+web:build: Ôö£ ãÆ /api/auth/send-verification
+web:build: Ôö£ ãÆ /api/auth/silent-refresh
+web:build: Ôö£ ãÆ /api/auth/upgrade-to-email
+web:build: Ôö£ ãÆ /api/auth/verify-email
+web:build: Ôö£ ãÆ /api/categories
+web:build: Ôö£ ãÆ /api/categories/[slug]
+web:build: Ôö£ ãÆ /api/chat
+web:build: Ôö£ ãÆ /api/chat/stream
+web:build: Ôö£ ãÆ /api/cron/magazine-daily
+web:build: Ôö£ ãÆ /api/cron/related-backfill
+web:build: Ôö£ ãÆ /api/current-video
+web:build: Ôö£ ãÆ /api/favourites
+web:build: Ôö£ ãÆ /api/hidden-videos
+web:build: Ôö£ ãÆ /api/lyrics
+web:build: Ôö£ ãÆ /api/magazine/[slug]/comments
+web:build: Ôö£ ãÆ /api/magazine/landing
+web:build: Ôö£ ãÆ /api/magazine/latest
+web:build: Ôö£ ãÆ /api/player-preferences
+web:build: Ôö£ ãÆ /api/playlists
+web:build: Ôö£ ãÆ /api/playlists/[id]
+web:build: Ôö£ ãÆ /api/playlists/[id]/items
+web:build: Ôö£ ãÆ /api/playlists/import
+web:build: Ôö£ ãÆ /api/search
+web:build: Ôö£ ãÆ /api/search-flags
+web:build: Ôö£ ãÆ /api/search/suggest
+web:build: Ôö£ ãÆ /api/seen-toggle-preferences
+web:build: Ôö£ ãÆ /api/status
+web:build: Ôö£ ãÆ /api/status/performance
+web:build: Ôö£ ãÆ /api/users/[screenName]/playlists/[playlistId]
+web:build: Ôö£ ãÆ /api/videos/flags
+web:build: Ôö£ ãÆ /api/videos/newest
+web:build: Ôö£ ãÆ /api/videos/share-preview
+web:build: Ôö£ ãÆ /api/videos/suggest
+web:build: Ôö£ ãÆ /api/videos/top
+web:build: Ôö£ ãÆ /api/videos/top/random
+web:build: Ôö£ ãÆ /api/videos/unavailable
+web:build: Ôö£ ãÆ /api/watch-history
+web:build: Ôö£ ãÆ /artist/[slug]
+web:build: Ôö£ ãÆ /artist/[slug]/wiki
+web:build: Ôö£ ãÆ /artists
+web:build: Ôö£ ãÆ /artists/[slug]
+web:build: Ôö£ ãÆ /categories
+web:build: Ôö£ ãÆ /categories/[slug]
+web:build: Ôö£ Ôùï /desktop-only
+web:build: Ôö£ ãÆ /embed/[videoId]
+web:build: Ôö£ ãÆ /favourites
+web:build: Ôö£ ãÆ /forgot-password
+web:build: Ôö£ ãÆ /forum
+web:build: Ôö£ ãÆ /history
+web:build: Ôö£ ãÆ /login
+web:build: Ôö£ ãÆ /magazine
+web:build: Ôö£ ãÆ /magazine/[slug]
+web:build: Ôö£ ãÆ /new
+web:build: Ôö£ ãÆ /playlists
+web:build: Ôö£ ãÆ /playlists/[id]
+web:build: Ôö£ ãÆ /register
+web:build: Ôö£ ãÆ /reset-password
+web:build: Ôö£ Ôùï /robots.txt
+web:build: Ôö£ ãÆ /s/[videoId]
+web:build: Ôö£ ãÆ /search
+web:build: Ôö£ ãÆ /share/[videoId]
+web:build: Ôö£ ÔùÅ /sitemap/[__metadata_id__]                              1d      1y
+web:build: Ôöé Ôö£ /sitemap/0.xml                                          1d      1y
+web:build: Ôöé Ôö£ /sitemap/1.xml                                          1d      1y
+web:build: Ôöé Ôö£ /sitemap/2.xml                                          1d      1y
+web:build: Ôöé Ôöö [+2 more paths]
+web:build: Ôö£ ãÆ /top100
+web:build: Ôö£ ãÆ /u/[screenName]
+web:build: Ôöö ãÆ /verify-email
+web:build: 
+web:build: 
+web:build: ãÆ Proxy (Middleware)
+web:build: 
+web:build: Ôùï  (Static)   prerendered as static content
+web:build: ÔùÅ  (SSG)      prerendered as static HTML (uses generateStaticParams)
+web:build: ãÆ  (Dynamic)  server-rendered on demand
+web:build: 
+
+ Tasks:    1 successful, 1 total
+Cached:    1 cached, 1 total
+  Time:    298ms >>> FULL TURBO
+
+
+> verify:ui-regressions
+> npm run verify:artists-ui && npm run verify:top100-ui && npm run verify:playlists-ui && npm run verify:core-experience && npm run verify:player-core && npm run verify:overlay-routing && npm run verify:new-videos && npm run verify:categories && npm run verify:thumbnail-preflight && npm run verify:auth && npm run verify:admin && npm run verify:favourites && npm run verify:history-ui && npm run verify:watch-next-and-new && npm run verify:hidden-videos && npm run verify:search && npm run verify:classification && npm run verify:no-seed-fallbacks && npm run verify:delivery-cache && npm run verify:budget-guardrails && npm run verify:queue-behavior && npm run verify:magazine && npm run verify:magazine-comments && npm run verify:shell-decomposition && npm run verify:shared-utils
+
+
+> verify:artists-ui
+> node scripts/verify-artists-ui-invariants.js
+
+Artists UI invariant check passed.
+
+> verify:top100-ui
+> node scripts/verify-top100-ui-invariants.js
+
+Top 100 UI invariant check passed.
+
+> verify:playlists-ui
+> node scripts/verify-playlists-ui-invariants.js
+
+Playlist UI invariant check passed.
+
+> verify:core-experience
+> node scripts/verify-core-experience-invariants.js
+
+Core experience invariant check passed.
+
+> verify:player-core
+> node scripts/verify-player-core-invariants.js
+
+Player core invariant check passed.
+
+> verify:overlay-routing
+> node scripts/verify-overlay-routing-invariants.js
+
+Overlay routing invariant check passed.
+
+> verify:new-videos
+> node scripts/verify-new-videos-invariants.js
+
+New videos invariant check passed.
+
+> verify:categories
+> node scripts/verify-categories-invariants.js
+
+Categories invariant audit
+
+genres=47 genre_cards=37 with_thumb=37 coverage=100.00%
+
+[ok] No duplicate genres in genre_cards
+[ok] All thumbnail_video_id values use valid YouTube ID format
+[ok] genre_cards rows are strictly rock/metal scoped
+[ok] Thumbnail coverage meets threshold

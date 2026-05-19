@@ -917,18 +917,20 @@ export async function getArtistVideoPoolByNormalizedName(normalizedArtist: strin
       videoId: string;
       title: string;
       channelTitle: string | null;
+      parsedArtist: string | null;
+      parsedTrack: string | null;
       favourited: number | null;
       description: string | null;
     }>>(
       `
-        SELECT v.id, v.videoId, v.title, COALESCE(v.parsedArtist, NULL) AS channelTitle, v.favourited, v.description
+        SELECT v.id, v.videoId, v.title, COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle, NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist, NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack, v.favourited, v.description
         FROM videos v
         WHERE v.id IN (${placeholders})
       `,
       ...rankedIds,
     );
 
-    const detailById = new Map(details.map((row: { id: number; videoId: string; title: string; channelTitle: string | null; favourited: number | null; description: string | null }) => [row.id, row]));
+    const detailById = new Map(details.map((row: { id: number; videoId: string; title: string; channelTitle: string | null; parsedArtist: string | null; parsedTrack: string | null; favourited: number | null; description: string | null }) => [row.id, row]));
     const rows = rankedRows
       .map((ranked: { id: number; videoId: string }) => detailById.get(ranked.id))
       .filter((row: any): row is NonNullable<typeof row> => Boolean(row))
@@ -936,6 +938,8 @@ export async function getArtistVideoPoolByNormalizedName(normalizedArtist: strin
         videoId: row.videoId,
         title: row.title,
         channelTitle: row.channelTitle,
+        parsedArtist: row.parsedArtist ?? null,
+        parsedTrack: row.parsedTrack ?? null,
         favourited: Number(row.favourited ?? 0),
         description: row.description,
       }));
@@ -1059,7 +1063,7 @@ export async function getSameGenreRelatedPoolByArtist(normalizedArtist: string, 
     const rows = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
       `
         SELECT /*+ MAX_EXECUTION_TIME(800) */
-          v.videoId, v.title, COALESCE(v.parsedArtist, NULL) AS channelTitle, v.favourited, v.description
+          v.videoId, v.title, COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle, NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist, NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack, v.favourited, v.description
         FROM videos v
         WHERE v.videoId IS NOT NULL
           AND COALESCE(v.approved, 0) = 1

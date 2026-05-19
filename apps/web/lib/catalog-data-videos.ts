@@ -446,7 +446,9 @@ async function getRelatedBaseRows(params: {
         SELECT
           v.videoId,
           v.title,
-          COALESCE(v.parsedArtist, NULL) AS channelTitle,
+          COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
+          NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
+          NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
           v.favourited,
           v.description
         FROM related r
@@ -455,7 +457,7 @@ async function getRelatedBaseRows(params: {
         WHERE r.videoId = ?
           AND v.videoId IS NOT NULL
           AND COALESCE(v.approved, 0) = 1
-        GROUP BY v.videoId, v.title, v.parsedArtist, v.favourited, v.description
+        GROUP BY v.videoId, v.title, v.parsedArtist, v.parsedTrack, v.channelTitle, v.favourited, v.description
         ORDER BY v.favourited DESC, MAX(COALESCE(v.viewCount, 0)) DESC, v.videoId ASC
         LIMIT 36
       `, normalizedVideoId);

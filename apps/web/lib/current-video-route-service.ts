@@ -109,6 +109,8 @@ export async function fetchRandomCatalogVideosForCurrentVideo(params: {
       v.videoId AS id,
       v.title AS title,
       COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
+      NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
+      NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
       COALESCE(v.favourited, 0) AS favourited,
       v.description AS description
     FROM videos v
@@ -120,6 +122,8 @@ export async function fetchRandomCatalogVideosForCurrentVideo(params: {
     id: string;
     title: string;
     channelTitle: string | null;
+    parsedArtist: string | null;
+    parsedTrack: string | null;
     favourited: number | null;
     description: string | null;
   };
@@ -166,6 +170,8 @@ export async function fetchRandomCatalogVideosForCurrentVideo(params: {
       id: row.id,
       title: row.title,
       channelTitle: resolvedArtist,
+      parsedArtist: row.parsedArtist ?? null,
+      parsedTrack: row.parsedTrack ?? null,
       genre: "",
       favourited: Number(row.favourited ?? 0),
       description: row.description ?? "",
