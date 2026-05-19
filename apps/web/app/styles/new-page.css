@@ -54,6 +54,7 @@
 
 .newPageTrackStack {
   overflow-anchor: none;
+  min-height: clamp(360px, 58dvh, 760px);
 }
 
 .newPageGenreFilterGroup {
@@ -70,14 +71,14 @@
 }
 
 .newPageGenreFilterPanel {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 18px;
-  right: 18px;
-  z-index: 45;
+  position: fixed;
+  top: 132px;
+  left: 28px;
+  right: 28px;
+  z-index: 140;
   width: auto;
-  min-height: 210px;
-  max-height: 55vh;
+  min-height: 320px;
+  max-height: calc(100dvh - 164px);
   overflow: auto;
   border: 1px solid rgba(180, 40, 40, 0.45);
   border-radius: 10px;
@@ -110,13 +111,38 @@
 .newPageGenreFilterOption {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
   padding: 6px 8px;
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.03);
 }
 
+.newPageGenreFilterOption span {
+  order: 1;
+}
+
+.newPageGenreFilterOption input {
+  order: 2;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
 @media (max-width: 980px) {
+  .newPageTrackStack {
+    min-height: clamp(280px, 52dvh, 620px);
+  }
+
+  .newPageGenreFilterPanel {
+    top: 118px;
+    left: 16px;
+    right: 16px;
+    min-height: 260px;
+    max-height: calc(100dvh - 146px);
+  }
+
   .newPageGenreFilterOptions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

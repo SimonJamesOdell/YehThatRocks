@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
@@ -150,6 +151,8 @@ export function NewVideosLoader({
   const [isCreatingPlaylistFromNew, setIsCreatingPlaylistFromNew] = useState(false);
   const [isGenreMenuOpen, setIsGenreMenuOpen] = useState(false);
   const genreFilterGroupRef = useRef<HTMLDivElement | null>(null);
+  const genreFilterPanelRef = useRef<HTMLDivElement | null>(null);
+  const [genrePanelStyle, setGenrePanelStyle] = useState<CSSProperties | undefined>(undefined);
   const suspendPrefetchUntilRef = useRef(0);
   const [genreFacets, setGenreFacets] = useState<NewVideoFacet[]>(() => cachedNewVideoFacets);
   const [facetLoadError, setFacetLoadError] = useState<string | null>(null);
@@ -353,6 +356,10 @@ export function NewVideosLoader({
         return;
       }
 
+      if (genreFilterPanelRef.current?.contains(target)) {
+        return;
+      }
+
       setIsGenreMenuOpen(false);
     };
 
@@ -370,6 +377,61 @@ export function NewVideosLoader({
       window.removeEventListener("keydown", handleEscape);
     };
   }, [isGenreMenuOpen]);
+
+  const syncGenrePanelLayout = useCallback(() => {
+    if (!isGenreMenuOpen) {
+      return;
+    }
+
+    const triggerRoot = genreFilterGroupRef.current;
+    if (!triggerRoot) {
+      return;
+    }
+
+    const overlayRoot = triggerRoot.closest(".favouritesBlind") as HTMLElement | null;
+    const triggerRect = triggerRoot.getBoundingClientRect();
+    const containerRect = overlayRoot?.getBoundingClientRect();
+    const containerHorizontalPadding = 18;
+
+    if (!containerRect) {
+      setGenrePanelStyle({
+        top: `${Math.round(triggerRect.bottom + 8)}px`,
+        left: "28px",
+        right: "28px",
+      });
+      return;
+    }
+
+    const left = Math.max(8, Math.round(containerRect.left + containerHorizontalPadding));
+    const right = Math.max(8, Math.round(window.innerWidth - (containerRect.right - containerHorizontalPadding)));
+    const top = Math.max(72, Math.round(triggerRect.bottom + 8));
+
+    setGenrePanelStyle({
+      top: `${top}px`,
+      left: `${left}px`,
+      right: `${right}px`,
+    });
+  }, [isGenreMenuOpen]);
+
+  useEffect(() => {
+    if (!isGenreMenuOpen) {
+      return;
+    }
+
+    syncGenrePanelLayout();
+
+    const handleWindowChange = () => {
+      syncGenrePanelLayout();
+    };
+
+    window.addEventListener("resize", handleWindowChange);
+    window.addEventListener("scroll", handleWindowChange, true);
+
+    return () => {
+      window.removeEventListener("resize", handleWindowChange);
+      window.removeEventListener("scroll", handleWindowChange, true);
+    };
+  }, [isGenreMenuOpen, syncGenrePanelLayout]);
 
   useEffect(() => {
     setClientSeenVideoIds(new Set(seenVideoIds));
@@ -555,6 +617,50 @@ export function NewVideosLoader({
     }
   };
 
+  const genreFilterPanel = isGenreMenuOpen ? (
+    <div
+      id="new-genre-filter-panel"
+      className="newPageGenreFilterPanel"
+      role="dialog"
+      aria-label="Filter New videos by genre"
+      ref={genreFilterPanelRef}
+      style={genrePanelStyle}
+    >
+      <div className="newPageGenreFilterPanelHeader">
+        <strong>Filter Genres</strong>
+        <div className="newPageGenreFilterPanelActions">
+          <button type="button" className="newPageSeenToggle" onClick={clearGenreSelection}>
+            Clear
+          </button>
+          <button type="button" className="newPageSeenToggle" onClick={() => setIsGenreMenuOpen(false)}>
+            Close
+          </button>
+        </div>
+      </div>
+      {facetLoadError ? <p className="routeMessage routeMessageError">{facetLoadError}</p> : null}
+      {!facetLoadError && actionableGenreFacets.length === 0 ? (
+        <p className="routeMessage">No genre facets available yet.</p>
+      ) : (
+        <div className="newPageGenreFilterOptions">
+          {actionableGenreFacets.map((facet) => {
+            const normalized = facet.genre.trim().toLowerCase();
+            const isSelected = selectedGenres.includes(normalized);
+            return (
+              <label key={facet.genre} className="newPageGenreFilterOption">
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleGenreSelection(facet.genre)}
+                />
+                <span>{facet.genre}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
     <>
       <OverlayScrollReset />
@@ -596,42 +702,9 @@ export function NewVideosLoader({
             >
               {selectedGenres.length > 0 ? `Genres: ${selectedGenres.length} selected` : "Genres: All"}
             </button>
-            {isGenreMenuOpen ? (
-              <div id="new-genre-filter-panel" className="newPageGenreFilterPanel" role="dialog" aria-label="Filter New videos by genre">
-                <div className="newPageGenreFilterPanelHeader">
-                  <strong>Filter Genres</strong>
-                  <div className="newPageGenreFilterPanelActions">
-                    <button type="button" className="newPageSeenToggle" onClick={clearGenreSelection}>
-                      Clear
-                    </button>
-                    <button type="button" className="newPageSeenToggle" onClick={() => setIsGenreMenuOpen(false)}>
-                      Close
-                    </button>
-                  </div>
-                </div>
-                {facetLoadError ? <p className="routeMessage routeMessageError">{facetLoadError}</p> : null}
-                {!facetLoadError && actionableGenreFacets.length === 0 ? (
-                  <p className="routeMessage">No genre facets available yet.</p>
-                ) : (
-                  <div className="newPageGenreFilterOptions">
-                    {actionableGenreFacets.map((facet) => {
-                      const normalized = facet.genre.trim().toLowerCase();
-                      const isSelected = selectedGenres.includes(normalized);
-                      return (
-                        <label key={facet.genre} className="newPageGenreFilterOption">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleGenreSelection(facet.genre)}
-                          />
-                          <span>{facet.genre}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : null}
+            {isGenreMenuOpen && typeof document !== "undefined" && genreFilterPanel
+              ? createPortal(genreFilterPanel, document.body)
+              : genreFilterPanel}
           </div>
         </div>
         <CloseLink />
