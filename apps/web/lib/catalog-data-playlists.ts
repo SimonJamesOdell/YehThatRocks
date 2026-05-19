@@ -440,6 +440,7 @@ export async function createPlaylist(name: string, videoIds: string[] = [], user
     const now = new Date();
 
     let inserted = false;
+    let ownerColumnUsed: "userId" | "user_id" | null = null;
 
     try {
       await prisma.$executeRaw`
@@ -447,6 +448,7 @@ export async function createPlaylist(name: string, videoIds: string[] = [], user
         VALUES (${userId}, ${name}, ${now}, ${now})
       `;
       inserted = true;
+      ownerColumnUsed = "userId";
     } catch {
       // no-op, try alternative shape
     }
@@ -458,6 +460,7 @@ export async function createPlaylist(name: string, videoIds: string[] = [], user
           VALUES (${userId}, ${name}, ${false})
         `;
         inserted = true;
+        ownerColumnUsed = "user_id";
       } catch {
         // no-op, handled by final throw below
       }
@@ -467,14 +470,27 @@ export async function createPlaylist(name: string, videoIds: string[] = [], user
       throw new Error("Playlist insert failed for known playlistnames schemas.");
     }
 
-    const insertedIdRows = await prisma.$queryRaw<Array<{ id: number | bigint }>>`
-      SELECT LAST_INSERT_ID() AS id
-    `;
+    // Avoid LAST_INSERT_ID() here because pooled connections can return an ID
+    // from a different session. Resolve the newest matching playlist instead.
+    const insertedIdRows = ownerColumnUsed === "userId"
+      ? await prisma.$queryRaw<Array<{ id: number | bigint }>>`
+          SELECT id
+          FROM playlistnames
+          WHERE userId = ${userId} AND name = ${name}
+          ORDER BY id DESC
+          LIMIT 1
+        `
+      : await prisma.$queryRaw<Array<{ id: number | bigint }>>`
+          SELECT id
+          FROM playlistnames
+          WHERE user_id = ${userId} AND name = ${name}
+          ORDER BY id DESC
+          LIMIT 1
+        `;
     const createdId = insertedIdRows[0]?.id;
-    const playlistId =
-      typeof createdId === "bigint" ? Number(createdId) : createdId;
+    const playlistId = typeof createdId === "bigint" ? Number(createdId) : Number(createdId ?? NaN);
 
-    if (!playlistId) {
+    if (!Number.isInteger(playlistId)) {
       throw new Error("Playlist inserted but id could not be resolved.");
     }
 
