@@ -63,6 +63,7 @@ let hasCheckedVideoMetadataColumns = false;
 let videoMetadataColumnsAvailable = false;
 let hasCheckedVideoChannelTitleColumn = false;
 let videoChannelTitleColumnAvailable = false;
+let ensureVideoGenreColumnInFlight: Promise<boolean> | null = null;
 
 let parsedArtistNormIndexAvailableCache: boolean | undefined;
 
@@ -350,6 +351,35 @@ export async function hasVideoGenreColumn(): Promise<boolean> {
   }
 
   return videoGenreColumnAvailableCache;
+}
+
+export async function ensureVideoGenreColumnAvailable(): Promise<boolean> {
+  const alreadyAvailable = await hasVideoGenreColumn();
+  if (alreadyAvailable) {
+    return true;
+  }
+
+  if (ensureVideoGenreColumnInFlight) {
+    return ensureVideoGenreColumnInFlight;
+  }
+
+  ensureVideoGenreColumnInFlight = (async () => {
+    try {
+      await prisma.$executeRawUnsafe(
+        "ALTER TABLE videos ADD COLUMN genre VARCHAR(255) NULL",
+      );
+      videoGenreColumnAvailableCache = true;
+    } catch {
+      // Ignore if migration races with another process or schema is immutable.
+      videoGenreColumnAvailableCache = await hasVideoGenreColumn();
+    } finally {
+      ensureVideoGenreColumnInFlight = null;
+    }
+
+    return videoGenreColumnAvailableCache === true;
+  })();
+
+  return ensureVideoGenreColumnInFlight;
 }
 
 export function resetVideoTitleFulltextIndexCache() {

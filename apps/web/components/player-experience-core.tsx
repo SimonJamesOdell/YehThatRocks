@@ -2392,6 +2392,23 @@ export function PlayerExperience({
     return () => unsubscribe();
   }, [showEndedChoiceOverlay]);
 
+  useEffect(() => {
+    function handleManualVideoNavigationRequest(payload: { videoId: string }) {
+      const requestedVideoId = typeof payload.videoId === "string" ? payload.videoId : null;
+
+      if (!requestedVideoId || requestedVideoId === currentVideoRef.current.id) {
+        return;
+      }
+
+      executeManualNavigation(requestedVideoId, {
+        useNativeHistory: true,
+      });
+    }
+
+    const unsubscribe = listenToAppEvent(EVENT_NAMES.MANUAL_VIDEO_NAVIGATION_REQUEST, handleManualVideoNavigationRequest);
+    return () => unsubscribe();
+  }, [executeManualNavigation]);
+
   async function reportUnavailableFromPlayer(reason: string): Promise<ReportUnavailableResult> {
     if (reportedUnavailableVideoIdRef.current === currentVideo.id) {
       logPlayerDebug("report-unavailable:already-reported", {

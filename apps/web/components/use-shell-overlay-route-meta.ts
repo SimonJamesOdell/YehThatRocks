@@ -93,6 +93,10 @@ export function useShellOverlayRouteMeta({
       return;
     }
 
+    if (anchor.dataset.overlayCaptureSkip === "true") {
+      return;
+    }
+
     if (anchor.dataset.overlayClose === "true") {
       const closeHref = anchor.getAttribute("href") ?? "/";
       event.preventDefault();

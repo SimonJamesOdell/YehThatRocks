@@ -33,6 +33,7 @@ import {
   pickColumn,
   getStoredVideoById,
   AVAILABLE_SITE_VIDEOS_JOIN,
+  hasVideoGenreColumn,
 } from "@/lib/catalog-data-db";
 import {
   getArtistVideoPoolByNormalizedName,
@@ -1079,6 +1080,8 @@ export async function getNewestVideos(
     return inFlightNewest;
   }
 
+  const videoGenreColumnExists = await hasVideoGenreColumn();
+
   const resolveNewestVideos = async () => {
     const cacheMappedVideos = (videos: VideoRecord[]) => {
       newestVideosRequestCache.set(newestRequestKey, {
@@ -1103,30 +1106,59 @@ export async function getNewestVideos(
         rawOffset < maxRawScan && collected.length < desiredAvailableWindow;
         rawOffset += batchSize
       ) {
-        const candidateRows = await prisma.$queryRaw<
-          Array<{
-            id: number;
-            videoId: string;
-            title: string;
-            parsedArtist: string | null;
-            favourited: number | null;
-            description: string | null;
-          }>
-        >`
-          SELECT
-            v.id,
-            v.videoId,
-            v.title,
-            v.parsedArtist,
-            v.favourited,
-            v.description
-          FROM videos v
-          WHERE v.videoId IS NOT NULL
-            AND COALESCE(v.approved, 0) = 1
-          ORDER BY v.created_at DESC, v.id DESC
-          LIMIT ${batchSize}
-          OFFSET ${rawOffset}
-        `;
+        const candidateRows = videoGenreColumnExists
+          ? await prisma.$queryRaw<
+              Array<{
+                id: number;
+                videoId: string;
+                title: string;
+                parsedArtist: string | null;
+                genre: string | null;
+                favourited: number | null;
+                description: string | null;
+              }>
+            >`
+              SELECT
+                v.id,
+                v.videoId,
+                v.title,
+                v.parsedArtist,
+                v.genre,
+                v.favourited,
+                v.description
+              FROM videos v
+              WHERE v.videoId IS NOT NULL
+                AND COALESCE(v.approved, 0) = 1
+              ORDER BY v.created_at DESC, v.id DESC
+              LIMIT ${batchSize}
+              OFFSET ${rawOffset}
+            `
+          : await prisma.$queryRaw<
+              Array<{
+                id: number;
+                videoId: string;
+                title: string;
+                parsedArtist: string | null;
+                genre: string | null;
+                favourited: number | null;
+                description: string | null;
+              }>
+            >`
+              SELECT
+                v.id,
+                v.videoId,
+                v.title,
+                v.parsedArtist,
+                NULL AS genre,
+                v.favourited,
+                v.description
+              FROM videos v
+              WHERE v.videoId IS NOT NULL
+                AND COALESCE(v.approved, 0) = 1
+              ORDER BY v.created_at DESC, v.id DESC
+              LIMIT ${batchSize}
+              OFFSET ${rawOffset}
+            `;
 
         if (candidateRows.length === 0) {
           break;
@@ -1155,6 +1187,7 @@ export async function getNewestVideos(
             title: row.title,
             channelTitle: null,
             parsedArtist: row.parsedArtist,
+            genre: row.genre,
             favourited: Number(row.favourited ?? 0),
             description: row.description,
           });
@@ -1190,27 +1223,50 @@ export async function getNewestVideos(
         return cacheMappedVideos(effectiveRows.map(mapVideo));
       }
 
-      const videos = await prisma.$queryRaw<RankedVideoRow[]>`
-        SELECT
-          v.videoId,
-          v.title,
-          NULL AS channelTitle,
-          v.parsedArtist,
-          v.favourited,
-          v.description
-        FROM videos v
-        WHERE v.videoId IS NOT NULL
-          AND COALESCE(v.approved, 0) = 1
-          AND EXISTS (
-            SELECT 1
-            FROM site_videos sv
-            WHERE sv.video_id = v.id
-              AND sv.status = 'available'
-          )
-        ORDER BY v.created_at DESC, v.id DESC
-        LIMIT ${safeCount}
-        OFFSET ${safeOffset}
-      `;
+      const videos = videoGenreColumnExists
+        ? await prisma.$queryRaw<RankedVideoRow[]>`
+            SELECT
+              v.videoId,
+              v.title,
+              NULL AS channelTitle,
+              v.parsedArtist,
+              v.genre,
+              v.favourited,
+              v.description
+            FROM videos v
+            WHERE v.videoId IS NOT NULL
+              AND COALESCE(v.approved, 0) = 1
+              AND EXISTS (
+                SELECT 1
+                FROM site_videos sv
+                WHERE sv.video_id = v.id
+                  AND sv.status = 'available'
+              )
+            ORDER BY v.created_at DESC, v.id DESC
+            LIMIT ${safeCount}
+            OFFSET ${safeOffset}
+          `
+        : await prisma.$queryRaw<RankedVideoRow[]>`
+            SELECT
+              v.videoId,
+              v.title,
+              NULL AS channelTitle,
+              v.parsedArtist,
+              v.favourited,
+              v.description
+            FROM videos v
+            WHERE v.videoId IS NOT NULL
+              AND COALESCE(v.approved, 0) = 1
+              AND EXISTS (
+                SELECT 1
+                FROM site_videos sv
+                WHERE sv.video_id = v.id
+                  AND sv.status = 'available'
+              )
+            ORDER BY v.created_at DESC, v.id DESC
+            LIMIT ${safeCount}
+            OFFSET ${safeOffset}
+          `;
 
       if (videos.length > 0) {
         const effectiveRows = options?.enforcePlaybackAvailability
@@ -1228,21 +1284,38 @@ export async function getNewestVideos(
         return cacheMappedVideos(effectiveRows.map(mapVideo));
       }
 
-      const fallbackByMappedTimestamps = await prisma.$queryRaw<RankedVideoRow[]>`
-        SELECT
-          v.videoId,
-          v.title,
-          NULL AS channelTitle,
-          v.parsedArtist,
-          v.favourited,
-          v.description
-        FROM videos v
-        WHERE v.videoId IS NOT NULL
-          AND COALESCE(v.approved, 0) = 1
-        ORDER BY v.created_at DESC, v.id DESC
-        LIMIT ${safeCount}
-        OFFSET ${safeOffset}
-      `;
+      const fallbackByMappedTimestamps = videoGenreColumnExists
+        ? await prisma.$queryRaw<RankedVideoRow[]>`
+            SELECT
+              v.videoId,
+              v.title,
+              NULL AS channelTitle,
+              v.parsedArtist,
+              v.genre,
+              v.favourited,
+              v.description
+            FROM videos v
+            WHERE v.videoId IS NOT NULL
+              AND COALESCE(v.approved, 0) = 1
+            ORDER BY v.created_at DESC, v.id DESC
+            LIMIT ${safeCount}
+            OFFSET ${safeOffset}
+          `
+        : await prisma.$queryRaw<RankedVideoRow[]>`
+            SELECT
+              v.videoId,
+              v.title,
+              NULL AS channelTitle,
+              v.parsedArtist,
+              v.favourited,
+              v.description
+            FROM videos v
+            WHERE v.videoId IS NOT NULL
+              AND COALESCE(v.approved, 0) = 1
+            ORDER BY v.created_at DESC, v.id DESC
+            LIMIT ${safeCount}
+            OFFSET ${safeOffset}
+          `;
 
       if (fallbackByMappedTimestamps.length > 0) {
         const effectiveRows = options?.enforcePlaybackAvailability
@@ -1260,20 +1333,36 @@ export async function getNewestVideos(
         return cacheMappedVideos(effectiveRows.map(mapVideo));
       }
 
-      const fallbackByLegacyTimestamps = await prisma.$queryRaw<RankedVideoRow[]>`
-        SELECT
-          v.videoId,
-          v.title,
-          NULL AS channelTitle,
-          v.favourited,
-          v.description
-        FROM videos v
-        WHERE v.videoId IS NOT NULL
-          AND COALESCE(v.approved, 0) = 1
-        ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC
-        LIMIT ${safeCount}
-        OFFSET ${safeOffset}
-      `;
+      const fallbackByLegacyTimestamps = videoGenreColumnExists
+        ? await prisma.$queryRaw<RankedVideoRow[]>`
+            SELECT
+              v.videoId,
+              v.title,
+              NULL AS channelTitle,
+              v.genre,
+              v.favourited,
+              v.description
+            FROM videos v
+            WHERE v.videoId IS NOT NULL
+              AND COALESCE(v.approved, 0) = 1
+            ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC
+            LIMIT ${safeCount}
+            OFFSET ${safeOffset}
+          `
+        : await prisma.$queryRaw<RankedVideoRow[]>`
+            SELECT
+              v.videoId,
+              v.title,
+              NULL AS channelTitle,
+              v.favourited,
+              v.description
+            FROM videos v
+            WHERE v.videoId IS NOT NULL
+              AND COALESCE(v.approved, 0) = 1
+            ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC
+            LIMIT ${safeCount}
+            OFFSET ${safeOffset}
+          `;
 
       const effectiveLegacyRows = options?.enforcePlaybackAvailability
         ? await filterPlayableNewestRows(fallbackByLegacyTimestamps, safeCount)
@@ -1297,6 +1386,7 @@ export async function getNewestVideos(
               videoId,
               title,
               NULL AS channelTitle,
+              ${videoGenreColumnExists ? "genre," : ""}
               favourited,
               description
             FROM videos

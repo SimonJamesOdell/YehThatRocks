@@ -26,7 +26,9 @@ import {
   getYouTubeThumbnailUrl,
   hasDatabaseUrl,
   mapStoredVideoToPersistable,
+  normalizeArtistKey,
   normalizeYouTubeVideoId,
+  ROCK_METAL_GENRE_PATTERN,
   truncate,
   escapeSqlIdentifier,
   type ParsedVideoMetadata,
@@ -36,7 +38,9 @@ import {
 } from "@/lib/catalog-data-utils";
 import {
   ensureVideoChannelTitleColumnAvailable,
+  ensureVideoGenreColumnAvailable,
   ensureVideoMetadataColumnsAvailable,
+  getArtistColumnMap,
   getStoredVideoById,
   loadTableColumns,
   loadVideoForeignKeyRefs,
@@ -49,7 +53,7 @@ import {
 } from "@/lib/catalog-data-artists";
 import { markAvailableVideoMaxIdDirty, recordAvailableVideoIdCandidate } from "@/lib/available-video-max-id";
 import { clearGenreCardThumbnailForVideo } from "@/lib/catalog-data-genres";
-import { getMusicBrainzArtistData } from "@/lib/musicbrainz";
+import { getMusicBrainzArtistData, type MusicBrainzArtistResult } from "@/lib/musicbrainz";
 import { getDatabaseNormalizedVideoId } from "@/lib/catalog-data-internal-helpers";
 import { PLAYBACK_MIN_CONFIDENCE } from "@/lib/playback-config";
 
@@ -310,6 +314,98 @@ function isLikelyNonMusicText(title: string, description: string) {
 
 function isLikelyNonMusicSignal(row: PlaybackDecisionRow) {
   return isLikelyNonMusicText(row.title, row.description ?? "");
+}
+
+function normalizeGenreForStorage(value: string | null | undefined) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed
+    .split(/\s+/)
+    .map((token) => {
+      if (token.length === 0) return token;
+      if (/^[A-Z0-9\-+/]+$/.test(token)) return token;
+      return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+    })
+    .join(" ");
+}
+
+function pickGenreFromMusicBrainz(mbData: MusicBrainzArtistResult | null) {
+  if (!mbData) {
+    return null;
+  }
+
+  const candidate = mbData.tags.find((tag) => ROCK_METAL_GENRE_PATTERN.test(tag));
+  if (candidate) {
+    return normalizeGenreForStorage(candidate);
+  }
+
+  if (mbData.isRockOrMetal) {
+    return "Rock / Metal";
+  }
+
+  return null;
+}
+
+async function inferPersistedVideoGenre(artistName: string | null, mbData: MusicBrainzArtistResult | null) {
+  const normalizedArtist = normalizeArtistKey(artistName ?? "");
+
+  if (normalizedArtist) {
+    try {
+      const artistStatRows = await prisma.$queryRawUnsafe<Array<{ genre: string | null }>>(
+        `
+          SELECT genre
+          FROM artist_stats
+          WHERE normalized_artist = ?
+            AND genre IS NOT NULL
+            AND TRIM(genre) <> ''
+          LIMIT 1
+        `,
+        normalizedArtist,
+      );
+
+      const projectedGenre = normalizeGenreForStorage(artistStatRows[0]?.genre ?? null);
+      if (projectedGenre) {
+        return projectedGenre;
+      }
+    } catch {
+      // artist_stats is optional in some schemas.
+    }
+
+    try {
+      const artistColumns = await getArtistColumnMap();
+      if (artistColumns.genreColumns.length > 0) {
+        const artistNameColumn = escapeSqlIdentifier(artistColumns.name);
+        const genreExpr = `COALESCE(${artistColumns.genreColumns.map((column) => `a.${escapeSqlIdentifier(column)}`).join(", ")})`;
+        const normalizedNameExpr = artistColumns.normalizedName
+          ? `LOWER(TRIM(a.${escapeSqlIdentifier(artistColumns.normalizedName)}))`
+          : `LOWER(TRIM(a.${artistNameColumn}))`;
+
+        const artistRows = await prisma.$queryRawUnsafe<Array<{ genre: string | null }>>(
+          `
+            SELECT ${genreExpr} AS genre
+            FROM artists a
+            WHERE ${normalizedNameExpr} = ?
+              AND ${genreExpr} IS NOT NULL
+              AND TRIM(${genreExpr}) <> ''
+            LIMIT 1
+          `,
+          normalizedArtist,
+        );
+
+        const artistGenre = normalizeGenreForStorage(artistRows[0]?.genre ?? null);
+        if (artistGenre) {
+          return artistGenre;
+        }
+      }
+    } catch {
+      // Best-effort enrichment; do not block ingestion on artist lookup errors.
+    }
+  }
+
+  return pickGenreFromMusicBrainz(mbData);
 }
 
 export function evaluatePlaybackMetadataEligibility(row: PlaybackDecisionRow): PlaybackDecision {
@@ -688,23 +784,41 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
     adjustedConfidence = Math.max(0, Math.min(1, adjustedConfidence));
     const correctedReason = [parsed.reason, ...confidenceNotes].filter(Boolean).join(" | ");
     const existingTitle = normalizeParsedString(existingMeta?.title, 255) ?? truncate(video.title, 255);
+    const inferredGenre = await inferPersistedVideoGenre(correctedArtist, mbData);
+    const hasGenreColumn = await ensureVideoGenreColumnAvailable();
     const nextPersistedTitle =
       Number.isFinite(adjustedConfidence) && adjustedConfidence >= PLAYBACK_MIN_CONFIDENCE
         ? (buildNormalizedVideoTitleFromMetadata(existingTitle, correctedArtist, correctedTrack) ?? existingTitle)
         : existingTitle;
 
-    await prisma.$executeRaw`
-      UPDATE videos
-      SET title = ${nextPersistedTitle},
-          parsedArtist = ${correctedArtist},
-          parsedTrack = ${correctedTrack},
-          parsedVideoType = ${parsed.videoType},
-          parseMethod = ${"groq-llm"},
-          parseReason = ${correctedReason},
-          parseConfidence = ${adjustedConfidence},
-          parsedAt = ${new Date()}
-      WHERE id = ${videoRowId}
-    `;
+    if (hasGenreColumn) {
+      await prisma.$executeRaw`
+        UPDATE videos
+        SET title = ${nextPersistedTitle},
+            parsedArtist = ${correctedArtist},
+            parsedTrack = ${correctedTrack},
+            parsedVideoType = ${parsed.videoType},
+            parseMethod = ${"groq-llm"},
+            parseReason = ${correctedReason},
+            parseConfidence = ${adjustedConfidence},
+            genre = COALESCE(${inferredGenre}, genre),
+            parsedAt = ${new Date()}
+        WHERE id = ${videoRowId}
+      `;
+    } else {
+      await prisma.$executeRaw`
+        UPDATE videos
+        SET title = ${nextPersistedTitle},
+            parsedArtist = ${correctedArtist},
+            parsedTrack = ${correctedTrack},
+            parsedVideoType = ${parsed.videoType},
+            parseMethod = ${"groq-llm"},
+            parseReason = ${correctedReason},
+            parseConfidence = ${adjustedConfidence},
+            parsedAt = ${new Date()}
+        WHERE id = ${videoRowId}
+      `;
+    }
 
     debugCatalog("maybePersistRuntimeMetadata:updated", {
       videoId: video.id,
@@ -751,6 +865,7 @@ function triggerRuntimeMetadataBackfill(videoRowId: number, video: PersistableVi
 async function persistVideoAvailability(video: PersistableVideoRecord, availability: VideoAvailability) {
   const persistedTitle = truncate(normalizePossiblyMojibakeText(video.title), 255);
   const persistedDescription = video.description;
+  const persistedGenre = normalizeGenreForStorage(video.genre);
 
   if (availability.status === "unavailable") {
     await persistRejectedVideo(video.id, availability.reason || "unavailable");
@@ -766,15 +881,37 @@ async function persistVideoAvailability(video: PersistableVideoRecord, availabil
       : null;
   const persistedTimestamp = new Date();
   const hasChannelTitleColumn = await ensureVideoChannelTitleColumnAvailable();
+  const hasGenreColumn = await ensureVideoGenreColumnAvailable();
   const existingVideo = await getStoredVideoById(video.id);
 
-  if (hasChannelTitleColumn) {
+  if (hasChannelTitleColumn && hasGenreColumn) {
+    await prisma.$executeRaw`
+      INSERT INTO videos (videoId, title, channelTitle, genre, favourited, description, created_at, updated_at)
+      VALUES (${video.id}, ${persistedTitle}, ${persistedChannelTitle}, ${persistedGenre}, 0, ${persistedDescription}, ${persistedTimestamp}, ${persistedTimestamp})
+      ON DUPLICATE KEY UPDATE
+        title = VALUES(title),
+        channelTitle = VALUES(channelTitle),
+        genre = COALESCE(VALUES(genre), genre),
+        description = VALUES(description),
+        updated_at = VALUES(updated_at)
+    `;
+  } else if (hasChannelTitleColumn) {
     await prisma.$executeRaw`
       INSERT INTO videos (videoId, title, channelTitle, favourited, description, created_at, updated_at)
       VALUES (${video.id}, ${persistedTitle}, ${persistedChannelTitle}, 0, ${persistedDescription}, ${persistedTimestamp}, ${persistedTimestamp})
       ON DUPLICATE KEY UPDATE
         title = VALUES(title),
         channelTitle = VALUES(channelTitle),
+        description = VALUES(description),
+        updated_at = VALUES(updated_at)
+    `;
+  } else if (hasGenreColumn) {
+    await prisma.$executeRaw`
+      INSERT INTO videos (videoId, title, genre, favourited, description, created_at, updated_at)
+      VALUES (${video.id}, ${persistedTitle}, ${persistedGenre}, 0, ${persistedDescription}, ${persistedTimestamp}, ${persistedTimestamp})
+      ON DUPLICATE KEY UPDATE
+        title = VALUES(title),
+        genre = COALESCE(VALUES(genre), genre),
         description = VALUES(description),
         updated_at = VALUES(updated_at)
     `;
