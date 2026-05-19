@@ -96,6 +96,7 @@ export type RankedVideoRow = {
   channelTitle: string | null;
   parsedArtist?: string | null;
   parsedTrack?: string | null;
+  genre?: string | null;
   favourited: number;
   description: string | null;
 };
@@ -329,6 +330,7 @@ export function mapVideo(video: {
   channelTitle: string | null;
   parsedArtist?: string | null;
   parsedTrack?: string | null;
+  genre?: string | null;
   favourited: number | bigint | null;
   description: string | null;
 }): VideoRecord {
@@ -348,13 +350,18 @@ export function mapVideo(video: {
     inferredChannelTitle ||
     "Unknown Artist";
 
+  const genre =
+    typeof video.genre === "string" && video.genre.trim().length > 0
+      ? video.genre.trim()
+      : "Rock / Metal";
+
   return {
     id: video.videoId,
     title: video.title,
     channelTitle: displayArtist,
     parsedArtist: parsedArtist || null,
     parsedTrack: parsedTrack || null,
-    genre: "Rock / Metal",
+    genre,
     favourited: Number.isFinite(favouritedValue) ? favouritedValue : 0,
     description: video.description ?? "Legacy video entry from the retained Yeh database.",
   };

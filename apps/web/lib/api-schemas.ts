@@ -117,6 +117,10 @@ export const seenTogglePreferenceMutationSchema = z.object({
   value: z.boolean(),
 });
 
+export const newVideosGenrePreferenceMutationSchema = z.object({
+  genres: z.array(z.string().trim().min(1).max(80)).max(24),
+});
+
 export const playerPreferenceMutationSchema = z.object({
   autoplayEnabled: z.boolean().optional(),
   volume: z.number().int().min(0).max(100).optional(),

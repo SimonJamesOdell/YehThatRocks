@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 
 type UseActiveRowAutoScrollOptions = {
   activeVideoId: string | null;
@@ -17,16 +17,6 @@ export function useActiveRowAutoScroll({
 }: UseActiveRowAutoScrollOptions) {
   const activeTrackAutoScrollRafRef = useRef<number | null>(null);
   const lastAutoScrolledActiveVideoIdRef = useRef<string | null>(null);
-  // Captures the overlay's scrollTop synchronously before each browser paint
-  // so we can restore it if something resets it to 0.
-  const capturedScrollTopRef = useRef<number>(0);
-
-  // Capture the overlay scroll position synchronously after each React commit
-  // (before the browser paints) whenever the active video changes.
-  useLayoutEffect(() => {
-    const overlay = overlayScrollContainerRef?.current;
-    capturedScrollTopRef.current = overlay?.scrollTop ?? 0;
-  }, [activeVideoId, overlayScrollContainerRef]);
 
   useEffect(() => {
     if (!activeVideoId || isLoading || visibleVideoCount === 0) {
@@ -37,31 +27,15 @@ export function useActiveRowAutoScroll({
       return;
     }
 
-    // If a subsequent effect reset scrollTop to 0 after paint, restore it via rAF
-    // before the next frame so the user does not see a flash to the top.
-    const captured = capturedScrollTopRef.current;
-    let restoreRafId: number | null = null;
-    if (captured > 1) {
-      restoreRafId = window.requestAnimationFrame(() => {
-        restoreRafId = null;
-        const overlayForRestore = overlayScrollContainerRef?.current;
-        if (overlayForRestore && overlayForRestore.scrollTop === 0) {
-          overlayForRestore.scrollTop = captured;
-        }
-      });
-    }
+    // Mark immediately so incidental rerenders (e.g. list bookkeeping updates)
+    // do not restart this scroll operation for the same active id.
+    lastAutoScrolledActiveVideoIdRef.current = activeVideoId;
 
     const timeoutId = window.setTimeout(() => {
       const overlayContainer = overlayScrollContainerRef?.current;
       const scrollContainer = overlayContainer ?? document.scrollingElement as HTMLElement | null;
       if (!scrollContainer) {
         return;
-      }
-
-      // Belt-and-suspenders: if scrollTop is still 0 after the rAF restore pass,
-      // use the captured value so animation starts from the correct position.
-      if (scrollContainer.scrollTop === 0 && captured > 1) {
-        scrollContainer.scrollTop = captured;
       }
 
       const activeRow = document.querySelector<HTMLElement>(".trackCard.top100CardActive");
@@ -77,7 +51,6 @@ export function useActiveRowAutoScroll({
       const targetTop = Math.min(maxScrollTop, Math.max(0, rowOffsetInContent - topGutterPx));
 
       if (Math.abs(scrollContainer.scrollTop - targetTop) <= 1) {
-        lastAutoScrolledActiveVideoIdRef.current = activeVideoId;
         return;
       }
 
@@ -102,16 +75,12 @@ export function useActiveRowAutoScroll({
         }
 
         activeTrackAutoScrollRafRef.current = null;
-        lastAutoScrolledActiveVideoIdRef.current = activeVideoId;
       };
 
       activeTrackAutoScrollRafRef.current = window.requestAnimationFrame(animateScroll);
     }, 50);
 
     return () => {
-      if (restoreRafId !== null) {
-        window.cancelAnimationFrame(restoreRafId);
-      }
       window.clearTimeout(timeoutId);
       if (activeTrackAutoScrollRafRef.current !== null) {
         window.cancelAnimationFrame(activeTrackAutoScrollRafRef.current);

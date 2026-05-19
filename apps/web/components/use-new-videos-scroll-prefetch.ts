@@ -25,6 +25,7 @@ type UseNewVideosScrollPrefetchOptions = {
   scrollPrefetchEarlyThresholdPx: number;
   scrollTargetRunwayPx: number;
   scrollMaxPrefetchBatches: number;
+  suspendPrefetchUntilRef?: MutableRefObject<number>;
 };
 
 export function useNewVideosScrollPrefetch({
@@ -44,6 +45,7 @@ export function useNewVideosScrollPrefetch({
   scrollPrefetchEarlyThresholdPx,
   scrollTargetRunwayPx,
   scrollMaxPrefetchBatches,
+  suspendPrefetchUntilRef,
 }: UseNewVideosScrollPrefetchOptions) {
   const readActiveScrollMetrics = useCallback((metrics?: ScrollMetrics): ScrollMetrics => {
     if (metrics) {
@@ -68,6 +70,10 @@ export function useNewVideosScrollPrefetch({
 
   const maybeLoadMoreFromScroll = useCallback(async (metrics?: ScrollMetrics) => {
     if (prefetchInFlightRef.current || loading || isLoadingMoreRef.current || !hasMoreRef.current) {
+      return;
+    }
+
+    if (suspendPrefetchUntilRef && Date.now() < suspendPrefetchUntilRef.current) {
       return;
     }
 
@@ -152,6 +158,7 @@ export function useNewVideosScrollPrefetch({
     scrollPrefetchThresholdPx,
     scrollStartRatio,
     scrollTargetRunwayPx,
+    suspendPrefetchUntilRef,
   ]);
 
   useEffect(() => {

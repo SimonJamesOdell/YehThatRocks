@@ -10,9 +10,12 @@ import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { dispatchAppEvent, EVENT_NAMES } from "@/lib/events-contract";
-import { LIVE_SEARCH_PARAMS_EVENT, useLiveSearchParams } from "@/components/use-live-search-params";
+import { useLiveSearchParams } from "@/components/use-live-search-params";
 import { getArtistPagePath } from "@/lib/artist-routing";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { navigateVideoHref } from "@/components/player-video-navigation";
+import { resolveLeaderboardVideoLinkNavigationAction } from "@/components/leaderboard-video-link-navigation";
+import { shouldShowLeaderboardVideoArtistCount } from "@/components/leaderboard-video-link-display";
 import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 
 type LeaderboardVideoLinkProps = {
@@ -159,6 +162,7 @@ export function LeaderboardVideoLink({
   onFlagVideo,
   isFlagPending = false,
 }: LeaderboardVideoLinkProps) {
+  const isNewRow = rowVariant === "new";
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useLiveSearchParams();
@@ -187,7 +191,7 @@ export function LeaderboardVideoLink({
   const artistPagePath = getArtistPagePath(metadataArtist);
   const parsedArtistPagePath = parsedArtistCandidate ? getArtistPagePath(parsedArtistCandidate) : null;
   const artistSlug = artistPagePath?.split("/")[2] ?? null;
-  const artistVideoCountLabel = artistVideoCount === null
+  const artistVideoCountLabel = rowVariant === "new" || artistVideoCount === null
     ? null
     : `${artistVideoCount.toLocaleString("en-US")} videos`;
 
@@ -212,6 +216,11 @@ export function LeaderboardVideoLink({
   }, [track.id, track.favourited]);
 
   useEffect(() => {
+    if (!shouldShowLeaderboardVideoArtistCount(rowVariant)) {
+      setArtistVideoCount(null);
+      return;
+    }
+
     if (!artistSlug) {
       setArtistVideoCount(null);
       return;
@@ -228,7 +237,7 @@ export function LeaderboardVideoLink({
     return () => {
       cancelled = true;
     };
-  }, [artistSlug, track.id]);
+  }, [artistSlug, rowVariant, track.id]);
 
   const triggerClickFlash = useCallback(() => {
     setIsClickFlashing(true);
@@ -282,11 +291,31 @@ export function LeaderboardVideoLink({
   }, [stagePendingSelection, track.id, triggerClickFlash]);
 
   const navigateToVideo = useCallback(() => {
-    warmSelection();
-    window.history.pushState(window.history.state, "", videoHref);
-    window.dispatchEvent(new CustomEvent(LIVE_SEARCH_PARAMS_EVENT));
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  }, [videoHref, warmSelection]);
+    if (rowVariant !== "new") {
+      warmSelection();
+    }
+
+    const navigationAction = resolveLeaderboardVideoLinkNavigationAction({
+      rowVariant,
+      videoId: track.id,
+      href: videoHref,
+    });
+
+    if (navigationAction.kind === "dispatch-manual-navigation-request") {
+      dispatchAppEvent(EVENT_NAMES.MANUAL_VIDEO_NAVIGATION_REQUEST, {
+        videoId: navigationAction.videoId,
+      });
+      return;
+    }
+
+    navigateVideoHref({
+      href: navigationAction.href,
+      useNativeHistory: true,
+      routerPush: (href) => {
+        router.push(href, { scroll: false });
+      },
+    });
+  }, [router, rowVariant, track.id, videoHref, warmSelection]);
 
   const openVideoFromCard = useCallback(() => {
     navigateToVideo();
@@ -360,13 +389,74 @@ export function LeaderboardVideoLink({
     }
   }, [isAuthenticated, isRemovingFavourite, track.id]);
 
+  const cardBody = (
+    <>
+      <div className="leaderboardRank">#{index + 1}</div>
+      <div className="leaderboardThumbWrap" data-video-id={track.id}>
+        <YouTubeThumbnailImage
+          videoId={track.id}
+          alt=""
+          className="leaderboardThumb"
+          loading="lazy"
+          fetchPriority="auto"
+          reportReason="thumbnail-load-error:top100"
+        />
+        {isSeen && !isFavourited ? <span className="videoSeenBadge videoSeenBadgeOverlay">Seen</span> : null}
+        {isFavourited ? (
+          <button
+            type="button"
+            className="relatedFavouriteBadgeOverlay top100FavouriteBadgeOverlay artistVideoFavouriteBadgeButton"
+            aria-label={`Remove ${track.title} from favourites`}
+            title="Remove from favourites"
+            disabled={isRemovingFavourite}
+            onClick={handleRemoveFavourite}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+          >
+            <span className="artistVideoFavouriteBadgeHeart" aria-hidden="true">♥</span>
+            <span className="artistVideoFavouriteBadgeRemoveGlyph" aria-hidden="true">x</span>
+          </button>
+        ) : null}
+      </div>
+      <div className="leaderboardMeta">
+        <h3>
+          {parsedArtistCandidate && parsedTrackCandidate ? (
+            <>
+              <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
+                <span
+                  role={parsedArtistPagePath ? "link" : undefined}
+                  tabIndex={parsedArtistPagePath ? 0 : undefined}
+                  onClick={handleOpenParsedArtistPage}
+                  onKeyDown={handleOpenParsedArtistPageByKeyboard}
+                >
+                  {parsedArtistLabel}
+                </span>
+              </ArtistWikiLink>
+              <span aria-hidden="true"> - </span>
+              <span>{parsedTrackCandidate}</span>
+            </>
+          ) : displayTitle}
+        </h3>
+        {artistVideoCountLabel ? (
+          <p className="leaderboardArtistVideoCount">{artistVideoCountLabel}</p>
+        ) : null}
+      </div>
+    </>
+  );
+
   return (
     <article
       className={`trackCard leaderboardCard top100CardWithPlaylistAction${isSeen ? " top100CardSeen" : ""}${isSeen && rowVariant === "new" ? " top100CardSeenNew" : ""}${isActive ? " top100CardActive" : ""}${isClickFlashing ? " top100CardClickFlash" : ""}${isAuthenticated ? " top100CardCornerActions" : ""}${rowVariant === "new" ? " top100CardNewPersistentActions" : ""}${rowVariant === "default" ? " top100CardAlwaysVisibleControls" : ""}`}
-      role="link"
-      tabIndex={0}
+      role={isNewRow ? undefined : "link"}
+      tabIndex={isNewRow ? undefined : 0}
       aria-label={`Play ${track.title}`}
       onClick={(event) => {
+        if (isNewRow) {
+          return;
+        }
+
         if (event.defaultPrevented) {
           return;
         }
@@ -379,6 +469,10 @@ export function LeaderboardVideoLink({
         openVideoFromCard();
       }}
       onKeyDown={(event) => {
+        if (isNewRow) {
+          return;
+        }
+
         if (event.key !== "Enter" && event.key !== " ") {
           return;
         }
@@ -419,83 +513,77 @@ export function LeaderboardVideoLink({
           ⚑
         </button>
       ) : null}
-      <Link
-        href={videoHref}
-        className="linkedCard leaderboardTrackLink"
-        prefetch={false}
-        aria-current={isActive ? "true" : undefined}
-        onMouseEnter={stagePendingSelection}
-        onFocus={stagePendingSelection}
-        onPointerDown={warmSelection}
-        onClick={(event) => {
-          if (
-            event.defaultPrevented
-            || event.button !== 0
-            || event.metaKey
-            || event.ctrlKey
-            || event.shiftKey
-            || event.altKey
-          ) {
-            return;
-          }
+      {isNewRow ? (
+        <div
+          className="linkedCard leaderboardTrackLink"
+          data-overlay-capture-skip="true"
+          role="link"
+          tabIndex={0}
+          aria-current={isActive ? "true" : undefined}
+          onMouseDown={(event) => {
+            event.preventDefault();
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") {
+              return;
+            }
 
-          event.preventDefault();
-          navigateToVideo();
-        }}
-      >
-        <div className="leaderboardRank">#{index + 1}</div>
-        <div className="leaderboardThumbWrap" data-video-id={track.id}>
-          <YouTubeThumbnailImage
-            videoId={track.id}
-            alt=""
-            className="leaderboardThumb"
-            loading="lazy"
-            fetchPriority="auto"
-            reportReason="thumbnail-load-error:top100"
-          />
-          {isSeen && !isFavourited ? <span className="videoSeenBadge videoSeenBadgeOverlay">Seen</span> : null}
-          {isFavourited ? (
-            <button
-              type="button"
-              className="relatedFavouriteBadgeOverlay top100FavouriteBadgeOverlay artistVideoFavouriteBadgeButton"
-              aria-label={`Remove ${track.title} from favourites`}
-              title="Remove from favourites"
-              disabled={isRemovingFavourite}
-              onClick={handleRemoveFavourite}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-            >
-              <span className="artistVideoFavouriteBadgeHeart" aria-hidden="true">♥</span>
-              <span className="artistVideoFavouriteBadgeRemoveGlyph" aria-hidden="true">x</span>
-            </button>
-          ) : null}
+            event.preventDefault();
+            event.stopPropagation();
+            navigateToVideo();
+          }}
+          onClick={(event) => {
+            if (event.defaultPrevented) {
+              return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            const isPrimaryButton = event.button === 0 || event.button === undefined;
+            if (!isPrimaryButton || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+              if (typeof window !== "undefined") {
+                window.open(videoHref, "_blank", "noopener,noreferrer");
+              }
+              return;
+            }
+
+            navigateToVideo();
+          }}
+        >
+          {cardBody}
         </div>
-        <div className="leaderboardMeta">
-          <h3>
-            {parsedArtistCandidate && parsedTrackCandidate ? (
-              <>
-                <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
-                  <span
-                    role={parsedArtistPagePath ? "link" : undefined}
-                    tabIndex={parsedArtistPagePath ? 0 : undefined}
-                    onClick={handleOpenParsedArtistPage}
-                    onKeyDown={handleOpenParsedArtistPageByKeyboard}
-                  >
-                    {parsedArtistLabel}
-                  </span>
-                </ArtistWikiLink>
-                <span aria-hidden="true"> - </span>
-                <span>{parsedTrackCandidate}</span>
-              </>
-            ) : displayTitle}
-          </h3>
-          {artistVideoCountLabel ? (
-            <p className="leaderboardArtistVideoCount">{artistVideoCountLabel}</p>
-          ) : null}
-        </div>
-      </Link>
+      ) : (
+        <Link
+          href={videoHref}
+          className="linkedCard leaderboardTrackLink"
+          data-overlay-capture-skip="true"
+          prefetch={false}
+          aria-current={isActive ? "true" : undefined}
+          onMouseEnter={stagePendingSelection}
+          onFocus={stagePendingSelection}
+          onPointerDown={warmSelection}
+          onClick={(event) => {
+            if (event.defaultPrevented) {
+              return;
+            }
+
+            event.preventDefault();
+
+            const isPrimaryButton = event.button === 0 || event.button === undefined;
+            if (!isPrimaryButton || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+              if (typeof window !== "undefined") {
+                window.open(videoHref, "_blank", "noopener,noreferrer");
+              }
+              return;
+            }
+
+            navigateToVideo();
+          }}
+        >
+          {cardBody}
+        </Link>
+      )}
       <div className="top100CardAction">
         {!isFavourited ? (
           <div

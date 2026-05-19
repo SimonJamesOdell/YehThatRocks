@@ -46,6 +46,7 @@
     "prune:genres:apply": "node scripts/prune-non-rock-metal-genres.js --confirm=PRUNE_NON_ROCK_METAL",
     "backfill:related": "node scripts/backfill-related-links.js",
     "backfill:genres": "node scripts/backfill-genres-from-musicbrainz.js",
+    "backfill:video-genres": "node scripts/backfill-video-genres.js",
     "verify:categories": "node scripts/verify-categories-invariants.js",
     "verify:categories:api": "node scripts/verify-categories-invariants.js --check-api",
     "verify:artists-ui": "node scripts/verify-artists-ui-invariants.js",

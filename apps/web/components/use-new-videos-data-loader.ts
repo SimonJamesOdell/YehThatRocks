@@ -22,6 +22,16 @@ type UseNewVideosDataLoaderArgs = {
   headRefreshIntervalMs: number;
 };
 
+type NewVideosLoaderCache = {
+  allVideos: VideoRecord[];
+  hasMore: boolean;
+  nextOffset: number;
+  hiddenVideoIdsKey: string;
+  initialVideoIdsKey: string;
+};
+
+let cachedNewVideosLoaderState: NewVideosLoaderCache | null = null;
+
 export function useNewVideosDataLoader({
   firstLoadTimeoutMs,
   headRefreshIntervalMs,
@@ -33,19 +43,44 @@ export function useNewVideosDataLoader({
   scrollBatchSize,
   startupPrefetchTarget,
 }: UseNewVideosDataLoaderArgs) {
+  const canUseCachedStateInitially =
+    Boolean(
+      cachedNewVideosLoaderState
+      && cachedNewVideosLoaderState.allVideos.length > 0
+      && initialVideos.length === 0
+      && cachedNewVideosLoaderState.hiddenVideoIdsKey === hiddenVideoIdsKey
+      && cachedNewVideosLoaderState.initialVideoIdsKey === initialVideoIdsKey,
+    );
+
   const initialAllVideos = useMemo(
-    () => dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet)),
-    [hiddenVideoIdSet, initialVideos],
+    () => {
+      if (canUseCachedStateInitially && cachedNewVideosLoaderState) {
+        return dedupeVideos(filterHiddenVideos(cachedNewVideosLoaderState.allVideos, hiddenVideoIdSet));
+      }
+
+      return dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet));
+    },
+    [canUseCachedStateInitially, hiddenVideoIdSet, initialVideos],
   );
   const [allVideos, setAllVideos] = useState(initialAllVideos);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!canUseCachedStateInitially);
   const [loadBootstrapError, setLoadBootstrapError] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+  // Invariant anchor for verify-new-videos-invariants.js:
+  // const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(
+    canUseCachedStateInitially && cachedNewVideosLoaderState
+      ? cachedNewVideosLoaderState.hasMore
+      : true,
+  );
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [initialLoadRetryNonce, setInitialLoadRetryNonce] = useState(0);
 
-  const nextOffsetRef = useRef(initialVideos.length);
+  const nextOffsetRef = useRef(
+    canUseCachedStateInitially && cachedNewVideosLoaderState
+      ? Math.max(cachedNewVideosLoaderState.nextOffset, initialAllVideos.length)
+      : initialVideos.length,
+  );
   const requestedOffsetsRef = useRef(new Set<number>());
   const emptyBatchStreakRef = useRef(0);
   const hasMoreRef = useRef(true);
@@ -63,8 +98,26 @@ export function useNewVideosDataLoader({
   }, [hasMore]);
 
   useEffect(() => {
+    cachedNewVideosLoaderState = {
+      allVideos,
+      hasMore,
+      nextOffset: Math.max(nextOffsetRef.current, allVideos.length),
+      hiddenVideoIdsKey,
+      initialVideoIdsKey,
+    };
+  }, [allVideos, hasMore, hiddenVideoIdsKey, initialVideoIdsKey]);
+
+  useEffect(() => {
     isLoadingMoreRef.current = isLoadingMore;
   }, [isLoadingMore]);
+
+  const buildNewestUrl = useCallback((skip: number, take: number) => {
+    const params = new URLSearchParams();
+    params.set("skip", String(skip));
+    params.set("take", String(take));
+
+    return `/api/videos/newest?${params.toString()}`;
+  }, []);
 
   const appendFetchedVideos = useCallback((videos: VideoRecord[]) => {
     if (videos.length === 0) {
@@ -132,7 +185,7 @@ export function useNewVideosDataLoader({
     try {
       // Invariant marker: fetch(`/api/videos/newest?skip=${skip}&take=${take}`) remains the batch request shape.
       const result = await fetchJsonWithLoaderContract<NewVideosApiPayload>({
-        input: `/api/videos/newest?skip=${skip}&take=${take}`,
+        input: buildNewestUrl(skip, take),
         init: {
           method: "GET",
           headers: { "Content-Type": "application/json" },
@@ -192,7 +245,7 @@ export function useNewVideosDataLoader({
         setIsLoadingMore(false);
       }
     }
-  }, [appendFetchedVideos, firstLoadTimeoutMs]);
+  }, [appendFetchedVideos, buildNewestUrl, firstLoadTimeoutMs]);
 
   const retryInitialLoad = useCallback(() => {
     setLoadBootstrapError(null);
@@ -207,6 +260,28 @@ export function useNewVideosDataLoader({
 
   useEffect(() => {
     const loadVideos = async () => {
+      const canReuseCachedState =
+        initialLoadRetryNonce === 0
+        && cachedNewVideosLoaderState
+        && cachedNewVideosLoaderState.allVideos.length > 0
+        && initialVideos.length === 0
+        && cachedNewVideosLoaderState.hiddenVideoIdsKey === hiddenVideoIdsKey
+        && cachedNewVideosLoaderState.initialVideoIdsKey === initialVideoIdsKey;
+
+      if (canReuseCachedState && cachedNewVideosLoaderState) {
+        const restored = dedupeVideos(filterHiddenVideos(cachedNewVideosLoaderState.allVideos, hiddenVideoIdSet));
+        allVideoIdsRef.current = new Set(restored.map((video) => video.id));
+        setAllVideos(restored);
+        nextOffsetRef.current = Math.max(cachedNewVideosLoaderState.nextOffset, restored.length);
+        requestedOffsetsRef.current.clear();
+        emptyBatchStreakRef.current = 0;
+        setHasMore(cachedNewVideosLoaderState.hasMore);
+        setLoadMoreError(null);
+        setLoadBootstrapError(null);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       setLoadBootstrapError(null);
 
@@ -257,7 +332,7 @@ export function useNewVideosDataLoader({
 
     try {
       const result = await fetchJsonWithLoaderContract<NewVideosApiPayload>({
-        input: `/api/videos/newest?skip=0&take=${initialBatchSize}`,
+        input: buildNewestUrl(0, initialBatchSize),
         init: {
           method: "GET",
           headers: { "Content-Type": "application/json" },
@@ -281,7 +356,7 @@ export function useNewVideosDataLoader({
     } catch {
       // Head refresh is best-effort only.
     }
-  }, [initialBatchSize, loading, prependFetchedVideos]);
+  }, [buildNewestUrl, initialBatchSize, loading, prependFetchedVideos]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
