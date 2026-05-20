@@ -15,9 +15,14 @@ import type { VideoRecord } from "@/lib/catalog";
 type ArtistVideoLinkProps = {
   video: VideoRecord;
   isAuthenticated?: boolean;
+  isAdmin?: boolean;
   isSeen?: boolean;
   useCornerActions?: boolean;
   titleMode?: "parsedTrackOrTitle" | "parsedTrackOnly";
+  adminThumbnailPinTarget?: "artist" | "category-artist";
+  adminThumbnailGenre?: string;
+  adminThumbnailArtistSlug?: string;
+  adminThumbnailArtistName?: string;
   onHideVideo?: (video: VideoRecord) => void;
   isHidePending?: boolean;
 };
@@ -25,9 +30,14 @@ type ArtistVideoLinkProps = {
 export function ArtistVideoLink({
   video,
   isAuthenticated = true,
+  isAdmin = false,
   isSeen = false,
   useCornerActions = false,
   titleMode = "parsedTrackOrTitle",
+  adminThumbnailPinTarget = "artist",
+  adminThumbnailGenre,
+  adminThumbnailArtistSlug,
+  adminThumbnailArtistName,
   onHideVideo,
   isHidePending = false,
 }: ArtistVideoLinkProps) {
@@ -35,6 +45,7 @@ export function ArtistVideoLink({
   const hasWarmedRef = useRef(false);
   const [isFavourited, setIsFavourited] = useState(Number(video.favourited ?? 0) > 0);
   const [isRemovingFavourite, setIsRemovingFavourite] = useState(false);
+  const [isPinningThumbnail, setIsPinningThumbnail] = useState(false);
   const hasFavouriteHeart = isFavourited;
 
   useEffect(() => {
@@ -103,6 +114,37 @@ export function ArtistVideoLink({
     ? (video.parsedTrack?.trim() || "Untitled Track")
     : (video.parsedTrack ?? video.title);
 
+  const canPinArtistThumbnail = isAdmin
+    && (adminThumbnailPinTarget === "artist"
+      ? Boolean(adminThumbnailArtistSlug)
+      : Boolean(adminThumbnailArtistName && adminThumbnailGenre));
+
+  const handlePinArtistThumbnail = useCallback(async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!canPinArtistThumbnail || isPinningThumbnail) {
+      return;
+    }
+
+    setIsPinningThumbnail(true);
+    try {
+      await fetchWithAuthRetry("/api/admin/thumbnail-pins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target: adminThumbnailPinTarget,
+          genre: adminThumbnailPinTarget === "category-artist" ? adminThumbnailGenre : undefined,
+          artistSlug: adminThumbnailArtistSlug,
+          artistName: adminThumbnailArtistName,
+          thumbnailVideoId: video.id,
+        }),
+      });
+    } finally {
+      setIsPinningThumbnail(false);
+    }
+  }, [adminThumbnailArtistName, adminThumbnailArtistSlug, adminThumbnailGenre, adminThumbnailPinTarget, canPinArtistThumbnail, isPinningThumbnail, video.id]);
+
   return (
     <article
       className={`categoryVideoCard${isSeen ? " categoryVideoCardSeen artistVideoCardSeen" : ""}${useCornerActions ? " categoryVideoCardCornerActions" : ""}`}
@@ -156,6 +198,22 @@ export function ArtistVideoLink({
         onClick={warmSelection}
       >
         <div className="categoryThumbWrap">
+          {canPinArtistThumbnail ? (
+            <button
+              type="button"
+              className="adminThumbnailPinButton"
+              aria-label="Set as thumbnail"
+              title="Set as thumbnail"
+              disabled={isPinningThumbnail}
+              onClick={handlePinArtistThumbnail}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+            >
+              ◰
+            </button>
+          ) : null}
           <YouTubeThumbnailImage
             videoId={video.id}
             alt=""

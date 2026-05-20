@@ -23,6 +23,7 @@ type CategoryVideosInfiniteProps = {
   artistSlug?: string;
   artistName?: string;
   isAuthenticated: boolean;
+  isAdmin?: boolean;
   seenVideoIds?: string[];
   hiddenVideoIds?: string[];
   initialVideos: VideoRecord[];
@@ -67,6 +68,7 @@ export function CategoryVideosInfinite({
   artistSlug,
   artistName,
   isAuthenticated,
+  isAdmin = false,
   seenVideoIds = [],
   hiddenVideoIds = [],
   initialVideos,
@@ -387,8 +389,13 @@ export function CategoryVideosInfinite({
             <ArtistVideoLink
               video={video}
               isAuthenticated={isArtistCategoryRoute ? true : isAuthenticated}
+              isAdmin={isAdmin}
               isSeen={seenVideoIdSet.has(video.id)}
               useCornerActions
+              adminThumbnailPinTarget={isArtistCategoryRoute ? "category-artist" : "artist"}
+              adminThumbnailGenre={isArtistCategoryRoute ? genre : undefined}
+              adminThumbnailArtistSlug={isArtistCategoryRoute ? artistSlug : undefined}
+              adminThumbnailArtistName={isArtistCategoryRoute ? artistName : undefined}
               titleMode={isArtistCategoryRoute ? "parsedTrackOnly" : "parsedTrackOrTitle"}
               onHideVideo={handleHideVideo}
               isHidePending={hidingVideoIds.includes(video.id)}

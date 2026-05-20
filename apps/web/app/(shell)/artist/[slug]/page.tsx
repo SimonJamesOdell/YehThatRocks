@@ -45,7 +45,7 @@ type ArtistPageProps = {
 type ArtistVideoRow = Awaited<ReturnType<typeof getVideosByArtist>>[number];
 
 export default async function ArtistPage({ params, searchParams }: ArtistPageProps) {
-  const [{ hasAccessToken: isAuthenticated }, { seenVideoIds, hiddenVideoIds }] = await Promise.all([
+  const [{ hasAccessToken: isAuthenticated, isAdmin }, { seenVideoIds, hiddenVideoIds }] = await Promise.all([
     getShellRequestAuthState(),
     getShellRequestVideoState(),
   ]);
@@ -127,10 +127,12 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(musicGroupJsonLd) }} />
       <ArtistVideosGridClient
         artistName={artist.name}
+        artistSlug={slug}
         artistsHref={artistsHref}
         initialVideos={orderedArtistVideos}
         seenVideoIds={Array.from(seenVideoIds)}
         isAuthenticated={isAuthenticated}
+        isAdmin={isAdmin}
       />
     </>
   );

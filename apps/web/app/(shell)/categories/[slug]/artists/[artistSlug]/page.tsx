@@ -61,7 +61,7 @@ export async function generateMetadata({ params, searchParams }: CategoryArtistP
 }
 
 export default async function CategoryArtistVideosPage({ params, searchParams }: CategoryArtistPageProps) {
-  const [{ hasAccessToken: isAuthenticated }, { seenVideoIds, hiddenVideoIds }, { slug, artistSlug }, query] = await Promise.all([
+  const [{ hasAccessToken: isAuthenticated, isAdmin }, { seenVideoIds, hiddenVideoIds }, { slug, artistSlug }, query] = await Promise.all([
     getShellRequestAuthState(),
     getShellRequestVideoState(),
     params,
@@ -103,6 +103,7 @@ export default async function CategoryArtistVideosPage({ params, searchParams }:
         slug={slug}
         genre={genre}
         isAuthenticated={isAuthenticated}
+        isAdmin={isAdmin}
         seenVideoIds={Array.from(seenVideoIds)}
         hiddenVideoIds={Array.from(hiddenVideoIds)}
         initialVideos={initialVideos}

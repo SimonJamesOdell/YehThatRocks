@@ -18,18 +18,22 @@ const ARTIST_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-artist";
 
 type ArtistVideosGridClientProps = {
   artistName: string;
+  artistSlug: string;
   artistsHref: string;
   initialVideos: VideoRecord[];
   seenVideoIds: string[];
   isAuthenticated: boolean;
+  isAdmin: boolean;
 };
 
 export function ArtistVideosGridClient({
   artistName,
+  artistSlug,
   artistsHref,
   initialVideos,
   seenVideoIds,
   isAuthenticated,
+  isAdmin,
 }: ArtistVideosGridClientProps) {
   const searchParams = useSearchParams();
   const [videos, setVideos] = useState<VideoRecord[]>(initialVideos);
@@ -168,8 +172,11 @@ export function ArtistVideosGridClient({
             key={video.id}
             video={video}
             isAuthenticated={isAuthenticated}
+            isAdmin={isAdmin}
             isSeen={seenVideoIdSet.has(video.id)}
             useCornerActions
+            adminThumbnailArtistSlug={artistSlug}
+            adminThumbnailArtistName={artistName}
             onHideVideo={handleHideVideo}
             isHidePending={hidingVideoIds.includes(video.id)}
           />
