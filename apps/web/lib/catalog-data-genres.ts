@@ -40,6 +40,7 @@ import {
 const GENRE_RESULTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const GENRE_CARDS_CACHE_TTL_MS = 30 * 1000;
 const CATEGORY_QUERY_TIMEOUT_MS = 2_500;
+const CATEGORY_ARTIST_THUMB_TABLE_CACHE_TTL_MS = 60_000;
 const GENRE_CACHE_MAX_ENTRIES = Math.max(
   100,
   Math.min(2_000, Number(process.env.GENRE_CACHE_MAX_ENTRIES || "600")),
@@ -54,6 +55,7 @@ let genreCardsCache: { expiresAt: number; cards: GenreCard[] } | undefined;
 let genreCardsInFlight: Promise<GenreCard[]> | undefined;
 let genreListCache: { expiresAt: number; genres: string[] } | undefined;
 const genreArtistCountCache = new BoundedMap<string, { expiresAt: number; count: number }>(GENRE_CACHE_MAX_ENTRIES);
+let categoryArtistThumbTableAvailableCache: { checkedAt: number; available: boolean } | undefined;
 
 const GENRE_ARTIST_COUNT_CACHE_TTL_MS = 10 * 60 * 1000;
 
@@ -117,6 +119,72 @@ function getCategoryArtistNormalizationExpr(alias: string, normalizedColumn: str
   return `LOWER(TRIM(COALESCE(NULLIF(${parsedArtistRef}, ''), NULLIF(${channelTitleRef}, ''))))`;
 }
 
+async function hasCategoryArtistThumbnailTable() {
+  const now = Date.now();
+  if (
+    categoryArtistThumbTableAvailableCache?.available
+    && categoryArtistThumbTableAvailableCache.checkedAt + CATEGORY_ARTIST_THUMB_TABLE_CACHE_TTL_MS > now
+  ) {
+    return true;
+  }
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ tableName?: string }>>(
+      "SHOW TABLES LIKE 'category_artist_thumbnails'",
+    );
+    const available = rows.length > 0;
+    categoryArtistThumbTableAvailableCache = available
+      ? { checkedAt: now, available: true }
+      : undefined;
+    return available;
+  } catch {
+    categoryArtistThumbTableAvailableCache = undefined;
+    return false;
+  }
+}
+
+async function ensureCategoryArtistThumbnailTable() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS category_artist_thumbnails (
+      id BIGINT NOT NULL AUTO_INCREMENT,
+      genre_norm VARCHAR(255) NOT NULL,
+      artist_key VARCHAR(255) NOT NULL,
+      thumbnail_video_id VARCHAR(32) NOT NULL,
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+      PRIMARY KEY (id),
+      UNIQUE KEY uniq_category_artist_thumb (genre_norm, artist_key),
+      KEY idx_category_artist_thumb_updated (updated_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  categoryArtistThumbTableAvailableCache = { checkedAt: Date.now(), available: true };
+}
+
+export async function setCategoryArtistThumbnailPin(genre: string, artistName: string, thumbnailVideoId: string) {
+  const normalizedGenre = normalizeGenreTerm(genre);
+  const normalizedArtistKey = normalizeArtistKey(artistName);
+  const normalizedVideoId = normalizeYouTubeVideoId(thumbnailVideoId);
+
+  if (!normalizedGenre || !normalizedArtistKey || !normalizedVideoId) {
+    throw new Error("Invalid category artist thumbnail pin payload");
+  }
+
+  await ensureCategoryArtistThumbnailTable();
+  await prisma.$executeRawUnsafe(
+    `
+      INSERT INTO category_artist_thumbnails (genre_norm, artist_key, thumbnail_video_id)
+      VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        thumbnail_video_id = VALUES(thumbnail_video_id),
+        updated_at = CURRENT_TIMESTAMP(3)
+    `,
+    normalizedGenre,
+    normalizedArtistKey,
+    normalizedVideoId,
+  );
+
+  clearGenreCaches();
+}
+
 export async function getCategoryArtistsByGenre(
   genre: string,
   options?: { offset?: number; limit?: number },
@@ -147,6 +215,17 @@ export async function getCategoryArtistsByGenre(
   const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
   const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
   const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
+  const hasPinnedCategoryArtistThumbs = await hasCategoryArtistThumbnailTable();
+
+  const pinnedArtistThumbJoin = hasPinnedCategoryArtistThumbs
+    ? `LEFT JOIN category_artist_thumbnails cat
+       ON cat.genre_norm = ?
+      AND cat.artist_key = ${videoArtistNormExpr}`
+    : "";
+
+  const thumbnailSelectExpr = hasPinnedCategoryArtistThumbs
+    ? "COALESCE(cat.thumbnail_video_id, SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC), ',', 1))"
+    : "SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC), ',', 1)";
 
   const rows = await prisma.$queryRawUnsafe<Array<{
     artistName: string | null;
@@ -155,13 +234,10 @@ export async function getCategoryArtistsByGenre(
   }>>(
     `SELECT
        MAX(COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''))) AS artistName,
-       SUBSTRING_INDEX(
-         GROUP_CONCAT(v.videoId ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC),
-         ',',
-         1
-       ) AS thumbnailVideoId,
+       ${thumbnailSelectExpr} AS thumbnailVideoId,
        COUNT(*) AS videoCount
      FROM videos v${videoArtistIndexHint}
+     ${pinnedArtistThumbJoin}
      WHERE v.videoId IS NOT NULL
        AND ${videoArtistNormExpr} <> ''
        AND COALESCE(v.approved, 0) = 1
@@ -170,10 +246,11 @@ export async function getCategoryArtistsByGenre(
          ${normalizedGenreSqlExpr} = ?
          OR LOWER(v.genre) REGEXP ?
        )
-     GROUP BY ${videoArtistNormExpr}
+     GROUP BY ${videoArtistNormExpr}, cat.thumbnail_video_id
      ORDER BY videoCount DESC, artistName ASC
      LIMIT ${requestedLimit + 1}
      OFFSET ${requestedOffset}`,
+    ...(hasPinnedCategoryArtistThumbs ? [normalizedGenre] : []),
     normalizedGenre,
     normalizedGenrePattern,
   );
@@ -721,7 +798,7 @@ export async function getVideosByGenre(
          AND TRIM(v.genre) <> ''
          AND COALESCE(v.approved, 0) = 1
          AND EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND sv.status = 'available')
-         AND NOT EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status <> 'available'))
+         AND NOT EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status <> 'available')
          AND (
            ${normalizedGenreSqlExpr} = ?
            OR LOWER(v.genre) REGEXP ?

@@ -1,25 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { CloseLink } from "@/components/close-link";
 import { OverlayHeader } from "@/components/overlay-header";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
+import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import type { CategoryArtistCard } from "@/lib/catalog-data";
 
 type CategoryArtistsInfiniteProps = {
   slug: string;
   genre: string;
   allArtists: CategoryArtistCard[];
+  isAdmin?: boolean;
 };
 
 export function CategoryArtistsInfinite({
   slug,
   genre,
   allArtists,
+  isAdmin = false,
 }: CategoryArtistsInfiniteProps) {
   const [filterValue, setFilterValue] = useState("");
+  const [pinningArtistSlug, setPinningArtistSlug] = useState<string | null>(null);
 
   const normalizedFilter = filterValue.trim().toLowerCase();
 
@@ -39,6 +43,30 @@ export function CategoryArtistsInfinite({
 
     return `${artists.length.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} artists`;
   }, [allArtists.length, artists.length, normalizedFilter]);
+
+  const handlePinCategoryThumbnail = useCallback(async (event: React.MouseEvent<HTMLButtonElement>, artistSlug: string, thumbnailVideoId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!isAdmin || pinningArtistSlug === artistSlug) {
+      return;
+    }
+
+    setPinningArtistSlug(artistSlug);
+    try {
+      await fetchWithAuthRetry("/api/admin/thumbnail-pins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target: "category",
+          genre,
+          thumbnailVideoId,
+        }),
+      });
+    } finally {
+      setPinningArtistSlug((current) => (current === artistSlug ? null : current));
+    }
+  }, [genre, isAdmin, pinningArtistSlug]);
 
   return (
     <>
@@ -82,6 +110,24 @@ export function CategoryArtistsInfinite({
               >
                 {artist.thumbnailVideoId ? (
                   <div className="categoryThumbWrap artistResultThumbWrap">
+                    {isAdmin ? (
+                      <button
+                        type="button"
+                        className="adminThumbnailPinButton"
+                        aria-label="Set as category thumbnail"
+                        title="Set as category thumbnail"
+                        disabled={pinningArtistSlug === artist.slug}
+                        onClick={(event) => {
+                          void handlePinCategoryThumbnail(event, artist.slug, artist.thumbnailVideoId as string);
+                        }}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                      >
+                        ◰
+                      </button>
+                    ) : null}
                     <YouTubeThumbnailImage
                       videoId={artist.thumbnailVideoId}
                       alt=""
