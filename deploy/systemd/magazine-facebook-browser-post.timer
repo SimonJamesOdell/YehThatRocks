@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the magazine Facebook browser poster every 6 hours
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=6h
+Persistent=true
+Unit=magazine-facebook-browser-post.service
+
+[Install]
+WantedBy=timers.target

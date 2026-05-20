@@ -1,0 +1,18 @@
+[Unit]
+Description=YehThatRocks magazine Facebook browser poster (user)
+After=network-online.target graphical-session.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/.local/share/yehthatrocks/magazine-facebook-browser
+EnvironmentFile=-%h/.config/yehthatrocks/magazine-facebook-browser.env
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+ExecStart=/usr/bin/node %h/.local/share/yehthatrocks/magazine-facebook-browser/magazine-facebook-browser-post.js
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=magazine-facebook-browser-post
+
+[Install]
+WantedBy=default.target
