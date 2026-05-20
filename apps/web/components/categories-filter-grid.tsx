@@ -30,9 +30,9 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
   const [filterValue, setFilterValue] = useState("");
   const [cards, setCards] = useState<GenreCard[]>(shouldDeferInitialCards ? [] : genreCards);
   const [isLoadingCards, setIsLoadingCards] = useState(genreCards.length === 0 || shouldDeferInitialCards);
-  const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0 || shouldDeferInitialCards);
+  const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);
   const [isLoaderFadingOut, setIsLoaderFadingOut] = useState(false);
-  const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0 && !shouldDeferInitialCards);
+  const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0);
   const loaderFadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
