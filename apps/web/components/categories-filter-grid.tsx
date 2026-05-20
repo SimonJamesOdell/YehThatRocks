@@ -26,24 +26,25 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
     () => genreCards.length > 0 && genreCards.every((card) => Number(card.artistCount ?? 0) === 0),
     [genreCards],
   );
+  const shouldDeferInitialCards = genreCards.length > 0 && initialCardsNeedCountRefresh;
   const [filterValue, setFilterValue] = useState("");
-  const [cards, setCards] = useState<GenreCard[]>(genreCards);
-  const [isLoadingCards, setIsLoadingCards] = useState(genreCards.length === 0);
-  const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);
+  const [cards, setCards] = useState<GenreCard[]>(shouldDeferInitialCards ? [] : genreCards);
+  const [isLoadingCards, setIsLoadingCards] = useState(genreCards.length === 0 || shouldDeferInitialCards);
+  const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0 || shouldDeferInitialCards);
   const [isLoaderFadingOut, setIsLoaderFadingOut] = useState(false);
-  const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0);
+  const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0 && !shouldDeferInitialCards);
   const loaderFadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setCards(genreCards);
-    setIsLoadingCards(genreCards.length === 0);
+    setCards(shouldDeferInitialCards ? [] : genreCards);
+    setIsLoadingCards(genreCards.length === 0 || shouldDeferInitialCards);
 
-    if (genreCards.length > 0) {
+    if (genreCards.length > 0 && !shouldDeferInitialCards) {
       setIsLoaderVisible(false);
       setIsLoaderFadingOut(false);
       setHasRevealedCards(true);
     }
-  }, [genreCards]);
+  }, [genreCards, shouldDeferInitialCards]);
 
   useEffect(() => {
     return () => {
