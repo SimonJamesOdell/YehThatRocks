@@ -226,6 +226,9 @@ export async function getCategoryArtistsByGenre(
   const thumbnailSelectExpr = hasPinnedCategoryArtistThumbs
     ? "COALESCE(cat.thumbnail_video_id, SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC), ',', 1))"
     : "SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC), ',', 1)";
+  const groupByExpr = hasPinnedCategoryArtistThumbs
+    ? `${videoArtistNormExpr}, cat.thumbnail_video_id`
+    : videoArtistNormExpr;
 
   const rows = await prisma.$queryRawUnsafe<Array<{
     artistName: string | null;
@@ -246,7 +249,7 @@ export async function getCategoryArtistsByGenre(
          ${normalizedGenreSqlExpr} = ?
          OR LOWER(v.genre) REGEXP ?
        )
-     GROUP BY ${videoArtistNormExpr}, cat.thumbnail_video_id
+    GROUP BY ${groupByExpr}
      ORDER BY videoCount DESC, artistName ASC
      LIMIT ${requestedLimit + 1}
      OFFSET ${requestedOffset}`,
