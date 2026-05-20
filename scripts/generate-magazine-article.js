@@ -24,6 +24,7 @@ const mysql = require("mysql2/promise");
 const https = require("node:https");
 const path = require("node:path");
 const fs = require("node:fs");
+const { maybeShareMagazineArticle } = require("./lib/facebook-group-magazine-share");
 
 // ── Args parsing ──────────────────────────────────────────────────────────
 
@@ -312,8 +313,25 @@ async function main() {
   }
 
   await saveToDatabase(article);
+  let shareResult = { status: "skipped", reason: "generation-complete" };
+  try {
+    shareResult = await maybeShareMagazineArticle({
+      slug: articleSlug,
+      title: article.title,
+      artist,
+      track,
+      genre,
+      videoId,
+    });
+  } catch (shareError) {
+    shareResult = {
+      status: "error",
+      error: shareError instanceof Error ? shareError.message : String(shareError),
+    };
+  }
   console.log(`\nDone. Article URL: /magazine/${articleSlug}`);
   console.log(`Watch URL: /?v=${videoId}&resume=1`);
+  console.log(`Facebook share: ${JSON.stringify(shareResult)}`);
 }
 
 main().catch((err) => {
