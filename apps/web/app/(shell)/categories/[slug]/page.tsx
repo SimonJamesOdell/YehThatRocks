@@ -1,15 +1,14 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { CategoryVideosInfinite } from "@/components/category-videos-infinite";
+import { CategoryArtistsInfinite } from "@/components/category-artists-infinite";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import {
+  getCategoryArtistsByGenre,
   getGenreBySlug,
-  getVideosByGenre,
 } from "@/lib/catalog-data";
-import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
 
-const CATEGORY_INITIAL_PAGE_SIZE = 48;
+const CATEGORY_ARTISTS_FETCH_LIMIT = 2_000;
 
 const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
 
@@ -17,8 +16,8 @@ export async function generateMetadata({ params }: CategoryPageProps): Promise<M
   const { slug } = await params;
   const genre = await getGenreBySlug(slug);
   if (!genre) return {};
-  const title = `${genre} Videos | YehThatRocks`;
-  const description = `Stream the best ${genre} music videos on YehThatRocks — community-driven rock and metal discovery.`;
+  const title = `${genre} Artists | YehThatRocks`;
+  const description = `Browse artists with videos in ${genre} on YehThatRocks, then drill into artist-specific category video lists.`;
   return {
     title,
     description,
@@ -43,11 +42,6 @@ type CategoryPageProps = {
 };
 
 export default async function CategoryDetailPage({ params }: CategoryPageProps) {
-  const [{ hasAccessToken: isAuthenticated }, { seenVideoIds, hiddenVideoIds }] = await Promise.all([
-    getShellRequestAuthState(),
-    getShellRequestVideoState(),
-  ]);
-
   const { slug } = await params;
   const genre = await getGenreBySlug(slug);
 
@@ -55,15 +49,15 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
     notFound();
   }
 
-  const initialVideosWithProbe = await getVideosByGenre(genre, { offset: 0, limit: CATEGORY_INITIAL_PAGE_SIZE + 1 });
-
-  const initialHasMore = initialVideosWithProbe.length > CATEGORY_INITIAL_PAGE_SIZE;
-  const initialVideos = initialVideosWithProbe.slice(0, CATEGORY_INITIAL_PAGE_SIZE);
+  const allArtists = await getCategoryArtistsByGenre(genre, {
+    offset: 0,
+    limit: CATEGORY_ARTISTS_FETCH_LIMIT,
+  });
   const categoryJsonLd = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",
-    name: `${genre} Videos | YehThatRocks`,
-    description: `Stream the best ${genre} music videos on YehThatRocks.`,
+    name: `${genre} Artists | YehThatRocks`,
+    description: `Browse artists with available ${genre} videos on YehThatRocks.`,
     url: `${SITE_ORIGIN}/categories/${slug}`,
     isPartOf: { "@type": "WebSite", name: "YehThatRocks", url: SITE_ORIGIN },
     breadcrumb: {
@@ -80,15 +74,10 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(categoryJsonLd) }} />
       <OverlayScrollReset />
 
-      <CategoryVideosInfinite
+      <CategoryArtistsInfinite
         slug={slug}
         genre={genre}
-        isAuthenticated={isAuthenticated}
-        seenVideoIds={Array.from(seenVideoIds)}
-        hiddenVideoIds={Array.from(hiddenVideoIds)}
-        initialVideos={initialVideos}
-        initialHasMore={initialHasMore}
-        pageSize={CATEGORY_INITIAL_PAGE_SIZE}
+        allArtists={allArtists}
       />
     </>
   );

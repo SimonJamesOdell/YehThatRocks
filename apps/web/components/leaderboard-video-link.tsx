@@ -191,7 +191,7 @@ export function LeaderboardVideoLink({
   const artistPagePath = getArtistPagePath(metadataArtist);
   const parsedArtistPagePath = parsedArtistCandidate ? getArtistPagePath(parsedArtistCandidate) : null;
   const artistSlug = artistPagePath?.split("/")[2] ?? null;
-  const artistVideoCountLabel = rowVariant === "new" || artistVideoCount === null
+  const artistVideoCountLabel = artistVideoCount === null
     ? null
     : `${artistVideoCount.toLocaleString("en-US")} videos`;
 

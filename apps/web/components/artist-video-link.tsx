@@ -17,6 +17,7 @@ type ArtistVideoLinkProps = {
   isAuthenticated?: boolean;
   isSeen?: boolean;
   useCornerActions?: boolean;
+  titleMode?: "parsedTrackOrTitle" | "parsedTrackOnly";
   onHideVideo?: (video: VideoRecord) => void;
   isHidePending?: boolean;
 };
@@ -26,6 +27,7 @@ export function ArtistVideoLink({
   isAuthenticated = true,
   isSeen = false,
   useCornerActions = false,
+  titleMode = "parsedTrackOrTitle",
   onHideVideo,
   isHidePending = false,
 }: ArtistVideoLinkProps) {
@@ -96,6 +98,10 @@ export function ArtistVideoLink({
       setIsRemovingFavourite(false);
     }
   }, [isAuthenticated, isRemovingFavourite, video.id]);
+
+  const cardTitle = titleMode === "parsedTrackOnly"
+    ? (video.parsedTrack?.trim() || "Untitled Track")
+    : (video.parsedTrack ?? video.title);
 
   return (
     <article
@@ -212,7 +218,7 @@ export function ArtistVideoLink({
           {video.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
           {video.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
         </div>
-        <h3 className="categoryVideoTitle">{video.parsedTrack ?? video.title}</h3>
+        <h3 className="categoryVideoTitle">{cardTitle}</h3>
       </Link>
       {!useCornerActions ? (
         <div className="actionRow categoryVideoActions">

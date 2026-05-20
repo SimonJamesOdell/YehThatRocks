@@ -5,8 +5,10 @@
 
 import { prisma } from "@/lib/db";
 import { BoundedMap } from "@/lib/bounded-map";
+import { slugifyArtistName } from "@/lib/artist-routing";
 import type { ArtistRecord, VideoRecord } from "@/lib/catalog";
 import {
+  type CategoryArtistCard,
   dedupeRankedRows,
   escapeSqlIdentifier,
   getGenreSlug,
@@ -21,6 +23,7 @@ import {
   type RankedVideoRow,
 } from "@/lib/catalog-data-utils";
 import {
+  AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE,
   AVAILABLE_SITE_VIDEOS_JOIN,
   getArtistColumnMap,
   getArtistNameNormalizationExpr,
@@ -50,6 +53,215 @@ const genreVideosInFlight = new BoundedMap<string, Promise<VideoRecord[]>>(GENRE
 let genreCardsCache: { expiresAt: number; cards: GenreCard[] } | undefined;
 let genreCardsInFlight: Promise<GenreCard[]> | undefined;
 let genreListCache: { expiresAt: number; genres: string[] } | undefined;
+const genreArtistCountCache = new BoundedMap<string, { expiresAt: number; count: number }>(GENRE_CACHE_MAX_ENTRIES);
+
+const GENRE_ARTIST_COUNT_CACHE_TTL_MS = 10 * 60 * 1000;
+
+async function hydrateGenreArtistCounts(cards: GenreCard[]): Promise<GenreCard[]> {
+  if (cards.length === 0) {
+    return cards;
+  }
+
+  const now = Date.now();
+  const countByGenre = new Map<string, number>();
+  const missingCards: GenreCard[] = [];
+
+  for (const card of cards) {
+    const key = card.genre.trim().toLowerCase();
+    const cached = genreArtistCountCache.get(key);
+    if (cached && cached.expiresAt > now) {
+      countByGenre.set(key, cached.count);
+      continue;
+    }
+    missingCards.push(card);
+  }
+
+  for (const card of missingCards) {
+    const key = card.genre.trim().toLowerCase();
+    const artists = await getCategoryArtistsByGenre(card.genre, { offset: 0, limit: 2_000 });
+    const count = artists.length;
+    countByGenre.set(key, count);
+    genreArtistCountCache.set(key, { expiresAt: now + GENRE_ARTIST_COUNT_CACHE_TTL_MS, count });
+  }
+
+  return cards.map((card) => ({
+    ...card,
+    artistCount: countByGenre.get(card.genre.trim().toLowerCase()) ?? 0,
+  }));
+}
+
+async function attachArtistCountsToGenreCards(cards: GenreCard[]): Promise<GenreCard[]> {
+  if (cards.length === 0) {
+    return cards;
+  }
+
+  try {
+    return await hydrateGenreArtistCounts(cards);
+  } catch (error) {
+    console.error("[catalog-data-genres] attachArtistCountsToGenreCards failed", {
+      message: error instanceof Error ? error.message : "unknown error",
+    });
+    return cards.map((card) => ({ ...card, artistCount: 0 }));
+  }
+}
+
+function getCategoryArtistNormalizationExpr(alias: string, normalizedColumn: string | null) {
+  const parsedArtistRef = `${alias}.parsedArtist`;
+  const channelTitleRef = `${alias}.channelTitle`;
+
+  if (normalizedColumn) {
+    const normalizedRef = `${alias}.${escapeSqlIdentifier(normalizedColumn)}`;
+    return `LOWER(TRIM(COALESCE(NULLIF(${normalizedRef}, ''), NULLIF(${parsedArtistRef}, ''), NULLIF(${channelTitleRef}, ''))))`;
+  }
+
+  return `LOWER(TRIM(COALESCE(NULLIF(${parsedArtistRef}, ''), NULLIF(${channelTitleRef}, ''))))`;
+}
+
+export async function getCategoryArtistsByGenre(
+  genre: string,
+  options?: { offset?: number; limit?: number },
+): Promise<CategoryArtistCard[]> {
+  if (!hasDatabaseUrl()) {
+    return [];
+  }
+
+  requireDatabaseUrl("getCategoryArtistsByGenre");
+
+  const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
+  const requestedLimit = Math.max(1, Math.min(200, Number.isFinite(options?.limit) ? Number(options?.limit) : 48));
+  const normalizedGenre = normalizeGenreTerm(genre);
+  const normalizedGenrePattern = normalizedGenre.length > 0
+    ? `(^|[^a-z0-9])${escapeRegexLiteral(normalizedGenre).replace(/ /g, "[^a-z0-9]+")}([^a-z0-9]|$)`
+    : "";
+
+  if (!normalizedGenre) {
+    return [];
+  }
+
+  const videoGenreColumnExists = await hasVideoGenreColumn();
+  if (!videoGenreColumnExists) {
+    return [];
+  }
+
+  const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
+  const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
+  const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
+  const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
+
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    artistName: string | null;
+    thumbnailVideoId: string | null;
+    videoCount: bigint | number;
+  }>>(
+    `SELECT
+       MAX(COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''))) AS artistName,
+       SUBSTRING_INDEX(
+         GROUP_CONCAT(v.videoId ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC),
+         ',',
+         1
+       ) AS thumbnailVideoId,
+       COUNT(*) AS videoCount
+     FROM videos v${videoArtistIndexHint}
+     WHERE v.videoId IS NOT NULL
+       AND ${videoArtistNormExpr} <> ''
+       AND COALESCE(v.approved, 0) = 1
+       ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+       AND (
+         ${normalizedGenreSqlExpr} = ?
+         OR LOWER(v.genre) REGEXP ?
+       )
+     GROUP BY ${videoArtistNormExpr}
+     ORDER BY videoCount DESC, artistName ASC
+     LIMIT ${requestedLimit + 1}
+     OFFSET ${requestedOffset}`,
+    normalizedGenre,
+    normalizedGenrePattern,
+  );
+
+  return rows
+    .map((row) => {
+      const name = (row.artistName ?? "").trim();
+      if (!name) {
+        return null;
+      }
+
+      return {
+        name,
+        slug: slugifyArtistName(name),
+        videoCount: Number(row.videoCount) || 0,
+        thumbnailVideoId: (row.thumbnailVideoId ?? "").trim() || null,
+      } as CategoryArtistCard;
+    })
+    .filter((row): row is CategoryArtistCard => row !== null);
+}
+
+export async function getVideosByGenreAndArtist(
+  genre: string,
+  artistName: string,
+  options?: { offset?: number; limit?: number },
+): Promise<VideoRecord[]> {
+  if (!hasDatabaseUrl()) {
+    return [];
+  }
+
+  requireDatabaseUrl("getVideosByGenreAndArtist");
+
+  const normalizedGenre = normalizeGenreTerm(genre);
+  const normalizedArtist = normalizeArtistKey(artistName);
+  const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
+  const requestedLimit = Math.max(1, Math.min(120, Number.isFinite(options?.limit) ? Number(options?.limit) : 48));
+
+  if (!normalizedGenre || !normalizedArtist) {
+    return [];
+  }
+
+  const videoGenreColumnExists = await hasVideoGenreColumn();
+  if (!videoGenreColumnExists) {
+    return [];
+  }
+
+  const normalizedGenrePattern = `(^|[^a-z0-9])${escapeRegexLiteral(normalizedGenre).replace(/ /g, "[^a-z0-9]+")}([^a-z0-9]|$)`;
+  const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
+  const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
+    const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
+  const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
+
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    videoId: string;
+    title: string;
+    channelTitle: string | null;
+    parsedArtist: string | null;
+    parsedTrack: string | null;
+    favourited: number | bigint | null;
+    description: string | null;
+  }>>(
+    `SELECT
+       v.videoId,
+       v.title,
+       NULLIF(TRIM(v.channelTitle), '') AS channelTitle,
+       NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
+       NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
+       v.favourited,
+       v.description
+     FROM videos v${videoArtistIndexHint}
+     WHERE v.videoId IS NOT NULL
+       AND ${videoArtistNormExpr} = ?
+       AND COALESCE(v.approved, 0) = 1
+       ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+       AND (
+         ${normalizedGenreSqlExpr} = ?
+         OR LOWER(v.genre) REGEXP ?
+       )
+     ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC
+     LIMIT ${requestedLimit}
+     OFFSET ${requestedOffset}`,
+    normalizedArtist,
+    normalizedGenre,
+    normalizedGenrePattern,
+  );
+
+  return rows.map(mapVideo);
+}
 
 // ── Cache clearing ────────────────────────────────────────────────────────────
 
@@ -75,6 +287,7 @@ export function clearGenreCaches() {
   genreArtistsCache.clear();
   genreVideosCache.clear();
   genreVideosInFlight.clear();
+  genreArtistCountCache.clear();
   genreCardsCache = undefined;
   genreCardsInFlight = undefined;
   genreListCache = undefined;
@@ -141,7 +354,18 @@ export async function getGenreCards(): Promise<GenreCard[]> {
     genreCardsCache.cards.length > 0 &&
     genreCardsCache.cards.some((card) => !!card.previewVideoId)
   ) {
-    return genreCardsCache.cards;
+    const cachedCards = genreCardsCache.cards;
+    if (cachedCards.some((card) => Number(card.artistCount ?? 0) > 0)) {
+      return cachedCards;
+    }
+
+    const refreshedCards = await attachArtistCountsToGenreCards(cachedCards);
+    if (refreshedCards.some((card) => Number(card.artistCount ?? 0) > 0)) {
+      genreCardsCache = { expiresAt: now + GENRE_CARDS_CACHE_TTL_MS, cards: refreshedCards };
+      return refreshedCards;
+    }
+
+    return refreshedCards;
   }
 
   if (genreCardsInFlight) {
@@ -171,6 +395,7 @@ export async function getGenreCards(): Promise<GenreCard[]> {
       let cards: GenreCard[] = rows.map((row: { genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }) => ({
         genre: row.genre,
         previewVideoId: row.thumbnailVideoId ?? row.thumbnail_video_id ?? null,
+        artistCount: 0,
       }));
 
       if (cards.length === 0) {
@@ -186,17 +411,18 @@ export async function getGenreCards(): Promise<GenreCard[]> {
           cards = fallbackRows.map((r: { genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }) => ({
             genre: r.genre,
             previewVideoId: r.thumbnailVideoId ?? r.thumbnail_video_id ?? null,
+            artistCount: 0,
           }));
         } else {
           const genreRows = await prisma.$queryRaw<Array<{ genre: string }>>`
             SELECT name AS genre FROM genres WHERE name IS NOT NULL AND TRIM(name) <> '' ORDER BY name ASC LIMIT 1000
           `;
-          cards = genreRows.map((r: { genre: string }) => ({ genre: r.genre, previewVideoId: null }));
+          cards = genreRows.map((r: { genre: string }) => ({ genre: r.genre, previewVideoId: null, artistCount: 0 }));
         }
       }
 
       if (cards.length === 0) {
-        cards = (await getGenres()).map((genre: string) => ({ genre, previewVideoId: null }));
+        cards = (await getGenres()).map((genre: string) => ({ genre, previewVideoId: null, artistCount: 0 }));
       }
 
       if (cards.some((card) => !card.previewVideoId)) {
@@ -292,6 +518,8 @@ export async function getGenreCards(): Promise<GenreCard[]> {
         }
       }
 
+      cards = await attachArtistCountsToGenreCards(cards);
+
       genreCardsCache = { expiresAt: now + GENRE_CARDS_CACHE_TTL_MS, cards };
       genreListCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, genres: cards.map((c: GenreCard) => c.genre) };
       return cards;
@@ -308,6 +536,7 @@ export async function getGenreCards(): Promise<GenreCard[]> {
           const fallbackCards = rawFallbackRows.map((row: { genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }) => ({
             genre: row.genre,
             previewVideoId: row.thumbnailVideoId ?? row.thumbnail_video_id ?? null,
+            artistCount: 0,
           }));
           genreCardsCache = { expiresAt: now + 30_000, cards: fallbackCards };
           return fallbackCards;
@@ -316,7 +545,7 @@ export async function getGenreCards(): Promise<GenreCard[]> {
         // fall through
       }
 
-      const fallbackCards = (await getGenres()).map((genre: string) => ({ genre, previewVideoId: null }));
+      const fallbackCards = (await getGenres()).map((genre: string) => ({ genre, previewVideoId: null, artistCount: 0 }));
       genreCardsCache = { expiresAt: now + 30_000, cards: fallbackCards };
       return fallbackCards;
     }
