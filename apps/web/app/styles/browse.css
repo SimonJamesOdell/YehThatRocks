@@ -932,6 +932,12 @@
   bottom: 8px;
 }
 
+.artistVideoGrid .categoryVideoCardCornerActions .categoryVideoTitle {
+  padding-right: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
 .categoryVideoHideButton {
   position: absolute;
   top: 18px;
@@ -1069,21 +1075,39 @@
   box-shadow: var(--glow);
 }
 
-.artistVideoSourceBadges {
-  min-height: 20px;
+.artistVideoThumbBadges {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 22;
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: calc(100% - 72px);
 }
 
-.artistVideoFavouriteBadgeOverlay {
-  left: 3px;
+.artistVideoThumbBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  line-height: 1.1;
+  margin-bottom: 0;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
+}
+
+.artistVideoThumbBadges .videoSeenBadge.artistVideoThumbBadge {
+  margin-left: 0;
+  font-size: 0.64rem;
 }
 
 .artistVideoFavouriteBadgeButton {
   appearance: none;
-  border: 0;
-  background: transparent;
   padding: 0;
   cursor: pointer;
-  position: absolute;
+  position: relative;
 }
 
 .trackCard.leaderboardCard .artistVideoFavouriteBadgeButton {
@@ -1117,6 +1141,17 @@
   line-height: 1;
 }
 
+.artistVideoFavouriteInlineBadge {
+  min-width: 22px;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.artistVideoFavouriteInlineBadge .artistVideoFavouriteBadgeHeart {
+  font-size: 1rem;
+}
+
 .artistVideoFavouriteBadgeRemoveGlyph {
   position: absolute;
   inset: 0;
@@ -1136,13 +1171,9 @@
 
 .artistVideoFavouriteBadgeButton:hover,
 .artistVideoFavouriteBadgeButton:focus-visible {
-  width: auto;
-  height: auto;
-  display: inline-block;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+  border-color: rgba(255, 191, 191, 0.65);
+  background: rgba(88, 18, 18, 0.72);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
 }
 
 .artistVideoFavouriteBadgeButton:hover .artistVideoFavouriteBadgeHeart,
