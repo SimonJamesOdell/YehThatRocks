@@ -58,6 +58,14 @@ export type HiddenVideoEntry = {
 export type GenreCard = {
   genre: string;
   previewVideoId: string | null;
+  artistCount: number;
+};
+
+export type CategoryArtistCard = {
+  name: string;
+  slug: string;
+  videoCount: number;
+  thumbnailVideoId: string | null;
 };
 
 export type PlaybackDecision = {

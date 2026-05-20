@@ -22,6 +22,10 @@ type CategoriesFilterGridProps = {
 };
 
 export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) {
+  const initialCardsNeedCountRefresh = useMemo(
+    () => genreCards.length > 0 && genreCards.every((card) => Number(card.artistCount ?? 0) === 0),
+    [genreCards],
+  );
   const [filterValue, setFilterValue] = useState("");
   const [cards, setCards] = useState<GenreCard[]>(genreCards);
   const [isLoadingCards, setIsLoadingCards] = useState(genreCards.length === 0);
@@ -50,7 +54,7 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
   }, []);
 
   useEffect(() => {
-    if (genreCards.length > 0) {
+    if (genreCards.length > 0 && !initialCardsNeedCountRefresh) {
       return;
     }
 
@@ -81,7 +85,7 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
     return () => {
       cancelled = true;
     };
-  }, [genreCards]);
+  }, [genreCards, initialCardsNeedCountRefresh]);
 
   const filteredCards = useMemo(() => {
     const needle = filterValue.trim().toLowerCase();
@@ -163,7 +167,7 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
       <div className="categoriesCatalogStage">
         {filteredCards.length > 0 ? (
           <div className={`catalogGrid categoriesCatalogGrid categoriesCards${hasRevealedCards ? " categoriesCardsRevealed" : ""}`}>
-            {filteredCards.map(({ genre, previewVideoId }, index) => (
+            {filteredCards.map(({ genre, previewVideoId, artistCount }, index) => (
               <Link
                 key={genre}
                 href={`/categories/${getGenreSlug(genre)}`}
@@ -186,6 +190,7 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
                 ) : null}
                 <p className="statusLabel">Category</p>
                 <h3>{genre}</h3>
+                <p className="categoryArtistCount">{artistCount.toLocaleString("en-US")} {artistCount === 1 ? "artist" : "artists"}</p>
               </Link>
             ))}
           </div>

@@ -554,6 +554,7 @@ function ShellDynamicInner({
       shouldShowOverlayPanel
       && pathname !== "/new"
       && pathname !== "/top100"
+      && pathname !== "/search"
       && pathname !== "/favourites"
       && pathname !== "/history"
       && pathname !== "/account"

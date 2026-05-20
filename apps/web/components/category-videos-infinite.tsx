@@ -20,6 +20,8 @@ import { OPERATIONAL_RETRY_LATER_MESSAGE } from "@/lib/operational-error-copy";
 type CategoryVideosInfiniteProps = {
   slug: string;
   genre: string;
+  artistSlug?: string;
+  artistName?: string;
   isAuthenticated: boolean;
   seenVideoIds?: string[];
   hiddenVideoIds?: string[];
@@ -62,6 +64,8 @@ function sortVideosBySeen(videos: VideoRecord[], seenVideoIdSet: Set<string>) {
 export function CategoryVideosInfinite({
   slug,
   genre,
+  artistSlug,
+  artistName,
   isAuthenticated,
   seenVideoIds = [],
   hiddenVideoIds = [],
@@ -69,6 +73,8 @@ export function CategoryVideosInfinite({
   initialHasMore,
   pageSize = 48,
 }: CategoryVideosInfiniteProps) {
+  const isArtistCategoryRoute = Boolean(artistSlug && artistName);
+  const [filterValue, setFilterValue] = useState("");
   const hiddenVideoIdSet = useMemo(() => new Set(hiddenVideoIds), [hiddenVideoIds]);
   const initialVisibleVideos = useMemo(
     () => dedupeVideos(filterHiddenVideos(initialVideos, hiddenVideoIdSet)),
@@ -91,9 +97,16 @@ export function CategoryVideosInfinite({
       const params = new URLSearchParams();
       params.set("offset", String(offset));
       params.set("limit", String(pageSize));
+      if (artistName) {
+        params.set("name", artistName);
+      }
+
+      const endpoint = isArtistCategoryRoute
+        ? `/api/categories/${encodeURIComponent(slug)}/artists/${encodeURIComponent(artistSlug ?? "")}`
+        : `/api/categories/${encodeURIComponent(slug)}`;
 
       const result = await fetchJsonWithLoaderContract<CategoryVideosPayload>({
-        input: `/api/categories/${encodeURIComponent(slug)}?${params.toString()}`,
+        input: `${endpoint}?${params.toString()}`,
         init: {
           method: "GET",
           cache: "no-store",
@@ -139,7 +152,7 @@ export function CategoryVideosInfinite({
         errorMessage: OPERATIONAL_RETRY_LATER_MESSAGE,
       };
     }
-  }, [hiddenVideoIdSet, pageSize, slug]);
+  }, [artistName, artistSlug, hiddenVideoIdSet, isArtistCategoryRoute, pageSize, slug]);
 
   const {
     items: videos,
@@ -250,8 +263,23 @@ export function CategoryVideosInfinite({
   const visibleOrderedVideos = hideSeen
     ? (isAuthenticated ? orderedVideos.filter((video) => !seenVideoIdSet.has(video.id)) : orderedVideos)
     : orderedVideos;
-  const chunkTriggerIndex = visibleOrderedVideos.length > pageSize
-    ? Math.max(0, visibleOrderedVideos.length - pageSize * SCROLL_BUFFER_PAGES)
+
+  const filteredVisibleVideos = useMemo(() => {
+    const needle = filterValue.trim().toLowerCase();
+    if (!needle) {
+      return visibleOrderedVideos;
+    }
+
+    return visibleOrderedVideos.filter((video) => {
+      const parsedTrack = video.parsedTrack?.toLowerCase() ?? "";
+      const title = video.title.toLowerCase();
+      const artist = video.channelTitle.toLowerCase();
+      return parsedTrack.includes(needle) || title.includes(needle) || artist.includes(needle);
+    });
+  }, [filterValue, visibleOrderedVideos]);
+
+  const chunkTriggerIndex = filteredVisibleVideos.length > pageSize
+    ? Math.max(0, filteredVisibleVideos.length - pageSize * SCROLL_BUFFER_PAGES)
     : -1;
 
   if (videos.length === 0) {
@@ -266,13 +294,27 @@ export function CategoryVideosInfinite({
                   Categories
                 </Link>
                 <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">&gt;</span>
-                <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{genre}</span>
+                {!isArtistCategoryRoute ? (
+                  <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{genre}</span>
+                ) : (
+                  <>
+                    <Link href={`/categories/${encodeURIComponent(slug)}`} className="categoryHeaderBreadcrumbLink">
+                      {genre}
+                    </Link>
+                    <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">&gt;</span>
+                    <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{artistName}</span>
+                  </>
+                )}
               </span>
             </strong>
           </div>
           <CloseLink />
         </OverlayHeader>
-        <p className="categoryNoVideos">No videos found for this category yet.</p>
+        <p className="categoryNoVideos">
+          {isArtistCategoryRoute
+            ? "No videos found for this artist in the selected category yet."
+            : "No videos found for this category yet."}
+        </p>
       </>
     );
   }
@@ -288,9 +330,31 @@ export function CategoryVideosInfinite({
                 Categories
               </Link>
               <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">&gt;</span>
-              <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{genre}</span>
+              {!isArtistCategoryRoute ? (
+                <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{genre}</span>
+              ) : (
+                <>
+                  <Link href={`/categories/${encodeURIComponent(slug)}`} className="categoryHeaderBreadcrumbLink">
+                    {genre}
+                  </Link>
+                  <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">&gt;</span>
+                  <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{artistName}</span>
+                </>
+              )}
             </span>
           </strong>
+          <div className="categoriesFilterBar">
+            <input
+              type="text"
+              className="categoriesFilterInput"
+              placeholder="filter tracks..."
+              value={filterValue}
+              onChange={(event) => setFilterValue(event.target.value)}
+              aria-label="Filter tracks in this list"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
           {isAuthenticated ? (
             <button
               type="button"
@@ -304,8 +368,8 @@ export function CategoryVideosInfinite({
           <CategoryCreatePlaylistButton
             isAuthenticated={isAuthenticated}
             slug={slug}
-            categoryName={genre}
-            videos={visibleOrderedVideos}
+            categoryName={isArtistCategoryRoute ? `${genre} / ${artistName}` : genre}
+            videos={filteredVisibleVideos}
             seenVideoIds={seenVideoIds}
             hideSeenOnly={hideSeen}
           />
@@ -313,8 +377,8 @@ export function CategoryVideosInfinite({
         <CloseLink />
       </OverlayHeader>
 
-      <div className="categoryVideoGrid">
-        {visibleOrderedVideos.map((video, index) => (
+      <div className="categoryVideoGrid artistVideoGrid">
+        {filteredVisibleVideos.map((video, index) => (
           <div
             key={video.id}
             className="categoryVideoObserverAnchor"
@@ -322,9 +386,10 @@ export function CategoryVideosInfinite({
           >
             <ArtistVideoLink
               video={video}
-              isAuthenticated={isAuthenticated}
+              isAuthenticated={isArtistCategoryRoute ? true : isAuthenticated}
               isSeen={seenVideoIdSet.has(video.id)}
               useCornerActions
+              titleMode={isArtistCategoryRoute ? "parsedTrackOnly" : "parsedTrackOrTitle"}
               onHideVideo={handleHideVideo}
               isHidePending={hidingVideoIds.includes(video.id)}
             />
@@ -334,10 +399,12 @@ export function CategoryVideosInfinite({
 
       <RouteLoaderContractRow
         isLoading={isLoading}
-        loadingLabel={`Loading more ${genre} tracks...`}
+        loadingLabel={isArtistCategoryRoute ? `Loading more ${artistName} tracks...` : `Loading more ${genre} tracks...`}
         error={loadError}
         onRetry={loadError ? retryCategoryLoad : null}
-        endLabel={!isLoading && !hasMore && !loadError ? `End of ${genre} tracks.` : null}
+        endLabel={!isLoading && !hasMore && !loadError
+          ? (isArtistCategoryRoute ? `End of ${artistName} tracks.` : `End of ${genre} tracks.`)
+          : null}
       />
 
       <div ref={sentinelRef} aria-hidden="true" style={{ height: 1 }} />

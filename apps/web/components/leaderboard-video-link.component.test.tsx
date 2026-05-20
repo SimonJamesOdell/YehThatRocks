@@ -33,8 +33,8 @@ describe("resolveLeaderboardVideoLinkNavigationAction", () => {
 });
 
 describe("shouldShowLeaderboardVideoArtistCount", () => {
-  it("hides artist counts on New rows", () => {
-    expect(shouldShowLeaderboardVideoArtistCount("new")).toBe(false);
+  it("shows artist counts on New rows", () => {
+    expect(shouldShowLeaderboardVideoArtistCount("new")).toBe(true);
   });
 
   it("shows artist counts on default rows", () => {

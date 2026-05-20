@@ -1234,6 +1234,14 @@
   font-family: var(--font-display), cursive;
 }
 
+.categoryArtistCount {
+  margin: 0;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 205, 193, 0.86);
+}
+
 .categoryThumbWrap {
   position: relative;
   width: 100%;
