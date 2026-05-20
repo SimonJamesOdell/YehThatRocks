@@ -5,6 +5,13 @@ This project now includes a scheduler-safe script to periodically share curated 
 - Script: `scripts/facebook-group-autoshare.js`
 - Default mode: dry-run (safe, no posting)
 
+It also supports auto-sharing newly generated magazine articles to the same Facebook group:
+
+- Integration points:
+  - `scripts/magazine-news-autogen.js`
+  - `scripts/generate-magazine-article.js`
+- Default mode: disabled and dry-run safe
+
 ## Compliance-first guardrails
 
 The script enforces operational limits to align with platform safety expectations:
@@ -30,6 +37,15 @@ The script enforces operational limits to align with platform safety expectation
 - `FB_GROUP_AUTOSHARE_POOL_SIZE` (default `600`)
 - `FB_GROUP_AUTOSHARE_DEDUPE_DAYS` (default `30`)
 - `FB_GROUP_AUTOSHARE_STATE_PATH` (default `logs/facebook-group-autoshare-state.json`)
+
+### Magazine article auto-share variables
+
+- `FB_GROUP_MAGAZINE_AUTOSHARE_ENABLED` (default `0`)
+- `FB_GROUP_MAGAZINE_AUTOSHARE_DRY_RUN` (default `1`)
+- `FB_GROUP_MAGAZINE_AUTOSHARE_STATE_PATH` (default `logs/facebook-group-magazine-autoshare-state.json`)
+
+When enabled, each newly generated article attempts to publish exactly once per slug (state-file dedupe).
+Generation does not fail if Facebook posting fails; errors are emitted in script output.
 
 ## Commands
 

@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const https = require("node:https");
 const mysql = require("mysql2/promise");
+const { maybeShareMagazineArticle } = require("./lib/facebook-group-magazine-share");
 
 const NEWS_FEEDS = [
   { name: "BBC Entertainment", url: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml" },
@@ -1212,9 +1213,25 @@ async function run() {
           });
 
           let dbAction = "dry-run";
+          let facebookShare = { status: "skipped", reason: "dry-run" };
           if (!dryRun) {
             dbAction = await saveArticle(conn, slug, selection.video, article);
             publishedVideoIds.add(selection.video.videoId);
+            try {
+              facebookShare = await maybeShareMagazineArticle({
+                slug,
+                title: article.title,
+                artist: selection.video.artist,
+                track: selection.video.track,
+                genre: selection.video.genre,
+                videoId: selection.video.videoId,
+              });
+            } catch (shareError) {
+              facebookShare = {
+                status: "error",
+                error: shareError instanceof Error ? shareError.message : String(shareError),
+              };
+            }
           }
 
           results.push({
@@ -1229,6 +1246,7 @@ async function run() {
             track: selection.video.track,
             videoId: selection.video.videoId,
             title: article.title,
+            facebookShare,
           });
         }
 
@@ -1284,9 +1302,25 @@ async function run() {
 
           const slug = await buildArticleSlug(conn, video);
           let dbAction = "dry-run";
+          let facebookShare = { status: "skipped", reason: "dry-run" };
           if (!dryRun) {
             dbAction = await saveArticle(conn, slug, video, article);
             publishedVideoIds.add(videoId);
+            try {
+              facebookShare = await maybeShareMagazineArticle({
+                slug,
+                title: article.title,
+                artist: video.artist,
+                track: video.track,
+                genre: video.genre,
+                videoId,
+              });
+            } catch (shareError) {
+              facebookShare = {
+                status: "error",
+                error: shareError instanceof Error ? shareError.message : String(shareError),
+              };
+            }
           }
 
           results.push({
@@ -1297,6 +1331,7 @@ async function run() {
             artist: selection.artist,
             videoIds: selection.videoIds,
             title: article.title,
+            facebookShare,
           });
         }
 
@@ -1349,9 +1384,25 @@ async function run() {
 
           const slug = await buildArticleSlug(conn, video);
           let dbAction = "dry-run";
+          let facebookShare = { status: "skipped", reason: "dry-run" };
           if (!dryRun) {
             dbAction = await saveArticle(conn, slug, video, article);
             publishedVideoIds.add(videoId);
+            try {
+              facebookShare = await maybeShareMagazineArticle({
+                slug,
+                title: article.title,
+                artist: video.artist,
+                track: video.track,
+                genre: video.genre,
+                videoId,
+              });
+            } catch (shareError) {
+              facebookShare = {
+                status: "error",
+                error: shareError instanceof Error ? shareError.message : String(shareError),
+              };
+            }
           }
 
           results.push({
@@ -1364,6 +1415,7 @@ async function run() {
             artists: selection.artists.map(a => a.name),
             videoIds: selection.videoIds,
             title: article.title,
+            facebookShare,
           });
         }
       } catch (err) {
