@@ -618,7 +618,8 @@ async function runPostFlow({ article, groupUrl, profileDir, headed, dryRun, chan
     }
 
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(5000);
+    console.log("[magazine-facebook-browser-post] Waiting 10 seconds for Facebook to complete the post.");
+    await page.waitForTimeout(10000);
     return { submitted: true };
   } catch (error) {
     pendingError = error;
