@@ -5,8 +5,18 @@ const fs = require("node:fs");
 const path = require("node:path");
 const mysql = require("mysql2/promise");
 const { isRockMetalGenre } = require("./lib/genre-scope");
-const { assertInvariant, finishInvariantCheck } = require("./lib/test-harness");
+const { assertContains, assertInvariant, finishInvariantCheck, readFileStrict } = require("./lib/test-harness");
 const { asNumber, readArg } = require("./lib/cli");
+
+const ROOT = process.cwd();
+const SOURCE_FILES = {
+  categoryPage: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/page.tsx"),
+  categoryArtistPage: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/artists/[artistSlug]/page.tsx"),
+  categoryArtistsApi: path.join(ROOT, "apps/web/app/api/categories/[slug]/artists/route.ts"),
+  categoryArtistVideosApi: path.join(ROOT, "apps/web/app/api/categories/[slug]/artists/[artistSlug]/route.ts"),
+  categoryArtistsInfinite: path.join(ROOT, "apps/web/components/category-artists-infinite.tsx"),
+  categoryVideosInfinite: path.join(ROOT, "apps/web/components/category-videos-infinite.tsx"),
+};
 
 function loadDatabaseEnv() {
   const envPath = path.resolve(process.cwd(), "apps/web/.env.local");
@@ -131,7 +141,30 @@ function getGenreSlug(value) {
     .replace(/^-+|-+$/g, "");
 }
 
+function runSourceChecks(failures) {
+  const categoryPageSource = readFileStrict(SOURCE_FILES.categoryPage, ROOT);
+  const categoryArtistPageSource = readFileStrict(SOURCE_FILES.categoryArtistPage, ROOT);
+  const categoryArtistsApiSource = readFileStrict(SOURCE_FILES.categoryArtistsApi, ROOT);
+  const categoryArtistVideosApiSource = readFileStrict(SOURCE_FILES.categoryArtistVideosApi, ROOT);
+  const categoryArtistsInfiniteSource = readFileStrict(SOURCE_FILES.categoryArtistsInfinite, ROOT);
+  const categoryVideosInfiniteSource = readFileStrict(SOURCE_FILES.categoryVideosInfinite, ROOT);
+
+  assertContains(categoryPageSource, "getCategoryArtistsByGenre", "Category page resolves artists for selected genre", failures);
+  assertContains(categoryPageSource, "CategoryArtistsInfinite", "Category page renders category artist grid", failures);
+  assertContains(categoryArtistPageSource, "getVideosByGenreAndArtist", "Category artist page resolves artist-scoped videos", failures);
+  assertContains(categoryArtistPageSource, "CategoryVideosInfinite", "Category artist page renders category video infinite view", failures);
+  assertContains(categoryArtistsApiSource, "getCategoryArtistsByGenre", "Category artists API resolves category artists", failures);
+  assertContains(categoryArtistsApiSource, "nextOffset: offset + artists.length", "Category artists API computes nextOffset from returned artists", failures);
+  assertContains(categoryArtistVideosApiSource, "getVideosByGenreAndArtist", "Category artist videos API resolves artist-scoped videos", failures);
+  assertContains(categoryArtistVideosApiSource, "getOptionalApiAuth", "Category artist videos API supports optional auth context", failures);
+  assertContains(categoryArtistVideosApiSource, "filterHiddenVideos", "Category artist videos API filters hidden videos for authenticated users", failures);
+  assertContains(categoryArtistsInfiniteSource, "/categories/${encodeURIComponent(slug)}/artists/${encodeURIComponent(artist.slug)}", "Category artists cards deep-link into category artist video routes", failures);
+  assertContains(categoryVideosInfiniteSource, "const isArtistCategoryRoute = Boolean(artistSlug && artistName);", "Category videos view distinguishes category artist route mode", failures);
+  assertContains(categoryVideosInfiniteSource, "? `/api/categories/${encodeURIComponent(slug)}/artists/${encodeURIComponent(artistSlug ?? \"\")}`", "Category videos view fetches from artist-scoped API on artist route", failures);
+}
+
 async function runApiChecks({ baseUrl, maxApiDurationMs, minCoverage }, failures) {
+  const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
   const url = `${baseUrl.replace(/\/$/, "")}/api/categories`;
   const startedAt = Date.now();
 
@@ -203,7 +236,7 @@ async function runApiChecks({ baseUrl, maxApiDurationMs, minCoverage }, failures
     return;
   }
 
-  const categoryUrl = `${baseUrl.replace(/\/$/, "")}/api/categories/${encodeURIComponent(firstSlug)}?limit=24&offset=0`;
+  const categoryUrl = `${normalizedBaseUrl}/api/categories/${encodeURIComponent(firstSlug)}?limit=24&offset=0`;
   let categoryResponse;
   try {
     categoryResponse = await fetch(categoryUrl, {
@@ -254,6 +287,121 @@ async function runApiChecks({ baseUrl, maxApiDurationMs, minCoverage }, failures
       failures,
     );
   }
+
+  const categoryArtistsUrl = `${normalizedBaseUrl}/api/categories/${encodeURIComponent(firstSlug)}/artists?limit=24&offset=0`;
+  let categoryArtistsResponse;
+  try {
+    categoryArtistsResponse = await fetch(categoryArtistsUrl, {
+      method: "GET",
+      headers: {
+        "Cache-Control": "no-cache",
+      },
+    });
+  } catch (error) {
+    failures.push({
+      description: "API /api/categories/[slug]/artists reachable",
+      details: `request failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    console.error("[fail] API /api/categories/[slug]/artists reachable");
+    return;
+  }
+
+  assertInvariant(
+    categoryArtistsResponse.status !== 500,
+    "API /api/categories/[slug]/artists never returns raw 500",
+    `status=${categoryArtistsResponse.status}`,
+    failures,
+  );
+
+  let categoryArtistsPayload;
+  try {
+    categoryArtistsPayload = await categoryArtistsResponse.json();
+  } catch (error) {
+    failures.push({
+      description: "API /api/categories/[slug]/artists returns valid JSON",
+      details: error instanceof Error ? error.message : String(error),
+    });
+    console.error("[fail] API /api/categories/[slug]/artists returns valid JSON");
+    return;
+  }
+
+  if (categoryArtistsResponse.status === 200) {
+    assertInvariant(typeof categoryArtistsPayload?.genre === "string" && categoryArtistsPayload.genre.length > 0, "API /api/categories/[slug]/artists returns canonical genre name", `genre=${String(categoryArtistsPayload?.genre)}`, failures);
+    assertInvariant(Array.isArray(categoryArtistsPayload?.artists), "API /api/categories/[slug]/artists returns artists array", `artistsType=${typeof categoryArtistsPayload?.artists}`, failures);
+    assertInvariant(typeof categoryArtistsPayload?.hasMore === "boolean", "API /api/categories/[slug]/artists returns hasMore boolean", `hasMore=${String(categoryArtistsPayload?.hasMore)}`, failures);
+    assertInvariant(Number.isFinite(Number(categoryArtistsPayload?.nextOffset)), "API /api/categories/[slug]/artists returns numeric nextOffset", `nextOffset=${String(categoryArtistsPayload?.nextOffset)}`, failures);
+
+    const artists = Array.isArray(categoryArtistsPayload?.artists) ? categoryArtistsPayload.artists : [];
+    const firstArtist = artists.find((artist) => typeof artist?.slug === "string" && artist.slug.length > 0);
+
+    if (firstArtist) {
+      const artistName = String(firstArtist.name ?? "").trim();
+      const artistSlug = String(firstArtist.slug ?? "").trim();
+      const categoryArtistVideosUrl = `${normalizedBaseUrl}/api/categories/${encodeURIComponent(firstSlug)}/artists/${encodeURIComponent(artistSlug)}?limit=24&offset=0${artistName ? `&name=${encodeURIComponent(artistName)}` : ""}`;
+
+      let categoryArtistVideosResponse;
+      try {
+        categoryArtistVideosResponse = await fetch(categoryArtistVideosUrl, {
+          method: "GET",
+          headers: {
+            "Cache-Control": "no-cache",
+          },
+        });
+      } catch (error) {
+        failures.push({
+          description: "API /api/categories/[slug]/artists/[artistSlug] reachable",
+          details: `request failed: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        console.error("[fail] API /api/categories/[slug]/artists/[artistSlug] reachable");
+        return;
+      }
+
+      assertInvariant(
+        categoryArtistVideosResponse.status !== 500,
+        "API /api/categories/[slug]/artists/[artistSlug] never returns raw 500",
+        `status=${categoryArtistVideosResponse.status}`,
+        failures,
+      );
+
+      let categoryArtistVideosPayload;
+      try {
+        categoryArtistVideosPayload = await categoryArtistVideosResponse.json();
+      } catch (error) {
+        failures.push({
+          description: "API /api/categories/[slug]/artists/[artistSlug] returns valid JSON",
+          details: error instanceof Error ? error.message : String(error),
+        });
+        console.error("[fail] API /api/categories/[slug]/artists/[artistSlug] returns valid JSON");
+        return;
+      }
+
+      if (categoryArtistVideosResponse.status === 200) {
+        assertInvariant(typeof categoryArtistVideosPayload?.genre === "string" && categoryArtistVideosPayload.genre.length > 0, "API /api/categories/[slug]/artists/[artistSlug] returns canonical genre", `genre=${String(categoryArtistVideosPayload?.genre)}`, failures);
+        assertInvariant(typeof categoryArtistVideosPayload?.artistName === "string" && categoryArtistVideosPayload.artistName.length > 0, "API /api/categories/[slug]/artists/[artistSlug] returns canonical artistName", `artistName=${String(categoryArtistVideosPayload?.artistName)}`, failures);
+        assertInvariant(Array.isArray(categoryArtistVideosPayload?.videos), "API /api/categories/[slug]/artists/[artistSlug] returns videos array", `videosType=${typeof categoryArtistVideosPayload?.videos}`, failures);
+        assertInvariant(typeof categoryArtistVideosPayload?.hasMore === "boolean", "API /api/categories/[slug]/artists/[artistSlug] returns hasMore boolean", `hasMore=${String(categoryArtistVideosPayload?.hasMore)}`, failures);
+        assertInvariant(Number.isFinite(Number(categoryArtistVideosPayload?.nextOffset)), "API /api/categories/[slug]/artists/[artistSlug] returns numeric nextOffset", `nextOffset=${String(categoryArtistVideosPayload?.nextOffset)}`, failures);
+      } else {
+        assertInvariant(categoryArtistVideosResponse.status === 503, "API /api/categories/[slug]/artists/[artistSlug] hard-fails with 503 when canonical data is unavailable", `status=${categoryArtistVideosResponse.status}`, failures);
+        assertInvariant(
+          categoryArtistVideosPayload?.error === "The system cannot serve this request right now. Please try again later.",
+          "API /api/categories/[slug]/artists/[artistSlug] returns explicit retry message on hard-fail",
+          `error=${String(categoryArtistVideosPayload?.error)}`,
+          failures,
+        );
+      }
+    } else {
+      assertInvariant(true, "API category artist detail checks skipped when category has no artists", "", failures);
+    }
+  } else {
+    assertInvariant(categoryArtistsResponse.status === 503, "API /api/categories/[slug]/artists hard-fails with 503 when canonical data is unavailable", `status=${categoryArtistsResponse.status}`, failures);
+    assertInvariant(
+      categoryArtistsPayload?.error === "The system cannot serve this request right now. Please try again later.",
+      "API /api/categories/[slug]/artists returns explicit retry message on hard-fail",
+      `error=${String(categoryArtistsPayload?.error)}`,
+      failures,
+    );
+  }
 }
 
 async function main() {
@@ -293,6 +441,8 @@ async function main() {
   const failures = [];
 
   try {
+    runSourceChecks(failures);
+
     const cardCountRows = await queryWithRetry(
       () => runSqlQuery(connection, "SELECT COUNT(*) AS count FROM genre_cards"),
       "genre_cards count",
