@@ -166,24 +166,28 @@ export function ArtistVideoLink({
             hideClosestSelector=".categoryVideoCard"
             reportReason="thumbnail-load-error"
           />
-          {isSeen && !hasFavouriteHeart ? <span className="videoSeenBadge videoSeenBadgeOverlay categorySeenBadgeOverlay">Seen</span> : null}
-          {hasFavouriteHeart ? (
-            <button
-              type="button"
-              className="relatedFavouriteBadgeOverlay artistVideoFavouriteBadgeOverlay artistVideoFavouriteBadgeButton"
-              aria-label={`Remove ${video.title} from favourites`}
-              title="Remove from favourites"
-              disabled={isRemovingFavourite}
-              onClick={handleRemoveFavourite}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-            >
-              <span className="artistVideoFavouriteBadgeHeart" aria-hidden="true">♥</span>
-              <span className="artistVideoFavouriteBadgeRemoveGlyph" aria-hidden="true">x</span>
-            </button>
-          ) : null}
+          <div className="artistVideoThumbBadges" aria-hidden="true">
+            {isSeen ? <span className="videoSeenBadge artistVideoThumbBadge">Seen</span> : null}
+            {video.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100 artistVideoThumbBadge">Top100</span> : null}
+            {video.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew artistVideoThumbBadge">New</span> : null}
+            {hasFavouriteHeart ? (
+              <button
+                type="button"
+                className="relatedSourceBadge relatedSourceBadgeFavourite artistVideoThumbBadge artistVideoFavouriteBadgeButton artistVideoFavouriteInlineBadge"
+                aria-label={`Remove ${video.title} from favourites`}
+                title="Remove from favourites"
+                disabled={isRemovingFavourite}
+                onClick={handleRemoveFavourite}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+              >
+                <span className="artistVideoFavouriteBadgeHeart" aria-hidden="true">♥</span>
+                <span className="artistVideoFavouriteBadgeRemoveGlyph" aria-hidden="true">x</span>
+              </button>
+            ) : null}
+          </div>
           {useCornerActions ? (
             <div className="actionRow categoryVideoActions">
               {!isFavourited ? (
@@ -213,10 +217,6 @@ export function ArtistVideoLink({
               </div>
             </div>
           ) : null}
-        </div>
-        <div className="relatedCardSourceBadges artistVideoSourceBadges">
-          {video.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
-          {video.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
         </div>
         <h3 className="categoryVideoTitle">{cardTitle}</h3>
       </Link>

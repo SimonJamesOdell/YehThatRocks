@@ -129,8 +129,14 @@ function main() {
   assertContains(artistWikiLinkSource, 'if (asButton) {', "Artist wiki link supports button rendering for footer controls", failures);
 
   // Artist video card — parsedTrack display and thumbnail-anchored buttons.
-  assertContains(artistVideoLinkSource, "{video.parsedTrack ?? video.title}", "Artist video card title shows parsedTrack with title fallback", failures);
+  assertContains(artistVideoLinkSource, "const cardTitle = titleMode === \"parsedTrackOnly\"", "Artist video card supports parsed-track-only title mode", failures);
+  assertContains(artistVideoLinkSource, ": (video.parsedTrack ?? video.title);", "Artist video card title falls back from parsedTrack to title in default mode", failures);
   assertContains(catalogDataArtistsSource, "NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,", "getVideosByArtist primary query selects parsedTrack", failures);
+  assertContains(artistVideoLinkSource, "className=\"artistVideoThumbBadges\"", "Artist video card renders a unified thumbnail badge row", failures);
+  assertContains(artistVideoLinkSource, "{isSeen ? <span className=\"videoSeenBadge artistVideoThumbBadge\">Seen</span> : null}", "Artist video card keeps Seen badge inside the unified thumbnail badge row", failures);
+  assertContains(artistVideoLinkSource, "relatedSourceBadge relatedSourceBadgeTop100 artistVideoThumbBadge", "Artist video card renders Top100 badge inside the unified thumbnail badge row", failures);
+  assertContains(artistVideoLinkSource, "relatedSourceBadge relatedSourceBadgeNew artistVideoThumbBadge", "Artist video card renders New badge inside the unified thumbnail badge row", failures);
+  assertContains(artistVideoLinkSource, "artistVideoFavouriteInlineBadge", "Artist video card keeps favourite heart inside the unified thumbnail badge row", failures);
   assertContains(artistVideoLinkSource, "{useCornerActions ? (", "Artist video card conditionally renders corner actions", failures);
   assertContains(artistVideoLinkSource, "className=\"actionRow categoryVideoActions\">", "Artist video card renders corner action row inside thumbwrap", failures);
   assertContains(artistVideoLinkSource, "{!useCornerActions ? (", "Artist video card only renders external action row when not in corner-actions mode", failures);
