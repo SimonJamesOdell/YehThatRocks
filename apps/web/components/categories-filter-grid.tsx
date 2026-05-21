@@ -20,36 +20,36 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
     () => genreCards.length > 0 && genreCards.every((card) => Number(card.artistCount ?? 0) === 0),
     [genreCards],
   );
-  const shouldDeferInitialCards = genreCards.length > 0 && initialCardsNeedCountRefresh;
-  const initialCards = shouldDeferInitialCards
-    ? (lastKnownCategoriesWithArtists.length > 0 ? lastKnownCategoriesWithArtists : [])
-    : genreCards;
+  const initialCards = initialCardsNeedCountRefresh ? [] : genreCards;
   const [filterValue, setFilterValue] = useState("");
   const [cards, setCards] = useState<GenreCard[]>(initialCards);
-  const [isLoadingCards, setIsLoadingCards] = useState(genreCards.length === 0 || (shouldDeferInitialCards && initialCards.length === 0));
-  const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);
+  const [isLoadingCards, setIsLoadingCards] = useState(initialCards.length === 0);
+  const [isLoaderVisible, setIsLoaderVisible] = useState(initialCards.length === 0);
   const [isLoaderFadingOut, setIsLoaderFadingOut] = useState(false);
-  const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0);
+  const [hasRevealedCards, setHasRevealedCards] = useState(initialCards.length > 0);
   const loaderFadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setCards((previous) => {
-      if (!shouldDeferInitialCards) {
-        return genreCards;
-      }
-      if (previous.length > 0) {
-        return previous;
-      }
-      return lastKnownCategoriesWithArtists.length > 0 ? lastKnownCategoriesWithArtists : [];
-    });
-    setIsLoadingCards(genreCards.length === 0 || (shouldDeferInitialCards && lastKnownCategoriesWithArtists.length === 0));
+    const needsCountRefresh = genreCards.length > 0 && genreCards.every((card) => Number(card.artistCount ?? 0) === 0);
 
-    if (genreCards.length > 0 && !shouldDeferInitialCards) {
+    if (needsCountRefresh) {
+      setCards([]);
+      setIsLoadingCards(true);
+      setIsLoaderVisible(true);
+      setIsLoaderFadingOut(false);
+      setHasRevealedCards(false);
+      return;
+    }
+
+    setCards(genreCards);
+    setIsLoadingCards(genreCards.length === 0);
+
+    if (genreCards.length > 0) {
       setIsLoaderVisible(false);
       setIsLoaderFadingOut(false);
       setHasRevealedCards(true);
     }
-  }, [genreCards, shouldDeferInitialCards]);
+  }, [genreCards]);
 
   useEffect(() => {
     return () => {
@@ -60,10 +60,6 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
   }, []);
 
   useEffect(() => {
-    if (genreCards.length > 0 && !initialCardsNeedCountRefresh) {
-      return;
-    }
-
     let cancelled = false;
     let retryTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -127,20 +123,16 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
         clearTimeout(retryTimeout);
       }
     };
-  }, [genreCards, initialCardsNeedCountRefresh]);
-
-  const categoriesWithArtists = useMemo(() => {
-    return cards.filter((card) => Number(card.artistCount ?? 0) > 0);
-  }, [cards]);
+  }, []);
 
   const filteredCards = useMemo(() => {
     const needle = filterValue.trim().toLowerCase();
     if (!needle) {
-      return categoriesWithArtists;
+      return cards;
     }
 
-    return categoriesWithArtists.filter(({ genre }) => genre.toLowerCase().startsWith(needle));
-  }, [filterValue, categoriesWithArtists]);
+    return cards.filter(({ genre }) => genre.toLowerCase().startsWith(needle));
+  }, [cards, filterValue]);
 
   const hasActiveFilter = filterValue.trim().length > 0;
 

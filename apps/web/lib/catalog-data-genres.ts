@@ -34,6 +34,11 @@ import {
   hasVideoGenreColumn,
   hasVideoTitleFulltextIndex,
 } from "@/lib/catalog-data-db";
+import {
+  collateGenreCardsToTopLevelBuckets,
+  getBucketTermsForGenreSelection,
+  getTopLevelGenreBucketBySlug,
+} from "@/lib/genre-buckets";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -198,11 +203,10 @@ export async function getCategoryArtistsByGenre(
   const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
   const requestedLimit = Math.max(1, Math.min(2_000, Number.isFinite(options?.limit) ? Number(options?.limit) : 48));
   const normalizedGenre = normalizeGenreTerm(genre);
-  const normalizedGenrePattern = normalizedGenre.length > 0
-    ? `(^|[^a-z0-9])${escapeRegexLiteral(normalizedGenre).replace(/ /g, "[^a-z0-9]+")}([^a-z0-9]|$)`
-    : "";
+  const normalizedGenreTerms = getExpandedGenreTerms(genre);
+  const normalizedGenrePattern = buildGenreRegexPattern(normalizedGenreTerms);
 
-  if (!normalizedGenre) {
+  if (!normalizedGenre || normalizedGenreTerms.length === 0) {
     return [];
   }
 
@@ -229,6 +233,7 @@ export async function getCategoryArtistsByGenre(
   const groupByExpr = hasPinnedCategoryArtistThumbs
     ? `${videoArtistNormExpr}, cat.thumbnail_video_id`
     : videoArtistNormExpr;
+  const normalizedGenrePlaceholders = normalizedGenreTerms.map(() => "?").join(", ");
 
   const rows = await prisma.$queryRawUnsafe<Array<{
     artistName: string | null;
@@ -246,7 +251,7 @@ export async function getCategoryArtistsByGenre(
        AND COALESCE(v.approved, 0) = 1
        ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
        AND (
-         ${normalizedGenreSqlExpr} = ?
+         ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
          OR LOWER(v.genre) REGEXP ?
        )
     GROUP BY ${groupByExpr}
@@ -254,7 +259,7 @@ export async function getCategoryArtistsByGenre(
     LIMIT ${requestedLimit}
      OFFSET ${requestedOffset}`,
     ...(hasPinnedCategoryArtistThumbs ? [normalizedGenre] : []),
-    normalizedGenre,
+    ...normalizedGenreTerms,
     normalizedGenrePattern,
   );
 
@@ -287,11 +292,12 @@ export async function getVideosByGenreAndArtist(
   requireDatabaseUrl("getVideosByGenreAndArtist");
 
   const normalizedGenre = normalizeGenreTerm(genre);
+  const normalizedGenreTerms = getExpandedGenreTerms(genre);
   const normalizedArtist = normalizeArtistKey(artistName);
   const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
   const requestedLimit = Math.max(1, Math.min(120, Number.isFinite(options?.limit) ? Number(options?.limit) : 48));
 
-  if (!normalizedGenre || !normalizedArtist) {
+  if (!normalizedGenre || normalizedGenreTerms.length === 0 || !normalizedArtist) {
     return [];
   }
 
@@ -300,11 +306,12 @@ export async function getVideosByGenreAndArtist(
     return [];
   }
 
-  const normalizedGenrePattern = `(^|[^a-z0-9])${escapeRegexLiteral(normalizedGenre).replace(/ /g, "[^a-z0-9]+")}([^a-z0-9]|$)`;
+  const normalizedGenrePattern = buildGenreRegexPattern(normalizedGenreTerms);
   const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
   const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
     const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
   const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
+  const normalizedGenrePlaceholders = normalizedGenreTerms.map(() => "?").join(", ");
 
   const rows = await prisma.$queryRawUnsafe<Array<{
     videoId: string;
@@ -329,14 +336,14 @@ export async function getVideosByGenreAndArtist(
        AND COALESCE(v.approved, 0) = 1
        ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
        AND (
-         ${normalizedGenreSqlExpr} = ?
+         ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
          OR LOWER(v.genre) REGEXP ?
        )
      ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC
      LIMIT ${requestedLimit}
      OFFSET ${requestedOffset}`,
     normalizedArtist,
-    normalizedGenre,
+    ...normalizedGenreTerms,
     normalizedGenrePattern,
   );
 
@@ -361,6 +368,27 @@ function normalizeGenreTerm(value: string) {
 
 function escapeRegexLiteral(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getExpandedGenreTerms(genre: string) {
+  const normalized = [...new Set(
+    getBucketTermsForGenreSelection(genre)
+      .map(normalizeGenreTerm)
+      .filter((term) => term.length > 0),
+  )];
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  const fallback = normalizeGenreTerm(genre);
+  return fallback ? [fallback] : [];
+}
+
+function buildGenreRegexPattern(terms: string[]) {
+  return terms
+    .map((term) => `(^|[^a-z0-9])${escapeRegexLiteral(term).replace(/ /g, "[^a-z0-9]+")}([^a-z0-9]|$)`)
+    .join("|");
 }
 
 export function clearGenreCaches() {
@@ -598,6 +626,7 @@ export async function getGenreCards(): Promise<GenreCard[]> {
         }
       }
 
+      cards = collateGenreCardsToTopLevelBuckets(cards);
       cards = await attachArtistCountsToGenreCards(cards);
 
       genreCardsCache = { expiresAt: now + GENRE_CARDS_CACHE_TTL_MS, cards };
@@ -613,11 +642,11 @@ export async function getGenreCards(): Promise<GenreCard[]> {
           LIMIT 1000
         `;
         if (rawFallbackRows.length > 0) {
-          const fallbackCards = rawFallbackRows.map((row: { genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }) => ({
+          const fallbackCards = collateGenreCardsToTopLevelBuckets(rawFallbackRows.map((row: { genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }) => ({
             genre: row.genre,
             previewVideoId: row.thumbnailVideoId ?? row.thumbnail_video_id ?? null,
             artistCount: 0,
-          }));
+          })));
           genreCardsCache = { expiresAt: now + 30_000, cards: fallbackCards };
           return fallbackCards;
         }
@@ -625,7 +654,7 @@ export async function getGenreCards(): Promise<GenreCard[]> {
         // fall through
       }
 
-      const fallbackCards = (await getGenres()).map((genre: string) => ({ genre, previewVideoId: null, artistCount: 0 }));
+      const fallbackCards = collateGenreCardsToTopLevelBuckets((await getGenres()).map((genre: string) => ({ genre, previewVideoId: null, artistCount: 0 })));
       genreCardsCache = { expiresAt: now + 30_000, cards: fallbackCards };
       return fallbackCards;
     }
@@ -638,6 +667,11 @@ export async function getGenreCards(): Promise<GenreCard[]> {
 }
 
 export async function getGenreBySlug(slug: string) {
+  const bucket = getTopLevelGenreBucketBySlug(slug);
+  if (bucket) {
+    return bucket;
+  }
+
   const genres = await getGenres();
   return genres.find((genre: string) => getGenreSlug(genre) === slug);
 }
@@ -650,7 +684,8 @@ function getArtistsByGenreFallback(genre: string) {
 }
 
 export async function getArtistsByGenre(genre: string) {
-  const cacheKey = genre.trim().toLowerCase();
+  const expandedTerms = getExpandedGenreTerms(genre);
+  const cacheKey = expandedTerms.join("|") || genre.trim().toLowerCase();
   const now = Date.now();
   const cached = genreArtistsCache.get(cacheKey);
   if (cached && cached.expiresAt > now) return cached.artists;
@@ -661,37 +696,51 @@ export async function getArtistsByGenre(genre: string) {
   }
   requireDatabaseUrl("getArtistsByGenre");
 
+  const sourceTerms = expandedTerms.length > 0 ? expandedTerms : [genre.trim()].filter((term) => term.length > 0);
+  if (sourceTerms.length === 0) {
+    return [];
+  }
+
   try {
     const genreAllExists = await hasGenreAllColumn();
-    const useFulltext = genreAllExists && genre.trim().length >= 3;
+    const useFulltext = genreAllExists && sourceTerms.length === 1 && sourceTerms[0].length >= 3;
 
     const artists = useFulltext
       ? await prisma.$queryRaw<Array<{ name: string; country: string | null; genre1: string | null }>>`
           SELECT a.artist AS name, a.country,
                  COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
           FROM artists a
-          WHERE MATCH(a.genre_all) AGAINST (${genre} IN BOOLEAN MODE)
+          WHERE MATCH(a.genre_all) AGAINST (${sourceTerms[0]} IN BOOLEAN MODE)
         `
       : genreAllExists
-        ? await prisma.$queryRaw<Array<{ name: string; country: string | null; genre1: string | null }>>`
-            SELECT a.artist AS name, a.country,
-                   COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
-            FROM artists a
-            WHERE a.genre_all LIKE CONCAT('%', ${genre}, '%')
-          `
-        : await prisma.$queryRaw<Array<{ name: string; country: string | null; genre1: string | null }>>`
-            SELECT a.artist AS name, a.country,
-                   COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
-            FROM artists a
-            WHERE (
-              a.genre1 LIKE CONCAT('%', ${genre}, '%') OR
-              a.genre2 LIKE CONCAT('%', ${genre}, '%') OR
-              a.genre3 LIKE CONCAT('%', ${genre}, '%') OR
-              a.genre4 LIKE CONCAT('%', ${genre}, '%') OR
-              a.genre5 LIKE CONCAT('%', ${genre}, '%') OR
-              a.genre6 LIKE CONCAT('%', ${genre}, '%')
-            )
-          `;
+        ? await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+            `SELECT a.artist AS name, a.country,
+                    COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
+             FROM artists a
+             WHERE (${sourceTerms.map(() => "a.genre_all LIKE ?").join(" OR ")})`,
+            ...sourceTerms.map((term) => `%${term}%`),
+          )
+        : await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+            `SELECT a.artist AS name, a.country,
+                    COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
+             FROM artists a
+             WHERE (${sourceTerms.flatMap(() => [
+               "a.genre1 LIKE ?",
+               "a.genre2 LIKE ?",
+               "a.genre3 LIKE ?",
+               "a.genre4 LIKE ?",
+               "a.genre5 LIKE ?",
+               "a.genre6 LIKE ?",
+             ]).join(" OR ")})`,
+            ...sourceTerms.flatMap((term) => [
+              `%${term}%`,
+              `%${term}%`,
+              `%${term}%`,
+              `%${term}%`,
+              `%${term}%`,
+              `%${term}%`,
+            ]),
+          );
 
     const mappedArtists = artists.map(mapArtist).sort((a: ArtistRecord, b: ArtistRecord) => a.name.localeCompare(b.name));
 
@@ -715,11 +764,10 @@ export async function getVideosByGenre(
     limit?: number;
   },
 ) {
-  const cacheKey = genre.trim().toLowerCase();
-  const normalizedGenre = normalizeGenreTerm(genre);
-  const normalizedGenrePattern = normalizedGenre.length > 0
-    ? `(^|[^a-z0-9])${escapeRegexLiteral(normalizedGenre).replace(/ /g, "[^a-z0-9]+")}([^a-z0-9]|$)`
-    : "";
+  const expandedGenreTerms = getExpandedGenreTerms(genre);
+  const cacheKey = expandedGenreTerms.join("|") || genre.trim().toLowerCase();
+  const normalizedGenre = expandedGenreTerms[0] ?? normalizeGenreTerm(genre);
+  const normalizedGenrePattern = buildGenreRegexPattern(expandedGenreTerms);
   const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
   const requestedLimit = Math.max(1, Math.min(120, Number.isFinite(options?.limit) ? Number(options?.limit) : 24));
   const minRequiredRows = requestedOffset + requestedLimit;
@@ -761,12 +809,14 @@ export async function getVideosByGenre(
     return [];
   };
 
+  const genreSearchText = expandedGenreTerms.join(" ") || genre;
+
   const getGenreKeywordVideos = async () => {
     return prisma.$queryRaw<RankedVideoRow[]>`
       SELECT
         v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
       FROM videos v
-      WHERE MATCH(v.title, v.parsedArtist, v.parsedTrack) AGAINST (${genre} IN NATURAL LANGUAGE MODE)
+      WHERE MATCH(v.title, v.parsedArtist, v.parsedTrack) AGAINST (${genreSearchText} IN NATURAL LANGUAGE MODE)
         AND v.videoId IS NOT NULL
         AND COALESCE(v.approved, 0) = 1
         AND EXISTS (
@@ -781,7 +831,7 @@ export async function getVideosByGenre(
   };
 
   const getStrictGenreColumnVideos = async () => {
-    if (!normalizedGenre) {
+    if (!normalizedGenre || expandedGenreTerms.length === 0) {
       return [] as RankedVideoRow[];
     }
 
@@ -792,6 +842,8 @@ export async function getVideosByGenre(
 
     const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
 
+    const normalizedGenrePlaceholders = expandedGenreTerms.map(() => "?").join(", ");
+
     return prisma.$queryRawUnsafe<RankedVideoRow[]>(
       `SELECT
          v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
@@ -801,23 +853,23 @@ export async function getVideosByGenre(
          AND TRIM(v.genre) <> ''
          AND COALESCE(v.approved, 0) = 1
          AND EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND sv.status = 'available')
-         AND NOT EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status <> 'available')
+         AND NOT EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status <> 'available'))
          AND (
-           ${normalizedGenreSqlExpr} = ?
+           ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
            OR LOWER(v.genre) REGEXP ?
          )
        ORDER BY
          CASE
-           WHEN ${normalizedGenreSqlExpr} = ? THEN 0
+           WHEN ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders}) THEN 0
            ELSE 1
          END,
          v.favourited DESC,
          COALESCE(v.viewCount, 0) DESC,
          v.videoId ASC
        LIMIT ${fetchQueryLimit}`,
-      normalizedGenre,
+      ...expandedGenreTerms,
       normalizedGenrePattern,
-      normalizedGenre,
+      ...expandedGenreTerms,
     );
   };
 
@@ -845,27 +897,33 @@ export async function getVideosByGenre(
       if (artistColumns.genreColumns.length > 0) {
         const artistNameColumn = escapeSqlIdentifier(artistColumns.name);
         const genreAllExists = await hasGenreAllColumn();
-        const useFulltext = genreAllExists && genre.trim().length >= 3;
+        const useFulltext = genreAllExists && expandedGenreTerms.length === 1 && expandedGenreTerms[0].length >= 3;
 
         let artistGenreRows: Array<{ artistName: string | null }>;
         if (useFulltext) {
           // Single FULLTEXT index seek — avoids 6× full-table LIKE scans
           artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
             `SELECT a.${artistNameColumn} AS artistName FROM artists a WHERE MATCH(a.genre_all) AGAINST (? IN BOOLEAN MODE) LIMIT 64`,
-            genre,
+            expandedGenreTerms[0],
           );
         } else if (genreAllExists) {
           // genre_all exists but term too short for FULLTEXT minimum word length — single-column LIKE
+          const genrePredicates = expandedGenreTerms.map(() => "a.genre_all LIKE ?").join(" OR ");
+          const genreParams = expandedGenreTerms.map((term) => `%${term}%`);
           artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
-            `SELECT a.${artistNameColumn} AS artistName FROM artists a WHERE a.genre_all LIKE ? LIMIT 64`,
-            `%${genre}%`,
+            `SELECT a.${artistNameColumn} AS artistName FROM artists a WHERE (${genrePredicates}) LIMIT 64`,
+            ...genreParams,
           );
         } else {
           // Fallback: 6× LIKE on individual genre columns
-          const genrePredicates = artistColumns.genreColumns
-            .map((column) => `a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', ?, '%')`)
-            .join(" OR ");
-          const genreParams = artistColumns.genreColumns.map(() => genre);
+          const genrePredicates: string[] = [];
+          const genreParams: string[] = [];
+          for (const term of expandedGenreTerms) {
+            for (const column of artistColumns.genreColumns) {
+              genrePredicates.push(`a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', ?, '%')`);
+              genreParams.push(term);
+            }
+          }
           artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
             `SELECT a.${artistNameColumn} AS artistName FROM artists a WHERE (${genrePredicates}) LIMIT 64`,
             ...genreParams,
@@ -971,7 +1029,7 @@ export async function getVideosByGenre(
         }
       }
 
-      const genreTerm = genre.trim();
+      const genreTerm = genreSearchText.trim();
       const hasVideoFT = await hasVideoTitleFulltextIndex();
       const useVideoFulltext = hasVideoFT && genreTerm.length >= 3;
 

@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const collectFilteredWindow = async () => {
-      const targetFilteredRows = probeTake;
+      const targetFilteredRows = skip + probeTake;
       const maxRawRows = Math.max(1000, (skip + probeTake) * 12);
       const chunkSize = 220;
 

@@ -15,6 +15,12 @@ type UseNewVideosDataLoaderArgs = {
   hiddenVideoIdSet: Set<string>;
   hiddenVideoIdsKey: string;
   initialVideoIdsKey: string;
+  genreFilters: {
+    includeGenres: string[];
+    excludeGenres: string[];
+  };
+  genreFiltersKey: string;
+  enabled: boolean;
   initialBatchSize: number;
   startupPrefetchTarget: number;
   scrollBatchSize: number;
@@ -28,12 +34,16 @@ type NewVideosLoaderCache = {
   nextOffset: number;
   hiddenVideoIdsKey: string;
   initialVideoIdsKey: string;
+  genreFiltersKey: string;
 };
 
 let cachedNewVideosLoaderState: NewVideosLoaderCache | null = null;
 
 export function useNewVideosDataLoader({
+  enabled,
   firstLoadTimeoutMs,
+  genreFilters,
+  genreFiltersKey,
   headRefreshIntervalMs,
   hiddenVideoIdSet,
   hiddenVideoIdsKey,
@@ -49,7 +59,8 @@ export function useNewVideosDataLoader({
       && cachedNewVideosLoaderState.allVideos.length > 0
       && initialVideos.length === 0
       && cachedNewVideosLoaderState.hiddenVideoIdsKey === hiddenVideoIdsKey
-      && cachedNewVideosLoaderState.initialVideoIdsKey === initialVideoIdsKey,
+      && cachedNewVideosLoaderState.initialVideoIdsKey === initialVideoIdsKey
+      && cachedNewVideosLoaderState.genreFiltersKey === genreFiltersKey,
     );
 
   const initialAllVideos = useMemo(
@@ -104,8 +115,9 @@ export function useNewVideosDataLoader({
       nextOffset: Math.max(nextOffsetRef.current, allVideos.length),
       hiddenVideoIdsKey,
       initialVideoIdsKey,
+      genreFiltersKey,
     };
-  }, [allVideos, hasMore, hiddenVideoIdsKey, initialVideoIdsKey]);
+  }, [allVideos, hasMore, hiddenVideoIdsKey, initialVideoIdsKey, genreFiltersKey]);
 
   useEffect(() => {
     isLoadingMoreRef.current = isLoadingMore;
@@ -116,8 +128,16 @@ export function useNewVideosDataLoader({
     params.set("skip", String(skip));
     params.set("take", String(take));
 
+    if (genreFilters.includeGenres.length > 0) {
+      params.set("genresInclude", genreFilters.includeGenres.join(","));
+    }
+
+    if (genreFilters.excludeGenres.length > 0) {
+      params.set("genresExclude", genreFilters.excludeGenres.join(","));
+    }
+
     return `/api/videos/newest?${params.toString()}`;
-  }, []);
+  }, [genreFilters.excludeGenres, genreFilters.includeGenres]);
 
   const appendFetchedVideos = useCallback((videos: VideoRecord[]) => {
     if (videos.length === 0) {
@@ -260,13 +280,19 @@ export function useNewVideosDataLoader({
 
   useEffect(() => {
     const loadVideos = async () => {
+      if (!enabled) {
+        setLoading(true);
+        return;
+      }
+
       const canReuseCachedState =
         initialLoadRetryNonce === 0
         && cachedNewVideosLoaderState
         && cachedNewVideosLoaderState.allVideos.length > 0
         && initialVideos.length === 0
         && cachedNewVideosLoaderState.hiddenVideoIdsKey === hiddenVideoIdsKey
-        && cachedNewVideosLoaderState.initialVideoIdsKey === initialVideoIdsKey;
+        && cachedNewVideosLoaderState.initialVideoIdsKey === initialVideoIdsKey
+        && cachedNewVideosLoaderState.genreFiltersKey === genreFiltersKey;
 
       if (canReuseCachedState && cachedNewVideosLoaderState) {
         const restored = dedupeVideos(filterHiddenVideos(cachedNewVideosLoaderState.allVideos, hiddenVideoIdSet));
@@ -323,10 +349,10 @@ export function useNewVideosDataLoader({
     };
 
     void loadVideos();
-  }, [hiddenVideoIdSet, hiddenVideoIdsKey, initialBatchSize, initialLoadRetryNonce, initialVideoIdsKey, initialVideos, loadBatch, startupPrefetchTarget]);
+  }, [enabled, genreFiltersKey, hiddenVideoIdSet, hiddenVideoIdsKey, initialBatchSize, initialLoadRetryNonce, initialVideoIdsKey, initialVideos, loadBatch, startupPrefetchTarget]);
 
   const refreshNewestHead = useCallback(async () => {
-    if (loading || document.visibilityState !== "visible") {
+    if (!enabled || loading || document.visibilityState !== "visible") {
       return;
     }
 
@@ -356,7 +382,7 @@ export function useNewVideosDataLoader({
     } catch {
       // Head refresh is best-effort only.
     }
-  }, [buildNewestUrl, initialBatchSize, loading, prependFetchedVideos]);
+  }, [buildNewestUrl, enabled, initialBatchSize, loading, prependFetchedVideos]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {

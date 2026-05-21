@@ -1,37 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getNewestVideos } from "@/lib/catalog-data";
-import { clamp } from "@/lib/number-utils";
+import { getGenreCards } from "@/lib/catalog-data";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const windowParam = searchParams.get("window");
-  const windowSize = clamp(Number(windowParam ?? "1000"), 50, 5000);
+  const windowSize = Number(windowParam ?? "0");
 
   try {
-    const videos = await getNewestVideos(windowSize, 0, {
-      enforcePlaybackAvailability: true,
-    });
-
-    const counts = new Map<string, number>();
-    for (const video of videos) {
-      const genre = (video.genre ?? "").trim();
-      if (!genre) {
-        continue;
-      }
-
-      counts.set(genre, (counts.get(genre) ?? 0) + 1);
-    }
-
-    const genres = [...counts.entries()]
-      .map(([genre, count]) => ({ genre, count }))
-      .sort((a, b) => (b.count - a.count) || a.genre.localeCompare(b.genre));
+    const categories = await getGenreCards();
+    const genres = categories
+      .map((category) => ({
+        genre: category.genre,
+        count: Number(category.artistCount ?? 0),
+      }))
+      .filter((facet) => facet.genre.trim().length > 0)
+      .sort((a, b) => a.genre.localeCompare(b.genre));
 
     return NextResponse.json({
       ok: true,
       window: windowSize,
-      totalVideos: videos.length,
+      totalVideos: genres.length,
       genres,
+    }, {
+      headers: {
+        "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+      },
     });
   } catch (error) {
     return NextResponse.json(

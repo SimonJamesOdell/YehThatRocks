@@ -1,3 +1,5 @@
+import { resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
+
 export const NEW_VIDEO_GENRE_FILTER_LIMIT = 128;
 
 export type NewVideoGenreFilterState = {
@@ -11,7 +13,19 @@ export function normalizeNewVideoGenreFilters(input: unknown): string[] {
   }
 
   const normalized = input
-    .map((value) => (typeof value === "string" ? value.trim().toLowerCase() : ""))
+    .map((value) => {
+      if (typeof value !== "string") {
+        return "";
+      }
+
+      const normalizedValue = value.trim().toLowerCase();
+      if (!normalizedValue) {
+        return "";
+      }
+
+      const bucket = resolveTopLevelGenreBucket(normalizedValue);
+      return bucket ? bucket.toLowerCase() : normalizedValue;
+    })
     .filter((value) => value.length > 0)
     .slice(0, NEW_VIDEO_GENRE_FILTER_LIMIT);
 
@@ -89,11 +103,25 @@ export function doesVideoMatchNewGenreFilters(
   }
 
   const normalizedGenre = (videoGenre ?? "").trim().toLowerCase();
-  if (!normalizedGenre) {
+  const bucketGenre = resolveTopLevelGenreBucket(normalizedGenre)?.toLowerCase() ?? "";
+  if (!normalizedGenre && !bucketGenre) {
     return includeGenres.length === 0;
   }
 
-  if (excludeGenres.some((genre) => normalizedGenre.includes(genre))) {
+  const doesTokenMatch = (token: string) => {
+    const normalizedToken = token.trim().toLowerCase();
+    if (!normalizedToken) {
+      return false;
+    }
+
+    const tokenBucket = resolveTopLevelGenreBucket(normalizedToken)?.toLowerCase() ?? "";
+    const targetToken = tokenBucket || normalizedToken;
+
+    return (bucketGenre && bucketGenre === targetToken)
+      || normalizedGenre.includes(targetToken);
+  };
+
+  if (excludeGenres.some((genre) => doesTokenMatch(genre))) {
     return false;
   }
 
@@ -101,5 +129,5 @@ export function doesVideoMatchNewGenreFilters(
     return true;
   }
 
-  return includeGenres.some((genre) => normalizedGenre.includes(genre));
+  return includeGenres.some((genre) => doesTokenMatch(genre));
 }

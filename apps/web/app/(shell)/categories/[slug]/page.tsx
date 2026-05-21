@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 
 import { CategoryArtistsInfinite } from "@/components/category-artists-infinite";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
@@ -8,6 +7,7 @@ import {
   getGenreBySlug,
 } from "@/lib/catalog-data";
 import { withSoftTimeout } from "@/lib/catalog-data-utils";
+import { getTopLevelGenreBucketBySlug } from "@/lib/genre-buckets";
 import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
 
 const CATEGORY_ARTISTS_FETCH_LIMIT = 2_000;
@@ -45,6 +45,7 @@ type CategoryPageProps = {
 
 export default async function CategoryDetailPage({ params }: CategoryPageProps) {
   const { slug } = await params;
+  const isTopLevelBucketRoute = Boolean(getTopLevelGenreBucketBySlug(slug));
   const [{ isAdmin }, { hiddenVideoIds }] = await Promise.all([
     getShellRequestAuthState(),
     getShellRequestVideoState(),
@@ -52,15 +53,26 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
   const genre = await getGenreBySlug(slug);
 
   if (!genre) {
-    notFound();
+    return (
+      <>
+        <OverlayScrollReset />
+        <article className="catalogCard categoryNoVideos">
+          <p className="statusLabel">Categories</p>
+          <h3>Category not found</h3>
+          <p>This bucket is not available right now.</p>
+        </article>
+      </>
+    );
   }
 
-  const allArtists = await withSoftTimeout("category-artists-initial", 180, async () => {
-    return getCategoryArtistsByGenre(genre, {
-      offset: 0,
-      limit: CATEGORY_ARTISTS_FETCH_LIMIT,
-    });
-  }).catch(() => []);
+  const allArtists = isTopLevelBucketRoute
+    ? []
+    : await withSoftTimeout("category-artists-initial", 180, async () => {
+        return getCategoryArtistsByGenre(genre, {
+          offset: 0,
+          limit: CATEGORY_ARTISTS_FETCH_LIMIT,
+        });
+      }).catch(() => []);
   const categoryJsonLd = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",

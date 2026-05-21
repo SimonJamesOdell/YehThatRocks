@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 
 import { CategoryVideosInfinite } from "@/components/category-videos-infinite";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
@@ -70,12 +69,30 @@ export default async function CategoryArtistVideosPage({ params, searchParams }:
 
   const genre = await getGenreBySlug(slug);
   if (!genre) {
-    notFound();
+    return (
+      <>
+        <OverlayScrollReset />
+        <article className="catalogCard categoryNoVideos">
+          <p className="statusLabel">Categories</p>
+          <h3>Category not found</h3>
+          <p>This artist bucket is not available right now.</p>
+        </article>
+      </>
+    );
   }
 
   const artistName = await resolveCategoryArtistName(genre, artistSlug, query.name);
   if (!artistName) {
-    notFound();
+    return (
+      <>
+        <OverlayScrollReset />
+        <article className="catalogCard categoryNoVideos">
+          <p className="statusLabel">Categories</p>
+          <h3>Artist not found</h3>
+          <p>This artist is not available in the selected category bucket.</p>
+        </article>
+      </>
+    );
   }
 
   const initialVideosWithProbe = await getVideosByGenreAndArtist(genre, artistName, {
