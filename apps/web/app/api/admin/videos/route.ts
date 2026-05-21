@@ -103,12 +103,9 @@ export async function PATCH(request: NextRequest) {
   } = {};
 
   if (parsed.title !== undefined) data.title = parsed.title;
-  if (parsed.approved !== undefined) {
-    data.approved = parsed.approved;
-    // Set approvedAt timestamp when approving a video
-    if (parsed.approved === true) {
-      data.approvedAt = new Date();
-    }
+  if (parsed.approved !== undefined) data.approved = parsed.approved;
+  if (parsed.approved === true) {
+    data.approvedAt = new Date();
   }
   if (parsed.parsedArtist !== undefined) data.parsedArtist = parsed.parsedArtist || null;
   if (parsed.parsedTrack !== undefined) data.parsedTrack = parsed.parsedTrack || null;
