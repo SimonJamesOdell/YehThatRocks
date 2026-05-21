@@ -14,6 +14,7 @@ type CategoryArtistsInfiniteProps = {
   genre: string;
   allArtists: CategoryArtistCard[];
   isAdmin?: boolean;
+  hiddenVideoIds?: string[];
 };
 
 export function CategoryArtistsInfinite({
@@ -21,6 +22,7 @@ export function CategoryArtistsInfinite({
   genre,
   allArtists,
   isAdmin = false,
+  hiddenVideoIds = [],
 }: CategoryArtistsInfiniteProps) {
   const [filterValue, setFilterValue] = useState("");
   const [pinningArtistSlug, setPinningArtistSlug] = useState<string | null>(null);
@@ -94,7 +96,7 @@ export function CategoryArtistsInfinite({
               spellCheck={false}
             />
           </div>
-          <p className="categoryArtistCount">{artistsLabel}</p>
+          <p className="categoryArtistCount" data-hidden-video-count={hiddenVideoIds.length}>{artistsLabel}</p>
         </div>
         <CloseLink />
       </OverlayHeader>
