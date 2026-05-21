@@ -40,8 +40,8 @@ set +e
 PATCH_SQL="$(
   "${COMPOSE[@]}" exec -T web sh -lc \
     'npx prisma migrate diff \
-       --from-url "$DATABASE_URL" \
-       --to-schema-datamodel /app/prisma/schema.prisma \
+  --from-config-datasource \
+  --to-schema /app/prisma/schema.prisma \
        --script' 2>/dev/null
 )"
 DIFF_EXIT=$?

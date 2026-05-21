@@ -35,7 +35,7 @@ echo "[schema-verify] Prisma migration status"
 
 echo "[schema-verify] Prisma schema diff (DB vs schema.prisma)"
 set +e
-DIFF_OUTPUT="$(${COMPOSE[@]} exec -T web sh -lc 'npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel /app/prisma/schema.prisma --exit-code' 2>&1)"
+DIFF_OUTPUT="$(${COMPOSE[@]} exec -T web sh -lc 'npx prisma migrate diff --from-config-datasource --to-schema /app/prisma/schema.prisma --exit-code' 2>&1)"
 DIFF_EXIT=$?
 set -e
 
