@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type UIEvent } from "react";
+import { ChangeEvent, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type UIEvent } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -2159,7 +2159,7 @@ export function PlayerExperience({
     });
   }, [currentVideo.id]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (overlayTimeoutRef.current) {
       window.clearTimeout(overlayTimeoutRef.current);
       overlayTimeoutRef.current = null;

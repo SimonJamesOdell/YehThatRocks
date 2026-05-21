@@ -33,6 +33,7 @@ function inferTrackForWatchNext(title: string, artist: string): string {
 
 const watchNextArtistCountCache = new Map<string, number | null>();
 const watchNextArtistCountInFlight = new Map<string, Promise<number | null>>();
+const GENERIC_WATCH_NEXT_ARTIST_LABELS = new Set(["unknown artist", "unknown", "youtube"]);
 
 async function fetchWatchNextArtistCount(artistSlug: string, videoId: string): Promise<number | null> {
   const cacheKey = `${artistSlug}:${videoId}`;
@@ -189,9 +190,13 @@ export const WatchNextCard = memo(function WatchNextCard({
   const [artistVideoCount, setArtistVideoCount] = useState<number | null>(null);
 
   const rawDisplayTitle = track.title;
+  const channelArtistCandidate = track.channelTitle?.trim() || "";
+  const safeChannelArtistCandidate = GENERIC_WATCH_NEXT_ARTIST_LABELS.has(channelArtistCandidate.toLowerCase())
+    ? ""
+    : channelArtistCandidate;
   const parsedArtistCandidate =
     track.parsedArtist?.trim()
-    || track.channelTitle?.trim()
+    || safeChannelArtistCandidate
     || inferArtistFromTitle(rawDisplayTitle)?.trim()
     || "";
   const metadataArtist = parsedArtistCandidate || "Unknown Artist";
