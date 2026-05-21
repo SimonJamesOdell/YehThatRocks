@@ -4,6 +4,7 @@ export type VideoRecord = {
   channelTitle: string;
   parsedArtist?: string | null;
   parsedTrack?: string | null;
+  artistVideoCount?: number | null;
   genre: string;
   favourited: number;
   description: string;

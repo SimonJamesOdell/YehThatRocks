@@ -25,6 +25,7 @@ type LeaderboardVideoLinkProps = {
     channelTitle: string;
     parsedArtist?: string | null;
     parsedTrack?: string | null;
+    artistVideoCount?: number | null;
     genre: string;
     favourited: number;
     description: string;
@@ -221,6 +222,12 @@ export function LeaderboardVideoLink({
       return;
     }
 
+    const hydratedCount = Number(track.artistVideoCount);
+    if (Number.isFinite(hydratedCount)) {
+      setArtistVideoCount(hydratedCount);
+      return;
+    }
+
     if (!artistSlug) {
       setArtistVideoCount(null);
       return;
@@ -237,7 +244,7 @@ export function LeaderboardVideoLink({
     return () => {
       cancelled = true;
     };
-  }, [artistSlug, rowVariant, track.id]);
+  }, [artistSlug, rowVariant, track.artistVideoCount, track.id]);
 
   const triggerClickFlash = useCallback(() => {
     setIsClickFlashing(true);

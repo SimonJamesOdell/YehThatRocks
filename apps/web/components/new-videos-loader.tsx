@@ -763,54 +763,58 @@ export function NewVideosLoader({
     <>
       <OverlayScrollReset />
       <OverlayHeader close={false}>
-        <div className="newPageHeaderLeft">
-          <strong><span style={{filter: "brightness(0) invert(1)"}}>⭐</span> New</strong>
-          <button
-            type="button"
-            className={`newPageSeenToggle${hideSeen ? " newPageSeenToggleActive" : ""}`}
-            onClick={() => setHideSeen((v) => !v)}
-            aria-pressed={hideSeen}
-          >
-            {hideSeen ? "Showing unseen only" : "Show unseen only"}
-          </button>
-          {isAuthenticated ? (
-            <>
+        <div className="newPageHeaderStack">
+          <div className="newPageHeaderRow">
+            <div className="newPageHeaderLeft">
+              <strong><span style={{filter: "brightness(0) invert(1)"}}>⭐</span> New</strong>
               <button
                 type="button"
-                className="newPageSeenToggle top100CreatePlaylistButton"
-                onClick={openSuggestModal}
+                className={`newPageSeenToggle${hideSeen ? " newPageSeenToggleActive" : ""}`}
+                onClick={() => setHideSeen((v) => !v)}
+                aria-pressed={hideSeen}
               >
-                + Suggest New
+                {hideSeen ? "Showing unseen only" : "Show unseen only"}
               </button>
-              <button
-                type="button"
-                className="newPageSeenToggle top100CreatePlaylistButton"
-                onClick={() => {
-                  void createPlaylistFromNew();
-                }}
-                disabled={visibleVideos.length === 0 || isCreatingPlaylistFromNew}
-              >
-                {isCreatingPlaylistFromNew ? "+ Creating..." : "+ New Playlist"}
-              </button>
-            </>
-          ) : null}
-          <div className="newPageGenreFilterGroup" ref={genreFilterGroupRef}>
-            <button
-              type="button"
-              className={`newPageSeenToggle${(selectedGenres.length > 0 || excludedGenres.length > 0) ? " newPageSeenToggleActive" : ""}`}
-              onClick={() => setIsGenreMenuOpen((current) => !current)}
-              aria-expanded={isGenreMenuOpen}
-              aria-controls="new-genre-filter-panel"
-            >
-              {(selectedGenres.length > 0 || excludedGenres.length > 0)
-                ? `Genres: +${selectedGenres.length} / -${excludedGenres.length}`
-                : "Genres: All"}
-            </button>
+              {isAuthenticated ? (
+                <>
+                  <button
+                    type="button"
+                    className="newPageSeenToggle top100CreatePlaylistButton"
+                    onClick={openSuggestModal}
+                  >
+                    + Suggest New
+                  </button>
+                  <button
+                    type="button"
+                    className="newPageSeenToggle top100CreatePlaylistButton"
+                    onClick={() => {
+                      void createPlaylistFromNew();
+                    }}
+                    disabled={visibleVideos.length === 0 || isCreatingPlaylistFromNew}
+                  >
+                    {isCreatingPlaylistFromNew ? "+ Creating..." : "+ New Playlist"}
+                  </button>
+                </>
+              ) : null}
+              <div className="newPageGenreFilterGroup" ref={genreFilterGroupRef}>
+                <button
+                  type="button"
+                  className={`newPageSeenToggle${(selectedGenres.length > 0 || excludedGenres.length > 0) ? " newPageSeenToggleActive" : ""}`}
+                  onClick={() => setIsGenreMenuOpen((current) => !current)}
+                  aria-expanded={isGenreMenuOpen}
+                  aria-controls="new-genre-filter-panel"
+                >
+                  {(selectedGenres.length > 0 || excludedGenres.length > 0)
+                    ? `Genres: +${selectedGenres.length} / -${excludedGenres.length}`
+                    : "Genres: All"}
+                </button>
+              </div>
+            </div>
+            <CloseLink />
           </div>
+          {genreFilterPanel}
         </div>
-        <CloseLink />
       </OverlayHeader>
-      {genreFilterPanel}
       {topStatusMessage ? <p className="rightRailStatus">{topStatusMessage}</p> : null}
       <div className="trackStack spanTwoColumns newPageTrackStack">
       {visibleVideos.map((track, index) => (

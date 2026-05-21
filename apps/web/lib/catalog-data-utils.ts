@@ -338,6 +338,7 @@ export function mapVideo(video: {
   channelTitle: string | null;
   parsedArtist?: string | null;
   parsedTrack?: string | null;
+  artistVideoCount?: number | bigint | null;
   genre?: string | null;
   favourited: number | bigint | null;
   description: string | null;
@@ -363,12 +364,18 @@ export function mapVideo(video: {
       ? video.genre.trim()
       : "Rock / Metal";
 
+  const artistVideoCountValue =
+    typeof video.artistVideoCount === "bigint"
+      ? Number(video.artistVideoCount)
+      : Number(video.artistVideoCount ?? Number.NaN);
+
   return {
     id: video.videoId,
     title: video.title,
     channelTitle: displayArtist,
     parsedArtist: parsedArtist || null,
     parsedTrack: parsedTrack || null,
+    artistVideoCount: Number.isFinite(artistVideoCountValue) ? artistVideoCountValue : null,
     genre,
     favourited: Number.isFinite(favouritedValue) ? favouritedValue : 0,
     description: video.description ?? "Legacy video entry from the retained Yeh database.",
