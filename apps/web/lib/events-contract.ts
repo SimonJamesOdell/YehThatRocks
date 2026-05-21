@@ -28,6 +28,7 @@ export const EVENT_NAMES = {
 
   // Navigation and overlay
   AUTH_SUCCESS: "ytr:auth-success",
+  AUTH_MODAL_OPEN: "ytr:auth-modal-open",
   OVERLAY_OPEN_REQUEST: "ytr:overlay-open-request",
   OVERLAY_CLOSE_REQUEST: "ytr:overlay-close-request",
   DOCK_HIDE_REQUEST: "ytr:dock-hide-request",
@@ -80,6 +81,7 @@ export type EventPayloads = {
   };
   [EVENT_NAMES.RIGHT_RAIL_LYRICS_OPEN]: { videoId: string };
   [EVENT_NAMES.AUTH_SUCCESS]: null;
+  [EVENT_NAMES.AUTH_MODAL_OPEN]: null;
   [EVENT_NAMES.OVERLAY_OPEN_REQUEST]: {
     href: string;
     kind: "wiki" | "video";
@@ -237,6 +239,7 @@ export const RIGHT_RAIL_LYRICS_OPEN_EVENT = EVENT_NAMES.RIGHT_RAIL_LYRICS_OPEN;
 
 // Navigation and overlay
 export const AUTH_SUCCESS_EVENT = EVENT_NAMES.AUTH_SUCCESS;
+export const AUTH_MODAL_OPEN_EVENT = EVENT_NAMES.AUTH_MODAL_OPEN;
 export const OVERLAY_OPEN_REQUEST_EVENT = EVENT_NAMES.OVERLAY_OPEN_REQUEST;
 export const OVERLAY_CLOSE_REQUEST_EVENT = EVENT_NAMES.OVERLAY_CLOSE_REQUEST;
 export const DOCK_HIDE_REQUEST_EVENT = EVENT_NAMES.DOCK_HIDE_REQUEST;

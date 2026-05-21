@@ -71,22 +71,36 @@
 }
 
 .newPageGenreFilterPanel {
-  position: fixed;
-  top: 132px;
-  left: 28px;
-  right: 28px;
-  z-index: 140;
-  width: auto;
-  min-height: 320px;
-  max-height: calc(100dvh - 164px);
-  overflow: auto;
+  width: 100%;
+  margin: 0;
+  max-height: 0;
+  overflow: hidden;
   border: 1px solid rgba(180, 40, 40, 0.45);
   border-radius: 10px;
   background: linear-gradient(180deg, rgba(26, 11, 11, 0.98), rgba(12, 6, 6, 0.98));
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
-  padding: 12px;
+  padding: 0 12px;
   display: grid;
   gap: 10px;
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+  transition:
+    max-height 180ms ease,
+    opacity 140ms ease,
+    transform 180ms ease,
+    margin 180ms ease,
+    padding 180ms ease;
+}
+
+.newPageGenreFilterPanel.newPageGenreFilterPanelOpen {
+  margin-top: 10px;
+  max-height: min(72dvh, 760px);
+  overflow: auto;
+  padding: 12px;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 
 .newPageGenreFilterPanelHeader {
@@ -100,6 +114,13 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.newPageGenreFilterPanelActionsBottom {
+  width: auto;
+  margin-left: auto;
+  justify-self: end;
+  justify-content: flex-end;
 }
 
 .newPageGenreFilterOptions {
@@ -159,11 +180,7 @@
   }
 
   .newPageGenreFilterPanel {
-    top: 118px;
-    left: 16px;
-    right: 16px;
-    min-height: 260px;
-    max-height: calc(100dvh - 146px);
+    width: 100%;
   }
 
   .newPageGenreFilterOptions {

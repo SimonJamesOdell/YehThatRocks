@@ -2115,6 +2115,16 @@ function ShellDynamicInner({
   function openAuthModal() {
     setIsAuthModalOpen(true);
   }
+  useEffect(() => {
+    const handleAuthModalOpen = () => {
+      openAuthModal();
+    };
+
+    window.addEventListener(EVENT_NAMES.AUTH_MODAL_OPEN, handleAuthModalOpen);
+    return () => {
+      window.removeEventListener(EVENT_NAMES.AUTH_MODAL_OPEN, handleAuthModalOpen);
+    };
+  }, []);
   const {
     getNavHref,
     openAutoplaySettingsOverlay,
