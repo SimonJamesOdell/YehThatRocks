@@ -13,6 +13,7 @@ import { SearchResultBlockButton } from "@/components/search-result-block-button
 import { SearchFlagButton } from "@/components/search-flag-button";
 import { SearchSeenToggle } from "@/components/search-seen-toggle";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
+import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import { getGenreSlug, searchCatalog } from "@/lib/catalog-data";
 import { getSuppressedSearchVideoIds } from "@/lib/search-flag-data";
 import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
@@ -38,6 +39,33 @@ type SearchCatalogPageResult = {
   genres: string[];
   videos: SearchVideoResult[];
 };
+
+function inferTrackFromTitle(title: string, artist: string) {
+  const trimmedTitle = title.trim();
+  const trimmedArtist = artist.trim();
+  if (!trimmedTitle || !trimmedArtist) {
+    return trimmedTitle;
+  }
+
+  const separators = [" - ", " — ", " | "];
+  for (const separator of separators) {
+    const split = trimmedTitle.split(separator).map((part) => part.trim()).filter(Boolean);
+    if (split.length < 2) {
+      continue;
+    }
+
+    const [left, right] = split;
+    if (left.toLowerCase() === trimmedArtist.toLowerCase()) {
+      return right;
+    }
+
+    if (right.toLowerCase() === trimmedArtist.toLowerCase()) {
+      return left;
+    }
+  }
+
+  return trimmedTitle;
+}
 
 export default async function SearchPage({ searchParams }: SearchPageProps) {
   const [{ hasAccessToken: isAuthenticated, user, isAdmin: isAdminUser }, { seenVideoIds }] = await Promise.all([
@@ -68,6 +96,16 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       <div id="search-video-grid" className="trackStack spanTwoColumns">
         {uniqueVideos.map((video) => {
           const isSeen = seenVideoIds.has(video.id);
+          const rawDisplayTitle = video.title;
+          const parsedArtistCandidate =
+            video.channelTitle?.trim()
+            || inferArtistFromTitle(rawDisplayTitle)?.trim()
+            || "";
+          const metadataArtist = parsedArtistCandidate || "Unknown Artist";
+          const parsedTrackCandidate = inferTrackFromTitle(rawDisplayTitle, metadataArtist);
+          const displayTitle = parsedArtistCandidate && parsedTrackCandidate
+            ? `${parsedArtistCandidate.toUpperCase()} - ${parsedTrackCandidate}`
+            : rawDisplayTitle;
 
           return (
             <article
@@ -96,7 +134,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                   {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay">Seen</span> : null}
                 </div>
                 <div className="leaderboardMeta">
-                  <h3>{video.title}</h3>
+                  <h3>{displayTitle}</h3>
                   <p>
                     <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
                       {video.channelTitle}
