@@ -214,6 +214,7 @@ function ShellDynamicInner({
       ? "The auth server is not responding, so your authorization status cannot currently be confirmed. Try again later or reconnect now."
       : null,
   );
+  const [isAuthUnavailableDialogRequested, setIsAuthUnavailableDialogRequested] = useState(false);
   const [isAuthUnavailableDialogDismissed, setIsAuthUnavailableDialogDismissed] = useState(false);
   const [isRetryingAuthStatus, setIsRetryingAuthStatus] = useState(false);
   const [deniedPlaybackMessage, setDeniedPlaybackMessage] = useState<string | null>(null);
@@ -419,7 +420,8 @@ function ShellDynamicInner({
     },
     [refreshAuthSession],
   );
-  const checkAuthState = useCallback(async () => {
+  const checkAuthState = useCallback(async (options?: { showDialogOnUnavailable?: boolean }) => {
+    const showDialogOnUnavailable = options?.showDialogOnUnavailable === true;
     const isDocumentVisible = typeof document === "undefined" || document.visibilityState === "visible";
     const resolveAuthState = async () => {
       try {
@@ -465,16 +467,22 @@ function ShellDynamicInner({
     if (resolvedState === "unauthenticated") {
       setAuthStatus("clear");
       setAuthStatusMessage(null);
+      setIsAuthUnavailableDialogRequested(false);
       setIsAuthenticated(false);
       return "unauthenticated" as const;
     }
     if (resolvedState === "unavailable") {
       setAuthStatus("unavailable");
       setAuthStatusMessage("The auth server is probably being updated. Please wait a moment and try again.");
+      if (showDialogOnUnavailable) {
+        setIsAuthUnavailableDialogRequested(true);
+        setIsAuthUnavailableDialogDismissed(false);
+      }
       return "unavailable" as const;
     }
     setAuthStatus("clear");
     setAuthStatusMessage(null);
+    setIsAuthUnavailableDialogRequested(false);
     setIsAuthenticated(true);
     return "authenticated" as const;
   }, [fetchWithAuthRetry, isAuthenticated]);
@@ -533,7 +541,7 @@ function ShellDynamicInner({
     router,
     isAuthenticated,
     fetchWithAuthRetry,
-    checkAuthState,
+    checkAuthState: checkAuthStateForProtectedAction,
   });
   const {
     chatMode, setChatMode,
@@ -562,7 +570,7 @@ function ShellDynamicInner({
       && (pathname !== "/categories" && !pathname.startsWith("/categories/"))
       && !pathname.startsWith("/playlists"),
     fetchWithAuthRetry,
-    checkAuthState,
+    checkAuthState: checkAuthStateForProtectedAction,
   });
   const {
     deletingMagazineSlugs,
@@ -765,6 +773,7 @@ function ShellDynamicInner({
     if (!isLoggedIn) {
       setAuthStatus("clear");
       setAuthStatusMessage(null);
+      setIsAuthUnavailableDialogRequested(false);
       return;
     }
     if (initialAuthStatus === "unavailable") {
@@ -774,6 +783,7 @@ function ShellDynamicInner({
     }
     setAuthStatus("clear");
     setAuthStatusMessage(null);
+    setIsAuthUnavailableDialogRequested(false);
   }, [initialAuthStatus, isLoggedIn]);
   useEffect(() => {
     if (authStatus !== "unavailable" || !authStatusMessage) {
@@ -1248,11 +1258,14 @@ function ShellDynamicInner({
     }
     setIsRetryingAuthStatus(true);
     try {
-      await checkAuthState();
+      await checkAuthState({ showDialogOnUnavailable: true });
     } finally {
       setIsRetryingAuthStatus(false);
     }
   }, [checkAuthState, isRetryingAuthStatus]);
+  const checkAuthStateForProtectedAction = useCallback(() => {
+    return checkAuthState({ showDialogOnUnavailable: true });
+  }, [checkAuthState]);
   useEffect(() => {
     if (authStatus !== "unavailable" || !authStatusMessage) {
       return;
@@ -1692,7 +1705,7 @@ function ShellDynamicInner({
         setHiddenMutationPendingVideoIds((previous) => [...previous, track.id]);
       },
       onUnauthorized: () => {
-        void checkAuthState();
+        void checkAuthStateForProtectedAction();
       },
       onSettled: () => {
         setHiddenMutationPendingVideoIds((previous) => previous.filter((videoId) => videoId !== track.id));
@@ -1703,7 +1716,7 @@ function ShellDynamicInner({
       setPlaylistMutationMessage(result.message);
     }
   }, [
-    checkAuthState,
+    checkAuthStateForProtectedAction,
     commitWatchNextHide,
     isAuthenticated,
     setPlaylistMutationMessage,
@@ -2375,14 +2388,17 @@ function ShellDynamicInner({
           </section>
         </div>
       ) : null}
-      {authStatus === "unavailable" && authStatusMessage && !isAuthUnavailableDialogDismissed ? (
+      {authStatus === "unavailable" && authStatusMessage && isAuthUnavailableDialogRequested && !isAuthUnavailableDialogDismissed ? (
         <AuthUnavailableDialog
           message={authStatusMessage}
           isRetrying={isRetryingAuthStatus}
           retryLabel="Retry auth now"
           retryButtonLabel="Try again"
           retryBusyLabel="Trying again..."
+          dismissLabel="Dismiss auth availability notice"
+          dismissButtonLabel="Dismiss"
           onRetry={() => void retryAuthStateCheck()}
+          onDismiss={() => setIsAuthUnavailableDialogDismissed(true)}
         />
       ) : null}
       <section

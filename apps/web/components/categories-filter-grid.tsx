@@ -28,7 +28,12 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
   const loaderFadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setCards(shouldDeferInitialCards ? [] : genreCards);
+    setCards((previous) => {
+      if (!shouldDeferInitialCards) {
+        return genreCards;
+      }
+      return previous.length > 0 ? previous : [];
+    });
     setIsLoadingCards(genreCards.length === 0 || shouldDeferInitialCards);
 
     if (genreCards.length > 0 && !shouldDeferInitialCards) {
@@ -62,7 +67,13 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
         const payload = (await response.json()) as { categories?: GenreCard[] };
         const nextCards = Array.isArray(payload.categories) ? payload.categories : [];
         if (!cancelled && nextCards.length > 0) {
-          setCards(nextCards);
+          const hasVisibleCounts = nextCards.some((card) => Number(card.artistCount ?? 0) > 0);
+          setCards((previous) => {
+            if (hasVisibleCounts) {
+              return nextCards;
+            }
+            return previous.length > 0 ? previous : nextCards;
+          });
         }
       } catch {
         // Keep server-provided cards when client fallback fetch fails.
