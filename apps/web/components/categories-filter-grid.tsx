@@ -80,14 +80,18 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
     };
   }, [genreCards, initialCardsNeedCountRefresh]);
 
+  const categoriesWithArtists = useMemo(() => {
+    return cards.filter((card) => Number(card.artistCount ?? 0) > 0);
+  }, [cards]);
+
   const filteredCards = useMemo(() => {
     const needle = filterValue.trim().toLowerCase();
     if (!needle) {
-      return cards;
+      return categoriesWithArtists;
     }
 
-    return cards.filter(({ genre }) => genre.toLowerCase().startsWith(needle));
-  }, [filterValue, cards]);
+    return categoriesWithArtists.filter(({ genre }) => genre.toLowerCase().startsWith(needle));
+  }, [filterValue, categoriesWithArtists]);
 
   const hasActiveFilter = filterValue.trim().length > 0;
 
