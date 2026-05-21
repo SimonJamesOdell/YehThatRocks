@@ -6,7 +6,10 @@ type AuthUnavailableDialogProps = {
   retryLabel: string;
   retryButtonLabel: string;
   retryBusyLabel: string;
+  dismissLabel: string;
+  dismissButtonLabel: string;
   onRetry: () => void;
+  onDismiss: () => void;
 };
 
 export function AuthUnavailableDialog({
@@ -15,10 +18,13 @@ export function AuthUnavailableDialog({
   retryLabel,
   retryButtonLabel,
   retryBusyLabel,
+  dismissLabel,
+  dismissButtonLabel,
   onRetry,
+  onDismiss,
 }: AuthUnavailableDialogProps) {
   return (
-    <div className="authStatusModalOverlay">
+    <div className="authStatusModalOverlay" onClick={onDismiss}>
       <section
         className="authStatusModalDialog"
         role="dialog"
@@ -33,6 +39,16 @@ export function AuthUnavailableDialog({
           <p id="auth-unavailable-message">{message}</p>
         </div>
         <div className="authStatusModalActions">
+          <button
+            type="button"
+            className="authStatusModalDismiss"
+            aria-label={dismissLabel}
+            title={dismissLabel}
+            onClick={onDismiss}
+            disabled={isRetrying}
+          >
+            {dismissButtonLabel}
+          </button>
           <button
             type="button"
             aria-label={retryLabel}
