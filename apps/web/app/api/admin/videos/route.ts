@@ -91,6 +91,7 @@ export async function PATCH(request: NextRequest) {
   const data: {
     title?: string;
     approved?: boolean;
+    approvedAt?: Date | null;
     parsedArtist?: string | null;
     parsedTrack?: string | null;
     parsedVideoType?: string | null;
@@ -102,7 +103,13 @@ export async function PATCH(request: NextRequest) {
   } = {};
 
   if (parsed.title !== undefined) data.title = parsed.title;
-  if (parsed.approved !== undefined) data.approved = parsed.approved;
+  if (parsed.approved !== undefined) {
+    data.approved = parsed.approved;
+    // Set approvedAt timestamp when approving a video
+    if (parsed.approved === true) {
+      data.approvedAt = new Date();
+    }
+  }
   if (parsed.parsedArtist !== undefined) data.parsedArtist = parsed.parsedArtist || null;
   if (parsed.parsedTrack !== undefined) data.parsedTrack = parsed.parsedTrack || null;
   if (parsed.parsedVideoType !== undefined) data.parsedVideoType = parsed.parsedVideoType || null;

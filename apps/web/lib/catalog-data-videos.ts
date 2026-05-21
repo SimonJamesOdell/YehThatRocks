@@ -252,7 +252,7 @@ async function getRankedVideoIdSlice(mode: "top" | "newest", limit: number): Pro
           ) available_sv ON available_sv.video_id = v.id
           WHERE v.videoId IS NOT NULL
             AND COALESCE(v.approved, 0) = 1
-          ORDER BY v.created_at DESC, v.id DESC
+          ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
           LIMIT ${fetchLimit}
         `;
 
@@ -1129,7 +1129,7 @@ export async function getNewestVideos(
               FROM videos v
               WHERE v.videoId IS NOT NULL
                 AND COALESCE(v.approved, 0) = 1
-              ORDER BY v.created_at DESC, v.id DESC
+              ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
               LIMIT ${batchSize}
               OFFSET ${rawOffset}
             `
@@ -1155,7 +1155,7 @@ export async function getNewestVideos(
               FROM videos v
               WHERE v.videoId IS NOT NULL
                 AND COALESCE(v.approved, 0) = 1
-              ORDER BY v.created_at DESC, v.id DESC
+              ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
               LIMIT ${batchSize}
               OFFSET ${rawOffset}
             `;
@@ -1242,7 +1242,7 @@ export async function getNewestVideos(
                 WHERE sv.video_id = v.id
                   AND sv.status = 'available'
               )
-            ORDER BY v.created_at DESC, v.id DESC
+            ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
             LIMIT ${safeCount}
             OFFSET ${safeOffset}
           `
@@ -1263,7 +1263,7 @@ export async function getNewestVideos(
                 WHERE sv.video_id = v.id
                   AND sv.status = 'available'
               )
-            ORDER BY v.created_at DESC, v.id DESC
+            ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
             LIMIT ${safeCount}
             OFFSET ${safeOffset}
           `;
@@ -1297,7 +1297,7 @@ export async function getNewestVideos(
             FROM videos v
             WHERE v.videoId IS NOT NULL
               AND COALESCE(v.approved, 0) = 1
-            ORDER BY v.created_at DESC, v.id DESC
+            ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
             LIMIT ${safeCount}
             OFFSET ${safeOffset}
           `
@@ -1312,7 +1312,7 @@ export async function getNewestVideos(
             FROM videos v
             WHERE v.videoId IS NOT NULL
               AND COALESCE(v.approved, 0) = 1
-            ORDER BY v.created_at DESC, v.id DESC
+            ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
             LIMIT ${safeCount}
             OFFSET ${safeOffset}
           `;

@@ -135,12 +135,14 @@ export async function POST(request: NextRequest) {
     const approveData: {
       approved: boolean;
       updatedAt: Date;
+      approvedAt: Date;
       title?: string;
       parsedArtist?: string | null;
       parsedTrack?: string | null;
     } = {
       approved: true,
       updatedAt: new Date(),
+      approvedAt: new Date(),
     };
 
     if (parsed.title !== undefined) {
