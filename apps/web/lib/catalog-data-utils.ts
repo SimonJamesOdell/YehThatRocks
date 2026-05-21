@@ -400,6 +400,7 @@ export function mapPlaylistVideo(video: {
   title: string;
   channelTitle: string | null;
   parsedArtist?: string | null;
+  parsedTrack?: string | null;
   favourited: number | bigint | null;
   description: string | null;
 }): PlaylistVideoRecord {

@@ -29,6 +29,8 @@ export type PlaylistRailVideo = {
   id: string;
   title: string;
   channelTitle: string;
+  parsedArtist?: string | null;
+  parsedTrack?: string | null;
   thumbnail?: string | null;
 };
 

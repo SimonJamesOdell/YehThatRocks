@@ -551,7 +551,7 @@
 
 .playlistRailTrackRow {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-columns: 24px minmax(0, 1fr);
   align-items: stretch;
   gap: 1px;
 }
@@ -594,13 +594,13 @@
   justify-items: center;
   gap: 4px;
   align-content: center;
-  transform: translateX(-15px);
+  transform: translateX(-10px);
 }
 
 .playlistRailReorderChevron {
-  width: 36px;
+  width: 32px;
   height: 26px;
-  min-width: 36px;
+  min-width: 32px;
   min-height: 26px;
   padding: 0;
   border: none;
@@ -615,22 +615,22 @@
 }
 
 .playlistRailReorderChevron {
-  font-size: 1.34rem;
+  font-size: 1.2rem;
 }
 
 .playlistRailChevronGlyph {
   display: inline-block;
   font-weight: 900;
-  transform: scaleX(1.85);
+  transform: scaleX(1.65);
   transform-origin: center;
 }
 
 .playlistRailReorderColumn .playlistRailReorderChevron:first-child .playlistRailChevronGlyph {
-  transform: scaleX(1.85) rotate(90deg);
+  transform: scaleX(1.65) rotate(90deg);
 }
 
 .playlistRailReorderColumn .playlistRailReorderChevron:last-child .playlistRailChevronGlyph {
-  transform: scaleX(1.85) rotate(90deg);
+  transform: scaleX(1.65) rotate(90deg);
 }
 
 .playlistRailReorderChevron:hover:not(:disabled) {

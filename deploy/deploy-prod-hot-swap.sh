@@ -256,8 +256,17 @@ if wait_for_public_health "$STATUS_URL" "$HEALTH_TIMEOUT_SEC"; then
   echo "[deploy] deploy complete: $CURRENT_COMMIT"
   if [ -f "$REPO_DIR/deploy/verify-live-schema.sh" ]; then
     echo "[deploy] verifying schema parity"
-    REPO_DIR="$REPO_DIR" ENV_FILE="$ENV_FILE" COMPOSE_FILE="$COMPOSE_FILE" \
-      bash "$REPO_DIR/deploy/verify-live-schema.sh" || echo "[deploy] WARNING: schema verification failed — run: bash deploy/verify-live-schema.sh" >&2
+    if REPO_DIR="$REPO_DIR" ENV_FILE="$ENV_FILE" COMPOSE_FILE="$COMPOSE_FILE" \
+      bash "$REPO_DIR/deploy/verify-live-schema.sh"; then
+      echo "[deploy] schema verification passed"
+    else
+      if [ "${ALLOW_SCHEMA_VERIFY_WARN_ONLY:-0}" = "1" ]; then
+        echo "[deploy] WARNING: schema verification failed (ALLOW_SCHEMA_VERIFY_WARN_ONLY=1)" >&2
+      else
+        echo "[deploy] schema verification failed — failing deploy to prevent app/schema drift" >&2
+        exit 1
+      fi
+    fi
   fi
 
   # Install/refresh magazine autogen systemd timer (runs every 6 hours)

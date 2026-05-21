@@ -45,7 +45,7 @@ GLOBAL_DRIFT=0
 
 if [ "$DIFF_EXIT" -eq 2 ]; then
   GLOBAL_DRIFT=1
-  echo "[schema-verify] Warning: full-schema drift detected (continuing with hidden/watch checks)" >&2
+  echo "[schema-verify] Warning: full-schema drift detected (continuing with critical table checks)" >&2
 fi
 
 if [ "$DIFF_EXIT" -ne 0 ] && [ "$DIFF_EXIT" -ne 2 ]; then
@@ -85,8 +85,22 @@ do
   fi
 done
 
+echo "[schema-verify] Checking videos DDL for approval-recency schema"
+VIDEOS_DDL_OUTPUT="$("${COMPOSE[@]}" exec -T db sh -lc 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" -e "SHOW CREATE TABLE videos\\G"')"
+echo "$VIDEOS_DDL_OUTPUT"
+
+for required_regex in \
+  '`approved_at` datetime\(3\)' \
+  'KEY `idx_videos_approved_at_id` \(`approved_at` DESC,`id` DESC\)'
+do
+  if ! grep -Eq "$required_regex" <<<"$VIDEOS_DDL_OUTPUT"; then
+    echo "[schema-verify] Missing expected videos schema pattern: $required_regex" >&2
+    exit 5
+  fi
+done
+
 echo "[schema-verify] Relevant Prisma migration records"
-"${COMPOSE[@]}" exec -T db sh -lc 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" -e "SELECT migration_name, finished_at, rolled_back_at FROM _prisma_migrations WHERE migration_name IN (\"20260412_hidden_videos\", \"20260412030719_auto\", \"20260410_watch_history\") ORDER BY migration_name;"'
+"${COMPOSE[@]}" exec -T db sh -lc 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" -e "SELECT migration_name, finished_at, rolled_back_at FROM _prisma_migrations WHERE migration_name IN (\"20260412_hidden_videos\", \"20260412030719_auto\", \"20260410_watch_history\", \"20260521034500_add_approved_at_timestamp\") ORDER BY migration_name;"'
 
 if [ "$GLOBAL_DRIFT" -eq 1 ] && [ "$STRICT_FULL_DRIFT" = "1" ]; then
   echo "[schema-verify] FAIL: full-schema drift present and STRICT_FULL_DRIFT=1" >&2
@@ -94,9 +108,9 @@ if [ "$GLOBAL_DRIFT" -eq 1 ] && [ "$STRICT_FULL_DRIFT" = "1" ]; then
 fi
 
 if [ "$GLOBAL_DRIFT" -eq 1 ]; then
-  echo "[schema-verify] NOTE: Full-schema drift exists, but hidden_videos/watch_history checks passed" >&2
+  echo "[schema-verify] NOTE: Full-schema drift exists, but critical hidden/watch/videos checks passed" >&2
   echo "[schema-verify] Set STRICT_FULL_DRIFT=1 to fail on any global drift" >&2
-  echo "[schema-verify] OK (with drift): critical hidden/watch schema checks passed" >&2
+  echo "[schema-verify] OK (with drift): critical hidden/watch/videos schema checks passed" >&2
   exit 0
 fi
 

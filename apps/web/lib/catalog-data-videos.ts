@@ -241,20 +241,54 @@ async function getRankedVideoIdSlice(mode: "top" | "newest", limit: number): Pro
           ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
           LIMIT ${fetchLimit}
         `
-      : await prisma.$queryRaw<Array<{ videoId: string }>>`
-          SELECT
-            v.videoId
-          FROM videos v FORCE INDEX (idx_videos_created_at_id)
-          INNER JOIN (
-            SELECT DISTINCT sv.video_id
-            FROM site_videos sv FORCE INDEX (idx_site_videos_status_video_id)
-            WHERE sv.status = 'available'
-          ) available_sv ON available_sv.video_id = v.id
-          WHERE v.videoId IS NOT NULL
-            AND COALESCE(v.approved, 0) = 1
-          ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
-          LIMIT ${fetchLimit}
-        `;
+      : await (async () => {
+          const newestQueryBase = `
+            SELECT
+              v.videoId
+            FROM videos v FORCE INDEX (idx_videos_created_at_id)
+            INNER JOIN (
+              SELECT DISTINCT sv.video_id
+              FROM site_videos sv FORCE INDEX (idx_site_videos_status_video_id)
+              WHERE sv.status = 'available'
+            ) available_sv ON available_sv.video_id = v.id
+            WHERE v.videoId IS NOT NULL
+              AND COALESCE(v.approved, 0) = 1
+          `;
+
+          try {
+            return await prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
+              `${newestQueryBase}
+               ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
+               LIMIT ?`,
+              fetchLimit,
+            );
+          } catch {
+            try {
+              return await prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
+                `${newestQueryBase}
+                 ORDER BY COALESCE(v.created_at, v.id) DESC, v.id DESC
+                 LIMIT ?`,
+                fetchLimit,
+              );
+            } catch {
+              try {
+                return await prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
+                  `${newestQueryBase}
+                   ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC
+                   LIMIT ?`,
+                  fetchLimit,
+                );
+              } catch {
+                return await prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
+                  `${newestQueryBase}
+                   ORDER BY v.id DESC
+                   LIMIT ?`,
+                  fetchLimit,
+                );
+              }
+            }
+          }
+        })();
 
     const ids = Array.from(new Set<string>(rows.map((row: { videoId: string | null }) => row.videoId).filter((id: string | null): id is string => Boolean(id)))).slice(0, fetchLimit);
 

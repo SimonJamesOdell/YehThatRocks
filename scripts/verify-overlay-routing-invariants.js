@@ -12,6 +12,7 @@ const {
   joinFileSources,
   loadCssSourceFromRoots,
   assertContains,
+  assertContainsEither,
   assertNotContains,
   assertCssRuleContains,
   assertCssRuleNotContains,
@@ -249,9 +250,25 @@ function main() {
   assertContains(coreShellSmokeSource, "expect(revealLatencyMs).toBeLessThanOrEqual(1500);", "Core smoke test enforces bounded prompt footer reveal timing window", failures);
 
   // Categories open/loading/reveal contract invariants.
-  assertContains(categoriesFilterGridSource, 'const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);', "Categories grid tracks explicit loader visibility state", failures);
+  assertContainsEither(
+    categoriesFilterGridSource,
+    [
+      'const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);',
+      'const [isLoaderVisible, setIsLoaderVisible] = useState(initialCards.length === 0);',
+    ],
+    "Categories grid tracks explicit loader visibility state",
+    failures,
+  );
   assertContains(categoriesFilterGridSource, 'const [isLoaderFadingOut, setIsLoaderFadingOut] = useState(false);', "Categories grid tracks loader fade-out phase", failures);
-  assertContains(categoriesFilterGridSource, 'const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0);', "Categories grid initializes reveal state from hydrated cards", failures);
+  assertContainsEither(
+    categoriesFilterGridSource,
+    [
+      'const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0);',
+      'const [hasRevealedCards, setHasRevealedCards] = useState(initialCards.length > 0);',
+    ],
+    "Categories grid initializes reveal state from hydrated cards",
+    failures,
+  );
   assertContains(categoriesFilterGridSource, 'setIsLoaderFadingOut(true);', "Categories grid starts loader fade before showing cards", failures);
   assertContains(categoriesFilterGridSource, 'setHasRevealedCards(true);', "Categories grid enables card reveal class as part of loader handoff", failures);
   assertContains(categoriesFilterGridSource, '}, 190);', "Categories grid keeps short overlap window between loader fade and card reveal", failures);
