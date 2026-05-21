@@ -10,8 +10,10 @@ export const DESKTOP_INTRO_LOGO_SRC = "/assets/images/yeh_main_logo.png?v=202604
 const DESKTOP_INTRO_HOLD_MS = 1300;
 const DESKTOP_INTRO_MOVE_MS = 760;
 const DESKTOP_INTRO_REVEAL_MS = 820;
+const DESKTOP_INTRO_PRELOAD_TIMEOUT_MS = 4000;
 const DESKTOP_INTRO_MAX_LOGO_WIDTH_PX = 1128;
 const DESKTOP_INTRO_VIEWPORT_WIDTH_RATIO = 1.128;
+const DESKTOP_INTRO_DISABLED = process.env.NEXT_PUBLIC_DISABLE_DESKTOP_INTRO === "1";
 // Legacy invariant anchors for verify:overlay-routing:
 // const DESKTOP_INTRO_PLAYED_SESSION_KEY = "ytr:desktop-intro-played";
 
@@ -61,7 +63,7 @@ export function useDesktopIntro({
 }): DesktopIntroState {
   // Legacy invariant anchor:
   // const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(false);
-  const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(true);
+  const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(!DESKTOP_INTRO_DISABLED);
   const [isDesktopIntroLogoReady, setIsDesktopIntroLogoReady] = useState(false);
   const [desktopIntroPhase, setDesktopIntroPhase] = useState<DesktopIntroPhase>("disabled");
   const [desktopIntroDeltaX, setDesktopIntroDeltaX] = useState(0);
@@ -138,6 +140,12 @@ export function useDesktopIntro({
       return;
     }
 
+    if (DESKTOP_INTRO_DISABLED) {
+      setDesktopIntroPhase("disabled");
+      setIsDesktopIntroPreload(false);
+      return;
+    }
+
     const isDesktop = window.matchMedia("(min-width: 1181px)").matches;
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -210,6 +218,11 @@ export function useDesktopIntro({
     }
 
     return await new Promise<boolean>((resolve) => {
+      const timeoutHandle = window.setTimeout(() => {
+        cleanup();
+        resolve(false);
+      }, DESKTOP_INTRO_PRELOAD_TIMEOUT_MS);
+
       const handleLoad = () => {
         cleanup();
         finalizeReady();
@@ -223,6 +236,7 @@ export function useDesktopIntro({
       };
 
       const cleanup = () => {
+        window.clearTimeout(timeoutHandle);
         image.removeEventListener("load", handleLoad);
         image.removeEventListener("error", handleError);
       };
@@ -233,11 +247,24 @@ export function useDesktopIntro({
   }, []);
 
   const startPreparedDesktopIntroSequence = useCallback(async () => {
+    if (DESKTOP_INTRO_DISABLED) {
+      setDesktopIntroPhase("disabled");
+      setIsDesktopIntroPreload(false);
+      return;
+    }
+
     setIsDesktopIntroPreload(true);
-    const ready = await prepareDesktopIntroLogo();
+    let ready = false;
+
+    try {
+      ready = await prepareDesktopIntroLogo();
+    } catch {
+      ready = false;
+    }
 
     if (!ready) {
       setIsDesktopIntroPreload(false);
+      return;
     }
 
     startDesktopIntroSequence();
@@ -246,6 +273,12 @@ export function useDesktopIntro({
   // Run the intro on first mount and re-run on resize while active.
   useEffect(() => {
     if (typeof window === "undefined") {
+      return;
+    }
+
+    if (DESKTOP_INTRO_DISABLED) {
+      setDesktopIntroPhase("disabled");
+      setIsDesktopIntroPreload(false);
       return;
     }
 
@@ -274,6 +307,10 @@ export function useDesktopIntro({
 
   // Replay the intro when the user navigates back to "/" via the brand logo.
   useEffect(() => {
+    if (DESKTOP_INTRO_DISABLED) {
+      return;
+    }
+
     if (pathname !== "/" || !shouldReplayDesktopIntroOnHomeRef.current) {
       return;
     }
