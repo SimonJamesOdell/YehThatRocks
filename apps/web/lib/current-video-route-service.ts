@@ -160,11 +160,13 @@ export async function fetchRandomCatalogVideosForCurrentVideo(params: {
   }
 
   return rows.map((row) => {
+    const parsedArtist = row.parsedArtist?.trim() || "";
     const normalizedCurrentArtist = (row.channelTitle ?? "").trim().toLowerCase();
     const inferredArtist = inferArtistFromTitle(row.title)?.trim();
-    const resolvedArtist = row.channelTitle?.trim() && !params.genericArtistLabels.has(normalizedCurrentArtist)
+    const resolvedArtist = parsedArtist
+      || (row.channelTitle?.trim() && !params.genericArtistLabels.has(normalizedCurrentArtist)
       ? row.channelTitle.trim()
-      : inferredArtist || "Unknown Artist";
+      : inferredArtist || "Unknown Artist");
 
     return {
       id: row.id,

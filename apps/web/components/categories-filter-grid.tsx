@@ -65,37 +65,56 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
     }
 
     let cancelled = false;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    const loadCards = async () => {
+    const RETRY_DELAYS_MS = [700, 1400, 2400];
+
+    const scheduleRetry = (attempt: number, loadCards: (nextAttempt: number) => Promise<void>) => {
+      if (attempt >= RETRY_DELAYS_MS.length) {
+        setIsLoadingCards(false);
+        return;
+      }
+
+      const retryDelay = RETRY_DELAYS_MS[attempt];
+      retryTimeout = setTimeout(() => {
+        void loadCards(attempt + 1);
+      }, retryDelay);
+    };
+
+    const loadCards = async (attempt = 0) => {
       try {
         const response = await fetch("/api/categories", { cache: "no-store" });
         if (!response.ok) {
-          return;
+          throw new Error("categories-fetch-failed");
         }
+
         const payload = (await response.json()) as { categories?: GenreCard[] };
         const nextCards = Array.isArray(payload.categories) ? payload.categories : [];
-        if (!cancelled && nextCards.length > 0) {
-          const hasVisibleCounts = nextCards.some((card) => Number(card.artistCount ?? 0) > 0);
-          setCards((previous) => {
-            if (hasVisibleCounts) {
-              lastKnownCategoriesWithArtists = nextCards;
-              return nextCards;
-            }
-            if (previous.length > 0) {
-              return previous;
-            }
-            if (lastKnownCategoriesWithArtists.length > 0) {
-              return lastKnownCategoriesWithArtists;
-            }
-            return nextCards;
-          });
+
+        if (cancelled) {
+          return;
         }
+
+        const hasVisibleCounts = nextCards.some((card) => Number(card.artistCount ?? 0) > 0);
+        if (nextCards.length === 0 || !hasVisibleCounts) {
+          if (lastKnownCategoriesWithArtists.length > 0) {
+            setCards(lastKnownCategoriesWithArtists);
+            setIsLoadingCards(false);
+            return;
+          }
+
+          throw new Error("categories-payload-incomplete");
+        }
+
+        lastKnownCategoriesWithArtists = nextCards;
+        setCards(nextCards);
+        setIsLoadingCards(false);
       } catch {
-        // Keep server-provided cards when client fallback fetch fails.
-      } finally {
-        if (!cancelled) {
-          setIsLoadingCards(false);
+        if (cancelled) {
+          return;
         }
+
+        scheduleRetry(attempt, loadCards);
       }
     };
 
@@ -103,6 +122,10 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
 
     return () => {
       cancelled = true;
+
+      if (retryTimeout !== null) {
+        clearTimeout(retryTimeout);
+      }
     };
   }, [genreCards, initialCardsNeedCountRefresh]);
 
