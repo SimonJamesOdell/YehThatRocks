@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 
 import { CloseLink } from "@/components/close-link";
 import { OverlayHeader } from "@/components/overlay-header";
@@ -24,27 +24,97 @@ export function CategoryArtistsInfinite({
   isAdmin = false,
   hiddenVideoIds = [],
 }: CategoryArtistsInfiniteProps) {
+  const [artistsState, setArtistsState] = useState<CategoryArtistCard[]>(allArtists);
+  const [isLoadingArtists, setIsLoadingArtists] = useState(allArtists.length === 0);
   const [filterValue, setFilterValue] = useState("");
   const [pinningArtistSlug, setPinningArtistSlug] = useState<string | null>(null);
+  const [, startArtistsRenderTransition] = useTransition();
 
-  const normalizedFilter = filterValue.trim().toLowerCase();
+  useEffect(() => {
+    setArtistsState(allArtists);
+    setIsLoadingArtists(allArtists.length === 0);
+  }, [allArtists]);
 
-  const artists = useMemo(() => {
-    if (!normalizedFilter) {
-      return allArtists;
+  useEffect(() => {
+    if (allArtists.length > 0) {
+      return;
     }
 
-    return allArtists.filter((artist) => artist.name.toLowerCase().includes(normalizedFilter));
-  }, [allArtists, normalizedFilter]);
+    let cancelled = false;
+
+    const loadArtists = async () => {
+      setIsLoadingArtists(true);
+      setArtistsState([]);
+      try {
+        let offset = 0;
+        const pageSize = 192;
+        let pendingAppend: CategoryArtistCard[] = [];
+        for (let page = 0; page < 40; page += 1) {
+          const response = await fetch(`/api/categories/${encodeURIComponent(slug)}/artists?limit=${pageSize}&offset=${offset}`, {
+            cache: "no-store",
+          });
+
+          if (!response.ok) {
+            break;
+          }
+
+          const payload = (await response.json()) as {
+            artists?: CategoryArtistCard[];
+            hasMore?: boolean;
+            nextOffset?: number;
+          };
+          const pageArtists = Array.isArray(payload.artists) ? payload.artists : [];
+          pendingAppend.push(...pageArtists);
+
+          const hasMore = payload.hasMore === true;
+          const shouldFlushChunk = pendingAppend.length >= pageSize * 2 || !hasMore || pageArtists.length === 0;
+          if (!cancelled && shouldFlushChunk && pendingAppend.length > 0) {
+            const chunkToAppend = pendingAppend;
+            pendingAppend = [];
+            startArtistsRenderTransition(() => {
+              setArtistsState((current) => [...current, ...chunkToAppend]);
+            });
+          }
+
+          if (!hasMore || pageArtists.length === 0) {
+            break;
+          }
+
+          const nextOffset = Number(payload.nextOffset);
+          offset = Number.isFinite(nextOffset) ? nextOffset : offset + pageArtists.length;
+        }
+
+      } finally {
+        if (!cancelled) {
+          setIsLoadingArtists(false);
+        }
+      }
+    };
+
+    void loadArtists();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [allArtists.length, slug]);
+
+  const normalizedFilter = filterValue.trim().toLowerCase();
+  const artists = useMemo(() => {
+    if (!normalizedFilter) {
+      return artistsState;
+    }
+
+    return artistsState.filter((artist) => artist.name.toLowerCase().includes(normalizedFilter));
+  }, [artistsState, normalizedFilter]);
 
   const artistsLabel = useMemo(() => {
-    const total = allArtists.length;
+    const total = artistsState.length;
     if (!normalizedFilter) {
       return `${total.toLocaleString("en-US")} artists`;
     }
 
     return `${artists.length.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} artists`;
-  }, [allArtists.length, artists.length, normalizedFilter]);
+  }, [artistsState.length, artists.length, normalizedFilter]);
 
   const handlePinCategoryThumbnail = useCallback(async (event: React.MouseEvent<HTMLButtonElement>, artistSlug: string, thumbnailVideoId: string) => {
     event.preventDefault();
@@ -101,7 +171,17 @@ export function CategoryArtistsInfinite({
         <CloseLink />
       </OverlayHeader>
 
-      {artists.length > 0 ? (
+      {isLoadingArtists && artists.length === 0 ? (
+        <div className="routeContractRow artistLoadingCenter" aria-live="polite" aria-busy="true">
+          <span className="playerBootBars" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </span>
+          <span>Loading artists...</span>
+        </div>
+      ) : artists.length > 0 ? (
         <div className="catalogGrid artistsCatalogGrid categoryArtistsGrid">
           {artists.map((artist) => (
             <div key={`${artist.slug}:${artist.name}`}>
