@@ -7,7 +7,7 @@ import {
   getCategoryArtistsByGenre,
   getGenreBySlug,
 } from "@/lib/catalog-data";
-import { getShellRequestAuthState } from "@/lib/shell-request-state";
+import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
 
 const CATEGORY_ARTISTS_FETCH_LIMIT = 2_000;
 
@@ -44,7 +44,10 @@ type CategoryPageProps = {
 
 export default async function CategoryDetailPage({ params }: CategoryPageProps) {
   const { slug } = await params;
-  const { isAdmin } = await getShellRequestAuthState();
+  const [{ isAdmin }, { hiddenVideoIds }] = await Promise.all([
+    getShellRequestAuthState(),
+    getShellRequestVideoState(),
+  ]);
   const genre = await getGenreBySlug(slug);
 
   if (!genre) {
@@ -81,6 +84,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
         genre={genre}
         allArtists={allArtists}
         isAdmin={isAdmin}
+        hiddenVideoIds={Array.from(hiddenVideoIds)}
       />
     </>
   );

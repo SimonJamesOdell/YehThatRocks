@@ -65,11 +65,14 @@ describe("admin catalog review queue count cache", () => {
     nowSpy.mockRestore();
   });
 
-  it("applies mutation delta without DB read when cache is warm", async () => {
+  it("reconciles mutation delta through DB reads", async () => {
     const nowSpy = vi.spyOn(Date, "now");
     nowSpy.mockReturnValue(300_000);
 
-    queryRawUnsafeMock.mockResolvedValue([{ total: 40 }]);
+    queryRawUnsafeMock
+      .mockResolvedValueOnce([{ total: 40 }])
+      .mockResolvedValueOnce([{ total: 39 }])
+      .mockResolvedValueOnce([{ total: 40 }]);
 
     const {
       applyCatalogReviewQueueCountDelta,
@@ -86,7 +89,7 @@ describe("admin catalog review queue count cache", () => {
     expect(initial).toBe(40);
     expect(afterApprove).toBe(39);
     expect(afterUndo).toBe(40);
-    expect(queryRawUnsafeMock).toHaveBeenCalledTimes(1);
+    expect(queryRawUnsafeMock).toHaveBeenCalledTimes(3);
 
     nowSpy.mockRestore();
   });
