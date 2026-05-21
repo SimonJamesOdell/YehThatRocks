@@ -196,7 +196,7 @@ export async function getCategoryArtistsByGenre(
   requireDatabaseUrl("getCategoryArtistsByGenre");
 
   const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
-  const requestedLimit = Math.max(1, Math.min(200, Number.isFinite(options?.limit) ? Number(options?.limit) : 48));
+  const requestedLimit = Math.max(1, Math.min(2_000, Number.isFinite(options?.limit) ? Number(options?.limit) : 48));
   const normalizedGenre = normalizeGenreTerm(genre);
   const normalizedGenrePattern = normalizedGenre.length > 0
     ? `(^|[^a-z0-9])${escapeRegexLiteral(normalizedGenre).replace(/ /g, "[^a-z0-9]+")}([^a-z0-9]|$)`
@@ -250,8 +250,8 @@ export async function getCategoryArtistsByGenre(
          OR LOWER(v.genre) REGEXP ?
        )
     GROUP BY ${groupByExpr}
-     ORDER BY videoCount DESC, artistName ASC
-     LIMIT ${requestedLimit + 1}
+     ORDER BY artistName ASC, videoCount DESC
+    LIMIT ${requestedLimit}
      OFFSET ${requestedOffset}`,
     ...(hasPinnedCategoryArtistThumbs ? [normalizedGenre] : []),
     normalizedGenre,

@@ -7,6 +7,7 @@ import {
   getCategoryArtistsByGenre,
   getGenreBySlug,
 } from "@/lib/catalog-data";
+import { withSoftTimeout } from "@/lib/catalog-data-utils";
 import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
 
 const CATEGORY_ARTISTS_FETCH_LIMIT = 2_000;
@@ -54,10 +55,12 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
     notFound();
   }
 
-  const allArtists = await getCategoryArtistsByGenre(genre, {
-    offset: 0,
-    limit: CATEGORY_ARTISTS_FETCH_LIMIT,
-  });
+  const allArtists = await withSoftTimeout("category-artists-initial", 180, async () => {
+    return getCategoryArtistsByGenre(genre, {
+      offset: 0,
+      limit: CATEGORY_ARTISTS_FETCH_LIMIT,
+    });
+  }).catch(() => []);
   const categoryJsonLd = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",

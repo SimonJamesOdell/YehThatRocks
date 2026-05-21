@@ -11,7 +11,7 @@ export async function GET(request: NextRequest, context: CategoryArtistsRouteCon
   try {
     const limitParam = request.nextUrl.searchParams.get("limit");
     const offsetParam = request.nextUrl.searchParams.get("offset");
-    const limit = Math.max(1, Math.min(96, Number.parseInt(limitParam ?? "48", 10) || 48));
+    const limit = Math.max(1, Math.min(192, Number.parseInt(limitParam ?? "96", 10) || 96));
     const offset = Math.max(0, Number.parseInt(offsetParam ?? "0", 10) || 0);
     const { slug } = await context.params;
     const genre = await getGenreBySlug(slug);

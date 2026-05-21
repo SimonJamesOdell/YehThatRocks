@@ -13,15 +13,20 @@ type CategoriesFilterGridProps = {
   genreCards: GenreCard[];
 };
 
+let lastKnownCategoriesWithArtists: GenreCard[] = [];
+
 export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) {
   const initialCardsNeedCountRefresh = useMemo(
     () => genreCards.length > 0 && genreCards.every((card) => Number(card.artistCount ?? 0) === 0),
     [genreCards],
   );
   const shouldDeferInitialCards = genreCards.length > 0 && initialCardsNeedCountRefresh;
+  const initialCards = shouldDeferInitialCards
+    ? (lastKnownCategoriesWithArtists.length > 0 ? lastKnownCategoriesWithArtists : [])
+    : genreCards;
   const [filterValue, setFilterValue] = useState("");
-  const [cards, setCards] = useState<GenreCard[]>(shouldDeferInitialCards ? [] : genreCards);
-  const [isLoadingCards, setIsLoadingCards] = useState(genreCards.length === 0 || shouldDeferInitialCards);
+  const [cards, setCards] = useState<GenreCard[]>(initialCards);
+  const [isLoadingCards, setIsLoadingCards] = useState(genreCards.length === 0 || (shouldDeferInitialCards && initialCards.length === 0));
   const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);
   const [isLoaderFadingOut, setIsLoaderFadingOut] = useState(false);
   const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0);
@@ -32,9 +37,12 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
       if (!shouldDeferInitialCards) {
         return genreCards;
       }
-      return previous.length > 0 ? previous : [];
+      if (previous.length > 0) {
+        return previous;
+      }
+      return lastKnownCategoriesWithArtists.length > 0 ? lastKnownCategoriesWithArtists : [];
     });
-    setIsLoadingCards(genreCards.length === 0 || shouldDeferInitialCards);
+    setIsLoadingCards(genreCards.length === 0 || (shouldDeferInitialCards && lastKnownCategoriesWithArtists.length === 0));
 
     if (genreCards.length > 0 && !shouldDeferInitialCards) {
       setIsLoaderVisible(false);
@@ -70,9 +78,16 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
           const hasVisibleCounts = nextCards.some((card) => Number(card.artistCount ?? 0) > 0);
           setCards((previous) => {
             if (hasVisibleCounts) {
+              lastKnownCategoriesWithArtists = nextCards;
               return nextCards;
             }
-            return previous.length > 0 ? previous : nextCards;
+            if (previous.length > 0) {
+              return previous;
+            }
+            if (lastKnownCategoriesWithArtists.length > 0) {
+              return lastKnownCategoriesWithArtists;
+            }
+            return nextCards;
           });
         }
       } catch {
