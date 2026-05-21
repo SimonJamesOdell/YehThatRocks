@@ -23,29 +23,6 @@ function Invoke-Step {
   Write-Host "[$Name] done" -ForegroundColor Green
 }
 
-function Wait-ForHttp {
-  param(
-    [string]$Url,
-    [int]$TimeoutSeconds
-  )
-
-  $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-  while ($stopwatch.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
-    try {
-      $resp = Invoke-WebRequest -Uri $Url -Method Get -UseBasicParsing -TimeoutSec 5
-      if ($resp.StatusCode -ge 200 -and $resp.StatusCode -lt 500) {
-        return
-      }
-    } catch {
-      # Server is still starting.
-    }
-
-    Start-Sleep -Milliseconds 700
-  }
-
-  throw "Timed out waiting for server at $Url after $TimeoutSeconds seconds."
-}
-
 function Test-CoreApiReady {
   param(
     [string]$BaseUrl
@@ -165,9 +142,9 @@ function Invoke-NodeScript {
 
 Set-Location $RepoRoot
 
-$testPort = $Port
-$baseUrl = "http://127.0.0.1:$testPort"
-$devProcess = $null
+$baseUrl = "http://127.0.0.1:$Port"
+$serverProcess = $null
+$standaloneServerPath = Join-Path $RepoRoot "apps\web\.next\standalone\apps\web\server.js"
 
 try {
   if (-not $SkipInvariants) {
@@ -181,72 +158,36 @@ try {
   }
 
   Invoke-Step -Name "start:test-server" -Action {
-    $statusCode = Get-HttpStatusCode -Url "$baseUrl/api/status"
-    $isDefaultCoreReady = Test-CoreApiReady -BaseUrl $baseUrl
-    if ($null -ne $statusCode) {
-      if ($isDefaultCoreReady) {
-        Write-Host "[start:test-server] reusing existing healthy server at $baseUrl (status=$statusCode, core=ok)" -ForegroundColor Yellow
-        return
-      }
-
-      Write-Host "[start:test-server] port $testPort serves $baseUrl/api/status with status $statusCode but core API is not ready; searching fallback port" -ForegroundColor Yellow
+    if (Test-PortInUse -HostName "127.0.0.1" -Port $Port) {
+      throw "Port $Port is already in use. Stop the existing listener before running verify:deps:full."
     }
 
-    if ($null -eq $statusCode -and (Test-PortInUse -HostName "127.0.0.1" -Port $testPort)) {
-      Write-Host "[start:test-server] port $testPort is in use by an unresponsive process; searching fallback port" -ForegroundColor Yellow
+    if (-not (Test-Path $standaloneServerPath)) {
+      throw "Standalone server was not found at $standaloneServerPath. Run the production build before verify:deps:full."
     }
 
-    if (($null -ne $statusCode -and (-not $isDefaultCoreReady)) -or ($null -eq $statusCode -and (Test-PortInUse -HostName "127.0.0.1" -Port $testPort))) {
-      $fallbackPort = $null
-      for ($candidatePort = $Port + 1; $candidatePort -le $Port + 20; $candidatePort++) {
-        $candidateUrl = "http://127.0.0.1:$candidatePort"
-        $candidateStatusCode = Get-HttpStatusCode -Url "$candidateUrl/api/status"
-        if ($null -ne $candidateStatusCode -and (Test-CoreApiReady -BaseUrl $candidateUrl)) {
-          $testPort = $candidatePort
-          $baseUrl = $candidateUrl
-          Write-Host "[start:test-server] reusing existing healthy server at $baseUrl (status=$candidateStatusCode, core=ok)" -ForegroundColor Yellow
-          return
-        }
-
-        if ($null -eq $candidateStatusCode -and -not (Test-PortInUse -HostName "127.0.0.1" -Port $candidatePort)) {
-          $fallbackPort = $candidatePort
-          break
-        }
-      }
-
-      if ($null -eq $fallbackPort) {
-        throw "Default port $Port is unavailable and no fallback port in range $($Port + 1)-$($Port + 20) is usable."
-      }
-
-      $testPort = $fallbackPort
-      $baseUrl = "http://127.0.0.1:$testPort"
-      Write-Host "[start:test-server] using fallback port $testPort" -ForegroundColor Yellow
-    }
-
-    $npmCmd = (Get-Command npm.cmd -ErrorAction SilentlyContinue)
-    if (-not $npmCmd) {
-      $npmCmd = (Get-Command npm -ErrorAction SilentlyContinue)
-    }
-
-    if (-not $npmCmd) {
-      throw "npm executable was not found."
+    $nodeCmd = (Get-Command node -ErrorAction SilentlyContinue)
+    if (-not $nodeCmd) {
+      throw "node executable was not found."
     }
 
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $startInfo.FileName = $npmCmd.Source
-    $startInfo.WorkingDirectory = $RepoRoot
-    $startInfo.Arguments = "-w web run dev -- --port $testPort"
+    $startInfo.FileName = $nodeCmd.Source
+    $startInfo.WorkingDirectory = (Join-Path $RepoRoot "apps\web")
+    $startInfo.Arguments = $standaloneServerPath
     $startInfo.UseShellExecute = $false
     $startInfo.RedirectStandardOutput = $false
     $startInfo.RedirectStandardError = $false
     $startInfo.Environment["NEXT_PUBLIC_DISABLE_DESKTOP_INTRO"] = "1"
+    $startInfo.Environment["NODE_ENV"] = "production"
+    $startInfo.Environment["HOSTNAME"] = "127.0.0.1"
+    $startInfo.Environment["PORT"] = [string]$Port
 
-    $devProcess = [System.Diagnostics.Process]::Start($startInfo)
-    if (-not $devProcess) {
+    $serverProcess = [System.Diagnostics.Process]::Start($startInfo)
+    if (-not $serverProcess) {
       throw "Failed to start test server process."
     }
 
-    Wait-ForHttp -Url "$baseUrl/api/status" -TimeoutSeconds $ServerStartTimeoutSeconds
     Wait-ForCoreApiReady -BaseUrl $baseUrl -TimeoutSeconds $ServerStartTimeoutSeconds
   }
 
@@ -261,9 +202,9 @@ try {
     Invoke-Npm -NpmArgs @("run", "test:smoke:full") -ExtraEnv @{ PLAYWRIGHT_BASE_URL = $baseUrl }
   }
 } finally {
-  if ($devProcess -and -not $devProcess.HasExited) {
+  if ($serverProcess -and -not $serverProcess.HasExited) {
     try {
-      Stop-Process -Id $devProcess.Id -Force -ErrorAction SilentlyContinue
+      Stop-Process -Id $serverProcess.Id -Force -ErrorAction SilentlyContinue
     } catch {
       # Best-effort cleanup.
     }
