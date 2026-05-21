@@ -46,6 +46,42 @@ function Wait-ForHttp {
   throw "Timed out waiting for server at $Url after $TimeoutSeconds seconds."
 }
 
+function Test-CoreApiReady {
+  param(
+    [string]$BaseUrl
+  )
+
+  $statusCode = Get-HttpStatusCode -Url "$BaseUrl/api/status"
+  if ($null -eq $statusCode -or $statusCode -lt 200 -or $statusCode -ge 300) {
+    return $false
+  }
+
+  $topStatusCode = Get-HttpStatusCode -Url "$BaseUrl/api/videos/top?take=1"
+  if ($null -eq $topStatusCode -or $topStatusCode -lt 200 -or $topStatusCode -ge 300) {
+    return $false
+  }
+
+  return $true
+}
+
+function Wait-ForCoreApiReady {
+  param(
+    [string]$BaseUrl,
+    [int]$TimeoutSeconds
+  )
+
+  $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+  while ($stopwatch.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+    if (Test-CoreApiReady -BaseUrl $BaseUrl) {
+      return
+    }
+
+    Start-Sleep -Milliseconds 700
+  }
+
+  throw "Timed out waiting for healthy API readiness at $BaseUrl after $TimeoutSeconds seconds."
+}
+
 function Get-HttpStatusCode {
   param(
     [string]$Url
@@ -129,7 +165,8 @@ function Invoke-NodeScript {
 
 Set-Location $RepoRoot
 
-$baseUrl = "http://127.0.0.1:$Port"
+$testPort = $Port
+$baseUrl = "http://127.0.0.1:$testPort"
 $devProcess = $null
 
 try {
@@ -145,17 +182,45 @@ try {
 
   Invoke-Step -Name "start:test-server" -Action {
     $statusCode = Get-HttpStatusCode -Url "$baseUrl/api/status"
+    $isDefaultCoreReady = Test-CoreApiReady -BaseUrl $baseUrl
     if ($null -ne $statusCode) {
-      if ($statusCode -ge 200 -and $statusCode -lt 300) {
-        Write-Host "[start:test-server] reusing existing healthy server at $baseUrl (status=$statusCode)" -ForegroundColor Yellow
+      if ($isDefaultCoreReady) {
+        Write-Host "[start:test-server] reusing existing healthy server at $baseUrl (status=$statusCode, core=ok)" -ForegroundColor Yellow
         return
       }
 
-      throw "Port $Port already serves $baseUrl/api/status with status $statusCode. Refusing to start another dev server on the same port."
+      Write-Host "[start:test-server] port $testPort serves $baseUrl/api/status with status $statusCode but core API is not ready; searching fallback port" -ForegroundColor Yellow
     }
 
-    if (Test-PortInUse -HostName "127.0.0.1" -Port $Port) {
-      throw "Port $Port is already in use by a non-HTTP or unresponsive process. Refusing to start another dev server."
+    if ($null -eq $statusCode -and (Test-PortInUse -HostName "127.0.0.1" -Port $testPort)) {
+      Write-Host "[start:test-server] port $testPort is in use by an unresponsive process; searching fallback port" -ForegroundColor Yellow
+    }
+
+    if (($null -ne $statusCode -and (-not $isDefaultCoreReady)) -or ($null -eq $statusCode -and (Test-PortInUse -HostName "127.0.0.1" -Port $testPort))) {
+      $fallbackPort = $null
+      for ($candidatePort = $Port + 1; $candidatePort -le $Port + 20; $candidatePort++) {
+        $candidateUrl = "http://127.0.0.1:$candidatePort"
+        $candidateStatusCode = Get-HttpStatusCode -Url "$candidateUrl/api/status"
+        if ($null -ne $candidateStatusCode -and (Test-CoreApiReady -BaseUrl $candidateUrl)) {
+          $testPort = $candidatePort
+          $baseUrl = $candidateUrl
+          Write-Host "[start:test-server] reusing existing healthy server at $baseUrl (status=$candidateStatusCode, core=ok)" -ForegroundColor Yellow
+          return
+        }
+
+        if ($null -eq $candidateStatusCode -and -not (Test-PortInUse -HostName "127.0.0.1" -Port $candidatePort)) {
+          $fallbackPort = $candidatePort
+          break
+        }
+      }
+
+      if ($null -eq $fallbackPort) {
+        throw "Default port $Port is unavailable and no fallback port in range $($Port + 1)-$($Port + 20) is usable."
+      }
+
+      $testPort = $fallbackPort
+      $baseUrl = "http://127.0.0.1:$testPort"
+      Write-Host "[start:test-server] using fallback port $testPort" -ForegroundColor Yellow
     }
 
     $npmCmd = (Get-Command npm.cmd -ErrorAction SilentlyContinue)
@@ -170,7 +235,7 @@ try {
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $npmCmd.Source
     $startInfo.WorkingDirectory = $RepoRoot
-    $startInfo.Arguments = "-w web run dev -- --port $Port"
+    $startInfo.Arguments = "-w web run dev -- --port $testPort"
     $startInfo.UseShellExecute = $false
     $startInfo.RedirectStandardOutput = $false
     $startInfo.RedirectStandardError = $false
@@ -182,6 +247,7 @@ try {
     }
 
     Wait-ForHttp -Url "$baseUrl/api/status" -TimeoutSeconds $ServerStartTimeoutSeconds
+    Wait-ForCoreApiReady -BaseUrl $baseUrl -TimeoutSeconds $ServerStartTimeoutSeconds
   }
 
   Invoke-Step -Name "verify:invariants:api" -Action {
