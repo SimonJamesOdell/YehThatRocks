@@ -611,6 +611,9 @@ async function runPostFlow({ article, groupUrl, profileDir, headed, dryRun, chan
       throw new Error("Could not submit Facebook post using button or keyboard shortcut");
     }
 
+    console.log("[magazine-facebook-browser-post] Post submitted. Waiting an additional 15 seconds before shutdown.");
+    await page.waitForTimeout(15000);
+
     // --pause: keep browser open after first button click so operator can inspect page 2.
     if (hasArg("--pause")) {
       console.log("[magazine-facebook-browser-post] PAUSED — browser stays open for 60 seconds so you can inspect page 2.");
