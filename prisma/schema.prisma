@@ -23,6 +23,7 @@ model Video {
   thumbnail       String?        @db.VarChar(500)
   viewCount       Int?           @map("viewCount")
   approved        Boolean        @default(false)
+  approvedAt      DateTime?      @map("approved_at") @db.DateTime(3)
   favourited      Int            @default(0)
   description     String?        @db.LongText
   createdAt       DateTime?      @map("created_at")
