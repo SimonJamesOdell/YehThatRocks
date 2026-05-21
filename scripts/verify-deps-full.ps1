@@ -7,10 +7,6 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-trap {
-  Write-Error $_
-  exit 1
-}
 
 function Invoke-Step {
   param(
@@ -140,11 +136,66 @@ function Invoke-NodeScript {
   }
 }
 
+function Get-DotEnvVariable {
+  param(
+    [string]$FilePath,
+    [string]$Name
+  )
+
+  if (-not (Test-Path $FilePath)) {
+    return $null
+  }
+
+  $pattern = "^\s*" + [Regex]::Escape($Name) + "\s*=\s*(.+?)\s*$"
+  foreach ($line in Get-Content -Path $FilePath) {
+    if ($line -match '^\s*#') {
+      continue
+    }
+
+    if ($line -match $pattern) {
+      $value = $matches[1].Trim()
+      if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+        $value = $value.Substring(1, $value.Length - 2)
+      }
+      return $value
+    }
+  }
+
+  return $null
+}
+
+function Resolve-EnvValue {
+  param(
+    [string]$RepoRootPath,
+    [string]$Name
+  )
+
+  $fromEnv = [Environment]::GetEnvironmentVariable($Name)
+  if (-not [string]::IsNullOrWhiteSpace($fromEnv)) {
+    return $fromEnv
+  }
+
+  $paths = @(
+    (Join-Path $RepoRootPath "apps\web\.env.local"),
+    (Join-Path $RepoRootPath ".env.local")
+  )
+
+  foreach ($path in $paths) {
+    $value = Get-DotEnvVariable -FilePath $path -Name $Name
+    if (-not [string]::IsNullOrWhiteSpace($value)) {
+      return $value
+    }
+  }
+
+  return $null
+}
+
 Set-Location $RepoRoot
 
 $baseUrl = "http://127.0.0.1:$Port"
 $serverProcess = $null
 $standaloneServerPath = Join-Path $RepoRoot "apps\web\.next\standalone\apps\web\server.js"
+$scriptFailed = $false
 
 try {
   if (-not $SkipInvariants) {
@@ -171,6 +222,16 @@ try {
       throw "node executable was not found."
     }
 
+    $databaseUrl = Resolve-EnvValue -RepoRootPath $RepoRoot -Name "DATABASE_URL"
+    if ([string]::IsNullOrWhiteSpace($databaseUrl)) {
+      throw "DATABASE_URL is not configured. Set it in the environment or apps/web/.env.local before running verify:deps:full."
+    }
+
+    $authJwtSecret = Resolve-EnvValue -RepoRootPath $RepoRoot -Name "AUTH_JWT_SECRET"
+    if ([string]::IsNullOrWhiteSpace($authJwtSecret) -or $authJwtSecret.Length -lt 32) {
+      throw "AUTH_JWT_SECRET must be configured (32+ chars) in the environment or apps/web/.env.local before running verify:deps:full."
+    }
+
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $nodeCmd.Source
     $startInfo.WorkingDirectory = (Join-Path $RepoRoot "apps\web")
@@ -182,6 +243,9 @@ try {
     $startInfo.Environment["NODE_ENV"] = "production"
     $startInfo.Environment["HOSTNAME"] = "127.0.0.1"
     $startInfo.Environment["PORT"] = [string]$Port
+    $startInfo.Environment["DATABASE_URL"] = $databaseUrl
+    $startInfo.Environment["AUTH_JWT_SECRET"] = $authJwtSecret
+    $startInfo.Environment["MEMORY_PRESSURE_GUARD_DISABLED"] = "1"
 
     $serverProcess = [System.Diagnostics.Process]::Start($startInfo)
     if (-not $serverProcess) {
@@ -201,14 +265,25 @@ try {
   Invoke-Step -Name "test:smoke:full" -Action {
     Invoke-Npm -NpmArgs @("run", "test:smoke:full") -ExtraEnv @{ PLAYWRIGHT_BASE_URL = $baseUrl }
   }
+} catch {
+  $scriptFailed = $true
+  Write-Error $_
 } finally {
   if ($serverProcess -and -not $serverProcess.HasExited) {
     try {
       Stop-Process -Id $serverProcess.Id -Force -ErrorAction SilentlyContinue
+      $serverProcess.WaitForExit(5000) | Out-Null
     } catch {
       # Best-effort cleanup.
     }
   }
+}
+
+if ($scriptFailed) {
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+  exit 1
 }
 
 if ($LASTEXITCODE -ne 0) {

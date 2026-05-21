@@ -171,7 +171,31 @@ if (!global.__yehPrismaShutdownHooks__) {
   global.__yehPrismaShutdownHooks__ = true;
 }
 
-if (process.env.NODE_ENV === "production" && !global.__yehMemoryPressureGuardStarted__) {
+const memoryPressureGuardDisabled = /^(1|true|yes)$/i.test(
+  process.env.MEMORY_PRESSURE_GUARD_DISABLED ?? "",
+);
+const localHostNames = new Set(["127.0.0.1", "localhost", "::1"]);
+const runtimeHostName = (process.env.HOSTNAME ?? "").trim().toLowerCase();
+const appUrlHostName = (() => {
+  try {
+    const appUrl = process.env.APP_URL?.trim();
+    if (!appUrl) {
+      return "";
+    }
+
+    return new URL(appUrl).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+})();
+const isLocalRuntime = localHostNames.has(runtimeHostName) || localHostNames.has(appUrlHostName);
+
+if (
+  process.env.NODE_ENV === "production" &&
+  !memoryPressureGuardDisabled &&
+  !isLocalRuntime &&
+  !global.__yehMemoryPressureGuardStarted__
+) {
   startServerMemoryPressureGuard();
   global.__yehMemoryPressureGuardStarted__ = true;
 }
