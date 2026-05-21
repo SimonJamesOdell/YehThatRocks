@@ -349,6 +349,8 @@ async function main() {
   const nextResult = await clickNextButton(page);
   await page.waitForTimeout(2000);
   const postResult = await clickPostButton(page);
+  console.log("[launcher] Post clicked. Waiting 15 seconds before shutdown to allow Facebook publish completion.");
+  await page.waitForTimeout(15000);
 
   console.log(`[launcher] Browser opened at ${targetUrl}`);
   console.log(`[launcher] Scroll result: ${JSON.stringify(scrollResult)}`);
