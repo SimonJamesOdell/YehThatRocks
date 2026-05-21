@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
             OR parsedArtist LIKE CONCAT('%', ?, '%')
             OR parsedTrack LIKE CONCAT('%', ?, '%')
           )
-        ORDER BY created_at DESC, id DESC
+        ORDER BY created_at ASC, id ASC
         LIMIT 100
       `,
         q,
@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
           GROUP BY video_id
         ) wh ON wh.video_id = v.videoId
         WHERE ${PENDING_VIDEO_APPROVAL_WHERE_CLAUSE}
-        ORDER BY created_at DESC, id DESC
+        ORDER BY created_at ASC, id ASC
         LIMIT 100
       `,
       );
