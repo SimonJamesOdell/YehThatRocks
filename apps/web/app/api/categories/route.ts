@@ -1,26 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { getCategoryArtistsByGenre, getGenreCards } from "@/lib/catalog-data";
+import { getGenreCards } from "@/lib/catalog-data";
 
 export async function GET() {
   const startedAt = Date.now();
 
   try {
-    let categories = await getGenreCards();
-
-    // Safety net: if card-level counts collapse to zero, recompute from the
-    // same source used by category artist pages so parent cards stay accurate.
-    if (categories.length > 0 && categories.every((category) => Number(category.artistCount ?? 0) === 0)) {
-      categories = await Promise.all(
-        categories.map(async (category) => {
-          const artists = await getCategoryArtistsByGenre(category.genre, { offset: 0, limit: 2_000 });
-          return {
-            ...category,
-            artistCount: artists.length,
-          };
-        }),
-      );
-    }
+    const categories = await getGenreCards();
 
     const durationMs = Date.now() - startedAt;
 
