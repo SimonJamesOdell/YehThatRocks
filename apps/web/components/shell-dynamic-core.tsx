@@ -486,6 +486,9 @@ function ShellDynamicInner({
     setIsAuthenticated(true);
     return "authenticated" as const;
   }, [fetchWithAuthRetry, isAuthenticated]);
+  const checkAuthStateForProtectedAction = useCallback(() => {
+    return checkAuthState({ showDialogOnUnavailable: true });
+  }, [checkAuthState]);
   // ── Custom hooks ──────────────────────────────────────────────────────────
   const {
     isDesktopIntroActive,
@@ -1263,9 +1266,6 @@ function ShellDynamicInner({
       setIsRetryingAuthStatus(false);
     }
   }, [checkAuthState, isRetryingAuthStatus]);
-  const checkAuthStateForProtectedAction = useCallback(() => {
-    return checkAuthState({ showDialogOnUnavailable: true });
-  }, [checkAuthState]);
   useEffect(() => {
     if (authStatus !== "unavailable" || !authStatusMessage) {
       return;
