@@ -1255,13 +1255,13 @@ function ShellDynamicInner({
     setDeniedPlaybackMessage(null);
     setForcedUnavailableMessage(null);
   }, [pathname, searchParamsKey]);
-  const retryAuthStateCheck = useCallback(async () => {
+  const retryAuthStateCheck = useCallback(async (options?: { showDialogOnUnavailable?: boolean }) => {
     if (isRetryingAuthStatus) {
       return;
     }
     setIsRetryingAuthStatus(true);
     try {
-      await checkAuthState({ showDialogOnUnavailable: true });
+      await checkAuthState({ showDialogOnUnavailable: options?.showDialogOnUnavailable === true });
     } finally {
       setIsRetryingAuthStatus(false);
     }
@@ -2397,7 +2397,7 @@ function ShellDynamicInner({
           retryBusyLabel="Trying again..."
           dismissLabel="Dismiss auth availability notice"
           dismissButtonLabel="Dismiss"
-          onRetry={() => void retryAuthStateCheck()}
+          onRetry={() => void retryAuthStateCheck({ showDialogOnUnavailable: true })}
           onDismiss={() => setIsAuthUnavailableDialogDismissed(true)}
         />
       ) : null}
