@@ -1,4 +1,4 @@
-import { useMemo, useState, type MutableRefObject } from "react";
+import { useEffect, useMemo, useState, type MutableRefObject } from "react";
 
 import type { GenreReviewVideoRow, GenreReviewWorkerState } from "@/components/admin-dashboard-types";
 
@@ -25,6 +25,10 @@ export function AdminDashboardGenreReviewTab({
 }: AdminDashboardGenreReviewTabProps) {
   const [draftGenre, setDraftGenre] = useState("");
 
+  useEffect(() => {
+    setDraftGenre(genreReviewCurrentVideo?.proposedGenre ?? "");
+  }, [genreReviewCurrentVideo?.videoId, genreReviewCurrentVideo?.proposedGenre]);
+
   const workerProgress = useMemo(() => {
     if (!genreReviewWorker || !genreReviewWorker.totalVideos) {
       return null;
@@ -37,10 +41,6 @@ export function AdminDashboardGenreReviewTab({
   const row = genreReviewCurrentVideo;
   const baseStartAtSec = row?.durationSec && row.durationSec > 0 ? Math.floor(row.durationSec / 2) : 0;
   const maxStartAtSec = row?.durationSec && row.durationSec > 0 ? Math.max(0, row.durationSec - 1) : null;
-
-  const effectiveDraft = draftGenre.trim().length > 0
-    ? draftGenre.trim()
-    : (row?.proposedGenre ?? "");
 
   return (
     <section className="panel featurePanel">
@@ -94,7 +94,7 @@ export function AdminDashboardGenreReviewTab({
               <label style={{ display: "grid", gap: 6 }}>
                 <span>Genre</span>
                 <input
-                  value={effectiveDraft}
+                  value={draftGenre}
                   onChange={(event) => setDraftGenre(event.target.value)}
                   placeholder={row.proposedGenre ?? "Set genre"}
                   disabled={genreReviewActionVideoId === row.videoId}
@@ -156,7 +156,8 @@ export function AdminDashboardGenreReviewTab({
                 <button
                   type="button"
                   onClick={() => {
-                    void onModerateGenreReviewVideo("approve", effectiveDraft || null);
+                    const normalizedDraft = draftGenre.trim();
+                    void onModerateGenreReviewVideo("approve", normalizedDraft.length > 0 ? normalizedDraft : null);
                   }}
                   disabled={genreReviewActionVideoId === row.videoId}
                 >
