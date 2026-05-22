@@ -10,6 +10,7 @@ type AdminDashboardGenreReviewTabProps = {
   genreReviewPreviewIframeRef: MutableRefObject<HTMLIFrameElement | null>;
   genreReviewPreviewCurrentTimeRef: MutableRefObject<number | null>;
   onSeekGenreReviewPreview: (seconds: number) => void;
+  onReverseGenreReviewArtistTrack: () => Promise<void>;
   onModerateGenreReviewVideo: (action: "approve" | "remove", genre: string | null) => Promise<void>;
 };
 
@@ -21,6 +22,7 @@ export function AdminDashboardGenreReviewTab({
   genreReviewPreviewIframeRef,
   genreReviewPreviewCurrentTimeRef,
   onSeekGenreReviewPreview,
+  onReverseGenreReviewArtistTrack,
   onModerateGenreReviewVideo,
 }: AdminDashboardGenreReviewTabProps) {
   const [draftGenre, setDraftGenre] = useState("");
@@ -151,6 +153,16 @@ export function AdminDashboardGenreReviewTab({
                   disabled={genreReviewActionVideoId === row.videoId}
                 >
                   Skip +20s
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onReverseGenreReviewArtistTrack();
+                  }}
+                  disabled={genreReviewActionVideoId === row.videoId}
+                >
+                  Reverse Artist/Track
                 </button>
 
                 <button

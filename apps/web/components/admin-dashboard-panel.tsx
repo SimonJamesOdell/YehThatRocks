@@ -551,6 +551,56 @@ export function AdminDashboardPanel({
     }
   }
 
+  async function reverseGenreReviewArtistTrack() {
+    if (!genreReviewCurrentVideo) {
+      return;
+    }
+
+    const videoId = genreReviewCurrentVideo.videoId;
+    setGenreReviewActionVideoId(videoId);
+
+    try {
+      const payload = await postJson<{
+        ok: boolean;
+        suggestion?: {
+          proposedGenre: string | null;
+          confidence: number;
+          reason: string;
+        };
+      }>("/api/admin/videos/genre-review", {
+        videoId,
+        action: "swap-artist-track",
+      });
+
+      const suggestedGenre = payload.suggestion?.proposedGenre ?? "(none)";
+      const suggestedConfidence = typeof payload.suggestion?.confidence === "number"
+        ? payload.suggestion.confidence.toFixed(3)
+        : "0.000";
+
+      if (payload.suggestion) {
+        setGenreReviewCurrentVideo((previous) => {
+          if (!previous || previous.videoId !== videoId) {
+            return previous;
+          }
+
+          return {
+            ...previous,
+            proposedGenre: payload.suggestion?.proposedGenre ?? null,
+            confidence: payload.suggestion?.confidence ?? previous.confidence,
+            reason: payload.suggestion?.reason ?? previous.reason,
+          };
+        });
+      }
+
+      setSaveMessage(`Reversed artist/track for ${videoId}. Suggested genre: ${suggestedGenre} (${suggestedConfidence}).`);
+      await loadGenreReviewQueue();
+    } catch (swapError) {
+      setSaveMessage(swapError instanceof Error ? swapError.message : "Artist/track reverse failed.");
+    } finally {
+      setGenreReviewActionVideoId(null);
+    }
+  }
+
   async function revokeApprovedVideo(videoId: string) {
     setRevokingVideoId(videoId);
     try {
@@ -1129,6 +1179,7 @@ export function AdminDashboardPanel({
           genreReviewPreviewIframeRef={genreReviewPreviewIframeRef}
           genreReviewPreviewCurrentTimeRef={genreReviewPreviewCurrentTimeRef}
           onSeekGenreReviewPreview={seekGenreReviewPreview}
+          onReverseGenreReviewArtistTrack={reverseGenreReviewArtistTrack}
           onModerateGenreReviewVideo={moderateGenreReviewVideo}
         />
       ) : null}
