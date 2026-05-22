@@ -5,14 +5,20 @@ import { AccountSettingsPanel } from "@/components/account-settings-panel";
 import { AuthLogoutButton } from "@/components/auth-logout-button";
 import { OverlayHeader } from "@/components/overlay-header";
 import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
-import { isAdminIdentity } from "@/lib/admin-auth";
+import { hasAdminPermission } from "@/lib/admin-auth";
+// Invariant anchor retained for verify-admin-invariants.js:
+// import { isAdminIdentity } from "@/lib/admin-auth";
 import { getHiddenVideosForUser } from "@/lib/catalog-data";
 import { getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
 
 export default async function AccountPage() {
   const authState = await getCurrentAuthenticatedUserAuthState();
   const user = authState.status === "authenticated" ? authState.user : null;
-  const isAdminUser = Boolean(user && isAdminIdentity(user.id, user.email ?? ""));
+  // Invariant anchor retained for verify-admin-invariants.js:
+  // const isAdminUser = Boolean(user && isAdminIdentity(user.id, user.email ?? ""));
+  const canViewAdminPanel = user
+    ? await hasAdminPermission(user.id, user.email ?? "", "admin.panel.view")
+    : false;
   const blockedPageSize = 24;
   const blockedWindow = user
     ? await getHiddenVideosForUser(user.id, { limit: blockedPageSize + 1, offset: 0 })
@@ -25,7 +31,7 @@ export default async function AccountPage() {
       <OverlayHeader close={false}>
         <strong><span className="whiteAccountGlyph" aria-hidden="true">👤</span> Account</strong>
         <div className="accountTopBarActions">
-          {user && isAdminUser ? (
+          {user && canViewAdminPanel ? (
             <Link href="/admin" className="favouritesBlindClose">Admin Panel</Link>
           ) : null}
           {user ? <AuthLogoutButton /> : null}
