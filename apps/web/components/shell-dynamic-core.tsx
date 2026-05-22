@@ -2144,11 +2144,15 @@ function ShellDynamicInner({
       .filter((item) => !isRouteActive(item.href, pathname))
       .map((item) => getNavHref(item.href));
   }, [activeArtistLetter, currentVideo.id, pathname, visibleNavItems]);
-  useAuthSuccessListener(() => {
-    setIsAuthenticated(true);
+  useAuthSuccessListener((state, source) => {
+    setIsAuthenticated(state === "authenticated");
     setAuthStatus("clear");
     setAuthStatusMessage(null);
     setIsAuthModalOpen(false);
+
+    if (source === "cross-tab") {
+      router.refresh();
+    }
   });
   useIdleRoutePrefetch(targetNavPrefetchHrefs, router);
   const handleSearchSubmit = useCallback(() => {

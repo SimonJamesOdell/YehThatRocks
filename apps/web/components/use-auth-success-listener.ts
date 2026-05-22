@@ -1,20 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
+import { subscribeToAuthStateChanges } from "@/lib/auth-sync";
 
-export function useAuthSuccessListener(onAuthSuccess: () => void) {
+export function useAuthSuccessListener(
+  onAuthStateChange: (state: "authenticated" | "logged-out", source: "local" | "cross-tab") => void,
+) {
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const handleAuthSuccess = () => {
-      onAuthSuccess();
-    };
-
-    window.addEventListener("ytr:auth-success", handleAuthSuccess);
-    return () => {
-      window.removeEventListener("ytr:auth-success", handleAuthSuccess);
-    };
-  }, [onAuthSuccess]);
+    return subscribeToAuthStateChanges(onAuthStateChange);
+  }, [onAuthStateChange]);
 }

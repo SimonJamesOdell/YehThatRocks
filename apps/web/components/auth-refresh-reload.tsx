@@ -26,6 +26,7 @@ export function AuthRefreshReload() {
 
         if (!cancelled && res.ok) {
           dispatchAppEvent(EVENT_NAMES.AUTH_SUCCESS, null);
+          publishAuthStateChange("authenticated");
           router.refresh();
         }
       } catch {

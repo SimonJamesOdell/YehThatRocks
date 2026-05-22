@@ -46,6 +46,7 @@ export function AuthRegisterForm() {
       }
 
       dispatchAppEvent(EVENT_NAMES.AUTH_SUCCESS, null);
+      publishAuthStateChange("authenticated");
       router.push("/");
       router.refresh();
     } finally {

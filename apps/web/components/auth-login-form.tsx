@@ -115,6 +115,7 @@ export function AuthLoginForm() {
     const videoParam = new URLSearchParams(window.location.search).get("v");
     const target = videoParam ? `/?v=${encodeURIComponent(videoParam)}` : "/";
     dispatchAppEvent(EVENT_NAMES.AUTH_SUCCESS, null);
+    publishAuthStateChange("authenticated");
     router.push(target);
     router.refresh();
   }

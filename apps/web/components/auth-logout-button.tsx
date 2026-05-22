@@ -30,6 +30,7 @@ export function AuthLogoutButton() {
         return;
       }
 
+      publishAuthStateChange("logged-out");
       router.push("/");
       router.refresh();
     } catch {
