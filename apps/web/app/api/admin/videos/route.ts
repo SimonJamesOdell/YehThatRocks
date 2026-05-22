@@ -39,7 +39,10 @@ type VideoColumnMap = {
 };
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAuthOnly(request);
+  const auth = await requireAuthOnly(request, {
+    authMode: "admin",
+    adminPermission: "admin.videos.catalog.read",
+  });
 
   if (!auth.ok) {
     return auth.response;
@@ -80,7 +83,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const result = await withAuthAndBody(request, updateSchema);
+  const result = await withAuthAndBody(request, updateSchema, {
+    authMode: "admin",
+    adminPermission: "admin.videos.catalog.edit",
+  });
 
   if (!result.ok) {
     return result.response;
@@ -150,7 +156,10 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const result = await withAuthAndBody(request, deleteSchema);
+  const result = await withAuthAndBody(request, deleteSchema, {
+    authMode: "admin",
+    adminPermission: "admin.videos.catalog.delete",
+  });
 
   if (!result.ok) {
     return result.response;

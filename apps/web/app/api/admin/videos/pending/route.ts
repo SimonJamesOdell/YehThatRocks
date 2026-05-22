@@ -17,7 +17,10 @@ const moderatePendingSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAuthOnly(request);
+  const auth = await requireAuthOnly(request, {
+    authMode: "admin",
+    adminPermission: "admin.videos.pending.read",
+  });
 
   if (!auth.ok) {
     return auth.response;
@@ -122,7 +125,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const result = await withAuthAndBody(request, moderatePendingSchema);
+  const result = await withAuthAndBody(request, moderatePendingSchema, {
+    authMode: "admin",
+    adminPermission: "admin.videos.pending.moderate",
+  });
 
   if (!result.ok) {
     return result.response;

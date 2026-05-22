@@ -9,6 +9,8 @@ import {
   normalizeYouTubeVideoId,
   pruneVideoAndAssociationsByVideoId,
 } from "@/lib/catalog-data";
+import { hasAdminPermission } from "@/lib/admin-auth";
+import { getOptionalApiAuth } from "@/lib/auth-request";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
 import { parseRequestJson } from "@/lib/request-json";
@@ -407,6 +409,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
+  const optionalAuth = await getOptionalApiAuth(request);
+  const canBypassApproval =
+    typeof optionalAuth?.userId === "number"
+    && Number.isInteger(optionalAuth.userId)
+    && optionalAuth.userId > 0
+    && await hasAdminPermission(
+      optionalAuth.userId,
+      optionalAuth.email ?? "",
+      "admin.videos.bypass_approval",
+    );
+
   const source = parseYouTubeSource(parsed.data.source);
   if (!source) {
     return NextResponse.json({ ok: false, error: "Invalid YouTube URL, video id, or playlist URL." }, { status: 400 });
@@ -456,6 +469,16 @@ export async function POST(request: NextRequest) {
       artist: parsed.data.artist,
       track: parsed.data.track,
     }, true);
+
+    if (canBypassApproval && hasDatabaseUrl()) {
+      await prisma.$executeRaw`
+        UPDATE videos
+        SET approved = ${true},
+            approved_at = UTC_TIMESTAMP(3),
+            updated_at = UTC_TIMESTAMP(3)
+        WHERE videoId = ${result.videoId}
+      `;
+    }
 
     const resolvedMetadata = await loadResolvedVideoMetadata(result.videoId, {
       artist: parsed.data.artist,
@@ -516,6 +539,7 @@ export async function POST(request: NextRequest) {
       kind: "video",
       videoId: result.videoId,
       submissionStatus,
+      bypassApproved: canBypassApproval,
       alreadyInCatalog,
       rejectionCode,
       rejectionReason,

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { hasAdminPermission } from "@/lib/admin-auth";
 import { getOptionalApiAuth } from "@/lib/auth-request";
 import { withAuthAndBody } from "@/lib/api-route-pipeline";
 import { chatQuerySchema, createChatMessageSchema } from "@/lib/api-schemas";
 import { deleteChatMessageSchema } from "@/lib/api-schemas";
 import { chatChannel, chatEvents } from "@/lib/chat-events";
 import {
-  deleteChatMessageById,
+  deleteChatMessageByIdForRequester,
   fetchChatMessages,
   fetchOnlineUsers,
   insertChatMessage,
@@ -146,7 +147,21 @@ export async function DELETE(request: NextRequest) {
     return result.response;
   }
 
-  const deletion = await deleteChatMessageById(result.data.messageId);
+  const canModerate = await hasAdminPermission(
+    result.auth.userId,
+    result.auth.email,
+    "admin.forum.moderate",
+  );
+
+  const deletion = await deleteChatMessageByIdForRequester({
+    messageId: result.data.messageId,
+    requesterUserId: result.auth.userId,
+    canModerate,
+  });
+
+  if (!deletion.deleted && deletion.forbidden) {
+    return NextResponse.json({ error: "Forbidden" }, { status: HTTP_FORBIDDEN });
+  }
 
   if (!deletion.deleted) {
     return NextResponse.json({ error: "Message not found" }, { status: 404 });

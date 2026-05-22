@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { requireAdminApiAuth } from "@/lib/admin-auth";
+import { requireAdminApiAuthWithPermission, type AdminPermissionKey } from "@/lib/admin-auth";
 import { requireApiAuth } from "@/lib/auth-request";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
@@ -51,6 +51,7 @@ export interface RouteAuthOptions {
    * Defaults to "admin".
    */
   authMode?: "admin" | "user";
+  adminPermission?: AdminPermissionKey;
 }
 
 export type AuthAndCsrfOutcome = AuthOnlyResult | AuthAndBodyError;
@@ -60,10 +61,11 @@ type RouteAuthMode = NonNullable<RouteAuthOptions["authMode"]>;
 async function resolveValidatedAuth(
   request: NextRequest,
   authMode: RouteAuthMode,
+  adminPermission?: AdminPermissionKey,
 ): Promise<AuthOnlyOutcome> {
   const authResult =
     authMode === "admin"
-      ? await requireAdminApiAuth(request)
+      ? await requireAdminApiAuthWithPermission(request, adminPermission ?? "admin.panel.view")
       : await requireApiAuth(request);
 
   if (!authResult.ok) {
@@ -108,9 +110,9 @@ export async function requireAuthOnly(
   request: NextRequest,
   options: RouteAuthOptions = {}
 ): Promise<AuthOnlyOutcome> {
-  const { authMode = "admin" } = options;
+  const { authMode = "admin", adminPermission } = options;
 
-  return resolveValidatedAuth(request, authMode);
+  return resolveValidatedAuth(request, authMode, adminPermission);
 }
 
 /**
@@ -130,10 +132,10 @@ export async function withAuthAndBody<T>(
   bodySchema: z.ZodType<T>,
   options: RouteAuthOptions = {}
 ): Promise<AuthAndBodyOutcome<T>> {
-  const { authMode = "admin" } = options;
+  const { authMode = "admin", adminPermission } = options;
 
   // Step 1: Auth check
-  const auth = await resolveValidatedAuth(request, authMode);
+  const auth = await resolveValidatedAuth(request, authMode, adminPermission);
   if (!auth.ok) {
     return auth;
   }

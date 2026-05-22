@@ -482,17 +482,34 @@ export async function insertChatMessage(params: {
 
 export async function deleteChatMessageById(messageId: number): Promise<
   | { deleted: true; mode: "global" | "video"; videoId: string | null }
-  | { deleted: false }
+  | { deleted: false; forbidden?: boolean }
+> {
+  return deleteChatMessageByIdForRequester({
+    messageId,
+    requesterUserId: null,
+    canModerate: true,
+  });
+}
+
+export async function deleteChatMessageByIdForRequester(input: {
+  messageId: number;
+  requesterUserId: number | null;
+  canModerate: boolean;
+}): Promise<
+  | { deleted: true; mode: "global" | "video"; videoId: string | null }
+  | { deleted: false; forbidden?: boolean }
 > {
   const columns = await getMessageColumns();
 
   const idCol = escapeIdentifier(columns.id);
+  const userIdCol = escapeIdentifier(columns.userId);
   const roomCol = escapeIdentifier(columns.room);
   const videoIdCol = escapeIdentifier(columns.videoId);
 
-  const existing = await prisma.$queryRawUnsafe<Array<{ room: string | null; videoId: string | null }>>(
+  const existing = await prisma.$queryRawUnsafe<Array<{ userId: number | null; room: string | null; videoId: string | null }>>(
     `
       SELECT
+        m.${userIdCol} AS userId,
         m.${roomCol} AS room,
         m.${videoIdCol} AS videoId
       FROM messages m
@@ -504,6 +521,18 @@ export async function deleteChatMessageById(messageId: number): Promise<
 
   if (existing.length === 0) {
     return { deleted: false };
+  }
+
+  const ownerUserId = Number(existing[0]?.userId ?? 0);
+  const requesterUserId = input.requesterUserId;
+  const canDeleteAsOwner =
+    typeof requesterUserId === "number"
+    && Number.isInteger(requesterUserId)
+    && requesterUserId > 0
+    && ownerUserId === requesterUserId;
+
+  if (!input.canModerate && !canDeleteAsOwner) {
+    return { deleted: false, forbidden: true };
   }
 
   const room = existing[0]?.room;
