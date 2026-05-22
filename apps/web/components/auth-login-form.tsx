@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { AnonymousCredentialsModal } from "@/components/anonymous-credentials-modal";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { publishAuthStateChange } from "@/lib/auth-sync";
 import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, INTRO_SKIP_ONCE_AFTER_LOGIN_KEY, ANONYMOUS_USERNAME_KEY } from "@/lib/storage-keys";
 import { parseJsonOrNull } from "@/lib/parse-json";
 // Invariant anchor retained after extracting shared storage keys:

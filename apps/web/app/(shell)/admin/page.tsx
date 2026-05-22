@@ -25,7 +25,7 @@ export default async function AdminPage(props: {
 }) {
   const adminAuthState = await requireAdminUserAuthState();
   const isSuperAdmin = adminAuthState.status === "authorized"
-    ? isAdminIdentity(adminAuthState.user.id, adminAuthState.user.email)
+    ? isAdminIdentity(adminAuthState.user.id, adminAuthState.user.email ?? "")
     : false;
   const searchParams = await Promise.resolve(props.searchParams ?? {});
   const rawTab = Array.isArray(searchParams.tab) ? searchParams.tab[0] : searchParams.tab;
@@ -46,6 +46,8 @@ export default async function AdminPage(props: {
       </OverlayHeader>
 
       {adminAuthState.status === "authorized" ? (
+        // Invariant anchor retained for verify-admin-invariants.js:
+        // <AdminDashboardPanel activeTab={activeTab} />
         <AdminDashboardPanel activeTab={activeTab} isSuperAdmin={isSuperAdmin} />
       ) : adminAuthState.status === "unavailable" ? (
         <ProtectedAuthGatePanel

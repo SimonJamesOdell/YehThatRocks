@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { parseJsonOrNull } from "@/lib/parse-json";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { publishAuthStateChange } from "@/lib/auth-sync";
 
 export function AuthRegisterForm() {
   const router = useRouter();

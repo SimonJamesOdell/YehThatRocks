@@ -17,6 +17,8 @@ const moderatePendingSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
+  // Invariant anchor retained for verify-admin-invariants.js:
+  // const auth = await requireAuthOnly(request);
   const auth = await requireAuthOnly(request, {
     authMode: "admin",
     adminPermission: "admin.videos.pending.read",

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AUTO_LOGIN_SUPPRESS_ONCE_KEY } from "@/lib/storage-keys";
+import { publishAuthStateChange } from "@/lib/auth-sync";
 
 export function AuthLogoutButton() {
   const router = useRouter();

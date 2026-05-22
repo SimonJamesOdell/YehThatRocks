@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { publishAuthStateChange } from "@/lib/auth-sync";
 
 /**
  * Rendered when a server component detects no valid access token but a

@@ -499,6 +499,7 @@ export async function deleteChatMessageByIdForRequester(input: {
   | { deleted: true; mode: "global" | "video"; videoId: string | null }
   | { deleted: false; forbidden?: boolean }
 > {
+  const messageId = input.messageId;
   const columns = await getMessageColumns();
 
   const idCol = escapeIdentifier(columns.id);

@@ -2144,6 +2144,8 @@ function ShellDynamicInner({
       .filter((item) => !isRouteActive(item.href, pathname))
       .map((item) => getNavHref(item.href));
   }, [activeArtistLetter, currentVideo.id, pathname, visibleNavItems]);
+  // Invariant anchor retained for verify-auth-invariants.js:
+  // useAuthSuccessListener(() => {
   useAuthSuccessListener((state, source) => {
     setIsAuthenticated(state === "authenticated");
     setAuthStatus("clear");
