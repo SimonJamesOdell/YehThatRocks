@@ -27,16 +27,29 @@ export async function generateSitemaps() {
   ];
 }
 
-function normalizeSitemapId(rawId: number | string): number {
+async function resolveSitemapId(rawInput: unknown): Promise<number> {
+  const input = await Promise.resolve(rawInput);
+
+  const rawId = (
+    input && typeof input === "object" && "id" in input
+      ? (input as { id: unknown }).id
+      : input
+  );
+
   if (typeof rawId === "number" && Number.isFinite(rawId)) {
     return rawId;
   }
-  const parsed = Number(rawId);
-  return Number.isFinite(parsed) ? parsed : 0;
+
+  if (typeof rawId === "string") {
+    const parsed = Number(rawId);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
 }
 
-export default async function sitemap({ id }: { id: number | string }): Promise<MetadataRoute.Sitemap> {
-  const normalizedId = normalizeSitemapId(id);
+export default async function sitemap(rawArg: unknown): Promise<MetadataRoute.Sitemap> {
+  const normalizedId = await resolveSitemapId(rawArg);
 
   if (normalizedId === 0) {
     const genres = await withSoftTimeout(
