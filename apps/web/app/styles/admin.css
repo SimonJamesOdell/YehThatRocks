@@ -124,6 +124,151 @@
   font-variant-numeric: tabular-nums;
 }
 
+.adminPermissionsStack {
+  gap: 14px;
+}
+
+.adminPermissionsSearchRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.adminPermissionsLayout {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(280px, 1fr) minmax(360px, 1.2fr);
+}
+
+.adminPermissionsUsersColumn,
+.adminPermissionsDetailColumn {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 10px;
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+}
+
+.adminPermissionsUsersColumn {
+  max-height: 440px;
+  overflow-y: auto;
+}
+
+.adminPermissionsSectionLabel {
+  margin-bottom: 8px;
+  font-size: 0.74rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.adminPermissionsUserList {
+  display: grid;
+  gap: 8px;
+}
+
+.adminPermissionsUserCard {
+  text-align: left;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease, transform 120ms ease;
+}
+
+.adminPermissionsUserCard:hover {
+  border-color: rgba(255, 157, 92, 0.48);
+  background: rgba(255, 157, 92, 0.08);
+  transform: translateY(-1px);
+}
+
+.adminPermissionsUserCardSelected {
+  border-color: rgba(255, 157, 92, 0.72);
+  background: rgba(255, 157, 92, 0.16);
+}
+
+.adminPermissionsUserCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.adminPermissionsUserCardHeader strong {
+  font-size: 0.82rem;
+}
+
+.adminPermissionsSuperBadge {
+  border: 1px solid rgba(255, 211, 143, 0.55);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.67rem;
+  letter-spacing: 0.04em;
+  color: #ffd38f;
+  background: rgba(255, 211, 143, 0.14);
+  text-transform: uppercase;
+}
+
+.adminPermissionsUserMeta {
+  margin-top: 2px;
+  font-size: 0.74rem;
+  opacity: 0.72;
+}
+
+.adminPermissionsAccessHint {
+  margin-top: 4px;
+  font-size: 0.7rem;
+  color: #7ce0a3;
+}
+
+.adminPermissionsDetailStack {
+  display: grid;
+  gap: 10px;
+}
+
+.adminPermissionsDetailHeader {
+  padding-bottom: 4px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.16);
+}
+
+.adminPermissionsSuperHint {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #ffd38f;
+}
+
+.adminPermissionsToggleList {
+  display: grid;
+  gap: 6px;
+}
+
+.adminPermissionsToggleItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.adminPermissionsToggleItem input[type="checkbox"] {
+  accent-color: #ff9d5c;
+}
+
+.adminPermissionsPermissionKey {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.74rem;
+  line-height: 1.2;
+}
+
+.adminPermissionsAbilityHint {
+  margin-left: auto;
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+
 @media (max-width: 1180px) {
   .shell {
     height: auto;
@@ -188,6 +333,14 @@
     grid-template-columns: 1fr;
   }
 
+  .adminPermissionsLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .adminPermissionsUsersColumn {
+    max-height: none;
+  }
+
   .adminOverviewHealthLayout {
     grid-template-columns: 1fr;
   }
@@ -249,6 +402,16 @@
 
   .playerChrome {
     min-height: clamp(300px, 56vh, 560px);
+  }
+}
+
+@media (max-width: 760px) {
+  .adminPermissionsSearchRow {
+    grid-template-columns: 1fr;
+  }
+
+  .adminPermissionsAbilityHint {
+    display: none;
   }
 }
 

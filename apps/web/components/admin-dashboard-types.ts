@@ -258,4 +258,4 @@ export type PerfWindowResetResponse = {
 };
 
 // Tab Routing
-export type AdminTab = "overview" | "magazine" | "performance" | "categories" | "videos" | "catalog-review";
+export type AdminTab = "overview" | "magazine" | "performance" | "categories" | "videos" | "catalog-review" | "permissions";

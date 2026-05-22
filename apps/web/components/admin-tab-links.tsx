@@ -19,9 +19,11 @@ const PENDING_COUNT_POLL_MS = 30_000;
 export function AdminTabLinks({
   activeTab,
   enablePendingCount = true,
+  showPermissionsTab = false,
 }: {
   activeTab: AdminTab;
   enablePendingCount?: boolean;
+  showPermissionsTab?: boolean;
 }) {
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [catalogReviewRemaining, setCatalogReviewRemaining] = useState<number | null>(null);
@@ -99,6 +101,7 @@ export function AdminTabLinks({
       <Link href="/admin?tab=categories" className={tabClass("categories")}>Categories</Link>
       <Link href="/admin?tab=videos" className={tabClass("videos")}>New Videos {pendingCount !== null ? `(${pendingCount})` : ""}</Link>
       <Link href="/admin?tab=catalog-review" className={tabClass("catalog-review")}>Catalog Cleanup {catalogReviewRemaining !== null ? `(${catalogReviewRemaining})` : ""}</Link>
+      {showPermissionsTab ? <Link href="/admin?tab=permissions" className={tabClass("permissions")}>Permissions</Link> : null}
     </div>
   );
 }

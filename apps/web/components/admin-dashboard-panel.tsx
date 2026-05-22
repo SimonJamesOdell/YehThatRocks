@@ -11,6 +11,7 @@ import { AdminDashboardCatalogReviewTab } from "@/components/admin-dashboard-cat
 import { AdminDashboardCategoriesTab } from "@/components/admin-dashboard-categories-tab";
 import { AdminDashboardMagazineTab } from "@/components/admin-dashboard-magazine-tab";
 import { AdminDashboardOverviewTab } from "@/components/admin-dashboard-overview-tab";
+import { AdminDashboardPermissionsTab } from "@/components/admin-dashboard-permissions-tab";
 import { AdminDashboardPerformanceTab } from "@/components/admin-dashboard-performance-tab";
 import { AdminDashboardVideosTab } from "@/components/admin-dashboard-videos-tab";
 import { useAdminAnalytics } from "@/components/use-admin-analytics";
@@ -41,7 +42,13 @@ const ANALYTICS_AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 export type { AdminTab };
 
-export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
+export function AdminDashboardPanel({
+  activeTab,
+  isSuperAdmin,
+}: {
+  activeTab: AdminTab;
+  isSuperAdmin: boolean;
+}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -1039,6 +1046,16 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
           onModerateCatalogReviewVideo={moderateCatalogReviewVideo}
           onReversePreviousCatalogAction={reversePreviousCatalogAction}
         />
+      ) : null}
+
+      {activeTab === "permissions" ? (
+        isSuperAdmin ? (
+          <AdminDashboardPermissionsTab
+            onMessage={setSaveMessage}
+          />
+        ) : (
+          <p className="authMessage">Only super_admin can manage admin permissions.</p>
+        )
       ) : null}
 
     </div>

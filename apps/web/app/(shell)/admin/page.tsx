@@ -5,12 +5,15 @@ import { CloseLink } from "@/components/close-link";
 import { AdminDashboardPanel, type AdminTab } from "@/components/admin-dashboard-panel";
 import { OverlayHeader } from "@/components/overlay-header";
 import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
-import { requireAdminUserAuthState } from "@/lib/admin-auth";
+import { isAdminIdentity, requireAdminUserAuthState } from "@/lib/admin-auth";
 
 const ADMIN_TABS: AdminTab[] = ["overview", "magazine", "performance", "categories", "videos", "catalog-review"];
+const SUPER_ADMIN_TABS: AdminTab[] = [...ADMIN_TABS, "permissions"];
 
-function resolveAdminTab(tab: string | null | undefined): AdminTab {
-  if (tab && ADMIN_TABS.includes(tab as AdminTab)) {
+function resolveAdminTab(tab: string | null | undefined, isSuperAdmin: boolean): AdminTab {
+  const allowedTabs = isSuperAdmin ? SUPER_ADMIN_TABS : ADMIN_TABS;
+
+  if (tab && allowedTabs.includes(tab as AdminTab)) {
     return tab as AdminTab;
   }
 
@@ -21,22 +24,29 @@ export default async function AdminPage(props: {
   searchParams?: Promise<{ tab?: string | string[] | undefined }> | { tab?: string | string[] | undefined };
 }) {
   const adminAuthState = await requireAdminUserAuthState();
+  const isSuperAdmin = adminAuthState.status === "authorized"
+    ? isAdminIdentity(adminAuthState.user.id, adminAuthState.user.email)
+    : false;
   const searchParams = await Promise.resolve(props.searchParams ?? {});
   const rawTab = Array.isArray(searchParams.tab) ? searchParams.tab[0] : searchParams.tab;
-  const activeTab = resolveAdminTab(rawTab ?? undefined);
+  const activeTab = resolveAdminTab(rawTab ?? undefined, isSuperAdmin);
 
   return (
     <div className="adminOverlayPage">
       <OverlayHeader close={false}>
         <strong><span className="whiteAccountGlyph" aria-hidden="true">🛠</span> Admin</strong>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <AdminTabLinks activeTab={activeTab} enablePendingCount={adminAuthState.status === "authorized"} />
+          <AdminTabLinks
+            activeTab={activeTab}
+            enablePendingCount={adminAuthState.status === "authorized"}
+            showPermissionsTab={isSuperAdmin}
+          />
           <CloseLink />
         </div>
       </OverlayHeader>
 
       {adminAuthState.status === "authorized" ? (
-        <AdminDashboardPanel activeTab={activeTab} />
+        <AdminDashboardPanel activeTab={activeTab} isSuperAdmin={isSuperAdmin} />
       ) : adminAuthState.status === "unavailable" ? (
         <ProtectedAuthGatePanel
           status="unavailable"
