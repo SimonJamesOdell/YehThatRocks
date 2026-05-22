@@ -276,7 +276,15 @@ function aggregateSeriesBuckets(
   return Array.from(aggregates.values()).sort((a, b) => a.bucketStart.localeCompare(b.bucketStart));
 }
 
-function buildDailySeriesFromRows(rows: Array<{ day?: string; pageViews?: number; videoViews?: number; uniqueVisitors?: number }>) {
+function buildDailySeriesFromRows(rows: Array<{
+  day?: string;
+  pageViews?: number;
+  videoViews?: number;
+  uniqueVisitors?: number;
+  returnVisits?: number;
+  magazineExternalLandings?: number;
+  authEvents?: number;
+}>) {
   return rows
     .map((row, index) => {
       const dayString = typeof row.day === "string" ? row.day : "";
@@ -291,9 +299,9 @@ function buildDailySeriesFromRows(rows: Array<{ day?: string; pageViews?: number
         pageViews: Number(row.pageViews ?? 0),
         videoViews: Number(row.videoViews ?? 0),
         uniqueVisitors: Number(row.uniqueVisitors ?? 0),
-        returnVisits: 0,
-        magazineExternalLandings: 0,
-        authEvents: 0,
+        returnVisits: Number(row.returnVisits ?? 0),
+        magazineExternalLandings: Number(row.magazineExternalLandings ?? 0),
+        authEvents: Number(row.authEvents ?? 0),
       } as AnalyticsSeriesBucket;
     })
     .sort((a, b) => a.bucketStart.localeCompare(b.bucketStart));
@@ -381,7 +389,15 @@ function normalizeDashboardPayload(rawPayload: unknown) {
   const rawMemoryProcess = asObject(rawMemoryDiagnostics.process);
   const rawMemoryCaches = asObject(rawMemoryDiagnostics.caches);
 
-  const normalizedDaily = asArray<{ day?: string; pageViews?: number; videoViews?: number; uniqueVisitors?: number }>(rawAnalytics.daily);
+  const normalizedDaily = asArray<{
+    day?: string;
+    pageViews?: number;
+    videoViews?: number;
+    uniqueVisitors?: number;
+    returnVisits?: number;
+    magazineExternalLandings?: number;
+    authEvents?: number;
+  }>(rawAnalytics.daily);
   const normalizedHourlyRecent = asArray(rawAnalytics.hourlyRecent, asArray(rawAnalytics.hourly));
   const normalizedSeries = {
     ...base.analytics.series,

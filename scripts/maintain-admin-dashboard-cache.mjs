@@ -236,6 +236,9 @@ async function computeAdminDashboardData() {
         pageViews: toNumber(row.pageViews),
         videoViews: toNumber(row.videoViews),
         uniqueVisitors: toNumber(row.uniqueVisitors),
+        returnVisits: toNumber(row.returnVisits),
+        magazineExternalLandings: toNumber(row.magazineExternalLandings),
+        authEvents: toNumber(row.authEvents),
       })),
       hourlyRecent,
       newVsRepeat: {
