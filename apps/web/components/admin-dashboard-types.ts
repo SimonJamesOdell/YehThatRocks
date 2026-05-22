@@ -215,6 +215,35 @@ export type CatalogReviewVideoRow = {
   enqueuedAt: string | null;
 };
 
+export type GenreReviewVideoRow = {
+  id: number;
+  videoId: string;
+  title: string;
+  parsedArtist: string | null;
+  parsedTrack: string | null;
+  channelTitle: string | null;
+  durationSec: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  proposedGenre: string | null;
+  confidence: number | null;
+  reason: string | null;
+  enqueuedAt: string | null;
+};
+
+export type GenreReviewWorkerState = {
+  status: string;
+  totalVideos: number;
+  lastVideoId: number;
+  processedCount: number;
+  updatedCount: number;
+  deletedCount: number;
+  queuedCount: number;
+  startedAt: string | null;
+  updatedAt: string | null;
+  lastMessage: string | null;
+};
+
 // Magazine Domain
 export type AdminMagazineArticleRow = {
   slug: string;
@@ -258,4 +287,4 @@ export type PerfWindowResetResponse = {
 };
 
 // Tab Routing
-export type AdminTab = "overview" | "magazine" | "performance" | "categories" | "videos" | "catalog-review" | "permissions";
+export type AdminTab = "overview" | "magazine" | "performance" | "categories" | "videos" | "catalog-review" | "genre-review" | "permissions";

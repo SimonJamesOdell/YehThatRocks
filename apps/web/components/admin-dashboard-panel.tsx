@@ -8,6 +8,7 @@ import { finiteOrNull, isAuthResponseError, readJson, readNoStoreJson } from "@/
 import { mergePendingQueuePreservingCurrentOrder } from "@/components/admin-pending-queue-order";
 import { buildAnalyticsGraph, buildHostMetricsGraph, filterBucketsWithinRange } from "@/components/admin-dashboard-graph-builders";
 import { AdminDashboardCatalogReviewTab } from "@/components/admin-dashboard-catalog-review-tab";
+import { AdminDashboardGenreReviewTab } from "@/components/admin-dashboard-genre-review-tab";
 import { AdminDashboardCategoriesTab } from "@/components/admin-dashboard-categories-tab";
 import { AdminDashboardMagazineTab } from "@/components/admin-dashboard-magazine-tab";
 import { AdminDashboardOverviewTab } from "@/components/admin-dashboard-overview-tab";
@@ -31,6 +32,8 @@ import {
   PendingVideoRow,
   PendingVideoDraft,
   CatalogReviewVideoRow,
+  GenreReviewVideoRow,
+  GenreReviewWorkerState,
   AdminMagazineArticleRow,
   AdminMagazineCommentModerationAction,
   AdminMagazineCommentModerationRow,
@@ -62,10 +65,16 @@ export function AdminDashboardPanel({
   const pendingPreviewCurrentTimeRef = useRef<number | null>(null);
   const catalogReviewPreviewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const catalogReviewPreviewCurrentTimeRef = useRef<number | null>(null);
+  const genreReviewPreviewIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const genreReviewPreviewCurrentTimeRef = useRef<number | null>(null);
   const [pendingVideoTotal, setPendingVideoTotal] = useState(0);
   const [catalogReviewRemaining, setCatalogReviewRemaining] = useState(0);
   const [catalogReviewCurrentVideo, setCatalogReviewCurrentVideo] = useState<CatalogReviewVideoRow | null>(null);
   const [catalogReviewActionVideoId, setCatalogReviewActionVideoId] = useState<string | null>(null);
+  const [genreReviewRemaining, setGenreReviewRemaining] = useState(0);
+  const [genreReviewCurrentVideo, setGenreReviewCurrentVideo] = useState<GenreReviewVideoRow | null>(null);
+  const [genreReviewActionVideoId, setGenreReviewActionVideoId] = useState<string | null>(null);
+  const [genreReviewWorker, setGenreReviewWorker] = useState<GenreReviewWorkerState | null>(null);
   const [previousCatalogAction, setPreviousCatalogAction] = useState<{ action: "approve" | "remove"; videoId: string } | null>(null);
   const [reversingCatalogAction, setReversingCatalogAction] = useState(false);
   const [recentlyApprovedVideos, setRecentlyApprovedVideos] = useState<RecentlyApprovedVideoRow[]>([]);
@@ -420,6 +429,18 @@ export function AdminDashboardPanel({
     setCatalogReviewCurrentVideo(payload.currentVideo ?? null);
   }
 
+  async function loadGenreReviewQueue() {
+    const payload = await readJson<{
+      remaining: number;
+      currentVideo: GenreReviewVideoRow | null;
+      worker: GenreReviewWorkerState | null;
+    }>("/api/admin/videos/genre-review");
+
+    setGenreReviewRemaining(Number(payload.remaining ?? 0));
+    setGenreReviewCurrentVideo(payload.currentVideo ?? null);
+    setGenreReviewWorker(payload.worker ?? null);
+  }
+
   async function moderateCatalogReviewVideo(action: "approve" | "remove") {
     if (!catalogReviewCurrentVideo) {
       return;
@@ -500,6 +521,36 @@ export function AdminDashboardPanel({
     }
   }
 
+  async function moderateGenreReviewVideo(action: "approve" | "remove", genre: string | null) {
+    if (!genreReviewCurrentVideo) {
+      return;
+    }
+
+    const videoId = genreReviewCurrentVideo.videoId;
+    setGenreReviewActionVideoId(videoId);
+
+    try {
+      await postJson<{ ok: boolean; remaining?: number }>("/api/admin/videos/genre-review", {
+        videoId,
+        action,
+        genre,
+      });
+
+      setSaveMessage(action === "approve"
+        ? `Saved genre for ${videoId}.`
+        : `Removed ${videoId}.`);
+
+      await Promise.all([
+        loadGenreReviewQueue(),
+        action === "remove" ? loadVideos() : Promise.resolve(),
+      ]);
+    } catch (moderationError) {
+      setSaveMessage(moderationError instanceof Error ? moderationError.message : "Genre review action failed.");
+    } finally {
+      setGenreReviewActionVideoId(null);
+    }
+  }
+
   async function revokeApprovedVideo(videoId: string) {
     setRevokingVideoId(videoId);
     try {
@@ -545,6 +596,22 @@ export function AdminDashboardPanel({
     );
   }
 
+  function seekGenreReviewPreview(seconds: number) {
+    const iframeWindow = genreReviewPreviewIframeRef.current?.contentWindow;
+    if (!iframeWindow) {
+      return;
+    }
+
+    iframeWindow.postMessage(
+      JSON.stringify({ event: "command", func: "seekTo", args: [seconds, true] }),
+      "*",
+    );
+    iframeWindow.postMessage(
+      JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+      "*",
+    );
+  }
+
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -573,6 +640,7 @@ export function AdminDashboardPanel({
         if (typeof currentTime === "number" && Number.isFinite(currentTime)) {
           pendingPreviewCurrentTimeRef.current = currentTime;
           catalogReviewPreviewCurrentTimeRef.current = currentTime;
+          genreReviewPreviewCurrentTimeRef.current = currentTime;
         }
       } catch {
         // Ignore non-JSON/non-YouTube messages.
@@ -612,6 +680,8 @@ export function AdminDashboardPanel({
         await Promise.all([loadPendingVideos(), loadRecentlyApprovedVideos()]);
       } else if (activeTab === "catalog-review") {
         await loadCatalogReviewQueue();
+      } else if (activeTab === "genre-review") {
+        await loadGenreReviewQueue();
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load admin data.");
@@ -699,6 +769,8 @@ export function AdminDashboardPanel({
           await Promise.all([loadPendingVideos(), loadRecentlyApprovedVideos()]);
         } else if (activeTab === "catalog-review") {
           await loadCatalogReviewQueue();
+        } else if (activeTab === "genre-review") {
+          await loadGenreReviewQueue();
         }
         // Clear error on successful poll
         if (error?.includes("Unauthorized")) {
@@ -1045,6 +1117,19 @@ export function AdminDashboardPanel({
           onRefreshCatalogReviewMetadata={refreshCatalogReviewMetadata}
           onModerateCatalogReviewVideo={moderateCatalogReviewVideo}
           onReversePreviousCatalogAction={reversePreviousCatalogAction}
+        />
+      ) : null}
+
+      {activeTab === "genre-review" ? (
+        <AdminDashboardGenreReviewTab
+          genreReviewRemaining={genreReviewRemaining}
+          genreReviewCurrentVideo={genreReviewCurrentVideo}
+          genreReviewActionVideoId={genreReviewActionVideoId}
+          genreReviewWorker={genreReviewWorker}
+          genreReviewPreviewIframeRef={genreReviewPreviewIframeRef}
+          genreReviewPreviewCurrentTimeRef={genreReviewPreviewCurrentTimeRef}
+          onSeekGenreReviewPreview={seekGenreReviewPreview}
+          onModerateGenreReviewVideo={moderateGenreReviewVideo}
         />
       ) : null}
 

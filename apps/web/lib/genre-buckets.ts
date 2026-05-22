@@ -58,6 +58,26 @@ export function resolveTopLevelGenreBucket(input: string): string | null {
     return null;
   }
 
+  const hasRockToken = tokenMatchesTerm(normalizedInput, "rock");
+  const hasMetalToken = tokenMatchesTerm(normalizedInput, "metal");
+  if (hasRockToken && hasMetalToken) {
+    const hasSpecificSubgenreSignal = TOP_LEVEL_GENRE_BUCKETS.some((bucket) =>
+      bucket.terms.some((term) => {
+        const normalizedTerm = normalizeGenreToken(term);
+        if (normalizedTerm === "rock") {
+          return false;
+        }
+
+        return tokenMatchesTerm(normalizedInput, normalizedTerm);
+      }),
+    );
+
+    // Generic mixed labels like "Rock / Metal" are too broad to bucket reliably.
+    if (!hasSpecificSubgenreSignal) {
+      return null;
+    }
+  }
+
   for (const bucket of TOP_LEVEL_GENRE_BUCKETS) {
     const normalizedLabel = normalizeGenreToken(bucket.label);
     if (normalizedInput === normalizedLabel) {

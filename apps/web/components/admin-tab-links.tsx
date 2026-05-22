@@ -14,6 +14,10 @@ type CatalogReviewCountPayload = {
   remaining?: number;
 };
 
+type GenreReviewCountPayload = {
+  remaining?: number;
+};
+
 const PENDING_COUNT_POLL_MS = 30_000;
 
 export function AdminTabLinks({
@@ -27,6 +31,7 @@ export function AdminTabLinks({
 }) {
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [catalogReviewRemaining, setCatalogReviewRemaining] = useState<number | null>(null);
+  const [genreReviewRemaining, setGenreReviewRemaining] = useState<number | null>(null);
 
   useEffect(() => {
     if (!enablePendingCount) {
@@ -38,7 +43,7 @@ export function AdminTabLinks({
 
     const fetchPendingCount = async () => {
       try {
-        const [pendingResponse, catalogReviewResponse] = await Promise.all([
+        const [pendingResponse, catalogReviewResponse, genreReviewResponse] = await Promise.all([
           fetch("/api/admin/videos/pending", {
             cache: "no-store",
             headers: {
@@ -46,6 +51,12 @@ export function AdminTabLinks({
             },
           }),
           fetch("/api/admin/videos/catalog-review", {
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-store",
+            },
+          }),
+          fetch("/api/admin/videos/genre-review", {
             cache: "no-store",
             headers: {
               "Cache-Control": "no-store",
@@ -75,6 +86,17 @@ export function AdminTabLinks({
             setCatalogReviewRemaining(nextCatalogReviewRemaining);
           }
         }
+
+        if (genreReviewResponse.ok) {
+          const genreReviewPayload = (await genreReviewResponse.json()) as GenreReviewCountPayload;
+          const nextGenreReviewRemaining = Number.isFinite(genreReviewPayload.remaining)
+            ? Number(genreReviewPayload.remaining)
+            : 0;
+
+          if (!cancelled) {
+            setGenreReviewRemaining(nextGenreReviewRemaining);
+          }
+        }
       } catch {
         // Keep last known count if polling fails.
       }
@@ -101,6 +123,7 @@ export function AdminTabLinks({
       <Link href="/admin?tab=categories" className={tabClass("categories")}>Categories</Link>
       <Link href="/admin?tab=videos" className={tabClass("videos")}>New Videos {pendingCount !== null ? `(${pendingCount})` : ""}</Link>
       <Link href="/admin?tab=catalog-review" className={tabClass("catalog-review")}>Catalog Cleanup {catalogReviewRemaining !== null ? `(${catalogReviewRemaining})` : ""}</Link>
+      <Link href="/admin?tab=genre-review" className={tabClass("genre-review")}>Genre Review {genreReviewRemaining !== null ? `(${genreReviewRemaining})` : ""}</Link>
       {showPermissionsTab ? <Link href="/admin?tab=permissions" className={tabClass("permissions")}>Permissions</Link> : null}
     </div>
   );

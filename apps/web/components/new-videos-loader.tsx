@@ -25,6 +25,7 @@ import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference
 import { useSuggestNewVideo } from "@/components/use-suggest-new-video";
 import {
   doesVideoMatchNewGenreFilters,
+  normalizeNewVideoGenreFilters,
   normalizeNewVideoGenreFilterState,
   parseNewVideoGenreFilterStateFromParams,
 } from "@/lib/new-video-genre-filters";
@@ -280,10 +281,11 @@ export function NewVideosLoader({
     [genreFacets],
   );
   const knownGenreUniverse = useMemo(() => {
-    const combined = [...actionableGenreFacets.map((facet) => facet.genre), ...selectedGenres, ...excludedGenres]
-      .map((genre) => genre.trim().toLowerCase())
-      .filter((genre) => genre.length > 0);
-    return [...new Set(combined)];
+    return normalizeNewVideoGenreFilters([
+      ...actionableGenreFacets.map((facet) => facet.genre),
+      ...selectedGenres,
+      ...excludedGenres,
+    ]);
   }, [actionableGenreFacets, excludedGenres, selectedGenres]);
 
   useEffect(() => {
