@@ -12,7 +12,15 @@ type AdminDashboardGenreReviewTabProps = {
   onSeekGenreReviewPreview: (seconds: number) => void;
   onRefetchGenreReviewMetadata: () => Promise<void>;
   onReverseGenreReviewArtistTrack: () => Promise<void>;
-  onModerateGenreReviewVideo: (action: "approve" | "remove", genre: string | null) => Promise<void>;
+  onModerateGenreReviewVideo: (
+    action: "approve" | "remove",
+    draft: {
+      genre: string | null;
+      title: string;
+      parsedArtist: string | null;
+      parsedTrack: string | null;
+    },
+  ) => Promise<void>;
 };
 
 export function AdminDashboardGenreReviewTab({
@@ -27,6 +35,9 @@ export function AdminDashboardGenreReviewTab({
   onModerateGenreReviewVideo,
 }: AdminDashboardGenreReviewTabProps) {
   const [draftGenre, setDraftGenre] = useState("");
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftArtist, setDraftArtist] = useState("");
+  const [draftTrack, setDraftTrack] = useState("");
 
   const genreOptions = [...TOP_LEVEL_GENRE_BUCKETS.map((bucket) => bucket.label), "Unclassified"];
   const genreOptionDetails = new Map(
@@ -42,7 +53,16 @@ export function AdminDashboardGenreReviewTab({
 
   useEffect(() => {
     setDraftGenre(genreReviewCurrentVideo?.proposedGenre ?? "");
-  }, [genreReviewCurrentVideo?.videoId, genreReviewCurrentVideo?.proposedGenre]);
+    setDraftTitle(genreReviewCurrentVideo?.title ?? "");
+    setDraftArtist(genreReviewCurrentVideo?.parsedArtist ?? "");
+    setDraftTrack(genreReviewCurrentVideo?.parsedTrack ?? "");
+  }, [
+    genreReviewCurrentVideo?.videoId,
+    genreReviewCurrentVideo?.proposedGenre,
+    genreReviewCurrentVideo?.title,
+    genreReviewCurrentVideo?.parsedArtist,
+    genreReviewCurrentVideo?.parsedTrack,
+  ]);
 
   const row = genreReviewCurrentVideo;
   const baseStartAtSec = row?.durationSec && row.durationSec > 0 ? Math.floor(row.durationSec / 2) : 0;
@@ -79,9 +99,39 @@ export function AdminDashboardGenreReviewTab({
           >
             <div style={{ display: "grid", gap: 6 }}>
               <p className="authMessage" style={{ margin: 0 }}><strong>{row.videoId}</strong></p>
-              <p className="authMessage" style={{ margin: 0 }}>{row.title}</p>
-              {row.parsedArtist ? <p className="authMessage" style={{ margin: 0 }}>Artist: {row.parsedArtist}</p> : null}
-              {row.parsedTrack ? <p className="authMessage" style={{ margin: 0 }}>Track: {row.parsedTrack}</p> : null}
+              <div style={{ display: "grid", gridTemplateColumns: "170px minmax(0, 1fr)", alignItems: "center", gap: 6 }}>
+                <label htmlFor={`genre-review-title-${row.id}`}>Title</label>
+                <input
+                  id={`genre-review-title-${row.id}`}
+                  style={{ padding: "5px 8px" }}
+                  value={draftTitle}
+                  onChange={(event) => setDraftTitle(event.target.value)}
+                  placeholder="Video title"
+                  disabled={genreReviewActionVideoId === row.videoId}
+                />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "170px minmax(0, 1fr)", alignItems: "center", gap: 6 }}>
+                <label htmlFor={`genre-review-artist-${row.id}`}>Artist (optional override)</label>
+                <input
+                  id={`genre-review-artist-${row.id}`}
+                  style={{ padding: "5px 8px" }}
+                  value={draftArtist}
+                  onChange={(event) => setDraftArtist(event.target.value)}
+                  placeholder="Artist"
+                  disabled={genreReviewActionVideoId === row.videoId}
+                />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "170px minmax(0, 1fr)", alignItems: "center", gap: 6 }}>
+                <label htmlFor={`genre-review-track-${row.id}`}>Track (optional override)</label>
+                <input
+                  id={`genre-review-track-${row.id}`}
+                  style={{ padding: "5px 8px" }}
+                  value={draftTrack}
+                  onChange={(event) => setDraftTrack(event.target.value)}
+                  placeholder="Track name"
+                  disabled={genreReviewActionVideoId === row.videoId}
+                />
+              </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
                 <button
                   type="button"
@@ -263,8 +313,16 @@ export function AdminDashboardGenreReviewTab({
                 <button
                   type="button"
                   onClick={() => {
-                    const normalizedDraft = draftGenre.trim();
-                    void onModerateGenreReviewVideo("approve", normalizedDraft.length > 0 ? normalizedDraft : null);
+                    const normalizedGenre = draftGenre.trim();
+                    const normalizedTitle = draftTitle.trim();
+                    const normalizedArtist = draftArtist.trim();
+                    const normalizedTrack = draftTrack.trim();
+                    void onModerateGenreReviewVideo("approve", {
+                      genre: normalizedGenre.length > 0 ? normalizedGenre : null,
+                      title: normalizedTitle.length > 0 ? normalizedTitle : row.title,
+                      parsedArtist: normalizedArtist.length > 0 ? normalizedArtist : null,
+                      parsedTrack: normalizedTrack.length > 0 ? normalizedTrack : null,
+                    });
                   }}
                   disabled={genreReviewActionVideoId === row.videoId}
                 >
@@ -274,7 +332,12 @@ export function AdminDashboardGenreReviewTab({
                 <button
                   type="button"
                   onClick={() => {
-                    void onModerateGenreReviewVideo("remove", null);
+                    void onModerateGenreReviewVideo("remove", {
+                      genre: null,
+                      title: row.title,
+                      parsedArtist: row.parsedArtist,
+                      parsedTrack: row.parsedTrack,
+                    });
                   }}
                   disabled={genreReviewActionVideoId === row.videoId}
                 >

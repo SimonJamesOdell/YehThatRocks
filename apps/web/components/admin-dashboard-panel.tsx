@@ -519,7 +519,15 @@ export function AdminDashboardPanel({
     }
   }
 
-  async function moderateGenreReviewVideo(action: "approve" | "remove", genre: string | null) {
+  async function moderateGenreReviewVideo(
+    action: "approve" | "remove",
+    draft: {
+      genre: string | null;
+      title: string;
+      parsedArtist: string | null;
+      parsedTrack: string | null;
+    },
+  ) {
     if (!genreReviewCurrentVideo) {
       return;
     }
@@ -531,7 +539,10 @@ export function AdminDashboardPanel({
       await postJson<{ ok: boolean; remaining?: number }>("/api/admin/videos/genre-review", {
         videoId,
         action,
-        genre,
+        genre: draft.genre,
+        title: action === "approve" ? draft.title : undefined,
+        parsedArtist: action === "approve" ? draft.parsedArtist : undefined,
+        parsedTrack: action === "approve" ? draft.parsedTrack : undefined,
       });
 
       setSaveMessage(action === "approve"

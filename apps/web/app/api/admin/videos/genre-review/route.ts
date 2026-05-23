@@ -168,6 +168,9 @@ const moderateGenreReviewSchema = z.object({
   videoId: z.string().trim().min(1).max(64),
   action: z.enum(["approve", "remove", "swap-artist-track"]),
   genre: z.string().trim().min(1).max(255).nullable().optional(),
+  title: z.string().trim().min(1).max(255).optional(),
+  parsedArtist: z.string().trim().max(255).nullable().optional(),
+  parsedTrack: z.string().trim().max(255).nullable().optional(),
 });
 
 async function getGenreReviewRemaining() {
@@ -177,7 +180,7 @@ async function getGenreReviewRemaining() {
   return Number(rows[0]?.total ?? 0);
 }
 
-async function persistGenreReviewManualMetadata(videoId: string, reason: string) {
+async function persistGenreReviewManualMetadata(videoId: string, reason: string, preferredTitle?: string) {
   const rows = await prisma.$queryRawUnsafe<Array<{
     title: string | null;
     parsedArtist: string | null;
@@ -202,16 +205,19 @@ async function persistGenreReviewManualMetadata(videoId: string, reason: string)
   );
 
   const storedTitle = buildGenreReviewStoredTitle(row.parsedArtist, row.parsedTrack) ?? normalizedTitle;
+  const normalizedPreferredTitle = typeof preferredTitle === "string" ? preferredTitle.trim() : "";
+  const manualTitle = normalizedPreferredTitle.length > 0 ? normalizedPreferredTitle : null;
 
   await prisma.$executeRawUnsafe(
     `UPDATE videos
-     SET title = COALESCE(?, title),
+     SET title = COALESCE(?, ?, title),
          parseMethod = ?,
          parseReason = ?,
          parseConfidence = ?,
          parsedAt = UTC_TIMESTAMP(3),
          updated_at = UTC_TIMESTAMP(3)
      WHERE videoId = ?`,
+    manualTitle,
     storedTitle,
     "admin-manual",
     reason,
@@ -289,7 +295,7 @@ export async function POST(request: NextRequest) {
 
   await ensureGenreReviewQueueReady();
 
-  const { videoId, action, genre } = result.data;
+  const { videoId, action, genre, title, parsedArtist, parsedTrack } = result.data;
 
   if (action === "swap-artist-track") {
     const sourceRows = await prisma.$queryRawUnsafe<Array<{
@@ -355,15 +361,36 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "approve") {
-    await persistGenreReviewManualMetadata(videoId, "genre-review-save-keep");
+    const setClauses = ["updated_at = UTC_TIMESTAMP(3)"];
+    const setParams: unknown[] = [];
 
-    if (genre && genre.trim().length > 0) {
-      await prisma.$executeRawUnsafe(
-        `UPDATE videos SET genre = ?, updated_at = UTC_TIMESTAMP(3) WHERE videoId = ?`,
-        genre.trim(),
-        videoId,
-      );
+    if (genre !== undefined) {
+      setClauses.push("genre = ?");
+      setParams.push(genre && genre.trim().length > 0 ? genre.trim() : null);
     }
+
+    if (title !== undefined) {
+      setClauses.push("title = ?");
+      setParams.push(title);
+    }
+
+    if (parsedArtist !== undefined) {
+      setClauses.push("parsedArtist = ?");
+      setParams.push(parsedArtist);
+    }
+
+    if (parsedTrack !== undefined) {
+      setClauses.push("parsedTrack = ?");
+      setParams.push(parsedTrack);
+    }
+
+    await prisma.$executeRawUnsafe(
+      `UPDATE videos SET ${setClauses.join(", ")} WHERE videoId = ?`,
+      ...setParams,
+      videoId,
+    );
+
+    await persistGenreReviewManualMetadata(videoId, "genre-review-save-keep", title);
 
     const queueDelete = await prisma.$executeRawUnsafe(
       `DELETE FROM admin_genre_review_queue WHERE video_id = ?`,
