@@ -6,6 +6,7 @@ import { fetchGenreReviewCurrentVideo } from "@/lib/admin-genre-review-current-v
 import { ensureGenreReviewQueueReady } from "@/lib/admin-genre-review-queue";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { buildNormalizedVideoTitleFromMetadata } from "@/lib/catalog-data-utils";
 import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";
 import { prisma } from "@/lib/db";
 import { getMusicBrainzArtistData } from "@/lib/musicbrainz";
@@ -35,6 +36,28 @@ function normalizeGenreLabel(value: unknown): string | null {
 
 function normalizeArtistKey(value: unknown): string {
   return String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function formatGenreReviewStoredTrack(track: string | null) {
+  const trimmed = typeof track === "string" ? track.trim() : "";
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (match) => match.toUpperCase());
+}
+
+function buildGenreReviewStoredTitle(artist: string | null, track: string | null) {
+  const trimmedArtist = typeof artist === "string" ? artist.trim() : "";
+  const formattedTrack = formatGenreReviewStoredTrack(track);
+
+  if (!trimmedArtist || !formattedTrack) {
+    return null;
+  }
+
+  return `${trimmedArtist.toUpperCase()} - ${formattedTrack}`;
 }
 
 async function suggestGenreForVideo(videoId: string): Promise<GenreSuggestion> {
@@ -154,6 +177,49 @@ async function getGenreReviewRemaining() {
   return Number(rows[0]?.total ?? 0);
 }
 
+async function persistGenreReviewManualMetadata(videoId: string, reason: string) {
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    title: string | null;
+    parsedArtist: string | null;
+    parsedTrack: string | null;
+  }>>(
+    `SELECT title, parsedArtist, parsedTrack
+     FROM videos
+     WHERE videoId = ?
+     LIMIT 1`,
+    videoId,
+  );
+
+  const row = rows[0];
+  if (!row) {
+    return;
+  }
+
+  const normalizedTitle = buildNormalizedVideoTitleFromMetadata(
+    row.title,
+    row.parsedArtist,
+    row.parsedTrack,
+  );
+
+  const storedTitle = buildGenreReviewStoredTitle(row.parsedArtist, row.parsedTrack) ?? normalizedTitle;
+
+  await prisma.$executeRawUnsafe(
+    `UPDATE videos
+     SET title = COALESCE(?, title),
+         parseMethod = ?,
+         parseReason = ?,
+         parseConfidence = ?,
+         parsedAt = UTC_TIMESTAMP(3),
+         updated_at = UTC_TIMESTAMP(3)
+     WHERE videoId = ?`,
+    storedTitle,
+    "admin-manual",
+    reason,
+    1,
+    videoId,
+  );
+}
+
 async function getWorkerState() {
   const rows = await prisma.$queryRawUnsafe<Array<{
     status: string;
@@ -257,6 +323,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Video not found" }, { status: 404 });
     }
 
+    await persistGenreReviewManualMetadata(videoId, "genre-review-artist-track-swap");
+
     const suggestion = await suggestGenreForVideo(videoId);
 
     await prisma.$executeRawUnsafe(
@@ -287,6 +355,8 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "approve") {
+    await persistGenreReviewManualMetadata(videoId, "genre-review-save-keep");
+
     if (genre && genre.trim().length > 0) {
       await prisma.$executeRawUnsafe(
         `UPDATE videos SET genre = ?, updated_at = UTC_TIMESTAMP(3) WHERE videoId = ?`,
