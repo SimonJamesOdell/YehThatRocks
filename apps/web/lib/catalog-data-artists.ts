@@ -1609,7 +1609,7 @@ export async function getArtistBySlug(slug: string) {
         ...fallbackMatchParams,
       );
 
-      const fallback = fallbackRows.find((row) => slugify(row.name ?? "") === slug) ?? fallbackRows[0];
+      const fallback = fallbackRows.find((row) => slugify(row.name ?? "") === slug);
       const fallbackName = fallback?.name ? getTrimmedDatabaseValue(fallback.name) : null;
       if (!fallbackName) return null;
 

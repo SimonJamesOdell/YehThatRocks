@@ -199,6 +199,22 @@ describe("getArtistBySlug — narrow query strategy", () => {
     expect(sql).not.toContain("MATCH(a.`artist`)");
     expect(params).toEqual(["%ac%", "%dc%"]);
   });
+
+  it("does not resolve to a partial fallback artist when exact slug is missing", async () => {
+    queryRawUnsafeMock
+      // Short-term slug path (no exact match in artists table query)
+      .mockResolvedValueOnce([{ name: "L7x", country: null, genre1: "Rock" }])
+      // Prefix scan fallback in artists table (no exact slug match)
+      .mockResolvedValueOnce([{ name: "L7x", country: null, genre1: "Rock" }])
+      // Video-derived fallback candidates contain only partial match
+      .mockResolvedValueOnce([{ name: "X-RL7", thumbnailVideoId: "vid-1" }]);
+
+    const { clearArtistCaches, getArtistBySlug } = await import("@/lib/catalog-data-artists");
+    clearArtistCaches();
+
+    const result = await getArtistBySlug("l7");
+    expect(result).toBeNull();
+  });
 });
 
 describe("getVideosByArtist — availability check strategy", () => {
