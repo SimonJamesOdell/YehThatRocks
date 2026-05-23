@@ -394,6 +394,38 @@ export async function setCategoryArtistThumbnailPin(genre: string, artistName: s
     normalizedVideoId,
   );
 
+  const bucketLabel = resolveTopLevelGenreBucket(genre) ?? "Rock & Alternative";
+  try {
+    await ensureCategoryBucketRuntimeCacheTable();
+
+    const existingRows = await prisma.$queryRawUnsafe<Array<{ artistCount: number | bigint }>>(
+      `
+        SELECT artist_count AS artistCount
+        FROM category_bucket_runtime_cache
+        WHERE bucket_label = ?
+        LIMIT 1
+      `,
+      bucketLabel,
+    );
+
+    const existingArtistCount = Math.max(0, Number(existingRows[0]?.artistCount ?? 0));
+
+    await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO category_bucket_runtime_cache (bucket_label, preview_video_id, artist_count)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          preview_video_id = VALUES(preview_video_id),
+          updated_at = CURRENT_TIMESTAMP(3)
+      `,
+      bucketLabel,
+      normalizedVideoId,
+      existingArtistCount,
+    );
+  } catch {
+    // Best-effort: pin should still persist even if runtime cache update fails.
+  }
+
   clearGenreCaches();
 }
 
