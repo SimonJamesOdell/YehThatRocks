@@ -145,45 +145,45 @@ export async function POST(request: NextRequest) {
   const { videoId, action } = parsed;
 
   if (action === "approve") {
-    const approveData: {
-      approved: boolean;
-      updatedAt: Date;
-      approvedAt: Date;
-      title?: string;
-      genre?: string | null;
-      parsedArtist?: string | null;
-      parsedTrack?: string | null;
-    } = {
-      approved: true,
-      updatedAt: new Date(),
-      approvedAt: new Date(),
-    };
+    const setClauses = [
+      "approved = 1",
+      "approved_at = UTC_TIMESTAMP(3)",
+      "updated_at = UTC_TIMESTAMP(3)",
+    ];
+    const setParams: unknown[] = [];
 
     if (parsed.title !== undefined) {
-      approveData.title = parsed.title;
+      setClauses.push("title = ?");
+      setParams.push(parsed.title);
     }
 
     if (parsed.genre !== undefined) {
-      approveData.genre = parsed.genre;
+      setClauses.push("genre = ?");
+      setParams.push(parsed.genre);
     }
 
     if (parsed.parsedArtist !== undefined) {
-      approveData.parsedArtist = parsed.parsedArtist;
+      setClauses.push("parsedArtist = ?");
+      setParams.push(parsed.parsedArtist);
     }
 
     if (parsed.parsedTrack !== undefined) {
-      approveData.parsedTrack = parsed.parsedTrack;
+      setClauses.push("parsedTrack = ?");
+      setParams.push(parsed.parsedTrack);
     }
 
-    const approvedRows = await prisma.video.updateMany({
-      where: {
-        videoId,
-        approved: false,
-      },
-      data: approveData,
-    });
+    const approvedRows = await prisma.$executeRawUnsafe(
+      `
+        UPDATE videos
+        SET ${setClauses.join(", ")}
+        WHERE videoId = ?
+          AND (${PENDING_VIDEO_APPROVAL_WHERE_CLAUSE})
+      `,
+      ...setParams,
+      videoId,
+    );
 
-    if (approvedRows.count === 0) {
+    if (approvedRows === 0) {
       const existing = await prisma.$queryRaw<Array<{ id: number }>>`
         SELECT id
         FROM videos
