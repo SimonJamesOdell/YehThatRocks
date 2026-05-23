@@ -12,6 +12,7 @@ const moderatePendingSchema = z.object({
   videoId: z.string().trim().min(1).max(64),
   action: z.enum(["approve", "remove"]),
   title: z.string().trim().min(1).max(255).optional(),
+  genre: z.string().trim().max(255).nullable().optional(),
   parsedArtist: z.string().trim().max(255).nullable().optional(),
   parsedTrack: z.string().trim().max(255).nullable().optional(),
 });
@@ -48,6 +49,7 @@ export async function GET(request: NextRequest) {
         id: number;
         videoId: string;
         title: string;
+      genre: string | null;
         parsedArtist: string | null;
         parsedTrack: string | null;
         channelTitle: string | null;
@@ -60,6 +62,7 @@ export async function GET(request: NextRequest) {
           v.id,
           v.videoId,
           v.title,
+          v.genre,
           v.parsedArtist,
           v.parsedTrack,
           v.channelTitle,
@@ -92,6 +95,7 @@ export async function GET(request: NextRequest) {
         id: number;
         videoId: string;
         title: string;
+      genre: string | null;
         parsedArtist: string | null;
         parsedTrack: string | null;
         channelTitle: string | null;
@@ -104,6 +108,7 @@ export async function GET(request: NextRequest) {
           v.id,
           v.videoId,
           v.title,
+          v.genre,
           v.parsedArtist,
           v.parsedTrack,
           v.channelTitle,
@@ -145,6 +150,7 @@ export async function POST(request: NextRequest) {
       updatedAt: Date;
       approvedAt: Date;
       title?: string;
+      genre?: string | null;
       parsedArtist?: string | null;
       parsedTrack?: string | null;
     } = {
@@ -155,6 +161,10 @@ export async function POST(request: NextRequest) {
 
     if (parsed.title !== undefined) {
       approveData.title = parsed.title;
+    }
+
+    if (parsed.genre !== undefined) {
+      approveData.genre = parsed.genre;
     }
 
     if (parsed.parsedArtist !== undefined) {

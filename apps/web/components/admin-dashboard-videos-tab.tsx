@@ -1,6 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import type { PendingVideoDraft, PendingVideoRow, RecentlyApprovedVideoRow } from "@/components/admin-dashboard-types";
+import { TOP_LEVEL_GENRE_BUCKETS, resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
 
 type AdminDashboardVideosTabProps = {
   pendingVideoTotal: number;
@@ -37,10 +38,21 @@ export function AdminDashboardVideosTab({
   revokingVideoId,
   onRevokeApprovedVideo,
 }: AdminDashboardVideosTabProps) {
+  const pendingGenreOptions = [...TOP_LEVEL_GENRE_BUCKETS.map((bucket) => bucket.label), "Unclassified"];
+  const pendingGenreOptionDetails = new Map(
+    TOP_LEVEL_GENRE_BUCKETS.map((bucket) => {
+      const sampleTerms = bucket.terms.slice(0, 6);
+      return [bucket.label, sampleTerms];
+    }),
+  );
+  const pendingGenreSuggestions = Array.from(new Set([
+    ...TOP_LEVEL_GENRE_BUCKETS.map((bucket) => bucket.label),
+    ...TOP_LEVEL_GENRE_BUCKETS.flatMap((bucket) => bucket.terms),
+  ]));
+
   return (
     <>
-      <section className="panel featurePanel">
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
           <button
             type="button"
             className={videoModerationPane === "pending" ? "navLink navLinkActive" : "navLink"}
@@ -55,18 +67,21 @@ export function AdminDashboardVideosTab({
           >
             Recently Approved ({recentlyApprovedVideos.length})
           </button>
-        </div>
+          <p className="authMessage" style={{ margin: 0, marginLeft: "auto" }}>
+            <strong>
+              {videoModerationPane === "pending"
+                ? (pendingVideos[0]?.videoId ?? "")
+                : (recentlyApprovedVideos[0]?.videoId ?? "")}
+            </strong>
+          </p>
+      </div>
+      {videoModerationPane === "recent" ? (
         <div className="panelHeading">
-          {videoModerationPane === "pending" ? (
-            null
-          ) : (
-            <>
-              <span>Recently Approved</span>
-              <strong>last 24 hours · {recentlyApprovedVideos.length} video{recentlyApprovedVideos.length !== 1 ? "s" : ""}</strong>
-            </>
-          )}
+          <span>Recently Approved</span>
+          <strong>last 24 hours · {recentlyApprovedVideos.length} video{recentlyApprovedVideos.length !== 1 ? "s" : ""}</strong>
         </div>
-        <div className="interactiveStack">
+      ) : null}
+      <div className="interactiveStack">
           {videoModerationPane === "pending" ? (
             <>
               {pendingVideos.length === 0 ? <p className="authMessage">No pending videos.</p> : null}
@@ -75,6 +90,10 @@ export function AdminDashboardVideosTab({
                   const row = pendingVideos[0];
                   const draft = pendingVideoDrafts[row.id];
                   const editableTitle = draft?.title ?? row.title;
+                  const classifiedGenreValue = draft !== undefined
+                    ? (draft.genre ?? "")
+                    : (row.genre ?? "");
+                  const selectedPendingGenre = resolveTopLevelGenreBucket(classifiedGenreValue) ?? "Unclassified";
                   // If a draft exists for this row (user has edited it), use the draft
                   // value even if parsedArtist/parsedTrack is null (user cleared the field).
                   // Only fall back to the server value when no draft exists yet.
@@ -82,6 +101,14 @@ export function AdminDashboardVideosTab({
                   const editableTrack = draft !== undefined ? (draft.parsedTrack ?? "") : (row.parsedTrack ?? "");
                   const baseStartAtSec = row.durationSec && row.durationSec > 0 ? Math.floor(row.durationSec / 2) : 0;
                   const maxStartAtSec = row.durationSec && row.durationSec > 0 ? Math.max(0, row.durationSec - 1) : null;
+                  const normalizedTypedGenre = classifiedGenreValue.trim().toLowerCase();
+                  const filteredPendingGenreSuggestions = pendingGenreSuggestions.filter((suggestion) => {
+                    if (!normalizedTypedGenre) {
+                      return false;
+                    }
+
+                    return suggestion.toLowerCase().startsWith(normalizedTypedGenre);
+                  });
 
                   return (
                     <div
@@ -90,16 +117,18 @@ export function AdminDashboardVideosTab({
                       style={{
                         width: "100%",
                         maxWidth: "none",
-                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                        gap: 14,
+                        gridTemplateColumns: "65% 35%",
+                        gap: 12,
                         alignItems: "start",
+                        paddingBottom: 60,
                       }}
                     >
-                      <div style={{ display: "grid", gap: 10 }}>
-                        <p className="authMessage" style={{ margin: 0 }}><strong>{row.videoId}</strong></p>
-                        <label>
-                          <span>Title</span>
+                      <div style={{ display: "grid", gap: 5 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "170px minmax(0, 1fr)", alignItems: "center", gap: 6 }}>
+                          <label htmlFor={`pending-title-${row.id}`}>Title</label>
                           <input
+                            id={`pending-title-${row.id}`}
+                            style={{ padding: "5px 8px" }}
                             value={editableTitle}
                             onChange={(event) => {
                               const nextTitle = event.target.value;
@@ -107,6 +136,7 @@ export function AdminDashboardVideosTab({
                                 ...current,
                                 [row.id]: {
                                   title: nextTitle,
+                                  genre: current[row.id]?.genre ?? row.genre ?? null,
                                   parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
                                   parsedTrack: current[row.id]?.parsedTrack ?? row.parsedTrack,
                                 },
@@ -114,10 +144,12 @@ export function AdminDashboardVideosTab({
                             }}
                             placeholder="Video title"
                           />
-                        </label>
-                        <label>
-                          <span>Artist (optional override)</span>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "170px minmax(0, 1fr)", alignItems: "center", gap: 6 }}>
+                          <label htmlFor={`pending-artist-${row.id}`}>Artist (optional override)</label>
                           <input
+                            id={`pending-artist-${row.id}`}
+                            style={{ padding: "5px 8px" }}
                             value={editableArtist}
                             onChange={(event) => {
                               const nextArtist = event.target.value;
@@ -125,6 +157,7 @@ export function AdminDashboardVideosTab({
                                 ...current,
                                 [row.id]: {
                                   title: current[row.id]?.title ?? row.title,
+                                  genre: current[row.id]?.genre ?? row.genre ?? null,
                                   parsedArtist: nextArtist || null,
                                   parsedTrack: current[row.id]?.parsedTrack ?? row.parsedTrack,
                                 },
@@ -132,10 +165,12 @@ export function AdminDashboardVideosTab({
                             }}
                             placeholder="Artist"
                           />
-                        </label>
-                        <label>
-                          <span>Track (optional override)</span>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "170px minmax(0, 1fr)", alignItems: "center", gap: 6 }}>
+                          <label htmlFor={`pending-track-${row.id}`}>Track (optional override)</label>
                           <input
+                            id={`pending-track-${row.id}`}
+                            style={{ padding: "5px 8px" }}
                             value={editableTrack}
                             onChange={(event) => {
                               const nextTrack = event.target.value;
@@ -143,6 +178,7 @@ export function AdminDashboardVideosTab({
                                 ...current,
                                 [row.id]: {
                                   title: current[row.id]?.title ?? row.title,
+                                  genre: current[row.id]?.genre ?? row.genre ?? null,
                                   parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
                                   parsedTrack: nextTrack || null,
                                 },
@@ -150,8 +186,133 @@ export function AdminDashboardVideosTab({
                             }}
                             placeholder="Track name"
                           />
-                        </label>
-                        <p className="authMessage" style={{ margin: 0 }}>Channel: {row.channelTitle ?? "-"}</p>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "170px minmax(0, 1fr)", alignItems: "center", gap: 6 }}>
+                          <label htmlFor={`pending-genre-${row.id}`}>Classified Genre</label>
+                          <div>
+                            <input
+                              id={`pending-genre-${row.id}`}
+                              list={`pending-genre-suggestions-${row.id}`}
+                              style={{ padding: "5px 8px" }}
+                              value={classifiedGenreValue}
+                              onChange={(event) => {
+                                const nextGenre = event.target.value;
+                                onSetPendingVideoDrafts((current) => ({
+                                  ...current,
+                                  [row.id]: {
+                                    title: current[row.id]?.title ?? row.title,
+                                    genre: nextGenre,
+                                    parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
+                                    parsedTrack: current[row.id]?.parsedTrack ?? row.parsedTrack,
+                                  },
+                                }));
+                              }}
+                              placeholder="Classified genre"
+                            />
+                            <datalist id={`pending-genre-suggestions-${row.id}`}>
+                              {filteredPendingGenreSuggestions.map((suggestion) => (
+                                <option key={suggestion} value={suggestion} />
+                              ))}
+                            </datalist>
+                          </div>
+                        </div>
+                        <fieldset style={{ margin: 0, padding: 0, border: 0, display: "grid", gap: 4 }}>
+                          <span style={{ fontWeight: 600 }}>Category</span>
+                          <table
+                            style={{
+                              width: "100%",
+                              borderCollapse: "collapse",
+                              border: "1px solid rgba(255,255,255,0.16)",
+                              borderRadius: 8,
+                              overflow: "hidden",
+                            }}
+                          >
+                            <tbody>
+                              {pendingGenreOptions.map((genreOption) => {
+                                const radioId = `pending-genre-${row.id}-${genreOption.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+                                const isSelected = selectedPendingGenre === genreOption;
+                                const genreOptionDetails = pendingGenreOptionDetails.get(genreOption) ?? [];
+                                const rowCellPadding = genreOption === "Extreme Metal" ? "13px 8px" : "11px 8px";
+
+                                return (
+                                  <tr key={genreOption} style={{ background: isSelected ? "rgba(255,255,255,0.12)" : "transparent" }}>
+                                    <td style={{ width: 40, textAlign: "center", padding: rowCellPadding, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+                                      <input
+                                        id={radioId}
+                                        type="radio"
+                                        name={`pending-genre-${row.id}`}
+                                        value={genreOption}
+                                        checked={isSelected}
+                                        onChange={() => {
+                                          const nextGenreValue = genreOption === "Unclassified"
+                                            ? ""
+                                            : genreOption;
+                                          onSetPendingVideoDrafts((current) => ({
+                                            ...current,
+                                            [row.id]: {
+                                              title: current[row.id]?.title ?? row.title,
+                                              genre: nextGenreValue,
+                                              parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
+                                              parsedTrack: current[row.id]?.parsedTrack ?? row.parsedTrack,
+                                            },
+                                          }));
+                                        }}
+                                      />
+                                    </td>
+                                    <td style={{ padding: rowCellPadding, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+                                      <label htmlFor={radioId} style={{ cursor: "pointer" }}>{genreOption}</label>
+                                    </td>
+                                    <td
+                                      style={{
+                                        padding: rowCellPadding,
+                                        borderBottom: "1px solid rgba(255,255,255,0.12)",
+                                        fontSize: "0.75rem",
+                                        lineHeight: 1.3,
+                                        color: "rgba(255,255,255,0.78)",
+                                        overflow: "hidden",
+                                        display: "-webkit-box",
+                                        WebkitLineClamp: 2,
+                                        WebkitBoxOrient: "vertical",
+                                      }}
+                                      title={genreOptionDetails.join(", ") || "No specific subgenres mapped."}
+                                    >
+                                      {genreOptionDetails.length > 0 ? (
+                                        genreOptionDetails.map((detail, index) => (
+                                          <span
+                                            key={`${genreOption}-${detail}`}
+                                            style={{ cursor: "pointer" }}
+                                            onMouseEnter={(event) => {
+                                              event.currentTarget.style.textDecoration = "underline";
+                                            }}
+                                            onMouseLeave={(event) => {
+                                              event.currentTarget.style.textDecoration = "none";
+                                            }}
+                                            onClick={() => {
+                                              onSetPendingVideoDrafts((current) => ({
+                                                ...current,
+                                                [row.id]: {
+                                                  title: current[row.id]?.title ?? row.title,
+                                                  genre: detail,
+                                                  parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
+                                                  parsedTrack: current[row.id]?.parsedTrack ?? row.parsedTrack,
+                                                },
+                                              }));
+                                            }}
+                                          >
+                                            {detail}
+                                            {index < genreOptionDetails.length - 1 ? ", " : ""}
+                                          </span>
+                                        ))
+                                      ) : (
+                                        "No specific subgenres mapped."
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </fieldset>
                       </div>
                       <div style={{ display: "grid", gap: 10 }}>
                         <div
@@ -284,8 +445,7 @@ export function AdminDashboardVideosTab({
               ))}
             </>
           )}
-        </div>
-      </section>
+      </div>
     </>
   );
 }

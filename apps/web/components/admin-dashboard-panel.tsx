@@ -20,6 +20,7 @@ import { useAdminCategories } from "@/components/use-admin-categories";
 import { useAdminVideoModeration } from "@/components/use-admin-video-moderation";
 import { useAdminCatalogReview } from "@/components/use-admin-catalog-review";
 import { useAdminMagazine } from "@/components/use-admin-magazine";
+import { resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
 import {
   AdminTab,
   DashboardPayload,
@@ -954,6 +955,7 @@ export function AdminDashboardPanel({
     try {
       const draft = pendingVideoDrafts[row.id];
       const titleToApprove = (draft?.title ?? row.title).trim();
+      const genreToApprove = (draft?.genre ?? resolveTopLevelGenreBucket(row.genre ?? "") ?? row.genre ?? "").trim() || null;
       // Use draft value if a draft exists (even if artist was cleared to null/empty),
       // only fall back to row value when the user has never touched this row.
       const parsedArtistToApprove = (draft !== undefined ? (draft.parsedArtist ?? "") : (row.parsedArtist ?? "")).trim() || null;
@@ -963,12 +965,14 @@ export function AdminDashboardPanel({
         videoId: string;
         action: "approve" | "remove";
         title?: string;
+        genre?: string | null;
         parsedArtist?: string | null;
         parsedTrack?: string | null;
       } = { videoId, action };
 
       if (action === "approve") {
         payload.title = titleToApprove;
+        payload.genre = genreToApprove;
         payload.parsedArtist = parsedArtistToApprove;
         payload.parsedTrack = parsedTrackToApprove;
       }

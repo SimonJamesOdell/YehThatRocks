@@ -1,3 +1,5 @@
+import { resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
+
 export const AUTOPLAY_MIX_KEYS = ["top100", "favourites", "newest", "random"] as const;
 
 export type AutoplayMixKey = (typeof AUTOPLAY_MIX_KEYS)[number];
@@ -155,10 +157,22 @@ export function doesVideoMatchAutoplayGenres(videoGenre: string | null | undefin
     return true;
   }
 
-  const blob = (videoGenre ?? "").trim().toLowerCase();
-  if (!blob) {
+  const normalizedGenre = (videoGenre ?? "").trim().toLowerCase();
+  const bucketGenre = resolveTopLevelGenreBucket(normalizedGenre)?.toLowerCase() ?? "";
+  if (!normalizedGenre && !bucketGenre) {
     return false;
   }
 
-  return allowedGenres.some((genre) => blob.includes(genre));
+  return allowedGenres.some((genre) => {
+    const normalizedToken = genre.trim().toLowerCase();
+    if (!normalizedToken) {
+      return false;
+    }
+
+    const tokenBucket = resolveTopLevelGenreBucket(normalizedToken)?.toLowerCase() ?? "";
+    const targetToken = tokenBucket || normalizedToken;
+
+    return (bucketGenre && bucketGenre === targetToken)
+      || normalizedGenre.includes(targetToken);
+  });
 }

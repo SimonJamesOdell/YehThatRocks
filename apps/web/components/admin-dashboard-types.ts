@@ -187,6 +187,7 @@ export type PendingVideoRow = {
   id: number;
   videoId: string;
   title: string;
+  genre: string | null;
   parsedArtist: string | null;
   parsedTrack: string | null;
   channelTitle: string | null;
@@ -197,6 +198,7 @@ export type PendingVideoRow = {
 
 export type PendingVideoDraft = {
   title: string;
+  genre: string | null;
   parsedArtist: string | null;
   parsedTrack: string | null;
 };

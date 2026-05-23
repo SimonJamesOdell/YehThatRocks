@@ -6,6 +6,7 @@
 import { useCallback, useRef, useState } from "react";
 import { PendingVideoRow, VideoRow, RecentlyApprovedVideoRow, PendingVideoDraft } from "@/components/admin-dashboard-types";
 import { readJson, patchJson, postJson } from "@/components/admin-dashboard-utils";
+import { resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
 
 export function useAdminVideoModeration() {
   const [videos, setVideos] = useState<VideoRow[]>([]);
@@ -135,6 +136,7 @@ export function useAdminVideoModeration() {
       try {
         const draft = pendingVideoDrafts[row.id];
         const titleToApprove = (draft?.title ?? row.title).trim();
+        const genreToApprove = (draft?.genre ?? resolveTopLevelGenreBucket(row.genre ?? "") ?? row.genre ?? "").trim() || null;
         const parsedArtistToApprove = (draft !== undefined ? (draft.parsedArtist ?? "") : (row.parsedArtist ?? "")).trim() || null;
         const parsedTrackToApprove = (draft !== undefined ? (draft.parsedTrack ?? "") : (row.parsedTrack ?? "")).trim() || null;
 
@@ -142,12 +144,14 @@ export function useAdminVideoModeration() {
           videoId: string;
           action: "approve" | "remove";
           title?: string;
+          genre?: string | null;
           parsedArtist?: string | null;
           parsedTrack?: string | null;
         } = { videoId, action };
 
         if (action === "approve") {
           payload.title = titleToApprove;
+          payload.genre = genreToApprove;
           payload.parsedArtist = parsedArtistToApprove;
           payload.parsedTrack = parsedTrackToApprove;
         }

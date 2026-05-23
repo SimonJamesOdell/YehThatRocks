@@ -73,15 +73,15 @@ describe("getArtistsByGenre — genre_all FULLTEXT strategy", () => {
 
   it("uses genre_all LIKE for short genre (< 3 chars) when column exists", async () => {
     hasGenreAllColumnMock.mockResolvedValue(true);
-    queryRawMock.mockResolvedValue([]);
+    queryRawUnsafeMock.mockResolvedValue([]);
 
     const { clearGenreCaches, getArtistsByGenre } = await import("@/lib/catalog-data-genres");
     clearGenreCaches();
 
     await getArtistsByGenre("Nu"); // 2 chars
 
-    expect(queryRawMock).toHaveBeenCalled();
-    const callArg = String(queryRawMock.mock.calls[0][0]);
+    expect(queryRawUnsafeMock).toHaveBeenCalled();
+    const callArg = String(queryRawUnsafeMock.mock.calls[0][0]);
     expect(callArg).toContain("genre_all");
     expect(callArg).toContain("LIKE");
     expect(callArg).not.toContain("MATCH");
@@ -92,15 +92,15 @@ describe("getArtistsByGenre — genre_all FULLTEXT strategy", () => {
 
   it("falls back to 6× LIKE when genre_all column does not exist", async () => {
     hasGenreAllColumnMock.mockResolvedValue(false);
-    queryRawMock.mockResolvedValue([]);
+    queryRawUnsafeMock.mockResolvedValue([]);
 
     const { clearGenreCaches, getArtistsByGenre } = await import("@/lib/catalog-data-genres");
     clearGenreCaches();
 
     await getArtistsByGenre("Metal");
 
-    expect(queryRawMock).toHaveBeenCalled();
-    const callArg = String(queryRawMock.mock.calls[0][0]);
+    expect(queryRawUnsafeMock).toHaveBeenCalled();
+    const callArg = String(queryRawUnsafeMock.mock.calls[0][0]);
     // Falls back to 6-column LIKE
     expect(callArg).toContain("genre1 LIKE");
     expect(callArg).not.toContain("MATCH");
@@ -189,7 +189,7 @@ describe("getVideosByGenre — artist genre FULLTEXT strategy", () => {
     expect(String(sql)).toContain("LIKE");
     expect(String(sql)).not.toContain("MATCH");
     expect(String(sql)).not.toContain("genre1 LIKE");
-    expect(String(param)).toContain("Nu");
+    expect(String(param)).toContain("nu");
   });
 
   it("uses 6× LIKE fallback when genre_all column does not exist", async () => {
@@ -250,15 +250,25 @@ describe("getVideosByGenre — textMatchedVideos FULLTEXT strategy", () => {
   //   5. $queryRawUnsafe: artist normalized name video lookup → empty
   //   6. textMatchedVideos → the call we want to observe
   async function driveToTextMatch(genre: string) {
-    queryRawMock
-      .mockResolvedValueOnce([])  // getGenreKeywordVideos
-      .mockResolvedValueOnce([{ name: "Iron Maiden", country: "US", genre1: "Metal" }])  // getArtistsByGenre
-      .mockResolvedValueOnce([])  // FULLTEXT video lookup by artist name
-      .mockResolvedValue([]);     // genre-card fallback etc.
+    queryRawMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
 
-    // $queryRawUnsafe: artist genre lookup → [] (so normalizedGenreArtistNames empty → skip)
-    // then textMatchedVideos itself (MATCH or LIKE)
-    queryRawUnsafeMock.mockResolvedValue([]);
+      if (text.includes("MATCH(a.genre_all)")) {
+        return [{ name: "Iron Maiden", country: "US", genre1: "Metal" }];
+      }
+
+      return [];
+    });
+
+    queryRawUnsafeMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
+
+      if (text.includes("a.genre_all LIKE") || text.includes("a.genre1 LIKE")) {
+        return [{ name: "Iron Maiden", country: "US", genre1: "Metal" }];
+      }
+
+      return [];
+    });
 
     const { clearGenreCaches, getVideosByGenre } = await import("@/lib/catalog-data-genres");
     clearGenreCaches();
