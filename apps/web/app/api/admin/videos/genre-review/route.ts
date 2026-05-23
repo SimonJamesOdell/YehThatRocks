@@ -226,12 +226,30 @@ export async function POST(request: NextRequest) {
   const { videoId, action, genre } = result.data;
 
   if (action === "swap-artist-track") {
+    const sourceRows = await prisma.$queryRawUnsafe<Array<{
+      parsedArtist: string | null;
+      parsedTrack: string | null;
+    }>>(
+      `SELECT parsedArtist, parsedTrack
+       FROM videos
+       WHERE videoId = ?
+       LIMIT 1`,
+      videoId,
+    );
+
+    const source = sourceRows[0];
+    if (!source) {
+      return NextResponse.json({ error: "Video not found" }, { status: 404 });
+    }
+
     const swapResult = await prisma.$executeRawUnsafe(
       `UPDATE videos
-       SET parsedArtist = parsedTrack,
-           parsedTrack = parsedArtist,
+       SET parsedArtist = ?,
+           parsedTrack = ?,
            updated_at = UTC_TIMESTAMP(3)
        WHERE videoId = ?`,
+      source.parsedTrack,
+      source.parsedArtist,
       videoId,
     );
 
