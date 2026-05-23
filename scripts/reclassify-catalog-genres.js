@@ -515,10 +515,10 @@ async function deleteVideoEverywhere(video) {
     await conn.query(`DELETE FROM admin_catalog_review_queue WHERE video_id = ?`, [video.videoId]);
     await conn.query(`DELETE FROM watch_history WHERE video_id = ?`, [video.videoId]);
     await conn.query(`DELETE FROM messages WHERE video_id = ?`, [video.videoId]);
-    await conn.query(`DELETE FROM related WHERE video_id = ? OR related_video = ?`, [video.videoId, video.videoId]);
+    await conn.query(`DELETE FROM related WHERE videoId = ? OR related = ?`, [video.videoId, video.videoId]);
 
     await conn.query(`DELETE FROM site_videos WHERE video_id = ?`, [video.id]);
-    await conn.query(`DELETE FROM favourites WHERE video_id = ?`, [video.id]);
+    await conn.query(`DELETE FROM favourites WHERE videoId = ?`, [video.videoId]);
     await conn.query(`DELETE FROM playlistitems WHERE video_id = ?`, [video.id]);
     await conn.query(`DELETE FROM videosbyartist WHERE video_id = ? OR id = ?`, [video.id, video.id]);
 
