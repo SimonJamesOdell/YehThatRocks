@@ -90,6 +90,7 @@ export function AdminDashboardPanel({
   const [videoImportSource, setVideoImportSource] = useState("");
   const [ingestingVideo, setIngestingVideo] = useState(false);
   const [moderatingVideoId, setModeratingVideoId] = useState<string | null>(null);
+  const [autoClassifyingVideoId, setAutoClassifyingVideoId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [refreshingAnalytics, setRefreshingAnalytics] = useState(false);
   const [resettingPerfWindow, setResettingPerfWindow] = useState(false);
@@ -996,6 +997,38 @@ export function AdminDashboardPanel({
     }
   }
 
+  async function autoClassifyPendingGenre(row: PendingVideoRow) {
+    const videoId = row.videoId;
+    setSaveMessage(null);
+    setAutoClassifyingVideoId(videoId);
+
+    try {
+      const payload = await postJson<{
+        ok: boolean;
+        suggestion?: {
+          proposedGenre: string | null;
+          confidence: number;
+          reason: string;
+        };
+      }>("/api/admin/videos/pending/auto-genre", { videoId });
+
+      const suggestedGenre = payload.suggestion?.proposedGenre ?? "";
+      setPendingVideoDrafts((current) => ({
+        ...current,
+        [row.id]: {
+          title: current[row.id]?.title ?? row.title,
+          genre: suggestedGenre,
+          parsedArtist: current[row.id]?.parsedArtist ?? row.parsedArtist,
+          parsedTrack: current[row.id]?.parsedTrack ?? row.parsedTrack,
+        },
+      }));
+    } catch {
+      // Auto-classify is intentionally silent in this panel.
+    } finally {
+      setAutoClassifyingVideoId(null);
+    }
+  }
+
   async function deleteMagazineArticle(slug: string) {
     try {
       await readJson(`/api/admin/magazine/${encodeURIComponent(slug)}`, {
@@ -1184,6 +1217,8 @@ export function AdminDashboardPanel({
             onSeekPendingPreview={seekPendingPreview}
             onModeratePendingVideo={moderatePendingVideo}
             moderatingVideoId={moderatingVideoId}
+            autoClassifyingVideoId={autoClassifyingVideoId}
+            onAutoClassifyPendingGenre={autoClassifyPendingGenre}
             onSetPendingPreviewSkipOffsets={setPendingPreviewSkipOffsets}
             recentlyApprovedVideos={recentlyApprovedVideos}
             revokingVideoId={revokingVideoId}

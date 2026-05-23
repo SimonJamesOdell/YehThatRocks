@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type MutableRefObject } from "react";
 
 import type { GenreReviewVideoRow, GenreReviewWorkerState } from "@/components/admin-dashboard-types";
+import { TOP_LEVEL_GENRE_BUCKETS, resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
 
 type AdminDashboardGenreReviewTabProps = {
   genreReviewRemaining: number;
@@ -29,6 +30,18 @@ export function AdminDashboardGenreReviewTab({
 }: AdminDashboardGenreReviewTabProps) {
   const [draftGenre, setDraftGenre] = useState("");
 
+  const genreOptions = [...TOP_LEVEL_GENRE_BUCKETS.map((bucket) => bucket.label), "Unclassified"];
+  const genreOptionDetails = new Map(
+    TOP_LEVEL_GENRE_BUCKETS.map((bucket) => {
+      const sampleTerms = bucket.terms.slice(0, 6);
+      return [bucket.label, sampleTerms];
+    }),
+  );
+  const genreSuggestions = Array.from(new Set([
+    ...TOP_LEVEL_GENRE_BUCKETS.map((bucket) => bucket.label),
+    ...TOP_LEVEL_GENRE_BUCKETS.flatMap((bucket) => bucket.terms),
+  ]));
+
   useEffect(() => {
     setDraftGenre(genreReviewCurrentVideo?.proposedGenre ?? "");
   }, [genreReviewCurrentVideo?.videoId, genreReviewCurrentVideo?.proposedGenre]);
@@ -45,6 +58,15 @@ export function AdminDashboardGenreReviewTab({
   const row = genreReviewCurrentVideo;
   const baseStartAtSec = row?.durationSec && row.durationSec > 0 ? Math.floor(row.durationSec / 2) : 0;
   const maxStartAtSec = row?.durationSec && row.durationSec > 0 ? Math.max(0, row.durationSec - 1) : null;
+  const normalizedTypedGenre = draftGenre.trim().toLowerCase();
+  const filteredGenreSuggestions = genreSuggestions.filter((suggestion) => {
+    if (!normalizedTypedGenre) {
+      return false;
+    }
+
+    return suggestion.toLowerCase().startsWith(normalizedTypedGenre);
+  });
+  const selectedGenreOption = resolveTopLevelGenreBucket(draftGenre) ?? "Unclassified";
 
   return (
     <section className="panel featurePanel">
@@ -80,12 +102,12 @@ export function AdminDashboardGenreReviewTab({
             style={{
               width: "100%",
               maxWidth: "none",
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              gap: 14,
+              gridTemplateColumns: "65% 35%",
+              gap: 12,
               alignItems: "start",
             }}
           >
-            <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ display: "grid", gap: 6 }}>
               <p className="authMessage" style={{ margin: 0 }}><strong>{row.videoId}</strong></p>
               <p className="authMessage" style={{ margin: 0 }}>{row.title}</p>
               {row.parsedArtist ? <p className="authMessage" style={{ margin: 0 }}>Artist: {row.parsedArtist}</p> : null}
@@ -116,15 +138,104 @@ export function AdminDashboardGenreReviewTab({
                 <p className="authMessage" style={{ margin: 0 }}>Worker confidence: {row.confidence.toFixed(3)}</p>
               ) : null}
               {row.reason ? <p className="authMessage" style={{ margin: 0 }}>Reason: {row.reason}</p> : null}
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>Genre</span>
-                <input
-                  value={draftGenre}
-                  onChange={(event) => setDraftGenre(event.target.value)}
-                  placeholder={row.proposedGenre ?? "Set genre"}
-                  disabled={genreReviewActionVideoId === row.videoId}
-                />
-              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "170px minmax(0, 1fr)", alignItems: "center", gap: 6 }}>
+                <label htmlFor={`genre-review-genre-${row.id}`}>Classified Genre</label>
+                <div>
+                  <input
+                    id={`genre-review-genre-${row.id}`}
+                    list={`genre-review-genre-suggestions-${row.id}`}
+                    style={{ padding: "5px 8px", width: "100%" }}
+                    value={draftGenre}
+                    onChange={(event) => setDraftGenre(event.target.value)}
+                    placeholder={row.proposedGenre ?? "Set genre"}
+                    disabled={genreReviewActionVideoId === row.videoId}
+                  />
+                  <datalist id={`genre-review-genre-suggestions-${row.id}`}>
+                    {filteredGenreSuggestions.map((suggestion) => (
+                      <option key={suggestion} value={suggestion} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+              <fieldset style={{ margin: 0, padding: 0, border: 0, display: "grid", gap: 4 }}>
+                <span style={{ fontWeight: 600 }}>Category</span>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    border: "1px solid rgba(255,255,255,0.16)",
+                    borderRadius: 8,
+                    overflow: "hidden",
+                  }}
+                >
+                  <tbody>
+                    {genreOptions.map((genreOption) => {
+                      const radioId = `genre-review-${row.id}-${genreOption.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+                      const isSelected = selectedGenreOption === genreOption;
+                      const optionDetails = genreOptionDetails.get(genreOption) ?? [];
+                      const rowCellPadding = genreOption === "Extreme Metal" ? "13px 8px" : "11px 8px";
+
+                      return (
+                        <tr key={genreOption} style={{ background: isSelected ? "rgba(255,255,255,0.12)" : "transparent" }}>
+                          <td style={{ width: 40, textAlign: "center", padding: rowCellPadding, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+                            <input
+                              id={radioId}
+                              type="radio"
+                              name={`genre-review-${row.id}`}
+                              value={genreOption}
+                              checked={isSelected}
+                              disabled={genreReviewActionVideoId === row.videoId}
+                              onChange={() => {
+                                setDraftGenre(genreOption === "Unclassified" ? "" : genreOption);
+                              }}
+                            />
+                          </td>
+                          <td style={{ padding: rowCellPadding, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+                            <label htmlFor={radioId} style={{ cursor: "pointer" }}>{genreOption}</label>
+                          </td>
+                          <td
+                            style={{
+                              padding: rowCellPadding,
+                              borderBottom: "1px solid rgba(255,255,255,0.12)",
+                              fontSize: "0.75rem",
+                              lineHeight: 1.3,
+                              color: "rgba(255,255,255,0.78)",
+                              overflow: "hidden",
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
+                            }}
+                            title={optionDetails.join(", ") || "No specific subgenres mapped."}
+                          >
+                            {optionDetails.length > 0 ? (
+                              optionDetails.map((detail, index) => (
+                                <span
+                                  key={`${genreOption}-${detail}`}
+                                  style={{ cursor: "pointer" }}
+                                  onMouseEnter={(event) => {
+                                    event.currentTarget.style.textDecoration = "underline";
+                                  }}
+                                  onMouseLeave={(event) => {
+                                    event.currentTarget.style.textDecoration = "none";
+                                  }}
+                                  onClick={() => {
+                                    setDraftGenre(detail);
+                                  }}
+                                >
+                                  {detail}
+                                  {index < optionDetails.length - 1 ? ", " : ""}
+                                </span>
+                              ))
+                            ) : (
+                              "No specific subgenres mapped."
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </fieldset>
             </div>
 
             <div style={{ display: "grid", gap: 10 }}>
@@ -132,6 +243,7 @@ export function AdminDashboardGenreReviewTab({
                 style={{
                   position: "relative",
                   width: "100%",
+                  maxWidth: 420,
                   aspectRatio: "16 / 9",
                   borderRadius: 10,
                   overflow: "hidden",

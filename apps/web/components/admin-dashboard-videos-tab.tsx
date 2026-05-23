@@ -15,6 +15,8 @@ type AdminDashboardVideosTabProps = {
   onSeekPendingPreview: (seconds: number) => void;
   onModeratePendingVideo: (row: PendingVideoRow, action: "approve" | "remove") => Promise<void>;
   moderatingVideoId: string | null;
+  autoClassifyingVideoId: string | null;
+  onAutoClassifyPendingGenre: (row: PendingVideoRow) => Promise<void>;
   onSetPendingPreviewSkipOffsets: Dispatch<SetStateAction<Record<number, number>>>;
   recentlyApprovedVideos: RecentlyApprovedVideoRow[];
   revokingVideoId: string | null;
@@ -33,6 +35,8 @@ export function AdminDashboardVideosTab({
   onSeekPendingPreview,
   onModeratePendingVideo,
   moderatingVideoId,
+  autoClassifyingVideoId,
+  onAutoClassifyPendingGenre,
   onSetPendingPreviewSkipOffsets,
   recentlyApprovedVideos,
   revokingVideoId,
@@ -189,7 +193,7 @@ export function AdminDashboardVideosTab({
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "170px minmax(0, 1fr)", alignItems: "center", gap: 6 }}>
                           <label htmlFor={`pending-genre-${row.id}`}>Classified Genre</label>
-                          <div>
+                          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 6, alignItems: "center" }}>
                             <input
                               id={`pending-genre-${row.id}`}
                               list={`pending-genre-suggestions-${row.id}`}
@@ -214,6 +218,15 @@ export function AdminDashboardVideosTab({
                                 <option key={suggestion} value={suggestion} />
                               ))}
                             </datalist>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void onAutoClassifyPendingGenre(row);
+                              }}
+                              disabled={autoClassifyingVideoId === row.videoId || moderatingVideoId === row.videoId}
+                            >
+                              {autoClassifyingVideoId === row.videoId ? "Auto…" : "Auto"}
+                            </button>
                           </div>
                         </div>
                         <fieldset style={{ margin: 0, padding: 0, border: 0, display: "grid", gap: 4 }}>

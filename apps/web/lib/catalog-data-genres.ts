@@ -38,6 +38,8 @@ import {
   collateGenreCardsToTopLevelBuckets,
   getBucketTermsForGenreSelection,
   getTopLevelGenreBucketBySlug,
+  resolveTopLevelGenreBucket,
+  TOP_LEVEL_GENRE_BUCKETS,
 } from "@/lib/genre-buckets";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -46,6 +48,8 @@ const GENRE_RESULTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const GENRE_CARDS_CACHE_TTL_MS = 30 * 1000;
 const CATEGORY_QUERY_TIMEOUT_MS = 2_500;
 const CATEGORY_ARTIST_THUMB_TABLE_CACHE_TTL_MS = 60_000;
+const CATEGORY_BUCKET_RUNTIME_CACHE_TABLE_CACHE_TTL_MS = 60_000;
+const CATEGORY_BUCKET_RUNTIME_CACHE_STALE_MS = 6 * 60 * 60 * 1000;
 const GENRE_CACHE_MAX_ENTRIES = Math.max(
   100,
   Math.min(2_000, Number(process.env.GENRE_CACHE_MAX_ENTRIES || "600")),
@@ -61,6 +65,7 @@ let genreCardsInFlight: Promise<GenreCard[]> | undefined;
 let genreListCache: { expiresAt: number; genres: string[] } | undefined;
 const genreArtistCountCache = new BoundedMap<string, { expiresAt: number; count: number }>(GENRE_CACHE_MAX_ENTRIES);
 let categoryArtistThumbTableAvailableCache: { checkedAt: number; available: boolean } | undefined;
+let categoryBucketRuntimeCacheTableAvailableCache: { checkedAt: number; available: boolean } | undefined;
 
 const GENRE_ARTIST_COUNT_CACHE_TTL_MS = 10 * 60 * 1000;
 
@@ -162,6 +167,208 @@ async function ensureCategoryArtistThumbnailTable() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
   categoryArtistThumbTableAvailableCache = { checkedAt: Date.now(), available: true };
+}
+
+async function hasCategoryBucketRuntimeCacheTable() {
+  const now = Date.now();
+  if (
+    categoryBucketRuntimeCacheTableAvailableCache?.available
+    && categoryBucketRuntimeCacheTableAvailableCache.checkedAt + CATEGORY_BUCKET_RUNTIME_CACHE_TABLE_CACHE_TTL_MS > now
+  ) {
+    return true;
+  }
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ tableName?: string }>>(
+      "SHOW TABLES LIKE 'category_bucket_runtime_cache'",
+    );
+    const available = rows.length > 0;
+    categoryBucketRuntimeCacheTableAvailableCache = available
+      ? { checkedAt: now, available: true }
+      : undefined;
+    return available;
+  } catch {
+    categoryBucketRuntimeCacheTableAvailableCache = undefined;
+    return false;
+  }
+}
+
+async function ensureCategoryBucketRuntimeCacheTable() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS category_bucket_runtime_cache (
+      bucket_label VARCHAR(255) NOT NULL,
+      preview_video_id VARCHAR(32) NULL,
+      artist_count INT NOT NULL DEFAULT 0,
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+      PRIMARY KEY (bucket_label),
+      KEY idx_category_bucket_runtime_cache_updated (updated_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  categoryBucketRuntimeCacheTableAvailableCache = { checkedAt: Date.now(), available: true };
+}
+
+async function upsertCategoryBucketRuntimeCache(cards: GenreCard[]) {
+  if (!hasDatabaseUrl() || cards.length === 0) {
+    return;
+  }
+
+  await ensureCategoryBucketRuntimeCacheTable();
+
+  for (const card of cards) {
+    const label = card.genre.trim();
+    if (!label) {
+      continue;
+    }
+
+    await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO category_bucket_runtime_cache (bucket_label, preview_video_id, artist_count)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          preview_video_id = VALUES(preview_video_id),
+          artist_count = VALUES(artist_count),
+          updated_at = CURRENT_TIMESTAMP(3)
+      `,
+      label,
+      card.previewVideoId,
+      Math.max(0, Number(card.artistCount ?? 0)),
+    );
+  }
+}
+
+async function bootstrapCategoryBucketRuntimeCacheFast(): Promise<GenreCard[] | null> {
+  if (!hasDatabaseUrl()) {
+    return null;
+  }
+
+  await ensureCategoryBucketRuntimeCacheTable();
+
+  const thumbnailRows = await prisma.$queryRawUnsafe<Array<{
+    genre: string;
+    previewVideoId: string | null;
+  }>>(
+    `
+      SELECT
+        v.genre AS genre,
+        SUBSTRING_INDEX(
+          GROUP_CONCAT(v.videoId ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC),
+          ',', 1
+        ) AS previewVideoId
+      FROM videos v
+      INNER JOIN site_videos sv ON sv.video_id = v.id AND sv.status = 'available'
+      WHERE v.genre IS NOT NULL
+        AND TRIM(v.genre) <> ''
+        AND COALESCE(v.approved, 0) = 1
+      GROUP BY v.genre
+      ORDER BY v.genre ASC
+      LIMIT 4000
+    `,
+  ).catch(() => []);
+
+  const collatedThumbs = collateGenreCardsToTopLevelBuckets(
+    thumbnailRows.map((row) => ({
+      genre: row.genre,
+      previewVideoId: row.previewVideoId?.trim() || null,
+      artistCount: 0,
+    })),
+  );
+  const thumbByBucket = new Map(collatedThumbs.map((card) => [card.genre.trim().toLowerCase(), card.previewVideoId]));
+
+  const artistCountRows = await prisma.$queryRawUnsafe<Array<{
+    genre: string;
+    total: bigint | number;
+  }>>(
+    `
+      SELECT
+        v.genre AS genre,
+        COUNT(DISTINCT LOWER(TRIM(COALESCE(NULLIF(v.parsedArtist, ''), NULLIF(v.channelTitle, ''))))) AS total
+      FROM videos v
+      INNER JOIN site_videos sv ON sv.video_id = v.id AND sv.status = 'available'
+      WHERE v.genre IS NOT NULL
+        AND TRIM(v.genre) <> ''
+        AND COALESCE(v.approved, 0) = 1
+        AND TRIM(COALESCE(NULLIF(v.parsedArtist, ''), NULLIF(v.channelTitle, ''))) <> ''
+      GROUP BY v.genre
+      ORDER BY total DESC
+      LIMIT 6000
+    `,
+  ).catch(() => []);
+
+  const countByBucket = new Map<string, number>();
+  for (const row of artistCountRows) {
+    const bucket = resolveTopLevelGenreBucket(row.genre) ?? "Rock & Alternative";
+    countByBucket.set(bucket, (countByBucket.get(bucket) ?? 0) + Math.max(0, Number(row.total ?? 0)));
+  }
+
+  const cards = TOP_LEVEL_GENRE_BUCKETS.map((bucket) => ({
+    genre: bucket.label,
+    previewVideoId: thumbByBucket.get(bucket.label.trim().toLowerCase()) ?? null,
+    artistCount: countByBucket.get(bucket.label) ?? 0,
+  }));
+
+  await upsertCategoryBucketRuntimeCache(cards).catch(() => undefined);
+  return cards;
+}
+
+export async function getRuntimeCachedTopLevelGenreCards(): Promise<GenreCard[] | null> {
+  if (!hasDatabaseUrl()) {
+    return null;
+  }
+
+  const tableAvailable = await hasCategoryBucketRuntimeCacheTable();
+  if (!tableAvailable) {
+    const bootstrapped = await bootstrapCategoryBucketRuntimeCacheFast();
+    if (bootstrapped && bootstrapped.length > 0) {
+      return bootstrapped;
+    }
+    return null;
+  }
+
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    bucketLabel: string;
+    previewVideoId: string | null;
+    artistCount: number | bigint;
+    updatedAt: Date | null;
+  }>>(
+    `
+      SELECT
+        bucket_label AS bucketLabel,
+        preview_video_id AS previewVideoId,
+        artist_count AS artistCount,
+        updated_at AS updatedAt
+      FROM category_bucket_runtime_cache
+      ORDER BY bucket_label ASC
+    `,
+  );
+
+  if (rows.length === 0) {
+    return bootstrapCategoryBucketRuntimeCacheFast();
+  }
+
+  const newestUpdatedAtMs = rows.reduce((maxMs, row) => {
+    const valueMs = row.updatedAt ? row.updatedAt.getTime() : 0;
+    return Math.max(maxMs, Number.isFinite(valueMs) ? valueMs : 0);
+  }, 0);
+
+  if (newestUpdatedAtMs <= 0 || Date.now() - newestUpdatedAtMs > CATEGORY_BUCKET_RUNTIME_CACHE_STALE_MS) {
+    const refreshed = await bootstrapCategoryBucketRuntimeCacheFast();
+    if (refreshed && refreshed.length > 0) {
+      return refreshed;
+    }
+  }
+
+  const byLabel = new Map(rows.map((row) => [row.bucketLabel.trim().toLowerCase(), row]));
+
+  return TOP_LEVEL_GENRE_BUCKETS.map((bucket) => {
+    const cached = byLabel.get(bucket.label.trim().toLowerCase());
+    const previewVideoId = cached?.previewVideoId?.trim() || null;
+    const artistCount = Math.max(0, Number(cached?.artistCount ?? 0));
+    return {
+      genre: bucket.label,
+      previewVideoId,
+      artistCount,
+    } as GenreCard;
+  });
 }
 
 export async function setCategoryArtistThumbnailPin(genre: string, artistName: string, thumbnailVideoId: string) {
@@ -411,6 +618,12 @@ export async function clearGenreCardThumbnailForVideo(videoId: string) {
       SET thumbnail_video_id = NULL
       WHERE CONVERT(thumbnail_video_id USING utf8mb4) = CONVERT(${normalizedVideoId} USING utf8mb4)
     `;
+    await prisma.$executeRaw`
+      UPDATE category_bucket_runtime_cache
+      SET preview_video_id = NULL,
+          updated_at = UTC_TIMESTAMP(3)
+      WHERE CONVERT(preview_video_id USING utf8mb4) = CONVERT(${normalizedVideoId} USING utf8mb4)
+    `.catch(() => undefined);
     if (Number(cleared) > 0) {
       resetGenreCardCaches();
     }
@@ -456,6 +669,18 @@ export async function getGenreCards(): Promise<GenreCard[]> {
   requireDatabaseUrl("getGenreCards");
 
   const now = Date.now();
+  if (!genreCardsCache || genreCardsCache.expiresAt <= now) {
+    try {
+      const runtimeCached = await getRuntimeCachedTopLevelGenreCards();
+      if (runtimeCached && runtimeCached.some((card) => card.previewVideoId || Number(card.artistCount ?? 0) > 0)) {
+        genreCardsCache = { expiresAt: now + GENRE_CARDS_CACHE_TTL_MS, cards: runtimeCached };
+        return runtimeCached;
+      }
+    } catch {
+      // fall through to the richer rebuild path.
+    }
+  }
+
   if (
     genreCardsCache &&
     genreCardsCache.expiresAt > now &&
@@ -628,6 +853,7 @@ export async function getGenreCards(): Promise<GenreCard[]> {
 
       cards = collateGenreCardsToTopLevelBuckets(cards);
       cards = await attachArtistCountsToGenreCards(cards);
+      await upsertCategoryBucketRuntimeCache(cards).catch(() => undefined);
 
       genreCardsCache = { expiresAt: now + GENRE_CARDS_CACHE_TTL_MS, cards };
       genreListCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, genres: cards.map((c: GenreCard) => c.genre) };

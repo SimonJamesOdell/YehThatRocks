@@ -56,6 +56,7 @@ import { clearGenreCardThumbnailForVideo } from "@/lib/catalog-data-genres";
 import { getMusicBrainzArtistData, type MusicBrainzArtistResult } from "@/lib/musicbrainz";
 import { getDatabaseNormalizedVideoId } from "@/lib/catalog-data-internal-helpers";
 import { PLAYBACK_MIN_CONFIDENCE } from "@/lib/playback-config";
+import { resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -410,7 +411,7 @@ async function inferPersistedVideoGenre(artistName: string | null, mbData: Music
 }
 
 type GenreClassificationDecision = {
-  action: "approve" | "remove" | "queue";
+  action: "remove" | "queue";
   proposedGenre: string | null;
   confidence: number;
   reason: string;
@@ -446,11 +447,11 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
     };
   }
 
-  const signals: Array<{ genre: string; confidence: number }> = [];
+  const signals: Array<{ source: "video-existing" | "artist-stats" | "musicbrainz"; genre: string; confidence: number }> = [];
 
   const existingGenre = normalizeGenreForStorage(row.genre);
-  if (existingGenre) {
-    signals.push({ genre: existingGenre, confidence: 0.55 });
+  if (existingGenre && existingGenre.toLowerCase() !== "rock / metal" && existingGenre.toLowerCase() !== "rock/metal") {
+    signals.push({ source: "video-existing", genre: existingGenre, confidence: 0.55 });
   }
 
   const normalizedArtist = normalizeArtistKey(row.parsedArtist ?? "");
@@ -470,7 +471,7 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
 
       const projectedGenre = normalizeGenreForStorage(artistStatRows[0]?.genre ?? null);
       if (projectedGenre) {
-        signals.push({ genre: projectedGenre, confidence: 0.86 });
+        signals.push({ source: "artist-stats", genre: projectedGenre, confidence: 0.86 });
       }
     } catch {
       // artist_stats is optional in some schemas.
@@ -481,12 +482,12 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
       const tag = mbData.tags[0];
       const mbGenre = normalizeGenreForStorage(tag);
       if (mbGenre) {
-        signals.push({ genre: mbGenre, confidence: mbData.isRockOrMetal ? 0.9 : 0.75 });
+        signals.push({ source: "musicbrainz", genre: mbGenre, confidence: mbData.isRockOrMetal ? 0.9 : 0.75 });
       }
     } else if (mbData?.isRockOrMetal) {
-      signals.push({ genre: "Rock / Metal", confidence: 0.9 });
+      signals.push({ source: "musicbrainz", genre: "Rock / Metal", confidence: 0.9 });
     } else if (mbData?.isDefinitelyNotRockOrMetal) {
-      signals.push({ genre: "Non-Rock", confidence: 0.75 });
+      signals.push({ source: "musicbrainz", genre: "Non-Rock", confidence: 0.75 });
     }
   }
 
@@ -496,6 +497,16 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
       proposedGenre: null,
       confidence: 0,
       reason: "no-sources",
+    };
+  }
+
+  const hasExternalSignal = signals.some((signal) => signal.source !== "video-existing");
+  if (!hasExternalSignal) {
+    return {
+      action: "queue",
+      proposedGenre: null,
+      confidence: 0,
+      reason: "genre-manual-review:insufficient-external-sources",
     };
   }
 
@@ -533,7 +544,8 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
   }
   confidence = Math.max(0, Math.min(1, confidence));
 
-  const isNonRockTop = NON_ROCK_GENRE_PATTERN.test(top.genre);
+  const isRockOrMetalBucket = Boolean(resolveTopLevelGenreBucket(top.genre));
+  const isNonRockTop = NON_ROCK_GENRE_PATTERN.test(top.genre) || !isRockOrMetalBucket;
   if (confidence >= 0.9 && nonRockWeight >= 0.9 * totalWeight && totalWeight >= 1.5 && isNonRockTop) {
     return {
       action: "remove",
@@ -543,20 +555,17 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
     };
   }
 
-  if (confidence >= 0.9) {
-    return {
-      action: "approve",
-      proposedGenre: top.genre,
-      confidence,
-      reason: `genre-auto-approve:${top.genre}`,
-    };
-  }
+  const bucketedGenre = resolveTopLevelGenreBucket(top.genre);
+  const proposedGenre = confidence >= 0.85 && bucketedGenre ? bucketedGenre : null;
+  const reviewReason = confidence >= 0.85 && proposedGenre
+    ? `genre-manual-review:rock-metal:${proposedGenre}:requires-human-sound-check`
+    : `genre-manual-review:uncertain:${top.genre}:requires-human-sound-check`;
 
   return {
     action: "queue",
-    proposedGenre: top.genre,
+    proposedGenre,
     confidence,
-    reason: `genre-manual-review:${top.genre}`,
+    reason: reviewReason,
   };
 }
 
@@ -1652,13 +1661,7 @@ export async function importVideoFromDirectSource(source: string, options?: { di
 
     const fallbackRow = fallbackRows[0];
 
-  const eligibleForGenrePolicy =
-    decision.allowed ||
-    decision.reason === "missing-metadata" ||
-    decision.reason === "unknown-video-type" ||
-    decision.reason === "low-confidence";
-
-  if (hasDatabaseUrl() && !options?.forceApprove && eligibleForGenrePolicy) {
+  if (hasDatabaseUrl() && !options?.forceApprove) {
     const genreDecision = await classifyPersistedVideoGenre(normalizedVideoId);
 
     if (genreDecision.action === "remove") {
@@ -1674,18 +1677,17 @@ export async function importVideoFromDirectSource(source: string, options?: { di
       };
     }
 
-    if (genreDecision.action === "approve") {
+    if (genreDecision.proposedGenre) {
       await prisma.$executeRaw`
         UPDATE videos
-        SET approved = 1,
-            approved_at = UTC_TIMESTAMP(3),
-            genre = COALESCE(${genreDecision.proposedGenre}, genre),
+        SET genre = ${genreDecision.proposedGenre},
             updated_at = UTC_TIMESTAMP(3)
         WHERE videoId = ${normalizedVideoId}
       `;
       playbackDecisionCache.delete(normalizedVideoId);
-      decision = { allowed: true, reason: "ok" };
-    } else if (!decision.allowed) {
+    }
+
+    if (!decision.allowed) {
       decision = { allowed: true, reason: "ok" };
     }
   }
