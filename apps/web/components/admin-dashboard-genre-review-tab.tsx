@@ -10,6 +10,7 @@ type AdminDashboardGenreReviewTabProps = {
   genreReviewPreviewIframeRef: MutableRefObject<HTMLIFrameElement | null>;
   genreReviewPreviewCurrentTimeRef: MutableRefObject<number | null>;
   onSeekGenreReviewPreview: (seconds: number) => void;
+  onRefetchGenreReviewMetadata: () => Promise<void>;
   onReverseGenreReviewArtistTrack: () => Promise<void>;
   onModerateGenreReviewVideo: (action: "approve" | "remove", genre: string | null) => Promise<void>;
 };
@@ -22,6 +23,7 @@ export function AdminDashboardGenreReviewTab({
   genreReviewPreviewIframeRef,
   genreReviewPreviewCurrentTimeRef,
   onSeekGenreReviewPreview,
+  onRefetchGenreReviewMetadata,
   onReverseGenreReviewArtistTrack,
   onModerateGenreReviewVideo,
 }: AdminDashboardGenreReviewTabProps) {
@@ -88,6 +90,27 @@ export function AdminDashboardGenreReviewTab({
               <p className="authMessage" style={{ margin: 0 }}>{row.title}</p>
               {row.parsedArtist ? <p className="authMessage" style={{ margin: 0 }}>Artist: {row.parsedArtist}</p> : null}
               {row.parsedTrack ? <p className="authMessage" style={{ margin: 0 }}>Track: {row.parsedTrack}</p> : null}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onRefetchGenreReviewMetadata();
+                  }}
+                  disabled={genreReviewActionVideoId === row.videoId}
+                >
+                  Refetch Metadata
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onReverseGenreReviewArtistTrack();
+                  }}
+                  disabled={genreReviewActionVideoId === row.videoId}
+                >
+                  Reverse Artist/Track
+                </button>
+              </div>
               {row.channelTitle ? <p className="authMessage" style={{ margin: 0 }}>Channel: {row.channelTitle}</p> : null}
               {typeof row.confidence === "number" ? (
                 <p className="authMessage" style={{ margin: 0 }}>Worker confidence: {row.confidence.toFixed(3)}</p>
@@ -153,16 +176,6 @@ export function AdminDashboardGenreReviewTab({
                   disabled={genreReviewActionVideoId === row.videoId}
                 >
                   Skip +20s
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    void onReverseGenreReviewArtistTrack();
-                  }}
-                  disabled={genreReviewActionVideoId === row.videoId}
-                >
-                  Reverse Artist/Track
                 </button>
 
                 <button

@@ -601,6 +601,43 @@ export function AdminDashboardPanel({
     }
   }
 
+  async function refetchGenreReviewMetadata() {
+    if (!genreReviewCurrentVideo) {
+      return;
+    }
+
+    const { id, videoId } = genreReviewCurrentVideo;
+    setGenreReviewActionVideoId(videoId);
+
+    try {
+      const payload = await postJson<{ ok: boolean; video?: { id: number; videoId: string } }>("/api/admin/videos/refetch-data", {
+        id,
+        videoId,
+      });
+
+      setSaveMessage(`Refetched metadata for ${videoId} from YouTube.`);
+
+      if (payload.video?.videoId === videoId) {
+        setGenreReviewCurrentVideo((previous) => {
+          if (!previous || previous.videoId !== videoId) {
+            return previous;
+          }
+
+          return {
+            ...previous,
+            id: payload.video?.id ?? previous.id,
+          };
+        });
+      }
+
+      await loadGenreReviewQueue();
+    } catch (refetchError) {
+      setSaveMessage(refetchError instanceof Error ? refetchError.message : "Metadata refresh failed.");
+    } finally {
+      setGenreReviewActionVideoId(null);
+    }
+  }
+
   async function revokeApprovedVideo(videoId: string) {
     setRevokingVideoId(videoId);
     try {
@@ -1179,6 +1216,7 @@ export function AdminDashboardPanel({
           genreReviewPreviewIframeRef={genreReviewPreviewIframeRef}
           genreReviewPreviewCurrentTimeRef={genreReviewPreviewCurrentTimeRef}
           onSeekGenreReviewPreview={seekGenreReviewPreview}
+          onRefetchGenreReviewMetadata={refetchGenreReviewMetadata}
           onReverseGenreReviewArtistTrack={reverseGenreReviewArtistTrack}
           onModerateGenreReviewVideo={moderateGenreReviewVideo}
         />
