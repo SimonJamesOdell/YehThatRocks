@@ -243,6 +243,41 @@ async function bootstrapCategoryBucketRuntimeCacheFast(): Promise<GenreCard[] | 
 
   await ensureCategoryBucketRuntimeCacheTable();
 
+  const pinnedPreviewByBucket = new Map<string, string>();
+  const hasPinnedCategoryArtistThumbs = await hasCategoryArtistThumbnailTable();
+  if (hasPinnedCategoryArtistThumbs) {
+    const pinnedRows = await prisma.$queryRawUnsafe<Array<{
+      genreNorm: string | null;
+      thumbnailVideoId: string | null;
+    }>>(
+      `
+        SELECT
+          genre_norm AS genreNorm,
+          thumbnail_video_id AS thumbnailVideoId
+        FROM category_artist_thumbnails
+        WHERE thumbnail_video_id IS NOT NULL
+          AND TRIM(thumbnail_video_id) <> ''
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 5000
+      `,
+    ).catch(() => []);
+
+    for (const row of pinnedRows) {
+      const bucketLabel = resolveTopLevelGenreBucket(row.genreNorm ?? "") ?? "Rock & Alternative";
+      const bucketKey = bucketLabel.trim().toLowerCase();
+      if (pinnedPreviewByBucket.has(bucketKey)) {
+        continue;
+      }
+
+      const normalizedPinnedVideoId = normalizeYouTubeVideoId(row.thumbnailVideoId);
+      if (!normalizedPinnedVideoId) {
+        continue;
+      }
+
+      pinnedPreviewByBucket.set(bucketKey, normalizedPinnedVideoId);
+    }
+  }
+
   const thumbnailRows = await prisma.$queryRawUnsafe<Array<{
     genre: string;
     previewVideoId: string | null;
@@ -302,7 +337,9 @@ async function bootstrapCategoryBucketRuntimeCacheFast(): Promise<GenreCard[] | 
 
   const cards = TOP_LEVEL_GENRE_BUCKETS.map((bucket) => ({
     genre: bucket.label,
-    previewVideoId: thumbByBucket.get(bucket.label.trim().toLowerCase()) ?? null,
+    previewVideoId: pinnedPreviewByBucket.get(bucket.label.trim().toLowerCase())
+      ?? thumbByBucket.get(bucket.label.trim().toLowerCase())
+      ?? null,
     artistCount: countByBucket.get(bucket.label) ?? 0,
   }));
 
