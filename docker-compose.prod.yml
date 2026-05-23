@@ -45,5 +45,24 @@ services:
       SMTP_FROM: ${SMTP_FROM:-noreply@example.com}
       NODE_ENV: production
 
+  classifier:
+    image: ${WEB_IMAGE:-ghcr.io/simonjamesodell/yehthatrocks-web:latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["node", "scripts/reclassify-catalog-genres.js"]
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-yeh}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE:-yeh}
+      NODE_ENV: production
+      GENRE_RECLASSIFY_THRESHOLD: ${GENRE_RECLASSIFY_THRESHOLD:-0.9}
+      GENRE_RECLASSIFY_BATCH_SIZE: ${GENRE_RECLASSIFY_BATCH_SIZE:-150}
+      GENRE_RECLASSIFY_STATUS_EVERY: ${GENRE_RECLASSIFY_STATUS_EVERY:-25}
+      GENRE_RECLASSIFY_IDLE_SLEEP_MS: ${GENRE_RECLASSIFY_IDLE_SLEEP_MS:-15000}
+      GENRE_RECLASSIFY_MB_DELAY_MS: ${GENRE_RECLASSIFY_MB_DELAY_MS:-1200}
+      GENRE_RECLASSIFY_USE_GROQ: ${GENRE_RECLASSIFY_USE_GROQ:-1}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
+
 volumes:
   db-data:

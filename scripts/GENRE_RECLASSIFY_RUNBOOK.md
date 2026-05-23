@@ -28,6 +28,29 @@ Watch progress in another terminal:
 npm run classify:genres:watch
 ```
 
+## Production (Docker Compose)
+
+The production compose stack now includes a dedicated `classifier` service that
+auto-restarts and resumes from `admin_genre_reclassify_state.last_video_id`.
+
+Start or refresh services after deploy:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d web classifier
+```
+
+Check classifier logs:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml logs -f --tail=100 classifier
+```
+
+Verify process-level status:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml ps
+```
+
 ## Environment Variables
 
 - `GENRE_RECLASSIFY_THRESHOLD` (default `0.9`)
