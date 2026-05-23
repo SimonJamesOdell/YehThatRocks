@@ -77,7 +77,8 @@ export type PlaybackDecision = {
     | "missing-metadata"
     | "low-confidence"
     | "unknown-video-type"
-    | "unavailable";
+    | "unavailable"
+    | "genre-auto-remove";
   message?: string;
 };
 

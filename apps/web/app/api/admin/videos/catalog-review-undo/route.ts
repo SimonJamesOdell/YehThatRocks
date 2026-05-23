@@ -78,6 +78,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (!importResult.decision.allowed) {
+    return NextResponse.json(
+      {
+        error: importResult.decision.message ?? "Rejected during ingestion/classification.",
+        decision: importResult.decision,
+      },
+      { status: 409 },
+    );
+  }
+
   const queueInsert = await prisma.$executeRawUnsafe(
     `INSERT IGNORE INTO admin_catalog_review_queue (video_id, enqueued_at) VALUES (?, NOW())`,
     videoId,

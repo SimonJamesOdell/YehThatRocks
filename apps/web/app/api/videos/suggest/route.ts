@@ -93,6 +93,8 @@ function getRejectionReason(decision: { reason: string; message?: string }) {
       return "Rejected: video could not be found.";
     case "invalid-video-id":
       return "Rejected: invalid YouTube video ID or URL.";
+    case "genre-auto-remove":
+      return "Rejected: confidently classified as non-rock/metal.";
     default:
       return "Rejected during ingestion/classification.";
   }
@@ -379,7 +381,7 @@ function startPlaylistBatchIngestion(args: {
     for (const videoId of videoIds) {
       try {
         const result = await importVideoFromDirectSource(videoId, { discoverRelated: false });
-        if (result.videoId) {
+        if (result.videoId && result.decision.allowed) {
           await applyMetadataHints(result.videoId, { artist, track }, false);
         }
       } catch {
@@ -463,6 +465,18 @@ export async function POST(request: NextRequest) {
     const result = await importVideoFromDirectSource(source.videoId, { discoverRelated: discoverRelatedForSuggestion });
     if (!result.videoId) {
       return NextResponse.json({ ok: false, error: "Invalid YouTube URL or video id." }, { status: 400 });
+    }
+
+    if (!result.decision.allowed) {
+      return NextResponse.json({
+        ok: false,
+        kind: "video",
+        videoId: result.videoId,
+        submissionStatus: "rejected",
+        rejectionCode: result.decision.reason,
+        rejectionReason: getRejectionReason(result.decision),
+        decision: result.decision,
+      });
     }
 
     await applyMetadataHints(result.videoId, {

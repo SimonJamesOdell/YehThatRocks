@@ -95,6 +95,7 @@ const GROQ_RETRY_COOLDOWN_MS = Math.max(300_000, Number(process.env.GROQ_RETRY_C
 const PLAYBACK_DECISION_CACHE_TTL_MS = 15_000;
 const ALLOWED_VIDEO_TYPES = new Set(["official", "lyric", "live", "cover", "remix", "fan"]);
 const NON_MUSIC_SIGNAL_PATTERN = /\b(instagram|tiktok|facebook|whatsapp|snapchat|podcast|interview|prank|challenge|reaction|vlog|tutorial|gameplay|livestream|stream highlights?|shorts?|sermon|khutbah|tafsir|quran|qur'an|recitation|dua|nasheed|bhajan|kirtan|pravachan|speech|lecture|talk show|news bulletin)\b/i;
+const NON_ROCK_GENRE_PATTERN = /\b(pop|hip\s?hop|rap|r&b|country|edm|techno|house|reggaeton|k\s?pop|j\s?pop|latin pop|afrobeats|trap|dancehall|salsa|bachata|classical|jazz|blues)\b/i;
 
 const REJECTED_VIDEO_CACHE_TTL_MS = 5 * 60_000;
 const BACKFILL_CONCURRENCY = Math.max(1, Math.min(5, Number(process.env.RELATED_BACKFILL_CONCURRENCY || "2")));
@@ -406,6 +407,157 @@ async function inferPersistedVideoGenre(artistName: string | null, mbData: Music
   }
 
   return pickGenreFromMusicBrainz(mbData);
+}
+
+type GenreClassificationDecision = {
+  action: "approve" | "remove" | "queue";
+  proposedGenre: string | null;
+  confidence: number;
+  reason: string;
+};
+
+async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassificationDecision> {
+  if (!hasDatabaseUrl()) {
+    return {
+      action: "queue",
+      proposedGenre: null,
+      confidence: 0,
+      reason: "no-database",
+    };
+  }
+
+  const rows = await prisma.$queryRaw<Array<{
+    genre: string | null;
+    parsedArtist: string | null;
+  }>>`
+    SELECT genre, parsedArtist
+    FROM videos
+    WHERE videoId = ${videoId}
+    LIMIT 1
+  `;
+
+  const row = rows[0];
+  if (!row) {
+    return {
+      action: "queue",
+      proposedGenre: null,
+      confidence: 0,
+      reason: "no-video",
+    };
+  }
+
+  const signals: Array<{ genre: string; confidence: number }> = [];
+
+  const existingGenre = normalizeGenreForStorage(row.genre);
+  if (existingGenre) {
+    signals.push({ genre: existingGenre, confidence: 0.55 });
+  }
+
+  const normalizedArtist = normalizeArtistKey(row.parsedArtist ?? "");
+  if (normalizedArtist) {
+    try {
+      const artistStatRows = await prisma.$queryRawUnsafe<Array<{ genre: string | null }>>(
+        `
+          SELECT genre
+          FROM artist_stats
+          WHERE normalized_artist = ?
+            AND genre IS NOT NULL
+            AND TRIM(genre) <> ''
+          LIMIT 1
+        `,
+        normalizedArtist,
+      );
+
+      const projectedGenre = normalizeGenreForStorage(artistStatRows[0]?.genre ?? null);
+      if (projectedGenre) {
+        signals.push({ genre: projectedGenre, confidence: 0.86 });
+      }
+    } catch {
+      // artist_stats is optional in some schemas.
+    }
+
+    const mbData = await getMusicBrainzArtistData(row.parsedArtist ?? "");
+    if (mbData?.tags.length) {
+      const tag = mbData.tags[0];
+      const mbGenre = normalizeGenreForStorage(tag);
+      if (mbGenre) {
+        signals.push({ genre: mbGenre, confidence: mbData.isRockOrMetal ? 0.9 : 0.75 });
+      }
+    } else if (mbData?.isRockOrMetal) {
+      signals.push({ genre: "Rock / Metal", confidence: 0.9 });
+    } else if (mbData?.isDefinitelyNotRockOrMetal) {
+      signals.push({ genre: "Non-Rock", confidence: 0.75 });
+    }
+  }
+
+  if (signals.length === 0) {
+    return {
+      action: "queue",
+      proposedGenre: null,
+      confidence: 0,
+      reason: "no-sources",
+    };
+  }
+
+  const grouped = new Map<string, { genre: string; weight: number; support: number }>();
+  let totalWeight = 0;
+  let nonRockWeight = 0;
+
+  for (const signal of signals) {
+    const key = signal.genre.toLowerCase();
+    const current = grouped.get(key) ?? { genre: signal.genre, weight: 0, support: 0 };
+    current.weight += signal.confidence;
+    current.support += 1;
+    grouped.set(key, current);
+    totalWeight += signal.confidence;
+    if (NON_ROCK_GENRE_PATTERN.test(signal.genre)) {
+      nonRockWeight += signal.confidence;
+    }
+  }
+
+  const ranked = Array.from(grouped.values()).sort((left, right) => right.weight - left.weight || right.support - left.support);
+  const top = ranked[0];
+
+  if (!top || totalWeight <= 0) {
+    return {
+      action: "queue",
+      proposedGenre: null,
+      confidence: 0,
+      reason: "no-top-genre",
+    };
+  }
+
+  let confidence = top.weight / totalWeight;
+  if (top.support >= 2) {
+    confidence += 0.08;
+  }
+  confidence = Math.max(0, Math.min(1, confidence));
+
+  const isNonRockTop = NON_ROCK_GENRE_PATTERN.test(top.genre);
+  if (confidence >= 0.9 && nonRockWeight >= 0.9 * totalWeight && totalWeight >= 1.5 && isNonRockTop) {
+    return {
+      action: "remove",
+      proposedGenre: top.genre,
+      confidence,
+      reason: `genre-auto-remove:${top.genre}`,
+    };
+  }
+
+  if (confidence >= 0.9) {
+    return {
+      action: "approve",
+      proposedGenre: top.genre,
+      confidence,
+      reason: `genre-auto-approve:${top.genre}`,
+    };
+  }
+
+  return {
+    action: "queue",
+    proposedGenre: top.genre,
+    confidence,
+    reason: `genre-manual-review:${top.genre}`,
+  };
 }
 
 export function evaluatePlaybackMetadataEligibility(row: PlaybackDecisionRow): PlaybackDecision {
@@ -1499,6 +1651,44 @@ export async function importVideoFromDirectSource(source: string, options?: { di
     `;
 
     const fallbackRow = fallbackRows[0];
+
+  const eligibleForGenrePolicy =
+    decision.allowed ||
+    decision.reason === "missing-metadata" ||
+    decision.reason === "unknown-video-type" ||
+    decision.reason === "low-confidence";
+
+  if (hasDatabaseUrl() && !options?.forceApprove && eligibleForGenrePolicy) {
+    const genreDecision = await classifyPersistedVideoGenre(normalizedVideoId);
+
+    if (genreDecision.action === "remove") {
+      await pruneVideoAndAssociationsByVideoId(normalizedVideoId, "genre-auto-remove");
+      playbackDecisionCache.delete(normalizedVideoId);
+      return {
+        videoId: normalizedVideoId,
+        decision: {
+          allowed: false,
+          reason: "genre-auto-remove" as const,
+          message: "Rejected: confidently classified as non-rock/metal.",
+        } satisfies PlaybackDecision,
+      };
+    }
+
+    if (genreDecision.action === "approve") {
+      await prisma.$executeRaw`
+        UPDATE videos
+        SET approved = 1,
+            approved_at = UTC_TIMESTAMP(3),
+            genre = COALESCE(${genreDecision.proposedGenre}, genre),
+            updated_at = UTC_TIMESTAMP(3)
+        WHERE videoId = ${normalizedVideoId}
+      `;
+      playbackDecisionCache.delete(normalizedVideoId);
+      decision = { allowed: true, reason: "ok" };
+    } else if (!decision.allowed) {
+      decision = { allowed: true, reason: "ok" };
+    }
+  }
     const metadataAbsent = fallbackRow && !fallbackRow.parsedArtist?.trim();
     const decisionNeedsHelp =
       !decision.allowed &&
@@ -1691,11 +1881,12 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
   await clearGenreCardThumbnailForVideo(normalizedVideoId);
   void markAvailableVideoMaxIdDirty().catch(() => undefined);
 
-  if (reason === "admin-hard-delete") {
+  if (reason === "admin-hard-delete" || reason.startsWith("genre-auto-remove")) {
     try {
+      const rejectedReason = reason === "admin-hard-delete" ? "admin-deleted" : reason;
       await prisma.$executeRaw`
         INSERT INTO rejected_videos (video_id, reason, rejected_at)
-        VALUES (${normalizedVideoId}, ${"admin-deleted"}, ${new Date()})
+        VALUES (${normalizedVideoId}, ${rejectedReason}, ${new Date()})
         ON DUPLICATE KEY UPDATE reason = VALUES(reason), rejected_at = VALUES(rejected_at)
       `;
       rejectedVideoCache.set(normalizedVideoId, { expiresAt: Date.now() + REJECTED_VIDEO_CACHE_TTL_MS, rejected: true });

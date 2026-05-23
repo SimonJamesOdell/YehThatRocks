@@ -162,7 +162,7 @@ async function ingestMissingVideoIds(videoIds: string[]) {
 
       try {
         const result = await importVideoFromDirectSource(videoId, { discoverRelated: false });
-        if (result.videoId) {
+        if (result.videoId && result.decision.allowed) {
           importedVideoIds.push(result.videoId);
         } else {
           failedVideoIds.push(videoId);

@@ -31,6 +31,8 @@ function getRejectionReason(decision: { reason: string; message?: string }) {
       return "Rejected: video could not be found.";
     case "invalid-video-id":
       return "Rejected: invalid YouTube video ID or URL.";
+    case "genre-auto-remove":
+      return "Rejected: confidently classified as non-rock/metal.";
     default:
       return "Rejected during ingestion/classification.";
   }
