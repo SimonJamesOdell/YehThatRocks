@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getCategoryArtistsByGenre, getGenreBySlug } from "@/lib/catalog-data";
+import { getCategoryArtistCountByGenre, getCategoryArtistsByGenre, getGenreBySlug } from "@/lib/catalog-data";
 import { OPERATIONAL_RETRY_LATER_MESSAGE } from "@/lib/operational-error-copy";
 
 type CategoryArtistsRouteContext = {
@@ -20,13 +20,17 @@ export async function GET(request: NextRequest, context: CategoryArtistsRouteCon
       return NextResponse.json({ error: "Category not found" }, { status: 404 });
     }
 
-    const artistsWithProbe = await getCategoryArtistsByGenre(genre, { offset, limit: limit + 1 });
+    const [artistsWithProbe, totalArtists] = await Promise.all([
+      getCategoryArtistsByGenre(genre, { offset, limit: limit + 1 }),
+      offset === 0 ? getCategoryArtistCountByGenre(genre) : Promise.resolve(null),
+    ]);
     const hasMore = artistsWithProbe.length > limit;
     const artists = artistsWithProbe.slice(0, limit);
 
     return NextResponse.json({
       genre,
       artists,
+      totalArtists,
       hasMore,
       nextOffset: offset + artists.length,
     });

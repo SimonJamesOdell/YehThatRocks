@@ -26,6 +26,7 @@ export function CategoryArtistsInfinite({
 }: CategoryArtistsInfiniteProps) {
   const [artistsState, setArtistsState] = useState<CategoryArtistCard[]>(allArtists);
   const [isLoadingArtists, setIsLoadingArtists] = useState(allArtists.length === 0);
+  const [totalArtists, setTotalArtists] = useState<number>(allArtists.length);
   const [filterValue, setFilterValue] = useState("");
   const [pinningArtistSlug, setPinningArtistSlug] = useState<string | null>(null);
   const [, startArtistsRenderTransition] = useTransition();
@@ -33,6 +34,7 @@ export function CategoryArtistsInfinite({
   useEffect(() => {
     setArtistsState(allArtists);
     setIsLoadingArtists(allArtists.length === 0);
+    setTotalArtists(allArtists.length);
   }, [allArtists]);
 
   useEffect(() => {
@@ -46,11 +48,46 @@ export function CategoryArtistsInfinite({
       setIsLoadingArtists(true);
       setArtistsState([]);
       try {
+        const firstPageSize = 30;
+        const backgroundPageSize = 192;
         let offset = 0;
+        const firstResponse = await fetch(`/api/categories/${encodeURIComponent(slug)}/artists?limit=${firstPageSize}&offset=0`, {
+          cache: "no-store",
+        });
+
+        if (!firstResponse.ok) {
+          return;
+        }
+
+        const firstPayload = (await firstResponse.json()) as {
+          artists?: CategoryArtistCard[];
+          totalArtists?: number | null;
+          hasMore?: boolean;
+          nextOffset?: number;
+        };
+
+        const firstArtists = Array.isArray(firstPayload.artists) ? firstPayload.artists : [];
+        if (!cancelled) {
+          setArtistsState(firstArtists);
+          if (typeof firstPayload.totalArtists === "number" && Number.isFinite(firstPayload.totalArtists)) {
+            setTotalArtists(Math.max(firstArtists.length, firstPayload.totalArtists));
+          } else {
+            setTotalArtists(firstArtists.length);
+          }
+        }
+
+        const firstHasMore = firstPayload.hasMore === true;
+        const firstNextOffset = Number(firstPayload.nextOffset);
+        offset = Number.isFinite(firstNextOffset) ? firstNextOffset : firstArtists.length;
+
+        if (!firstHasMore || firstArtists.length === 0) {
+          return;
+        }
+
         const pageSize = 192;
         let pendingAppend: CategoryArtistCard[] = [];
         for (let page = 0; page < 40; page += 1) {
-          const response = await fetch(`/api/categories/${encodeURIComponent(slug)}/artists?limit=${pageSize}&offset=${offset}`, {
+          const response = await fetch(`/api/categories/${encodeURIComponent(slug)}/artists?limit=${backgroundPageSize}&offset=${offset}`, {
             cache: "no-store",
           });
 
@@ -67,7 +104,7 @@ export function CategoryArtistsInfinite({
           pendingAppend.push(...pageArtists);
 
           const hasMore = payload.hasMore === true;
-          const shouldFlushChunk = pendingAppend.length >= pageSize * 2 || !hasMore || pageArtists.length === 0;
+          const shouldFlushChunk = pendingAppend.length >= backgroundPageSize * 2 || !hasMore || pageArtists.length === 0;
           if (!cancelled && shouldFlushChunk && pendingAppend.length > 0) {
             const chunkToAppend = pendingAppend;
             pendingAppend = [];
@@ -108,13 +145,13 @@ export function CategoryArtistsInfinite({
   }, [artistsState, normalizedFilter]);
 
   const artistsLabel = useMemo(() => {
-    const total = artistsState.length;
+    const total = Math.max(totalArtists, artistsState.length);
     if (!normalizedFilter) {
       return `${total.toLocaleString("en-US")} artists`;
     }
 
     return `${artists.length.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} artists`;
-  }, [artistsState.length, artists.length, normalizedFilter]);
+  }, [artistsState.length, artists.length, normalizedFilter, totalArtists]);
 
   const handlePinCategoryThumbnail = useCallback(async (
     event: React.MouseEvent<HTMLButtonElement>,

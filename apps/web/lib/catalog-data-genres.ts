@@ -519,6 +519,51 @@ export async function getCategoryArtistsByGenre(
     .filter((row): row is CategoryArtistCard => row !== null);
 }
 
+export async function getCategoryArtistCountByGenre(genre: string): Promise<number> {
+  if (!hasDatabaseUrl()) {
+    return 0;
+  }
+
+  requireDatabaseUrl("getCategoryArtistCountByGenre");
+
+  const normalizedGenre = normalizeGenreTerm(genre);
+  const normalizedGenreTerms = getExpandedGenreTerms(genre);
+  const normalizedGenrePattern = buildGenreRegexPattern(normalizedGenreTerms);
+
+  if (!normalizedGenre || normalizedGenreTerms.length === 0) {
+    return 0;
+  }
+
+  const videoGenreColumnExists = await hasVideoGenreColumn();
+  if (!videoGenreColumnExists) {
+    return 0;
+  }
+
+  const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
+  const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
+  const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
+  const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
+  const normalizedGenrePlaceholders = normalizedGenreTerms.map(() => "?").join(", ");
+
+  const rows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(
+    `SELECT
+       COUNT(DISTINCT ${videoArtistNormExpr}) AS total
+     FROM videos v${videoArtistIndexHint}
+     WHERE v.videoId IS NOT NULL
+       AND ${videoArtistNormExpr} <> ''
+       AND COALESCE(v.approved, 0) = 1
+       ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+       AND (
+         ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+         OR LOWER(v.genre) REGEXP ?
+       )`,
+    ...normalizedGenreTerms,
+    normalizedGenrePattern,
+  );
+
+  return Math.max(0, Number(rows[0]?.total ?? 0));
+}
+
 export async function getVideosByGenreAndArtist(
   genre: string,
   artistName: string,
