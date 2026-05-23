@@ -1251,7 +1251,6 @@ export function AdminDashboardPanel({
           genreReviewRemaining={genreReviewRemaining}
           genreReviewCurrentVideo={genreReviewCurrentVideo}
           genreReviewActionVideoId={genreReviewActionVideoId}
-          genreReviewWorker={genreReviewWorker}
           genreReviewPreviewIframeRef={genreReviewPreviewIframeRef}
           genreReviewPreviewCurrentTimeRef={genreReviewPreviewCurrentTimeRef}
           onSeekGenreReviewPreview={seekGenreReviewPreview}

@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useState, type MutableRefObject } from "react";
+import { useEffect, useState, type MutableRefObject } from "react";
 
-import type { GenreReviewVideoRow, GenreReviewWorkerState } from "@/components/admin-dashboard-types";
+import type { GenreReviewVideoRow } from "@/components/admin-dashboard-types";
 import { TOP_LEVEL_GENRE_BUCKETS, resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
 
 type AdminDashboardGenreReviewTabProps = {
   genreReviewRemaining: number;
   genreReviewCurrentVideo: GenreReviewVideoRow | null;
   genreReviewActionVideoId: string | null;
-  genreReviewWorker: GenreReviewWorkerState | null;
   genreReviewPreviewIframeRef: MutableRefObject<HTMLIFrameElement | null>;
   genreReviewPreviewCurrentTimeRef: MutableRefObject<number | null>;
   onSeekGenreReviewPreview: (seconds: number) => void;
@@ -20,7 +19,6 @@ export function AdminDashboardGenreReviewTab({
   genreReviewRemaining,
   genreReviewCurrentVideo,
   genreReviewActionVideoId,
-  genreReviewWorker,
   genreReviewPreviewIframeRef,
   genreReviewPreviewCurrentTimeRef,
   onSeekGenreReviewPreview,
@@ -46,15 +44,6 @@ export function AdminDashboardGenreReviewTab({
     setDraftGenre(genreReviewCurrentVideo?.proposedGenre ?? "");
   }, [genreReviewCurrentVideo?.videoId, genreReviewCurrentVideo?.proposedGenre]);
 
-  const workerProgress = useMemo(() => {
-    if (!genreReviewWorker || !genreReviewWorker.totalVideos) {
-      return null;
-    }
-
-    const pct = Math.max(0, Math.min(100, (genreReviewWorker.processedCount / genreReviewWorker.totalVideos) * 100));
-    return `${pct.toFixed(2)}%`;
-  }, [genreReviewWorker]);
-
   const row = genreReviewCurrentVideo;
   const baseStartAtSec = row?.durationSec && row.durationSec > 0 ? Math.floor(row.durationSec / 2) : 0;
   const maxStartAtSec = row?.durationSec && row.durationSec > 0 ? Math.max(0, row.durationSec - 1) : null;
@@ -75,25 +64,6 @@ export function AdminDashboardGenreReviewTab({
         <strong>{genreReviewRemaining} remaining</strong>
       </div>
       <div className="interactiveStack">
-        {genreReviewWorker ? (
-          <div className="authMessage" style={{ margin: 0 }}>
-            <strong>Worker:</strong> {genreReviewWorker.status}
-            {workerProgress ? ` | ${workerProgress}` : ""}
-            {` | processed ${genreReviewWorker.processedCount}`}
-            {` | updated ${genreReviewWorker.updatedCount}`}
-            {` | deleted ${genreReviewWorker.deletedCount}`}
-            {` | queued ${genreReviewWorker.queuedCount}`}
-          </div>
-        ) : null}
-
-        {genreReviewWorker?.lastMessage ? (
-          <p className="authMessage" style={{ margin: 0 }}>{genreReviewWorker.lastMessage}</p>
-        ) : null}
-
-        <p className="authMessage" style={{ margin: 0 }}>
-          Tracks that cannot be classified with confidence stay here for manual review. Saving keeps the video and updates its genre.
-        </p>
-
         {!row ? (
           <p className="authMessage">No videos pending manual genre review.</p>
         ) : (

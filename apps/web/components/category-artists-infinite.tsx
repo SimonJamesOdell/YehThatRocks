@@ -116,7 +116,12 @@ export function CategoryArtistsInfinite({
     return `${artists.length.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} artists`;
   }, [artistsState.length, artists.length, normalizedFilter]);
 
-  const handlePinCategoryThumbnail = useCallback(async (event: React.MouseEvent<HTMLButtonElement>, artistSlug: string, thumbnailVideoId: string) => {
+  const handlePinCategoryThumbnail = useCallback(async (
+    event: React.MouseEvent<HTMLButtonElement>,
+    artistSlug: string,
+    artistName: string,
+    thumbnailVideoId: string,
+  ) => {
     event.preventDefault();
     event.stopPropagation();
 
@@ -130,8 +135,9 @@ export function CategoryArtistsInfinite({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          target: "category",
+          target: "category-artist",
           genre,
+          artistName,
           thumbnailVideoId,
         }),
       });
@@ -200,7 +206,7 @@ export function CategoryArtistsInfinite({
                         title="Set as category thumbnail"
                         disabled={pinningArtistSlug === artist.slug}
                         onClick={(event) => {
-                          void handlePinCategoryThumbnail(event, artist.slug, artist.thumbnailVideoId as string);
+                          void handlePinCategoryThumbnail(event, artist.slug, artist.name, artist.thumbnailVideoId as string);
                         }}
                         onMouseDown={(event) => {
                           event.preventDefault();
