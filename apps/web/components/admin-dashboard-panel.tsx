@@ -34,7 +34,6 @@ import {
   PendingVideoDraft,
   CatalogReviewVideoRow,
   GenreReviewVideoRow,
-  GenreReviewWorkerState,
   AdminMagazineArticleRow,
   AdminMagazineCommentModerationAction,
   AdminMagazineCommentModerationRow,
@@ -75,7 +74,6 @@ export function AdminDashboardPanel({
   const [genreReviewRemaining, setGenreReviewRemaining] = useState(0);
   const [genreReviewCurrentVideo, setGenreReviewCurrentVideo] = useState<GenreReviewVideoRow | null>(null);
   const [genreReviewActionVideoId, setGenreReviewActionVideoId] = useState<string | null>(null);
-  const [genreReviewWorker, setGenreReviewWorker] = useState<GenreReviewWorkerState | null>(null);
   const [previousCatalogAction, setPreviousCatalogAction] = useState<{ action: "approve" | "remove"; videoId: string } | null>(null);
   const [reversingCatalogAction, setReversingCatalogAction] = useState(false);
   const [recentlyApprovedVideos, setRecentlyApprovedVideos] = useState<RecentlyApprovedVideoRow[]>([]);
@@ -435,12 +433,10 @@ export function AdminDashboardPanel({
     const payload = await readJson<{
       remaining: number;
       currentVideo: GenreReviewVideoRow | null;
-      worker: GenreReviewWorkerState | null;
     }>("/api/admin/videos/genre-review");
 
     setGenreReviewRemaining(Number(payload.remaining ?? 0));
     setGenreReviewCurrentVideo(payload.currentVideo ?? null);
-    setGenreReviewWorker(payload.worker ?? null);
   }
 
   async function moderateCatalogReviewVideo(action: "approve" | "remove") {
