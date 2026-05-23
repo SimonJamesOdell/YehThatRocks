@@ -610,6 +610,46 @@ export function AdminDashboardPanel({
     }
   }
 
+  async function autoClassifyGenreReviewGenre() {
+    if (!genreReviewCurrentVideo) {
+      return;
+    }
+
+    const videoId = genreReviewCurrentVideo.videoId;
+    setSaveMessage(null);
+    setGenreReviewActionVideoId(videoId);
+
+    try {
+      const payload = await postJson<{
+        ok: boolean;
+        suggestion?: {
+          proposedGenre: string | null;
+          confidence: number;
+          reason: string;
+        };
+      }>("/api/admin/videos/pending/auto-genre", { videoId });
+
+      if (payload.suggestion) {
+        setGenreReviewCurrentVideo((previous) => {
+          if (!previous || previous.videoId !== videoId) {
+            return previous;
+          }
+
+          return {
+            ...previous,
+            proposedGenre: payload.suggestion?.proposedGenre ?? null,
+            confidence: payload.suggestion?.confidence ?? previous.confidence,
+            reason: payload.suggestion?.reason ?? previous.reason,
+          };
+        });
+      }
+    } catch (autoClassifyError) {
+      setSaveMessage(autoClassifyError instanceof Error ? autoClassifyError.message : "Auto classify failed.");
+    } finally {
+      setGenreReviewActionVideoId(null);
+    }
+  }
+
   async function refetchGenreReviewMetadata() {
     if (!genreReviewCurrentVideo) {
       return;
@@ -1263,6 +1303,7 @@ export function AdminDashboardPanel({
           onSeekGenreReviewPreview={seekGenreReviewPreview}
           onRefetchGenreReviewMetadata={refetchGenreReviewMetadata}
           onReverseGenreReviewArtistTrack={reverseGenreReviewArtistTrack}
+          onAutoClassifyGenreReviewGenre={autoClassifyGenreReviewGenre}
           onModerateGenreReviewVideo={moderateGenreReviewVideo}
         />
       ) : null}

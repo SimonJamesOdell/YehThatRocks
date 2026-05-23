@@ -12,6 +12,7 @@ type AdminDashboardGenreReviewTabProps = {
   onSeekGenreReviewPreview: (seconds: number) => void;
   onRefetchGenreReviewMetadata: () => Promise<void>;
   onReverseGenreReviewArtistTrack: () => Promise<void>;
+  onAutoClassifyGenreReviewGenre: () => Promise<void>;
   onModerateGenreReviewVideo: (
     action: "approve" | "remove",
     draft: {
@@ -32,6 +33,7 @@ export function AdminDashboardGenreReviewTab({
   onSeekGenreReviewPreview,
   onRefetchGenreReviewMetadata,
   onReverseGenreReviewArtistTrack,
+  onAutoClassifyGenreReviewGenre,
   onModerateGenreReviewVideo,
 }: AdminDashboardGenreReviewTabProps) {
   const [draftGenre, setDraftGenre] = useState("");
@@ -160,7 +162,7 @@ export function AdminDashboardGenreReviewTab({
               {row.reason ? <p className="authMessage" style={{ margin: 0 }}>Reason: {row.reason}</p> : null}
               <div style={{ display: "grid", gridTemplateColumns: "170px minmax(0, 1fr)", alignItems: "center", gap: 6 }}>
                 <label htmlFor={`genre-review-genre-${row.id}`}>Classified Genre</label>
-                <div>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 6, alignItems: "center" }}>
                   <input
                     id={`genre-review-genre-${row.id}`}
                     list={`genre-review-genre-suggestions-${row.id}`}
@@ -175,6 +177,15 @@ export function AdminDashboardGenreReviewTab({
                       <option key={suggestion} value={suggestion} />
                     ))}
                   </datalist>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void onAutoClassifyGenreReviewGenre();
+                    }}
+                    disabled={genreReviewActionVideoId === row.videoId}
+                  >
+                    {genreReviewActionVideoId === row.videoId ? "Auto..." : "Auto"}
+                  </button>
                 </div>
               </div>
               <fieldset style={{ margin: 0, padding: 0, border: 0, display: "grid", gap: 4 }}>
