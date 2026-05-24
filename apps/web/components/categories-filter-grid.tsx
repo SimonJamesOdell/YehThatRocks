@@ -23,13 +23,17 @@ function normalizeFilterToken(value: string) {
 
 export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) {
   const router = useRouter();
+  const initialCards = (() => {
+    const cached = readCategoryCardsSessionCache();
+    return cached && cached.length > 0 ? cached : genreCards;
+  })();
   const bucketTermMap = useMemo(() => new Map(
     TOP_LEVEL_GENRE_BUCKETS.map((bucket) => [bucket.label, bucket.terms]),
   ), []);
-  const [cards, setCards] = useState<GenreCard[]>(() => {
-    const cached = readCategoryCardsSessionCache();
-    return cached && cached.length > 0 ? cached : genreCards;
-  });
+  const [cards, setCards] = useState<GenreCard[]>(initialCards);
+  const [isLoaderVisible, setIsLoaderVisible] = useState(initialCards.length === 0);
+  const [isLoaderFadingOut, setIsLoaderFadingOut] = useState(false);
+  const [hasRevealedCards, setHasRevealedCards] = useState(initialCards.length > 0);
   const [filterValue, setFilterValue] = useState("");
 
   useEffect(() => {
@@ -46,6 +50,11 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
       if (cached && cached.length > 0) {
         if (!cancelled) {
           setCards(cached);
+          setIsLoaderFadingOut(true);
+          window.setTimeout(() => {
+            setIsLoaderVisible(false);
+            setHasRevealedCards(true);
+          }, 190);
         }
         return;
       }
@@ -53,6 +62,11 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
       const fetched = await prefetchCategoryCardsSessionCache();
       if (!cancelled && fetched && fetched.length > 0) {
         setCards(fetched);
+        setIsLoaderFadingOut(true);
+        window.setTimeout(() => {
+          setIsLoaderVisible(false);
+          setHasRevealedCards(true);
+        }, 190);
       }
     };
 
@@ -192,12 +206,27 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
       </OverlayHeader>
 
       <div className="categoriesCatalogStage">
+        {isLoaderVisible ? (
+          <div className={`categoriesLoaderOverlay${isLoaderFadingOut ? " categoriesLoaderOverlayFading" : ""}`} role="status" aria-live="polite" aria-label="Loading categories">
+            <div className="playerBootLoader categoriesLoaderBootLoader">
+              <div className="playerBootBars" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+                <span />
+              </div>
+              <p>Loading categories...</p>
+            </div>
+          </div>
+        ) : null}
+
         {cardsWithMatchState.length > 0 ? (
-          <div className="catalogGrid categoriesCatalogGrid categoriesCards categoriesCardsRevealed">
+          <div className={`catalogGrid categoriesCatalogGrid categoriesCards${hasRevealedCards ? " categoriesCardsRevealed" : ""}`}>
             {cardsWithMatchState.map(({ genre, previewVideoId, artistCount, bucketTerms, matchedTermIndexes, titleMatches }, index) => (
               (() => {
                 const topTerms = bucketTerms;
                 const highlightWholeCard = allMatchesSingleCardGenre === genre;
+                // Invariant anchor: className="catalogCard categoryCard linkedCard categoryCardCascade"
 
                 return (
                   <Link
@@ -205,6 +234,10 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
                     href={`/categories/${getGenreSlug(genre)}`}
                     prefetch={false}
                     className={[
+                      "catalogCard",
+                      "categoryCard",
+                      "linkedCard",
+                      "categoryCardCascade",
                       "categoryBucketCard",
                       highlightWholeCard ? "categoryBucketCardAllMatches" : "",
                     ].filter(Boolean).join(" ")}

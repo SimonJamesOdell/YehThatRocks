@@ -118,6 +118,11 @@
   animation-delay: calc(var(--category-cascade-index, 0) * 24ms);
 }
 
+.categoriesCards.categoriesCardsRevealed .categoryCardCascade {
+  animation: categoryCardCascadeIn 240ms ease-out both;
+  animation-delay: calc(var(--category-cascade-index, 0) * 24ms);
+}
+
 .categoriesHeaderBar {
   gap: 16px;
 }
