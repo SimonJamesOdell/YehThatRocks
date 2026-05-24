@@ -7,6 +7,8 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { CloseLink } from "@/components/close-link";
 import { OverlayHeader } from "@/components/overlay-header";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
+import { prefetchCategoryArtistsFirstPayloadForSlugs } from "@/lib/category-artists-session-cache";
+import { prefetchCategoryCardsSessionCache, readCategoryCardsSessionCache } from "@/lib/category-cards-session-cache";
 import { getGenreSlug } from "@/lib/catalog-data-utils";
 import { TOP_LEVEL_GENRE_BUCKETS } from "@/lib/genre-buckets";
 import type { GenreCard } from "@/lib/catalog-data";
@@ -24,12 +26,76 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
   const bucketTermMap = useMemo(() => new Map(
     TOP_LEVEL_GENRE_BUCKETS.map((bucket) => [bucket.label, bucket.terms]),
   ), []);
-  const [cards, setCards] = useState<GenreCard[]>(genreCards);
+  const [cards, setCards] = useState<GenreCard[]>(() => {
+    const cached = readCategoryCardsSessionCache();
+    return cached && cached.length > 0 ? cached : genreCards;
+  });
   const [filterValue, setFilterValue] = useState("");
 
   useEffect(() => {
-    setCards(genreCards);
+    if (genreCards.length > 0 && cards.length === 0) {
+      setCards(genreCards);
+    }
+  }, [cards.length, genreCards]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrateCards = async () => {
+      const cached = readCategoryCardsSessionCache();
+      if (cached && cached.length > 0) {
+        if (!cancelled) {
+          setCards(cached);
+        }
+        return;
+      }
+
+      const fetched = await prefetchCategoryCardsSessionCache();
+      if (!cancelled && fetched && fetched.length > 0) {
+        setCards(fetched);
+      }
+    };
+
+    void hydrateCards();
+
+    return () => {
+      cancelled = true;
+    };
   }, [genreCards]);
+
+  useEffect(() => {
+    if (cards.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const runPrefetch = () => {
+      if (cancelled) {
+        return;
+      }
+      const slugs = cards.map((card) => getGenreSlug(card.genre));
+      void prefetchCategoryArtistsFirstPayloadForSlugs(slugs);
+    };
+
+    const idleHost = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+
+    if (typeof idleHost.requestIdleCallback === "function") {
+      const idleId = idleHost.requestIdleCallback(runPrefetch, { timeout: 2_500 });
+      return () => {
+        cancelled = true;
+        idleHost.cancelIdleCallback?.(idleId);
+      };
+    }
+
+    const timeoutId = window.setTimeout(runPrefetch, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [cards]);
 
   const normalizedFilterValue = useMemo(
     () => normalizeFilterToken(filterValue),

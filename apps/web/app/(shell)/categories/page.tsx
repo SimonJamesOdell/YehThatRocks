@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { CategoriesFilterGrid } from "@/components/categories-filter-grid";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
-import { getGenreCards, getRuntimeCachedTopLevelGenreCards } from "@/lib/catalog-data";
 import { TOP_LEVEL_GENRE_BUCKETS } from "@/lib/genre-buckets";
 import type { GenreCard } from "@/lib/catalog-data-utils";
 
@@ -37,28 +36,13 @@ export default async function CategoriesPage() {
     artistCount: 0,
   }));
 
-  const genreCards = await getRuntimeCachedTopLevelGenreCards()
-    .then(async (cards) => {
-      if (cards && cards.some((card) => card.previewVideoId || Number(card.artistCount ?? 0) > 0)) {
-        return cards;
-      }
-
-      const richer = await getGenreCards().catch(() => null);
-      if (richer && richer.some((card) => card.previewVideoId || Number(card.artistCount ?? 0) > 0)) {
-        return richer;
-      }
-
-      return fallbackCards;
-    })
-    .catch(() => fallbackCards);
-
   const categoriesJsonLd = {
     "@context": "https://schema.org",
     "@type": "ItemList",
     name: "Rock & Metal Category Buckets on YehThatRocks",
     description: "Top-level rock and metal category buckets with curated music videos.",
     url: `${SITE_ORIGIN}/categories`,
-    itemListElement: genreCards.slice(0, 50).map((card, index) => ({
+    itemListElement: fallbackCards.slice(0, 50).map((card, index) => ({
       "@type": "ListItem",
       position: index + 1,
       name: card.genre,
@@ -70,7 +54,7 @@ export default async function CategoriesPage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(categoriesJsonLd) }} />
       <OverlayScrollReset />
-      <CategoriesFilterGrid genreCards={genreCards} />
+      <CategoriesFilterGrid genreCards={fallbackCards} />
     </>
   );
 }

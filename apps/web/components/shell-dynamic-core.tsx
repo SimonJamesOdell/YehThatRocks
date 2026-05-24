@@ -66,6 +66,7 @@ import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { dedupeVideos, filterHiddenVideos } from "@/lib/video-list-utils";
 import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
+import { prefetchCategoryCardsSessionCache } from "@/lib/category-cards-session-cache";
 import { FORUM_SECTIONS } from "@/lib/forum-sections";
 import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT, EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
@@ -606,6 +607,36 @@ function ShellDynamicInner({
   // Client mounting hook
   useEffect(() => {
     setHasClientMounted(true);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const runPrefetch = () => {
+      if (cancelled) {
+        return;
+      }
+      void prefetchCategoryCardsSessionCache();
+    };
+
+    const idleHost = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+
+    if (typeof idleHost.requestIdleCallback === "function") {
+      const idleId = idleHost.requestIdleCallback(runPrefetch, { timeout: 2_000 });
+      return () => {
+        cancelled = true;
+        idleHost.cancelIdleCallback?.(idleId);
+      };
+    }
+
+    const timeoutId = window.setTimeout(runPrefetch, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
   }, []);
 
   // Use orchestration hook for route change tracking (pathname, analytics firing)

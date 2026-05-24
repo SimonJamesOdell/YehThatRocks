@@ -6,6 +6,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { CloseLink } from "@/components/close-link";
 import { OverlayHeader } from "@/components/overlay-header";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
+import {
+  readCategoryArtistsFirstPayloadFromSessionCache,
+  writeCategoryArtistsFirstPayloadToSessionCache,
+} from "@/lib/category-artists-session-cache";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import type { CategoryArtistCard } from "@/lib/catalog-data";
 import { TOP_LEVEL_GENRE_BUCKETS } from "@/lib/genre-buckets";
@@ -143,41 +147,72 @@ export function CategoryArtistsInfinite({
 
     const loadArtists = async () => {
       setIsLoadingArtists(true);
-      setArtistsState([]);
+      const cachedFirstPayload = readCategoryArtistsFirstPayloadFromSessionCache(slug);
+      if (cachedFirstPayload && !cancelled) {
+        setArtistsState(Array.isArray(cachedFirstPayload.artists) ? cachedFirstPayload.artists : []);
+        setInitialTabCounts(cachedFirstPayload.tabCounts && typeof cachedFirstPayload.tabCounts === "object" ? cachedFirstPayload.tabCounts : null);
+        if (typeof cachedFirstPayload.totalArtists === "number" && Number.isFinite(cachedFirstPayload.totalArtists)) {
+          setTotalArtists(Math.max(cachedFirstPayload.artists.length, cachedFirstPayload.totalArtists));
+        } else {
+          setTotalArtists(cachedFirstPayload.artists.length);
+        }
+      } else {
+        setArtistsState([]);
+      }
       try {
         const firstPageSize = 30;
         const backgroundPageSize = 192;
         let offset = 0;
-        const firstResponse = await fetch(`/api/categories/${encodeURIComponent(slug)}/artists?limit=${firstPageSize}&offset=0`, {
-          cache: "no-store",
-        });
+        let firstHasMore = false;
+        let firstArtists: CategoryArtistCard[] = [];
 
-        if (!firstResponse.ok) {
-          return;
-        }
+        if (cachedFirstPayload) {
+          firstArtists = Array.isArray(cachedFirstPayload.artists) ? cachedFirstPayload.artists : [];
+          firstHasMore = cachedFirstPayload.hasMore === true;
+          const cachedNextOffset = Number(cachedFirstPayload.nextOffset);
+          offset = Number.isFinite(cachedNextOffset) ? cachedNextOffset : firstArtists.length;
+        } else {
+          const firstResponse = await fetch(`/api/categories/${encodeURIComponent(slug)}/artists?limit=${firstPageSize}&offset=0`, {
+            cache: "no-store",
+          });
 
-        const firstPayload = (await firstResponse.json()) as {
-          artists?: CategoryArtistCard[];
-          totalArtists?: number | null;
-          tabCounts?: Record<string, number> | null;
-          hasMore?: boolean;
-          nextOffset?: number;
-        };
-
-        const firstArtists = Array.isArray(firstPayload.artists) ? firstPayload.artists : [];
-        if (!cancelled) {
-          setArtistsState(firstArtists);
-          setInitialTabCounts(firstPayload.tabCounts && typeof firstPayload.tabCounts === "object" ? firstPayload.tabCounts : null);
-          if (typeof firstPayload.totalArtists === "number" && Number.isFinite(firstPayload.totalArtists)) {
-            setTotalArtists(Math.max(firstArtists.length, firstPayload.totalArtists));
-          } else {
-            setTotalArtists(firstArtists.length);
+          if (!firstResponse.ok) {
+            return;
           }
-        }
 
-        const firstHasMore = firstPayload.hasMore === true;
-        const firstNextOffset = Number(firstPayload.nextOffset);
-        offset = Number.isFinite(firstNextOffset) ? firstNextOffset : firstArtists.length;
+          const firstPayload = (await firstResponse.json()) as {
+            artists?: CategoryArtistCard[];
+            totalArtists?: number | null;
+            tabCounts?: Record<string, number> | null;
+            hasMore?: boolean;
+            nextOffset?: number;
+          };
+
+          firstArtists = Array.isArray(firstPayload.artists) ? firstPayload.artists : [];
+          const normalizedFirstPayload = {
+            artists: firstArtists,
+            totalArtists: typeof firstPayload.totalArtists === "number" && Number.isFinite(firstPayload.totalArtists)
+              ? firstPayload.totalArtists
+              : null,
+            tabCounts: firstPayload.tabCounts && typeof firstPayload.tabCounts === "object" ? firstPayload.tabCounts : null,
+            hasMore: firstPayload.hasMore === true,
+            nextOffset: Number.isFinite(Number(firstPayload.nextOffset)) ? Number(firstPayload.nextOffset) : firstArtists.length,
+          };
+          writeCategoryArtistsFirstPayloadToSessionCache(slug, normalizedFirstPayload);
+
+          if (!cancelled) {
+            setArtistsState(firstArtists);
+            setInitialTabCounts(normalizedFirstPayload.tabCounts);
+            if (typeof normalizedFirstPayload.totalArtists === "number" && Number.isFinite(normalizedFirstPayload.totalArtists)) {
+              setTotalArtists(Math.max(firstArtists.length, normalizedFirstPayload.totalArtists));
+            } else {
+              setTotalArtists(firstArtists.length);
+            }
+          }
+
+          firstHasMore = normalizedFirstPayload.hasMore;
+          offset = normalizedFirstPayload.nextOffset;
+        }
 
         if (!firstHasMore || firstArtists.length === 0) {
           return;
