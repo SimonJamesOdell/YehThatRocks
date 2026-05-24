@@ -245,7 +245,7 @@ export function AdminDashboardVideosTab({
                                 const radioId = `pending-genre-${row.id}-${genreOption.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
                                 const isSelected = selectedPendingGenre === genreOption;
                                 const genreOptionDetails = pendingGenreOptionDetails.get(genreOption) ?? [];
-                                const rowCellPadding = genreOption === "Extreme Metal" ? "13px 8px" : "11px 8px";
+                                const rowCellPadding = genreOption === "Black Metal" ? "13px 8px" : "11px 8px";
 
                                 return (
                                   <tr key={genreOption} style={{ background: isSelected ? "rgba(255,255,255,0.12)" : "transparent" }}>

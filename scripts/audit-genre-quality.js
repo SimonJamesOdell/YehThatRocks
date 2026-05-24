@@ -10,8 +10,8 @@ const { loadDatabaseEnv } = require("./lib/runtime");
 const TOP_LEVEL_GENRE_BUCKETS = [
   { label: "Rock & Alternative", terms: ["rock", "grunge", "shoegaze", "post rock"] },
   { label: "Punk & Hardcore", terms: ["punk", "post hardcore", "hardcore", "screamo"] },
-  { label: "Classic Metal", terms: ["heavy", "nwobhm", "glam", "power", "symphonic"] },
-  { label: "Extreme Metal", terms: ["deathcore", "death", "black", "thrash", "grind"] },
+  { label: "Classic Metal", terms: ["heavy", "nwobhm", "glam", "power", "symphonic", "thrash"] },
+  { label: "Black Metal", terms: ["deathcore", "death", "black", "grind"] },
   { label: "Doom & Sludge", terms: ["post doom", "doom", "sludge", "stoner"] },
   { label: "Modern Metal", terms: ["metalcore", "djent", "groove", "nu metal", "mathcore"] },
   { label: "Progressive & Experimental", terms: ["post black", "post metal", "progressive", "industrial"] },

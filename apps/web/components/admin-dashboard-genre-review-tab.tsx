@@ -204,7 +204,7 @@ export function AdminDashboardGenreReviewTab({
                       const radioId = `genre-review-${row.id}-${genreOption.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
                       const isSelected = selectedGenreOption === genreOption;
                       const optionDetails = genreOptionDetails.get(genreOption) ?? [];
-                      const rowCellPadding = genreOption === "Extreme Metal" ? "13px 8px" : "11px 8px";
+                      const rowCellPadding = genreOption === "Black Metal" ? "13px 8px" : "11px 8px";
 
                       return (
                         <tr key={genreOption} style={{ background: isSelected ? "rgba(255,255,255,0.12)" : "transparent" }}>
