@@ -81,6 +81,9 @@ function main() {
   assertContains(top100LinkSource, "const videoHref = useMemo(() => {", "Top 100 warmed link derives a route-preserving href", failures);
   assertContains(top100LinkSource, "params.set(\"v\", track.id);", "Top 100 warmed link sets selected video query param", failures);
   assertContains(top100LinkSource, "params.set(\"resume\", \"1\");", "Top 100 warmed link sets resume query param", failures);
+  assertContains(top100LinkSource, "const isTop100Route = pathname === \"/top100\";", "Leaderboard card detects Top 100 route context", failures);
+  assertContains(top100LinkSource, "const showCategoryLabel = categoryLabel.length > 0 && (isNewRow || isTop100Route);", "Leaderboard card shares category-label behavior across New and Top 100 routes", failures);
+  assertContains(top100LinkSource, "<p className=\"leaderboardVideoCategory\">{categoryLabel}</p>", "Leaderboard card renders category label above artist-track metadata", failures);
   assertContains(top100LinkSource, "href={videoHref}", "Top 100 warmed link uses route-preserving href", failures);
   assertContains(top100LinkSource, "onMouseEnter={stagePendingSelection}", "Top 100 warmed link stages pending selection on hover", failures);
   assertContains(top100LinkSource, "onFocus={stagePendingSelection}", "Top 100 warmed link stages pending selection on focus", failures);
@@ -101,6 +104,8 @@ function main() {
   assertContains(top100LinkSource, "className=\"top100CardFlagButton\"", "Top 100 rows render a dedicated quality-flag button", failures);
   assertContains(top100LinkSource, "className=\"top100CardHideButton\"", "Top 100 rows render a dedicated hide button", failures);
   assertContains(top100LinkSource, "className=\"top100CardFavouriteButton\"", "Top 100 rows render circular add-to-favourites control", failures);
+  assertContains(top100LinkSource, "const hasHydratedCount = track.artistVideoCount !== null && track.artistVideoCount !== undefined;", "Leaderboard card treats null/undefined artist counts as missing hydrated data", failures);
+  assertContains(top100LinkSource, "if (hasHydratedCount && Number.isFinite(hydratedCount))", "Leaderboard card only uses hydrated artist count when explicitly present", failures);
   assertContains(top100LinkSource, 'import { ArtistWikiLink } from "@/components/artist-wiki-link";', "Top 100 warmed link imports artist wiki link helper", failures);
   assertContains(top100LinkSource, '<ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">', "Top 100 warmed link wraps artist name with wiki link", failures);
 

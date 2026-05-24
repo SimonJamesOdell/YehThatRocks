@@ -10,12 +10,18 @@ const { asNumber, readArg } = require("./lib/cli");
 
 const ROOT = process.cwd();
 const SOURCE_FILES = {
+  categoriesParentPage: path.join(ROOT, "apps/web/app/(shell)/categories/page.tsx"),
+  topLevelCardsApi: path.join(ROOT, "apps/web/app/api/categories/top-level-cards/route.ts"),
   categoryPage: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/page.tsx"),
   categoryArtistPage: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/artists/[artistSlug]/page.tsx"),
   categoryArtistsApi: path.join(ROOT, "apps/web/app/api/categories/[slug]/artists/route.ts"),
   categoryArtistVideosApi: path.join(ROOT, "apps/web/app/api/categories/[slug]/artists/[artistSlug]/route.ts"),
   categoryArtistsInfinite: path.join(ROOT, "apps/web/components/category-artists-infinite.tsx"),
   categoryVideosInfinite: path.join(ROOT, "apps/web/components/category-videos-infinite.tsx"),
+  categoriesFilterGrid: path.join(ROOT, "apps/web/components/categories-filter-grid.tsx"),
+  categoryCardsSessionCache: path.join(ROOT, "apps/web/lib/category-cards-session-cache.ts"),
+  categoryArtistsSessionCache: path.join(ROOT, "apps/web/lib/category-artists-session-cache.ts"),
+  genreBuckets: path.join(ROOT, "apps/web/lib/genre-buckets.ts"),
 };
 
 function loadDatabaseEnv() {
@@ -142,12 +148,38 @@ function getGenreSlug(value) {
 }
 
 function runSourceChecks(failures) {
+  const categoriesParentPageSource = readFileStrict(SOURCE_FILES.categoriesParentPage, ROOT);
+  const topLevelCardsApiSource = readFileStrict(SOURCE_FILES.topLevelCardsApi, ROOT);
   const categoryPageSource = readFileStrict(SOURCE_FILES.categoryPage, ROOT);
   const categoryArtistPageSource = readFileStrict(SOURCE_FILES.categoryArtistPage, ROOT);
   const categoryArtistsApiSource = readFileStrict(SOURCE_FILES.categoryArtistsApi, ROOT);
   const categoryArtistVideosApiSource = readFileStrict(SOURCE_FILES.categoryArtistVideosApi, ROOT);
   const categoryArtistsInfiniteSource = readFileStrict(SOURCE_FILES.categoryArtistsInfinite, ROOT);
   const categoryVideosInfiniteSource = readFileStrict(SOURCE_FILES.categoryVideosInfinite, ROOT);
+  const categoriesFilterGridSource = readFileStrict(SOURCE_FILES.categoriesFilterGrid, ROOT);
+  const categoryCardsSessionCacheSource = readFileStrict(SOURCE_FILES.categoryCardsSessionCache, ROOT);
+  const categoryArtistsSessionCacheSource = readFileStrict(SOURCE_FILES.categoryArtistsSessionCache, ROOT);
+  const genreBucketsSource = readFileStrict(SOURCE_FILES.genreBuckets, ROOT);
+
+  assertContains(categoriesParentPageSource, "const fallbackCards", "Categories parent page builds immediate fallback cards for fast first render", failures);
+  assertContains(categoriesParentPageSource, "<CategoriesFilterGrid genreCards={fallbackCards} />", "Categories parent page renders fallback cards and relies on client hydration", failures);
+
+  assertContains(topLevelCardsApiSource, "getRuntimeCachedTopLevelGenreCards", "Top-level cards API reads runtime cache source", failures);
+  assertContains(topLevelCardsApiSource, "getGenreCards", "Top-level cards API falls back to richer genre-card source", failures);
+  assertContains(topLevelCardsApiSource, "Cache-Control", "Top-level cards API emits cache headers", failures);
+
+  assertContains(categoryCardsSessionCacheSource, "readCategoryCardsSessionCache", "Category cards session cache exposes read helper", failures);
+  assertContains(categoryCardsSessionCacheSource, "prefetchCategoryCardsSessionCache", "Category cards session cache exposes prefetch helper", failures);
+
+  assertContains(categoryArtistsSessionCacheSource, "prefetchCategoryArtistsFirstPayloadForSlugs", "Category artists session cache supports batch slug prefetch", failures);
+  assertContains(categoryArtistsSessionCacheSource, "FIRST_PAGE_LIMIT = 30", "Category artists session cache prefetch uses bounded first page payload", failures);
+
+  assertContains(categoriesFilterGridSource, "prefetchCategoryCardsSessionCache", "Categories grid hydrates from top-level cards session cache", failures);
+  assertContains(categoriesFilterGridSource, "prefetchCategoryArtistsFirstPayloadForSlugs", "Categories grid triggers category-detail artists prefetch", failures);
+  assertContains(categoriesFilterGridSource, "requestIdleCallback", "Categories grid performs prefetch during idle time", failures);
+
+  assertContains(categoryArtistsInfiniteSource, "readCategoryArtistsFirstPayloadFromSessionCache", "Category artists view consumes session-prefetched first payload", failures);
+  assertContains(categoryArtistsInfiniteSource, "writeCategoryArtistsFirstPayloadToSessionCache", "Category artists view persists first payload for session reuse", failures);
 
   assertContains(categoryPageSource, "getCategoryArtistsByGenre", "Category page resolves artists for selected genre", failures);
   assertContains(categoryPageSource, "CategoryArtistsInfinite", "Category page renders category artist grid", failures);
@@ -161,6 +193,18 @@ function runSourceChecks(failures) {
   assertContains(categoryArtistsInfiniteSource, "/categories/${encodeURIComponent(slug)}/artists/${encodeURIComponent(artist.slug)}", "Category artists cards deep-link into category artist video routes", failures);
   assertContains(categoryVideosInfiniteSource, "const isArtistCategoryRoute = Boolean(artistSlug && artistName);", "Category videos view distinguishes category artist route mode", failures);
   assertContains(categoryVideosInfiniteSource, "? `/api/categories/${encodeURIComponent(slug)}/artists/${encodeURIComponent(artistSlug ?? \"\")}`", "Category videos view fetches from artist-scoped API on artist route", failures);
+
+  assertContains(genreBucketsSource, 'label: "Rock & Alternative"', "Top-level category bucket list includes Rock & Alternative", failures);
+  assertContains(genreBucketsSource, 'label: "Punk & Hardcore"', "Top-level category bucket list includes Punk & Hardcore", failures);
+  assertContains(genreBucketsSource, 'label: "Classic and Symphonic Metal"', "Top-level category bucket list includes Classic and Symphonic Metal", failures);
+  assertContains(genreBucketsSource, 'label: "Thrash & Power Metal"', "Top-level category bucket list includes Thrash & Power Metal", failures);
+  assertContains(genreBucketsSource, 'label: "Black and Death Metal"', "Top-level category bucket list includes Black and Death Metal", failures);
+  assertContains(genreBucketsSource, 'label: "Doom & Sludge"', "Top-level category bucket list includes Doom & Sludge", failures);
+  assertContains(genreBucketsSource, 'label: "Nu-metal & Metalcore"', "Top-level category bucket list includes Nu-metal & Metalcore", failures);
+  assertContains(genreBucketsSource, 'label: "Progressive & Experimental"', "Top-level category bucket list includes Progressive & Experimental", failures);
+
+  const topLevelBucketCount = (genreBucketsSource.match(/label:\s*"/g) || []).length;
+  assertInvariant(topLevelBucketCount === 8, "Top-level category bucket list defines exactly 8 categories", `count=${topLevelBucketCount}`, failures);
 }
 
 async function runApiChecks({ baseUrl, maxApiDurationMs, minCoverage }, failures) {
@@ -298,6 +342,43 @@ async function runApiChecks({ baseUrl, maxApiDurationMs, minCoverage }, failures
       },
     });
   } catch (error) {
+
+  const topLevelCardsUrl = `${normalizedBaseUrl}/api/categories/top-level-cards`;
+  let topLevelCardsResponse;
+  try {
+    topLevelCardsResponse = await fetch(topLevelCardsUrl, {
+      method: "GET",
+      headers: {
+        "Cache-Control": "no-cache",
+      },
+    });
+  } catch (error) {
+    failures.push({
+      description: "API /api/categories/top-level-cards reachable",
+      details: `request failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    console.error("[fail] API /api/categories/top-level-cards reachable");
+    return;
+  }
+
+  assertInvariant(topLevelCardsResponse.ok, "API /api/categories/top-level-cards returns 2xx", `status=${topLevelCardsResponse.status}`, failures);
+
+  let topLevelCardsPayload;
+  try {
+    topLevelCardsPayload = await topLevelCardsResponse.json();
+  } catch (error) {
+    failures.push({
+      description: "API /api/categories/top-level-cards returns valid JSON",
+      details: error instanceof Error ? error.message : String(error),
+    });
+    console.error("[fail] API /api/categories/top-level-cards returns valid JSON");
+    return;
+  }
+
+  const topLevelCards = Array.isArray(topLevelCardsPayload?.cards) ? topLevelCardsPayload.cards : [];
+  assertInvariant(topLevelCards.length === 8, "API /api/categories/top-level-cards returns 8 top-level categories", `count=${topLevelCards.length}`, failures);
+  assertInvariant(topLevelCards.every((card) => typeof card?.genre === "string" && card.genre.length > 0), "API /api/categories/top-level-cards returns cards with genre labels", "missing genre labels", failures);
+  assertInvariant(topLevelCards.every((card) => Number.isFinite(Number(card?.artistCount ?? NaN))), "API /api/categories/top-level-cards returns numeric artist counts", "non-numeric artistCount detected", failures);
     failures.push({
       description: "API /api/categories/[slug]/artists reachable",
       details: `request failed: ${error instanceof Error ? error.message : String(error)}`,

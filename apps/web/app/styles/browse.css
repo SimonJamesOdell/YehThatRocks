@@ -34,9 +34,14 @@
 
   .categoryBucketCard {
     min-height: 0;
-    height: calc(100% - 20px);
+    height: calc(100% - var(--categoryParentCardDesktopOffset, 80px));
     align-self: start;
     overflow: hidden;
+  }
+
+  .categoryCard.categoryBucketCard {
+    min-height: 0;
+    height: calc(100% - var(--categoryParentCardDesktopOffset, 80px));
   }
 }
 
@@ -50,6 +55,7 @@
   grid-template-rows: auto minmax(0, 1fr);
   gap: 6px;
   min-height: 100%;
+  --categoryParentCardDesktopOffset: 20px;
 }
 
 .categoriesCatalogStage {
@@ -1332,11 +1338,15 @@
     border-color 220ms ease,
     box-shadow 220ms ease,
     transform 220ms ease;
-  min-height: 250px;
+  min-height: 190px;
   align-content: start;
   text-decoration: none;
   color: inherit;
   position: relative;
+}
+
+.categoryCard.categoryBucketCard {
+  min-height: 250px;
 }
 
 .categoryBucketCard:hover {

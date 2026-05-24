@@ -23,17 +23,14 @@ function normalizeFilterToken(value: string) {
 
 export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) {
   const router = useRouter();
-  const initialCards = (() => {
-    const cached = readCategoryCardsSessionCache();
-    return cached && cached.length > 0 ? cached : genreCards;
-  })();
   const bucketTermMap = useMemo(() => new Map(
     TOP_LEVEL_GENRE_BUCKETS.map((bucket) => [bucket.label, bucket.terms]),
   ), []);
-  const [cards, setCards] = useState<GenreCard[]>(initialCards);
-  const [isLoaderVisible, setIsLoaderVisible] = useState(initialCards.length === 0);
+  // Keep first client render identical to SSR; hydrate from session/API only in effects.
+  const [cards, setCards] = useState<GenreCard[]>(genreCards);
+  const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);
   const [isLoaderFadingOut, setIsLoaderFadingOut] = useState(false);
-  const [hasRevealedCards, setHasRevealedCards] = useState(initialCards.length > 0);
+  const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0);
   const [filterValue, setFilterValue] = useState("");
 
   useEffect(() => {

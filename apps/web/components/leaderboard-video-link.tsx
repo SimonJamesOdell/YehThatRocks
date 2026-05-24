@@ -165,6 +165,7 @@ export function LeaderboardVideoLink({
 }: LeaderboardVideoLinkProps) {
   const isNewRow = rowVariant === "new";
   const pathname = usePathname();
+  const isTop100Route = pathname === "/top100";
   const router = useRouter();
   const searchParams = useLiveSearchParams();
   const hasWarmedRef = useRef(false);
@@ -195,6 +196,8 @@ export function LeaderboardVideoLink({
   const artistVideoCountLabel = artistVideoCount === null
     ? null
     : `${artistVideoCount.toLocaleString("en-US")} videos`;
+  const categoryLabel = track.genre.trim();
+  const showCategoryLabel = categoryLabel.length > 0 && (isNewRow || isTop100Route);
 
   const videoHref = useMemo(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -222,8 +225,9 @@ export function LeaderboardVideoLink({
       return;
     }
 
-    const hydratedCount = Number(track.artistVideoCount);
-    if (Number.isFinite(hydratedCount)) {
+    const hasHydratedCount = track.artistVideoCount !== null && track.artistVideoCount !== undefined;
+    const hydratedCount = hasHydratedCount ? Number(track.artistVideoCount) : Number.NaN;
+    if (hasHydratedCount && Number.isFinite(hydratedCount)) {
       setArtistVideoCount(hydratedCount);
       return;
     }
@@ -469,6 +473,9 @@ export function LeaderboardVideoLink({
         ) : null}
       </div>
       <div className="leaderboardMeta">
+        {showCategoryLabel ? (
+          <p className="leaderboardVideoCategory">{categoryLabel}</p>
+        ) : null}
         <h3>
           {parsedArtistCandidate && parsedTrackCandidate ? (
             <>
