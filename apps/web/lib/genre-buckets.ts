@@ -52,12 +52,13 @@ export const TOP_LEVEL_GENRE_BUCKETS: readonly GenreBucket[] = [
       "crust punk",
       "d beat",
       "crossover thrash",
+      "powerviolence",
       "screamo",
       "emo",
     ],
   },
   {
-    label: "Classic Metal",
+    label: "Classic and Symphonic Metal",
     terms: [
       "heavy metal",
       "traditional heavy metal",
@@ -65,18 +66,24 @@ export const TOP_LEVEL_GENRE_BUCKETS: readonly GenreBucket[] = [
       "new wave of british heavy metal",
       "glam metal",
       "hair metal",
-      "speed metal",
-      "power metal",
       "epic metal",
       "neoclassical metal",
       "symphonic metal",
-      "thrash metal",
-      "blackened thrash metal",
-      "crossover thrash",
     ],
   },
   {
-    label: "Black Metal",
+    label: "Thrash & Power Metal",
+    terms: [
+      "thrash metal",
+      "blackened thrash metal",
+      "crossover thrash",
+      "speed metal",
+      "power metal",
+      "groove metal",
+    ],
+  },
+  {
+    label: "Black and Death Metal",
     terms: [
       "black metal",
       "atmospheric black metal",
@@ -89,11 +96,9 @@ export const TOP_LEVEL_GENRE_BUCKETS: readonly GenreBucket[] = [
       "technical death metal",
       "brutal death metal",
       "old school death metal",
-      "death doom",
       "grindcore",
       "deathgrind",
       "goregrind",
-      "powerviolence",
     ],
   },
   {
@@ -114,18 +119,13 @@ export const TOP_LEVEL_GENRE_BUCKETS: readonly GenreBucket[] = [
     ],
   },
   {
-    label: "Modern Metal",
+    label: "Nu-metal & Metalcore",
     terms: [
+      "nu metal",
       "metalcore",
       "melodic metalcore",
       "deathcore",
-      "djent",
-      "progressive metalcore",
-      "mathcore",
-      "nu metal",
       "alternative metal",
-      "industrial metal",
-      "groove metal",
       "rap metal",
       "electronicore",
       "trancecore",
@@ -143,6 +143,9 @@ export const TOP_LEVEL_GENRE_BUCKETS: readonly GenreBucket[] = [
       "post black metal",
       "blackgaze",
       "atmospheric metal",
+      "djent",
+      "progressive metalcore",
+      "mathcore",
       "industrial rock",
       "industrial metal",
     ],
@@ -165,10 +168,10 @@ function tokenMatchesTerm(normalizedToken: string, normalizedTerm: string) {
     || normalizedToken.includes(` ${normalizedTerm} `);
 }
 
-export function resolveTopLevelGenreBucket(input: string): string | null {
+export function resolveAllTopLevelGenreBuckets(input: string): string[] {
   const normalizedInput = normalizeGenreToken(input);
   if (!normalizedInput) {
-    return null;
+    return [];
   }
 
   const hasRockToken = tokenMatchesTerm(normalizedInput, "rock");
@@ -187,30 +190,46 @@ export function resolveTopLevelGenreBucket(input: string): string | null {
 
     // Generic mixed labels like "Rock / Metal" are too broad to bucket reliably.
     if (!hasSpecificSubgenreSignal) {
-      return null;
+      return [];
     }
   }
 
-  for (const bucket of TOP_LEVEL_GENRE_BUCKETS) {
-    const normalizedLabel = normalizeGenreToken(bucket.label);
-    if (normalizedInput === normalizedLabel) {
-      return bucket.label;
-    }
+  const matchingLabels = TOP_LEVEL_GENRE_BUCKETS
+    .filter((bucket) => normalizeGenreToken(bucket.label) === normalizedInput)
+    .map((bucket) => bucket.label);
+
+  if (matchingLabels.length > 0) {
+    return matchingLabels;
   }
 
-  for (const bucket of TOP_LEVEL_GENRE_BUCKETS) {
-    for (const term of bucket.terms) {
-      const normalizedTerm = normalizeGenreToken(term);
-      if (tokenMatchesTerm(normalizedInput, normalizedTerm)) {
-        return bucket.label;
-      }
-    }
-  }
+  return TOP_LEVEL_GENRE_BUCKETS
+    .filter((bucket) =>
+      bucket.terms.some((term) => {
+        const normalizedTerm = normalizeGenreToken(term);
+        return tokenMatchesTerm(normalizedInput, normalizedTerm);
+      }),
+    )
+    .map((bucket) => bucket.label);
+}
 
-  return null;
+export function resolveTopLevelGenreBucket(input: string): string | null {
+  const matches = resolveAllTopLevelGenreBuckets(input);
+  return matches[0] ?? null;
 }
 
 export function getTopLevelGenreBucketBySlug(slug: string): string | null {
+  if (slug === "classic-metal") {
+    return "Classic and Symphonic Metal";
+  }
+
+  if (slug === "modern-metal") {
+    return "Nu-metal & Metalcore";
+  }
+
+  if (slug === "black-metal") {
+    return "Black and Death Metal";
+  }
+
   for (const bucket of TOP_LEVEL_GENRE_BUCKETS) {
     if (getGenreSlug(bucket.label) === slug) {
       return bucket.label;

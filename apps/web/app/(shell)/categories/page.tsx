@@ -12,7 +12,7 @@ const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "
 
 export const metadata: Metadata = {
   title: "Rock & Metal Category Buckets | YehThatRocks",
-  description: "Explore top-level rock and metal category buckets on YehThatRocks — from Classic and Black Metal to Punk, Doom, Modern, and Progressive scenes.",
+  description: "Explore top-level rock and metal category buckets on YehThatRocks — from Classic and Symphonic, Thrash & Power, and Black and Death Metal to Punk, Doom, Nu-metal & Metalcore, and Progressive scenes.",
   alternates: { canonical: "/categories" },
   openGraph: {
     title: "Rock & Metal Category Buckets | YehThatRocks",

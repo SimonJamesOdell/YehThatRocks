@@ -1846,7 +1846,7 @@
   border-top-right-radius: 10px;
 }
 
-.heroGridAdminOverlayRoute .favouritesBlindInner {
+.heroGridAdminOverlayRoute .overlayPanelInner {
   gap: 8px;
   padding-bottom: 8px;
 }
@@ -1876,7 +1876,7 @@
   pointer-events: none;
 }
 
-.favouritesBlindInner {
+.overlayPanelInner {
   display: grid;
   gap: 12px;
   max-height: 100%;
@@ -1885,6 +1885,10 @@
   padding: 0 18px 18px;
   position: relative;
   isolation: isolate;
+}
+
+.overlayPanelInner.overlayPanelInnerNoScroll {
+  overflow-y: hidden;
 }
 
 .favouritesBlindBar {
@@ -2000,7 +2004,7 @@
   text-overflow: ellipsis;
 }
 
-.favouritesBlindInner > :not(.favouritesBlindBar) {
+.overlayPanelInner > :not(.favouritesBlindBar) {
   position: relative;
   z-index: 1;
 }

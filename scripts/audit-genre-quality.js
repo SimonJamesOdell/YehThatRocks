@@ -9,12 +9,13 @@ const { loadDatabaseEnv } = require("./lib/runtime");
 
 const TOP_LEVEL_GENRE_BUCKETS = [
   { label: "Rock & Alternative", terms: ["rock", "grunge", "shoegaze", "post rock"] },
-  { label: "Punk & Hardcore", terms: ["punk", "post hardcore", "hardcore", "screamo"] },
-  { label: "Classic Metal", terms: ["heavy", "nwobhm", "glam", "power", "symphonic", "thrash"] },
-  { label: "Black Metal", terms: ["deathcore", "death", "black", "grind"] },
+  { label: "Punk & Hardcore", terms: ["punk", "post hardcore", "hardcore", "screamo", "crossover thrash", "powerviolence"] },
+  { label: "Classic and Symphonic Metal", terms: ["heavy", "nwobhm", "glam", "symphonic"] },
+  { label: "Thrash & Power Metal", terms: ["thrash", "blackened thrash", "crossover thrash", "speed", "power", "groove"] },
+  { label: "Black and Death Metal", terms: ["deathcore", "death", "black", "grind"] },
   { label: "Doom & Sludge", terms: ["post doom", "doom", "sludge", "stoner"] },
-  { label: "Modern Metal", terms: ["metalcore", "djent", "groove", "nu metal", "mathcore"] },
-  { label: "Progressive & Experimental", terms: ["post black", "post metal", "progressive", "industrial"] },
+  { label: "Nu-metal & Metalcore", terms: ["nu metal", "metalcore", "deathcore", "melodic metalcore", "alternative metal", "rap metal"] },
+  { label: "Progressive & Experimental", terms: ["post black", "post metal", "progressive", "industrial", "djent", "mathcore", "progressive metalcore"] },
 ];
 
 function normalizeGenreToken(input) {

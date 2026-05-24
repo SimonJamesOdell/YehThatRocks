@@ -309,31 +309,17 @@ async function bootstrapCategoryBucketRuntimeCacheFast(): Promise<GenreCard[] | 
   );
   const thumbByBucket = new Map(collatedThumbs.map((card) => [card.genre.trim().toLowerCase(), card.previewVideoId]));
 
-  const artistCountRows = await prisma.$queryRawUnsafe<Array<{
-    genre: string;
-    total: bigint | number;
-  }>>(
-    `
-      SELECT
-        v.genre AS genre,
-        COUNT(DISTINCT LOWER(TRIM(COALESCE(NULLIF(v.parsedArtist, ''), NULLIF(v.channelTitle, ''))))) AS total
-      FROM videos v
-      INNER JOIN site_videos sv ON sv.video_id = v.id AND sv.status = 'available'
-      WHERE v.genre IS NOT NULL
-        AND TRIM(v.genre) <> ''
-        AND COALESCE(v.approved, 0) = 1
-        AND TRIM(COALESCE(NULLIF(v.parsedArtist, ''), NULLIF(v.channelTitle, ''))) <> ''
-      GROUP BY v.genre
-      ORDER BY total DESC
-      LIMIT 6000
-    `,
-  ).catch(() => []);
-
-  const countByBucket = new Map<string, number>();
-  for (const row of artistCountRows) {
-    const bucket = resolveTopLevelGenreBucket(row.genre) ?? "Rock & Alternative";
-    countByBucket.set(bucket, (countByBucket.get(bucket) ?? 0) + Math.max(0, Number(row.total ?? 0)));
-  }
+  const bucketArtistCounts = await Promise.all(
+    TOP_LEVEL_GENRE_BUCKETS.map(async (bucket) => {
+      try {
+        const count = await getCategoryArtistCountByGenre(bucket.label);
+        return [bucket.label, Math.max(0, Number(count || 0))] as const;
+      } catch {
+        return [bucket.label, 0] as const;
+      }
+    }),
+  );
+  const countByBucket = new Map<string, number>(bucketArtistCounts);
 
   const cards = TOP_LEVEL_GENRE_BUCKETS.map((bucket) => ({
     genre: bucket.label,
@@ -387,6 +373,18 @@ export async function getRuntimeCachedTopLevelGenreCards(): Promise<GenreCard[] 
     return Math.max(maxMs, Number.isFinite(valueMs) ? valueMs : 0);
   }, 0);
 
+  const expectedBucketLabels = new Set(TOP_LEVEL_GENRE_BUCKETS.map((bucket) => bucket.label.trim().toLowerCase()));
+  const cachedBucketLabels = new Set(rows.map((row) => row.bucketLabel.trim().toLowerCase()));
+  const hasBucketLabelMismatch = expectedBucketLabels.size !== cachedBucketLabels.size
+    || Array.from(expectedBucketLabels).some((label) => !cachedBucketLabels.has(label));
+
+  if (hasBucketLabelMismatch) {
+    const refreshed = await bootstrapCategoryBucketRuntimeCacheFast();
+    if (refreshed && refreshed.length > 0) {
+      return refreshed;
+    }
+  }
+
   if (newestUpdatedAtMs <= 0 || Date.now() - newestUpdatedAtMs > CATEGORY_BUCKET_RUNTIME_CACHE_STALE_MS) {
     const refreshed = await bootstrapCategoryBucketRuntimeCacheFast();
     if (refreshed && refreshed.length > 0) {
@@ -395,17 +393,34 @@ export async function getRuntimeCachedTopLevelGenreCards(): Promise<GenreCard[] 
   }
 
   const byLabel = new Map(rows.map((row) => [row.bucketLabel.trim().toLowerCase(), row]));
+  const liveCountEntries = await Promise.all(
+    TOP_LEVEL_GENRE_BUCKETS.map(async (bucket) => {
+      try {
+        const count = await getCategoryArtistCountByGenre(bucket.label);
+        return [bucket.label.trim().toLowerCase(), Math.max(0, Number(count || 0))] as const;
+      } catch {
+        return [bucket.label.trim().toLowerCase(), null] as const;
+      }
+    }),
+  );
+  const liveCountsByLabel = new Map<string, number | null>(liveCountEntries);
 
-  return TOP_LEVEL_GENRE_BUCKETS.map((bucket) => {
+  const cards = TOP_LEVEL_GENRE_BUCKETS.map((bucket) => {
     const cached = byLabel.get(bucket.label.trim().toLowerCase());
     const previewVideoId = cached?.previewVideoId?.trim() || null;
-    const artistCount = Math.max(0, Number(cached?.artistCount ?? 0));
+    const liveArtistCount = liveCountsByLabel.get(bucket.label.trim().toLowerCase());
+    const artistCount = liveArtistCount === null || liveArtistCount === undefined
+      ? Math.max(0, Number(cached?.artistCount ?? 0))
+      : liveArtistCount;
     return {
       genre: bucket.label,
       previewVideoId,
       artistCount,
     } as GenreCard;
   });
+
+  await upsertCategoryBucketRuntimeCache(cards).catch(() => undefined);
+  return cards;
 }
 
 export async function setCategoryArtistThumbnailPin(genre: string, artistName: string, thumbnailVideoId: string) {
@@ -514,11 +529,13 @@ export async function getCategoryArtistsByGenre(
   const rows = await prisma.$queryRawUnsafe<Array<{
     artistName: string | null;
     thumbnailVideoId: string | null;
+    dominantGenre: string | null;
     videoCount: bigint | number;
   }>>(
     `SELECT
        MAX(COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''))) AS artistName,
        ${thumbnailSelectExpr} AS thumbnailVideoId,
+       SUBSTRING_INDEX(GROUP_CONCAT(NULLIF(TRIM(v.genre), '') ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC), ',', 1) AS dominantGenre,
        COUNT(*) AS videoCount
      FROM videos v${videoArtistIndexHint}
      ${pinnedArtistThumbJoin}
@@ -551,6 +568,7 @@ export async function getCategoryArtistsByGenre(
         slug: slugifyArtistName(name),
         videoCount: Number(row.videoCount) || 0,
         thumbnailVideoId: (row.thumbnailVideoId ?? "").trim() || null,
+        dominantGenre: (row.dominantGenre ?? "").trim() || null,
       } as CategoryArtistCard;
     })
     .filter((row): row is CategoryArtistCard => row !== null);
@@ -599,6 +617,137 @@ export async function getCategoryArtistCountByGenre(genre: string): Promise<numb
   );
 
   return Math.max(0, Number(rows[0]?.total ?? 0));
+}
+
+type CategoryArtistTabCountMatcher = {
+  id: string;
+  matches: (dominantGenre: string | null | undefined) => boolean;
+};
+
+function buildCategoryArtistTabCountMatchers(genre: string): CategoryArtistTabCountMatcher[] {
+  const hasAny = (dominantGenre: string | null | undefined, patterns: RegExp[]) => {
+    const normalized = (dominantGenre ?? "").trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    return patterns.some((pattern) => pattern.test(normalized));
+  };
+
+  switch (genre) {
+    case "Thrash & Power Metal":
+      return [
+        { id: "all", matches: () => true },
+        { id: "thrash", matches: (value) => hasAny(value, [/thrash/i]) },
+        { id: "power-speed", matches: (value) => hasAny(value, [/power/i, /speed/i]) },
+        { id: "groove", matches: (value) => hasAny(value, [/groove/i]) },
+      ];
+    case "Black and Death Metal":
+      return [
+        { id: "all", matches: () => true },
+        { id: "black", matches: (value) => hasAny(value, [/black/i]) },
+        { id: "death", matches: (value) => hasAny(value, [/death/i]) },
+        { id: "grind", matches: (value) => hasAny(value, [/grind/i]) },
+      ];
+    case "Doom & Sludge":
+      return [
+        { id: "all", matches: () => true },
+        { id: "doom", matches: (value) => hasAny(value, [/doom/i]) },
+        { id: "sludge-stoner", matches: (value) => hasAny(value, [/sludge/i, /stoner/i]) },
+        { id: "drone", matches: (value) => hasAny(value, [/drone/i]) },
+      ];
+    case "Nu-metal & Metalcore":
+      return [
+        { id: "all", matches: () => true },
+        { id: "nu-metal", matches: (value) => hasAny(value, [/nu\s*metal/i]) },
+        { id: "metalcore", matches: (value) => hasAny(value, [/metalcore/i, /deathcore/i, /core/i]) },
+        { id: "alt-rap", matches: (value) => hasAny(value, [/alternative/i, /rap/i]) },
+      ];
+    case "Progressive & Experimental":
+      return [
+        { id: "all", matches: () => true },
+        { id: "progressive", matches: (value) => hasAny(value, [/progressive/i, /prog\b/i]) },
+        { id: "post", matches: (value) => hasAny(value, [/post/i, /blackgaze/i]) },
+        { id: "industrial-tech", matches: (value) => hasAny(value, [/industrial/i, /technical/i, /djent/i, /mathcore/i]) },
+      ];
+    case "Classic and Symphonic Metal":
+      return [
+        { id: "all", matches: () => true },
+        { id: "traditional", matches: (value) => hasAny(value, [/heavy/i, /nwobhm/i, /traditional/i]) },
+        { id: "symphonic", matches: (value) => hasAny(value, [/symphonic/i]) },
+        { id: "glam", matches: (value) => hasAny(value, [/glam/i, /hair/i]) },
+      ];
+    case "Punk & Hardcore":
+      return [
+        { id: "all", matches: () => true },
+        { id: "punk", matches: (value) => hasAny(value, [/punk/i]) },
+        { id: "hardcore", matches: (value) => hasAny(value, [/hardcore/i, /powerviolence/i, /crust/i, /d beat/i]) },
+        { id: "emo", matches: (value) => hasAny(value, [/emo/i, /screamo/i]) },
+      ];
+    case "Rock & Alternative":
+      return [
+        { id: "all", matches: () => true },
+        { id: "classic-hard", matches: (value) => hasAny(value, [/classic rock/i, /hard rock/i, /heavy rock/i]) },
+        { id: "alt-indie", matches: (value) => hasAny(value, [/alternative/i, /indie/i, /grunge/i, /shoegaze/i]) },
+        { id: "other-rock", matches: (value) => hasAny(value, [/rock/i]) },
+      ];
+    default:
+      return [{ id: "all", matches: () => true }];
+  }
+}
+
+export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<Record<string, number>> {
+  if (!hasDatabaseUrl()) {
+    return { all: 0 };
+  }
+
+  requireDatabaseUrl("getCategoryArtistTabCountsByGenre");
+
+  const normalizedGenre = normalizeGenreTerm(genre);
+  const normalizedGenreTerms = getExpandedGenreTerms(genre);
+  const normalizedGenrePattern = buildGenreRegexPattern(normalizedGenreTerms);
+
+  if (!normalizedGenre || normalizedGenreTerms.length === 0) {
+    return { all: 0 };
+  }
+
+  const videoGenreColumnExists = await hasVideoGenreColumn();
+  if (!videoGenreColumnExists) {
+    return { all: 0 };
+  }
+
+  const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
+  const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
+  const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
+  const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
+  const normalizedGenrePlaceholders = normalizedGenreTerms.map(() => "?").join(", ");
+
+  const rows = await prisma.$queryRawUnsafe<Array<{ dominantGenre: string | null }>>(
+    `SELECT
+       SUBSTRING_INDEX(GROUP_CONCAT(NULLIF(TRIM(v.genre), '') ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC), ',', 1) AS dominantGenre
+     FROM videos v${videoArtistIndexHint}
+     WHERE v.videoId IS NOT NULL
+       AND ${videoArtistNormExpr} <> ''
+       AND COALESCE(v.approved, 0) = 1
+       ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+       AND (
+         ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+         OR LOWER(v.genre) REGEXP ?
+       )
+     GROUP BY ${videoArtistNormExpr}`,
+    ...normalizedGenreTerms,
+    normalizedGenrePattern,
+  );
+
+  const matchers = buildCategoryArtistTabCountMatchers(genre);
+  const counts: Record<string, number> = { all: rows.length };
+  for (const matcher of matchers) {
+    if (matcher.id === "all") {
+      continue;
+    }
+    counts[matcher.id] = rows.reduce((total, row) => total + (matcher.matches(row.dominantGenre) ? 1 : 0), 0);
+  }
+
+  return counts;
 }
 
 export async function getVideosByGenreAndArtist(

@@ -123,12 +123,12 @@ export default function Home() {
         <nav aria-label="Browse by genre">
           <ul>
             <li><a href="/categories/heavy-metal">Heavy Metal</a></li>
-            <li><a href="/categories/thrash-metal">Thrash Metal</a></li>
+            <li><a href="/categories/thrash-power-metal">Thrash &amp; Power Metal</a></li>
             <li><a href="/categories/classic-rock">Classic Rock</a></li>
             <li><a href="/categories/doom-metal">Doom Metal</a></li>
             <li><a href="/categories/progressive-metal">Progressive Metal</a></li>
             <li><a href="/categories/death-metal">Death Metal</a></li>
-            <li><a href="/categories/black-metal">Black Metal</a></li>
+            <li><a href="/categories/black-and-death-metal">Black and Death Metal</a></li>
             <li><a href="/categories/power-metal">Power Metal</a></li>
             <li><a href="/categories">All genres →</a></li>
           </ul>

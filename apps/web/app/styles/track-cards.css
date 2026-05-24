@@ -505,12 +505,12 @@
   color: inherit;
 }
 
-.favouritesBlindInner .linkedCard {
+.overlayPanelInner .linkedCard {
   position: relative;
   overflow: hidden;
 }
 
-.favouritesBlindInner .linkedCard::after {
+.overlayPanelInner .linkedCard::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -519,15 +519,15 @@
   background: rgba(255, 255, 255, 0.92);
 }
 
-.favouritesBlindInner .linkedCard:active::after {
+.overlayPanelInner .linkedCard:active::after {
   animation: navClickFlash 220ms ease-out;
 }
 
-.favouritesBlindInner .leaderboardTrackLink::after {
+.overlayPanelInner .leaderboardTrackLink::after {
   display: none;
 }
 
-.favouritesBlindInner .leaderboardTrackLink:active::after {
+.overlayPanelInner .leaderboardTrackLink:active::after {
   animation: none;
 }
 

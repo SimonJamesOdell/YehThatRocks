@@ -659,6 +659,8 @@ function ShellDynamicInner({
       router.push(href);
     },
   });
+  const isCategoriesParentOverlayPendingOrActive = isCategoriesOverlayPendingOrActive
+    && (pathname === "/categories" || overlayRouteKey === "/categories");
   const handleOverlayOpenRequest = useCallback((kind: "wiki" | "video", optimisticRouteKey: string) => {
     setPendingOverlayOpenKind(kind);
     setPendingOverlayRouteKey(optimisticRouteKey);
@@ -2709,7 +2711,13 @@ function ShellDynamicInner({
                 className={overlayPanelClassName}
                 aria-label="Page overlay"
               >
-                <div ref={favouritesBlindInnerRef} className="favouritesBlindInner">
+                <div
+                  ref={favouritesBlindInnerRef}
+                  className={[
+                    "overlayPanelInner",
+                    isCategoriesParentOverlayPendingOrActive ? "overlayPanelInnerNoScroll" : "",
+                  ].filter(Boolean).join(" ")}
+                >
                   {(() => {
                     const loadingFallback = (
                       isCategoriesOverlayPendingOrActive ? (

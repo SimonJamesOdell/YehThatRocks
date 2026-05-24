@@ -1,4 +1,4 @@
-import { resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
+import { resolveAllTopLevelGenreBuckets, resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
 
 export const AUTOPLAY_MIX_KEYS = ["top100", "favourites", "newest", "random"] as const;
 
@@ -158,8 +158,8 @@ export function doesVideoMatchAutoplayGenres(videoGenre: string | null | undefin
   }
 
   const normalizedGenre = (videoGenre ?? "").trim().toLowerCase();
-  const bucketGenre = resolveTopLevelGenreBucket(normalizedGenre)?.toLowerCase() ?? "";
-  if (!normalizedGenre && !bucketGenre) {
+  const bucketGenres = resolveAllTopLevelGenreBuckets(normalizedGenre).map((bucket) => bucket.toLowerCase());
+  if (!normalizedGenre && bucketGenres.length === 0) {
     return false;
   }
 
@@ -169,10 +169,12 @@ export function doesVideoMatchAutoplayGenres(videoGenre: string | null | undefin
       return false;
     }
 
-    const tokenBucket = resolveTopLevelGenreBucket(normalizedToken)?.toLowerCase() ?? "";
-    const targetToken = tokenBucket || normalizedToken;
+    const tokenBuckets = resolveAllTopLevelGenreBuckets(normalizedToken).map((bucket) => bucket.toLowerCase());
+    const targetTokens = tokenBuckets.length > 0 ? tokenBuckets : [normalizedToken];
 
-    return (bucketGenre && bucketGenre === targetToken)
-      || normalizedGenre.includes(targetToken);
+    return targetTokens.some((targetToken) =>
+      bucketGenres.includes(targetToken)
+        || normalizedGenre.includes(targetToken),
+    );
   });
 }

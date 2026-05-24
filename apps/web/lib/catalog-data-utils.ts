@@ -66,6 +66,7 @@ export type CategoryArtistCard = {
   slug: string;
   videoCount: number;
   thumbnailVideoId: string | null;
+  dominantGenre?: string | null;
 };
 
 export type PlaybackDecision = {
