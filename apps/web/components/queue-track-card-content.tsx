@@ -30,7 +30,30 @@ export function QueueTrackCardContent({ track, index }: QueueTrackCardContentPro
   const router = useRouter();
   const [artistVideoCount, setArtistVideoCount] = useState<number | null>(null);
   const parsedArtistCandidate = track.parsedArtist?.trim() || track.channelTitle?.trim() || "";
-  const parsedTrackCandidate = track.parsedTrack?.trim() || "";
+  const parsedTrackCandidate = (() => {
+    const explicitTrack = track.parsedTrack?.trim();
+    if (explicitTrack) {
+      return explicitTrack;
+    }
+
+    const normalizedTitle = track.title?.trim() || "";
+    const normalizedArtist = parsedArtistCandidate.trim();
+    if (!normalizedTitle || !normalizedArtist) {
+      return normalizedTitle;
+    }
+
+    const lowerTitle = normalizedTitle.toLowerCase();
+    const lowerArtist = normalizedArtist.toLowerCase();
+    if (lowerTitle.startsWith(lowerArtist)) {
+      const remainder = normalizedTitle.slice(normalizedArtist.length).trimStart();
+      const strippedRemainder = remainder.replace(/^[\-:\u2013\u2014\|]+\s*/, "").trim();
+      if (strippedRemainder) {
+        return strippedRemainder;
+      }
+    }
+
+    return normalizedTitle;
+  })();
   const parsedArtistLabel = parsedArtistCandidate.toUpperCase();
   const parsedTrackLabel = parsedTrackCandidate
     ? `${parsedTrackCandidate.charAt(0).toUpperCase()}${parsedTrackCandidate.slice(1)}`

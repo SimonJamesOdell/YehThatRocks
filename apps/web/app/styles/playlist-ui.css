@@ -543,9 +543,21 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.03));
 }
 
+.rightRailPlaylistCard .rightRailPlaylistCardBody {
+  min-width: 0;
+  padding-right: 34px;
+}
+
+.rightRailPlaylistCard .rightRailPlaylistCardBody h3 {
+  margin: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .rightRailPlaylistTrackCard {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.025));
-  padding: 0 8px 0 0;
+  padding: 10px;
   gap: 10px;
 }
 
@@ -689,8 +701,8 @@
 }
 
 .playlistRailTrackRow .rightRailPlaylistTrackCard.relatedCardActive::before {
-  left: 109px;
-  border-radius: 0 7px 7px 0;
+  left: 1px;
+  border-radius: inherit;
 }
 
 .rightRail .relatedCardActive > *:not(.thumbGlow),

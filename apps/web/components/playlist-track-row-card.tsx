@@ -42,7 +42,7 @@ export function PlaylistTrackRowCard({
       </button>
       <Link
         href={`/?v=${track.id}&pl=${encodeURIComponent(playlistId)}&pli=${index}`}
-        className={`relatedCard linkedCard rightRailPlaylistTrackCard${isCurrentPlaylistTrack ? " relatedCardActive" : ""}`}
+        className={`relatedCard linkedCard relatedCardTransition rightRailPlaylistTrackCard${isCurrentPlaylistTrack ? " relatedCardActive" : ""}`}
         prefetch={false}
         draggable={false}
       >

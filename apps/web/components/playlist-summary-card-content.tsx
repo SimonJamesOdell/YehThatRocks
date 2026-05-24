@@ -33,7 +33,7 @@ export function PlaylistSummaryCardContent({
           <div className="playlistRailThumbPlaceholder" aria-hidden="true">♬</div>
         )}
       </div>
-      <div>
+      <div className="rightRailPlaylistCardBody">
         <h3>{playlist.name}</h3>
         <p>{playlist.itemCount} {playlist.itemCount === 1 ? "track" : "tracks"}</p>
       </div>

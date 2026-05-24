@@ -783,7 +783,7 @@
   gap: 4px;
 }
 
-.relatedCardGenre {
+.relatedCard p.relatedCardGenre {
   margin: 0 0 4px;
   color: #ffb6aa;
   font-family: var(--font-body), sans-serif;

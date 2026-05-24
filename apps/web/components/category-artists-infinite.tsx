@@ -127,7 +127,7 @@ export function CategoryArtistsInfinite({
   const [initialTabCounts, setInitialTabCounts] = useState<Record<string, number> | null>(null);
   const [pinningArtistSlug, setPinningArtistSlug] = useState<string | null>(null);
   const [, startArtistsRenderTransition] = useTransition();
-  const renderFrameRef = useRef<number | null>(null);
+  const renderTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     setActiveTabId("all");
@@ -288,9 +288,9 @@ export function CategoryArtistsInfinite({
   }, [bucketFilteredArtists, normalizedFilter]);
 
   useEffect(() => {
-    if (renderFrameRef.current !== null) {
-      window.cancelAnimationFrame(renderFrameRef.current);
-      renderFrameRef.current = null;
+    if (renderTimerRef.current !== null) {
+      window.clearTimeout(renderTimerRef.current);
+      renderTimerRef.current = null;
     }
 
     const initialBatchSize = matchedArtists.length > 240 ? 24 : 36;
@@ -301,7 +301,8 @@ export function CategoryArtistsInfinite({
       return () => undefined;
     }
 
-    const batchSize = 36;
+    const batchSize = 48;
+    const appendDelayMs = 28;
     let nextIndex = initialBatchSize;
     let cancelled = false;
 
@@ -312,32 +313,34 @@ export function CategoryArtistsInfinite({
 
       nextIndex = Math.min(nextIndex, matchedArtists.length);
       if (nextIndex >= matchedArtists.length) {
-        renderFrameRef.current = null;
+        renderTimerRef.current = null;
         return;
       }
 
       const chunk = matchedArtists.slice(nextIndex, nextIndex + batchSize);
       nextIndex += chunk.length;
-      setVisibleArtists((current) => {
-        if (current.length === 0) {
-          return firstSlice.concat(chunk);
-        }
-        return current.concat(chunk);
+      startArtistsRenderTransition(() => {
+        setVisibleArtists((current) => {
+          if (current.length === 0) {
+            return firstSlice.concat(chunk);
+          }
+          return current.concat(chunk);
+        });
       });
 
-      renderFrameRef.current = window.requestAnimationFrame(step);
+      renderTimerRef.current = window.setTimeout(step, appendDelayMs);
     };
 
-    renderFrameRef.current = window.requestAnimationFrame(step);
+    renderTimerRef.current = window.setTimeout(step, appendDelayMs);
 
     return () => {
       cancelled = true;
-      if (renderFrameRef.current !== null) {
-        window.cancelAnimationFrame(renderFrameRef.current);
-        renderFrameRef.current = null;
+      if (renderTimerRef.current !== null) {
+        window.clearTimeout(renderTimerRef.current);
+        renderTimerRef.current = null;
       }
     };
-  }, [matchedArtists]);
+  }, [matchedArtists, startArtistsRenderTransition]);
 
   const artists = visibleArtists;
 

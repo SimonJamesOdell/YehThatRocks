@@ -16,6 +16,9 @@ type PlaylistTrack = {
   parsedArtist?: string | null;
   parsedTrack?: string | null;
   genre?: string | null;
+  isFavouriteSource?: boolean;
+  isTop100Source?: boolean;
+  isNewSource?: boolean;
 };
 
 type PlaylistTrackCardContentProps = {
@@ -99,6 +102,11 @@ export function PlaylistTrackCardContent({
         />
       </div>
       <div>
+        <div className="relatedCardSourceBadges">
+          {track.isFavouriteSource ? <span className="relatedSourceBadge relatedSourceBadgeFavourite">Favourite</span> : null}
+          {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
+          {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
+        </div>
         <p className="relatedCardGenre">{genreLabel}</p>
         <h3>
           {hasParsedTitlePattern ? (

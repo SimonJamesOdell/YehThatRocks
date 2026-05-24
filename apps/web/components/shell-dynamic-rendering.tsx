@@ -343,6 +343,7 @@ export const WatchNextCard = memo(function WatchNextCard({
             {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
             {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
           </div>
+          <p className="relatedCardGenre">{genreLabel}</p>
           <h3>
             {parsedArtistCandidate && parsedTrackCandidate ? (
               <>
@@ -411,6 +412,7 @@ export const WatchNextCard = memo(function WatchNextCard({
   return prev.track.id === next.track.id
     && prev.track.title === next.track.title
     && prev.track.channelTitle === next.track.channelTitle
+    && prev.track.genre === next.track.genre
     && prev.track.parsedArtist === next.track.parsedArtist
     && prev.track.parsedTrack === next.track.parsedTrack
     && prev.track.sourceLabel === next.track.sourceLabel
