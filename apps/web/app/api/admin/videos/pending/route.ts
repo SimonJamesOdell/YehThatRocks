@@ -150,7 +150,6 @@ export async function POST(request: NextRequest) {
       approvedAt: Date;
       updatedAt: Date;
       title?: string;
-      genre?: string | null;
       parsedArtist?: string | null;
       parsedTrack?: string | null;
     } = {
@@ -163,10 +162,6 @@ export async function POST(request: NextRequest) {
       approveData.title = parsed.title;
     }
 
-    if (parsed.genre !== undefined) {
-      approveData.genre = parsed.genre;
-    }
-
     if (parsed.parsedArtist !== undefined) {
       approveData.parsedArtist = parsed.parsedArtist;
     }
@@ -176,9 +171,17 @@ export async function POST(request: NextRequest) {
     }
 
     const approvedRows = await prisma.video.updateMany({
-      where: { videoId, approved: false },
+      where: { videoId },
       data: approveData,
     });
+
+    if (parsed.genre !== undefined) {
+      await prisma.$executeRaw`
+        UPDATE videos
+        SET genre = ${parsed.genre}
+        WHERE videoId = ${videoId}
+      `;
+    }
 
     if (approvedRows.count === 0) {
       const existing = await prisma.$queryRaw<Array<{ id: number }>>`
