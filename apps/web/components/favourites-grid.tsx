@@ -166,6 +166,7 @@ const FavouritesGridCard = memo(function FavouritesGridCard({
   const artistVideoCountLabel = artistVideoCount === null
     ? null
     : `${artistVideoCount.toLocaleString("en-US")} videos`;
+  const genreLabel = track.genre?.trim() || "Rock / Metal";
 
   useEffect(() => {
     if (!artistSlug) {
@@ -198,7 +199,7 @@ const FavouritesGridCard = memo(function FavouritesGridCard({
 
   return (
     <article
-      className="catalogCard categoryCard favouritesCardCompact playlistCardInteractive"
+      className="catalogCard favouritesCardCompact playlistCardInteractive"
       role="link"
       tabIndex={0}
       aria-label={`Play ${track.title}`}
@@ -253,6 +254,7 @@ const FavouritesGridCard = memo(function FavouritesGridCard({
         {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
         {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
       </div>
+      <p className="favouritesVideoGenre">{genreLabel}</p>
       <h3>
         <span className="cardTitleLink">
           {parsedArtistCandidate && parsedTrackCandidate ? (

@@ -15,6 +15,7 @@ type PlaylistTrack = {
   channelTitle: string;
   parsedArtist?: string | null;
   parsedTrack?: string | null;
+  genre?: string | null;
 };
 
 type PlaylistTrackCardContentProps = {
@@ -40,6 +41,7 @@ export function PlaylistTrackCardContent({
   const artistVideoCountLabel = artistVideoCount === null
     ? null
     : `${artistVideoCount.toLocaleString("en-US")} videos`;
+  const genreLabel = track.genre?.trim() || "Rock / Metal";
 
   useEffect(() => {
     if (!artistSlug) {
@@ -97,6 +99,7 @@ export function PlaylistTrackCardContent({
         />
       </div>
       <div>
+        <p className="relatedCardGenre">{genreLabel}</p>
         <h3>
           {hasParsedTitlePattern ? (
             <>

@@ -249,6 +249,7 @@ export async function getWatchHistory(
         title: string | null;
         parsedArtist: string | null;
         parsedTrack: string | null;
+        genre: string | null;
         channelTitle: string | null;
         favourited: number | bigint | null;
         description: string | null;
@@ -263,6 +264,7 @@ export async function getWatchHistory(
           COALESCE(v.title, CONCAT('Video ', wh.video_id)) AS title,
           NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
           NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
+          NULLIF(TRIM(v.genre), '') AS genre,
           ${channelTitleExpr} AS channelTitle,
           COALESCE(v.favourited, 0) AS favourited,
           COALESCE(v.description, 'Watched track') AS description,
@@ -281,7 +283,7 @@ export async function getWatchHistory(
 
     return rows
       .filter((row: { videoId: string | null }) => typeof row.videoId === "string" && row.videoId.length > 0)
-      .map((row: { videoId: string | null; title: string | null; parsedArtist: string | null; parsedTrack: string | null; channelTitle: string | null; favourited: number | bigint | null; description: string | null; lastWatchedAt: Date | string | null; watchCount: number | bigint | null; maxProgressPercent: number | bigint | null }) => {
+      .map((row: { videoId: string | null; title: string | null; parsedArtist: string | null; parsedTrack: string | null; genre: string | null; channelTitle: string | null; favourited: number | bigint | null; description: string | null; lastWatchedAt: Date | string | null; watchCount: number | bigint | null; maxProgressPercent: number | bigint | null }) => {
         const videoTitle = row.title ?? "Unknown title";
         const normalizedTitle = videoTitle.trim().toLowerCase();
 
@@ -309,6 +311,9 @@ export async function getWatchHistory(
           video: mapVideo({
             videoId: row.videoId as string,
             title: videoTitle,
+            parsedArtist: row.parsedArtist,
+            parsedTrack: row.parsedTrack,
+            genre: row.genre,
             channelTitle: resolvedChannelTitle,
             favourited: row.favourited ?? 0,
             description: row.description,

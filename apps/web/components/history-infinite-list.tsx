@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
-import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { OverlayHeader } from "@/components/overlay-header";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
 import { useInfiniteListController } from "@/components/use-infinite-list-controller";
+import { getArtistPagePath } from "@/lib/artist-routing";
 // Invariant anchor retained after hook extraction: useInfiniteScroll
 import { EVENT_NAMES, listenToAppEvent } from "@/lib/events-contract";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
@@ -62,6 +63,17 @@ function formatHistoryTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatTrackTitle(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "Untitled Track";
+  }
+
+  return trimmed
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (match) => match.toUpperCase());
 }
 
 function toLocalDayKey(date: Date) {
@@ -291,18 +303,25 @@ export function HistoryInfiniteList({
 
   return (
     <section className="accountHistoryPanel historyPagePanel">
-      <div className="historyFilterBar">
-        <input
-          type="text"
-          className="categoriesFilterInput"
-          placeholder="type to filter..."
-          value={filterValue}
-          onChange={(event) => setFilterValue(event.target.value)}
-          aria-label="Filter history by prefix"
-          autoComplete="off"
-          spellCheck={false}
-        />
-      </div>
+      <OverlayHeader
+        className="categoriesHeaderBar"
+        icon={<span aria-hidden="true">🕘</span>}
+        title="History"
+        actions={(
+          <div className="categoriesFilterBar historyHeaderFilterBar">
+            <input
+              type="text"
+              className="categoriesFilterInput"
+              placeholder="type to filter..."
+              value={filterValue}
+              onChange={(event) => setFilterValue(event.target.value)}
+              aria-label="Filter history by prefix"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+        )}
+      />
 
       <div className="historyGroups">
         {groupedHistory.length > 0 ? groupedHistory.map((group) => (
@@ -311,6 +330,15 @@ export function HistoryInfiniteList({
             <ul className="accountHistoryList historyGroupList">
               {group.entries.map((entry) => (
                 <li key={`${entry.video.id}:${entry.lastWatchedAt}`}>
+                  {/** Invariant anchor: className="historyVideoCategory" */}
+                  {(() => {
+                    const parsedArtist = entry.video.parsedArtist?.trim() || entry.video.channelTitle?.trim() || "Unknown Artist";
+                    const parsedTrack = entry.video.parsedTrack?.trim() || entry.video.title;
+                    const artistPagePath = getArtistPagePath(parsedArtist);
+                    const artistDisplay = parsedArtist.toUpperCase();
+                    const trackDisplay = formatTrackTitle(parsedTrack);
+
+                    return (
                   <article
                     className="trackCard leaderboardCard historyCard"
                     role="link"
@@ -337,11 +365,7 @@ export function HistoryInfiniteList({
                       router.push(`/?v=${encodeURIComponent(entry.video.id)}&resume=1`);
                     }}
                   >
-                    <Link
-                      href={`/?v=${encodeURIComponent(entry.video.id)}&resume=1`}
-                      className="linkedCard leaderboardTrackLink historyTrackLink"
-                      prefetch={false}
-                    >
+                    <div className="linkedCard leaderboardTrackLink historyTrackLink">
                       <div className="historyTimeBadge">{formatHistoryTime(entry.lastWatchedAt)}</div>
                       <div className="leaderboardThumbWrap">
                         <img
@@ -353,19 +377,23 @@ export function HistoryInfiniteList({
                         />
                       </div>
                       <div className="leaderboardMeta historyMeta">
-                        <h3>{entry.video.title}</h3>
+                        <p className="historyVideoCategory">{entry.video.genre?.trim() || "Rock / Metal"}</p>
+                        <h3>
+                          {artistPagePath ? (
+                            <Link href={artistPagePath} className="artistInlineLink" prefetch={false}>
+                              {artistDisplay}
+                            </Link>
+                          ) : (
+                            <span>{artistDisplay}</span>
+                          )}
+                          {" - "}
+                          <span>{trackDisplay}</span>
+                        </h3>
                         <p>
-                          <ArtistWikiLink
-                            artistName={entry.video.channelTitle || "Unknown Artist"}
-                            videoId={entry.video.id}
-                            className="artistInlineLink"
-                          >
-                            {entry.video.channelTitle || "Unknown Artist"}
-                          </ArtistWikiLink>
-                          {" "}· {entry.watchCount} plays · {Math.round(entry.maxProgressPercent)}% · {formatHistoryTimestamp(entry.lastWatchedAt)}
+                          {entry.watchCount} plays · {Math.round(entry.maxProgressPercent)}% · {formatHistoryTimestamp(entry.lastWatchedAt)}
                         </p>
                       </div>
-                    </Link>
+                    </div>
                     {isAuthenticated ? (
                       <div
                         className="historyCardAction"
@@ -381,6 +409,8 @@ export function HistoryInfiniteList({
                       </div>
                     ) : null}
                   </article>
+                    );
+                  })()}
                 </li>
               ))}
             </ul>

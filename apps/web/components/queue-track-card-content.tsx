@@ -15,6 +15,7 @@ type QueueTrack = {
   channelTitle: string;
   parsedArtist?: string | null;
   parsedTrack?: string | null;
+  genre?: string | null;
   isFavouriteSource?: boolean;
   isTop100Source?: boolean;
   isNewSource?: boolean;
@@ -40,6 +41,7 @@ export function QueueTrackCardContent({ track, index }: QueueTrackCardContentPro
   const artistVideoCountLabel = artistVideoCount === null
     ? null
     : `${artistVideoCount.toLocaleString("en-US")} videos`;
+  const genreLabel = track.genre?.trim() || "Rock / Metal";
 
   useEffect(() => {
     if (!artistSlug) {
@@ -102,6 +104,7 @@ export function QueueTrackCardContent({ track, index }: QueueTrackCardContentPro
           {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
           {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
         </div>
+        <p className="relatedCardGenre">{genreLabel}</p>
         <h3>
           {hasParsedTitlePattern ? (
             <>

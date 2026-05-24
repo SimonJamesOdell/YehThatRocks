@@ -24,24 +24,31 @@ export default async function HistoryPage() {
   return (
     <>
       <OverlayScrollReset />
-      <OverlayHeader
-        icon={<span className="whiteHistoryGlyph" aria-hidden="true">🕘</span>}
-        title="History"
-      />
-
       {!user ? (
-        <ProtectedAuthGatePanel
-          status={authState.status === "unavailable" ? "unavailable" : "unauthenticated"}
-          heading="🕘 Watch history"
-          headingDetail="Login required"
-          unauthenticatedMessage="Sign in to view your watch history."
-          hasRefreshToken={hasRefreshToken}
-          unavailableMessage={authState.status === "unavailable" ? authState.message : undefined}
-        />
+        <>
+          <OverlayHeader
+            icon={<span className="whiteHistoryGlyph" aria-hidden="true">🕘</span>}
+            title="History"
+          />
+          <ProtectedAuthGatePanel
+            status={authState.status === "unavailable" ? "unavailable" : "unauthenticated"}
+            heading="🕘 Watch history"
+            headingDetail="Login required"
+            unauthenticatedMessage="Sign in to view your watch history."
+            hasRefreshToken={hasRefreshToken}
+            unavailableMessage={authState.status === "unavailable" ? authState.message : undefined}
+          />
+        </>
       ) : initialHistory.length === 0 ? (
-        <section className="accountHistoryPanel historyPagePanel">
-          <p className="authMessage">Play a few tracks and your history will appear here.</p>
-        </section>
+        <>
+          <OverlayHeader
+            icon={<span className="whiteHistoryGlyph" aria-hidden="true">🕘</span>}
+            title="History"
+          />
+          <section className="accountHistoryPanel historyPagePanel">
+            <p className="authMessage">Play a few tracks and your history will appear here.</p>
+          </section>
+        </>
       ) : (
         <HistoryInfiniteList
           initialHistory={initialHistory}

@@ -590,7 +590,7 @@ export function AddToPlaylistButton({
                       <button
                         key={playlist.id}
                         type="button"
-                        className="catalogCard categoryCard favouritesCardCompact playlistCardInteractive playlistQuickAddCard"
+                        className="catalogCard favouritesCardCompact playlistCardInteractive playlistQuickAddCard"
                         onClick={() => handleChooseExistingPlaylist(playlist.id)}
                         disabled={isPending}
                         aria-label={`Add to ${playlist.name}`}

@@ -403,7 +403,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
       </OverlayHeader>
 
       {playlists.length > 0 ? (
-        <div className="catalogGrid favouritesCatalogGrid">
+        <div className="catalogGrid favouritesCatalogGrid playlistsCatalogGrid">
           {playlists.map((playlist) => {
             const isDeleting = pendingDeleteId === playlist.id;
             const hasLeadThumbnail =
@@ -412,7 +412,7 @@ export function PlaylistsGrid({ initialPlaylists, isAuthenticated }: PlaylistsGr
             return (
               <article
                 key={playlist.id}
-                className="catalogCard categoryCard favouritesCardCompact playlistCardInteractive"
+                className="catalogCard favouritesCardCompact playlistCardInteractive"
                 role="link"
                 tabIndex={0}
                 aria-label={`Set ${playlist.name} as active playlist`}

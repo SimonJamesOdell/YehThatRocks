@@ -515,8 +515,8 @@ export function CategoryArtistsInfinite({
                     />
                   </div>
                 ) : null}
-                <h3 className="artistResultName">{artist.name}</h3>
                 <p className="artistResultGenre statusLabel">{artistGenreLabel}</p>
+                <h3 className="artistResultName">{artist.name}</h3>
                 <p>{artist.videoCount.toLocaleString("en-US")} videos in category</p>
               </Link>
                 );

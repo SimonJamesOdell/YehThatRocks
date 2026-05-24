@@ -210,6 +210,7 @@ export const WatchNextCard = memo(function WatchNextCard({
   const artistVideoCountLabel = artistVideoCount === null
     ? null
     : `${artistVideoCount.toLocaleString("en-US")} videos`;
+  const genreLabel = track.genre?.trim() || "Rock / Metal";
 
   useEffect(() => {
     setIsCardFavourited(isFavourite);

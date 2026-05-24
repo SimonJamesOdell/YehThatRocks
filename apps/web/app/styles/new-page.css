@@ -783,6 +783,16 @@
   gap: 4px;
 }
 
+.relatedCardGenre {
+  margin: 0 0 4px;
+  color: #ffb6aa;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
 .relatedSourceBadgeFavourite {
   border-color: rgba(255, 191, 191, 0.45);
   background: rgba(88, 18, 18, 0.48);
@@ -896,6 +906,12 @@
   width: min(100%, 420px);
 }
 
+.historyHeaderFilterBar {
+  flex: 0 1 340px;
+  max-width: 340px;
+  min-width: 200px;
+}
+
 .historyDateGroup {
   display: grid;
   gap: 10px;
@@ -950,6 +966,20 @@
 
 .historyMeta {
   min-width: 0;
+}
+
+.historyVideoCategory {
+  margin: 0 0 4px;
+  color: #ffb6aa;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.trackCard.historyCard .historyMeta p.historyVideoCategory {
+  color: #ffb6aa;
 }
 
 .historyCardAction {
