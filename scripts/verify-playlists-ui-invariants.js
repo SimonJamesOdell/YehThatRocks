@@ -20,6 +20,7 @@ const files = mapRelativeFiles(ROOT, {
   schemas: "apps/web/lib/api-schemas.ts",
   data: "apps/web/lib/catalog-data-core.ts",
   addButton: "apps/web/components/add-to-playlist-button.tsx",
+  playlistSummaryCard: "apps/web/components/playlist-summary-card-content.tsx",
   shell: "apps/web/components/shell-dynamic-core.tsx",
   playlistRailHook: "apps/web/components/use-playlist-rail.ts",
   player: "apps/web/components/player-experience-core.tsx",
@@ -41,6 +42,7 @@ function main() {
   const schemasSource = sources.schemas;
   const dataSource = sources.data;
   const addButtonSource = sources.addButton;
+  const playlistSummaryCardSource = sources.playlistSummaryCard;
   const playlistRailHookSource = sources.playlistRailHook;
   const shellSource = joinFileSources([files.shell, files.playlistRailHook], ROOT);
   const playerSource = joinFileSources([files.player, files.playlistSequenceHook], ROOT);
@@ -155,10 +157,15 @@ function main() {
   assertContains(shellSource, "className=\"rightRailPlaylistCardDelete\"", "Playlist rail cards have delete button", failures);
   assertContains(shellSource, "setConfirmDeleteRailPlaylist({ id: playlist.id, name: playlist.name });", "Playlist rail delete button opens confirmation modal", failures);
   assertContains(shellSource, "void handleDeletePlaylistFromRail(playlistId);", "Playlist rail confirmation modal invokes delete handler", failures);
+  assertContains(playlistSummaryCardSource, "className=\"rightRailPlaylistCardBody\"", "Playlist summary cards render a dedicated body wrapper class", failures);
   assertContains(cssSource, ".rightRailPlaylistCardDelete {", "CSS defines delete button for rail cards", failures);
   assertContains(cssSource, "position: absolute;", "Delete button is positioned absolutely", failures);
   assertContains(cssSource, "top: 8px;", "Delete button positioned at top", failures);
   assertContains(cssSource, "right: 8px;", "Delete button positioned at right", failures);
+  assertContains(cssSource, ".rightRailPlaylistCard .rightRailPlaylistCardBody {", "Playlist rail CSS defines wrapped summary body layout", failures);
+  assertContains(cssSource, "padding-right: 34px;", "Playlist summary body reserves space for delete button", failures);
+  assertContains(cssSource, ".rightRailPlaylistCard .rightRailPlaylistCardBody h3 {", "Playlist summary title uses dedicated wrapping rule", failures);
+  assertContains(cssSource, "white-space: normal;", "Playlist summary title can wrap onto multiple lines", failures);
 
   // Player playlist rail fixed-header invariants.
   assertContains(shellSource, "<div className=\"rightRailPlaylistBar\">", "Player rail playlist header exists", failures);

@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const mysql = require("mysql2/promise");
 const { isRockMetalGenre } = require("./lib/genre-scope");
-const { assertContains, assertInvariant, finishInvariantCheck, readFileStrict } = require("./lib/test-harness");
+const { assertContains, assertNotContains, assertInvariant, finishInvariantCheck, readFileStrict } = require("./lib/test-harness");
 const { asNumber, readArg } = require("./lib/cli");
 
 const ROOT = process.cwd();
@@ -180,6 +180,11 @@ function runSourceChecks(failures) {
 
   assertContains(categoryArtistsInfiniteSource, "readCategoryArtistsFirstPayloadFromSessionCache", "Category artists view consumes session-prefetched first payload", failures);
   assertContains(categoryArtistsInfiniteSource, "writeCategoryArtistsFirstPayloadToSessionCache", "Category artists view persists first payload for session reuse", failures);
+  assertContains(categoryArtistsInfiniteSource, "const [, startArtistsRenderTransition] = useTransition();", "Category artists uses transition-priority rendering for incremental card appends", failures);
+  assertContains(categoryArtistsInfiniteSource, "const renderTimerRef = useRef<number | null>(null);", "Category artists uses timer-based incremental append scheduling", failures);
+  assertContains(categoryArtistsInfiniteSource, "renderTimerRef.current = window.setTimeout(step, appendDelayMs);", "Category artists incremental append loop uses timed cadence instead of per-frame updates", failures);
+  assertContains(categoryArtistsInfiniteSource, "startArtistsRenderTransition(() => {", "Category artists appends visible chunks inside React transitions", failures);
+  assertNotContains(categoryArtistsInfiniteSource, "window.requestAnimationFrame(step)", "Category artists avoids per-frame append scheduling that can contend with scroll", failures);
 
   assertContains(categoryPageSource, "getCategoryArtistsByGenre", "Category page resolves artists for selected genre", failures);
   assertContains(categoryPageSource, "CategoryArtistsInfinite", "Category page renders category artist grid", failures);

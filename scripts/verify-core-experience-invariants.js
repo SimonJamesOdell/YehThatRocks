@@ -22,6 +22,7 @@ const ROOT = process.cwd();
 const files = {
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
   shellDynamicRendering: path.join(ROOT, "apps/web/components/shell-dynamic-rendering.tsx"),
+  queueTrackCardContent: path.join(ROOT, "apps/web/components/queue-track-card-content.tsx"),
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
   currentVideoRouteService: path.join(ROOT, "apps/web/lib/current-video-route-service.ts"),
   analyticsRoute: path.join(ROOT, "apps/web/app/api/analytics/route.ts"),
@@ -60,6 +61,7 @@ function main() {
     readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
   ].join('\n');
   const shellDynamicRenderingSource = readFileStrict(files.shellDynamicRendering, ROOT);
+  const queueTrackCardContentSource = readFileStrict(files.queueTrackCardContent, ROOT);
   const shellRenderingSource = `${shellDynamicSource}\n${shellDynamicRenderingSource}`;
   const currentVideoRouteServiceSource = readFileStrict(files.currentVideoRouteService, ROOT);
   const currentVideoRouteSource = [
@@ -114,6 +116,10 @@ function main() {
   assertContains(shellRenderingSource, "{isSeen && !isFavourite ? <span className=\"videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay\">Seen</span> : null}", "Watch Next suppresses seen badge when favourite heart is present", failures);
   assertNotContains(shellDynamicSource, "{isSeen ? <span className=\"videoSeenBadge videoSeenBadgeOverlay relatedSeenBadgeOverlay\">Seen</span> : null}", "Watch Next should not render seen badge for favourited cards", failures);
   assertContains(shellDynamicSource, "watchNextRailRef.current.scrollTop = 0;", "Watch Next resets scroll top during transition", failures);
+  assertContains(queueTrackCardContentSource, "const parsedTrackCandidate = (() => {", "Queue cards derive a parsed-track fallback when parsedTrack is missing", failures);
+  assertContains(queueTrackCardContentSource, "const strippedRemainder = remainder.replace(/^[\\-:\\u2013\\u2014\\|]+\\s*/, \"\").trim();", "Queue cards strip artist-prefix separators from title fallback track text", failures);
+  assertContains(queueTrackCardContentSource, "const hasParsedTitlePattern = Boolean(parsedArtistCandidate && parsedTrackLabel);", "Queue cards only enter parsed-title mode with both artist and track labels", failures);
+  assertContains(queueTrackCardContentSource, "<span aria-hidden=\"true\"> - </span>", "Queue cards render ARTIST - Track separator in title", failures);
 
   // Current-video API invariants.
   assertContains(currentVideoRouteSource, "RESOLVE_CURRENT_VIDEO_TARGET_RELATED_COUNT = 8;", "Current-video API targets 8 Watch Next items", failures);
