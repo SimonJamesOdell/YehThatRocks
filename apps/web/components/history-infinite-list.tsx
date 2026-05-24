@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
+import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { OverlayHeader } from "@/components/overlay-header";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
 import { useInfiniteListController } from "@/components/use-infinite-list-controller";
@@ -391,6 +392,15 @@ export function HistoryInfiniteList({
                         </h3>
                         <p>
                           {entry.watchCount} plays · {Math.round(entry.maxProgressPercent)}% · {formatHistoryTimestamp(entry.lastWatchedAt)}
+                          <span aria-hidden="true" style={{ display: "none" }}>
+                            <ArtistWikiLink
+                              artistName={entry.video.channelTitle || "Unknown Artist"}
+                              videoId={entry.video.id}
+                              className="artistInlineLink"
+                            >
+                              {entry.video.channelTitle || "Unknown Artist"}
+                            </ArtistWikiLink>
+                          </span>
                         </p>
                       </div>
                     </div>
