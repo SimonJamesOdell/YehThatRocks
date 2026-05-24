@@ -1,7 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import type { PendingVideoDraft, PendingVideoRow, RecentlyApprovedVideoRow } from "@/components/admin-dashboard-types";
-import { TOP_LEVEL_GENRE_BUCKETS, resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
+import { TOP_LEVEL_GENRE_BUCKETS, TOP_LEVEL_GENRE_BUCKET_LABELS, resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
 
 type AdminDashboardVideosTabProps = {
   pendingVideoTotal: number;
@@ -42,7 +42,7 @@ export function AdminDashboardVideosTab({
   revokingVideoId,
   onRevokeApprovedVideo,
 }: AdminDashboardVideosTabProps) {
-  const pendingGenreOptions = [...TOP_LEVEL_GENRE_BUCKETS.map((bucket) => bucket.label), "Unclassified"];
+  const pendingGenreOptions = [...TOP_LEVEL_GENRE_BUCKET_LABELS, "Unclassified"];
   const pendingGenreOptionDetails = new Map(
     TOP_LEVEL_GENRE_BUCKETS.map((bucket) => {
       const sampleTerms = bucket.terms.slice(0, 6);
@@ -97,7 +97,11 @@ export function AdminDashboardVideosTab({
                   const classifiedGenreValue = draft !== undefined
                     ? (draft.genre ?? "")
                     : (row.genre ?? "");
-                  const selectedPendingGenre = resolveTopLevelGenreBucket(classifiedGenreValue) ?? "Unclassified";
+                  const normalizedPendingGenreValue = classifiedGenreValue.trim().toLowerCase();
+                  const exactPendingGenreMatch = pendingGenreOptions.find((option) => option.toLowerCase() === normalizedPendingGenreValue);
+                  const selectedPendingGenre = exactPendingGenreMatch
+                    ?? resolveTopLevelGenreBucket(classifiedGenreValue)
+                    ?? "Unclassified";
                   // If a draft exists for this row (user has edited it), use the draft
                   // value even if parsedArtist/parsedTrack is null (user cleared the field).
                   // Only fall back to the server value when no draft exists yet.

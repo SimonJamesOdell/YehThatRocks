@@ -1,7 +1,7 @@
 import { useEffect, useState, type MutableRefObject } from "react";
 
 import type { GenreReviewVideoRow } from "@/components/admin-dashboard-types";
-import { TOP_LEVEL_GENRE_BUCKETS, resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
+import { TOP_LEVEL_GENRE_BUCKETS, TOP_LEVEL_GENRE_BUCKET_LABELS, resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
 
 type AdminDashboardGenreReviewTabProps = {
   genreReviewRemaining: number;
@@ -41,7 +41,7 @@ export function AdminDashboardGenreReviewTab({
   const [draftArtist, setDraftArtist] = useState("");
   const [draftTrack, setDraftTrack] = useState("");
 
-  const genreOptions = [...TOP_LEVEL_GENRE_BUCKETS.map((bucket) => bucket.label), "Unclassified"];
+  const genreOptions = [...TOP_LEVEL_GENRE_BUCKET_LABELS, "Unclassified"];
   const genreOptionDetails = new Map(
     TOP_LEVEL_GENRE_BUCKETS.map((bucket) => {
       const sampleTerms = bucket.terms.slice(0, 6);

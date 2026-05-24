@@ -152,6 +152,8 @@ export const TOP_LEVEL_GENRE_BUCKETS: readonly GenreBucket[] = [
   },
 ];
 
+export const TOP_LEVEL_GENRE_BUCKET_LABELS = TOP_LEVEL_GENRE_BUCKETS.map((bucket) => bucket.label);
+
 function normalizeGenreToken(input: string) {
   return input
     .trim()
