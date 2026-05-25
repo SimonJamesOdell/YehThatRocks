@@ -1579,7 +1579,7 @@ export async function getArtistBySlug(slug: string) {
               SELECT a.${nameCol} AS name, NULL AS country, ${genreExpr} AS genre1
               FROM artists a
               WHERE a.${nameCol} IS NOT NULL AND a.${nameCol} <> ''
-                AND ${artistNameNormExpr} LIKE ?
+                AND (${artistNameNormExpr}) LIKE ?
               ORDER BY a.${nameCol} ASC
               LIMIT ${pageSize}
               OFFSET ${offset}
