@@ -13,6 +13,8 @@ import {
   readCategoryArtistsFullPayloadFromCache,
 } from "@/lib/category-artists-session-cache";
 import { CATEGORY_ARTISTS_FILTER_EVENT, readCategoryArtistsFilter } from "@/lib/category-artists-filter-state";
+import { CATEGORY_ARTISTS_TAB_EVENT, readCategoryArtistsTab } from "@/lib/category-artists-tab-state";
+import { resolveCategoryArtistTabById } from "@/lib/category-artists-tabs";
 import type { CategoryArtistCard } from "@/lib/catalog-data";
 
 type CategoryArtistsBrowserProps = {
@@ -70,6 +72,7 @@ export function CategoryArtistsBrowser({ slug, genre }: CategoryArtistsBrowserPr
   const appendQueueRef = useRef<CategoryArtistCard[]>([]);
   const appendFlushFrameRef = useRef<number | null>(null);
   const [filterValue, setFilterValue] = useState(() => readCategoryArtistsFilter(slug));
+  const [selectedTab, setSelectedTab] = useState(() => readCategoryArtistsTab(slug));
   const [columns, setColumns] = useState(1);
   const [virtualRange, setVirtualRange] = useState({ startRow: 0, endRow: 24 });
 
@@ -252,18 +255,40 @@ export function CategoryArtistsBrowser({ slug, genre }: CategoryArtistsBrowserPr
     };
   }, [slug]);
 
-  const normalizedFilterValue = filterValue.trim().toLowerCase();
-  const filteredArtists = useMemo(() => {
-    if (!normalizedFilterValue) {
-      return artists;
-    }
+  useEffect(() => {
+    const handleTabUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent<{ slug?: string; value?: string }>;
+      if (customEvent.detail?.slug !== slug) {
+        return;
+      }
 
+      setSelectedTab(customEvent.detail?.value ?? "all");
+    };
+
+    setSelectedTab(readCategoryArtistsTab(slug));
+    window.addEventListener(CATEGORY_ARTISTS_TAB_EVENT, handleTabUpdate as EventListener);
+    return () => {
+      window.removeEventListener(CATEGORY_ARTISTS_TAB_EVENT, handleTabUpdate as EventListener);
+    };
+  }, [slug]);
+
+  const normalizedFilterValue = filterValue.trim().toLowerCase();
+  const selectedTabMatcher = resolveCategoryArtistTabById(genre, selectedTab);
+  const filteredArtists = useMemo(() => {
     return artists.filter((artist) => {
+      if (selectedTabMatcher && !selectedTabMatcher.matches(artist.dominantGenre)) {
+        return false;
+      }
+
+      if (!normalizedFilterValue) {
+        return true;
+      }
+
       const name = artist.name.toLowerCase();
       const genreLabel = (artist.dominantGenre ?? genre).toLowerCase();
       return name.includes(normalizedFilterValue) || genreLabel.includes(normalizedFilterValue);
     });
-  }, [artists, genre, normalizedFilterValue]);
+  }, [artists, genre, normalizedFilterValue, selectedTabMatcher]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -357,7 +382,7 @@ export function CategoryArtistsBrowser({ slug, genre }: CategoryArtistsBrowserPr
 
   useEffect(() => {
     setVirtualRange({ startRow: 0, endRow: 24 });
-  }, [normalizedFilterValue, slug]);
+  }, [normalizedFilterValue, selectedTab, slug]);
 
   const safeColumns = Math.max(1, columns);
   const totalRows = Math.ceil(filteredArtists.length / safeColumns);

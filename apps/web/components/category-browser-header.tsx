@@ -18,14 +18,33 @@ type CategoryBrowserHeaderProps = {
 };
 
 export function CategoryBrowserHeader({ genre, slug }: CategoryBrowserHeaderProps) {
-  const [filterValue, setFilterValue] = useState(() => readCategoryArtistsFilter(slug));
-  const [totalArtists, setTotalArtists] = useState<number | null>(() => {
-    if (typeof window === "undefined") {
-      return null;
+  const [filterValue, setFilterValue] = useState("");
+  const [totalArtists, setTotalArtists] = useState<number | null>(null);
+
+  useEffect(() => {
+    const headerElement = document.querySelector(".categoriesHeaderBar") as HTMLElement | null;
+    const overlayContainer = headerElement?.closest(".overlayPanelInner") as HTMLElement | null;
+    if (!headerElement || !overlayContainer) {
+      return;
     }
 
-    return readCategoryArtistsFirstPayloadFromSessionCache(slug)?.totalArtists ?? null;
-  });
+    const updateHeaderHeight = () => {
+      const nextHeight = Math.round(headerElement.getBoundingClientRect().height);
+      overlayContainer.style.setProperty("--category-header-height", `${nextHeight}px`);
+    };
+
+    updateHeaderHeight();
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateHeaderHeight();
+    });
+    resizeObserver.observe(headerElement);
+
+    return () => {
+      resizeObserver.disconnect();
+      overlayContainer.style.removeProperty("--category-header-height");
+    };
+  }, [genre, slug, totalArtists]);
 
   useEffect(() => {
     setTotalArtists(readCategoryArtistsFirstPayloadFromSessionCache(slug)?.totalArtists ?? null);

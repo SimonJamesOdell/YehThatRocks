@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { CategoryArtistsBrowser } from "@/components/category-artists-browser";
 import { CategoryBrowserHeader } from "@/components/category-browser-header";
+import { CategoryBrowserTabs } from "@/components/category-browser-tabs";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { getGenreBySlug } from "@/lib/catalog-data";
 
@@ -73,6 +74,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(categoryJsonLd) }} />
       <OverlayScrollReset />
       <CategoryBrowserHeader genre={genre} slug={slug} />
+      <CategoryBrowserTabs genre={genre} slug={slug} />
       <CategoryArtistsBrowser slug={slug} genre={genre} />
     </>
   );

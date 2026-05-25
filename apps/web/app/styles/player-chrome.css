@@ -2015,9 +2015,14 @@
   text-overflow: ellipsis;
 }
 
-.overlayPanelInner > :not(.favouritesBlindBar) {
+.overlayPanelInner > :not(.favouritesBlindBar):not(.categoryTabsSticky) {
   position: relative;
   z-index: 1;
+}
+
+.overlayPanelInner > .categoryTabsSticky {
+  position: sticky;
+  z-index: 39;
 }
 
 .favouritesBlindClose {

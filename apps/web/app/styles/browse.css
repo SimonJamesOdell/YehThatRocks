@@ -131,6 +131,7 @@
 
 .categoriesHeaderBar {
   gap: 16px;
+  margin-bottom: 0;
 }
 
 .categoriesHeaderMain {
@@ -139,6 +140,54 @@
   gap: 16px;
   flex: 1;
   min-width: 0;
+}
+
+.categoryHeaderStack {
+  display: grid;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.categoryTabsSticky {
+  position: sticky;
+  top: var(--category-header-height, 78px);
+  z-index: 39;
+  align-self: start;
+  isolation: isolate;
+  margin-top: -12px;
+  margin-bottom: 0;
+  padding-top: 14px;
+  padding-bottom: 10px;
+  background: linear-gradient(180deg, rgba(11, 4, 4, 0.98), rgba(11, 4, 4, 0.9));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+}
+
+.categoryTabsSticky::before,
+.categoryTabsSticky::after {
+  content: "";
+  position: absolute;
+  left: -18px;
+  right: -18px;
+  background: rgba(11, 4, 4, 0.96);
+  pointer-events: none;
+}
+
+.categoryTabsSticky::before {
+  top: -6px;
+  height: 6px;
+}
+
+.categoryTabsSticky::after {
+  bottom: -8px;
+  height: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.categoryTabsSticky .categoriesBucketTabs {
+  position: relative;
+  z-index: 1;
 }
 
 .categoryHeaderTitleBlock {
@@ -187,6 +236,24 @@
   color: var(--text);
   font-family: var(--font-display), cursive;
   letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.categoriesBucketTabCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.24);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  line-height: 1;
 }
 
 .categoriesBucketTab:hover {
