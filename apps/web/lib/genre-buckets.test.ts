@@ -20,16 +20,16 @@ describe("genre bucket alias mapping", () => {
 
   it("maps technical thrash to thrash metal for bucket matching", () => {
     expect(canonicalizeGenreLabel("Technical Thrash")).toBe("thrash metal");
-    expect(resolveTopLevelGenreBucket("Technical Thrash")).toBe("Thrash & Power Metal");
+    expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("Technical Thrash"))).toBe("Thrash & Power Metal");
   });
 
-  it("resolves alias inputs to expected top-level buckets", () => {
-    expect(resolveTopLevelGenreBucket("death")).toBe("Black and Death Metal");
-    expect(resolveTopLevelGenreBucket("speed")).toBe("Thrash & Power Metal");
-    expect(resolveTopLevelGenreBucket("power")).toBe("Thrash & Power Metal");
-    expect(resolveTopLevelGenreBucket("melodic death")).toBe("Black and Death Metal");
-    expect(resolveTopLevelGenreBucket("progressive")).toBe("Progressive & Experimental");
-    expect(resolveTopLevelGenreBucket("occult")).toBe("Black and Death Metal");
-    expect(resolveTopLevelGenreBucket("crossover")).toBe("Punk & Hardcore");
+  it("resolves canonicalized alias outputs to expected top-level buckets", () => {
+    expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("death"))).toBe("Black and Death Metal");
+    expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("speed"))).toBe("Thrash & Power Metal");
+    expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("power"))).toBe("Thrash & Power Metal");
+    expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("melodic death"))).toBe("Black and Death Metal");
+    expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("progressive"))).toBe("Progressive & Experimental");
+    expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("occult"))).toBe("Black and Death Metal");
+    expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("crossover"))).toBe("Punk & Hardcore");
   });
 });

@@ -195,8 +195,7 @@ function tokenMatchesTerm(normalizedToken: string, normalizedTerm: string) {
 }
 
 export function resolveAllTopLevelGenreBuckets(input: string): string[] {
-  const canonicalInput = canonicalizeGenreLabel(input);
-  const normalizedInput = normalizeGenreToken(canonicalInput);
+  const normalizedInput = normalizeGenreToken(input);
   if (!normalizedInput) {
     return [];
   }
