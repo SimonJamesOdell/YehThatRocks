@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import {
@@ -290,7 +290,7 @@ export function CategoryArtistsBrowser({ slug, genre }: CategoryArtistsBrowserPr
     });
   }, [artists, genre, normalizedFilterValue, selectedTabMatcher]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) {
       return;
