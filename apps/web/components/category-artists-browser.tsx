@@ -373,6 +373,7 @@ export function CategoryArtistsBrowser({ slug, genre, isAdmin = false }: Categor
     }
 
     const host = findScrollParent(viewport);
+    const isWindowHost = host === window;
 
     const updateMetrics = () => {
       if (!viewportRef.current) {
@@ -390,15 +391,16 @@ export function CategoryArtistsBrowser({ slug, genre, isAdmin = false }: Categor
       let viewportHeight = 0;
       let listTop = 0;
 
-      if (host === window) {
+      if (isWindowHost) {
         scrollTop = window.scrollY;
         viewportHeight = window.innerHeight;
         listTop = viewportRect.top + window.scrollY;
       } else {
-        const hostRect = host.getBoundingClientRect();
-        scrollTop = host.scrollTop;
-        viewportHeight = host.clientHeight;
-        listTop = viewportRect.top - hostRect.top + host.scrollTop;
+        const hostElement = host as HTMLElement;
+        const hostRect = hostElement.getBoundingClientRect();
+        scrollTop = hostElement.scrollTop;
+        viewportHeight = hostElement.clientHeight;
+        listTop = viewportRect.top - hostRect.top + hostElement.scrollTop;
       }
 
       const visibleStart = scrollTop - listTop;
@@ -433,10 +435,10 @@ export function CategoryArtistsBrowser({ slug, genre, isAdmin = false }: Categor
 
     updateMetrics();
 
-    if (host === window) {
+    if (isWindowHost) {
       window.addEventListener("scroll", scheduleMetrics, { passive: true });
     } else {
-      host.addEventListener("scroll", scheduleMetrics, { passive: true });
+      (host as HTMLElement).addEventListener("scroll", scheduleMetrics, { passive: true });
     }
     window.addEventListener("resize", scheduleMetrics, { passive: true });
 
@@ -446,10 +448,10 @@ export function CategoryArtistsBrowser({ slug, genre, isAdmin = false }: Categor
     resizeObserver.observe(viewport);
 
     return () => {
-      if (host === window) {
+      if (isWindowHost) {
         window.removeEventListener("scroll", scheduleMetrics);
       } else {
-        host.removeEventListener("scroll", scheduleMetrics);
+        (host as HTMLElement).removeEventListener("scroll", scheduleMetrics);
       }
       window.removeEventListener("resize", scheduleMetrics);
       resizeObserver.disconnect();

@@ -29,6 +29,7 @@ const files = {
   top100Page: path.join(ROOT, "apps/web/app/(shell)/top100/page.tsx"),
   top100Loader: path.join(ROOT, "apps/web/components/top100-videos-loader.tsx"),
   categoryPage: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/page.tsx"),
+  categoryArtistPage: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/artists/[artistSlug]/page.tsx"),
   categoryLoader: path.join(ROOT, "apps/web/components/category-videos-infinite.tsx"),
   artistPage: path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/page.tsx"),
   videoListUtils: path.join(ROOT, "apps/web/lib/video-list-utils.ts"),
@@ -62,6 +63,7 @@ function main() {
   const top100PageSource = readFileStrict(files.top100Page, ROOT);
   const top100LoaderSource = readFileStrict(files.top100Loader, ROOT);
   const categoryPageSource = readFileStrict(files.categoryPage, ROOT);
+  const categoryArtistPageSource = readFileStrict(files.categoryArtistPage, ROOT);
   const categoryLoaderSource = readFileStrict(files.categoryLoader, ROOT);
   const artistPageSource = readFileStrict(files.artistPage, ROOT);
   const videoListUtilsSource = readFileStrict(files.videoListUtils, ROOT);
@@ -113,8 +115,9 @@ function main() {
   assertContains(top100PageSource, "getShellRequestVideoState", "Top100 page resolves hidden ids through shared shell request state helper", failures);
   assertContains(top100LoaderSource, "filterHiddenVideos", "Top100 loader filters hidden videos", failures);
 
-  assertContains(categoryPageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "Category page passes hidden ids to loader", failures);
-  assertContains(categoryPageSource, "getShellRequestVideoState", "Category page resolves hidden ids through shared shell request state helper", failures);
+  assertContains(categoryPageSource, "CategoryArtistsBrowser", "Category page renders artist browser shell instead of videos loader", failures);
+  assertContains(categoryArtistPageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "Category artist page passes hidden ids to category videos loader", failures);
+  assertContains(categoryArtistPageSource, "getShellRequestVideoState", "Category artist page resolves hidden ids through shared shell request state helper", failures);
   assertContains(categoryLoaderSource, "filterHiddenVideos", "Category loader filters hidden videos", failures);
 
   assertContains(artistPageSource, "getShellRequestVideoState", "Artist page loads hidden video ids through shared shell request state helper", failures);

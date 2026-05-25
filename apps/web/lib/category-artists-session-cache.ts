@@ -355,10 +355,11 @@ export async function primeCategoryArtistsFullPayload(
   slug?: string | null,
   options: PrimeCategoryArtistsFullPayloadOptions = {},
 ): Promise<CategoryArtistsFullPayload | null> {
-  const normalizedSlug = normalizeSlug(slug);
-  if (!normalizedSlug) {
+  const maybeSlug = normalizeSlug(slug);
+  if (!maybeSlug) {
     return null;
   }
+  const normalizedSlug = maybeSlug;
 
   const inFlight = inFlightFullBySlug.get(normalizedSlug);
   if (inFlight && !options.force) {
