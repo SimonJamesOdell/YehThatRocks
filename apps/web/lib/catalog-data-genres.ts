@@ -475,6 +475,70 @@ export async function getRuntimeCachedTopLevelGenreCards(): Promise<GenreCard[] 
   return pinnedCards;
 }
 
+async function persistTopLevelCategoryPreview(bucketLabel: string, normalizedVideoId: string) {
+  const normalizedBucketLabel = bucketLabel.trim();
+  if (!normalizedBucketLabel || !normalizedVideoId) {
+    return;
+  }
+
+  await prisma.genreCard.upsert({
+    where: { genre: normalizedBucketLabel },
+    update: { thumbnailVideoId: normalizedVideoId },
+    create: {
+      genre: normalizedBucketLabel,
+      thumbnailVideoId: normalizedVideoId,
+    },
+  }).catch(() => undefined);
+
+  try {
+    await ensureCategoryBucketRuntimeCacheTable();
+
+    const existingRows = await prisma.$queryRawUnsafe<Array<{ artistCount: number | bigint }>>(
+      `
+        SELECT artist_count AS artistCount
+        FROM category_bucket_runtime_cache
+        WHERE bucket_label = ?
+        LIMIT 1
+      `,
+      normalizedBucketLabel,
+    );
+
+    const existingArtistCount = Math.max(0, Number(existingRows[0]?.artistCount ?? 0));
+
+    await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO category_bucket_runtime_cache (bucket_label, preview_video_id, artist_count)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          preview_video_id = VALUES(preview_video_id),
+          updated_at = CURRENT_TIMESTAMP(3)
+      `,
+      normalizedBucketLabel,
+      normalizedVideoId,
+      existingArtistCount,
+    );
+  } catch {
+    // Best effort: pin should still persist in genre_cards and category_artist_thumbnails.
+  }
+}
+
+export async function setTopLevelCategoryThumbnailPin(genre: string, thumbnailVideoId: string) {
+  const bucketLabel = resolveTopLevelGenreBucket(genre) ?? genre.trim();
+  const normalizedVideoId = normalizeYouTubeVideoId(thumbnailVideoId);
+
+  if (!bucketLabel || !normalizedVideoId) {
+    throw new Error("Invalid top-level category thumbnail pin payload");
+  }
+
+  await persistTopLevelCategoryPreview(bucketLabel, normalizedVideoId);
+  clearGenreCaches();
+
+  return {
+    bucketLabel,
+    thumbnailVideoId: normalizedVideoId,
+  };
+}
+
 export async function setCategoryArtistThumbnailPin(genre: string, artistName: string, thumbnailVideoId: string) {
   const normalizedGenre = normalizeGenreTerm(genre);
   const normalizedArtistKey = normalizeArtistKey(artistName);
@@ -499,36 +563,7 @@ export async function setCategoryArtistThumbnailPin(genre: string, artistName: s
   );
 
   const bucketLabel = resolveTopLevelGenreBucket(genre) ?? "Rock & Alternative";
-  try {
-    await ensureCategoryBucketRuntimeCacheTable();
-
-    const existingRows = await prisma.$queryRawUnsafe<Array<{ artistCount: number | bigint }>>(
-      `
-        SELECT artist_count AS artistCount
-        FROM category_bucket_runtime_cache
-        WHERE bucket_label = ?
-        LIMIT 1
-      `,
-      bucketLabel,
-    );
-
-    const existingArtistCount = Math.max(0, Number(existingRows[0]?.artistCount ?? 0));
-
-    await prisma.$executeRawUnsafe(
-      `
-        INSERT INTO category_bucket_runtime_cache (bucket_label, preview_video_id, artist_count)
-        VALUES (?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          preview_video_id = VALUES(preview_video_id),
-          updated_at = CURRENT_TIMESTAMP(3)
-      `,
-      bucketLabel,
-      normalizedVideoId,
-      existingArtistCount,
-    );
-  } catch {
-    // Best-effort: pin should still persist even if runtime cache update fails.
-  }
+  await persistTopLevelCategoryPreview(bucketLabel, normalizedVideoId);
 
   clearGenreCaches();
 }
@@ -1168,6 +1203,8 @@ export async function getGenreCards(): Promise<GenreCard[]> {
 
       cards = collateGenreCardsToTopLevelBuckets(cards);
       cards = await attachArtistCountsToGenreCards(cards);
+      const pinnedPreviewByBucket = await getPinnedCategoryArtistPreviewsByBucket();
+      cards = applyPinnedCategoryArtistPreviews(cards, pinnedPreviewByBucket);
       await upsertCategoryBucketRuntimeCache(cards).catch(() => undefined);
 
       genreCardsCache = { expiresAt: now + GENRE_CARDS_CACHE_TTL_MS, cards };
@@ -1183,11 +1220,13 @@ export async function getGenreCards(): Promise<GenreCard[]> {
           LIMIT 1000
         `;
         if (rawFallbackRows.length > 0) {
-          const fallbackCards = collateGenreCardsToTopLevelBuckets(rawFallbackRows.map((row: { genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }) => ({
+          let fallbackCards = collateGenreCardsToTopLevelBuckets(rawFallbackRows.map((row: { genre: string; thumbnailVideoId?: string | null; thumbnail_video_id?: string | null }) => ({
             genre: row.genre,
             previewVideoId: row.thumbnailVideoId ?? row.thumbnail_video_id ?? null,
             artistCount: 0,
           })));
+          const pinnedPreviewByBucket = await getPinnedCategoryArtistPreviewsByBucket();
+          fallbackCards = applyPinnedCategoryArtistPreviews(fallbackCards, pinnedPreviewByBucket);
           genreCardsCache = { expiresAt: now + 30_000, cards: fallbackCards };
           return fallbackCards;
         }

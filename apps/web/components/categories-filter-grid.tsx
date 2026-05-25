@@ -8,9 +8,15 @@ import { CloseLink } from "@/components/close-link";
 import { OverlayHeader } from "@/components/overlay-header";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { prefetchCategoryArtistsFirstPayloadForSlugs } from "@/lib/category-artists-session-cache";
-import { prefetchCategoryCardsSessionCache, readCategoryCardsSessionCache } from "@/lib/category-cards-session-cache";
+import {
+  applyCategoryCardThumbnailPinOverrides,
+  prefetchCategoryCardsSessionCache,
+  readCategoryCardsSessionCache,
+  writeCategoryCardsSessionCache,
+} from "@/lib/category-cards-session-cache";
 import { getGenreSlug } from "@/lib/catalog-data-utils";
 import { TOP_LEVEL_GENRE_BUCKETS } from "@/lib/genre-buckets";
+import { THUMBNAIL_PIN_UPDATED_EVENT } from "@/lib/thumbnail-pin-client-sync";
 import type { GenreCard } from "@/lib/catalog-data";
 
 type CategoriesFilterGridProps = {
@@ -27,7 +33,7 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
     TOP_LEVEL_GENRE_BUCKETS.map((bucket) => [bucket.label, bucket.terms]),
   ), []);
   // Keep first client render identical to SSR; hydrate from session/API only in effects.
-  const [cards, setCards] = useState<GenreCard[]>(genreCards);
+  const [cards, setCards] = useState<GenreCard[]>(() => applyCategoryCardThumbnailPinOverrides(genreCards));
   const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);
   const [isLoaderFadingOut, setIsLoaderFadingOut] = useState(false);
   const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0);
@@ -57,7 +63,7 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
 
       const fetched = await prefetchCategoryCardsSessionCache();
       if (!cancelled && fetched && fetched.length > 0) {
-        setCards(fetched);
+        setCards(applyCategoryCardThumbnailPinOverrides(fetched));
         setIsLoaderFadingOut(true);
         window.setTimeout(() => {
           setIsLoaderVisible(false);
@@ -80,6 +86,57 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
     const slugs = cards.map((card) => getGenreSlug(card.genre));
     void prefetchCategoryArtistsFirstPayloadForSlugs(slugs);
   }, [cards]);
+
+  useEffect(() => {
+    const handleThumbnailPinUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        target?: "artist" | "category" | "category-artist";
+        genre?: string;
+        thumbnailVideoId?: string;
+      }>;
+
+      const detail = customEvent.detail;
+      if (detail?.target !== "category" && detail?.target !== "category-artist") {
+        return;
+      }
+
+      const normalizedGenre = detail.genre?.trim().toLowerCase();
+      const normalizedVideoId = detail.thumbnailVideoId?.trim();
+      if (!normalizedGenre || !normalizedVideoId) {
+        return;
+      }
+
+      setCards((current) => {
+        let changed = false;
+        const next = current.map((card) => {
+          if (card.genre.trim().toLowerCase() !== normalizedGenre) {
+            return card;
+          }
+
+          if (card.previewVideoId === normalizedVideoId) {
+            return card;
+          }
+
+          changed = true;
+          return {
+            ...card,
+            previewVideoId: normalizedVideoId,
+          };
+        });
+
+        if (changed) {
+          writeCategoryCardsSessionCache(next);
+        }
+
+        return next;
+      });
+    };
+
+    window.addEventListener(THUMBNAIL_PIN_UPDATED_EVENT, handleThumbnailPinUpdate as EventListener);
+    return () => {
+      window.removeEventListener(THUMBNAIL_PIN_UPDATED_EVENT, handleThumbnailPinUpdate as EventListener);
+    };
+  }, []);
 
   const normalizedFilterValue = useMemo(
     () => normalizeFilterToken(filterValue),

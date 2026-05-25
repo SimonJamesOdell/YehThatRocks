@@ -5,6 +5,7 @@ import { CategoryBrowserHeader } from "@/components/category-browser-header";
 import { CategoryBrowserTabs } from "@/components/category-browser-tabs";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { getGenreBySlug } from "@/lib/catalog-data";
+import { getShellRequestAuthState } from "@/lib/shell-request-state";
 
 const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
 
@@ -39,7 +40,10 @@ type CategoryPageProps = {
 
 export default async function CategoryDetailPage({ params }: CategoryPageProps) {
   const { slug } = await params;
-  const genre = await getGenreBySlug(slug);
+  const [genre, { isAdmin }] = await Promise.all([
+    getGenreBySlug(slug),
+    getShellRequestAuthState(),
+  ]);
 
   if (!genre) {
     return (
@@ -75,7 +79,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
       <OverlayScrollReset />
       <CategoryBrowserHeader genre={genre} slug={slug} />
       <CategoryBrowserTabs genre={genre} slug={slug} />
-      <CategoryArtistsBrowser slug={slug} genre={genre} />
+      <CategoryArtistsBrowser slug={slug} genre={genre} isAdmin={isAdmin} />
     </>
   );
 }

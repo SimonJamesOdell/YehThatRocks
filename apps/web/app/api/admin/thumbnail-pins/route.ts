@@ -4,10 +4,10 @@ import { z } from "zod";
 import { requireAdminApiAuth } from "@/lib/admin-auth";
 import {
   clearArtistCaches,
-  clearGenreCaches,
   normalizeArtistKey,
   refreshArtistProjectionForName,
   setCategoryArtistThumbnailPin,
+  setTopLevelCategoryThumbnailPin,
 } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
@@ -121,22 +121,16 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const categoryResult = await prisma.genreCard.updateMany({
-    where: { genre: parsed.data.genre },
-    data: { thumbnailVideoId: parsed.data.thumbnailVideoId },
-  });
-
-  if (categoryResult.count === 0) {
-    return NextResponse.json({ error: "Category not found" }, { status: 404 });
-  }
-
-  clearGenreCaches();
+  const categoryResult = await setTopLevelCategoryThumbnailPin(
+    parsed.data.genre,
+    parsed.data.thumbnailVideoId,
+  );
 
   return NextResponse.json({
     ok: true,
     target: "category",
-    updatedCount: categoryResult.count,
-    genre: parsed.data.genre,
-    thumbnailVideoId: parsed.data.thumbnailVideoId,
+    updatedCount: 1,
+    genre: categoryResult.bucketLabel,
+    thumbnailVideoId: categoryResult.thumbnailVideoId,
   });
 }

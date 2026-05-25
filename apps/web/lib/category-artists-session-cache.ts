@@ -479,4 +479,78 @@ export async function primeCategoryArtistsFullPayload(
   return task;
 }
 
+function normalizeArtistNameKey(value?: string | null) {
+  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function patchArtistThumbnailInList(
+  artists: CategoryArtistCard[],
+  artistName: string,
+  thumbnailVideoId: string,
+) {
+  const artistKey = normalizeArtistNameKey(artistName);
+  if (!artistKey) {
+    return { artists, changed: false };
+  }
+
+  let changed = false;
+  const nextArtists = artists.map((artist) => {
+    if (normalizeArtistNameKey(artist.name) !== artistKey) {
+      return artist;
+    }
+
+    if (artist.thumbnailVideoId === thumbnailVideoId) {
+      return artist;
+    }
+
+    changed = true;
+    return {
+      ...artist,
+      thumbnailVideoId,
+    };
+  });
+
+  return { artists: nextArtists, changed };
+}
+
+export function patchCategoryArtistThumbnailInCaches(
+  slug: string,
+  artistName: string,
+  thumbnailVideoId: string,
+) {
+  const normalizedSlug = normalizeSlug(slug);
+  const normalizedVideoId = thumbnailVideoId.trim();
+  if (!normalizedSlug || !artistName.trim() || !normalizedVideoId) {
+    return false;
+  }
+
+  let changed = false;
+
+  const firstPayload = readCategoryArtistsFirstPayloadFromSessionCache(normalizedSlug);
+  if (firstPayload) {
+    const patchedFirst = patchArtistThumbnailInList(firstPayload.artists, artistName, normalizedVideoId);
+    if (patchedFirst.changed) {
+      changed = true;
+      writeCategoryArtistsFirstPayloadToSessionCache(normalizedSlug, {
+        ...firstPayload,
+        artists: patchedFirst.artists,
+      });
+    }
+  }
+
+  const fullPayload = readCategoryArtistsFullPayloadFromCache(normalizedSlug);
+  if (fullPayload) {
+    const patchedFull = patchArtistThumbnailInList(fullPayload.artists, artistName, normalizedVideoId);
+    if (patchedFull.changed) {
+      changed = true;
+      writeCategoryArtistsFullPayloadToCache(normalizedSlug, {
+        ...fullPayload,
+        artists: patchedFull.artists,
+      });
+    }
+  }
+
+  return changed;
+}
+
 export { CATEGORY_ARTISTS_CACHE_EVENT };

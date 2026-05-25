@@ -7,9 +7,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
+import { patchCategoryArtistThumbnailInCaches } from "@/lib/category-artists-session-cache";
+import { patchCategoryCardThumbnailInSessionCache } from "@/lib/category-cards-session-cache";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { getGenreSlug } from "@/lib/catalog-data-utils";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
+import { dispatchThumbnailPinUpdated } from "@/lib/thumbnail-pin-client-sync";
 import type { VideoRecord } from "@/lib/catalog";
 
 type ArtistVideoLinkProps = {
@@ -129,7 +133,7 @@ export function ArtistVideoLink({
 
     setIsPinningThumbnail(true);
     try {
-      await fetchWithAuthRetry("/api/admin/thumbnail-pins", {
+      const response = await fetchWithAuthRetry("/api/admin/thumbnail-pins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -140,6 +144,25 @@ export function ArtistVideoLink({
           thumbnailVideoId: video.id,
         }),
       });
+
+      if (!response.ok) {
+        return;
+      }
+
+      if (adminThumbnailPinTarget === "category-artist" && adminThumbnailGenre && adminThumbnailArtistName) {
+        patchCategoryArtistThumbnailInCaches(
+          getGenreSlug(adminThumbnailGenre),
+          adminThumbnailArtistName,
+          video.id,
+        );
+        patchCategoryCardThumbnailInSessionCache(adminThumbnailGenre, video.id);
+        dispatchThumbnailPinUpdated({
+          target: "category-artist",
+          genre: adminThumbnailGenre,
+          artistName: adminThumbnailArtistName,
+          thumbnailVideoId: video.id,
+        });
+      }
     } finally {
       setIsPinningThumbnail(false);
     }

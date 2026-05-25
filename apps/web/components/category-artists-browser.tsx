@@ -4,9 +4,12 @@ import Link from "next/link";
 import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
+import { patchCategoryCardThumbnailInSessionCache } from "@/lib/category-cards-session-cache";
+import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import {
   CATEGORY_ARTISTS_CACHE_EVENT,
   type CategoryArtistsFirstPayload,
+  patchCategoryArtistThumbnailInCaches,
   prefetchCategoryArtistsFirstPayload,
   primeCategoryArtistsFullPayload,
   readCategoryArtistsFirstPayloadFromSessionCache,
@@ -16,10 +19,12 @@ import { CATEGORY_ARTISTS_FILTER_EVENT, readCategoryArtistsFilter } from "@/lib/
 import { CATEGORY_ARTISTS_TAB_EVENT, readCategoryArtistsTab } from "@/lib/category-artists-tab-state";
 import { resolveCategoryArtistTabById } from "@/lib/category-artists-tabs";
 import type { CategoryArtistCard } from "@/lib/catalog-data";
+import { dispatchThumbnailPinUpdated, THUMBNAIL_PIN_UPDATED_EVENT } from "@/lib/thumbnail-pin-client-sync";
 
 type CategoryArtistsBrowserProps = {
   slug: string;
   genre: string;
+  isAdmin?: boolean;
 };
 
 const GRID_MIN_COLUMN_WIDTH = 220;
@@ -47,7 +52,7 @@ function findScrollParent(element: HTMLElement | null): HTMLElement | Window {
   return window;
 }
 
-export function CategoryArtistsBrowser({ slug, genre }: CategoryArtistsBrowserProps) {
+export function CategoryArtistsBrowser({ slug, genre, isAdmin = false }: CategoryArtistsBrowserProps) {
   const initialFullPayload = useMemo(
     () => (typeof window === "undefined" ? null : readCategoryArtistsFullPayloadFromCache(slug)),
     [slug],
@@ -75,6 +80,44 @@ export function CategoryArtistsBrowser({ slug, genre }: CategoryArtistsBrowserPr
   const [selectedTab, setSelectedTab] = useState(() => readCategoryArtistsTab(slug));
   const [columns, setColumns] = useState(1);
   const [virtualRange, setVirtualRange] = useState({ startRow: 0, endRow: 24 });
+  const [pinningArtistSlug, setPinningArtistSlug] = useState<string | null>(null);
+
+  const handlePinCategoryThumbnail = async (event: React.MouseEvent<HTMLButtonElement>, artist: CategoryArtistCard) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!isAdmin || !artist.thumbnailVideoId || pinningArtistSlug === artist.slug) {
+      return;
+    }
+
+    setPinningArtistSlug(artist.slug);
+
+    try {
+      const response = await fetchWithAuthRetry("/api/admin/thumbnail-pins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target: "category",
+          genre,
+          thumbnailVideoId: artist.thumbnailVideoId,
+        }),
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      patchCategoryCardThumbnailInSessionCache(genre, artist.thumbnailVideoId);
+      dispatchThumbnailPinUpdated({
+        target: "category",
+        genre,
+        artistName: artist.name,
+        thumbnailVideoId: artist.thumbnailVideoId,
+      });
+    } finally {
+      setPinningArtistSlug((current) => (current === artist.slug ? null : current));
+    }
+  };
 
   function appendArtists(incoming: CategoryArtistCard[]) {
     if (incoming.length === 0) {
@@ -213,6 +256,39 @@ export function CategoryArtistsBrowser({ slug, genre }: CategoryArtistsBrowserPr
       cancelled = true;
     };
   }, [slug]);
+
+  useEffect(() => {
+    const handleThumbnailPinUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        target?: "artist" | "category" | "category-artist";
+        genre?: string;
+        artistName?: string;
+        thumbnailVideoId?: string;
+      }>;
+
+      const detail = customEvent.detail;
+      if (detail?.target !== "category-artist") {
+        return;
+      }
+
+      if ((detail.genre ?? "").trim().toLowerCase() !== genre.trim().toLowerCase()) {
+        return;
+      }
+
+      const artistName = detail.artistName?.trim();
+      const thumbnailVideoId = detail.thumbnailVideoId?.trim();
+      if (!artistName || !thumbnailVideoId) {
+        return;
+      }
+
+      patchCategoryArtistThumbnailInCaches(slug, artistName, thumbnailVideoId);
+    };
+
+    window.addEventListener(THUMBNAIL_PIN_UPDATED_EVENT, handleThumbnailPinUpdate as EventListener);
+    return () => {
+      window.removeEventListener(THUMBNAIL_PIN_UPDATED_EVENT, handleThumbnailPinUpdate as EventListener);
+    };
+  }, [genre, slug]);
 
   useEffect(() => {
     const handleCacheUpdate = (event: Event) => {
@@ -420,6 +496,24 @@ export function CategoryArtistsBrowser({ slug, genre }: CategoryArtistsBrowserPr
               >
                 {artist.thumbnailVideoId ? (
                   <div className="categoryThumbWrap artistResultThumbWrap">
+                    {isAdmin ? (
+                      <button
+                        type="button"
+                        className="adminThumbnailPinButton"
+                        aria-label="Set category thumbnail"
+                        title="Set category thumbnail"
+                        disabled={pinningArtistSlug === artist.slug}
+                        onClick={(event) => {
+                          void handlePinCategoryThumbnail(event, artist);
+                        }}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                      >
+                        ◰
+                      </button>
+                    ) : null}
                     <YouTubeThumbnailImage
                       videoId={artist.thumbnailVideoId}
                       alt=""
