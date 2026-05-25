@@ -5,6 +5,7 @@ const ensureArtistSearchPrefixIndexMock = vi.fn();
 const getArtistColumnMapMock = vi.fn();
 const hasArtistStatsProjectionMock = vi.fn();
 const hasArtistStatsThumbnailColumnMock = vi.fn();
+const hasArtistNameFulltextIndexMock = vi.fn();
 const getVideoArtistNormalizationColumnMock = vi.fn();
 const getVideoArtistNormalizationIndexHintClauseMock = vi.fn();
 const originalDatabaseUrl = process.env.DATABASE_URL;
@@ -23,6 +24,7 @@ vi.mock("@/lib/catalog-data-db", async () => {
     getArtistColumnMap: getArtistColumnMapMock,
     hasArtistStatsProjection: hasArtistStatsProjectionMock,
     hasArtistStatsThumbnailColumn: hasArtistStatsThumbnailColumnMock,
+    hasArtistNameFulltextIndex: hasArtistNameFulltextIndexMock,
     getVideoArtistNormalizationColumn: getVideoArtistNormalizationColumnMock,
     getVideoArtistNormalizationIndexHintClause: getVideoArtistNormalizationIndexHintClauseMock,
   };
@@ -45,8 +47,10 @@ describe("findArtistsInDatabase", () => {
     ensureArtistSearchPrefixIndexMock.mockReset();
     getArtistColumnMapMock.mockReset();
     hasArtistStatsProjectionMock.mockReset();
+    hasArtistNameFulltextIndexMock.mockReset();
 
     hasArtistStatsProjectionMock.mockResolvedValue(false);
+    hasArtistNameFulltextIndexMock.mockResolvedValue(false);
   });
 
   it("uses normalized prefix path for autocomplete mode", async () => {
@@ -134,6 +138,36 @@ describe("findArtistsInDatabase", () => {
     expect(sql).toContain("a.`genre2` LIKE ?");
     expect(params).toEqual(["%metal%", "%metal%", "%metal%", "%metal%"]);
   });
+
+  it("uses FULLTEXT for non-prefix artist-name search when index is available", async () => {
+    hasArtistNameFulltextIndexMock.mockResolvedValue(true);
+    getArtistColumnMapMock.mockResolvedValue({
+      name: "artist",
+      normalizedName: "artist_name_norm",
+      country: "country",
+      genreColumns: ["genre1", "genre2"],
+    });
+    queryRawUnsafeMock.mockResolvedValue([{ name: "Metallica", country: "US", genre1: "Heavy Metal" }]);
+
+    const { clearArtistCaches, findArtistsInDatabase } = await import("@/lib/catalog-data-artists");
+    clearArtistCaches();
+
+    await findArtistsInDatabase({
+      limit: 12,
+      search: "heavy metal",
+      prefixOnly: false,
+      nameOnly: false,
+      orderByName: false,
+    });
+
+    const [sql, ...params] = queryRawUnsafeMock.mock.calls[0] as [string, ...unknown[]];
+    expect(sql).toContain("MATCH(a.`artist`) AGAINST(? IN BOOLEAN MODE)");
+    expect(sql).toContain("a.`country` LIKE ?");
+    expect(sql).toContain("a.`genre1` LIKE ?");
+    expect(sql).toContain("a.`genre2` LIKE ?");
+    expect(sql).not.toContain("a.`artist` LIKE ?");
+    expect(params).toEqual(["heavy* metal*", "%heavy metal%", "%heavy metal%", "%heavy metal%"]);
+  });
 });
 
 describe("getArtistBySlug — narrow query strategy", () => {
@@ -141,13 +175,14 @@ describe("getArtistBySlug — narrow query strategy", () => {
     vi.resetModules();
     process.env.DATABASE_URL = "mysql://test";
     queryRawUnsafeMock.mockReset();
+    ensureArtistSearchPrefixIndexMock.mockReset();
     getArtistColumnMapMock.mockReset();
     hasArtistStatsProjectionMock.mockReset();
 
     hasArtistStatsProjectionMock.mockResolvedValue(false);
     getArtistColumnMapMock.mockResolvedValue({
       name: "artist",
-      normalizedName: null,
+      normalizedName: "artist_name_norm",
       country: null,
       genreColumns: ["genre1"],
     });
@@ -184,8 +219,8 @@ describe("getArtistBySlug — narrow query strategy", () => {
     expect(params).toEqual(["+mac*"]);
   });
 
-  it("falls back to LOWER LIKE when all slug terms are shorter than 3 chars", async () => {
-    // slug "ac-dc": both terms are 2 chars — below ft_min_word_len, use LOWER LIKE
+  it("uses normalized LIKE fallback for slugs with only short terms", async () => {
+    // slug "ac-dc": both terms are 2 chars — below ft_min_word_len.
     queryRawUnsafeMock
       .mockResolvedValueOnce([{ name: "AC/DC", country: null, genre1: "Rock" }]);
 
@@ -195,9 +230,44 @@ describe("getArtistBySlug — narrow query strategy", () => {
     await getArtistBySlug("ac-dc");
 
     const [sql, ...params] = queryRawUnsafeMock.mock.calls[0] as [string, ...unknown[]];
-    expect(sql).toContain("LOWER(a.`artist`) LIKE ?");
+    expect(ensureArtistSearchPrefixIndexMock).toHaveBeenCalledTimes(1);
+    expect(sql).toContain("a.`artist_name_norm` LIKE ?");
     expect(sql).not.toContain("MATCH(a.`artist`)");
-    expect(params).toEqual(["%ac%", "%dc%"]);
+    expect(sql).not.toContain("LOWER(a.`artist`) LIKE ?");
+    expect(params).toEqual(["a%", "%ac%", "%dc%"]);
+  });
+
+  it("skips short-term narrow probe for one-character slugs", async () => {
+    queryRawUnsafeMock.mockResolvedValueOnce([{ name: "A", country: null, genre1: "Rock" }]);
+
+    const { clearArtistCaches, getArtistBySlug } = await import("@/lib/catalog-data-artists");
+    clearArtistCaches();
+
+    await getArtistBySlug("a");
+
+    const [sql, ...params] = queryRawUnsafeMock.mock.calls[0] as [string, ...unknown[]];
+    expect(ensureArtistSearchPrefixIndexMock).toHaveBeenCalledTimes(1);
+    expect(sql).toContain("a.`artist_name_norm` LIKE ?");
+    expect(sql).not.toContain("%a%");
+    expect(params).toEqual(["a%"]);
+  });
+
+  it("uses normalized prefix scan when fulltext narrowing misses", async () => {
+    queryRawUnsafeMock
+      .mockResolvedValueOnce([{ name: "Other Artist", country: null, genre1: "Rock" }])
+      .mockResolvedValueOnce([{ name: "Iron Maiden", country: null, genre1: "Heavy Metal" }]);
+
+    const { clearArtistCaches, getArtistBySlug } = await import("@/lib/catalog-data-artists");
+    clearArtistCaches();
+
+    const result = await getArtistBySlug("iron-maiden");
+
+    const [scanSql, ...scanParams] = queryRawUnsafeMock.mock.calls[1] as [string, ...unknown[]];
+    expect(ensureArtistSearchPrefixIndexMock).toHaveBeenCalledTimes(1);
+    expect(scanSql).toContain("a.`artist_name_norm` LIKE ?");
+    expect(scanSql).not.toContain("LOWER(a.`artist`) LIKE ?");
+    expect(scanParams).toEqual(["i%"]);
+    expect(result?.name).toBe("Iron Maiden");
   });
 
   it("does not resolve to a partial fallback artist when exact slug is missing", async () => {

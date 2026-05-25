@@ -47,9 +47,11 @@ import {
 const GENRE_RESULTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const GENRE_CARDS_CACHE_TTL_MS = 30 * 1000;
 const CATEGORY_QUERY_TIMEOUT_MS = 2_500;
+const CATEGORY_QUERY_DB_MAX_EXECUTION_MS = 1_200;
 const CATEGORY_ARTIST_THUMB_TABLE_CACHE_TTL_MS = 60_000;
 const CATEGORY_BUCKET_RUNTIME_CACHE_TABLE_CACHE_TTL_MS = 60_000;
 const CATEGORY_BUCKET_RUNTIME_CACHE_STALE_MS = 6 * 60 * 60 * 1000;
+const GENRE_ARTIST_SEED_CACHE_TTL_MS = 2 * 60 * 1000;
 const GENRE_CACHE_MAX_ENTRIES = Math.max(
   100,
   Math.min(2_000, Number(process.env.GENRE_CACHE_MAX_ENTRIES || "600")),
@@ -60,6 +62,7 @@ const GENRE_CACHE_MAX_ENTRIES = Math.max(
 const genreArtistsCache = new BoundedMap<string, { expiresAt: number; artists: ArtistRecord[] }>(GENRE_CACHE_MAX_ENTRIES);
 const genreVideosCache = new BoundedMap<string, { expiresAt: number; videos: VideoRecord[] }>(GENRE_CACHE_MAX_ENTRIES);
 const genreVideosInFlight = new BoundedMap<string, Promise<VideoRecord[]>>(GENRE_CACHE_MAX_ENTRIES);
+const genreArtistSeedCache = new BoundedMap<string, { expiresAt: number; artistNames: string[] }>(GENRE_CACHE_MAX_ENTRIES);
 let genreCardsCache: { expiresAt: number; cards: GenreCard[] } | undefined;
 let genreCardsInFlight: Promise<GenreCard[]> | undefined;
 let genreListCache: { expiresAt: number; genres: string[] } | undefined;
@@ -682,26 +685,68 @@ export async function getCategoryArtistCountByGenre(genre: string): Promise<numb
   }
 
   const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
-  const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
   const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
   const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
   const normalizedGenrePlaceholders = normalizedGenreTerms.map(() => "?").join(", ");
 
-  const rows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(
-    `SELECT
-       COUNT(DISTINCT ${videoArtistNormExpr}) AS total
-     FROM videos v${videoArtistIndexHint}
-     WHERE v.videoId IS NOT NULL
-       AND ${videoArtistNormExpr} <> ''
-       AND COALESCE(v.approved, 0) = 1
-       ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
-       AND (
-         ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
-         OR LOWER(v.genre) REGEXP ?
-       )`,
-    ...normalizedGenreTerms,
-    normalizedGenrePattern,
-  );
+  let rows: Array<{ total: bigint | number }>;
+
+  if (videoArtistNormColumn) {
+    const normalizedRef = `v.${escapeSqlIdentifier(videoArtistNormColumn)}`;
+    rows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(
+      `SELECT COUNT(*) AS total
+       FROM (
+         SELECT ${normalizedRef} AS artistKey
+         FROM videos v${videoArtistIndexHint}
+         WHERE v.videoId IS NOT NULL
+           AND ${normalizedRef} IS NOT NULL
+           AND TRIM(${normalizedRef}) <> ''
+           AND COALESCE(v.approved, 0) = 1
+           ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+           AND (
+             ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+             OR LOWER(v.genre) REGEXP ?
+           )
+         GROUP BY ${normalizedRef}
+
+         UNION
+
+         SELECT LOWER(TRIM(COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')))) AS artistKey
+         FROM videos v
+         WHERE v.videoId IS NOT NULL
+           AND (${normalizedRef} IS NULL OR TRIM(${normalizedRef}) = '')
+           AND COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) IS NOT NULL
+           AND COALESCE(v.approved, 0) = 1
+           ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+           AND (
+             ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+             OR LOWER(v.genre) REGEXP ?
+           )
+         GROUP BY artistKey
+       ) category_artist_keys`,
+      ...normalizedGenreTerms,
+      normalizedGenrePattern,
+      ...normalizedGenreTerms,
+      normalizedGenrePattern,
+    );
+  } else {
+    const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", null);
+    rows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(
+      `SELECT
+         COUNT(DISTINCT ${videoArtistNormExpr}) AS total
+       FROM videos v
+       WHERE v.videoId IS NOT NULL
+         AND ${videoArtistNormExpr} <> ''
+         AND COALESCE(v.approved, 0) = 1
+         ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+         AND (
+           ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+           OR LOWER(v.genre) REGEXP ?
+         )`,
+      ...normalizedGenreTerms,
+      normalizedGenrePattern,
+    );
+  }
 
   return Math.max(0, Number(rows[0]?.total ?? 0));
 }
@@ -952,6 +997,7 @@ export function clearGenreCaches() {
   genreArtistsCache.clear();
   genreVideosCache.clear();
   genreVideosInFlight.clear();
+  genreArtistSeedCache.clear();
   genreArtistCountCache.clear();
   genreCardsCache = undefined;
   genreCardsInFlight = undefined;
@@ -1287,21 +1333,24 @@ export async function getArtistsByGenre(genre: string) {
 
     const artists = useFulltext
       ? await prisma.$queryRaw<Array<{ name: string; country: string | null; genre1: string | null }>>`
-          SELECT a.artist AS name, a.country,
+          SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */
+                 a.artist AS name, a.country,
                  COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
           FROM artists a
           WHERE MATCH(a.genre_all) AGAINST (${sourceTerms[0]} IN BOOLEAN MODE)
         `
       : genreAllExists
         ? await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
-            `SELECT a.artist AS name, a.country,
+            `SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */
+                    a.artist AS name, a.country,
                     COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
              FROM artists a
              WHERE (${sourceTerms.map(() => "a.genre_all LIKE ?").join(" OR ")})`,
             ...sourceTerms.map((term) => `%${term}%`),
           )
         : await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
-            `SELECT a.artist AS name, a.country,
+            `SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */
+                    a.artist AS name, a.country,
                     COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
              FROM artists a
              WHERE (${sourceTerms.flatMap(() => [
@@ -1425,7 +1474,7 @@ export async function getVideosByGenre(
     const normalizedGenrePlaceholders = expandedGenreTerms.map(() => "?").join(", ");
 
     return prisma.$queryRawUnsafe<RankedVideoRow[]>(
-      `SELECT
+      `SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */
          v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
        FROM videos v
        WHERE v.videoId IS NOT NULL
@@ -1469,6 +1518,12 @@ export async function getVideosByGenre(
       const keywordVideos = await getGenreKeywordVideos();
       considerRows(keywordVideos);
 
+      if (canResolveWindow()) {
+        const resolved = resolveFromBestRows();
+        storeGenreVideosInCache(resolved);
+        return resolved;
+      }
+
       const artistColumns = await getArtistColumnMap();
       const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
       const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
@@ -1479,48 +1534,63 @@ export async function getVideosByGenre(
         const genreAllExists = await hasGenreAllColumn();
         const useFulltext = genreAllExists && expandedGenreTerms.length === 1 && expandedGenreTerms[0].length >= 3;
 
-        let artistGenreRows: Array<{ artistName: string | null }>;
-        if (useFulltext) {
-          // Single FULLTEXT index seek — avoids 6× full-table LIKE scans
-          artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
-            `SELECT a.${artistNameColumn} AS artistName FROM artists a WHERE MATCH(a.genre_all) AGAINST (? IN BOOLEAN MODE) LIMIT 64`,
-            expandedGenreTerms[0],
-          );
-        } else if (genreAllExists) {
-          // genre_all exists but term too short for FULLTEXT minimum word length — single-column LIKE
-          const genrePredicates = expandedGenreTerms.map(() => "a.genre_all LIKE ?").join(" OR ");
-          const genreParams = expandedGenreTerms.map((term) => `%${term}%`);
-          artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
-            `SELECT a.${artistNameColumn} AS artistName FROM artists a WHERE (${genrePredicates}) LIMIT 64`,
-            ...genreParams,
-          );
-        } else {
-          // Fallback: 6× LIKE on individual genre columns
-          const genrePredicates: string[] = [];
-          const genreParams: string[] = [];
-          for (const term of expandedGenreTerms) {
-            for (const column of artistColumns.genreColumns) {
-              genrePredicates.push(`a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', ?, '%')`);
-              genreParams.push(term);
-            }
-          }
-          artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
-            `SELECT a.${artistNameColumn} AS artistName FROM artists a WHERE (${genrePredicates}) LIMIT 64`,
-            ...genreParams,
-          );
-        }
+        const artistLookupCacheKey = expandedGenreTerms.join("|") || normalizeGenreTerm(genre);
+        const cachedArtistSeeds = artistLookupCacheKey ? genreArtistSeedCache.get(artistLookupCacheKey) : undefined;
+        const normalizedGenreArtistNames = cachedArtistSeeds && cachedArtistSeeds.expiresAt > Date.now()
+          ? cachedArtistSeeds.artistNames
+          : await (async () => {
+              let artistGenreRows: Array<{ artistName: string | null }>;
+              if (useFulltext) {
+                // Single FULLTEXT index seek — avoids 6× full-table LIKE scans
+                artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
+                  `SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */ a.${artistNameColumn} AS artistName FROM artists a WHERE MATCH(a.genre_all) AGAINST (? IN BOOLEAN MODE) LIMIT 64`,
+                  expandedGenreTerms[0],
+                );
+              } else if (genreAllExists) {
+                // genre_all exists but term too short for FULLTEXT minimum word length — single-column LIKE
+                const genrePredicates = expandedGenreTerms.map(() => "a.genre_all LIKE ?").join(" OR ");
+                const genreParams = expandedGenreTerms.map((term) => `%${term}%`);
+                artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
+                  `SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */ a.${artistNameColumn} AS artistName FROM artists a WHERE (${genrePredicates}) LIMIT 64`,
+                  ...genreParams,
+                );
+              } else {
+                // Fallback: 6× LIKE on individual genre columns
+                const genrePredicates: string[] = [];
+                const genreParams: string[] = [];
+                for (const term of expandedGenreTerms) {
+                  for (const column of artistColumns.genreColumns) {
+                    genrePredicates.push(`a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', ?, '%')`);
+                    genreParams.push(term);
+                  }
+                }
+                artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
+                  `SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */ a.${artistNameColumn} AS artistName FROM artists a WHERE (${genrePredicates}) LIMIT 64`,
+                  ...genreParams,
+                );
+              }
 
-        const normalizedGenreArtistNames = [...new Set(
-          artistGenreRows
-            .map((row: { artistName: string | null }) => normalizeArtistKey(row.artistName ?? ""))
-            .filter((name: string) => name.length > 0),
-        )];
+              const artistNames = [...new Set(
+                artistGenreRows
+                  .map((row: { artistName: string | null }) => normalizeArtistKey(row.artistName ?? ""))
+                  .filter((name: string) => name.length > 0),
+              )];
+
+              if (artistLookupCacheKey) {
+                genreArtistSeedCache.set(artistLookupCacheKey, {
+                  expiresAt: Date.now() + GENRE_ARTIST_SEED_CACHE_TTL_MS,
+                  artistNames,
+                });
+              }
+
+              return artistNames;
+            })();
 
         if (normalizedGenreArtistNames.length > 0) {
           const placeholders = normalizedGenreArtistNames.map(() => "?").join(", ");
           const artistGenreMatchedVideos = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
             `
-              SELECT v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
+              SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */ v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
               FROM videos v${videoArtistIndexHint}
               WHERE ${videoArtistNormExpr} IN (${placeholders})
                 AND v.videoId IS NOT NULL
@@ -1561,7 +1631,7 @@ export async function getVideosByGenre(
         .join(" ");
 
       const videos = await prisma.$queryRaw<RankedVideoRow[]>`
-        SELECT v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
+        SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */ v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
         FROM videos v
         WHERE MATCH(v.title, v.parsedArtist, v.parsedTrack) AGAINST (${fulltextTerm} IN BOOLEAN MODE)
           AND v.videoId IS NOT NULL
@@ -1588,7 +1658,7 @@ export async function getVideosByGenre(
         const placeholders = normalizedArtistNames.map(() => "?").join(", ");
         const artistMatchedVideos = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
           `
-            SELECT v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
+            SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */ v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
             FROM videos v
             WHERE ${videoArtistNormExpr} IN (${placeholders})
               AND v.videoId IS NOT NULL
@@ -1618,7 +1688,7 @@ export async function getVideosByGenre(
         // MATCH AGAINST on the (title, parsedArtist, parsedTrack) FULLTEXT index —
         // avoids 4× LOWER() LIKE '%term%' full-table scans (~2.8M rows examined per call)
         textMatchedVideos = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
-          `SELECT v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
+          `SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */ v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
            FROM videos v
            WHERE MATCH(v.title, v.parsedArtist, v.parsedTrack) AGAINST (? IN BOOLEAN MODE)
              AND v.videoId IS NOT NULL
@@ -1635,7 +1705,7 @@ export async function getVideosByGenre(
         // description column excluded — it's large and rarely differentiates genre results.
         const likeNeedle = `%${genreTerm}%`;
         textMatchedVideos = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
-          `SELECT v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
+          `SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */ v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
            FROM videos v
            WHERE v.videoId IS NOT NULL
              AND COALESCE(v.approved, 0) = 1

@@ -307,6 +307,34 @@ export async function hasGenreAllColumn(): Promise<boolean> {
 }
 
 let videoTitleFulltextIndexAvailableCache: boolean | undefined;
+let artistNameFulltextIndexAvailableCache: boolean | undefined;
+
+// Returns true when artists table has a FULLTEXT index on the canonical name
+// column (artist/name). This enables MATCH ... AGAINST for contains-like
+// artist name queries instead of leading-wildcard LIKE scans.
+export async function hasArtistNameFulltextIndex(): Promise<boolean> {
+  if (artistNameFulltextIndexAvailableCache !== undefined) return artistNameFulltextIndexAvailableCache;
+
+  try {
+    const columns = await getArtistColumnMap();
+    const nameColumn = columns.name;
+    const rows = await prisma.$queryRawUnsafe<Array<{ INDEX_NAME: string }>>(
+      `SELECT INDEX_NAME
+       FROM information_schema.STATISTICS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'artists'
+         AND INDEX_TYPE = 'FULLTEXT'
+         AND COLUMN_NAME = ?
+       LIMIT 1`,
+      nameColumn,
+    );
+    artistNameFulltextIndexAvailableCache = rows.length > 0;
+  } catch {
+    artistNameFulltextIndexAvailableCache = false;
+  }
+
+  return artistNameFulltextIndexAvailableCache;
+}
 
 // Returns true when the videos table has a FULLTEXT index on (title, parsedArtist, parsedTrack).
 // When present, MATCH … AGAINST replaces costly 4× LOWER() LIKE '%term%' full-table scans.
@@ -384,6 +412,10 @@ export async function ensureVideoGenreColumnAvailable(): Promise<boolean> {
 
 export function resetVideoTitleFulltextIndexCache() {
   videoTitleFulltextIndexAvailableCache = undefined;
+}
+
+export function resetArtistNameFulltextIndexCache() {
+  artistNameFulltextIndexAvailableCache = undefined;
 }
 
 function isDuplicateSchemaError(error: unknown): boolean {

@@ -5,6 +5,7 @@ type TimedEvent = {
 };
 
 import { readPositiveIntEnv } from "@/lib/number-utils";
+import { getDbProfilingReportFreshness, type DbProfilingReportFreshness } from "@/lib/db-profiling-report-freshness";
 
 type OperationAggregate = {
   operation: string;
@@ -42,6 +43,9 @@ type RuntimeProfilingSnapshot = {
     rssMb: number;
     heapUsedMb: number;
     heapTotalMb: number;
+  };
+  observability: {
+    dbProfilingReport: DbProfilingReportFreshness;
   };
   prisma: PrismaProfilingSnapshot;
 };
@@ -224,6 +228,9 @@ export function getRuntimeProfilingSnapshot(): RuntimeProfilingSnapshot {
       rssMb: round(memory.rss / 1024 / 1024, 1),
       heapUsedMb: round(memory.heapUsed / 1024 / 1024, 1),
       heapTotalMb: round(memory.heapTotal / 1024 / 1024, 1),
+    },
+    observability: {
+      dbProfilingReport: getDbProfilingReportFreshness({ nowMs: now }),
     },
     prisma: {
       windowSec,

@@ -16,7 +16,7 @@ describe("catalog-data ranked video ID slices", () => {
     process.env.DATABASE_URL = "mysql://test:test@localhost:3306/yeh";
   });
 
-  it("uses indexed availability join query shape for top/newest slices", async () => {
+  it("uses EXISTS availability filter query shape for top/newest slices", async () => {
     const seenSql: string[] = [];
 
     queryRawMock.mockImplementation((strings: TemplateStringsArray) => {
@@ -56,14 +56,20 @@ describe("catalog-data ranked video ID slices", () => {
     const topSql = seenSql.find((sql) => sql.includes("ORDER BY COALESCE(v.favourited, 0) DESC"));
     const newestSql = seenSql.find((sql) => sql.includes("ORDER BY v.created_at DESC, v.id DESC"));
 
-    expect(topSql).toContain("INNER JOIN (");
-    expect(topSql).toContain("FORCE INDEX (idx_site_videos_status_video_id)");
-    expect(topSql).toContain("available_sv.video_id = v.id");
+    expect(topSql).toContain("EXISTS (");
+    expect(topSql).toContain("FROM site_videos sv FORCE INDEX (idx_site_videos_status_video_id)");
+    expect(topSql).toContain("sv.video_id = v.id");
+    expect(topSql).toContain("sv.status = 'available'");
+    expect(topSql).not.toContain("SELECT DISTINCT sv.video_id");
+    expect(topSql).not.toContain("available_sv");
 
     expect(newestSql).toContain("FORCE INDEX (idx_videos_created_at_id)");
-    expect(newestSql).toContain("INNER JOIN (");
-    expect(newestSql).toContain("FORCE INDEX (idx_site_videos_status_video_id)");
-    expect(newestSql).toContain("available_sv.video_id = v.id");
+    expect(newestSql).toContain("EXISTS (");
+    expect(newestSql).toContain("FROM site_videos sv FORCE INDEX (idx_site_videos_status_video_id)");
+    expect(newestSql).toContain("sv.video_id = v.id");
+    expect(newestSql).toContain("sv.status = 'available'");
+    expect(newestSql).not.toContain("SELECT DISTINCT sv.video_id");
+    expect(newestSql).not.toContain("available_sv");
   });
 
   it("reuses ranked slice cache on repeated calls", async () => {

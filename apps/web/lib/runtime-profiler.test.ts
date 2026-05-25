@@ -36,6 +36,8 @@ describe("runtime profiler buffer caps", () => {
     expect(snapshot.prisma.totalQueries).toBe(500);
     expect(snapshot.prisma.totalsSinceBoot.totalQueries).toBe(800);
     expect(snapshot.prisma.totalsSinceBoot.totalDurationMs).toBe(8000);
+    expect(snapshot.observability.dbProfilingReport).toBeDefined();
+    expect(["fresh", "stale", "missing"]).toContain(snapshot.observability.dbProfilingReport.status);
   });
 
   it("caps fingerprint events independently from operation events", async () => {

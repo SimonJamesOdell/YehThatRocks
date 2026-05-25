@@ -32,6 +32,7 @@ import {
   getVideoArtistNormalizationColumn,
   getVideoArtistNormalizationExpr,
   getVideoArtistNormalizationIndexHintClause,
+  hasArtistNameFulltextIndex,
   hasArtistStatsProjection,
   hasArtistStatsThumbnailColumn,
   hasGenreAllColumn,
@@ -717,6 +718,13 @@ export async function findArtistsInDatabase(options: {
   const whereParts: string[] = [];
   const params: string[] = [];
 
+  const fulltextWords = normalizedSearch
+    .split(/\s+/)
+    .map((word) => word.replace(/[+\-><()~*"@]/g, ""))
+    .filter((word) => word.length >= 3);
+  const canUseNameFulltext = !prefixOnly && fulltextWords.length > 0 && await hasArtistNameFulltextIndex();
+  const fulltextNeedle = fulltextWords.map((word) => `${word}*`).join(" ");
+
   if (normalizedSearch) {
     const defaultNeedle = prefixOnly ? `${normalizedSearch}%` : `%${normalizedSearch}%`;
     const normalizedNeedle = prefixOnly ? `${normalizedArtistSearch}%` : `%${normalizedArtistSearch}%`;
@@ -724,6 +732,9 @@ export async function findArtistsInDatabase(options: {
     if (shouldUseNormalizedPrefixSearch && normalizedNameCol) {
       whereParts.push(`a.${normalizedNameCol} LIKE ?`);
       params.push(normalizedNeedle);
+    } else if (canUseNameFulltext && fulltextNeedle) {
+      whereParts.push(`MATCH(a.${nameCol}) AGAINST(? IN BOOLEAN MODE)`);
+      params.push(fulltextNeedle);
     } else {
       whereParts.push(`a.${nameCol} LIKE ?`);
       params.push(defaultNeedle);
@@ -1497,39 +1508,61 @@ export async function getArtistBySlug(slug: string) {
         return mapped;
       }
     } else if (slugTerms.length > 0) {
-      // All terms are shorter than ft_min_word_len — fall back to LOWER LIKE.
+      // All terms are shorter than ft_min_word_len. Use normalized-name LIKE
+      // predicates and keep a prefix guard to avoid broad single-char scans.
       const columns = await getArtistColumnMap();
       const nameCol = escapeSqlIdentifier(columns.name);
+      const artistNameNormExpr = getArtistNameNormalizationExpr("a", columns);
       const genreExpr = columns.genreColumns.length > 0
         ? `COALESCE(${columns.genreColumns.map((column) => `a.${escapeSqlIdentifier(column)}`).join(", ")})`
         : "NULL";
 
-      const termPredicates = slugTerms.map(() => `LOWER(a.${nameCol}) LIKE ?`).join(" AND ");
-      const termParams = slugTerms.map((term) => `%${term}%`);
-      const narrowed = await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
-        `
-          SELECT a.${nameCol} AS name, NULL AS country, ${genreExpr} AS genre1
-          FROM artists a
-          WHERE a.${nameCol} IS NOT NULL AND a.${nameCol} <> ''
-            AND ${termPredicates}
-          ORDER BY a.${nameCol} ASC
-          LIMIT 400
-        `,
-        ...termParams,
-      );
+      const slugStart = slug.match(/[a-z0-9]/i)?.[0]?.toLowerCase() ?? "";
+      const indexedTerms = slugTerms.filter((term) => term.length >= 2);
 
-      const fastMatch = narrowed.find((artist: any) => slugify(artist.name) === slug);
-      if (fastMatch) {
-        const mapped = await hydrateArtistCountryByName(mapArtist(fastMatch));
-        artistSingleSlugCache.set(slug, { expiresAt: Date.now() + ARTIST_SINGLE_SLUG_CACHE_TTL_MS, artist: mapped });
-        return mapped;
+      // A one-character slug term (for example "a") causes a very broad
+      // "%a%" probe. Skip that narrow stage and proceed directly to the
+      // prefix-paged fallback below.
+      if (indexedTerms.length > 0) {
+        await ensureArtistSearchPrefixIndex();
+        const narrowPredicates: string[] = [];
+        const narrowParams: string[] = [];
+
+        if (slugStart) {
+          narrowPredicates.push(`${artistNameNormExpr} LIKE ?`);
+          narrowParams.push(`${slugStart}%`);
+        }
+
+        narrowPredicates.push(...indexedTerms.map(() => `${artistNameNormExpr} LIKE ?`));
+        narrowParams.push(...indexedTerms.map((term) => `%${term}%`));
+
+        const narrowed = await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+          `
+            SELECT a.${nameCol} AS name, NULL AS country, ${genreExpr} AS genre1
+            FROM artists a
+            WHERE a.${nameCol} IS NOT NULL AND a.${nameCol} <> ''
+              AND ${narrowPredicates.join(" AND ")}
+            ORDER BY a.${nameCol} ASC
+            LIMIT 400
+          `,
+          ...narrowParams,
+        );
+
+        const fastMatch = narrowed.find((artist: any) => slugify(artist.name) === slug);
+        if (fastMatch) {
+          const mapped = await hydrateArtistCountryByName(mapArtist(fastMatch));
+          artistSingleSlugCache.set(slug, { expiresAt: Date.now() + ARTIST_SINGLE_SLUG_CACHE_TTL_MS, artist: mapped });
+          return mapped;
+        }
       }
     }
 
     if (!artistSlugLookupInFlight) {
       artistSlugLookupInFlight = (async () => {
+        await ensureArtistSearchPrefixIndex();
         const columns = await getArtistColumnMap();
         const nameCol = escapeSqlIdentifier(columns.name);
+        const artistNameNormExpr = getArtistNameNormalizationExpr("a", columns);
         const genreExpr = columns.genreColumns.length > 0
           ? `COALESCE(${columns.genreColumns.map((column) => `a.${escapeSqlIdentifier(column)}`).join(", ")})`
           : "NULL";
@@ -1546,7 +1579,7 @@ export async function getArtistBySlug(slug: string) {
               SELECT a.${nameCol} AS name, NULL AS country, ${genreExpr} AS genre1
               FROM artists a
               WHERE a.${nameCol} IS NOT NULL AND a.${nameCol} <> ''
-                AND LOWER(a.${nameCol}) LIKE ?
+                AND ${artistNameNormExpr} LIKE ?
               ORDER BY a.${nameCol} ASC
               LIMIT ${pageSize}
               OFFSET ${offset}

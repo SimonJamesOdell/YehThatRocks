@@ -7,6 +7,7 @@ const queryRawMock = vi.fn();
 const getArtistColumnMapMock = vi.fn();
 const hasGenreAllColumnMock = vi.fn();
 const hasVideoTitleFulltextIndexMock = vi.fn();
+const hasVideoGenreColumnMock = vi.fn();
 const getVideoArtistNormalizationColumnMock = vi.fn();
 const getVideoArtistNormalizationIndexHintClauseMock = vi.fn();
 
@@ -26,6 +27,7 @@ vi.mock("@/lib/catalog-data-db", async () => {
     getArtistColumnMap: getArtistColumnMapMock,
     hasGenreAllColumn: hasGenreAllColumnMock,
     hasVideoTitleFulltextIndex: hasVideoTitleFulltextIndexMock,
+    hasVideoGenreColumn: hasVideoGenreColumnMock,
     getVideoArtistNormalizationColumn: getVideoArtistNormalizationColumnMock,
     getVideoArtistNormalizationIndexHintClause: getVideoArtistNormalizationIndexHintClauseMock,
   };
@@ -68,6 +70,7 @@ describe("getArtistsByGenre — genre_all FULLTEXT strategy", () => {
     const callArg = String(queryRawMock.mock.calls[0][0]);
     expect(callArg).toContain("MATCH");
     expect(callArg).toContain("genre_all");
+    expect(callArg).toContain("MAX_EXECUTION_TIME");
     expect(callArg).not.toContain("genre1 LIKE");
   });
 
@@ -84,6 +87,7 @@ describe("getArtistsByGenre — genre_all FULLTEXT strategy", () => {
     const callArg = String(queryRawUnsafeMock.mock.calls[0][0]);
     expect(callArg).toContain("genre_all");
     expect(callArg).toContain("LIKE");
+    expect(callArg).toContain("MAX_EXECUTION_TIME");
     expect(callArg).not.toContain("MATCH");
     // Must NOT be the 6× LIKE fallback
     expect(callArg).not.toContain("genre1 LIKE");
@@ -103,6 +107,7 @@ describe("getArtistsByGenre — genre_all FULLTEXT strategy", () => {
     const callArg = String(queryRawUnsafeMock.mock.calls[0][0]);
     // Falls back to 6-column LIKE
     expect(callArg).toContain("genre1 LIKE");
+    expect(callArg).toContain("MAX_EXECUTION_TIME");
     expect(callArg).not.toContain("MATCH");
   });
 
@@ -129,6 +134,7 @@ describe("getVideosByGenre — artist genre FULLTEXT strategy", () => {
     queryRawUnsafeMock.mockReset();
     queryRawMock.mockReset();
     hasGenreAllColumnMock.mockReset();
+    hasVideoGenreColumnMock.mockReset();
     getArtistColumnMapMock.mockReset();
     getVideoArtistNormalizationColumnMock.mockReset();
     getVideoArtistNormalizationIndexHintClauseMock.mockReset();
@@ -139,6 +145,7 @@ describe("getVideosByGenre — artist genre FULLTEXT strategy", () => {
       country: "country",
       genreColumns: ["genre1", "genre2"],
     });
+    hasVideoGenreColumnMock.mockResolvedValue(true);
     getVideoArtistNormalizationColumnMock.mockResolvedValue("parsed_artist_norm");
     getVideoArtistNormalizationIndexHintClauseMock.mockResolvedValue("");
   });
@@ -165,6 +172,7 @@ describe("getVideosByGenre — artist genre FULLTEXT strategy", () => {
     const [sql] = genreLookupCall!;
     expect(String(sql)).toContain("MATCH");
     expect(String(sql)).toContain("genre_all");
+    expect(String(sql)).toContain("MAX_EXECUTION_TIME");
     expect(String(sql)).not.toContain("genre1 LIKE");
     expect(String(sql)).not.toContain("genre2 LIKE");
   });
@@ -187,6 +195,7 @@ describe("getVideosByGenre — artist genre FULLTEXT strategy", () => {
     const [sql, param] = genreLookupCall!;
     expect(String(sql)).toContain("genre_all");
     expect(String(sql)).toContain("LIKE");
+    expect(String(sql)).toContain("MAX_EXECUTION_TIME");
     expect(String(sql)).not.toContain("MATCH");
     expect(String(sql)).not.toContain("genre1 LIKE");
     expect(String(param)).toContain("nu");
@@ -210,7 +219,62 @@ describe("getVideosByGenre — artist genre FULLTEXT strategy", () => {
     const [sql] = genreLookupCall!;
     expect(String(sql)).toContain("genre1");
     expect(String(sql)).toContain("LIKE");
+    expect(String(sql)).toContain("MAX_EXECUTION_TIME");
     expect(String(sql)).not.toContain("MATCH");
+  });
+
+  it("reuses cached artist genre lookup for repeated requests", async () => {
+    hasGenreAllColumnMock.mockResolvedValue(false);
+
+    queryRawMock.mockResolvedValue([]);
+    queryRawUnsafeMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
+      if (text.includes("AS artistName FROM artists a WHERE")) {
+        return [{ artistName: "Iron Maiden" }];
+      }
+      return [];
+    });
+
+    const { clearGenreCaches, getVideosByGenre } = await import("@/lib/catalog-data-genres");
+    clearGenreCaches();
+
+    await getVideosByGenre("Metal", { artists: [] });
+    await getVideosByGenre("Metal", { artists: [] });
+
+    const artistLookupCalls = queryRawUnsafeMock.mock.calls.filter(([sql]) =>
+      String(sql).includes("AS artistName FROM artists a WHERE"),
+    );
+    expect(artistLookupCalls).toHaveLength(1);
+  });
+
+  it("skips artist genre lookup when keyword query already fills the requested window", async () => {
+    hasGenreAllColumnMock.mockResolvedValue(false);
+
+    queryRawMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
+      if (text.includes("MATCH(v.title, v.parsedArtist, v.parsedTrack)")) {
+        return Array.from({ length: 24 }, (_, index) => ({
+          videoId: `VID${String(index).padStart(8, "0")}`,
+          title: `Video ${index}`,
+          channelTitle: null,
+          favourited: 100 - index,
+          description: null,
+        }));
+      }
+      return [];
+    });
+    queryRawUnsafeMock.mockResolvedValue([]);
+
+    const { clearGenreCaches, getVideosByGenre } = await import("@/lib/catalog-data-genres");
+    clearGenreCaches();
+
+    const videos = await getVideosByGenre("Metal");
+
+    expect(videos).toHaveLength(24);
+    const artistLookupCalls = queryRawUnsafeMock.mock.calls.filter(([sql]) =>
+      String(sql).includes("AS artistName FROM artists a WHERE"),
+    );
+    expect(artistLookupCalls).toHaveLength(0);
   });
 });
 
@@ -224,6 +288,7 @@ describe("getVideosByGenre — textMatchedVideos FULLTEXT strategy", () => {
     queryRawMock.mockReset();
     hasGenreAllColumnMock.mockReset();
     hasVideoTitleFulltextIndexMock.mockReset();
+    hasVideoGenreColumnMock.mockReset();
     getArtistColumnMapMock.mockReset();
     getVideoArtistNormalizationColumnMock.mockReset();
     getVideoArtistNormalizationIndexHintClauseMock.mockReset();
@@ -231,6 +296,7 @@ describe("getVideosByGenre — textMatchedVideos FULLTEXT strategy", () => {
     // Default: genre_all and video FT index both available
     hasGenreAllColumnMock.mockResolvedValue(true);
     hasVideoTitleFulltextIndexMock.mockResolvedValue(true);
+    hasVideoGenreColumnMock.mockResolvedValue(true);
     getArtistColumnMapMock.mockResolvedValue({
       name: "artist",
       normalizedName: null,
@@ -287,6 +353,7 @@ describe("getVideosByGenre — textMatchedVideos FULLTEXT strategy", () => {
     const [sql] = textMatchCall!;
     expect(sql).toContain("MATCH(v.title, v.parsedArtist, v.parsedTrack)");
     expect(sql).toContain("AGAINST");
+    expect(sql).toContain("MAX_EXECUTION_TIME");
     // Must NOT use the old 4× LOWER() LIKE pattern
     expect(sql).not.toContain("LOWER(v.title)");
     expect(sql).not.toContain("LOWER(COALESCE(v.description");
@@ -303,6 +370,7 @@ describe("getVideosByGenre — textMatchedVideos FULLTEXT strategy", () => {
     expect(textMatchCall).toBeDefined();
     const [sql] = textMatchCall!;
     // No LOWER() — utf8mb4_unicode_ci is already case-insensitive
+    expect(sql).toContain("MAX_EXECUTION_TIME");
     expect(sql).not.toContain("LOWER(v.title)");
     expect(sql).not.toContain("LOWER(COALESCE(v.description");
     // No FULLTEXT
@@ -318,8 +386,58 @@ describe("getVideosByGenre — textMatchedVideos FULLTEXT strategy", () => {
     expect(textMatchCall).toBeDefined();
     const [sql] = textMatchCall!;
     // FULLTEXT minimum word length is 3 — must fall back to LIKE for "Nu"
+    expect(sql).toContain("MAX_EXECUTION_TIME");
     expect(sql).not.toContain("MATCH(v.title");
     expect(sql).not.toContain("LOWER(v.title)");
+  });
+});
+
+// ── getCategoryArtistCountByGenre — distinct count strategy ─────────────────
+
+describe("getCategoryArtistCountByGenre — distinct artist count strategy", () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    process.env.DATABASE_URL = "mysql://test";
+    queryRawUnsafeMock.mockReset();
+    queryRawMock.mockReset();
+    hasVideoGenreColumnMock.mockReset();
+    getVideoArtistNormalizationColumnMock.mockReset();
+    getVideoArtistNormalizationIndexHintClauseMock.mockReset();
+
+    hasVideoGenreColumnMock.mockResolvedValue(true);
+    getVideoArtistNormalizationIndexHintClauseMock.mockResolvedValue(" FORCE INDEX (idx_videos_parsed_artist_norm_fav_view_videoid_id)");
+  });
+
+  it("uses index-first UNION strategy when parsed_artist_norm exists", async () => {
+    getVideoArtistNormalizationColumnMock.mockResolvedValue("parsed_artist_norm");
+    queryRawUnsafeMock.mockResolvedValue([{ total: 123 }]);
+
+    const { clearGenreCaches, getCategoryArtistCountByGenre } = await import("@/lib/catalog-data-genres");
+    clearGenreCaches();
+
+    const total = await getCategoryArtistCountByGenre("Metal");
+
+    expect(total).toBe(123);
+    const [sql] = queryRawUnsafeMock.mock.calls[0] as [string, ...unknown[]];
+    expect(sql).toContain("UNION");
+    expect(sql).toContain("parsed_artist_norm");
+    expect(sql).toContain("COUNT(*) AS total");
+    expect(sql).not.toContain("COUNT(DISTINCT LOWER(TRIM(COALESCE");
+  });
+
+  it("keeps expression DISTINCT fallback when parsed_artist_norm is unavailable", async () => {
+    getVideoArtistNormalizationColumnMock.mockResolvedValue(null);
+    queryRawUnsafeMock.mockResolvedValue([{ total: 7 }]);
+
+    const { clearGenreCaches, getCategoryArtistCountByGenre } = await import("@/lib/catalog-data-genres");
+    clearGenreCaches();
+
+    const total = await getCategoryArtistCountByGenre("Metal");
+
+    expect(total).toBe(7);
+    const [sql] = queryRawUnsafeMock.mock.calls[0] as [string, ...unknown[]];
+    expect(sql).toContain("COUNT(DISTINCT LOWER(TRIM(COALESCE(NULLIF(v.parsedArtist, ''), NULLIF(v.channelTitle, ''))))) AS total");
+    expect(sql).not.toContain("UNION");
   });
 });
 

@@ -154,6 +154,19 @@ export const TOP_LEVEL_GENRE_BUCKETS: readonly GenreBucket[] = [
 
 export const TOP_LEVEL_GENRE_BUCKET_LABELS = TOP_LEVEL_GENRE_BUCKETS.map((bucket) => bucket.label);
 
+const GENRE_ALIAS_TO_CANONICAL = new Map<string, string>([
+  ["death", "death metal"],
+  ["speed", "speed metal"],
+  ["power", "power metal"],
+  ["technical thrash", "thrash metal"],
+  ["melodic death", "melodic death metal"],
+  ["progressive", "progressive metal"],
+  ["technical speed", "technical speed metal"],
+  ["metal", "heavy metal"],
+  ["occult", "black metal"],
+  ["crossover", "crossover thrash"],
+]);
+
 function normalizeGenreToken(input: string) {
   return input
     .trim()
@@ -161,6 +174,17 @@ function normalizeGenreToken(input: string) {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+export function canonicalizeGenreLabel(input: string): string {
+  const trimmedInput = input.trim();
+  if (!trimmedInput) {
+    return "";
+  }
+
+  const normalized = normalizeGenreToken(trimmedInput);
+  const canonical = GENRE_ALIAS_TO_CANONICAL.get(normalized);
+  return canonical ?? trimmedInput;
 }
 
 function tokenMatchesTerm(normalizedToken: string, normalizedTerm: string) {
@@ -171,7 +195,8 @@ function tokenMatchesTerm(normalizedToken: string, normalizedTerm: string) {
 }
 
 export function resolveAllTopLevelGenreBuckets(input: string): string[] {
-  const normalizedInput = normalizeGenreToken(input);
+  const canonicalInput = canonicalizeGenreLabel(input);
+  const normalizedInput = normalizeGenreToken(canonicalInput);
   if (!normalizedInput) {
     return [];
   }

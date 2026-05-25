@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { withAuthAndBody } from "@/lib/api-route-pipeline";
 import { prisma } from "@/lib/db";
+import { canonicalizeGenreLabel } from "@/lib/genre-buckets";
 import { getMusicBrainzArtistData } from "@/lib/musicbrainz";
 
 const ROCK_METAL_PATTERN = /\b(rock|metal|doom|death|black|thrash|sludge|stoner|hardcore|punk|grind|djent|nu metal|metalcore|post metal|heavy|prog|progressive|gothic|folk metal|power metal|industrial metal|symphonic metal)\b/i;
@@ -29,7 +30,7 @@ function normalizeGenreLabel(value: unknown): string | null {
     return null;
   }
 
-  return trimmed.replace(/\s+/g, " ");
+  return canonicalizeGenreLabel(trimmed.replace(/\s+/g, " "));
 }
 
 function normalizeArtistKey(value: unknown): string {

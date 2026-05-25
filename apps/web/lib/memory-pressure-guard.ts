@@ -100,6 +100,7 @@ async function relieveMemoryPressure(snapshot: MemorySnapshot, nowMs: number) {
     currentVideoCacheModule,
     videoCacheModule,
     artistCacheModule,
+    genreCacheModule,
     historyCacheModule,
     favouritesCacheModule,
     runtimeProfilerModule,
@@ -107,6 +108,7 @@ async function relieveMemoryPressure(snapshot: MemorySnapshot, nowMs: number) {
     import("@/lib/current-video-cache"),
     import("@/lib/catalog-data-videos"),
     import("@/lib/catalog-data-artists"),
+    import("@/lib/catalog-data-genres"),
     import("@/lib/catalog-data-history"),
     import("@/lib/catalog-data-favourites"),
     import("@/lib/runtime-profiler"),
@@ -115,6 +117,7 @@ async function relieveMemoryPressure(snapshot: MemorySnapshot, nowMs: number) {
   currentVideoCacheModule.clearCurrentVideoRouteCaches();
   videoCacheModule.clearVideosCaches();
   artistCacheModule.clearArtistCaches();
+  genreCacheModule.clearGenreCaches();
   historyCacheModule.clearHistoryCaches();
   favouritesCacheModule.clearFavouritesCaches();
   runtimeProfilerModule.resetRuntimeProfiling();
