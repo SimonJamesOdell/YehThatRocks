@@ -39,8 +39,8 @@ type CategoryVideosPayload = {
 
 const PREFETCH_ROOT_MARGIN = "1800px 0px";
 const CHUNK_TRIGGER_ROOT_MARGIN = "1400px 0px";
-const INITIAL_BUFFER_PAGES = 3;
-const SCROLL_BUFFER_PAGES = 2;
+const INITIAL_BUFFER_PAGES = 6;
+const SCROLL_BUFFER_PAGES = 3;
 const CATEGORY_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-category";
 
 function sortVideosBySeen(videos: VideoRecord[], seenVideoIdSet: Set<string>) {
@@ -220,6 +220,14 @@ export function CategoryVideosInfinite({
     setLoadError(null);
     void warmBuffer(videosCountRef.current + pageSize * SCROLL_BUFFER_PAGES);
   }, [pageSize, warmBuffer]);
+
+  useEffect(() => {
+    if (!initialHasMore) {
+      return;
+    }
+
+    void warmBuffer(pageSize * INITIAL_BUFFER_PAGES);
+  }, [initialHasMore, pageSize, warmBuffer]);
 
   useEffect(() => {
     if (!hasMore || videos.length >= pageSize * INITIAL_BUFFER_PAGES) {

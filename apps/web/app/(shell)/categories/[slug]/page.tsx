@@ -98,6 +98,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
         slug={slug}
         genre={genre}
         allArtists={allArtists}
+        shouldBackfillRemainingArtists={isTopLevelBucketRoute || allArtists.length >= CATEGORY_ARTISTS_FETCH_LIMIT}
         isAdmin={isAdmin}
         hiddenVideoIds={Array.from(hiddenVideoIds)}
       />

@@ -18,6 +18,7 @@ type CategoryArtistsInfiniteProps = {
   slug: string;
   genre: string;
   allArtists: CategoryArtistCard[];
+  shouldBackfillRemainingArtists?: boolean;
   isAdmin?: boolean;
   hiddenVideoIds?: string[];
 };
@@ -114,13 +115,14 @@ export function CategoryArtistsInfinite({
   slug,
   genre,
   allArtists,
+  shouldBackfillRemainingArtists = false,
   isAdmin = false,
   hiddenVideoIds = [],
 }: CategoryArtistsInfiniteProps) {
   const artistBucketTabs = useMemo(() => buildArtistBucketTabs(genre), [genre]);
   const [artistsState, setArtistsState] = useState<CategoryArtistCard[]>(allArtists);
   const [visibleArtists, setVisibleArtists] = useState<CategoryArtistCard[]>(allArtists);
-  const [isLoadingArtists, setIsLoadingArtists] = useState(allArtists.length === 0);
+  const [isLoadingArtists, setIsLoadingArtists] = useState(allArtists.length === 0 || shouldBackfillRemainingArtists);
   const [totalArtists, setTotalArtists] = useState<number>(allArtists.length);
   const [filterValue, setFilterValue] = useState("");
   const [activeTabId, setActiveTabId] = useState<string>("all");
@@ -133,13 +135,13 @@ export function CategoryArtistsInfinite({
     setActiveTabId("all");
     setArtistsState(allArtists);
     setVisibleArtists(allArtists);
-    setIsLoadingArtists(allArtists.length === 0);
+    setIsLoadingArtists(allArtists.length === 0 || shouldBackfillRemainingArtists);
     setTotalArtists(allArtists.length);
     setInitialTabCounts(null);
-  }, [allArtists]);
+  }, [allArtists, shouldBackfillRemainingArtists]);
 
   useEffect(() => {
-    if (allArtists.length > 0) {
+    if (allArtists.length > 0 && !shouldBackfillRemainingArtists) {
       return;
     }
 
@@ -148,7 +150,9 @@ export function CategoryArtistsInfinite({
     const loadArtists = async () => {
       setIsLoadingArtists(true);
       const cachedFirstPayload = readCategoryArtistsFirstPayloadFromSessionCache(slug);
-      if (cachedFirstPayload && !cancelled) {
+      const shouldUseCachedFirstPayload = allArtists.length === 0 && !!cachedFirstPayload;
+
+      if (shouldUseCachedFirstPayload && !cancelled) {
         setArtistsState(Array.isArray(cachedFirstPayload.artists) ? cachedFirstPayload.artists : []);
         setInitialTabCounts(cachedFirstPayload.tabCounts && typeof cachedFirstPayload.tabCounts === "object" ? cachedFirstPayload.tabCounts : null);
         if (typeof cachedFirstPayload.totalArtists === "number" && Number.isFinite(cachedFirstPayload.totalArtists)) {
@@ -157,21 +161,22 @@ export function CategoryArtistsInfinite({
           setTotalArtists(cachedFirstPayload.artists.length);
         }
       } else {
-        setArtistsState([]);
+        setArtistsState(allArtists);
+        setVisibleArtists(allArtists);
       }
       try {
         const firstPageSize = 30;
         const backgroundPageSize = 192;
-        let offset = 0;
-        let firstHasMore = false;
-        let firstArtists: CategoryArtistCard[] = [];
+        let offset = allArtists.length;
+        let firstHasMore = shouldBackfillRemainingArtists;
+        let firstArtists: CategoryArtistCard[] = allArtists;
 
-        if (cachedFirstPayload) {
+        if (shouldUseCachedFirstPayload && cachedFirstPayload) {
           firstArtists = Array.isArray(cachedFirstPayload.artists) ? cachedFirstPayload.artists : [];
           firstHasMore = cachedFirstPayload.hasMore === true;
           const cachedNextOffset = Number(cachedFirstPayload.nextOffset);
           offset = Number.isFinite(cachedNextOffset) ? cachedNextOffset : firstArtists.length;
-        } else {
+        } else if (allArtists.length === 0) {
           const firstResponse = await fetch(`/api/categories/${encodeURIComponent(slug)}/artists?limit=${firstPageSize}&offset=0`, {
             cache: "no-store",
           });
@@ -527,13 +532,13 @@ export function CategoryArtistsInfinite({
             </div>
           ))}
         </div>
-      ) : (
+      ) : !isLoadingArtists ? (
         <article className="catalogCard categoryNoVideos">
           <p className="statusLabel">Category artists</p>
           <h3>No artists match this filter.</h3>
           <p>Try a shorter search string.</p>
         </article>
-      )}
+      ) : null}
     </>
   );
 }

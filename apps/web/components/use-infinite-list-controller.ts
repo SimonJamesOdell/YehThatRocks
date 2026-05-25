@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, type RefObject } from "react";
+import { startTransition, useCallback, useState, type RefObject } from "react";
 
 import {
   type InfiniteScrollLoadOptions,
@@ -75,26 +75,28 @@ export function useInfiniteListController<TItem>({
       const incoming = Array.isArray(page.incoming) ? page.incoming : [];
 
       let added = 0;
-      setItems((current) => {
-        const seen = new Set(current.map(getItemKey));
-        const uniqueIncoming: TItem[] = [];
+      startTransition(() => {
+        setItems((current) => {
+          const seen = new Set(current.map(getItemKey));
+          const uniqueIncoming: TItem[] = [];
 
-        for (const item of incoming) {
-          const key = getItemKey(item);
-          if (seen.has(key)) {
-            continue;
+          for (const item of incoming) {
+            const key = getItemKey(item);
+            if (seen.has(key)) {
+              continue;
+            }
+
+            seen.add(key);
+            uniqueIncoming.push(item);
           }
 
-          seen.add(key);
-          uniqueIncoming.push(item);
-        }
+          added = uniqueIncoming.length;
+          if (added === 0) {
+            return current;
+          }
 
-        added = uniqueIncoming.length;
-        if (added === 0) {
-          return current;
-        }
-
-        return [...current, ...uniqueIncoming];
+          return [...current, ...uniqueIncoming];
+        });
       });
 
       const nextOffsetValue = Number(page.nextOffset);
