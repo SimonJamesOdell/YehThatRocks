@@ -16,13 +16,28 @@ const SOURCE_FILES = {
   categoryArtistPage: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/artists/[artistSlug]/page.tsx"),
   categoryArtistsApi: path.join(ROOT, "apps/web/app/api/categories/[slug]/artists/route.ts"),
   categoryArtistVideosApi: path.join(ROOT, "apps/web/app/api/categories/[slug]/artists/[artistSlug]/route.ts"),
-  categoryArtistsInfinite: path.join(ROOT, "apps/web/components/category-artists-infinite.tsx"),
+  categoryArtistsBrowser: path.join(ROOT, "apps/web/components/category-artists-browser.tsx"),
   categoryVideosInfinite: path.join(ROOT, "apps/web/components/category-videos-infinite.tsx"),
   categoriesFilterGrid: path.join(ROOT, "apps/web/components/categories-filter-grid.tsx"),
   categoryCardsSessionCache: path.join(ROOT, "apps/web/lib/category-cards-session-cache.ts"),
   categoryArtistsSessionCache: path.join(ROOT, "apps/web/lib/category-artists-session-cache.ts"),
+  thumbnailPinClientSync: path.join(ROOT, "apps/web/lib/thumbnail-pin-client-sync.ts"),
+  artistVideoLink: path.join(ROOT, "apps/web/components/artist-video-link.tsx"),
+  catalogDataGenres: path.join(ROOT, "apps/web/lib/catalog-data-genres.ts"),
+  adminThumbnailPinsRoute: path.join(ROOT, "apps/web/app/api/admin/thumbnail-pins/route.ts"),
   genreBuckets: path.join(ROOT, "apps/web/lib/genre-buckets.ts"),
 };
+
+const TOP_LEVEL_BUCKET_LABELS = new Set([
+  "Rock & Alternative",
+  "Punk & Hardcore",
+  "Classic and Symphonic Metal",
+  "Thrash & Power Metal",
+  "Black and Death Metal",
+  "Doom & Sludge",
+  "Nu-metal & Metalcore",
+  "Progressive & Experimental",
+].map((value) => value.toLowerCase()));
 
 function loadDatabaseEnv() {
   const envPath = path.resolve(process.cwd(), "apps/web/.env.local");
@@ -154,15 +169,19 @@ function runSourceChecks(failures) {
   const categoryArtistPageSource = readFileStrict(SOURCE_FILES.categoryArtistPage, ROOT);
   const categoryArtistsApiSource = readFileStrict(SOURCE_FILES.categoryArtistsApi, ROOT);
   const categoryArtistVideosApiSource = readFileStrict(SOURCE_FILES.categoryArtistVideosApi, ROOT);
-  const categoryArtistsInfiniteSource = readFileStrict(SOURCE_FILES.categoryArtistsInfinite, ROOT);
+  const categoryArtistsBrowserSource = readFileStrict(SOURCE_FILES.categoryArtistsBrowser, ROOT);
   const categoryVideosInfiniteSource = readFileStrict(SOURCE_FILES.categoryVideosInfinite, ROOT);
   const categoriesFilterGridSource = readFileStrict(SOURCE_FILES.categoriesFilterGrid, ROOT);
   const categoryCardsSessionCacheSource = readFileStrict(SOURCE_FILES.categoryCardsSessionCache, ROOT);
   const categoryArtistsSessionCacheSource = readFileStrict(SOURCE_FILES.categoryArtistsSessionCache, ROOT);
+  const thumbnailPinClientSyncSource = readFileStrict(SOURCE_FILES.thumbnailPinClientSync, ROOT);
+  const artistVideoLinkSource = readFileStrict(SOURCE_FILES.artistVideoLink, ROOT);
+  const catalogDataGenresSource = readFileStrict(SOURCE_FILES.catalogDataGenres, ROOT);
+  const adminThumbnailPinsRouteSource = readFileStrict(SOURCE_FILES.adminThumbnailPinsRoute, ROOT);
   const genreBucketsSource = readFileStrict(SOURCE_FILES.genreBuckets, ROOT);
 
   assertContains(categoriesParentPageSource, "const fallbackCards", "Categories parent page builds immediate fallback cards for fast first render", failures);
-  assertContains(categoriesParentPageSource, "<CategoriesFilterGrid genreCards={fallbackCards} />", "Categories parent page renders fallback cards and relies on client hydration", failures);
+  assertContains(categoriesParentPageSource, "<CategoriesFilterGrid genreCards={cards} />", "Categories parent page renders merged cards model (runtime or fallback)", failures);
 
   assertContains(topLevelCardsApiSource, "getRuntimeCachedTopLevelGenreCards", "Top-level cards API reads runtime cache source", failures);
   assertContains(topLevelCardsApiSource, "getGenreCards", "Top-level cards API falls back to richer genre-card source", failures);
@@ -170,24 +189,31 @@ function runSourceChecks(failures) {
 
   assertContains(categoryCardsSessionCacheSource, "readCategoryCardsSessionCache", "Category cards session cache exposes read helper", failures);
   assertContains(categoryCardsSessionCacheSource, "prefetchCategoryCardsSessionCache", "Category cards session cache exposes prefetch helper", failures);
+  assertContains(categoryCardsSessionCacheSource, "CATEGORY_CARDS_PIN_OVERRIDES_KEY", "Category cards cache persists admin pin overrides separately", failures);
+  assertContains(categoryCardsSessionCacheSource, "applyCategoryCardThumbnailPinOverrides", "Category cards cache applies persisted pin overrides during hydration", failures);
+  assertContains(categoryCardsSessionCacheSource, "writeCategoryCardThumbnailPinOverride", "Category cards cache can persist override writes even without full cards cache", failures);
 
   assertContains(categoryArtistsSessionCacheSource, "prefetchCategoryArtistsFirstPayloadForSlugs", "Category artists session cache supports batch slug prefetch", failures);
-  assertContains(categoryArtistsSessionCacheSource, "FIRST_PAGE_LIMIT = 30", "Category artists session cache prefetch uses bounded first page payload", failures);
+  assertContains(categoryArtistsSessionCacheSource, "FIRST_PAGE_LIMIT = 50", "Category artists session cache prefetch uses bounded first page payload", failures);
+  assertContains(categoryArtistsSessionCacheSource, "patchCategoryArtistThumbnailInCaches", "Category artists cache supports immediate thumbnail patch after admin pin", failures);
+
+  assertContains(thumbnailPinClientSyncSource, "THUMBNAIL_PIN_UPDATED_EVENT", "Thumbnail pin client sync event constant exists", failures);
+  assertContains(thumbnailPinClientSyncSource, "dispatchThumbnailPinUpdated", "Thumbnail pin client sync dispatcher exists", failures);
 
   assertContains(categoriesFilterGridSource, "prefetchCategoryCardsSessionCache", "Categories grid hydrates from top-level cards session cache", failures);
   assertContains(categoriesFilterGridSource, "prefetchCategoryArtistsFirstPayloadForSlugs", "Categories grid triggers category-detail artists prefetch", failures);
-  assertContains(categoriesFilterGridSource, "requestIdleCallback", "Categories grid performs prefetch during idle time", failures);
+  assertContains(categoriesFilterGridSource, "void prefetchCategoryArtistsFirstPayloadForSlugs(slugs);", "Categories grid eagerly prefetches category detail artists payloads", failures);
+  assertContains(categoriesFilterGridSource, "THUMBNAIL_PIN_UPDATED_EVENT", "Categories grid listens for pin updates to patch root thumbnails immediately", failures);
+  assertContains(categoriesFilterGridSource, "applyCategoryCardThumbnailPinOverrides", "Categories grid applies persisted pin overrides on initial render", failures);
 
-  assertContains(categoryArtistsInfiniteSource, "readCategoryArtistsFirstPayloadFromSessionCache", "Category artists view consumes session-prefetched first payload", failures);
-  assertContains(categoryArtistsInfiniteSource, "writeCategoryArtistsFirstPayloadToSessionCache", "Category artists view persists first payload for session reuse", failures);
-  assertContains(categoryArtistsInfiniteSource, "const [, startArtistsRenderTransition] = useTransition();", "Category artists uses transition-priority rendering for incremental card appends", failures);
-  assertContains(categoryArtistsInfiniteSource, "const renderTimerRef = useRef<number | null>(null);", "Category artists uses timer-based incremental append scheduling", failures);
-  assertContains(categoryArtistsInfiniteSource, "renderTimerRef.current = window.setTimeout(step, appendDelayMs);", "Category artists incremental append loop uses timed cadence instead of per-frame updates", failures);
-  assertContains(categoryArtistsInfiniteSource, "startArtistsRenderTransition(() => {", "Category artists appends visible chunks inside React transitions", failures);
-  assertNotContains(categoryArtistsInfiniteSource, "window.requestAnimationFrame(step)", "Category artists avoids per-frame append scheduling that can contend with scroll", failures);
+  assertContains(categoryArtistsBrowserSource, "readCategoryArtistsFirstPayloadFromSessionCache", "Category artists browser consumes session-prefetched first payload", failures);
+  assertContains(categoryArtistsBrowserSource, "primeCategoryArtistsFullPayload", "Category artists browser hydrates full payload cache in background", failures);
+  assertContains(categoryArtistsBrowserSource, "appendArtists(pageArtists)", "Category artists browser incrementally appends fetched artist pages", failures);
+  assertContains(categoryArtistsBrowserSource, "VIRTUAL_OVERSCAN_ROWS", "Category artists browser virtualizes rows with overscan", failures);
+  assertContains(categoryArtistsBrowserSource, "gridTemplateColumns: `repeat(${safeColumns}, minmax(0, 1fr))`", "Category artists browser computes responsive virtual row columns", failures);
 
-  assertContains(categoryPageSource, "getCategoryArtistsByGenre", "Category page resolves artists for selected genre", failures);
-  assertContains(categoryPageSource, "CategoryArtistsInfinite", "Category page renders category artist grid", failures);
+  assertContains(categoryPageSource, "CategoryArtistsBrowser", "Category page renders category artist browser grid", failures);
+  assertContains(categoryPageSource, "CategoryBrowserTabs", "Category page renders sticky category tabs under header", failures);
   assertContains(categoryArtistPageSource, "getVideosByGenreAndArtist", "Category artist page resolves artist-scoped videos", failures);
   assertContains(categoryArtistPageSource, "CategoryVideosInfinite", "Category artist page renders category video infinite view", failures);
   assertContains(categoryArtistsApiSource, "getCategoryArtistsByGenre", "Category artists API resolves category artists", failures);
@@ -195,9 +221,26 @@ function runSourceChecks(failures) {
   assertContains(categoryArtistVideosApiSource, "getVideosByGenreAndArtist", "Category artist videos API resolves artist-scoped videos", failures);
   assertContains(categoryArtistVideosApiSource, "getOptionalApiAuth", "Category artist videos API supports optional auth context", failures);
   assertContains(categoryArtistVideosApiSource, "filterHiddenVideos", "Category artist videos API filters hidden videos for authenticated users", failures);
-  assertContains(categoryArtistsInfiniteSource, "/categories/${encodeURIComponent(slug)}/artists/${encodeURIComponent(artist.slug)}", "Category artists cards deep-link into category artist video routes", failures);
+  assertContains(categoryArtistsBrowserSource, "/categories/${encodeURIComponent(slug)}/artists/${encodeURIComponent(artist.slug)}", "Category artists cards deep-link into category artist video routes", failures);
   assertContains(categoryVideosInfiniteSource, "const isArtistCategoryRoute = Boolean(artistSlug && artistName);", "Category videos view distinguishes category artist route mode", failures);
   assertContains(categoryVideosInfiniteSource, "? `/api/categories/${encodeURIComponent(slug)}/artists/${encodeURIComponent(artistSlug ?? \"\")}`", "Category videos view fetches from artist-scoped API on artist route", failures);
+  assertContains(artistVideoLinkSource, "target: adminThumbnailPinTarget", "Artist video card pin button submits explicit thumbnail pin target", failures);
+  assertContains(artistVideoLinkSource, "patchCategoryArtistThumbnailInCaches", "Artist video card pin flow patches category artist caches immediately", failures);
+  assertContains(artistVideoLinkSource, "patchCategoryCardThumbnailInSessionCache", "Artist video card pin flow patches top-level category cards cache", failures);
+  assertContains(artistVideoLinkSource, "dispatchThumbnailPinUpdated", "Artist video card pin flow dispatches thumbnail pin update events", failures);
+
+  assertContains(categoryPageSource, "getShellRequestAuthState", "Category page resolves auth state to gate admin-only pin controls", failures);
+  assertContains(categoryPageSource, "isAdmin={isAdmin}", "Category page passes admin state into category artists browser", failures);
+  assertContains(categoryArtistsBrowserSource, "adminThumbnailPinButton", "Category artists browser renders admin-only top-left pin control", failures);
+  assertContains(categoryArtistsBrowserSource, "target: \"category\"", "Category artists browser parent-level pin writes category target", failures);
+  assertContains(categoryArtistsBrowserSource, "patchCategoryCardThumbnailInSessionCache", "Category artists browser parent pin patches root category card cache", failures);
+  assertContains(categoryArtistsBrowserSource, "THUMBNAIL_PIN_UPDATED_EVENT", "Category artists browser listens for thumbnail pin update events", failures);
+
+  assertContains(catalogDataGenresSource, "setTopLevelCategoryThumbnailPin", "Genre data layer exports dedicated top-level category thumbnail pin helper", failures);
+  assertContains(catalogDataGenresSource, "await prisma.genreCard.upsert({", "Top-level category thumbnail pin persists via upsert", failures);
+  assertContains(catalogDataGenresSource, "persistTopLevelCategoryPreview", "Category artist pin pipeline reuses shared persistence helper", failures);
+  assertContains(catalogDataGenresSource, "applyPinnedCategoryArtistPreviews", "Genre card rebuild path reapplies pinned previews before caching", failures);
+  assertContains(adminThumbnailPinsRouteSource, "setTopLevelCategoryThumbnailPin", "Admin thumbnail pin API uses robust top-level pin helper", failures);
 
   assertContains(genreBucketsSource, 'label: "Rock & Alternative"', "Top-level category bucket list includes Rock & Alternative", failures);
   assertContains(genreBucketsSource, 'label: "Punk & Hardcore"', "Top-level category bucket list includes Punk & Hardcore", failures);
@@ -595,7 +638,11 @@ async function main() {
       .filter((genre) => genre && !isRockMetalGenre(genre));
     const scopedCanonicalGenreSet = new Set(scopedCanonicalGenres.map((genre) => genre.toLowerCase()));
     const missingScopedCanonicalGenres = cardGenres
-      .filter((genre) => !scopedCanonicalGenreSet.has(genre.toLowerCase()));
+      .filter((genre) => {
+        const normalizedGenre = genre.toLowerCase();
+        return !scopedCanonicalGenreSet.has(normalizedGenre)
+          && !TOP_LEVEL_BUCKET_LABELS.has(normalizedGenre);
+      });
 
     console.log("Categories invariant audit\n");
     console.log(`genres_scoped=${scopedCanonicalGenres.length} genre_cards=${cardCount} with_thumb=${withThumb} coverage=${(coverage * 100).toFixed(2)}%\n`);
@@ -605,7 +652,7 @@ async function main() {
     assertInvariant(invalidVideoIdRows.length === 0, "All thumbnail_video_id values use valid YouTube ID format", invalidVideoIdRows.length ? `examples=${JSON.stringify(invalidVideoIdRows.slice(0, 3))}` : "", failures);
     assertInvariant(
       missingScopedCanonicalGenres.length === 0,
-      "genre_cards rows map to scoped canonical genres",
+      "genre_cards rows map to scoped canonical genres or top-level buckets",
       missingScopedCanonicalGenres.length ? `examples=${JSON.stringify(missingScopedCanonicalGenres.slice(0, 8))}` : "",
       failures,
     );
