@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { CategoriesFilterGrid } from "@/components/categories-filter-grid";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
+import { getGenreCards } from "@/lib/catalog-data";
 import { TOP_LEVEL_GENRE_BUCKETS } from "@/lib/genre-buckets";
 import type { GenreCard } from "@/lib/catalog-data-utils";
 
@@ -35,6 +36,8 @@ export default async function CategoriesPage() {
     previewVideoId: null,
     artistCount: 0,
   }));
+  const genreCards = await getGenreCards().catch(() => null);
+  const cards = genreCards && genreCards.length > 0 ? genreCards : fallbackCards;
 
   const categoriesJsonLd = {
     "@context": "https://schema.org",
@@ -54,7 +57,7 @@ export default async function CategoriesPage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(categoriesJsonLd) }} />
       <OverlayScrollReset />
-      <CategoriesFilterGrid genreCards={fallbackCards} />
+      <CategoriesFilterGrid genreCards={cards} />
     </>
   );
 }

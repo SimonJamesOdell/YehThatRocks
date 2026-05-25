@@ -1,16 +1,9 @@
 import type { Metadata } from "next";
 
-import { CategoryArtistsInfinite } from "@/components/category-artists-infinite";
+import { CategoryArtistsBrowser } from "@/components/category-artists-browser";
+import { CategoryBrowserHeader } from "@/components/category-browser-header";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
-import {
-  getCategoryArtistsByGenre,
-  getGenreBySlug,
-} from "@/lib/catalog-data";
-import { withSoftTimeout } from "@/lib/catalog-data-utils";
-import { getTopLevelGenreBucketBySlug } from "@/lib/genre-buckets";
-import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
-
-const CATEGORY_ARTISTS_FETCH_LIMIT = 2_000;
+import { getGenreBySlug } from "@/lib/catalog-data";
 
 const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
 
@@ -45,11 +38,6 @@ type CategoryPageProps = {
 
 export default async function CategoryDetailPage({ params }: CategoryPageProps) {
   const { slug } = await params;
-  const isTopLevelBucketRoute = Boolean(getTopLevelGenreBucketBySlug(slug));
-  const [{ isAdmin }, { hiddenVideoIds }] = await Promise.all([
-    getShellRequestAuthState(),
-    getShellRequestVideoState(),
-  ]);
   const genre = await getGenreBySlug(slug);
 
   if (!genre) {
@@ -64,20 +52,11 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
       </>
     );
   }
-
-  const allArtists = isTopLevelBucketRoute
-    ? []
-    : await withSoftTimeout("category-artists-initial", 180, async () => {
-        return getCategoryArtistsByGenre(genre, {
-          offset: 0,
-          limit: CATEGORY_ARTISTS_FETCH_LIMIT,
-        });
-      }).catch(() => []);
   const categoryJsonLd = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",
-    name: `${genre} Artists | YehThatRocks`,
-    description: `Browse artists with available ${genre} videos on YehThatRocks.`,
+    name: `${genre} | YehThatRocks`,
+    description: `Browse ${genre} on YehThatRocks.`,
     url: `${SITE_ORIGIN}/categories/${slug}`,
     isPartOf: { "@type": "WebSite", name: "YehThatRocks", url: SITE_ORIGIN },
     breadcrumb: {
@@ -93,15 +72,8 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(categoryJsonLd) }} />
       <OverlayScrollReset />
-
-      <CategoryArtistsInfinite
-        slug={slug}
-        genre={genre}
-        allArtists={allArtists}
-        shouldBackfillRemainingArtists={isTopLevelBucketRoute || allArtists.length >= CATEGORY_ARTISTS_FETCH_LIMIT}
-        isAdmin={isAdmin}
-        hiddenVideoIds={Array.from(hiddenVideoIds)}
-      />
+      <CategoryBrowserHeader genre={genre} slug={slug} />
+      <CategoryArtistsBrowser slug={slug} genre={genre} />
     </>
   );
 }

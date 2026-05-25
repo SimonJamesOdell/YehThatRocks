@@ -32,14 +32,13 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
   const [isLoaderFadingOut, setIsLoaderFadingOut] = useState(false);
   const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0);
   const [filterValue, setFilterValue] = useState("");
+  const hasRichCards = genreCards.some((card) => Number(card.artistCount ?? 0) > 0 || Boolean(card.previewVideoId));
 
   useEffect(() => {
-    if (genreCards.length > 0 && cards.length === 0) {
-      setCards(genreCards);
+    if (hasRichCards) {
+      return;
     }
-  }, [cards.length, genreCards]);
 
-  useEffect(() => {
     let cancelled = false;
 
     const hydrateCards = async () => {
@@ -72,40 +71,14 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
     return () => {
       cancelled = true;
     };
-  }, [genreCards]);
+  }, [genreCards.length, hasRichCards]);
 
   useEffect(() => {
     if (cards.length === 0) {
       return;
     }
-
-    let cancelled = false;
-    const runPrefetch = () => {
-      if (cancelled) {
-        return;
-      }
-      const slugs = cards.map((card) => getGenreSlug(card.genre));
-      void prefetchCategoryArtistsFirstPayloadForSlugs(slugs);
-    };
-
-    const idleHost = window as Window & {
-      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
-      cancelIdleCallback?: (id: number) => void;
-    };
-
-    if (typeof idleHost.requestIdleCallback === "function") {
-      const idleId = idleHost.requestIdleCallback(runPrefetch, { timeout: 2_500 });
-      return () => {
-        cancelled = true;
-        idleHost.cancelIdleCallback?.(idleId);
-      };
-    }
-
-    const timeoutId = window.setTimeout(runPrefetch, 200);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-    };
+    const slugs = cards.map((card) => getGenreSlug(card.genre));
+    void prefetchCategoryArtistsFirstPayloadForSlugs(slugs);
   }, [cards]);
 
   const normalizedFilterValue = useMemo(
