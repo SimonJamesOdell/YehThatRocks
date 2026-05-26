@@ -67,6 +67,15 @@ function isCategoryArtistsFullPayload(value: unknown): value is CategoryArtistsF
     && Number.isFinite(Number(payload.lastCheckedAt));
 }
 
+function isCompleteCategoryArtistsPayload(payload: Pick<CategoryArtistsFullPayload, "artists" | "totalArtists">) {
+  if (typeof payload.totalArtists !== "number" || !Number.isFinite(payload.totalArtists)) {
+    return true;
+  }
+
+  const expectedTotal = Math.max(0, Math.floor(payload.totalArtists));
+  return payload.artists.length >= expectedTotal;
+}
+
 function getFirstPayloadKey(slug?: string | null) {
   const normalizedSlug = normalizeSlug(slug);
   if (!normalizedSlug) {
@@ -265,6 +274,11 @@ export function readCategoryArtistsFullPayloadFromCache(slug?: string | null): C
       return null;
     }
 
+    if (!isCompleteCategoryArtistsPayload(parsed.payload)) {
+      window.localStorage.removeItem(key);
+      return null;
+    }
+
     memoryFullCache.set(normalizedSlug, { payload: parsed.payload, expiresAt });
     return parsed.payload;
   } catch {
@@ -403,20 +417,30 @@ export async function primeCategoryArtistsFullPayload(
     const cachedFull = readCategoryArtistsFullPayloadFromCache(normalizedSlug);
 
     if (cachedFull && !options.force) {
-      if (!shouldProbeServerForFullCache(cachedFull)) {
-        return cachedFull;
-      }
+      if (!isCompleteCategoryArtistsPayload(cachedFull)) {
+        memoryFullCache.delete(normalizedSlug);
+        if (typeof window !== "undefined") {
+          const cacheKey = getFullPayloadKey(normalizedSlug);
+          if (cacheKey) {
+            window.localStorage.removeItem(cacheKey);
+          }
+        }
+      } else {
+        if (!shouldProbeServerForFullCache(cachedFull)) {
+          return cachedFull;
+        }
 
-      const freshness = await probeCategoryArtistsFreshness(normalizedSlug);
-      if (freshness) {
-        const cachedFirstSlug = cachedFull.artists[0]?.slug ?? null;
-        if (freshness.totalArtists === cachedFull.totalArtists && freshness.firstSlug === cachedFirstSlug) {
-          const refreshedCache: CategoryArtistsFullPayload = {
-            ...cachedFull,
-            lastCheckedAt: Date.now(),
-          };
-          writeCategoryArtistsFullPayloadToCache(normalizedSlug, refreshedCache);
-          return refreshedCache;
+        const freshness = await probeCategoryArtistsFreshness(normalizedSlug);
+        if (freshness) {
+          const cachedFirstSlug = cachedFull.artists[0]?.slug ?? null;
+          if (freshness.totalArtists === cachedFull.totalArtists && freshness.firstSlug === cachedFirstSlug) {
+            const refreshedCache: CategoryArtistsFullPayload = {
+              ...cachedFull,
+              lastCheckedAt: Date.now(),
+            };
+            writeCategoryArtistsFullPayloadToCache(normalizedSlug, refreshedCache);
+            return refreshedCache;
+          }
         }
       }
     }
@@ -426,7 +450,7 @@ export async function primeCategoryArtistsFullPayload(
       : await prefetchCategoryArtistsFirstPayload(normalizedSlug);
 
     if (!baseline) {
-      return cachedFull ?? null;
+      return cachedFull && isCompleteCategoryArtistsPayload(cachedFull) ? cachedFull : null;
     }
 
     writeCategoryArtistsFirstPayloadToSessionCache(normalizedSlug, baseline);
@@ -517,17 +541,21 @@ export async function primeCategoryArtistsFullPayload(
 
     const finalizedTotalArtists = hasKnownTotal ? totalArtists : fullArtists.length;
 
+    const fullPayloadComplete = hasKnownTotal ? fullArtists.length >= totalArtists : true;
+
     const finalizedPayload: CategoryArtistsFullPayload = {
       artists: fullArtists,
       totalArtists: finalizedTotalArtists,
       tabCounts: baseline.tabCounts,
-      hasMore: false,
+      hasMore: !fullPayloadComplete,
       nextOffset: fullArtists.length,
       fetchedAt: Date.now(),
       lastCheckedAt: Date.now(),
     };
 
-    writeCategoryArtistsFullPayloadToCache(normalizedSlug, finalizedPayload);
+    if (fullPayloadComplete) {
+      writeCategoryArtistsFullPayloadToCache(normalizedSlug, finalizedPayload);
+    }
     writeCategoryArtistsFirstPayloadToSessionCache(normalizedSlug, {
       artists: finalizedPayload.artists.slice(0, FIRST_PAGE_LIMIT),
       totalArtists: finalizedPayload.totalArtists,
