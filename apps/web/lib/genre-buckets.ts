@@ -161,10 +161,12 @@ const GENRE_ALIAS_TO_CANONICAL = new Map<string, string>([
   ["power", "power metal"],
   ["technical thrash", "thrash metal"],
   ["melodic death", "melodic death metal"],
+  ["melodic doom", "doom metal"],
   ["progressive", "progressive metal"],
   ["technical speed", "technical speed metal"],
   ["metal", "heavy metal"],
   ["occult", "black metal"],
+  ["gothic", "black metal"],
   ["crossover", "crossover thrash"],
 ]);
 
