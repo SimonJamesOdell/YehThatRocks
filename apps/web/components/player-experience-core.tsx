@@ -41,6 +41,7 @@ import {
   resolveRouteAutoplaySource,
   type RouteAutoplaySource,
 } from "@/components/player-experience-autoplay-utils";
+import { TOP_LEVEL_GENRE_BUCKETS, TOP_LEVEL_GENRE_BUCKET_LABELS, resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
 import {
   isInteractivePlaybackBlockReason,
   isUnavailableVerificationReason,
@@ -74,6 +75,7 @@ import {
   openShareToSocialsModal,
 } from "@/components/player-share-controls";
 import { shareCurrentVideoToChat } from "@/components/player-share-chat";
+import { VideoGenreLink } from "@/components/video-genre-link";
 import { openAdminDeleteConfirm, openAdminEditOverlay, toggleShareMenu } from "@/components/player-overlay-actions";
 import { buildVideoNavigationHref, navigateVideoHref } from "@/components/player-video-navigation";
 import { buildPathWithParams, clearPlaylistParams } from "@/components/player-search-params";
@@ -568,6 +570,7 @@ export function PlayerExperience({
   const isAdmin = useAdminSession({ isLoggedIn, initialIsAdmin });
   const [localTitleOverride, setLocalTitleOverride] = useState<string | null>(null);
   const [localChannelTitleOverride, setLocalChannelTitleOverride] = useState<string | null>(null);
+  const [localGenreOverride, setLocalGenreOverride] = useState<string | null>(null);
   const [localParsedArtistOverride, setLocalParsedArtistOverride] = useState<string | null>(null);
   const [localParsedTrackOverride, setLocalParsedTrackOverride] = useState<string | null>(null);
   const [overlayArtistVideoCount, setOverlayArtistVideoCount] = useState<number | null>(null);
@@ -607,6 +610,8 @@ export function PlayerExperience({
     setAdminEditApproved,
     adminEditChannelTitle,
     setAdminEditChannelTitle,
+    adminEditGenre,
+    setAdminEditGenre,
     adminEditParsedArtist,
     setAdminEditParsedArtist,
     adminEditParsedTrack,
@@ -618,6 +623,7 @@ export function PlayerExperience({
     adminEditDescription,
     setAdminEditDescription,
     adminEditCreatedAt,
+    isAutoClassifyingGenre,
     isAdminEditMetadataRefreshing,
     isAdminEditLoading,
     isAdminEditSaving,
@@ -630,6 +636,7 @@ export function PlayerExperience({
     adminEditStatus,
     setAdminEditStatus,
     handleOpenAdminVideoEdit,
+    handleAutoClassifyAdminGenre,
     handleRefetchAdminVideoMetadata,
     handleSaveAdminVideoEdit,
     closeAdminVideoEditModal,
@@ -638,9 +645,10 @@ export function PlayerExperience({
     isAdmin,
     playerFrameRef,
     pointerPositionRef,
-    onSaveSuccess: (title, channelTitle, parsedArtist, parsedTrack) => {
+    onSaveSuccess: (title, channelTitle, parsedArtist, parsedTrack, genre) => {
       setLocalTitleOverride(title);
       setLocalChannelTitleOverride(channelTitle);
+      setLocalGenreOverride(genre);
       setLocalParsedArtistOverride(parsedArtist);
       setLocalParsedTrackOverride(parsedTrack);
     },
@@ -674,6 +682,7 @@ export function PlayerExperience({
     currentVideoRef.current = currentVideo;
     setLocalTitleOverride(null);
     setLocalChannelTitleOverride(null);
+    setLocalGenreOverride(null);
     setLocalParsedArtistOverride(null);
     setLocalParsedTrackOverride(null);
     resetEndedChoiceRuntimeState({
@@ -757,6 +766,28 @@ export function PlayerExperience({
       }
     };
   }, []);
+
+  const adminEditCategoryOptions = useMemo(() => ([...TOP_LEVEL_GENRE_BUCKET_LABELS, "Unclassified"]), []);
+  const adminEditCategoryOptionDetails = useMemo(() => new Map(
+    TOP_LEVEL_GENRE_BUCKETS.map((bucket) => [bucket.label, bucket.terms.slice(0, 6)]),
+  ), []);
+  const adminEditGenreSuggestions = useMemo(() => Array.from(new Set([
+    ...TOP_LEVEL_GENRE_BUCKETS.map((bucket) => bucket.label),
+    ...TOP_LEVEL_GENRE_BUCKETS.flatMap((bucket) => bucket.terms),
+  ])), []);
+  const selectedAdminEditCategory = useMemo(() => {
+    const normalized = adminEditGenre.trim().toLowerCase();
+    if (!normalized) {
+      return "Unclassified";
+    }
+
+    const exact = adminEditCategoryOptions.find((option) => option.toLowerCase() === normalized);
+    if (exact) {
+      return exact;
+    }
+
+    return resolveTopLevelGenreBucket(adminEditGenre) ?? "Unclassified";
+  }, [adminEditCategoryOptions, adminEditGenre]);
 
   useEffect(() => {
     if (!showShareModal) {
@@ -944,7 +975,9 @@ export function PlayerExperience({
   const currentVideoMetadata = currentVideo as VideoRecord & {
     parsedArtist?: string | null;
     parsedTrack?: string | null;
+    genre?: string | null;
   };
+  const overlayGenreLabel = localGenreOverride?.trim() || currentVideoMetadata.genre?.trim() || "Rock / Metal";
   const parsedArtistCandidate =
     localParsedArtistOverride?.trim()
     || currentVideoMetadata.parsedArtist?.trim()
@@ -4382,6 +4415,7 @@ export function PlayerExperience({
                   {!isFullscreen ? (
                     <div className="overlayTitleRow">
                       <div className="overlayTitleStack">
+                        <p className="overlayRelatedCardGenre"><VideoGenreLink genre={overlayGenreLabel} /></p>
                         <p className="overlayTitle">
                           {overlayArtistHref ? (
                             <Link href={overlayArtistHref} className="overlayArtistLink">
@@ -4883,19 +4917,15 @@ export function PlayerExperience({
               )
             : null}
 
-          {showAdminVideoEditModal ? (
-            <div
-              className="shareModalBackdrop"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Edit video record"
-              onClick={() => {
-                if (!isAdminEditSaving) {
-                  closeAdminVideoEditModal();
-                }
-              }}
-            >
-              <div className="shareModal adminVideoEditModal" onClick={(event) => event.stopPropagation()}>
+          {showAdminVideoEditModal && typeof document !== "undefined"
+            ? createPortal(
+              <div
+                className="shareModalBackdrop adminVideoEditBackdrop"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Edit video record"
+              >
+                <div className="shareModal adminVideoEditModal" onClick={(event) => event.stopPropagation()}>
                 <div className="shareModalHeader">
                   <strong>Edit Video Record</strong>
                   <button
@@ -4917,92 +4947,197 @@ export function PlayerExperience({
                 {adminEditStatus ? <p className="authMessage">{adminEditStatus}</p> : null}
 
                 {!isAdminEditLoading ? (
-                  <div className="adminVideoEditGrid">
-                    <label>
-                      <span>Title</span>
-                      <input
-                        value={adminEditTitle}
-                        onChange={(event) => setAdminEditTitle(event.currentTarget.value)}
-                        maxLength={255}
-                      />
-                    </label>
-                    <label>
-                      <span>Channel title</span>
-                      <input
-                        value={adminEditChannelTitle}
-                        onChange={(event) => setAdminEditChannelTitle(event.currentTarget.value)}
-                        maxLength={255}
-                      />
-                    </label>
-                    <label>
-                      <span>Approval status</span>
-                      <select
-                        value={adminEditApproved ? "approved" : "pending"}
-                        onChange={(event) => setAdminEditApproved(event.currentTarget.value === "approved")}
-                      >
-                        <option value="approved">Approved</option>
-                        <option value="pending">Pending review</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>Parsed artist</span>
-                      <input
-                        value={adminEditParsedArtist}
-                        onChange={(event) => setAdminEditParsedArtist(event.currentTarget.value)}
-                        maxLength={255}
-                      />
-                    </label>
-                    <label>
-                      <span>Parsed track</span>
-                      <input
-                        value={adminEditParsedTrack}
-                        onChange={(event) => setAdminEditParsedTrack(event.currentTarget.value)}
-                        maxLength={255}
-                      />
-                    </label>
-                    <label>
-                      <span>Video type</span>
-                      <input
-                        value={adminEditParsedVideoType}
-                        onChange={(event) => setAdminEditParsedVideoType(event.currentTarget.value)}
-                        maxLength={50}
-                      />
-                    </label>
-                    <label>
-                      <span>Parse confidence (0-1)</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        value={adminEditParseConfidence}
-                        onChange={(event) => setAdminEditParseConfidence(event.currentTarget.value)}
-                      />
-                    </label>
-                    <label className="adminVideoEditFieldFull">
-                      <span>Description</span>
-                      <textarea
-                        value={adminEditDescription}
-                        onChange={(event) => setAdminEditDescription(event.currentTarget.value)}
-                        rows={4}
-                      />
-                    </label>
-                    <label className="adminVideoEditFieldFull">
-                      <span>Stored date</span>
-                      <input
-                        value={
-                          adminEditCreatedAt && Number.isFinite(Date.parse(String(adminEditCreatedAt)))
-                            ? new Date(adminEditCreatedAt).toISOString()
-                            : ""
-                        }
-                        readOnly
-                        placeholder="No stored date"
-                      />
-                    </label>
+                  <div className="adminVideoEditLayout">
+                    <div className="adminVideoEditGrid">
+                      <label>
+                        <span>Title</span>
+                        <input
+                          value={adminEditTitle}
+                          onChange={(event) => setAdminEditTitle(event.currentTarget.value)}
+                          maxLength={255}
+                        />
+                      </label>
+                      <label>
+                        <span>Channel title</span>
+                        <input
+                          value={adminEditChannelTitle}
+                          onChange={(event) => setAdminEditChannelTitle(event.currentTarget.value)}
+                          maxLength={255}
+                        />
+                      </label>
+                      <label>
+                        <span>Approval status</span>
+                        <select
+                          value={adminEditApproved ? "approved" : "pending"}
+                          onChange={(event) => setAdminEditApproved(event.currentTarget.value === "approved")}
+                        >
+                          <option value="approved">Approved</option>
+                          <option value="pending">Pending review</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Parsed artist</span>
+                        <input
+                          value={adminEditParsedArtist}
+                          onChange={(event) => setAdminEditParsedArtist(event.currentTarget.value)}
+                          maxLength={255}
+                        />
+                      </label>
+                      <label>
+                        <span>Parsed track</span>
+                        <input
+                          value={adminEditParsedTrack}
+                          onChange={(event) => setAdminEditParsedTrack(event.currentTarget.value)}
+                          maxLength={255}
+                        />
+                      </label>
+                      <label>
+                        <span>Video type</span>
+                        <input
+                          value={adminEditParsedVideoType}
+                          onChange={(event) => setAdminEditParsedVideoType(event.currentTarget.value)}
+                          maxLength={50}
+                        />
+                      </label>
+                      <label>
+                        <span>Parse confidence (0-1)</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={adminEditParseConfidence}
+                          onChange={(event) => setAdminEditParseConfidence(event.currentTarget.value)}
+                        />
+                      </label>
+                      <label className="adminVideoEditFieldFull">
+                        <span>Description</span>
+                        <textarea
+                          value={adminEditDescription}
+                          onChange={(event) => setAdminEditDescription(event.currentTarget.value)}
+                          rows={4}
+                        />
+                      </label>
+                      <label className="adminVideoEditFieldFull">
+                        <span>Stored date</span>
+                        <input
+                          value={
+                            adminEditCreatedAt && Number.isFinite(Date.parse(String(adminEditCreatedAt)))
+                              ? new Date(adminEditCreatedAt).toISOString()
+                              : ""
+                          }
+                          readOnly
+                          placeholder="No stored date"
+                        />
+                      </label>
+                    </div>
+
+                    <fieldset className="adminVideoGenrePanel">
+                      <legend>Category & Genre</legend>
+                      <label>
+                        <span>Classified genre</span>
+                        <div className="adminVideoGenreInputRow">
+                          <input
+                            list="player-admin-video-edit-genre-suggestions"
+                            value={adminEditGenre}
+                            onChange={(event) => setAdminEditGenre(event.currentTarget.value)}
+                            maxLength={255}
+                            placeholder="Optional specific genre"
+                          />
+                          <button
+                            type="button"
+                            className="adminVideoEditButton adminVideoEditButtonSecondary"
+                            onClick={() => {
+                              void handleAutoClassifyAdminGenre();
+                            }}
+                            disabled={
+                              isAdminEditSaving
+                              || isAdminEditLoading
+                              || isAdminEditMetadataRefreshing
+                              || isAutoClassifyingGenre
+                              || !adminEditVideoRowId
+                            }
+                          >
+                            {isAutoClassifyingGenre ? "Auto..." : "Auto"}
+                          </button>
+                        </div>
+                        <datalist id="player-admin-video-edit-genre-suggestions">
+                          {adminEditGenreSuggestions.map((suggestion) => (
+                            <option key={suggestion} value={suggestion} />
+                          ))}
+                        </datalist>
+                      </label>
+
+                      <table className="adminVideoGenreTable">
+                        <tbody>
+                          {adminEditCategoryOptions.map((option) => {
+                            const radioId = `player-admin-video-edit-category-${option.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+                            const isSelected = selectedAdminEditCategory === option;
+                            const optionDetails = adminEditCategoryOptionDetails.get(option) ?? [];
+                            const isGenreSelectionDisabled =
+                              isAdminEditSaving || isAdminEditLoading || isAdminEditMetadataRefreshing || isAutoClassifyingGenre;
+                            const applySelectedGenreOption = () => {
+                              if (isGenreSelectionDisabled) {
+                                return;
+                              }
+                              setAdminEditGenre(option === "Unclassified" ? "" : option);
+                            };
+
+                            return (
+                              <tr key={option} className={isSelected ? "adminVideoGenreRowSelected" : undefined}>
+                                <td>
+                                  <input
+                                    id={radioId}
+                                    type="radio"
+                                    name="player-admin-video-edit-category"
+                                    value={option}
+                                    checked={isSelected}
+                                    onChange={applySelectedGenreOption}
+                                    disabled={isGenreSelectionDisabled}
+                                  />
+                                </td>
+                                <td>
+                                  <label htmlFor={radioId}>{option}</label>
+                                </td>
+                                <td title={optionDetails.join(", ") || "No specific subgenres mapped."}>
+                                  {optionDetails.length > 0 ? (
+                                    optionDetails.map((detail, index) => (
+                                      <span
+                                        key={`${option}-${detail}`}
+                                        style={{ cursor: isGenreSelectionDisabled ? "default" : "pointer" }}
+                                        onMouseEnter={(event) => {
+                                          if (!isGenreSelectionDisabled) {
+                                            event.currentTarget.style.textDecoration = "underline";
+                                          }
+                                        }}
+                                        onMouseLeave={(event) => {
+                                          event.currentTarget.style.textDecoration = "none";
+                                        }}
+                                        onClick={() => {
+                                          if (isGenreSelectionDisabled) {
+                                            return;
+                                          }
+                                          setAdminEditGenre(detail);
+                                        }}
+                                      >
+                                        {detail}
+                                        {index < optionDetails.length - 1 ? ", " : ""}
+                                      </span>
+                                    ))
+                                  ) : (
+                                    "No specific subgenres mapped."
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </fieldset>
                   </div>
                 ) : null}
 
-                <div className="adminVideoEditActions">
+                  <div className="adminVideoEditActions">
                   <button
                     type="button"
                     className="adminVideoEditButton adminVideoEditButtonSecondary"
@@ -5017,7 +5152,7 @@ export function PlayerExperience({
                     type="button"
                     className="adminVideoEditButton adminVideoEditButtonSecondary"
                     onClick={closeAdminVideoEditModal}
-                    disabled={isAdminEditSaving || isAdminEditMetadataRefreshing}
+                    disabled={isAdminEditSaving || isAdminEditMetadataRefreshing || isAutoClassifyingGenre}
                   >
                     Cancel
                   </button>
@@ -5031,15 +5166,19 @@ export function PlayerExperience({
                       isAdminEditSaving
                       || isAdminEditLoading
                       || isAdminEditMetadataRefreshing
+                      || isAutoClassifyingGenre
                       || !adminEditVideoRowId
                     }
                   >
                     {isAdminEditSaving ? "Saving..." : "Save changes"}
                   </button>
                 </div>
+                </div>
               </div>
-            </div>
-          ) : null}
+              ,
+              document.body,
+            )
+            : null}
 
           {showAdminDeleteConfirmModal && typeof document !== "undefined"
             ? createPortal(

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireAdminApiAuth } from "@/lib/admin-auth";
+import { clearCatalogVideoCaches } from "@/lib/catalog-data";
+import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";
 import { prisma } from "@/lib/db";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
@@ -142,6 +144,9 @@ export async function POST(request: NextRequest) {
       viewCount: true,
     },
   });
+
+  clearCatalogVideoCaches();
+  clearCurrentVideoRouteCaches();
 
   return NextResponse.json({
     ok: true,

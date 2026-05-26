@@ -11,6 +11,7 @@ type AdminEditableVideo = {
   videoId: string;
   title: string;
   approved: boolean;
+  genre: string | null;
   parsedArtist: string | null;
   parsedTrack: string | null;
   parsedVideoType: string | null;
@@ -31,6 +32,8 @@ export type UseAdminVideoEditReturn = {
   setAdminEditApproved: React.Dispatch<React.SetStateAction<boolean>>;
   adminEditChannelTitle: string;
   setAdminEditChannelTitle: React.Dispatch<React.SetStateAction<string>>;
+  adminEditGenre: string;
+  setAdminEditGenre: React.Dispatch<React.SetStateAction<string>>;
   adminEditParsedArtist: string;
   setAdminEditParsedArtist: React.Dispatch<React.SetStateAction<string>>;
   adminEditParsedTrack: string;
@@ -42,6 +45,7 @@ export type UseAdminVideoEditReturn = {
   adminEditDescription: string;
   setAdminEditDescription: React.Dispatch<React.SetStateAction<string>>;
   adminEditCreatedAt: string | Date | null;
+  isAutoClassifyingGenre: boolean;
   isAdminEditMetadataRefreshing: boolean;
   isAdminEditLoading: boolean;
   isAdminEditSaving: boolean;
@@ -54,6 +58,7 @@ export type UseAdminVideoEditReturn = {
   adminEditStatus: string | null;
   setAdminEditStatus: React.Dispatch<React.SetStateAction<string | null>>;
   handleOpenAdminVideoEdit: () => Promise<void>;
+  handleAutoClassifyAdminGenre: () => Promise<void>;
   handleRefetchAdminVideoMetadata: () => Promise<void>;
   handleSaveAdminVideoEdit: () => Promise<void>;
   closeAdminVideoEditModal: () => void;
@@ -72,7 +77,7 @@ export function useAdminVideoEdit({
   playerFrameRef: RefObject<HTMLDivElement | null>;
   pointerPositionRef: RefObject<{ x: number; y: number } | null>;
   /** Called after a successful save with the latest editable metadata values */
-  onSaveSuccess: (title: string, channelTitle: string, parsedArtist: string, parsedTrack: string) => void;
+  onSaveSuccess: (title: string, channelTitle: string, parsedArtist: string, parsedTrack: string, genre: string) => void;
   /** Called from closeAdminVideoEditModal when the pointer is hovering the player */
   onShowControls: () => void;
 }): UseAdminVideoEditReturn {
@@ -83,12 +88,14 @@ export function useAdminVideoEdit({
   const [adminEditTitle, setAdminEditTitle] = useState("");
   const [adminEditApproved, setAdminEditApproved] = useState(false);
   const [adminEditChannelTitle, setAdminEditChannelTitle] = useState("");
+  const [adminEditGenre, setAdminEditGenre] = useState("");
   const [adminEditParsedArtist, setAdminEditParsedArtist] = useState("");
   const [adminEditParsedTrack, setAdminEditParsedTrack] = useState("");
   const [adminEditParsedVideoType, setAdminEditParsedVideoType] = useState("");
   const [adminEditParseConfidence, setAdminEditParseConfidence] = useState("");
   const [adminEditDescription, setAdminEditDescription] = useState("");
   const [adminEditCreatedAt, setAdminEditCreatedAt] = useState<string | Date | null>(null);
+  const [isAutoClassifyingGenre, setIsAutoClassifyingGenre] = useState(false);
   const [isAdminEditMetadataRefreshing, setIsAdminEditMetadataRefreshing] = useState(false);
   const [isAdminEditLoading, setIsAdminEditLoading] = useState(false);
   const [isAdminEditSaving, setIsAdminEditSaving] = useState(false);
@@ -136,6 +143,7 @@ export function useAdminVideoEdit({
       setAdminEditTitle(row.title ?? "");
       setAdminEditApproved(Boolean(row.approved));
       setAdminEditChannelTitle(row.channelTitle ?? "");
+      setAdminEditGenre(row.genre ?? "");
       setAdminEditParsedArtist(row.parsedArtist ?? "");
       setAdminEditParsedTrack(row.parsedTrack ?? "");
       setAdminEditParsedVideoType(row.parsedVideoType ?? "");
@@ -150,6 +158,58 @@ export function useAdminVideoEdit({
       setAdminEditError("Could not load video details.");
     } finally {
       setIsAdminEditLoading(false);
+    }
+  }
+
+  async function handleAutoClassifyAdminGenre() {
+    if (!isAdmin || !videoId || isAutoClassifyingGenre || isAdminEditSaving || isAdminEditLoading) {
+      return;
+    }
+
+    setIsAutoClassifyingGenre(true);
+    setAdminEditError(null);
+    setAdminEditStatus(null);
+
+    try {
+      const response = await fetchWithAuthRetry("/api/admin/videos/pending/auto-genre", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ videoId }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          setAdminEditError("Admin session expired. Please sign in again.");
+          return;
+        }
+        setAdminEditError("Could not auto classify genre.");
+        return;
+      }
+
+      const payload = await parseJsonOrNull<{
+        suggestion?: {
+          proposedGenre: string | null;
+          confidence: number;
+        };
+      }>(response);
+
+      const suggestedGenre = payload?.suggestion?.proposedGenre?.trim() || "";
+      if (suggestedGenre) {
+        setAdminEditGenre(suggestedGenre);
+        const confidence = Number(payload?.suggestion?.confidence ?? NaN);
+        const confidenceLabel = Number.isFinite(confidence)
+          ? `${Math.round(confidence * 100)}%`
+          : "n/a";
+        setAdminEditStatus(`Auto-classified genre: ${suggestedGenre} (${confidenceLabel}).`);
+      } else {
+        setAdminEditStatus("Auto-classify returned no genre suggestion.");
+      }
+    } catch {
+      setAdminEditError("Could not auto classify genre.");
+    } finally {
+      setIsAutoClassifyingGenre(false);
     }
   }
 
@@ -255,6 +315,7 @@ export function useAdminVideoEdit({
           id: adminEditVideoRowId,
           title: adminEditTitle,
           approved: adminEditApproved,
+          genre: adminEditGenre.trim().length > 0 ? adminEditGenre.trim() : null,
           channelTitle: adminEditChannelTitle,
           parsedArtist: adminEditParsedArtist,
           parsedTrack: adminEditParsedTrack,
@@ -274,7 +335,13 @@ export function useAdminVideoEdit({
       }
 
       setAdminEditStatus("Saved.");
-      onSaveSuccess(adminEditTitle, adminEditChannelTitle, adminEditParsedArtist, adminEditParsedTrack);
+      onSaveSuccess(
+        adminEditTitle,
+        adminEditChannelTitle,
+        adminEditParsedArtist,
+        adminEditParsedTrack,
+        adminEditGenre.trim(),
+      );
       closeAdminVideoEditModal();
       router.refresh();
     } catch {
@@ -324,6 +391,8 @@ export function useAdminVideoEdit({
     setAdminEditApproved,
     adminEditChannelTitle,
     setAdminEditChannelTitle,
+    adminEditGenre,
+    setAdminEditGenre,
     adminEditParsedArtist,
     setAdminEditParsedArtist,
     adminEditParsedTrack,
@@ -335,6 +404,7 @@ export function useAdminVideoEdit({
     adminEditDescription,
     setAdminEditDescription,
     adminEditCreatedAt,
+    isAutoClassifyingGenre,
     isAdminEditMetadataRefreshing,
     isAdminEditLoading,
     isAdminEditSaving,
@@ -347,6 +417,7 @@ export function useAdminVideoEdit({
     adminEditStatus,
     setAdminEditStatus,
     handleOpenAdminVideoEdit,
+    handleAutoClassifyAdminGenre,
     handleRefetchAdminVideoMetadata,
     handleSaveAdminVideoEdit,
     closeAdminVideoEditModal,

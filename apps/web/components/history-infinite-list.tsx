@@ -8,6 +8,7 @@ import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { OverlayHeader } from "@/components/overlay-header";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
+import { VideoGenreLink } from "@/components/video-genre-link";
 import { useInfiniteListController } from "@/components/use-infinite-list-controller";
 import { getArtistPagePath } from "@/lib/artist-routing";
 // Invariant anchor retained after hook extraction: useInfiniteScroll
@@ -378,7 +379,7 @@ export function HistoryInfiniteList({
                         />
                       </div>
                       <div className="leaderboardMeta historyMeta">
-                        <p className="historyVideoCategory">{entry.video.genre?.trim() || "Rock / Metal"}</p>
+                        <p className="historyVideoCategory"><VideoGenreLink genre={entry.video.genre} /></p>
                         <h3>
                           {artistPagePath ? (
                             <Link href={artistPagePath} className="artistInlineLink" prefetch={false}>

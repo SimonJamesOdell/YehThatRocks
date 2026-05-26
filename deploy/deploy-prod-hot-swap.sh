@@ -21,6 +21,13 @@ CLEANUP_BUILDER_CACHE="${CLEANUP_BUILDER_CACHE:-1}"
 CLEANUP_UNUSED_IMAGES="${CLEANUP_UNUSED_IMAGES:-1}"
 SKIP_PULL="${SKIP_PULL:-0}"
 ENABLE_DB_PROFILING_ON_DEPLOY="${ENABLE_DB_PROFILING_ON_DEPLOY:-0}"
+DEPLOY_WARM_CATEGORY_PATHS="${DEPLOY_WARM_CATEGORY_PATHS:-1}"
+DEPLOY_WARMUP_REQUIRE_SUCCESS="${DEPLOY_WARMUP_REQUIRE_SUCCESS:-1}"
+DEPLOY_WARMUP_MAX_WAIT_MS="${DEPLOY_WARMUP_MAX_WAIT_MS:-90000}"
+DEPLOY_WARMUP_REQUEST_TIMEOUT_MS="${DEPLOY_WARMUP_REQUEST_TIMEOUT_MS:-12000}"
+DEPLOY_WARMUP_POLL_MS="${DEPLOY_WARMUP_POLL_MS:-1000}"
+DEPLOY_WARMUP_INCLUDE_TAB_COUNTS="${DEPLOY_WARMUP_INCLUDE_TAB_COUNTS:-1}"
+DEPLOY_WARMUP_FIRST_PAGE_LIMIT="${DEPLOY_WARMUP_FIRST_PAGE_LIMIT:-50}"
 WEB_IMAGE_DEFAULT="ghcr.io/simonjamesodell/yehthatrocks-web:latest"
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -169,6 +176,41 @@ wait_for_canary_health() {
   done
 }
 
+warm_category_paths_in_container() {
+  local container_ref="$1"
+  local stage_label="$2"
+
+  if [ "$DEPLOY_WARM_CATEGORY_PATHS" != "1" ]; then
+    echo "[deploy] skipping category warmup during ${stage_label} (DEPLOY_WARM_CATEGORY_PATHS=${DEPLOY_WARM_CATEGORY_PATHS})"
+    return 0
+  fi
+
+  echo "[deploy] warming category cache paths during ${stage_label}"
+  local warmup_exit=0
+  docker exec \
+    -e WARMUP_BASE_URL="http://127.0.0.1:3000" \
+    -e WARMUP_MAX_WAIT_MS="$DEPLOY_WARMUP_MAX_WAIT_MS" \
+    -e WARMUP_REQUEST_TIMEOUT_MS="$DEPLOY_WARMUP_REQUEST_TIMEOUT_MS" \
+    -e WARMUP_POLL_MS="$DEPLOY_WARMUP_POLL_MS" \
+    -e WARMUP_INCLUDE_TAB_COUNTS="$DEPLOY_WARMUP_INCLUDE_TAB_COUNTS" \
+    -e WARMUP_CATEGORY_FIRST_PAGE_LIMIT="$DEPLOY_WARMUP_FIRST_PAGE_LIMIT" \
+    "$container_ref" \
+    node /app/scripts/warm-category-caches.js || warmup_exit=$?
+
+  if [ "$warmup_exit" -eq 0 ]; then
+    echo "[deploy] category warmup succeeded during ${stage_label}"
+    return 0
+  fi
+
+  if [ "$DEPLOY_WARMUP_REQUIRE_SUCCESS" = "1" ]; then
+    echo "[deploy] category warmup failed during ${stage_label}; failing deploy (DEPLOY_WARMUP_REQUIRE_SUCCESS=1)" >&2
+    return "$warmup_exit"
+  fi
+
+  echo "[deploy] WARNING: category warmup failed during ${stage_label} (non-fatal; DEPLOY_WARMUP_REQUIRE_SUCCESS=0)" >&2
+  return 0
+}
+
 echo "[deploy] fetching latest refs"
 git fetch origin "$TARGET_BRANCH"
 
@@ -241,12 +283,30 @@ if ! wait_for_canary_health "$CANARY_NAME" "$HEALTH_TIMEOUT_SEC"; then
   exit 1
 fi
 
+if ! warm_category_paths_in_container "$CANARY_NAME" "canary preflight"; then
+  echo "[deploy] canary warmup failed; keeping current web container live" >&2
+  cleanup_docker_artifacts
+  exit 1
+fi
+
 echo "[deploy] canary passed; swapping web container"
 WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" up -d --no-deps web
 
 echo "[deploy] verifying live health after swap: $STATUS_URL"
 if wait_for_public_health "$STATUS_URL" "$HEALTH_TIMEOUT_SEC"; then
   echo "[deploy] health check passed"
+
+  WEB_CONTAINER_ID="$(${COMPOSE[@]} ps -q web 2>/dev/null || true)"
+  if [ -n "$WEB_CONTAINER_ID" ]; then
+    if ! warm_category_paths_in_container "$WEB_CONTAINER_ID" "post-swap live container"; then
+      echo "[deploy] live container warmup failed" >&2
+      cleanup_docker_artifacts
+      exit 1
+    fi
+  else
+    echo "[deploy] WARNING: could not resolve live web container id for post-swap warmup" >&2
+  fi
+
   if [ "$ENABLE_DB_PROFILING_ON_DEPLOY" = "1" ] && [ -f "$REPO_DIR/deploy/start-db-profiling.sh" ]; then
     echo "[deploy] enabling db profiling (ENABLE_DB_PROFILING_ON_DEPLOY=1)"
     REPO_DIR="$REPO_DIR" ENV_FILE="$ENV_FILE" COMPOSE_FILE="$COMPOSE_FILE" \

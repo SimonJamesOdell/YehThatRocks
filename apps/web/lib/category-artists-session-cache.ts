@@ -11,6 +11,7 @@ const CATEGORY_ARTISTS_FULL_REVALIDATE_MS = 20 * 60 * 1000;
 const FIRST_PAGE_LIMIT = 50;
 const FULL_PAGE_LIMIT = 192;
 const FULL_FETCH_CONCURRENCY = 4;
+const FIRST_PAYLOAD_PREFETCH_CONCURRENCY = 2;
 
 export type CategoryArtistsFirstPayload = {
   artists: CategoryArtistCard[];
@@ -118,8 +119,15 @@ function mergeArtists(existing: CategoryArtistCard[], incoming: CategoryArtistCa
   return merged;
 }
 
-async function fetchCategoryArtistsPage(slug: string, offset: number, limit: number) {
-  const response = await fetch(`/api/categories/${encodeURIComponent(slug)}/artists?limit=${limit}&offset=${offset}`, {
+async function fetchCategoryArtistsPage(slug: string, offset: number, limit: number, includeTabCounts = false) {
+  const searchParams = new URLSearchParams();
+  searchParams.set("limit", String(limit));
+  searchParams.set("offset", String(offset));
+  if (includeTabCounts) {
+    searchParams.set("includeTabCounts", "1");
+  }
+
+  const response = await fetch(`/api/categories/${encodeURIComponent(slug)}/artists?${searchParams.toString()}`, {
     cache: "no-store",
   }).catch(() => null);
 
@@ -342,7 +350,32 @@ export async function prefetchCategoryArtistsFirstPayload(slug?: string | null):
 
 export async function prefetchCategoryArtistsFirstPayloadForSlugs(slugs: string[]) {
   const uniqueSlugs = [...new Set(slugs.map((slug) => normalizeSlug(slug)).filter((slug): slug is string => Boolean(slug)))];
-  await Promise.all(uniqueSlugs.map((slug) => prefetchCategoryArtistsFirstPayload(slug)));
+  if (uniqueSlugs.length === 0) {
+    return;
+  }
+
+  let nextIndex = 0;
+
+  async function worker() {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+
+      if (currentIndex >= uniqueSlugs.length) {
+        return;
+      }
+
+      const currentSlug = uniqueSlugs[currentIndex];
+      if (!currentSlug) {
+        continue;
+      }
+
+      await prefetchCategoryArtistsFirstPayload(currentSlug);
+    }
+  }
+
+  const workerCount = Math.max(1, Math.min(FIRST_PAYLOAD_PREFETCH_CONCURRENCY, uniqueSlugs.length));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
 }
 
 type PrimeCategoryArtistsFullPayloadOptions = {
@@ -398,11 +431,12 @@ export async function primeCategoryArtistsFullPayload(
 
     writeCategoryArtistsFirstPayloadToSessionCache(normalizedSlug, baseline);
 
-    const totalArtists = typeof baseline.totalArtists === "number" && Number.isFinite(baseline.totalArtists)
+    const hasKnownTotal = typeof baseline.totalArtists === "number" && Number.isFinite(baseline.totalArtists);
+    const totalArtists = hasKnownTotal
       ? Math.max(0, baseline.totalArtists)
       : baseline.artists.length;
 
-    if (baseline.artists.length >= totalArtists || totalArtists === 0) {
+    if (hasKnownTotal && (baseline.artists.length >= totalArtists || totalArtists === 0)) {
       const completePayload: CategoryArtistsFullPayload = {
         ...baseline,
         hasMore: false,
@@ -413,48 +447,78 @@ export async function primeCategoryArtistsFullPayload(
       writeCategoryArtistsFullPayloadToCache(normalizedSlug, completePayload);
       return completePayload;
     }
+    let fullArtists = baseline.artists;
 
-    const offsets: number[] = [];
-    for (let offset = baseline.nextOffset; offset < totalArtists; offset += FULL_PAGE_LIMIT) {
-      offsets.push(offset);
-    }
+    if (hasKnownTotal) {
+      const offsets: number[] = [];
+      for (let offset = baseline.nextOffset; offset < totalArtists; offset += FULL_PAGE_LIMIT) {
+        offsets.push(offset);
+      }
 
-    const pagesByOffset = new Map<number, CategoryArtistCard[]>();
-    let nextOffsetIndex = 0;
+      const pagesByOffset = new Map<number, CategoryArtistCard[]>();
+      let nextOffsetIndex = 0;
 
-    async function worker() {
-      while (true) {
-        const index = nextOffsetIndex;
-        nextOffsetIndex += 1;
+      async function worker() {
+        while (true) {
+          const index = nextOffsetIndex;
+          nextOffsetIndex += 1;
 
-        if (index >= offsets.length) {
-          return;
+          if (index >= offsets.length) {
+            return;
+          }
+
+          const offset = offsets[index] ?? 0;
+          const page = await fetchCategoryArtistsPage(normalizedSlug, offset, FULL_PAGE_LIMIT);
+          if (!page) {
+            continue;
+          }
+
+          pagesByOffset.set(offset, page.artists);
+          options.onPage?.(page.artists, offset);
         }
+      }
 
-        const offset = offsets[index] ?? 0;
-        const page = await fetchCategoryArtistsPage(normalizedSlug, offset, FULL_PAGE_LIMIT);
+      const workerCount = Math.max(1, Math.min(FULL_FETCH_CONCURRENCY, offsets.length));
+      await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+      const sortedOffsets = [...pagesByOffset.keys()].sort((a, b) => a - b);
+      for (const offset of sortedOffsets) {
+        const pageArtists = pagesByOffset.get(offset) ?? [];
+        fullArtists = mergeArtists(fullArtists, pageArtists);
+      }
+    } else {
+      let nextOffset = baseline.nextOffset;
+      let hasMore = baseline.hasMore;
+      let pageGuard = 0;
+
+      while (hasMore && pageGuard < 80) {
+        const page = await fetchCategoryArtistsPage(normalizedSlug, nextOffset, FULL_PAGE_LIMIT);
         if (!page) {
-          continue;
+          break;
         }
 
-        pagesByOffset.set(offset, page.artists);
-        options.onPage?.(page.artists, offset);
+        fullArtists = mergeArtists(fullArtists, page.artists);
+        options.onPage?.(page.artists, nextOffset);
+
+        hasMore = page.hasMore;
+        const resolvedNextOffset = Number.isFinite(page.nextOffset)
+          ? page.nextOffset
+          : nextOffset + page.artists.length;
+
+        if (resolvedNextOffset <= nextOffset) {
+          break;
+        }
+
+        nextOffset = resolvedNextOffset;
+        pageGuard += 1;
       }
     }
 
-    const workerCount = Math.max(1, Math.min(FULL_FETCH_CONCURRENCY, offsets.length));
-    await Promise.all(Array.from({ length: workerCount }, () => worker()));
-
-    let fullArtists = baseline.artists;
-    const sortedOffsets = [...pagesByOffset.keys()].sort((a, b) => a - b);
-    for (const offset of sortedOffsets) {
-      const pageArtists = pagesByOffset.get(offset) ?? [];
-      fullArtists = mergeArtists(fullArtists, pageArtists);
-    }
+    const finalizedTotalArtists = hasKnownTotal ? totalArtists : fullArtists.length;
 
     const finalizedPayload: CategoryArtistsFullPayload = {
       artists: fullArtists,
-      totalArtists: totalArtists,
+      totalArtists: finalizedTotalArtists,
       tabCounts: baseline.tabCounts,
       hasMore: false,
       nextOffset: fullArtists.length,

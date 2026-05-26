@@ -11,6 +11,7 @@ const updateSchema = z.object({
   id: z.number().int().positive(),
   title: z.string().trim().min(1).max(255).optional(),
   approved: z.boolean().optional(),
+  genre: z.string().trim().max(255).nullable().optional(),
   parsedArtist: z.string().trim().max(255).nullable().optional(),
   parsedTrack: z.string().trim().max(255).nullable().optional(),
   parsedVideoType: z.string().trim().max(50).nullable().optional(),
@@ -37,6 +38,44 @@ type VideoColumnMap = {
   description: string | null;
   updatedAt: string | null;
 };
+
+type AdminVideoListRow = {
+  id: number;
+  videoId: string;
+  title: string | null;
+  approved: boolean | null;
+  parsedArtist: string | null;
+  parsedTrack: string | null;
+  parsedVideoType: string | null;
+  parseConfidence: number | null;
+  channelTitle: string | null;
+  description: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+async function loadVideoGenresByIds(ids: number[]) {
+  if (ids.length === 0) {
+    return new Map<number, string | null>();
+  }
+
+  const placeholders = ids.map(() => "?").join(",");
+
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: number; genre: string | null }>>(
+    `SELECT id, genre FROM videos WHERE id IN (${placeholders})`,
+    ...ids,
+  ).catch(() => []);
+
+  return new Map(rows.map((row) => [Number(row.id), row.genre ?? null]));
+}
+
+async function attachGenresToVideos<T extends { id: number }>(videos: T[]) {
+  const genresById = await loadVideoGenresByIds(videos.map((video) => Number(video.id)));
+  return videos.map((video) => ({
+    ...video,
+    genre: genresById.get(Number(video.id)) ?? null,
+  }));
+}
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuthOnly(request, {
@@ -79,7 +118,9 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  return NextResponse.json({ videos });
+  const videosWithGenres = await attachGenresToVideos(videos as AdminVideoListRow[]);
+
+  return NextResponse.json({ videos: videosWithGenres });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -140,6 +181,8 @@ export async function PATCH(request: NextRequest) {
         parsedVideoType: true,
         parseConfidence: true,
         channelTitle: true,
+        description: true,
+        createdAt: true,
         updatedAt: true,
       },
     })
@@ -149,10 +192,21 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Video not found" }, { status: 404 });
   }
 
+  if (parsed.genre !== undefined) {
+    await prisma.$executeRaw`
+      UPDATE videos
+      SET genre = ${parsed.genre || null},
+          updated_at = UTC_TIMESTAMP(3)
+      WHERE id = ${parsed.id}
+    `.catch(() => undefined);
+  }
+
+  const [updatedWithGenre] = await attachGenresToVideos([updated]);
+
   clearCatalogVideoCaches();
   clearCurrentVideoRouteCaches();
 
-  return NextResponse.json({ ok: true, video: updated });
+  return NextResponse.json({ ok: true, video: updatedWithGenre });
 }
 
 export async function DELETE(request: NextRequest) {

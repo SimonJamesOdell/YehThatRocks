@@ -18,7 +18,7 @@ export * from "@/lib/catalog-data-users";
 
 import { registerFullCacheInvalidator } from "@/lib/catalog-data-video-ingestion";
 import { clearArtistCaches } from "@/lib/catalog-data-artists";
-import { clearGenreCaches } from "@/lib/catalog-data-genres";
+import { clearGenreCaches, invalidateRuntimeCategoryCaches } from "@/lib/catalog-data-genres";
 import { clearIngestionCaches } from "@/lib/catalog-data-video-ingestion";
 import { clearVideosCaches } from "@/lib/catalog-data-videos";
 import { clearFavouritesCaches } from "@/lib/catalog-data-favourites";
@@ -29,6 +29,7 @@ export function clearCatalogVideoCaches() {
   clearVideosCaches();
   clearArtistCaches();
   clearGenreCaches();
+  void invalidateRuntimeCategoryCaches();
   clearIngestionCaches();
   clearFavouritesCaches();
   clearHiddenVideoIdsCaches();

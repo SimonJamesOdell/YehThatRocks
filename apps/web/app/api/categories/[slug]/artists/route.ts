@@ -11,6 +11,7 @@ export async function GET(request: NextRequest, context: CategoryArtistsRouteCon
   try {
     const limitParam = request.nextUrl.searchParams.get("limit");
     const offsetParam = request.nextUrl.searchParams.get("offset");
+    const includeTabCounts = request.nextUrl.searchParams.get("includeTabCounts") === "1";
     const limit = Math.max(1, Math.min(192, Number.parseInt(limitParam ?? "96", 10) || 96));
     const offset = Math.max(0, Number.parseInt(offsetParam ?? "0", 10) || 0);
     const { slug } = await context.params;
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest, context: CategoryArtistsRouteCon
 
     const [artistsWithProbe, tabCounts] = await Promise.all([
       getCategoryArtistsByGenre(genre, { offset, limit: limit + 1 }),
-      offset === 0 ? getCategoryArtistTabCountsByGenre(genre) : Promise.resolve(null),
+      offset === 0 && includeTabCounts ? getCategoryArtistTabCountsByGenre(genre) : Promise.resolve(null),
     ]);
     const totalArtists = offset === 0 ? (tabCounts?.all ?? null) : null;
     const hasMore = artistsWithProbe.length > limit;

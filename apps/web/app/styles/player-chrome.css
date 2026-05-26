@@ -2918,6 +2918,16 @@
   min-width: 0;
 }
 
+.overlayRelatedCardGenre {
+  margin: 0;
+  color: #ffb6aa;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
 .overlayArtistVideoCount {
   margin: 0;
   font-family: var(--font-body), sans-serif;
@@ -3261,6 +3271,14 @@
   backdrop-filter: blur(4px);
 }
 
+.adminVideoEditBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 160;
+  align-content: center;
+  overflow: auto;
+}
+
 .shareModal {
   width: min(92vw, 560px);
   border-radius: 12px;
@@ -3320,7 +3338,16 @@
 }
 
 .adminVideoEditModal {
-  width: min(92vw, 720px);
+  width: min(96vw, 1240px);
+  max-height: calc(100vh - 28px);
+  overflow: auto;
+}
+
+.adminVideoEditLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 0.9fr);
+  gap: 16px;
+  align-items: start;
 }
 
 .adminVideoEditGrid {
@@ -3342,7 +3369,8 @@
 }
 
 .adminVideoEditGrid input,
-.adminVideoEditGrid textarea {
+.adminVideoEditGrid textarea,
+.adminVideoGenrePanel input {
   width: 100%;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -3357,6 +3385,92 @@
 
 .adminVideoEditFieldFull {
   grid-column: 1 / -1;
+}
+
+.adminVideoGenrePanel {
+  margin: 0;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 10px;
+}
+
+.adminVideoGenrePanel legend {
+  padding: 0 6px;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 226, 218, 0.95);
+}
+
+.adminVideoGenrePanel label {
+  display: grid;
+  gap: 6px;
+}
+
+.adminVideoGenrePanel label > span {
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 219, 210, 0.9);
+}
+
+.adminVideoGenreInputRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.adminVideoGenreInputRow .adminVideoEditButton {
+  min-height: 42px;
+  padding-inline: 12px;
+}
+
+.adminVideoGenreTable {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.adminVideoGenreTable td {
+  padding: 10px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  vertical-align: top;
+}
+
+.adminVideoGenreTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.adminVideoGenreTable td:first-child {
+  width: 36px;
+  text-align: center;
+}
+
+.adminVideoGenreTable td:nth-child(2) {
+  width: 42%;
+}
+
+.adminVideoGenreTable td:nth-child(2) label {
+  cursor: pointer;
+  color: #fff6f2;
+  font-weight: 600;
+}
+
+.adminVideoGenreTable td:nth-child(3) {
+  font-size: 0.74rem;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.adminVideoGenreRowSelected {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .adminVideoEditActions {
@@ -3487,6 +3601,22 @@
 
   .adminVideoEditGrid {
     grid-template-columns: 1fr;
+  }
+
+  .adminVideoEditLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .adminVideoEditModal {
+    width: min(96vw, 760px);
+  }
+
+  .adminVideoGenreInputRow {
+    grid-template-columns: 1fr;
+  }
+
+  .adminVideoGenreTable td:nth-child(3) {
+    display: none;
   }
 
   .hideVideoConfirmPreview {

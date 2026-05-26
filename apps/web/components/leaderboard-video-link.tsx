@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent a
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
+import { VideoGenreLink } from "@/components/video-genre-link";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
@@ -474,7 +475,7 @@ export function LeaderboardVideoLink({
       </div>
       <div className="leaderboardMeta">
         {showCategoryLabel ? (
-          <p className="leaderboardVideoCategory">{categoryLabel}</p>
+          <p className="leaderboardVideoCategory"><VideoGenreLink genre={categoryLabel} stopPropagation /></p>
         ) : null}
         <h3>
           {parsedArtistCandidate && parsedTrackCandidate ? (

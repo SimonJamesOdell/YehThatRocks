@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import {
   CATEGORY_ARTISTS_CACHE_EVENT,
@@ -8,7 +9,7 @@ import {
   readCategoryArtistsFullPayloadFromCache,
 } from "@/lib/category-artists-session-cache";
 import { readCategoryArtistsTab, writeCategoryArtistsTab } from "@/lib/category-artists-tab-state";
-import { buildCategoryArtistTabs } from "@/lib/category-artists-tabs";
+import { buildCategoryArtistTabs, resolveCategoryArtistTabById } from "@/lib/category-artists-tabs";
 
 type CategoryBrowserTabsProps = {
   genre: string;
@@ -16,6 +17,7 @@ type CategoryBrowserTabsProps = {
 };
 
 export function CategoryBrowserTabs({ genre, slug }: CategoryBrowserTabsProps) {
+  const searchParams = useSearchParams();
   const [selectedTab, setSelectedTab] = useState("all");
   const [tabCounts, setTabCounts] = useState<Record<string, number> | null>(null);
 
@@ -32,13 +34,20 @@ export function CategoryBrowserTabs({ genre, slug }: CategoryBrowserTabsProps) {
   );
 
   useEffect(() => {
-    setSelectedTab(readCategoryArtistsTab(slug));
+    const requestedTab = searchParams.get("tab")?.trim().toLowerCase() ?? "";
+    if (requestedTab) {
+      const resolvedTab = resolveCategoryArtistTabById(genre, requestedTab)?.id ?? "all";
+      setSelectedTab(resolvedTab);
+      writeCategoryArtistsTab(slug, resolvedTab);
+    } else {
+      setSelectedTab(readCategoryArtistsTab(slug));
+    }
 
     const cachedTabs = readCategoryArtistsFullPayloadFromCache(slug)?.tabCounts
       ?? readCategoryArtistsFirstPayloadFromSessionCache(slug)?.tabCounts
       ?? null;
     setTabCounts(cachedTabs);
-  }, [slug]);
+  }, [genre, searchParams, slug]);
 
   useEffect(() => {
     const handleCacheUpdate = (event: Event) => {

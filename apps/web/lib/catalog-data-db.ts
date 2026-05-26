@@ -660,6 +660,11 @@ export async function getFastVideoByVideoIdRows(
     `
     : "ORDER BY v.updated_at DESC, v.id DESC";
 
+  const hasGenreColumn = await hasVideoGenreColumn();
+  const genreSelectExpr = hasGenreColumn
+    ? "NULLIF(TRIM(v.genre), '') AS genre,"
+    : "NULL AS genre,";
+
   const fastSql = `
     SELECT
       v.id,
@@ -668,6 +673,7 @@ export async function getFastVideoByVideoIdRows(
       NULL AS channelTitle,
       NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
       NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
+      ${genreSelectExpr}
       COALESCE(v.favourited, 0) AS favourited,
       v.description
     FROM videos v FORCE INDEX (videos_videoId_key)
@@ -686,6 +692,7 @@ export async function getFastVideoByVideoIdRows(
       NULL AS channelTitle,
       NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
       NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
+      ${genreSelectExpr}
       COALESCE(v.favourited, 0) AS favourited,
       v.description
     FROM videos v

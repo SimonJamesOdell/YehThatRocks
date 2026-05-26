@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { CloseLink } from "@/components/close-link";
 import { OverlayHeader } from "@/components/overlay-header";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
-import { prefetchCategoryArtistsFirstPayloadForSlugs } from "@/lib/category-artists-session-cache";
+import {
+  prefetchCategoryArtistsFirstPayload,
+  prefetchCategoryArtistsFirstPayloadForSlugs,
+} from "@/lib/category-artists-session-cache";
 import {
   applyCategoryCardThumbnailPinOverrides,
   prefetchCategoryCardsSessionCache,
@@ -29,6 +32,7 @@ function normalizeFilterToken(value: string) {
 
 export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) {
   const router = useRouter();
+  const pendingNavigationResetTimerRef = useRef<number | null>(null);
   const bucketTermMap = useMemo(() => new Map(
     TOP_LEVEL_GENRE_BUCKETS.map((bucket) => [bucket.label, bucket.terms]),
   ), []);
@@ -38,7 +42,21 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
   const [isLoaderFadingOut, setIsLoaderFadingOut] = useState(false);
   const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0);
   const [filterValue, setFilterValue] = useState("");
+  const [pendingNavigationSlug, setPendingNavigationSlug] = useState<string | null>(null);
   const hasRichCards = genreCards.some((card) => Number(card.artistCount ?? 0) > 0 || Boolean(card.previewVideoId));
+
+  const primeCategoryRoute = (categorySlug: string) => {
+    void prefetchCategoryArtistsFirstPayload(categorySlug);
+    router.prefetch(`/categories/${categorySlug}`);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (pendingNavigationResetTimerRef.current !== null) {
+        window.clearTimeout(pendingNavigationResetTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (hasRichCards) {
@@ -259,7 +277,6 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
                   <Link
                     key={genre}
                     href={`/categories/${getGenreSlug(genre)}`}
-                    prefetch={false}
                     className={[
                       "catalogCard",
                       "categoryCard",
@@ -269,6 +286,39 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
                       highlightWholeCard ? "categoryBucketCardAllMatches" : "",
                     ].filter(Boolean).join(" ")}
                     style={{ "--category-cascade-index": index } as CSSProperties}
+                    onMouseEnter={() => {
+                      primeCategoryRoute(getGenreSlug(genre));
+                    }}
+                    onFocus={() => {
+                      primeCategoryRoute(getGenreSlug(genre));
+                    }}
+                    onTouchStart={() => {
+                      primeCategoryRoute(getGenreSlug(genre));
+                    }}
+                    onClick={(event) => {
+                      if (
+                        event.defaultPrevented
+                        || event.button !== 0
+                        || event.metaKey
+                        || event.ctrlKey
+                        || event.shiftKey
+                        || event.altKey
+                      ) {
+                        return;
+                      }
+
+                      const targetSlug = getGenreSlug(genre);
+                      setPendingNavigationSlug(targetSlug);
+                      primeCategoryRoute(targetSlug);
+
+                      if (pendingNavigationResetTimerRef.current !== null) {
+                        window.clearTimeout(pendingNavigationResetTimerRef.current);
+                      }
+
+                      pendingNavigationResetTimerRef.current = window.setTimeout(() => {
+                        setPendingNavigationSlug((current) => (current === targetSlug ? null : current));
+                      }, 10000);
+                    }}
                   >
                     {previewVideoId ? (
                       <div className="categoryThumbWrap">
@@ -314,6 +364,20 @@ export function CategoriesFilterGrid({ genreCards }: CategoriesFilterGridProps) 
               <h3>No categories available right now</h3>
               <p>Please try again in a moment.</p>
             </article>
+          </div>
+        ) : null}
+
+        {pendingNavigationSlug ? (
+          <div className="categoriesLoaderOverlay" role="status" aria-live="polite" aria-label="Opening category">
+            <div className="playerBootLoader categoriesLoaderBootLoader">
+              <div className="playerBootBars" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+                <span />
+              </div>
+              <p>Opening category...</p>
+            </div>
           </div>
         ) : null}
       </div>

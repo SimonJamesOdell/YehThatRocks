@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { fetchArtistVideoCountForCard } from "@/components/artist-video-count";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { VideoGenreLink } from "@/components/video-genre-link";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { getArtistPagePath } from "@/lib/artist-routing";
 
@@ -107,7 +108,7 @@ export function PlaylistTrackCardContent({
           {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
           {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
         </div>
-        <p className="relatedCardGenre">{genreLabel}</p>
+        <p className="relatedCardGenre"><VideoGenreLink genre={genreLabel} stopPropagation /></p>
         <h3>
           {hasParsedTitlePattern ? (
             <>

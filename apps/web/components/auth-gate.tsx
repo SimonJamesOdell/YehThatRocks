@@ -2,13 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { AuthForgotPasswordForm } from "@/components/auth-forgot-password-form";
 import { AuthLoginForm } from "@/components/auth-login-form";
 import { AuthRegisterForm } from "@/components/auth-register-form";
 import { magazineDraftEdition } from "@/lib/magazine-draft";
+import { resolveVideoGenreNavigationTarget } from "@/lib/video-genre-navigation";
 
 type AuthGateProps = {
   videoCount: number;
@@ -37,6 +38,7 @@ function resolveArticleBackHref(source: string | null, backTo: string | null) {
 }
 
 export function AuthGate({ videoCount }: AuthGateProps) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [view, setView] = useState<"login" | "register" | "forgot-password">("login");
   const [sharedVideoPreview, setSharedVideoPreview] = useState<{ videoId: string | null; title: string | null }>({
@@ -178,7 +180,26 @@ export function AuthGate({ videoCount }: AuthGateProps) {
                       loading="lazy"
                     />
                     <span className="authGateMagazineItemTitle">{track.artist} - {track.title}</span>
-                    <small>{track.genre}</small>
+                    <small
+                      role="link"
+                      tabIndex={0}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        router.push(resolveVideoGenreNavigationTarget(track.genre).href);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") {
+                          return;
+                        }
+
+                        event.preventDefault();
+                        event.stopPropagation();
+                        router.push(resolveVideoGenreNavigationTarget(track.genre).href);
+                      }}
+                    >
+                      {track.genre}
+                    </small>
                   </Link>
                 ))}
               </div>

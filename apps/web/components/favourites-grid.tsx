@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
+import { VideoGenreLink } from "@/components/video-genre-link";
 import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
@@ -254,7 +255,7 @@ const FavouritesGridCard = memo(function FavouritesGridCard({
         {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
         {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
       </div>
-      <p className="favouritesVideoGenre">{genreLabel}</p>
+      <p className="favouritesVideoGenre"><VideoGenreLink genre={genreLabel} stopPropagation /></p>
       <h3>
         <span className="cardTitleLink">
           {parsedArtistCandidate && parsedTrackCandidate ? (

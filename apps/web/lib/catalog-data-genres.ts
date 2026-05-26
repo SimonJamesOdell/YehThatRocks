@@ -51,6 +51,9 @@ const CATEGORY_QUERY_DB_MAX_EXECUTION_MS = 1_200;
 const CATEGORY_ARTIST_THUMB_TABLE_CACHE_TTL_MS = 60_000;
 const CATEGORY_BUCKET_RUNTIME_CACHE_TABLE_CACHE_TTL_MS = 60_000;
 const CATEGORY_BUCKET_RUNTIME_CACHE_STALE_MS = 6 * 60 * 60 * 1000;
+const CATEGORY_ARTIST_RUNTIME_CACHE_TABLE_CACHE_TTL_MS = 60_000;
+const CATEGORY_ARTIST_RUNTIME_CACHE_STALE_MS = 6 * 60 * 60 * 1000;
+const CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT = 2_000;
 const GENRE_ARTIST_SEED_CACHE_TTL_MS = 2 * 60 * 1000;
 const GENRE_CACHE_MAX_ENTRIES = Math.max(
   100,
@@ -69,6 +72,8 @@ let genreListCache: { expiresAt: number; genres: string[] } | undefined;
 const genreArtistCountCache = new BoundedMap<string, { expiresAt: number; count: number }>(GENRE_CACHE_MAX_ENTRIES);
 let categoryArtistThumbTableAvailableCache: { checkedAt: number; available: boolean } | undefined;
 let categoryBucketRuntimeCacheTableAvailableCache: { checkedAt: number; available: boolean } | undefined;
+let categoryArtistRuntimeCacheTableAvailableCache: { checkedAt: number; available: boolean } | undefined;
+const categoryArtistRuntimeCacheRebuildInFlight = new Map<string, Promise<void>>();
 
 const GENRE_ARTIST_COUNT_CACHE_TTL_MS = 10 * 60 * 1000;
 
@@ -208,6 +213,214 @@ async function ensureCategoryBucketRuntimeCacheTable() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
   categoryBucketRuntimeCacheTableAvailableCache = { checkedAt: Date.now(), available: true };
+}
+
+async function hasCategoryArtistRuntimeCacheTable() {
+  const now = Date.now();
+  if (
+    categoryArtistRuntimeCacheTableAvailableCache?.available
+    && categoryArtistRuntimeCacheTableAvailableCache.checkedAt + CATEGORY_ARTIST_RUNTIME_CACHE_TABLE_CACHE_TTL_MS > now
+  ) {
+    return true;
+  }
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ tableName?: string }>>(
+      "SHOW TABLES LIKE 'category_artist_runtime_cache'",
+    );
+    const available = rows.length > 0;
+    categoryArtistRuntimeCacheTableAvailableCache = available
+      ? { checkedAt: now, available: true }
+      : undefined;
+    return available;
+  } catch {
+    categoryArtistRuntimeCacheTableAvailableCache = undefined;
+    return false;
+  }
+}
+
+async function ensureCategoryArtistRuntimeCacheTable() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS category_artist_runtime_cache (
+      genre_norm VARCHAR(255) NOT NULL,
+      artist_slug VARCHAR(255) NOT NULL,
+      artist_name VARCHAR(255) NOT NULL,
+      video_count INT NOT NULL DEFAULT 0,
+      thumbnail_video_id VARCHAR(32) NULL,
+      dominant_genre VARCHAR(255) NULL,
+      sort_index INT NOT NULL DEFAULT 0,
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+      PRIMARY KEY (genre_norm, artist_slug),
+      KEY idx_category_artist_runtime_sort (genre_norm, sort_index),
+      KEY idx_category_artist_runtime_updated (updated_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  categoryArtistRuntimeCacheTableAvailableCache = { checkedAt: Date.now(), available: true };
+}
+
+function mapCategoryArtistRows(rows: Array<{
+  artistName: string | null;
+  thumbnailVideoId: string | null;
+  dominantGenre: string | null;
+  videoCount: bigint | number;
+}>): CategoryArtistCard[] {
+  return rows
+    .map((row) => {
+      const name = (row.artistName ?? "").trim();
+      if (!name) {
+        return null;
+      }
+
+      return {
+        name,
+        slug: slugifyArtistName(name),
+        videoCount: Number(row.videoCount) || 0,
+        thumbnailVideoId: (row.thumbnailVideoId ?? "").trim() || null,
+        dominantGenre: (row.dominantGenre ?? "").trim() || null,
+      } as CategoryArtistCard;
+    })
+    .filter((row): row is CategoryArtistCard => row !== null);
+}
+
+async function getRuntimeCachedCategoryArtistsByGenre(
+  normalizedGenre: string,
+  options: { offset: number; limit: number },
+): Promise<CategoryArtistCard[] | null> {
+  if (!hasDatabaseUrl()) {
+    return null;
+  }
+
+  const tableAvailable = await hasCategoryArtistRuntimeCacheTable();
+  if (!tableAvailable) {
+    return null;
+  }
+
+  const freshnessRows = await prisma.$queryRawUnsafe<Array<{ newestUpdatedAt: Date | null; total: bigint | number }>>(
+    `
+      SELECT
+        MAX(updated_at) AS newestUpdatedAt,
+        COUNT(*) AS total
+      FROM category_artist_runtime_cache
+      WHERE genre_norm = ?
+    `,
+    normalizedGenre,
+  ).catch(() => []);
+
+  const freshness = freshnessRows[0];
+  const totalRows = Math.max(0, Number(freshness?.total ?? 0));
+  if (totalRows === 0) {
+    return null;
+  }
+
+  const newestUpdatedAtMs = freshness?.newestUpdatedAt?.getTime() ?? 0;
+  if (newestUpdatedAtMs <= 0 || Date.now() - newestUpdatedAtMs > CATEGORY_ARTIST_RUNTIME_CACHE_STALE_MS) {
+    return null;
+  }
+
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    artistName: string | null;
+    thumbnailVideoId: string | null;
+    dominantGenre: string | null;
+    videoCount: bigint | number;
+  }>>(
+    `
+      SELECT
+        artist_name AS artistName,
+        thumbnail_video_id AS thumbnailVideoId,
+        dominant_genre AS dominantGenre,
+        video_count AS videoCount
+      FROM category_artist_runtime_cache
+      WHERE genre_norm = ?
+      ORDER BY sort_index ASC
+      LIMIT ?
+      OFFSET ?
+    `,
+    normalizedGenre,
+    options.limit,
+    options.offset,
+  ).catch(() => []);
+
+  if (rows.length === 0 && options.offset === 0) {
+    return null;
+  }
+
+  return mapCategoryArtistRows(rows);
+}
+
+async function upsertCategoryArtistRuntimeCacheRows(genreNorm: string, artists: CategoryArtistCard[]) {
+  if (!hasDatabaseUrl()) {
+    return;
+  }
+
+  await ensureCategoryArtistRuntimeCacheTable();
+
+  await prisma.$executeRawUnsafe(
+    `DELETE FROM category_artist_runtime_cache WHERE genre_norm = ?`,
+    genreNorm,
+  );
+
+  if (artists.length === 0) {
+    return;
+  }
+
+  const chunkSize = 200;
+  for (let offset = 0; offset < artists.length; offset += chunkSize) {
+    const chunk = artists.slice(offset, offset + chunkSize);
+    const valuesClause = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3))").join(", ");
+    const params: Array<string | number | null> = [];
+
+    for (let index = 0; index < chunk.length; index += 1) {
+      const row = chunk[index];
+      params.push(
+        genreNorm,
+        row.slug,
+        row.name,
+        Math.max(0, Number(row.videoCount || 0)),
+        row.thumbnailVideoId || null,
+        row.dominantGenre || null,
+        offset + index,
+      );
+    }
+
+    await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO category_artist_runtime_cache (
+          genre_norm,
+          artist_slug,
+          artist_name,
+          video_count,
+          thumbnail_video_id,
+          dominant_genre,
+          sort_index,
+          updated_at
+        )
+        VALUES ${valuesClause}
+      `,
+      ...params,
+    );
+  }
+}
+
+function scheduleCategoryArtistRuntimeCacheRebuild(genre: string, normalizedGenre: string) {
+  if (!normalizedGenre || categoryArtistRuntimeCacheRebuildInFlight.has(normalizedGenre)) {
+    return;
+  }
+
+  const rebuildPromise = (async () => {
+    try {
+      const artists = await queryCategoryArtistsByGenreFromVideos(genre, {
+        offset: 0,
+        limit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
+      });
+      await upsertCategoryArtistRuntimeCacheRows(normalizedGenre, artists);
+    } catch {
+      // best effort only
+    }
+  })().finally(() => {
+    categoryArtistRuntimeCacheRebuildInFlight.delete(normalizedGenre);
+  });
+
+  categoryArtistRuntimeCacheRebuildInFlight.set(normalizedGenre, rebuildPromise);
 }
 
 async function getPinnedCategoryArtistPreviewsByBucket() {
@@ -552,21 +765,29 @@ export async function setCategoryArtistThumbnailPin(genre: string, artistName: s
   const bucketLabel = resolveTopLevelGenreBucket(genre) ?? "Rock & Alternative";
   await persistTopLevelCategoryPreview(bucketLabel, normalizedVideoId);
 
+  const artistRuntimeTableAvailable = await hasCategoryArtistRuntimeCacheTable();
+  if (artistRuntimeTableAvailable) {
+    await prisma.$executeRawUnsafe(
+      `
+        UPDATE category_artist_runtime_cache
+        SET thumbnail_video_id = ?,
+            updated_at = UTC_TIMESTAMP(3)
+        WHERE genre_norm = ?
+          AND artist_slug = ?
+      `,
+      normalizedVideoId,
+      normalizedGenre,
+      slugifyArtistName(artistName),
+    ).catch(() => undefined);
+  }
+
   clearGenreCaches();
 }
 
-export async function getCategoryArtistsByGenre(
+async function queryCategoryArtistsByGenreFromVideos(
   genre: string,
-  options?: { offset?: number; limit?: number },
+  options: { offset: number; limit: number },
 ): Promise<CategoryArtistCard[]> {
-  if (!hasDatabaseUrl()) {
-    return [];
-  }
-
-  requireDatabaseUrl("getCategoryArtistsByGenre");
-
-  const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
-  const requestedLimit = Math.max(1, Math.min(2_000, Number.isFinite(options?.limit) ? Number(options?.limit) : 48));
   const normalizedGenre = normalizeGenreTerm(genre);
   const normalizedGenreTerms = getExpandedGenreTerms(genre);
   const normalizedGenrePattern = buildGenreRegexPattern(normalizedGenreTerms);
@@ -580,6 +801,8 @@ export async function getCategoryArtistsByGenre(
     return [];
   }
 
+  const requestedOffset = Math.max(0, Number.isFinite(options.offset) ? Number(options.offset) : 0);
+  const requestedLimit = Math.max(1, Math.min(2_000, Number.isFinite(options.limit) ? Number(options.limit) : 48));
   const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
   const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
   const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
@@ -630,22 +853,42 @@ export async function getCategoryArtistsByGenre(
     normalizedGenrePattern,
   );
 
-  return rows
-    .map((row) => {
-      const name = (row.artistName ?? "").trim();
-      if (!name) {
-        return null;
-      }
+  return mapCategoryArtistRows(rows);
+}
 
-      return {
-        name,
-        slug: slugifyArtistName(name),
-        videoCount: Number(row.videoCount) || 0,
-        thumbnailVideoId: (row.thumbnailVideoId ?? "").trim() || null,
-        dominantGenre: (row.dominantGenre ?? "").trim() || null,
-      } as CategoryArtistCard;
-    })
-    .filter((row): row is CategoryArtistCard => row !== null);
+export async function getCategoryArtistsByGenre(
+  genre: string,
+  options?: { offset?: number; limit?: number },
+): Promise<CategoryArtistCard[]> {
+  if (!hasDatabaseUrl()) {
+    return [];
+  }
+
+  requireDatabaseUrl("getCategoryArtistsByGenre");
+
+  const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
+  const requestedLimit = Math.max(1, Math.min(2_000, Number.isFinite(options?.limit) ? Number(options?.limit) : 48));
+  const normalizedGenre = normalizeGenreTerm(genre);
+
+  if (!normalizedGenre) {
+    return [];
+  }
+
+  const cachedArtists = await getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
+    offset: requestedOffset,
+    limit: requestedLimit,
+  });
+  if (cachedArtists) {
+    return cachedArtists;
+  }
+
+  const artists = await queryCategoryArtistsByGenreFromVideos(genre, {
+    offset: requestedOffset,
+    limit: requestedLimit,
+  });
+
+  scheduleCategoryArtistRuntimeCacheRebuild(genre, normalizedGenre);
+  return artists;
 }
 
 export async function getCategoryArtistCountByGenre(genre: string): Promise<number> {
@@ -826,6 +1069,26 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
     return { all: 0 };
   }
 
+  const cachedArtists = await getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
+    offset: 0,
+    limit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
+  });
+  if (cachedArtists) {
+    const matchers = buildCategoryArtistTabCountMatchers(genre);
+    const counts: Record<string, number> = { all: cachedArtists.length };
+    for (const matcher of matchers) {
+      if (matcher.id === "all") {
+        continue;
+      }
+      counts[matcher.id] = cachedArtists.reduce(
+        (total, row) => total + (matcher.matches(row.dominantGenre) ? 1 : 0),
+        0,
+      );
+    }
+
+    return counts;
+  }
+
   const videoGenreColumnExists = await hasVideoGenreColumn();
   if (!videoGenreColumnExists) {
     return { all: 0 };
@@ -988,6 +1251,40 @@ export function clearGenreCaches() {
   genreListCache = undefined;
 }
 
+export async function invalidateRuntimeCategoryCaches() {
+  clearGenreCaches();
+
+  if (!hasDatabaseUrl()) {
+    return;
+  }
+
+  try {
+    const tableAvailable = await hasCategoryBucketRuntimeCacheTable();
+    if (!tableAvailable) {
+      return;
+    }
+
+    await prisma.$executeRawUnsafe(
+      `
+        UPDATE category_bucket_runtime_cache
+        SET updated_at = DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 7 HOUR)
+      `,
+    );
+
+    const artistRuntimeTableAvailable = await hasCategoryArtistRuntimeCacheTable();
+    if (artistRuntimeTableAvailable) {
+      await prisma.$executeRawUnsafe(
+        `
+          UPDATE category_artist_runtime_cache
+          SET updated_at = DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 7 HOUR)
+        `,
+      );
+    }
+  } catch {
+    // best effort only
+  }
+}
+
 export async function clearGenreCardThumbnailForVideo(videoId: string) {
   const normalizedVideoId = normalizeYouTubeVideoId(videoId);
   if (!normalizedVideoId || !hasDatabaseUrl()) return;
@@ -1003,6 +1300,12 @@ export async function clearGenreCardThumbnailForVideo(videoId: string) {
       SET preview_video_id = NULL,
           updated_at = UTC_TIMESTAMP(3)
       WHERE CONVERT(preview_video_id USING utf8mb4) = CONVERT(${normalizedVideoId} USING utf8mb4)
+    `.catch(() => undefined);
+    await prisma.$executeRaw`
+      UPDATE category_artist_runtime_cache
+      SET thumbnail_video_id = NULL,
+          updated_at = UTC_TIMESTAMP(3)
+      WHERE CONVERT(thumbnail_video_id USING utf8mb4) = CONVERT(${normalizedVideoId} USING utf8mb4)
     `.catch(() => undefined);
     if (Number(cleared) > 0) {
       resetGenreCardCaches();

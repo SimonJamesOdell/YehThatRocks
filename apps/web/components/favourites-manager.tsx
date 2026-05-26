@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { VideoGenreLink } from "@/components/video-genre-link";
 import type { VideoRecord } from "@/lib/catalog";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 
@@ -83,7 +84,7 @@ export function FavouritesManager({ favourites, candidates, isAuthenticated }: F
               <div key={track.id} className="trackCard actionCard compactCard">
                 <div>
                   <h3>{track.title}</h3>
-                  <p>{track.genre}</p>
+                  <p><VideoGenreLink genre={track.genre} /></p>
                 </div>
                 <button
                   type="button"

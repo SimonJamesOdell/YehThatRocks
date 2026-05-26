@@ -6,6 +6,7 @@ import { memo, useCallback, useEffect, useState, type CSSProperties, type Keyboa
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
+import { VideoGenreLink } from "@/components/video-genre-link";
 import { finitePercentOrNull } from "@/components/shell-dynamic-utils";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import type { VideoRecord } from "@/lib/catalog";
@@ -343,7 +344,7 @@ export const WatchNextCard = memo(function WatchNextCard({
             {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
             {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
           </div>
-          <p className="relatedCardGenre">{genreLabel}</p>
+          <p className="relatedCardGenre"><VideoGenreLink genre={genreLabel} stopPropagation /></p>
           <h3>
             {parsedArtistCandidate && parsedTrackCandidate ? (
               <>

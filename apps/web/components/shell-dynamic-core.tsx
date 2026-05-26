@@ -72,6 +72,7 @@ import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVEN
 import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
 import { parseJsonOrNull } from "@/lib/parse-json";
+import { resolveVideoGenreNavigationTarget } from "@/lib/video-genre-navigation";
 applyRuntimeBootstrapPatches({ safePerformanceMeasure: true });
 type CurrentVideoResolvePayload = {
   currentVideo?: VideoRecord;
@@ -2578,7 +2579,31 @@ function ShellDynamicInner({
                           <div className="magazineRailBody">
                             <div className="messageMeta">
                               <strong>{track.artist}</strong>
-                              <span>{track.kicker || track.genre}</span>
+                              {track.kicker ? (
+                                <span>{track.kicker}</span>
+                              ) : (
+                                <span
+                                  role="link"
+                                  tabIndex={0}
+                                  style={{ cursor: "pointer", textDecoration: "underline" }}
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    router.push(resolveVideoGenreNavigationTarget(track.genre).href);
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (event.key !== "Enter" && event.key !== " ") {
+                                      return;
+                                    }
+
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    router.push(resolveVideoGenreNavigationTarget(track.genre).href);
+                                  }}
+                                >
+                                  {track.genre}
+                                </span>
+                              )}
                             </div>
                             <p>{track.title}</p>
                             {magazineDeleteErrors[track.slug] ? (

@@ -5,7 +5,7 @@ import { mapAdminPruneResultToDeleteResponse } from "@/lib/admin-prune-delete-re
 import { fetchGenreReviewCurrentVideo } from "@/lib/admin-genre-review-current-video";
 import { ensureGenreReviewQueueReady } from "@/lib/admin-genre-review-queue";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
-import { pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { clearCatalogVideoCaches, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { buildNormalizedVideoTitleFromMetadata } from "@/lib/catalog-data-utils";
 import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";
 import { prisma } from "@/lib/db";
@@ -350,6 +350,8 @@ export async function POST(request: NextRequest) {
 
     const remaining = await getGenreReviewRemaining();
     const currentVideo = await fetchGenreReviewCurrentVideo();
+    clearCatalogVideoCaches();
+    clearCurrentVideoRouteCaches();
 
     return NextResponse.json({
       ok: true,
@@ -403,6 +405,8 @@ export async function POST(request: NextRequest) {
     }
 
     const remaining = await getGenreReviewRemaining();
+    clearCatalogVideoCaches();
+    clearCurrentVideoRouteCaches();
 
     return NextResponse.json({
       ok: true,
@@ -429,6 +433,7 @@ export async function POST(request: NextRequest) {
     videoId,
   );
 
+  clearCatalogVideoCaches();
   clearCurrentVideoRouteCaches();
 
   const remaining = await getGenreReviewRemaining();

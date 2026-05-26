@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   buildNormalizedVideoTitleFromMetadata,
+  clearCatalogVideoCaches,
   clearIngestionCachesForVideo,
   hasDatabaseUrl,
   importVideoFromDirectSource,
@@ -378,15 +379,21 @@ function startPlaylistBatchIngestion(args: {
   }
 
   const job = (async () => {
+    let mutatedCatalog = false;
     for (const videoId of videoIds) {
       try {
         const result = await importVideoFromDirectSource(videoId, { discoverRelated: false });
         if (result.videoId && result.decision.allowed) {
           await applyMetadataHints(result.videoId, { artist, track }, false);
+          mutatedCatalog = true;
         }
       } catch {
         // Continue processing remaining playlist items.
       }
+    }
+
+    if (mutatedCatalog) {
+      clearCatalogVideoCaches();
     }
   })().finally(() => {
     playlistBatchJobs.delete(jobKey);
@@ -493,6 +500,8 @@ export async function POST(request: NextRequest) {
         WHERE videoId = ${result.videoId}
       `;
     }
+
+    clearCatalogVideoCaches();
 
     const resolvedMetadata = await loadResolvedVideoMetadata(result.videoId, {
       artist: parsed.data.artist,

@@ -286,6 +286,10 @@ async function getRankedVideoIdSlice(mode: "top" | "newest", limit: number): Pro
 async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
   const fetchLimit = Math.max(limit, MIN_RANKED_TOP_POOL_FETCH);
   const now = Date.now();
+  const hasGenreColumn = await hasVideoGenreColumn();
+  const genreSelectExpr = hasGenreColumn
+    ? "NULLIF(TRIM(v.genre), '') AS genre,"
+    : "NULL AS genre,";
 
   // Invariant compatibility marker:
   // const rankedVideoIds = Array.from(new Set(rankedVideoIdRows.map((row) => row.videoId).filter(Boolean))).slice(0, fetchLimit);
@@ -315,6 +319,7 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
               COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
               NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
               NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
+              ${genreSelectExpr}
               COALESCE(v.favourited, 0) AS favourited,
               v.description
             FROM videos v
@@ -338,6 +343,7 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
       const videoViewRef = pickColumn(videoColumns, ["viewCount", "view_count", "views"]);
       const videoParsedArtistRef = pickColumn(videoColumns, ["parsedArtist", "parsed_artist"]);
       const videoParsedTrackRef = pickColumn(videoColumns, ["parsedTrack", "parsed_track"]);
+      const videoGenreRef = pickColumn(videoColumns, ["genre"]);
       const videoChannelTitleRef = pickColumn(videoColumns, ["channelTitle", "channel_title"]);
       const videoPkRef = pickColumn(videoColumns, ["id"]);
       const siteVideoIdRef = pickColumn(siteVideoColumns, ["video_id", "videoId", "videoid"]);
@@ -361,6 +367,9 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
         const parsedTrackExpr = videoParsedTrackRef
           ? `NULLIF(TRIM(v.${escapeSqlIdentifier(videoParsedTrackRef.Field)}), '')`
           : "NULL";
+        const genreExpr = videoGenreRef
+          ? `NULLIF(TRIM(v.${escapeSqlIdentifier(videoGenreRef.Field)}), '')`
+          : "NULL";
         const channelTitleExpr = videoChannelTitleRef
           ? `NULLIF(TRIM(v.${escapeSqlIdentifier(videoChannelTitleRef.Field)}), '')`
           : "NULL";
@@ -377,6 +386,7 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
               ${displayArtistExpr} AS channelTitle,
               ${parsedArtistExpr} AS parsedArtist,
               ${parsedTrackExpr} AS parsedTrack,
+              ${genreExpr} AS genre,
               ${favouritedExpr} AS favourited,
               ${descriptionExpr} AS description
             FROM videos v
@@ -554,21 +564,37 @@ export async function getCurrentVideo(
   options?: { skipPlaybackDecision?: boolean },
 ) {
   const normalizedVideoId = normalizeYouTubeVideoId(videoId);
+  const hasGenreColumn = await hasVideoGenreColumn();
 
   const resolveEmergencyBootstrapVideo = async () => {
     try {
-      const emergencyRows = await prisma.$queryRaw<Array<RankedVideoRow>>`
-        SELECT
-          videoId,
-          title,
-          NULL AS channelTitle,
-          favourited,
-          description
-        FROM videos
-        WHERE videoId IS NOT NULL
-        ORDER BY COALESCE(favourited, 0) DESC, id DESC
-        LIMIT 1
-      `;
+      const emergencyRows = hasGenreColumn
+        ? await prisma.$queryRaw<Array<RankedVideoRow>>`
+            SELECT
+              videoId,
+              title,
+              NULL AS channelTitle,
+              NULLIF(TRIM(genre), '') AS genre,
+              favourited,
+              description
+            FROM videos
+            WHERE videoId IS NOT NULL
+            ORDER BY COALESCE(favourited, 0) DESC, id DESC
+            LIMIT 1
+          `
+        : await prisma.$queryRaw<Array<RankedVideoRow>>`
+            SELECT
+              videoId,
+              title,
+              NULL AS channelTitle,
+              NULL AS genre,
+              favourited,
+              description
+            FROM videos
+            WHERE videoId IS NOT NULL
+            ORDER BY COALESCE(favourited, 0) DESC, id DESC
+            LIMIT 1
+          `;
 
       const emergencyVideo = emergencyRows[0];
       if (!emergencyVideo) {
@@ -633,31 +659,59 @@ export async function getCurrentVideo(
         }
 
         const videos = normalizedVideoId
-          ? await prisma.$queryRaw<RankedVideoRow[]>`
-              SELECT
-                videoId,
-                title,
-                NULL AS channelTitle,
-                favourited,
-                description
-              FROM videos
-              WHERE videoId = ${normalizedVideoId}
-                AND COALESCE(approved, 0) = 1
-                AND EXISTS (
-                  SELECT 1
-                  FROM site_videos sv
-                  WHERE sv.video_id = videos.id
-                    AND sv.status = 'available'
-                )
-                AND NOT EXISTS (
-                  SELECT 1
-                  FROM site_videos sv
-                  WHERE sv.video_id = videos.id
-                    AND (sv.status IS NULL OR sv.status <> 'available')
-                )
-              ORDER BY updated_at DESC, id DESC
-              LIMIT 1
-            `
+          ? hasGenreColumn
+            ? await prisma.$queryRaw<RankedVideoRow[]>`
+                SELECT
+                  videoId,
+                  title,
+                  NULL AS channelTitle,
+                  NULLIF(TRIM(genre), '') AS genre,
+                  favourited,
+                  description
+                FROM videos
+                WHERE videoId = ${normalizedVideoId}
+                  AND COALESCE(approved, 0) = 1
+                  AND EXISTS (
+                    SELECT 1
+                    FROM site_videos sv
+                    WHERE sv.video_id = videos.id
+                      AND sv.status = 'available'
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM site_videos sv
+                    WHERE sv.video_id = videos.id
+                      AND (sv.status IS NULL OR sv.status <> 'available')
+                  )
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+              `
+            : await prisma.$queryRaw<RankedVideoRow[]>`
+                SELECT
+                  videoId,
+                  title,
+                  NULL AS channelTitle,
+                  NULL AS genre,
+                  favourited,
+                  description
+                FROM videos
+                WHERE videoId = ${normalizedVideoId}
+                  AND COALESCE(approved, 0) = 1
+                  AND EXISTS (
+                    SELECT 1
+                    FROM site_videos sv
+                    WHERE sv.video_id = videos.id
+                      AND sv.status = 'available'
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM site_videos sv
+                    WHERE sv.video_id = videos.id
+                      AND (sv.status IS NULL OR sv.status <> 'available')
+                  )
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+              `
           : await (async () => {
               const pool = await getRankedTopPool(50);
               if (pool.length === 0) return pool;

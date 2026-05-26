@@ -29,4 +29,32 @@ node /app/scripts/schedule-admin-dashboard-maintenance.js &
 SCHEDULER_PID=$!
 
 echo "[entrypoint] Starting application..."
-exec "$@"
+"$@" &
+APP_PID=$!
+
+cleanup() {
+  if [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; then
+    kill "$APP_PID" 2>/dev/null || true
+  fi
+  if [ -n "$SCHEDULER_PID" ] && kill -0 "$SCHEDULER_PID" 2>/dev/null; then
+    kill "$SCHEDULER_PID" 2>/dev/null || true
+  fi
+}
+
+trap cleanup INT TERM
+
+if [ "${WARMUP_CATEGORY_PATHS:-1}" = "1" ]; then
+  echo "[entrypoint] Warming category cache paths..."
+  node /app/scripts/warm-category-caches.js || echo "[entrypoint] Category warmup failed (non-fatal)"
+else
+  echo "[entrypoint] Category warmup disabled (WARMUP_CATEGORY_PATHS=${WARMUP_CATEGORY_PATHS:-0})"
+fi
+
+wait "$APP_PID"
+APP_EXIT_CODE=$?
+
+if [ -n "$SCHEDULER_PID" ] && kill -0 "$SCHEDULER_PID" 2>/dev/null; then
+  kill "$SCHEDULER_PID" 2>/dev/null || true
+fi
+
+exit "$APP_EXIT_CODE"
