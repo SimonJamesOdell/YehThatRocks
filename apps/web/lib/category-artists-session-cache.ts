@@ -9,9 +9,11 @@ const CATEGORY_ARTISTS_SESSION_TTL_MS = 30 * 60 * 1000;
 const CATEGORY_ARTISTS_FULL_TTL_MS = 24 * 60 * 60 * 1000;
 const CATEGORY_ARTISTS_FULL_REVALIDATE_MS = 20 * 60 * 1000;
 const FIRST_PAGE_LIMIT = 50;
-const FULL_PAGE_LIMIT = 192;
-const FULL_FETCH_CONCURRENCY = 4;
+const FULL_PAGE_LIMIT = 96;
+const FULL_FETCH_CONCURRENCY = 2;
 const FIRST_PAYLOAD_PREFETCH_CONCURRENCY = 2;
+const PAGE_FETCH_ATTEMPTS = 3;
+const PAGE_FETCH_RETRY_BASE_DELAY_MS = 140;
 
 export type CategoryArtistsFirstPayload = {
   artists: CategoryArtistCard[];
@@ -164,6 +166,37 @@ async function fetchCategoryArtistsPage(slug: string, offset: number, limit: num
     hasMore: payload.hasMore === true,
     nextOffset: Number.isFinite(nextOffset) ? nextOffset : offset + artists.length,
   } as CategoryArtistsFirstPayload;
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
+}
+
+async function fetchCategoryArtistsPageWithRetry(
+  slug: string,
+  offset: number,
+  limit: number,
+  includeTabCounts = false,
+) {
+  let attempt = 0;
+  while (attempt < PAGE_FETCH_ATTEMPTS) {
+    const payload = await fetchCategoryArtistsPage(slug, offset, limit, includeTabCounts);
+    if (payload) {
+      return payload;
+    }
+
+    attempt += 1;
+    if (attempt >= PAGE_FETCH_ATTEMPTS) {
+      return null;
+    }
+
+    const backoffMs = PAGE_FETCH_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+    await sleep(backoffMs);
+  }
+
+  return null;
 }
 
 export function readCategoryArtistsFirstPayloadFromSessionCache(slug?: string | null): CategoryArtistsFirstPayload | null {
@@ -345,7 +378,7 @@ export async function prefetchCategoryArtistsFirstPayload(slug?: string | null):
     return inFlight;
   }
 
-  const requestPromise = fetchCategoryArtistsPage(normalizedSlug, 0, FIRST_PAGE_LIMIT, true)
+  const requestPromise = fetchCategoryArtistsPageWithRetry(normalizedSlug, 0, FIRST_PAGE_LIMIT, true)
     .then((payload) => {
       if (!payload) {
         return cached ?? null;
@@ -481,6 +514,7 @@ export async function primeCategoryArtistsFullPayload(
       }
 
       const pagesByOffset = new Map<number, CategoryArtistCard[]>();
+      const failedOffsets: number[] = [];
       let nextOffsetIndex = 0;
 
       async function worker() {
@@ -493,8 +527,9 @@ export async function primeCategoryArtistsFullPayload(
           }
 
           const offset = offsets[index] ?? 0;
-          const page = await fetchCategoryArtistsPage(normalizedSlug, offset, FULL_PAGE_LIMIT);
+          const page = await fetchCategoryArtistsPageWithRetry(normalizedSlug, offset, FULL_PAGE_LIMIT);
           if (!page) {
+            failedOffsets.push(offset);
             continue;
           }
 
@@ -505,6 +540,19 @@ export async function primeCategoryArtistsFullPayload(
 
       const workerCount = Math.max(1, Math.min(FULL_FETCH_CONCURRENCY, offsets.length));
       await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+      if (failedOffsets.length > 0) {
+        const uniqueFailedOffsets = [...new Set(failedOffsets)].sort((a, b) => a - b);
+        for (const offset of uniqueFailedOffsets) {
+          const retryPage = await fetchCategoryArtistsPageWithRetry(normalizedSlug, offset, FULL_PAGE_LIMIT);
+          if (!retryPage) {
+            continue;
+          }
+
+          pagesByOffset.set(offset, retryPage.artists);
+          options.onPage?.(retryPage.artists, offset);
+        }
+      }
 
       const sortedOffsets = [...pagesByOffset.keys()].sort((a, b) => a - b);
       for (const offset of sortedOffsets) {
@@ -517,7 +565,7 @@ export async function primeCategoryArtistsFullPayload(
       let pageGuard = 0;
 
       while (hasMore && pageGuard < 80) {
-        const page = await fetchCategoryArtistsPage(normalizedSlug, nextOffset, FULL_PAGE_LIMIT);
+        const page = await fetchCategoryArtistsPageWithRetry(normalizedSlug, nextOffset, FULL_PAGE_LIMIT);
         if (!page) {
           break;
         }
