@@ -13,6 +13,7 @@ const SOURCE_FILES = {
   categoriesParentPage: path.join(ROOT, "apps/web/app/(shell)/categories/page.tsx"),
   topLevelCardsApi: path.join(ROOT, "apps/web/app/api/categories/top-level-cards/route.ts"),
   categoryPage: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/page.tsx"),
+  categoryPageLoading: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/loading.tsx"),
   categoryArtistPage: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/artists/[artistSlug]/page.tsx"),
   categoryArtistsApi: path.join(ROOT, "apps/web/app/api/categories/[slug]/artists/route.ts"),
   categoryArtistVideosApi: path.join(ROOT, "apps/web/app/api/categories/[slug]/artists/[artistSlug]/route.ts"),
@@ -166,6 +167,7 @@ function runSourceChecks(failures) {
   const categoriesParentPageSource = readFileStrict(SOURCE_FILES.categoriesParentPage, ROOT);
   const topLevelCardsApiSource = readFileStrict(SOURCE_FILES.topLevelCardsApi, ROOT);
   const categoryPageSource = readFileStrict(SOURCE_FILES.categoryPage, ROOT);
+  const categoryPageLoadingSource = readFileStrict(SOURCE_FILES.categoryPageLoading, ROOT);
   const categoryArtistPageSource = readFileStrict(SOURCE_FILES.categoryArtistPage, ROOT);
   const categoryArtistsApiSource = readFileStrict(SOURCE_FILES.categoryArtistsApi, ROOT);
   const categoryArtistVideosApiSource = readFileStrict(SOURCE_FILES.categoryArtistVideosApi, ROOT);
@@ -214,6 +216,9 @@ function runSourceChecks(failures) {
 
   assertContains(categoryPageSource, "CategoryArtistsBrowser", "Category page renders category artist browser grid", failures);
   assertContains(categoryPageSource, "CategoryBrowserTabs", "Category page renders sticky category tabs under header", failures);
+  assertContains(categoryPageLoadingSource, "Loading category...", "Category detail route exposes an immediate loading state", failures);
+  assertContains(categoryPageLoadingSource, "OverlayScrollReset", "Category detail loading state preserves overlay scroll reset behavior", failures);
+  assertContains(categoryPageLoadingSource, "playerBootLoader", "Category detail loading state uses the shared boot loader styling", failures);
   assertContains(categoryArtistPageSource, "getVideosByGenreAndArtist", "Category artist page resolves artist-scoped videos", failures);
   assertContains(categoryArtistPageSource, "CategoryVideosInfinite", "Category artist page renders category video infinite view", failures);
   assertContains(categoryArtistsApiSource, "getCategoryArtistsByGenre", "Category artists API resolves category artists", failures);
