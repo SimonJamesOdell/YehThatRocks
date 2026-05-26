@@ -30,25 +30,12 @@ npm run classify:genres:watch
 
 ## Production (Docker Compose)
 
-The production compose stack now includes a dedicated `classifier` service that
-auto-restarts and resumes from `admin_genre_reclassify_state.last_video_id`.
+Background classifier service is disabled.
 
-Start or refresh services after deploy:
-
-```bash
-docker compose --env-file .env.production -f docker-compose.prod.yml up -d web classifier
-```
-
-Check classifier logs:
+Run reclassification manually (one-off) only when explicitly needed:
 
 ```bash
-docker compose --env-file .env.production -f docker-compose.prod.yml logs -f --tail=100 classifier
-```
-
-Verify process-level status:
-
-```bash
-docker compose --env-file .env.production -f docker-compose.prod.yml ps
+docker compose --env-file .env.production -f docker-compose.prod.yml run --rm web node scripts/reclassify-catalog-genres.js
 ```
 
 ## Environment Variables
