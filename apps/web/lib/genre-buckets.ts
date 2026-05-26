@@ -162,12 +162,15 @@ const GENRE_ALIAS_TO_CANONICAL = new Map<string, string>([
   ["technical thrash", "thrash metal"],
   ["melodic death", "melodic death metal"],
   ["melodic doom", "doom metal"],
+  ["doom", "doom metal"],
   ["progressive", "progressive metal"],
   ["technical speed", "technical speed metal"],
   ["metal", "heavy metal"],
+  ["black", "black metal"],
   ["occult", "black metal"],
   ["gothic", "black metal"],
   ["crossover", "crossover thrash"],
+  ["crossover thrash", "thrash metal"],
 ]);
 
 function normalizeGenreToken(input: string) {
@@ -198,7 +201,7 @@ function tokenMatchesTerm(normalizedToken: string, normalizedTerm: string) {
 }
 
 export function resolveAllTopLevelGenreBuckets(input: string): string[] {
-  const normalizedInput = normalizeGenreToken(input);
+  const normalizedInput = normalizeGenreToken(canonicalizeGenreLabel(input));
   if (!normalizedInput) {
     return [];
   }

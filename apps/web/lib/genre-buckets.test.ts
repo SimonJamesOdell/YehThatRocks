@@ -25,6 +25,9 @@ describe("genre bucket alias mapping", () => {
 
   it("resolves canonicalized alias outputs to expected top-level buckets", () => {
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("melodic doom"))).toBe("Doom & Sludge");
+    expect(resolveTopLevelGenreBucket("melodic doom")).toBe("Doom & Sludge");
+    expect(resolveTopLevelGenreBucket("black")).toBe("Black and Death Metal");
+    expect(resolveTopLevelGenreBucket("crossover thrash")).toBe("Thrash & Power Metal");
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("gothic"))).toBe("Black and Death Metal");
     expect(resolveTopLevelGenreBucket("Britpop")).toBe("Rock & Alternative");
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("death"))).toBe("Black and Death Metal");
@@ -33,6 +36,6 @@ describe("genre bucket alias mapping", () => {
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("melodic death"))).toBe("Black and Death Metal");
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("progressive"))).toBe("Progressive & Experimental");
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("occult"))).toBe("Black and Death Metal");
-    expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("crossover"))).toBe("Punk & Hardcore");
+    expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("crossover"))).toBe("Thrash & Power Metal");
   });
 });
