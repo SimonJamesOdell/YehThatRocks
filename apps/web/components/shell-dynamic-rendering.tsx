@@ -344,7 +344,7 @@ export const WatchNextCard = memo(function WatchNextCard({
             {track.isTop100Source ? <span className="relatedSourceBadge relatedSourceBadgeTop100">Top100</span> : null}
             {track.isNewSource ? <span className="relatedSourceBadge relatedSourceBadgeNew">New</span> : null}
           </div>
-          <p className="relatedCardGenre"><VideoGenreLink genre={genreLabel} stopPropagation /></p>
+          <p className="relatedCardGenre"><VideoGenreLink genre={genreLabel} stopPropagation nestedInLink /></p>
           <h3>
             {parsedArtistCandidate && parsedTrackCandidate ? (
               <>
