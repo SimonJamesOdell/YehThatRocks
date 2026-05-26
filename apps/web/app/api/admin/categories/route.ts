@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
+import { clearCatalogVideoCaches } from "@/lib/catalog-data";
 import { prisma } from "@/lib/db";
 
 const updateSchema = z.object({
@@ -55,6 +56,8 @@ export async function PATCH(request: NextRequest) {
       updatedAt: true,
     },
   });
+
+  clearCatalogVideoCaches();
 
   return NextResponse.json({ ok: true, category: updated });
 }

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireAdminApiAuth } from "@/lib/admin-auth";
-import { importVideoFromDirectSource } from "@/lib/catalog-data";
+import { clearCatalogVideoCaches, importVideoFromDirectSource } from "@/lib/catalog-data";
+import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
@@ -40,6 +41,9 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+
+  clearCatalogVideoCaches();
+  clearCurrentVideoRouteCaches();
 
   return NextResponse.json({
     ok: result.decision.allowed,

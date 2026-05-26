@@ -74,6 +74,10 @@ let categoryArtistThumbTableAvailableCache: { checkedAt: number; available: bool
 let categoryBucketRuntimeCacheTableAvailableCache: { checkedAt: number; available: boolean } | undefined;
 let categoryArtistRuntimeCacheTableAvailableCache: { checkedAt: number; available: boolean } | undefined;
 const categoryArtistRuntimeCacheRebuildInFlight = new Map<string, Promise<void>>();
+let categoryBucketRuntimeRefreshInFlight: Promise<void> | null = null;
+let categoryBucketRuntimeRefreshLastStartedAt = 0;
+
+const CATEGORY_BUCKET_RUNTIME_REFRESH_MIN_INTERVAL_MS = 30_000;
 
 const GENRE_ARTIST_COUNT_CACHE_TTL_MS = 10 * 60 * 1000;
 
@@ -1251,6 +1255,32 @@ export function clearGenreCaches() {
   genreListCache = undefined;
 }
 
+function scheduleCategoryBucketRuntimeCacheRefresh() {
+  if (!hasDatabaseUrl()) {
+    return;
+  }
+
+  const now = Date.now();
+  if (categoryBucketRuntimeRefreshInFlight) {
+    return;
+  }
+
+  if (now - categoryBucketRuntimeRefreshLastStartedAt < CATEGORY_BUCKET_RUNTIME_REFRESH_MIN_INTERVAL_MS) {
+    return;
+  }
+
+  categoryBucketRuntimeRefreshLastStartedAt = now;
+  categoryBucketRuntimeRefreshInFlight = (async () => {
+    try {
+      await bootstrapCategoryBucketRuntimeCacheFast();
+    } catch {
+      // best effort only
+    }
+  })().finally(() => {
+    categoryBucketRuntimeRefreshInFlight = null;
+  });
+}
+
 export async function invalidateRuntimeCategoryCaches() {
   clearGenreCaches();
 
@@ -1259,17 +1289,9 @@ export async function invalidateRuntimeCategoryCaches() {
   }
 
   try {
-    const tableAvailable = await hasCategoryBucketRuntimeCacheTable();
-    if (!tableAvailable) {
-      return;
-    }
-
-    await prisma.$executeRawUnsafe(
-      `
-        UPDATE category_bucket_runtime_cache
-        SET updated_at = DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 7 HOUR)
-      `,
-    );
+    // Keep top-level bucket cache fresh off the request path instead of forcing
+    // the next categories page render to run an expensive rebuild synchronously.
+    scheduleCategoryBucketRuntimeCacheRefresh();
 
     const artistRuntimeTableAvailable = await hasCategoryArtistRuntimeCacheTable();
     if (artistRuntimeTableAvailable) {

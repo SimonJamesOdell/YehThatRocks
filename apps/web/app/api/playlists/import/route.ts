@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { withAuthAndBody } from "@/lib/api-route-pipeline";
-import { addPlaylistItems, createPlaylist, hasDatabaseUrl, importVideoFromDirectSource, normalizeYouTubeVideoId } from "@/lib/catalog-data";
+import { addPlaylistItems, clearCatalogVideoCaches, createPlaylist, hasDatabaseUrl, importVideoFromDirectSource, normalizeYouTubeVideoId } from "@/lib/catalog-data";
 import { prisma } from "@/lib/db";
 import { parseJsonOrNull } from "@/lib/parse-json";
 import { maybeNormalizePlaylistId } from "@/lib/youtube-playlist";
@@ -242,6 +242,10 @@ export async function POST(request: NextRequest) {
 
   const ingestResult = await ingestMissingVideoIds(missingVideoIds);
   const importedSet = new Set(ingestResult.importedVideoIds.map((id) => normalizeYouTubeVideoId(id) ?? id));
+
+  if (importedSet.size > 0) {
+    clearCatalogVideoCaches();
+  }
 
   const playlistVideoIds = playlistFetchResult.videoIds.filter((videoId) => existingVideoIdSet.has(videoId) || importedSet.has(videoId));
 

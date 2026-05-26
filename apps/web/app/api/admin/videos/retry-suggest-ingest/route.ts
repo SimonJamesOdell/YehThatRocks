@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { adminRetrySuggestIngestSchema } from "@/lib/api-schemas";
 import { requireAdminApiAuth } from "@/lib/admin-auth";
 import {
+  clearCatalogVideoCaches,
   importVideoFromDirectSource,
   hasDatabaseUrl,
   pruneVideoAndAssociationsByVideoId,
@@ -116,6 +117,8 @@ export async function POST(request: NextRequest) {
   if (!result.videoId) {
     return NextResponse.json({ error: "Invalid YouTube URL or video id." }, { status: 400 });
   }
+
+  clearCatalogVideoCaches();
 
   const metadataRows = hasDatabaseUrl()
     ? await prisma.$queryRaw<Array<{ parsedArtist: string | null; parsedTrack: string | null }>>`
