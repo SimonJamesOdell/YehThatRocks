@@ -318,7 +318,7 @@ export async function prefetchCategoryArtistsFirstPayload(slug?: string | null):
   }
 
   const cached = readCategoryArtistsFirstPayloadFromSessionCache(normalizedSlug);
-  if (cached) {
+  if (cached?.tabCounts) {
     return cached;
   }
 
@@ -331,10 +331,10 @@ export async function prefetchCategoryArtistsFirstPayload(slug?: string | null):
     return inFlight;
   }
 
-  const requestPromise = fetchCategoryArtistsPage(normalizedSlug, 0, FIRST_PAGE_LIMIT)
+  const requestPromise = fetchCategoryArtistsPage(normalizedSlug, 0, FIRST_PAGE_LIMIT, true)
     .then((payload) => {
       if (!payload) {
-        return null;
+        return cached ?? null;
       }
 
       writeCategoryArtistsFirstPayloadToSessionCache(normalizedSlug, payload);

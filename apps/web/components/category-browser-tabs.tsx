@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 
 import {
   CATEGORY_ARTISTS_CACHE_EVENT,
+  prefetchCategoryArtistsFirstPayload,
   readCategoryArtistsFirstPayloadFromSessionCache,
   readCategoryArtistsFullPayloadFromCache,
 } from "@/lib/category-artists-session-cache";
@@ -34,6 +35,8 @@ export function CategoryBrowserTabs({ genre, slug }: CategoryBrowserTabsProps) {
   );
 
   useEffect(() => {
+    let cancelled = false;
+
     const requestedTab = searchParams.get("tab")?.trim().toLowerCase() ?? "";
     if (requestedTab) {
       const resolvedTab = resolveCategoryArtistTabById(genre, requestedTab)?.id ?? "all";
@@ -47,6 +50,20 @@ export function CategoryBrowserTabs({ genre, slug }: CategoryBrowserTabsProps) {
       ?? readCategoryArtistsFirstPayloadFromSessionCache(slug)?.tabCounts
       ?? null;
     setTabCounts(cachedTabs);
+
+    if (!cachedTabs) {
+      void prefetchCategoryArtistsFirstPayload(slug).then((payload) => {
+        if (cancelled) {
+          return;
+        }
+
+        setTabCounts(payload?.tabCounts ?? null);
+      });
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [genre, searchParams, slug]);
 
   useEffect(() => {
