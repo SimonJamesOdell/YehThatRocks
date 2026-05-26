@@ -17,6 +17,7 @@ export const TOP_LEVEL_GENRE_BUCKETS: readonly GenreBucket[] = [
       "arena rock",
       "rock",
       "alternative rock",
+      "britpop",
       "indie rock",
       "art rock",
       "folk rock",

@@ -24,6 +24,7 @@ describe("genre bucket alias mapping", () => {
   });
 
   it("resolves canonicalized alias outputs to expected top-level buckets", () => {
+    expect(resolveTopLevelGenreBucket("Britpop")).toBe("Rock & Alternative");
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("death"))).toBe("Black and Death Metal");
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("speed"))).toBe("Thrash & Power Metal");
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("power"))).toBe("Thrash & Power Metal");
