@@ -68,6 +68,56 @@ function Get-HttpStatusCode {
   }
 }
 
+function Get-ListeningProcessIdForPort {
+  param(
+    [int]$Port
+  )
+
+  try {
+    $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($listener) {
+      return [int]$listener.OwningProcess
+    }
+  } catch {
+    return $null
+  }
+
+  return $null
+}
+
+function Stop-StaleStandaloneServerForPort {
+  param(
+    [int]$Port,
+    [string]$StandaloneServerPath
+  )
+
+  $listenerProcessId = Get-ListeningProcessIdForPort -Port $Port
+  if (-not $listenerProcessId) {
+    return $false
+  }
+
+  $process = $null
+  try {
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId = $listenerProcessId" | Select-Object -First 1
+  } catch {
+    return $false
+  }
+
+  $commandLine = [string]$process.CommandLine
+  if ([string]::IsNullOrWhiteSpace($commandLine) -or $commandLine -notlike "*$StandaloneServerPath*") {
+    return $false
+  }
+
+  try {
+    Stop-Process -Id $listenerProcessId -Force -ErrorAction SilentlyContinue
+    Wait-Process -Id $listenerProcessId -Timeout 5 -ErrorAction SilentlyContinue
+  } catch {
+    return $false
+  }
+
+  return -not (Test-PortInUse -HostName "127.0.0.1" -Port $Port)
+}
+
 function Test-PortInUse {
   param(
     [string]$HostName,
@@ -210,7 +260,9 @@ try {
 
   Invoke-Step -Name "start:test-server" -Action {
     if (Test-PortInUse -HostName "127.0.0.1" -Port $Port) {
-      throw "Port $Port is already in use. Stop the existing listener before running verify:deps:full."
+      if (-not (Stop-StaleStandaloneServerForPort -Port $Port -StandaloneServerPath $standaloneServerPath)) {
+        throw "Port $Port is already in use. Stop the existing listener before running verify:deps:full."
+      }
     }
 
     if (-not (Test-Path $standaloneServerPath)) {
@@ -273,6 +325,14 @@ try {
     try {
       Stop-Process -Id $serverProcess.Id -Force -ErrorAction SilentlyContinue
       $serverProcess.WaitForExit(5000) | Out-Null
+    } catch {
+      # Best-effort cleanup.
+    }
+  }
+
+  if (Test-PortInUse -HostName "127.0.0.1" -Port $Port) {
+    try {
+      [void](Stop-StaleStandaloneServerForPort -Port $Port -StandaloneServerPath $standaloneServerPath)
     } catch {
       # Best-effort cleanup.
     }
