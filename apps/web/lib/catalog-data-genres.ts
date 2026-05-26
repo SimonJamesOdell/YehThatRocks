@@ -53,7 +53,7 @@ const CATEGORY_BUCKET_RUNTIME_CACHE_TABLE_CACHE_TTL_MS = 60_000;
 const CATEGORY_BUCKET_RUNTIME_CACHE_STALE_MS = 6 * 60 * 60 * 1000;
 const CATEGORY_ARTIST_RUNTIME_CACHE_TABLE_CACHE_TTL_MS = 60_000;
 const CATEGORY_ARTIST_RUNTIME_CACHE_STALE_MS = 6 * 60 * 60 * 1000;
-const CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT = 2_000;
+const CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT = 5_000;
 const GENRE_ARTIST_SEED_CACHE_TTL_MS = 2 * 60 * 1000;
 const GENRE_CACHE_MAX_ENTRIES = Math.max(
   100,
@@ -288,7 +288,7 @@ function mapCategoryArtistRows(rows: Array<{
 
 async function getRuntimeCachedCategoryArtistsByGenre(
   normalizedGenre: string,
-  options: { offset: number; limit: number },
+  options: { offset: number; limit: number; expectedTotal?: number | null },
 ): Promise<CategoryArtistCard[] | null> {
   if (!hasDatabaseUrl()) {
     return null;
@@ -313,6 +313,11 @@ async function getRuntimeCachedCategoryArtistsByGenre(
   const freshness = freshnessRows[0];
   const totalRows = Math.max(0, Number(freshness?.total ?? 0));
   if (totalRows === 0) {
+    return null;
+  }
+
+  const expectedTotal = Number(options.expectedTotal ?? NaN);
+  if (Number.isFinite(expectedTotal) && expectedTotal > totalRows) {
     return null;
   }
 
@@ -873,6 +878,9 @@ export async function getCategoryArtistsByGenre(
   const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
   const requestedLimit = Math.max(1, Math.min(2_000, Number.isFinite(options?.limit) ? Number(options?.limit) : 48));
   const normalizedGenre = normalizeGenreTerm(genre);
+  const expectedTotal = requestedOffset === 0
+    ? await getCategoryArtistCountByGenre(genre).catch(() => null)
+    : null;
 
   if (!normalizedGenre) {
     return [];
@@ -881,6 +889,7 @@ export async function getCategoryArtistsByGenre(
   const cachedArtists = await getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
     offset: requestedOffset,
     limit: requestedLimit,
+    expectedTotal,
   });
   if (cachedArtists) {
     return cachedArtists;
@@ -916,9 +925,40 @@ export async function getCategoryArtistCountByGenre(genre: string): Promise<numb
   }
 
   const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
+  const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
   const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
   const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
   const normalizedGenrePlaceholders = normalizedGenreTerms.map(() => "?").join(", ");
+
+  return queryCategoryArtistCountByTerms({
+    normalizedGenrePlaceholders,
+    normalizedGenrePattern,
+    normalizedGenreTerms,
+    normalizedGenreSqlExpr,
+    videoArtistNormColumn,
+    videoArtistNormExpr,
+    videoArtistIndexHint,
+  });
+}
+
+async function queryCategoryArtistCountByTerms(args: {
+  normalizedGenrePlaceholders: string;
+  normalizedGenrePattern: string;
+  normalizedGenreTerms: string[];
+  normalizedGenreSqlExpr: string;
+  videoArtistNormColumn: string | null;
+  videoArtistNormExpr: string;
+  videoArtistIndexHint: string;
+}): Promise<number> {
+  const {
+    normalizedGenrePlaceholders,
+    normalizedGenrePattern,
+    normalizedGenreTerms,
+    normalizedGenreSqlExpr,
+    videoArtistNormColumn,
+    videoArtistNormExpr,
+    videoArtistIndexHint,
+  } = args;
 
   let rows: Array<{ total: bigint | number }>;
 
@@ -961,7 +1001,6 @@ export async function getCategoryArtistCountByGenre(genre: string): Promise<numb
       normalizedGenrePattern,
     );
   } else {
-    const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", null);
     rows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(
       `SELECT
          COUNT(DISTINCT ${videoArtistNormExpr}) AS total
@@ -1073,13 +1112,34 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
     return { all: 0 };
   }
 
+  const videoGenreColumnExists = await hasVideoGenreColumn();
+  if (!videoGenreColumnExists) {
+    return { all: 0 };
+  }
+
+  const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
+  const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
+  const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
+  const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
+  const normalizedGenrePlaceholders = normalizedGenreTerms.map(() => "?").join(", ");
+  const authoritativeAllCount = await queryCategoryArtistCountByTerms({
+    normalizedGenrePlaceholders,
+    normalizedGenrePattern,
+    normalizedGenreTerms,
+    normalizedGenreSqlExpr,
+    videoArtistNormColumn,
+    videoArtistNormExpr,
+    videoArtistIndexHint,
+  });
+
   const cachedArtists = await getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
     offset: 0,
     limit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
+    expectedTotal: authoritativeAllCount,
   });
-  if (cachedArtists) {
+  if (cachedArtists && cachedArtists.length >= authoritativeAllCount) {
     const matchers = buildCategoryArtistTabCountMatchers(genre);
-    const counts: Record<string, number> = { all: cachedArtists.length };
+    const counts: Record<string, number> = { all: authoritativeAllCount };
     for (const matcher of matchers) {
       if (matcher.id === "all") {
         continue;
@@ -1092,17 +1152,6 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
 
     return counts;
   }
-
-  const videoGenreColumnExists = await hasVideoGenreColumn();
-  if (!videoGenreColumnExists) {
-    return { all: 0 };
-  }
-
-  const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
-  const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
-  const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
-  const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
-  const normalizedGenrePlaceholders = normalizedGenreTerms.map(() => "?").join(", ");
 
   const rows = await prisma.$queryRawUnsafe<Array<{ dominantGenre: string | null }>>(
     `SELECT
@@ -1122,7 +1171,7 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
   );
 
   const matchers = buildCategoryArtistTabCountMatchers(genre);
-  const counts: Record<string, number> = { all: rows.length };
+  const counts: Record<string, number> = { all: authoritativeAllCount };
   for (const matcher of matchers) {
     if (matcher.id === "all") {
       continue;
