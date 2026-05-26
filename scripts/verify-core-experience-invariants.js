@@ -134,8 +134,8 @@ function main() {
   assertContains(queueTrackCardContentSource, "const strippedRemainder = remainder.replace(/^[\\-:\\u2013\\u2014\\|]+\\s*/, \"\").trim();", "Queue cards strip artist-prefix separators from title fallback track text", failures);
   assertContains(queueTrackCardContentSource, "const hasParsedTitlePattern = Boolean(parsedArtistCandidate && parsedTrackLabel);", "Queue cards only enter parsed-title mode with both artist and track labels", failures);
   assertContains(queueTrackCardContentSource, "<span aria-hidden=\"true\"> - </span>", "Queue cards render ARTIST - Track separator in title", failures);
-  assertContains(queueTrackCardContentSource, "<VideoGenreLink genre={genreLabel} stopPropagation />", "Queue cards render genre labels as category deep links", failures);
-  assertContains(playlistTrackCardContentSource, "<VideoGenreLink genre={genreLabel} stopPropagation />", "Playlist cards render genre labels as category deep links", failures);
+  assertContains(queueTrackCardContentSource, "<VideoGenreLink genre={genreLabel} stopPropagation nestedInLink />", "Queue cards render genre labels as category deep links", failures);
+  assertContains(playlistTrackCardContentSource, "<VideoGenreLink genre={genreLabel} stopPropagation nestedInLink />", "Playlist cards render genre labels as category deep links", failures);
   assertContains(favouritesGridSource, "<VideoGenreLink genre={genreLabel} stopPropagation />", "Favourites grid renders genre labels as category deep links", failures);
   assertContains(historyInfiniteListSource, "<VideoGenreLink genre={entry.video.genre} />", "History cards render genre labels as category deep links", failures);
   assertContains(leaderboardVideoLinkSource, "<VideoGenreLink genre={categoryLabel} stopPropagation />", "Leaderboard cards render genre labels as category deep links", failures);
