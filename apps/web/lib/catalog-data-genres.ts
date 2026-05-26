@@ -445,26 +445,10 @@ export async function getRuntimeCachedTopLevelGenreCards(): Promise<GenreCard[] 
     }
   }
 
-  const byLabel = new Map(rows.map((row) => [row.bucketLabel.trim().toLowerCase(), row]));
-  const liveCountEntries = await Promise.all(
-    TOP_LEVEL_GENRE_BUCKETS.map(async (bucket) => {
-      try {
-        const count = await getCategoryArtistCountByGenre(bucket.label);
-        return [bucket.label.trim().toLowerCase(), Math.max(0, Number(count || 0))] as const;
-      } catch {
-        return [bucket.label.trim().toLowerCase(), null] as const;
-      }
-    }),
-  );
-  const liveCountsByLabel = new Map<string, number | null>(liveCountEntries);
-
   const cards = TOP_LEVEL_GENRE_BUCKETS.map((bucket) => {
-    const cached = byLabel.get(bucket.label.trim().toLowerCase());
+    const cached = rows.find((row) => row.bucketLabel.trim().toLowerCase() === bucket.label.trim().toLowerCase());
     const previewVideoId = cached?.previewVideoId?.trim() || null;
-    const liveArtistCount = liveCountsByLabel.get(bucket.label.trim().toLowerCase());
-    const artistCount = liveArtistCount === null || liveArtistCount === undefined
-      ? Math.max(0, Number(cached?.artistCount ?? 0))
-      : liveArtistCount;
+    const artistCount = Math.max(0, Number(cached?.artistCount ?? 0));
     return {
       genre: bucket.label,
       previewVideoId,
@@ -1068,7 +1052,7 @@ export async function getGenreCards(): Promise<GenreCard[]> {
   if (!genreCardsCache || genreCardsCache.expiresAt <= now) {
     try {
       const runtimeCached = await getRuntimeCachedTopLevelGenreCards();
-      if (runtimeCached && runtimeCached.some((card) => card.previewVideoId || Number(card.artistCount ?? 0) > 0)) {
+      if (runtimeCached && runtimeCached.length > 0) {
         genreCardsCache = { expiresAt: now + GENRE_CARDS_CACHE_TTL_MS, cards: runtimeCached };
         return runtimeCached;
       }
@@ -1083,18 +1067,7 @@ export async function getGenreCards(): Promise<GenreCard[]> {
     genreCardsCache.cards.length > 0 &&
     genreCardsCache.cards.some((card) => !!card.previewVideoId)
   ) {
-    const cachedCards = genreCardsCache.cards;
-    if (cachedCards.some((card) => Number(card.artistCount ?? 0) > 0)) {
-      return cachedCards;
-    }
-
-    const refreshedCards = await attachArtistCountsToGenreCards(cachedCards);
-    if (refreshedCards.some((card) => Number(card.artistCount ?? 0) > 0)) {
-      genreCardsCache = { expiresAt: now + GENRE_CARDS_CACHE_TTL_MS, cards: refreshedCards };
-      return refreshedCards;
-    }
-
-    return refreshedCards;
+    return genreCardsCache.cards;
   }
 
   if (genreCardsInFlight) {
@@ -1248,7 +1221,6 @@ export async function getGenreCards(): Promise<GenreCard[]> {
       }
 
       cards = collateGenreCardsToTopLevelBuckets(cards);
-      cards = await attachArtistCountsToGenreCards(cards);
       const pinnedPreviewByBucket = await getPinnedCategoryArtistPreviewsByBucket();
       cards = applyPinnedCategoryArtistPreviews(cards, pinnedPreviewByBucket);
       await upsertCategoryBucketRuntimeCache(cards).catch(() => undefined);
