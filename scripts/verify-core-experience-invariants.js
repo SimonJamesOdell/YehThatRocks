@@ -23,6 +23,13 @@ const files = {
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
   shellDynamicRendering: path.join(ROOT, "apps/web/components/shell-dynamic-rendering.tsx"),
   queueTrackCardContent: path.join(ROOT, "apps/web/components/queue-track-card-content.tsx"),
+  playlistTrackCardContent: path.join(ROOT, "apps/web/components/playlist-track-card-content.tsx"),
+  favouritesGrid: path.join(ROOT, "apps/web/components/favourites-grid.tsx"),
+  historyInfiniteList: path.join(ROOT, "apps/web/components/history-infinite-list.tsx"),
+  leaderboardVideoLink: path.join(ROOT, "apps/web/components/leaderboard-video-link.tsx"),
+  categoryBrowserTabs: path.join(ROOT, "apps/web/components/category-browser-tabs.tsx"),
+  videoGenreLink: path.join(ROOT, "apps/web/components/video-genre-link.tsx"),
+  videoGenreNavigation: path.join(ROOT, "apps/web/lib/video-genre-navigation.ts"),
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
   currentVideoRouteService: path.join(ROOT, "apps/web/lib/current-video-route-service.ts"),
   analyticsRoute: path.join(ROOT, "apps/web/app/api/analytics/route.ts"),
@@ -62,6 +69,13 @@ function main() {
   ].join('\n');
   const shellDynamicRenderingSource = readFileStrict(files.shellDynamicRendering, ROOT);
   const queueTrackCardContentSource = readFileStrict(files.queueTrackCardContent, ROOT);
+  const playlistTrackCardContentSource = readFileStrict(files.playlistTrackCardContent, ROOT);
+  const favouritesGridSource = readFileStrict(files.favouritesGrid, ROOT);
+  const historyInfiniteListSource = readFileStrict(files.historyInfiniteList, ROOT);
+  const leaderboardVideoLinkSource = readFileStrict(files.leaderboardVideoLink, ROOT);
+  const categoryBrowserTabsSource = readFileStrict(files.categoryBrowserTabs, ROOT);
+  const videoGenreLinkSource = readFileStrict(files.videoGenreLink, ROOT);
+  const videoGenreNavigationSource = readFileStrict(files.videoGenreNavigation, ROOT);
   const shellRenderingSource = `${shellDynamicSource}\n${shellDynamicRenderingSource}`;
   const currentVideoRouteServiceSource = readFileStrict(files.currentVideoRouteService, ROOT);
   const currentVideoRouteSource = [
@@ -120,6 +134,17 @@ function main() {
   assertContains(queueTrackCardContentSource, "const strippedRemainder = remainder.replace(/^[\\-:\\u2013\\u2014\\|]+\\s*/, \"\").trim();", "Queue cards strip artist-prefix separators from title fallback track text", failures);
   assertContains(queueTrackCardContentSource, "const hasParsedTitlePattern = Boolean(parsedArtistCandidate && parsedTrackLabel);", "Queue cards only enter parsed-title mode with both artist and track labels", failures);
   assertContains(queueTrackCardContentSource, "<span aria-hidden=\"true\"> - </span>", "Queue cards render ARTIST - Track separator in title", failures);
+  assertContains(queueTrackCardContentSource, "<VideoGenreLink genre={genreLabel} stopPropagation />", "Queue cards render genre labels as category deep links", failures);
+  assertContains(playlistTrackCardContentSource, "<VideoGenreLink genre={genreLabel} stopPropagation />", "Playlist cards render genre labels as category deep links", failures);
+  assertContains(favouritesGridSource, "<VideoGenreLink genre={genreLabel} stopPropagation />", "Favourites grid renders genre labels as category deep links", failures);
+  assertContains(historyInfiniteListSource, "<VideoGenreLink genre={entry.video.genre} />", "History cards render genre labels as category deep links", failures);
+  assertContains(leaderboardVideoLinkSource, "<VideoGenreLink genre={categoryLabel} stopPropagation />", "Leaderboard cards render genre labels as category deep links", failures);
+  assertContains(playerExperienceSource, "<VideoGenreLink genre={overlayGenreLabel} />", "Player overlay renders genre labels as category deep links", failures);
+  assertContains(videoGenreLinkSource, "resolveVideoGenreNavigationTarget", "Video genre link component uses shared genre navigation target resolver", failures);
+  assertContains(videoGenreNavigationSource, "resolveVideoGenreNavigationTarget", "Video genre navigation helper exposes resolver", failures);
+  assertContains(videoGenreNavigationSource, "`/categories/${categorySlug}?tab=${encodeURIComponent(tabId)}`", "Video genre navigation includes category tab query when a specific tab is resolved", failures);
+  assertContains(categoryBrowserTabsSource, "searchParams.get(\"tab\")", "Category browser tabs reads incoming tab query parameter", failures);
+  assertContains(categoryBrowserTabsSource, "writeCategoryArtistsTab(slug, resolvedTab);", "Category browser tabs persists requested tab selection from query", failures);
 
   // Current-video API invariants.
   assertContains(currentVideoRouteSource, "RESOLVE_CURRENT_VIDEO_TARGET_RELATED_COUNT = 8;", "Current-video API targets 8 Watch Next items", failures);

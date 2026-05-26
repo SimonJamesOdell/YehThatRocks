@@ -83,7 +83,7 @@ function main() {
   assertContains(top100LinkSource, "params.set(\"resume\", \"1\");", "Top 100 warmed link sets resume query param", failures);
   assertContains(top100LinkSource, "const isTop100Route = pathname === \"/top100\";", "Leaderboard card detects Top 100 route context", failures);
   assertContains(top100LinkSource, "const showCategoryLabel = categoryLabel.length > 0 && (isNewRow || isTop100Route);", "Leaderboard card shares category-label behavior across New and Top 100 routes", failures);
-  assertContains(top100LinkSource, "<p className=\"leaderboardVideoCategory\">{categoryLabel}</p>", "Leaderboard card renders category label above artist-track metadata", failures);
+  assertContains(top100LinkSource, "<p className=\"leaderboardVideoCategory\"><VideoGenreLink genre={categoryLabel} stopPropagation /></p>", "Leaderboard card renders category label as deep-link metadata above artist-track text", failures);
   assertContains(top100LinkSource, "href={videoHref}", "Top 100 warmed link uses route-preserving href", failures);
   assertContains(top100LinkSource, "onMouseEnter={stagePendingSelection}", "Top 100 warmed link stages pending selection on hover", failures);
   assertContains(top100LinkSource, "onFocus={stagePendingSelection}", "Top 100 warmed link stages pending selection on focus", failures);

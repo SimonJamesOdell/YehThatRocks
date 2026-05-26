@@ -247,7 +247,7 @@ describe("getArtistBySlug — narrow query strategy", () => {
 
     const [sql, ...params] = queryRawUnsafeMock.mock.calls[0] as [string, ...unknown[]];
     expect(ensureArtistSearchPrefixIndexMock).toHaveBeenCalledTimes(1);
-    expect(sql).toContain("a.`artist_name_norm` LIKE ?");
+    expect(sql).toContain("(a.`artist_name_norm`) LIKE ?");
     expect(sql).not.toContain("%a%");
     expect(params).toEqual(["a%"]);
   });
@@ -264,7 +264,7 @@ describe("getArtistBySlug — narrow query strategy", () => {
 
     const [scanSql, ...scanParams] = queryRawUnsafeMock.mock.calls[1] as [string, ...unknown[]];
     expect(ensureArtistSearchPrefixIndexMock).toHaveBeenCalledTimes(1);
-    expect(scanSql).toContain("a.`artist_name_norm` LIKE ?");
+    expect(scanSql).toContain("(a.`artist_name_norm`) LIKE ?");
     expect(scanSql).not.toContain("LOWER(a.`artist`) LIKE ?");
     expect(scanParams).toEqual(["i%"]);
     expect(result?.name).toBe("Iron Maiden");

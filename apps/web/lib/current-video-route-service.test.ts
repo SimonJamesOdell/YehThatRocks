@@ -171,7 +171,7 @@ describe("buildWatchNextRelatedStream", () => {
     getNewestVideosMock.mockResolvedValueOnce([
       { id: "new-1", title: "Doom One", channelTitle: "Band A", genre: "doom metal", favourited: 0, description: "" },
       { id: "new-2", title: "Thrash One", channelTitle: "Band B", genre: "thrash metal", favourited: 0, description: "" },
-      { id: "new-3", title: "Doom Two", channelTitle: "Band C", genre: "epic doom", favourited: 0, description: "" },
+      { id: "new-3", title: "Doom Two", channelTitle: "Band C", genre: "doom metal", favourited: 0, description: "" },
     ]);
 
     const getTopPool = vi.fn().mockResolvedValue([

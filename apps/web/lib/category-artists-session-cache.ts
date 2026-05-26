@@ -432,8 +432,9 @@ export async function primeCategoryArtistsFullPayload(
     writeCategoryArtistsFirstPayloadToSessionCache(normalizedSlug, baseline);
 
     const hasKnownTotal = typeof baseline.totalArtists === "number" && Number.isFinite(baseline.totalArtists);
-    const totalArtists = hasKnownTotal
-      ? Math.max(0, baseline.totalArtists)
+    const knownTotalArtists = hasKnownTotal ? Number(baseline.totalArtists) : null;
+    const totalArtists = knownTotalArtists !== null
+      ? Math.max(0, knownTotalArtists)
       : baseline.artists.length;
 
     if (hasKnownTotal && (baseline.artists.length >= totalArtists || totalArtists === 0)) {

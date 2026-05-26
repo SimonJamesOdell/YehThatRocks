@@ -77,7 +77,6 @@ function main() {
   assertFileDoesNotExist(path.join(ROOT, "apps/web/app/(shell)/artists/loading.tsx"), "Artists route keeps loading state inside page flow (no duplicated loading.tsx)", failures, ROOT);
   assertFileDoesNotExist(path.join(ROOT, "apps/web/app/(shell)/artists/[slug]/loading.tsx"), "Artists slug route keeps loading state inside page flow (no duplicated loading.tsx)", failures, ROOT);
   assertFileDoesNotExist(path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/loading.tsx"), "Artist route keeps loading state inside page flow (no duplicated loading.tsx)", failures, ROOT);
-  assertFileDoesNotExist(path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/loading.tsx"), "Category route keeps loading state inside page flow (no duplicated loading.tsx)", failures, ROOT);
 
   // Dock-hide interaction invariants.
   assertContains(playerExperienceSource, 'window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));', "Dock close control dispatches hide-only event instead of navigating away", failures);

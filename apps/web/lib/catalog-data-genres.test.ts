@@ -62,7 +62,7 @@ describe("getArtistsByGenre — genre_all FULLTEXT strategy", () => {
     const { clearGenreCaches, getArtistsByGenre } = await import("@/lib/catalog-data-genres");
     clearGenreCaches();
 
-    await getArtistsByGenre("Metal");
+    await getArtistsByGenre("zeuhl");
 
     // Must have used $queryRaw (template literal) with FULLTEXT — not $queryRawUnsafe
     expect(queryRawMock).toHaveBeenCalled();
@@ -161,7 +161,7 @@ describe("getVideosByGenre — artist genre FULLTEXT strategy", () => {
     const { clearGenreCaches, getVideosByGenre } = await import("@/lib/catalog-data-genres");
     clearGenreCaches();
 
-    await getVideosByGenre("Metal");
+    await getVideosByGenre("zeuhl");
 
     // There should be a $queryRawUnsafe call for the artist genre lookup
     expect(queryRawUnsafeMock).toHaveBeenCalled();
