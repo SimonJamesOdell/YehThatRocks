@@ -296,12 +296,11 @@ async function maybeClassifyWithGroq(video, sourceCandidates) {
   if (strongCandidate) return null;
 
   const prompt = [
-    "Classify this music video into its most specific genre.",
+    "Classify this video into the most specific genre label.",
     "Return JSON only:",
     '{"genre":string|null,"isRockOrMetal":boolean,"confidence":number}',
     `title: ${String(video.title || "")}`,
     `parsedArtist: ${String(video.parsedArtist || "")}`,
-    `parsedTrack: ${String(video.parsedTrack || "")}`,
     `channelTitle: ${String(video.channelTitle || "")}`,
   ].join("\n");
 
@@ -316,6 +315,7 @@ async function maybeClassifyWithGroq(video, sourceCandidates) {
       body: JSON.stringify({
         model: GROQ_MODEL,
         temperature: 0.1,
+        max_tokens: 90,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: "You are a strict genre classification service." },

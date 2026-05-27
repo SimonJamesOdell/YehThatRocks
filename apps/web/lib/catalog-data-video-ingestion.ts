@@ -725,22 +725,37 @@ async function fetchOEmbedVideo(videoId: string): Promise<PersistableVideoRecord
 // ── Groq metadata classification ──────────────────────────────────────────────
 
 function buildGroqMetadataPrompt(video: PersistableVideoRecord) {
-  const descriptionSnippet = truncate(video.description ?? "", 700);
-  return [
-    "Extract music metadata from this YouTube video record.",
-    "Return JSON only with keys:",
+  const descriptionSnippet = truncate(video.description ?? "", 280);
+  const promptParts = [
+    "Extract rock/metal video metadata.",
+    "Return JSON only:",
     '{"artist":string|null,"track":string|null,"videoType":"official"|"lyric"|"live"|"cover"|"remix"|"fan"|"unknown","confidence":number,"reason":string}',
-    "Rules:",
-    "- YehThatRocks is a rock/metal catalog. If this is clearly non-rock/non-metal or non-music, return artist=null, track=null, confidence<=0.4 and explain why.",
-    "- artist must be the performing artist/band.",
-    "- track must be song title only.",
-    "- Do not include venue, city, date, official video, remaster, lyrics, HD in artist or track.",
-    "- If ambiguous, use null and lower confidence.",
-    "",
-    `videoId: ${video.id}`,
+    "Rules: artist is performer/band; track is song title only; omit terms like official video/remaster/lyrics/HD.",
+    "If clearly non-rock/non-metal or non-music: artist=null, track=null, confidence<=0.4, short reason.",
     `rawTitle: ${video.title}`,
-    `descriptionSnippet: ${descriptionSnippet}`,
-  ].join("\n");
+    `channelTitle: ${video.channelTitle}`,
+  ];
+
+  if (descriptionSnippet) {
+    promptParts.push(`descriptionSnippet: ${descriptionSnippet}`);
+  }
+
+  return promptParts.join("\n");
+}
+
+function buildGroqTokenUsageNote(model: string, usage: { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown } | null | undefined) {
+  const promptTokens = Number(usage?.prompt_tokens ?? NaN);
+  const completionTokens = Number(usage?.completion_tokens ?? NaN);
+  const totalTokens = Number(usage?.total_tokens ?? NaN);
+
+  const usageParts = [
+    `m=${model}`,
+    Number.isFinite(promptTokens) ? `pt=${promptTokens}` : null,
+    Number.isFinite(completionTokens) ? `ct=${completionTokens}` : null,
+    Number.isFinite(totalTokens) ? `tt=${totalTokens}` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return usageParts.join(" ").slice(0, 120);
 }
 
 async function classifyVideoMetadataWithGroq(video: PersistableVideoRecord): Promise<ParsedVideoMetadata | null> {
@@ -756,6 +771,7 @@ async function classifyVideoMetadataWithGroq(video: PersistableVideoRecord): Pro
       body: JSON.stringify({
         model: GROQ_MODEL,
         temperature: 0.1,
+        max_tokens: 140,
         response_format: { type: "json_object" },
         messages: [
           {
@@ -780,17 +796,24 @@ async function classifyVideoMetadataWithGroq(video: PersistableVideoRecord): Pro
       throw new Error(`Groq API error ${response.status}: ${body.slice(0, 260)}`);
     }
 
+    const payload = (await response.json()) as {
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        total_tokens?: number;
+      };
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+
     void recordExternalApiUsage({
       provider: "groq",
       endpoint: "chat/completions",
       units: 1,
       success: true,
       statusCode: response.status,
+      note: buildGroqTokenUsageNote(GROQ_MODEL, payload.usage),
     });
 
-    const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
     const parsed = extractJsonObject(payload?.choices?.[0]?.message?.content);
 
     return {
