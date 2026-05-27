@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getCategoryArtistTabCountsByGenre, getCategoryArtistsByGenre, getGenreBySlug } from "@/lib/catalog-data";
-import { OPERATIONAL_RETRY_LATER_MESSAGE } from "@/lib/operational-error-copy";
+import { getArtistsByGenre, getCategoryArtistTabCountsByGenre, getCategoryArtistsByGenre, getGenreBySlug } from "@/lib/catalog-data";
 
 type CategoryArtistsRouteContext = {
   params: Promise<{ slug: string }>;
@@ -21,10 +20,50 @@ export async function GET(request: NextRequest, context: CategoryArtistsRouteCon
       return NextResponse.json({ error: "Category not found" }, { status: 404 });
     }
 
-    const [artistsWithProbe, tabCounts] = await Promise.all([
-      getCategoryArtistsByGenre(genre, { offset, limit: limit + 1 }),
-      offset === 0 && includeTabCounts ? getCategoryArtistTabCountsByGenre(genre) : Promise.resolve(null),
-    ]);
+    let artistsWithProbe: Awaited<ReturnType<typeof getCategoryArtistsByGenre>> = [];
+    let tabCounts: Awaited<ReturnType<typeof getCategoryArtistTabCountsByGenre>> | null = null;
+
+    try {
+      const results = await Promise.all([
+        getCategoryArtistsByGenre(genre, { offset, limit: limit + 1 }),
+        offset === 0 && includeTabCounts ? getCategoryArtistTabCountsByGenre(genre) : Promise.resolve(null),
+      ]);
+      artistsWithProbe = results[0];
+      tabCounts = results[1];
+    } catch (error) {
+      console.warn("[api/categories/[slug]/artists] primary query degraded", {
+        message: error instanceof Error ? error.message : "unknown error",
+        slug,
+        genre,
+        limit,
+        offset,
+      });
+
+      try {
+        const allArtists = await getArtistsByGenre(genre);
+        const fallbackArtists = allArtists
+          .slice(offset, offset + limit + 1)
+          .map((artist) => ({
+            name: artist.name,
+            slug: artist.slug,
+            videoCount: 0,
+            thumbnailVideoId: null,
+            dominantGenre: artist.genre,
+          }));
+
+        artistsWithProbe = fallbackArtists;
+        if (offset === 0 && includeTabCounts) {
+          tabCounts = { all: allArtists.length };
+        }
+      } catch (fallbackError) {
+        console.error("[api/categories/[slug]/artists] fallback getArtistsByGenre failed", {
+          message: fallbackError instanceof Error ? fallbackError.message : "unknown error",
+          slug,
+          genre,
+        });
+      }
+    }
+
     const totalArtists = offset === 0 ? (tabCounts?.all ?? null) : null;
     const hasMore = artistsWithProbe.length > limit;
     const artists = artistsWithProbe.slice(0, limit);
@@ -44,11 +83,6 @@ export async function GET(request: NextRequest, context: CategoryArtistsRouteCon
       query: request.nextUrl.search,
     });
 
-    return NextResponse.json(
-      {
-        error: OPERATIONAL_RETRY_LATER_MESSAGE,
-      },
-      { status: 503 },
-    );
+    return NextResponse.json({ error: "Unable to load category artists" }, { status: 500 });
   }
 }

@@ -22,7 +22,18 @@ export async function GET(_request: NextRequest, context: CategoryRouteContext) 
       return NextResponse.json({ error: "Category not found" }, { status: 404 });
     }
 
-    const videosWithProbe = await getVideosByGenre(genre, { offset, limit: limit + 1 });
+    let videosWithProbe: Awaited<ReturnType<typeof getVideosByGenre>> = [];
+    try {
+      videosWithProbe = await getVideosByGenre(genre, { offset, limit: limit + 1 });
+    } catch (error) {
+      console.warn("[api/categories/[slug]] getVideosByGenre degraded", {
+        message: error instanceof Error ? error.message : "unknown error",
+        slug,
+        genre,
+        limit,
+        offset,
+      });
+    }
 
     // Filter blocked videos if user is authenticated
     const authResult = await getOptionalApiAuth(_request);
@@ -33,7 +44,16 @@ export async function GET(_request: NextRequest, context: CategoryRouteContext) 
 
     let artists: Awaited<ReturnType<typeof getArtistsByGenre>> | undefined;
     if (includeArtists) {
-      artists = await getArtistsByGenre(genre);
+      try {
+        artists = await getArtistsByGenre(genre);
+      } catch (error) {
+        console.warn("[api/categories/[slug]] getArtistsByGenre degraded", {
+          message: error instanceof Error ? error.message : "unknown error",
+          slug,
+          genre,
+        });
+        artists = [];
+      }
     }
 
     const hasMore = filteredVideos.length > limit;
