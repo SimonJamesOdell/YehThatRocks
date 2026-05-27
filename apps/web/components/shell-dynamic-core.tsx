@@ -65,7 +65,7 @@ import { fetchWithAuthRetry as fetchWithAuthRetryClient } from "@/lib/client-aut
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { dedupeVideos, filterHiddenVideos } from "@/lib/video-list-utils";
-import { parseSharedVideoMessage } from "@/lib/chat-shared-video";
+import { parseSharedVideoMessage, parseActivityMessage, buildActivityMessage } from "@/lib/chat-shared-video";
 import { prefetchCategoryCardsSessionCache } from "@/lib/category-cards-session-cache";
 import { FORUM_SECTIONS } from "@/lib/forum-sections";
 import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT, EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
@@ -1676,7 +1676,17 @@ function ShellDynamicInner({
       setClickedRelatedVideoId((activeId) => (activeId === trackId ? null : activeId));
       relatedClickFlashTimeoutRef.current = null;
     }, 240);
-  }, []);
+    if (isAuthenticated) {
+      const content = buildActivityMessage("playing", trackId);
+      if (content) {
+        void fetchWithAuthRetryClient("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "global", content }),
+        }).catch(() => undefined);
+      }
+    }
+  }, [isAuthenticated]);
   const commitWatchNextHide = useCallback((videoId: string) => {
     setHidingRelatedVideoIds((previous) => {
       if (previous.includes(videoId)) {
@@ -2630,7 +2640,8 @@ function ShellDynamicInner({
                 ) : (
                   chatMessages.map((message) => {
                     const isUserOnline = onlineUsers.some((u) => u.name === message.user.name);
-                    const sharedVideo = parseSharedVideoMessage(message.content);
+                    const activityMessage = parseActivityMessage(message.content);
+                    const sharedVideo = activityMessage ? null : parseSharedVideoMessage(message.content);
                     const profileHref = getUserProfileHref(message.user.name, message.user.id);
                     const isProfileClickable = Boolean(profileHref);
                     return (
@@ -2674,7 +2685,14 @@ function ShellDynamicInner({
                               ) : null}
                             </span>
                           </div>
-                          {sharedVideo ? (
+                          {activityMessage ? (
+                            <>
+                              <p className="chatActivityLabel">
+                                {activityMessage.action === "favourited" ? "favourited" : "is now playing"}
+                              </p>
+                              <SharedVideoMessageCard videoId={activityMessage.videoId} />
+                            </>
+                          ) : sharedVideo ? (
                             <>
                               <SharedVideoMessageCard videoId={sharedVideo.videoId} />
                             </>

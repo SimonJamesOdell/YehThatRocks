@@ -549,6 +549,37 @@
   text-overflow: ellipsis;
 }
 
+.chatSharedVideoGenre {
+  pointer-events: auto;
+}
+
+.chatSharedVideoGenre a {
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.chatSharedVideoArtist {
+  font-size: 0.75rem;
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chatSharedVideoCount {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.chatActivityLabel {
+  font-size: 0.76rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+  font-style: italic;
+}
+
 .chatComposer {
   display: flex;
   gap: 10px;

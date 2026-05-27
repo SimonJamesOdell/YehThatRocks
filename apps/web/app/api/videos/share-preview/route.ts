@@ -21,6 +21,9 @@ export async function GET(request: NextRequest) {
       id: video.id,
       title: video.title,
       channelTitle: video.channelTitle,
+      genre: video.genre ?? null,
+      parsedArtist: video.parsedArtist ?? null,
+      parsedTrack: video.parsedTrack ?? null,
     },
   });
 }

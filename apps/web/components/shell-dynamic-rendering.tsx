@@ -68,6 +68,9 @@ type SharedVideoPreview = {
   id: string;
   title: string;
   channelTitle: string;
+  genre: string | null;
+  parsedArtist: string | null;
+  parsedTrack: string | null;
 };
 
 function buildYouTubeThumbnail(videoId: string) {
@@ -75,7 +78,9 @@ function buildYouTubeThumbnail(videoId: string) {
 }
 
 export function SharedVideoMessageCard({ videoId }: { videoId: string }) {
+  const router = useRouter();
   const [preview, setPreview] = useState<SharedVideoPreview | null>(null);
+  const [artistVideoCount, setArtistVideoCount] = useState<number | null>(null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -92,6 +97,9 @@ export function SharedVideoMessageCard({ videoId }: { videoId: string }) {
             id: string;
             title: string;
             channelTitle: string;
+            genre?: string | null;
+            parsedArtist?: string | null;
+            parsedTrack?: string | null;
           };
         };
 
@@ -103,6 +111,9 @@ export function SharedVideoMessageCard({ videoId }: { videoId: string }) {
           id: payload.video.id,
           title: payload.video.title,
           channelTitle: payload.video.channelTitle,
+          genre: payload.video.genre ?? null,
+          parsedArtist: payload.video.parsedArtist ?? null,
+          parsedTrack: payload.video.parsedTrack ?? null,
         });
       } catch {
         // Keep generic card if preview fetch fails.
@@ -117,6 +128,40 @@ export function SharedVideoMessageCard({ videoId }: { videoId: string }) {
   }, [videoId]);
 
   const resolvedId = preview?.id ?? videoId;
+  const parsedArtist = preview?.parsedArtist?.trim() || preview?.channelTitle?.trim() || null;
+  const parsedArtistPagePath = parsedArtist ? getArtistPagePath(parsedArtist) : null;
+  const artistSlug = parsedArtistPagePath?.split("/")[2] ?? null;
+  const genreLabel = preview?.genre?.trim() || null;
+  const parsedTrack = preview?.parsedTrack?.trim() || null;
+  const artistVideoCountLabel = artistVideoCount !== null ? `${artistVideoCount.toLocaleString("en-US")} videos` : null;
+
+  useEffect(() => {
+    if (!artistSlug || !resolvedId) {
+      setArtistVideoCount(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const count = await fetchWatchNextArtistCount(artistSlug, resolvedId);
+      if (!cancelled) setArtistVideoCount(count);
+    })();
+    return () => { cancelled = true; };
+  }, [artistSlug, resolvedId]);
+
+  const handleOpenArtistPage = useCallback((event: ReactMouseEvent<HTMLSpanElement>) => {
+    if (!parsedArtistPagePath) return;
+    event.preventDefault();
+    event.stopPropagation();
+    router.push(parsedArtistPagePath);
+  }, [parsedArtistPagePath, router]);
+
+  const handleOpenArtistPageByKeyboard = useCallback((event: ReactKeyboardEvent<HTMLSpanElement>) => {
+    if (!parsedArtistPagePath) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    router.push(parsedArtistPagePath);
+  }, [parsedArtistPagePath, router]);
 
   return (
     <Link
@@ -141,14 +186,29 @@ export function SharedVideoMessageCard({ videoId }: { videoId: string }) {
         sizes="84px"
       />
       <span className="chatSharedVideoMeta">
-        <strong>{preview?.title ?? "Shared video"}</strong>
-        <span>
-          {preview?.channelTitle ? (
-            <ArtistWikiLink artistName={preview.channelTitle} videoId={resolvedId} className="artistInlineLink">
-              {preview.channelTitle}
+        {genreLabel ? (
+          <span className="chatSharedVideoGenre" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+            <VideoGenreLink genre={genreLabel} stopPropagation nestedInLink />
+          </span>
+        ) : null}
+        {parsedArtist ? (
+          <span className="chatSharedVideoArtist">
+            <ArtistWikiLink artistName={preview?.channelTitle ?? parsedArtist} videoId={resolvedId} className="artistInlineLink">
+              <span
+                role={parsedArtistPagePath ? "link" : undefined}
+                tabIndex={parsedArtistPagePath ? 0 : undefined}
+                onClick={handleOpenArtistPage}
+                onKeyDown={handleOpenArtistPageByKeyboard}
+              >
+                {parsedArtist.toUpperCase()}
+              </span>
             </ArtistWikiLink>
-          ) : "Tap to open"}
-        </span>
+          </span>
+        ) : null}
+        <strong>{parsedTrack || preview?.title || "Shared video"}</strong>
+        {artistVideoCountLabel ? (
+          <span className="chatSharedVideoCount">{artistVideoCountLabel}</span>
+        ) : null}
       </span>
     </Link>
   );
