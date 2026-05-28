@@ -193,6 +193,7 @@ export function SharedVideoMessageCard({
   const genreLabel = preview?.genre?.trim() || null;
   const parsedTrack = preview?.parsedTrack?.trim() || null;
   const parsedArtistLabel = parsedArtist?.toUpperCase() ?? null;
+  const resolvedArtistNameForWiki = preview?.channelTitle?.trim() || parsedArtist || fallbackChannel || "Unknown Artist";
   const resolvedTrack = parsedTrack
     || (resolvedTitle ? inferTrackForWatchNext(resolvedTitle, parsedArtist ?? "") : null)
     || resolvedTitle
@@ -235,7 +236,7 @@ export function SharedVideoMessageCard({
         <h3>
           {parsedArtistLabel && resolvedTrack ? (
             <>
-              <ArtistWikiLink artistName={preview?.channelTitle ?? parsedArtist} videoId={resolvedId} className="artistInlineLink">
+              <ArtistWikiLink artistName={resolvedArtistNameForWiki} videoId={resolvedId} className="artistInlineLink">
                 <span
                   role={parsedArtistPagePath ? "link" : undefined}
                   tabIndex={parsedArtistPagePath ? 0 : undefined}
@@ -249,7 +250,7 @@ export function SharedVideoMessageCard({
               <span>{resolvedTrack}</span>
             </>
           ) : parsedArtistLabel ? (
-            <ArtistWikiLink artistName={preview?.channelTitle ?? parsedArtist} videoId={resolvedId} className="artistInlineLink">
+            <ArtistWikiLink artistName={resolvedArtistNameForWiki} videoId={resolvedId} className="artistInlineLink">
               <span
                 role={parsedArtistPagePath ? "link" : undefined}
                 tabIndex={parsedArtistPagePath ? 0 : undefined}
