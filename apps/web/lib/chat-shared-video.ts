@@ -10,8 +10,8 @@ type SharedVideoPayload = {
 };
 
 export type ActivityMessagePayload = {
-  action: "favourited" | "playing";
-  videoId: string;
+  action: "online" | "favourited" | "playing";
+  videoId?: string;
   title?: string;
   channelTitle?: string;
 };
@@ -71,12 +71,16 @@ export function parseSharedVideoMessage(content: string) {
 }
 
 export function buildActivityMessage(
-  action: "favourited" | "playing",
-  videoId: string,
+  action: "online" | "favourited" | "playing",
+  videoId?: string,
   title?: string,
   channelTitle?: string,
 ): string {
-  const normalizedVideoId = videoId.trim();
+  if (action === "online") {
+    return `${ACTIVITY_MESSAGE_PREFIX}${action}${SHARED_VIDEO_FIELD_SEPARATOR}${SHARED_VIDEO_FIELD_SEPARATOR}${SHARED_VIDEO_FIELD_SEPARATOR}`;
+  }
+
+  const normalizedVideoId = videoId?.trim() ?? "";
   if (!YOUTUBE_VIDEO_ID_PATTERN.test(normalizedVideoId)) {
     return "";
   }
@@ -94,22 +98,31 @@ export function parseActivityMessage(content: string): ActivityMessagePayload | 
   }
 
   const payload = normalized.slice(ACTIVITY_MESSAGE_PREFIX.length);
-  const [action, videoId, rawTitle = "", rawChannelTitle = ""] = payload.split(SHARED_VIDEO_FIELD_SEPARATOR);
+  const [action, videoIdRaw = "", rawTitle = "", rawChannelTitle = ""] = payload.split(SHARED_VIDEO_FIELD_SEPARATOR);
 
-  if (!action || !videoId) {
+  if (!action) {
     return null;
   }
 
-  if (action !== "favourited" && action !== "playing") {
-    return null;
-  }
-
-  if (!YOUTUBE_VIDEO_ID_PATTERN.test(videoId)) {
+  if (action !== "online" && action !== "favourited" && action !== "playing") {
     return null;
   }
 
   const title = sanitizeField(rawTitle);
   const channelTitle = sanitizeField(rawChannelTitle);
+
+  if (action === "online") {
+    return {
+      action,
+      title: title || undefined,
+      channelTitle: channelTitle || undefined,
+    };
+  }
+
+  const videoId = videoIdRaw.trim();
+  if (!YOUTUBE_VIDEO_ID_PATTERN.test(videoId)) {
+    return null;
+  }
 
   return {
     action,

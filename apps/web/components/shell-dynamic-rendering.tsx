@@ -36,6 +36,8 @@ function inferTrackForWatchNext(title: string, artist: string): string {
 const watchNextArtistCountCache = new Map<string, number | null>();
 const watchNextArtistCountInFlight = new Map<string, Promise<number | null>>();
 const GENERIC_WATCH_NEXT_ARTIST_LABELS = new Set(["unknown artist", "unknown", "youtube"]);
+const sharedVideoPreviewCache = new Map<string, SharedVideoPreview | null>();
+const sharedVideoPreviewInFlight = new Map<string, Promise<SharedVideoPreview | null>>();
 
 async function fetchWatchNextArtistCount(artistSlug: string, videoId: string): Promise<number | null> {
   const cacheKey = `${artistSlug}:${videoId}`;
@@ -78,6 +80,72 @@ function buildYouTubeThumbnail(videoId: string) {
   return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
 }
 
+async function fetchSharedVideoPreview(videoId: string): Promise<SharedVideoPreview | null> {
+  if (sharedVideoPreviewCache.has(videoId)) {
+    return sharedVideoPreviewCache.get(videoId) ?? null;
+  }
+
+  const inFlight = sharedVideoPreviewInFlight.get(videoId);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const request = (async () => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const response = await fetch(`/api/videos/share-preview?v=${encodeURIComponent(videoId)}`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          if (response.status === 404 || response.status === 400) {
+            break;
+          }
+
+          continue;
+        }
+
+        const payload = (await response.json()) as {
+          video?: {
+            id: string;
+            title: string;
+            channelTitle: string;
+            genre?: string | null;
+            parsedArtist?: string | null;
+            parsedTrack?: string | null;
+          };
+        };
+
+        if (!payload.video?.id) {
+          continue;
+        }
+
+        const resolved: SharedVideoPreview = {
+          id: payload.video.id,
+          title: payload.video.title,
+          channelTitle: payload.video.channelTitle,
+          genre: payload.video.genre ?? null,
+          parsedArtist: payload.video.parsedArtist ?? null,
+          parsedTrack: payload.video.parsedTrack ?? null,
+        };
+
+        sharedVideoPreviewCache.set(videoId, resolved);
+        return resolved;
+      } catch {
+        // Retry transient failures.
+      }
+    }
+
+    sharedVideoPreviewCache.set(videoId, null);
+    return null;
+  })().finally(() => {
+    sharedVideoPreviewInFlight.delete(videoId);
+  });
+
+  sharedVideoPreviewInFlight.set(videoId, request);
+  return request;
+}
+
 export function SharedVideoMessageCard({
   videoId,
   fallbackTitle,
@@ -95,38 +163,12 @@ export function SharedVideoMessageCard({
     let isCancelled = false;
 
     async function loadPreview() {
-      try {
-        const response = await fetch(`/api/videos/share-preview?v=${encodeURIComponent(videoId)}`);
-        if (!response.ok) {
-          return;
-        }
-
-        const payload = (await response.json()) as {
-          video?: {
-            id: string;
-            title: string;
-            channelTitle: string;
-            genre?: string | null;
-            parsedArtist?: string | null;
-            parsedTrack?: string | null;
-          };
-        };
-
-        if (isCancelled || !payload.video?.id) {
-          return;
-        }
-
-        setPreview({
-          id: payload.video.id,
-          title: payload.video.title,
-          channelTitle: payload.video.channelTitle,
-          genre: payload.video.genre ?? null,
-          parsedArtist: payload.video.parsedArtist ?? null,
-          parsedTrack: payload.video.parsedTrack ?? null,
-        });
-      } catch {
-        // Keep generic card if preview fetch fails.
+      const resolvedPreview = await fetchSharedVideoPreview(videoId);
+      if (isCancelled || !resolvedPreview) {
+        return;
       }
+
+      setPreview(resolvedPreview);
     }
 
     void loadPreview();

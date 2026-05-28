@@ -64,7 +64,7 @@ import { detectAppendOnly, filterSeenFromWatchNext } from "@/components/shell-dy
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { dedupeVideos, filterHiddenVideos } from "@/lib/video-list-utils";
-import { parseSharedVideoMessage, parseActivityMessage } from "@/lib/chat-shared-video";
+import { buildSharedVideoMessage, parseSharedVideoMessage, parseActivityMessage } from "@/lib/chat-shared-video";
 import { prefetchCategoryCardsSessionCache } from "@/lib/category-cards-session-cache";
 import { FORUM_SECTIONS } from "@/lib/forum-sections";
 import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT, EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
@@ -576,6 +576,46 @@ function ShellDynamicInner({
     fetchWithAuthRetry,
     checkAuthState: checkAuthStateForProtectedAction,
   });
+  const [chatShareState, setChatShareState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const chatShareResetTimeoutRef = useRef<number | null>(null);
+
+  const handleShareCurrentVideoToChat = useCallback(async () => {
+    const content = buildSharedVideoMessage(currentVideo.id, currentVideo.title, currentVideo.channelTitle);
+    if (!content) {
+      setChatShareState("error");
+      return;
+    }
+
+    setChatShareState("sending");
+
+    try {
+      const response = await fetchWithAuthRetry("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "global",
+          content,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`share-chat-failed:${response.status}`);
+      }
+
+      setChatShareState("sent");
+    } catch {
+      setChatShareState("error");
+    }
+
+    if (chatShareResetTimeoutRef.current !== null) {
+      window.clearTimeout(chatShareResetTimeoutRef.current);
+    }
+
+    chatShareResetTimeoutRef.current = window.setTimeout(() => {
+      setChatShareState("idle");
+      chatShareResetTimeoutRef.current = null;
+    }, 1800);
+  }, [currentVideo.channelTitle, currentVideo.id, currentVideo.title, fetchWithAuthRetry]);
   const {
     deletingMagazineSlugs,
     magazineDeleteErrors,
@@ -636,6 +676,15 @@ function ShellDynamicInner({
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (chatShareResetTimeoutRef.current !== null) {
+        window.clearTimeout(chatShareResetTimeoutRef.current);
+        chatShareResetTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -2677,13 +2726,19 @@ function ShellDynamicInner({
                           {activityMessage ? (
                             <>
                               <p className="chatActivityLabel">
-                                {activityMessage.action === "favourited" ? "favourited" : "is now playing"}
+                                {activityMessage.action === "online"
+                                  ? "came online"
+                                  : activityMessage.action === "favourited"
+                                    ? "favourited"
+                                    : "is now playing"}
                               </p>
-                              <SharedVideoMessageCard
-                                videoId={activityMessage.videoId}
-                                fallbackTitle={activityMessage.title}
-                                fallbackChannelTitle={activityMessage.channelTitle}
-                              />
+                              {activityMessage.videoId ? (
+                                <SharedVideoMessageCard
+                                  videoId={activityMessage.videoId}
+                                  fallbackTitle={activityMessage.title}
+                                  fallbackChannelTitle={activityMessage.channelTitle}
+                                />
+                              ) : null}
                             </>
                           ) : sharedVideo ? (
                             <>
@@ -2705,6 +2760,24 @@ function ShellDynamicInner({
               {chatMode === "global" ? (
                 isAuthenticated ? (
                   <>
+                    <div className="chatSharePreview" role="region" aria-label="Share current video">
+                      <SharedVideoMessageCard
+                        videoId={currentVideo.id}
+                        fallbackTitle={currentVideo.title}
+                        fallbackChannelTitle={currentVideo.channelTitle}
+                      />
+                      <div className="chatSharePreviewActions">
+                        <button
+                          type="button"
+                          onClick={() => { void handleShareCurrentVideoToChat(); }}
+                          disabled={chatShareState === "sending"}
+                        >
+                          Share
+                        </button>
+                        {chatShareState === "sent" ? <span className="chatSharePreviewStatus">Shared</span> : null}
+                        {chatShareState === "error" ? <span className="chatSharePreviewStatus chatSharePreviewStatusError">Share failed</span> : null}
+                      </div>
+                    </div>
                     <form className="chatComposer" onSubmit={handleChatSubmit}>
                       <input
                         type="text"

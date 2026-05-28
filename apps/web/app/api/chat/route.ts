@@ -6,6 +6,7 @@ import { withAuthAndBody } from "@/lib/api-route-pipeline";
 import { chatQuerySchema, createChatMessageSchema } from "@/lib/api-schemas";
 import { deleteChatMessageSchema } from "@/lib/api-schemas";
 import { chatChannel, chatEvents } from "@/lib/chat-events";
+import { buildActivityMessage } from "@/lib/chat-shared-video";
 import {
   deleteChatMessageByIdForRequester,
   fetchChatMessages,
@@ -16,6 +17,28 @@ import {
 import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
 
 const HTTP_FORBIDDEN = 403;
+
+async function emitOnlinePresenceActivity(userId: number) {
+  const content = buildActivityMessage("online");
+  if (!content) {
+    return;
+  }
+
+  try {
+    const message = await insertChatMessage({
+      userId,
+      mode: "global",
+      videoId: undefined,
+      content,
+    });
+
+    if (message) {
+      chatEvents.emit(chatChannel("global", null), message);
+    }
+  } catch {
+    // Presence activity should never break chat fetch/post flows.
+  }
+}
 
 export async function GET(request: NextRequest) {
   const authContext = await getOptionalApiAuth(request);
@@ -39,7 +62,10 @@ export async function GET(request: NextRequest) {
   const hasValidAuthUserId = typeof authUserId === "number" && Number.isInteger(authUserId) && authUserId > 0;
 
   if (hasValidAuthUserId) {
-    await touchOnlinePresenceThrottled(authUserId).catch(() => undefined);
+    const becameOnline = await touchOnlinePresenceThrottled(authUserId).catch(() => false);
+    if (becameOnline) {
+      void emitOnlinePresenceActivity(authUserId);
+    }
   }
 
   if (mode === "online") {
@@ -79,7 +105,10 @@ export async function POST(request: NextRequest) {
     return result.response;
   }
 
-  await touchOnlinePresenceThrottled(result.auth.userId).catch(() => undefined);
+  const becameOnline = await touchOnlinePresenceThrottled(result.auth.userId).catch(() => false);
+  if (becameOnline) {
+    void emitOnlinePresenceActivity(result.auth.userId);
+  }
 
   const { content, mode, videoId } = result.data;
 

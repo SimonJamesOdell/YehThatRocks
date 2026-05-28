@@ -174,15 +174,42 @@ function pruneOnlinePresenceTouchCache(now: number) {
   }
 }
 
-async function touchOnlinePresence(userId: number) {
+function isPresenceFresh(lastSeen: number | Date | null, type: "epoch" | "datetime", nowMs: number) {
+  if (!lastSeen) {
+    return false;
+  }
+
+  if (type === "datetime") {
+    const seenMs = lastSeen instanceof Date
+      ? lastSeen.getTime()
+      : new Date(lastSeen).getTime();
+    if (!Number.isFinite(seenMs)) {
+      return false;
+    }
+    return nowMs - seenMs <= 5 * 60_000;
+  }
+
+  const epochSeconds = typeof lastSeen === "number"
+    ? lastSeen
+    : Number.parseFloat(String(lastSeen));
+  if (!Number.isFinite(epochSeconds)) {
+    return false;
+  }
+
+  return nowMs - (epochSeconds * 1_000) <= 5 * 60_000;
+}
+
+async function touchOnlinePresence(userId: number): Promise<boolean> {
   const columns = await getOnlineColumns();
   const userIdCol = escapeIdentifier(columns.userId);
   const lastSeenCol = escapeIdentifier(columns.lastSeen);
   const nowExpr = columns.lastSeenType === "datetime" ? "UTC_TIMESTAMP(3)" : "UNIX_TIMESTAMP(UTC_TIMESTAMP())";
+  const nowMs = Date.now();
 
-  const existing = await prisma.$queryRawUnsafe<Array<{ marker: number }>>(
+  const existing = await prisma.$queryRawUnsafe<Array<{ marker: number; lastSeen: number | Date | null }>>(
     `
-      SELECT 1 AS marker
+      SELECT 1 AS marker,
+             o.${lastSeenCol} AS lastSeen
       FROM online o
       WHERE o.${userIdCol} = ?
       LIMIT 1
@@ -191,6 +218,7 @@ async function touchOnlinePresence(userId: number) {
   );
 
   if (existing.length > 0) {
+    const wasFreshlyOnline = isPresenceFresh(existing[0]?.lastSeen ?? null, columns.lastSeenType, nowMs);
     const assignments = [`${lastSeenCol} = ${nowExpr}`];
 
     if (columns.updatedAt) {
@@ -205,7 +233,7 @@ async function touchOnlinePresence(userId: number) {
       `,
       userId,
     );
-    return;
+    return !wasFreshlyOnline;
   }
 
   const insertColumns = [userIdCol, lastSeenCol];
@@ -228,19 +256,22 @@ async function touchOnlinePresence(userId: number) {
     `,
     userId,
   );
+
+  return true;
 }
 
-export async function touchOnlinePresenceThrottled(userId: number) {
+export async function touchOnlinePresenceThrottled(userId: number): Promise<boolean> {
   const now = Date.now();
   const lastTouchedAt = onlinePresenceTouchedAt.get(userId) ?? 0;
 
   if (now - lastTouchedAt < ONLINE_PRESENCE_TOUCH_INTERVAL_MS) {
-    return;
+    return false;
   }
 
-  await touchOnlinePresence(userId);
+  const becameOnline = await touchOnlinePresence(userId);
   onlinePresenceTouchedAt.set(userId, now);
   pruneOnlinePresenceTouchCache(now);
+  return becameOnline;
 }
 
 // ── Message helpers ───────────────────────────────────────────────────────────
