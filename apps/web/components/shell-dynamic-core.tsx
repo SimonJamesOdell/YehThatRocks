@@ -2736,7 +2736,9 @@ function ShellDynamicInner({
                             <>
                               <p className="chatActivityLabel">
                                 {activityMessage.action === "online"
-                                  ? "came online"
+                                  ? "joined the chat"
+                                  : activityMessage.action === "offline"
+                                    ? "exited the chat"
                                   : activityMessage.action === "favourited"
                                     ? "favourited"
                                     : "is now playing"}

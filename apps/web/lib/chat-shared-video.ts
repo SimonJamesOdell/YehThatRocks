@@ -10,7 +10,7 @@ type SharedVideoPayload = {
 };
 
 export type ActivityMessagePayload = {
-  action: "online" | "favourited" | "playing";
+  action: "online" | "offline" | "favourited" | "playing";
   videoId?: string;
   title?: string;
   channelTitle?: string;
@@ -71,12 +71,12 @@ export function parseSharedVideoMessage(content: string) {
 }
 
 export function buildActivityMessage(
-  action: "online" | "favourited" | "playing",
+  action: "online" | "offline" | "favourited" | "playing",
   videoId?: string,
   title?: string,
   channelTitle?: string,
 ): string {
-  if (action === "online") {
+  if (action === "online" || action === "offline") {
     return `${ACTIVITY_MESSAGE_PREFIX}${action}${SHARED_VIDEO_FIELD_SEPARATOR}${SHARED_VIDEO_FIELD_SEPARATOR}${SHARED_VIDEO_FIELD_SEPARATOR}`;
   }
 
@@ -104,14 +104,14 @@ export function parseActivityMessage(content: string): ActivityMessagePayload | 
     return null;
   }
 
-  if (action !== "online" && action !== "favourited" && action !== "playing") {
+  if (action !== "online" && action !== "offline" && action !== "favourited" && action !== "playing") {
     return null;
   }
 
   const title = sanitizeField(rawTitle);
   const channelTitle = sanitizeField(rawChannelTitle);
 
-  if (action === "online") {
+  if (action === "online" || action === "offline") {
     return {
       action,
       title: title || undefined,

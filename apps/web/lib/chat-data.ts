@@ -68,10 +68,16 @@ export type OnlineUser = {
   lastSeen: string | null;
 };
 
+export type OnlinePresenceTransition = {
+  becameOnline: boolean;
+  wentOfflineUserIds: number[];
+};
+
 // ── Schema introspection (cached) ─────────────────────────────────────────────
 
 const ONLINE_PRESENCE_TOUCH_INTERVAL_MS = 45_000;
 const ONLINE_PRESENCE_TOUCH_CACHE_TTL_MS = 5 * 60_000;
+const ONLINE_PRESENCE_FRESHNESS_MS = 5 * 60_000;
 
 let cachedMessageColumns: MessageColumnMap | null = null;
 let cachedOnlineColumns: OnlineColumnMap | null = null;
@@ -186,7 +192,7 @@ function isPresenceFresh(lastSeen: number | Date | null, type: "epoch" | "dateti
     if (!Number.isFinite(seenMs)) {
       return false;
     }
-    return nowMs - seenMs <= 5 * 60_000;
+    return nowMs - seenMs <= ONLINE_PRESENCE_FRESHNESS_MS;
   }
 
   const epochSeconds = typeof lastSeen === "number"
@@ -196,7 +202,57 @@ function isPresenceFresh(lastSeen: number | Date | null, type: "epoch" | "dateti
     return false;
   }
 
-  return nowMs - (epochSeconds * 1_000) <= 5 * 60_000;
+  return nowMs - (epochSeconds * 1_000) <= ONLINE_PRESENCE_FRESHNESS_MS;
+}
+
+async function pruneStaleOnlinePresence(excludeUserId: number): Promise<number[]> {
+  const columns = await getOnlineColumns();
+  const userIdCol = escapeIdentifier(columns.userId);
+  const lastSeenCol = escapeIdentifier(columns.lastSeen);
+  const staleConditionSql =
+    columns.lastSeenType === "datetime"
+      ? `${lastSeenCol} < DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 5 MINUTE)`
+      : `${lastSeenCol} < UNIX_TIMESTAMP(UTC_TIMESTAMP()) - 300`;
+
+  const staleRows = await prisma.$queryRawUnsafe<Array<{ userId: number | null }>>(
+    `
+      SELECT DISTINCT ${userIdCol} AS userId
+      FROM online
+      WHERE ${userIdCol} IS NOT NULL
+        AND ${userIdCol} <> ?
+        AND ${staleConditionSql}
+      LIMIT 80
+    `,
+    excludeUserId,
+  );
+
+  const staleUserIds = staleRows
+    .map((row) => Number(row.userId))
+    .filter((value) => Number.isInteger(value) && value > 0);
+
+  if (staleUserIds.length === 0) {
+    return [];
+  }
+
+  const wentOfflineUserIds: number[] = [];
+
+  for (const staleUserId of staleUserIds) {
+    const deletedRows = await prisma.$executeRawUnsafe(
+      `
+        DELETE FROM online
+        WHERE ${userIdCol} = ?
+          AND ${staleConditionSql}
+      `,
+      staleUserId,
+    );
+
+    if (Number(deletedRows ?? 0) > 0) {
+      wentOfflineUserIds.push(staleUserId);
+      onlinePresenceTouchedAt.delete(staleUserId);
+    }
+  }
+
+  return wentOfflineUserIds;
 }
 
 async function touchOnlinePresence(userId: number): Promise<boolean> {
@@ -260,18 +316,25 @@ async function touchOnlinePresence(userId: number): Promise<boolean> {
   return true;
 }
 
-export async function touchOnlinePresenceThrottled(userId: number): Promise<boolean> {
+export async function touchOnlinePresenceThrottled(userId: number): Promise<OnlinePresenceTransition> {
   const now = Date.now();
   const lastTouchedAt = onlinePresenceTouchedAt.get(userId) ?? 0;
 
   if (now - lastTouchedAt < ONLINE_PRESENCE_TOUCH_INTERVAL_MS) {
-    return false;
+    return {
+      becameOnline: false,
+      wentOfflineUserIds: [],
+    };
   }
 
+  const wentOfflineUserIds = await pruneStaleOnlinePresence(userId);
   const becameOnline = await touchOnlinePresence(userId);
   onlinePresenceTouchedAt.set(userId, now);
   pruneOnlinePresenceTouchCache(now);
-  return becameOnline;
+  return {
+    becameOnline,
+    wentOfflineUserIds,
+  };
 }
 
 // ── Message helpers ───────────────────────────────────────────────────────────

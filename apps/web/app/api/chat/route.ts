@@ -18,8 +18,8 @@ import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit
 
 const HTTP_FORBIDDEN = 403;
 
-async function emitOnlinePresenceActivity(userId: number) {
-  const content = buildActivityMessage("online");
+async function emitPresenceActivity(userId: number, action: "online" | "offline") {
+  const content = buildActivityMessage(action);
   if (!content) {
     return;
   }
@@ -62,9 +62,15 @@ export async function GET(request: NextRequest) {
   const hasValidAuthUserId = typeof authUserId === "number" && Number.isInteger(authUserId) && authUserId > 0;
 
   if (hasValidAuthUserId) {
-    const becameOnline = await touchOnlinePresenceThrottled(authUserId).catch(() => false);
-    if (becameOnline) {
-      void emitOnlinePresenceActivity(authUserId);
+    const transition = await touchOnlinePresenceThrottled(authUserId).catch(() => ({
+      becameOnline: false,
+      wentOfflineUserIds: [],
+    }));
+    if (transition.becameOnline) {
+      void emitPresenceActivity(authUserId, "online");
+    }
+    for (const offlineUserId of transition.wentOfflineUserIds) {
+      void emitPresenceActivity(offlineUserId, "offline");
     }
   }
 
@@ -105,9 +111,15 @@ export async function POST(request: NextRequest) {
     return result.response;
   }
 
-  const becameOnline = await touchOnlinePresenceThrottled(result.auth.userId).catch(() => false);
-  if (becameOnline) {
-    void emitOnlinePresenceActivity(result.auth.userId);
+  const transition = await touchOnlinePresenceThrottled(result.auth.userId).catch(() => ({
+    becameOnline: false,
+    wentOfflineUserIds: [],
+  }));
+  if (transition.becameOnline) {
+    void emitPresenceActivity(result.auth.userId, "online");
+  }
+  for (const offlineUserId of transition.wentOfflineUserIds) {
+    void emitPresenceActivity(offlineUserId, "offline");
   }
 
   const { content, mode, videoId } = result.data;
