@@ -40,4 +40,8 @@ describe("genre bucket alias mapping", () => {
     expect(resolveTopLevelGenreBucket("gothic metal")).toBe("Nu-metal & Metalcore");
     expect(resolveTopLevelGenreBucket("Gothic Metal")).toBe("Nu-metal & Metalcore");
   });
+
+  it("prefers specific punk terms over generic rock term", () => {
+    expect(resolveTopLevelGenreBucket("punk rock")).toBe("Punk & Hardcore");
+  });
 });

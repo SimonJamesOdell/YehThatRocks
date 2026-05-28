@@ -201,6 +201,31 @@ function tokenMatchesTerm(normalizedToken: string, normalizedTerm: string) {
     || normalizedToken.includes(` ${normalizedTerm} `);
 }
 
+function getBucketSpecificityScore(normalizedInput: string, bucket: GenreBucket): number {
+  const normalizedLabel = normalizeGenreToken(bucket.label);
+  if (normalizedLabel === normalizedInput) {
+    // Direct bucket-label matches should always win.
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  let bestScore = -1;
+  for (const term of bucket.terms) {
+    const normalizedTerm = normalizeGenreToken(term);
+    if (!tokenMatchesTerm(normalizedInput, normalizedTerm)) {
+      continue;
+    }
+
+    // Prefer more specific matches (multi-word, longer terms) over generic terms like "rock".
+    const termWordCount = normalizedTerm.split(" ").length;
+    const termScore = termWordCount * 100 + normalizedTerm.length;
+    if (termScore > bestScore) {
+      bestScore = termScore;
+    }
+  }
+
+  return bestScore;
+}
+
 export function resolveAllTopLevelGenreBuckets(input: string): string[] {
   const normalizedInput = normalizeGenreToken(canonicalizeGenreLabel(input));
   if (!normalizedInput) {
@@ -236,13 +261,21 @@ export function resolveAllTopLevelGenreBuckets(input: string): string[] {
   }
 
   return TOP_LEVEL_GENRE_BUCKETS
-    .filter((bucket) =>
-      bucket.terms.some((term) => {
-        const normalizedTerm = normalizeGenreToken(term);
-        return tokenMatchesTerm(normalizedInput, normalizedTerm);
-      }),
-    )
-    .map((bucket) => bucket.label);
+    .map((bucket, index) => ({
+      bucket,
+      index,
+      score: getBucketSpecificityScore(normalizedInput, bucket),
+    }))
+    .filter((entry) => entry.score >= 0)
+    .sort((a, b) => {
+      if (a.score !== b.score) {
+        return b.score - a.score;
+      }
+
+      // Stable fallback keeps existing bucket order when specificity ties.
+      return a.index - b.index;
+    })
+    .map((entry) => entry.bucket.label);
 }
 
 export function resolveTopLevelGenreBucket(input: string): string | null {
