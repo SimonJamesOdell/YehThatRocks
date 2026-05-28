@@ -332,7 +332,7 @@ function main() {
   assertContains(seenToggleRouteSource, "setSeenTogglePreferenceForUser", "Seen-toggle API writes persisted values through data layer", failures);
 
   // Share and artist wiki helpers.
-  assertContains(sharePreviewRouteSource, 'const video = await getVideoForSharing(videoId);', "Share-preview API resolves lightweight share payloads", failures);
+  assertContains(sharePreviewRouteSource, 'getVideoForSharing(videoId)', "Share-preview API resolves lightweight share payloads", failures);
   assertContains(sharePreviewRouteSource, 'return NextResponse.json({', "Share-preview API returns JSON payload", failures);
   assertContains(shareHtmlRouteSource, 'const shareMetadata = await resolveShareMetadataForOrigin(rawVideoId, titleHint, siteOrigin);', "Short share route resolves host-aware metadata", failures);
   assertContains(shareHtmlRouteSource, '<meta property="og:title"', "Short share route emits Open Graph metadata", failures);
@@ -417,6 +417,31 @@ function main() {
   assertContains(cssSource, '.primaryActionPlaylistMenuAction:hover:not(:disabled)', "Footer playlist menu keeps explicit hover accent styles", failures);
   assertContains(cssSource, '.categoryHeaderWikiLink', "Artist wiki header link styles are defined", failures);
   assertContains(cssSource, '.artistInlineLink', "Artist wiki inline link styles are defined", failures);
+
+  // ── Chat share preview card ─────────────────────────────────────────────
+  const shellDynamicRenderingSource = readFileStrict(path.join(ROOT, "apps/web/components/shell-dynamic-rendering.tsx"), ROOT);
+
+  // Component structure
+  assertContains(shellDynamicRenderingSource, 'export function SharedVideoMessageCard(', "SharedVideoMessageCard is exported from shell-dynamic-rendering", failures);
+  assertContains(shellDynamicRenderingSource, 'onShare?: () => void;', "SharedVideoMessageCard accepts onShare callback prop", failures);
+  assertContains(shellDynamicRenderingSource, 'onDismiss?: () => void;', "SharedVideoMessageCard accepts onDismiss callback prop", failures);
+  assertContains(shellDynamicRenderingSource, '"idle" | "sending" | "sent" | "error" | "hidden"', "SharedVideoMessageCard shareState prop includes hidden state", failures);
+  assertContains(shellDynamicRenderingSource, 'className="chatSharedVideoCardDismiss"', "SharedVideoMessageCard renders circular dismiss button", failures);
+  assertContains(shellDynamicRenderingSource, 'className={`chatSharedVideoCardShareBtn', "SharedVideoMessageCard renders circular share button", failures);
+  assertContains(shellDynamicRenderingSource, 'chatSharedVideoCardSlotActions', "SharedVideoMessageCard marks slot as actions container for absolute button positioning", failures);
+
+  // Shell integration
+  assertContains(shellSource, 'chatShareState !== "hidden"', "Shell hides share card when state is hidden", failures);
+  assertContains(shellSource, 'onDismiss={() => setChatShareState("hidden")', "Shell dismisses share card by setting state to hidden", failures);
+  assertContains(shellSource, '}, [currentVideo.id]);', "Shell resets share card to idle whenever the playing video changes", failures);
+  assertContains(shellSource, '"idle" | "sending" | "sent" | "error" | "hidden"', "Shell chatShareState type includes hidden", failures);
+
+  // CSS
+  assertContains(cssSource, '.chatSharedVideoCardDismiss', "CSS defines circular dismiss button for share card", failures);
+  assertContains(cssSource, '.chatSharedVideoCardShareBtn', "CSS defines circular share button for share card", failures);
+  assertContains(cssSource, '.chatSharedVideoCardSlotActions', "CSS positions share card slot as relative container for absolute buttons", failures);
+  assertContains(cssSource, '.chatSharedVideoCardShareBtnSent', "CSS defines sent state style for share button", failures);
+  assertContains(cssSource, '.chatSharedVideoCardShareBtnError', "CSS defines error state style for share button", failures);
 
   finishInvariantCheck({
     failures,

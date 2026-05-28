@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { memo, useCallback, useEffect, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { memo, useCallback, useEffect, useState, type CSSProperties, type ReactNode, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
@@ -150,14 +150,21 @@ export function SharedVideoMessageCard({
   videoId,
   fallbackTitle,
   fallbackChannelTitle,
+  rightActions,
+  onShare,
+  onDismiss,
+  shareState,
 }: {
   videoId: string;
   fallbackTitle?: string;
   fallbackChannelTitle?: string;
+  rightActions?: ReactNode;
+  onShare?: () => void;
+  onDismiss?: () => void;
+  shareState?: "idle" | "sending" | "sent" | "error" | "hidden";
 }) {
   const router = useRouter();
   const [preview, setPreview] = useState<SharedVideoPreview | null>(null);
-  const [artistVideoCount, setArtistVideoCount] = useState<number | null>(null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -183,23 +190,13 @@ export function SharedVideoMessageCard({
   const resolvedTitle = preview?.title?.trim() || fallbackTitle?.trim() || null;
   const parsedArtist = preview?.parsedArtist?.trim() || preview?.channelTitle?.trim() || fallbackChannel || null;
   const parsedArtistPagePath = parsedArtist ? getArtistPagePath(parsedArtist) : null;
-  const artistSlug = parsedArtistPagePath?.split("/")[2] ?? null;
   const genreLabel = preview?.genre?.trim() || null;
   const parsedTrack = preview?.parsedTrack?.trim() || null;
-  const artistVideoCountLabel = artistVideoCount !== null ? `${artistVideoCount.toLocaleString("en-US")} videos` : null;
-
-  useEffect(() => {
-    if (!artistSlug || !resolvedId) {
-      setArtistVideoCount(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      const count = await fetchWatchNextArtistCount(artistSlug, resolvedId);
-      if (!cancelled) setArtistVideoCount(count);
-    })();
-    return () => { cancelled = true; };
-  }, [artistSlug, resolvedId]);
+  const parsedArtistLabel = parsedArtist?.toUpperCase() ?? null;
+  const resolvedTrack = parsedTrack
+    || (resolvedTitle ? inferTrackForWatchNext(resolvedTitle, parsedArtist ?? "") : null)
+    || resolvedTitle
+    || null;
 
   const handleOpenArtistPage = useCallback((event: ReactMouseEvent<HTMLSpanElement>) => {
     if (!parsedArtistPagePath) return;
@@ -216,42 +213,42 @@ export function SharedVideoMessageCard({
     router.push(parsedArtistPagePath);
   }, [parsedArtistPagePath, router]);
 
-  return (
-    <Link
-      href={`/?v=${encodeURIComponent(resolvedId)}`}
-      className="chatSharedVideoCard"
-      prefetch={false}
-      onClick={(event) => {
-        event.stopPropagation();
-
-        const isPrimaryButton = event.button === 0 || event.button === undefined;
-        if (isPrimaryButton && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
-          window.sessionStorage.setItem(CHAT_OPENED_VIDEO_ACTIVITY_SUPPRESS_KEY, resolvedId);
-        }
-
-        window.dispatchEvent(new CustomEvent(REQUEST_VIDEO_REPLAY_EVENT, {
-          detail: { videoId: resolvedId },
-        }));
-      }}
-      onMouseDown={(event) => event.stopPropagation()}
-    >
-      <Image
-        src={buildYouTubeThumbnail(resolvedId)}
-        alt=""
-        width={84}
-        height={48}
-        className="chatSharedVideoThumb"
-        loading="lazy"
-        sizes="84px"
-      />
-      <span className="chatSharedVideoMeta">
+  const cardInner = (
+    <>
+      <div className="thumbGlow">
+        <Image
+          src={buildYouTubeThumbnail(resolvedId)}
+          alt=""
+          width={102}
+          height={58}
+          className="relatedThumb chatSharedVideoThumb"
+          loading="lazy"
+          sizes="102px"
+        />
+      </div>
+      <div className="chatSharedVideoMeta">
         {genreLabel ? (
-          <span className="chatSharedVideoGenre" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+          <p className="relatedCardGenre chatSharedVideoGenre" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
             <VideoGenreLink genre={genreLabel} stopPropagation nestedInLink />
-          </span>
+          </p>
         ) : null}
-        {parsedArtist ? (
-          <span className="chatSharedVideoArtist">
+        <h3>
+          {parsedArtistLabel && resolvedTrack ? (
+            <>
+              <ArtistWikiLink artistName={preview?.channelTitle ?? parsedArtist} videoId={resolvedId} className="artistInlineLink">
+                <span
+                  role={parsedArtistPagePath ? "link" : undefined}
+                  tabIndex={parsedArtistPagePath ? 0 : undefined}
+                  onClick={handleOpenArtistPage}
+                  onKeyDown={handleOpenArtistPageByKeyboard}
+                >
+                  {parsedArtistLabel}
+                </span>
+              </ArtistWikiLink>
+              <span aria-hidden="true"> - </span>
+              <span>{resolvedTrack}</span>
+            </>
+          ) : parsedArtistLabel ? (
             <ArtistWikiLink artistName={preview?.channelTitle ?? parsedArtist} videoId={resolvedId} className="artistInlineLink">
               <span
                 role={parsedArtistPagePath ? "link" : undefined}
@@ -259,17 +256,71 @@ export function SharedVideoMessageCard({
                 onClick={handleOpenArtistPage}
                 onKeyDown={handleOpenArtistPageByKeyboard}
               >
-                {parsedArtist.toUpperCase()}
+                {parsedArtistLabel}
               </span>
             </ArtistWikiLink>
-          </span>
-        ) : null}
-        <strong>{parsedTrack || resolvedTitle || "Shared video"}</strong>
-        {artistVideoCountLabel ? (
-          <span className="chatSharedVideoCount">{artistVideoCountLabel}</span>
-        ) : null}
-      </span>
-    </Link>
+          ) : (
+            <span>{resolvedTrack || "Shared video"}</span>
+          )}
+        </h3>
+      </div>
+    </>
+  );
+
+  const hasActions = onShare || onDismiss || rightActions;
+
+  return (
+    <div className={`relatedCardSlot chatSharedVideoCardSlot${hasActions ? " chatSharedVideoCardSlotActions" : ""}`}>
+      <Link
+        href={`/?v=${encodeURIComponent(resolvedId)}`}
+        className={`relatedCard linkedCard chatSharedVideoCard${hasActions ? " chatSharedVideoCardWithActions" : ""}`}
+        prefetch={false}
+        onClick={(event) => {
+          event.stopPropagation();
+
+          const isPrimaryButton = event.button === 0 || event.button === undefined;
+          if (isPrimaryButton && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+            window.sessionStorage.setItem(CHAT_OPENED_VIDEO_ACTIVITY_SUPPRESS_KEY, resolvedId);
+          }
+
+          window.dispatchEvent(new CustomEvent(REQUEST_VIDEO_REPLAY_EVENT, {
+            detail: { videoId: resolvedId },
+          }));
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        {cardInner}
+      </Link>
+      {onDismiss ? (
+        <button
+          type="button"
+          className="chatSharedVideoCardDismiss"
+          aria-label="Dismiss"
+          onClick={(e) => { e.stopPropagation(); onDismiss(); }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          ×
+        </button>
+      ) : null}
+      {onShare ? (
+        <button
+          type="button"
+          className={`chatSharedVideoCardShareBtn${shareState === "sending" ? " chatSharedVideoCardShareBtnSending" : ""}${shareState === "sent" ? " chatSharedVideoCardShareBtnSent" : ""}${shareState === "error" ? " chatSharedVideoCardShareBtnError" : ""}`}
+          aria-label={shareState === "sent" ? "Shared" : shareState === "error" ? "Share failed — retry" : "Share to chat"}
+          title={shareState === "sent" ? "Shared" : shareState === "error" ? "Share failed — retry" : "Share to chat"}
+          disabled={shareState === "sending"}
+          onClick={(e) => { e.stopPropagation(); onShare(); }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {shareState === "sent" ? "✓" : shareState === "error" ? "!" : "↑"}
+        </button>
+      ) : null}
+      {rightActions ? (
+        <div className="chatSharedVideoCardActions" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+          {rightActions}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

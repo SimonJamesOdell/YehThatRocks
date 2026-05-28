@@ -213,7 +213,7 @@ function main() {
   assertContains(shellDynamicSource, "setChatMode(\"online\");", "Shell keeps Who's Online tab selectable in chat rail", failures);
   assertNotContains(shellDynamicSource, '<span className="tabLabel activeTab">Global Chat</span>', "Shell no longer hard-locks admin rail to a non-interactive Global Chat label", failures);
   assertContains(shellDynamicSource, "node.scrollTop = node.scrollHeight;", "Shell auto-scrolls chat list to latest message", failures);
-  assertContains(shellRenderingSource, 'fetch(`/api/videos/share-preview?v=${encodeURIComponent(videoId)}`)', "Shared chat cards resolve preview metadata via share-preview API", failures);
+  assertContains(shellRenderingSource, '/api/videos/share-preview?v=${encodeURIComponent(videoId)}', "Shared chat cards resolve preview metadata via share-preview API", failures);
   assertContains(shellRenderingSource, 'export { REQUEST_VIDEO_REPLAY_EVENT }', "Shell re-exports the replay-request event constant from events-contract", failures);
   assertContains(shellRenderingSource, "window.dispatchEvent(new CustomEvent(REQUEST_VIDEO_REPLAY_EVENT, {", "Shell dispatches replay request when shared chat card is clicked", failures);
 

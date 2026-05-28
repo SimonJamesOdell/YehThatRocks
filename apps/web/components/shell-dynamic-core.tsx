@@ -576,8 +576,17 @@ function ShellDynamicInner({
     fetchWithAuthRetry,
     checkAuthState: checkAuthStateForProtectedAction,
   });
-  const [chatShareState, setChatShareState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [chatShareState, setChatShareState] = useState<"idle" | "sending" | "sent" | "error" | "hidden">("idle");
   const chatShareResetTimeoutRef = useRef<number | null>(null);
+
+  // Reset share card whenever the playing video changes
+  useEffect(() => {
+    if (chatShareResetTimeoutRef.current !== null) {
+      window.clearTimeout(chatShareResetTimeoutRef.current);
+      chatShareResetTimeoutRef.current = null;
+    }
+    setChatShareState("idle");
+  }, [currentVideo.id]);
 
   const handleShareCurrentVideoToChat = useCallback(async () => {
     const content = buildSharedVideoMessage(currentVideo.id, currentVideo.title, currentVideo.channelTitle);
@@ -612,7 +621,7 @@ function ShellDynamicInner({
     }
 
     chatShareResetTimeoutRef.current = window.setTimeout(() => {
-      setChatShareState("idle");
+      setChatShareState("hidden");
       chatShareResetTimeoutRef.current = null;
     }, 1800);
   }, [currentVideo.channelTitle, currentVideo.id, currentVideo.title, fetchWithAuthRetry]);
@@ -2760,24 +2769,18 @@ function ShellDynamicInner({
               {chatMode === "global" ? (
                 isAuthenticated ? (
                   <>
+                    {chatShareState !== "hidden" && (
                     <div className="chatSharePreview" role="region" aria-label="Share current video">
                       <SharedVideoMessageCard
                         videoId={currentVideo.id}
                         fallbackTitle={currentVideo.title}
                         fallbackChannelTitle={currentVideo.channelTitle}
+                        onShare={() => { void handleShareCurrentVideoToChat(); }}
+                        onDismiss={() => setChatShareState("hidden")}
+                        shareState={chatShareState}
                       />
-                      <div className="chatSharePreviewActions">
-                        <button
-                          type="button"
-                          onClick={() => { void handleShareCurrentVideoToChat(); }}
-                          disabled={chatShareState === "sending"}
-                        >
-                          Share
-                        </button>
-                        {chatShareState === "sent" ? <span className="chatSharePreviewStatus">Shared</span> : null}
-                        {chatShareState === "error" ? <span className="chatSharePreviewStatus chatSharePreviewStatusError">Share failed</span> : null}
-                      </div>
                     </div>
+                    )}
                     <form className="chatComposer" onSubmit={handleChatSubmit}>
                       <input
                         type="text"
