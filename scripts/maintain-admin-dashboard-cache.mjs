@@ -32,6 +32,209 @@ async function ensureAdminDashboardCacheTable() {
   `);
 }
 
+// ---------------------------------------------------------------------------
+// Rollup table maintenance — runs in the external scheduler process only.
+// Keeping this outside the Next.js app prevents health-stream ticks from
+// triggering dashboard re-renders while rollups are being written.
+// ---------------------------------------------------------------------------
+
+const HOURLY_BUCKET_GROUP_BY_EXPR = "DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')";
+const HOURLY_BUCKET_SELECT_EXPR = `STR_TO_DATE(${HOURLY_BUCKET_GROUP_BY_EXPR}, '%Y-%m-%d %H:%i:%s')`;
+
+async function ensureRollupTables() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS admin_dashboard_analytics_daily (
+      day_date DATE NOT NULL,
+      page_views BIGINT NOT NULL DEFAULT 0,
+      video_views BIGINT NOT NULL DEFAULT 0,
+      unique_visitors BIGINT NOT NULL DEFAULT 0,
+      return_visits BIGINT NOT NULL DEFAULT 0,
+      magazine_external_landings BIGINT NOT NULL DEFAULT 0,
+      new_visitors BIGINT NOT NULL DEFAULT 0,
+      repeat_visitors BIGINT NOT NULL DEFAULT 0,
+      total_sessions BIGINT NOT NULL DEFAULT 0,
+      auth_events BIGINT NOT NULL DEFAULT 0,
+      registrations BIGINT NOT NULL DEFAULT 0,
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+      PRIMARY KEY (day_date)
+    )
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS admin_dashboard_analytics_hourly (
+      bucket_start DATETIME(0) NOT NULL,
+      page_views BIGINT NOT NULL DEFAULT 0,
+      video_views BIGINT NOT NULL DEFAULT 0,
+      unique_visitors BIGINT NOT NULL DEFAULT 0,
+      return_visits BIGINT NOT NULL DEFAULT 0,
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+      PRIMARY KEY (bucket_start)
+    )
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS admin_dashboard_auth_hourly (
+      bucket_start DATETIME(0) NOT NULL,
+      auth_events BIGINT NOT NULL DEFAULT 0,
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+      PRIMARY KEY (bucket_start)
+    )
+  `);
+}
+
+async function getUsersCreatedAtColumn() {
+  const rows = await prisma.$queryRawUnsafe(`
+    SELECT column_name AS columnName
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'users'
+      AND column_name IN ('created_at', 'createdAt')
+    ORDER BY CASE column_name WHEN 'created_at' THEN 0 ELSE 1 END
+    LIMIT 1
+  `).catch(() => []);
+  return rows[0]?.columnName ?? null;
+}
+
+async function getMagazineLandingsTableExists() {
+  const rows = await prisma.$queryRawUnsafe(`
+    SELECT COUNT(*) AS count
+    FROM information_schema.tables
+    WHERE table_schema = DATABASE()
+      AND table_name = 'magazine_article_external_landings'
+  `).catch(() => []);
+  return Number(rows[0]?.count ?? 0) > 0;
+}
+
+async function refreshRollupTables() {
+  await ensureRollupTables();
+
+  const usersCreatedAtColumn = await getUsersCreatedAtColumn();
+  const hasMagazineLandings = await getMagazineLandingsTableExists();
+
+  const registrationsDailyJoinSql = usersCreatedAtColumn
+    ? `
+      LEFT JOIN (
+        SELECT DATE(${usersCreatedAtColumn}) AS day_date, COUNT(*) AS registrations
+        FROM users
+        WHERE ${usersCreatedAtColumn} >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
+        GROUP BY DATE(${usersCreatedAtColumn})
+      ) reg ON reg.day_date = metrics.day_date
+    `
+    : `
+      LEFT JOIN (SELECT NULL AS day_date, 0 AS registrations WHERE 1 = 0) reg ON reg.day_date = metrics.day_date
+    `;
+
+  const magazineLandingsDailyJoinSql = hasMagazineLandings
+    ? `
+      LEFT JOIN (
+        SELECT DATE(landed_at) AS day_date, COUNT(*) AS magazine_external_landings
+        FROM magazine_article_external_landings
+        WHERE landed_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
+        GROUP BY DATE(landed_at)
+      ) mag_landings ON mag_landings.day_date = metrics.day_date
+    `
+    : `
+      LEFT JOIN (SELECT NULL AS day_date, 0 AS magazine_external_landings WHERE 1 = 0) mag_landings ON mag_landings.day_date = metrics.day_date
+    `;
+
+  // Refresh last 45 days of daily rollups from raw analytics_events
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO admin_dashboard_analytics_daily (
+      day_date, page_views, video_views, unique_visitors, return_visits,
+      magazine_external_landings, new_visitors, repeat_visitors,
+      total_sessions, auth_events, registrations
+    )
+    SELECT
+      metrics.day_date,
+      metrics.page_views,
+      metrics.video_views,
+      metrics.unique_visitors,
+      metrics.return_visits,
+      COALESCE(mag_landings.magazine_external_landings, 0),
+      metrics.new_visitors,
+      metrics.repeat_visitors,
+      metrics.total_sessions,
+      COALESCE(auth.auth_events, 0),
+      COALESCE(reg.registrations, 0)
+    FROM (
+      SELECT
+        DATE(created_at) AS day_date,
+        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
+        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits,
+        SUM(CASE WHEN event_type = 'page_view' AND is_new_visitor = 1 THEN 1 ELSE 0 END) AS new_visitors,
+        SUM(CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN 1 ELSE 0 END) AS repeat_visitors,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
+      FROM analytics_events
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
+      GROUP BY DATE(created_at)
+    ) metrics
+    LEFT JOIN (
+      SELECT DATE(created_at) AS day_date, COUNT(*) AS auth_events
+      FROM auth_audit_logs
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
+      GROUP BY DATE(created_at)
+    ) auth ON auth.day_date = metrics.day_date
+    ${registrationsDailyJoinSql}
+    ${magazineLandingsDailyJoinSql}
+    ON DUPLICATE KEY UPDATE
+      page_views = VALUES(page_views),
+      video_views = VALUES(video_views),
+      unique_visitors = VALUES(unique_visitors),
+      return_visits = VALUES(return_visits),
+      magazine_external_landings = VALUES(magazine_external_landings),
+      new_visitors = VALUES(new_visitors),
+      repeat_visitors = VALUES(repeat_visitors),
+      total_sessions = VALUES(total_sessions),
+      auth_events = VALUES(auth_events),
+      registrations = VALUES(registrations),
+      updated_at = CURRENT_TIMESTAMP(3)
+  `);
+
+  // Refresh last 72 hours of hourly analytics rollups (matches the read window)
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO admin_dashboard_analytics_hourly (
+      bucket_start, page_views, video_views, unique_visitors, return_visits
+    )
+    SELECT
+      ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start,
+      SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
+      SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
+      COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
+      COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits
+    FROM analytics_events
+    WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
+    GROUP BY ${HOURLY_BUCKET_GROUP_BY_EXPR}
+    ON DUPLICATE KEY UPDATE
+      page_views = VALUES(page_views),
+      video_views = VALUES(video_views),
+      unique_visitors = VALUES(unique_visitors),
+      return_visits = VALUES(return_visits),
+      updated_at = CURRENT_TIMESTAMP(3)
+  `);
+
+  // Refresh last 72 hours of hourly auth rollups
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO admin_dashboard_auth_hourly (bucket_start, auth_events)
+    SELECT
+      ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start,
+      COUNT(*) AS auth_events
+    FROM auth_audit_logs
+    WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
+    GROUP BY ${HOURLY_BUCKET_GROUP_BY_EXPR}
+    ON DUPLICATE KEY UPDATE
+      auth_events = VALUES(auth_events),
+      updated_at = CURRENT_TIMESTAMP(3)
+  `);
+
+  // Prune stale hourly rows older than 35 days
+  await Promise.all([
+    prisma.$executeRawUnsafe(`DELETE FROM admin_dashboard_analytics_hourly WHERE bucket_start < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 35 DAY)`),
+    prisma.$executeRawUnsafe(`DELETE FROM admin_dashboard_auth_hourly WHERE bucket_start < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 35 DAY)`),
+  ]);
+}
+
 async function computeAdminDashboardData() {
   const startedAt = Date.now();
 
@@ -321,6 +524,12 @@ export async function maintainAdminDashboardCache() {
   try {
     console.log("Ensuring admin dashboard cache table...");
     await ensureAdminDashboardCacheTable();
+
+    console.log("Refreshing analytics rollup tables...");
+    await refreshRollupTables().catch((err) => {
+      // Non-fatal: stale rollups are better than a failed cache write
+      console.warn("Rollup refresh failed (non-fatal):", err?.message ?? err);
+    });
 
     console.log("Computing and storing admin dashboard data...");
     const payload = await updateAdminDashboardCache();
