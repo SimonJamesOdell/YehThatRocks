@@ -19,6 +19,8 @@ const ARTIST_SITEMAP_PAGES = 3;
 const ARTIST_MIN_VIDEO_COUNT = 2;
 const SITEMAP_QUERY_SOFT_TIMEOUT_MS = 2_500;
 
+type SitemapProps = { id: number | string };
+
 export async function generateSitemaps() {
   return [
     { id: 0 },
@@ -27,29 +29,15 @@ export async function generateSitemaps() {
   ];
 }
 
-async function resolveSitemapId(rawInput: unknown): Promise<number> {
-  const input = await Promise.resolve(rawInput);
-
-  const rawId = (
-    input && typeof input === "object" && "id" in input
-      ? (input as { id: unknown }).id
-      : input
-  );
-
-  if (typeof rawId === "number" && Number.isFinite(rawId)) {
-    return rawId;
-  }
-
-  if (typeof rawId === "string") {
-    const parsed = Number(rawId);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  return 0;
+async function resolveSitemapId(input: SitemapProps | Promise<SitemapProps>): Promise<number> {
+  const resolved = await input;
+  const rawId = resolved?.id;
+  const parsed = typeof rawId === "number" ? rawId : Number(rawId);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export default async function sitemap(rawArg: unknown): Promise<MetadataRoute.Sitemap> {
-  const normalizedId = await resolveSitemapId(rawArg);
+export default async function sitemap(props: SitemapProps | Promise<SitemapProps>): Promise<MetadataRoute.Sitemap> {
+  const normalizedId = await resolveSitemapId(props);
 
   if (normalizedId === 0) {
     const genres = await withSoftTimeout(
