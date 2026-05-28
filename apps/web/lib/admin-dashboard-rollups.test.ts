@@ -126,13 +126,14 @@ describe("admin-dashboard-rollups narrow-window gating", () => {
     const [analyticsSql] = analyticsInsertCalls[0] as [string];
     const [authSql] = authInsertCalls[0] as [string];
 
-    const groupByExpr = "DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')";
-    const selectExpr = `STR_TO_DATE(${groupByExpr}, '%Y-%m-%d %H:%i:%s') AS bucket_start`;
+    const selectExpr = "bucket_start";
 
     expect(analyticsSql).toContain(selectExpr);
-    expect(analyticsSql).toContain(`GROUP BY ${groupByExpr}`);
+    expect(analyticsSql).toContain("GROUP BY bucket_start");
+    expect(analyticsSql).toContain("FROM (\n      SELECT");
     expect(authSql).toContain(selectExpr);
-    expect(authSql).toContain(`GROUP BY ${groupByExpr}`);
+    expect(authSql).toContain("GROUP BY bucket_start");
+    expect(authSql).toContain("FROM (\n      SELECT");
   });
 
   it("ensureAdminDashboardRollupsFresh skips refresh when in-memory TTL not expired", async () => {
@@ -169,9 +170,8 @@ describe("admin-dashboard-rollups narrow-window gating", () => {
     expect(insertCalls).toHaveLength(1);
     const [sql] = insertCalls[0] as [string];
 
-    // Extract SELECT expression and GROUP BY expression
-    const selectMatch = sql.match(/STR_TO_DATE\s*\(\s*DATE_FORMAT\s*\(\s*created_at\s*,\s*'%Y-%m-%d\s+%H:00:00'\s*\)\s*,\s*'%Y-%m-%d\s+%H:%i:%s'\s*\)\s+AS\s+bucket_start/i);
-    const groupByMatch = sql.match(/GROUP\s+BY\s+DATE_FORMAT\s*\(\s*created_at\s*,\s*'%Y-%m-%d\s+%H:00:00'\s*\)/i);
+    const selectMatch = sql.match(/FROM\s*\(\s*SELECT[\s\S]*STR_TO_DATE\s*\(\s*DATE_FORMAT\s*\(\s*created_at\s*,\s*'%Y-%m-%d\s+%H:00:00'\s*\)\s*,\s*'%Y-%m-%d\s+%H:%i:%s'\s*\)\s+AS\s+bucket_start/i);
+    const groupByMatch = sql.match(/GROUP\s+BY\s+bucket_start/i);
 
     expect(selectMatch).not.toBeNull();
     expect(groupByMatch).not.toBeNull();

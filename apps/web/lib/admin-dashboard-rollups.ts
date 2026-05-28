@@ -280,7 +280,7 @@ async function maybeBackfillDailyHistory() {
         COALESCE(reg.registrations, 0) AS registrations
       FROM (
         SELECT
-          DATE(created_at) AS day_date,
+          day_date,
           SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
           SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
           COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
@@ -288,13 +288,24 @@ async function maybeBackfillDailyHistory() {
           SUM(CASE WHEN event_type = 'page_view' AND is_new_visitor = 1 THEN 1 ELSE 0 END) AS new_visitors,
           SUM(CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN 1 ELSE 0 END) AS repeat_visitors,
           COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
-        FROM analytics_events
-        GROUP BY DATE(created_at)
+        FROM (
+          SELECT
+            DATE(created_at) AS day_date,
+            event_type,
+            visitor_id,
+            is_new_visitor,
+            session_id
+          FROM analytics_events
+        ) analytics_events_by_day
+        GROUP BY day_date
       ) metrics
       LEFT JOIN (
-        SELECT DATE(created_at) AS day_date, COUNT(*) AS auth_events
-        FROM auth_audit_logs
-        GROUP BY DATE(created_at)
+        SELECT day_date, COUNT(*) AS auth_events
+        FROM (
+          SELECT DATE(created_at) AS day_date
+          FROM auth_audit_logs
+        ) auth_audit_logs_by_day
+        GROUP BY day_date
       ) auth ON auth.day_date = metrics.day_date
       ${registrationsDailyJoinSql}
       ${magazineExternalLandingsDailyJoinSql}
@@ -352,7 +363,7 @@ async function refreshRecentDailyRollups(options: { fullScan: boolean }) {
       COALESCE(reg.registrations, 0) AS registrations
     FROM (
       SELECT
-        DATE(created_at) AS day_date,
+        day_date,
         SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
         SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
@@ -360,15 +371,26 @@ async function refreshRecentDailyRollups(options: { fullScan: boolean }) {
         SUM(CASE WHEN event_type = 'page_view' AND is_new_visitor = 1 THEN 1 ELSE 0 END) AS new_visitors,
         SUM(CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN 1 ELSE 0 END) AS repeat_visitors,
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
-      FROM analytics_events
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${intervalDays} DAY)
-      GROUP BY DATE(created_at)
+      FROM (
+        SELECT
+          DATE(created_at) AS day_date,
+          event_type,
+          visitor_id,
+          is_new_visitor,
+          session_id
+        FROM analytics_events
+        WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${intervalDays} DAY)
+      ) analytics_events_by_day
+      GROUP BY day_date
     ) metrics
     LEFT JOIN (
-      SELECT DATE(created_at) AS day_date, COUNT(*) AS auth_events
-      FROM auth_audit_logs
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${intervalDays} DAY)
-      GROUP BY DATE(created_at)
+      SELECT day_date, COUNT(*) AS auth_events
+      FROM (
+        SELECT DATE(created_at) AS day_date
+        FROM auth_audit_logs
+        WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${intervalDays} DAY)
+      ) auth_audit_logs_by_day
+      GROUP BY day_date
     ) auth ON auth.day_date = metrics.day_date
     ${registrationsDailyJoinSql}
     ${magazineExternalLandingsDailyJoinSql}
@@ -415,14 +437,21 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       return_visits
     )
     SELECT
-      ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start,
+      bucket_start,
       SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
       SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
       COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
       COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits
-    FROM analytics_events
-    WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${analyticsIntervalClause})
-    GROUP BY ${HOURLY_BUCKET_GROUP_BY_EXPR}
+    FROM (
+      SELECT
+        ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start,
+        event_type,
+        visitor_id,
+        is_new_visitor
+      FROM analytics_events
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${analyticsIntervalClause})
+    ) analytics_events_by_hour
+    GROUP BY bucket_start
     ON DUPLICATE KEY UPDATE
       page_views = VALUES(page_views),
       video_views = VALUES(video_views),
@@ -437,11 +466,15 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       auth_events
     )
     SELECT
-      ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start,
+      bucket_start,
       COUNT(*) AS auth_events
-    FROM auth_audit_logs
-    WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${authIntervalClause})
-    GROUP BY ${HOURLY_BUCKET_GROUP_BY_EXPR}
+    FROM (
+      SELECT
+        ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start
+      FROM auth_audit_logs
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${authIntervalClause})
+    ) auth_audit_logs_by_hour
+    GROUP BY bucket_start
     ON DUPLICATE KEY UPDATE
       auth_events = VALUES(auth_events),
       updated_at = CURRENT_TIMESTAMP(3)
