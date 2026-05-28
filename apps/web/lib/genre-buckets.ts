@@ -123,6 +123,7 @@ export const TOP_LEVEL_GENRE_BUCKETS: readonly GenreBucket[] = [
     label: "Nu-metal & Metalcore",
     terms: [
       "nu metal",
+      "gothic metal",
       "metalcore",
       "melodic metalcore",
       "deathcore",

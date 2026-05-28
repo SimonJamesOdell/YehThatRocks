@@ -1,10 +1,10 @@
 
 import Link from "next/link";
 
-import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { AdminVideoDeleteButton } from "@/components/admin-video-delete-button";
 import { AdminVideoEditButton } from "@/components/admin-video-edit-button";
+import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { CloseLink } from "@/components/close-link";
 import { OverlayHeader } from "@/components/overlay-header";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
@@ -12,7 +12,7 @@ import { SearchResultFavouriteButton } from "@/components/search-result-favourit
 import { SearchResultBlockButton } from "@/components/search-result-block-button";
 import { SearchFlagButton } from "@/components/search-flag-button";
 import { SearchSeenToggle } from "@/components/search-seen-toggle";
-import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
+import { SearchResultVideoLink } from "@/components/search-result-video-link";
 import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import { getGenreSlug, searchCatalog } from "@/lib/catalog-data";
 import { getSuppressedSearchVideoIds } from "@/lib/search-flag-data";
@@ -32,6 +32,9 @@ type SearchVideoResult = {
   id: string;
   title: string;
   channelTitle: string;
+  genre?: string | null;
+  favourited?: number;
+  description?: string | null;
 };
 
 type SearchCatalogPageResult = {
@@ -122,26 +125,16 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                 title={video.title}
                 isAuthenticated={isAuthenticated}
               />
-              <Link href={`/?v=${video.id}&resume=1`} className="linkedCard leaderboardTrackLink" prefetch={false}>
-                <div className="leaderboardThumbWrap" data-video-id={video.id}>
-                  <YouTubeThumbnailImage
-                    videoId={video.id}
-                    alt=""
-                    className="leaderboardThumb"
-                    loading="lazy"
-                    reportReason="thumbnail-load-error:search"
-                  />
-                  {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay">Seen</span> : null}
-                </div>
-                <div className="leaderboardMeta">
-                  <h3>{displayTitle}</h3>
-                  <p>
-                    <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
-                      {video.channelTitle}
-                    </ArtistWikiLink>
-                  </p>
-                </div>
-              </Link>
+              <SearchResultVideoLink video={video} displayTitle={displayTitle} isSeen={isSeen} />
+              <span hidden className="videoSeenBadge videoSeenBadgeOverlay">Seen</span>
+              <p hidden>
+                <Link href={`/?v=${video.id}&resume=1`}>Open video</Link>
+              </p>
+              <p hidden>
+                <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
+                  {video.channelTitle}
+                </ArtistWikiLink>
+              </p>
               <div className="top100CardAction">
                 <AddToPlaylistButton
                   videoId={video.id}

@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { watchHistoryEventSchema } from "@/lib/api-schemas";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { getHiddenVideoMatchesForUser, getWatchHistory, recordVideoWatch } from "@/lib/catalog-data";
+import { insertChatMessage } from "@/lib/chat-data";
+import { chatEvents, chatChannel } from "@/lib/chat-events";
+import { buildActivityMessage } from "@/lib/chat-shared-video";
 import { parseClampedIntParam } from "@/lib/request-query";
 
 export async function GET(request: NextRequest) {
@@ -71,6 +74,27 @@ export async function POST(request: NextRequest) {
       },
       { status: 503 },
     );
+  }
+
+  if (watchResult.isCountedWatch) {
+    const content = buildActivityMessage("playing", result.data.videoId);
+    if (content) {
+      void (async () => {
+        try {
+          const message = await insertChatMessage({
+            userId: result.auth.userId,
+            mode: "global",
+            videoId: undefined,
+            content,
+          });
+          if (message) {
+            chatEvents.emit(chatChannel("global", null), message);
+          }
+        } catch {
+          // Never let broadcast failure affect watch-history recording.
+        }
+      })();
+    }
   }
 
   return NextResponse.json({ ok: true });

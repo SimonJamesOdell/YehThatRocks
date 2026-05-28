@@ -61,11 +61,10 @@ import { deriveShellOverlayRouteState, isProtectedOverlayPath, isRouteActive, is
 import { navItems, type VideoRecord } from "@/lib/catalog";
 import { MagazineGenerateNowButton } from "@/components/magazine-generate-now-button";
 import { detectAppendOnly, filterSeenFromWatchNext } from "@/components/shell-dynamic-helpers";
-import { fetchWithAuthRetry as fetchWithAuthRetryClient } from "@/lib/client-auth-fetch";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { dedupeVideos, filterHiddenVideos } from "@/lib/video-list-utils";
-import { parseSharedVideoMessage, parseActivityMessage, buildActivityMessage } from "@/lib/chat-shared-video";
+import { parseSharedVideoMessage, parseActivityMessage } from "@/lib/chat-shared-video";
 import { prefetchCategoryCardsSessionCache } from "@/lib/category-cards-session-cache";
 import { FORUM_SECTIONS } from "@/lib/forum-sections";
 import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT, EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
@@ -1676,17 +1675,7 @@ function ShellDynamicInner({
       setClickedRelatedVideoId((activeId) => (activeId === trackId ? null : activeId));
       relatedClickFlashTimeoutRef.current = null;
     }, 240);
-    if (isAuthenticated) {
-      const content = buildActivityMessage("playing", trackId);
-      if (content) {
-        void fetchWithAuthRetryClient("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "global", content }),
-        }).catch(() => undefined);
-      }
-    }
-  }, [isAuthenticated]);
+  }, []);
   const commitWatchNextHide = useCallback((videoId: string) => {
     setHidingRelatedVideoIds((previous) => {
       if (previous.includes(videoId)) {

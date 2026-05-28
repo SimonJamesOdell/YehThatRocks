@@ -37,5 +37,7 @@ describe("genre bucket alias mapping", () => {
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("progressive"))).toBe("Progressive & Experimental");
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("occult"))).toBe("Black and Death Metal");
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("crossover"))).toBe("Thrash & Power Metal");
+    expect(resolveTopLevelGenreBucket("gothic metal")).toBe("Nu-metal & Metalcore");
+    expect(resolveTopLevelGenreBucket("Gothic Metal")).toBe("Nu-metal & Metalcore");
   });
 });

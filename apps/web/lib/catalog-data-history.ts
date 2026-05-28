@@ -188,6 +188,22 @@ export async function recordVideoWatch(input: {
   const now = new Date();
 
   try {
+    const existingRows = await prisma.$queryRawUnsafe<Array<{ lastWatchedAt: Date | string | null }>>(
+      `
+        SELECT last_watched_at AS lastWatchedAt
+        FROM watch_history
+        WHERE user_id = ? AND video_id = ?
+        LIMIT 1
+      `,
+      input.userId,
+      normalizedVideoId,
+    );
+
+    const lastWatchedAt = existingRows[0]?.lastWatchedAt;
+    const lastWatchedAtMs = lastWatchedAt ? new Date(lastWatchedAt).getTime() : NaN;
+    const isCountedWatch = !Number.isFinite(lastWatchedAtMs)
+      || (now.getTime() - lastWatchedAtMs) >= 600_000;
+
     await prisma.$executeRawUnsafe(
       `
         INSERT INTO watch_history (
@@ -223,9 +239,9 @@ export async function recordVideoWatch(input: {
 
     seenVideoIdsCache.add(input.userId, normalizedVideoId);
 
-    return { ok: true as const };
+    return { ok: true as const, isCountedWatch };
   } catch {
-    return { ok: false as const };
+    return { ok: false as const, isCountedWatch: false };
   }
 }
 
