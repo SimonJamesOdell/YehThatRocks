@@ -92,6 +92,7 @@ import { usePlaylistSequence } from "@/components/use-playlist-sequence";
 import { useLiveSearchParams } from "@/components/use-live-search-params";
 import { type AutoplayMixSettings } from "@/lib/player-preferences-shared";
 import { parseJsonOrNull } from "@/lib/parse-json";
+import { CHAT_OPENED_VIDEO_ACTIVITY_SUPPRESS_KEY } from "@/lib/storage-keys";
 
 type PlayerExperienceProps = {
   currentVideo: VideoRecord;
@@ -1956,6 +1957,19 @@ export function PlayerExperience({
       const requestPayload = {
         videoId: activeVideoId,
         reason,
+        source: (() => {
+          if (typeof window === "undefined") {
+            return "player" as const;
+          }
+
+          const sourceVideoId = window.sessionStorage.getItem(CHAT_OPENED_VIDEO_ACTIVITY_SUPPRESS_KEY);
+          if (sourceVideoId && sourceVideoId === activeVideoId) {
+            window.sessionStorage.removeItem(CHAT_OPENED_VIDEO_ACTIVITY_SUPPRESS_KEY);
+            return "chat-open" as const;
+          }
+
+          return "player" as const;
+        })(),
         positionSec,
         durationSec,
         progressPercent,
@@ -4070,6 +4084,8 @@ export function PlayerExperience({
         await shareCurrentVideoToChat({
           isLoggedIn,
           currentVideoId: currentVideo.id,
+          currentVideoTitle: currentVideo.title,
+          currentVideoChannelTitle: currentVideo.channelTitle,
           copyShareLink: handleCopyShareLink,
           setShowShareMenu,
           setShareToChatState,

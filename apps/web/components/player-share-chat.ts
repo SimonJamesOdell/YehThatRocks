@@ -7,6 +7,8 @@ type ShareToChatState = "idle" | "sending" | "sent" | "error";
 export async function shareCurrentVideoToChat({
   isLoggedIn,
   currentVideoId,
+  currentVideoTitle,
+  currentVideoChannelTitle,
   copyShareLink,
   setShowShareMenu,
   setShareToChatState,
@@ -14,6 +16,8 @@ export async function shareCurrentVideoToChat({
 }: {
   isLoggedIn: boolean;
   currentVideoId: string;
+  currentVideoTitle?: string;
+  currentVideoChannelTitle?: string;
   copyShareLink: () => Promise<void>;
   setShowShareMenu: (value: boolean) => void;
   setShareToChatState: (value: ShareToChatState) => void;
@@ -25,7 +29,7 @@ export async function shareCurrentVideoToChat({
     return;
   }
 
-  const content = buildSharedVideoMessage(currentVideoId);
+  const content = buildSharedVideoMessage(currentVideoId, currentVideoTitle, currentVideoChannelTitle);
   if (!content) {
     setShareToChatState("error");
     return;

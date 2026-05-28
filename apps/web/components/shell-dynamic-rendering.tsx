@@ -13,6 +13,7 @@ import type { VideoRecord } from "@/lib/catalog";
 import { fetchWithAuthRetry as fetchWithAuthRetryClient } from "@/lib/client-auth-fetch";
 import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import { getArtistPagePath } from "@/lib/artist-routing";
+import { CHAT_OPENED_VIDEO_ACTIVITY_SUPPRESS_KEY } from "@/lib/storage-keys";
 
 import { REQUEST_VIDEO_REPLAY_EVENT, EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 export { REQUEST_VIDEO_REPLAY_EVENT };
@@ -77,7 +78,15 @@ function buildYouTubeThumbnail(videoId: string) {
   return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
 }
 
-export function SharedVideoMessageCard({ videoId }: { videoId: string }) {
+export function SharedVideoMessageCard({
+  videoId,
+  fallbackTitle,
+  fallbackChannelTitle,
+}: {
+  videoId: string;
+  fallbackTitle?: string;
+  fallbackChannelTitle?: string;
+}) {
   const router = useRouter();
   const [preview, setPreview] = useState<SharedVideoPreview | null>(null);
   const [artistVideoCount, setArtistVideoCount] = useState<number | null>(null);
@@ -128,7 +137,9 @@ export function SharedVideoMessageCard({ videoId }: { videoId: string }) {
   }, [videoId]);
 
   const resolvedId = preview?.id ?? videoId;
-  const parsedArtist = preview?.parsedArtist?.trim() || preview?.channelTitle?.trim() || null;
+  const fallbackChannel = fallbackChannelTitle?.trim() || null;
+  const resolvedTitle = preview?.title?.trim() || fallbackTitle?.trim() || null;
+  const parsedArtist = preview?.parsedArtist?.trim() || preview?.channelTitle?.trim() || fallbackChannel || null;
   const parsedArtistPagePath = parsedArtist ? getArtistPagePath(parsedArtist) : null;
   const artistSlug = parsedArtistPagePath?.split("/")[2] ?? null;
   const genreLabel = preview?.genre?.trim() || null;
@@ -170,6 +181,12 @@ export function SharedVideoMessageCard({ videoId }: { videoId: string }) {
       prefetch={false}
       onClick={(event) => {
         event.stopPropagation();
+
+        const isPrimaryButton = event.button === 0 || event.button === undefined;
+        if (isPrimaryButton && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+          window.sessionStorage.setItem(CHAT_OPENED_VIDEO_ACTIVITY_SUPPRESS_KEY, resolvedId);
+        }
+
         window.dispatchEvent(new CustomEvent(REQUEST_VIDEO_REPLAY_EVENT, {
           detail: { videoId: resolvedId },
         }));
@@ -205,7 +222,7 @@ export function SharedVideoMessageCard({ videoId }: { videoId: string }) {
             </ArtistWikiLink>
           </span>
         ) : null}
-        <strong>{parsedTrack || preview?.title || "Shared video"}</strong>
+        <strong>{parsedTrack || resolvedTitle || "Shared video"}</strong>
         {artistVideoCountLabel ? (
           <span className="chatSharedVideoCount">{artistVideoCountLabel}</span>
         ) : null}

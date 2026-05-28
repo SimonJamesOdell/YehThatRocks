@@ -7,12 +7,16 @@ import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 
 export function usePlayerShareState({
   currentVideoId,
+  currentVideoTitle,
+  currentVideoChannelTitle,
   isLoggedIn,
   shareUrl,
   onDockHideRequest,
   pauseActivePlayback,
 }: {
   currentVideoId: string;
+  currentVideoTitle?: string;
+  currentVideoChannelTitle?: string;
   isLoggedIn: boolean;
   shareUrl: string;
   onDockHideRequest?: () => void;
@@ -68,7 +72,7 @@ export function usePlayerShareState({
       return;
     }
 
-    const content = buildSharedVideoMessage(currentVideoId);
+    const content = buildSharedVideoMessage(currentVideoId, currentVideoTitle, currentVideoChannelTitle);
     if (!content) {
       setShareToChatState("error");
       return;
@@ -104,7 +108,7 @@ export function usePlayerShareState({
     }, 1800);
 
     setShowShareMenu(false);
-  }, [currentVideoId, handleCopyShareLink, isLoggedIn]);
+  }, [currentVideoChannelTitle, currentVideoId, currentVideoTitle, handleCopyShareLink, isLoggedIn]);
 
   const handleShareToSocials = useCallback(async () => {
     setShareModalCopied(false);

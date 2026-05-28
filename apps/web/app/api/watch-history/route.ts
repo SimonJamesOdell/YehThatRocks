@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { watchHistoryEventSchema } from "@/lib/api-schemas";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
-import { getHiddenVideoMatchesForUser, getWatchHistory, recordVideoWatch } from "@/lib/catalog-data";
+import { getHiddenVideoMatchesForUser, getVideoForSharing, getWatchHistory, recordVideoWatch } from "@/lib/catalog-data";
 import { insertChatMessage } from "@/lib/chat-data";
 import { chatEvents, chatChannel } from "@/lib/chat-events";
 import { buildActivityMessage } from "@/lib/chat-shared-video";
@@ -76,8 +76,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (watchResult.isCountedWatch) {
-    const content = buildActivityMessage("playing", result.data.videoId);
+  if (watchResult.isCountedWatch && result.data.source !== "chat-open") {
+    const sharedVideo = await getVideoForSharing(result.data.videoId);
+    const content = buildActivityMessage(
+      "playing",
+      result.data.videoId,
+      sharedVideo?.title,
+      sharedVideo?.channelTitle,
+    );
     if (content) {
       void (async () => {
         try {

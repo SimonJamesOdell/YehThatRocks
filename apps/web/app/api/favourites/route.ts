@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { favouriteMutationSchema } from "@/lib/api-schemas";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
-import { filterHiddenVideos, getFavouriteVideos, getFavouriteVideosPage, updateFavourite } from "@/lib/catalog-data";
+import { filterHiddenVideos, getFavouriteVideos, getFavouriteVideosPage, getVideoForSharing, updateFavourite } from "@/lib/catalog-data";
 import { insertChatMessage } from "@/lib/chat-data";
 import { chatEvents, chatChannel } from "@/lib/chat-events";
 import { buildActivityMessage } from "@/lib/chat-shared-video";
@@ -67,7 +67,13 @@ export async function POST(request: NextRequest) {
   const updated = await updateFavourite(result.data.videoId, result.data.action, result.auth.userId);
 
   if (result.data.action === "add") {
-    const content = buildActivityMessage("favourited", result.data.videoId);
+    const sharedVideo = await getVideoForSharing(result.data.videoId);
+    const content = buildActivityMessage(
+      "favourited",
+      result.data.videoId,
+      sharedVideo?.title,
+      sharedVideo?.channelTitle,
+    );
     if (content) {
       void (async () => {
         try {

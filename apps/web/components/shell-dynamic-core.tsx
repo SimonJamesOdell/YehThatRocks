@@ -2679,11 +2679,19 @@ function ShellDynamicInner({
                               <p className="chatActivityLabel">
                                 {activityMessage.action === "favourited" ? "favourited" : "is now playing"}
                               </p>
-                              <SharedVideoMessageCard videoId={activityMessage.videoId} />
+                              <SharedVideoMessageCard
+                                videoId={activityMessage.videoId}
+                                fallbackTitle={activityMessage.title}
+                                fallbackChannelTitle={activityMessage.channelTitle}
+                              />
                             </>
                           ) : sharedVideo ? (
                             <>
-                              <SharedVideoMessageCard videoId={sharedVideo.videoId} />
+                              <SharedVideoMessageCard
+                                videoId={sharedVideo.videoId}
+                                fallbackTitle={sharedVideo.title}
+                                fallbackChannelTitle={sharedVideo.channelTitle}
+                              />
                             </>
                           ) : (
                             <p>{message.content}</p>
