@@ -1,0 +1,12 @@
+[Unit]
+Description=Run YehThatRocks Admin Dashboard Cache Maintenance every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Persistent=true
+Unit=admin-dashboard-cache-maintenance.service
+
+[Install]
+WantedBy=timers.target

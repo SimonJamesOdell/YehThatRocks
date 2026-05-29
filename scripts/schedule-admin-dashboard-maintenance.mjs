@@ -84,5 +84,7 @@ export async function runAdminDashboardMaintenanceScheduler() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const ok = await runAdminDashboardMaintenanceScheduler();
-  process.exit(ok ? 0 : 1);
+  if (!RUN_AS_DAEMON) {
+    process.exit(ok ? 0 : 1);
+  }
 }

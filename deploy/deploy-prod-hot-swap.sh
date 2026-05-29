@@ -350,6 +350,26 @@ if wait_for_public_health "$STATUS_URL" "$HEALTH_TIMEOUT_SEC"; then
     else
       echo "[deploy] magazine-autogen.timer enabled (every 6h), next run at: $TIMER_NEXT_ELAPSE"
     fi
+
+    echo "[deploy] installing admin-dashboard-cache-maintenance systemd timer"
+    cp "$REPO_DIR/deploy/systemd/admin-dashboard-cache-maintenance.service" /etc/systemd/system/admin-dashboard-cache-maintenance.service
+    cp "$REPO_DIR/deploy/systemd/admin-dashboard-cache-maintenance.timer" /etc/systemd/system/admin-dashboard-cache-maintenance.timer
+    systemctl daemon-reload
+    systemctl enable --now admin-dashboard-cache-maintenance.timer
+    echo "[deploy] validating admin-dashboard-cache-maintenance.service"
+    if systemctl start admin-dashboard-cache-maintenance.service; then
+      echo "[deploy] admin-dashboard-cache-maintenance.service smoke run passed"
+    else
+      echo "[deploy] WARNING: admin-dashboard-cache-maintenance.service smoke run failed (non-fatal - timer will retry on schedule)" >&2
+      journalctl -u admin-dashboard-cache-maintenance.service -n 40 --no-pager >&2 || true
+    fi
+    ADMIN_TIMER_NEXT_ELAPSE="$(systemctl show admin-dashboard-cache-maintenance.timer --property=NextElapseUSecRealtime --value || true)"
+    if [ -z "$ADMIN_TIMER_NEXT_ELAPSE" ] || [ "$ADMIN_TIMER_NEXT_ELAPSE" = "n/a" ]; then
+      echo "[deploy] WARNING: admin-dashboard-cache-maintenance.timer next-run value unavailable from systemctl show" >&2
+      systemctl status admin-dashboard-cache-maintenance.timer --no-pager >&2 || true
+    else
+      echo "[deploy] admin-dashboard-cache-maintenance.timer enabled (every 5m), next run at: $ADMIN_TIMER_NEXT_ELAPSE"
+    fi
   fi
 
   exit 0

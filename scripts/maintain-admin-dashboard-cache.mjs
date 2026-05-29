@@ -229,11 +229,15 @@ async function refreshRollupTables() {
   await prisma.$executeRawUnsafe(`
     INSERT INTO admin_dashboard_auth_hourly (bucket_start, auth_events)
     SELECT
-      ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start,
+      bucket_start,
       COUNT(*) AS auth_events
-    FROM auth_audit_logs
-    WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
-    GROUP BY ${HOURLY_BUCKET_GROUP_BY_EXPR}
+    FROM (
+      SELECT
+        ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start
+      FROM auth_audit_logs
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
+    ) auth_audit_logs_by_hour
+    GROUP BY bucket_start
     ON DUPLICATE KEY UPDATE
       auth_events = VALUES(auth_events),
       updated_at = CURRENT_TIMESTAMP(3)
