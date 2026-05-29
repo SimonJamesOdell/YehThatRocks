@@ -192,34 +192,34 @@ async function refreshRollupTables() {
       updated_at = CURRENT_TIMESTAMP(3)
   `);
 
-        day_date,
+  // Refresh last 72 hours of hourly analytics rollups
   await prisma.$executeRawUnsafe(`
     INSERT INTO admin_dashboard_analytics_hourly (
-      bucket_start, page_views, video_views, unique_visitors, return_visits
+      bucket_start,
+      page_views,
+      video_views,
+      unique_visitors,
+      return_visits
     )
     SELECT
-      ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start,
+      bucket_start,
       SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
-      FROM (
-        SELECT
-          DATE(created_at) AS day_date,
-          event_type,
-          visitor_id,
-          is_new_visitor,
-          session_id
-        FROM analytics_events
-        WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
-      ) analytics_events_by_day
-      GROUP BY day_date
-    FROM analytics_events
-    WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
-      SELECT day_date, COUNT(*) AS auth_events
-      FROM (
-        SELECT DATE(created_at) AS day_date
-        FROM auth_audit_logs
-        WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
-      ) auth_audit_logs_by_day
-      GROUP BY day_date
+      SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
+      COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
+      COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits
+    FROM (
+      SELECT
+        ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start,
+        event_type,
+        visitor_id,
+        is_new_visitor
+      FROM analytics_events
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
+    ) analytics_events_by_hour
+    GROUP BY bucket_start
+    ON DUPLICATE KEY UPDATE
+      page_views = VALUES(page_views),
+      video_views = VALUES(video_views),
       unique_visitors = VALUES(unique_visitors),
       return_visits = VALUES(return_visits),
       updated_at = CURRENT_TIMESTAMP(3)

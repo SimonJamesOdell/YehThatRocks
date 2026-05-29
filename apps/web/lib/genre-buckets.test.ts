@@ -15,6 +15,8 @@ describe("genre bucket alias mapping", () => {
     expect(canonicalizeGenreLabel("technical speed")).toBe("technical speed metal");
     expect(canonicalizeGenreLabel("metal")).toBe("heavy metal");
     expect(canonicalizeGenreLabel("occult")).toBe("black metal");
+    expect(canonicalizeGenreLabel("sludge")).toBe("sludge metal");
+    expect(canonicalizeGenreLabel("stoner")).toBe("stoner rock");
     expect(canonicalizeGenreLabel("crossover")).toBe("crossover thrash");
   });
 
@@ -36,6 +38,8 @@ describe("genre bucket alias mapping", () => {
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("melodic death"))).toBe("Black and Death Metal");
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("progressive"))).toBe("Progressive & Experimental");
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("occult"))).toBe("Black and Death Metal");
+    expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("sludge"))).toBe("Doom & Sludge");
+    expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("stoner"))).toBe("Doom & Sludge");
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("crossover"))).toBe("Thrash & Power Metal");
     expect(resolveTopLevelGenreBucket("gothic metal")).toBe("Nu-metal & Metalcore");
     expect(resolveTopLevelGenreBucket("Gothic Metal")).toBe("Nu-metal & Metalcore");
