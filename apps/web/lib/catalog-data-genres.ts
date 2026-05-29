@@ -53,7 +53,8 @@ const CATEGORY_BUCKET_RUNTIME_CACHE_TABLE_CACHE_TTL_MS = 60_000;
 const CATEGORY_BUCKET_RUNTIME_CACHE_STALE_MS = 6 * 60 * 60 * 1000;
 const CATEGORY_ARTIST_RUNTIME_CACHE_TABLE_CACHE_TTL_MS = 60_000;
 const CATEGORY_ARTIST_RUNTIME_CACHE_STALE_MS = 6 * 60 * 60 * 1000;
-const CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT = 5_000;
+const CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT = 25_000;
+const CATEGORY_PINNED_PREVIEW_CACHE_TTL_MS = 60_000;
 const GENRE_ARTIST_SEED_CACHE_TTL_MS = 2 * 60 * 1000;
 const GENRE_CACHE_MAX_ENTRIES = Math.max(
   100,
@@ -76,6 +77,7 @@ let categoryArtistRuntimeCacheTableAvailableCache: { checkedAt: number; availabl
 const categoryArtistRuntimeCacheRebuildInFlight = new Map<string, Promise<void>>();
 let categoryBucketRuntimeRefreshInFlight: Promise<void> | null = null;
 let categoryBucketRuntimeRefreshLastStartedAt = 0;
+let pinnedCategoryArtistPreviewsByBucketCache: { expiresAt: number; previews: Map<string, string> } | null = null;
 
 const CATEGORY_BUCKET_RUNTIME_REFRESH_MIN_INTERVAL_MS = 30_000;
 
@@ -288,7 +290,7 @@ function mapCategoryArtistRows(rows: Array<{
 
 async function getRuntimeCachedCategoryArtistsByGenre(
   normalizedGenre: string,
-  options: { offset: number; limit: number; expectedTotal?: number | null },
+  options: { offset: number; limit: number; expectedTotal?: number | null; refreshGenre?: string },
 ): Promise<CategoryArtistCard[] | null> {
   if (!hasDatabaseUrl()) {
     return null;
@@ -323,7 +325,9 @@ async function getRuntimeCachedCategoryArtistsByGenre(
 
   const newestUpdatedAtMs = freshness?.newestUpdatedAt?.getTime() ?? 0;
   if (newestUpdatedAtMs <= 0 || Date.now() - newestUpdatedAtMs > CATEGORY_ARTIST_RUNTIME_CACHE_STALE_MS) {
-    return null;
+    if (options.refreshGenre) {
+      scheduleCategoryArtistRuntimeCacheRebuild(options.refreshGenre, normalizedGenre);
+    }
   }
 
   const rows = await prisma.$queryRawUnsafe<Array<{
@@ -433,6 +437,11 @@ function scheduleCategoryArtistRuntimeCacheRebuild(genre: string, normalizedGenr
 }
 
 async function getPinnedCategoryArtistPreviewsByBucket() {
+  const now = Date.now();
+  if (pinnedCategoryArtistPreviewsByBucketCache && pinnedCategoryArtistPreviewsByBucketCache.expiresAt > now) {
+    return new Map(pinnedCategoryArtistPreviewsByBucketCache.previews);
+  }
+
   const pinnedPreviewByBucket = new Map<string, string>();
 
   if (!hasDatabaseUrl()) {
@@ -478,6 +487,11 @@ async function getPinnedCategoryArtistPreviewsByBucket() {
 
     pinnedPreviewByBucket.set(bucketKey, normalizedPinnedVideoId);
   }
+
+  pinnedCategoryArtistPreviewsByBucketCache = {
+    expiresAt: now + CATEGORY_PINNED_PREVIEW_CACHE_TTL_MS,
+    previews: new Map(pinnedPreviewByBucket),
+  };
 
   return pinnedPreviewByBucket;
 }
@@ -615,10 +629,7 @@ export async function getRuntimeCachedTopLevelGenreCards(): Promise<GenreCard[] 
 
   const tableAvailable = await hasCategoryBucketRuntimeCacheTable();
   if (!tableAvailable) {
-    const bootstrapped = await bootstrapCategoryBucketRuntimeCacheFast();
-    if (bootstrapped && bootstrapped.length > 0) {
-      return bootstrapped;
-    }
+    scheduleCategoryBucketRuntimeCacheRefresh();
     return null;
   }
 
@@ -640,7 +651,8 @@ export async function getRuntimeCachedTopLevelGenreCards(): Promise<GenreCard[] 
   );
 
   if (rows.length === 0) {
-    return bootstrapCategoryBucketRuntimeCacheFast();
+    scheduleCategoryBucketRuntimeCacheRefresh();
+    return null;
   }
 
   const newestUpdatedAtMs = rows.reduce((maxMs, row) => {
@@ -654,17 +666,11 @@ export async function getRuntimeCachedTopLevelGenreCards(): Promise<GenreCard[] 
     || Array.from(expectedBucketLabels).some((label) => !cachedBucketLabels.has(label));
 
   if (hasBucketLabelMismatch) {
-    const refreshed = await bootstrapCategoryBucketRuntimeCacheFast();
-    if (refreshed && refreshed.length > 0) {
-      return refreshed;
-    }
+    scheduleCategoryBucketRuntimeCacheRefresh();
   }
 
   if (newestUpdatedAtMs <= 0 || Date.now() - newestUpdatedAtMs > CATEGORY_BUCKET_RUNTIME_CACHE_STALE_MS) {
-    const refreshed = await bootstrapCategoryBucketRuntimeCacheFast();
-    if (refreshed && refreshed.length > 0) {
-      return refreshed;
-    }
+    scheduleCategoryBucketRuntimeCacheRefresh();
   }
 
   const cards = TOP_LEVEL_GENRE_BUCKETS.map((bucket) => {
@@ -680,7 +686,6 @@ export async function getRuntimeCachedTopLevelGenreCards(): Promise<GenreCard[] 
 
   const pinnedCards = applyPinnedCategoryArtistPreviews(cards, pinnedPreviewByBucket);
 
-  await upsertCategoryBucketRuntimeCache(pinnedCards).catch(() => undefined);
   return pinnedCards;
 }
 
@@ -878,9 +883,6 @@ export async function getCategoryArtistsByGenre(
   const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
   const requestedLimit = Math.max(1, Math.min(2_000, Number.isFinite(options?.limit) ? Number(options?.limit) : 48));
   const normalizedGenre = normalizeGenreTerm(genre);
-  const expectedTotal = requestedOffset === 0
-    ? await getCategoryArtistCountByGenre(genre).catch(() => null)
-    : null;
 
   if (!normalizedGenre) {
     return [];
@@ -889,7 +891,7 @@ export async function getCategoryArtistsByGenre(
   const cachedArtists = await getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
     offset: requestedOffset,
     limit: requestedLimit,
-    expectedTotal,
+    refreshGenre: genre,
   });
   if (cachedArtists) {
     return cachedArtists;
@@ -1112,6 +1114,27 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
     return { all: 0 };
   }
 
+  const cachedArtists = await getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
+    offset: 0,
+    limit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
+    refreshGenre: genre,
+  });
+  if (cachedArtists && cachedArtists.length > 0) {
+    const matchers = buildCategoryArtistTabCountMatchers(genre);
+    const counts: Record<string, number> = { all: cachedArtists.length };
+    for (const matcher of matchers) {
+      if (matcher.id === "all") {
+        continue;
+      }
+      counts[matcher.id] = cachedArtists.reduce(
+        (total, row) => total + (matcher.matches(row.dominantGenre) ? 1 : 0),
+        0,
+      );
+    }
+
+    return counts;
+  }
+
   const videoGenreColumnExists = await hasVideoGenreColumn();
   if (!videoGenreColumnExists) {
     return { all: 0 };
@@ -1132,19 +1155,20 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
     videoArtistIndexHint,
   });
 
-  const cachedArtists = await getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
+  const countedCachedArtists = await getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
     offset: 0,
     limit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
     expectedTotal: authoritativeAllCount,
+    refreshGenre: genre,
   });
-  if (cachedArtists && cachedArtists.length >= authoritativeAllCount) {
+  if (countedCachedArtists && countedCachedArtists.length >= authoritativeAllCount) {
     const matchers = buildCategoryArtistTabCountMatchers(genre);
     const counts: Record<string, number> = { all: authoritativeAllCount };
     for (const matcher of matchers) {
       if (matcher.id === "all") {
         continue;
       }
-      counts[matcher.id] = cachedArtists.reduce(
+      counts[matcher.id] = countedCachedArtists.reduce(
         (total, row) => total + (matcher.matches(row.dominantGenre) ? 1 : 0),
         0,
       );
@@ -1302,6 +1326,7 @@ export function clearGenreCaches() {
   genreCardsCache = undefined;
   genreCardsInFlight = undefined;
   genreListCache = undefined;
+  pinnedCategoryArtistPreviewsByBucketCache = null;
 }
 
 function scheduleCategoryBucketRuntimeCacheRefresh() {

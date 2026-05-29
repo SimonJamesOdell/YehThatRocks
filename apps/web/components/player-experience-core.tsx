@@ -575,6 +575,7 @@ export function PlayerExperience({
   const [localParsedArtistOverride, setLocalParsedArtistOverride] = useState<string | null>(null);
   const [localParsedTrackOverride, setLocalParsedTrackOverride] = useState<string | null>(null);
   const [overlayArtistVideoCount, setOverlayArtistVideoCount] = useState<number | null>(null);
+  const [overlayArtistVideoCountResolvedForVideoId, setOverlayArtistVideoCountResolvedForVideoId] = useState<string | null>(null);
   const endedChoiceOverlayRef = useRef<HTMLDivElement | null>(null);
   const endedChoicePrefetchRafRef = useRef<number | null>(null);
   const endedChoiceRowHeightRef = useRef(220);
@@ -1001,7 +1002,7 @@ export function PlayerExperience({
   const artistPagePath = getArtistPagePath(metadataArtist);
   const overlayArtistHref = artistPagePath ? withVideoContext(artistPagePath, currentVideo.id) : null;
   const overlayArtistSlug = artistPagePath?.split("/")[2] ?? null;
-  const overlayArtistVideoCountLabel = overlayArtistVideoCount === null
+  const overlayArtistVideoCountLabel = overlayArtistVideoCountResolvedForVideoId !== currentVideo.id || overlayArtistVideoCount === null
     ? null
     : `${overlayArtistVideoCount.toLocaleString("en-US")} videos`;
   const socialShareTargets = buildSocialShareTargets(shareUrl, displayTitle);
@@ -1078,8 +1079,11 @@ export function PlayerExperience({
       : null;
 
   useEffect(() => {
+    setOverlayArtistVideoCountResolvedForVideoId(null);
+
     if (!overlayArtistSlug) {
       setOverlayArtistVideoCount(null);
+      setOverlayArtistVideoCountResolvedForVideoId(currentVideo.id);
       return;
     }
 
@@ -1095,6 +1099,7 @@ export function PlayerExperience({
         if (!response.ok) {
           if (!cancelled) {
             setOverlayArtistVideoCount(null);
+            setOverlayArtistVideoCountResolvedForVideoId(currentVideo.id);
           }
           return;
         }
@@ -1108,10 +1113,12 @@ export function PlayerExperience({
 
         if (!cancelled) {
           setOverlayArtistVideoCount(Number.isFinite(resolvedCount) ? resolvedCount : fallbackCount);
+          setOverlayArtistVideoCountResolvedForVideoId(currentVideo.id);
         }
       } catch {
         if (!cancelled) {
           setOverlayArtistVideoCount(null);
+          setOverlayArtistVideoCountResolvedForVideoId(currentVideo.id);
         }
       }
     })();

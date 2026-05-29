@@ -186,7 +186,7 @@ function runSourceChecks(failures) {
   assertContains(categoriesParentPageSource, "<CategoriesFilterGrid genreCards={cards} />", "Categories parent page renders merged cards model (runtime or fallback)", failures);
 
   assertContains(topLevelCardsApiSource, "getRuntimeCachedTopLevelGenreCards", "Top-level cards API reads runtime cache source", failures);
-  assertContains(topLevelCardsApiSource, "getGenreCards", "Top-level cards API falls back to richer genre-card source", failures);
+  assertNotContains(topLevelCardsApiSource, "getGenreCards", "Top-level cards API avoids request-time genre-card rebuilds", failures);
   assertContains(topLevelCardsApiSource, "Cache-Control", "Top-level cards API emits cache headers", failures);
 
   assertContains(categoryCardsSessionCacheSource, "readCategoryCardsSessionCache", "Category cards session cache exposes read helper", failures);
