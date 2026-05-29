@@ -17,13 +17,17 @@ const SOURCE_FILES = {
   categoryArtistPage: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/artists/[artistSlug]/page.tsx"),
   categoryArtistsApi: path.join(ROOT, "apps/web/app/api/categories/[slug]/artists/route.ts"),
   categoryArtistVideosApi: path.join(ROOT, "apps/web/app/api/categories/[slug]/artists/[artistSlug]/route.ts"),
-  categoryArtistsBrowser: path.join(ROOT, "apps/web/components/category-artists-browser.tsx"),
   categoryVideosInfinite: path.join(ROOT, "apps/web/components/category-videos-infinite.tsx"),
-  categoriesFilterGrid: path.join(ROOT, "apps/web/components/categories-filter-grid.tsx"),
   categoryCardsSessionCache: path.join(ROOT, "apps/web/lib/category-cards-session-cache.ts"),
   categoryArtistsSessionCache: path.join(ROOT, "apps/web/lib/category-artists-session-cache.ts"),
+  categoriesNewParentPage: path.join(ROOT, "apps/web/app/(shell)/categories_new/page.tsx"),
+  categoriesNewCategoryPage: path.join(ROOT, "apps/web/app/(shell)/categories_new/[slug]/page.tsx"),
+  categoriesNewGrid: path.join(ROOT, "apps/web/components/categories-new-grid.tsx"),
+  categoriesNewArtistsBrowser: path.join(ROOT, "apps/web/components/category-new-artists-browser.tsx"),
+  categoriesNewSnapshots: path.join(ROOT, "apps/web/lib/categories-new-snapshots.ts"),
   thumbnailPinClientSync: path.join(ROOT, "apps/web/lib/thumbnail-pin-client-sync.ts"),
   artistVideoLink: path.join(ROOT, "apps/web/components/artist-video-link.tsx"),
+  catalogDataCore: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   catalogDataGenres: path.join(ROOT, "apps/web/lib/catalog-data-genres.ts"),
   warmCategoryCaches: path.join(ROOT, "scripts/warm-category-caches.js"),
   adminThumbnailPinsRoute: path.join(ROOT, "apps/web/app/api/admin/thumbnail-pins/route.ts"),
@@ -172,20 +176,24 @@ function runSourceChecks(failures) {
   const categoryArtistPageSource = readFileStrict(SOURCE_FILES.categoryArtistPage, ROOT);
   const categoryArtistsApiSource = readFileStrict(SOURCE_FILES.categoryArtistsApi, ROOT);
   const categoryArtistVideosApiSource = readFileStrict(SOURCE_FILES.categoryArtistVideosApi, ROOT);
-  const categoryArtistsBrowserSource = readFileStrict(SOURCE_FILES.categoryArtistsBrowser, ROOT);
   const categoryVideosInfiniteSource = readFileStrict(SOURCE_FILES.categoryVideosInfinite, ROOT);
-  const categoriesFilterGridSource = readFileStrict(SOURCE_FILES.categoriesFilterGrid, ROOT);
   const categoryCardsSessionCacheSource = readFileStrict(SOURCE_FILES.categoryCardsSessionCache, ROOT);
   const categoryArtistsSessionCacheSource = readFileStrict(SOURCE_FILES.categoryArtistsSessionCache, ROOT);
+  const categoriesNewParentPageSource = readFileStrict(SOURCE_FILES.categoriesNewParentPage, ROOT);
+  const categoriesNewCategoryPageSource = readFileStrict(SOURCE_FILES.categoriesNewCategoryPage, ROOT);
+  const categoriesNewGridSource = readFileStrict(SOURCE_FILES.categoriesNewGrid, ROOT);
+  const categoriesNewArtistsBrowserSource = readFileStrict(SOURCE_FILES.categoriesNewArtistsBrowser, ROOT);
+  const categoriesNewSnapshotsSource = readFileStrict(SOURCE_FILES.categoriesNewSnapshots, ROOT);
   const thumbnailPinClientSyncSource = readFileStrict(SOURCE_FILES.thumbnailPinClientSync, ROOT);
   const artistVideoLinkSource = readFileStrict(SOURCE_FILES.artistVideoLink, ROOT);
+  const catalogDataCoreSource = readFileStrict(SOURCE_FILES.catalogDataCore, ROOT);
   const catalogDataGenresSource = readFileStrict(SOURCE_FILES.catalogDataGenres, ROOT);
   const warmCategoryCachesSource = readFileStrict(SOURCE_FILES.warmCategoryCaches, ROOT);
   const adminThumbnailPinsRouteSource = readFileStrict(SOURCE_FILES.adminThumbnailPinsRoute, ROOT);
   const genreBucketsSource = readFileStrict(SOURCE_FILES.genreBuckets, ROOT);
 
-  assertContains(categoriesParentPageSource, "const fallbackCards", "Categories parent page builds immediate fallback cards for fast first render", failures);
-  assertContains(categoriesParentPageSource, "<CategoriesFilterGrid genreCards={cards} />", "Categories parent page renders merged cards model (runtime or fallback)", failures);
+  assertContains(categoriesParentPageSource, "getCategoriesNewTopLevelSnapshot", "Categories parent page reads snapshot-backed top-level categories", failures);
+  assertContains(categoriesParentPageSource, "<CategoriesNewGrid cards={cards} basePath=\"/categories\" />", "Categories parent page renders snapshot-backed grid as canonical categories UI", failures);
 
   assertContains(topLevelCardsApiSource, "getRuntimeCachedTopLevelGenreCards", "Top-level cards API reads runtime cache source", failures);
   assertNotContains(topLevelCardsApiSource, "getGenreCards", "Top-level cards API avoids request-time genre-card rebuilds", failures);
@@ -206,27 +214,29 @@ function runSourceChecks(failures) {
   assertContains(categoryArtistsApiSource, "full\") === \"1\"", "Category artists API supports full cached payload requests", failures);
   assertContains(categoryArtistsApiSource, "warm\") === \"1\"", "Category artists API supports awaited runtime cache warming", failures);
   assertContains(categoryArtistsApiSource, "getCachedCategoryArtistsByGenre", "Category artists API uses cache-only reads for normal full payload requests", failures);
+  assertContains(catalogDataCoreSource, "scheduleCategoriesNewSnapshotBuild", "Catalog cache invalidation triggers categories_new snapshot builds", failures);
+  assertContains(categoriesNewSnapshotsSource, "category_page_snapshots", "Categories_new snapshot store persists versioned page payloads", failures);
+  assertContains(categoriesNewSnapshotsSource, "category_page_snapshot_state", "Categories_new snapshot store keeps an active build pointer for atomic publish", failures);
+  assertContains(categoriesNewSnapshotsSource, "scheduleCategoriesNewSnapshotBuild", "Categories_new snapshot store exposes a shared background build trigger", failures);
+  assertContains(categoriesNewSnapshotsSource, "getCategoriesNewTopLevelSnapshot", "Categories_new snapshot store exposes top-level snapshot reads", failures);
+  assertContains(categoriesNewSnapshotsSource, "getCategoriesNewCategorySnapshot", "Categories_new snapshot store exposes per-category snapshot reads", failures);
+  assertContains(categoriesNewSnapshotsSource, "SNAPSHOT_ARTIST_LIMIT = 25_000", "Categories_new snapshot builds capture comprehensive artist grids", failures);
   assertContains(catalogDataGenresSource, "warmCategoryArtistRuntimeCacheByGenre", "Catalog genre data exposes category artist runtime cache warmer", failures);
   assertContains(catalogDataGenresSource, "CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT = 25_000", "Category artist runtime cache rebuild limit is comprehensive", failures);
   assertContains(warmCategoryCachesSource, "full=1&warm=1", "Category warmup refreshes full category artist runtime caches", failures);
 
+  assertContains(categoriesNewParentPageSource, "redirect(\"/categories\")", "Categories_new parent route redirects to canonical /categories", failures);
+  assertContains(categoriesNewGridSource, "href={`${basePath}/${encodeURIComponent(card.slug)}`}", "Categories snapshot grid deep-links into canonical category detail routes", failures);
+  assertContains(categoriesNewCategoryPageSource, "redirect(`/categories/${encodeURIComponent(slug)}`)", "Categories_new detail route redirects to canonical /categories detail", failures);
+  assertContains(categoriesNewArtistsBrowserSource, "Categories New", "Categories_new category browser presents the snapshot-backed breadcrumb", failures);
+  assertContains(categoriesNewArtistsBrowserSource, "categoryBrowserArtistTotal", "Categories_new category browser shows embedded total artist counts immediately", failures);
+  assertContains(categoriesNewArtistsBrowserSource, "VIRTUAL_OVERSCAN_ROWS", "Categories_new category browser virtualizes the precomputed artist grid", failures);
+
   assertContains(thumbnailPinClientSyncSource, "THUMBNAIL_PIN_UPDATED_EVENT", "Thumbnail pin client sync event constant exists", failures);
   assertContains(thumbnailPinClientSyncSource, "dispatchThumbnailPinUpdated", "Thumbnail pin client sync dispatcher exists", failures);
 
-  assertContains(categoriesFilterGridSource, "prefetchCategoryCardsSessionCache", "Categories grid hydrates from top-level cards session cache", failures);
-  assertContains(categoriesFilterGridSource, "prefetchCategoryArtistsFirstPayloadForSlugs", "Categories grid triggers category-detail artists prefetch", failures);
-  assertContains(categoriesFilterGridSource, "void prefetchCategoryArtistsFirstPayloadForSlugs(slugs);", "Categories grid eagerly prefetches category detail artists payloads", failures);
-  assertContains(categoriesFilterGridSource, "THUMBNAIL_PIN_UPDATED_EVENT", "Categories grid listens for pin updates to patch root thumbnails immediately", failures);
-  assertContains(categoriesFilterGridSource, "applyCategoryCardThumbnailPinOverrides", "Categories grid applies persisted pin overrides on initial render", failures);
-
-  assertContains(categoryArtistsBrowserSource, "readCategoryArtistsFirstPayloadFromSessionCache", "Category artists browser consumes session-prefetched first payload", failures);
-  assertContains(categoryArtistsBrowserSource, "primeCategoryArtistsFullPayload", "Category artists browser hydrates full payload cache in background", failures);
-  assertContains(categoryArtistsBrowserSource, "appendArtists(pageArtists)", "Category artists browser incrementally appends fetched artist pages", failures);
-  assertContains(categoryArtistsBrowserSource, "VIRTUAL_OVERSCAN_ROWS", "Category artists browser virtualizes rows with overscan", failures);
-  assertContains(categoryArtistsBrowserSource, "gridTemplateColumns: `repeat(${safeColumns}, minmax(0, 1fr))`", "Category artists browser computes responsive virtual row columns", failures);
-
-  assertContains(categoryPageSource, "CategoryArtistsBrowser", "Category page renders category artist browser grid", failures);
-  assertContains(categoryPageSource, "CategoryBrowserTabs", "Category page renders sticky category tabs under header", failures);
+  assertContains(categoryPageSource, "getCategoriesNewCategorySnapshot", "Category page reads snapshot-backed category detail", failures);
+  assertContains(categoryPageSource, "CategoryNewArtistsBrowser", "Category page renders snapshot-backed category browser", failures);
   assertContains(categoryPageLoadingSource, "Loading category...", "Category detail route exposes an immediate loading state", failures);
   assertContains(categoryPageLoadingSource, "OverlayScrollReset", "Category detail loading state preserves overlay scroll reset behavior", failures);
   assertContains(categoryPageLoadingSource, "playerBootLoader", "Category detail loading state uses the shared boot loader styling", failures);
@@ -237,7 +247,7 @@ function runSourceChecks(failures) {
   assertContains(categoryArtistVideosApiSource, "getVideosByGenreAndArtist", "Category artist videos API resolves artist-scoped videos", failures);
   assertContains(categoryArtistVideosApiSource, "getOptionalApiAuth", "Category artist videos API supports optional auth context", failures);
   assertContains(categoryArtistVideosApiSource, "filterHiddenVideos", "Category artist videos API filters hidden videos for authenticated users", failures);
-  assertContains(categoryArtistsBrowserSource, "/categories/${encodeURIComponent(slug)}/artists/${encodeURIComponent(artist.slug)}", "Category artists cards deep-link into category artist video routes", failures);
+  assertContains(categoriesNewArtistsBrowserSource, "/categories/${encodeURIComponent(slug)}/artists/${encodeURIComponent(artist.slug)}", "Category artists cards deep-link into category artist video routes", failures);
   assertContains(categoryVideosInfiniteSource, "const isArtistCategoryRoute = Boolean(artistSlug && artistName);", "Category videos view distinguishes category artist route mode", failures);
   assertContains(categoryVideosInfiniteSource, "? `/api/categories/${encodeURIComponent(slug)}/artists/${encodeURIComponent(artistSlug ?? \"\")}`", "Category videos view fetches from artist-scoped API on artist route", failures);
   assertContains(artistVideoLinkSource, "target: adminThumbnailPinTarget", "Artist video card pin button submits explicit thumbnail pin target", failures);
@@ -245,12 +255,7 @@ function runSourceChecks(failures) {
   assertContains(artistVideoLinkSource, "patchCategoryCardThumbnailInSessionCache", "Artist video card pin flow patches top-level category cards cache", failures);
   assertContains(artistVideoLinkSource, "dispatchThumbnailPinUpdated", "Artist video card pin flow dispatches thumbnail pin update events", failures);
 
-  assertContains(categoryPageSource, "getShellRequestAuthState", "Category page resolves auth state to gate admin-only pin controls", failures);
-  assertContains(categoryPageSource, "isAdmin={isAdmin}", "Category page passes admin state into category artists browser", failures);
-  assertContains(categoryArtistsBrowserSource, "adminThumbnailPinButton", "Category artists browser renders admin-only top-left pin control", failures);
-  assertContains(categoryArtistsBrowserSource, "target: \"category\"", "Category artists browser parent-level pin writes category target", failures);
-  assertContains(categoryArtistsBrowserSource, "patchCategoryCardThumbnailInSessionCache", "Category artists browser parent pin patches root category card cache", failures);
-  assertContains(categoryArtistsBrowserSource, "THUMBNAIL_PIN_UPDATED_EVENT", "Category artists browser listens for thumbnail pin update events", failures);
+  assertContains(categoriesNewArtistsBrowserSource, "THUMBNAIL_PIN_UPDATED_EVENT", "Category artists browser listens for thumbnail pin update events", failures);
 
   assertContains(catalogDataGenresSource, "setTopLevelCategoryThumbnailPin", "Genre data layer exports dedicated top-level category thumbnail pin helper", failures);
   assertContains(catalogDataGenresSource, "await prisma.genreCard.upsert({", "Top-level category thumbnail pin persists via upsert", failures);

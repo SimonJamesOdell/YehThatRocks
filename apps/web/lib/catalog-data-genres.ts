@@ -54,6 +54,7 @@ const CATEGORY_BUCKET_RUNTIME_CACHE_STALE_MS = 6 * 60 * 60 * 1000;
 const CATEGORY_ARTIST_RUNTIME_CACHE_TABLE_CACHE_TTL_MS = 60_000;
 const CATEGORY_ARTIST_RUNTIME_CACHE_STALE_MS = 6 * 60 * 60 * 1000;
 const CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT = 25_000;
+const CATEGORY_ARTIST_DIRECT_QUERY_PAGE_LIMIT = 1_000;
 const CATEGORY_PINNED_PREVIEW_CACHE_TTL_MS = 60_000;
 const GENRE_ARTIST_SEED_CACHE_TTL_MS = 2 * 60 * 1000;
 const GENRE_CACHE_MAX_ENTRIES = Math.max(
@@ -360,6 +361,41 @@ async function getRuntimeCachedCategoryArtistsByGenre(
   return mapCategoryArtistRows(rows);
 }
 
+async function queryCategoryArtistsByGenreFromVideosPaged(
+  genre: string,
+  options: { offset: number; limit: number },
+): Promise<CategoryArtistCard[]> {
+  const requestedOffset = Math.max(0, Number.isFinite(options.offset) ? Number(options.offset) : 0);
+  const requestedLimit = Math.max(1, Number.isFinite(options.limit) ? Number(options.limit) : 48);
+  const pageSize = Math.max(1, Math.min(CATEGORY_ARTIST_DIRECT_QUERY_PAGE_LIMIT, requestedLimit));
+
+  const collected: CategoryArtistCard[] = [];
+  let offset = requestedOffset;
+
+  while (collected.length < requestedLimit) {
+    const remaining = requestedLimit - collected.length;
+    const limit = Math.min(pageSize, remaining);
+    const page = await queryCategoryArtistsByGenreFromVideos(genre, {
+      offset,
+      limit,
+      maxLimit: CATEGORY_ARTIST_DIRECT_QUERY_PAGE_LIMIT,
+    });
+
+    if (page.length === 0) {
+      break;
+    }
+
+    collected.push(...page);
+    offset += page.length;
+
+    if (page.length < limit) {
+      break;
+    }
+  }
+
+  return collected;
+}
+
 async function upsertCategoryArtistRuntimeCacheRows(genreNorm: string, artists: CategoryArtistCard[]) {
   if (!hasDatabaseUrl()) {
     return;
@@ -449,10 +485,9 @@ export async function warmCategoryArtistRuntimeCacheByGenre(genre: string): Prom
     return { warmed: false, count: 0 };
   }
 
-  const artists = await queryCategoryArtistsByGenreFromVideos(genre, {
+  const artists = await queryCategoryArtistsByGenreFromVideosPaged(genre, {
     offset: 0,
     limit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
-    maxLimit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
   });
   await upsertCategoryArtistRuntimeCacheRows(normalizedGenre, artists);
 
@@ -759,6 +794,14 @@ async function persistTopLevelCategoryPreview(bucketLabel: string, normalizedVid
   }
 }
 
+function scheduleCategoriesNewSnapshotBuildAfterPin(reason: string) {
+  void import("@/lib/categories-new-snapshots")
+    .then(({ scheduleCategoriesNewSnapshotBuild }) => {
+      scheduleCategoriesNewSnapshotBuild(reason);
+    })
+    .catch(() => undefined);
+}
+
 export async function setTopLevelCategoryThumbnailPin(genre: string, thumbnailVideoId: string) {
   const bucketLabel = resolveTopLevelGenreBucket(genre) ?? genre.trim();
   const normalizedVideoId = normalizeYouTubeVideoId(thumbnailVideoId);
@@ -769,6 +812,7 @@ export async function setTopLevelCategoryThumbnailPin(genre: string, thumbnailVi
 
   await persistTopLevelCategoryPreview(bucketLabel, normalizedVideoId);
   clearGenreCaches();
+  scheduleCategoriesNewSnapshotBuildAfterPin("thumbnail-pin:category");
 
   return {
     bucketLabel,
@@ -819,6 +863,7 @@ export async function setCategoryArtistThumbnailPin(genre: string, artistName: s
   }
 
   clearGenreCaches();
+  scheduleCategoriesNewSnapshotBuildAfterPin("thumbnail-pin:category-artist");
 }
 
 async function queryCategoryArtistsByGenreFromVideos(
@@ -896,7 +941,7 @@ async function queryCategoryArtistsByGenreFromVideos(
 
 export async function getCategoryArtistsByGenre(
   genre: string,
-  options?: { offset?: number; limit?: number; maxLimit?: number },
+  options?: { offset?: number; limit?: number; maxLimit?: number; bypassRuntimeCache?: boolean },
 ): Promise<CategoryArtistCard[]> {
   if (!hasDatabaseUrl()) {
     return [];
@@ -913,20 +958,27 @@ export async function getCategoryArtistsByGenre(
     return [];
   }
 
-  const cachedArtists = await getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
-    offset: requestedOffset,
-    limit: requestedLimit,
-    refreshGenre: genre,
-  });
-  if (cachedArtists) {
-    return cachedArtists;
+  if (!options?.bypassRuntimeCache) {
+    const cachedArtists = await getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
+      offset: requestedOffset,
+      limit: requestedLimit,
+      refreshGenre: genre,
+    });
+    if (cachedArtists) {
+      return cachedArtists;
+    }
   }
 
-  const artists = await queryCategoryArtistsByGenreFromVideos(genre, {
-    offset: requestedOffset,
-    limit: requestedLimit,
-    maxLimit,
-  });
+  const artists = options?.bypassRuntimeCache
+    ? await queryCategoryArtistsByGenreFromVideosPaged(genre, {
+      offset: requestedOffset,
+      limit: requestedLimit,
+    })
+    : await queryCategoryArtistsByGenreFromVideos(genre, {
+      offset: requestedOffset,
+      limit: requestedLimit,
+      maxLimit,
+    });
 
   scheduleCategoryArtistRuntimeCacheRebuild(genre, normalizedGenre);
   return artists;

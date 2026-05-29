@@ -24,12 +24,14 @@ import { clearVideosCaches } from "@/lib/catalog-data-videos";
 import { clearFavouritesCaches } from "@/lib/catalog-data-favourites";
 import { clearHiddenVideoIdsCaches } from "@/lib/catalog-data-hidden";
 import { clearHistoryCaches } from "@/lib/catalog-data-history";
+import { scheduleCategoriesNewSnapshotBuild } from "@/lib/categories-new-snapshots";
 
 export function clearCatalogVideoCaches() {
   clearVideosCaches();
   clearArtistCaches();
   clearGenreCaches();
   void invalidateRuntimeCategoryCaches();
+  scheduleCategoriesNewSnapshotBuild();
   clearIngestionCaches();
   clearFavouritesCaches();
   clearHiddenVideoIdsCaches();

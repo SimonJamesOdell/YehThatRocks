@@ -1,20 +1,17 @@
 import type { Metadata } from "next";
 
-import { CategoryArtistsBrowser } from "@/components/category-artists-browser";
-import { CategoryBrowserHeader } from "@/components/category-browser-header";
-import { CategoryBrowserTabs } from "@/components/category-browser-tabs";
+import { CategoryNewArtistsBrowser } from "@/components/category-new-artists-browser";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
-import { getGenreBySlug } from "@/lib/catalog-data";
-import { getShellRequestAuthState } from "@/lib/shell-request-state";
+import { getCategoriesNewCategorySnapshot } from "@/lib/categories-new-snapshots";
 
 const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
 
 export async function generateMetadata({ params }: CategoryPageProps): Promise<Metadata> {
   const { slug } = await params;
-  const genre = await getGenreBySlug(slug);
-  if (!genre) return {};
-  const title = `${genre} Artists | YehThatRocks`;
-  const description = `Browse artists with videos in ${genre} on YehThatRocks, then drill into artist-specific category video lists.`;
+  const snapshot = await getCategoriesNewCategorySnapshot(slug);
+  if (!snapshot) return {};
+  const title = `${snapshot.genre} Artists | YehThatRocks`;
+  const description = `Browse precomputed artists and counts for ${snapshot.genre} on YehThatRocks.`;
   return {
     title,
     description,
@@ -40,23 +37,22 @@ type CategoryPageProps = {
 
 export default async function CategoryDetailPage({ params }: CategoryPageProps) {
   const { slug } = await params;
-  const [genre, { isAdmin }] = await Promise.all([
-    getGenreBySlug(slug),
-    getShellRequestAuthState(),
-  ]);
+  const snapshot = await getCategoriesNewCategorySnapshot(slug);
 
-  if (!genre) {
+  if (!snapshot) {
     return (
       <>
         <OverlayScrollReset />
         <article className="catalogCard categoryNoVideos">
           <p className="statusLabel">Categories</p>
-          <h3>Category not found</h3>
-          <p>This bucket is not available right now.</p>
+          <h3>Snapshot not available</h3>
+          <p>This category snapshot has not been built yet. Trigger a catalog change to publish one.</p>
         </article>
       </>
     );
   }
+
+  const { genre } = snapshot;
   const categoryJsonLd = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",
@@ -77,9 +73,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(categoryJsonLd) }} />
       <OverlayScrollReset />
-      <CategoryBrowserHeader genre={genre} slug={slug} />
-      <CategoryBrowserTabs genre={genre} slug={slug} />
-      <CategoryArtistsBrowser slug={slug} genre={genre} isAdmin={isAdmin} />
+      <CategoryNewArtistsBrowser snapshot={snapshot} parentPath="/categories" />
     </>
   );
 }

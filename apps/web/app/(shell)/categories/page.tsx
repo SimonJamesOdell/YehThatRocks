@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
-import { CategoriesFilterGrid } from "@/components/categories-filter-grid";
+import { CategoriesNewGrid } from "@/components/categories-new-grid";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
-import { getRuntimeCachedTopLevelGenreCards } from "@/lib/catalog-data";
-import { TOP_LEVEL_GENRE_BUCKETS } from "@/lib/genre-buckets";
-import type { GenreCard } from "@/lib/catalog-data-utils";
+import { getCategoriesNewTopLevelSnapshot } from "@/lib/categories-new-snapshots";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -31,13 +29,8 @@ export const metadata: Metadata = {
 };
 
 export default async function CategoriesPage() {
-  const fallbackCards: GenreCard[] = TOP_LEVEL_GENRE_BUCKETS.map((bucket) => ({
-    genre: bucket.label,
-    previewVideoId: null,
-    artistCount: 0,
-  }));
-  const genreCards = await getRuntimeCachedTopLevelGenreCards().catch(() => null);
-  const cards = genreCards && genreCards.length > 0 ? genreCards : fallbackCards;
+  const snapshot = await getCategoriesNewTopLevelSnapshot();
+  const cards = snapshot?.cards ?? [];
 
   const categoriesJsonLd = {
     "@context": "https://schema.org",
@@ -45,7 +38,7 @@ export default async function CategoriesPage() {
     name: "Rock & Metal Category Buckets on YehThatRocks",
     description: "Top-level rock and metal category buckets with curated music videos.",
     url: `${SITE_ORIGIN}/categories`,
-    itemListElement: fallbackCards.slice(0, 50).map((card, index) => ({
+    itemListElement: cards.slice(0, 50).map((card, index) => ({
       "@type": "ListItem",
       position: index + 1,
       name: card.genre,
@@ -53,11 +46,25 @@ export default async function CategoriesPage() {
     })),
   };
 
+  if (cards.length === 0) {
+    return (
+      <>
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(categoriesJsonLd) }} />
+        <OverlayScrollReset />
+        <article className="catalogCard categoryNoVideos">
+          <p className="statusLabel">Categories</p>
+          <h3>Snapshot not built yet</h3>
+          <p>Pin a category thumbnail or apply any catalog change to trigger the categories snapshot build.</p>
+        </article>
+      </>
+    );
+  }
+
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(categoriesJsonLd) }} />
       <OverlayScrollReset />
-      <CategoriesFilterGrid genreCards={cards} />
+      <CategoriesNewGrid cards={cards} basePath="/categories" />
     </>
   );
 }

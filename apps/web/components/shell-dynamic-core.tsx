@@ -749,7 +749,12 @@ function ShellDynamicInner({
     },
   });
   const isCategoriesParentOverlayPendingOrActive = isCategoriesOverlayPendingOrActive
-    && (pathname === "/categories" || overlayRouteKey === "/categories");
+    && (
+      pathname === "/categories"
+      || overlayRouteKey === "/categories"
+      || pathname === "/categories_new"
+      || overlayRouteKey === "/categories_new"
+    );
   const handleOverlayOpenRequest = useCallback((kind: "wiki" | "video", optimisticRouteKey: string) => {
     setPendingOverlayOpenKind(kind);
     setPendingOverlayRouteKey(optimisticRouteKey);

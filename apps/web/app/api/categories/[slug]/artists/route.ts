@@ -32,17 +32,31 @@ export async function GET(request: NextRequest, context: CategoryArtistsRouteCon
     }
 
     if (shouldWarmRuntimeCache) {
-      await warmCategoryArtistRuntimeCacheByGenre(genre);
+      try {
+        await warmCategoryArtistRuntimeCacheByGenre(genre);
+      } catch (error) {
+        console.warn("[api/categories/[slug]/artists] warm runtime cache failed", {
+          message: error instanceof Error ? error.message : "unknown error",
+          slug,
+          genre,
+        });
+      }
     }
 
     let artistsWithProbe: Awaited<ReturnType<typeof getCategoryArtistsByGenre>> = [];
     let tabCounts: Awaited<ReturnType<typeof getCategoryArtistTabCountsByGenre>> | null = null;
-    const useCacheOnlyFullPayload = wantsFullPayload && !shouldWarmRuntimeCache;
+    const shouldBypassRuntimeCache = wantsFullPayload && offset === 0;
+    const useCacheOnlyFullPayload = wantsFullPayload && !shouldWarmRuntimeCache && !shouldBypassRuntimeCache;
 
     try {
       const artistRowsPromise = useCacheOnlyFullPayload
         ? getCachedCategoryArtistsByGenre(genre, { offset, limit: limit + 1 })
-        : getCategoryArtistsByGenre(genre, { offset, limit: limit + 1, maxLimit: maxLimit + 1 });
+        : getCategoryArtistsByGenre(genre, {
+          offset,
+          limit: limit + 1,
+          maxLimit: maxLimit + 1,
+          bypassRuntimeCache: shouldBypassRuntimeCache,
+        });
       const results = await Promise.all([
         artistRowsPromise,
         offset === 0 && includeTabCounts && !useCacheOnlyFullPayload ? getCategoryArtistTabCountsByGenre(genre) : Promise.resolve(null),
@@ -52,6 +66,14 @@ export async function GET(request: NextRequest, context: CategoryArtistsRouteCon
 
       if (useCacheOnlyFullPayload && offset === 0 && includeTabCounts && artistsWithProbe.length > 0) {
         tabCounts = await getCategoryArtistTabCountsByGenre(genre);
+      }
+
+      if (shouldBypassRuntimeCache && offset === 0 && artistsWithProbe.length > 0) {
+        const directCount = artistsWithProbe.length;
+        tabCounts = {
+          ...(tabCounts ?? {}),
+          all: Math.max(directCount, Number(tabCounts?.all ?? 0)),
+        };
       }
     } catch (error) {
       console.warn("[api/categories/[slug]/artists] primary query degraded", {
