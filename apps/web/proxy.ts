@@ -110,7 +110,9 @@ export async function proxy(request: NextRequest) {
     isBrowserPageRequest
     && !pathname.startsWith("/api")
     && pathname !== "/desktop-only"
-    && !isEmbedRoute;
+    && !isEmbedRoute
+    && !isSitemapOrRobotsRequest
+    && !isMetadataCrawler;
 
   if (isBrowserPageNav) {
     const { accessToken: maybeAccess, refreshToken } = readAuthCookies(request);

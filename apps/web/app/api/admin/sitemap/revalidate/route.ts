@@ -2,15 +2,7 @@ import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 
 import { withAuthAndCsrf } from "@/lib/api-route-pipeline";
-
-const SITEMAP_PATHS = [
-  "/sitemap/0.xml",
-  "/sitemap/1.xml",
-  "/sitemap/2.xml",
-  "/sitemap/3.xml",
-  "/sitemap/4.xml",
-  "/robots.txt",
-] as const;
+import { getSitemapShardIds } from "@/lib/sitemap-data";
 
 export async function POST(request: NextRequest) {
   const result = await withAuthAndCsrf(request);
@@ -18,13 +10,19 @@ export async function POST(request: NextRequest) {
     return result.response;
   }
 
-  for (const path of SITEMAP_PATHS) {
+  const sitemapPaths = [
+    "/sitemap.xml",
+    ...(await getSitemapShardIds()).map((id) => `/sitemap/${id}.xml`),
+    "/robots.txt",
+  ];
+
+  for (const path of sitemapPaths) {
     revalidatePath(path);
   }
 
   return NextResponse.json({
     ok: true,
-    revalidated: [...SITEMAP_PATHS],
+    revalidated: sitemapPaths,
     at: new Date().toISOString(),
   });
 }
