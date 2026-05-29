@@ -10,6 +10,7 @@ const CATEGORY_ARTISTS_FULL_TTL_MS = 24 * 60 * 60 * 1000;
 const CATEGORY_ARTISTS_FULL_REVALIDATE_MS = 20 * 60 * 1000;
 const FIRST_PAGE_LIMIT = 50;
 const FULL_PAGE_LIMIT = 96;
+const FULL_PAYLOAD_LIMIT = 25_000;
 const FULL_FETCH_CONCURRENCY = 2;
 const FIRST_PAYLOAD_PREFETCH_CONCURRENCY = 2;
 const PAGE_FETCH_ATTEMPTS = 3;
@@ -166,6 +167,51 @@ async function fetchCategoryArtistsPage(slug: string, offset: number, limit: num
     hasMore: payload.hasMore === true,
     nextOffset: Number.isFinite(nextOffset) ? nextOffset : offset + artists.length,
   } as CategoryArtistsFirstPayload;
+}
+
+async function fetchCategoryArtistsFullPayload(slug: string) {
+  const searchParams = new URLSearchParams();
+  searchParams.set("full", "1");
+  searchParams.set("includeTabCounts", "1");
+  searchParams.set("offset", "0");
+  searchParams.set("limit", String(FULL_PAYLOAD_LIMIT));
+
+  const response = await fetch(`/api/categories/${encodeURIComponent(slug)}/artists?${searchParams.toString()}`, {
+    cache: "no-store",
+  }).catch(() => null);
+
+  if (!response || !response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json()) as {
+    artists?: CategoryArtistCard[];
+    totalArtists?: number | null;
+    tabCounts?: Record<string, number> | null;
+    hasMore?: boolean;
+    nextOffset?: number;
+  };
+
+  const artists = normalizeArtists(payload.artists);
+  const hasMore = payload.hasMore === true;
+  if (artists.length === 0 && hasMore) {
+    return null;
+  }
+
+  const totalArtists = typeof payload.totalArtists === "number" && Number.isFinite(payload.totalArtists)
+    ? payload.totalArtists
+    : artists.length;
+  const nextOffset = Number(payload.nextOffset);
+
+  return {
+    artists,
+    totalArtists,
+    tabCounts: payload.tabCounts && typeof payload.tabCounts === "object" ? payload.tabCounts : null,
+    hasMore,
+    nextOffset: Number.isFinite(nextOffset) ? nextOffset : artists.length,
+    fetchedAt: Date.now(),
+    lastCheckedAt: Date.now(),
+  } as CategoryArtistsFullPayload;
 }
 
 function sleep(ms: number) {
@@ -476,6 +522,19 @@ export async function primeCategoryArtistsFullPayload(
           }
         }
       }
+    }
+
+    const serverFullPayload = await fetchCategoryArtistsFullPayload(normalizedSlug);
+    if (serverFullPayload && isCompleteCategoryArtistsPayload(serverFullPayload)) {
+      writeCategoryArtistsFullPayloadToCache(normalizedSlug, serverFullPayload);
+      writeCategoryArtistsFirstPayloadToSessionCache(normalizedSlug, {
+        artists: serverFullPayload.artists.slice(0, FIRST_PAGE_LIMIT),
+        totalArtists: serverFullPayload.totalArtists,
+        tabCounts: serverFullPayload.tabCounts,
+        hasMore: serverFullPayload.artists.length > FIRST_PAGE_LIMIT,
+        nextOffset: Math.min(serverFullPayload.artists.length, FIRST_PAGE_LIMIT),
+      });
+      return serverFullPayload;
     }
 
     const baseline = options.seedPayload && options.seedPayload.artists.length > 0

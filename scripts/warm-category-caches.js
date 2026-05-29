@@ -51,9 +51,10 @@ async function warmCategoryCaches() {
   const baseUrl = (process.env.WARMUP_BASE_URL || "http://127.0.0.1:3000").replace(/\/$/, "");
   const maxWaitMs = Math.max(5_000, Number(process.env.WARMUP_MAX_WAIT_MS || 90_000));
   const requestTimeoutMs = Math.max(1_000, Number(process.env.WARMUP_REQUEST_TIMEOUT_MS || 12_000));
+  const categoryRefreshTimeoutMs = Math.max(requestTimeoutMs, Number(process.env.WARMUP_CATEGORY_REFRESH_TIMEOUT_MS || 120_000));
   const pollMs = Math.max(250, Number(process.env.WARMUP_POLL_MS || 1_000));
   const includeTabCounts = process.env.WARMUP_INCLUDE_TAB_COUNTS !== "0";
-  const firstPageLimit = Math.max(1, Math.min(200, Number(process.env.WARMUP_CATEGORY_FIRST_PAGE_LIMIT || 50)));
+  const fullPayloadLimit = Math.max(1, Math.min(25_000, Number(process.env.WARMUP_CATEGORY_FULL_PAYLOAD_LIMIT || 25_000)));
 
   console.log(`[warmup] Waiting for app readiness at ${baseUrl}...`);
   const ready = await waitForStatus(baseUrl, maxWaitMs, pollMs);
@@ -62,11 +63,8 @@ async function warmCategoryCaches() {
   }
 
   console.log("[warmup] Priming top-level category cards...");
-  await fetchJson(`${baseUrl}/api/categories/top-level-cards`, requestTimeoutMs);
-
-  console.log("[warmup] Loading categories list...");
-  const categoriesPayload = await fetchJson(`${baseUrl}/api/categories`, requestTimeoutMs);
-  const categories = Array.isArray(categoriesPayload?.categories) ? categoriesPayload.categories : [];
+  const topLevelCardsPayload = await fetchJson(`${baseUrl}/api/categories/top-level-cards`, requestTimeoutMs);
+  const categories = Array.isArray(topLevelCardsPayload?.cards) ? topLevelCardsPayload.cards : [];
 
   const slugs = Array.from(new Set(
     categories
@@ -79,15 +77,15 @@ async function warmCategoryCaches() {
     return;
   }
 
-  console.log(`[warmup] Priming ${slugs.length} category artist endpoints...`);
+  console.log(`[warmup] Refreshing ${slugs.length} category artist runtime caches...`);
   const query = includeTabCounts
-    ? `offset=0&limit=${firstPageLimit}&includeTabCounts=1`
-    : `offset=0&limit=${firstPageLimit}`;
+    ? `offset=0&limit=${fullPayloadLimit}&full=1&warm=1&includeTabCounts=1`
+    : `offset=0&limit=${fullPayloadLimit}&full=1&warm=1`;
 
   for (const slug of slugs) {
     const url = `${baseUrl}/api/categories/${encodeURIComponent(slug)}/artists?${query}`;
     try {
-      await fetchJson(url, requestTimeoutMs);
+      await fetchJson(url, categoryRefreshTimeoutMs);
       console.log(`[warmup] OK ${slug}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

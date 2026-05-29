@@ -25,6 +25,7 @@ const SOURCE_FILES = {
   thumbnailPinClientSync: path.join(ROOT, "apps/web/lib/thumbnail-pin-client-sync.ts"),
   artistVideoLink: path.join(ROOT, "apps/web/components/artist-video-link.tsx"),
   catalogDataGenres: path.join(ROOT, "apps/web/lib/catalog-data-genres.ts"),
+  warmCategoryCaches: path.join(ROOT, "scripts/warm-category-caches.js"),
   adminThumbnailPinsRoute: path.join(ROOT, "apps/web/app/api/admin/thumbnail-pins/route.ts"),
   genreBuckets: path.join(ROOT, "apps/web/lib/genre-buckets.ts"),
 };
@@ -179,6 +180,7 @@ function runSourceChecks(failures) {
   const thumbnailPinClientSyncSource = readFileStrict(SOURCE_FILES.thumbnailPinClientSync, ROOT);
   const artistVideoLinkSource = readFileStrict(SOURCE_FILES.artistVideoLink, ROOT);
   const catalogDataGenresSource = readFileStrict(SOURCE_FILES.catalogDataGenres, ROOT);
+  const warmCategoryCachesSource = readFileStrict(SOURCE_FILES.warmCategoryCaches, ROOT);
   const adminThumbnailPinsRouteSource = readFileStrict(SOURCE_FILES.adminThumbnailPinsRoute, ROOT);
   const genreBucketsSource = readFileStrict(SOURCE_FILES.genreBuckets, ROOT);
 
@@ -197,7 +199,16 @@ function runSourceChecks(failures) {
 
   assertContains(categoryArtistsSessionCacheSource, "prefetchCategoryArtistsFirstPayloadForSlugs", "Category artists session cache supports batch slug prefetch", failures);
   assertContains(categoryArtistsSessionCacheSource, "FIRST_PAGE_LIMIT = 50", "Category artists session cache prefetch uses bounded first page payload", failures);
+  assertContains(categoryArtistsSessionCacheSource, "fetchCategoryArtistsFullPayload", "Category artists session cache can hydrate full category payloads in one request", failures);
+  assertContains(categoryArtistsSessionCacheSource, "FULL_PAYLOAD_LIMIT = 25_000", "Category artists full payload fetch has a bounded but comprehensive limit", failures);
   assertContains(categoryArtistsSessionCacheSource, "patchCategoryArtistThumbnailInCaches", "Category artists cache supports immediate thumbnail patch after admin pin", failures);
+
+  assertContains(categoryArtistsApiSource, "full\") === \"1\"", "Category artists API supports full cached payload requests", failures);
+  assertContains(categoryArtistsApiSource, "warm\") === \"1\"", "Category artists API supports awaited runtime cache warming", failures);
+  assertContains(categoryArtistsApiSource, "getCachedCategoryArtistsByGenre", "Category artists API uses cache-only reads for normal full payload requests", failures);
+  assertContains(catalogDataGenresSource, "warmCategoryArtistRuntimeCacheByGenre", "Catalog genre data exposes category artist runtime cache warmer", failures);
+  assertContains(catalogDataGenresSource, "CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT = 25_000", "Category artist runtime cache rebuild limit is comprehensive", failures);
+  assertContains(warmCategoryCachesSource, "full=1&warm=1", "Category warmup refreshes full category artist runtime caches", failures);
 
   assertContains(thumbnailPinClientSyncSource, "THUMBNAIL_PIN_UPDATED_EVENT", "Thumbnail pin client sync event constant exists", failures);
   assertContains(thumbnailPinClientSyncSource, "dispatchThumbnailPinUpdated", "Thumbnail pin client sync dispatcher exists", failures);

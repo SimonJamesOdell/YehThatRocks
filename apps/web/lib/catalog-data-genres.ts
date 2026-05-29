@@ -424,6 +424,7 @@ function scheduleCategoryArtistRuntimeCacheRebuild(genre: string, normalizedGenr
       const artists = await queryCategoryArtistsByGenreFromVideos(genre, {
         offset: 0,
         limit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
+        maxLimit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
       });
       await upsertCategoryArtistRuntimeCacheRows(normalizedGenre, artists);
     } catch {
@@ -434,6 +435,28 @@ function scheduleCategoryArtistRuntimeCacheRebuild(genre: string, normalizedGenr
   });
 
   categoryArtistRuntimeCacheRebuildInFlight.set(normalizedGenre, rebuildPromise);
+}
+
+export async function warmCategoryArtistRuntimeCacheByGenre(genre: string): Promise<{ warmed: boolean; count: number }> {
+  if (!hasDatabaseUrl()) {
+    return { warmed: false, count: 0 };
+  }
+
+  requireDatabaseUrl("warmCategoryArtistRuntimeCacheByGenre");
+
+  const normalizedGenre = normalizeGenreTerm(genre);
+  if (!normalizedGenre) {
+    return { warmed: false, count: 0 };
+  }
+
+  const artists = await queryCategoryArtistsByGenreFromVideos(genre, {
+    offset: 0,
+    limit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
+    maxLimit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
+  });
+  await upsertCategoryArtistRuntimeCacheRows(normalizedGenre, artists);
+
+  return { warmed: true, count: artists.length };
 }
 
 async function getPinnedCategoryArtistPreviewsByBucket() {
@@ -800,7 +823,7 @@ export async function setCategoryArtistThumbnailPin(genre: string, artistName: s
 
 async function queryCategoryArtistsByGenreFromVideos(
   genre: string,
-  options: { offset: number; limit: number },
+  options: { offset: number; limit: number; maxLimit?: number },
 ): Promise<CategoryArtistCard[]> {
   const normalizedGenre = normalizeGenreTerm(genre);
   const normalizedGenreTerms = getExpandedGenreTerms(genre);
@@ -816,7 +839,8 @@ async function queryCategoryArtistsByGenreFromVideos(
   }
 
   const requestedOffset = Math.max(0, Number.isFinite(options.offset) ? Number(options.offset) : 0);
-  const requestedLimit = Math.max(1, Math.min(2_000, Number.isFinite(options.limit) ? Number(options.limit) : 48));
+  const maxLimit = Math.max(1, Number.isFinite(options.maxLimit) ? Number(options.maxLimit) : 2_000);
+  const requestedLimit = Math.max(1, Math.min(maxLimit, Number.isFinite(options.limit) ? Number(options.limit) : 48));
   const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
   const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
   const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
@@ -872,7 +896,7 @@ async function queryCategoryArtistsByGenreFromVideos(
 
 export async function getCategoryArtistsByGenre(
   genre: string,
-  options?: { offset?: number; limit?: number },
+  options?: { offset?: number; limit?: number; maxLimit?: number },
 ): Promise<CategoryArtistCard[]> {
   if (!hasDatabaseUrl()) {
     return [];
@@ -881,7 +905,8 @@ export async function getCategoryArtistsByGenre(
   requireDatabaseUrl("getCategoryArtistsByGenre");
 
   const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
-  const requestedLimit = Math.max(1, Math.min(2_000, Number.isFinite(options?.limit) ? Number(options?.limit) : 48));
+  const maxLimit = Math.max(1, Number.isFinite(options?.maxLimit) ? Number(options?.maxLimit) : 2_000);
+  const requestedLimit = Math.max(1, Math.min(maxLimit, Number.isFinite(options?.limit) ? Number(options?.limit) : 48));
   const normalizedGenre = normalizeGenreTerm(genre);
 
   if (!normalizedGenre) {
@@ -900,10 +925,39 @@ export async function getCategoryArtistsByGenre(
   const artists = await queryCategoryArtistsByGenreFromVideos(genre, {
     offset: requestedOffset,
     limit: requestedLimit,
+    maxLimit,
   });
 
   scheduleCategoryArtistRuntimeCacheRebuild(genre, normalizedGenre);
   return artists;
+}
+
+export async function getCachedCategoryArtistsByGenre(
+  genre: string,
+  options?: { offset?: number; limit?: number },
+): Promise<CategoryArtistCard[] | null> {
+  if (!hasDatabaseUrl()) {
+    return null;
+  }
+
+  requireDatabaseUrl("getCachedCategoryArtistsByGenre");
+
+  const normalizedGenre = normalizeGenreTerm(genre);
+  if (!normalizedGenre) {
+    return null;
+  }
+
+  const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
+  const requestedLimit = Math.max(1, Math.min(
+    CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT + 1,
+    Number.isFinite(options?.limit) ? Number(options?.limit) : 96,
+  ));
+
+  return getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
+    offset: requestedOffset,
+    limit: requestedLimit,
+    refreshGenre: genre,
+  });
 }
 
 export async function getCategoryArtistCountByGenre(genre: string): Promise<number> {
