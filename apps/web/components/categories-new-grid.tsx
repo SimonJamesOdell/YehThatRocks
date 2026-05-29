@@ -27,7 +27,9 @@ export function CategoriesNewGrid({ cards, basePath = "/categories_new" }: Categ
   const bucketTermMap = useMemo(() => new Map(
     TOP_LEVEL_GENRE_BUCKETS.map((bucket) => [bucket.label, bucket.terms]),
   ), []);
-  const [resolvedCards, setResolvedCards] = useState(() => applyCategoryCardThumbnailPinOverrides(cards));
+  const [resolvedCards, setResolvedCards] = useState<CategoriesNewTopLevelCard[]>(
+    () => applyCategoryCardThumbnailPinOverrides(cards) as CategoriesNewTopLevelCard[],
+  );
   const [filterValue, setFilterValue] = useState("");
   const [pendingNavigationSlug, setPendingNavigationSlug] = useState<string | null>(null);
   const normalizedFilterValue = useMemo(
@@ -43,7 +45,7 @@ export function CategoriesNewGrid({ cards, basePath = "/categories_new" }: Categ
   );
 
   useEffect(() => {
-    setResolvedCards(applyCategoryCardThumbnailPinOverrides(cards));
+    setResolvedCards(applyCategoryCardThumbnailPinOverrides(cards) as CategoriesNewTopLevelCard[]);
   }, [cards]);
 
   useEffect(() => {
