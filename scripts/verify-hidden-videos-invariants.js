@@ -115,7 +115,7 @@ function main() {
   assertContains(top100PageSource, "getShellRequestVideoState", "Top100 page resolves hidden ids through shared shell request state helper", failures);
   assertContains(top100LoaderSource, "filterHiddenVideos", "Top100 loader filters hidden videos", failures);
 
-  assertContains(categoryPageSource, "CategoryArtistsBrowser", "Category page renders artist browser shell instead of videos loader", failures);
+  assertContains(categoryPageSource, "CategoryNewArtistsBrowser", "Category page renders artist browser shell instead of videos loader", failures);
   assertContains(categoryArtistPageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "Category artist page passes hidden ids to category videos loader", failures);
   assertContains(categoryArtistPageSource, "getShellRequestVideoState", "Category artist page resolves hidden ids through shared shell request state helper", failures);
   assertContains(categoryLoaderSource, "filterHiddenVideos", "Category loader filters hidden videos", failures);
