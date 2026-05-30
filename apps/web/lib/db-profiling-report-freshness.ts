@@ -7,10 +7,22 @@ export type DbProfilingReportFreshness = {
   status: "fresh" | "stale" | "missing";
   latestReportFile: string | null;
   latestReportAt: string | null;
+  reportGeneratedAt: string | null;
+  sampleStartedAt: string | null;
+  sampleAgeHours: number | null;
+  slowQueryLogStatus: "ON" | "OFF" | "UNKNOWN";
+  hasActionableSlowLogData: boolean;
+  summary: string;
   ageHours: number | null;
   staleAfterHours: number;
   isStale: boolean;
   checkedAt: string;
+};
+
+type ParsedReportMetadata = {
+  reportGeneratedAt: string | null;
+  sampleStartedAt: string | null;
+  slowQueryLogStatus: "ON" | "OFF" | "UNKNOWN";
 };
 
 type FreshnessCacheEntry = {
@@ -113,6 +125,41 @@ function findLatestReportMtimeMs(searchDirs: string[]): { file: string; mtimeMs:
   return latest;
 }
 
+function parseProfilingTimestamp(value: string) {
+  const isoCandidate = value.trim().replace(" ", "T");
+  const parsed = Date.parse(`${isoCandidate}Z`);
+
+  if (Number.isNaN(parsed)) {
+    return null;
+  }
+
+  return new Date(parsed).toISOString();
+}
+
+function parseLatestReportMetadata(file: string): ParsedReportMetadata {
+  let content = "";
+
+  try {
+    content = fs.readFileSync(file, "utf8");
+  } catch {
+    return {
+      reportGeneratedAt: null,
+      sampleStartedAt: null,
+      slowQueryLogStatus: "UNKNOWN",
+    };
+  }
+
+  const generatedMatch = content.match(/^\[profiling\] report generated UTC: (.+)$/m);
+  const sampleStartedMatch = content.match(/^\[profiling\] sample started UTC: (.+)$/m);
+  const slowQueryMatch = content.match(/^slow_query_log\s+(ON|OFF)$/mi);
+
+  return {
+    reportGeneratedAt: generatedMatch ? parseProfilingTimestamp(generatedMatch[1]) : null,
+    sampleStartedAt: sampleStartedMatch ? parseProfilingTimestamp(sampleStartedMatch[1]) : null,
+    slowQueryLogStatus: slowQueryMatch ? slowQueryMatch[1].toUpperCase() as "ON" | "OFF" : "UNKNOWN",
+  };
+}
+
 export function buildDbProfilingReportFreshness(
   latest: { file: string; mtimeMs: number } | null,
   nowMs: number,
@@ -125,6 +172,12 @@ export function buildDbProfilingReportFreshness(
       status: "missing",
       latestReportFile: null,
       latestReportAt: null,
+      reportGeneratedAt: null,
+      sampleStartedAt: null,
+      sampleAgeHours: null,
+      slowQueryLogStatus: "UNKNOWN",
+      hasActionableSlowLogData: false,
+      summary: "No DB profiling report found.",
       ageHours: null,
       staleAfterHours,
       isStale: true,
@@ -132,13 +185,39 @@ export function buildDbProfilingReportFreshness(
     };
   }
 
+  const metadata = parseLatestReportMetadata(latest.file);
   const ageHours = round(Math.max(0, nowMs - latest.mtimeMs) / (1000 * 60 * 60), 2);
   const isStale = ageHours > staleAfterHours;
+  const sampleStartedAtMs = metadata.sampleStartedAt ? Date.parse(metadata.sampleStartedAt) : null;
+  const sampleAgeHours = sampleStartedAtMs == null
+    ? null
+    : round(Math.max(0, nowMs - sampleStartedAtMs) / (1000 * 60 * 60), 2);
+  const hasActionableSlowLogData = metadata.slowQueryLogStatus === "ON";
+
+  let summary = isStale
+    ? `DB profiling report is stale (${ageHours}h old).`
+    : `DB profiling report is fresh (${ageHours}h old).`;
+
+  if (metadata.slowQueryLogStatus === "OFF") {
+    summary += " Latest report was generated with slow_query_log OFF, so current DB hotspots are only partially observable.";
+  } else if (metadata.slowQueryLogStatus === "UNKNOWN") {
+    summary += " Slow query log state could not be determined from the latest report.";
+  }
+
+  if (sampleAgeHours != null) {
+    summary += ` Capture window started ${sampleAgeHours}h ago.`;
+  }
 
   return {
     status: isStale ? "stale" : "fresh",
     latestReportFile: latest.file,
     latestReportAt: new Date(latest.mtimeMs).toISOString(),
+    reportGeneratedAt: metadata.reportGeneratedAt,
+    sampleStartedAt: metadata.sampleStartedAt,
+    sampleAgeHours,
+    slowQueryLogStatus: metadata.slowQueryLogStatus,
+    hasActionableSlowLogData,
+    summary,
     ageHours,
     staleAfterHours,
     isStale,
