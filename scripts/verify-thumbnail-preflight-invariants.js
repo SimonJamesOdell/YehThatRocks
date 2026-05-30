@@ -7,7 +7,7 @@ const ROOT = process.cwd();
 
 const files = {
   thumbnailComponent: path.join(ROOT, "apps/web/components/youtube-thumbnail-image.tsx"),
-  categoriesFilterGrid: path.join(ROOT, "apps/web/components/categories-filter-grid.tsx"),
+  categoriesGrid: path.join(ROOT, "apps/web/components/categories-new-grid.tsx"),
   categoryVideoCard: path.join(ROOT, "apps/web/components/artist-video-link.tsx"),
   endedChoiceCard: path.join(ROOT, "apps/web/components/player-experience-ended-choice-card.tsx"),
   categoryVideosInfinite: path.join(ROOT, "apps/web/components/category-videos-infinite.tsx"),
@@ -20,7 +20,7 @@ function main() {
   const failures = [];
 
   const thumbnailComponentSource = readFileStrict(files.thumbnailComponent, ROOT);
-  const categoriesFilterGridSource = readFileStrict(files.categoriesFilterGrid, ROOT);
+  const categoriesGridSource = readFileStrict(files.categoriesGrid, ROOT);
   const categoryVideoCardSource = readFileStrict(files.categoryVideoCard, ROOT);
   const endedChoiceCardSource = readFileStrict(files.endedChoiceCard, ROOT);
   const categoryVideosInfiniteSource = readFileStrict(files.categoryVideosInfinite, ROOT);
@@ -39,9 +39,9 @@ function main() {
   assertContains(thumbnailComponentSource, "reportUnavailable(videoId, reportReason);", "Thumbnail component reports broken thumbnails to backend verifier", failures);
 
   // Categories routes and cards must use shared thumbnail pre-flight component.
-  assertContains(categoriesFilterGridSource, 'import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";', "Categories filter grid imports shared thumbnail pre-flight component", failures);
-  assertContains(categoriesFilterGridSource, "<YouTubeThumbnailImage", "Categories filter grid renders shared thumbnail pre-flight component", failures);
-  assertNotContains(categoriesFilterGridSource, "i.ytimg.com/vi/", "Categories filter grid no longer renders direct thumbnail URLs", failures);
+  assertContains(categoriesGridSource, 'import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";', "Categories grid imports shared thumbnail pre-flight component", failures);
+  assertContains(categoriesGridSource, "<YouTubeThumbnailImage", "Categories grid renders shared thumbnail pre-flight component", failures);
+  assertNotContains(categoriesGridSource, "i.ytimg.com/vi/", "Categories grid no longer renders direct thumbnail URLs", failures);
 
   assertContains(categoryVideoCardSource, 'import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";', "Category video cards import shared thumbnail pre-flight component", failures);
   assertContains(categoryVideoCardSource, "<YouTubeThumbnailImage", "Category video cards render shared thumbnail pre-flight component", failures);
