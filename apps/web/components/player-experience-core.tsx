@@ -209,7 +209,7 @@ const MID_PLAYBACK_BUFFERING_THRESHOLD_MS = 8000;
 const PLAYBACK_STALL_DIRECT_IFRAME_THRESHOLD_MS = 4500;
 const PLAYBACK_STALL_PROGRESS_EPSILON_SECONDS = 0.2;
 const PLAYER_LOAD_REFRESH_HINT_DELAY_MS = 2000;
-const PLAYER_AUTO_RECONNECT_DELAY_MS = 2000;
+const PLAYER_AUTO_RECONNECT_DELAY_MS = 1200;
 const MANUAL_TRANSITION_MASK_TIMEOUT_MS = 8000;
 const AUTOPLAY_KEY = "yeh-player-autoplay";
 const HISTORY_KEY = "ytr:recent-history";
@@ -4402,16 +4402,38 @@ export function PlayerExperience({
               ) : null}
 
               {showPlayerLoadingOverlay && !allowDirectIframeInteraction ? (
-                <div className="playerBootLoader" role="status" aria-live="polite" aria-label={playerLoadingLabel}>
-                  <div className="playerBootBars" aria-hidden="true">
-                    <span />
-                    <span />
-                    <span />
-                    <span />
+                <div className="playerConnectingOverlay" role="status" aria-live="polite" aria-label={playerLoadingLabel}>
+                  <img
+                    src={`https://i.ytimg.com/vi/${encodeURIComponent(currentVideo.id)}/hqdefault.jpg`}
+                    alt=""
+                    aria-hidden="true"
+                    className="playerConnectingThumb"
+                  />
+                  <div className="playerConnectingShade" aria-hidden="true" />
+                  <div className="playerConnectingTop">
+                    <div className="overlayTitleRow">
+                      <div className="overlayTitleStack">
+                        <p className="overlayRelatedCardGenre"><VideoGenreLink genre={overlayGenreLabel} /></p>
+                        <p className="overlayTitle">
+                          {overlayArtistHref ? (
+                            <Link href={overlayArtistHref} className="overlayArtistLink">
+                              {overlayArtistLabel}
+                            </Link>
+                          ) : (
+                            <span>{overlayArtistLabel}</span>
+                          )}
+                          <span aria-hidden="true"> - </span>
+                          <span>{overlayTrackLabel}</span>
+                        </p>
+                        {overlayArtistVideoCountLabel ? (
+                          <p className="overlayArtistVideoCount">{overlayArtistVideoCountLabel}</p>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
-                  <p>{playerLoadingMessage}</p>
-                  {!showRouteLikeLoadingCopy && showPlayerRefreshHint ? (
-                    <div className="playerBootRefreshWrap">
+                  <div className="playerConnectingCenter">
+                    <div className="playerConnectingBox">
+                      <p>{playerLoadingMessage}</p>
                       <button
                         type="button"
                         className="playerBootRefreshBtn"
@@ -4425,10 +4447,44 @@ export function PlayerExperience({
                           <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10" />
                           <path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14" />
                         </svg>
+                        <span>Retry connection</span>
                       </button>
-                      <span className="playerBootRefreshLabel">Try connecting again</span>
                     </div>
-                  ) : null}
+                  </div>
+                  <div className="overlayBottom playerConnectingControls" aria-hidden="true">
+                    <div className="overlayProgressWrap">
+                      <input
+                        type="range"
+                        className="overlayProgress"
+                        min={0}
+                        max={100}
+                        value={progressPercent}
+                        disabled
+                        readOnly
+                        aria-label="Player controls unavailable while connecting"
+                      />
+                    </div>
+                    <div className="overlayVolume">
+                      <button type="button" className="overlayIconBtn" disabled aria-label="Playback controls disabled">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                          <path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                        </svg>
+                      </button>
+                      <input type="range" className="overlayVolumeSlider" min={0} max={100} value={overlayVolumeValue} disabled readOnly aria-label="Volume disabled" />
+                      <div className="overlayTimeMeta" aria-label={`Playback time ${elapsedLabel} of ${durationLabel}`}>
+                        <span>{elapsedLabel}</span>
+                        <span>/</span>
+                        <span>{durationLabel}</span>
+                      </div>
+                      <button type="button" className="overlayIconBtn overlayFullscreenBtn" disabled aria-label="Fullscreen disabled">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" />
+                          <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ) : null}
 
