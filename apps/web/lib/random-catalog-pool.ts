@@ -34,15 +34,12 @@ async function buildRandomCatalogPool(): Promise<readonly string[]> {
 
   const probeSql = `
     SELECT v.videoId
-    FROM videos v
-    WHERE v.videoId IS NOT NULL
-      AND v.id >= ?
-      AND EXISTS (
-        SELECT 1
-        FROM site_videos sv
-        WHERE sv.video_id = v.id
-          AND sv.status = 'available'
-      )
+    FROM site_videos sv FORCE INDEX (idx_site_videos_status_video_id)
+    INNER JOIN videos v ON v.id = sv.video_id
+    WHERE sv.status = 'available'
+      AND sv.video_id >= ?
+      AND v.videoId IS NOT NULL
+    GROUP BY v.id, v.videoId
     ORDER BY v.id ASC
     LIMIT ?
   `;

@@ -78,7 +78,7 @@ async function computeAndPersistAuthoritativeMaxId() {
   // because site_videos.video_id is a FK to videos.id.
   const rows = await prisma.$queryRaw<Array<{ maxId: bigint | number | null }>>`
     SELECT MAX(sv.video_id) AS maxId
-    FROM site_videos sv
+    FROM site_videos sv FORCE INDEX (idx_site_videos_status_video_id)
     WHERE sv.status = 'available'
       AND sv.video_id IS NOT NULL
   `;

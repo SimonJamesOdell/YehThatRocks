@@ -30,7 +30,7 @@ export const ARTIST_NAME_NORM_PREFIX_INDEX = "idx_artists_artist_name_norm_prefi
 export const AVAILABLE_SITE_VIDEOS_JOIN = `
         INNER JOIN (
           SELECT DISTINCT sv.video_id
-          FROM site_videos sv
+          FROM site_videos sv FORCE INDEX (idx_site_videos_status_video_id)
           WHERE sv.status = 'available'
         ) available_sv ON available_sv.video_id = v.id
 `;
@@ -42,7 +42,7 @@ export const AVAILABLE_SITE_VIDEOS_JOIN = `
 export const AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE = `
       AND EXISTS (
         SELECT 1
-        FROM site_videos sv
+        FROM site_videos sv FORCE INDEX (idx_site_videos_status_video_id)
         WHERE sv.video_id = v.id
           AND sv.status = 'available'
       )

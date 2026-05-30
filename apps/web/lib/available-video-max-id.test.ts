@@ -96,6 +96,7 @@ describe("available video max id metadata", () => {
       : String(authQueryArgs[0]);
     // Must query from site_videos using (status, video_id) index path
     expect(sqlSkeleton).toContain("site_videos");
+    expect(sqlSkeleton).toContain("FORCE INDEX (idx_site_videos_status_video_id)");
     // Must NOT use the old correlated-EXISTS on the full videos table
     expect(sqlSkeleton).not.toMatch(/FROM\s+videos\s+v/i);
     expect(sqlSkeleton).not.toContain("EXISTS");

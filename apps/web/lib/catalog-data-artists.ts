@@ -1012,8 +1012,13 @@ export async function getSameGenreRelatedPoolByArtist(normalizedArtist: string, 
     if (!genre) return [] as RankedVideoRow[];
 
     // Use MATCH AGAINST on genre_all (single FULLTEXT seek) when available and term ≥ 3 chars,
-    // fall back to single-column LIKE on genre_all, or 6× LIKE as last resort.
+    // then fall back to single-column LIKE on genre_all for short terms.
     const genreAllExists = await hasGenreAllColumn();
+    if (!genreAllExists) {
+      // Avoid unbounded 6x wildcard scans across genre1..genre6 when genre_all is absent.
+      return [] as RankedVideoRow[];
+    }
+
     const useFulltext = genreAllExists && genre.length >= 3;
 
     let sameGenreArtistRows: Array<{ normalizedArtist: string | null }>;
@@ -1030,7 +1035,7 @@ export async function getSameGenreRelatedPoolByArtist(normalizedArtist: string, 
         normalizedArtist,
         genre,
       );
-    } else if (genreAllExists) {
+    } else {
       sameGenreArtistRows = await prisma.$queryRawUnsafe<Array<{ normalizedArtist: string | null }>>(
         `
           SELECT DISTINCT ${artistNameNormExpr} AS normalizedArtist
@@ -1042,23 +1047,6 @@ export async function getSameGenreRelatedPoolByArtist(normalizedArtist: string, 
         `,
         normalizedArtist,
         `%${genre}%`,
-      );
-    } else {
-      const genrePredicate = artistColumns.genreColumns
-        .map((column) => `a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', ?, '%')`)
-        .join(" OR ");
-      const genreParams = artistColumns.genreColumns.map(() => genre);
-      sameGenreArtistRows = await prisma.$queryRawUnsafe<Array<{ normalizedArtist: string | null }>>(
-        `
-          SELECT DISTINCT ${artistNameNormExpr} AS normalizedArtist
-          FROM artists a
-          WHERE ${artistNameNormExpr} IS NOT NULL
-            AND ${artistNameNormExpr} <> ?
-            AND (${genrePredicate})
-          LIMIT 160
-        `,
-        normalizedArtist,
-        ...genreParams,
       );
     }
 

@@ -1785,6 +1785,13 @@ export async function getArtistsByGenre(genre: string) {
 
   try {
     const genreAllExists = await hasGenreAllColumn();
+    if (!genreAllExists) {
+      // Avoid 6x wildcard scans across genre1..genre6. If genre_all is missing,
+      // this environment is not provisioned for scalable genre lookup.
+      genreArtistsCache.set(cacheKey, { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, artists: [] });
+      return [];
+    }
+
     const useFulltext = genreAllExists && sourceTerms.length === 1 && sourceTerms[0].length >= 3;
 
     const artists = useFulltext
@@ -1795,36 +1802,13 @@ export async function getArtistsByGenre(genre: string) {
           FROM artists a
           WHERE MATCH(a.genre_all) AGAINST (${sourceTerms[0]} IN BOOLEAN MODE)
         `
-      : genreAllExists
-        ? await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+      : await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
             `SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */
                     a.artist AS name, a.country,
                     COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
              FROM artists a
              WHERE (${sourceTerms.map(() => "a.genre_all LIKE ?").join(" OR ")})`,
             ...sourceTerms.map((term) => `%${term}%`),
-          )
-        : await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
-            `SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */
-                    a.artist AS name, a.country,
-                    COALESCE(a.genre1, a.genre2, a.genre3, a.genre4, a.genre5, a.genre6) AS genre1
-             FROM artists a
-             WHERE (${sourceTerms.flatMap(() => [
-               "a.genre1 LIKE ?",
-               "a.genre2 LIKE ?",
-               "a.genre3 LIKE ?",
-               "a.genre4 LIKE ?",
-               "a.genre5 LIKE ?",
-               "a.genre6 LIKE ?",
-             ]).join(" OR ")})`,
-            ...sourceTerms.flatMap((term) => [
-              `%${term}%`,
-              `%${term}%`,
-              `%${term}%`,
-              `%${term}%`,
-              `%${term}%`,
-              `%${term}%`,
-            ]),
           );
 
     const mappedArtists = artists.map(mapArtist).sort((a: ArtistRecord, b: ArtistRecord) => a.name.localeCompare(b.name));
@@ -1985,10 +1969,10 @@ export async function getVideosByGenre(
       const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
       const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
 
-      if (artistColumns.genreColumns.length > 0) {
-        const artistNameColumn = escapeSqlIdentifier(artistColumns.name);
-        const genreAllExists = await hasGenreAllColumn();
-        const useFulltext = genreAllExists && expandedGenreTerms.length === 1 && expandedGenreTerms[0].length >= 3;
+      const artistNameColumn = escapeSqlIdentifier(artistColumns.name);
+      const genreAllExists = await hasGenreAllColumn();
+      if (genreAllExists) {
+        const useFulltext = expandedGenreTerms.length === 1 && expandedGenreTerms[0].length >= 3;
 
         const artistLookupCacheKey = expandedGenreTerms.join("|") || normalizeGenreTerm(genre);
         const cachedArtistSeeds = artistLookupCacheKey ? genreArtistSeedCache.get(artistLookupCacheKey) : undefined;
@@ -2002,24 +1986,10 @@ export async function getVideosByGenre(
                   `SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */ a.${artistNameColumn} AS artistName FROM artists a WHERE MATCH(a.genre_all) AGAINST (? IN BOOLEAN MODE) LIMIT 64`,
                   expandedGenreTerms[0],
                 );
-              } else if (genreAllExists) {
+              } else {
                 // genre_all exists but term too short for FULLTEXT minimum word length — single-column LIKE
                 const genrePredicates = expandedGenreTerms.map(() => "a.genre_all LIKE ?").join(" OR ");
                 const genreParams = expandedGenreTerms.map((term) => `%${term}%`);
-                artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
-                  `SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */ a.${artistNameColumn} AS artistName FROM artists a WHERE (${genrePredicates}) LIMIT 64`,
-                  ...genreParams,
-                );
-              } else {
-                // Fallback: 6× LIKE on individual genre columns
-                const genrePredicates: string[] = [];
-                const genreParams: string[] = [];
-                for (const term of expandedGenreTerms) {
-                  for (const column of artistColumns.genreColumns) {
-                    genrePredicates.push(`a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', ?, '%')`);
-                    genreParams.push(term);
-                  }
-                }
                 artistGenreRows = await prisma.$queryRawUnsafe<Array<{ artistName: string | null }>>(
                   `SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */ a.${artistNameColumn} AS artistName FROM artists a WHERE (${genrePredicates}) LIMIT 64`,
                   ...genreParams,

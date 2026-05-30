@@ -42,6 +42,12 @@ describe("getRandomCatalogPool", () => {
     expect(Array.isArray(pool)).toBe(true);
     expect(pool.length).toBeGreaterThan(0);
     expect(queryRawUnsafeMock).toHaveBeenCalledTimes(8);
+
+    const firstProbeArgs = queryRawUnsafeMock.mock.calls[0] ?? [];
+    const firstProbeSql = String(firstProbeArgs[0] ?? "");
+    expect(firstProbeSql).toContain("FROM site_videos sv FORCE INDEX (idx_site_videos_status_video_id)");
+    expect(firstProbeSql).toContain("INNER JOIN videos v ON v.id = sv.video_id");
+    expect(firstProbeSql).not.toContain("EXISTS (");
   });
 
   it("returns empty array when maxId is 0", async () => {

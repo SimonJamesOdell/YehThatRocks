@@ -94,21 +94,18 @@ describe("getArtistsByGenre — genre_all FULLTEXT strategy", () => {
     expect(callArg).not.toContain("genre2 LIKE");
   });
 
-  it("falls back to 6× LIKE when genre_all column does not exist", async () => {
+  it("skips DB genre matching when genre_all column does not exist", async () => {
     hasGenreAllColumnMock.mockResolvedValue(false);
     queryRawUnsafeMock.mockResolvedValue([]);
 
     const { clearGenreCaches, getArtistsByGenre } = await import("@/lib/catalog-data-genres");
     clearGenreCaches();
 
-    await getArtistsByGenre("Metal");
+    const result = await getArtistsByGenre("Metal");
 
-    expect(queryRawUnsafeMock).toHaveBeenCalled();
-    const callArg = String(queryRawUnsafeMock.mock.calls[0][0]);
-    // Falls back to 6-column LIKE
-    expect(callArg).toContain("genre1 LIKE");
-    expect(callArg).toContain("MAX_EXECUTION_TIME");
-    expect(callArg).not.toContain("MATCH");
+    expect(result).toEqual([]);
+    expect(queryRawMock).not.toHaveBeenCalled();
+    expect(queryRawUnsafeMock).not.toHaveBeenCalled();
   });
 
   it("falls back to seed data when no DB configured", async () => {
@@ -201,7 +198,7 @@ describe("getVideosByGenre — artist genre FULLTEXT strategy", () => {
     expect(String(param)).toContain("nu");
   });
 
-  it("uses 6× LIKE fallback when genre_all column does not exist", async () => {
+  it("does not issue 6× LIKE artist fallback when genre_all column does not exist", async () => {
     hasGenreAllColumnMock.mockResolvedValue(false);
 
     queryRawMock.mockResolvedValue([]);
@@ -213,18 +210,18 @@ describe("getVideosByGenre — artist genre FULLTEXT strategy", () => {
     await getVideosByGenre("Metal");
 
     const genreLookupCall = queryRawUnsafeMock.mock.calls.find(([sql]) =>
-      String(sql).includes("artistName"),
+      String(sql).includes("AS artistName FROM artists a WHERE"),
     );
-    expect(genreLookupCall).toBeDefined();
-    const [sql] = genreLookupCall!;
-    expect(String(sql)).toContain("genre1");
-    expect(String(sql)).toContain("LIKE");
-    expect(String(sql)).toContain("MAX_EXECUTION_TIME");
-    expect(String(sql)).not.toContain("MATCH");
+    expect(genreLookupCall).toBeUndefined();
+
+    const emittedSixLikeFallback = queryRawUnsafeMock.mock.calls.some(([sql]) =>
+      /a\.genre[1-6]\s+LIKE/.test(String(sql)),
+    );
+    expect(emittedSixLikeFallback).toBe(false);
   });
 
   it("reuses cached artist genre lookup for repeated requests", async () => {
-    hasGenreAllColumnMock.mockResolvedValue(false);
+    hasGenreAllColumnMock.mockResolvedValue(true);
 
     queryRawMock.mockResolvedValue([]);
     queryRawUnsafeMock.mockImplementation((sql: unknown) => {
