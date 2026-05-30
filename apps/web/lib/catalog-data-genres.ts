@@ -1220,27 +1220,6 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
     return { all: 0 };
   }
 
-  const cachedArtists = await getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
-    offset: 0,
-    limit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
-    refreshGenre: genre,
-  });
-  if (cachedArtists && cachedArtists.length > 0) {
-    const matchers = buildCategoryArtistTabCountMatchers(genre);
-    const counts: Record<string, number> = { all: cachedArtists.length };
-    for (const matcher of matchers) {
-      if (matcher.id === "all") {
-        continue;
-      }
-      counts[matcher.id] = cachedArtists.reduce(
-        (total, row) => total + (matcher.matches(row.dominantGenre) ? 1 : 0),
-        0,
-      );
-    }
-
-    return counts;
-  }
-
   const videoGenreColumnExists = await hasVideoGenreColumn();
   if (!videoGenreColumnExists) {
     return { all: 0 };

@@ -348,5 +348,33 @@ export async function getCategoriesNewTopLevelSnapshot() {
 }
 
 export async function getCategoriesNewCategorySnapshot(slug: string) {
-  return readCategoriesNewSnapshot<CategoriesNewCategorySnapshot>(getCategorySnapshotKey(slug), true);
+  const snapshot = await readCategoriesNewSnapshot<CategoriesNewCategorySnapshot>(getCategorySnapshotKey(slug), true);
+  if (!snapshot) {
+    return null;
+  }
+
+  const currentAllCount = Math.max(0, Number(snapshot.tabCounts?.all ?? 0));
+  const currentTotalArtists = Math.max(0, Number(snapshot.totalArtists ?? 0));
+  if (currentAllCount >= currentTotalArtists) {
+    return snapshot;
+  }
+
+  const refreshedTabCounts = await getCategoryArtistTabCountsByGenre(snapshot.genre).catch(() => null);
+  if (!refreshedTabCounts) {
+    return snapshot;
+  }
+
+  const refreshedAllCount = Math.max(0, Number(refreshedTabCounts.all ?? 0));
+  if (refreshedAllCount <= currentAllCount) {
+    return snapshot;
+  }
+
+  const healedSnapshot: CategoriesNewCategorySnapshot = {
+    ...snapshot,
+    tabCounts: refreshedTabCounts,
+    totalArtists: Math.max(currentTotalArtists, refreshedAllCount, snapshot.artists.length),
+  };
+
+  await writeCategoriesNewSnapshot(snapshot.buildVersion, getCategorySnapshotKey(slug), healedSnapshot).catch(() => undefined);
+  return healedSnapshot;
 }
