@@ -61,7 +61,7 @@ async function loadDashboardPayloadFromCacheTable(): Promise<Record<string, unkn
   const liveUserCounters = await loadLiveUserCounters();
   if (liveUserCounters) {
     payload.counts = {
-      ...asObject(payload.counts),
+      ...payload.counts,
       users: liveUserCounters.users,
       registeredUsers: liveUserCounters.registeredUsers,
       anonymousUsers: liveUserCounters.anonymousUsers,
