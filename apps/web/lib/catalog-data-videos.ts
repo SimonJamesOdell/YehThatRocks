@@ -33,6 +33,7 @@ import {
   pickColumn,
   getStoredVideoById,
   AVAILABLE_SITE_VIDEOS_JOIN,
+  AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE,
   hasVideoGenreColumn,
 } from "@/lib/catalog-data-db";
 import {
@@ -470,10 +471,10 @@ async function getRelatedBaseRows(params: {
           v.description
         FROM related r
         INNER JOIN videos v ON v.videoId = r.related
-        ${AVAILABLE_SITE_VIDEOS_JOIN}
         WHERE r.videoId = ?
           AND v.videoId IS NOT NULL
           AND COALESCE(v.approved, 0) = 1
+          ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
         GROUP BY v.videoId, v.title, v.parsedArtist, v.parsedTrack, v.channelTitle, v.genre, v.favourited, v.description
         ORDER BY v.favourited DESC, MAX(COALESCE(v.viewCount, 0)) DESC, v.videoId ASC
         LIMIT 36
@@ -1189,7 +1190,6 @@ export async function getNewestVideos(
               FROM videos v
               WHERE v.videoId IS NOT NULL
                 AND COALESCE(v.approved, 0) = 1
-              ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
               LIMIT ${batchSize}
               OFFSET ${rawOffset}
             `
