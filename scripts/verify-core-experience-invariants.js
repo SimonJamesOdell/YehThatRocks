@@ -27,7 +27,7 @@ const files = {
   favouritesGrid: path.join(ROOT, "apps/web/components/favourites-grid.tsx"),
   historyInfiniteList: path.join(ROOT, "apps/web/components/history-infinite-list.tsx"),
   leaderboardVideoLink: path.join(ROOT, "apps/web/components/leaderboard-video-link.tsx"),
-  categoryBrowserTabs: path.join(ROOT, "apps/web/components/category-browser-tabs.tsx"),
+  categoryBrowser: path.join(ROOT, "apps/web/components/category-new-artists-browser.tsx"),
   videoGenreLink: path.join(ROOT, "apps/web/components/video-genre-link.tsx"),
   videoGenreNavigation: path.join(ROOT, "apps/web/lib/video-genre-navigation.ts"),
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
@@ -73,7 +73,7 @@ function main() {
   const favouritesGridSource = readFileStrict(files.favouritesGrid, ROOT);
   const historyInfiniteListSource = readFileStrict(files.historyInfiniteList, ROOT);
   const leaderboardVideoLinkSource = readFileStrict(files.leaderboardVideoLink, ROOT);
-  const categoryBrowserTabsSource = readFileStrict(files.categoryBrowserTabs, ROOT);
+  const categoryBrowserSource = readFileStrict(files.categoryBrowser, ROOT);
   const videoGenreLinkSource = readFileStrict(files.videoGenreLink, ROOT);
   const videoGenreNavigationSource = readFileStrict(files.videoGenreNavigation, ROOT);
   const shellRenderingSource = `${shellDynamicSource}\n${shellDynamicRenderingSource}`;
@@ -143,8 +143,8 @@ function main() {
   assertContains(videoGenreLinkSource, "resolveVideoGenreNavigationTarget", "Video genre link component uses shared genre navigation target resolver", failures);
   assertContains(videoGenreNavigationSource, "resolveVideoGenreNavigationTarget", "Video genre navigation helper exposes resolver", failures);
   assertContains(videoGenreNavigationSource, "`/categories/${categorySlug}?tab=${encodeURIComponent(tabId)}`", "Video genre navigation includes category tab query when a specific tab is resolved", failures);
-  assertContains(categoryBrowserTabsSource, "searchParams.get(\"tab\")", "Category browser tabs reads incoming tab query parameter", failures);
-  assertContains(categoryBrowserTabsSource, "writeCategoryArtistsTab(slug, resolvedTab);", "Category browser tabs persists requested tab selection from query", failures);
+  assertContains(categoryBrowserSource, "writeCategoryArtistsTab(slug, tab.id);", "Category browser persists selected category tab in session state", failures);
+  assertContains(categoryBrowserSource, "CATEGORY_ARTISTS_TAB_EVENT", "Category browser synchronizes tab selection updates across overlays", failures);
 
   // Current-video API invariants.
   assertContains(currentVideoRouteSource, "RESOLVE_CURRENT_VIDEO_TARGET_RELATED_COUNT = 8;", "Current-video API targets 8 Watch Next items", failures);
