@@ -13,6 +13,7 @@ import { TOP_LEVEL_GENRE_BUCKETS } from "@/lib/genre-buckets";
 const SNAPSHOT_NAME = "categories_new";
 const SNAPSHOT_TOP_LEVEL_KEY = "top-level";
 const SNAPSHOT_ARTIST_LIMIT = 25_000;
+const CATEGORIES_NEW_SNAPSHOT_BUILD_DEBOUNCE_MS = 5_000;
 
 export type CategoriesNewTopLevelCard = GenreCard & {
   slug: string;
@@ -36,6 +37,8 @@ export type CategoriesNewCategorySnapshot = {
 
 let categoriesNewSnapshotBuildInFlight: Promise<number | null> | null = null;
 let categoriesNewSnapshotBuildQueued = false;
+let categoriesNewSnapshotBuildDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let categoriesNewSnapshotBuildPendingReason = "catalog-change";
 
 function getCategorySnapshotKey(slug: string) {
   return `category:${slug.trim().toLowerCase()}`;
@@ -321,16 +324,14 @@ async function runCategoriesNewSnapshotBuild(reason: string) {
   }
 }
 
-export function scheduleCategoriesNewSnapshotBuild(reason = "catalog-change") {
-  if (!hasDatabaseUrl()) {
-    return;
+function clearCategoriesNewSnapshotBuildDebounceTimer() {
+  if (categoriesNewSnapshotBuildDebounceTimer !== null) {
+    clearTimeout(categoriesNewSnapshotBuildDebounceTimer);
+    categoriesNewSnapshotBuildDebounceTimer = null;
   }
+}
 
-  if (categoriesNewSnapshotBuildInFlight) {
-    categoriesNewSnapshotBuildQueued = true;
-    return;
-  }
-
+function startCategoriesNewSnapshotBuild(reason: string) {
   categoriesNewSnapshotBuildInFlight = runCategoriesNewSnapshotBuild(reason)
     .catch(() => null)
     .finally(() => {
@@ -338,9 +339,34 @@ export function scheduleCategoriesNewSnapshotBuild(reason = "catalog-change") {
 
       if (categoriesNewSnapshotBuildQueued) {
         categoriesNewSnapshotBuildQueued = false;
-        scheduleCategoriesNewSnapshotBuild("queued-catalog-change");
+        scheduleCategoriesNewSnapshotBuild(categoriesNewSnapshotBuildPendingReason);
       }
     });
+}
+
+export function scheduleCategoriesNewSnapshotBuild(reason = "catalog-change") {
+  if (!hasDatabaseUrl()) {
+    return;
+  }
+
+  categoriesNewSnapshotBuildPendingReason = reason;
+  clearCategoriesNewSnapshotBuildDebounceTimer();
+
+  categoriesNewSnapshotBuildDebounceTimer = setTimeout(() => {
+    categoriesNewSnapshotBuildDebounceTimer = null;
+
+    if (categoriesNewSnapshotBuildInFlight) {
+      categoriesNewSnapshotBuildQueued = true;
+      return;
+    }
+
+    startCategoriesNewSnapshotBuild(categoriesNewSnapshotBuildPendingReason);
+  }, CATEGORIES_NEW_SNAPSHOT_BUILD_DEBOUNCE_MS);
+
+  if (categoriesNewSnapshotBuildInFlight) {
+    categoriesNewSnapshotBuildQueued = true;
+    return;
+  }
 }
 
 export async function getCategoriesNewTopLevelSnapshot() {
