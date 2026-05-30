@@ -55,6 +55,7 @@ async function warmCategoryCaches() {
   const pollMs = Math.max(250, Number(process.env.WARMUP_POLL_MS || 1_000));
   const includeTabCounts = process.env.WARMUP_INCLUDE_TAB_COUNTS !== "0";
   const fullPayloadLimit = Math.max(1, Math.min(25_000, Number(process.env.WARMUP_CATEGORY_FULL_PAYLOAD_LIMIT || 25_000)));
+  const snapshotWaitMs = Math.max(0, Number(process.env.WARMUP_SNAPSHOT_WAIT_MS || 180_000));
 
   console.log(`[warmup] Waiting for app readiness at ${baseUrl}...`);
   const ready = await waitForStatus(baseUrl, maxWaitMs, pollMs);
@@ -62,8 +63,11 @@ async function warmCategoryCaches() {
     throw new Error(`Timed out waiting for ${baseUrl}/api/status`);
   }
 
-  console.log("[warmup] Priming top-level category cards...");
-  const topLevelCardsPayload = await fetchJson(`${baseUrl}/api/categories/top-level-cards`, requestTimeoutMs);
+  console.log("[warmup] Ensuring categories snapshot is ready...");
+  const topLevelCardsPayload = await fetchJson(
+    `${baseUrl}/api/categories/top-level-cards?ensureSnapshot=1&waitForSnapshot=1&snapshotWaitMs=${encodeURIComponent(String(snapshotWaitMs))}`,
+    Math.max(requestTimeoutMs, snapshotWaitMs + 5_000),
+  );
   const categories = Array.isArray(topLevelCardsPayload?.cards) ? topLevelCardsPayload.cards : [];
 
   const slugs = Array.from(new Set(

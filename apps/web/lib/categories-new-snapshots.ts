@@ -40,6 +40,12 @@ let categoriesNewSnapshotBuildQueued = false;
 let categoriesNewSnapshotBuildDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let categoriesNewSnapshotBuildPendingReason = "catalog-change";
 
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function getCategorySnapshotKey(slug: string) {
   return `category:${slug.trim().toLowerCase()}`;
 }
@@ -344,12 +350,25 @@ function startCategoriesNewSnapshotBuild(reason: string) {
     });
 }
 
-export function scheduleCategoriesNewSnapshotBuild(reason = "catalog-change") {
+export function scheduleCategoriesNewSnapshotBuild(reason = "catalog-change", options?: { immediate?: boolean }) {
   if (!hasDatabaseUrl()) {
     return;
   }
 
   categoriesNewSnapshotBuildPendingReason = reason;
+
+  if (options?.immediate) {
+    clearCategoriesNewSnapshotBuildDebounceTimer();
+
+    if (categoriesNewSnapshotBuildInFlight) {
+      categoriesNewSnapshotBuildQueued = true;
+      return;
+    }
+
+    startCategoriesNewSnapshotBuild(categoriesNewSnapshotBuildPendingReason);
+    return;
+  }
+
   clearCategoriesNewSnapshotBuildDebounceTimer();
 
   categoriesNewSnapshotBuildDebounceTimer = setTimeout(() => {
@@ -367,6 +386,44 @@ export function scheduleCategoriesNewSnapshotBuild(reason = "catalog-change") {
     categoriesNewSnapshotBuildQueued = true;
     return;
   }
+}
+
+export async function ensureCategoriesNewSnapshotReady(options?: { maxWaitMs?: number; pollMs?: number }) {
+  if (!hasDatabaseUrl()) {
+    return false;
+  }
+
+  const maxWaitMs = Math.max(0, Number(options?.maxWaitMs ?? 120_000));
+  const pollMs = Math.max(250, Number(options?.pollMs ?? 1_000));
+  const deadline = Date.now() + maxWaitMs;
+
+  const snapshotBefore = await readCategoriesNewSnapshot<CategoriesNewTopLevelSnapshot>(SNAPSHOT_TOP_LEVEL_KEY, true);
+  const hasReadySnapshotBefore = Boolean(snapshotBefore && snapshotBefore.cards.length > 0);
+  if (hasReadySnapshotBefore) {
+    return true;
+  }
+
+  scheduleCategoriesNewSnapshotBuild("startup-warmup", { immediate: true });
+
+  while (Date.now() <= deadline) {
+    if (categoriesNewSnapshotBuildInFlight) {
+      await categoriesNewSnapshotBuildInFlight.catch(() => undefined);
+    }
+
+    const snapshot = await readCategoriesNewSnapshot<CategoriesNewTopLevelSnapshot>(SNAPSHOT_TOP_LEVEL_KEY, true);
+    if (snapshot && snapshot.cards.length > 0) {
+      return true;
+    }
+
+    if (Date.now() >= deadline) {
+      break;
+    }
+
+    await sleep(pollMs);
+    scheduleCategoriesNewSnapshotBuild("startup-warmup-retry", { immediate: true });
+  }
+
+  return false;
 }
 
 export async function getCategoriesNewTopLevelSnapshot() {
