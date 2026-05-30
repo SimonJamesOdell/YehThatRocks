@@ -120,6 +120,8 @@ const relatedBaseRowsCache = new BoundedMap<
   string,
   { expiresAt: number; rows: RelatedBaseRowBuckets }
 >(VIDEO_CACHE_MAX_ENTRIES);
+
+const ARTIST_CONTAINS_SEARCH_MIN_LEN = 3;
 const relatedBaseRowsInFlight = new BoundedMap<string, Promise<RelatedBaseRowBuckets>>(VIDEO_CACHE_MAX_ENTRIES);
 
 const suggestCacheMap = new BoundedMap<string, { expiresAt: number; results: SearchSuggestion[] }>(VIDEO_CACHE_MAX_ENTRIES);
@@ -1716,6 +1718,7 @@ export async function searchCatalog(query: string) {
 
   try {
     const FT_MIN_WORD_LEN = 3;
+    const usePrefixOnlyArtistSearch = normalized.length < ARTIST_CONTAINS_SEARCH_MIN_LEN;
     const ftWords = normalized
       .split(/\s+/)
       .map((w) => w.replace(/[+\-><()~*"@]/g, ""))
@@ -1746,6 +1749,8 @@ export async function searchCatalog(query: string) {
       findArtistsInDatabase({
         limit: 12,
         search: normalized,
+        prefixOnly: usePrefixOnlyArtistSearch,
+        nameOnly: usePrefixOnlyArtistSearch,
       }),
       findArtistsFromVideoMetadata(normalized, 12),
     ]);
