@@ -2694,6 +2694,9 @@ function ShellDynamicInner({
                     const isUserOnline = onlineUsers.some((u) => u.name === message.user.name);
                     const activityMessage = parseActivityMessage(message.content);
                     const sharedVideo = activityMessage ? null : parseSharedVideoMessage(message.content);
+                    if (activityMessage && (activityMessage.action === "online" || activityMessage.action === "offline")) {
+                      return null;
+                    }
                     const profileHref = getUserProfileHref(message.user.name, message.user.id);
                     const isProfileClickable = Boolean(profileHref);
                     return (
