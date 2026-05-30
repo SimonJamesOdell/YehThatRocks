@@ -37,7 +37,7 @@ const files = mapRelativeFiles(ROOT, {
   apiSchemas: "apps/web/lib/api-schemas.ts",
   chatDataService: "apps/web/lib/chat-data.ts",
   chatStreamRoute: "apps/web/app/api/chat/stream/route.ts",
-  categoriesFilterGrid: "apps/web/components/categories-filter-grid.tsx",
+  categoriesGrid: "apps/web/components/categories-new-grid.tsx",
   overlayScrollReset: "apps/web/components/overlay-scroll-reset.tsx",
   appRoot: "apps/web/app",
 });
@@ -68,7 +68,7 @@ function main() {
   const apiSchemasSource = sources.apiSchemas;
   const chatDataServiceSource = sources.chatDataService;
   const chatStreamRouteSource = sources.chatStreamRoute;
-  const categoriesFilterGridSource = sources.categoriesFilterGrid;
+  const categoriesGridSource = sources.categoriesGrid;
   const overlayScrollResetSource = sources.overlayScrollReset;
   const cssSource = loadCssSourceFromRoots([files.appRoot], ROOT);
 
@@ -249,32 +249,11 @@ function main() {
   assertContains(coreShellSmokeSource, "expect(revealLatencyMs).toBeLessThanOrEqual(1500);", "Core smoke test enforces bounded prompt footer reveal timing window", failures);
 
   // Categories open/loading/reveal contract invariants.
-  assertContainsEither(
-    categoriesFilterGridSource,
-    [
-      'const [isLoaderVisible, setIsLoaderVisible] = useState(genreCards.length === 0);',
-      'const [isLoaderVisible, setIsLoaderVisible] = useState(initialCards.length === 0);',
-    ],
-    "Categories grid tracks explicit loader visibility state",
-    failures,
-  );
-  assertContains(categoriesFilterGridSource, 'const [isLoaderFadingOut, setIsLoaderFadingOut] = useState(false);', "Categories grid tracks loader fade-out phase", failures);
-  assertContainsEither(
-    categoriesFilterGridSource,
-    [
-      'const [hasRevealedCards, setHasRevealedCards] = useState(genreCards.length > 0);',
-      'const [hasRevealedCards, setHasRevealedCards] = useState(initialCards.length > 0);',
-    ],
-    "Categories grid initializes reveal state from hydrated cards",
-    failures,
-  );
-  assertContains(categoriesFilterGridSource, 'setIsLoaderFadingOut(true);', "Categories grid starts loader fade before showing cards", failures);
-  assertContains(categoriesFilterGridSource, 'setHasRevealedCards(true);', "Categories grid enables card reveal class as part of loader handoff", failures);
-  assertContains(categoriesFilterGridSource, '}, 190);', "Categories grid keeps short overlap window between loader fade and card reveal", failures);
-  assertContains(categoriesFilterGridSource, 'className={`catalogGrid categoriesCatalogGrid categoriesCards${hasRevealedCards ? " categoriesCardsRevealed" : ""}`}', "Categories grid toggles reveal class for cascade animation", failures);
-  assertContains(categoriesFilterGridSource, 'className="catalogCard categoryCard linkedCard categoryCardCascade"', "Categories cards opt into cascade animation class", failures);
-  assertContains(categoriesFilterGridSource, 'style={{ "--category-cascade-index": index } as CSSProperties}', "Categories cards provide per-card cascade index variable", failures);
-  assertContains(categoriesFilterGridSource, 'className={`categoriesLoaderOverlay${isLoaderFadingOut ? " categoriesLoaderOverlayFading" : ""}`}', "Categories loader overlay supports fade-out class state", failures);
+  assertContains(categoriesGridSource, 'className="categoriesCatalogStage categoriesCatalogStageAuto"', "Categories grid uses auto-height stage wrapper to avoid phantom scroll", failures);
+  assertContains(categoriesGridSource, 'className="catalogGrid categoriesCatalogGrid categoriesCards categoriesCardsRevealed"', "Categories grid renders cards with reveal class for cascade animation", failures);
+  assertContains(categoriesGridSource, '"categoryCardCascade",', "Categories cards opt into cascade animation class", failures);
+  assertContains(categoriesGridSource, 'style={{ "--category-cascade-index": index } as CSSProperties}', "Categories cards provide per-card cascade index variable", failures);
+  assertContains(categoriesGridSource, 'className="categoriesLoaderOverlay" role="status" aria-live="polite" aria-label="Opening category"', "Categories grid shows loading overlay while opening category route", failures);
 
   // Chat API invariants — route layer (pipeline auth/csrf/body validation, rate-limit, response contract).
   assertContains(chatRouteSource, "const result = await withAuthAndBody(request, createChatMessageSchema, { authMode: \"user\" });", "Chat POST uses shared auth/body pipeline wrapper", failures);
