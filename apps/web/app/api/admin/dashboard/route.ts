@@ -12,6 +12,38 @@ import { prisma } from "@/lib/db";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+type UserCounterRow = {
+  users?: bigint | number;
+  registeredUsers?: bigint | number;
+  anonymousUsers?: bigint | number;
+};
+
+function toSafeNumber(value: unknown) {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+async function loadLiveUserCounters() {
+  const rows = await prisma.$queryRaw<UserCounterRow[]>`
+    SELECT
+      COUNT(*) AS users,
+      SUM(CASE WHEN email IS NOT NULL AND TRIM(email) <> '' THEN 1 ELSE 0 END) AS registeredUsers,
+      SUM(CASE WHEN email IS NULL OR TRIM(email) = '' THEN 1 ELSE 0 END) AS anonymousUsers
+    FROM users
+  `.catch(() => []);
+
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+
+  return {
+    users: toSafeNumber(row.users),
+    registeredUsers: toSafeNumber(row.registeredUsers),
+    anonymousUsers: toSafeNumber(row.anonymousUsers),
+  };
+}
+
 async function loadDashboardPayloadFromCacheTable(): Promise<Record<string, unknown>> {
   // Read from pre-computed cache table — no side effects, super fast
   const cacheRows = await prisma.$queryRaw<Array<{ payload: string; computed_at: Date }>>`
@@ -25,6 +57,16 @@ async function loadDashboardPayloadFromCacheTable(): Promise<Record<string, unkn
   const cacheRow = cacheRows[0];
   const payload = normalizeDashboardPayload(JSON.parse(cacheRow.payload));
   payload.insights.metadataQuality = await getMetadataQualityStats();
+
+  const liveUserCounters = await loadLiveUserCounters();
+  if (liveUserCounters) {
+    payload.counts = {
+      ...asObject(payload.counts),
+      users: liveUserCounters.users,
+      registeredUsers: liveUserCounters.registeredUsers,
+      anonymousUsers: liveUserCounters.anonymousUsers,
+    };
+  }
 
   if (payload.analytics.hourlyRecent.length === 0) {
     const [hourlyAnalyticsRows, hourlyAuthRows] = await Promise.all([
@@ -310,11 +352,6 @@ function buildDailySeriesFromRows(rows: Array<{
 function toIsoString(value: Date | string) {
   const parsed = value instanceof Date ? value : new Date(value);
   return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
-}
-
-function toSafeNumber(value: unknown) {
-  const numeric = Number(value ?? 0);
-  return Number.isFinite(numeric) ? numeric : 0;
 }
 
 function buildHourlyRecentRows(
