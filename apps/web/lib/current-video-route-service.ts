@@ -111,6 +111,7 @@ export async function fetchRandomCatalogVideosForCurrentVideo(params: {
       COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
       NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
       NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
+      NULLIF(TRIM(v.genre), '') AS genre,
       COALESCE(v.favourited, 0) AS favourited,
       v.description AS description
     FROM videos v
@@ -124,6 +125,7 @@ export async function fetchRandomCatalogVideosForCurrentVideo(params: {
     channelTitle: string | null;
     parsedArtist: string | null;
     parsedTrack: string | null;
+    genre: string | null;
     favourited: number | null;
     description: string | null;
   };
@@ -174,7 +176,7 @@ export async function fetchRandomCatalogVideosForCurrentVideo(params: {
       channelTitle: resolvedArtist,
       parsedArtist: row.parsedArtist ?? null,
       parsedTrack: row.parsedTrack ?? null,
-      genre: "",
+      genre: row.genre?.trim() || "Rock / Metal",
       favourited: Number(row.favourited ?? 0),
       description: row.description ?? "",
     } satisfies VideoRecord;
