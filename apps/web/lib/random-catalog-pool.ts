@@ -25,11 +25,18 @@ async function buildRandomCatalogPool(): Promise<readonly string[]> {
 
   const bandSize = Math.floor(maxId / PROBE_COUNT);
 
-  // One random start per band so probes cover the full ID range, not just one region.
-  const probeStarts = Array.from({ length: PROBE_COUNT }, (_, i) => {
+  // One random start per bounded band so each probe stays index-local even in sparse ID ranges.
+  const probeBands = Array.from({ length: PROBE_COUNT }, (_, i) => {
     const bandStart = i * bandSize + 1;
-    const bandEnd = (i + 1) * bandSize;
-    return Math.max(1, bandStart + Math.floor(Math.random() * Math.max(1, bandEnd - bandStart)));
+    const rawBandEnd = (i + 1) * bandSize;
+    const bandEnd = i === PROBE_COUNT - 1 ? maxId : Math.min(maxId, rawBandEnd);
+    const randomStart = Math.max(1, bandStart + Math.floor(Math.random() * Math.max(1, bandEnd - bandStart + 1)));
+
+    return {
+      bandStart,
+      bandEnd,
+      randomStart,
+    };
   });
 
   const probeSql = `
@@ -38,17 +45,34 @@ async function buildRandomCatalogPool(): Promise<readonly string[]> {
     INNER JOIN videos v ON v.id = sv.video_id
     WHERE sv.status = 'available'
       AND sv.video_id >= ?
+      AND sv.video_id <= ?
       AND v.videoId IS NOT NULL
-    GROUP BY v.id, v.videoId
-    ORDER BY v.id ASC
+    ORDER BY sv.video_id ASC
     LIMIT ?
   `;
 
-  const chunks = await Promise.all(
-    probeStarts.map((start) =>
-      prisma.$queryRawUnsafe<Array<{ videoId: string }>>(probeSql, start, PROBE_LIMIT),
-    ),
-  );
+  const chunks = await Promise.all(probeBands.map(async (band) => {
+    const primary = await prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
+      probeSql,
+      band.randomStart,
+      band.bandEnd,
+      PROBE_LIMIT,
+    );
+
+    if (primary.length >= PROBE_LIMIT || band.randomStart <= band.bandStart) {
+      return primary;
+    }
+
+    const remainder = PROBE_LIMIT - primary.length;
+    const wrap = await prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
+      probeSql,
+      band.bandStart,
+      band.randomStart - 1,
+      remainder,
+    );
+
+    return [...primary, ...wrap];
+  }));
 
   const seen = new Set<string>();
   const ids: string[] = [];
