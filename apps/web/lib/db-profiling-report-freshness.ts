@@ -12,6 +12,8 @@ export type DbProfilingReportFreshness = {
   sampleAgeHours: number | null;
   slowQueryLogStatus: "ON" | "OFF" | "UNKNOWN";
   hasActionableSlowLogData: boolean;
+  evidenceRecency: "current" | "historical" | "none";
+  primaryHotspotSignal: "slow-log-and-runtime" | "runtime-prisma";
   summary: string;
   ageHours: number | null;
   staleAfterHours: number;
@@ -177,6 +179,8 @@ export function buildDbProfilingReportFreshness(
       sampleAgeHours: null,
       slowQueryLogStatus: "UNKNOWN",
       hasActionableSlowLogData: false,
+      evidenceRecency: "none",
+      primaryHotspotSignal: "runtime-prisma",
       summary: "No DB profiling report found.",
       ageHours: null,
       staleAfterHours,
@@ -192,7 +196,13 @@ export function buildDbProfilingReportFreshness(
   const sampleAgeHours = sampleStartedAtMs == null
     ? null
     : round(Math.max(0, nowMs - sampleStartedAtMs) / (1000 * 60 * 60), 2);
-  const hasActionableSlowLogData = metadata.slowQueryLogStatus === "ON";
+  const hasActionableSlowLogData = metadata.slowQueryLogStatus === "ON" && !isStale;
+  const evidenceRecency: DbProfilingReportFreshness["evidenceRecency"] = hasActionableSlowLogData
+    ? "current"
+    : "historical";
+  const primaryHotspotSignal: DbProfilingReportFreshness["primaryHotspotSignal"] = hasActionableSlowLogData
+    ? "slow-log-and-runtime"
+    : "runtime-prisma";
 
   let summary = isStale
     ? `DB profiling report is stale (${ageHours}h old).`
@@ -202,6 +212,8 @@ export function buildDbProfilingReportFreshness(
     summary += " Latest report was generated with slow_query_log OFF, so current DB hotspots are only partially observable.";
   } else if (metadata.slowQueryLogStatus === "UNKNOWN") {
     summary += " Slow query log state could not be determined from the latest report.";
+  } else if (isStale) {
+    summary += " Slow log data is historical-only right now; prioritize live Prisma fingerprint spikes until a fresh export window completes.";
   }
 
   if (sampleAgeHours != null) {
@@ -217,6 +229,8 @@ export function buildDbProfilingReportFreshness(
     sampleAgeHours,
     slowQueryLogStatus: metadata.slowQueryLogStatus,
     hasActionableSlowLogData,
+    evidenceRecency,
+    primaryHotspotSignal,
     summary,
     ageHours,
     staleAfterHours,

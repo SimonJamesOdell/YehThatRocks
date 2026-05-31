@@ -54,6 +54,8 @@ describe("db profiling report freshness", () => {
     expect(payload.ageHours).toBe(2);
     expect(payload.slowQueryLogStatus).toBe("UNKNOWN");
     expect(payload.hasActionableSlowLogData).toBe(false);
+    expect(payload.evidenceRecency).toBe("historical");
+    expect(payload.primaryHotspotSignal).toBe("runtime-prisma");
   });
 
   it("marks report as stale when latest file age exceeds threshold", () => {
@@ -84,6 +86,8 @@ describe("db profiling report freshness", () => {
     expect(payload.latestReportFile).toBeNull();
     expect(payload.ageHours).toBeNull();
     expect(payload.summary).toBe("No DB profiling report found.");
+    expect(payload.evidenceRecency).toBe("none");
+    expect(payload.primaryHotspotSignal).toBe("runtime-prisma");
   });
 
   it("parses report metadata and flags non-actionable slow-log snapshots", () => {
@@ -110,8 +114,68 @@ describe("db profiling report freshness", () => {
       expect(payload.sampleAgeHours).toBe(680.54);
       expect(payload.slowQueryLogStatus).toBe("OFF");
       expect(payload.hasActionableSlowLogData).toBe(false);
+      expect(payload.evidenceRecency).toBe("historical");
+      expect(payload.primaryHotspotSignal).toBe("runtime-prisma");
       expect(payload.summary).toContain("slow_query_log OFF");
       expect(payload.summary).toContain("Capture window started 680.54h ago");
+    } finally {
+      cleanupDir(dir);
+    }
+  });
+
+  it("treats stale ON slow-log reports as historical-only and runtime-primary", () => {
+    const dir = createTempDir("ytr-prof-on-stale-");
+
+    try {
+      writeRichReport(
+        dir,
+        "db-profiling-report-20260501-120000.txt",
+        "2026-05-01T12:00:00.000Z",
+        `[profiling] report generated UTC: 2026-05-01 12:00:00\n[profiling] sample started UTC: 2026-05-01 11:30:00\n\n=== MySQL slow query runtime settings ===\nslow_query_log\tON\n`,
+      );
+
+      const payload = getDbProfilingReportFreshness({
+        nowMs: new Date("2026-05-31T12:00:00.000Z").getTime(),
+        staleAfterHours: 72,
+        cacheTtlMs: 1_000,
+        searchDirs: [dir],
+      });
+
+      expect(payload.status).toBe("stale");
+      expect(payload.slowQueryLogStatus).toBe("ON");
+      expect(payload.hasActionableSlowLogData).toBe(false);
+      expect(payload.evidenceRecency).toBe("historical");
+      expect(payload.primaryHotspotSignal).toBe("runtime-prisma");
+      expect(payload.summary).toContain("historical-only");
+      expect(payload.summary).toContain("prioritize live Prisma fingerprint spikes");
+    } finally {
+      cleanupDir(dir);
+    }
+  });
+
+  it("marks fresh ON slow-log reports as actionable and dual-signal", () => {
+    const dir = createTempDir("ytr-prof-on-fresh-");
+
+    try {
+      writeRichReport(
+        dir,
+        "db-profiling-report-20260531-120000.txt",
+        "2026-05-31T12:00:00.000Z",
+        `[profiling] report generated UTC: 2026-05-31 12:00:00\n[profiling] sample started UTC: 2026-05-31 11:30:00\n\n=== MySQL slow query runtime settings ===\nslow_query_log\tON\n`,
+      );
+
+      const payload = getDbProfilingReportFreshness({
+        nowMs: new Date("2026-05-31T12:10:00.000Z").getTime(),
+        staleAfterHours: 72,
+        cacheTtlMs: 1_000,
+        searchDirs: [dir],
+      });
+
+      expect(payload.status).toBe("fresh");
+      expect(payload.slowQueryLogStatus).toBe("ON");
+      expect(payload.hasActionableSlowLogData).toBe(true);
+      expect(payload.evidenceRecency).toBe("current");
+      expect(payload.primaryHotspotSignal).toBe("slow-log-and-runtime");
     } finally {
       cleanupDir(dir);
     }
