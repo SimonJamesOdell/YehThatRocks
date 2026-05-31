@@ -133,12 +133,24 @@ async function loadFavouriteVideosForUser(userId: number): Promise<VideoRecord[]
     Array<{
       videoId: string;
       title: string;
+      channelTitle: string | null;
+      parsedArtist: string | null;
+      parsedTrack: string | null;
+      genre: string | null;
       favourited: number | null;
       description: string | null;
     }>
   >(
     `
-      SELECT v.videoId, v.title, v.favourited, v.description
+      SELECT
+        v.videoId,
+        v.title,
+        COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
+        NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
+        NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
+        NULLIF(TRIM(v.genre), '') AS genre,
+        v.favourited,
+        v.description
       FROM videos v
       WHERE v.videoId IN (${placeholders})
     `,
@@ -158,10 +170,7 @@ async function loadFavouriteVideosForUser(userId: number): Promise<VideoRecord[]
     .filter((video: (typeof videos)[number] | undefined): video is (typeof videos)[number] => Boolean(video));
 
   const mapped = orderedVideos.map((video: (typeof videos)[number]) =>
-    mapVideo({
-      ...video,
-      channelTitle: null,
-    }),
+    mapVideo(video),
   );
 
   favouriteVideosCache.set(userId, mapped);
