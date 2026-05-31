@@ -273,6 +273,12 @@ export async function GET(request: NextRequest) {
   }
 
   await ensureGenreReviewQueueReady();
+  const countsOnly = request.nextUrl.searchParams.get("countsOnly") === "1";
+
+  if (countsOnly) {
+    const remaining = await getGenreReviewRemaining();
+    return NextResponse.json({ remaining });
+  }
 
   const [remaining, currentVideo, worker] = await Promise.all([
     getGenreReviewRemaining(),

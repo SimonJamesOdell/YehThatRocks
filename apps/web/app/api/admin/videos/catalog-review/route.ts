@@ -23,8 +23,12 @@ export async function GET(request: NextRequest) {
   }
 
   await ensureCatalogReviewQueueReady();
+  const countsOnly = request.nextUrl.searchParams.get("countsOnly") === "1";
 
   const remaining = await getCatalogReviewQueueCount({ forceRefresh: true });
+  if (countsOnly) {
+    return NextResponse.json({ remaining });
+  }
   const currentVideo = await fetchCatalogReviewCurrentVideo();
 
   // If the count is positive but no valid video is surfaceable, the queue

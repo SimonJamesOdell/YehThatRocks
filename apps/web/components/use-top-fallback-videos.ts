@@ -7,12 +7,10 @@ import { parseJsonOrNull } from "@/lib/parse-json";
 
 export function useTopFallbackVideos({
   autoplayEnabled,
-  currentVideoId,
   fallbackPoolSize,
   setTopFallbackVideos,
 }: {
   autoplayEnabled: boolean;
-  currentVideoId: string;
   fallbackPoolSize: number;
   setTopFallbackVideos: (videos: VideoRecord[]) => void;
 }) {
@@ -61,5 +59,5 @@ export function useTopFallbackVideos({
     return () => {
       cancelled = true;
     };
-  }, [autoplayEnabled, currentVideoId, fallbackPoolSize, setTopFallbackVideos]);
+  }, [autoplayEnabled, fallbackPoolSize, setTopFallbackVideos]);
 }

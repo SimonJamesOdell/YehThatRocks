@@ -390,7 +390,7 @@ export function ArtistsLetterResults({
     }
 
     void reloadArtists(currentLetter);
-  }, [currentLetter, normalizedFilterValue]);
+  }, [normalizedFilterValue]);
 
   function artistHref(slug: string) {
     return `/artist/${slug}?${baseParams.toString()}`;

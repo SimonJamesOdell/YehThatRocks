@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
   }
 
   const q = (request.nextUrl.searchParams.get("q") ?? "").trim();
+  const countsOnly = request.nextUrl.searchParams.get("countsOnly") === "1";
 
   await ensurePendingVideoQueueIndex();
 
@@ -43,6 +44,10 @@ export async function GET(request: NextRequest) {
     `,
   );
   const totalPending = Number(totalRows[0]?.total ?? 0);
+
+  if (countsOnly) {
+    return NextResponse.json({ totalPending });
+  }
 
   const pendingVideos = q
     ? await prisma.$queryRawUnsafe<Array<{

@@ -917,7 +917,6 @@ export function PlayerExperience({
 
   useTopFallbackVideos({
     autoplayEnabled,
-    currentVideoId: currentVideo.id,
     fallbackPoolSize: AUTOPLAY_FALLBACK_POOL_SIZE,
     setTopFallbackVideos,
   });

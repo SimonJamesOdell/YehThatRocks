@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import type { AdminTab } from "@/components/admin-dashboard-panel";
 
 type PendingCountPayload = {
-  pendingVideos?: Array<unknown>;
   totalPending?: number;
 };
 
@@ -44,19 +43,19 @@ export function AdminTabLinks({
     const fetchPendingCount = async () => {
       try {
         const [pendingResponse, catalogReviewResponse, genreReviewResponse] = await Promise.all([
-          fetch("/api/admin/videos/pending", {
+          fetch("/api/admin/videos/pending?countsOnly=1", {
             cache: "no-store",
             headers: {
               "Cache-Control": "no-store",
             },
           }),
-          fetch("/api/admin/videos/catalog-review", {
+          fetch("/api/admin/videos/catalog-review?countsOnly=1", {
             cache: "no-store",
             headers: {
               "Cache-Control": "no-store",
             },
           }),
-          fetch("/api/admin/videos/genre-review", {
+          fetch("/api/admin/videos/genre-review?countsOnly=1", {
             cache: "no-store",
             headers: {
               "Cache-Control": "no-store",
@@ -66,10 +65,9 @@ export function AdminTabLinks({
 
         if (pendingResponse.ok) {
           const pendingPayload = (await pendingResponse.json()) as PendingCountPayload;
-          const fallbackCount = Array.isArray(pendingPayload.pendingVideos) ? pendingPayload.pendingVideos.length : 0;
           const nextPendingCount = Number.isFinite(pendingPayload.totalPending)
             ? Number(pendingPayload.totalPending)
-            : fallbackCount;
+            : 0;
 
           if (!cancelled) {
             setPendingCount(nextPendingCount);
