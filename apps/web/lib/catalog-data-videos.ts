@@ -1190,6 +1190,7 @@ export async function getNewestVideos(
               FROM videos v
               WHERE v.videoId IS NOT NULL
                 AND COALESCE(v.approved, 0) = 1
+              ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
               LIMIT ${batchSize}
               OFFSET ${rawOffset}
             `
