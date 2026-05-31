@@ -10,6 +10,7 @@ import { verifySameOrigin } from "@/lib/csrf";
 
 const execFileAsync = promisify(execFile);
 const SCRIPT_TIMEOUT_MS = Math.max(30_000, Math.min(15 * 60_000, Number(process.env.MAGAZINE_DAILY_TIMEOUT_MS || "480000")));
+const ENABLE_MAGAZINE_GENERATION = process.env.ENABLE_MAGAZINE_GENERATION === "1";
 
 function resolveScriptPath(): string {
   const direct = path.resolve(process.cwd(), "scripts/magazine-news-autogen.js");
@@ -37,6 +38,10 @@ export async function POST(request: NextRequest) {
 
   if (csrfError) {
     return csrfError;
+  }
+
+  if (!ENABLE_MAGAZINE_GENERATION) {
+    return NextResponse.json({ ok: false, error: "Magazine generation is temporarily disabled." }, { status: 503 });
   }
 
   const scriptPath = resolveScriptPath();

@@ -8,6 +8,7 @@ import { parseJsonOrNull } from "@/lib/parse-json";
 
 const WIKI_CACHE_VERSION = 3;
 const WIKI_CACHE_DIR = path.join(process.cwd(), ".cache", "artist-wiki");
+const ENABLE_ARTIST_WIKI_GENERATION = process.env.ENABLE_ARTIST_WIKI_GENERATION === "1";
 
 type GroqMessage = {
   role: "system" | "user";
@@ -643,6 +644,10 @@ export async function getOrCreateArtistWiki(artistName: string, slugHint?: strin
 
   if (cached) {
     return cached;
+  }
+
+  if (!ENABLE_ARTIST_WIKI_GENERATION) {
+    return null;
   }
 
   try {

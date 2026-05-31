@@ -48,12 +48,6 @@ const deckOverride = typeof args["deck"] === "string" ? args["deck"] : null;
 const isDryRun = Boolean(args["dry-run"]);
 const overwrite = Boolean(args["overwrite"]);
 
-if (!artist || !track || !videoId || !genre) {
-  console.error("Usage: node scripts/generate-magazine-article.js --artist=NAME --track=NAME --videoId=ID --genre=NAME");
-  console.error("Optional: --deck='...' --dry-run --overwrite");
-  process.exit(1);
-}
-
 // ── Env ───────────────────────────────────────────────────────────────────
 
 function loadEnv() {
@@ -68,6 +62,19 @@ function loadEnv() {
   }
 }
 loadEnv();
+
+const ENABLE_MAGAZINE_GENERATION = process.env.ENABLE_MAGAZINE_GENERATION === "1";
+
+if (!ENABLE_MAGAZINE_GENERATION) {
+  console.error("Magazine generation is temporarily disabled.");
+  process.exit(1);
+}
+
+if (!artist || !track || !videoId || !genre) {
+  console.error("Usage: node scripts/generate-magazine-article.js --artist=NAME --track=NAME --videoId=ID --genre=NAME");
+  console.error("Optional: --deck='...' --dry-run --overwrite");
+  process.exit(1);
+}
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = process.env.GROQ_WRITER_MODEL || "openai/gpt-oss-120b";

@@ -91,7 +91,7 @@ const RELATED_DISCOVERY_MAX_DEPTH = Math.max(1, Math.min(4, Number(process.env.R
 const RELATED_DISCOVERY_MAX_NEW_VIDEOS = Math.max(1, Math.min(400, Number(process.env.RELATED_DISCOVERY_MAX_NEW_VIDEOS || "40")));
 const RELATED_DISCOVERY_SEED_FANOUT = Math.max(1, Math.min(8, Number(process.env.RELATED_DISCOVERY_SEED_FANOUT || "8")));
 const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim() || undefined;
-const GROQ_MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-120b";
+const GROQ_MODEL = process.env.GROQ_MODEL?.trim() || "llama-3.1-8b-instant";
 const GROQ_RETRY_COOLDOWN_MS = Math.max(300_000, Number(process.env.GROQ_RETRY_COOLDOWN_MS || String(6 * 60 * 60 * 1000)));
 const PLAYBACK_DECISION_CACHE_TTL_MS = 15_000;
 const ALLOWED_VIDEO_TYPES = new Set(["official", "lyric", "live", "cover", "remix", "fan"]);
@@ -724,19 +724,41 @@ async function fetchOEmbedVideo(videoId: string): Promise<PersistableVideoRecord
 
 // ── Groq metadata classification ──────────────────────────────────────────────
 
+function normalizeGroqPromptField(value: unknown): string {
+  return normalizePossiblyMojibakeText(String(value ?? "")).replace(/\s+/g, " ").trim();
+}
+
+function isRedundantGroqDescriptionSnippet(snippet: string, title: string, channelTitle: string): boolean {
+  let reduced = snippet.toLowerCase();
+
+  for (const token of [title, channelTitle]) {
+    const normalizedToken = token.trim().toLowerCase();
+    if (!normalizedToken) continue;
+    reduced = reduced.split(normalizedToken).join(" ");
+  }
+
+  const semanticRemainder = reduced.replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+  return semanticRemainder.length < 24;
+}
+
 function buildGroqMetadataPrompt(video: PersistableVideoRecord) {
-  const descriptionSnippet = truncate(video.description ?? "", 280);
+  const rawTitle = normalizeGroqPromptField(video.title);
+  const channelTitle = normalizeGroqPromptField(video.channelTitle);
+  const descriptionSnippet = truncate(normalizeGroqPromptField(video.description), 280);
   const promptParts = [
     "Extract rock/metal video metadata.",
     "Return JSON only:",
     '{"artist":string|null,"track":string|null,"videoType":"official"|"lyric"|"live"|"cover"|"remix"|"fan"|"unknown","confidence":number,"reason":string}',
     "Rules: artist is performer/band; track is song title only; omit terms like official video/remaster/lyrics/HD.",
     "If clearly non-rock/non-metal or non-music: artist=null, track=null, confidence<=0.4, short reason.",
-    `rawTitle: ${video.title}`,
-    `channelTitle: ${video.channelTitle}`,
+    `rawTitle: ${rawTitle || ""}`,
   ];
 
-  if (descriptionSnippet) {
+  if (channelTitle && channelTitle.toLowerCase() !== rawTitle.toLowerCase()) {
+    promptParts.push(`channelTitle: ${channelTitle}`);
+  }
+
+  if (descriptionSnippet && !isRedundantGroqDescriptionSnippet(descriptionSnippet, rawTitle, channelTitle)) {
     promptParts.push(`descriptionSnippet: ${descriptionSnippet}`);
   }
 
@@ -1684,36 +1706,9 @@ export async function importVideoFromDirectSource(source: string, options?: { di
 
     const fallbackRow = fallbackRows[0];
 
-  if (hasDatabaseUrl() && !options?.forceApprove) {
-    const genreDecision = await classifyPersistedVideoGenre(normalizedVideoId);
-
-    if (genreDecision.action === "remove") {
-      await pruneVideoAndAssociationsByVideoId(normalizedVideoId, "genre-auto-remove");
-      playbackDecisionCache.delete(normalizedVideoId);
-      return {
-        videoId: normalizedVideoId,
-        decision: {
-          allowed: false,
-          reason: "genre-auto-remove" as const,
-          message: "Rejected: confidently classified as non-rock/metal.",
-        } satisfies PlaybackDecision,
-      };
-    }
-
-    if (genreDecision.proposedGenre) {
-      await prisma.$executeRaw`
-        UPDATE videos
-        SET genre = ${genreDecision.proposedGenre},
-            updated_at = UTC_TIMESTAMP(3)
-        WHERE videoId = ${normalizedVideoId}
-      `;
-      playbackDecisionCache.delete(normalizedVideoId);
-    }
-
-    if (!decision.allowed) {
-      decision = { allowed: true, reason: "ok" };
-    }
-  }
+    // Genre assignment for newly imported/user-submitted videos is manual-only.
+    // New videos should flow through admin pending/genre review rather than being
+    // auto-classified or auto-removed during ingestion.
     const metadataAbsent = fallbackRow && !fallbackRow.parsedArtist?.trim();
     const decisionNeedsHelp =
       !decision.allowed &&

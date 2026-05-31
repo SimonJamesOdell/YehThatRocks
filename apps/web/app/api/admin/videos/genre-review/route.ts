@@ -227,44 +227,6 @@ async function persistGenreReviewManualMetadata(videoId: string, reason: string,
   );
 }
 
-async function getWorkerState() {
-  const rows = await prisma.$queryRawUnsafe<Array<{
-    status: string;
-    total_videos: bigint | number;
-    last_video_id: bigint | number;
-    processed_count: bigint | number;
-    updated_count: bigint | number;
-    deleted_count: bigint | number;
-    queued_count: bigint | number;
-    started_at: Date | null;
-    updated_at: Date | null;
-    last_message: string | null;
-  }>>(
-    `SELECT status, total_videos, last_video_id, processed_count, updated_count, deleted_count, queued_count, started_at, updated_at, last_message
-     FROM admin_genre_reclassify_state
-     WHERE id = 1
-     LIMIT 1`,
-  );
-
-  const row = rows[0];
-  if (!row) {
-    return null;
-  }
-
-  return {
-    status: row.status,
-    totalVideos: Number(row.total_videos ?? 0),
-    lastVideoId: Number(row.last_video_id ?? 0),
-    processedCount: Number(row.processed_count ?? 0),
-    updatedCount: Number(row.updated_count ?? 0),
-    deletedCount: Number(row.deleted_count ?? 0),
-    queuedCount: Number(row.queued_count ?? 0),
-    startedAt: row.started_at,
-    updatedAt: row.updated_at,
-    lastMessage: row.last_message,
-  };
-}
-
 export async function GET(request: NextRequest) {
   const auth = await requireAuthOnly(request);
 
@@ -280,16 +242,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ remaining });
   }
 
-  const [remaining, currentVideo, worker] = await Promise.all([
+  const [remaining, currentVideo] = await Promise.all([
     getGenreReviewRemaining(),
     fetchGenreReviewCurrentVideo(),
-    getWorkerState(),
   ]);
 
   return NextResponse.json({
     remaining,
     currentVideo,
-    worker,
   });
 }
 

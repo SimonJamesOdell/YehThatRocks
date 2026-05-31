@@ -10,6 +10,7 @@ const execFileAsync = promisify(execFile);
 const CRON_SECRET = process.env.CRON_SECRET?.trim() || "";
 const DAILY_COUNT = Math.max(1, Math.min(10, Number(process.env.MAGAZINE_DAILY_COUNT || "3")));
 const SCRIPT_TIMEOUT_MS = Math.max(30_000, Math.min(15 * 60_000, Number(process.env.MAGAZINE_DAILY_TIMEOUT_MS || "480000")));
+const ENABLE_MAGAZINE_GENERATION = process.env.ENABLE_MAGAZINE_GENERATION === "1";
 
 function isCronAuthorized(request: NextRequest): boolean {
   if (!CRON_SECRET) {
@@ -44,6 +45,10 @@ const HTTP_UNAUTHORIZED = 401;
 export async function POST(request: NextRequest) {
   if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: HTTP_UNAUTHORIZED });
+  }
+
+  if (!ENABLE_MAGAZINE_GENERATION) {
+    return NextResponse.json({ ok: false, error: "Magazine generation is temporarily disabled." }, { status: 503 });
   }
 
   const dryRun = request.nextUrl.searchParams.get("dryRun") === "1";

@@ -17,27 +17,6 @@ async function ensureGenreReviewQueueInternal() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS admin_genre_reclassify_state (
-      id TINYINT NOT NULL,
-      status VARCHAR(32) NOT NULL DEFAULT 'idle',
-      total_videos BIGINT NOT NULL DEFAULT 0,
-      last_video_id BIGINT NOT NULL DEFAULT 0,
-      processed_count BIGINT NOT NULL DEFAULT 0,
-      updated_count BIGINT NOT NULL DEFAULT 0,
-      deleted_count BIGINT NOT NULL DEFAULT 0,
-      queued_count BIGINT NOT NULL DEFAULT 0,
-      started_at DATETIME(3) NULL,
-      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-      last_message VARCHAR(512) NULL,
-      PRIMARY KEY (id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-
-  await prisma.$executeRawUnsafe(
-    "INSERT IGNORE INTO admin_genre_reclassify_state (id, status) VALUES (1, 'idle')",
-  );
-
   genreReviewQueueReady = true;
 }
 

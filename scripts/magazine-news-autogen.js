@@ -930,6 +930,11 @@ async function saveArticle(conn, slug, video, article) {
 async function run() {
   loadEnv();
 
+  const enableMagazineGeneration = process.env.ENABLE_MAGAZINE_GENERATION === "1";
+  if (!enableMagazineGeneration) {
+    throw new Error("Magazine generation is temporarily disabled");
+  }
+
   const args = parseArgs(process.argv);
   const dryRun = Boolean(args["dry-run"]);
   const mode = String(args.mode || "").trim() || "news"; // 'news', 'band-history', or 'curated-picks'

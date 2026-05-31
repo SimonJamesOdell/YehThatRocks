@@ -233,19 +233,6 @@ export type GenreReviewVideoRow = {
   enqueuedAt: string | null;
 };
 
-export type GenreReviewWorkerState = {
-  status: string;
-  totalVideos: number;
-  lastVideoId: number;
-  processedCount: number;
-  updatedCount: number;
-  deletedCount: number;
-  queuedCount: number;
-  startedAt: string | null;
-  updatedAt: string | null;
-  lastMessage: string | null;
-};
-
 // Magazine Domain
 export type AdminMagazineArticleRow = {
   slug: string;
