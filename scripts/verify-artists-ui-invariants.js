@@ -65,6 +65,8 @@ function main() {
   assertContains(resultsSource, "fetch(`/api/artists?${params.toString()}`", "Results fetches artists API directly on letter switch", failures);
   assertContains(resultsSource, "setCurrentLetter(nextLetter)", "Results swaps active letter state in place", failures);
   assertContains(resultsSource, "reloadAbortControllerRef.current?.abort();", "Results aborts in-flight letter reload requests", failures);
+  assertContains(resultsSource, "}, [normalizedFilterValue]);", "Results keeps filter-effect reload dependency scoped to filter value", failures);
+  assertNotContains(resultsSource, "}, [currentLetter, normalizedFilterValue]);", "Results avoids duplicate reload trigger from currentLetter dependency", failures);
 
   // Scroll reset invariant for letter changes.
   assertContains(resultsSource, "function scrollResultsToTop()", "Results exposes scroll-to-top helper", failures);

@@ -19,6 +19,7 @@ const files = {
   newVideosScrollPrefetchHook: path.join(ROOT, "apps/web/components/use-new-videos-scroll-prefetch.ts"),
   newVideosModerationHook: path.join(ROOT, "apps/web/components/use-new-videos-moderation.ts"),
   createPlaylistFromVideoListHelper: path.join(ROOT, "apps/web/lib/playlist-create-from-video-list.ts"),
+  catalogDataVideos: path.join(ROOT, "apps/web/lib/catalog-data-videos.ts"),
   playlistData: path.join(ROOT, "apps/web/lib/catalog-data-playlists.ts"),
   suggestNewModal: path.join(ROOT, "apps/web/components/suggest-new-modal.tsx"),
   suggestNewHook: path.join(ROOT, "apps/web/components/use-suggest-new-video.ts"),
@@ -43,6 +44,7 @@ function main() {
   const newVideosScrollPrefetchHookSource = readFileStrict(files.newVideosScrollPrefetchHook, ROOT);
   const newVideosModerationHookSource = readFileStrict(files.newVideosModerationHook, ROOT);
   const createPlaylistFromVideoListHelperSource = readFileStrict(files.createPlaylistFromVideoListHelper, ROOT);
+  const catalogDataVideosSource = readFileStrict(files.catalogDataVideos, ROOT);
   const playlistDataSource = readFileStrict(files.playlistData, ROOT);
   const suggestNewModalSource = readFileStrict(files.suggestNewModal, ROOT);
   const suggestNewHookSource = readFileStrict(files.suggestNewHook, ROOT);
@@ -77,6 +79,8 @@ function main() {
   assertContains(newestRouteSource, "const nextOffset = skip + videos.length;", "Newest API returns nextOffset derived from emitted rows", failures);
   assertContains(newestRouteSource, "nextOffset,", "Newest API response includes nextOffset", failures);
   assertContains(newVideosDataLoaderHookSource, "nextOffsetRef.current = Number.isFinite(nextOffset) ? nextOffset : skip + received;", "New videos data hook advances offset using API-provided nextOffset when available", failures);
+  assertContains(catalogDataVideosSource, "const tryNewestFastPath = async () => {", "Catalog newest loader keeps dedicated fast-path helper", failures);
+  assertContains(catalogDataVideosSource, "ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC", "Catalog newest fast path preserves recency ordering by approved_at/created_at", failures);
 
   // New videos loader constants and state.
   assertContains(newVideosLoaderSource, "const NEW_INITIAL_BATCH_SIZE = 12;", "New videos loader uses smaller initial lazy-load batches", failures);

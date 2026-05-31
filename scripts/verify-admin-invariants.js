@@ -14,11 +14,14 @@ const files = {
   adminSitemapRevalidateRoute: path.join(ROOT, "apps/web/app/api/admin/sitemap/revalidate/route.ts"),
   adminVideosRoute: path.join(ROOT, "apps/web/app/api/admin/videos/route.ts"),
   adminPendingRoute: path.join(ROOT, "apps/web/app/api/admin/videos/pending/route.ts"),
+  adminCatalogReviewRoute: path.join(ROOT, "apps/web/app/api/admin/videos/catalog-review/route.ts"),
+  adminGenreReviewRoute: path.join(ROOT, "apps/web/app/api/admin/videos/genre-review/route.ts"),
   adminImportRoute: path.join(ROOT, "apps/web/app/api/admin/videos/import/route.ts"),
   adminRefetchDataRoute: path.join(ROOT, "apps/web/app/api/admin/videos/refetch-data/route.ts"),
   adminPerformanceSamplesRoute: path.join(ROOT, "apps/web/app/api/admin/performance-samples/route.ts"),
   adminDashboardStreamRoute: path.join(ROOT, "apps/web/app/api/admin/dashboard/stream/route.ts"),
   adminDashboardPanel: path.join(ROOT, "apps/web/components/admin-dashboard-panel.tsx"),
+  adminTabLinks: path.join(ROOT, "apps/web/components/admin-tab-links.tsx"),
   adminDashboardRollups: path.join(ROOT, "apps/web/lib/admin-dashboard-rollups.ts"),
   db: path.join(ROOT, "apps/web/lib/db.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
@@ -38,11 +41,14 @@ function main() {
   const adminSitemapRevalidateRouteSource = readFileStrict(files.adminSitemapRevalidateRoute, ROOT);
   const adminVideosRouteSource = readFileStrict(files.adminVideosRoute, ROOT);
   const adminPendingRouteSource = readFileStrict(files.adminPendingRoute, ROOT);
+  const adminCatalogReviewRouteSource = readFileStrict(files.adminCatalogReviewRoute, ROOT);
+  const adminGenreReviewRouteSource = readFileStrict(files.adminGenreReviewRoute, ROOT);
   const adminImportRouteSource = readFileStrict(files.adminImportRoute, ROOT);
   const adminRefetchDataRouteSource = readFileStrict(files.adminRefetchDataRoute, ROOT);
   const adminPerformanceSamplesRouteSource = readFileStrict(files.adminPerformanceSamplesRoute, ROOT);
   const adminDashboardStreamRouteSource = readFileStrict(files.adminDashboardStreamRoute, ROOT);
   const adminDashboardPanelSource = readFileStrict(files.adminDashboardPanel, ROOT);
+  const adminTabLinksSource = readFileStrict(files.adminTabLinks, ROOT);
   const adminDashboardRollupsSource = readFileStrict(files.adminDashboardRollups, ROOT);
   const dbSource = readFileStrict(files.db, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
@@ -189,6 +195,15 @@ function main() {
   assertContains(adminDashboardPanelSource, "pendingVideos", "Admin dashboard panel fetches and renders the pending approval queue", failures);
   assertContains(adminDashboardPanelSource, "Artist (optional override)", "Admin pending approval cards render editable artist override input", failures);
   assertContains(adminDashboardPanelSource, "placeholder=\"Video title\"", "Admin pending approval cards render editable title input", failures);
+  assertContains(adminTabLinksSource, "fetch(\"/api/admin/videos/pending?countsOnly=1\"", "Admin tab links poll pending count via lightweight counts-only endpoint", failures);
+  assertContains(adminTabLinksSource, "fetch(\"/api/admin/videos/catalog-review?countsOnly=1\"", "Admin tab links poll catalog-review count via lightweight counts-only endpoint", failures);
+  assertContains(adminTabLinksSource, "fetch(\"/api/admin/videos/genre-review?countsOnly=1\"", "Admin tab links poll genre-review count via lightweight counts-only endpoint", failures);
+  assertContains(adminPendingRouteSource, "const countsOnly = request.nextUrl.searchParams.get(\"countsOnly\") === \"1\";", "Admin pending route supports countsOnly polling mode", failures);
+  assertContains(adminPendingRouteSource, "if (countsOnly)", "Admin pending route short-circuits to count-only response", failures);
+  assertContains(adminCatalogReviewRouteSource, "const countsOnly = request.nextUrl.searchParams.get(\"countsOnly\") === \"1\";", "Admin catalog-review route supports countsOnly polling mode", failures);
+  assertContains(adminCatalogReviewRouteSource, "if (countsOnly)", "Admin catalog-review route short-circuits to count-only response", failures);
+  assertContains(adminGenreReviewRouteSource, "const countsOnly = request.nextUrl.searchParams.get(\"countsOnly\") === \"1\";", "Admin genre-review route supports countsOnly polling mode", failures);
+  assertContains(adminGenreReviewRouteSource, "if (countsOnly)", "Admin genre-review route short-circuits to count-only response", failures);
 
   // Unapproved video passthrough invariants — ensure ?v= and user-submitted videos can be played
   // immediately for the requesting user while staying in the admin approval queue for others.
