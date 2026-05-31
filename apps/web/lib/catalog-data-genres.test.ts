@@ -407,7 +407,13 @@ describe("getCategoryArtistCountByGenre — distinct artist count strategy", () 
 
   it("uses index-first UNION strategy when parsed_artist_norm exists", async () => {
     getVideoArtistNormalizationColumnMock.mockResolvedValue("parsed_artist_norm");
-    queryRawUnsafeMock.mockResolvedValue([{ total: 123 }]);
+    queryRawUnsafeMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
+      if (text.includes("SHOW TABLES LIKE 'category_artist_runtime_cache'")) {
+        return [];
+      }
+      return [{ total: 123 }];
+    });
 
     const { clearGenreCaches, getCategoryArtistCountByGenre } = await import("@/lib/catalog-data-genres");
     clearGenreCaches();
@@ -415,16 +421,48 @@ describe("getCategoryArtistCountByGenre — distinct artist count strategy", () 
     const total = await getCategoryArtistCountByGenre("Metal");
 
     expect(total).toBe(123);
-    const [sql] = queryRawUnsafeMock.mock.calls[0] as [string, ...unknown[]];
+    const unionCall = queryRawUnsafeMock.mock.calls.find(([sql]) => String(sql).includes("UNION"));
+    expect(unionCall).toBeDefined();
+    const [sql] = unionCall as [string, ...unknown[]];
     expect(sql).toContain("UNION");
     expect(sql).toContain("parsed_artist_norm");
     expect(sql).toContain("COUNT(*) AS total");
     expect(sql).not.toContain("COUNT(DISTINCT LOWER(TRIM(COALESCE");
   });
 
+  it("uses runtime cache total when available to avoid heavy regroup count", async () => {
+    getVideoArtistNormalizationColumnMock.mockResolvedValue("parsed_artist_norm");
+    queryRawUnsafeMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
+      if (text.includes("SHOW TABLES LIKE 'category_artist_runtime_cache'")) {
+        return [{ tableName: "category_artist_runtime_cache" }];
+      }
+      if (text.includes("MAX(updated_at) AS newestUpdatedAt") && text.includes("FROM category_artist_runtime_cache")) {
+        return [{ newestUpdatedAt: new Date(), total: 42 }];
+      }
+      return [{ total: 0 }];
+    });
+
+    const { clearGenreCaches, getCategoryArtistCountByGenre } = await import("@/lib/catalog-data-genres");
+    clearGenreCaches();
+
+    const total = await getCategoryArtistCountByGenre("Metal");
+
+    expect(total).toBe(42);
+    expect(getVideoArtistNormalizationColumnMock).not.toHaveBeenCalled();
+    const unionCall = queryRawUnsafeMock.mock.calls.find(([sql]) => String(sql).includes("UNION"));
+    expect(unionCall).toBeUndefined();
+  });
+
   it("keeps expression DISTINCT fallback when parsed_artist_norm is unavailable", async () => {
     getVideoArtistNormalizationColumnMock.mockResolvedValue(null);
-    queryRawUnsafeMock.mockResolvedValue([{ total: 7 }]);
+    queryRawUnsafeMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
+      if (text.includes("SHOW TABLES LIKE 'category_artist_runtime_cache'")) {
+        return [];
+      }
+      return [{ total: 7 }];
+    });
 
     const { clearGenreCaches, getCategoryArtistCountByGenre } = await import("@/lib/catalog-data-genres");
     clearGenreCaches();
@@ -432,9 +470,84 @@ describe("getCategoryArtistCountByGenre — distinct artist count strategy", () 
     const total = await getCategoryArtistCountByGenre("Metal");
 
     expect(total).toBe(7);
-    const [sql] = queryRawUnsafeMock.mock.calls[0] as [string, ...unknown[]];
+    const distinctCall = queryRawUnsafeMock.mock.calls.find(([sql]) =>
+      String(sql).includes("COUNT(DISTINCT LOWER(TRIM(COALESCE(NULLIF(v.parsedArtist, ''), NULLIF(v.channelTitle, ''))))) AS total"),
+    );
+    expect(distinctCall).toBeDefined();
+    const [sql] = distinctCall as [string, ...unknown[]];
     expect(sql).toContain("COUNT(DISTINCT LOWER(TRIM(COALESCE(NULLIF(v.parsedArtist, ''), NULLIF(v.channelTitle, ''))))) AS total");
     expect(sql).not.toContain("UNION");
+  });
+});
+
+describe("getCategoryArtistsByGenre — split aggregation strategy", () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    process.env.DATABASE_URL = "mysql://test";
+    queryRawUnsafeMock.mockReset();
+    queryRawMock.mockReset();
+    hasVideoGenreColumnMock.mockReset();
+    getVideoArtistNormalizationColumnMock.mockReset();
+    getVideoArtistNormalizationIndexHintClauseMock.mockReset();
+
+    hasVideoGenreColumnMock.mockResolvedValue(true);
+    getVideoArtistNormalizationColumnMock.mockResolvedValue("parsed_artist_norm");
+    getVideoArtistNormalizationIndexHintClauseMock.mockResolvedValue(" FORCE INDEX (idx_videos_parsed_artist_norm_fav_view_videoid_id)");
+  });
+
+  it("uses two-step query path for normalized artist columns", async () => {
+    queryRawUnsafeMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
+
+      if (text.includes("SHOW TABLES LIKE 'category_artist_thumbnails'")) {
+        return [];
+      }
+
+      if (text.includes("COUNT(*) AS videoCount") && text.includes("GROUP BY v.`parsed_artist_norm`")) {
+        return [
+          { artistKey: "metallica", artistName: "Metallica", videoCount: 5 },
+          { artistKey: "megadeth", artistName: "Megadeth", videoCount: 3 },
+        ];
+      }
+
+      if (text.includes("GROUP_CONCAT(v.videoId") && text.includes("GROUP BY v.`parsed_artist_norm`")) {
+        return [
+          { artistKey: "metallica", thumbnailVideoId: "AAAAAAAAAAA", dominantGenre: "thrash metal" },
+          { artistKey: "megadeth", thumbnailVideoId: "BBBBBBBBBBB", dominantGenre: "thrash metal" },
+        ];
+      }
+
+      return [];
+    });
+
+    const { clearGenreCaches, getCategoryArtistsByGenre } = await import("@/lib/catalog-data-genres");
+    clearGenreCaches();
+
+    const rows = await getCategoryArtistsByGenre("Thrash & Power Metal", {
+      offset: 0,
+      limit: 2,
+      bypassRuntimeCache: true,
+    });
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.name).toBe("Metallica");
+    expect(rows[0]?.thumbnailVideoId).toBe("AAAAAAAAAAA");
+
+    const headAggregationCall = queryRawUnsafeMock.mock.calls.find(([sql]) => {
+      const text = String(sql);
+      return text.includes("COUNT(*) AS videoCount")
+        && text.includes("GROUP BY v.`parsed_artist_norm`")
+        && !text.includes("GROUP_CONCAT(v.videoId");
+    });
+    expect(headAggregationCall).toBeDefined();
+
+    const detailAggregationCall = queryRawUnsafeMock.mock.calls.find(([sql]) => {
+      const text = String(sql);
+      return text.includes("GROUP_CONCAT(v.videoId")
+        && text.includes("GROUP BY v.`parsed_artist_norm`")
+        && text.includes("IN (");
+    });
+    expect(detailAggregationCall).toBeDefined();
   });
 });
 

@@ -892,6 +892,128 @@ async function queryCategoryArtistsByGenreFromVideos(
   const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
   const hasPinnedCategoryArtistThumbs = await hasCategoryArtistThumbnailTable();
 
+  if (videoArtistNormColumn) {
+    const normalizedRef = `v.${escapeSqlIdentifier(videoArtistNormColumn)}`;
+    const normalizedGenrePlaceholders = normalizedGenreTerms.map(() => "?").join(", ");
+
+    const rankedRows = await prisma.$queryRawUnsafe<Array<{
+      artistKey: string | null;
+      artistName: string | null;
+      videoCount: bigint | number;
+    }>>(
+      `SELECT
+         ${normalizedRef} AS artistKey,
+         MAX(COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''))) AS artistName,
+         COUNT(*) AS videoCount
+       FROM videos v${videoArtistIndexHint}
+       WHERE v.videoId IS NOT NULL
+         AND ${normalizedRef} IS NOT NULL
+         AND TRIM(${normalizedRef}) <> ''
+         AND COALESCE(v.approved, 0) = 1
+         ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+         AND (
+           ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+           OR LOWER(v.genre) REGEXP ?
+         )
+       GROUP BY ${normalizedRef}
+       ORDER BY artistName ASC, videoCount DESC
+       LIMIT ${requestedLimit}
+       OFFSET ${requestedOffset}`,
+      ...normalizedGenreTerms,
+      normalizedGenrePattern,
+    );
+
+    const artistKeys = [...new Set(
+      rankedRows
+        .map((row) => (row.artistKey ?? "").trim())
+        .filter((artistKey) => artistKey.length > 0),
+    )];
+
+    if (artistKeys.length === 0) {
+      return [];
+    }
+
+    const artistKeyPlaceholders = artistKeys.map(() => "?").join(", ");
+    const detailRows = await prisma.$queryRawUnsafe<Array<{
+      artistKey: string | null;
+      thumbnailVideoId: string | null;
+      dominantGenre: string | null;
+    }>>(
+      `SELECT
+         ${normalizedRef} AS artistKey,
+         SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC), ',', 1) AS thumbnailVideoId,
+         SUBSTRING_INDEX(GROUP_CONCAT(NULLIF(TRIM(v.genre), '') ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC), ',', 1) AS dominantGenre
+       FROM videos v${videoArtistIndexHint}
+       WHERE v.videoId IS NOT NULL
+         AND ${normalizedRef} IN (${artistKeyPlaceholders})
+         AND COALESCE(v.approved, 0) = 1
+         ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+         AND (
+           ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+           OR LOWER(v.genre) REGEXP ?
+         )
+       GROUP BY ${normalizedRef}`,
+      ...artistKeys,
+      ...normalizedGenreTerms,
+      normalizedGenrePattern,
+    );
+
+    const detailsByArtistKey = new Map(
+      detailRows
+        .map((row) => {
+          const artistKey = (row.artistKey ?? "").trim();
+          if (!artistKey) {
+            return null;
+          }
+          return [artistKey, row] as const;
+        })
+        .filter((entry): entry is readonly [string, { artistKey: string | null; thumbnailVideoId: string | null; dominantGenre: string | null }] => entry !== null),
+    );
+
+    const pinnedThumbnailByArtistKey = new Map<string, string>();
+    if (hasPinnedCategoryArtistThumbs) {
+      const pinnedRows = await prisma.$queryRawUnsafe<Array<{ artistKey: string | null; thumbnailVideoId: string | null }>>(
+        `SELECT
+           artist_key AS artistKey,
+           thumbnail_video_id AS thumbnailVideoId
+         FROM category_artist_thumbnails
+         WHERE genre_norm = ?
+           AND artist_key IN (${artistKeyPlaceholders})`,
+        normalizedGenre,
+        ...artistKeys,
+      );
+
+      for (const row of pinnedRows) {
+        const artistKey = (row.artistKey ?? "").trim();
+        const thumbnailVideoId = (row.thumbnailVideoId ?? "").trim();
+        if (!artistKey || !thumbnailVideoId) {
+          continue;
+        }
+        pinnedThumbnailByArtistKey.set(artistKey, thumbnailVideoId);
+      }
+    }
+
+    return rankedRows
+      .map((row) => {
+        const artistName = (row.artistName ?? "").trim();
+        const artistKey = (row.artistKey ?? "").trim();
+
+        if (!artistName || !artistKey) {
+          return null;
+        }
+
+        const details = detailsByArtistKey.get(artistKey);
+        return {
+          name: artistName,
+          slug: slugifyArtistName(artistName),
+          videoCount: Math.max(0, Number(row.videoCount ?? 0)),
+          thumbnailVideoId: pinnedThumbnailByArtistKey.get(artistKey) ?? ((details?.thumbnailVideoId ?? "").trim() || null),
+          dominantGenre: ((details?.dominantGenre ?? "").trim() || null),
+        } as CategoryArtistCard;
+      })
+      .filter((row): row is CategoryArtistCard => row !== null);
+  }
+
   const pinnedArtistThumbJoin = hasPinnedCategoryArtistThumbs
     ? `LEFT JOIN category_artist_thumbnails cat
        ON cat.genre_norm = ?
@@ -1025,6 +1147,46 @@ export async function getCategoryArtistCountByGenre(genre: string): Promise<numb
 
   if (!normalizedGenre || normalizedGenreTerms.length === 0) {
     return 0;
+  }
+
+  const runtimeCachedCount = await (async () => {
+    const tableAvailable = await hasCategoryArtistRuntimeCacheTable();
+    if (!tableAvailable) {
+      return null as number | null;
+    }
+
+    let rows: Array<{ newestUpdatedAt: Date | null; total: bigint | number }> = [];
+    try {
+      rows = await prisma.$queryRawUnsafe<Array<{ newestUpdatedAt: Date | null; total: bigint | number }>>(
+        `
+          SELECT
+            MAX(updated_at) AS newestUpdatedAt,
+            COUNT(*) AS total
+          FROM category_artist_runtime_cache
+          WHERE genre_norm = ?
+        `,
+        normalizedGenre,
+      );
+    } catch {
+      return null as number | null;
+    }
+
+    const freshness = rows[0];
+    const totalRows = Math.max(0, Number(freshness?.total ?? 0));
+    if (totalRows <= 0) {
+      return null as number | null;
+    }
+
+    const newestUpdatedAtMs = freshness?.newestUpdatedAt?.getTime() ?? 0;
+    if (newestUpdatedAtMs <= 0 || Date.now() - newestUpdatedAtMs > CATEGORY_ARTIST_RUNTIME_CACHE_STALE_MS) {
+      scheduleCategoryArtistRuntimeCacheRebuild(genre, normalizedGenre);
+    }
+
+    return totalRows;
+  })();
+
+  if (runtimeCachedCount !== null) {
+    return runtimeCachedCount;
   }
 
   const videoGenreColumnExists = await hasVideoGenreColumn();
