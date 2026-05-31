@@ -771,7 +771,7 @@ export function PlayerExperience({
 
   const adminEditCategoryOptions = useMemo(() => ([...TOP_LEVEL_GENRE_BUCKET_LABELS, "Unclassified"]), []);
   const adminEditCategoryOptionDetails = useMemo(() => new Map(
-    TOP_LEVEL_GENRE_BUCKETS.map((bucket) => [bucket.label, bucket.terms.slice(0, 6)]),
+    TOP_LEVEL_GENRE_BUCKETS.map((bucket) => [bucket.label, bucket.terms]),
   ), []);
   const adminEditGenreSuggestions = useMemo(() => Array.from(new Set([
     ...TOP_LEVEL_GENRE_BUCKETS.map((bucket) => bucket.label),

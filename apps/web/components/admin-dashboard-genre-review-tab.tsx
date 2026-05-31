@@ -44,7 +44,7 @@ export function AdminDashboardGenreReviewTab({
   const genreOptions = [...TOP_LEVEL_GENRE_BUCKET_LABELS, "Unclassified"];
   const genreOptionDetails = new Map(
     TOP_LEVEL_GENRE_BUCKETS.map((bucket) => {
-      const sampleTerms = bucket.terms.slice(0, 6);
+      const sampleTerms = bucket.terms;
       return [bucket.label, sampleTerms];
     }),
   );

@@ -45,7 +45,7 @@ export function AdminDashboardVideosTab({
   const pendingGenreOptions = [...TOP_LEVEL_GENRE_BUCKET_LABELS, "Unclassified"];
   const pendingGenreOptionDetails = new Map(
     TOP_LEVEL_GENRE_BUCKETS.map((bucket) => {
-      const sampleTerms = bucket.terms.slice(0, 6);
+      const sampleTerms = bucket.terms;
       return [bucket.label, sampleTerms];
     }),
   );

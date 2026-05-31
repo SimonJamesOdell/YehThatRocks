@@ -45,7 +45,7 @@ export function AdminVideoEditModal({ isOpen, videoId, onClose, onSaveComplete }
   const [adminEditDescription, setAdminEditDescription] = useState("");
   const adminEditCategoryOptions = [...TOP_LEVEL_GENRE_BUCKET_LABELS, "Unclassified"];
   const adminEditCategoryOptionDetails = new Map(
-    TOP_LEVEL_GENRE_BUCKETS.map((bucket) => [bucket.label, bucket.terms.slice(0, 6)]),
+    TOP_LEVEL_GENRE_BUCKETS.map((bucket) => [bucket.label, bucket.terms]),
   );
   const adminEditGenreSuggestions = Array.from(new Set([
     ...TOP_LEVEL_GENRE_BUCKETS.map((bucket) => bucket.label),
