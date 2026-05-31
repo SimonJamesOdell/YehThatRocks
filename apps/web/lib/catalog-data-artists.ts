@@ -700,7 +700,10 @@ export async function findArtistsInDatabase(options: {
   const { limit, search, orderByName, prefixOnly, nameOnly } = options;
   const normalizedSearch = search?.trim() ?? "";
   const normalizedArtistSearch = normalizedSearch ? normalizeArtistKey(normalizedSearch) : "";
-  const shouldUseNormalizedPrefixSearch = prefixOnly && normalizedArtistSearch.length > 0;
+  const shouldCoerceShortContainsToPrefix = !prefixOnly && normalizedSearch.length > 0 && normalizedSearch.length < 3;
+  const effectivePrefixOnly = Boolean(prefixOnly || shouldCoerceShortContainsToPrefix);
+  const effectiveNameOnly = Boolean(nameOnly || shouldCoerceShortContainsToPrefix);
+  const shouldUseNormalizedPrefixSearch = effectivePrefixOnly && normalizedArtistSearch.length > 0;
 
   if (shouldUseNormalizedPrefixSearch) {
     await ensureArtistSearchPrefixIndex();
@@ -722,12 +725,12 @@ export async function findArtistsInDatabase(options: {
     .split(/\s+/)
     .map((word) => word.replace(/[+\-><()~*"@]/g, ""))
     .filter((word) => word.length >= 3);
-  const canUseNameFulltext = !prefixOnly && fulltextWords.length > 0 && await hasArtistNameFulltextIndex();
+  const canUseNameFulltext = !effectivePrefixOnly && fulltextWords.length > 0 && await hasArtistNameFulltextIndex();
   const fulltextNeedle = fulltextWords.map((word) => `${word}*`).join(" ");
 
   if (normalizedSearch) {
-    const defaultNeedle = prefixOnly ? `${normalizedSearch}%` : `%${normalizedSearch}%`;
-    const normalizedNeedle = prefixOnly ? `${normalizedArtistSearch}%` : `%${normalizedArtistSearch}%`;
+    const defaultNeedle = effectivePrefixOnly ? `${normalizedSearch}%` : `%${normalizedSearch}%`;
+    const normalizedNeedle = effectivePrefixOnly ? `${normalizedArtistSearch}%` : `%${normalizedArtistSearch}%`;
 
     if (shouldUseNormalizedPrefixSearch && normalizedNameCol) {
       whereParts.push(`a.${normalizedNameCol} LIKE ?`);
@@ -740,12 +743,12 @@ export async function findArtistsInDatabase(options: {
       params.push(defaultNeedle);
     }
 
-    if (!nameOnly && columns.country) {
+    if (!effectiveNameOnly && columns.country) {
       whereParts.push(`a.${escapeSqlIdentifier(columns.country)} LIKE ?`);
       params.push(defaultNeedle);
     }
 
-    if (!nameOnly) {
+    if (!effectiveNameOnly) {
       for (const genreColumn of columns.genreColumns) {
         whereParts.push(`a.${escapeSqlIdentifier(genreColumn)} LIKE ?`);
         params.push(defaultNeedle);
@@ -756,7 +759,7 @@ export async function findArtistsInDatabase(options: {
   const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(" OR ")}` : "";
   const orderSql = orderByName ? `ORDER BY a.${nameCol} ASC` : "";
   const cappedLimit = clamp(Math.floor(limit), 1, 100);
-  const searchCacheKey = `s:${normalizedSearch}|l:${cappedLimit}|o:${orderByName ? 1 : 0}|p:${prefixOnly ? 1 : 0}|n:${nameOnly ? 1 : 0}`;
+  const searchCacheKey = `s:${normalizedSearch}|l:${cappedLimit}|o:${orderByName ? 1 : 0}|p:${effectivePrefixOnly ? 1 : 0}|n:${effectiveNameOnly ? 1 : 0}`;
 
   const executeQuery = async () => {
     if (await hasArtistStatsProjection()) {
@@ -767,10 +770,10 @@ export async function findArtistsInDatabase(options: {
       const statParams: string[] = [];
 
       if (statNeedle) {
-        if (prefixOnly && statNormalizedNeedle) {
+        if (effectivePrefixOnly && statNormalizedNeedle) {
           statWhereParts.push("s.normalized_artist LIKE ?");
           statParams.push(statNormalizedNeedle);
-          if (!nameOnly) {
+          if (!effectiveNameOnly) {
             statWhereParts.push("s.display_name LIKE ?");
             statParams.push(statNeedle);
           }
@@ -778,7 +781,7 @@ export async function findArtistsInDatabase(options: {
           statWhereParts.push("s.display_name LIKE ?");
           statParams.push(statNeedle);
         }
-        if (!nameOnly) {
+        if (!effectiveNameOnly) {
           statWhereParts.push("s.country LIKE ?", "s.genre LIKE ?");
           statParams.push(statNeedle, statNeedle);
         }

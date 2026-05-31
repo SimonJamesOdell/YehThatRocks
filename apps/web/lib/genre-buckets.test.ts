@@ -30,6 +30,16 @@ describe("genre bucket alias mapping", () => {
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("Melodic Thrash"))).toBe("Thrash & Power Metal");
   });
 
+  it("maps technical slam to technical death metal for bucket matching", () => {
+    expect(canonicalizeGenreLabel("Technical Slam")).toBe("technical death metal");
+    expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("Technical Slam"))).toBe("Black and Death Metal");
+  });
+
+  it("maps slam to technical death metal for bucket matching", () => {
+    expect(canonicalizeGenreLabel("Slam")).toBe("technical death metal");
+    expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("Slam"))).toBe("Black and Death Metal");
+  });
+
   it("resolves canonicalized alias outputs to expected top-level buckets", () => {
     expect(resolveTopLevelGenreBucket(canonicalizeGenreLabel("melodic doom"))).toBe("Doom & Sludge");
     expect(resolveTopLevelGenreBucket("melodic doom")).toBe("Doom & Sludge");

@@ -168,6 +168,37 @@ describe("findArtistsInDatabase", () => {
     expect(sql).not.toContain("a.`artist` LIKE ?");
     expect(params).toEqual(["heavy* metal*", "%heavy metal%", "%heavy metal%", "%heavy metal%"]);
   });
+
+  it("coerces one-character non-prefix search to normalized prefix-only name search", async () => {
+    getArtistColumnMapMock.mockResolvedValue({
+      name: "artist",
+      normalizedName: "artist_name_norm",
+      country: "country",
+      genreColumns: ["genre1", "genre2"],
+    });
+    queryRawUnsafeMock.mockResolvedValue([{ name: "Aerosmith", country: "US", genre1: "Rock" }]);
+
+    const { clearArtistCaches, findArtistsInDatabase } = await import("@/lib/catalog-data-artists");
+    clearArtistCaches();
+
+    await findArtistsInDatabase({
+      limit: 12,
+      search: "a",
+      prefixOnly: false,
+      nameOnly: false,
+      orderByName: true,
+    });
+
+    expect(ensureArtistSearchPrefixIndexMock).toHaveBeenCalledTimes(1);
+
+    const [sql, ...params] = queryRawUnsafeMock.mock.calls[0] as [string, ...unknown[]];
+    expect(sql).toContain("a.`artist_name_norm` LIKE ?");
+    expect(sql).toContain("ORDER BY a.`artist` ASC");
+    expect(sql).not.toContain("a.`country` LIKE ?");
+    expect(sql).not.toContain("a.`genre1` LIKE ?");
+    expect(sql).not.toContain("a.`genre2` LIKE ?");
+    expect(params).toEqual(["a%"]);
+  });
 });
 
 describe("getArtistBySlug — narrow query strategy", () => {
