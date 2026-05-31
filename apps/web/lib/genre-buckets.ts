@@ -71,11 +71,13 @@ export const TOP_LEVEL_GENRE_BUCKETS: readonly GenreBucket[] = [
       "epic metal",
       "neoclassical metal",
       "symphonic metal",
+      "folk metal",
     ],
   },
   {
     label: "Thrash & Power Metal",
     terms: [
+      "thrash",
       "thrash metal",
       "blackened thrash metal",
       "crossover thrash",
