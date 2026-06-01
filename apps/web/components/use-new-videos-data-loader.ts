@@ -32,12 +32,14 @@ type NewVideosLoaderCache = {
   allVideos: VideoRecord[];
   hasMore: boolean;
   nextOffset: number;
+  cachedAt: number;
   hiddenVideoIdsKey: string;
   initialVideoIdsKey: string;
   genreFiltersKey: string;
 };
 
 let cachedNewVideosLoaderState: NewVideosLoaderCache | null = null;
+const NEW_VIDEOS_LOADER_CACHE_TTL_MS = 60_000;
 
 export function useNewVideosDataLoader({
   enabled,
@@ -57,6 +59,7 @@ export function useNewVideosDataLoader({
     Boolean(
       cachedNewVideosLoaderState
       && cachedNewVideosLoaderState.allVideos.length > 0
+      && cachedNewVideosLoaderState.cachedAt + NEW_VIDEOS_LOADER_CACHE_TTL_MS > Date.now()
       && initialVideos.length === 0
       && cachedNewVideosLoaderState.hiddenVideoIdsKey === hiddenVideoIdsKey
       && cachedNewVideosLoaderState.initialVideoIdsKey === initialVideoIdsKey
@@ -113,6 +116,7 @@ export function useNewVideosDataLoader({
       allVideos,
       hasMore,
       nextOffset: Math.max(nextOffsetRef.current, allVideos.length),
+      cachedAt: Date.now(),
       hiddenVideoIdsKey,
       initialVideoIdsKey,
       genreFiltersKey,
@@ -289,6 +293,7 @@ export function useNewVideosDataLoader({
         initialLoadRetryNonce === 0
         && cachedNewVideosLoaderState
         && cachedNewVideosLoaderState.allVideos.length > 0
+        && cachedNewVideosLoaderState.cachedAt + NEW_VIDEOS_LOADER_CACHE_TTL_MS > Date.now()
         && initialVideos.length === 0
         && cachedNewVideosLoaderState.hiddenVideoIdsKey === hiddenVideoIdsKey
         && cachedNewVideosLoaderState.initialVideoIdsKey === initialVideoIdsKey
@@ -305,6 +310,7 @@ export function useNewVideosDataLoader({
         setLoadMoreError(null);
         setLoadBootstrapError(null);
         setLoading(false);
+        void refreshNewestHead();
         return;
       }
 
