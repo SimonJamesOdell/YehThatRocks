@@ -15,6 +15,7 @@ export type MagazineCommentModerationResult = {
 
 const GROQ_MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-120b";
 const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim() || "";
+const ENABLE_MAGAZINE_COMMENT_GROQ = process.env.ENABLE_MAGAZINE_COMMENT_GROQ === "1";
 
 const LOCAL_DOMAIN_POLICY_PATTERNS: Array<{ pattern: RegExp; label: string; reason: string }> = [
   {
@@ -71,7 +72,7 @@ function extractJsonObject(raw: string): string | null {
 }
 
 async function classifyWithGroq(comment: string): Promise<MagazineCommentModerationResult | null> {
-  if (!GROQ_API_KEY) {
+  if (!ENABLE_MAGAZINE_COMMENT_GROQ || !GROQ_API_KEY) {
     return null;
   }
 
