@@ -92,6 +92,7 @@ const RELATED_DISCOVERY_MAX_NEW_VIDEOS = Math.max(1, Math.min(400, Number(proces
 const RELATED_DISCOVERY_SEED_FANOUT = Math.max(1, Math.min(8, Number(process.env.RELATED_DISCOVERY_SEED_FANOUT || "8")));
 const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim() || undefined;
 const GROQ_MODEL = process.env.GROQ_MODEL?.trim() || "llama-3.1-8b-instant";
+const GROQ_CLASSIFICATION_MODEL = process.env.GROQ_CLASSIFICATION_MODEL?.trim() || "openai/gpt-oss-120b";
 const GROQ_RETRY_COOLDOWN_MS = Math.max(300_000, Number(process.env.GROQ_RETRY_COOLDOWN_MS || String(6 * 60 * 60 * 1000)));
 const PLAYBACK_DECISION_CACHE_TTL_MS = 15_000;
 const ALLOWED_VIDEO_TYPES = new Set(["official", "lyric", "live", "cover", "remix", "fan"]);
@@ -791,7 +792,7 @@ async function classifyVideoMetadataWithGroq(video: PersistableVideoRecord): Pro
         Authorization: `Bearer ${GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model: GROQ_MODEL,
+        model: GROQ_CLASSIFICATION_MODEL,
         temperature: 0.1,
         max_tokens: 140,
         response_format: { type: "json_object" },
@@ -833,7 +834,7 @@ async function classifyVideoMetadataWithGroq(video: PersistableVideoRecord): Pro
       units: 1,
       success: true,
       statusCode: response.status,
-      note: buildGroqTokenUsageNote(GROQ_MODEL, payload.usage),
+      note: buildGroqTokenUsageNote(GROQ_CLASSIFICATION_MODEL, payload.usage),
     });
 
     const parsed = extractJsonObject(payload?.choices?.[0]?.message?.content);
