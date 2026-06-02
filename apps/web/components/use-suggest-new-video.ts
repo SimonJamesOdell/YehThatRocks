@@ -239,6 +239,17 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
         | null;
 
       if (!response.ok || !payload?.ok) {
+        if (payload?.kind === "video" && payload.submissionStatus === "rejected") {
+          setPendingConfirmation(null);
+          applyVideoOutcome({
+            videoId: payload.videoId,
+            submissionStatus: "rejected",
+            rejectionReason: payload.rejectionReason,
+            decision: payload.decision,
+          });
+          return;
+        }
+
         if (payload?.errorCode === "youtube-quota-exhausted") {
           setSuggestQuotaExhausted(true);
         }
@@ -292,6 +303,11 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
       return;
     }
 
+    if (!isAdminUser) {
+      setSuggestError("Only admins can clear failed entries and retry ingest.");
+      return;
+    }
+
     setSuggestRetryPending(true);
     setSuggestError(null);
 
@@ -339,7 +355,7 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
     } finally {
       setSuggestRetryPending(false);
     }
-  }, [applyVideoOutcome, suggestOutcome]);
+  }, [applyVideoOutcome, isAdminUser, suggestOutcome]);
 
   return {
     closeSuggestModal,

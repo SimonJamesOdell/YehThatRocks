@@ -167,8 +167,11 @@ function main() {
   assertContains(suggestNewModalSource, "export function SuggestNewModal", "Suggest New modal exports presentational component", failures);
   assertContains(suggestNewModalSource, "createPortal(", "Suggest New modal owns portal rendering details", failures);
   assertContains(suggestNewModalSource, "channel URLs", "Suggest New modal lists channel URLs as accepted format", failures);
+  assertContains(suggestNewModalSource, "isAdminUser && suggestOutcome.kind === \"video\" && suggestOutcome.status === \"rejected\" && suggestOutcome.videoId", "Suggest New modal only shows retry-clear action to admin users", failures);
   assertContains(suggestRouteSource, "parseYouTubeSuggestSource", "Suggest New API delegates source parsing to shared parser utility", failures);
   assertContains(suggestRouteSource, "fetchChannelUploadsPlaylistId", "Suggest New API resolves channel sources via uploads playlist", failures);
+  assertContains(suggestRouteSource, "retryRejected && !canRetryRejectedIngest", "Suggest New API blocks retry-clear attempts without admin bypass permission", failures);
+  assertContains(suggestRouteSource, "Only admins with bypass approval permission can clear and retry rejected entries.", "Suggest New API returns explicit authorization error when retry-clear is not permitted", failures);
   assertContains(suggestSourceParserSource, "channelCustomName", "Suggest source parser supports legacy /c channel URLs", failures);
   assertContains(suggestSourceParserSource, "channelUsername", "Suggest source parser supports legacy /user channel URLs", failures);
 

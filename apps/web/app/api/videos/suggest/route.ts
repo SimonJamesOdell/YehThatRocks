@@ -557,6 +557,14 @@ export async function POST(request: NextRequest) {
 
   if (source.kind === "video") {
     const retryRejected = parsed.data.retryRejected === true;
+    const canRetryRejectedIngest = canBypassApproval;
+
+    if (retryRejected && !canRetryRejectedIngest) {
+      return NextResponse.json(
+        { ok: false, error: "Only admins with bypass approval permission can clear and retry rejected entries." },
+        { status: 403 },
+      );
+    }
 
     if (retryRejected && hasDatabaseUrl()) {
       clearIngestionCachesForVideo(source.videoId);

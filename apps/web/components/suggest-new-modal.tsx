@@ -189,7 +189,7 @@ export function SuggestNewModal({
             <button type="button" onClick={onClose} disabled={suggestPending}>
               Close
             </button>
-            {suggestOutcome.kind === "video" && suggestOutcome.status === "rejected" && suggestOutcome.videoId ? (
+            {isAdminUser && suggestOutcome.kind === "video" && suggestOutcome.status === "rejected" && suggestOutcome.videoId ? (
               <button
                 type="button"
                 onClick={onRetryRejectedVideo}
