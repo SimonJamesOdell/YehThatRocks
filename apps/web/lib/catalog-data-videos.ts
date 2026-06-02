@@ -565,7 +565,7 @@ async function filterPlayableNewestRows(rows: RankedVideoRow[], targetCount: num
 
 export async function getCurrentVideo(
   videoId?: string,
-  options?: { skipPlaybackDecision?: boolean },
+  options?: { skipPlaybackDecision?: boolean; allowRandomFallback?: boolean },
 ) {
   const normalizedVideoId = normalizeYouTubeVideoId(videoId);
   const hasGenreColumn = await hasVideoGenreColumn();
@@ -716,12 +716,14 @@ export async function getCurrentVideo(
                 ORDER BY updated_at DESC, id DESC
                 LIMIT 1
               `
-          : await (async () => {
-              const pool = await getRankedTopPool(50);
-              if (pool.length === 0) return pool;
-              const randomIndex = Math.floor(Math.random() * pool.length);
-              return [pool[randomIndex]];
-            })();
+          : options?.allowRandomFallback === false
+            ? await getRankedTopPool(1)
+            : await (async () => {
+                const pool = await getRankedTopPool(50);
+                if (pool.length === 0) return pool;
+                const randomIndex = Math.floor(Math.random() * pool.length);
+                return [pool[randomIndex]];
+              })();
 
         const video = videos[0];
 

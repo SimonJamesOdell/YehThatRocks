@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { headers } from "next/headers";
 import { ShellDynamic } from "@/components/shell-dynamic-core";
 import { ServiceFailurePanel } from "@/components/service-failure-panel";
 import { getCurrentVideo, getDataSourceStatus } from "@/lib/catalog-data";
@@ -7,9 +8,16 @@ import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell
 export const dynamic = "force-dynamic";
 
 export default async function ShellLayout({ children }: { children: ReactNode }) {
+  const requestHeaders = await headers();
+  const requestPathname = requestHeaders.get("x-ytr-pathname") ?? "/";
+  const requestSearch = requestHeaders.get("x-ytr-search") ?? "";
+  const searchParams = new URLSearchParams(requestSearch);
+  const requestedVideoId = searchParams.get("v") ?? undefined;
+  const shouldUseRandomLandingVideo = requestPathname === "/" && searchParams.toString().length === 0;
+
   const [{ authState, user, isAdmin, hasAccessToken }, initialVideo, dataSourceStatus] = await Promise.all([
     getShellRequestAuthState(),
-    getCurrentVideo(),
+    getCurrentVideo(requestedVideoId, { allowRandomFallback: shouldUseRandomLandingVideo }),
     getDataSourceStatus(),
   ]);
 

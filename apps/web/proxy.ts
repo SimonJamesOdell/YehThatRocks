@@ -80,6 +80,8 @@ function withSecurityHeaders(response: NextResponse, pathname = "") {
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const requestHeaders = sanitizedAuthHeaders(request);
+  requestHeaders.set("x-ytr-pathname", pathname);
+  requestHeaders.set("x-ytr-search", request.nextUrl.search);
 
   const isBrowserPageRequest = request.method === "GET" || request.method === "HEAD";
   const isShareRoute = pathname.startsWith("/s/") || pathname.startsWith("/share/");
