@@ -16,11 +16,33 @@ export async function closeOverlayAndExpectHome(page: Page, options?: { closeTim
 
   const closeTimeoutMs = options?.closeTimeoutMs ?? 15_000;
 
+  const navigateHomeSafely = async () => {
+    if (page.isClosed()) {
+      return;
+    }
+
+    try {
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+    } catch (error) {
+      if (page.isClosed()) {
+        return;
+      }
+      throw error;
+    }
+  };
+
   try {
     await expect(closeLink).toBeVisible({ timeout: closeTimeoutMs });
-    await closeLink.click();
+    await Promise.all([
+      page.waitForURL(/\/(\?.*)?$/, { timeout: closeTimeoutMs }),
+      closeLink.click(),
+    ]);
   } catch {
-    await page.goto("/");
+    await navigateHomeSafely();
+  }
+
+  if (page.isClosed()) {
+    return;
   }
 
   await expect(page).toHaveURL(/\/(\?.*)?$/);
