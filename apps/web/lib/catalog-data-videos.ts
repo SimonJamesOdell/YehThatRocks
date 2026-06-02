@@ -1103,6 +1103,7 @@ export async function getNewestVideos(
   offset = 0,
   options?: {
     enforcePlaybackAvailability?: boolean;
+    requireAvailableSiteVideo?: boolean;
   },
 ): Promise<VideoRecord[]> {
   if (!hasDatabaseUrl()) {
@@ -1111,6 +1112,7 @@ export async function getNewestVideos(
 
   const safeCount = Math.max(1, Math.min(500, Math.floor(count)));
   const safeOffset = Math.max(0, Math.floor(offset));
+  const requireAvailableSiteVideo = options?.requireAvailableSiteVideo !== false;
 
   maybeStartAutomaticRelatedBackfill(safeOffset);
 
@@ -1151,6 +1153,55 @@ export async function getNewestVideos(
       });
       return videos;
     };
+
+    if (!requireAvailableSiteVideo) {
+      const newestRows = videoGenreColumnExists
+        ? await prisma.$queryRaw<RankedVideoRow[]>`
+            SELECT
+              v.videoId,
+              v.title,
+              NULL AS channelTitle,
+              v.parsedArtist,
+              v.genre,
+              v.favourited,
+              v.description
+            FROM videos v
+            WHERE v.videoId IS NOT NULL
+              AND COALESCE(v.approved, 0) = 1
+            ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
+            LIMIT ${safeCount}
+            OFFSET ${safeOffset}
+          `
+        : await prisma.$queryRaw<RankedVideoRow[]>`
+            SELECT
+              v.videoId,
+              v.title,
+              NULL AS channelTitle,
+              v.parsedArtist,
+              v.favourited,
+              v.description
+            FROM videos v
+            WHERE v.videoId IS NOT NULL
+              AND COALESCE(v.approved, 0) = 1
+            ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
+            LIMIT ${safeCount}
+            OFFSET ${safeOffset}
+          `;
+
+      const effectiveRows = options?.enforcePlaybackAvailability
+        ? await filterPlayableNewestRows(newestRows, safeCount)
+        : newestRows;
+
+      if (safeOffset === 0 && effectiveRows.length > 0) {
+        newestVideosCache = {
+          expiresAt: now + NEWEST_CACHE_TTL_MS,
+          count: effectiveRows.length,
+          rows: effectiveRows,
+        };
+      }
+
+      return cacheMappedVideos(effectiveRows.map(mapVideo));
+    }
 
     const tryNewestFastPath = async () => {
       if (safeCount > 220 || safeOffset > 220) {

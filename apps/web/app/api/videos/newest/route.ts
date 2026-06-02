@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
 
       while (filtered.length < targetFilteredRows && collectedRaw < maxRawRows) {
         const batch = await getNewestVideos(chunkSize, rawOffset, {
-          enforcePlaybackAvailability: true,
+          requireAvailableSiteVideo: false,
         });
 
         if (batch.length === 0) {
@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
     const probedVideos = hasActiveGenreFilters
       ? (await collectFilteredWindow()).filtered.slice(skip, skip + probeTake)
       : await getNewestVideos(probeTake, skip, {
-          enforcePlaybackAvailability: true,
+          requireAvailableSiteVideo: false,
         });
 
     const hasMore = probedVideos.length > take;

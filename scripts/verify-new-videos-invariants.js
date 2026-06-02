@@ -74,7 +74,8 @@ function main() {
   assertContains(newVideosDataLoaderHookSource, "fetch(`/api/videos/newest?skip=${skip}&take=${take}`", "New videos data hook uses offset/take pagination for batch fetches", failures);
   assertContains(newVideosDataLoaderHookSource, "const payload = (await response.json()) as NewVideosApiPayload;", "New videos data hook parses newest API pagination metadata", failures);
   assertContains(newestRouteSource, "const probedVideos = await getNewestVideos(probeTake, skip, {", "Newest API probes one extra row to calculate hasMore", failures);
-  assertContains(newestRouteSource, "enforcePlaybackAvailability: true,", "Newest API enforces playback availability", failures);
+  assertContains(newestRouteSource, "requireAvailableSiteVideo: false,", "Newest API explicitly disables available-site gating to preserve newest-approved semantics", failures);
+  assertNotContains(newestRouteSource, "enforcePlaybackAvailability: true,", "Newest API does not force playback-availability gating", failures);
   assertContains(newestRouteSource, "const hasMore = probedVideos.length > take;", "Newest API derives hasMore from probed count", failures);
   assertContains(newestRouteSource, "const nextOffset = skip + videos.length;", "Newest API returns nextOffset derived from emitted rows", failures);
   assertContains(newestRouteSource, "nextOffset,", "Newest API response includes nextOffset", failures);

@@ -12,6 +12,7 @@ export const SITEMAP_QUERY_SOFT_TIMEOUT_MS = 8_000;
 
 const ARTIST_STATIC_LIMIT = 2_000;
 const MAGAZINE_STATIC_LIMIT = 2_000;
+let hasWarnedSeedSitemapFallback = false;
 
 export type SitemapUrlEntry = {
   loc: string;
@@ -24,6 +25,17 @@ type VideoSitemapRow = {
   videoId: string | null;
   lastModified: Date | string | null;
 };
+
+function warnSeedSitemapFallback(context: "count" | "entries") {
+  if (hasWarnedSeedSitemapFallback) {
+    return;
+  }
+
+  hasWarnedSeedSitemapFallback = true;
+  console.warn(
+    `[sitemap] using seed fallback (${context}) because DATABASE_URL is unavailable; this is a legacy compatibility path.`,
+  );
+}
 
 function getSitemapSiteOrigin() {
   return process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
@@ -101,6 +113,7 @@ export function buildSitemapIndex(shardIds: number[]) {
 
 export async function getVideoSitemapShardCount() {
   if (!hasDatabaseUrl()) {
+    warnSeedSitemapFallback("count");
     return Math.max(1, Math.ceil(fallbackVideos.length / VIDEO_SITEMAP_PAGE_SIZE));
   }
 
@@ -189,6 +202,7 @@ export async function getVideoSitemapEntries(shardId: number): Promise<SitemapUr
   const offset = (shardId - 1) * VIDEO_SITEMAP_PAGE_SIZE;
 
   if (!hasDatabaseUrl()) {
+    warnSeedSitemapFallback("entries");
     return fallbackVideos
       .slice(offset, offset + VIDEO_SITEMAP_PAGE_SIZE)
       .map((video) => normalizeYouTubeVideoId(video.id))

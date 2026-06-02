@@ -705,7 +705,14 @@ export async function getFastVideoByVideoIdRows(
 
   try {
     return await prisma.$queryRawUnsafe<StoredVideoRow[]>(fastSql, normalizedVideoId);
-  } catch {
+  } catch (error) {
+    debugCatalog("getFastVideoByVideoIdRows:force-index-fallback", {
+      normalizedVideoId,
+      requireAvailable,
+      preferParsedArtist,
+      includeUnapproved,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return prisma.$queryRawUnsafe<StoredVideoRow[]>(fallbackSql, normalizedVideoId);
   }
 }
