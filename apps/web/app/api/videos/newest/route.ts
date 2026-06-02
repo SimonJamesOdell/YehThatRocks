@@ -73,17 +73,18 @@ export async function GET(request: NextRequest) {
   // const probedVideos = await getNewestVideos(probeTake, skip, {
 
   try {
-    const collectFilteredWindow = async () => {
-      const targetFilteredRows = skip + probeTake;
-      const maxRawRows = Math.max(1000, (skip + probeTake) * 12);
+    const collectUniqueWindow = async (withGenreFilters: boolean) => {
+      const targetRows = skip + probeTake;
+      const maxRawRows = Math.max(1000, Math.min(12000, (skip + probeTake) * 16));
       const chunkSize = 220;
 
       let rawOffset = 0;
       let collectedRaw = 0;
       const filtered: Awaited<ReturnType<typeof getNewestVideos>> = [];
+      const seenIds = new Set<string>();
       let sourceExhausted = false;
 
-      while (filtered.length < targetFilteredRows && collectedRaw < maxRawRows) {
+      while (filtered.length < targetRows && collectedRaw < maxRawRows) {
         const batch = await getNewestVideos(chunkSize, rawOffset, {
           requireAvailableSiteVideo: false,
         });
@@ -94,8 +95,22 @@ export async function GET(request: NextRequest) {
         }
 
         for (const video of batch) {
-          if (doesVideoMatchNewGenreFilters(video.genre, genreFilters.includeGenres, genreFilters.excludeGenres)) {
-            filtered.push(video);
+          if (!video.id || seenIds.has(video.id)) {
+            continue;
+          }
+
+          if (
+            withGenreFilters &&
+            !doesVideoMatchNewGenreFilters(video.genre, genreFilters.includeGenres, genreFilters.excludeGenres)
+          ) {
+            continue;
+          }
+
+          seenIds.add(video.id);
+          filtered.push(video);
+
+          if (filtered.length >= targetRows) {
+            break;
           }
         }
 
@@ -109,17 +124,13 @@ export async function GET(request: NextRequest) {
       }
 
       return {
-        filtered,
+        filtered: filtered.slice(skip, skip + probeTake),
         sourceExhausted,
       };
     };
 
     const hasActiveGenreFilters = genreFilters.includeGenres.length > 0 || genreFilters.excludeGenres.length > 0;
-    const probedVideos = hasActiveGenreFilters
-      ? (await collectFilteredWindow()).filtered.slice(skip, skip + probeTake)
-      : await getNewestVideos(probeTake, skip, {
-          requireAvailableSiteVideo: false,
-        });
+    const probedVideos = (await collectUniqueWindow(hasActiveGenreFilters)).filtered;
 
     const hasMore = probedVideos.length > take;
     const videos = hasMore ? probedVideos.slice(0, take) : probedVideos;

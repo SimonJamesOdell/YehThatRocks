@@ -1116,7 +1116,7 @@ export async function getNewestVideos(
 
   maybeStartAutomaticRelatedBackfill(safeOffset);
 
-  const newestRequestKey = `${safeCount}:${safeOffset}:${options?.enforcePlaybackAvailability ? "1" : "0"}`;
+  const newestRequestKey = `${safeCount}:${safeOffset}:${options?.enforcePlaybackAvailability ? "1" : "0"}:${requireAvailableSiteVideo ? "1" : "0"}`;
   const now = Date.now();
 
   const requestCached = newestVideosRequestCache.get(newestRequestKey);
@@ -1155,38 +1155,71 @@ export async function getNewestVideos(
     };
 
     if (!requireAvailableSiteVideo) {
-      const newestRows = videoGenreColumnExists
-        ? await prisma.$queryRaw<RankedVideoRow[]>`
-            SELECT
-              v.videoId,
-              v.title,
-              NULL AS channelTitle,
-              v.parsedArtist,
-              v.genre,
-              v.favourited,
-              v.description
-            FROM videos v
-            WHERE v.videoId IS NOT NULL
-              AND COALESCE(v.approved, 0) = 1
-            ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
-            LIMIT ${safeCount}
-            OFFSET ${safeOffset}
-          `
-        : await prisma.$queryRaw<RankedVideoRow[]>`
-            SELECT
-              v.videoId,
-              v.title,
-              NULL AS channelTitle,
-              v.parsedArtist,
-              v.favourited,
-              v.description
-            FROM videos v
-            WHERE v.videoId IS NOT NULL
-              AND COALESCE(v.approved, 0) = 1
-            ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
-            LIMIT ${safeCount}
-            OFFSET ${safeOffset}
-          `;
+      const desiredUniqueWindow = safeOffset + safeCount;
+      const batchSize = Math.max(120, Math.min(500, safeCount * 8));
+      const maxRawScan = Math.max(1200, Math.min(12_000, desiredUniqueWindow * 30));
+      const dedupedRows: RankedVideoRow[] = [];
+      const seenVideoIds = new Set<string>();
+
+      for (
+        let rawOffset = 0;
+        rawOffset < maxRawScan && dedupedRows.length < desiredUniqueWindow;
+        rawOffset += batchSize
+      ) {
+        const batch = videoGenreColumnExists
+          ? await prisma.$queryRaw<RankedVideoRow[]>`
+              SELECT
+                v.videoId,
+                v.title,
+                NULL AS channelTitle,
+                v.parsedArtist,
+                v.genre,
+                v.favourited,
+                v.description
+              FROM videos v
+              WHERE v.videoId IS NOT NULL
+                AND COALESCE(v.approved, 0) = 1
+              ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
+              LIMIT ${batchSize}
+              OFFSET ${rawOffset}
+            `
+          : await prisma.$queryRaw<RankedVideoRow[]>`
+              SELECT
+                v.videoId,
+                v.title,
+                NULL AS channelTitle,
+                v.parsedArtist,
+                v.favourited,
+                v.description
+              FROM videos v
+              WHERE v.videoId IS NOT NULL
+                AND COALESCE(v.approved, 0) = 1
+              ORDER BY COALESCE(v.approved_at, v.created_at) DESC, v.id DESC
+              LIMIT ${batchSize}
+              OFFSET ${rawOffset}
+            `;
+
+        if (batch.length === 0) {
+          break;
+        }
+
+        for (const row of batch) {
+          if (!row.videoId || seenVideoIds.has(row.videoId)) {
+            continue;
+          }
+          seenVideoIds.add(row.videoId);
+          dedupedRows.push(row);
+          if (dedupedRows.length >= desiredUniqueWindow) {
+            break;
+          }
+        }
+
+        if (batch.length < batchSize) {
+          break;
+        }
+      }
+
+      const newestRows = dedupedRows.slice(safeOffset, safeOffset + safeCount);
 
       const effectiveRows = options?.enforcePlaybackAvailability
         ? await filterPlayableNewestRows(newestRows, safeCount)
