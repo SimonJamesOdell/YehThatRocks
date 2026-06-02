@@ -24,6 +24,29 @@ type UseSuggestNewVideoOptions = {
   router: RouterInstance;
 };
 
+async function extractSuggestRequestError(response: Response, payloadError?: string) {
+  if (payloadError?.trim()) {
+    return payloadError.trim();
+  }
+
+  try {
+    const text = await response.clone().text();
+    const normalized = text.trim();
+    if (normalized) {
+      const compact = normalized.replace(/\s+/g, " ");
+      return `Request failed (${response.status}): ${compact.slice(0, 220)}`;
+    }
+  } catch {
+    // Ignore response-body read failures and fall back to status text.
+  }
+
+  if (response.statusText?.trim()) {
+    return `Request failed (${response.status} ${response.statusText}).`;
+  }
+
+  return `Request failed (HTTP ${response.status}).`;
+}
+
 export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: UseSuggestNewVideoOptions) {
   const [isSuggestModalOpen, setIsSuggestModalOpen] = useState(false);
   const [suggestSource, setSuggestSource] = useState("");
@@ -175,7 +198,7 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
   const submitSuggestNew = useCallback(async () => {
     const source = suggestSource.trim();
     if (!source) {
-      setSuggestError("Paste a YouTube URL, playlist URL, or video id.");
+      setSuggestError("Paste a YouTube URL, playlist URL, channel URL, or video id.");
       return;
     }
 
@@ -219,7 +242,14 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
         if (payload?.errorCode === "youtube-quota-exhausted") {
           setSuggestQuotaExhausted(true);
         }
-        setSuggestError(payload?.error || "Could not submit suggestion. Please try again.");
+
+        const resolvedError = await extractSuggestRequestError(response, payload?.error);
+        console.error("[suggest-new] submit failed", {
+          status: response.status,
+          statusText: response.statusText,
+          payload,
+        });
+        setSuggestError(resolvedError);
         return;
       }
 
@@ -246,8 +276,12 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
         // submissionStatus is not "needs-confirmation" here — we handled that branch above.
         applyVideoOutcome({ ...payload, submissionStatus: payload.submissionStatus as "ingested" | "already-in-catalog" | "rejected" | "replaced" | undefined });
       }
-    } catch {
-      setSuggestError("Could not submit suggestion. Please try again.");
+    } catch (error) {
+      const message = error instanceof Error && error.message.trim()
+        ? `Could not submit suggestion: ${error.message}`
+        : "Could not submit suggestion due to a network/client error.";
+      console.error("[suggest-new] submit exception", error);
+      setSuggestError(message);
     } finally {
       setSuggestPending(false);
     }
@@ -285,13 +319,23 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
         | null;
 
       if (!response.ok || !payload?.ok) {
-        setSuggestError(payload?.error || "Could not clear prior state and retry ingestion.");
+        const resolvedError = await extractSuggestRequestError(response, payload?.error);
+        console.error("[suggest-new] retry failed", {
+          status: response.status,
+          statusText: response.statusText,
+          payload,
+        });
+        setSuggestError(resolvedError);
         return;
       }
 
       applyVideoOutcome(payload);
-    } catch {
-      setSuggestError("Could not clear prior state and retry ingestion.");
+    } catch (error) {
+      const message = error instanceof Error && error.message.trim()
+        ? `Could not clear prior state and retry ingestion: ${error.message}`
+        : "Could not clear prior state and retry ingestion due to a network/client error.";
+      console.error("[suggest-new] retry exception", error);
+      setSuggestError(message);
     } finally {
       setSuggestRetryPending(false);
     }

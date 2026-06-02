@@ -90,6 +90,9 @@ const AUTO_RELATED_BACKFILL_DEFER_JITTER_MS = Math.max(0, Math.min(60_000, Numbe
 const RELATED_DISCOVERY_MAX_DEPTH = Math.max(1, Math.min(4, Number(process.env.RELATED_DISCOVERY_MAX_DEPTH || "2")));
 const RELATED_DISCOVERY_MAX_NEW_VIDEOS = Math.max(1, Math.min(400, Number(process.env.RELATED_DISCOVERY_MAX_NEW_VIDEOS || "40")));
 const RELATED_DISCOVERY_SEED_FANOUT = Math.max(1, Math.min(8, Number(process.env.RELATED_DISCOVERY_SEED_FANOUT || "8")));
+const YOUTUBE_RELATED_QUERY_COUNT = Math.max(1, Math.min(5, Number(process.env.YOUTUBE_RELATED_QUERY_COUNT || "3")));
+const YOUTUBE_RELATED_QUERY_MAX_RESULTS = Math.max(6, Math.min(25, Number(process.env.YOUTUBE_RELATED_QUERY_MAX_RESULTS || "14")));
+const YOUTUBE_RELATED_MIN_SCORE = Math.max(0.25, Math.min(3, Number(process.env.YOUTUBE_RELATED_MIN_SCORE || "1.25")));
 const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim() || undefined;
 const GROQ_MODEL = process.env.GROQ_MODEL?.trim() || "llama-3.1-8b-instant";
 const GROQ_CLASSIFICATION_MODEL = process.env.GROQ_CLASSIFICATION_MODEL?.trim() || "openai/gpt-oss-120b";
@@ -313,6 +316,130 @@ function isUnavailablePlayabilityReason(reason: string | null | undefined) {
 function isLikelyNonMusicText(title: string, description: string) {
   const haystack = `${title}\n${description}`;
   return NON_MUSIC_SIGNAL_PATTERN.test(haystack);
+}
+
+function tokenizeSearchText(value: string) {
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return [] as string[];
+
+  return Array.from(new Set(normalized.split(" ").filter((token) => token.length >= 2)));
+}
+
+function countTokenOverlap(left: string[], right: string[]) {
+  if (left.length === 0 || right.length === 0) return 0;
+  const rightSet = new Set(right);
+  let overlap = 0;
+  for (const token of left) {
+    if (rightSet.has(token)) overlap += 1;
+  }
+  return overlap;
+}
+
+function buildRelatedSearchQueryPlans(seed: { parsedArtist?: string | null; parsedTrack?: string | null; title?: string | null }) {
+  const artist = seed.parsedArtist?.trim() ?? "";
+  const track = seed.parsedTrack?.trim() ?? "";
+  const title = seed.title?.trim() ?? "";
+  const queryTail = "-reaction -interview -podcast -shorts";
+
+  const plans: Array<{ intent: string; query: string }> = [];
+
+  if (artist && track) {
+    plans.push({
+      intent: "artist-track-official",
+      query: `${artist} ${track} official music video ${queryTail}`,
+    });
+    plans.push({
+      intent: "artist-track-lyric-live",
+      query: `${artist} ${track} lyric video live ${queryTail}`,
+    });
+  }
+
+  if (artist) {
+    plans.push({
+      intent: "artist-rock-metal",
+      query: `${artist} rock metal official video ${queryTail}`,
+    });
+  }
+
+  if (title) {
+    plans.push({
+      intent: "seed-title-rock-metal",
+      query: `${title} rock metal music video ${queryTail}`,
+    });
+  }
+
+  if (artist) {
+    plans.push({
+      intent: "artist-recent-rock-metal",
+      query: `${artist} new single metal rock 2025 2026 ${queryTail}`,
+    });
+  }
+
+  const seen = new Set<string>();
+  const dedupedPlans: Array<{ intent: string; query: string }> = [];
+
+  for (const plan of plans) {
+    const normalizedQuery = plan.query.replace(/\s+/g, " ").trim().slice(0, 180);
+    if (!normalizedQuery || seen.has(normalizedQuery)) continue;
+    seen.add(normalizedQuery);
+    dedupedPlans.push({ intent: plan.intent, query: normalizedQuery });
+  }
+
+  return dedupedPlans.slice(0, YOUTUBE_RELATED_QUERY_COUNT);
+}
+
+function scoreRelatedSearchCandidate(
+  candidate: { title: string; channelTitle: string; description: string },
+  seed: { parsedArtist?: string | null; parsedTrack?: string | null },
+  queryIntent: string,
+) {
+  const titleTokens = tokenizeSearchText(candidate.title);
+  const channelTokens = tokenizeSearchText(candidate.channelTitle);
+  const descriptionTokens = tokenizeSearchText(candidate.description);
+  const titleAndChannelTokens = Array.from(new Set([...titleTokens, ...channelTokens]));
+
+  const artistTokens = tokenizeSearchText(seed.parsedArtist?.trim() ?? "");
+  const trackTokens = tokenizeSearchText(seed.parsedTrack?.trim() ?? "");
+
+  const artistOverlap = countTokenOverlap(artistTokens, titleAndChannelTokens);
+  const trackOverlap = countTokenOverlap(trackTokens, titleAndChannelTokens);
+  const descriptionTrackOverlap = countTokenOverlap(trackTokens, descriptionTokens);
+
+  let score = 0;
+
+  if (artistOverlap > 0) score += Math.min(1.6, 0.8 + artistOverlap * 0.35);
+  if (trackOverlap > 0) score += Math.min(1.5, 0.7 + trackOverlap * 0.4);
+  if (descriptionTrackOverlap > 0) score += Math.min(0.35, descriptionTrackOverlap * 0.18);
+
+  if (/\b(official|lyric|live|audio|visualizer|premiere)\b/i.test(candidate.title)) {
+    score += 0.35;
+  }
+
+  if (/\b(vevo|records|official)\b/i.test(candidate.channelTitle)) {
+    score += 0.2;
+  }
+
+  if (queryIntent === "artist-track-official") score += 0.2;
+  if (queryIntent === "artist-track-lyric-live") score += 0.15;
+
+  if (isLikelyNonMusicText(candidate.title, candidate.description)) {
+    score -= 2.2;
+  }
+
+  if (/\b(reaction|interview|podcast|talk|review|analysis|breakdown|tutorial|gameplay|shorts?)\b/i.test(candidate.title)) {
+    score -= 1.2;
+  }
+
+  if (/\b(pop|hip\s?hop|rap|edm|techno|house|k\s?pop|j\s?pop|reggaeton)\b/i.test(candidate.title)) {
+    score -= 0.35;
+  }
+
+  return score;
 }
 
 function isLikelyNonMusicSignal(row: PlaybackDecisionRow) {
@@ -1264,73 +1391,115 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
     `;
 
     const seed = seedRows[0];
-    const query = [seed?.parsedArtist?.trim() || "", seed?.parsedTrack?.trim() || "", seed?.title?.trim() || "", "rock metal music video"]
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 180);
+    const queryPlans = buildRelatedSearchQueryPlans({
+      parsedArtist: seed?.parsedArtist,
+      parsedTrack: seed?.parsedTrack,
+      title: seed?.title,
+    });
 
-    if (!query) {
+    if (queryPlans.length === 0) {
       debugCatalog("fetchRelatedYouTubeVideos:skipped-empty-query", { videoId });
       return [];
     }
 
-    const url = new URL("https://www.googleapis.com/youtube/v3/search");
-    url.searchParams.set("part", "snippet");
-    url.searchParams.set("maxResults", "8");
-    url.searchParams.set("type", "video");
-    url.searchParams.set("q", query);
-    url.searchParams.set("key", YOUTUBE_DATA_API_KEY);
+    const candidatesById = new Map<string, { score: number; record: PersistableVideoRecord }>();
+    let attemptedQueries = 0;
 
-    const response = await fetch(url, { headers: { "User-Agent": "YehThatRocks/1.0" } });
+    for (const plan of queryPlans) {
+      if (!(await canSpendRelatedDiscoveryUnits(100))) {
+        break;
+      }
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      void recordExternalApiUsage({
-        provider: "youtube",
-        endpoint: "search.list.query",
-        units: 100,
-        success: false,
-        statusCode: response.status,
-        note: body.slice(0, 120) || null,
-      });
-      // Count failed requests against the budget too — the quota is consumed
-      // regardless of whether YouTube returns a valid result.
+      attemptedQueries += 1;
+      const url = new URL("https://www.googleapis.com/youtube/v3/search");
+      url.searchParams.set("part", "snippet");
+      url.searchParams.set("maxResults", String(YOUTUBE_RELATED_QUERY_MAX_RESULTS));
+      url.searchParams.set("type", "video");
+      url.searchParams.set("videoCategoryId", "10");
+      url.searchParams.set("q", plan.query);
+      url.searchParams.set("key", YOUTUBE_DATA_API_KEY);
+
+      const response = await fetch(url, { headers: { "User-Agent": "YehThatRocks/1.0" } });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        void recordExternalApiUsage({
+          provider: "youtube",
+          endpoint: "search.list.query",
+          units: 100,
+          success: false,
+          statusCode: response.status,
+          note: body.slice(0, 120) || null,
+        });
+        recordSpentRelatedDiscoveryUnits(100);
+        debugCatalog("fetchRelatedYouTubeVideos:query-response-not-ok", {
+          videoId,
+          query: plan.query,
+          intent: plan.intent,
+          status: response.status,
+        });
+        continue;
+      }
+
+      void recordExternalApiUsage({ provider: "youtube", endpoint: "search.list.query", units: 100, success: true, statusCode: response.status });
       recordSpentRelatedDiscoveryUnits(100);
-      debugCatalog("fetchRelatedYouTubeVideos:query-response-not-ok", { videoId, query, status: response.status });
-      return [];
-    }
+      const data = (await response.json()) as YouTubeRelatedSearchResponse;
 
-    void recordExternalApiUsage({ provider: "youtube", endpoint: "search.list.query", units: 100, success: true, statusCode: response.status });
-      recordSpentRelatedDiscoveryUnits(100);
-    const data = (await response.json()) as YouTubeRelatedSearchResponse;
-
-    const mapped = (data.items ?? [])
-      .map((item) => {
+      for (const item of data.items ?? []) {
         const relatedId = normalizeYouTubeVideoId(item.id?.videoId);
         const title = item.snippet?.title?.trim() ? normalizePossiblyMojibakeText(item.snippet.title) : "";
-        if (!relatedId || !title || relatedId === videoId) return null;
+        if (!relatedId || !title || relatedId === videoId) continue;
 
-        return {
+        const channelTitle = item.snippet?.channelTitle?.trim()
+          ? normalizePossiblyMojibakeText(item.snippet.channelTitle)
+          : "YouTube";
+        const description = item.snippet?.description?.trim() || "Related YouTube video discovered via YouTube Data API search query.";
+
+        const score = scoreRelatedSearchCandidate(
+          { title, channelTitle, description },
+          { parsedArtist: seed?.parsedArtist, parsedTrack: seed?.parsedTrack },
+          plan.intent,
+        );
+
+        if (score < YOUTUBE_RELATED_MIN_SCORE) {
+          continue;
+        }
+
+        const candidateRecord: PersistableVideoRecord = {
           id: relatedId,
           title,
-          channelTitle: item.snippet?.channelTitle?.trim()
-            ? normalizePossiblyMojibakeText(item.snippet.channelTitle)
-            : "YouTube",
+          channelTitle,
           genre: "Rock / Metal",
           favourited: 0,
-          description: item.snippet?.description?.trim() || "Related YouTube video discovered via YouTube Data API search query.",
+          description,
           thumbnail:
             item.snippet?.thumbnails?.high?.url?.trim() ||
             item.snippet?.thumbnails?.medium?.url?.trim() ||
             item.snippet?.thumbnails?.default?.url?.trim() ||
             getYouTubeThumbnailUrl(relatedId),
-        } satisfies PersistableVideoRecord;
-      })
-      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+        };
 
-    debugCatalog("fetchRelatedYouTubeVideos:query-success", { videoId, query, relatedCount: mapped.length });
-    return mapped;
+        const existing = candidatesById.get(relatedId);
+        if (!existing || score > existing.score) {
+          candidatesById.set(relatedId, { score, record: candidateRecord });
+        }
+      }
+    }
+
+    const ranked = Array.from(candidatesById.values())
+      .sort((left, right) => right.score - left.score)
+      .map((entry) => entry.record)
+      .slice(0, Math.max(8, YOUTUBE_RELATED_QUERY_MAX_RESULTS));
+
+    debugCatalog("fetchRelatedYouTubeVideos:query-success", {
+      videoId,
+      plannedQueries: queryPlans.length,
+      attemptedQueries,
+      candidateCount: candidatesById.size,
+      relatedCount: ranked.length,
+    });
+
+    return ranked;
   } catch (error) {
     void recordExternalApiUsage({
       provider: "youtube",

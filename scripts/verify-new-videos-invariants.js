@@ -23,6 +23,8 @@ const files = {
   playlistData: path.join(ROOT, "apps/web/lib/catalog-data-playlists.ts"),
   suggestNewModal: path.join(ROOT, "apps/web/components/suggest-new-modal.tsx"),
   suggestNewHook: path.join(ROOT, "apps/web/components/use-suggest-new-video.ts"),
+  suggestRoute: path.join(ROOT, "apps/web/app/api/videos/suggest/route.ts"),
+  suggestSourceParser: path.join(ROOT, "apps/web/lib/youtube-suggest-source.ts"),
   top100VideosLoader: path.join(ROOT, "apps/web/components/top100-videos-loader.tsx"),
   newestRoute: path.join(ROOT, "apps/web/app/api/videos/newest/route.ts"),
   hideVideoConfirmModal: path.join(ROOT, "apps/web/components/hide-video-confirm-modal.tsx"),
@@ -48,6 +50,8 @@ function main() {
   const playlistDataSource = readFileStrict(files.playlistData, ROOT);
   const suggestNewModalSource = readFileStrict(files.suggestNewModal, ROOT);
   const suggestNewHookSource = readFileStrict(files.suggestNewHook, ROOT);
+  const suggestRouteSource = readFileStrict(files.suggestRoute, ROOT);
+  const suggestSourceParserSource = readFileStrict(files.suggestSourceParser, ROOT);
   const top100VideosLoaderSource = readFileStrict(files.top100VideosLoader, ROOT);
   const newestRouteSource = readFileStrict(files.newestRoute, ROOT);
   const hideVideoConfirmModalSource = readFileStrict(files.hideVideoConfirmModal, ROOT);
@@ -159,8 +163,14 @@ function main() {
   assertContains(newVideosLoaderSource, "<SuggestNewModal", "New videos loader renders Suggest New via dedicated modal component", failures);
   assertContains(suggestNewHookSource, "export function useSuggestNewVideo", "Suggest New hook exports explicit domain state machine", failures);
   assertContains(suggestNewHookSource, "fetch(\"/api/videos/suggest\", {", "Suggest New hook owns suggest API orchestration", failures);
+  assertContains(suggestNewHookSource, "playlist URL, channel URL", "Suggest New hook prompts users with channel URL support", failures);
   assertContains(suggestNewModalSource, "export function SuggestNewModal", "Suggest New modal exports presentational component", failures);
   assertContains(suggestNewModalSource, "createPortal(", "Suggest New modal owns portal rendering details", failures);
+  assertContains(suggestNewModalSource, "channel URLs", "Suggest New modal lists channel URLs as accepted format", failures);
+  assertContains(suggestRouteSource, "parseYouTubeSuggestSource", "Suggest New API delegates source parsing to shared parser utility", failures);
+  assertContains(suggestRouteSource, "fetchChannelUploadsPlaylistId", "Suggest New API resolves channel sources via uploads playlist", failures);
+  assertContains(suggestSourceParserSource, "channelCustomName", "Suggest source parser supports legacy /c channel URLs", failures);
+  assertContains(suggestSourceParserSource, "channelUsername", "Suggest source parser supports legacy /user channel URLs", failures);
 
   // New videos loader catalog-deleted event handling.
   assertContains(newVideosLoaderSource, 'window.addEventListener("ytr:video-catalog-deleted", handleCatalogDeleted);', "New videos loader subscribes to catalog-deleted event for live removals", failures);

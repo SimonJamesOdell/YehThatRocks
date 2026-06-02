@@ -19,6 +19,7 @@ import { recordExternalApiUsage } from "@/lib/api-usage-telemetry";
 import { parseJsonOrNull } from "@/lib/parse-json";
 import { maybeNormalizePlaylistId } from "@/lib/youtube-playlist";
 import { PLAYBACK_MIN_CONFIDENCE } from "@/lib/playback-config";
+import { parseYouTubeSuggestSource } from "@/lib/youtube-suggest-source";
 
 const suggestSchema = z.object({
   source: z.string().trim().min(1).max(2048),
@@ -101,48 +102,168 @@ function getRejectionReason(decision: { reason: string; message?: string }) {
   }
 }
 
-function parseYouTubeSource(source: string):
-  | { kind: "video"; videoId: string }
-  | { kind: "playlist"; playlistId: string }
-  | null {
-  const trimmed = source.trim();
-  if (!trimmed) {
-    return null;
+async function fetchChannelUploadsPlaylistId(source: {
+  channelId?: string;
+  channelHandle?: string;
+  channelUsername?: string;
+  channelCustomName?: string;
+}) {
+  if (!YOUTUBE_DATA_API_KEY) {
+    return {
+      ok: false as const,
+      error: "YouTube Data API key is not configured on the server.",
+      code: "youtube-read-failed" as YouTubePlaylistFetchErrorCode,
+    };
   }
 
-  const normalizedVideoId = normalizeYouTubeVideoId(trimmed);
+  if (isYouTubeQuotaExhausted()) {
+    return {
+      ok: false as const,
+      error: "YouTube API credits are currently exhausted. Please try again later.",
+      code: "youtube-quota-exhausted" as YouTubePlaylistFetchErrorCode,
+    };
+  }
 
-  try {
-    const url = new URL(trimmed);
-    const playlistIdFromQuery = maybeNormalizePlaylistId(url.searchParams.get("list"));
+  const endpoint = new URL("https://www.googleapis.com/youtube/v3/channels");
+  endpoint.searchParams.set("part", "contentDetails");
+  endpoint.searchParams.set("maxResults", "1");
+  endpoint.searchParams.set("key", YOUTUBE_DATA_API_KEY);
 
-    if (playlistIdFromQuery) {
-      return { kind: "playlist", playlistId: playlistIdFromQuery };
+  if (source.channelId) {
+    endpoint.searchParams.set("id", source.channelId);
+  } else if (source.channelHandle) {
+    endpoint.searchParams.set("forHandle", source.channelHandle);
+  } else if (source.channelUsername) {
+    endpoint.searchParams.set("forUsername", source.channelUsername);
+  } else if (source.channelCustomName) {
+    // Best effort for legacy /c URLs: some custom names map to handles.
+    endpoint.searchParams.set("forHandle", source.channelCustomName);
+  } else {
+    return {
+      ok: false as const,
+      error: "Invalid YouTube channel URL.",
+      code: "youtube-read-failed" as YouTubePlaylistFetchErrorCode,
+    };
+  }
+
+  const response = await fetch(endpoint, {
+    headers: {
+      "User-Agent": "YehThatRocks/1.0",
+    },
+    cache: "no-store",
+  }).catch(() => null);
+
+  if (!response?.ok) {
+    const errorPayload = response ? await parseJsonOrNull<unknown>(response) : null;
+    const quotaExhausted = isYouTubeQuotaErrorPayload(errorPayload);
+    if (quotaExhausted) {
+      markYouTubeQuotaExhaustedNow();
     }
 
-    if (url.pathname.toLowerCase().startsWith("/playlist")) {
-      const explicitPlaylist = maybeNormalizePlaylistId(url.searchParams.get("list"));
-      if (explicitPlaylist) {
-        return { kind: "playlist", playlistId: explicitPlaylist };
+    void recordExternalApiUsage({
+      provider: "youtube",
+      endpoint: "channels.list",
+      units: 1,
+      success: false,
+      statusCode: response?.status ?? null,
+      note: quotaExhausted ? "quota-exhausted" : "channel-read-failed",
+    });
+
+    return {
+      ok: false as const,
+      error: quotaExhausted
+        ? "YouTube API credits are currently exhausted. Please try again later."
+        : "Could not read channel from YouTube.",
+      code: (quotaExhausted ? "youtube-quota-exhausted" : "youtube-read-failed") as YouTubePlaylistFetchErrorCode,
+    };
+  }
+
+  void recordExternalApiUsage({
+    provider: "youtube",
+    endpoint: "channels.list",
+    units: 1,
+    success: true,
+    statusCode: response.status,
+  });
+
+  const payload = await parseJsonOrNull<{
+    items?: Array<{ contentDetails?: { relatedPlaylists?: { uploads?: string } } }>;
+  }>(response);
+
+  const uploadsPlaylistId = maybeNormalizePlaylistId(payload?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads);
+  if (!uploadsPlaylistId) {
+    const fallbackChannelQuery = source.channelCustomName || source.channelUsername;
+    if (fallbackChannelQuery) {
+      const searchEndpoint = new URL("https://www.googleapis.com/youtube/v3/search");
+      searchEndpoint.searchParams.set("part", "snippet");
+      searchEndpoint.searchParams.set("type", "channel");
+      searchEndpoint.searchParams.set("maxResults", "5");
+      searchEndpoint.searchParams.set("q", fallbackChannelQuery);
+      searchEndpoint.searchParams.set("key", YOUTUBE_DATA_API_KEY);
+
+      const searchResponse = await fetch(searchEndpoint, {
+        headers: {
+          "User-Agent": "YehThatRocks/1.0",
+        },
+        cache: "no-store",
+      }).catch(() => null);
+
+      if (!searchResponse?.ok) {
+        const errorPayload = searchResponse ? await parseJsonOrNull<unknown>(searchResponse) : null;
+        const quotaExhausted = isYouTubeQuotaErrorPayload(errorPayload);
+        if (quotaExhausted) {
+          markYouTubeQuotaExhaustedNow();
+        }
+
+        void recordExternalApiUsage({
+          provider: "youtube",
+          endpoint: "search.list",
+          units: 100,
+          success: false,
+          statusCode: searchResponse?.status ?? null,
+          note: quotaExhausted ? "quota-exhausted" : "channel-search-failed",
+        });
+
+        return {
+          ok: false as const,
+          error: quotaExhausted
+            ? "YouTube API credits are currently exhausted. Please try again later."
+            : "Could not resolve channel from YouTube.",
+          code: (quotaExhausted ? "youtube-quota-exhausted" : "youtube-read-failed") as YouTubePlaylistFetchErrorCode,
+        };
+      }
+
+      void recordExternalApiUsage({
+        provider: "youtube",
+        endpoint: "search.list",
+        units: 100,
+        success: true,
+        statusCode: searchResponse.status,
+      });
+
+      const searchPayload = await parseJsonOrNull<{
+        items?: Array<{ id?: { channelId?: string }; snippet?: { channelTitle?: string } }>;
+      }>(searchResponse);
+
+      const loweredQuery = fallbackChannelQuery.trim().toLowerCase();
+      const exactMatch = (searchPayload?.items ?? []).find((item) => (item.snippet?.channelTitle ?? "").trim().toLowerCase() === loweredQuery);
+      const matchedChannelId =
+        exactMatch?.id?.channelId
+        || searchPayload?.items?.[0]?.id?.channelId;
+
+      if (matchedChannelId && /^UC[0-9A-Za-z_-]{20,}$/.test(matchedChannelId)) {
+        return fetchChannelUploadsPlaylistId({ channelId: matchedChannelId });
       }
     }
-  } catch {
-    const playlistParamMatch = trimmed.match(/[?&]list=([A-Za-z0-9_-]{10,})/i);
-    if (playlistParamMatch?.[1]) {
-      return { kind: "playlist", playlistId: playlistParamMatch[1] };
-    }
+
+    return {
+      ok: false as const,
+      error: "Could not resolve channel uploads playlist.",
+      code: "youtube-read-failed" as YouTubePlaylistFetchErrorCode,
+    };
   }
 
-  if (normalizedVideoId) {
-    return { kind: "video", videoId: normalizedVideoId };
-  }
-
-  const barePlaylistId = maybeNormalizePlaylistId(trimmed);
-  if (barePlaylistId && /^(PL|UU|LL|RD|OLAK5uy_)/.test(barePlaylistId)) {
-    return { kind: "playlist", playlistId: barePlaylistId };
-  }
-
-  return null;
+  return { ok: true as const, playlistId: uploadsPlaylistId };
 }
 
 async function fetchPlaylistVideoIds(playlistId: string) {
@@ -429,9 +550,9 @@ export async function POST(request: NextRequest) {
       "admin.videos.bypass_approval",
     );
 
-  const source = parseYouTubeSource(parsed.data.source);
+  const source = parseYouTubeSuggestSource(parsed.data.source);
   if (!source) {
-    return NextResponse.json({ ok: false, error: "Invalid YouTube URL, video id, or playlist URL." }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid YouTube URL, video id, playlist URL, or channel URL." }, { status: 400 });
   }
 
   if (source.kind === "video") {
@@ -573,7 +694,27 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const playlist = await fetchPlaylistVideoIds(source.playlistId);
+  const playlistSource = source.kind === "channel"
+    ? await fetchChannelUploadsPlaylistId({
+      channelId: source.channelId,
+      channelHandle: source.channelHandle,
+      channelUsername: source.channelUsername,
+      channelCustomName: source.channelCustomName,
+    })
+    : { ok: true as const, playlistId: source.playlistId };
+
+  if (!playlistSource.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: playlistSource.error,
+        errorCode: playlistSource.code,
+      },
+      { status: playlistSource.code === "youtube-quota-exhausted" ? 429 : 400 },
+    );
+  }
+
+  const playlist = await fetchPlaylistVideoIds(playlistSource.playlistId);
   if (!playlist.ok) {
     return NextResponse.json(
       {
@@ -586,10 +727,10 @@ export async function POST(request: NextRequest) {
   }
 
   if (playlist.videoIds.length === 0) {
-    return NextResponse.json({ ok: false, error: "No videos were found in that playlist." }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "No videos were found for that source." }, { status: 400 });
   }
 
-  const jobKey = `public:${source.playlistId}`;
+  const jobKey = `public:${playlistSource.playlistId}`;
   const alreadyRunning = playlistBatchJobs.has(jobKey);
   startPlaylistBatchIngestion({
     jobKey,
@@ -601,7 +742,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     kind: "playlist",
-    playlistId: source.playlistId,
+    playlistId: playlistSource.playlistId,
     queuedVideoCount: playlist.videoIds.length,
     background: true,
     jobAlreadyRunning: alreadyRunning,

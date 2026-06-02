@@ -132,7 +132,7 @@ export function ArtistVideosGridClient({
                 Artists
               </Link>
               <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">&gt;</span>
-              <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{artistName}</span>
+              <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{artistName} ({visibleVideos.length})</span>
             </span>
           </strong>
           {isAuthenticated ? (

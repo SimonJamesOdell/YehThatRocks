@@ -78,14 +78,14 @@ export function SuggestNewModal({
           <p className="suggestNewModalMeta">
             {isConfirmationStep
               ? "Our classifier isn't confident about this video — please confirm or correct the artist and track name."
-              : "Paste a YouTube video or playlist. We will ingest and classify it."
+              : "Paste a YouTube video, playlist, or channel URL. We will ingest and classify it."
             }
           </p>
           <button className="suggestNewModalClose" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
         <p className="suggestNewModalHints">
-          Accepted formats: <strong>watch URLs</strong>, <strong>short URLs</strong>, <strong>video IDs</strong>, and <strong>playlist URLs</strong>.
+          Accepted formats: <strong>watch URLs</strong>, <strong>short URLs</strong>, <strong>video IDs</strong>, <strong>playlist URLs</strong>, and <strong>channel URLs</strong>.
         </p>
 
         {suggestQuotaExhausted ? (
@@ -109,7 +109,7 @@ export function SuggestNewModal({
                   id="suggest-new-source"
                   value={suggestSource}
                   onChange={(event) => onSuggestSourceChange(event.currentTarget.value)}
-                  placeholder="https://youtube.com/watch?v=... or https://youtube.com/playlist?list=..."
+                  placeholder="https://youtube.com/watch?v=..., https://youtube.com/playlist?list=..., or https://youtube.com/@channel/videos"
                   disabled={suggestPending}
                   maxLength={2048}
                 />
