@@ -142,6 +142,16 @@ export function limitFavouritesInHead<T extends { id: string }>(
   return [...early, ...deferredFavourites, ...tail];
 }
 
+export function shouldBypassCurrentVideoCooldown(params: {
+  blockedUntil: number;
+  inflightCount: number;
+  now?: number;
+}) {
+  const now = params.now ?? Date.now();
+
+  return params.blockedUntil > now && params.inflightCount === 0;
+}
+
 export function injectSparseFavourites<T extends { id: string }>(
   baseVideos: T[],
   favouriteVideos: T[],

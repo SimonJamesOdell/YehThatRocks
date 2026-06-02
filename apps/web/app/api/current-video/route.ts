@@ -16,6 +16,7 @@ import {
   injectSparseFavourites,
   interleaveVideoBuckets,
   limitFavouritesInHead,
+  shouldBypassCurrentVideoCooldown,
   uniqueVideosById,
 } from "@/lib/current-video-route-utils";
 import {
@@ -458,7 +459,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(cachedPending.payload);
     }
 
-    if (currentVideoResolverBlockedUntil > now) {
+    if (currentVideoResolverBlockedUntil > now && !shouldBypassCurrentVideoCooldown({
+      blockedUntil: currentVideoResolverBlockedUntil,
+      inflightCount: currentVideoInflight.size,
+      now,
+    })) {
       const retryAfterMs = Math.max(250, currentVideoResolverBlockedUntil - now);
       logCurrentVideoRoute("request:cooldown", {
         requestedVideoId: v,
@@ -471,6 +476,10 @@ export async function GET(request: NextRequest) {
         payload: pendingPayload,
       });
       return NextResponse.json(pendingPayload);
+    }
+
+    if (currentVideoResolverBlockedUntil > now) {
+      currentVideoResolverBlockedUntil = 0;
     }
 
     const cached = currentVideoCache.get(cacheKey);

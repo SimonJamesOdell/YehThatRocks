@@ -171,6 +171,134 @@
   animation: videoUnavailableCountdownShrink var(--countdown-ms, 6000ms) linear forwards;
 }
 
+.currentVideoRetryOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1280;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 121, 82, 0.12), transparent 36%),
+    radial-gradient(circle at 82% 18%, rgba(255, 170, 136, 0.08), transparent 28%),
+    rgba(4, 1, 1, 0.68);
+  backdrop-filter: blur(10px) saturate(0.88);
+}
+
+.currentVideoRetryDialog {
+  position: relative;
+  width: min(620px, 100%);
+  display: grid;
+  gap: 18px;
+  padding: 24px 24px 22px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 194, 168, 0.34);
+  background:
+    radial-gradient(circle at 12% 10%, rgba(255, 94, 56, 0.22), transparent 34%),
+    linear-gradient(158deg, rgba(36, 8, 6, 0.98), rgba(10, 3, 3, 0.99));
+  box-shadow: 0 30px 84px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 126, 96, 0.16) inset;
+  overflow: hidden;
+}
+
+.currentVideoRetryDialog::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(255, 88, 48, 0.82), rgba(255, 180, 150, 0.4));
+}
+
+.currentVideoRetryCopy {
+  display: grid;
+  gap: 8px;
+}
+
+.currentVideoRetryCopy strong {
+  font-family: var(--font-display), cursive;
+  font-size: clamp(1.35rem, 2.4vw, 1.9rem);
+  line-height: 1.08;
+  letter-spacing: 0.03em;
+  color: #ffe8de;
+}
+
+.currentVideoRetryEyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.76rem;
+  color: rgba(255, 200, 188, 0.94);
+}
+
+.currentVideoRetryCopy p {
+  margin: 0;
+  color: rgba(255, 230, 223, 0.95);
+  line-height: 1.58;
+}
+
+.currentVideoRetryCountdownWrap {
+  display: grid;
+  gap: 12px;
+}
+
+@keyframes currentVideoRetryCountdownShrink {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+
+.currentVideoRetryCountdown {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 200, 180, 0.12);
+}
+
+.currentVideoRetryCountdown::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(255, 88, 44, 0.92), rgba(255, 195, 160, 0.96));
+  animation: currentVideoRetryCountdownShrink var(--countdown-ms, 6000ms) linear forwards;
+}
+
+.currentVideoRetryCountdownMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: rgba(255, 228, 218, 0.96);
+  font-size: 0.94rem;
+}
+
+.currentVideoRetryButton {
+  min-height: 44px;
+  min-width: 160px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 186, 172, 0.66);
+  background: linear-gradient(180deg, rgba(188, 44, 25, 0.94), rgba(92, 15, 8, 0.98));
+  color: #fff3ef;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.34);
+  transition: transform 130ms ease, filter 130ms ease;
+}
+
+.currentVideoRetryButton:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.07);
+}
+
+.currentVideoRetryButton:focus-visible {
+  outline: 2px solid rgba(255, 170, 146, 0.5);
+  outline-offset: 3px;
+}
+
 .playerPolicyBlocker {
   position: absolute;
   inset: 0;

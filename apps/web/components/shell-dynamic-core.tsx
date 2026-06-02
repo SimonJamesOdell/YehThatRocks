@@ -12,6 +12,7 @@ import { ArtistsLetterProvider } from "@/components/artists-letter-provider";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { AuthUnavailableDialog } from "@/components/auth-unavailable-dialog";
+import { CurrentVideoRetryDialog } from "@/components/current-video-retry-dialog";
 import { BrandLockup } from "@/components/brand-lockup";
 import { RightRailLyricsOverlay } from "@/components/right-rail-lyrics-overlay";
 import { RightRailLoadingState } from "@/components/right-rail-loading-state";
@@ -119,7 +120,6 @@ const STARTUP_RETRY_SLOW_DELAY_MS = 8_000;
 const STARTUP_RETRY_MAX_ATTEMPTS = 8;
 const REQUESTED_VIDEO_RETRY_FAST_ATTEMPTS = 4;
 const REQUESTED_VIDEO_RETRY_SLOW_DELAY_MS = 8_000;
-const REQUESTED_VIDEO_RETRY_MAX_ATTEMPTS = 8;
 const RELATED_LOAD_BATCH_SIZE = 40;
 const RELATED_LOAD_AHEAD_PX = 560;
 const RELATED_MAX_VIDEOS = Number.MAX_SAFE_INTEGER;
@@ -246,6 +246,9 @@ function ShellDynamicInner({
   const [isResolvingRequestedVideo, setIsResolvingRequestedVideo] = useState(
     Boolean(requestedVideoId && requestedVideoId !== initialVideo.id),
   );
+  const [requestedVideoPendingRetryAfterMs, setRequestedVideoPendingRetryAfterMs] = useState<number | null>(null);
+  const [requestedVideoPendingReason, setRequestedVideoPendingReason] = useState<CurrentVideoResolvePayload["pendingReason"] | null>(null);
+  const [requestedVideoRetryNonce, setRequestedVideoRetryNonce] = useState(0);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isMobileCommunityOpen, setIsMobileCommunityOpen] = useState(false);
   const [hasClientMounted, setHasClientMounted] = useState(false);
@@ -268,6 +271,11 @@ function ShellDynamicInner({
   const relatedHideTimeoutsRef = useRef<Map<string, number>>(new Map());
   const relatedStackRef = useRef<HTMLDivElement | null>(null);
   const relatedLoadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setRequestedVideoPendingRetryAfterMs(null);
+    setRequestedVideoPendingReason(null);
+  }, [requestedVideoId]);
   const relatedLoadInFlightRef = useRef(false);
   const relatedFetchOffsetRef = useRef<number | null>(null);
   const watchNextAutoRecoverAttemptRef = useRef(0);
@@ -1238,6 +1246,7 @@ function ShellDynamicInner({
     }
     const resolveRequestedVideo = async (attempt = 1): Promise<void> => {
       let pendingRetryAfterMs: number | null = null;
+      let pendingReason: CurrentVideoResolvePayload["pendingReason"] | null = null;
       try {
         const currentVideoParams = new URLSearchParams();
         currentVideoParams.set("v", requestedVideoId);
@@ -1268,6 +1277,8 @@ function ShellDynamicInner({
             startupHydratedVideoIdRef.current = null;
           }
           deniedRequestedVideoIdRef.current = requestedVideoId;
+          setRequestedVideoPendingReason(null);
+          setRequestedVideoPendingRetryAfterMs(null);
           setIsResolvingRequestedVideo(false);
           if (!hasResolvedInitialVideoRef.current) {
             hasResolvedInitialVideoRef.current = true;
@@ -1284,6 +1295,8 @@ function ShellDynamicInner({
             payload: data,
           });
           setDeniedPlaybackMessage(null);
+          setRequestedVideoPendingReason(null);
+          setRequestedVideoPendingRetryAfterMs(null);
           setCurrentVideo(data.currentVideo);
           setRelatedVideos(data.relatedVideos ?? []);
           setWatchNextAdvisory(data.watchNextAdvisory ?? null);
@@ -1299,6 +1312,7 @@ function ShellDynamicInner({
             typeof data.retryAfterMs === "number" && Number.isFinite(data.retryAfterMs)
               ? Math.max(100, Math.floor(data.retryAfterMs))
               : null;
+          pendingReason = data.pendingReason ?? null;
           logFlow(FLOW_DEBUG_ENABLED, "requested-video:pending", {
             requestedVideoId,
             attempt,
@@ -1310,6 +1324,7 @@ function ShellDynamicInner({
         if (ignore) {
           return;
         }
+        pendingReason = "resolver-error";
         logFlow(FLOW_DEBUG_ENABLED, "requested-video:error", {
           requestedVideoId,
           error: error instanceof Error ? error.message : String(error),
@@ -1319,20 +1334,16 @@ function ShellDynamicInner({
       if (ignore) {
         return;
       }
-      if (attempt >= REQUESTED_VIDEO_RETRY_MAX_ATTEMPTS) {
-        logFlow(FLOW_DEBUG_ENABLED, "requested-video:halted", {
-          requestedVideoId,
-          attempt,
-        });
-        if (startupHydratedVideoIdRef.current === requestedVideoId) {
-          startupHydratedVideoIdRef.current = null;
-        }
-        setIsResolvingRequestedVideo(false);
-        return;
-      }
       const delayMs = attempt <= REQUESTED_VIDEO_RETRY_FAST_ATTEMPTS
         ? Math.min(2400, 350 * attempt)
         : REQUESTED_VIDEO_RETRY_SLOW_DELAY_MS;
+
+      if (data?.pending || pendingReason !== null || pendingRetryAfterMs !== null) {
+        setRequestedVideoPendingReason(pendingReason);
+        setRequestedVideoPendingRetryAfterMs(
+          pendingRetryAfterMs ?? delayMs,
+        );
+      }
       const nextDelayMs = pendingRetryAfterMs !== null
         ? Math.max(delayMs, pendingRetryAfterMs)
         : delayMs;
@@ -1347,7 +1358,7 @@ function ShellDynamicInner({
         window.clearTimeout(retryTimeoutId);
       }
     };
-  }, [requestedVideoId]);
+  }, [requestedVideoId, requestedVideoRetryNonce]);
   useEffect(() => {
     if (!deniedPlaybackMessage) {
       return;
@@ -2523,6 +2534,13 @@ function ShellDynamicInner({
           dismissButtonLabel="Dismiss"
           onRetry={() => void retryAuthStateCheck({ showDialogOnUnavailable: true })}
           onDismiss={() => setIsAuthUnavailableDialogDismissed(true)}
+        />
+      ) : null}
+      {requestedVideoId && isResolvingRequestedVideo && requestedVideoPendingRetryAfterMs !== null ? (
+        <CurrentVideoRetryDialog
+          pendingReason={requestedVideoPendingReason}
+          retryAfterMs={requestedVideoPendingRetryAfterMs}
+          onRetryNow={() => setRequestedVideoRetryNonce((value) => value + 1)}
         />
       ) : null}
       <section
