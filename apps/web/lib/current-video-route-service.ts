@@ -71,7 +71,12 @@ export type WatchNextAdvisory = {
 
 export type CurrentVideoResolveResult =
   | ResolvedCurrentVideoPayload
-  | { pending: true; denied?: { videoId: string; reason: string; message: string } };
+  | {
+    pending: true;
+    pendingReason?: "cooldown" | "concurrency-shed" | "timeout" | "resolver-error";
+    retryAfterMs?: number;
+    denied?: { videoId: string; reason: string; message: string };
+  };
 
 export type WatchNextStreamCacheEntry = {
   expiresAt: number;

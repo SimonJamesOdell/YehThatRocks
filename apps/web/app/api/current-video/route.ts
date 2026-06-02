@@ -46,7 +46,11 @@ const CURRENT_VIDEO_PENDING_CACHE_MAX_ENTRIES = 300;
 const CURRENT_VIDEO_RELATED_POOL_CACHE_MAX_ENTRIES = 120;
 const WATCH_NEXT_STREAM_CACHE_MAX_ENTRIES = 120;
 const CURRENT_VIDEO_RESOLVER_TIMEOUT_MS = 6_000;
-const CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS = 1;
+const parsedCurrentVideoMaxConcurrentResolvers = Number(process.env.CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS || "8");
+const CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS =
+  Number.isFinite(parsedCurrentVideoMaxConcurrentResolvers)
+    ? Math.max(1, Math.min(32, Math.floor(parsedCurrentVideoMaxConcurrentResolvers)))
+    : 8;
 const CURRENT_VIDEO_RELATED_POOL_CACHE_TTL_MS = 30_000;
 const CURRENT_VIDEO_RELATED_POOL_SIZE = 100;
 const CURRENT_VIDEO_RELATED_POOL_BASE_SIZE = CURRENT_VIDEO_RELATED_POOL_SIZE;
@@ -76,6 +80,8 @@ type CurrentVideoPayload = ResolvedCurrentVideoPayload;
 
 type PendingPayload = {
   pending: true;
+  pendingReason?: "cooldown" | "concurrency-shed" | "timeout" | "resolver-error";
+  retryAfterMs?: number;
   denied?: { videoId: string; reason: string; message: string };
 };
 
@@ -453,11 +459,13 @@ export async function GET(request: NextRequest) {
     }
 
     if (currentVideoResolverBlockedUntil > now) {
+      const retryAfterMs = Math.max(250, currentVideoResolverBlockedUntil - now);
       logCurrentVideoRoute("request:cooldown", {
         requestedVideoId: v,
         blockedUntil: currentVideoResolverBlockedUntil,
+        retryAfterMs,
       });
-      const pendingPayload: PendingPayload = { pending: true };
+      const pendingPayload: PendingPayload = { pending: true, pendingReason: "cooldown", retryAfterMs };
       currentVideoPendingCache.set(cacheKey, {
         expiresAt: now + CURRENT_VIDEO_PENDING_CACHE_TTL_MS,
         payload: pendingPayload,
@@ -483,12 +491,14 @@ export async function GET(request: NextRequest) {
     }
 
     if (currentVideoInflight.size >= CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS) {
+      const retryAfterMs = 500;
       logCurrentVideoRoute("request:concurrency-shed", {
         requestedVideoId: v,
         inflight: currentVideoInflight.size,
         limit: CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS,
+        retryAfterMs,
       });
-      const pendingPayload: PendingPayload = { pending: true };
+      const pendingPayload: PendingPayload = { pending: true, pendingReason: "concurrency-shed", retryAfterMs };
       currentVideoPendingCache.set(cacheKey, {
         expiresAt: now + CURRENT_VIDEO_PENDING_CACHE_TTL_MS,
         payload: pendingPayload,
@@ -556,7 +566,7 @@ export async function GET(request: NextRequest) {
     resolvePayloadPromise,
     new Promise<PendingPayload>((resolve) => {
       setTimeout(() => {
-        resolve({ pending: true });
+        resolve({ pending: true, pendingReason: "timeout", retryAfterMs: 1_200 });
       }, CURRENT_VIDEO_RESOLVER_TIMEOUT_MS);
     }),
   ]);
@@ -582,6 +592,8 @@ export async function GET(request: NextRequest) {
     });
 
     const pendingPayload: PendingPayload = { pending: true };
+    pendingPayload.pendingReason = "resolver-error";
+    pendingPayload.retryAfterMs = CURRENT_VIDEO_FAILURE_COOLDOWN_MS;
     currentVideoPendingCache.set(cacheKey, {
       expiresAt: Date.now() + CURRENT_VIDEO_PENDING_CACHE_TTL_MS,
       payload: pendingPayload,

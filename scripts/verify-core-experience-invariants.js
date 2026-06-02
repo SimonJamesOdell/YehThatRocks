@@ -150,6 +150,9 @@ function main() {
   assertContains(currentVideoRouteSource, "RESOLVE_CURRENT_VIDEO_TARGET_RELATED_COUNT = 8;", "Current-video API targets 8 Watch Next items", failures);
   assertContains(currentVideoRouteSource, "earlyTopVideosForPadding ?? await ", "Current-video API fetches bounded filler pool (parallel-prefetched or direct)", failures);
   assertContains(currentVideoRouteSource, "const filler = shuffleVideos(fillerPool).slice(0, ", "Current-video API randomizes sparse filler selection", failures);
+  assertContains(currentVideoRouteSource, "process.env.CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS", "Current-video API exposes configurable resolver concurrency for traffic spikes", failures);
+  assertContains(currentVideoRouteSource, "pendingReason?: \"cooldown\" | \"concurrency-shed\" | \"timeout\" | \"resolver-error\"", "Current-video pending payload includes explicit overload reason metadata", failures);
+  assertContains(currentVideoRouteSource, "retryAfterMs", "Current-video pending payload provides retry-after hint for client pacing", failures);
   assertNotContains(currentVideoRouteServiceSource, 'from "next/server"', "Current-video route service is free of HTTP-layer imports (next/server)", failures);
   assertNotContains(currentVideoRouteServiceSource, "NextResponse", "Current-video route service does not construct HTTP responses", failures);
 

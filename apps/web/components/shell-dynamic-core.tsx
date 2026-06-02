@@ -77,6 +77,8 @@ type CurrentVideoResolvePayload = {
   currentVideo?: VideoRecord;
   relatedVideos?: VideoRecord[];
   pending?: boolean;
+  pendingReason?: "cooldown" | "concurrency-shed" | "timeout" | "resolver-error";
+  retryAfterMs?: number;
   denied?: { message?: string; reason?: string; videoId?: string };
   watchNextAdvisory?: WatchNextAdvisory;
 };
@@ -1235,6 +1237,7 @@ function ShellDynamicInner({
       }
     }
     const resolveRequestedVideo = async (attempt = 1): Promise<void> => {
+      let pendingRetryAfterMs: number | null = null;
       try {
         const currentVideoParams = new URLSearchParams();
         currentVideoParams.set("v", requestedVideoId);
@@ -1292,9 +1295,15 @@ function ShellDynamicInner({
           return;
         }
         if (data?.pending) {
+          pendingRetryAfterMs =
+            typeof data.retryAfterMs === "number" && Number.isFinite(data.retryAfterMs)
+              ? Math.max(100, Math.floor(data.retryAfterMs))
+              : null;
           logFlow(FLOW_DEBUG_ENABLED, "requested-video:pending", {
             requestedVideoId,
             attempt,
+            pendingReason: data.pendingReason,
+            retryAfterMs: pendingRetryAfterMs,
           });
         }
       } catch (error) {
@@ -1324,9 +1333,12 @@ function ShellDynamicInner({
       const delayMs = attempt <= REQUESTED_VIDEO_RETRY_FAST_ATTEMPTS
         ? Math.min(2400, 350 * attempt)
         : REQUESTED_VIDEO_RETRY_SLOW_DELAY_MS;
+      const nextDelayMs = pendingRetryAfterMs !== null
+        ? Math.max(delayMs, pendingRetryAfterMs)
+        : delayMs;
       retryTimeoutId = window.setTimeout(() => {
         void resolveRequestedVideo(attempt + 1);
-      }, delayMs);
+      }, nextDelayMs);
     };
     void resolveRequestedVideo();
     return () => {
