@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { buildAdminHealthPayload } from "@/lib/admin-dashboard-health";
-import { getRuntimeProfilingSnapshot } from "@/lib/runtime-profiler";
+import { getRuntimeProfilingSnapshotWithDbHistory } from "@/lib/runtime-profiler";
 
 export async function GET() {
   const payload = await buildAdminHealthPayload();
-  const runtime = getRuntimeProfilingSnapshot();
+  const runtime = await getRuntimeProfilingSnapshotWithDbHistory();
 
   return NextResponse.json({
     meta: payload.meta,

@@ -9,11 +9,16 @@ import {
 } from "@/lib/catalog-data-genres";
 import { getGenreSlug, hasDatabaseUrl, type CategoryArtistCard, type GenreCard } from "@/lib/catalog-data-utils";
 import { TOP_LEVEL_GENRE_BUCKETS } from "@/lib/genre-buckets";
+import { getRuntimeProfilingSnapshot, isRuntimeSqlPressureElevated } from "@/lib/runtime-profiler";
 
 const SNAPSHOT_NAME = "categories_new";
 const SNAPSHOT_TOP_LEVEL_KEY = "top-level";
 const SNAPSHOT_ARTIST_LIMIT = 25_000;
 const CATEGORIES_NEW_SNAPSHOT_BUILD_DEBOUNCE_MS = 5_000;
+const CATEGORIES_NEW_SNAPSHOT_PRESSURE_BACKOFF_MS = Math.max(
+  5_000,
+  Math.min(120_000, Number(process.env.CATEGORIES_NEW_SNAPSHOT_PRESSURE_BACKOFF_MS || "30_000")),
+);
 
 export type CategoriesNewTopLevelCard = GenreCard & {
   slug: string;
@@ -244,16 +249,24 @@ async function buildCategoriesNewSnapshotRows(buildVersion: number) {
 
     const tabCounts = await getCategoryArtistTabCountsByGenre(genre).catch(() => ({ all: 0 }));
 
-    let artists = await getCategoryArtistsByGenre(genre, {
+    let artists = await getCachedCategoryArtistsByGenre(genre, {
       offset: 0,
       limit: SNAPSHOT_ARTIST_LIMIT,
-      maxLimit: SNAPSHOT_ARTIST_LIMIT,
-      bypassRuntimeCache: true,
-    }).catch(() => []);
+    }).catch(() => null) ?? [];
 
     // Runtime cache rows can be stale/partial for some large buckets; prefer a complete snapshot payload.
     const expectedTotalArtists = Math.max(0, Number(tabCounts.all ?? 0));
+    if (artists.length === 0) {
+      artists = await getCategoryArtistsByGenre(genre, {
+        offset: 0,
+        limit: SNAPSHOT_ARTIST_LIMIT,
+        maxLimit: SNAPSHOT_ARTIST_LIMIT,
+      }).catch(() => []);
+    }
+
     if (artists.length < expectedTotalArtists) {
+      await warmCategoryArtistRuntimeCacheByGenre(genre).catch(() => undefined);
+
       const cachedArtists = await getCachedCategoryArtistsByGenre(genre, {
         offset: 0,
         limit: SNAPSHOT_ARTIST_LIMIT,
@@ -337,6 +350,14 @@ function clearCategoriesNewSnapshotBuildDebounceTimer() {
   }
 }
 
+function shouldBackoffCategoriesNewSnapshotBuild() {
+  try {
+    return isRuntimeSqlPressureElevated(getRuntimeProfilingSnapshot());
+  } catch {
+    return false;
+  }
+}
+
 function startCategoriesNewSnapshotBuild(reason: string) {
   categoriesNewSnapshotBuildInFlight = runCategoriesNewSnapshotBuild(reason)
     .catch(() => null)
@@ -356,6 +377,17 @@ export function scheduleCategoriesNewSnapshotBuild(reason = "catalog-change", op
   }
 
   categoriesNewSnapshotBuildPendingReason = reason;
+
+  if (shouldBackoffCategoriesNewSnapshotBuild()) {
+    clearCategoriesNewSnapshotBuildDebounceTimer();
+
+    categoriesNewSnapshotBuildDebounceTimer = setTimeout(() => {
+      categoriesNewSnapshotBuildDebounceTimer = null;
+      scheduleCategoriesNewSnapshotBuild(`${categoriesNewSnapshotBuildPendingReason}:retry`);
+    }, CATEGORIES_NEW_SNAPSHOT_PRESSURE_BACKOFF_MS);
+
+    return;
+  }
 
   if (options?.immediate) {
     clearCategoriesNewSnapshotBuildDebounceTimer();

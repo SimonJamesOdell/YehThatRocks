@@ -46,8 +46,38 @@ type RuntimeProfilingSnapshot = {
   };
   observability: {
     dbProfilingReport: DbProfilingReportFreshness;
+    dbHistoricalProfiling: DbHistoricalProfilingSummary | null;
+    queryPressure: QueryPressureSignal;
   };
   prisma: PrismaProfilingSnapshot;
+};
+
+type QueryPressureSignal = {
+  status: "normal" | "elevated";
+  mode: "none" | "low-qps-high-latency";
+  qps: number;
+  avgMs: number;
+  p95Ms: number;
+  summary: string;
+};
+
+type DbHistoricalProfilingSummary = {
+  status: "available" | "unavailable";
+  source: "performance_telemetry_samples";
+  windowHours: number;
+  sampleCount: number;
+  latestSampledAt: string | null;
+  prismaAvgMs: number | null;
+  prismaP95Ms: number | null;
+  prismaPeakP95Ms: number | null;
+  prismaQpsAvg: number | null;
+  prismaQueryCountTotal: number;
+  summary: string;
+};
+
+type DbHistoricalProfilingCacheEntry = {
+  expiresAt: number;
+  summary: DbHistoricalProfilingSummary;
 };
 
 type SnapshotCacheEntry = {
@@ -76,12 +106,44 @@ const RUNTIME_PROFILING_SNAPSHOT_TTL_MS = readPositiveIntEnv(
   250,
   10_000,
 );
+const DB_HISTORY_WINDOW_HOURS = readPositiveIntEnv(
+  "RUNTIME_DB_HISTORY_WINDOW_HOURS",
+  24,
+  1,
+  7 * 24,
+);
+const DB_HISTORY_SUMMARY_CACHE_TTL_MS = readPositiveIntEnv(
+  "RUNTIME_DB_HISTORY_CACHE_TTL_MS",
+  30_000,
+  1_000,
+  5 * 60_000,
+);
+const QUERY_PRESSURE_QPS_MAX = readPositiveIntEnv(
+  "RUNTIME_QUERY_PRESSURE_QPS_MAX",
+  2,
+  1,
+  20,
+);
+const QUERY_PRESSURE_AVG_MS_MIN = readPositiveIntEnv(
+  "RUNTIME_QUERY_PRESSURE_AVG_MS_MIN",
+  350,
+  50,
+  10_000,
+);
+const QUERY_PRESSURE_P95_MS_MIN = readPositiveIntEnv(
+  "RUNTIME_QUERY_PRESSURE_P95_MS_MIN",
+  2_000,
+  100,
+  60_000,
+);
 
 const prismaEvents: TimedEvent[] = [];
 const prismaFingerprintEvents: TimedEvent[] = [];
 let totalPrismaQueriesSinceBoot = 0;
 let totalPrismaDurationMsSinceBoot = 0;
 let runtimeProfilingSnapshotCache: SnapshotCacheEntry | null = null;
+let dbHistoricalProfilingCache: DbHistoricalProfilingCacheEntry | null = null;
+let dbHistoricalProfilingInFlight: Promise<DbHistoricalProfilingSummary> | null = null;
 
 function round(value: number, digits = 2) {
   if (!Number.isFinite(value)) {
@@ -166,6 +228,164 @@ function clearRuntimeProfilingSnapshotCache() {
   runtimeProfilingSnapshotCache = null;
 }
 
+function clearDbHistoricalProfilingCache() {
+  dbHistoricalProfilingCache = null;
+}
+
+function buildQueryPressureSignal(prisma: PrismaProfilingSnapshot): QueryPressureSignal {
+  const qps = Math.max(0, Number(prisma.queriesPerSec || 0));
+  const avgMs = Math.max(0, Number(prisma.avgDurationMs || 0));
+  const p95Ms = Math.max(0, Number(prisma.p95DurationMs || 0));
+  const lowQpsHighLatency = qps <= QUERY_PRESSURE_QPS_MAX
+    && (avgMs >= QUERY_PRESSURE_AVG_MS_MIN || p95Ms >= QUERY_PRESSURE_P95_MS_MIN);
+
+  if (lowQpsHighLatency) {
+    return {
+      status: "elevated",
+      mode: "low-qps-high-latency",
+      qps: round(qps, 2),
+      avgMs: round(avgMs, 1),
+      p95Ms: round(p95Ms, 1),
+      summary: "Low query throughput with high latency indicates heavy analytical SQL pressure.",
+    };
+  }
+
+  return {
+    status: "normal",
+    mode: "none",
+    qps: round(qps, 2),
+    avgMs: round(avgMs, 1),
+    p95Ms: round(p95Ms, 1),
+    summary: "Runtime SQL pressure is within expected bounds.",
+  };
+}
+
+export function isRuntimeSqlPressureElevated(snapshot: RuntimeProfilingSnapshot) {
+  return snapshot.observability.queryPressure.status === "elevated";
+}
+
+type HistoricalPerfSampleSummaryRow = {
+  sampleCount: bigint | number | null;
+  latestSampledAt: Date | null;
+  prismaAvgMs: number | null;
+  prismaP95Ms: number | null;
+  prismaPeakP95Ms: number | null;
+  prismaQpsAvg: number | null;
+  prismaQueryCountTotal: bigint | number | null;
+};
+
+async function queryDbHistoricalProfilingSummary(now: Date): Promise<DbHistoricalProfilingSummary> {
+  if (!process.env.DATABASE_URL) {
+    return {
+      status: "unavailable",
+      source: "performance_telemetry_samples",
+      windowHours: DB_HISTORY_WINDOW_HOURS,
+      sampleCount: 0,
+      latestSampledAt: null,
+      prismaAvgMs: null,
+      prismaP95Ms: null,
+      prismaPeakP95Ms: null,
+      prismaQpsAvg: null,
+      prismaQueryCountTotal: 0,
+      summary: "Historical DB telemetry unavailable: database is not configured.",
+    };
+  }
+
+  const cutoff = new Date(now.getTime() - DB_HISTORY_WINDOW_HOURS * 60 * 60 * 1000);
+
+  try {
+    const { prisma } = await import("@/lib/db");
+    const rows = await prisma.$queryRaw<HistoricalPerfSampleSummaryRow[]>`
+      SELECT
+        COUNT(*) AS sampleCount,
+        MAX(sampled_at) AS latestSampledAt,
+        AVG(prisma_avg_ms) AS prismaAvgMs,
+        AVG(prisma_p95_ms) AS prismaP95Ms,
+        MAX(prisma_p95_ms) AS prismaPeakP95Ms,
+        AVG(prisma_qps) AS prismaQpsAvg,
+        SUM(prisma_query_count) AS prismaQueryCountTotal
+      FROM performance_telemetry_samples
+      WHERE sampled_at >= ${cutoff}
+    `;
+
+    const row = rows[0];
+    const sampleCount = Math.max(0, Number(row?.sampleCount ?? 0));
+    const latestSampledAt = row?.latestSampledAt ? row.latestSampledAt.toISOString() : null;
+    const prismaQueryCountTotal = Math.max(0, Number(row?.prismaQueryCountTotal ?? 0));
+    const prismaAvgMs = row?.prismaAvgMs == null ? null : round(Number(row.prismaAvgMs), 1);
+    const prismaP95Ms = row?.prismaP95Ms == null ? null : round(Number(row.prismaP95Ms), 1);
+    const prismaPeakP95Ms = row?.prismaPeakP95Ms == null ? null : round(Number(row.prismaPeakP95Ms), 1);
+    const prismaQpsAvg = row?.prismaQpsAvg == null ? null : round(Number(row.prismaQpsAvg), 2);
+
+    if (sampleCount <= 0) {
+      return {
+        status: "unavailable",
+        source: "performance_telemetry_samples",
+        windowHours: DB_HISTORY_WINDOW_HOURS,
+        sampleCount: 0,
+        latestSampledAt: null,
+        prismaAvgMs,
+        prismaP95Ms,
+        prismaPeakP95Ms,
+        prismaQpsAvg,
+        prismaQueryCountTotal,
+        summary: `No historical performance telemetry rows found in the last ${DB_HISTORY_WINDOW_HOURS}h.`,
+      };
+    }
+
+    return {
+      status: "available",
+      source: "performance_telemetry_samples",
+      windowHours: DB_HISTORY_WINDOW_HOURS,
+      sampleCount,
+      latestSampledAt,
+      prismaAvgMs,
+      prismaP95Ms,
+      prismaPeakP95Ms,
+      prismaQpsAvg,
+      prismaQueryCountTotal,
+      summary: `Historical DB telemetry available from ${sampleCount} samples over ${DB_HISTORY_WINDOW_HOURS}h.`,
+    };
+  } catch {
+    return {
+      status: "unavailable",
+      source: "performance_telemetry_samples",
+      windowHours: DB_HISTORY_WINDOW_HOURS,
+      sampleCount: 0,
+      latestSampledAt: null,
+      prismaAvgMs: null,
+      prismaP95Ms: null,
+      prismaPeakP95Ms: null,
+      prismaQpsAvg: null,
+      prismaQueryCountTotal: 0,
+      summary: "Historical DB telemetry unavailable: performance sample table is not readable.",
+    };
+  }
+}
+
+async function getDbHistoricalProfilingSummary(now = new Date()) {
+  const nowMs = now.getTime();
+  if (dbHistoricalProfilingCache && dbHistoricalProfilingCache.expiresAt > nowMs) {
+    return dbHistoricalProfilingCache.summary;
+  }
+
+  if (!dbHistoricalProfilingInFlight) {
+    dbHistoricalProfilingInFlight = queryDbHistoricalProfilingSummary(now)
+      .then((summary) => {
+        dbHistoricalProfilingCache = {
+          summary,
+          expiresAt: nowMs + DB_HISTORY_SUMMARY_CACHE_TTL_MS,
+        };
+        return summary;
+      })
+      .finally(() => {
+        dbHistoricalProfilingInFlight = null;
+      });
+  }
+
+  return dbHistoricalProfilingInFlight;
+}
+
 export function recordPrismaOperation(operation: string, durationMs: number) {
   const safeDurationMs = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
   const event: TimedEvent = {
@@ -205,6 +425,7 @@ export function resetRuntimeProfiling() {
   totalPrismaQueriesSinceBoot = 0;
   totalPrismaDurationMsSinceBoot = 0;
   clearRuntimeProfilingSnapshotCache();
+  clearDbHistoricalProfilingCache();
 }
 
 export function getRuntimeProfilingSnapshot(): RuntimeProfilingSnapshot {
@@ -231,6 +452,15 @@ export function getRuntimeProfilingSnapshot(): RuntimeProfilingSnapshot {
     },
     observability: {
       dbProfilingReport: getDbProfilingReportFreshness({ nowMs: now }),
+      dbHistoricalProfiling: null,
+      queryPressure: {
+        status: "normal",
+        mode: "none",
+        qps: 0,
+        avgMs: 0,
+        p95Ms: 0,
+        summary: "Runtime SQL pressure is within expected bounds.",
+      },
     },
     prisma: {
       windowSec,
@@ -247,10 +477,28 @@ export function getRuntimeProfilingSnapshot(): RuntimeProfilingSnapshot {
     },
   };
 
+  snapshot.observability.queryPressure = buildQueryPressureSignal(snapshot.prisma);
+
   runtimeProfilingSnapshotCache = {
     snapshot,
     expiresAt: now + RUNTIME_PROFILING_SNAPSHOT_TTL_MS,
   };
 
   return snapshot;
+}
+
+export async function getRuntimeProfilingSnapshotWithDbHistory(): Promise<RuntimeProfilingSnapshot> {
+  const snapshot = getRuntimeProfilingSnapshot();
+  if (snapshot.observability.dbProfilingReport.status !== "missing") {
+    return snapshot;
+  }
+
+  const dbHistoricalProfiling = await getDbHistoricalProfilingSummary();
+  return {
+    ...snapshot,
+    observability: {
+      ...snapshot.observability,
+      dbHistoricalProfiling,
+    },
+  };
 }

@@ -34,6 +34,7 @@ import {
   hasVideoGenreColumn,
   hasVideoTitleFulltextIndex,
 } from "@/lib/catalog-data-db";
+import { getRuntimeProfilingSnapshot, isRuntimeSqlPressureElevated } from "@/lib/runtime-profiler";
 import {
   collateGenreCardsToTopLevelBuckets,
   getBucketTermsForGenreSelection,
@@ -76,6 +77,7 @@ let categoryArtistThumbTableAvailableCache: { checkedAt: number; available: bool
 let categoryBucketRuntimeCacheTableAvailableCache: { checkedAt: number; available: boolean } | undefined;
 let categoryArtistRuntimeCacheTableAvailableCache: { checkedAt: number; available: boolean } | undefined;
 const categoryArtistRuntimeCacheRebuildInFlight = new Map<string, Promise<void>>();
+const categoryArtistRuntimeCacheDirtyGenres = new Set<string>();
 let categoryBucketRuntimeRefreshInFlight: Promise<void> | null = null;
 let categoryBucketRuntimeRefreshLastStartedAt = 0;
 let pinnedCategoryArtistPreviewsByBucketCache: { expiresAt: number; previews: Map<string, string> } | null = null;
@@ -448,6 +450,8 @@ async function upsertCategoryArtistRuntimeCacheRows(genreNorm: string, artists: 
       ...params,
     );
   }
+
+  categoryArtistRuntimeCacheDirtyGenres.delete(genreNorm);
 }
 
 function scheduleCategoryArtistRuntimeCacheRebuild(genre: string, normalizedGenre: string) {
@@ -483,6 +487,25 @@ export async function warmCategoryArtistRuntimeCacheByGenre(genre: string): Prom
   const normalizedGenre = normalizeGenreTerm(genre);
   if (!normalizedGenre) {
     return { warmed: false, count: 0 };
+  }
+
+  const runtimeCountSummary = await getRuntimeCategoryArtistCountSummary(genre, normalizedGenre);
+  const isDirty = categoryArtistRuntimeCacheDirtyGenres.has(normalizedGenre);
+  if (!isDirty && runtimeCountSummary?.likelyComplete && runtimeCountSummary.isFresh) {
+    return { warmed: false, count: runtimeCountSummary.total };
+  }
+
+  const runtimeSqlPressureElevated = (() => {
+    try {
+      return isRuntimeSqlPressureElevated(getRuntimeProfilingSnapshot());
+    } catch {
+      return false;
+    }
+  })();
+
+  if (runtimeSqlPressureElevated && runtimeCountSummary?.total) {
+    scheduleCategoryArtistRuntimeCacheRebuild(genre, normalizedGenre);
+    return { warmed: false, count: runtimeCountSummary.total };
   }
 
   const artists = await queryCategoryArtistsByGenreFromVideosPaged(genre, {
@@ -940,19 +963,29 @@ async function queryCategoryArtistsByGenreFromVideos(
       dominantGenre: string | null;
     }>>(
       `SELECT
-         ${normalizedRef} AS artistKey,
-         SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC), ',', 1) AS thumbnailVideoId,
-         SUBSTRING_INDEX(GROUP_CONCAT(NULLIF(TRIM(v.genre), '') ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC), ',', 1) AS dominantGenre
-       FROM videos v${videoArtistIndexHint}
-       WHERE v.videoId IS NOT NULL
-         AND ${normalizedRef} IN (${artistKeyPlaceholders})
-         AND COALESCE(v.approved, 0) = 1
-         ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
-         AND (
-           ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
-           OR LOWER(v.genre) REGEXP ?
-         )
-       GROUP BY ${normalizedRef}`,
+         ranked.artistKey,
+         ranked.thumbnailVideoId,
+         ranked.dominantGenre
+       FROM (
+         SELECT
+           ${normalizedRef} AS artistKey,
+           v.videoId AS thumbnailVideoId,
+           NULLIF(TRIM(v.genre), '') AS dominantGenre,
+           ROW_NUMBER() OVER (
+             PARTITION BY ${normalizedRef}
+             ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC
+           ) AS rowNumber
+         FROM videos v${videoArtistIndexHint}
+         WHERE v.videoId IS NOT NULL
+           AND ${normalizedRef} IN (${artistKeyPlaceholders})
+           AND COALESCE(v.approved, 0) = 1
+           ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+           AND (
+             ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+             OR LOWER(v.genre) REGEXP ?
+           )
+       ) ranked
+       WHERE ranked.rowNumber = 1`,
       ...artistKeys,
       ...normalizedGenreTerms,
       normalizedGenrePattern,
@@ -1014,33 +1047,18 @@ async function queryCategoryArtistsByGenreFromVideos(
       .filter((row): row is CategoryArtistCard => row !== null);
   }
 
-  const pinnedArtistThumbJoin = hasPinnedCategoryArtistThumbs
-    ? `LEFT JOIN category_artist_thumbnails cat
-       ON cat.genre_norm = ?
-      AND cat.artist_key = ${videoArtistNormExpr}`
-    : "";
-
-  const thumbnailSelectExpr = hasPinnedCategoryArtistThumbs
-    ? "COALESCE(cat.thumbnail_video_id, SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC), ',', 1))"
-    : "SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC), ',', 1)";
-  const groupByExpr = hasPinnedCategoryArtistThumbs
-    ? `${videoArtistNormExpr}, cat.thumbnail_video_id`
-    : videoArtistNormExpr;
   const normalizedGenrePlaceholders = normalizedGenreTerms.map(() => "?").join(", ");
 
-  const rows = await prisma.$queryRawUnsafe<Array<{
+  const rankedRows = await prisma.$queryRawUnsafe<Array<{
+    artistKey: string | null;
     artistName: string | null;
-    thumbnailVideoId: string | null;
-    dominantGenre: string | null;
     videoCount: bigint | number;
   }>>(
     `SELECT
+       ${videoArtistNormExpr} AS artistKey,
        MAX(COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''))) AS artistName,
-       ${thumbnailSelectExpr} AS thumbnailVideoId,
-       SUBSTRING_INDEX(GROUP_CONCAT(NULLIF(TRIM(v.genre), '') ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC), ',', 1) AS dominantGenre,
        COUNT(*) AS videoCount
      FROM videos v${videoArtistIndexHint}
-     ${pinnedArtistThumbJoin}
      WHERE v.videoId IS NOT NULL
        AND ${videoArtistNormExpr} <> ''
        AND COALESCE(v.approved, 0) = 1
@@ -1049,16 +1067,113 @@ async function queryCategoryArtistsByGenreFromVideos(
          ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
          OR LOWER(v.genre) REGEXP ?
        )
-    GROUP BY ${groupByExpr}
+     GROUP BY ${videoArtistNormExpr}
      ORDER BY artistName ASC, videoCount DESC
-    LIMIT ${requestedLimit}
+     LIMIT ${requestedLimit}
      OFFSET ${requestedOffset}`,
-    ...(hasPinnedCategoryArtistThumbs ? [normalizedGenre] : []),
     ...normalizedGenreTerms,
     normalizedGenrePattern,
   );
 
-  return mapCategoryArtistRows(rows);
+  const artistKeys = [...new Set(
+    rankedRows
+      .map((row) => (row.artistKey ?? "").trim())
+      .filter((artistKey) => artistKey.length > 0),
+  )];
+
+  if (artistKeys.length === 0) {
+    return [];
+  }
+
+  const artistKeyPlaceholders = artistKeys.map(() => "?").join(", ");
+  const detailRows = await prisma.$queryRawUnsafe<Array<{
+    artistKey: string | null;
+    thumbnailVideoId: string | null;
+    dominantGenre: string | null;
+  }>>(
+    `SELECT
+       ranked.artistKey,
+       ranked.thumbnailVideoId,
+       ranked.dominantGenre
+     FROM (
+       SELECT
+         ${videoArtistNormExpr} AS artistKey,
+         v.videoId AS thumbnailVideoId,
+         NULLIF(TRIM(v.genre), '') AS dominantGenre,
+         ROW_NUMBER() OVER (
+           PARTITION BY ${videoArtistNormExpr}
+           ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC
+         ) AS rowNumber
+       FROM videos v${videoArtistIndexHint}
+       WHERE v.videoId IS NOT NULL
+         AND ${videoArtistNormExpr} IN (${artistKeyPlaceholders})
+         AND COALESCE(v.approved, 0) = 1
+         ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+         AND (
+           ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+           OR LOWER(v.genre) REGEXP ?
+         )
+     ) ranked
+     WHERE ranked.rowNumber = 1`,
+    ...artistKeys,
+    ...normalizedGenreTerms,
+    normalizedGenrePattern,
+  );
+
+  const detailsByArtistKey = new Map(
+    detailRows
+      .map((row) => {
+        const artistKey = (row.artistKey ?? "").trim();
+        if (!artistKey) {
+          return null;
+        }
+        return [artistKey, row] as const;
+      })
+      .filter((entry): entry is readonly [string, { artistKey: string | null; thumbnailVideoId: string | null; dominantGenre: string | null }] => entry !== null),
+  );
+
+  const pinnedThumbnailByArtistKey = new Map<string, string>();
+  if (hasPinnedCategoryArtistThumbs) {
+    const pinnedRows = await prisma.$queryRawUnsafe<Array<{ artistKey: string | null; thumbnailVideoId: string | null }>>(
+      `SELECT
+         artist_key AS artistKey,
+         thumbnail_video_id AS thumbnailVideoId
+       FROM category_artist_thumbnails
+       WHERE genre_norm = ?
+         AND artist_key IN (${artistKeyPlaceholders})`,
+      normalizedGenre,
+      ...artistKeys,
+    );
+
+    for (const row of pinnedRows) {
+      const artistKey = (row.artistKey ?? "").trim();
+      const thumbnailVideoId = (row.thumbnailVideoId ?? "").trim();
+      if (!artistKey || !thumbnailVideoId) {
+        continue;
+      }
+      pinnedThumbnailByArtistKey.set(artistKey, thumbnailVideoId);
+    }
+  }
+
+  return rankedRows
+    .map((row) => {
+      const artistName = (row.artistName ?? "").trim();
+      const artistKey = (row.artistKey ?? "").trim();
+
+      if (!artistName || !artistKey) {
+        return null;
+      }
+
+      const details = detailsByArtistKey.get(artistKey);
+      return {
+        name: artistName,
+        slug: slugifyArtistName(artistName),
+        videoCount: Math.max(0, Number(row.videoCount ?? 0)),
+        thumbnailVideoId: pinnedThumbnailByArtistKey.get(artistKey) ?? ((details?.thumbnailVideoId ?? "").trim() || null),
+        dominantGenre: ((details?.dominantGenre ?? "").trim() || null),
+      } as CategoryArtistCard;
+    })
+    .filter((row): row is CategoryArtistCard => row !== null);
 }
 
 export async function getCategoryArtistsByGenre(
@@ -1134,6 +1249,60 @@ export async function getCachedCategoryArtistsByGenre(
   });
 }
 
+type RuntimeCategoryArtistCountSummary = {
+  total: number;
+  likelyComplete: boolean;
+  isFresh: boolean;
+};
+
+async function getRuntimeCategoryArtistCountSummary(
+  genre: string,
+  normalizedGenre: string,
+): Promise<RuntimeCategoryArtistCountSummary | null> {
+  const tableAvailable = await hasCategoryArtistRuntimeCacheTable();
+  if (!tableAvailable) {
+    return null;
+  }
+
+  let rows: Array<{ newestUpdatedAt: Date | null; total: bigint | number }> = [];
+  try {
+    rows = await prisma.$queryRawUnsafe<Array<{ newestUpdatedAt: Date | null; total: bigint | number }>>(
+      `
+        SELECT
+          MAX(updated_at) AS newestUpdatedAt,
+          COUNT(*) AS total
+        FROM category_artist_runtime_cache
+        WHERE genre_norm = ?
+      `,
+      normalizedGenre,
+    );
+  } catch {
+    return null;
+  }
+
+  const freshness = rows[0];
+  const totalRows = Math.max(0, Number(freshness?.total ?? 0));
+  if (totalRows <= 0) {
+    return null;
+  }
+
+  const newestUpdatedAtMs = freshness?.newestUpdatedAt?.getTime() ?? 0;
+  const isFresh = newestUpdatedAtMs > 0 && Date.now() - newestUpdatedAtMs <= CATEGORY_ARTIST_RUNTIME_CACHE_STALE_MS;
+  if (!isFresh) {
+    scheduleCategoryArtistRuntimeCacheRebuild(genre, normalizedGenre);
+  }
+
+  // Rebuild writes are bounded; a saturated cache can be truncated and should not
+  // be treated as authoritative for totals.
+  const likelyComplete = totalRows < CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT;
+
+  return {
+    total: totalRows,
+    likelyComplete,
+    isFresh,
+  };
+}
+
 export async function getCategoryArtistCountByGenre(genre: string): Promise<number> {
   if (!hasDatabaseUrl()) {
     return 0;
@@ -1149,44 +1318,9 @@ export async function getCategoryArtistCountByGenre(genre: string): Promise<numb
     return 0;
   }
 
-  const runtimeCachedCount = await (async () => {
-    const tableAvailable = await hasCategoryArtistRuntimeCacheTable();
-    if (!tableAvailable) {
-      return null as number | null;
-    }
-
-    let rows: Array<{ newestUpdatedAt: Date | null; total: bigint | number }> = [];
-    try {
-      rows = await prisma.$queryRawUnsafe<Array<{ newestUpdatedAt: Date | null; total: bigint | number }>>(
-        `
-          SELECT
-            MAX(updated_at) AS newestUpdatedAt,
-            COUNT(*) AS total
-          FROM category_artist_runtime_cache
-          WHERE genre_norm = ?
-        `,
-        normalizedGenre,
-      );
-    } catch {
-      return null as number | null;
-    }
-
-    const freshness = rows[0];
-    const totalRows = Math.max(0, Number(freshness?.total ?? 0));
-    if (totalRows <= 0) {
-      return null as number | null;
-    }
-
-    const newestUpdatedAtMs = freshness?.newestUpdatedAt?.getTime() ?? 0;
-    if (newestUpdatedAtMs <= 0 || Date.now() - newestUpdatedAtMs > CATEGORY_ARTIST_RUNTIME_CACHE_STALE_MS) {
-      scheduleCategoryArtistRuntimeCacheRebuild(genre, normalizedGenre);
-    }
-
-    return totalRows;
-  })();
-
-  if (runtimeCachedCount !== null) {
-    return runtimeCachedCount;
+  const runtimeCountSummary = await getRuntimeCategoryArtistCountSummary(genre, normalizedGenre);
+  if (runtimeCountSummary?.likelyComplete) {
+    return runtimeCountSummary.total;
   }
 
   const videoGenreColumnExists = await hasVideoGenreColumn();
@@ -1382,6 +1516,56 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
     return { all: 0 };
   }
 
+  const runtimeCountSummary = await getRuntimeCategoryArtistCountSummary(genre, normalizedGenre);
+  if (runtimeCountSummary?.likelyComplete) {
+    const cachedAllCount = runtimeCountSummary.total;
+    const matchers = buildCategoryArtistTabCountMatchers(genre);
+
+    const countedCachedArtists = await getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
+      offset: 0,
+      limit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
+      expectedTotal: cachedAllCount,
+      refreshGenre: genre,
+    });
+    if (countedCachedArtists && countedCachedArtists.length >= cachedAllCount) {
+      const counts: Record<string, number> = { all: cachedAllCount };
+      for (const matcher of matchers) {
+        if (matcher.id === "all") {
+          continue;
+        }
+        counts[matcher.id] = countedCachedArtists.reduce(
+          (total, row) => total + (matcher.matches(row.dominantGenre) ? 1 : 0),
+          0,
+        );
+      }
+
+      return counts;
+    }
+
+    const runtimeRows = await prisma.$queryRawUnsafe<Array<{ dominantGenre: string | null }>>(
+      `
+        SELECT
+          dominant_genre AS dominantGenre
+        FROM category_artist_runtime_cache
+        WHERE genre_norm = ?
+        ORDER BY sort_index ASC
+      `,
+      normalizedGenre,
+    ).catch(() => []);
+
+    if (runtimeRows.length >= cachedAllCount) {
+      const counts: Record<string, number> = { all: cachedAllCount };
+      for (const matcher of matchers) {
+        if (matcher.id === "all") {
+          continue;
+        }
+        counts[matcher.id] = runtimeRows.reduce((total, row) => total + (matcher.matches(row.dominantGenre) ? 1 : 0), 0);
+      }
+
+      return counts;
+    }
+  }
+
   const videoGenreColumnExists = await hasVideoGenreColumn();
   if (!videoGenreColumnExists) {
     return { all: 0 };
@@ -1402,6 +1586,7 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
     videoArtistIndexHint,
   });
 
+  const matchers = buildCategoryArtistTabCountMatchers(genre);
   const countedCachedArtists = await getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
     offset: 0,
     limit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
@@ -1409,7 +1594,6 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
     refreshGenre: genre,
   });
   if (countedCachedArtists && countedCachedArtists.length >= authoritativeAllCount) {
-    const matchers = buildCategoryArtistTabCountMatchers(genre);
     const counts: Record<string, number> = { all: authoritativeAllCount };
     for (const matcher of matchers) {
       if (matcher.id === "all") {
@@ -1426,22 +1610,29 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
 
   const rows = await prisma.$queryRawUnsafe<Array<{ dominantGenre: string | null }>>(
     `SELECT
-       SUBSTRING_INDEX(GROUP_CONCAT(NULLIF(TRIM(v.genre), '') ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC), ',', 1) AS dominantGenre
-     FROM videos v${videoArtistIndexHint}
-     WHERE v.videoId IS NOT NULL
-       AND ${videoArtistNormExpr} <> ''
-       AND COALESCE(v.approved, 0) = 1
-       ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
-       AND (
-         ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
-         OR LOWER(v.genre) REGEXP ?
-       )
-     GROUP BY ${videoArtistNormExpr}`,
+       ranked.dominantGenre
+     FROM (
+       SELECT
+         NULLIF(TRIM(v.genre), '') AS dominantGenre,
+         ROW_NUMBER() OVER (
+           PARTITION BY ${videoArtistNormExpr}
+           ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC
+         ) AS rowNumber
+       FROM videos v${videoArtistIndexHint}
+       WHERE v.videoId IS NOT NULL
+         AND ${videoArtistNormExpr} <> ''
+         AND COALESCE(v.approved, 0) = 1
+         ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+         AND (
+           ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+           OR LOWER(v.genre) REGEXP ?
+         )
+     ) ranked
+     WHERE ranked.rowNumber = 1`,
     ...normalizedGenreTerms,
     normalizedGenrePattern,
   );
 
-  const matchers = buildCategoryArtistTabCountMatchers(genre);
   const counts: Record<string, number> = { all: authoritativeAllCount };
   for (const matcher of matchers) {
     if (matcher.id === "all") {
@@ -1614,14 +1805,12 @@ export async function invalidateRuntimeCategoryCaches() {
     // the next categories page render to run an expensive rebuild synchronously.
     scheduleCategoryBucketRuntimeCacheRefresh();
 
-    const artistRuntimeTableAvailable = await hasCategoryArtistRuntimeCacheTable();
-    if (artistRuntimeTableAvailable) {
-      await prisma.$executeRawUnsafe(
-        `
-          UPDATE category_artist_runtime_cache
-          SET updated_at = DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 7 HOUR)
-        `,
-      );
+    for (const bucket of TOP_LEVEL_GENRE_BUCKETS) {
+      const normalizedBucketGenre = normalizeGenreTerm(bucket.label);
+      if (!normalizedBucketGenre) {
+        continue;
+      }
+      categoryArtistRuntimeCacheDirtyGenres.add(normalizedBucketGenre);
     }
   } catch {
     // best effort only

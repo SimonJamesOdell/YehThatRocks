@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   getArtistsByGenre,
-  getCachedCategoryArtistsByGenre,
   getCategoryArtistTabCountsByGenre,
   getCategoryArtistsByGenre,
   getGenreBySlug,
@@ -45,28 +44,21 @@ export async function GET(request: NextRequest, context: CategoryArtistsRouteCon
 
     let artistsWithProbe: Awaited<ReturnType<typeof getCategoryArtistsByGenre>> = [];
     let tabCounts: Awaited<ReturnType<typeof getCategoryArtistTabCountsByGenre>> | null = null;
-    const shouldBypassRuntimeCache = wantsFullPayload && offset === 0;
-    const useCacheOnlyFullPayload = wantsFullPayload && !shouldWarmRuntimeCache && !shouldBypassRuntimeCache;
+    const shouldBypassRuntimeCache = wantsFullPayload && offset === 0 && shouldWarmRuntimeCache;
 
     try {
-      const artistRowsPromise = useCacheOnlyFullPayload
-        ? getCachedCategoryArtistsByGenre(genre, { offset, limit: limit + 1 })
-        : getCategoryArtistsByGenre(genre, {
-          offset,
-          limit: limit + 1,
-          maxLimit: maxLimit + 1,
-          bypassRuntimeCache: shouldBypassRuntimeCache,
-        });
+      const artistRowsPromise = getCategoryArtistsByGenre(genre, {
+        offset,
+        limit: limit + 1,
+        maxLimit: maxLimit + 1,
+        bypassRuntimeCache: shouldBypassRuntimeCache,
+      });
       const results = await Promise.all([
         artistRowsPromise,
-        offset === 0 && includeTabCounts && !useCacheOnlyFullPayload ? getCategoryArtistTabCountsByGenre(genre) : Promise.resolve(null),
+        offset === 0 && includeTabCounts ? getCategoryArtistTabCountsByGenre(genre) : Promise.resolve(null),
       ]);
       artistsWithProbe = results[0] ?? [];
       tabCounts = results[1];
-
-      if (useCacheOnlyFullPayload && offset === 0 && includeTabCounts && artistsWithProbe.length > 0) {
-        tabCounts = await getCategoryArtistTabCountsByGenre(genre);
-      }
 
       if (shouldBypassRuntimeCache && offset === 0 && artistsWithProbe.length > 0) {
         const directCount = artistsWithProbe.length;
@@ -110,10 +102,8 @@ export async function GET(request: NextRequest, context: CategoryArtistsRouteCon
     }
 
     const artists = artistsWithProbe.slice(0, limit);
-    const totalArtists = offset === 0 ? (tabCounts?.all ?? (useCacheOnlyFullPayload && artists.length > 0 ? artists.length : null)) : null;
-    const hasMore = useCacheOnlyFullPayload && artistsWithProbe.length === 0
-      ? true
-      : artistsWithProbe.length > limit;
+    const totalArtists = offset === 0 ? (tabCounts?.all ?? (wantsFullPayload && artists.length > 0 ? artists.length : null)) : null;
+    const hasMore = artistsWithProbe.length > limit;
 
     return NextResponse.json({
       genre,

@@ -108,4 +108,138 @@ describe("runtime profiler buffer caps", () => {
     expect(refreshedSnapshot.prisma.totalQueries).toBe(2);
     expect(refreshedSnapshot.prisma.topOperations).toHaveLength(2);
   });
+
+  it("flags elevated SQL pressure when low QPS combines with very high latency", async () => {
+    const {
+      getRuntimeProfilingSnapshot,
+      recordPrismaOperation,
+      resetRuntimeProfiling,
+      isRuntimeSqlPressureElevated,
+    } = await import("@/lib/runtime-profiler");
+
+    resetRuntimeProfiling();
+    for (let i = 0; i < 5; i += 1) {
+      recordPrismaOperation("SQL.SELECT", 5_500);
+    }
+
+    const snapshot = getRuntimeProfilingSnapshot();
+    expect(snapshot.prisma.queriesPerSec).toBeLessThanOrEqual(2);
+    expect(snapshot.observability.queryPressure.status).toBe("elevated");
+    expect(snapshot.observability.queryPressure.mode).toBe("low-qps-high-latency");
+    expect(isRuntimeSqlPressureElevated(snapshot)).toBe(true);
+  });
+
+  it("keeps SQL pressure normal when latency is low", async () => {
+    const {
+      getRuntimeProfilingSnapshot,
+      recordPrismaOperation,
+      resetRuntimeProfiling,
+      isRuntimeSqlPressureElevated,
+    } = await import("@/lib/runtime-profiler");
+
+    resetRuntimeProfiling();
+    for (let i = 0; i < 300; i += 1) {
+      recordPrismaOperation("SQL.SELECT", 12);
+    }
+
+    const snapshot = getRuntimeProfilingSnapshot();
+    expect(snapshot.observability.queryPressure.status).toBe("normal");
+    expect(snapshot.observability.queryPressure.mode).toBe("none");
+    expect(isRuntimeSqlPressureElevated(snapshot)).toBe(false);
+  });
+
+  it("adds historical DB telemetry fallback when profiling report is missing", async () => {
+    process.env.DATABASE_URL = "mysql://test";
+
+    vi.doMock("@/lib/db-profiling-report-freshness", () => ({
+      getDbProfilingReportFreshness: () => ({
+        status: "missing",
+        latestReportFile: null,
+        latestReportAt: null,
+        reportGeneratedAt: null,
+        sampleStartedAt: null,
+        sampleAgeHours: null,
+        slowQueryLogStatus: "UNKNOWN",
+        hasActionableSlowLogData: false,
+        evidenceRecency: "none",
+        primaryHotspotSignal: "runtime-prisma",
+        summary: "No DB profiling report found.",
+        ageHours: null,
+        staleAfterHours: 72,
+        isStale: true,
+        checkedAt: new Date().toISOString(),
+      }),
+    }));
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        $queryRaw: vi.fn().mockResolvedValue([{
+          sampleCount: 12,
+          latestSampledAt: new Date("2026-05-15T00:10:00.000Z"),
+          prismaAvgMs: 24.3,
+          prismaP95Ms: 77.1,
+          prismaPeakP95Ms: 120.4,
+          prismaQpsAvg: 8.2,
+          prismaQueryCountTotal: 642,
+        }]),
+      },
+    }));
+
+    const {
+      getRuntimeProfilingSnapshotWithDbHistory,
+      resetRuntimeProfiling,
+    } = await import("@/lib/runtime-profiler");
+
+    resetRuntimeProfiling();
+    const snapshot = await getRuntimeProfilingSnapshotWithDbHistory();
+
+    expect(snapshot.observability.dbProfilingReport.status).toBe("missing");
+    expect(snapshot.observability.dbHistoricalProfiling).toBeTruthy();
+    expect(snapshot.observability.dbHistoricalProfiling?.status).toBe("available");
+    expect(snapshot.observability.dbHistoricalProfiling?.sampleCount).toBe(12);
+  });
+
+  it("does not query DB history fallback when profiling report is present", async () => {
+    process.env.DATABASE_URL = "mysql://test";
+
+    const queryRawMock = vi.fn().mockResolvedValue([]);
+
+    vi.doMock("@/lib/db-profiling-report-freshness", () => ({
+      getDbProfilingReportFreshness: () => ({
+        status: "fresh",
+        latestReportFile: "db-profiling-report-20260501-120000.txt",
+        latestReportAt: new Date("2026-05-15T00:00:00.000Z").toISOString(),
+        reportGeneratedAt: new Date("2026-05-15T00:00:00.000Z").toISOString(),
+        sampleStartedAt: new Date("2026-05-14T23:00:00.000Z").toISOString(),
+        sampleAgeHours: 1,
+        slowQueryLogStatus: "ON",
+        hasActionableSlowLogData: true,
+        evidenceRecency: "current",
+        primaryHotspotSignal: "slow-log-and-runtime",
+        summary: "DB profiling report is fresh.",
+        ageHours: 1,
+        staleAfterHours: 72,
+        isStale: false,
+        checkedAt: new Date().toISOString(),
+      }),
+    }));
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        $queryRaw: queryRawMock,
+      },
+    }));
+
+    const {
+      getRuntimeProfilingSnapshotWithDbHistory,
+      resetRuntimeProfiling,
+    } = await import("@/lib/runtime-profiler");
+
+    resetRuntimeProfiling();
+    const snapshot = await getRuntimeProfilingSnapshotWithDbHistory();
+
+    expect(snapshot.observability.dbProfilingReport.status).toBe("fresh");
+    expect(snapshot.observability.dbHistoricalProfiling).toBeNull();
+    expect(queryRawMock).not.toHaveBeenCalled();
+  });
 });

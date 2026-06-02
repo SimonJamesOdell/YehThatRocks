@@ -213,7 +213,7 @@ function runSourceChecks(failures) {
 
   assertContains(categoryArtistsApiSource, "full\") === \"1\"", "Category artists API supports full cached payload requests", failures);
   assertContains(categoryArtistsApiSource, "warm\") === \"1\"", "Category artists API supports awaited runtime cache warming", failures);
-  assertContains(categoryArtistsApiSource, "getCachedCategoryArtistsByGenre", "Category artists API uses cache-only reads for normal full payload requests", failures);
+  assertContains(categoryArtistsApiSource, "bypassRuntimeCache: shouldBypassRuntimeCache", "Category artists API defaults to runtime-cache-backed reads and only bypasses cache for explicit warm requests", failures);
   assertContains(catalogDataCoreSource, "scheduleCategoriesNewSnapshotBuild", "Catalog cache invalidation triggers categories_new snapshot builds", failures);
   assertContains(categoriesNewSnapshotsSource, "category_page_snapshots", "Categories_new snapshot store persists versioned page payloads", failures);
   assertContains(categoriesNewSnapshotsSource, "category_page_snapshot_state", "Categories_new snapshot store keeps an active build pointer for atomic publish", failures);

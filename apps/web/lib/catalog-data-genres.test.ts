@@ -10,6 +10,8 @@ const hasVideoTitleFulltextIndexMock = vi.fn();
 const hasVideoGenreColumnMock = vi.fn();
 const getVideoArtistNormalizationColumnMock = vi.fn();
 const getVideoArtistNormalizationIndexHintClauseMock = vi.fn();
+const getRuntimeProfilingSnapshotMock = vi.fn();
+const isRuntimeSqlPressureElevatedMock = vi.fn();
 
 const originalDatabaseUrl = process.env.DATABASE_URL;
 
@@ -32,6 +34,11 @@ vi.mock("@/lib/catalog-data-db", async () => {
     getVideoArtistNormalizationIndexHintClause: getVideoArtistNormalizationIndexHintClauseMock,
   };
 });
+
+vi.mock("@/lib/runtime-profiler", () => ({
+  getRuntimeProfilingSnapshot: getRuntimeProfilingSnapshotMock,
+  isRuntimeSqlPressureElevated: isRuntimeSqlPressureElevatedMock,
+}));
 
 afterEach(() => {
   if (originalDatabaseUrl === undefined) {
@@ -510,7 +517,7 @@ describe("getCategoryArtistsByGenre — split aggregation strategy", () => {
         ];
       }
 
-      if (text.includes("GROUP_CONCAT(v.videoId") && text.includes("GROUP BY v.`parsed_artist_norm`")) {
+      if (text.includes("ROW_NUMBER() OVER") && text.includes("PARTITION BY v.`parsed_artist_norm`")) {
         return [
           { artistKey: "metallica", thumbnailVideoId: "AAAAAAAAAAA", dominantGenre: "thrash metal" },
           { artistKey: "megadeth", thumbnailVideoId: "BBBBBBBBBBB", dominantGenre: "thrash metal" },
@@ -543,11 +550,235 @@ describe("getCategoryArtistsByGenre — split aggregation strategy", () => {
 
     const detailAggregationCall = queryRawUnsafeMock.mock.calls.find(([sql]) => {
       const text = String(sql);
-      return text.includes("GROUP_CONCAT(v.videoId")
-        && text.includes("GROUP BY v.`parsed_artist_norm`")
+      return text.includes("ROW_NUMBER() OVER")
+        && text.includes("PARTITION BY v.`parsed_artist_norm`")
         && text.includes("IN (");
     });
     expect(detailAggregationCall).toBeDefined();
+
+    const [detailSql] = detailAggregationCall as [string, ...unknown[]];
+    expect(detailSql).not.toContain("GROUP_CONCAT(");
+  });
+});
+
+describe("category artist count and tab-count runtime-cache optimization", () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    process.env.DATABASE_URL = "mysql://test";
+    queryRawUnsafeMock.mockReset();
+    queryRawMock.mockReset();
+    hasVideoGenreColumnMock.mockReset();
+    getVideoArtistNormalizationColumnMock.mockReset();
+    getVideoArtistNormalizationIndexHintClauseMock.mockReset();
+
+    hasVideoGenreColumnMock.mockResolvedValue(true);
+    getVideoArtistNormalizationColumnMock.mockResolvedValue("parsed_artist_norm");
+    getVideoArtistNormalizationIndexHintClauseMock.mockResolvedValue(" FORCE INDEX (idx_videos_parsed_artist_norm_fav_view_videoid_id)");
+  });
+
+  it("uses runtime cache metadata for tab counts and skips heavy UNION regroup queries", async () => {
+    queryRawUnsafeMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
+
+      if (text.includes("SHOW TABLES LIKE 'category_artist_runtime_cache'")) {
+        return Promise.resolve([{ tableName: "category_artist_runtime_cache" }]);
+      }
+
+      if (text.includes("MAX(updated_at) AS newestUpdatedAt") && text.includes("FROM category_artist_runtime_cache")) {
+        return Promise.resolve([{ newestUpdatedAt: new Date(), total: 3 }]);
+      }
+
+      if (text.includes("FROM category_artist_runtime_cache") && text.includes("artist_name AS artistName")) {
+        return Promise.resolve([
+          { artistName: "Metallica", thumbnailVideoId: "AAAAAAAAAAA", dominantGenre: "thrash metal", videoCount: 10 },
+          { artistName: "Blind Guardian", thumbnailVideoId: "BBBBBBBBBBB", dominantGenre: "power metal", videoCount: 8 },
+          { artistName: "Lamb of God", thumbnailVideoId: "CCCCCCCCCCC", dominantGenre: "groove metal", videoCount: 6 },
+        ]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    const { clearGenreCaches, getCategoryArtistTabCountsByGenre } = await import("@/lib/catalog-data-genres");
+    clearGenreCaches();
+
+    const counts = await getCategoryArtistTabCountsByGenre("Thrash & Power Metal");
+
+    expect(counts).toEqual({
+      all: 3,
+      thrash: 1,
+      "power-speed": 1,
+      groove: 1,
+    });
+
+    const heavyUnionCall = queryRawUnsafeMock.mock.calls.find(([sql]) => String(sql).includes("UNION"));
+    expect(heavyUnionCall).toBeUndefined();
+
+    const heavyDominantGenreCall = queryRawUnsafeMock.mock.calls.find(([sql]) =>
+      String(sql).includes("GROUP_CONCAT(NULLIF(TRIM(v.genre), '')"),
+    );
+    expect(heavyDominantGenreCall).toBeUndefined();
+  });
+
+  it("falls back to authoritative UNION count when runtime cache is likely truncated", async () => {
+    queryRawUnsafeMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
+
+      if (text.includes("SHOW TABLES LIKE 'category_artist_runtime_cache'")) {
+        return Promise.resolve([{ tableName: "category_artist_runtime_cache" }]);
+      }
+
+      if (text.includes("MAX(updated_at) AS newestUpdatedAt") && text.includes("FROM category_artist_runtime_cache")) {
+        return Promise.resolve([{ newestUpdatedAt: new Date(), total: 25_000 }]);
+      }
+
+      if (text.includes("SELECT COUNT(*) AS total") && text.includes("UNION")) {
+        return Promise.resolve([{ total: 25_731 }]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    const { clearGenreCaches, getCategoryArtistCountByGenre } = await import("@/lib/catalog-data-genres");
+    clearGenreCaches();
+
+    const total = await getCategoryArtistCountByGenre("Metal");
+
+    expect(total).toBe(25_731);
+    const heavyUnionCall = queryRawUnsafeMock.mock.calls.find(([sql]) => String(sql).includes("UNION"));
+    expect(heavyUnionCall).toBeDefined();
+  });
+
+  it("uses row-number dominant-genre fallback for tab counts without GROUP_CONCAT", async () => {
+    queryRawUnsafeMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
+
+      if (text.includes("SHOW TABLES LIKE 'category_artist_runtime_cache'")) {
+        return Promise.resolve([]);
+      }
+
+      if (text.includes("SELECT COUNT(*) AS total") && text.includes("UNION")) {
+        return Promise.resolve([{ total: 2 }]);
+      }
+
+      if (text.includes("ROW_NUMBER() OVER") && text.includes("dominantGenre")) {
+        return Promise.resolve([
+          { dominantGenre: "thrash metal" },
+          { dominantGenre: "power metal" },
+        ]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    const { clearGenreCaches, getCategoryArtistTabCountsByGenre } = await import("@/lib/catalog-data-genres");
+    clearGenreCaches();
+
+    const counts = await getCategoryArtistTabCountsByGenre("Thrash & Power Metal");
+
+    expect(counts).toEqual({
+      all: 2,
+      thrash: 1,
+      "power-speed": 1,
+      groove: 0,
+    });
+
+    const dominantGenreQuery = queryRawUnsafeMock.mock.calls.find(([sql]) => String(sql).includes("ROW_NUMBER() OVER"));
+    expect(dominantGenreQuery).toBeDefined();
+    const [sql] = dominantGenreQuery as [string, ...unknown[]];
+    expect(sql).not.toContain("GROUP_CONCAT(");
+  });
+});
+
+describe("runtime cache maintenance write-pressure guards", () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    process.env.DATABASE_URL = "mysql://test";
+    queryRawUnsafeMock.mockReset();
+    queryRawMock.mockReset();
+    hasVideoGenreColumnMock.mockReset();
+    getVideoArtistNormalizationColumnMock.mockReset();
+    getVideoArtistNormalizationIndexHintClauseMock.mockReset();
+
+    hasVideoGenreColumnMock.mockResolvedValue(true);
+    getVideoArtistNormalizationColumnMock.mockResolvedValue("parsed_artist_norm");
+    getVideoArtistNormalizationIndexHintClauseMock.mockResolvedValue(" FORCE INDEX (idx_videos_parsed_artist_norm_fav_view_videoid_id)");
+    getRuntimeProfilingSnapshotMock.mockReset();
+    isRuntimeSqlPressureElevatedMock.mockReset();
+    getRuntimeProfilingSnapshotMock.mockReturnValue({});
+    isRuntimeSqlPressureElevatedMock.mockReturnValue(false);
+  });
+
+  it("skips warm rebuild writes when runtime cache is fresh and complete", async () => {
+    queryRawUnsafeMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
+
+      if (text.includes("SHOW TABLES LIKE 'category_artist_runtime_cache'")) {
+        return Promise.resolve([{ tableName: "category_artist_runtime_cache" }]);
+      }
+
+      if (text.includes("MAX(updated_at) AS newestUpdatedAt") && text.includes("FROM category_artist_runtime_cache")) {
+        return Promise.resolve([{ newestUpdatedAt: new Date(), total: 123 }]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    const { clearGenreCaches, warmCategoryArtistRuntimeCacheByGenre } = await import("@/lib/catalog-data-genres");
+    clearGenreCaches();
+
+    const result = await warmCategoryArtistRuntimeCacheByGenre("Thrash & Power Metal");
+
+    expect(result).toEqual({ warmed: false, count: 123 });
+    const deleteCacheRowsCall = queryRawUnsafeMock.mock.calls.find(([sql]) =>
+      String(sql).includes("DELETE FROM category_artist_runtime_cache WHERE genre_norm = ?"),
+    );
+    expect(deleteCacheRowsCall).toBeUndefined();
+  });
+
+  it("invalidates category runtime caches without issuing mass stale timestamp updates", async () => {
+    queryRawUnsafeMock.mockResolvedValue([]);
+
+    const { clearGenreCaches, invalidateRuntimeCategoryCaches } = await import("@/lib/catalog-data-genres");
+    clearGenreCaches();
+
+    await invalidateRuntimeCategoryCaches();
+
+    const massUpdateCall = queryRawUnsafeMock.mock.calls.find(([sql]) =>
+      String(sql).includes("UPDATE category_artist_runtime_cache")
+      && String(sql).includes("SET updated_at = DATE_SUB"),
+    );
+    expect(massUpdateCall).toBeUndefined();
+  });
+
+  it("defers warm rebuild writes during elevated runtime SQL pressure", async () => {
+    isRuntimeSqlPressureElevatedMock.mockReturnValue(true);
+
+    queryRawUnsafeMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
+
+      if (text.includes("SHOW TABLES LIKE 'category_artist_runtime_cache'")) {
+        return Promise.resolve([{ tableName: "category_artist_runtime_cache" }]);
+      }
+
+      if (text.includes("MAX(updated_at) AS newestUpdatedAt") && text.includes("FROM category_artist_runtime_cache")) {
+        return Promise.resolve([{ newestUpdatedAt: new Date(), total: 111 }]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    const { clearGenreCaches, warmCategoryArtistRuntimeCacheByGenre } = await import("@/lib/catalog-data-genres");
+    clearGenreCaches();
+
+    const result = await warmCategoryArtistRuntimeCacheByGenre("Thrash & Power Metal");
+
+    expect(result).toEqual({ warmed: false, count: 111 });
+
+    const deleteCacheRowsCall = queryRawUnsafeMock.mock.calls.find(([sql]) =>
+      String(sql).includes("DELETE FROM category_artist_runtime_cache WHERE genre_norm = ?"),
+    );
+    expect(deleteCacheRowsCall).toBeUndefined();
   });
 });
 
