@@ -340,10 +340,18 @@ function countTokenOverlap(left: string[], right: string[]) {
   return overlap;
 }
 
-function buildRelatedSearchQueryPlans(seed: { parsedArtist?: string | null; parsedTrack?: string | null; title?: string | null }) {
+function buildRelatedSearchQueryPlans(seed: {
+  parsedArtist?: string | null;
+  parsedTrack?: string | null;
+  title?: string | null;
+  highConfidenceTracks?: string[];
+}) {
   const artist = seed.parsedArtist?.trim() ?? "";
   const track = seed.parsedTrack?.trim() ?? "";
   const title = seed.title?.trim() ?? "";
+  const highConfidenceTracks = Array.from(
+    new Set((seed.highConfidenceTracks ?? []).map((value) => value.trim()).filter((value) => value.length > 0)),
+  ).slice(0, 4);
   const queryTail = "-reaction -interview -podcast -shorts";
 
   const plans: Array<{ intent: string; query: string }> = [];
@@ -357,6 +365,19 @@ function buildRelatedSearchQueryPlans(seed: { parsedArtist?: string | null; pars
       intent: "artist-track-lyric-live",
       query: `${artist} ${track} lyric video live ${queryTail}`,
     });
+  }
+
+  if (artist && highConfidenceTracks.length > 0) {
+    for (const seedTrack of highConfidenceTracks) {
+      plans.push({
+        intent: "artist-seeded-track-official",
+        query: `${artist} ${seedTrack} official music video ${queryTail}`,
+      });
+      plans.push({
+        intent: "artist-seeded-track-live",
+        query: `${artist} ${seedTrack} live lyric video ${queryTail}`,
+      });
+    }
   }
 
   if (artist) {
@@ -426,6 +447,20 @@ function scoreRelatedSearchCandidate(
 
   if (queryIntent === "artist-track-official") score += 0.2;
   if (queryIntent === "artist-track-lyric-live") score += 0.15;
+  if (queryIntent === "artist-seeded-track-official") score += 0.22;
+  if (queryIntent === "artist-seeded-track-live") score += 0.16;
+
+  if (artistTokens.length >= 1 && artistOverlap === 0) {
+    score -= 1.1;
+  }
+
+  if (trackTokens.length >= 2 && trackOverlap === 0 && descriptionTrackOverlap === 0) {
+    score -= 0.65;
+  }
+
+  if (artistOverlap > 0 && (trackOverlap > 0 || descriptionTrackOverlap > 0)) {
+    score += 0.3;
+  }
 
   if (isLikelyNonMusicText(candidate.title, candidate.description)) {
     score -= 2.2;
@@ -437,6 +472,10 @@ function scoreRelatedSearchCandidate(
 
   if (/\b(pop|hip\s?hop|rap|edm|techno|house|k\s?pop|j\s?pop|reggaeton)\b/i.test(candidate.title)) {
     score -= 0.35;
+  }
+
+  if (/\b(pop|hip\s?hop|rap|edm|techno|house|k\s?pop|j\s?pop|reggaeton)\b/i.test(`${candidate.title} ${candidate.description}`)) {
+    score -= 0.55;
   }
 
   return score;
@@ -579,7 +618,7 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
 
   const existingGenre = normalizeGenreForStorage(row.genre);
   if (existingGenre && existingGenre.toLowerCase() !== "rock / metal" && existingGenre.toLowerCase() !== "rock/metal") {
-    signals.push({ source: "video-existing", genre: existingGenre, confidence: 0.55 });
+    signals.push({ source: "video-existing", genre: existingGenre, confidence: 0.72 });
   }
 
   const normalizedArtist = normalizeArtistKey(row.parsedArtist ?? "");
@@ -615,7 +654,7 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
     } else if (mbData?.isRockOrMetal) {
       signals.push({ source: "musicbrainz", genre: "Rock / Metal", confidence: 0.9 });
     } else if (mbData?.isDefinitelyNotRockOrMetal) {
-      signals.push({ source: "musicbrainz", genre: "Non-Rock", confidence: 0.75 });
+      signals.push({ source: "musicbrainz", genre: "Non-Rock", confidence: 0.92 });
     }
   }
 
@@ -641,6 +680,7 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
   const grouped = new Map<string, { genre: string; weight: number; support: number }>();
   let totalWeight = 0;
   let nonRockWeight = 0;
+  let externalNonRockWeight = 0;
 
   for (const signal of signals) {
     const key = signal.genre.toLowerCase();
@@ -651,6 +691,9 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
     totalWeight += signal.confidence;
     if (NON_ROCK_GENRE_PATTERN.test(signal.genre)) {
       nonRockWeight += signal.confidence;
+      if (signal.source !== "video-existing") {
+        externalNonRockWeight += signal.confidence;
+      }
     }
   }
 
@@ -674,7 +717,19 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
 
   const isRockOrMetalBucket = Boolean(resolveTopLevelGenreBucket(top.genre));
   const isNonRockTop = NON_ROCK_GENRE_PATTERN.test(top.genre) || !isRockOrMetalBucket;
-  if (confidence >= 0.9 && nonRockWeight >= 0.9 * totalWeight && totalWeight >= 1.5 && isNonRockTop) {
+  const decisiveNonRockMajority =
+    confidence >= 0.86 &&
+    nonRockWeight >= 0.82 * totalWeight &&
+    externalNonRockWeight >= 0.75 &&
+    totalWeight >= 1.2;
+  const corroboratedNonRockConsensus =
+    top.support >= 2 &&
+    confidence >= 0.8 &&
+    nonRockWeight >= 0.75 * totalWeight &&
+    externalNonRockWeight >= 0.6 &&
+    totalWeight >= 1.1;
+
+  if (isNonRockTop && (decisiveNonRockMajority || corroboratedNonRockConsensus)) {
     return {
       action: "remove",
       proposedGenre: top.genre,
@@ -1364,6 +1419,42 @@ async function hasStoredRelatedCache(videoId: string) {
   return count > 0;
 }
 
+async function loadHighConfidenceSeedTracks(seedVideoId: string, parsedArtist: string | null | undefined) {
+  const normalizedArtist = normalizeArtistKey(parsedArtist ?? "");
+  if (!normalizedArtist) return [] as string[];
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ parsedTrack: string | null }>>(
+      `
+        SELECT v.parsedTrack
+        FROM videos v
+        WHERE v.videoId <> ?
+          AND LOWER(TRIM(v.parsedArtist)) = ?
+          AND v.parsedTrack IS NOT NULL
+          AND TRIM(v.parsedTrack) <> ''
+          AND COALESCE(v.parseConfidence, 0) >= ?
+          AND EXISTS (
+            SELECT 1
+            FROM site_videos sv
+            WHERE sv.video_id = v.id
+              AND sv.status = 'available'
+          )
+        ORDER BY v.favourited DESC, v.updated_at DESC, v.id DESC
+        LIMIT 4
+      `,
+      seedVideoId,
+      normalizedArtist,
+      PLAYBACK_MIN_CONFIDENCE,
+    );
+
+    return Array.from(
+      new Set(rows.map((row) => row.parsedTrack?.trim() ?? "").filter((value) => value.length > 0)),
+    );
+  } catch {
+    return [] as string[];
+  }
+}
+
 // ── YouTube API ───────────────────────────────────────────────────────────────
 
 async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVideoRecord[]> {
@@ -1395,6 +1486,7 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
       parsedArtist: seed?.parsedArtist,
       parsedTrack: seed?.parsedTrack,
       title: seed?.title,
+      highConfidenceTracks: await loadHighConfidenceSeedTracks(videoId, seed?.parsedArtist),
     });
 
     if (queryPlans.length === 0) {
@@ -1486,9 +1578,14 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
       }
     }
 
-    const ranked = Array.from(candidatesById.values())
+    const rankedCandidates = Array.from(candidatesById.values())
       .sort((left, right) => right.score - left.score)
-      .map((entry) => entry.record)
+      .map((entry) => entry.record);
+
+    const existingOrRejectedIds = await getExistingCatalogVideoIdSet(rankedCandidates.map((entry) => entry.id));
+
+    const ranked = rankedCandidates
+      .filter((entry) => !existingOrRejectedIds.has(entry.id))
       .slice(0, Math.max(8, YOUTUBE_RELATED_QUERY_MAX_RESULTS));
 
     debugCatalog("fetchRelatedYouTubeVideos:query-success", {
@@ -1496,6 +1593,7 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
       plannedQueries: queryPlans.length,
       attemptedQueries,
       candidateCount: candidatesById.size,
+      filteredKnownCount: existingOrRejectedIds.size,
       relatedCount: ranked.length,
     });
 
@@ -1744,8 +1842,23 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
   if (maxSeeds === 0) return empty;
 
   const seeds = await prisma.$queryRaw<Array<{ videoId: string }>>`
-    SELECT v.videoId FROM videos v
+    SELECT v.videoId
+    FROM videos v
     WHERE NOT EXISTS (SELECT 1 FROM related r WHERE r.videoId = v.videoId)
+      AND v.parsedArtist IS NOT NULL
+      AND TRIM(v.parsedArtist) <> ''
+      AND v.parsedTrack IS NOT NULL
+      AND TRIM(v.parsedTrack) <> ''
+      AND COALESCE(v.parseConfidence, 0) >= ${PLAYBACK_MIN_CONFIDENCE}
+      AND (v.genre IS NULL OR v.genre REGEXP 'rock|metal|doom|death|black|thrash|hardcore|punk|djent|core')
+      AND COALESCE(v.approved, 0) = 1
+      AND EXISTS (
+        SELECT 1
+        FROM site_videos sv
+        WHERE sv.video_id = v.id
+          AND sv.status = 'available'
+      )
+    ORDER BY v.favourited DESC, v.updated_at DESC, v.id DESC
     LIMIT ${maxSeeds}
   `;
 
@@ -1912,6 +2025,37 @@ export async function importVideoFromDirectSource(source: string, options?: { di
       scheduleArtistProjectionRefreshForName(fallbackMeta.artist);
       playbackDecisionCache.delete(normalizedVideoId);
       decision = await getVideoPlaybackDecision(normalizedVideoId);
+    }
+  }
+
+  if (hasDatabaseUrl() && !options?.forceApprove) {
+    const genreDecision = await classifyPersistedVideoGenre(normalizedVideoId).catch(() => ({
+      action: "queue" as const,
+      proposedGenre: null,
+      confidence: 0,
+      reason: "genre-classification-error",
+    }));
+
+    if (genreDecision.action === "remove") {
+      await pruneVideoAndAssociationsByVideoId(normalizedVideoId, `genre-auto-remove:${genreDecision.proposedGenre ?? "non-rock"}`)
+        .catch(() => undefined);
+
+      return {
+        videoId: normalizedVideoId,
+        decision: {
+          allowed: false,
+          reason: "genre-auto-remove",
+          message: "Rejected: confidently classified as non-rock/metal.",
+        } satisfies PlaybackDecision,
+      };
+    }
+
+    if (genreDecision.proposedGenre && genreDecision.confidence >= 0.85) {
+      await prisma.$executeRaw`
+        UPDATE videos
+        SET genre = ${genreDecision.proposedGenre}
+        WHERE videoId = ${normalizedVideoId}
+      `.catch(() => undefined);
     }
   }
 
@@ -2416,3 +2560,9 @@ export async function findAndReplaceUnavailableVideo(videoId: string): Promise<{
 
   return { replaced: true, newVideoId: replacementId, reason: "ok" };
 }
+
+export const videoIngestionInternals = {
+  buildRelatedSearchQueryPlans,
+  scoreRelatedSearchCandidate,
+  classifyPersistedVideoGenre,
+};
