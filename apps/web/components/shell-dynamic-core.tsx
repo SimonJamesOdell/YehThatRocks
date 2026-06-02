@@ -1247,6 +1247,7 @@ function ShellDynamicInner({
     const resolveRequestedVideo = async (attempt = 1): Promise<void> => {
       let pendingRetryAfterMs: number | null = null;
       let pendingReason: CurrentVideoResolvePayload["pendingReason"] | null = null;
+      let sawPendingResponse = false;
       try {
         const currentVideoParams = new URLSearchParams();
         currentVideoParams.set("v", requestedVideoId);
@@ -1308,6 +1309,7 @@ function ShellDynamicInner({
           return;
         }
         if (data?.pending) {
+          sawPendingResponse = true;
           pendingRetryAfterMs =
             typeof data.retryAfterMs === "number" && Number.isFinite(data.retryAfterMs)
               ? Math.max(100, Math.floor(data.retryAfterMs))
@@ -1338,7 +1340,7 @@ function ShellDynamicInner({
         ? Math.min(2400, 350 * attempt)
         : REQUESTED_VIDEO_RETRY_SLOW_DELAY_MS;
 
-      if (data?.pending || pendingReason !== null || pendingRetryAfterMs !== null) {
+      if (sawPendingResponse || pendingReason !== null || pendingRetryAfterMs !== null) {
         setRequestedVideoPendingReason(pendingReason);
         setRequestedVideoPendingRetryAfterMs(
           pendingRetryAfterMs ?? delayMs,
