@@ -170,6 +170,9 @@ export function useWatchNextPrefetch({
     if (isOverlayRoute) {
       return;
     }
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+      return;
+    }
 
     const topTargets = sourceRelatedVideos
       .filter((video) => video.id !== currentVideoId)

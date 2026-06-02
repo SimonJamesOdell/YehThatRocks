@@ -14,6 +14,9 @@ export function useIdleRoutePrefetch(targetHrefs: string[], router: RouterLike) 
     if (targetHrefs.length === 0) {
       return;
     }
+    if (document.visibilityState !== "visible") {
+      return;
+    }
 
     let cancelled = false;
     let idleId: number | null = null;

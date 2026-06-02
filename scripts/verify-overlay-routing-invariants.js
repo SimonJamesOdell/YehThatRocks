@@ -295,6 +295,12 @@ function main() {
   assertContains(chatStreamRouteSource, "getOptionalApiAuth", "Chat stream API uses optional auth so unauthenticated users can subscribe to the global feed", failures);
   assertContains(chatStreamRouteSource, "SSE_CONNECTION_LIMIT_TOTAL", "Chat stream API defines a total SSE connection limit", failures);
   assertContains(chatStreamRouteSource, "SSE_CONNECTION_LIMIT_PER_IP", "Chat stream API defines a per-IP SSE connection limit", failures);
+  assertContains(
+    chatStreamRouteSource,
+    'CHAT_SSE_MAX_CONNECTIONS_PER_IP || "3"',
+    "Chat stream API leaves browser connection slots free by default",
+    failures,
+  );
   assertContains(chatStreamRouteSource, "reserveSseConnectionSlot(clientIp)", "Chat stream API reserves a connection slot before opening stream", failures);
   assertContains(chatStreamRouteSource, "status: 429", "Chat stream API rejects over-capacity clients with HTTP 429", failures);
   assertContains(chatStreamRouteSource, '"Retry-After": "15"', "Chat stream API returns Retry-After header for throttled SSE clients", failures);

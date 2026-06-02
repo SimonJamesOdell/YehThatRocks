@@ -92,6 +92,8 @@ function main() {
   assertContains(useChatStateSource, "fetchWithAuthRetry(`/api/chat?", "useChatState loads chat via authenticated API call", failures);
   assertContains(useChatStateSource, "fetchWithAuthRetry(\"/api/chat\",", "useChatState posts chat via authenticated API call", failures);
   assertContains(useChatStateSource, "const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute || isForumOverlayRoute) && (isAuthenticated || chatMode === \"global\" || chatMode === \"online\");", "useChatState keeps chat mounted across overlay routes while preserving magazine/forum exceptions", failures);
+  assertContains(useChatStateSource, "const shouldStreamChat = shouldRunChat && isPageVisible;", "useChatState gates SSE subscriptions to visible tabs", failures);
+  assertContains(useChatStateSource, "document.addEventListener(\"visibilitychange\", syncPageVisibility);", "useChatState tracks page visibility for stream connection safety", failures);
   assertContains(useChatStateSource, "isMagazineOverlayRoute", "useChatState preserves the magazine-route exception in the run gate", failures);
   assertContains(useChatStateSource, "setChatMode(\"magazine\");", "useChatState keeps magazine mode selectable", failures);
   assertContains(shellDynamicSource, "setChatMode(\"online\")", "shell JSX keeps online chat mode tab selectable", failures);

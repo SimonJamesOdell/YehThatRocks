@@ -10,7 +10,10 @@ const streamQuerySchema = z.object({
 });
 
 const SSE_CONNECTION_LIMIT_TOTAL = Math.max(50, Number(process.env.CHAT_SSE_MAX_CONNECTIONS_TOTAL || "500"));
-const SSE_CONNECTION_LIMIT_PER_IP = Math.max(1, Number(process.env.CHAT_SSE_MAX_CONNECTIONS_PER_IP || "6"));
+const SSE_CONNECTION_LIMIT_PER_IP = Math.max(
+  1,
+  Number(process.env.CHAT_SSE_MAX_CONNECTIONS_PER_IP || "3"),
+);
 
 const activeSseConnectionIds = new Set<string>();
 const activeSseConnectionIdsByIp = new Map<string, Set<string>>();

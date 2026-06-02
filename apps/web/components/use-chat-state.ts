@@ -105,6 +105,9 @@ export function useChatState({
   const [flashingChatTabs, setFlashingChatTabs] = useState<Record<FlashableChatMode, boolean>>({
     global: false,
   });
+  const [isPageVisible, setIsPageVisible] = useState(() => (
+    typeof document === "undefined" || document.visibilityState === "visible"
+  ));
 
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const chatModeRef = useRef<ChatMode>(chatMode);
@@ -116,6 +119,24 @@ export function useChatState({
 
   // Computed from auth + chat mode so the chat state stays mounted while overlay pages are open.
   const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute || isForumOverlayRoute) && (isAuthenticated || chatMode === "global" || chatMode === "online");
+  const shouldLoadChat = shouldRunChat && isPageVisible;
+  const shouldStreamChat = shouldRunChat && isPageVisible;
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const syncPageVisibility = () => {
+      setIsPageVisible(document.visibilityState === "visible");
+    };
+
+    syncPageVisibility();
+    document.addEventListener("visibilitychange", syncPageVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", syncPageVisibility);
+    };
+  }, []);
 
   // Keep the ref in sync for use inside event handlers.
   useEffect(() => {
@@ -154,7 +175,7 @@ export function useChatState({
   // Load chat history whenever mode / auth changes.
   // For "online" mode we also keep a 30 s refresh so presence stays current.
   useEffect(() => {
-    if (!shouldRunChat) {
+    if (!shouldLoadChat) {
       return;
     }
 
@@ -222,7 +243,7 @@ export function useChatState({
       cancelled = true;
       if (intervalId !== undefined) window.clearInterval(intervalId);
     };
-  }, [chatMode, checkAuthState, fetchWithAuthRetry, onAuthLost, shouldRunChat]);
+  }, [chatMode, checkAuthState, fetchWithAuthRetry, onAuthLost, shouldLoadChat]);
 
   // Load the latest magazine rail cards from the API instead of static fallback data.
   useEffect(() => {
@@ -258,7 +279,7 @@ export function useChatState({
 
   // Real-time SSE subscription for global chat.
   useEffect(() => {
-    if (!shouldRunChat) {
+    if (!shouldStreamChat) {
       return;
     }
 
@@ -317,7 +338,7 @@ export function useChatState({
     return () => {
       globalEvents.close();
     };
-  }, [shouldRunChat]);
+  }, [shouldStreamChat]);
 
   // Cleanup flash timeouts on unmount.
   useEffect(() => {
