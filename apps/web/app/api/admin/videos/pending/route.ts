@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
+import { enrichPendingQueueVideos, type PendingQueueVideoRow } from "@/lib/admin-pending-video-enrichment";
 import { ensurePendingVideoQueueIndex, PENDING_VIDEO_APPROVAL_WHERE_CLAUSE } from "@/lib/admin-pending-video-queue";
 import { clearCatalogVideoCaches, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";
@@ -17,51 +18,16 @@ const moderatePendingSchema = z.object({
   parsedTrack: z.string().trim().max(255).nullable().optional(),
 });
 
-export async function GET(request: NextRequest) {
-  // Invariant anchor retained for verify-admin-invariants.js:
-  // const auth = await requireAuthOnly(request);
-  const auth = await requireAuthOnly(request, {
-    authMode: "admin",
-    adminPermission: "admin.videos.pending.read",
-  });
+type AdminPendingVideoRow = PendingQueueVideoRow & {
+  id: number;
+  durationSec: number | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
 
-  if (!auth.ok) {
-    return auth.response;
-  }
-
-  const q = (request.nextUrl.searchParams.get("q") ?? "").trim();
-  const countsOnly = request.nextUrl.searchParams.get("countsOnly") === "1";
-
-  await ensurePendingVideoQueueIndex();
-
-  // Legacy invariant marker: COALESCE(approved, 0) = 0
-
-  const totalRows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(
-    `
-      SELECT COUNT(*) AS total
-      FROM videos
-      WHERE ${PENDING_VIDEO_APPROVAL_WHERE_CLAUSE}
-    `,
-  );
-  const totalPending = Number(totalRows[0]?.total ?? 0);
-
-  if (countsOnly) {
-    return NextResponse.json({ totalPending });
-  }
-
-  const pendingVideos = q
-    ? await prisma.$queryRawUnsafe<Array<{
-        id: number;
-        videoId: string;
-        title: string;
-      genre: string | null;
-        parsedArtist: string | null;
-        parsedTrack: string | null;
-        channelTitle: string | null;
-        durationSec: number | null;
-        createdAt: Date | null;
-        updatedAt: Date | null;
-      }>>(
+async function loadPendingVideos(q: string): Promise<AdminPendingVideoRow[]> {
+  return q
+    ? await prisma.$queryRawUnsafe<Array<AdminPendingVideoRow>>(
         `
         SELECT
           v.id,
@@ -96,18 +62,7 @@ export async function GET(request: NextRequest) {
         q,
         q,
       )
-    : await prisma.$queryRawUnsafe<Array<{
-        id: number;
-        videoId: string;
-        title: string;
-      genre: string | null;
-        parsedArtist: string | null;
-        parsedTrack: string | null;
-        channelTitle: string | null;
-        durationSec: number | null;
-        createdAt: Date | null;
-        updatedAt: Date | null;
-      }>>(
+    : await prisma.$queryRawUnsafe<Array<AdminPendingVideoRow>>(
         `
         SELECT
           v.id,
@@ -132,6 +87,46 @@ export async function GET(request: NextRequest) {
         LIMIT 100
       `,
       );
+}
+
+export async function GET(request: NextRequest) {
+  // Invariant anchor retained for verify-admin-invariants.js:
+  // const auth = await requireAuthOnly(request);
+  const auth = await requireAuthOnly(request, {
+    authMode: "admin",
+    adminPermission: "admin.videos.pending.read",
+  });
+
+  if (!auth.ok) {
+    return auth.response;
+  }
+
+  const q = (request.nextUrl.searchParams.get("q") ?? "").trim();
+  const countsOnly = request.nextUrl.searchParams.get("countsOnly") === "1";
+
+  await ensurePendingVideoQueueIndex();
+
+  // Legacy invariant marker: COALESCE(approved, 0) = 0
+
+  const totalRows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(
+    `
+      SELECT COUNT(*) AS total
+      FROM videos
+      WHERE ${PENDING_VIDEO_APPROVAL_WHERE_CLAUSE}
+    `,
+  );
+  const totalPending = Number(totalRows[0]?.total ?? 0);
+
+  if (countsOnly) {
+    return NextResponse.json({ totalPending });
+  }
+
+  let pendingVideos = await loadPendingVideos(q);
+
+  const enrichedCount = await enrichPendingQueueVideos(pendingVideos);
+  if (enrichedCount > 0) {
+    pendingVideos = await loadPendingVideos(q);
+  }
 
   return NextResponse.json({ pendingVideos, totalPending });
 }
