@@ -92,6 +92,7 @@ export function AdminDashboardVideosTab({
               {pendingVideos.length > 0 ? (
                 (() => {
                   const row = pendingVideos[0];
+                  const nextRow = pendingVideos[1] ?? null;
                   const draft = pendingVideoDrafts[row.id];
                   const editableTitle = draft?.title ?? row.title;
                   const classifiedGenreValue = draft !== undefined
@@ -108,6 +109,9 @@ export function AdminDashboardVideosTab({
                   const editableArtist = draft !== undefined ? (draft.parsedArtist ?? "") : (row.parsedArtist ?? "");
                   const editableTrack = draft !== undefined ? (draft.parsedTrack ?? "") : (row.parsedTrack ?? "");
                   const baseStartAtSec = row.durationSec && row.durationSec > 0 ? Math.floor(row.durationSec / 2) : 0;
+                  const nextBaseStartAtSec = nextRow?.durationSec && nextRow.durationSec > 0
+                    ? Math.floor(nextRow.durationSec / 2)
+                    : 0;
                   const maxStartAtSec = row.durationSec && row.durationSec > 0 ? Math.max(0, row.durationSec - 1) : null;
                   const normalizedTypedGenre = classifiedGenreValue.trim().toLowerCase();
                   const filteredPendingGenreSuggestions = pendingGenreSuggestions.filter((suggestion) => {
@@ -360,6 +364,27 @@ export function AdminDashboardVideosTab({
                             allowFullScreen
                             style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
                           />
+                          {nextRow ? (
+                            <iframe
+                              src={`https://www.youtube.com/embed/${encodeURIComponent(nextRow.videoId)}?rel=0&autoplay=0&mute=1&playsinline=1&enablejsapi=1&start=${nextBaseStartAtSec}`}
+                              title={`Pending next video preload ${nextRow.videoId}`}
+                              loading="eager"
+                              aria-hidden="true"
+                              tabIndex={-1}
+                              referrerPolicy="strict-origin-when-cross-origin"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                              style={{
+                                position: "absolute",
+                                width: 1,
+                                height: 1,
+                                border: 0,
+                                opacity: 0,
+                                pointerEvents: "none",
+                                left: -9999,
+                                top: -9999,
+                              }}
+                            />
+                          ) : null}
                         </div>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                           <button

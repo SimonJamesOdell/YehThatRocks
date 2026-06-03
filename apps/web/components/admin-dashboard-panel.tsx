@@ -1025,17 +1025,37 @@ export function AdminDashboardPanel({
         payload.parsedTrack = parsedTrackToApprove;
       }
 
-      await postJson<{ ok: boolean }>("/api/admin/videos/pending", payload);
-      setPendingVideoDrafts((current) => {
-        if (!(row.id in current)) {
-          return current;
-        }
+      const clearDraftForRow = () => {
+        setPendingVideoDrafts((current) => {
+          if (!(row.id in current)) {
+            return current;
+          }
 
-        const next = { ...current };
-        delete next[row.id];
-        return next;
-      });
-      setSaveMessage(action === "approve" ? `Approved ${videoId}.` : `Removed ${videoId}.`);
+          const next = { ...current };
+          delete next[row.id];
+          return next;
+        });
+      };
+
+      if (action === "remove") {
+        setPendingVideos((current) => current.filter((item) => item.id !== row.id));
+        setPendingVideoTotal((current) => Math.max(0, current - 1));
+        clearDraftForRow();
+        setSaveMessage(`Removed ${videoId}.`);
+
+        void postJson<{ ok: boolean }>("/api/admin/videos/pending?async=1", payload)
+          .then(() => Promise.all([loadPendingVideos(), loadVideos()]))
+          .catch((moderationError) => {
+            setSaveMessage(moderationError instanceof Error ? moderationError.message : "Pending moderation action failed.");
+            void Promise.all([loadPendingVideos(), loadVideos()]);
+          });
+
+        return;
+      }
+
+      await postJson<{ ok: boolean }>("/api/admin/videos/pending", payload);
+      clearDraftForRow();
+      setSaveMessage(`Approved ${videoId}.`);
       await Promise.all([loadPendingVideos(), loadVideos()]);
     } catch (moderationError) {
       setSaveMessage(moderationError instanceof Error ? moderationError.message : "Pending moderation action failed.");

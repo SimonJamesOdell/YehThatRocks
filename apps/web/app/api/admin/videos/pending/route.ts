@@ -143,6 +143,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = result.data;
   const { videoId, action } = parsed;
+  const asyncRemove = request.nextUrl.searchParams.get("async") === "1";
 
   if (action === "approve") {
     const approveData: {
@@ -200,6 +201,18 @@ export async function POST(request: NextRequest) {
     clearCurrentVideoRouteCaches();
 
     return NextResponse.json({ ok: true, videoId, action: "approve" });
+  }
+
+  if (asyncRemove) {
+    void pruneVideoAndAssociationsByVideoId(videoId, "admin-pending-remove")
+      .then(() => {
+        clearCurrentVideoRouteCaches();
+      })
+      .catch(() => {
+        // Best-effort async remove; moderation UI already advanced optimistically.
+      });
+
+    return NextResponse.json({ ok: true, videoId, action: "remove", queued: true });
   }
 
   const pruneResult = await pruneVideoAndAssociationsByVideoId(videoId, "admin-pending-remove");
