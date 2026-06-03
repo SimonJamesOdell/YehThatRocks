@@ -89,6 +89,7 @@ const AUTO_RELATED_BACKFILL_DEFER_MS = Math.max(0, Math.min(60_000, Number(proce
 const AUTO_RELATED_BACKFILL_DEFER_JITTER_MS = Math.max(0, Math.min(60_000, Number(process.env.AUTO_RELATED_BACKFILL_DEFER_JITTER_MS || "5000")));
 const RELATED_DISCOVERY_MAX_DEPTH = Math.max(1, Math.min(4, Number(process.env.RELATED_DISCOVERY_MAX_DEPTH || "2")));
 const RELATED_DISCOVERY_MAX_NEW_VIDEOS = Math.max(1, Math.min(400, Number(process.env.RELATED_DISCOVERY_MAX_NEW_VIDEOS || "16")));
+const RELATED_DISCOVERY_DAILY_NEW_VIDEO_CAP = Math.max(0, Math.min(1000, Number(process.env.RELATED_DISCOVERY_DAILY_NEW_VIDEO_CAP || "50")));
 const RELATED_DISCOVERY_SEED_FANOUT = Math.max(1, Math.min(8, Number(process.env.RELATED_DISCOVERY_SEED_FANOUT || "8")));
 const YOUTUBE_RELATED_QUERY_COUNT = Math.max(1, Math.min(5, Number(process.env.YOUTUBE_RELATED_QUERY_COUNT || "3")));
 const YOUTUBE_RELATED_QUERY_MAX_RESULTS = Math.max(6, Math.min(25, Number(process.env.YOUTUBE_RELATED_QUERY_MAX_RESULTS || "14")));
@@ -154,6 +155,9 @@ const runtimeMetadataBackfillInFlight = new Set<number>();
 let relatedDiscoveryQuotaSnapshot:
   | { dayKey: string; expiresAt: number; totalUnits: number; relatedUnits: number }
   | null = null;
+let relatedDiscoveryAdmitSnapshot:
+  | { dayKey: string; expiresAt: number; admittedVideos: number }
+  | null = null;
 
 let autoRelatedBackfillInFlight: Promise<void> | null = null;
 let autoRelatedBackfillLastStartedAt = 0;
@@ -174,6 +178,7 @@ export function clearIngestionCaches() {
   rejectedVideoCache.clear();
   playbackDecisionCache.clear();
   relatedDiscoveryQuotaSnapshot = null;
+  relatedDiscoveryAdmitSnapshot = null;
   if (autoRelatedBackfillTimer) {
     clearTimeout(autoRelatedBackfillTimer);
     autoRelatedBackfillTimer = null;
@@ -285,6 +290,75 @@ function recordSpentRelatedDiscoveryUnits(units: number) {
     totalUnits: relatedDiscoveryQuotaSnapshot.totalUnits + units,
     relatedUnits: relatedDiscoveryQuotaSnapshot.relatedUnits + units,
   };
+}
+
+async function canAdmitMoreRelatedDiscoveryVideos(requestedVideos: number) {
+  if (!hasDatabaseUrl()) return true;
+  if (RELATED_DISCOVERY_DAILY_NEW_VIDEO_CAP <= 0) return false;
+
+  const safeRequested = Math.max(0, Math.floor(requestedVideos));
+  if (safeRequested <= 0) return true;
+
+  const now = Date.now();
+  const { dayKey, dayStartUtc } = getPacificDayWindow(new Date(now));
+
+  if (
+    !relatedDiscoveryAdmitSnapshot ||
+    relatedDiscoveryAdmitSnapshot.dayKey !== dayKey ||
+    relatedDiscoveryAdmitSnapshot.expiresAt <= now
+  ) {
+    try {
+      const rows = await prisma.$queryRaw<Array<{ total: bigint }>>`
+        SELECT COALESCE(SUM(units), 0) AS total
+        FROM external_api_usage_events
+        WHERE provider = 'internal'
+          AND endpoint = 'related.discovery.admit'
+          AND created_at >= ${dayStartUtc}
+      `;
+
+      relatedDiscoveryAdmitSnapshot = {
+        dayKey,
+        expiresAt: now + 60_000,
+        admittedVideos: Number(rows[0]?.total ?? 0),
+      };
+    } catch {
+      return true;
+    }
+  }
+
+  const snapshot = relatedDiscoveryAdmitSnapshot;
+  if (!snapshot) return true;
+
+  const allowed = snapshot.admittedVideos + safeRequested <= RELATED_DISCOVERY_DAILY_NEW_VIDEO_CAP;
+  if (!allowed) {
+    debugCatalog("related-discovery:daily-admit-cap-reached", {
+      requestedVideos: safeRequested,
+      admittedToday: snapshot.admittedVideos,
+      dailyCap: RELATED_DISCOVERY_DAILY_NEW_VIDEO_CAP,
+    });
+  }
+
+  return allowed;
+}
+
+function recordRelatedDiscoveryAdmission(units = 1) {
+  const safeUnits = Math.max(0, Math.floor(units));
+  if (safeUnits <= 0) return;
+
+  if (relatedDiscoveryAdmitSnapshot) {
+    relatedDiscoveryAdmitSnapshot = {
+      ...relatedDiscoveryAdmitSnapshot,
+      admittedVideos: relatedDiscoveryAdmitSnapshot.admittedVideos + safeUnits,
+    };
+  }
+
+  void recordExternalApiUsage({
+    provider: "internal",
+    endpoint: "related.discovery.admit",
+    units: safeUnits,
+    success: true,
+    statusCode: null,
+  });
 }
 
 function containsAgeRestrictionMarker(html: string) {
@@ -1792,6 +1866,10 @@ async function hydrateAndPersistVideo(
     const availableRelatedIds: string[] = [];
 
     for (const relatedVideo of relatedVideos) {
+      if (!(await canAdmitMoreRelatedDiscoveryVideos(1))) {
+        break;
+      }
+
       const relatedAvailability = await checkEmbedPlayability(relatedVideo.id);
       await persistVideoAvailability(relatedVideo, relatedAvailability);
       if (relatedAvailability.status !== "available") {
@@ -1801,6 +1879,7 @@ async function hydrateAndPersistVideo(
       const admitted = await canAdmitVideoByStrictMetadata(relatedVideo.id);
       if (admitted) {
         availableRelatedIds.push(relatedVideo.id);
+        recordRelatedDiscoveryAdmission(1);
       } else {
         await pruneVideoAndAssociationsByVideoId(relatedVideo.id, "related-inline-strict-admission").catch(() => undefined);
       }
@@ -1861,6 +1940,7 @@ export async function discoverRelatedVideosCascade(
 
     for (const candidate of newCandidates) {
       if (discoveredNewVideos >= maxNewVideos) break;
+      if (!(await canAdmitMoreRelatedDiscoveryVideos(1))) break;
 
       const hydrated = await hydrateAndPersistVideo(candidate.id, candidate, {
         forceAvailabilityRefresh: true,
@@ -1875,6 +1955,7 @@ export async function discoverRelatedVideosCascade(
       }
 
       discoveredNewVideos += 1;
+      recordRelatedDiscoveryAdmission(1);
       if (current.depth + 1 < maxDepth) {
         queue.push({ videoId: candidate.id, depth: current.depth + 1 });
       }

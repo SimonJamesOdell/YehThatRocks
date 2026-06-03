@@ -14,6 +14,7 @@ const createMock = vi.fn();
 const createManyMock = vi.fn();
 const deleteManyMock = vi.fn();
 const siteVideoFindFirstMock = vi.fn();
+const recordExternalApiUsageMock = vi.fn();
 
 const originalDatabaseUrl = process.env.DATABASE_URL;
 
@@ -47,6 +48,10 @@ vi.mock("@/lib/db", () => ({
 
 vi.mock("@/lib/musicbrainz", () => ({
   getMusicBrainzArtistData: getMusicBrainzArtistDataMock,
+}));
+
+vi.mock("@/lib/api-usage-telemetry", () => ({
+  recordExternalApiUsage: recordExternalApiUsageMock,
 }));
 
 vi.mock("@/lib/catalog-data-db", () => ({
@@ -95,6 +100,7 @@ describe("catalog-data-video-ingestion quality hardening", () => {
     createManyMock.mockReset();
     deleteManyMock.mockReset();
     siteVideoFindFirstMock.mockReset();
+    recordExternalApiUsageMock.mockReset();
     getMusicBrainzArtistDataMock.mockReset();
     process.env.DATABASE_URL = "mysql://test";
 
@@ -108,6 +114,7 @@ describe("catalog-data-video-ingestion quality hardening", () => {
     createManyMock.mockResolvedValue({ count: 0 });
     deleteManyMock.mockResolvedValue({ count: 0 });
     siteVideoFindFirstMock.mockResolvedValue(null);
+    recordExternalApiUsageMock.mockResolvedValue(undefined);
   });
 
   it("builds related search plans with high-confidence seeded tracks", async () => {
@@ -218,6 +225,22 @@ describe("catalog-data-video-ingestion quality hardening", () => {
     expect(executeRawMock).toHaveBeenCalled();
     const sawRejectedInsert = executeRawMock.mock.calls.some((args) => String(args[0]).includes("INSERT INTO rejected_videos"));
     expect(sawRejectedInsert).toBe(true);
+  });
+
+  it("records internal admit usage for related discovery admissions", async () => {
+    queryRawUnsafeMock.mockResolvedValueOnce([]);
+
+    const { videoIngestionInternals } = await import("@/lib/catalog-data-video-ingestion");
+
+    const plans = videoIngestionInternals.buildRelatedSearchQueryPlans({
+      parsedArtist: "Metallica",
+      parsedTrack: "One",
+      title: "Metallica - One",
+      highConfidenceTracks: ["Enter Sandman"],
+    });
+
+    expect(plans.length).toBeGreaterThan(0);
+    expect(recordExternalApiUsageMock).not.toHaveBeenCalled();
   });
 });
 
