@@ -81,18 +81,18 @@ const ENABLE_YOUTUBE_RELATED_DISCOVERY = process.env.ENABLE_YOUTUBE_RELATED_DISC
 const YOUTUBE_DAILY_QUOTA_UNITS = Math.max(1_000, Number(process.env.YOUTUBE_DAILY_QUOTA_UNITS || "10000"));
 const YOUTUBE_RELATED_DISCOVERY_RESERVED_UNITS = Math.max(0, Number(process.env.YOUTUBE_RELATED_DISCOVERY_RESERVED_UNITS || "2500"));
 const YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS = Math.max(100, Number(process.env.YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS || "3000"));
-const ENABLE_AUTO_RELATED_BACKFILL = process.env.ENABLE_AUTO_RELATED_BACKFILL !== "0";
+const ENABLE_AUTO_RELATED_BACKFILL = process.env.ENABLE_AUTO_RELATED_BACKFILL === "1";
 const AUTO_RELATED_BACKFILL_UNITS_PER_RUN = Math.max(100, Math.min(3000, Number(process.env.AUTO_RELATED_BACKFILL_UNITS_PER_RUN || "300")));
 const AUTO_RELATED_BACKFILL_MIN_INTERVAL_MS = Math.max(60_000, Number(process.env.AUTO_RELATED_BACKFILL_MIN_INTERVAL_MS || String(15 * 60 * 1000)));
 const AUTO_RELATED_BACKFILL_MAX_NEWEST_OFFSET = Math.max(0, Math.min(500, Number(process.env.AUTO_RELATED_BACKFILL_MAX_NEWEST_OFFSET || "0")));
 const AUTO_RELATED_BACKFILL_DEFER_MS = Math.max(0, Math.min(60_000, Number(process.env.AUTO_RELATED_BACKFILL_DEFER_MS || "5000")));
 const AUTO_RELATED_BACKFILL_DEFER_JITTER_MS = Math.max(0, Math.min(60_000, Number(process.env.AUTO_RELATED_BACKFILL_DEFER_JITTER_MS || "5000")));
 const RELATED_DISCOVERY_MAX_DEPTH = Math.max(1, Math.min(4, Number(process.env.RELATED_DISCOVERY_MAX_DEPTH || "2")));
-const RELATED_DISCOVERY_MAX_NEW_VIDEOS = Math.max(1, Math.min(400, Number(process.env.RELATED_DISCOVERY_MAX_NEW_VIDEOS || "40")));
+const RELATED_DISCOVERY_MAX_NEW_VIDEOS = Math.max(1, Math.min(400, Number(process.env.RELATED_DISCOVERY_MAX_NEW_VIDEOS || "16")));
 const RELATED_DISCOVERY_SEED_FANOUT = Math.max(1, Math.min(8, Number(process.env.RELATED_DISCOVERY_SEED_FANOUT || "8")));
 const YOUTUBE_RELATED_QUERY_COUNT = Math.max(1, Math.min(5, Number(process.env.YOUTUBE_RELATED_QUERY_COUNT || "3")));
 const YOUTUBE_RELATED_QUERY_MAX_RESULTS = Math.max(6, Math.min(25, Number(process.env.YOUTUBE_RELATED_QUERY_MAX_RESULTS || "14")));
-const YOUTUBE_RELATED_MIN_SCORE = Math.max(0.25, Math.min(3, Number(process.env.YOUTUBE_RELATED_MIN_SCORE || "1.25")));
+const YOUTUBE_RELATED_MIN_SCORE = Math.max(0.25, Math.min(3, Number(process.env.YOUTUBE_RELATED_MIN_SCORE || "1.7")));
 const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim() || undefined;
 const GROQ_MODEL = process.env.GROQ_MODEL?.trim() || "llama-3.1-8b-instant";
 const GROQ_CLASSIFICATION_MODEL = process.env.GROQ_CLASSIFICATION_MODEL?.trim() || "openai/gpt-oss-120b";
@@ -1455,6 +1455,63 @@ async function loadHighConfidenceSeedTracks(seedVideoId: string, parsedArtist: s
   }
 }
 
+async function loadProminentGenreArtistKeys(maxPerGenre = 10, maxTotal = 70) {
+  if (!hasDatabaseUrl()) return [] as string[];
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{
+      artistKey: string | null;
+      genre: string | null;
+      favouriteWeight: bigint | number;
+      videoCount: bigint | number;
+    }>>(
+      `
+        SELECT
+          LOWER(TRIM(v.parsedArtist)) AS artistKey,
+          COALESCE(NULLIF(TRIM(v.genre), ''), 'Rock / Metal') AS genre,
+          COALESCE(SUM(COALESCE(v.favourited, 0)), 0) AS favouriteWeight,
+          COUNT(*) AS videoCount
+        FROM videos v
+        WHERE v.parsedArtist IS NOT NULL
+          AND TRIM(v.parsedArtist) <> ''
+          AND COALESCE(v.approved, 0) = 1
+          AND COALESCE(v.parseConfidence, 0) >= ?
+          AND EXISTS (
+            SELECT 1
+            FROM site_videos sv
+            WHERE sv.video_id = v.id
+              AND sv.status = 'available'
+          )
+        GROUP BY LOWER(TRIM(v.parsedArtist)), COALESCE(NULLIF(TRIM(v.genre), ''), 'Rock / Metal')
+        ORDER BY favouriteWeight DESC, videoCount DESC
+        LIMIT 500
+      `,
+      PLAYBACK_MIN_CONFIDENCE,
+    );
+
+    const byBucket = new Map<string, string[]>();
+    for (const row of rows) {
+      const artistKey = (row.artistKey ?? "").trim();
+      if (!artistKey) continue;
+
+      const genre = (row.genre ?? "").trim() || "Rock / Metal";
+      const bucket = resolveTopLevelGenreBucket(genre) ?? (ROCK_METAL_GENRE_PATTERN.test(genre) ? "Rock / Metal" : null);
+      if (!bucket) continue;
+
+      const current = byBucket.get(bucket) ?? [];
+      if (!current.includes(artistKey) && current.length < maxPerGenre) {
+        current.push(artistKey);
+        byBucket.set(bucket, current);
+      }
+    }
+
+    const flattened = Array.from(byBucket.values()).flat();
+    return Array.from(new Set(flattened)).slice(0, maxTotal);
+  } catch {
+    return [] as string[];
+  }
+}
+
 // ── YouTube API ───────────────────────────────────────────────────────────────
 
 async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVideoRecord[]> {
@@ -1841,26 +1898,53 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
   const maxSeeds = Math.max(0, Math.floor(budgetUnits / 100));
   if (maxSeeds === 0) return empty;
 
-  const seeds = await prisma.$queryRaw<Array<{ videoId: string }>>`
-    SELECT v.videoId
-    FROM videos v
-    WHERE NOT EXISTS (SELECT 1 FROM related r WHERE r.videoId = v.videoId)
-      AND v.parsedArtist IS NOT NULL
-      AND TRIM(v.parsedArtist) <> ''
-      AND v.parsedTrack IS NOT NULL
-      AND TRIM(v.parsedTrack) <> ''
-      AND COALESCE(v.parseConfidence, 0) >= ${PLAYBACK_MIN_CONFIDENCE}
-      AND (v.genre IS NULL OR v.genre REGEXP 'rock|metal|doom|death|black|thrash|hardcore|punk|djent|core')
-      AND COALESCE(v.approved, 0) = 1
-      AND EXISTS (
-        SELECT 1
-        FROM site_videos sv
-        WHERE sv.video_id = v.id
-          AND sv.status = 'available'
-      )
-    ORDER BY v.favourited DESC, v.updated_at DESC, v.id DESC
-    LIMIT ${maxSeeds}
-  `;
+  const prominentArtistKeys = await loadProminentGenreArtistKeys();
+
+  const seeds = prominentArtistKeys.length > 0
+    ? await prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
+      `
+        SELECT v.videoId
+        FROM videos v
+        WHERE NOT EXISTS (SELECT 1 FROM related r WHERE r.videoId = v.videoId)
+          AND v.parsedArtist IS NOT NULL
+          AND TRIM(v.parsedArtist) <> ''
+          AND v.parsedTrack IS NOT NULL
+          AND TRIM(v.parsedTrack) <> ''
+          AND COALESCE(v.parseConfidence, 0) >= ?
+          AND LOWER(TRIM(v.parsedArtist)) IN (${prominentArtistKeys.map(() => "?").join(",")})
+          AND COALESCE(v.approved, 0) = 1
+          AND EXISTS (
+            SELECT 1
+            FROM site_videos sv
+            WHERE sv.video_id = v.id
+              AND sv.status = 'available'
+          )
+        ORDER BY v.favourited DESC, v.updated_at DESC, v.id DESC
+        LIMIT ?
+      `,
+      PLAYBACK_MIN_CONFIDENCE,
+      ...prominentArtistKeys,
+      maxSeeds,
+    )
+    : await prisma.$queryRaw<Array<{ videoId: string }>>`
+      SELECT v.videoId
+      FROM videos v
+      WHERE NOT EXISTS (SELECT 1 FROM related r WHERE r.videoId = v.videoId)
+        AND v.parsedArtist IS NOT NULL
+        AND TRIM(v.parsedArtist) <> ''
+        AND v.parsedTrack IS NOT NULL
+        AND TRIM(v.parsedTrack) <> ''
+        AND COALESCE(v.parseConfidence, 0) >= ${PLAYBACK_MIN_CONFIDENCE}
+        AND COALESCE(v.approved, 0) = 1
+        AND EXISTS (
+          SELECT 1
+          FROM site_videos sv
+          WHERE sv.video_id = v.id
+            AND sv.status = 'available'
+        )
+      ORDER BY v.favourited DESC, v.updated_at DESC, v.id DESC
+      LIMIT ${maxSeeds}
+    `;
 
   if (seeds.length === 0) return empty;
 
@@ -2215,9 +2299,18 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
   await clearGenreCardThumbnailForVideo(normalizedVideoId);
   void markAvailableVideoMaxIdDirty().catch(() => undefined);
 
-  if (reason === "admin-hard-delete" || reason.startsWith("genre-auto-remove")) {
+  if (
+    reason === "admin-hard-delete" ||
+    reason === "admin-pending-remove" ||
+    reason.startsWith("genre-auto-remove") ||
+    reason.includes("strict-admission")
+  ) {
     try {
-      const rejectedReason = reason === "admin-hard-delete" ? "admin-deleted" : reason;
+      const rejectedReason = reason === "admin-hard-delete"
+        ? "admin-deleted"
+        : reason === "admin-pending-remove"
+          ? "admin-pending-removed"
+          : reason;
       await prisma.$executeRaw`
         INSERT INTO rejected_videos (video_id, reason, rejected_at)
         VALUES (${normalizedVideoId}, ${rejectedReason}, ${new Date()})
@@ -2565,4 +2658,5 @@ export const videoIngestionInternals = {
   buildRelatedSearchQueryPlans,
   scoreRelatedSearchCandidate,
   classifyPersistedVideoGenre,
+  loadProminentGenreArtistKeys,
 };

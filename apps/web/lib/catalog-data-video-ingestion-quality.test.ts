@@ -3,8 +3,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const queryRawMock = vi.fn();
 const queryRawUnsafeMock = vi.fn();
 const executeRawMock = vi.fn();
+const videoFindManyMock = vi.fn();
 
 const getMusicBrainzArtistDataMock = vi.fn();
+const findFirstMock = vi.fn();
+const findManyMock = vi.fn();
+const updateMock = vi.fn();
+const updateManyMock = vi.fn();
+const createMock = vi.fn();
+const createManyMock = vi.fn();
+const deleteManyMock = vi.fn();
+const siteVideoFindFirstMock = vi.fn();
 
 const originalDatabaseUrl = process.env.DATABASE_URL;
 
@@ -13,11 +22,62 @@ vi.mock("@/lib/db", () => ({
     $queryRaw: queryRawMock,
     $queryRawUnsafe: queryRawUnsafeMock,
     $executeRaw: executeRawMock,
+    $executeRawUnsafe: executeRawMock,
+    video: {
+      findMany: videoFindManyMock,
+      findFirst: findFirstMock,
+    },
+    siteVideo: {
+      findFirst: siteVideoFindFirstMock,
+      update: updateMock,
+      updateMany: updateManyMock,
+      create: createMock,
+    },
+    relatedCache: {
+      findMany: findManyMock,
+      createMany: createManyMock,
+      deleteMany: deleteManyMock,
+    },
+    related: {
+      findMany: findManyMock,
+      createMany: createManyMock,
+    },
   },
 }));
 
 vi.mock("@/lib/musicbrainz", () => ({
   getMusicBrainzArtistData: getMusicBrainzArtistDataMock,
+}));
+
+vi.mock("@/lib/catalog-data-db", () => ({
+  ensureVideoChannelTitleColumnAvailable: vi.fn().mockResolvedValue(false),
+  ensureVideoGenreColumnAvailable: vi.fn().mockResolvedValue(false),
+  ensureVideoMetadataColumnsAvailable: vi.fn().mockResolvedValue(false),
+  getArtistColumnMap: vi.fn().mockResolvedValue({
+    name: "artist",
+    normalizedName: null,
+    country: "country",
+    genreColumns: ["genre1"],
+  }),
+  getStoredVideoById: vi.fn().mockResolvedValue(null),
+  loadTableColumns: vi.fn().mockResolvedValue([]),
+  loadVideoForeignKeyRefs: vi.fn().mockResolvedValue([]),
+  pickColumn: vi.fn().mockReturnValue(null),
+}));
+
+vi.mock("@/lib/catalog-data-artists", () => ({
+  getArtistCatalogEvidence: vi.fn().mockResolvedValue({ known: false, rockOrMetalGenreMatch: false }),
+  maybeInsertNewArtist: vi.fn().mockResolvedValue(undefined),
+  scheduleArtistProjectionRefreshForName: vi.fn(),
+}));
+
+vi.mock("@/lib/catalog-data-genres", () => ({
+  clearGenreCardThumbnailForVideo: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@/lib/available-video-max-id", () => ({
+  markAvailableVideoMaxIdDirty: vi.fn().mockResolvedValue(undefined),
+  recordAvailableVideoIdCandidate: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe("catalog-data-video-ingestion quality hardening", () => {
@@ -26,8 +86,28 @@ describe("catalog-data-video-ingestion quality hardening", () => {
     queryRawMock.mockReset();
     queryRawUnsafeMock.mockReset();
     executeRawMock.mockReset();
+    videoFindManyMock.mockReset();
+    findFirstMock.mockReset();
+    findManyMock.mockReset();
+    updateMock.mockReset();
+    updateManyMock.mockReset();
+    createMock.mockReset();
+    createManyMock.mockReset();
+    deleteManyMock.mockReset();
+    siteVideoFindFirstMock.mockReset();
     getMusicBrainzArtistDataMock.mockReset();
     process.env.DATABASE_URL = "mysql://test";
+
+    executeRawMock.mockResolvedValue(1);
+    videoFindManyMock.mockResolvedValue([]);
+    findFirstMock.mockResolvedValue(null);
+    findManyMock.mockResolvedValue([]);
+    updateMock.mockResolvedValue(null);
+    updateManyMock.mockResolvedValue({ count: 0 });
+    createMock.mockResolvedValue(null);
+    createManyMock.mockResolvedValue({ count: 0 });
+    deleteManyMock.mockResolvedValue({ count: 0 });
+    siteVideoFindFirstMock.mockResolvedValue(null);
   });
 
   it("builds related search plans with high-confidence seeded tracks", async () => {
@@ -107,6 +187,37 @@ describe("catalog-data-video-ingestion quality hardening", () => {
 
     expect(decision.action).toBe("queue");
     expect(decision.reason).toBe("genre-manual-review:insufficient-external-sources");
+  });
+
+  it("builds prominent artist keys spread across supported genre buckets", async () => {
+    queryRawUnsafeMock.mockResolvedValueOnce([
+      { artistKey: "metallica", genre: "Thrash Metal", favouriteWeight: 1000, videoCount: 80 },
+      { artistKey: "sabaton", genre: "Power Metal", favouriteWeight: 800, videoCount: 65 },
+      { artistKey: "gojira", genre: "Progressive Metal", favouriteWeight: 700, videoCount: 50 },
+      { artistKey: "ghost", genre: "Hard Rock", favouriteWeight: 600, videoCount: 45 },
+    ]);
+
+    const { videoIngestionInternals } = await import("@/lib/catalog-data-video-ingestion");
+    const keys = await videoIngestionInternals.loadProminentGenreArtistKeys();
+
+    expect(keys).toContain("metallica");
+    expect(keys).toContain("sabaton");
+    expect(keys).toContain("gojira");
+    expect(keys).toContain("ghost");
+  });
+
+  it("adds removed pending videos to rejected list so they do not resurface", async () => {
+    videoFindManyMock.mockResolvedValueOnce([
+      { id: 77, parsedArtist: "Random Pop Channel" },
+    ]);
+
+    const { pruneVideoAndAssociationsByVideoId } = await import("@/lib/catalog-data-video-ingestion");
+    const result = await pruneVideoAndAssociationsByVideoId("abc123def45", "admin-pending-remove");
+
+    expect(result.pruned).toBe(true);
+    expect(executeRawMock).toHaveBeenCalled();
+    const sawRejectedInsert = executeRawMock.mock.calls.some((args) => String(args[0]).includes("INSERT INTO rejected_videos"));
+    expect(sawRejectedInsert).toBe(true);
   });
 });
 

@@ -31,7 +31,7 @@ const suggestSchema = z.object({
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || "";
 const SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE = Math.max(
   0,
-  Math.min(1, Number(process.env.SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE || "0.08")),
+  Math.min(1, Number(process.env.SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE || "0.02")),
 );
 const playlistBatchJobs = new Map<string, Promise<void>>();
 const YOUTUBE_QUOTA_EXHAUSTED_TTL_MS = 26 * 60 * 60 * 1000;
