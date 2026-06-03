@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 
-export const PENDING_VIDEO_APPROVAL_WHERE_CLAUSE = "(approved = 0 OR approved IS NULL)";
+export const PENDING_VIDEO_APPROVAL_WHERE_CLAUSE = "((approved = 0 OR approved IS NULL) AND NOT EXISTS (SELECT 1 FROM rejected_videos rv WHERE rv.video_id = videoId))";
 export const PENDING_VIDEO_QUEUE_INDEX_NAME = "idx_videos_pending_approval_queue";
 
 let pendingQueueIndexReady = false;

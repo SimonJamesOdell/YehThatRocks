@@ -143,9 +143,58 @@ export async function POST(request: NextRequest) {
 
   const parsed = result.data;
   const { videoId, action } = parsed;
-  const asyncRemove = request.nextUrl.searchParams.get("async") === "1";
+  const asyncMode = request.nextUrl.searchParams.get("async") === "1";
 
   if (action === "approve") {
+    if (asyncMode) {
+      void (async () => {
+        const approveData: {
+          approved: boolean;
+          approvedAt: Date;
+          updatedAt: Date;
+          title?: string;
+          parsedArtist?: string | null;
+          parsedTrack?: string | null;
+        } = {
+          approved: true,
+          approvedAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        if (parsed.title !== undefined) {
+          approveData.title = parsed.title;
+        }
+
+        if (parsed.parsedArtist !== undefined) {
+          approveData.parsedArtist = parsed.parsedArtist;
+        }
+
+        if (parsed.parsedTrack !== undefined) {
+          approveData.parsedTrack = parsed.parsedTrack;
+        }
+
+        await prisma.video.updateMany({
+          where: { videoId },
+          data: approveData,
+        });
+
+        if (parsed.genre !== undefined) {
+          await prisma.$executeRaw`
+            UPDATE videos
+            SET genre = ${parsed.genre}
+            WHERE videoId = ${videoId}
+          `;
+        }
+
+        clearCatalogVideoCaches();
+        clearCurrentVideoRouteCaches();
+      })().catch(() => {
+        // Best-effort async approve; moderation UI already advanced optimistically.
+      });
+
+      return NextResponse.json({ ok: true, videoId, action: "approve", queued: true });
+    }
+
     const approveData: {
       approved: boolean;
       approvedAt: Date;
@@ -203,7 +252,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, videoId, action: "approve" });
   }
 
-  if (asyncRemove) {
+  if (asyncMode) {
     void pruneVideoAndAssociationsByVideoId(videoId, "admin-pending-remove")
       .then(() => {
         clearCurrentVideoRouteCaches();

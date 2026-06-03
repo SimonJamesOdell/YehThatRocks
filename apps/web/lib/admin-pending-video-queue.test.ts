@@ -20,7 +20,8 @@ describe("admin pending video queue helper", () => {
   it("uses index-friendly pending approval predicate", async () => {
     const { PENDING_VIDEO_APPROVAL_WHERE_CLAUSE } = await import("@/lib/admin-pending-video-queue");
 
-    expect(PENDING_VIDEO_APPROVAL_WHERE_CLAUSE).toBe("(approved = 0 OR approved IS NULL)");
+    expect(PENDING_VIDEO_APPROVAL_WHERE_CLAUSE).toContain("approved = 0 OR approved IS NULL");
+    expect(PENDING_VIDEO_APPROVAL_WHERE_CLAUSE).toContain("rejected_videos");
     expect(PENDING_VIDEO_APPROVAL_WHERE_CLAUSE).not.toContain("COALESCE");
   });
 

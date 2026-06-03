@@ -559,6 +559,12 @@ function isLikelyNonMusicSignal(row: PlaybackDecisionRow) {
   return isLikelyNonMusicText(row.title, row.description ?? "");
 }
 
+function isRockOrMetalGenreValue(value: string | null | undefined) {
+  const normalized = normalizeGenreForStorage(value);
+  if (!normalized) return false;
+  return Boolean(resolveTopLevelGenreBucket(normalized) ?? ROCK_METAL_GENRE_PATTERN.test(normalized));
+}
+
 function normalizeGenreForStorage(value: string | null | undefined) {
   const trimmed = typeof value === "string" ? value.trim() : "";
   if (!trimmed) {
@@ -656,6 +662,8 @@ type GenreClassificationDecision = {
   proposedGenre: string | null;
   confidence: number;
   reason: string;
+  hasExternalRockEvidence: boolean;
+  hasExternalNonRockEvidence: boolean;
 };
 
 async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassificationDecision> {
@@ -665,6 +673,8 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
       proposedGenre: null,
       confidence: 0,
       reason: "no-database",
+      hasExternalRockEvidence: false,
+      hasExternalNonRockEvidence: false,
     };
   }
 
@@ -685,6 +695,8 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
       proposedGenre: null,
       confidence: 0,
       reason: "no-video",
+      hasExternalRockEvidence: false,
+      hasExternalNonRockEvidence: false,
     };
   }
 
@@ -738,6 +750,8 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
       proposedGenre: null,
       confidence: 0,
       reason: "no-sources",
+      hasExternalRockEvidence: false,
+      hasExternalNonRockEvidence: false,
     };
   }
 
@@ -748,6 +762,8 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
       proposedGenre: null,
       confidence: 0,
       reason: "genre-manual-review:insufficient-external-sources",
+      hasExternalRockEvidence: false,
+      hasExternalNonRockEvidence: false,
     };
   }
 
@@ -755,6 +771,7 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
   let totalWeight = 0;
   let nonRockWeight = 0;
   let externalNonRockWeight = 0;
+  let externalRockWeight = 0;
 
   for (const signal of signals) {
     const key = signal.genre.toLowerCase();
@@ -763,6 +780,9 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
     current.support += 1;
     grouped.set(key, current);
     totalWeight += signal.confidence;
+    if (signal.source !== "video-existing" && isRockOrMetalGenreValue(signal.genre)) {
+      externalRockWeight += signal.confidence;
+    }
     if (NON_ROCK_GENRE_PATTERN.test(signal.genre)) {
       nonRockWeight += signal.confidence;
       if (signal.source !== "video-existing") {
@@ -780,6 +800,8 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
       proposedGenre: null,
       confidence: 0,
       reason: "no-top-genre",
+      hasExternalRockEvidence: externalRockWeight >= 0.72,
+      hasExternalNonRockEvidence: externalNonRockWeight >= 0.72,
     };
   }
 
@@ -809,6 +831,8 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
       proposedGenre: top.genre,
       confidence,
       reason: `genre-auto-remove:${top.genre}`,
+      hasExternalRockEvidence: externalRockWeight >= 0.72,
+      hasExternalNonRockEvidence: externalNonRockWeight >= 0.72,
     };
   }
 
@@ -823,6 +847,8 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
     proposedGenre,
     confidence,
     reason: reviewReason,
+    hasExternalRockEvidence: externalRockWeight >= 0.72,
+    hasExternalNonRockEvidence: externalNonRockWeight >= 0.72,
   };
 }
 
@@ -1498,15 +1524,16 @@ async function loadHighConfidenceSeedTracks(seedVideoId: string, parsedArtist: s
   if (!normalizedArtist) return [] as string[];
 
   try {
-    const rows = await prisma.$queryRawUnsafe<Array<{ parsedTrack: string | null }>>(
+    const rows = await prisma.$queryRawUnsafe<Array<{ parsedTrack: string | null; genre: string | null }>>(
       `
-        SELECT v.parsedTrack
+        SELECT v.parsedTrack, v.genre
         FROM videos v
         WHERE v.videoId <> ?
           AND LOWER(TRIM(v.parsedArtist)) = ?
           AND v.parsedTrack IS NOT NULL
           AND TRIM(v.parsedTrack) <> ''
           AND COALESCE(v.parseConfidence, 0) >= ?
+          AND COALESCE(v.approved, 0) = 1
           AND EXISTS (
             SELECT 1
             FROM site_videos sv
@@ -1522,7 +1549,12 @@ async function loadHighConfidenceSeedTracks(seedVideoId: string, parsedArtist: s
     );
 
     return Array.from(
-      new Set(rows.map((row) => row.parsedTrack?.trim() ?? "").filter((value) => value.length > 0)),
+      new Set(
+        rows
+          .filter((row) => isRockOrMetalGenreValue(row.genre))
+          .map((row) => row.parsedTrack?.trim() ?? "")
+          .filter((value) => value.length > 0),
+      ),
     );
   } catch {
     return [] as string[];
@@ -1542,12 +1574,14 @@ async function loadProminentGenreArtistKeys(maxPerGenre = 10, maxTotal = 70) {
       `
         SELECT
           LOWER(TRIM(v.parsedArtist)) AS artistKey,
-          COALESCE(NULLIF(TRIM(v.genre), ''), 'Rock / Metal') AS genre,
+          NULLIF(TRIM(v.genre), '') AS genre,
           COALESCE(SUM(COALESCE(v.favourited, 0)), 0) AS favouriteWeight,
           COUNT(*) AS videoCount
         FROM videos v
         WHERE v.parsedArtist IS NOT NULL
           AND TRIM(v.parsedArtist) <> ''
+          AND v.genre IS NOT NULL
+          AND TRIM(v.genre) <> ''
           AND COALESCE(v.approved, 0) = 1
           AND COALESCE(v.parseConfidence, 0) >= ?
           AND EXISTS (
@@ -1556,7 +1590,7 @@ async function loadProminentGenreArtistKeys(maxPerGenre = 10, maxTotal = 70) {
             WHERE sv.video_id = v.id
               AND sv.status = 'available'
           )
-        GROUP BY LOWER(TRIM(v.parsedArtist)), COALESCE(NULLIF(TRIM(v.genre), ''), 'Rock / Metal')
+        GROUP BY LOWER(TRIM(v.parsedArtist)), NULLIF(TRIM(v.genre), '')
         ORDER BY favouriteWeight DESC, videoCount DESC
         LIMIT 500
       `,
@@ -1568,7 +1602,7 @@ async function loadProminentGenreArtistKeys(maxPerGenre = 10, maxTotal = 70) {
       const artistKey = (row.artistKey ?? "").trim();
       if (!artistKey) continue;
 
-      const genre = (row.genre ?? "").trim() || "Rock / Metal";
+      const genre = (row.genre ?? "").trim();
       const bucket = resolveTopLevelGenreBucket(genre) ?? (ROCK_METAL_GENRE_PATTERN.test(genre) ? "Rock / Metal" : null);
       if (!bucket) continue;
 
@@ -1777,7 +1811,7 @@ async function getExistingCatalogVideoIdSet(videoIds: string[]) {
 async function canAdmitVideoByStrictMetadata(videoId: string) {
   const admissionRows = await prisma.$queryRaw<Array<PlaybackDecisionRow>>`
     SELECT
-      v.id, v.title, v.description, v.parsedArtist, v.parsedTrack, v.parsedVideoType, v.parseConfidence,
+      v.id, v.title, v.description, v.parsedArtist, v.parsedTrack, v.parsedVideoType, v.parseConfidence, v.genre,
       EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND sv.status = 'available') AS hasAvailable,
       EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status <> 'available')) AS hasBlocked
     FROM videos v
@@ -1787,7 +1821,32 @@ async function canAdmitVideoByStrictMetadata(videoId: string) {
 
   const admissionRow = admissionRows[0];
   const admissionDecision = admissionRow ? evaluatePlaybackMetadataEligibility(admissionRow) : null;
-  return Boolean(admissionRow && admissionRow.hasAvailable && admissionDecision?.allowed);
+  if (!admissionRow || !admissionRow.hasAvailable || !admissionDecision?.allowed) {
+    return false;
+  }
+
+  const genreDecision = await classifyPersistedVideoGenre(videoId).catch(() => ({
+    action: "queue" as const,
+    proposedGenre: null,
+    confidence: 0,
+    reason: "strict-admission:genre-check-error",
+    hasExternalRockEvidence: false,
+    hasExternalNonRockEvidence: false,
+  }));
+
+  if (genreDecision.action === "remove") {
+    return false;
+  }
+
+  if (!genreDecision.hasExternalRockEvidence) {
+    return false;
+  }
+
+  return Boolean(
+    genreDecision.confidence >= 0.85 &&
+      genreDecision.proposedGenre &&
+      isRockOrMetalGenreValue(genreDecision.proposedGenre),
+  );
 }
 
 function getRelatedFanoutForDepth(depth: number) {
@@ -1904,6 +1963,11 @@ export async function discoverRelatedVideosCascade(
   options?: { maxDepth?: number; maxNewVideos?: number },
 ) {
   if (!ENABLE_YOUTUBE_RELATED_DISCOVERY || !hasDatabaseUrl()) {
+    return { fetchedNodes: 0, discoveredNewVideos: 0 };
+  }
+
+  if (!(await canAdmitVideoByStrictMetadata(seedVideoId))) {
+    debugCatalog("discoverRelatedVideosCascade:seed-rejected", { seedVideoId, reason: "strict-seed-admission" });
     return { fetchedNodes: 0, discoveredNewVideos: 0 };
   }
 
@@ -2199,6 +2263,8 @@ export async function importVideoFromDirectSource(source: string, options?: { di
       proposedGenre: null,
       confidence: 0,
       reason: "genre-classification-error",
+      hasExternalRockEvidence: false,
+      hasExternalNonRockEvidence: false,
     }));
 
     if (genreDecision.action === "remove") {
@@ -2740,4 +2806,5 @@ export const videoIngestionInternals = {
   scoreRelatedSearchCandidate,
   classifyPersistedVideoGenre,
   loadProminentGenreArtistKeys,
+  isRockOrMetalGenreValue,
 };

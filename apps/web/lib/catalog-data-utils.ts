@@ -123,6 +123,7 @@ export type PlaybackDecisionRow = {
   id: number;
   title: string;
   description: string | null;
+  genre?: string | null;
   parsedArtist: string | null;
   parsedTrack: string | null;
   parsedVideoType: string | null;

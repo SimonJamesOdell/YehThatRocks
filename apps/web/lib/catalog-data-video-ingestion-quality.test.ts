@@ -213,6 +213,65 @@ describe("catalog-data-video-ingestion quality hardening", () => {
     expect(keys).toContain("ghost");
   });
 
+  it("does not infer blank genres as rock for prominent artist seed keys", async () => {
+    queryRawUnsafeMock.mockResolvedValueOnce([
+      { artistKey: "legacyunknown", genre: "", favouriteWeight: 1500, videoCount: 200 },
+      { artistKey: "chartpop", genre: "Pop", favouriteWeight: 1400, videoCount: 180 },
+      { artistKey: "slayer", genre: "Thrash Metal", favouriteWeight: 1300, videoCount: 160 },
+    ]);
+
+    const { videoIngestionInternals } = await import("@/lib/catalog-data-video-ingestion");
+    const keys = await videoIngestionInternals.loadProminentGenreArtistKeys();
+
+    expect(keys).toContain("slayer");
+    expect(keys).not.toContain("legacyunknown");
+    expect(keys).not.toContain("chartpop");
+  });
+
+  it("strict rock/metal genre helper only accepts rock-aligned genres", async () => {
+    const { videoIngestionInternals } = await import("@/lib/catalog-data-video-ingestion");
+
+    expect(videoIngestionInternals.isRockOrMetalGenreValue("Thrash Metal")).toBe(true);
+    expect(videoIngestionInternals.isRockOrMetalGenreValue("Alternative Rock")).toBe(true);
+    expect(videoIngestionInternals.isRockOrMetalGenreValue("Pop")).toBe(false);
+    expect(videoIngestionInternals.isRockOrMetalGenreValue("")).toBe(false);
+    expect(videoIngestionInternals.isRockOrMetalGenreValue(null)).toBe(false);
+  });
+
+  it("does not treat stored genre alone as external rock evidence", async () => {
+    queryRawMock.mockResolvedValueOnce([
+      { genre: "Rock / Metal", parsedArtist: null },
+    ]);
+
+    const { videoIngestionInternals } = await import("@/lib/catalog-data-video-ingestion");
+    const decision = await videoIngestionInternals.classifyPersistedVideoGenre("abc123def45");
+
+    expect(decision.hasExternalRockEvidence).toBe(false);
+    expect(decision.proposedGenre).toBeNull();
+    expect(decision.reason).toBe("no-sources");
+  });
+
+  it("flags MusicBrainz rock signal as external rock evidence", async () => {
+    queryRawMock.mockResolvedValueOnce([
+      { genre: null, parsedArtist: "Mastodon" },
+    ]);
+    queryRawUnsafeMock.mockResolvedValueOnce([]);
+    getMusicBrainzArtistDataMock.mockResolvedValueOnce({
+      tags: ["progressive metal"],
+      isRockOrMetal: true,
+      isDefinitelyNotRockOrMetal: false,
+      disambiguation: null,
+    });
+
+    const { videoIngestionInternals } = await import("@/lib/catalog-data-video-ingestion");
+    const decision = await videoIngestionInternals.classifyPersistedVideoGenre("abc123def45");
+
+    expect(decision.hasExternalRockEvidence).toBe(true);
+    expect(decision.action).toBe("queue");
+    expect(decision.proposedGenre).toBe("Progressive & Experimental");
+    expect(decision.confidence).toBeGreaterThanOrEqual(0.85);
+  });
+
   it("adds removed pending videos to rejected list so they do not resurface", async () => {
     videoFindManyMock.mockResolvedValueOnce([
       { id: 77, parsedArtist: "Random Pop Channel" },

@@ -1053,10 +1053,19 @@ export function AdminDashboardPanel({
         return;
       }
 
-      await postJson<{ ok: boolean }>("/api/admin/videos/pending", payload);
+      setPendingVideos((current) => current.filter((item) => item.id !== row.id));
+      setPendingVideoTotal((current) => Math.max(0, current - 1));
       clearDraftForRow();
       setSaveMessage(`Approved ${videoId}.`);
-      await Promise.all([loadPendingVideos(), loadVideos()]);
+
+      void postJson<{ ok: boolean }>("/api/admin/videos/pending?async=1", payload)
+        .then(() => Promise.all([loadPendingVideos(), loadVideos()]))
+        .catch((moderationError) => {
+          setSaveMessage(moderationError instanceof Error ? moderationError.message : "Pending moderation action failed.");
+          void Promise.all([loadPendingVideos(), loadVideos()]);
+        });
+
+      return;
     } catch (moderationError) {
       setSaveMessage(moderationError instanceof Error ? moderationError.message : "Pending moderation action failed.");
     } finally {
