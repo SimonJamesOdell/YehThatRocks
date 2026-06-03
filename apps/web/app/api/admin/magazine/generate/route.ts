@@ -10,7 +10,7 @@ import { verifySameOrigin } from "@/lib/csrf";
 
 const execFileAsync = promisify(execFile);
 const SCRIPT_TIMEOUT_MS = Math.max(30_000, Math.min(15 * 60_000, Number(process.env.MAGAZINE_DAILY_TIMEOUT_MS || "480000")));
-const ENABLE_MAGAZINE_GENERATION = process.env.ENABLE_MAGAZINE_GENERATION === "1";
+const ENABLE_MAGAZINE_GENERATION = process.env.ENABLE_MAGAZINE_GENERATION !== "0";
 
 function resolveScriptPath(): string {
   const direct = path.resolve(process.cwd(), "scripts/magazine-news-autogen.js");

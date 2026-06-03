@@ -10,7 +10,7 @@ const execFileAsync = promisify(execFile);
 const CRON_SECRET = process.env.CRON_SECRET?.trim() || "";
 const DAILY_COUNT = Math.max(1, Math.min(10, Number(process.env.MAGAZINE_DAILY_COUNT || "3")));
 const SCRIPT_TIMEOUT_MS = Math.max(30_000, Math.min(15 * 60_000, Number(process.env.MAGAZINE_DAILY_TIMEOUT_MS || "480000")));
-const ENABLE_MAGAZINE_GENERATION = process.env.ENABLE_MAGAZINE_GENERATION === "1";
+const ENABLE_MAGAZINE_GENERATION = process.env.ENABLE_MAGAZINE_GENERATION !== "0";
 
 function isCronAuthorized(request: NextRequest): boolean {
   if (!CRON_SECRET) {
