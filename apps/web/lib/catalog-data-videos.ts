@@ -47,7 +47,6 @@ import { getGenres } from "@/lib/catalog-data-genres";
 import { getInteractiveTableCount } from "@/lib/interactive-table-counts";
 import {
   getVideoPlaybackDecision,
-  maybeStartAutomaticRelatedBackfill,
   pruneVideoAndAssociationsByVideoId,
 } from "@/lib/catalog-data-video-ingestion";
 import {
@@ -1115,8 +1114,6 @@ export async function getNewestVideos(
   const safeCount = Math.max(1, Math.min(500, Math.floor(count)));
   const safeOffset = Math.max(0, Math.floor(offset));
   const requireAvailableSiteVideo = options?.requireAvailableSiteVideo !== false;
-
-  maybeStartAutomaticRelatedBackfill(safeOffset);
 
   const newestRequestKey = `${safeCount}:${safeOffset}:${options?.enforcePlaybackAvailability ? "1" : "0"}:${requireAvailableSiteVideo ? "1" : "0"}`;
   const now = Date.now();

@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 
 import { ArtistVideoLink } from "@/components/artist-video-link";
 import { ArtistCreatePlaylistButton } from "@/components/artist-create-playlist-button";
+import { AdminArtistDiscoveryButton } from "@/components/admin-artist-discovery-button";
 import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { OverlayHeader } from "@/components/overlay-header";
@@ -151,6 +152,7 @@ export function ArtistVideosGridClient({
             videos={visibleVideos}
             hideSeenOnly={hideSeen}
           />
+          <AdminArtistDiscoveryButton artistName={artistName} isAdmin={isAdmin} />
         </div>
         {wasOpenedFromSourceRoute ? (
           <Link

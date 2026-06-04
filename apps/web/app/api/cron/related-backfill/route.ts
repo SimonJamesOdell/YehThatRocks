@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { hasDatabaseUrl, runQuotaBackfill } from "@/lib/catalog-data";
+import { hasDatabaseUrl } from "@/lib/catalog-data";
 
 // Budget per cron run in YouTube API units. Each related call costs 100 units.
 // Default 300 = 3 related pulls per trigger. Override via AUTO_RELATED_BACKFILL_UNITS_PER_RUN.
@@ -35,23 +35,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, skipped: true, reason: "no-database" });
   }
 
-  try {
-    const result = await runQuotaBackfill(UNITS_PER_RUN);
-
-    return NextResponse.json({
-      ok: true,
-      seedsAttempted: result.seedsAttempted,
-      fetchedNodes: result.fetchedNodes,
-      discoveredNewVideos: result.discoveredNewVideos,
-      unitsEstimated: result.unitsEstimated,
-      unitsPerRun: UNITS_PER_RUN,
-    });
-  } catch (error) {
-    return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "Backfill failed." },
-      { status: 500 },
-    );
-  }
+  return NextResponse.json({
+    ok: true,
+    skipped: true,
+    reason: "disabled-manual-artist-discovery-only",
+    unitsPerRun: UNITS_PER_RUN,
+  });
 }
 
 // Also accept GET so a simple curl or browser ping works alongside cron daemons

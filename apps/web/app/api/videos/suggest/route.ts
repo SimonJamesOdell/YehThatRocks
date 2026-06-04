@@ -29,10 +29,7 @@ const suggestSchema = z.object({
 });
 
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || "";
-const SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE = Math.max(
-  0,
-  Math.min(1, Number(process.env.SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE || "0.02")),
-);
+const SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE = 0;
 const playlistBatchJobs = new Map<string, Promise<void>>();
 const YOUTUBE_QUOTA_EXHAUSTED_TTL_MS = 26 * 60 * 60 * 1000;
 let youtubeQuotaExhaustedUntilMs = 0;
@@ -593,8 +590,6 @@ export async function POST(request: NextRequest) {
       : [];
     const alreadyInCatalog = !retryRejected && existingRows.length > 0;
 
-    // Re-enable occasional related discovery for fresh suggestions to keep discovery flowing,
-    // while catalog-data quota guards preserve API headroom for ingest reliability.
     const discoverRelatedForSuggestion = retryRejected
       ? false
       : Math.random() < SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE;
