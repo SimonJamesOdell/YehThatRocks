@@ -2314,6 +2314,18 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
   }
 
   const ids = matchingRows.map((row: { id: number }) => row.id);
+  const shouldPersistRejectedMarker =
+    reason === "admin-hard-delete" ||
+    reason === "admin-pending-remove" ||
+    reason.startsWith("genre-auto-remove") ||
+    reason.includes("strict-admission");
+  const rejectedReason = shouldPersistRejectedMarker
+    ? reason === "admin-hard-delete"
+      ? "admin-deleted"
+      : reason === "admin-pending-remove"
+        ? "admin-pending-removed"
+        : reason
+    : null;
   const parsedArtistsToRefresh = Array.from(
     new Set<string>(matchingRows.map((row: { parsedArtist: string | null }) => row.parsedArtist?.trim()).filter((v: string | undefined): v is string => Boolean(v))),
   );
@@ -2436,6 +2448,19 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
       }
     }
 
+    if (shouldPersistRejectedMarker && rejectedReason) {
+      try {
+        await prisma.$executeRaw`
+          INSERT INTO rejected_videos (video_id, reason, rejected_at)
+          VALUES (${normalizedVideoId}, ${rejectedReason}, ${new Date()})
+          ON DUPLICATE KEY UPDATE reason = VALUES(reason), rejected_at = VALUES(rejected_at)
+        `;
+        rejectedVideoCache.set(normalizedVideoId, { expiresAt: Date.now() + REJECTED_VIDEO_CACHE_TTL_MS, rejected: true });
+      } catch {
+        // best-effort only
+      }
+    }
+
     return {
       pruned: false,
       deletedVideoRows: 0,
@@ -2446,18 +2471,8 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
   await clearGenreCardThumbnailForVideo(normalizedVideoId);
   void markAvailableVideoMaxIdDirty().catch(() => undefined);
 
-  if (
-    reason === "admin-hard-delete" ||
-    reason === "admin-pending-remove" ||
-    reason.startsWith("genre-auto-remove") ||
-    reason.includes("strict-admission")
-  ) {
+  if (shouldPersistRejectedMarker && rejectedReason) {
     try {
-      const rejectedReason = reason === "admin-hard-delete"
-        ? "admin-deleted"
-        : reason === "admin-pending-remove"
-          ? "admin-pending-removed"
-          : reason;
       await prisma.$executeRaw`
         INSERT INTO rejected_videos (video_id, reason, rejected_at)
         VALUES (${normalizedVideoId}, ${rejectedReason}, ${new Date()})
