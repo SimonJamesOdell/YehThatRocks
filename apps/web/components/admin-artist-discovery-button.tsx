@@ -47,7 +47,12 @@ export function AdminArtistDiscoveryButton({ artistName, isAdmin }: AdminArtistD
         }),
       });
 
-      const payload = (await response.json().catch(() => null)) as DiscoveryResponse | null;
+      let payload: DiscoveryResponse | null = null;
+      try {
+        payload = (await response.json()) as DiscoveryResponse;
+      } catch {
+        payload = null;
+      }
 
       if (!response.ok || !payload?.ok) {
         setStatus(payload?.error?.trim() || "Discovery failed. Please try again.");
