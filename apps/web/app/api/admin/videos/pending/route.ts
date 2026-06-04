@@ -25,6 +25,32 @@ type AdminPendingVideoRow = PendingQueueVideoRow & {
   updatedAt: Date | null;
 };
 
+let pendingEnrichmentInFlight: Promise<void> | null = null;
+let pendingEnrichmentLastStartedAt = 0;
+const PENDING_ENRICHMENT_MIN_INTERVAL_MS = 30_000;
+
+function schedulePendingQueueEnrichment(rows: PendingQueueVideoRow[]) {
+  if (pendingEnrichmentInFlight) {
+    return;
+  }
+
+  const now = Date.now();
+  if (now - pendingEnrichmentLastStartedAt < PENDING_ENRICHMENT_MIN_INTERVAL_MS) {
+    return;
+  }
+
+  pendingEnrichmentLastStartedAt = now;
+  pendingEnrichmentInFlight = (async () => {
+    await enrichPendingQueueVideos(rows);
+  })()
+    .catch(() => {
+      // Best effort only: queue reads should never fail due to enrichment.
+    })
+    .finally(() => {
+      pendingEnrichmentInFlight = null;
+    });
+}
+
 async function loadPendingVideos(q: string): Promise<AdminPendingVideoRow[]> {
   return q
     ? await prisma.$queryRawUnsafe<Array<AdminPendingVideoRow>>(
@@ -121,11 +147,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ totalPending });
   }
 
-  let pendingVideos = await loadPendingVideos(q);
+  const pendingVideos = await loadPendingVideos(q);
 
-  const enrichedCount = await enrichPendingQueueVideos(pendingVideos);
-  if (enrichedCount > 0) {
-    pendingVideos = await loadPendingVideos(q);
+  // Run enrichment opportunistically in the background so opening Admin is fast.
+  // Any improvements become visible on subsequent refresh/poll cycles.
+  if (!q) {
+    schedulePendingQueueEnrichment(pendingVideos);
   }
 
   return NextResponse.json({ pendingVideos, totalPending });

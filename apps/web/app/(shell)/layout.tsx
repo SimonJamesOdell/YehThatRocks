@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { headers } from "next/headers";
 import { ShellDynamic } from "@/components/shell-dynamic-core";
 import { ServiceFailurePanel } from "@/components/service-failure-panel";
@@ -15,11 +16,18 @@ export default async function ShellLayout({ children }: { children: ReactNode })
   const requestedVideoId = searchParams.get("v") ?? undefined;
   const shouldUseRandomLandingVideo = requestPathname === "/" && searchParams.toString().length === 0;
 
-  const [{ authState, user, isAdmin, hasAccessToken }, initialVideo, dataSourceStatus] = await Promise.all([
+  const [{ authState, user, isAdmin, hasAccessToken }, resolvedInitialVideo, dataSourceStatus] = await Promise.all([
     getShellRequestAuthState(),
     getCurrentVideo(requestedVideoId, { allowRandomFallback: shouldUseRandomLandingVideo }),
     getDataSourceStatus(),
   ]);
+
+  // If the URL requests a specific video that is missing/unapproved/unplayable,
+  // fall back to any approved catalog video instead of showing a global outage panel.
+  const initialVideo = resolvedInitialVideo
+    ?? (requestedVideoId
+      ? await getCurrentVideo(undefined, { allowRandomFallback: true })
+      : null);
 
   if (!initialVideo) {
     const isBackendOutage = dataSourceStatus.mode === "database-error";
@@ -35,6 +43,7 @@ export default async function ShellLayout({ children }: { children: ReactNode })
             ? "Yeh That Rocks cannot connect to the backend server and cannot load right now. Please try again later."
             : "The backend is online, but there are currently no approved videos to play. Approve videos in Admin to bring the catalog online."
         }
+        actions={isAdmin ? <Link href="/admin" className="serviceFailureActionPrimary">Open admin panel</Link> : undefined}
       />
     );
   }
