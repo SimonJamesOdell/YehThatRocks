@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 
 import { ArtistVideoLink } from "@/components/artist-video-link";
 import { ArtistCreatePlaylistButton } from "@/components/artist-create-playlist-button";
+import { ArtistAdminMetadataEditor } from "@/components/artist-admin-metadata-editor";
 import { AdminArtistDiscoveryButton } from "@/components/admin-artist-discovery-button";
 import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
@@ -151,6 +152,17 @@ export function ArtistVideosGridClient({
             artistName={artistName}
             videos={visibleVideos}
             hideSeenOnly={hideSeen}
+          />
+          <ArtistAdminMetadataEditor
+            isAdmin={isAdmin}
+            videos={videos}
+            onVideoPatched={(videoId, patch) => {
+              setVideos((current) => current.map((video) => (
+                video.id === videoId
+                  ? { ...video, ...patch }
+                  : video
+              )));
+            }}
           />
           <AdminArtistDiscoveryButton artistName={artistName} isAdmin={isAdmin} />
         </div>

@@ -223,6 +223,8 @@ function runSourceChecks(failures) {
   assertContains(categoriesNewSnapshotsSource, "SNAPSHOT_ARTIST_LIMIT = 25_000", "Categories_new snapshot builds capture comprehensive artist grids", failures);
   assertContains(catalogDataGenresSource, "warmCategoryArtistRuntimeCacheByGenre", "Catalog genre data exposes category artist runtime cache warmer", failures);
   assertContains(catalogDataGenresSource, "CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT = 25_000", "Category artist runtime cache rebuild limit is comprehensive", failures);
+  assertContains(catalogDataGenresSource, "artistCount: countByBucket.get(card.genre)", "Top-level bucket cache writes use authoritative per-bucket artist counts instead of placeholders", failures);
+  assertContains(catalogDataGenresSource, "const hasPositiveArtistCount = rows.some", "Top-level runtime cache reader self-heals zeroed artist count rows", failures);
   assertContains(warmCategoryCachesSource, "full=1&warm=1", "Category warmup refreshes full category artist runtime caches", failures);
 
   assertContains(categoriesNewParentPageSource, "redirect(\"/categories\")", "Categories_new parent route redirects to canonical /categories", failures);

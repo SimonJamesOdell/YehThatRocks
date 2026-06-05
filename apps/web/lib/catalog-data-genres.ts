@@ -107,8 +107,7 @@ async function hydrateGenreArtistCounts(cards: GenreCard[]): Promise<GenreCard[]
 
   for (const card of missingCards) {
     const key = card.genre.trim().toLowerCase();
-    const artists = await getCategoryArtistsByGenre(card.genre, { offset: 0, limit: 2_000 });
-    const count = artists.length;
+    const count = await getCategoryArtistCountByGenre(card.genre);
     countByGenre.set(key, count);
     genreArtistCountCache.set(key, { expiresAt: now + GENRE_ARTIST_COUNT_CACHE_TTL_MS, count });
   }
@@ -751,6 +750,15 @@ export async function getRuntimeCachedTopLevelGenreCards(): Promise<GenreCard[] 
   }
 
   if (newestUpdatedAtMs <= 0 || Date.now() - newestUpdatedAtMs > CATEGORY_BUCKET_RUNTIME_CACHE_STALE_MS) {
+    scheduleCategoryBucketRuntimeCacheRefresh();
+  }
+
+  const hasPositiveArtistCount = rows.some((row) => Math.max(0, Number(row.artistCount ?? 0)) > 0);
+  if (!hasPositiveArtistCount) {
+    const rebuiltCards = await bootstrapCategoryBucketRuntimeCacheFast().catch(() => null);
+    if (rebuiltCards && rebuiltCards.length > 0) {
+      return applyPinnedCategoryArtistPreviews(rebuiltCards, pinnedPreviewByBucket);
+    }
     scheduleCategoryBucketRuntimeCacheRefresh();
   }
 
@@ -2056,6 +2064,23 @@ export async function getGenreCards(): Promise<GenreCard[]> {
       }
 
       cards = collateGenreCardsToTopLevelBuckets(cards);
+
+      const bucketArtistCounts = await Promise.all(
+        TOP_LEVEL_GENRE_BUCKETS.map(async (bucket) => {
+          try {
+            const count = await getCategoryArtistCountByGenre(bucket.label);
+            return [bucket.label, Math.max(0, Number(count || 0))] as const;
+          } catch {
+            return [bucket.label, 0] as const;
+          }
+        }),
+      );
+      const countByBucket = new Map<string, number>(bucketArtistCounts);
+      cards = cards.map((card) => ({
+        ...card,
+        artistCount: countByBucket.get(card.genre) ?? Math.max(0, Number(card.artistCount ?? 0)),
+      }));
+
       const pinnedPreviewByBucket = await getPinnedCategoryArtistPreviewsByBucket();
       cards = applyPinnedCategoryArtistPreviews(cards, pinnedPreviewByBucket);
       await upsertCategoryBucketRuntimeCache(cards).catch(() => undefined);
