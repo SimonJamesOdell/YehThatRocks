@@ -154,6 +154,38 @@ describe("categories-new snapshot build cache-first behavior", () => {
     expect(forcedBypassCall).toBeUndefined();
   });
 
+  it("heals suspicious top-level snapshot counts from refreshed genre cards", async () => {
+    getRuntimeCachedTopLevelGenreCardsMock.mockResolvedValue([
+      {
+        genre: "Thrash & Power Metal",
+        previewVideoId: "AAAAAAAAAAA",
+        artistCount: 400,
+      },
+    ]);
+    getGenreCardsMock.mockResolvedValue([
+      {
+        genre: "Thrash & Power Metal",
+        previewVideoId: "AAAAAAAAAAA",
+        artistCount: 931,
+      },
+    ]);
+
+    const {
+      ensureCategoriesNewSnapshotReady,
+      getCategoriesNewTopLevelSnapshot,
+      scheduleCategoriesNewSnapshotBuild,
+    } = await import("@/lib/categories-new-snapshots");
+
+    scheduleCategoriesNewSnapshotBuild("test-suspicious-count-heal", { immediate: true });
+    const ready = await ensureCategoriesNewSnapshotReady({ maxWaitMs: 5_000, pollMs: 50 });
+    expect(ready).toBe(true);
+
+    const snapshot = await getCategoriesNewTopLevelSnapshot();
+    const thrashCard = snapshot?.cards.find((card) => card.genre === "Thrash & Power Metal");
+
+    expect(thrashCard?.artistCount).toBe(931);
+  });
+
   it("defers immediate snapshot rebuild when runtime SQL pressure is elevated", async () => {
     const { ensureCategoriesNewSnapshotReady, scheduleCategoriesNewSnapshotBuild } = await import("@/lib/categories-new-snapshots");
 

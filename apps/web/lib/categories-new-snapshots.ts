@@ -225,6 +225,25 @@ function normalizeTopLevelCards(cards: GenreCard[]): CategoriesNewTopLevelCard[]
   });
 }
 
+function hasSuspiciousArtistTotal(value: number) {
+  return value === 200 || value === 400;
+}
+
+function areTopLevelCardsEqual(a: CategoriesNewTopLevelCard[], b: CategoriesNewTopLevelCard[]) {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  return a.every((card, index) => {
+    const other = b[index];
+    return Boolean(other)
+      && card.genre === other.genre
+      && card.slug === other.slug
+      && card.previewVideoId === other.previewVideoId
+      && Number(card.artistCount ?? 0) === Number(other.artistCount ?? 0);
+  });
+}
+
 async function buildCategoriesNewSnapshotRows(buildVersion: number) {
   const generatedAt = new Date().toISOString();
   const runtimeCards = await getRuntimeCachedTopLevelGenreCards().catch(() => null);
@@ -459,7 +478,32 @@ export async function ensureCategoriesNewSnapshotReady(options?: { maxWaitMs?: n
 }
 
 export async function getCategoriesNewTopLevelSnapshot() {
-  return readCategoriesNewSnapshot<CategoriesNewTopLevelSnapshot>(SNAPSHOT_TOP_LEVEL_KEY, true);
+  const snapshot = await readCategoriesNewSnapshot<CategoriesNewTopLevelSnapshot>(SNAPSHOT_TOP_LEVEL_KEY, true);
+  if (!snapshot) {
+    return null;
+  }
+
+  const hasSuspiciousCounts = snapshot.cards.some((card) => hasSuspiciousArtistTotal(Math.max(0, Number(card.artistCount ?? 0))));
+  if (!hasSuspiciousCounts) {
+    return snapshot;
+  }
+
+  const refreshedCards = normalizeTopLevelCards(
+    await getGenreCards().catch(() => snapshot.cards),
+  );
+
+  if (areTopLevelCardsEqual(snapshot.cards, refreshedCards)) {
+    return snapshot;
+  }
+
+  const healedSnapshot: CategoriesNewTopLevelSnapshot = {
+    ...snapshot,
+    generatedAt: new Date().toISOString(),
+    cards: refreshedCards,
+  };
+
+  await writeCategoriesNewSnapshot(snapshot.buildVersion, SNAPSHOT_TOP_LEVEL_KEY, healedSnapshot).catch(() => undefined);
+  return healedSnapshot;
 }
 
 export async function getCategoriesNewCategorySnapshot(slug: string) {
@@ -470,7 +514,8 @@ export async function getCategoriesNewCategorySnapshot(slug: string) {
 
   const currentAllCount = Math.max(0, Number(snapshot.tabCounts?.all ?? 0));
   const currentTotalArtists = Math.max(0, Number(snapshot.totalArtists ?? 0));
-  if (currentAllCount >= currentTotalArtists) {
+  const hasSuspiciousTotals = hasSuspiciousArtistTotal(currentAllCount) || hasSuspiciousArtistTotal(currentTotalArtists);
+  if (currentAllCount >= currentTotalArtists && !hasSuspiciousTotals) {
     return snapshot;
   }
 
@@ -480,14 +525,26 @@ export async function getCategoriesNewCategorySnapshot(slug: string) {
   }
 
   const refreshedAllCount = Math.max(0, Number(refreshedTabCounts.all ?? 0));
-  if (refreshedAllCount <= currentAllCount) {
+  const needsArtistListRepair = snapshot.artists.length < refreshedAllCount;
+  if (refreshedAllCount <= currentAllCount && !needsArtistListRepair) {
     return snapshot;
+  }
+
+  let healedArtists = snapshot.artists;
+  if (needsArtistListRepair) {
+    healedArtists = await getCategoryArtistsByGenre(snapshot.genre, {
+      offset: 0,
+      limit: SNAPSHOT_ARTIST_LIMIT,
+      maxLimit: SNAPSHOT_ARTIST_LIMIT,
+      bypassRuntimeCache: true,
+    }).catch(() => healedArtists);
   }
 
   const healedSnapshot: CategoriesNewCategorySnapshot = {
     ...snapshot,
     tabCounts: refreshedTabCounts,
-    totalArtists: Math.max(currentTotalArtists, refreshedAllCount, snapshot.artists.length),
+    artists: healedArtists,
+    totalArtists: Math.max(currentTotalArtists, refreshedAllCount, healedArtists.length),
   };
 
   await writeCategoriesNewSnapshot(snapshot.buildVersion, getCategorySnapshotKey(slug), healedSnapshot).catch(() => undefined);

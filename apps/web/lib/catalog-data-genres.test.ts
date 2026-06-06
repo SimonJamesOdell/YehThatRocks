@@ -649,6 +649,35 @@ describe("category artist count and tab-count runtime-cache optimization", () =>
     expect(heavyUnionCall).toBeDefined();
   });
 
+  it("treats legacy 400-row runtime totals as suspicious and re-checks authoritative count", async () => {
+    queryRawUnsafeMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
+
+      if (text.includes("SHOW TABLES LIKE 'category_artist_runtime_cache'")) {
+        return Promise.resolve([{ tableName: "category_artist_runtime_cache" }]);
+      }
+
+      if (text.includes("MAX(updated_at) AS newestUpdatedAt") && text.includes("FROM category_artist_runtime_cache")) {
+        return Promise.resolve([{ newestUpdatedAt: new Date(), total: 400 }]);
+      }
+
+      if (text.includes("SELECT COUNT(*) AS total") && text.includes("UNION")) {
+        return Promise.resolve([{ total: 931 }]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    const { clearGenreCaches, getCategoryArtistCountByGenre } = await import("@/lib/catalog-data-genres");
+    clearGenreCaches();
+
+    const total = await getCategoryArtistCountByGenre("Thrash & Power Metal");
+
+    expect(total).toBe(931);
+    const heavyUnionCall = queryRawUnsafeMock.mock.calls.find(([sql]) => String(sql).includes("UNION"));
+    expect(heavyUnionCall).toBeDefined();
+  });
+
   it("uses row-number dominant-genre fallback for tab counts without GROUP_CONCAT", async () => {
     queryRawUnsafeMock.mockImplementation((sql: unknown) => {
       const text = String(sql);

@@ -55,6 +55,7 @@ const CATEGORY_BUCKET_RUNTIME_CACHE_STALE_MS = 6 * 60 * 60 * 1000;
 const CATEGORY_ARTIST_RUNTIME_CACHE_TABLE_CACHE_TTL_MS = 60_000;
 const CATEGORY_ARTIST_RUNTIME_CACHE_STALE_MS = 6 * 60 * 60 * 1000;
 const CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT = 25_000;
+const CATEGORY_ARTIST_RUNTIME_CACHE_SUSPICIOUS_TOTALS = new Set([200, 400]);
 const CATEGORY_ARTIST_DIRECT_QUERY_PAGE_LIMIT = 1_000;
 const CATEGORY_PINNED_PREVIEW_CACHE_TTL_MS = 60_000;
 const GENRE_ARTIST_SEED_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -1300,9 +1301,14 @@ async function getRuntimeCategoryArtistCountSummary(
     scheduleCategoryArtistRuntimeCacheRebuild(genre, normalizedGenre);
   }
 
+  const isSuspiciouslyTruncated = CATEGORY_ARTIST_RUNTIME_CACHE_SUSPICIOUS_TOTALS.has(totalRows);
+  if (isSuspiciouslyTruncated) {
+    scheduleCategoryArtistRuntimeCacheRebuild(genre, normalizedGenre);
+  }
+
   // Rebuild writes are bounded; a saturated cache can be truncated and should not
   // be treated as authoritative for totals.
-  const likelyComplete = totalRows < CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT;
+  const likelyComplete = totalRows < CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT && !isSuspiciouslyTruncated;
 
   return {
     total: totalRows,
