@@ -4,7 +4,8 @@ import { z } from "zod";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { enrichPendingQueueVideos, type PendingQueueVideoRow } from "@/lib/admin-pending-video-enrichment";
 import { ensurePendingVideoQueueIndex, PENDING_VIDEO_APPROVAL_WHERE_CLAUSE } from "@/lib/admin-pending-video-queue";
-import { clearCatalogVideoCaches, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { scheduleCatalogVisibilityInvalidation } from "@/lib/catalog-visibility-invalidation";
 import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";
 import { prisma } from "@/lib/db";
 import { mapAdminPruneResultToDeleteResponse } from "@/lib/admin-prune-delete-response";
@@ -213,8 +214,7 @@ export async function POST(request: NextRequest) {
           `;
         }
 
-        clearCatalogVideoCaches();
-        clearCurrentVideoRouteCaches();
+        scheduleCatalogVisibilityInvalidation("admin-pending-approve");
       })().catch(() => {
         // Best-effort async approve; moderation UI already advanced optimistically.
       });
@@ -273,8 +273,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    clearCatalogVideoCaches();
-    clearCurrentVideoRouteCaches();
+    scheduleCatalogVisibilityInvalidation("admin-pending-approve");
 
     return NextResponse.json({ ok: true, videoId, action: "approve" });
   }

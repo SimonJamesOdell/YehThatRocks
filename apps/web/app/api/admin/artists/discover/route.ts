@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import {
-  clearCatalogVideoCaches,
   getStoredVideoById,
   hasDatabaseUrl,
   importVideoFromDirectSource,
@@ -123,6 +122,14 @@ export async function POST(request: NextRequest) {
 
   for (const videoId of candidateIds) {
     const existedBefore = Boolean(await getStoredVideoById(videoId, { includeUnapproved: true }));
+
+    // Artist discovery is intended to queue new candidates for moderation. If the
+    // video already exists, skip re-hydration/import to avoid unnecessary CPU work.
+    if (existedBefore) {
+      skipped += 1;
+      continue;
+    }
+
     const result = await importVideoFromDirectSource(videoId, { discoverRelated: false });
 
     if (!result.videoId || !result.decision.allowed) {
@@ -137,18 +144,14 @@ export async function POST(request: NextRequest) {
     const normalizedParsedArtist = parsedArtist ? normalizeArtistKey(parsedArtist) : "";
     const isArtistMatch = normalizedParsedArtist.length > 0 && normalizedParsedArtist === normalizedRequestedArtist;
 
-    if (!existedBefore && !isArtistMatch) {
+    if (!isArtistMatch) {
       await pruneVideoAndAssociationsByVideoId(videoId, "admin-artist-discovery-artist-mismatch").catch(() => undefined);
       prunedAsMismatch += 1;
       continue;
     }
 
-    if (!existedBefore) {
-      queued += 1;
-    }
+    queued += 1;
   }
-
-  clearCatalogVideoCaches();
 
   return NextResponse.json({
     ok: true,
