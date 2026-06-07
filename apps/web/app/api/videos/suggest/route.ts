@@ -542,11 +542,12 @@ export async function POST(request: NextRequest) {
   }
 
   const optionalAuth = await getOptionalApiAuth(request);
+  const authenticatedEmail = optionalAuth?.email?.trim() || "";
   const authenticatedUserId =
     typeof optionalAuth?.userId === "number"
     && Number.isInteger(optionalAuth.userId)
     && optionalAuth.userId > 0
-    && Boolean(optionalAuth.email?.trim())
+    && Boolean(authenticatedEmail)
       ? optionalAuth.userId
       : null;
 
@@ -557,7 +558,7 @@ export async function POST(request: NextRequest) {
   const canBypassApproval =
     await hasAdminPermission(
       authenticatedUserId,
-      optionalAuth.email ?? "",
+      authenticatedEmail,
       "admin.videos.bypass_approval",
     );
 
