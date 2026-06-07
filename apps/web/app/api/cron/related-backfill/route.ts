@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { hasDatabaseUrl } from "@/lib/catalog-data";
-
-// Budget per cron run in YouTube API units. Each related call costs 100 units.
-// Default 300 = 3 related pulls per trigger. Override via AUTO_RELATED_BACKFILL_UNITS_PER_RUN.
-const UNITS_PER_RUN = Math.max(100, Math.min(10_000, Number(process.env.AUTO_RELATED_BACKFILL_UNITS_PER_RUN || "300")));
-
 // Optional shared secret to protect the endpoint from unauthenticated callers.
 // Set CRON_SECRET in env; cron caller must send: Authorization: Bearer <CRON_SECRET>
 const CRON_SECRET = process.env.CRON_SECRET?.trim() || "";
+const DISABLED_REASON = "disabled-manual-submissions-only";
 
 function isCronAuthorized(request: NextRequest): boolean {
   if (!CRON_SECRET) {
@@ -31,15 +26,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized." }, { status: HTTP_UNAUTHORIZED });
   }
 
-  if (!hasDatabaseUrl()) {
-    return NextResponse.json({ ok: false, skipped: true, reason: "no-database" });
-  }
-
   return NextResponse.json({
     ok: true,
     skipped: true,
-    reason: "disabled-manual-artist-discovery-only",
-    unitsPerRun: UNITS_PER_RUN,
+    reason: DISABLED_REASON,
   });
 }
 

@@ -76,6 +76,23 @@ function toSerializable(value) {
 
 loadDatabaseEnv();
 
+const FORCE_RELATED_BACKFILL_FLAG = "--force-related-backfill";
+
+if (!process.argv.includes(FORCE_RELATED_BACKFILL_FLAG)) {
+  console.log(
+    JSON.stringify(
+      {
+        event: "related-backfill-skip",
+        reason: "disabled-manual-submissions-only",
+        forceFlag: FORCE_RELATED_BACKFILL_FLAG,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
+}
+
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL is not set. Add it to apps/web/.env.local or the current shell.");
   process.exit(1);

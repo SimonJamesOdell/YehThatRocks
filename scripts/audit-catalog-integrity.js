@@ -298,7 +298,7 @@ async function main() {
       artistProjectionRebuild: "npm run rebuild:artist-stats",
       embedabilityAudit: "npm run audit:embedability:all",
       unavailablePrune: "npm run prune:unavailable:all",
-      relatedBackfill: `npm run backfill:related -- --max-calls=5000 --min-related=${minRelated}`,
+      relatedBackfill: "disabled-manual-submissions-only",
     },
   };
 

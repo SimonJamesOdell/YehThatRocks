@@ -35,6 +35,9 @@ const files = {
   analyticsRoute: path.join(ROOT, "apps/web/app/api/analytics/route.ts"),
   analyticsClient: path.join(ROOT, "apps/web/lib/analytics-client.ts"),
   cronRelatedBackfillRoute: path.join(ROOT, "apps/web/app/api/cron/related-backfill/route.ts"),
+  suggestRoute: path.join(ROOT, "apps/web/app/api/videos/suggest/route.ts"),
+  adminArtistDiscoverRoute: path.join(ROOT, "apps/web/app/api/admin/artists/discover/route.ts"),
+  playlistImportRoute: path.join(ROOT, "apps/web/app/api/playlists/import/route.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   catalogDataVideos: path.join(ROOT, "apps/web/lib/catalog-data-videos.ts"),
   catalogDataArtists: path.join(ROOT, "apps/web/lib/catalog-data-artists.ts"),
@@ -54,6 +57,8 @@ const files = {
   queueDomain: path.join(ROOT, "apps/web/domains/queue/temporary-queue.ts"),
   playlistDomain: path.join(ROOT, "apps/web/domains/playlist/playlist-step-target.ts"),
   playerEvents: path.join(ROOT, "apps/web/lib/player-events.ts"),
+  relatedBackfillScript: path.join(ROOT, "scripts/backfill-related-links.js"),
+  catalogIntegrityAuditScript: path.join(ROOT, "scripts/audit-catalog-integrity.js"),
 };
 
 function main() {
@@ -85,6 +90,9 @@ function main() {
   const analyticsRouteSource = readFileStrict(files.analyticsRoute, ROOT);
   const analyticsClientSource = readFileStrict(files.analyticsClient, ROOT);
   const cronRelatedBackfillRouteSource = readFileStrict(files.cronRelatedBackfillRoute, ROOT);
+  const suggestRouteSource = readFileStrict(files.suggestRoute, ROOT);
+  const adminArtistDiscoverRouteSource = readFileStrict(files.adminArtistDiscoverRoute, ROOT);
+  const playlistImportRouteSource = readFileStrict(files.playlistImportRoute, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const catalogDataVideosSource = readFileStrict(files.catalogDataVideos, ROOT);
   const catalogDataArtistsSource = readFileStrict(files.catalogDataArtists, ROOT);
@@ -105,6 +113,8 @@ function main() {
   const queueDomainSource = readFileStrict(files.queueDomain, ROOT);
   const playlistDomainSource = readFileStrict(files.playlistDomain, ROOT);
   const playerEventsSource = readFileStrict(files.playerEvents, ROOT);
+  const relatedBackfillScriptSource = readFileStrict(files.relatedBackfillScript, ROOT);
+  const catalogIntegrityAuditScriptSource = readFileStrict(files.catalogIntegrityAuditScript, ROOT);
 
   applyQueueResolutionRulePack({
     shellDynamicSource,
@@ -200,6 +210,31 @@ function main() {
   assertContains(cronRelatedBackfillRouteSource, "return token.length > 0 && token === CRON_SECRET;", "Cron related-backfill route requires bearer token to match CRON_SECRET", failures);
   assertContains(cronRelatedBackfillRouteSource, "if (!isCronAuthorized(request)) {", "Cron related-backfill route rejects unauthorized requests early", failures);
   assertContains(cronRelatedBackfillRouteSource, "return NextResponse.json({ error: \"Unauthorized.\" }, { status: HTTP_UNAUTHORIZED });", "Cron related-backfill route returns stable unauthorized response contract", failures);
+
+  // Automated video discovery must remain disabled; only explicit user/admin ingestion may create pending videos.
+  assertContains(catalogDataVideoIngestionSource, "const ENABLE_AUTOMATED_TRACK_DISCOVERY: boolean = false;", "Video ingestion hard-disables automated track discovery", failures);
+  assertContains(catalogDataVideoIngestionSource, "const AUTOMATED_TRACK_DISCOVERY_DISABLED_REASON = \"manual-submissions-only\";", "Video ingestion records the manual-submissions-only disabled reason", failures);
+  assertContains(catalogDataVideoIngestionSource, "function canRunAutomatedTrackDiscovery(): boolean", "Video ingestion centralizes the automated discovery gate", failures);
+  assertContains(catalogDataVideoIngestionSource, "fetchRelatedYouTubeVideos:disabled", "Related YouTube fetches fail closed while automated discovery is disabled", failures);
+  assertContains(catalogDataVideoIngestionSource, "discoverRelatedVideosCascade:disabled", "Related cascade fails closed while automated discovery is disabled", failures);
+  assertContains(catalogDataVideoIngestionSource, "runQuotaBackfill:disabled", "Quota backfill fails closed while automated discovery is disabled", failures);
+  assertContains(catalogDataVideoIngestionSource, "auto-related-backfill:disabled", "Automatic related backfill scheduler is a no-op", failures);
+  assertContains(catalogDataVideoIngestionSource, "const shouldDiscoverRelated = canRunAutomatedTrackDiscovery() && options?.discoverRelated === true && !existedBeforeImport;", "Direct ingestion cannot discover related videos unless the hard gate is enabled", failures);
+  assertNotContains(catalogDataVideoIngestionSource, "autoRelatedBackfillTimer = setTimeout", "Automatic related backfill must not schedule timers", failures);
+  assertNotContains(catalogDataVideoIngestionSource, "auto-related-backfill:scheduled", "Automatic related backfill must not expose a scheduled path", failures);
+  assertNotContains(catalogDataVideoIngestionSource, "ENABLE_AUTO_RELATED_BACKFILL", "Env flags must not be able to re-enable automatic related backfill", failures);
+  assertContains(cronRelatedBackfillRouteSource, "const DISABLED_REASON = \"disabled-manual-submissions-only\";", "Cron related-backfill route returns a stable disabled reason", failures);
+  assertNotContains(cronRelatedBackfillRouteSource, "runQuotaBackfill", "Cron related-backfill route must not call quota backfill", failures);
+  assertNotContains(cronRelatedBackfillRouteSource, "hasDatabaseUrl", "Cron related-backfill route must return disabled without touching the database", failures);
+  assertContains(relatedBackfillScriptSource, "const FORCE_RELATED_BACKFILL_FLAG = \"--force-related-backfill\";", "Standalone related backfill requires an explicit force flag", failures);
+  assertContains(relatedBackfillScriptSource, "reason: \"disabled-manual-submissions-only\"", "Standalone related backfill reports the disabled reason by default", failures);
+  assertContains(relatedBackfillScriptSource, "process.exit(0);", "Standalone related backfill exits successfully before external calls when disabled", failures);
+  assertContains(catalogIntegrityAuditScriptSource, "relatedBackfill: \"disabled-manual-submissions-only\"", "Catalog integrity audit no longer recommends related backfill as remediation", failures);
+  assertNotContains(catalogIntegrityAuditScriptSource, "npm run backfill:related -- --max-calls", "Catalog integrity audit must not recommend the disabled related backfill command", failures);
+  assertContains(suggestRouteSource, "const discoverRelatedForSuggestion = false;", "Suggest-new direct submissions do not trigger related discovery", failures);
+  assertContains(suggestRouteSource, "importVideoFromDirectSource(videoId, { discoverRelated: false });", "Suggest-new playlist/channel batch ingestion does not trigger related discovery", failures);
+  assertContains(playlistImportRouteSource, "importVideoFromDirectSource(videoId, { discoverRelated: false });", "Playlist ingestion remains a user submission path without related discovery", failures);
+  assertContains(adminArtistDiscoverRouteSource, "importVideoFromDirectSource(videoId, { discoverRelated: false });", "Admin artist discovery remains explicit and does not cascade related discovery", failures);
 
   // Catalog data support invariants for fallback sourcing.
   assertContains(catalogDataVideosSource, "const rankedVideoIds = Array.from(new Set(rankedVideoIdRows.map((row) => row.videoId).filter(Boolean))).slice(0, fetchLimit);", "Ranked top-pool builder deduplicates candidate video ids before hydration", failures);

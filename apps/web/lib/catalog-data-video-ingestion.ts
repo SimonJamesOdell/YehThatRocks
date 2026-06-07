@@ -17,10 +17,6 @@ import {
   scoreLikelyMojibake,
 } from "@/lib/catalog-metadata-utils";
 import {
-  computeRelatedBackfillDelayMs,
-  shouldScheduleRelatedBackfill,
-} from "@/lib/related-backfill-scheduler";
-import {
   debugCatalog,
   extractJsonObject,
   getYouTubeThumbnailUrl,
@@ -78,18 +74,16 @@ const BOT_CHALLENGE_PATTERNS = [
 
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || undefined;
 const ENABLE_YOUTUBE_RELATED_DISCOVERY = process.env.ENABLE_YOUTUBE_RELATED_DISCOVERY === "1";
-// Safety gate: automated related-track discovery is disabled.
-// New pending items should only come from explicit user/admin ingestion flows.
-const ENABLE_AUTOMATED_TRACK_DISCOVERY = false;
+const ENABLE_AUTOMATED_TRACK_DISCOVERY: boolean = false;
+const AUTOMATED_TRACK_DISCOVERY_DISABLED_REASON = "manual-submissions-only";
+
+function canRunAutomatedTrackDiscovery(): boolean {
+  return ENABLE_AUTOMATED_TRACK_DISCOVERY;
+}
+
 const YOUTUBE_DAILY_QUOTA_UNITS = Math.max(1_000, Number(process.env.YOUTUBE_DAILY_QUOTA_UNITS || "10000"));
 const YOUTUBE_RELATED_DISCOVERY_RESERVED_UNITS = Math.max(0, Number(process.env.YOUTUBE_RELATED_DISCOVERY_RESERVED_UNITS || "2500"));
 const YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS = Math.max(100, Number(process.env.YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS || "3000"));
-const ENABLE_AUTO_RELATED_BACKFILL = process.env.ENABLE_AUTO_RELATED_BACKFILL === "1";
-const AUTO_RELATED_BACKFILL_UNITS_PER_RUN = Math.max(100, Math.min(3000, Number(process.env.AUTO_RELATED_BACKFILL_UNITS_PER_RUN || "300")));
-const AUTO_RELATED_BACKFILL_MIN_INTERVAL_MS = Math.max(60_000, Number(process.env.AUTO_RELATED_BACKFILL_MIN_INTERVAL_MS || String(15 * 60 * 1000)));
-const AUTO_RELATED_BACKFILL_MAX_NEWEST_OFFSET = Math.max(0, Math.min(500, Number(process.env.AUTO_RELATED_BACKFILL_MAX_NEWEST_OFFSET || "0")));
-const AUTO_RELATED_BACKFILL_DEFER_MS = Math.max(0, Math.min(60_000, Number(process.env.AUTO_RELATED_BACKFILL_DEFER_MS || "5000")));
-const AUTO_RELATED_BACKFILL_DEFER_JITTER_MS = Math.max(0, Math.min(60_000, Number(process.env.AUTO_RELATED_BACKFILL_DEFER_JITTER_MS || "5000")));
 const RELATED_DISCOVERY_MAX_DEPTH = Math.max(1, Math.min(4, Number(process.env.RELATED_DISCOVERY_MAX_DEPTH || "2")));
 const RELATED_DISCOVERY_MAX_NEW_VIDEOS = Math.max(1, Math.min(400, Number(process.env.RELATED_DISCOVERY_MAX_NEW_VIDEOS || "16")));
 const RELATED_DISCOVERY_DAILY_NEW_VIDEO_CAP = Math.max(0, Math.min(1000, Number(process.env.RELATED_DISCOVERY_DAILY_NEW_VIDEO_CAP || "50")));
@@ -162,11 +156,6 @@ let relatedDiscoveryAdmitSnapshot:
   | { dayKey: string; expiresAt: number; admittedVideos: number }
   | null = null;
 
-let autoRelatedBackfillInFlight: Promise<void> | null = null;
-let autoRelatedBackfillLastStartedAt = 0;
-let autoRelatedBackfillTimer: ReturnType<typeof setTimeout> | null = null;
-let autoRelatedBackfillScheduledFor = 0;
-
 /**
  * Registered by the barrel so that pruneVideoAndAssociationsByVideoId can trigger
  * a full multi-module cache clear without creating a circular dependency.
@@ -182,11 +171,6 @@ export function clearIngestionCaches() {
   playbackDecisionCache.clear();
   relatedDiscoveryQuotaSnapshot = null;
   relatedDiscoveryAdmitSnapshot = null;
-  if (autoRelatedBackfillTimer) {
-    clearTimeout(autoRelatedBackfillTimer);
-    autoRelatedBackfillTimer = null;
-    autoRelatedBackfillScheduledFor = 0;
-  }
 }
 
 export function clearIngestionCachesForVideo(videoId: string) {
@@ -1626,6 +1610,11 @@ async function loadProminentGenreArtistKeys(maxPerGenre = 10, maxTotal = 70) {
 // ── YouTube API ───────────────────────────────────────────────────────────────
 
 async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVideoRecord[]> {
+  if (!canRunAutomatedTrackDiscovery()) {
+    debugCatalog("fetchRelatedYouTubeVideos:disabled", { videoId, reason: AUTOMATED_TRACK_DISCOVERY_DISABLED_REASON });
+    return [];
+  }
+
   if (!ENABLE_YOUTUBE_RELATED_DISCOVERY) {
     debugCatalog("fetchRelatedYouTubeVideos:disabled", { videoId });
     return [];
@@ -1924,7 +1913,7 @@ async function hydrateAndPersistVideo(
   if (!persisted) return null;
 
   if (
-    ENABLE_AUTOMATED_TRACK_DISCOVERY &&
+    canRunAutomatedTrackDiscovery() &&
     availability.status !== "unavailable" &&
     ENABLE_YOUTUBE_RELATED_DISCOVERY &&
     options?.enableRelatedDiscovery === true &&
@@ -1972,7 +1961,12 @@ export async function discoverRelatedVideosCascade(
   seedVideoId: string,
   options?: { maxDepth?: number; maxNewVideos?: number },
 ) {
-  if (!ENABLE_AUTOMATED_TRACK_DISCOVERY || !ENABLE_YOUTUBE_RELATED_DISCOVERY || !hasDatabaseUrl()) {
+  if (!canRunAutomatedTrackDiscovery()) {
+    debugCatalog("discoverRelatedVideosCascade:disabled", { seedVideoId, reason: AUTOMATED_TRACK_DISCOVERY_DISABLED_REASON });
+    return { fetchedNodes: 0, discoveredNewVideos: 0 };
+  }
+
+  if (!ENABLE_YOUTUBE_RELATED_DISCOVERY || !hasDatabaseUrl()) {
     return { fetchedNodes: 0, discoveredNewVideos: 0 };
   }
 
@@ -2048,7 +2042,12 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
 }> {
   const empty = { seedsAttempted: 0, fetchedNodes: 0, discoveredNewVideos: 0, unitsEstimated: 0 };
 
-  if (!ENABLE_AUTOMATED_TRACK_DISCOVERY || !hasDatabaseUrl() || !ENABLE_YOUTUBE_RELATED_DISCOVERY) return empty;
+  if (!canRunAutomatedTrackDiscovery()) {
+    debugCatalog("runQuotaBackfill:disabled", { reason: AUTOMATED_TRACK_DISCOVERY_DISABLED_REASON });
+    return empty;
+  }
+
+  if (!hasDatabaseUrl() || !ENABLE_YOUTUBE_RELATED_DISCOVERY) return empty;
 
   const maxSeeds = Math.max(0, Math.floor(budgetUnits / 100));
   if (maxSeeds === 0) return empty;
@@ -2124,56 +2123,7 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
 }
 
 export function maybeStartAutomaticRelatedBackfill(offset: number) {
-  const now = Date.now();
-  const shouldSchedule = shouldScheduleRelatedBackfill({
-    enabled: ENABLE_AUTOMATED_TRACK_DISCOVERY && ENABLE_AUTO_RELATED_BACKFILL && ENABLE_YOUTUBE_RELATED_DISCOVERY && hasDatabaseUrl(),
-    offset,
-    maxNewestOffset: AUTO_RELATED_BACKFILL_MAX_NEWEST_OFFSET,
-    now,
-    lastStartedAt: autoRelatedBackfillLastStartedAt,
-    minIntervalMs: AUTO_RELATED_BACKFILL_MIN_INTERVAL_MS,
-    hasInFlight: Boolean(autoRelatedBackfillInFlight),
-    hasScheduled: Boolean(autoRelatedBackfillTimer),
-  });
-
-  if (!shouldSchedule) return;
-
-  const startDelayMs = computeRelatedBackfillDelayMs(AUTO_RELATED_BACKFILL_DEFER_MS, AUTO_RELATED_BACKFILL_DEFER_JITTER_MS);
-  autoRelatedBackfillScheduledFor = now + startDelayMs;
-
-  autoRelatedBackfillTimer = setTimeout(() => {
-    autoRelatedBackfillTimer = null;
-    autoRelatedBackfillScheduledFor = 0;
-    autoRelatedBackfillLastStartedAt = Date.now();
-
-    autoRelatedBackfillInFlight = (async () => {
-      try {
-        const result = await runQuotaBackfill(AUTO_RELATED_BACKFILL_UNITS_PER_RUN);
-        debugCatalog("auto-related-backfill:complete", {
-          seedsAttempted: result.seedsAttempted,
-          fetchedNodes: result.fetchedNodes,
-          discoveredNewVideos: result.discoveredNewVideos,
-          unitsEstimated: result.unitsEstimated,
-          unitsPerRun: AUTO_RELATED_BACKFILL_UNITS_PER_RUN,
-          delayMs: startDelayMs,
-        });
-      } catch (error) {
-        debugCatalog("auto-related-backfill:error", {
-          message: error instanceof Error ? error.message : String(error),
-        });
-      } finally {
-        autoRelatedBackfillInFlight = null;
-      }
-    })();
-  }, startDelayMs);
-
-  debugCatalog("auto-related-backfill:scheduled", {
-    offset,
-    delayMs: startDelayMs,
-    scheduledFor: autoRelatedBackfillScheduledFor,
-    unitsPerRun: AUTO_RELATED_BACKFILL_UNITS_PER_RUN,
-    concurrency: BACKFILL_CONCURRENCY,
-  });
+  debugCatalog("auto-related-backfill:disabled", { offset, reason: AUTOMATED_TRACK_DISCOVERY_DISABLED_REASON });
 }
 
 // ── Admin imports / pruning ───────────────────────────────────────────────────
@@ -2300,7 +2250,7 @@ export async function importVideoFromDirectSource(source: string, options?: { di
     }
   }
 
-  const shouldDiscoverRelated = ENABLE_AUTOMATED_TRACK_DISCOVERY && options?.discoverRelated === true && !existedBeforeImport;
+  const shouldDiscoverRelated = canRunAutomatedTrackDiscovery() && options?.discoverRelated === true && !existedBeforeImport;
   if (shouldDiscoverRelated) {
     await discoverRelatedVideosCascade(normalizedVideoId);
   }
