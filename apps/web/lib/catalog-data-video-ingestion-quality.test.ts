@@ -301,6 +301,46 @@ describe("catalog-data-video-ingestion quality hardening", () => {
     expect(plans.length).toBeGreaterThan(0);
     expect(recordExternalApiUsageMock).not.toHaveBeenCalled();
   });
+
+  it("builds conditional video upsert SQL to avoid no-op row rewrites", async () => {
+    const { videoIngestionInternals } = await import("@/lib/catalog-data-video-ingestion");
+
+    const sql = videoIngestionInternals.buildConditionalVideoUpsertStatement({
+      includeChannelTitle: true,
+      includeGenre: true,
+    });
+
+    expect(sql).toContain("ON DUPLICATE KEY UPDATE");
+    expect(sql).toContain("title = IF(NOT (title <=> VALUES(title)), VALUES(title), title)");
+    expect(sql).toContain("channelTitle = IF(NOT (channelTitle <=> VALUES(channelTitle)), VALUES(channelTitle), channelTitle)");
+    expect(sql).toContain("genre = IF(VALUES(genre) IS NULL, genre, IF(NOT (genre <=> VALUES(genre)), VALUES(genre), genre))");
+    expect(sql).toContain("description = IF(NOT (description <=> VALUES(description)), VALUES(description), description)");
+    expect(sql).toContain("updated_at = IF(");
+  });
+
+  it("only updates site_videos when title or status actually changes", async () => {
+    const { videoIngestionInternals } = await import("@/lib/catalog-data-video-ingestion");
+
+    const unchanged = videoIngestionInternals.shouldUpdateSiteVideoRow(
+      { title: "METALLICA - One [embed:playability-ok]", status: "available" },
+      "METALLICA - One [embed:playability-ok]",
+      "available",
+    );
+    const changedStatus = videoIngestionInternals.shouldUpdateSiteVideoRow(
+      { title: "METALLICA - One [embed:playability-ok]", status: "available" },
+      "METALLICA - One [embed:playability-ok]",
+      "check-failed",
+    );
+    const changedTitle = videoIngestionInternals.shouldUpdateSiteVideoRow(
+      { title: "METALLICA - One [embed:playability-ok]", status: "available" },
+      "METALLICA - One [metadata-gate:low-confidence]",
+      "available",
+    );
+
+    expect(unchanged).toBe(false);
+    expect(changedStatus).toBe(true);
+    expect(changedTitle).toBe(true);
+  });
 });
 
 afterEach(() => {

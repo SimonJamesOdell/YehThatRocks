@@ -154,6 +154,49 @@ describe("categories-new snapshot build cache-first behavior", () => {
     expect(forcedBypassCall).toBeUndefined();
   });
 
+  it("does not force bypass reads when cached artists already hit snapshot cap", async () => {
+    const cappedArtists = Array.from({ length: 25_000 }, (_, index) => ({
+      name: `Artist ${index}`,
+      slug: `artist-${index}`,
+      videoCount: 1,
+      thumbnailVideoId: null,
+      dominantGenre: "metal",
+    }));
+
+    getCategoryArtistTabCountsByGenreMock.mockResolvedValue({ all: 30_500, thrash: 100, "power-speed": 100, groove: 0 });
+    getCachedCategoryArtistsByGenreMock.mockResolvedValue(cappedArtists);
+
+    const { ensureCategoriesNewSnapshotReady, scheduleCategoriesNewSnapshotBuild } = await import("@/lib/categories-new-snapshots");
+
+    scheduleCategoriesNewSnapshotBuild("test-snapshot-cap-skip-bypass", { immediate: true });
+    const ready = await ensureCategoriesNewSnapshotReady({ maxWaitMs: 5_000, pollMs: 50 });
+
+    expect(ready).toBe(true);
+
+    const forcedBypassCall = getCategoryArtistsByGenreMock.mock.calls.find(([, options]) =>
+      typeof options === "object" && options !== null && (options as { bypassRuntimeCache?: boolean }).bypassRuntimeCache === true,
+    );
+    expect(forcedBypassCall).toBeUndefined();
+  });
+
+  it("never executes snapshot table DDL during runtime read/write flow", async () => {
+    const { ensureCategoriesNewSnapshotReady, getCategoriesNewTopLevelSnapshot, getCategoriesNewCategorySnapshot, scheduleCategoriesNewSnapshotBuild } = await import("@/lib/categories-new-snapshots");
+
+    scheduleCategoriesNewSnapshotBuild("test-ddl-single-bootstrap", { immediate: true });
+    const ready = await ensureCategoriesNewSnapshotReady({ maxWaitMs: 5_000, pollMs: 50 });
+
+    expect(ready).toBe(true);
+
+    await getCategoriesNewTopLevelSnapshot();
+    await getCategoriesNewCategorySnapshot("thrash-power-metal");
+
+    const bootstrapDdlCalls = executeRawUnsafeMock.mock.calls.filter(([sql]) =>
+      String(sql).includes("CREATE TABLE IF NOT EXISTS category_page_snapshot"),
+    );
+
+    expect(bootstrapDdlCalls).toHaveLength(0);
+  });
+
   it("heals suspicious top-level snapshot counts from refreshed genre cards", async () => {
     getRuntimeCachedTopLevelGenreCardsMock.mockResolvedValue([
       {

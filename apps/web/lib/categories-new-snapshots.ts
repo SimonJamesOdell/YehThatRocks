@@ -55,34 +55,6 @@ function getCategorySnapshotKey(slug: string) {
   return `category:${slug.trim().toLowerCase()}`;
 }
 
-async function ensureCategoriesNewSnapshotTables() {
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS category_page_snapshots (
-      snapshot_name VARCHAR(64) NOT NULL,
-      build_version BIGINT NOT NULL,
-      page_key VARCHAR(255) NOT NULL,
-      payload_json LONGTEXT NOT NULL,
-      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-      PRIMARY KEY (snapshot_name, build_version, page_key),
-      KEY idx_category_page_snapshots_lookup (snapshot_name, page_key, build_version),
-      KEY idx_category_page_snapshots_updated (updated_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS category_page_snapshot_state (
-      snapshot_name VARCHAR(64) NOT NULL,
-      active_build_version BIGINT NULL,
-      build_status VARCHAR(32) NOT NULL DEFAULT 'idle',
-      last_started_at DATETIME(3) NULL,
-      last_finished_at DATETIME(3) NULL,
-      last_error TEXT NULL,
-      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-      PRIMARY KEY (snapshot_name)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-}
-
 async function updateCategoriesNewSnapshotState(args: {
   buildStatus: "idle" | "running" | "ready" | "failed";
   activeBuildVersion?: number | null;
@@ -90,8 +62,6 @@ async function updateCategoriesNewSnapshotState(args: {
   touchStartedAt?: boolean;
   touchFinishedAt?: boolean;
 }) {
-  await ensureCategoriesNewSnapshotTables();
-
   await prisma.$executeRawUnsafe(
     `
       INSERT INTO category_page_snapshot_state (
@@ -125,8 +95,6 @@ async function getActiveCategoriesNewBuildVersion() {
     return null;
   }
 
-  await ensureCategoriesNewSnapshotTables();
-
   const rows = await prisma.$queryRawUnsafe<Array<{ activeBuildVersion: bigint | number | null }>>(
     `
       SELECT active_build_version AS activeBuildVersion
@@ -142,8 +110,6 @@ async function getActiveCategoriesNewBuildVersion() {
 }
 
 async function writeCategoriesNewSnapshot(buildVersion: number, pageKey: string, payload: unknown) {
-  await ensureCategoriesNewSnapshotTables();
-
   await prisma.$executeRawUnsafe(
     `
       INSERT INTO category_page_snapshots (snapshot_name, build_version, page_key, payload_json)
@@ -275,6 +241,7 @@ async function buildCategoriesNewSnapshotRows(buildVersion: number) {
 
     // Runtime cache rows can be stale/partial for some large buckets; prefer a complete snapshot payload.
     const expectedTotalArtists = Math.max(0, Number(tabCounts.all ?? 0));
+    const expectedSnapshotArtists = Math.min(expectedTotalArtists, SNAPSHOT_ARTIST_LIMIT);
     if (artists.length === 0) {
       artists = await getCategoryArtistsByGenre(genre, {
         offset: 0,
@@ -283,7 +250,7 @@ async function buildCategoriesNewSnapshotRows(buildVersion: number) {
       }).catch(() => []);
     }
 
-    if (artists.length < expectedTotalArtists) {
+    if (artists.length < expectedSnapshotArtists) {
       await warmCategoryArtistRuntimeCacheByGenre(genre).catch(() => undefined);
 
       const cachedArtists = await getCachedCategoryArtistsByGenre(genre, {
@@ -295,7 +262,7 @@ async function buildCategoriesNewSnapshotRows(buildVersion: number) {
         artists = cachedArtists;
       }
 
-      if (artists.length < expectedTotalArtists) {
+      if (artists.length < expectedSnapshotArtists) {
         const rebuiltArtists = await getCategoryArtistsByGenre(genre, {
           offset: 0,
           limit: SNAPSHOT_ARTIST_LIMIT,

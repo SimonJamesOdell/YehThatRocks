@@ -143,6 +143,11 @@ type CachedPlaybackDecision = {
   decision: PlaybackDecision;
 };
 
+type ConditionalVideoUpsertFlags = {
+  includeChannelTitle: boolean;
+  includeGenre: boolean;
+};
+
 // ── Cache state ───────────────────────────────────────────────────────────────
 
 const rejectedVideoCache = new BoundedMap<string, { expiresAt: number; rejected: boolean }>(INGESTION_CACHE_MAX_ENTRIES);
@@ -566,6 +571,52 @@ function normalizeGenreForStorage(value: string | null | undefined) {
       return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
     })
     .join(" ");
+}
+
+function buildConditionalVideoUpsertStatement(flags: ConditionalVideoUpsertFlags) {
+  const columns = ["videoId", "title"];
+  const valuePlaceholders = ["?", "?"];
+  const updateStatements = ["title = IF(NOT (title <=> VALUES(title)), VALUES(title), title)"];
+  const changedPredicates = ["NOT (title <=> VALUES(title))"];
+
+  if (flags.includeChannelTitle) {
+    columns.push("channelTitle");
+    valuePlaceholders.push("?");
+    updateStatements.push("channelTitle = IF(NOT (channelTitle <=> VALUES(channelTitle)), VALUES(channelTitle), channelTitle)");
+    changedPredicates.push("NOT (channelTitle <=> VALUES(channelTitle))");
+  }
+
+  if (flags.includeGenre) {
+    columns.push("genre");
+    valuePlaceholders.push("?");
+    updateStatements.push(
+      "genre = IF(VALUES(genre) IS NULL, genre, IF(NOT (genre <=> VALUES(genre)), VALUES(genre), genre))",
+    );
+    changedPredicates.push("(VALUES(genre) IS NOT NULL AND NOT (genre <=> VALUES(genre)))");
+  }
+
+  columns.push("favourited", "description", "created_at", "updated_at");
+  valuePlaceholders.push("0", "?", "?", "?");
+  updateStatements.push("description = IF(NOT (description <=> VALUES(description)), VALUES(description), description)");
+  changedPredicates.push("NOT (description <=> VALUES(description))");
+  updateStatements.push(
+    `updated_at = IF(${changedPredicates.join(" OR ")}, VALUES(updated_at), updated_at)`,
+  );
+
+  return `
+    INSERT INTO videos (${columns.join(", ")})
+    VALUES (${valuePlaceholders.join(", ")})
+    ON DUPLICATE KEY UPDATE
+      ${updateStatements.join(",\n      ")}
+  `;
+}
+
+function shouldUpdateSiteVideoRow(
+  row: { title: string | null; status: string | null },
+  nextTitle: string,
+  nextStatus: string,
+) {
+  return row.title !== nextTitle || row.status !== nextStatus;
 }
 
 function pickGenreFromMusicBrainz(mbData: MusicBrainzArtistResult | null) {
@@ -1360,47 +1411,22 @@ async function persistVideoAvailability(video: PersistableVideoRecord, availabil
   const hasGenreColumn = await ensureVideoGenreColumnAvailable();
   const existingVideo = await getStoredVideoById(video.id);
 
-  if (hasChannelTitleColumn && hasGenreColumn) {
-    await prisma.$executeRaw`
-      INSERT INTO videos (videoId, title, channelTitle, genre, favourited, description, created_at, updated_at)
-      VALUES (${video.id}, ${persistedTitle}, ${persistedChannelTitle}, ${persistedGenre}, 0, ${persistedDescription}, ${persistedTimestamp}, ${persistedTimestamp})
-      ON DUPLICATE KEY UPDATE
-        title = VALUES(title),
-        channelTitle = VALUES(channelTitle),
-        genre = COALESCE(VALUES(genre), genre),
-        description = VALUES(description),
-        updated_at = VALUES(updated_at)
-    `;
-  } else if (hasChannelTitleColumn) {
-    await prisma.$executeRaw`
-      INSERT INTO videos (videoId, title, channelTitle, favourited, description, created_at, updated_at)
-      VALUES (${video.id}, ${persistedTitle}, ${persistedChannelTitle}, 0, ${persistedDescription}, ${persistedTimestamp}, ${persistedTimestamp})
-      ON DUPLICATE KEY UPDATE
-        title = VALUES(title),
-        channelTitle = VALUES(channelTitle),
-        description = VALUES(description),
-        updated_at = VALUES(updated_at)
-    `;
-  } else if (hasGenreColumn) {
-    await prisma.$executeRaw`
-      INSERT INTO videos (videoId, title, genre, favourited, description, created_at, updated_at)
-      VALUES (${video.id}, ${persistedTitle}, ${persistedGenre}, 0, ${persistedDescription}, ${persistedTimestamp}, ${persistedTimestamp})
-      ON DUPLICATE KEY UPDATE
-        title = VALUES(title),
-        genre = COALESCE(VALUES(genre), genre),
-        description = VALUES(description),
-        updated_at = VALUES(updated_at)
-    `;
-  } else {
-    await prisma.$executeRaw`
-      INSERT INTO videos (videoId, title, favourited, description, created_at, updated_at)
-      VALUES (${video.id}, ${persistedTitle}, 0, ${persistedDescription}, ${persistedTimestamp}, ${persistedTimestamp})
-      ON DUPLICATE KEY UPDATE
-        title = VALUES(title),
-        description = VALUES(description),
-        updated_at = VALUES(updated_at)
-    `;
+  const upsertFlags: ConditionalVideoUpsertFlags = {
+    includeChannelTitle: hasChannelTitleColumn,
+    includeGenre: hasGenreColumn,
+  };
+  const upsertSql = buildConditionalVideoUpsertStatement(upsertFlags);
+  const upsertParams: Array<string | Date | null> = [video.id, persistedTitle];
+
+  if (upsertFlags.includeChannelTitle) {
+    upsertParams.push(persistedChannelTitle);
   }
+  if (upsertFlags.includeGenre) {
+    upsertParams.push(persistedGenre);
+  }
+
+  upsertParams.push(persistedDescription, persistedTimestamp, persistedTimestamp);
+  await prisma.$executeRawUnsafe(upsertSql, ...upsertParams);
 
   debugCatalog("persistVideoAvailability:video-upserted", {
     videoId: video.id,
@@ -1413,16 +1439,18 @@ async function persistVideoAvailability(video: PersistableVideoRecord, availabil
 
   const existingSiteVideo = await prisma.siteVideo.findFirst({
     where: { videoId: persistedVideo.id },
-    select: { id: true },
+    select: { id: true, title: true, status: true },
   });
 
   const titleWithReason = truncate(`${persistedTitle} [${availability.reason}]`, 255);
 
   if (existingSiteVideo) {
-    await prisma.siteVideo.update({
-      where: { id: existingSiteVideo.id },
-      data: { title: titleWithReason, status: availability.status },
-    });
+    if (shouldUpdateSiteVideoRow(existingSiteVideo, titleWithReason, availability.status)) {
+      await prisma.siteVideo.update({
+        where: { id: existingSiteVideo.id },
+        data: { title: titleWithReason, status: availability.status },
+      });
+    }
   } else {
     await prisma.siteVideo.create({
       data: { videoId: persistedVideo.id, title: titleWithReason, status: availability.status, createdAt: new Date() },
@@ -2400,7 +2428,10 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
     if (siteVideoRef) {
       try {
         await executeWithRetry(
-          `UPDATE site_videos SET status = 'unavailable' WHERE ${escapeSqlIdentifier(siteVideoRef.Field)} IN (${ids.map(() => "?").join(",")})`,
+          `UPDATE site_videos
+           SET status = 'unavailable'
+           WHERE ${escapeSqlIdentifier(siteVideoRef.Field)} IN (${ids.map(() => "?").join(",")})
+             AND (status IS NULL OR status <> 'unavailable')`,
           ids,
         );
       } catch {
@@ -2562,13 +2593,17 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
     !Boolean(row.hasBlocked) &&
     (decision.reason === "missing-metadata" || decision.reason === "unknown-video-type" || decision.reason === "low-confidence")
   ) {
-    await prisma.siteVideo.updateMany({
-      where: { videoId: row.id },
-      data: {
-        status: "check-failed",
-        title: truncate(`${row.title} [metadata-gate:${decision.reason}]`, 255),
-      },
-    });
+    const metadataGateTitle = truncate(`${row.title} [metadata-gate:${decision.reason}]`, 255);
+    await prisma.$executeRawUnsafe(
+      `UPDATE site_videos
+       SET status = 'check-failed',
+           title = ?
+       WHERE video_id = ?
+         AND (NOT (status <=> 'check-failed') OR NOT (title <=> ?))`,
+      metadataGateTitle,
+      row.id,
+      metadataGateTitle,
+    );
 
     const passthroughDecision: PlaybackDecision = { allowed: true, reason: "ok" };
     playbackDecisionCache.set(normalizedVideoId, { expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS, decision: passthroughDecision });
@@ -2690,7 +2725,10 @@ export async function replaceVideoIdInDatabase(
 
   // Restore availability in site_videos (still references the integer id).
   await prisma.$executeRaw`
-    UPDATE site_videos SET status = 'available' WHERE video_id = ${existingRow.id}
+    UPDATE site_videos
+    SET status = 'available'
+    WHERE video_id = ${existingRow.id}
+      AND (status IS NULL OR status <> 'available')
   `.catch(() => undefined);
 
   // Remove old rejection record so the video is no longer blocked.
@@ -2768,8 +2806,10 @@ export async function findAndReplaceUnavailableVideo(videoId: string): Promise<{
 
 export const videoIngestionInternals = {
   buildRelatedSearchQueryPlans,
+  buildConditionalVideoUpsertStatement,
   scoreRelatedSearchCandidate,
   classifyPersistedVideoGenre,
   loadProminentGenreArtistKeys,
   isRockOrMetalGenreValue,
+  shouldUpdateSiteVideoRow,
 };

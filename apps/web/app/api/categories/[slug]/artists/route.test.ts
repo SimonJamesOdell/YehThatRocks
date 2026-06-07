@@ -5,6 +5,7 @@ const getCategoryArtistsByGenreMock = vi.fn();
 const getCategoryArtistTabCountsByGenreMock = vi.fn();
 const getGenreBySlugMock = vi.fn();
 const warmCategoryArtistRuntimeCacheByGenreMock = vi.fn();
+const getCategoriesNewCategorySnapshotMock = vi.fn();
 
 vi.mock("@/lib/catalog-data", () => ({
   getArtistsByGenre: getArtistsByGenreMock,
@@ -12,6 +13,10 @@ vi.mock("@/lib/catalog-data", () => ({
   getCategoryArtistsByGenre: getCategoryArtistsByGenreMock,
   getGenreBySlug: getGenreBySlugMock,
   warmCategoryArtistRuntimeCacheByGenre: warmCategoryArtistRuntimeCacheByGenreMock,
+}));
+
+vi.mock("@/lib/categories-new-snapshots", () => ({
+  getCategoriesNewCategorySnapshot: getCategoriesNewCategorySnapshotMock,
 }));
 
 function createRequest(query = "") {
@@ -38,11 +43,13 @@ describe("GET /api/categories/[slug]/artists", () => {
     getCategoryArtistTabCountsByGenreMock.mockReset();
     getGenreBySlugMock.mockReset();
     warmCategoryArtistRuntimeCacheByGenreMock.mockReset();
+    getCategoriesNewCategorySnapshotMock.mockReset();
 
     getGenreBySlugMock.mockResolvedValue("Thrash & Power Metal");
     getArtistsByGenreMock.mockResolvedValue([]);
     getCategoryArtistTabCountsByGenreMock.mockResolvedValue({ all: 0 });
     warmCategoryArtistRuntimeCacheByGenreMock.mockResolvedValue({ warmed: true, count: 0 });
+    getCategoriesNewCategorySnapshotMock.mockResolvedValue(null);
   });
 
   it("uses runtime-cache-enabled category query for full payload by default", async () => {
@@ -118,5 +125,69 @@ describe("GET /api/categories/[slug]/artists", () => {
     expect(getCategoryArtistTabCountsByGenreMock).toHaveBeenCalledWith("Thrash & Power Metal");
     expect(payload.tabCounts).toEqual({ all: 10, thrash: 7, "power-speed": 3 });
     expect(payload.totalArtists).toBe(10);
+  });
+
+  it("serves first-page artists and tab counts from precomputed snapshot when available", async () => {
+    getCategoriesNewCategorySnapshotMock.mockResolvedValue({
+      buildVersion: 123,
+      generatedAt: "2026-06-08T00:00:00.000Z",
+      slug: "thrash-power-metal",
+      genre: "Thrash & Power Metal",
+      totalArtists: 3,
+      tabCounts: { all: 3, thrash: 2, "power-speed": 1, groove: 0 },
+      artists: [
+        createArtist("Metallica", "thrash metal"),
+        createArtist("Megadeth", "thrash metal"),
+        createArtist("Blind Guardian", "power metal"),
+      ],
+    });
+
+    const { GET } = await import("@/app/api/categories/[slug]/artists/route");
+    const response = await GET(
+      createRequest("?includeTabCounts=1&offset=0&limit=2") as never,
+      { params: Promise.resolve({ slug: "thrash-power-metal" }) },
+    );
+    const payload = await response.json();
+
+    expect(getCategoryArtistsByGenreMock).not.toHaveBeenCalled();
+    expect(getCategoryArtistTabCountsByGenreMock).not.toHaveBeenCalled();
+    expect(payload.artists).toHaveLength(2);
+    expect(payload.hasMore).toBe(true);
+    expect(payload.nextOffset).toBe(2);
+    expect(payload.totalArtists).toBe(3);
+    expect(payload.tabCounts).toEqual({ all: 3, thrash: 2, "power-speed": 1, groove: 0 });
+  });
+
+  it("falls back to live query when requested page is beyond snapshot payload window", async () => {
+    getCategoriesNewCategorySnapshotMock.mockResolvedValue({
+      buildVersion: 123,
+      generatedAt: "2026-06-08T00:00:00.000Z",
+      slug: "thrash-power-metal",
+      genre: "Thrash & Power Metal",
+      totalArtists: 3,
+      tabCounts: { all: 3 },
+      artists: [
+        createArtist("Metallica", "thrash metal"),
+        createArtist("Megadeth", "thrash metal"),
+      ],
+    });
+    getCategoryArtistsByGenreMock.mockResolvedValue([createArtist("Blind Guardian", "power metal")]);
+
+    const { GET } = await import("@/app/api/categories/[slug]/artists/route");
+    const response = await GET(
+      createRequest("?offset=2&limit=2") as never,
+      { params: Promise.resolve({ slug: "thrash-power-metal" }) },
+    );
+    const payload = await response.json();
+
+    expect(getCategoryArtistsByGenreMock).toHaveBeenCalledWith("Thrash & Power Metal", {
+      offset: 2,
+      limit: 3,
+      maxLimit: 193,
+      bypassRuntimeCache: false,
+    });
+    expect(payload.artists).toHaveLength(1);
+    expect(payload.hasMore).toBe(false);
+    expect(payload.totalArtists).toBeNull();
   });
 });

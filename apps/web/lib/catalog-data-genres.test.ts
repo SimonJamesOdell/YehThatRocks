@@ -678,16 +678,12 @@ describe("category artist count and tab-count runtime-cache optimization", () =>
     expect(heavyUnionCall).toBeDefined();
   });
 
-  it("uses row-number dominant-genre fallback for tab counts without GROUP_CONCAT", async () => {
+  it("uses row-number dominant-genre fallback for tab counts without companion UNION count", async () => {
     queryRawUnsafeMock.mockImplementation((sql: unknown) => {
       const text = String(sql);
 
       if (text.includes("SHOW TABLES LIKE 'category_artist_runtime_cache'")) {
         return Promise.resolve([]);
-      }
-
-      if (text.includes("SELECT COUNT(*) AS total") && text.includes("UNION")) {
-        return Promise.resolve([{ total: 2 }]);
       }
 
       if (text.includes("ROW_NUMBER() OVER") && text.includes("dominantGenre")) {
@@ -711,6 +707,12 @@ describe("category artist count and tab-count runtime-cache optimization", () =>
       "power-speed": 1,
       groove: 0,
     });
+
+    const companionCountCall = queryRawUnsafeMock.mock.calls.find(([sql]) => {
+      const text = String(sql);
+      return text.includes("SELECT COUNT(*) AS total") && text.includes("UNION");
+    });
+    expect(companionCountCall).toBeUndefined();
 
     const dominantGenreQuery = queryRawUnsafeMock.mock.calls.find(([sql]) => String(sql).includes("ROW_NUMBER() OVER"));
     expect(dominantGenreQuery).toBeDefined();
@@ -759,6 +761,39 @@ describe("runtime cache maintenance write-pressure guards", () => {
     const result = await warmCategoryArtistRuntimeCacheByGenre("Thrash & Power Metal");
 
     expect(result).toEqual({ warmed: false, count: 123 });
+    const deleteCacheRowsCall = queryRawUnsafeMock.mock.calls.find(([sql]) =>
+      String(sql).includes("DELETE FROM category_artist_runtime_cache WHERE genre_norm = ?"),
+    );
+    expect(deleteCacheRowsCall).toBeUndefined();
+  });
+
+  it("skips warm rebuild writes when runtime cache is fresh but saturated", async () => {
+    queryRawUnsafeMock.mockImplementation((sql: unknown) => {
+      const text = String(sql);
+
+      if (text.includes("SHOW TABLES LIKE 'category_artist_runtime_cache'")) {
+        return Promise.resolve([{ tableName: "category_artist_runtime_cache" }]);
+      }
+
+      if (text.includes("MAX(updated_at) AS newestUpdatedAt") && text.includes("FROM category_artist_runtime_cache")) {
+        return Promise.resolve([{ newestUpdatedAt: new Date(), total: 25_000 }]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    const { clearGenreCaches, warmCategoryArtistRuntimeCacheByGenre } = await import("@/lib/catalog-data-genres");
+    clearGenreCaches();
+
+    const result = await warmCategoryArtistRuntimeCacheByGenre("Thrash & Power Metal");
+
+    expect(result).toEqual({ warmed: false, count: 25_000 });
+
+    const heavyAggregationCall = queryRawUnsafeMock.mock.calls.find(([sql]) =>
+      String(sql).includes("COUNT(*) AS videoCount") && String(sql).includes("GROUP BY v.`parsed_artist_norm`"),
+    );
+    expect(heavyAggregationCall).toBeUndefined();
+
     const deleteCacheRowsCall = queryRawUnsafeMock.mock.calls.find(([sql]) =>
       String(sql).includes("DELETE FROM category_artist_runtime_cache WHERE genre_norm = ?"),
     );

@@ -221,6 +221,8 @@ function runSourceChecks(failures) {
   assertContains(categoriesNewSnapshotsSource, "getCategoriesNewTopLevelSnapshot", "Categories_new snapshot store exposes top-level snapshot reads", failures);
   assertContains(categoriesNewSnapshotsSource, "getCategoriesNewCategorySnapshot", "Categories_new snapshot store exposes per-category snapshot reads", failures);
   assertContains(categoriesNewSnapshotsSource, "SNAPSHOT_ARTIST_LIMIT = 25_000", "Categories_new snapshot builds capture comprehensive artist grids", failures);
+  assertNotContains(categoriesNewSnapshotsSource, "CREATE TABLE IF NOT EXISTS category_page_snapshots", "Categories_new snapshot reads/writes avoid runtime DDL for snapshot tables", failures);
+  assertNotContains(categoriesNewSnapshotsSource, "CREATE TABLE IF NOT EXISTS category_page_snapshot_state", "Categories_new snapshot state management avoids runtime DDL", failures);
   assertContains(catalogDataGenresSource, "warmCategoryArtistRuntimeCacheByGenre", "Catalog genre data exposes category artist runtime cache warmer", failures);
   assertContains(catalogDataGenresSource, "CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT = 25_000", "Category artist runtime cache rebuild limit is comprehensive", failures);
   assertContains(catalogDataGenresSource, "artistCount: countByBucket.get(card.genre)", "Top-level bucket cache writes use authoritative per-bucket artist counts instead of placeholders", failures);

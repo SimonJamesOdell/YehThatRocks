@@ -495,6 +495,13 @@ export async function warmCategoryArtistRuntimeCacheByGenre(genre: string): Prom
     return { warmed: false, count: runtimeCountSummary.total };
   }
 
+  // Rebuild writes are capped at CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT.
+  // When the cache is already fresh and saturated, repeating the heavy source
+  // aggregation cannot increase runtime coverage and only burns CPU.
+  if (!isDirty && runtimeCountSummary?.isFresh && runtimeCountSummary.total >= CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT) {
+    return { warmed: false, count: runtimeCountSummary.total };
+  }
+
   const runtimeSqlPressureElevated = (() => {
     try {
       return isRuntimeSqlPressureElevated(getRuntimeProfilingSnapshot());
@@ -1590,38 +1597,8 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
   const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
   const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
   const normalizedGenrePlaceholders = normalizedGenreTerms.map(() => "?").join(", ");
-  const authoritativeAllCount = await queryCategoryArtistCountByTerms({
-    normalizedGenrePlaceholders,
-    normalizedGenrePattern,
-    normalizedGenreTerms,
-    normalizedGenreSqlExpr,
-    videoArtistNormColumn,
-    videoArtistNormExpr,
-    videoArtistIndexHint,
-  });
 
   const matchers = buildCategoryArtistTabCountMatchers(genre);
-  const countedCachedArtists = await getRuntimeCachedCategoryArtistsByGenre(normalizedGenre, {
-    offset: 0,
-    limit: CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT,
-    expectedTotal: authoritativeAllCount,
-    refreshGenre: genre,
-  });
-  if (countedCachedArtists && countedCachedArtists.length >= authoritativeAllCount) {
-    const counts: Record<string, number> = { all: authoritativeAllCount };
-    for (const matcher of matchers) {
-      if (matcher.id === "all") {
-        continue;
-      }
-      counts[matcher.id] = countedCachedArtists.reduce(
-        (total, row) => total + (matcher.matches(row.dominantGenre) ? 1 : 0),
-        0,
-      );
-    }
-
-    return counts;
-  }
-
   const rows = await prisma.$queryRawUnsafe<Array<{ dominantGenre: string | null }>>(
     `SELECT
        ranked.dominantGenre
@@ -1647,7 +1624,7 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
     normalizedGenrePattern,
   );
 
-  const counts: Record<string, number> = { all: authoritativeAllCount };
+  const counts: Record<string, number> = { all: rows.length };
   for (const matcher of matchers) {
     if (matcher.id === "all") {
       continue;

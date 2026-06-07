@@ -7,6 +7,7 @@ import {
   getGenreBySlug,
   warmCategoryArtistRuntimeCacheByGenre,
 } from "@/lib/catalog-data";
+import { getCategoriesNewCategorySnapshot } from "@/lib/categories-new-snapshots";
 
 type CategoryArtistsRouteContext = {
   params: Promise<{ slug: string }>;
@@ -44,65 +45,89 @@ export async function GET(request: NextRequest, context: CategoryArtistsRouteCon
 
     let artistsWithProbe: Awaited<ReturnType<typeof getCategoryArtistsByGenre>> = [];
     let tabCounts: Awaited<ReturnType<typeof getCategoryArtistTabCountsByGenre>> | null = null;
+    let totalArtistsOverride: number | null = null;
     const shouldBypassRuntimeCache = wantsFullPayload && offset === 0 && shouldWarmRuntimeCache;
 
-    try {
-      const artistRowsPromise = getCategoryArtistsByGenre(genre, {
-        offset,
-        limit: limit + 1,
-        maxLimit: maxLimit + 1,
-        bypassRuntimeCache: shouldBypassRuntimeCache,
-      });
-      const results = await Promise.all([
-        artistRowsPromise,
-        offset === 0 && includeTabCounts ? getCategoryArtistTabCountsByGenre(genre) : Promise.resolve(null),
-      ]);
-      artistsWithProbe = results[0] ?? [];
-      tabCounts = results[1];
+    if (!shouldBypassRuntimeCache) {
+      const snapshot = await getCategoriesNewCategorySnapshot(slug).catch(() => null);
 
-      if (shouldBypassRuntimeCache && offset === 0 && artistsWithProbe.length > 0) {
-        const directCount = artistsWithProbe.length;
-        tabCounts = {
-          ...(tabCounts ?? {}),
-          all: Math.max(directCount, Number(tabCounts?.all ?? 0)),
-        };
-      }
-    } catch (error) {
-      console.warn("[api/categories/[slug]/artists] primary query degraded", {
-        message: error instanceof Error ? error.message : "unknown error",
-        slug,
-        genre,
-        limit,
-        offset,
-      });
+      if (snapshot && snapshot.genre === genre && offset < snapshot.artists.length) {
+        artistsWithProbe = snapshot.artists.slice(offset, offset + limit + 1);
+        totalArtistsOverride = offset === 0 ? Math.max(0, Number(snapshot.totalArtists ?? snapshot.artists.length)) : null;
 
-      try {
-        const allArtists = await getArtistsByGenre(genre);
-        const fallbackArtists = allArtists
-          .slice(offset, offset + limit + 1)
-          .map((artist) => ({
-            name: artist.name,
-            slug: artist.slug,
-            videoCount: 0,
-            thumbnailVideoId: null,
-            dominantGenre: artist.genre,
-          }));
-
-        artistsWithProbe = fallbackArtists;
         if (offset === 0 && includeTabCounts) {
-          tabCounts = { all: allArtists.length };
+          tabCounts = {
+            ...snapshot.tabCounts,
+            all: Math.max(
+              0,
+              Number(snapshot.tabCounts?.all ?? snapshot.totalArtists ?? snapshot.artists.length),
+            ),
+          };
         }
-      } catch (fallbackError) {
-        console.error("[api/categories/[slug]/artists] fallback getArtistsByGenre failed", {
-          message: fallbackError instanceof Error ? fallbackError.message : "unknown error",
+      }
+    }
+
+    if (artistsWithProbe.length === 0) {
+      try {
+        const artistRowsPromise = getCategoryArtistsByGenre(genre, {
+          offset,
+          limit: limit + 1,
+          maxLimit: maxLimit + 1,
+          bypassRuntimeCache: shouldBypassRuntimeCache,
+        });
+        const results = await Promise.all([
+          artistRowsPromise,
+          offset === 0 && includeTabCounts ? getCategoryArtistTabCountsByGenre(genre) : Promise.resolve(null),
+        ]);
+        artistsWithProbe = results[0] ?? [];
+        tabCounts = results[1];
+
+        if (shouldBypassRuntimeCache && offset === 0 && artistsWithProbe.length > 0) {
+          const directCount = artistsWithProbe.length;
+          tabCounts = {
+            ...(tabCounts ?? {}),
+            all: Math.max(directCount, Number(tabCounts?.all ?? 0)),
+          };
+        }
+      } catch (error) {
+        console.warn("[api/categories/[slug]/artists] primary query degraded", {
+          message: error instanceof Error ? error.message : "unknown error",
           slug,
           genre,
+          limit,
+          offset,
         });
+
+        try {
+          const allArtists = await getArtistsByGenre(genre);
+          const fallbackArtists = allArtists
+            .slice(offset, offset + limit + 1)
+            .map((artist) => ({
+              name: artist.name,
+              slug: artist.slug,
+              videoCount: 0,
+              thumbnailVideoId: null,
+              dominantGenre: artist.genre,
+            }));
+
+          artistsWithProbe = fallbackArtists;
+          if (offset === 0 && includeTabCounts) {
+            tabCounts = { all: allArtists.length };
+          }
+        } catch (fallbackError) {
+          console.error("[api/categories/[slug]/artists] fallback getArtistsByGenre failed", {
+            message: fallbackError instanceof Error ? fallbackError.message : "unknown error",
+            slug,
+            genre,
+          });
+        }
       }
     }
 
     const artists = artistsWithProbe.slice(0, limit);
-    const totalArtists = offset === 0 ? (tabCounts?.all ?? (wantsFullPayload && artists.length > 0 ? artists.length : null)) : null;
+    const totalArtists = offset === 0
+      ? (totalArtistsOverride ?? tabCounts?.all ?? (wantsFullPayload && artists.length > 0 ? artists.length : null))
+      : null;
     const hasMore = artistsWithProbe.length > limit;
 
     return NextResponse.json({

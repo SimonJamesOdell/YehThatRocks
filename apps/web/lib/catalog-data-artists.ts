@@ -56,6 +56,7 @@ const ARTISTS_LIST_CACHE_TTL_MS = 5 * 60 * 1000;
 const ARTIST_SLUG_LOOKUP_CACHE_TTL_MS = 5 * 60 * 1000;
 const ARTIST_SINGLE_SLUG_CACHE_TTL_MS = 5 * 60 * 1000;
 const ARTIST_VIDEOS_CACHE_TTL_MS = 20_000;
+const ARTIST_VIDEO_METADATA_SEARCH_CACHE_TTL_MS = 60_000;
 const KNOWN_ARTIST_MATCH_CACHE_TTL_MS = 10 * 60 * 1000;
 const ARTIST_CATALOG_EVIDENCE_CACHE_TTL_MS = 10 * 60 * 1000;
 const ARTIST_CACHE_MAX_ENTRIES = Math.max(
@@ -91,6 +92,8 @@ let artistSlugLookupInFlight: Promise<Map<string, ArtistRecord>> | undefined;
 const artistSingleSlugCache = new BoundedMap<string, { expiresAt: number; artist: ArtistRecord }>(ARTIST_CACHE_MAX_ENTRIES);
 const artistVideosCache = new BoundedMap<string, { expiresAt: number; videos: VideoRecord[] }>(ARTIST_HEAVY_CACHE_MAX_ENTRIES);
 const artistVideosInFlight = new BoundedMap<string, Promise<VideoRecord[]>>(ARTIST_HEAVY_CACHE_MAX_ENTRIES);
+const artistVideoMetadataSearchCache = new BoundedMap<string, { expiresAt: number; rows: Array<{ name: string; country: string | null; genre1: string | null }> }>(ARTIST_CACHE_MAX_ENTRIES);
+const artistVideoMetadataSearchInFlight = new BoundedMap<string, Promise<Array<{ name: string; country: string | null; genre1: string | null }>>>(ARTIST_CACHE_MAX_ENTRIES);
 const knownArtistMatchCache = new BoundedMap<string, { expiresAt: number; known: boolean }>(ARTIST_CACHE_MAX_ENTRIES);
 const artistCatalogEvidenceCache = new BoundedMap<string, { expiresAt: number; known: boolean; rockOrMetalGenreMatch: boolean }>(ARTIST_CACHE_MAX_ENTRIES);
 let artistVideoStatsSourceCache: "videosbyartist" | "parsedArtist" | undefined;
@@ -129,6 +132,8 @@ export function clearArtistCaches() {
   artistsListInFlight = undefined;
   artistVideosCache.clear();
   artistVideosInFlight.clear();
+  artistVideoMetadataSearchCache.clear();
+  artistVideoMetadataSearchInFlight.clear();
 }
 
 export function invalidateArtistLookupCaches() {
@@ -156,6 +161,8 @@ export function getArtistCacheDiagnostics() {
       artistSingleSlugCache: artistSingleSlugCache.size,
       artistVideosCache: artistVideosCache.size,
       artistVideosInFlight: artistVideosInFlight.size,
+      artistVideoMetadataSearchCache: artistVideoMetadataSearchCache.size,
+      artistVideoMetadataSearchInFlight: artistVideoMetadataSearchInFlight.size,
     },
   };
 }
@@ -852,28 +859,82 @@ export async function findArtistsFromVideoMetadata(search: string, limit: number
 
   const safeLimit = clamp(Math.floor(limit), 1, 100);
   const likePattern = `%${normalizedSearch}%`;
+  const cacheKey = `${normalizedSearch.toLowerCase()}:${safeLimit}`;
+  const now = Date.now();
 
-  return prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
-    `
-      SELECT artist_name AS name, NULL AS country, NULL AS genre1
-      FROM (
-        SELECT
-          COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) AS artist_name,
-          SUM(COALESCE(v.favourited, 0)) AS artist_score,
-          COUNT(*) AS artist_count
-        FROM videos v
-        WHERE v.videoId IS NOT NULL
-          AND COALESCE(v.approved, 0) = 1
-          AND COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) IS NOT NULL
-          ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
-        GROUP BY artist_name
-      ) ranked
-      WHERE ranked.artist_name LIKE ?
-      ORDER BY ranked.artist_score DESC, ranked.artist_count DESC, ranked.artist_name ASC
-      LIMIT ${safeLimit}
-    `,
-    likePattern,
-  ).catch(() => []);
+  const cached = artistVideoMetadataSearchCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.rows.map((row) => ({ ...row }));
+  }
+
+  const inFlight = artistVideoMetadataSearchInFlight.get(cacheKey);
+  if (inFlight) {
+    const rows = await inFlight;
+    return rows.map((row) => ({ ...row }));
+  }
+
+  const resolveRows = async () => {
+    // Prefer the materialized artist_stats projection to avoid repeated
+    // full videos aggregation scans on high-frequency search traffic.
+    if (await hasArtistStatsProjection()) {
+      const projectedRows = await prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+        `
+          SELECT
+            s.display_name AS name,
+            s.country AS country,
+            s.genre AS genre1
+          FROM artist_stats s
+          WHERE s.video_count > 0
+            AND s.display_name LIKE ?
+          ORDER BY s.video_count DESC, s.display_name ASC
+          LIMIT ${safeLimit}
+        `,
+        likePattern,
+      ).catch(() => []);
+
+      if (projectedRows.length > 0) {
+        return projectedRows;
+      }
+    }
+
+    return prisma.$queryRawUnsafe<Array<{ name: string; country: string | null; genre1: string | null }>>(
+      `
+        SELECT artist_name AS name, NULL AS country, NULL AS genre1
+        FROM (
+          SELECT
+            COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) AS artist_name,
+            SUM(COALESCE(v.favourited, 0)) AS artist_score,
+            COUNT(*) AS artist_count
+          FROM videos v
+          WHERE v.videoId IS NOT NULL
+            AND COALESCE(v.approved, 0) = 1
+            AND COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) IS NOT NULL
+            ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+          GROUP BY artist_name
+        ) ranked
+        WHERE ranked.artist_name LIKE ?
+        ORDER BY ranked.artist_score DESC, ranked.artist_count DESC, ranked.artist_name ASC
+        LIMIT ${safeLimit}
+      `,
+      likePattern,
+    ).catch(() => []);
+  };
+
+  const pending = resolveRows();
+  artistVideoMetadataSearchInFlight.set(cacheKey, pending);
+
+  try {
+    const rows = await pending;
+    artistVideoMetadataSearchCache.set(cacheKey, {
+      expiresAt: Date.now() + ARTIST_VIDEO_METADATA_SEARCH_CACHE_TTL_MS,
+      rows,
+    });
+    return rows.map((row) => ({ ...row }));
+  } finally {
+    if (artistVideoMetadataSearchInFlight.get(cacheKey) === pending) {
+      artistVideoMetadataSearchInFlight.delete(cacheKey);
+    }
+  }
 }
 
 // ── Artist video pool (for related videos) ────────────────────────────────────
@@ -1596,6 +1657,59 @@ export async function getArtistBySlug(slug: string) {
     const rowsBySlug = await artistSlugLookupInFlight;
     const matched = rowsBySlug.get(slug);
     if (!matched) {
+      if (await hasArtistStatsProjection()) {
+        const slugTerms = slug.trim().toLowerCase().split("-")
+          .map((part) => part.trim())
+          .filter((part) => part.length > 0)
+          .slice(0, 8);
+
+        const slugStart = slug.match(/[a-z0-9]/i)?.[0]?.toLowerCase() ?? "";
+        const projectionPredicates = slugTerms.map(() => "s.slug LIKE ?").join(" AND ");
+        const projectionParams = slugTerms.map((term) => `%${term}%`);
+        const hasThumbnailColumn = await hasArtistStatsThumbnailColumn();
+
+        const projectedRows = await prisma.$queryRawUnsafe<Array<{
+          displayName: string;
+          slug: string | null;
+          country: string | null;
+          genre: string | null;
+          thumbnailVideoId: string | null;
+        }>>(
+          `
+            SELECT
+              s.display_name AS displayName,
+              s.slug AS slug,
+              s.country AS country,
+              s.genre AS genre,
+              ${hasThumbnailColumn ? "s.thumbnail_video_id" : "NULL"} AS thumbnailVideoId
+            FROM artist_stats s
+            WHERE s.video_count > 0
+              AND s.slug IS NOT NULL
+              ${slugStart ? "AND s.slug LIKE ?" : ""}
+              ${projectionPredicates ? `AND ${projectionPredicates}` : ""}
+            ORDER BY s.video_count DESC, s.display_name ASC
+            LIMIT 200
+          `,
+          ...(slugStart ? [`${slugStart}%`] : []),
+          ...projectionParams,
+        ).catch(() => []);
+
+        const projectedExactMatch = projectedRows.find((row) => {
+          const displayName = getTrimmedDatabaseValue(row.displayName) ?? "";
+          if (!displayName) return false;
+          return row.slug === slug || slugify(displayName) === slug;
+        });
+
+        if (projectedExactMatch) {
+          const mapped = mapArtistProjectionRow(projectedExactMatch);
+          artistSingleSlugCache.set(slug, {
+            expiresAt: Date.now() + ARTIST_SINGLE_SLUG_CACHE_TTL_MS,
+            artist: mapped,
+          });
+          return mapped;
+        }
+      }
+
       // Fallback for newly curated artists that may not exist in the artists table yet.
       // Resolve the slug directly from approved videos so artist links/counts keep working
       // immediately after admin metadata edits.
@@ -1613,23 +1727,50 @@ export async function getArtistBySlug(slug: string) {
       const fallbackRows = await prisma.$queryRawUnsafe<Array<{
         name: string | null;
         thumbnailVideoId: string | null;
+        videoCount: number | null;
       }>>(
         `
+          WITH matched AS (
+            SELECT
+              COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) AS name,
+              v.videoId,
+              COALESCE(v.viewCount, 0) AS viewCount,
+              v.id
+            FROM videos v
+            WHERE ${videoArtistNormExpr} <> ''
+              AND ${fallbackMatchPredicates}
+              AND v.videoId IS NOT NULL
+              AND COALESCE(v.approved, 0) = 1
+              ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+          ),
+          counts AS (
+            SELECT
+              name,
+              COUNT(DISTINCT videoId) AS videoCount
+            FROM matched
+            WHERE name IS NOT NULL
+            GROUP BY name
+          ),
+          thumbnail_ranked AS (
+            SELECT
+              name,
+              videoId,
+              ROW_NUMBER() OVER (
+                PARTITION BY name
+                ORDER BY viewCount DESC, id ASC
+              ) AS rowNumber
+            FROM matched
+            WHERE name IS NOT NULL
+          )
           SELECT
-            COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) AS name,
-            SUBSTRING_INDEX(
-              GROUP_CONCAT(v.videoId ORDER BY COALESCE(v.viewCount, 0) DESC, v.id ASC),
-              ',',
-              1
-            ) AS thumbnailVideoId
-          FROM videos v
-          WHERE ${videoArtistNormExpr} <> ''
-            AND ${fallbackMatchPredicates}
-            AND v.videoId IS NOT NULL
-            AND COALESCE(v.approved, 0) = 1
-            ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
-          GROUP BY COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''))
-          ORDER BY COUNT(DISTINCT v.videoId) DESC, name ASC
+            c.name AS name,
+            tr.videoId AS thumbnailVideoId,
+            c.videoCount AS videoCount
+          FROM counts c
+          INNER JOIN thumbnail_ranked tr
+            ON tr.name = c.name
+           AND tr.rowNumber = 1
+          ORDER BY c.videoCount DESC, c.name ASC
           LIMIT 200
         `,
         ...fallbackMatchParams,

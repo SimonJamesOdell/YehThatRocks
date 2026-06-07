@@ -201,6 +201,69 @@ describe("findArtistsInDatabase", () => {
   });
 });
 
+describe("findArtistsFromVideoMetadata — projection-first strategy", () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    process.env.DATABASE_URL = "mysql://test";
+    queryRawUnsafeMock.mockReset();
+    hasArtistStatsProjectionMock.mockReset();
+    hasArtistStatsThumbnailColumnMock.mockReset();
+
+    hasArtistStatsProjectionMock.mockResolvedValue(true);
+    hasArtistStatsThumbnailColumnMock.mockResolvedValue(true);
+  });
+
+  it("uses artist_stats projection before falling back to videos aggregation", async () => {
+    queryRawUnsafeMock.mockResolvedValueOnce([
+      { name: "Metallica", country: "US", genre1: "Heavy Metal" },
+    ]);
+
+    const { findArtistsFromVideoMetadata } = await import("@/lib/catalog-data-artists");
+    const rows = await findArtistsFromVideoMetadata("metal", 10);
+
+    expect(rows).toHaveLength(1);
+    const [sql, ...params] = queryRawUnsafeMock.mock.calls[0] as [string, ...unknown[]];
+    expect(sql).toContain("FROM artist_stats s");
+    expect(sql).toContain("s.display_name LIKE ?");
+    expect(sql).not.toContain("GROUP_CONCAT");
+    expect(sql).not.toContain("FROM videos v");
+    expect(params).toEqual(["%metal%"]);
+  });
+
+  it("falls back to legacy videos aggregation when projection returns no rows", async () => {
+    queryRawUnsafeMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ name: "New Artist", country: null, genre1: null }]);
+
+    const { findArtistsFromVideoMetadata } = await import("@/lib/catalog-data-artists");
+    const rows = await findArtistsFromVideoMetadata("new", 10);
+
+    expect(rows).toHaveLength(1);
+    expect(queryRawUnsafeMock).toHaveBeenCalledTimes(2);
+    const [fallbackSql] = queryRawUnsafeMock.mock.calls[1] as [string, ...unknown[]];
+    expect(fallbackSql).toContain("FROM videos v");
+    expect(fallbackSql).toContain("GROUP BY artist_name");
+  });
+
+  it("serves repeated identical lookup from runtime cache without extra SQL", async () => {
+    queryRawUnsafeMock.mockResolvedValueOnce([
+      { name: "Metallica", country: "US", genre1: "Heavy Metal" },
+    ]);
+
+    const { clearArtistCaches, findArtistsFromVideoMetadata } = await import("@/lib/catalog-data-artists");
+    clearArtistCaches();
+
+    const first = await findArtistsFromVideoMetadata("metal", 10);
+    expect(first).toHaveLength(1);
+    expect(queryRawUnsafeMock).toHaveBeenCalledTimes(1);
+
+    queryRawUnsafeMock.mockReset();
+    const second = await findArtistsFromVideoMetadata("metal", 10);
+    expect(second).toHaveLength(1);
+    expect(queryRawUnsafeMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("getArtistBySlug — narrow query strategy", () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -315,6 +378,67 @@ describe("getArtistBySlug — narrow query strategy", () => {
 
     const result = await getArtistBySlug("l7");
     expect(result).toBeNull();
+
+    const fallbackSql = queryRawUnsafeMock.mock.calls[2]?.[0] as string;
+    expect(fallbackSql).toContain("WITH matched AS");
+    expect(fallbackSql).not.toContain("GROUP_CONCAT(");
+  });
+});
+
+describe("getArtistBySlug — projection fallback before videos scan", () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    process.env.DATABASE_URL = "mysql://test";
+    queryRawUnsafeMock.mockReset();
+    ensureArtistSearchPrefixIndexMock.mockReset();
+    getArtistColumnMapMock.mockReset();
+    hasArtistStatsProjectionMock.mockReset();
+    hasArtistStatsThumbnailColumnMock.mockReset();
+
+    hasArtistStatsProjectionMock.mockResolvedValue(true);
+    hasArtistStatsThumbnailColumnMock.mockResolvedValue(true);
+    getArtistColumnMapMock.mockResolvedValue({
+      name: "artist",
+      normalizedName: "artist_name_norm",
+      country: null,
+      genreColumns: ["genre1"],
+    });
+  });
+
+  it("uses artist_stats slug-term projection fallback and avoids videos GROUP_CONCAT when matched", async () => {
+    queryRawUnsafeMock
+      // initial direct projection lookup by slug
+      .mockResolvedValueOnce([])
+      // fulltext narrow lookup
+      .mockResolvedValueOnce([])
+      // prefix paged fallback
+      .mockResolvedValueOnce([])
+      // projection fallback by slug terms
+      .mockResolvedValueOnce([
+        {
+          displayName: "AC/DC",
+          slug: "ac-dc",
+          country: null,
+          genre: "Rock",
+          thumbnailVideoId: "abc12345678",
+        },
+      ]);
+
+    const { clearArtistCaches, getArtistBySlug } = await import("@/lib/catalog-data-artists");
+    clearArtistCaches();
+
+    const result = await getArtistBySlug("ac-dc");
+
+    expect(result?.name).toBe("AC/DC");
+    const projectionFallbackCall = queryRawUnsafeMock.mock.calls[3] as [string, ...unknown[]];
+    expect(projectionFallbackCall[0]).toContain("FROM artist_stats s");
+    expect(projectionFallbackCall[0]).toContain("s.slug LIKE ?");
+    expect(projectionFallbackCall[0]).not.toContain("GROUP_CONCAT");
+    expect(projectionFallbackCall[1]).toBe("a%");
+
+    const calledSql = queryRawUnsafeMock.mock.calls.map(([sql]) => String(sql));
+    const hasVideosGroupConcat = calledSql.some((sql) => sql.includes("GROUP_CONCAT(v.videoId ORDER BY COALESCE(v.viewCount, 0) DESC"));
+    expect(hasVideosGroupConcat).toBe(false);
   });
 });
 

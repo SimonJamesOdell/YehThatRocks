@@ -9,10 +9,18 @@ import { getAllPublishedSlugs } from "@/lib/magazine-data";
 export const STATIC_SITEMAP_ID = 0;
 export const VIDEO_SITEMAP_PAGE_SIZE = 50_000;
 export const SITEMAP_QUERY_SOFT_TIMEOUT_MS = 8_000;
+const SITEMAP_RUNTIME_CACHE_TTL_MS = Math.max(
+  60_000,
+  Math.min(15 * 60_000, Number(process.env.SITEMAP_RUNTIME_CACHE_TTL_MS || "300000")),
+);
 
 const ARTIST_STATIC_LIMIT = 2_000;
 const MAGAZINE_STATIC_LIMIT = 2_000;
 let hasWarnedSeedSitemapFallback = false;
+let sitemapShardCountCache: { expiresAt: number; value: number } | null = null;
+let sitemapShardCountInFlight: Promise<number> | null = null;
+const sitemapEntriesCache = new Map<number, { expiresAt: number; entries: SitemapUrlEntry[] }>();
+const sitemapEntriesInFlight = new Map<number, Promise<SitemapUrlEntry[]>>();
 
 export type SitemapUrlEntry = {
   loc: string;
@@ -25,6 +33,13 @@ type VideoSitemapRow = {
   videoId: string | null;
   lastModified: Date | string | null;
 };
+
+export function clearSitemapDataCaches() {
+  sitemapShardCountCache = null;
+  sitemapShardCountInFlight = null;
+  sitemapEntriesCache.clear();
+  sitemapEntriesInFlight.clear();
+}
 
 function warnSeedSitemapFallback(context: "count" | "entries") {
   if (hasWarnedSeedSitemapFallback) {
@@ -117,23 +132,45 @@ export async function getVideoSitemapShardCount() {
     return Math.max(1, Math.ceil(fallbackVideos.length / VIDEO_SITEMAP_PAGE_SIZE));
   }
 
-  const rows = await withSoftTimeout(
-    "sitemap:countVideoUrls",
-    SITEMAP_QUERY_SOFT_TIMEOUT_MS,
-    () => prisma.$queryRawUnsafe<Array<{ total: number | bigint | null }>>(
-      `
-        SELECT COUNT(*) AS total
-        FROM videos v
-        ${AVAILABLE_SITE_VIDEOS_JOIN}
-        WHERE ${buildApprovedVideoPredicate("v")}
-          AND v.videoId IS NOT NULL
-          AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
-      `,
-    ),
-  ).catch(() => []);
+  const now = Date.now();
+  if (sitemapShardCountCache && sitemapShardCountCache.expiresAt > now) {
+    return sitemapShardCountCache.value;
+  }
 
-  const total = Number(rows[0]?.total ?? 0);
-  return Math.max(1, Math.ceil((Number.isFinite(total) ? total : 0) / VIDEO_SITEMAP_PAGE_SIZE));
+  if (sitemapShardCountInFlight) {
+    return sitemapShardCountInFlight;
+  }
+
+  sitemapShardCountInFlight = (async () => {
+    const rows = await withSoftTimeout(
+      "sitemap:countVideoUrls",
+      SITEMAP_QUERY_SOFT_TIMEOUT_MS,
+      () => prisma.$queryRawUnsafe<Array<{ total: number | bigint | null }>>(
+        `
+          SELECT COUNT(*) AS total
+          FROM videos v
+          ${AVAILABLE_SITE_VIDEOS_JOIN}
+          WHERE ${buildApprovedVideoPredicate("v")}
+            AND v.videoId IS NOT NULL
+            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+        `,
+      ),
+    ).catch(() => []);
+
+    const total = Number(rows[0]?.total ?? 0);
+    const shardCount = Math.max(1, Math.ceil((Number.isFinite(total) ? total : 0) / VIDEO_SITEMAP_PAGE_SIZE));
+
+    sitemapShardCountCache = {
+      expiresAt: Date.now() + SITEMAP_RUNTIME_CACHE_TTL_MS,
+      value: shardCount,
+    };
+
+    return shardCount;
+  })().finally(() => {
+    sitemapShardCountInFlight = null;
+  });
+
+  return sitemapShardCountInFlight;
 }
 
 export async function getSitemapShardIds() {
@@ -214,44 +251,72 @@ export async function getVideoSitemapEntries(shardId: number): Promise<SitemapUr
       }));
   }
 
-  const rows = await withSoftTimeout(
-    `sitemap:getVideoShard:${shardId}`,
-    SITEMAP_QUERY_SOFT_TIMEOUT_MS,
-    () => prisma.$queryRawUnsafe<VideoSitemapRow[]>(
-      `
-        SELECT
-          v.videoId AS videoId,
-          COALESCE(v.updated_at, v.approved_at, v.created_at) AS lastModified
-        FROM videos v
-        ${AVAILABLE_SITE_VIDEOS_JOIN}
-        WHERE ${buildApprovedVideoPredicate("v")}
-          AND v.videoId IS NOT NULL
-          AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
-        ORDER BY v.id ASC
-        LIMIT ? OFFSET ?
-      `,
-      VIDEO_SITEMAP_PAGE_SIZE,
-      offset,
-    ),
-  ).catch(() => []);
-
-  const entries: SitemapUrlEntry[] = [];
-
-  for (const row of rows) {
-    const videoId = normalizeYouTubeVideoId(row.videoId);
-    if (!videoId) {
-      continue;
-    }
-
-    entries.push({
-      loc: buildUrl(`/?v=${encodeURIComponent(videoId)}`),
-      lastmod: normalizeLastModified(row.lastModified),
-      priority: 0.7,
-      changefreq: "monthly",
-    });
+  const now = Date.now();
+  const cachedEntries = sitemapEntriesCache.get(shardId);
+  if (cachedEntries && cachedEntries.expiresAt > now) {
+    return cachedEntries.entries;
   }
 
-  return entries;
+  const inFlightEntries = sitemapEntriesInFlight.get(shardId);
+  if (inFlightEntries) {
+    return inFlightEntries;
+  }
+
+  const pendingEntries = (async () => {
+    const rows = await withSoftTimeout(
+      `sitemap:getVideoShard:${shardId}`,
+      SITEMAP_QUERY_SOFT_TIMEOUT_MS,
+      () => prisma.$queryRawUnsafe<VideoSitemapRow[]>(
+        `
+          SELECT
+            v.videoId AS videoId,
+            COALESCE(v.updated_at, v.approved_at, v.created_at) AS lastModified
+          FROM videos v
+          ${AVAILABLE_SITE_VIDEOS_JOIN}
+          WHERE ${buildApprovedVideoPredicate("v")}
+            AND v.videoId IS NOT NULL
+            AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+          ORDER BY v.id ASC
+          LIMIT ? OFFSET ?
+        `,
+        VIDEO_SITEMAP_PAGE_SIZE,
+        offset,
+      ),
+    ).catch(() => []);
+
+    const entries: SitemapUrlEntry[] = [];
+
+    for (const row of rows) {
+      const videoId = normalizeYouTubeVideoId(row.videoId);
+      if (!videoId) {
+        continue;
+      }
+
+      entries.push({
+        loc: buildUrl(`/?v=${encodeURIComponent(videoId)}`),
+        lastmod: normalizeLastModified(row.lastModified),
+        priority: 0.7,
+        changefreq: "monthly",
+      });
+    }
+
+    sitemapEntriesCache.set(shardId, {
+      expiresAt: Date.now() + SITEMAP_RUNTIME_CACHE_TTL_MS,
+      entries,
+    });
+
+    return entries;
+  })();
+
+  sitemapEntriesInFlight.set(shardId, pendingEntries);
+
+  try {
+    return await pendingEntries;
+  } finally {
+    if (sitemapEntriesInFlight.get(shardId) === pendingEntries) {
+      sitemapEntriesInFlight.delete(shardId);
+    }
+  }
 }
 
 export async function getSitemapEntriesForShard(shardId: number) {
