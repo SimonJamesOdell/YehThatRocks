@@ -219,7 +219,10 @@ function main() {
   assertContains(catalogDataVideoIngestionSource, "discoverRelatedVideosCascade:disabled", "Related cascade fails closed while automated discovery is disabled", failures);
   assertContains(catalogDataVideoIngestionSource, "runQuotaBackfill:disabled", "Quota backfill fails closed while automated discovery is disabled", failures);
   assertContains(catalogDataVideoIngestionSource, "auto-related-backfill:disabled", "Automatic related backfill scheduler is a no-op", failures);
+  assertContains(catalogDataVideoIngestionSource, "Direct playback of an unknown YouTube id must not create pending review rows.", "Unknown direct playback does not create pending review rows", failures);
+  assertContains(catalogDataVideoIngestionSource, "getVideoPlaybackDecision:direct-ingest-disabled", "Playback decision logs when unknown direct ingestion is denied", failures);
   assertContains(catalogDataVideoIngestionSource, "const shouldDiscoverRelated = canRunAutomatedTrackDiscovery() && options?.discoverRelated === true && !existedBeforeImport;", "Direct ingestion cannot discover related videos unless the hard gate is enabled", failures);
+  assertNotContains(catalogDataVideoIngestionSource, "const hydrated = await hydrateAndPersistVideo(normalizedVideoId);", "Playback decision must not hydrate unknown direct video ids", failures);
   assertNotContains(catalogDataVideoIngestionSource, "autoRelatedBackfillTimer = setTimeout", "Automatic related backfill must not schedule timers", failures);
   assertNotContains(catalogDataVideoIngestionSource, "auto-related-backfill:scheduled", "Automatic related backfill must not expose a scheduled path", failures);
   assertNotContains(catalogDataVideoIngestionSource, "ENABLE_AUTO_RELATED_BACKFILL", "Env flags must not be able to re-enable automatic related backfill", failures);
@@ -232,6 +235,9 @@ function main() {
   assertContains(catalogIntegrityAuditScriptSource, "relatedBackfill: \"disabled-manual-submissions-only\"", "Catalog integrity audit no longer recommends related backfill as remediation", failures);
   assertNotContains(catalogIntegrityAuditScriptSource, "npm run backfill:related -- --max-calls", "Catalog integrity audit must not recommend the disabled related backfill command", failures);
   assertContains(suggestRouteSource, "const discoverRelatedForSuggestion = false;", "Suggest-new direct submissions do not trigger related discovery", failures);
+  assertContains(suggestRouteSource, "const SUGGEST_SIGN_IN_REQUIRED_MESSAGE = \"Sign in to suggest new videos.\";", "Suggest-new requires a signed-in user before ingestion", failures);
+  assertContains(suggestRouteSource, "rateLimitOrResponse(", "Suggest-new applies an IP-scoped emergency rate limit", failures);
+  assertContains(suggestRouteSource, "`videos:suggest:${source.kind}:user:${authenticatedUserId}`", "Suggest-new applies a user-scoped emergency rate limit", failures);
   assertContains(suggestRouteSource, "importVideoFromDirectSource(videoId, { discoverRelated: false });", "Suggest-new playlist/channel batch ingestion does not trigger related discovery", failures);
   assertContains(playlistImportRouteSource, "importVideoFromDirectSource(videoId, { discoverRelated: false });", "Playlist ingestion remains a user submission path without related discovery", failures);
   assertContains(adminArtistDiscoverRouteSource, "importVideoFromDirectSource(videoId, { discoverRelated: false });", "Admin artist discovery remains explicit and does not cascade related discovery", failures);

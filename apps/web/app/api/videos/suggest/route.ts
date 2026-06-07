@@ -20,6 +20,7 @@ import { parseJsonOrNull } from "@/lib/parse-json";
 import { maybeNormalizePlaylistId } from "@/lib/youtube-playlist";
 import { PLAYBACK_MIN_CONFIDENCE } from "@/lib/playback-config";
 import { parseYouTubeSuggestSource } from "@/lib/youtube-suggest-source";
+import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
 
 const suggestSchema = z.object({
   source: z.string().trim().min(1).max(2048),
@@ -31,6 +32,11 @@ const suggestSchema = z.object({
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || "";
 const playlistBatchJobs = new Map<string, Promise<void>>();
 const YOUTUBE_QUOTA_EXHAUSTED_TTL_MS = 26 * 60 * 60 * 1000;
+const SUGGEST_SIGN_IN_REQUIRED_MESSAGE = "Sign in to suggest new videos.";
+const SUGGEST_VIDEO_LIMIT_PER_USER_HOUR = 12;
+const SUGGEST_COLLECTION_LIMIT_PER_USER_DAY = 2;
+const SUGGEST_VIDEO_LIMIT_PER_IP_HOUR = 30;
+const SUGGEST_COLLECTION_LIMIT_PER_IP_DAY = 6;
 let youtubeQuotaExhaustedUntilMs = 0;
 
 type YouTubePlaylistFetchErrorCode = "youtube-read-failed" | "youtube-quota-exhausted";
@@ -536,12 +542,21 @@ export async function POST(request: NextRequest) {
   }
 
   const optionalAuth = await getOptionalApiAuth(request);
-  const canBypassApproval =
+  const authenticatedUserId =
     typeof optionalAuth?.userId === "number"
     && Number.isInteger(optionalAuth.userId)
     && optionalAuth.userId > 0
-    && await hasAdminPermission(
-      optionalAuth.userId,
+    && Boolean(optionalAuth.email?.trim())
+      ? optionalAuth.userId
+      : null;
+
+  if (!authenticatedUserId) {
+    return NextResponse.json({ ok: false, error: SUGGEST_SIGN_IN_REQUIRED_MESSAGE }, { status: 401 });
+  }
+
+  const canBypassApproval =
+    await hasAdminPermission(
+      authenticatedUserId,
       optionalAuth.email ?? "",
       "admin.videos.bypass_approval",
     );
@@ -549,6 +564,29 @@ export async function POST(request: NextRequest) {
   const source = parseYouTubeSuggestSource(parsed.data.source);
   if (!source) {
     return NextResponse.json({ ok: false, error: "Invalid YouTube URL, video id, playlist URL, or channel URL." }, { status: 400 });
+  }
+
+  if (!canBypassApproval) {
+    const ipRateLimited = rateLimitOrResponse(
+      request,
+      `videos:suggest:${source.kind}`,
+      source.kind === "video" ? SUGGEST_VIDEO_LIMIT_PER_IP_HOUR : SUGGEST_COLLECTION_LIMIT_PER_IP_DAY,
+      source.kind === "video" ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000,
+    );
+
+    if (ipRateLimited) {
+      return ipRateLimited;
+    }
+
+    const userRateLimited = rateLimitSharedOrResponse(
+      `videos:suggest:${source.kind}:user:${authenticatedUserId}`,
+      source.kind === "video" ? SUGGEST_VIDEO_LIMIT_PER_USER_HOUR : SUGGEST_COLLECTION_LIMIT_PER_USER_DAY,
+      source.kind === "video" ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000,
+    );
+
+    if (userRateLimited) {
+      return userRateLimited;
+    }
   }
 
   if (source.kind === "video") {

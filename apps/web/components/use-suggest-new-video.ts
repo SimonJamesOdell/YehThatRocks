@@ -196,6 +196,11 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
   }, [closeSuggestModal, router, suggestOutcome?.videoId]);
 
   const submitSuggestNew = useCallback(async () => {
+    if (!isAuthenticated) {
+      setSuggestError("Sign in to suggest new videos.");
+      return;
+    }
+
     const source = suggestSource.trim();
     if (!source) {
       setSuggestError("Paste a YouTube URL, playlist URL, channel URL, or video id.");
@@ -296,7 +301,7 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
     } finally {
       setSuggestPending(false);
     }
-  }, [applyVideoOutcome, suggestArtist, suggestSource, suggestTrack, pendingConfirmation]);
+  }, [applyVideoOutcome, isAuthenticated, suggestArtist, suggestSource, suggestTrack, pendingConfirmation]);
 
   const retryRejectedSuggestVideo = useCallback(async () => {
     if (suggestOutcome?.kind !== "video" || suggestOutcome.status !== "rejected" || !suggestOutcome.videoId) {

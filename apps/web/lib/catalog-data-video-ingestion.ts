@@ -2489,20 +2489,11 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
     `;
 
   let row = (await fetchDecisionRows())[0];
-  let hydratedFromDirectRequest = false;
 
   if (!row) {
-    const hydrated = await hydrateAndPersistVideo(normalizedVideoId);
-
-    if (!hydrated) {
-      const decision: PlaybackDecision = { allowed: false, reason: "not-found", message: "Sorry, that video cannot be played on YehThatRocks." };
-      playbackDecisionCache.set(normalizedVideoId, { expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS, decision });
-      return decision;
-    }
-
-    // The video was just ingested and lands with approved=NULL (pending admin review).
-    // The approved=1 filter won't find it, so query without that restriction to allow
-    // the requesting user to play it immediately while it stays unapproved for others.
+    // Direct playback of an unknown YouTube id must not create pending review rows.
+    // Explicit suggest/import/admin flows hydrate first, then reach this unapproved
+    // passthrough check so the submitting user can still preview the pending video.
     const unapprovedRows = await prisma.$queryRaw<Array<PlaybackDecisionRow>>`
       SELECT
         v.id, v.title, v.description, v.parsedArtist, v.parsedTrack, v.parsedVideoType, v.parseConfidence,
@@ -2521,16 +2512,15 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
       return passthroughDecision;
     }
 
+    debugCatalog("getVideoPlaybackDecision:direct-ingest-disabled", { videoId: normalizedVideoId, reason: AUTOMATED_TRACK_DISCOVERY_DISABLED_REASON });
     const decision: PlaybackDecision = { allowed: false, reason: "not-found", message: "Sorry, that video cannot be played on YehThatRocks." };
     playbackDecisionCache.set(normalizedVideoId, { expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS, decision });
     return decision;
   }
 
   if (!Boolean(row.hasAvailable)) {
-    if (!hydratedFromDirectRequest) {
-      await hydrateAndPersistVideo(normalizedVideoId, undefined, { forceAvailabilityRefresh: true });
-      row = (await fetchDecisionRows())[0] ?? row;
-    }
+    await hydrateAndPersistVideo(normalizedVideoId, undefined, { forceAvailabilityRefresh: true });
+    row = (await fetchDecisionRows())[0] ?? row;
 
     if (!Boolean(row.hasAvailable)) {
       if (Boolean(row.hasCheckFailed) && !Boolean(row.hasBlocked)) {
