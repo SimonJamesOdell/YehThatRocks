@@ -211,8 +211,9 @@ function main() {
   assertContains(cronRelatedBackfillRouteSource, "if (!isCronAuthorized(request)) {", "Cron related-backfill route rejects unauthorized requests early", failures);
   assertContains(cronRelatedBackfillRouteSource, "return NextResponse.json({ error: \"Unauthorized.\" }, { status: HTTP_UNAUTHORIZED });", "Cron related-backfill route returns stable unauthorized response contract", failures);
 
-  // Automated video discovery must remain disabled; only explicit user/admin ingestion may create pending videos.
-  assertContains(catalogDataVideoIngestionSource, "const ENABLE_AUTOMATED_TRACK_DISCOVERY: boolean = false;", "Video ingestion hard-disables automated track discovery", failures);
+  // Automated video discovery is enabled but must remain hard-capped and policy-gated.
+  assertContains(catalogDataVideoIngestionSource, "const ENABLE_AUTOMATED_TRACK_DISCOVERY: boolean = true;", "Video ingestion enables automated track discovery", failures);
+  assertContains(catalogDataVideoIngestionSource, "const RELATED_DISCOVERY_DAILY_NEW_VIDEO_CAP = Math.max(0, Math.min(50, Number(process.env.RELATED_DISCOVERY_DAILY_NEW_VIDEO_CAP || \"50\")));", "Video ingestion enforces a hard 50/day maximum cap for related discovery admissions", failures);
   assertContains(catalogDataVideoIngestionSource, "const AUTOMATED_TRACK_DISCOVERY_DISABLED_REASON = \"manual-submissions-only\";", "Video ingestion records the manual-submissions-only disabled reason", failures);
   assertContains(catalogDataVideoIngestionSource, "function canRunAutomatedTrackDiscovery(): boolean", "Video ingestion centralizes the automated discovery gate", failures);
   assertContains(catalogDataVideoIngestionSource, "fetchRelatedYouTubeVideos:disabled", "Related YouTube fetches fail closed while automated discovery is disabled", failures);

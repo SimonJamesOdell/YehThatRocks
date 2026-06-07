@@ -74,7 +74,7 @@ const BOT_CHALLENGE_PATTERNS = [
 
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || undefined;
 const ENABLE_YOUTUBE_RELATED_DISCOVERY = process.env.ENABLE_YOUTUBE_RELATED_DISCOVERY === "1";
-const ENABLE_AUTOMATED_TRACK_DISCOVERY: boolean = false;
+const ENABLE_AUTOMATED_TRACK_DISCOVERY: boolean = true;
 const AUTOMATED_TRACK_DISCOVERY_DISABLED_REASON = "manual-submissions-only";
 
 function canRunAutomatedTrackDiscovery(): boolean {
@@ -86,7 +86,7 @@ const YOUTUBE_RELATED_DISCOVERY_RESERVED_UNITS = Math.max(0, Number(process.env.
 const YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS = Math.max(100, Number(process.env.YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS || "3000"));
 const RELATED_DISCOVERY_MAX_DEPTH = Math.max(1, Math.min(4, Number(process.env.RELATED_DISCOVERY_MAX_DEPTH || "2")));
 const RELATED_DISCOVERY_MAX_NEW_VIDEOS = Math.max(1, Math.min(400, Number(process.env.RELATED_DISCOVERY_MAX_NEW_VIDEOS || "16")));
-const RELATED_DISCOVERY_DAILY_NEW_VIDEO_CAP = Math.max(0, Math.min(1000, Number(process.env.RELATED_DISCOVERY_DAILY_NEW_VIDEO_CAP || "50")));
+const RELATED_DISCOVERY_DAILY_NEW_VIDEO_CAP = Math.max(0, Math.min(50, Number(process.env.RELATED_DISCOVERY_DAILY_NEW_VIDEO_CAP || "50")));
 const RELATED_DISCOVERY_SEED_FANOUT = Math.max(1, Math.min(8, Number(process.env.RELATED_DISCOVERY_SEED_FANOUT || "8")));
 const YOUTUBE_RELATED_QUERY_COUNT = Math.max(1, Math.min(5, Number(process.env.YOUTUBE_RELATED_QUERY_COUNT || "3")));
 const YOUTUBE_RELATED_QUERY_MAX_RESULTS = Math.max(6, Math.min(25, Number(process.env.YOUTUBE_RELATED_QUERY_MAX_RESULTS || "14")));
