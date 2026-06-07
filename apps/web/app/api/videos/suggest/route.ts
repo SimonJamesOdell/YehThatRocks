@@ -29,7 +29,6 @@ const suggestSchema = z.object({
 });
 
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || "";
-const SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE = 0;
 const playlistBatchJobs = new Map<string, Promise<void>>();
 const YOUTUBE_QUOTA_EXHAUSTED_TTL_MS = 26 * 60 * 60 * 1000;
 let youtubeQuotaExhaustedUntilMs = 0;
@@ -590,9 +589,7 @@ export async function POST(request: NextRequest) {
       : [];
     const alreadyInCatalog = !retryRejected && existingRows.length > 0;
 
-    const discoverRelatedForSuggestion = retryRejected
-      ? false
-      : Math.random() < SUGGEST_RELATED_DISCOVERY_SAMPLE_RATE;
+    const discoverRelatedForSuggestion = false;
     const result = await importVideoFromDirectSource(source.videoId, { discoverRelated: discoverRelatedForSuggestion });
     if (!result.videoId) {
       return NextResponse.json({ ok: false, error: "Invalid YouTube URL or video id." }, { status: 400 });

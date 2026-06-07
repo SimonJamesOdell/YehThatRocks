@@ -78,6 +78,9 @@ const BOT_CHALLENGE_PATTERNS = [
 
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || undefined;
 const ENABLE_YOUTUBE_RELATED_DISCOVERY = process.env.ENABLE_YOUTUBE_RELATED_DISCOVERY === "1";
+// Safety gate: automated related-track discovery is disabled.
+// New pending items should only come from explicit user/admin ingestion flows.
+const ENABLE_AUTOMATED_TRACK_DISCOVERY = false;
 const YOUTUBE_DAILY_QUOTA_UNITS = Math.max(1_000, Number(process.env.YOUTUBE_DAILY_QUOTA_UNITS || "10000"));
 const YOUTUBE_RELATED_DISCOVERY_RESERVED_UNITS = Math.max(0, Number(process.env.YOUTUBE_RELATED_DISCOVERY_RESERVED_UNITS || "2500"));
 const YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS = Math.max(100, Number(process.env.YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS || "3000"));
@@ -1859,7 +1862,12 @@ function getRelatedFanoutForDepth(depth: number) {
 async function hydrateAndPersistVideo(
   videoId: string,
   providedVideo?: PersistableVideoRecord,
-  options?: { forceAvailabilityRefresh?: boolean; skipRelatedDiscovery?: boolean; skipEmbedCheck?: boolean },
+  options?: {
+    forceAvailabilityRefresh?: boolean;
+    skipRelatedDiscovery?: boolean;
+    skipEmbedCheck?: boolean;
+    enableRelatedDiscovery?: boolean;
+  },
 ): Promise<PersistableVideoRecord | null> {
   if (!hasDatabaseUrl()) return providedVideo ?? (await fetchOEmbedVideo(videoId));
 
@@ -1916,8 +1924,10 @@ async function hydrateAndPersistVideo(
   if (!persisted) return null;
 
   if (
+    ENABLE_AUTOMATED_TRACK_DISCOVERY &&
     availability.status !== "unavailable" &&
     ENABLE_YOUTUBE_RELATED_DISCOVERY &&
+    options?.enableRelatedDiscovery === true &&
     !options?.skipRelatedDiscovery &&
     !(await hasStoredRelatedCache(normalizedVideoId))
   ) {
@@ -1962,7 +1972,7 @@ export async function discoverRelatedVideosCascade(
   seedVideoId: string,
   options?: { maxDepth?: number; maxNewVideos?: number },
 ) {
-  if (!ENABLE_YOUTUBE_RELATED_DISCOVERY || !hasDatabaseUrl()) {
+  if (!ENABLE_AUTOMATED_TRACK_DISCOVERY || !ENABLE_YOUTUBE_RELATED_DISCOVERY || !hasDatabaseUrl()) {
     return { fetchedNodes: 0, discoveredNewVideos: 0 };
   }
 
@@ -2038,7 +2048,7 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
 }> {
   const empty = { seedsAttempted: 0, fetchedNodes: 0, discoveredNewVideos: 0, unitsEstimated: 0 };
 
-  if (!hasDatabaseUrl() || !ENABLE_YOUTUBE_RELATED_DISCOVERY) return empty;
+  if (!ENABLE_AUTOMATED_TRACK_DISCOVERY || !hasDatabaseUrl() || !ENABLE_YOUTUBE_RELATED_DISCOVERY) return empty;
 
   const maxSeeds = Math.max(0, Math.floor(budgetUnits / 100));
   if (maxSeeds === 0) return empty;
@@ -2116,7 +2126,7 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
 export function maybeStartAutomaticRelatedBackfill(offset: number) {
   const now = Date.now();
   const shouldSchedule = shouldScheduleRelatedBackfill({
-    enabled: ENABLE_AUTO_RELATED_BACKFILL && ENABLE_YOUTUBE_RELATED_DISCOVERY && hasDatabaseUrl(),
+    enabled: ENABLE_AUTOMATED_TRACK_DISCOVERY && ENABLE_AUTO_RELATED_BACKFILL && ENABLE_YOUTUBE_RELATED_DISCOVERY && hasDatabaseUrl(),
     offset,
     maxNewestOffset: AUTO_RELATED_BACKFILL_MAX_NEWEST_OFFSET,
     now,
@@ -2290,7 +2300,7 @@ export async function importVideoFromDirectSource(source: string, options?: { di
     }
   }
 
-  const shouldDiscoverRelated = (options?.discoverRelated ?? true) && !existedBeforeImport;
+  const shouldDiscoverRelated = ENABLE_AUTOMATED_TRACK_DISCOVERY && options?.discoverRelated === true && !existedBeforeImport;
   if (shouldDiscoverRelated) {
     await discoverRelatedVideosCascade(normalizedVideoId);
   }
