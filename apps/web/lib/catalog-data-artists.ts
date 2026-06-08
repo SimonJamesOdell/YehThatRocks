@@ -1670,7 +1670,7 @@ export async function getArtistBySlug(slug: string) {
 
         const projectedRows = await prisma.$queryRawUnsafe<Array<{
           displayName: string;
-          slug: string | null;
+          slug: string;
           country: string | null;
           genre: string | null;
           thumbnailVideoId: string | null;
