@@ -225,7 +225,8 @@ function main() {
   assertContains(catalogDataArtistsSource, "narrowPredicates.push(`${artistNameNormExpr} LIKE ?`)", "getArtistBySlug applies normalized-prefix LIKE guard for all-short-term slugs", failures);
   assertContains(catalogDataArtistsSource, "Fallback for newly curated artists that may not exist in the artists table yet.", "getArtistBySlug documents fallback for curated artists missing in artists table", failures);
   assertContains(catalogDataArtistsSource, "COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), '')) AS name", "getArtistBySlug fallback resolves artist display name from videos metadata", failures);
-  assertContains(catalogDataArtistsSource, "GROUP_CONCAT(v.videoId ORDER BY COALESCE(v.viewCount, 0) DESC, v.id ASC)", "getArtistBySlug fallback derives a stable thumbnail candidate from artist videos", failures);
+  assertContains(catalogDataArtistsSource, "ROW_NUMBER() OVER (", "getArtistBySlug fallback derives a stable thumbnail candidate from artist videos", failures);
+  assertContains(catalogDataArtistsSource, "ORDER BY viewCount DESC, id ASC", "getArtistBySlug fallback ranks thumbnail candidates by popularity then deterministic id", failures);
   assertContains(catalogDataArtistsSource, "refreshArtistProjectionForName(fallbackName)", "getArtistBySlug fallback triggers projection refresh for long-term canonical lookup", failures);
 
   // --- getVideosByArtist: correlated EXISTS replaces DISTINCT subquery JOIN (Hotspot 3) ---
