@@ -389,13 +389,13 @@ function writeState(filePath, state) {
   fs.writeFileSync(filePath, JSON.stringify(state, null, 2));
 }
 
-function groqRequest(apiKey, body) {
+function deepseekRequest(apiKey, body) {
   return new Promise((resolve, reject) => {
     const payload = Buffer.from(JSON.stringify(body));
     const req = https.request(
       {
-        hostname: "api.groq.com",
-        path: "/openai/v1/chat/completions",
+        hostname: "api.deepseek.com",
+        path: "/v1/chat/completions",
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -635,7 +635,7 @@ function validateArticleShape(article) {
 }
 
 async function generateArticle({ apiKey, model, video, news, members }) {
-  const completion = await groqRequest(apiKey, {
+  const completion = await deepseekRequest(apiKey, {
     model,
     temperature: 0.7,
     max_tokens: 4000,
@@ -760,7 +760,7 @@ async function generateBandHistoryArticle({ apiKey, model, artist, videoIds, mem
     "Write a comprehensive band history article covering formation, key eras, lineup evolution, influence, and current status. Keep the length similar to our news-driven articles (10-14 body blocks). Make it opinionated and engaging."
   );
 
-  const completion = await groqRequest(apiKey, {
+  const completion = await deepseekRequest(apiKey, {
     model,
     temperature: 0.7,
     max_tokens: 4000,
@@ -806,7 +806,7 @@ async function generateCuratedPicksArticle({ apiKey, model, genre, theme, artist
     "Write a curated listicle showcasing the best tracks in this genre/theme. Each artist gets 1-2 paragraphs explaining their significance and style. This is your opinionated curation, not a ranked countdown. Keep total body to 14-18 blocks (4-6 artist sections with 1-2 paragraphs each). Do not add a final paragraph about where/how to watch or download."
   );
 
-  const completion = await groqRequest(apiKey, {
+  const completion = await deepseekRequest(apiKey, {
     model,
     temperature: 0.7,
     max_tokens: 4500,
@@ -945,12 +945,12 @@ async function run() {
   const sourceDedupeDays = toInt(args["source-dedupe-days"] ?? process.env.MAGAZINE_SOURCE_DEDUPE_DAYS ?? "14", 14, 1, 90);
   const maxAttempts = toInt(args["max-attempts"] ?? process.env.MAGAZINE_AUTOGEN_MAX_ATTEMPTS ?? "3", 3, 1, 6);
 
-  const groqApiKey = process.env.GROQ_API_KEY?.trim() || "";
-  const writerModel = String(args.model || "").trim() || process.env.MAGAZINE_WRITER_MODEL?.trim() || "openai/gpt-oss-120b";
+  const deepseekApiKey = process.env.DEEPSEEK_API_KEY?.trim() || "";
+  const writerModel = String(args.model || "").trim() || process.env.MAGAZINE_WRITER_MODEL?.trim() || "deepseek-chat";
   const databaseUrl = process.env.DATABASE_URL?.trim() || "";
 
-  if (!groqApiKey) {
-    throw new Error("GROQ_API_KEY is required");
+  if (!deepseekApiKey) {
+    throw new Error("DEEPSEEK_API_KEY is required");
   }
   if (!databaseUrl && !dryRun) {
     throw new Error("DATABASE_URL is required unless --dry-run is set");
@@ -1209,7 +1209,7 @@ async function run() {
           const bandMembers = await fetchBandMembers(selection.video.artist);
           
           const article = await generateArticleWithRetries({
-            apiKey: groqApiKey,
+            apiKey: deepseekApiKey,
             model: writerModel,
             video: selection.video,
             news: selection.news,
@@ -1296,7 +1296,7 @@ async function run() {
           }
 
           const article = await generateArticleWithRetries({
-            apiKey: groqApiKey,
+            apiKey: deepseekApiKey,
             model: writerModel,
             members: bandMembers,
             artist: selection.artist,
@@ -1377,7 +1377,7 @@ async function run() {
           }
 
           const article = await generateArticleWithRetries({
-            apiKey: groqApiKey,
+            apiKey: deepseekApiKey,
             model: writerModel,
             genre: selection.genre,
             theme: selection.theme,

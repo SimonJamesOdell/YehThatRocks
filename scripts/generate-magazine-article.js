@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // scripts/generate-magazine-article.js
 //
-// Generates a magazine article using Groq and inserts it into the database.
+// Generates a magazine article using DeepSeek and inserts it into the database.
 //
 // Usage:
 //   node scripts/generate-magazine-article.js \
@@ -15,8 +15,8 @@
 //
 // Environment:
 //   DATABASE_URL          MySQL connection string
-//   GROQ_API_KEY          Groq API key
-//   GROQ_WRITER_MODEL     Groq model to use (default: openai/gpt-oss-120b)
+//   DEEPSEEK_API_KEY      DeepSeek API key
+//   DEEPSEEK_WRITER_MODEL DeepSeek model to use (default: deepseek-chat)
 
 "use strict";
 
@@ -76,12 +76,12 @@ if (!artist || !track || !videoId || !genre) {
   process.exit(1);
 }
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_MODEL = process.env.GROQ_WRITER_MODEL || "openai/gpt-oss-120b";
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_WRITER_MODEL || "deepseek-chat";
 const DATABASE_URL = process.env.DATABASE_URL;
 
-if (!GROQ_API_KEY) {
-  console.error("GROQ_API_KEY is not set");
+if (!DEEPSEEK_API_KEY) {
+  console.error("DEEPSEEK_API_KEY is not set");
   process.exit(1);
 }
 if (!isDryRun && !DATABASE_URL) {
@@ -101,19 +101,19 @@ function toSlug(str) {
 
 const articleSlug = `${toSlug(artist)}-${toSlug(track)}`;
 
-// ── Groq API call ─────────────────────────────────────────────────────────
+// ── DeepSeek API call ─────────────────────────────────────────────────────
 
-function groqRequest(body) {
+function deepseekRequest(body) {
   return new Promise((resolve, reject) => {
     const payload = Buffer.from(JSON.stringify(body));
     const req = https.request(
       {
-        hostname: "api.groq.com",
-        path: "/openai/v1/chat/completions",
+        hostname: "api.deepseek.com",
+        path: "/v1/chat/completions",
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${GROQ_API_KEY}`,
+          "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
           "Content-Length": payload.length,
         },
       },
@@ -188,10 +188,10 @@ Be specific. No filler. No AI-speak. Real sentences about real music.`;
 
 async function generateArticle() {
   console.log(`Generating article for: ${artist} - ${track} (${genre})`);
-  console.log(`Model: ${GROQ_MODEL}`);
+  console.log(`Model: ${DEEPSEEK_MODEL}`);
 
-  const response = await groqRequest({
-    model: GROQ_MODEL,
+  const response = await deepseekRequest({
+    model: DEEPSEEK_MODEL,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: buildUserPrompt(artist, track, genre) },
