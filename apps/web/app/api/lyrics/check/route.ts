@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
-import { sanitizeMetadataToken } from "@/lib/catalog-metadata-normalization-shared";
 import { normalizeYouTubeVideoId } from "@/lib/catalog-data";
+
+function sanitizeMetadataToken(value: string | null | undefined, maxLength = 255): string | null {
+  if (!value) return null;
+  const cleaned = value
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return null;
+  return cleaned.length > maxLength ? cleaned.slice(0, maxLength) : cleaned;
+}
 
 function normalizeSignatureToken(value: string) {
   return value
