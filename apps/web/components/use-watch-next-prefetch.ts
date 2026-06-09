@@ -166,38 +166,6 @@ export function useWatchNextPrefetch({
     }
   }, [displayedRelatedVideos, prewarmRelatedThumbnail]);
 
-  useEffect(() => {
-    if (isOverlayRoute) {
-      return;
-    }
-    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
-      return;
-    }
-
-    const topTargets = sourceRelatedVideos
-      .filter((video) => video.id !== currentVideoId)
-      .slice(0, 3);
-
-    if (topTargets.length === 0) {
-      return;
-    }
-
-    let cancelled = false;
-    const timeoutId = window.setTimeout(() => {
-      if (cancelled) {
-        return;
-      }
-      for (const target of topTargets) {
-        prefetchCurrentVideoPayload(target.id);
-      }
-    }, 120);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-    };
-  }, [currentVideoId, isOverlayRoute, prefetchCurrentVideoPayload, sourceRelatedVideos]);
-
   return {
     prefetchRelatedSelection,
   };

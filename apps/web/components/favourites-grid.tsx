@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
+import { fetchArtistVideoCountBatched } from "@/components/artist-count-batcher";
 import { VideoGenreLink } from "@/components/video-genre-link";
 import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import type { VideoRecord } from "@/lib/catalog";
@@ -15,8 +16,6 @@ import { parseJsonOrNull } from "@/lib/parse-json";
 import { getArtistPagePath } from "@/lib/artist-routing";
 
 const FAVOURITES_BATCH_SIZE = 100;
-const artistVideoCountCache = new Map<string, number | null>();
-const artistVideoCountInFlight = new Map<string, Promise<number | null>>();
 
 function inferTrackFromTitle(title: string, artist: string) {
   const trimmedTitle = title.trim();
@@ -60,52 +59,6 @@ function inferArtistTrackFromTitleFallback(title: string) {
   }
 
   return { artist: "", track: "" };
-}
-
-async function fetchArtistVideoCount(artistSlug: string, videoId: string): Promise<number | null> {
-  const cacheKey = `${artistSlug}:${videoId}`;
-  if (artistVideoCountCache.has(cacheKey)) {
-    return artistVideoCountCache.get(cacheKey) ?? null;
-  }
-
-  const existing = artistVideoCountInFlight.get(cacheKey);
-  if (existing) {
-    return existing;
-  }
-
-  const request = (async () => {
-    try {
-      const query = new URLSearchParams();
-      query.set("v", videoId);
-      const response = await fetch(`/api/artists/${encodeURIComponent(artistSlug)}?${query.toString()}`, {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        artistVideoCountCache.set(cacheKey, null);
-        return null;
-      }
-
-      const payload = await response.json() as {
-        videoCount?: number | null;
-        videos?: Array<{ id?: string }>;
-      };
-
-      const resolvedCount = Number(payload?.videoCount);
-      const fallbackCount = Array.isArray(payload?.videos) ? payload.videos.length : null;
-      const count = Number.isFinite(resolvedCount) ? resolvedCount : fallbackCount;
-      artistVideoCountCache.set(cacheKey, count);
-      return count;
-    } catch {
-      artistVideoCountCache.set(cacheKey, null);
-      return null;
-    } finally {
-      artistVideoCountInFlight.delete(cacheKey);
-    }
-  })();
-
-  artistVideoCountInFlight.set(cacheKey, request);
-  return request;
 }
 
 type FavouritesPayload = {
@@ -177,7 +130,7 @@ const FavouritesGridCard = memo(function FavouritesGridCard({
 
     let cancelled = false;
     void (async () => {
-      const count = await fetchArtistVideoCount(artistSlug, track.id);
+      const count = await fetchArtistVideoCountBatched(artistSlug, track.id);
       if (!cancelled) {
         setArtistVideoCount(count);
       }

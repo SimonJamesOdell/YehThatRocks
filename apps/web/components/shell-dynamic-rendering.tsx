@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { memo, useCallback, useEffect, useState, type CSSProperties, type ReactNode, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { fetchArtistVideoCountBatched } from "@/components/artist-count-batcher";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
@@ -33,39 +34,9 @@ function inferTrackForWatchNext(title: string, artist: string): string {
   return trimmedTitle;
 }
 
-const watchNextArtistCountCache = new Map<string, number | null>();
-const watchNextArtistCountInFlight = new Map<string, Promise<number | null>>();
 const GENERIC_WATCH_NEXT_ARTIST_LABELS = new Set(["unknown artist", "unknown", "youtube"]);
 const sharedVideoPreviewCache = new Map<string, SharedVideoPreview | null>();
 const sharedVideoPreviewInFlight = new Map<string, Promise<SharedVideoPreview | null>>();
-
-async function fetchWatchNextArtistCount(artistSlug: string, videoId: string): Promise<number | null> {
-  const cacheKey = `${artistSlug}:${videoId}`;
-  if (watchNextArtistCountCache.has(cacheKey)) return watchNextArtistCountCache.get(cacheKey) ?? null;
-  const existing = watchNextArtistCountInFlight.get(cacheKey);
-  if (existing) return existing;
-  const request = (async () => {
-    try {
-      const query = new URLSearchParams();
-      query.set("v", videoId);
-      const response = await fetch(`/api/artists/${encodeURIComponent(artistSlug)}?${query.toString()}`, { cache: "no-store" });
-      if (!response.ok) { watchNextArtistCountCache.set(cacheKey, null); return null; }
-      const payload = await response.json() as { videoCount?: number | null; videos?: Array<{ id?: string }> };
-      const resolvedCount = Number(payload?.videoCount);
-      const fallbackCount = Array.isArray(payload?.videos) ? payload.videos.length : null;
-      const count = Number.isFinite(resolvedCount) ? resolvedCount : fallbackCount;
-      watchNextArtistCountCache.set(cacheKey, count);
-      return count;
-    } catch {
-      watchNextArtistCountCache.set(cacheKey, null);
-      return null;
-    } finally {
-      watchNextArtistCountInFlight.delete(cacheKey);
-    }
-  })();
-  watchNextArtistCountInFlight.set(cacheKey, request);
-  return request;
-}
 
 type SharedVideoPreview = {
   id: string;
@@ -395,7 +366,7 @@ export const WatchNextCard = memo(function WatchNextCard({
     }
     let cancelled = false;
     void (async () => {
-      const count = await fetchWatchNextArtistCount(artistSlug, track.id);
+      const count = await fetchArtistVideoCountBatched(artistSlug, track.id);
       if (!cancelled) setArtistVideoCount(count);
     })();
     return () => { cancelled = true; };

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { parseJsonOrNull } from "@/lib/parse-json";
 
-type LyricsAvailabilityResponse = {
+type LyricsCheckResponse = {
   available?: boolean;
 };
 
@@ -29,7 +29,8 @@ export function useLyricsAvailability(videoId: string): boolean | null {
 
     async function loadLyricsAvailability() {
       try {
-        const response = await fetch(`/api/lyrics?v=${encodeURIComponent(videoId)}`, {
+        // Use lightweight check endpoint — only queries the DB cache, never hits LRCLIB.
+        const response = await fetch(`/api/lyrics/check?v=${encodeURIComponent(videoId)}`, {
           cache: "no-store",
           signal: controller.signal,
         });
@@ -38,7 +39,7 @@ export function useLyricsAvailability(videoId: string): boolean | null {
           return;
         }
 
-        const payload = (await parseJsonOrNull(response)) as LyricsAvailabilityResponse | null;
+        const payload = (await parseJsonOrNull(response)) as LyricsCheckResponse | null;
         const isAvailable = Boolean(payload?.available);
         cacheRef.current.set(videoId, isAvailable);
 
