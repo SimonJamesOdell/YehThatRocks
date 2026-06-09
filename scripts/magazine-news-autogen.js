@@ -637,7 +637,7 @@ function validateArticleShape(article) {
 async function generateArticle({ apiKey, model, video, news, members }) {
   const completion = await deepseekRequest(apiKey, {
     model,
-    temperature: 0.7,
+    temperature: 0.9,
     max_tokens: 4000,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
@@ -762,7 +762,7 @@ async function generateBandHistoryArticle({ apiKey, model, artist, videoIds, mem
 
   const completion = await deepseekRequest(apiKey, {
     model,
-    temperature: 0.7,
+    temperature: 0.9,
     max_tokens: 4000,
     messages: [
       { role: "system", content: BAND_HISTORY_SYSTEM_PROMPT },
@@ -808,7 +808,7 @@ async function generateCuratedPicksArticle({ apiKey, model, genre, theme, artist
 
   const completion = await deepseekRequest(apiKey, {
     model,
-    temperature: 0.7,
+    temperature: 0.9,
     max_tokens: 4500,
     messages: [
       { role: "system", content: CURATED_PICKS_SYSTEM_PROMPT },

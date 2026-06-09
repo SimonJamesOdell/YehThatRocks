@@ -196,7 +196,7 @@ async function generateArticle() {
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: buildUserPrompt(artist, track, genre) },
     ],
-    temperature: 0.7,
+    temperature: 0.9,
     max_tokens: 2000,
   });
 
