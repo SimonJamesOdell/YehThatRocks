@@ -561,7 +561,7 @@ function ShellDynamicInner({
     chatMode, setChatMode,
     chatMessages, onlineUsers, chatDraft, setChatDraft,
     chatError, isChatLoading, isChatSubmitting, deletingMessageIds,
-    flashingChatTabs, chatListRef, latestMagazineTracks,
+    flashingChatTabs, chatListRef, latestMagazineTracks, isMagazineLoading,
     handleChatSubmit, handleDeleteChatMessage,
   } = useChatState({
     initialPathname: pathname,
@@ -2621,7 +2621,9 @@ function ShellDynamicInner({
                   </p>
                 ) : null}
                 {chatMode === "magazine" ? (
-                  visibleMagazineTracks.length === 0 ? (
+                  isMagazineLoading ? (
+                    <p className="chatStatus">Loading articles...</p>
+                  ) : visibleMagazineTracks.length === 0 ? (
                     <p className="chatStatus">No magazine articles are available yet.</p>
                   ) : (
                     <>

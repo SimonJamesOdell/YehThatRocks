@@ -195,6 +195,11 @@ function main() {
   assertContains(adminDashboardPanelSource, "pendingVideos", "Admin dashboard panel fetches and renders the pending approval queue", failures);
   assertContains(adminDashboardPanelSource, "Artist (optional override)", "Admin pending approval cards render editable artist override input", failures);
   assertContains(adminDashboardPanelSource, "placeholder=\"Video title\"", "Admin pending approval cards render editable title input", failures);
+
+  // Pending video optimistic removal — must not reload on async success.
+  assertContains(adminDashboardPanelSource, "setPendingVideos((current) => current.filter((item) => item.id !== row.id))", "Admin pending removal optimistically filters video from local state", failures);
+  assertContains(adminDashboardPanelSource, "Async op queued", "Admin pending removal async success callback is a no-op; does not reload", failures);
+  assertContains(adminDashboardPanelSource, "void Promise.all([loadPendingVideos(), loadVideos()]);", "Admin pending removal reloads on async error to restore server state", failures);
   assertContains(adminTabLinksSource, "fetch(\"/api/admin/videos/pending?countsOnly=1\"", "Admin tab links poll pending count via lightweight counts-only endpoint", failures);
   assertContains(adminTabLinksSource, "fetch(\"/api/admin/videos/catalog-review?countsOnly=1\"", "Admin tab links poll catalog-review count via lightweight counts-only endpoint", failures);
   assertContains(adminTabLinksSource, "fetch(\"/api/admin/videos/genre-review?countsOnly=1\"", "Admin tab links poll genre-review count via lightweight counts-only endpoint", failures);

@@ -53,6 +53,7 @@ export type ChatStateResult = {
   flashingChatTabs: Record<FlashableChatMode, boolean>;
   chatListRef: React.RefObject<HTMLDivElement | null>;
   latestMagazineTracks: MagazineRailTrack[];
+  isMagazineLoading: boolean;
   handleChatSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   handleDeleteChatMessage: (messageId: number) => Promise<void>;
 };
@@ -116,6 +117,7 @@ export function useChatState({
   });
 
   const [latestMagazineTracks, setLatestMagazineTracks] = useState<MagazineRailTrack[]>([]);
+  const [isMagazineLoading, setIsMagazineLoading] = useState(true);
 
   // Computed from auth + chat mode so the chat state stays mounted while overlay pages are open.
   const shouldRunChat = (!shouldShowOverlayPanel || isMagazineOverlayRoute || isForumOverlayRoute) && (isAuthenticated || chatMode === "global" || chatMode === "online");
@@ -255,6 +257,7 @@ export function useChatState({
         if (!response.ok) {
           if (!cancelled) {
             setLatestMagazineTracks([]);
+            setIsMagazineLoading(false);
           }
           return;
         }
@@ -262,10 +265,12 @@ export function useChatState({
         const payload = (await response.json()) as { articles?: MagazineRailTrack[] };
         if (!cancelled) {
           setLatestMagazineTracks(Array.isArray(payload.articles) ? payload.articles : []);
+          setIsMagazineLoading(false);
         }
       } catch {
         if (!cancelled) {
           setLatestMagazineTracks([]);
+          setIsMagazineLoading(false);
         }
       }
     };
@@ -534,6 +539,7 @@ export function useChatState({
     flashingChatTabs,
     chatListRef,
     latestMagazineTracks,
+    isMagazineLoading,
     handleChatSubmit,
     handleDeleteChatMessage,
   };

@@ -1044,7 +1044,9 @@ export function AdminDashboardPanel({
         setSaveMessage(`Removed ${videoId}.`);
 
         void postJson<{ ok: boolean }>("/api/admin/videos/pending?async=1", payload)
-          .then(() => Promise.all([loadPendingVideos(), loadVideos()]))
+          .then(() => {
+            // Async op queued — keep optimistic removal; don't reload yet.
+          })
           .catch((moderationError) => {
             setSaveMessage(moderationError instanceof Error ? moderationError.message : "Pending moderation action failed.");
             void Promise.all([loadPendingVideos(), loadVideos()]);
@@ -1059,7 +1061,9 @@ export function AdminDashboardPanel({
       setSaveMessage(`Approved ${videoId}.`);
 
       void postJson<{ ok: boolean }>("/api/admin/videos/pending?async=1", payload)
-        .then(() => Promise.all([loadPendingVideos(), loadVideos()]))
+        .then(() => {
+          // Async op queued — keep optimistic removal; don't reload yet.
+        })
         .catch((moderationError) => {
           setSaveMessage(moderationError instanceof Error ? moderationError.message : "Pending moderation action failed.");
           void Promise.all([loadPendingVideos(), loadVideos()]);

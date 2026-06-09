@@ -101,9 +101,14 @@ function main() {
   assertContains(useChatStateSource, "chatListRef", "useChatState owns the chat list scroll ref", failures);
   assertContains(useChatStateSource, "triggerChatTabFlash", "useChatState owns the chat-tab flash helper", failures);
   assertContains(useChatStateSource, "const [latestMagazineTracks, setLatestMagazineTracks]", "useChatState manages magazine track list state", failures);
+  assertContains(useChatStateSource, "const [isMagazineLoading, setIsMagazineLoading]", "useChatState manages magazine loading state", failures);
+  assertContains(useChatStateSource, "setIsMagazineLoading(false)", "useChatState clears magazine loading flag after fetch completes", failures);
+  assertContains(useChatStateSource, "isMagazineLoading,", "useChatState returns isMagazineLoading", failures);
 
   assertContains(shellDynamicSource, "useChatState(", "Shell imports and calls useChatState hook", failures);
   assertContains(shellDynamicSource, "from \"@/components/use-chat-state\"", "Shell imports useChatState from its own module", failures);
+  assertContains(shellDynamicSource, "isMagazineLoading ?", "Shell gates magazine empty state behind loading flag", failures);
+  assertContains(shellDynamicSource, "Loading articles...", "Shell shows loading text while magazine data is in-flight", failures);
 
   // SSE and chat fetch must not be duplicated in shell core
   assertNotContains(shellDynamicSource, "new EventSource(\"/api/chat/stream", "Shell core no longer directly opens chat SSE stream", failures);
