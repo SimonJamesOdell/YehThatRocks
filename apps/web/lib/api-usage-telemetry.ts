@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 
 type ExternalApiUsageInput = {
-  provider: "youtube" | "groq" | "internal";
+  provider: "youtube" | "groq" | "deepseek" | "internal";
   endpoint: string;
   units: number;
   success: boolean;

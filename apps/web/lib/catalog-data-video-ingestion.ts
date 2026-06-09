@@ -1,9 +1,10 @@
 /**
  * catalog-data-video-ingestion.ts
  * YouTube video ingestion, playback decisions, availability checks, related discovery,
- * metadata classification via Groq, and video pruning.
+ * metadata classification via DeepSeek, and video pruning.
  */
 
+import { buildLlmTokenUsageNote, llmChatCompletion } from "@/lib/llm-client";
 import { prisma } from "@/lib/db";
 import { recordExternalApiUsage } from "@/lib/api-usage-telemetry";
 import { BoundedMap } from "@/lib/bounded-map";
@@ -91,10 +92,8 @@ const RELATED_DISCOVERY_SEED_FANOUT = Math.max(1, Math.min(8, Number(process.env
 const YOUTUBE_RELATED_QUERY_COUNT = Math.max(1, Math.min(5, Number(process.env.YOUTUBE_RELATED_QUERY_COUNT || "3")));
 const YOUTUBE_RELATED_QUERY_MAX_RESULTS = Math.max(6, Math.min(25, Number(process.env.YOUTUBE_RELATED_QUERY_MAX_RESULTS || "14")));
 const YOUTUBE_RELATED_MIN_SCORE = Math.max(0.25, Math.min(3, Number(process.env.YOUTUBE_RELATED_MIN_SCORE || "1.7")));
-const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim() || undefined;
-const GROQ_MODEL = process.env.GROQ_MODEL?.trim() || "llama-3.1-8b-instant";
-const GROQ_CLASSIFICATION_MODEL = process.env.GROQ_CLASSIFICATION_MODEL?.trim() || "openai/gpt-oss-120b";
-const GROQ_RETRY_COOLDOWN_MS = Math.max(300_000, Number(process.env.GROQ_RETRY_COOLDOWN_MS || String(6 * 60 * 60 * 1000)));
+const LLM_CLASSIFICATION_MODEL = process.env.LLM_CLASSIFICATION_MODEL?.trim() || "deepseek-chat";
+const LLM_RETRY_COOLDOWN_MS = Math.max(300_000, Number(process.env.LLM_RETRY_COOLDOWN_MS || String(6 * 60 * 60 * 1000)));
 const PLAYBACK_DECISION_CACHE_TTL_MS = 15_000;
 const ALLOWED_VIDEO_TYPES = new Set(["official", "lyric", "live", "cover", "remix", "fan"]);
 const NON_MUSIC_SIGNAL_PATTERN = /\b(instagram|tiktok|facebook|whatsapp|snapchat|podcast|interview|prank|challenge|reaction|vlog|tutorial|gameplay|livestream|stream highlights?|shorts?|sermon|khutbah|tafsir|quran|qur'an|recitation|dua|nasheed|bhajan|kirtan|pravachan|speech|lecture|talk show|news bulletin)\b/i;
@@ -1086,78 +1085,45 @@ function buildGroqMetadataPrompt(video: PersistableVideoRecord) {
   return promptParts.join("\n");
 }
 
-function buildGroqTokenUsageNote(model: string, usage: { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown } | null | undefined) {
-  const promptTokens = Number(usage?.prompt_tokens ?? NaN);
-  const completionTokens = Number(usage?.completion_tokens ?? NaN);
-  const totalTokens = Number(usage?.total_tokens ?? NaN);
-
-  const usageParts = [
-    `m=${model}`,
-    Number.isFinite(promptTokens) ? `pt=${promptTokens}` : null,
-    Number.isFinite(completionTokens) ? `ct=${completionTokens}` : null,
-    Number.isFinite(totalTokens) ? `tt=${totalTokens}` : null,
-  ].filter((value): value is string => Boolean(value));
-
-  return usageParts.join(" ").slice(0, 120);
-}
-
-async function classifyVideoMetadataWithGroq(video: PersistableVideoRecord): Promise<ParsedVideoMetadata | null> {
-  if (!GROQ_API_KEY) return null;
+async function classifyVideoMetadata(video: PersistableVideoRecord): Promise<ParsedVideoMetadata | null> {
 
   try {
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: GROQ_CLASSIFICATION_MODEL,
-        temperature: 0.1,
-        max_tokens: 140,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content: "You are a strict music metadata extraction service. Output valid JSON only, with no markdown fences.",
-          },
-          { role: "user", content: buildGroqMetadataPrompt(video) },
-        ],
-      }),
+    const result = await llmChatCompletion({
+      model: LLM_CLASSIFICATION_MODEL,
+      temperature: 0.1,
+      max_tokens: 140,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: "You are a strict music metadata extraction service. Output valid JSON only, with no markdown fences.",
+        },
+        { role: "user", content: buildGroqMetadataPrompt(video) },
+      ],
     });
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
+    if (!result) {
       void recordExternalApiUsage({
-        provider: "groq",
+        provider: "deepseek",
         endpoint: "chat/completions",
         units: 1,
         success: false,
-        statusCode: response.status,
-        note: body.slice(0, 120) || null,
+        statusCode: null,
+        note: "No LLM provider configured",
       });
-      throw new Error(`Groq API error ${response.status}: ${body.slice(0, 260)}`);
+      return null;
     }
 
-    const payload = (await response.json()) as {
-      usage?: {
-        prompt_tokens?: number;
-        completion_tokens?: number;
-        total_tokens?: number;
-      };
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-
     void recordExternalApiUsage({
-      provider: "groq",
+      provider: result.provider,
       endpoint: "chat/completions",
       units: 1,
       success: true,
-      statusCode: response.status,
-      note: buildGroqTokenUsageNote(GROQ_CLASSIFICATION_MODEL, payload.usage),
+      statusCode: 200,
+      note: buildLlmTokenUsageNote(LLM_CLASSIFICATION_MODEL, result.usage),
     });
 
-    const parsed = extractJsonObject(payload?.choices?.[0]?.message?.content);
+    const parsed = extractJsonObject(result?.choices?.[0]?.message?.content);
 
     return {
       artist: normalizeParsedString(parsed.artist, 255),
@@ -1168,14 +1134,14 @@ async function classifyVideoMetadataWithGroq(video: PersistableVideoRecord): Pro
     };
   } catch (error) {
     void recordExternalApiUsage({
-      provider: "groq",
+      provider: "deepseek",
       endpoint: "chat/completions",
       units: 1,
       success: false,
       statusCode: null,
       note: error instanceof Error ? error.message.slice(0, 120) : "request-error",
     });
-    debugCatalog("classifyVideoMetadataWithGroq:error", {
+    debugCatalog("classifyVideoMetadata:error", {
       videoId: video.id,
       message: error instanceof Error ? error.message : String(error),
     });
@@ -1186,8 +1152,6 @@ async function classifyVideoMetadataWithGroq(video: PersistableVideoRecord): Pro
 // ── Runtime metadata persistence ──────────────────────────────────────────────
 
 async function maybePersistRuntimeMetadata(videoRowId: number, video: PersistableVideoRecord) {
-  if (!GROQ_API_KEY) return;
-
   const hasColumns = await ensureVideoMetadataColumnsAvailable();
   if (!hasColumns) return;
 
@@ -1234,19 +1198,19 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
     const parsedAtMs = parsedAtRaw
       ? parsedAtRaw instanceof Date ? parsedAtRaw.getTime() : new Date(parsedAtRaw).getTime()
       : NaN;
-    const hasRecentGroqAttempt =
+    const hasRecentLlmAttempt =
       Number.isFinite(parsedAtMs) &&
-      Date.now() - parsedAtMs < GROQ_RETRY_COOLDOWN_MS &&
-      (existingMeta?.parseMethod === "groq-error" || (existingMeta?.parseMethod ?? "").startsWith("groq-llm"));
+      Date.now() - parsedAtMs < LLM_RETRY_COOLDOWN_MS &&
+      (existingMeta?.parseMethod === "llm-error" || (existingMeta?.parseMethod ?? "").startsWith("llm"));
 
-    if (hasRecentGroqAttempt) return;
+    if (hasRecentLlmAttempt) return;
 
-    const parsed = await classifyVideoMetadataWithGroq(video);
+    const parsed = await classifyVideoMetadata(video);
     if (!parsed) {
       await prisma.$executeRaw`
         UPDATE videos
-        SET parseMethod = ${"groq-error"},
-            parseReason = ${"Groq metadata classification failed. Retry deferred by cooldown."},
+        SET parseMethod = ${"llm-error"},
+            parseReason = ${"LLM metadata classification failed. Retry deferred by cooldown."},
             parsedAt = ${new Date()}
         WHERE id = ${videoRowId}
       `;
@@ -1325,7 +1289,7 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
             parsedArtist = ${correctedArtist},
             parsedTrack = ${correctedTrack},
             parsedVideoType = ${parsed.videoType},
-            parseMethod = ${"groq-llm"},
+            parseMethod = ${"llm"},
             parseReason = ${correctedReason},
             parseConfidence = ${adjustedConfidence},
             genre = COALESCE(${inferredGenre}, genre),
@@ -1339,7 +1303,7 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
             parsedArtist = ${correctedArtist},
             parsedTrack = ${correctedTrack},
             parsedVideoType = ${parsed.videoType},
-            parseMethod = ${"groq-llm"},
+            parseMethod = ${"llm"},
             parseReason = ${correctedReason},
             parseConfidence = ${adjustedConfidence},
             parsedAt = ${new Date()}

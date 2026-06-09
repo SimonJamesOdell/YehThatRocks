@@ -1,6 +1,7 @@
+import { llmChatCompletion } from "@/lib/llm-client";
 import { recordExternalApiUsage } from "@/lib/api-usage-telemetry";
 
-type GroqModerationPayload = {
+type LlmModerationPayload = {
   shouldReview?: unknown;
   label?: unknown;
   reason?: unknown;
@@ -10,12 +11,11 @@ export type MagazineCommentModerationResult = {
   shouldReview: boolean;
   label: string;
   reason: string;
-  source: "local" | "groq";
+  source: "local" | "deepseek";
 };
 
-const GROQ_MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-120b";
-const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim() || "";
-const ENABLE_MAGAZINE_COMMENT_GROQ = process.env.ENABLE_MAGAZINE_COMMENT_GROQ === "1";
+const LLM_MODEL = process.env.LLM_MODEL?.trim() || "deepseek-v4-flash";
+const ENABLE_MAGAZINE_COMMENT_LLM = process.env.ENABLE_MAGAZINE_COMMENT_LLM === "1";
 
 const LOCAL_DOMAIN_POLICY_PATTERNS: Array<{ pattern: RegExp; label: string; reason: string }> = [
   {
@@ -71,8 +71,8 @@ function extractJsonObject(raw: string): string | null {
   return null;
 }
 
-async function classifyWithGroq(comment: string): Promise<MagazineCommentModerationResult | null> {
-  if (!ENABLE_MAGAZINE_COMMENT_GROQ || !GROQ_API_KEY) {
+async function classifyWithLlm(comment: string): Promise<MagazineCommentModerationResult | null> {
+  if (!ENABLE_MAGAZINE_COMMENT_LLM) {
     return null;
   }
 
@@ -85,52 +85,40 @@ async function classifyWithGroq(comment: string): Promise<MagazineCommentModerat
   ].join("\n");
 
   try {
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content: "You are a strict moderation classifier. Output JSON only.",
-          },
-          { role: "user", content: prompt },
-        ],
-      }),
+    const result = await llmChatCompletion({
+      model: LLM_MODEL,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: "You are a strict moderation classifier. Output JSON only.",
+        },
+        { role: "user", content: prompt },
+      ],
     });
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
+    if (!result) {
       void recordExternalApiUsage({
-        provider: "groq",
+        provider: "deepseek",
         endpoint: "chat/completions",
         units: 1,
         success: false,
-        statusCode: response.status,
-        note: body.slice(0, 120) || null,
+        statusCode: null,
+        note: "No LLM provider configured",
       });
       return null;
     }
 
     void recordExternalApiUsage({
-      provider: "groq",
+      provider: result.provider,
       endpoint: "chat/completions",
       units: 1,
       success: true,
-      statusCode: response.status,
+      statusCode: 200,
     });
 
-    const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-
-    const content = payload?.choices?.[0]?.message?.content;
+    const content = result?.choices?.[0]?.message?.content;
     if (!content) {
       return null;
     }
@@ -140,7 +128,7 @@ async function classifyWithGroq(comment: string): Promise<MagazineCommentModerat
       return null;
     }
 
-    const parsed = JSON.parse(jsonText) as GroqModerationPayload;
+    const parsed = JSON.parse(jsonText) as LlmModerationPayload;
     const shouldReview = parsed.shouldReview === true;
     const label = typeof parsed.label === "string" && parsed.label.trim()
       ? parsed.label.trim().slice(0, 80)
@@ -157,11 +145,11 @@ async function classifyWithGroq(comment: string): Promise<MagazineCommentModerat
       shouldReview,
       label,
       reason,
-      source: "groq",
+      source: "deepseek",
     };
   } catch (error) {
     void recordExternalApiUsage({
-      provider: "groq",
+      provider: "deepseek",
       endpoint: "chat/completions",
       units: 1,
       success: false,
@@ -178,9 +166,9 @@ export async function classifyMagazineComment(comment: string): Promise<Magazine
     return local;
   }
 
-  const groq = await classifyWithGroq(comment);
-  if (groq) {
-    return groq;
+  const result = await classifyWithLlm(comment);
+  if (result) {
+    return result;
   }
 
   return {

@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getVideosByArtist } from "@/lib/catalog-data";
+import { llmChatCompletion } from "@/lib/llm-client";
 import { slugifyArtistName } from "@/lib/artist-routing";
 import { getMusicBrainzArtistData } from "@/lib/musicbrainz";
 import { parseJsonOrNull } from "@/lib/parse-json";
@@ -549,34 +550,26 @@ async function generateWikiDocument(artistName: string, slug: string): Promise<A
     { role: "user", content: userPrompt },
   ];
 
-  const apiKey = process.env.GROQ_API_KEY?.trim();
+  const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
   let model = "fallback/offline";
   let parsedPayload: unknown = null;
 
   if (apiKey) {
-    const modelsToTry = ["openai/gpt-oss-120b", "gpt-oss-120b"];
+    const modelsToTry = ["deepseek-chat", "deepseek-v4-flash"];
 
     for (const candidateModel of modelsToTry) {
       try {
-        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
+        const result = await llmChatCompletion({
             model: candidateModel,
             temperature: 0.2,
             messages,
-          }),
         });
 
-        if (!response.ok) {
+        if (!result) {
           continue;
         }
 
-        const completion = (await parseJsonOrNull(response)) as GroqCompletionResponse | null;
-        const content = completion?.choices?.[0]?.message?.content;
+        const content = result?.choices?.[0]?.message?.content;
 
         if (!content) {
           continue;
