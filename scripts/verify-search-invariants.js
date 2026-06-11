@@ -22,6 +22,7 @@ const files = {
   searchFlagData: path.join(ROOT, "apps/web/lib/search-flag-data.ts"),
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
   searchFlagButton: path.join(ROOT, "apps/web/components/search-flag-button.tsx"),
+  searchResultVideoLink: path.join(ROOT, "apps/web/components/search-result-video-link.tsx"),
   searchSeenToggle: path.join(ROOT, "apps/web/components/search-seen-toggle.tsx"),
   seenToggleHook: path.join(ROOT, "apps/web/components/use-seen-toggle-preference.ts"),
   seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
@@ -55,6 +56,7 @@ function main() {
     readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
   ].join('\n');
   const searchFlagButtonSource = readFileStrict(files.searchFlagButton, ROOT);
+  const searchResultVideoLinkSource = readFileStrict(files.searchResultVideoLink, ROOT);
   const searchSeenToggleSource = readFileStrict(files.searchSeenToggle, ROOT);
   const seenToggleHookSource = readFileStrict(files.seenToggleHook, ROOT);
   const seenToggleRouteSource = readFileStrict(files.seenToggleRoute, ROOT);
@@ -77,7 +79,7 @@ function main() {
   assertContains(searchPageSource, "getShellRequestVideoState", "Search page loads seen/hidden state via shared shell request state helper", failures);
   assertContains(searchPageSource, "const isSeen = seenVideoIds.has(video.id);", "Search page computes seen status per video", failures);
   assertContains(searchPageSource, "top100CardSeen", "Search page applies seen-card darkening class used by New/Top100", failures);
-  assertContains(searchPageSource, 'videoSeenBadge videoSeenBadgeOverlay', "Search page renders seen badge overlay on thumbnails", failures);
+  assertContains(searchResultVideoLinkSource, 'videoSeenBadge videoSeenBadgeOverlay', "Search page renders seen badge overlay on thumbnails", failures);
   assertContains(searchPageSource, 'import { SearchResultBlockButton } from "@/components/search-result-block-button";', "Search page imports the block button", failures);
   assertContains(searchPageSource, 'import { SearchFlagButton } from "@/components/search-flag-button";', "Search page imports the search flag button", failures);
   assertContains(searchPageSource, 'import { SearchSeenToggle } from "@/components/search-seen-toggle";', "Search page imports the seen toggle", failures);
@@ -96,9 +98,9 @@ function main() {
   assertContains(seenToggleRouteSource, "seenTogglePreferenceKeySchema.safeParse", "Seen-toggle API validates query key schema for GET", failures);
 
   // Results: videos linked with resume flag
-  assertContains(searchPageSource, "/?v=${video.id}&resume=1", "Search page video links include resume=1 flag", failures);
-  assertContains(searchPageSource, 'import { ArtistWikiLink } from "@/components/artist-wiki-link";', "Search page imports artist wiki link helper", failures);
-  assertContains(searchPageSource, '<ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">', "Search page wraps video artist names with wiki links", failures);
+  assertContains(searchResultVideoLinkSource, "&resume=1", "Search page video links include resume=1 flag", failures);
+  assertContains(searchResultVideoLinkSource, 'import { ArtistWikiLink } from "@/components/artist-wiki-link";', "Search page imports artist wiki link helper", failures);
+  assertContains(searchResultVideoLinkSource, '<ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">', "Search page wraps video artist names with wiki links", failures);
 
   // Results: artists and genres rendered
   assertContains(searchPageSource, "/artist/${artist.slug}", "Search page artist links route to /artist/<slug>", failures);

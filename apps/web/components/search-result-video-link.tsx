@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { VideoGenreLink } from "@/components/video-genre-link";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
+import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
+import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { navigateVideoHref } from "@/components/player-video-navigation";
 import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
@@ -20,14 +23,61 @@ type SearchResultVideoLinkProps = {
     favourited?: number;
     description?: string | null;
   };
-  displayTitle: string;
   isSeen: boolean;
 };
 
-export function SearchResultVideoLink({ video, displayTitle, isSeen }: SearchResultVideoLinkProps) {
+function inferTrackFromTitle(title: string, artist: string) {
+  const trimmedTitle = title.trim();
+  const trimmedArtist = artist.trim();
+  if (!trimmedTitle || !trimmedArtist) {
+    return trimmedTitle;
+  }
+
+  const separators = [" - ", " — ", " | "];
+  for (const separator of separators) {
+    const split = trimmedTitle.split(separator).map((part) => part.trim()).filter(Boolean);
+    if (split.length < 2) {
+      continue;
+    }
+
+    const [left, right] = split;
+    if (left.toLowerCase() === trimmedArtist.toLowerCase()) {
+      return right;
+    }
+
+    if (right.toLowerCase() === trimmedArtist.toLowerCase()) {
+      return left;
+    }
+  }
+
+  return trimmedTitle;
+}
+
+export function SearchResultVideoLink({ video, isSeen }: SearchResultVideoLinkProps) {
   const router = useRouter();
   const hasWarmedRef = useRef(false);
   const videoHref = `/?v=${encodeURIComponent(video.id)}&resume=1`;
+
+  const [isFavourited, setIsFavourited] = useState(Number(video.favourited ?? 0) > 0);
+  const [isRemovingFavourite, setIsRemovingFavourite] = useState(false);
+
+  useEffect(() => {
+    setIsFavourited(Number(video.favourited ?? 0) > 0);
+  }, [video.id, video.favourited]);
+
+  const rawDisplayTitle = video.title;
+  const parsedArtistCandidate =
+    video.channelTitle?.trim()
+    || inferArtistFromTitle(rawDisplayTitle)?.trim()
+    || "";
+  const metadataArtist = parsedArtistCandidate || "Unknown Artist";
+  const parsedTrackCandidate = inferTrackFromTitle(rawDisplayTitle, metadataArtist);
+  const parsedArtistLabel = parsedArtistCandidate.toUpperCase();
+  const displayTitle = parsedArtistCandidate && parsedTrackCandidate
+    ? `${parsedArtistLabel} - ${parsedTrackCandidate}`
+    : rawDisplayTitle;
+  const categoryLabel = (video.genre ?? "Rock / Metal").trim();
+  const showCategoryLabel = categoryLabel.length > 0;
 
   const stagePendingSelection = useCallback(() => {
     if (typeof window === "undefined") {
@@ -78,6 +128,34 @@ export function SearchResultVideoLink({ video, displayTitle, isSeen }: SearchRes
     }
   }, [router, video.id, videoHref, warmSelection]);
 
+  const handleRemoveFavourite = useCallback(async (event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (isRemovingFavourite) {
+      return;
+    }
+
+    setIsRemovingFavourite(true);
+
+    try {
+      const response = await fetchWithAuthRetry("/api/favourites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId: video.id, action: "remove" }),
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      setIsFavourited(false);
+      dispatchAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, null);
+    } finally {
+      setIsRemovingFavourite(false);
+    }
+  }, [isRemovingFavourite, video.id]);
+
   return (
     <Link
       href={videoHref}
@@ -108,18 +186,44 @@ export function SearchResultVideoLink({ video, displayTitle, isSeen }: SearchRes
           loading="lazy"
           reportReason="thumbnail-load-error:search"
         />
-        {isSeen ? <span className="videoSeenBadge videoSeenBadgeOverlay">Seen</span> : null}
+        {isSeen && !isFavourited ? <span className="videoSeenBadge videoSeenBadgeOverlay">Seen</span> : null}
+        {isFavourited ? (
+          <button
+            type="button"
+            className="relatedFavouriteBadgeOverlay top100FavouriteBadgeOverlay artistVideoFavouriteBadgeButton"
+            aria-label={`Remove ${video.title} from favourites`}
+            title="Remove from favourites"
+            disabled={isRemovingFavourite}
+            onClick={handleRemoveFavourite}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+          >
+            <span className="artistVideoFavouriteBadgeHeart" aria-hidden="true">♥</span>
+            <span className="artistVideoFavouriteBadgeRemoveGlyph" aria-hidden="true">x</span>
+          </button>
+        ) : null}
       </div>
       <div className="leaderboardMeta">
-        <h3>{displayTitle}</h3>
-        <p className="leaderboardVideoCategory">
-          <VideoGenreLink genre={video.genre ?? "Rock / Metal"} stopPropagation nestedInLink />
-        </p>
-        <p>
-          <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
-            {video.channelTitle}
-          </ArtistWikiLink>
-        </p>
+        {showCategoryLabel ? (
+          <p className="leaderboardVideoCategory">
+            <VideoGenreLink genre={categoryLabel} stopPropagation nestedInLink />
+          </p>
+        ) : null}
+        <h3>
+          {parsedArtistCandidate && parsedTrackCandidate ? (
+            <>
+              <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
+                {parsedArtistLabel}
+              </ArtistWikiLink>
+              <span aria-hidden="true"> - </span>
+              <span>{parsedTrackCandidate}</span>
+            </>
+          ) : (
+            displayTitle
+          )}
+        </h3>
       </div>
     </Link>
   );

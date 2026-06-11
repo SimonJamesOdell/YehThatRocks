@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
-import { dispatchAppEvent, EVENT_NAMES } from "@/lib/events-contract";
+import { dispatchAppEvent, EVENT_NAMES, listenToAppEvent } from "@/lib/events-contract";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 
 export type UseFavouriteStateReturn = {
@@ -39,6 +39,39 @@ export function useFavouriteState({
     setRemoveFavouriteState("idle");
     setShowRemoveFavouriteConfirm(false);
   }, [currentVideo]);
+
+  // Re-check favourite status when any favourite is added/removed elsewhere.
+  useEffect(() => {
+    const currentVideoId = currentVideo.id;
+
+    async function refreshFavouriteStatus() {
+      try {
+        const response = await fetchWithAuthRetry("/api/favourites", {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json()) as { favourites?: { id: string }[] };
+        const favourites = payload.favourites ?? [];
+        const isFavourited = favourites.some((f) => f.id === currentVideoId);
+        setIsCurrentVideoFavourited(isFavourited);
+      } catch {
+        // Silently ignore fetch errors.
+      }
+    }
+
+    const unsubscribe = listenToAppEvent(EVENT_NAMES.FAVOURITES_UPDATED, () => {
+      void refreshFavouriteStatus();
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentVideo.id]);
 
   // Cleanup timeout on unmount.
   useEffect(() => {
