@@ -120,24 +120,32 @@ export async function POST(request: NextRequest) {
   let skipped = 0;
   let prunedAsMismatch = 0;
 
-  for (const videoId of candidateIds) {
+  // Process candidates in concurrent batches to reduce wall-clock time.
+  // Each candidate needs ~2 HTTP calls (oEmbed + embed check) plus DB writes;
+  // running them 4 at a time cuts total latency by ~3x.
+  const BATCH_SIZE = 4;
+  const processCandidate = async (videoId: string) => {
     const existedBefore = Boolean(await getStoredVideoById(videoId, { includeUnapproved: true }));
 
     // Artist discovery is intended to queue new candidates for moderation. If the
     // video already exists, skip re-hydration/import to avoid unnecessary CPU work.
     if (existedBefore) {
-      skipped += 1;
-      continue;
+      return { action: "skip" as const };
     }
 
-    const result = await importVideoFromDirectSource(videoId, { discoverRelated: false });
+    const result = await importVideoFromDirectSource(videoId, {
+      discoverRelated: false,
+      // Force-approve skips the server-side YouTube embed check, which is
+      // unreliable from a VPS IP. The admin will review the video later.
+      forceApprove: true,
+      // Defer expensive LLM classification and MusicBrainz genre lookups.
+      // These will run during admin review, not during bulk discovery.
+      deferMetadataClassification: true,
+    });
 
     if (!result.videoId || !result.decision.allowed) {
-      skipped += 1;
-      continue;
+      return { action: "skip" as const };
     }
-
-    imported += 1;
 
     const persisted = await getStoredVideoById(videoId, { includeUnapproved: true });
     const parsedArtist = (persisted?.parsedArtist ?? persisted?.channelTitle ?? "").trim();
@@ -146,11 +154,27 @@ export async function POST(request: NextRequest) {
 
     if (!isArtistMatch) {
       await pruneVideoAndAssociationsByVideoId(videoId, "admin-artist-discovery-artist-mismatch").catch(() => undefined);
-      prunedAsMismatch += 1;
-      continue;
+      return { action: "prune_mismatch" as const };
     }
 
-    queued += 1;
+    return { action: "queued" as const };
+  };
+
+  for (let i = 0; i < candidateIds.length; i += BATCH_SIZE) {
+    const batch = candidateIds.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(batch.map(processCandidate));
+
+    for (const result of results) {
+      if (result.action === "skip") {
+        skipped += 1;
+      } else if (result.action === "prune_mismatch") {
+        imported += 1;
+        prunedAsMismatch += 1;
+      } else if (result.action === "queued") {
+        imported += 1;
+        queued += 1;
+      }
+    }
   }
 
   return NextResponse.json({

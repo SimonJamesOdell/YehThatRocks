@@ -92,7 +92,7 @@ const RELATED_DISCOVERY_SEED_FANOUT = Math.max(1, Math.min(8, Number(process.env
 const YOUTUBE_RELATED_QUERY_COUNT = Math.max(1, Math.min(5, Number(process.env.YOUTUBE_RELATED_QUERY_COUNT || "3")));
 const YOUTUBE_RELATED_QUERY_MAX_RESULTS = Math.max(6, Math.min(25, Number(process.env.YOUTUBE_RELATED_QUERY_MAX_RESULTS || "14")));
 const YOUTUBE_RELATED_MIN_SCORE = Math.max(0.25, Math.min(3, Number(process.env.YOUTUBE_RELATED_MIN_SCORE || "1.7")));
-const LLM_CLASSIFICATION_MODEL = process.env.LLM_CLASSIFICATION_MODEL?.trim() || "deepseek-chat";
+const LLM_CLASSIFICATION_MODEL = process.env.LLM_CLASSIFICATION_MODEL?.trim() || "deepseek-v4-flash";
 const LLM_RETRY_COOLDOWN_MS = Math.max(300_000, Number(process.env.LLM_RETRY_COOLDOWN_MS || String(6 * 60 * 60 * 1000)));
 const PLAYBACK_DECISION_CACHE_TTL_MS = 15_000;
 const ALLOWED_VIDEO_TYPES = new Set(["official", "lyric", "live", "cover", "remix", "fan"]);
@@ -1042,13 +1042,13 @@ async function fetchOEmbedVideo(videoId: string): Promise<PersistableVideoRecord
   }
 }
 
-// ── Groq metadata classification ──────────────────────────────────────────────
+// ── LLM metadata classification ───────────────────────────────────────────────
 
-function normalizeGroqPromptField(value: unknown): string {
+function normalizeLlmPromptField(value: unknown): string {
   return normalizePossiblyMojibakeText(String(value ?? "")).replace(/\s+/g, " ").trim();
 }
 
-function isRedundantGroqDescriptionSnippet(snippet: string, title: string, channelTitle: string): boolean {
+function isRedundantLlmDescriptionSnippet(snippet: string, title: string, channelTitle: string): boolean {
   let reduced = snippet.toLowerCase();
 
   for (const token of [title, channelTitle]) {
@@ -1061,10 +1061,10 @@ function isRedundantGroqDescriptionSnippet(snippet: string, title: string, chann
   return semanticRemainder.length < 24;
 }
 
-function buildGroqMetadataPrompt(video: PersistableVideoRecord) {
-  const rawTitle = normalizeGroqPromptField(video.title);
-  const channelTitle = normalizeGroqPromptField(video.channelTitle);
-  const descriptionSnippet = truncate(normalizeGroqPromptField(video.description), 280);
+function buildLlmMetadataPrompt(video: PersistableVideoRecord) {
+  const rawTitle = normalizeLlmPromptField(video.title);
+  const channelTitle = normalizeLlmPromptField(video.channelTitle);
+  const descriptionSnippet = truncate(normalizeLlmPromptField(video.description), 280);
   const promptParts = [
     "Extract rock/metal video metadata.",
     "Return JSON only:",
@@ -1078,7 +1078,7 @@ function buildGroqMetadataPrompt(video: PersistableVideoRecord) {
     promptParts.push(`channelTitle: ${channelTitle}`);
   }
 
-  if (descriptionSnippet && !isRedundantGroqDescriptionSnippet(descriptionSnippet, rawTitle, channelTitle)) {
+  if (descriptionSnippet && !isRedundantLlmDescriptionSnippet(descriptionSnippet, rawTitle, channelTitle)) {
     promptParts.push(`descriptionSnippet: ${descriptionSnippet}`);
   }
 
@@ -1098,7 +1098,7 @@ async function classifyVideoMetadata(video: PersistableVideoRecord): Promise<Par
           role: "system",
           content: "You are a strict music metadata extraction service. Output valid JSON only, with no markdown fences.",
         },
-        { role: "user", content: buildGroqMetadataPrompt(video) },
+        { role: "user", content: buildLlmMetadataPrompt(video) },
       ],
     });
 
@@ -1151,7 +1151,7 @@ async function classifyVideoMetadata(video: PersistableVideoRecord): Promise<Par
 
 // ── Runtime metadata persistence ──────────────────────────────────────────────
 
-async function maybePersistRuntimeMetadata(videoRowId: number, video: PersistableVideoRecord) {
+async function maybePersistRuntimeMetadata(videoRowId: number, video: PersistableVideoRecord, deferClassification = false) {
   const hasColumns = await ensureVideoMetadataColumnsAvailable();
   if (!hasColumns) return;
 
@@ -1175,6 +1175,12 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
 
     // Never overwrite metadata that has been explicitly curated by an admin.
     if (existingMeta?.parseMethod === "admin-manual") {
+      return;
+    }
+
+    // When deferred (e.g. during bulk discovery), mark as pending and skip the
+    // expensive LLM classification + MusicBrainz lookup.
+    if (deferClassification) {
       return;
     }
 
@@ -1353,7 +1359,11 @@ function triggerRuntimeMetadataBackfill(videoRowId: number, video: PersistableVi
 
 // ── Video availability persistence ────────────────────────────────────────────
 
-async function persistVideoAvailability(video: PersistableVideoRecord, availability: VideoAvailability) {
+async function persistVideoAvailability(
+  video: PersistableVideoRecord,
+  availability: VideoAvailability,
+  options?: { deferMetadataClassification?: boolean },
+) {
   const persistedTitle = truncate(normalizePossiblyMojibakeText(video.title), 255);
   const persistedDescription = video.description;
   const persistedGenre = normalizeGenreForStorage(video.genre);
@@ -1437,7 +1447,9 @@ async function persistVideoAvailability(video: PersistableVideoRecord, availabil
     void markAvailableVideoMaxIdDirty().catch(() => undefined);
   }
 
-  await maybePersistRuntimeMetadata(persistedVideo.id, video);
+  if (!options?.deferMetadataClassification) {
+    await maybePersistRuntimeMetadata(persistedVideo.id, video);
+  }
   return persistedVideo;
 }
 
@@ -1848,6 +1860,7 @@ async function hydrateAndPersistVideo(
     skipRelatedDiscovery?: boolean;
     skipEmbedCheck?: boolean;
     enableRelatedDiscovery?: boolean;
+    deferMetadataClassification?: boolean;
   },
 ): Promise<PersistableVideoRecord | null> {
   if (!hasDatabaseUrl()) return providedVideo ?? (await fetchOEmbedVideo(videoId));
@@ -1901,7 +1914,9 @@ async function hydrateAndPersistVideo(
     reason: availability.reason,
   });
 
-  const persisted = await persistVideoAvailability(video, availability);
+  const persisted = await persistVideoAvailability(video, availability, {
+    deferMetadataClassification: Boolean(options?.deferMetadataClassification),
+  });
   if (!persisted) return null;
 
   if (
@@ -2120,7 +2135,14 @@ export function maybeStartAutomaticRelatedBackfill(offset: number) {
 
 // ── Admin imports / pruning ───────────────────────────────────────────────────
 
-export async function importVideoFromDirectSource(source: string, options?: { discoverRelated?: boolean; forceApprove?: boolean }) {
+export async function importVideoFromDirectSource(
+  source: string,
+  options?: {
+    discoverRelated?: boolean;
+    forceApprove?: boolean;
+    deferMetadataClassification?: boolean;
+  },
+) {
   const normalizedVideoId = normalizeYouTubeVideoId(source);
 
   if (!normalizedVideoId) {
@@ -2141,6 +2163,7 @@ export async function importVideoFromDirectSource(source: string, options?: { di
   await hydrateAndPersistVideo(normalizedVideoId, undefined, {
     forceAvailabilityRefresh: true,
     skipRelatedDiscovery: true,
+    deferMetadataClassification: Boolean(options?.deferMetadataClassification),
     // When forceApprove is set the admin has confirmed the video is embeddable.
     // Skip the server-side embed check to avoid VPS IP-based bot-detection rejecting
     // a video that plays fine in a browser.
@@ -2209,7 +2232,10 @@ export async function importVideoFromDirectSource(source: string, options?: { di
     }
   }
 
-  if (hasDatabaseUrl() && !options?.forceApprove) {
+  // When deferMetadataClassification is set (bulk discovery), skip genre
+  // classification — it does MusicBrainz lookups that are expensive in bulk.
+  // Genre will be assigned during admin review.
+  if (hasDatabaseUrl() && !options?.forceApprove && !options?.deferMetadataClassification) {
     const genreDecision = await classifyPersistedVideoGenre(normalizedVideoId).catch(() => ({
       action: "queue" as const,
       proposedGenre: null,

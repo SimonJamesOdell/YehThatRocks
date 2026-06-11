@@ -1,18 +1,14 @@
 /**
- * Shared LLM client — DeepSeek primary, Groq fallback.
+ * Shared LLM client — DeepSeek exclusively.
  *
- * Both providers expose an OpenAI-compatible chat completions API.
- * Prefer DeepSeek when DEEPSEEK_API_KEY is set; fall back to Groq
- * when only GROQ_API_KEY is available.
+ * All LLM backend services use DeepSeek (deepseek-v4-flash or deepseek-chat)
+ * via the OpenAI-compatible chat completions API.
  */
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY?.trim() || undefined;
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1/chat/completions";
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim() || undefined;
-const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
-
-export type LlmProvider = "deepseek" | "groq";
+export type LlmProvider = "deepseek";
 
 export type LlmMessage = {
   role: "system" | "user" | "assistant";
@@ -49,23 +45,13 @@ export type LlmConfig = {
 };
 
 function resolveConfig(): LlmConfig | null {
-  if (DEEPSEEK_API_KEY) {
-    return {
-      provider: "deepseek",
-      apiKey: DEEPSEEK_API_KEY,
-      baseUrl: DEEPSEEK_BASE_URL,
-    };
-  }
+  if (!DEEPSEEK_API_KEY) return null;
 
-  if (GROQ_API_KEY) {
-    return {
-      provider: "groq",
-      apiKey: GROQ_API_KEY,
-      baseUrl: GROQ_BASE_URL,
-    };
-  }
-
-  return null;
+  return {
+    provider: "deepseek",
+    apiKey: DEEPSEEK_API_KEY,
+    baseUrl: DEEPSEEK_BASE_URL,
+  };
 }
 
 export async function llmChatCompletion(

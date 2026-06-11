@@ -209,7 +209,7 @@ export async function withSoftTimeout<T>(label: string, timeoutMs: number, opera
 
 export function extractJsonObject(content: unknown) {
   if (typeof content !== "string") {
-    throw new Error("Groq returned non-string message content");
+    throw new Error("LLM returned non-string message content");
   }
   const trimmed = content.trim();
   try {
@@ -220,7 +220,7 @@ export function extractJsonObject(content: unknown) {
     if (start >= 0 && end > start) {
       return JSON.parse(trimmed.slice(start, end + 1)) as Record<string, unknown>;
     }
-    throw new Error(`Unable to parse Groq JSON payload: ${trimmed.slice(0, 220)}`);
+    throw new Error(`Unable to parse LLM JSON payload: ${trimmed.slice(0, 220)}`);
   }
 }
 

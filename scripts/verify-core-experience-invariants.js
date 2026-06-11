@@ -241,7 +241,7 @@ function main() {
   assertContains(suggestRouteSource, "`videos:suggest:${source.kind}:user:${authenticatedUserId}`", "Suggest-new applies a user-scoped emergency rate limit", failures);
   assertContains(suggestRouteSource, "importVideoFromDirectSource(videoId, { discoverRelated: false });", "Suggest-new playlist/channel batch ingestion does not trigger related discovery", failures);
   assertContains(playlistImportRouteSource, "importVideoFromDirectSource(videoId, { discoverRelated: false });", "Playlist ingestion remains a user submission path without related discovery", failures);
-  assertContains(adminArtistDiscoverRouteSource, "importVideoFromDirectSource(videoId, { discoverRelated: false });", "Admin artist discovery remains explicit and does not cascade related discovery", failures);
+  assertContains(adminArtistDiscoverRouteSource, "discoverRelated: false", "Admin artist discovery remains explicit and does not cascade related discovery", failures);
 
   // Catalog data support invariants for fallback sourcing.
   assertContains(catalogDataVideosSource, "const rankedVideoIds = Array.from(new Set(rankedVideoIdRows.map((row) => row.videoId).filter(Boolean))).slice(0, fetchLimit);", "Ranked top-pool builder deduplicates candidate video ids before hydration", failures);

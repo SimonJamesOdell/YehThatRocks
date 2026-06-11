@@ -11,17 +11,9 @@ const WIKI_CACHE_VERSION = 3;
 const WIKI_CACHE_DIR = path.join(process.cwd(), ".cache", "artist-wiki");
 const ENABLE_ARTIST_WIKI_GENERATION = process.env.ENABLE_ARTIST_WIKI_GENERATION === "1";
 
-type GroqMessage = {
+type LlmMessage = {
   role: "system" | "user";
   content: string;
-};
-
-type GroqCompletionResponse = {
-  choices?: Array<{
-    message?: {
-      content?: string;
-    };
-  }>;
 };
 
 type ExternalSource = {
@@ -545,7 +537,7 @@ async function generateWikiDocument(artistName: string, slug: string): Promise<A
     sourceDigest,
   ].join("\n\n");
 
-  const messages: GroqMessage[] = [
+  const messages: LlmMessage[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
   ];
@@ -555,7 +547,7 @@ async function generateWikiDocument(artistName: string, slug: string): Promise<A
   let parsedPayload: unknown = null;
 
   if (apiKey) {
-    const modelsToTry = ["deepseek-chat", "deepseek-v4-flash"];
+    const modelsToTry = ["deepseek-v4-flash"];
 
     for (const candidateModel of modelsToTry) {
       try {
