@@ -135,9 +135,9 @@ export async function POST(request: NextRequest) {
 
     const result = await importVideoFromDirectSource(videoId, {
       discoverRelated: false,
-      // Force-approve skips the server-side YouTube embed check, which is
-      // unreliable from a VPS IP. The admin will review the video later.
-      forceApprove: true,
+      // Skip the server-side YouTube embed check — VPS IPs are often
+      // bot-detected and blocked. The admin will verify during review.
+      skipEmbedCheck: true,
       // Defer expensive LLM classification and MusicBrainz genre lookups.
       // These will run during admin review, not during bulk discovery.
       deferMetadataClassification: true,

@@ -652,10 +652,13 @@ export async function POST(request: NextRequest) {
     }, true);
 
     if (canBypassApproval && hasDatabaseUrl()) {
+      // Only set approved_at for newly-approved videos.  Existing approved
+      // videos keep their original approved_at so they don't falsely
+      // surface as "new" on the frontend.
       await prisma.$executeRaw`
         UPDATE videos
         SET approved = ${true},
-            approved_at = UTC_TIMESTAMP(3),
+            approved_at = COALESCE(approved_at, UTC_TIMESTAMP(3)),
             updated_at = UTC_TIMESTAMP(3)
         WHERE videoId = ${result.videoId}
       `;

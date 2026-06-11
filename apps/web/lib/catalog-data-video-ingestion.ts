@@ -2140,6 +2140,7 @@ export async function importVideoFromDirectSource(
   options?: {
     discoverRelated?: boolean;
     forceApprove?: boolean;
+    skipEmbedCheck?: boolean;
     deferMetadataClassification?: boolean;
   },
 ) {
@@ -2164,10 +2165,10 @@ export async function importVideoFromDirectSource(
     forceAvailabilityRefresh: true,
     skipRelatedDiscovery: true,
     deferMetadataClassification: Boolean(options?.deferMetadataClassification),
-    // When forceApprove is set the admin has confirmed the video is embeddable.
-    // Skip the server-side embed check to avoid VPS IP-based bot-detection rejecting
-    // a video that plays fine in a browser.
-    skipEmbedCheck: Boolean(options?.forceApprove),
+    // When forceApprove or skipEmbedCheck is set the admin has confirmed the
+    // video is embeddable. Skip the server-side embed check to avoid VPS
+    // IP-based bot-detection rejecting a video that plays fine in a browser.
+    skipEmbedCheck: Boolean(options?.forceApprove || options?.skipEmbedCheck),
   });
 
   // Only auto-approve when the caller explicitly requests it (e.g. admin import).
