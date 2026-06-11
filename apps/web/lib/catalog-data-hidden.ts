@@ -12,12 +12,6 @@ import {
   normalizeYouTubeVideoId,
 } from "@/lib/catalog-data-utils";
 import { ensureVideoChannelTitleColumnAvailable } from "@/lib/catalog-data-db";
-import {
-  getPlaylists,
-  getPlaylistById,
-  removePlaylistItem,
-  deletePlaylist,
-} from "@/lib/catalog-data-playlists";
 import { clearFavouritesCacheForUser } from "@/lib/catalog-data-favourites";
 
 // ── Constants & caches ────────────────────────────────────────────────────────
@@ -271,6 +265,135 @@ export async function hideVideoForUser(input: { userId: number; videoId: string 
   }
 }
 
+// ── Batch playlist pruning helpers ─────────────────────────────────────────────
+// Instead of the N+1 per-playlist loop in hideVideoAndPrunePlaylistsForUser,
+// these helpers batch-find and batch-delete playlist items referencing a hidden
+// video, then batch-delete any playlists left empty.
+
+type PlaylistItemRef = {
+  playlistId: number;
+  itemRowId: number;
+};
+
+async function findPlaylistItemsByVideoIdBatch(
+  userId: number,
+  normalizedVideoId: string,
+): Promise<PlaylistItemRef[]> {
+  // Try camelCase schema variant first, then snake_case.
+  const queries = [
+    // camelCase: playlistitems.playlistId / playlistitems.videoId / playlistnames.userId
+    `SELECT p.id AS playlistId, pi.id AS itemRowId
+     FROM playlistitems pi
+     JOIN playlistnames p ON p.id = pi.playlistId
+     WHERE p.userId = ? AND pi.videoId = ?`,
+    // snake_case: playlistitems.playlist_id / playlistitems.video_id / playlistnames.user_id
+    `SELECT p.id AS playlistId, pi.id AS itemRowId
+     FROM playlistitems pi
+     JOIN playlistnames p ON p.id = pi.playlist_id
+     WHERE p.user_id = ? AND pi.video_id = ?`,
+  ];
+
+  for (const sql of queries) {
+    try {
+      const rows = await prisma.$queryRawUnsafe<Array<{ playlistId: number | bigint; itemRowId: number | bigint }>>(
+        sql, userId, normalizedVideoId,
+      );
+      if (rows.length > 0) {
+        return rows.map((r) => ({
+          playlistId: typeof r.playlistId === "bigint" ? Number(r.playlistId) : r.playlistId,
+          itemRowId: typeof r.itemRowId === "bigint" ? Number(r.itemRowId) : r.itemRowId,
+        }));
+      }
+    } catch {
+      // Try next schema variant.
+    }
+  }
+
+  return [];
+}
+
+async function batchRemovePlaylistItems(
+  items: PlaylistItemRef[],
+): Promise<{ removedCount: number; affectedPlaylistIds: Set<string> }> {
+  if (items.length === 0) return { removedCount: 0, affectedPlaylistIds: new Set() };
+
+  const affectedPlaylistIds = new Set<string>();
+  let removedCount = 0;
+
+  // Batch delete all items in one query using IN (...)
+  const itemIds = items.map((i) => i.itemRowId);
+  const placeholders = itemIds.map(() => "?").join(", ");
+
+  try {
+    const result = await prisma.$executeRawUnsafe(
+      `DELETE FROM playlistitems WHERE id IN (${placeholders})`,
+      ...itemIds,
+    );
+    removedCount = Number(result);
+    for (const item of items) {
+      affectedPlaylistIds.add(String(item.playlistId));
+    }
+  } catch {
+    // Fallback: delete one by one
+    for (const item of items) {
+      try {
+        await prisma.$executeRawUnsafe(
+          `DELETE FROM playlistitems WHERE id = ?`,
+          item.itemRowId,
+        );
+        removedCount++;
+        affectedPlaylistIds.add(String(item.playlistId));
+      } catch {
+        // Continue with remaining items.
+      }
+    }
+  }
+
+  return { removedCount, affectedPlaylistIds };
+}
+
+async function batchDeleteEmptyPlaylists(
+  playlistIds: string[],
+  userId: number,
+): Promise<Set<string>> {
+  const deleted = new Set<string>();
+  if (playlistIds.length === 0) return deleted;
+
+  // Check which playlists are empty and delete them in one pass
+  for (const id of playlistIds) {
+    try {
+      // Only delete if the playlist has zero items
+      const numericId = Number(id);
+      // Try camelCase first
+      let deleted_ = false;
+      try {
+        const result = await prisma.$executeRawUnsafe(
+          `DELETE FROM playlistnames WHERE id = ? AND userId = ?
+           AND NOT EXISTS (SELECT 1 FROM playlistitems WHERE playlistId = ?)`,
+          numericId, userId, numericId,
+        );
+        deleted_ = Number(result) > 0;
+      } catch {
+        try {
+          const result = await prisma.$executeRawUnsafe(
+            `DELETE FROM playlistnames WHERE id = ? AND user_id = ?
+             AND NOT EXISTS (SELECT 1 FROM playlistitems WHERE playlist_id = ?)`,
+            numericId, userId, numericId,
+          );
+          deleted_ = Number(result) > 0;
+        } catch {
+          // Skip this playlist.
+        }
+      }
+      if (deleted_) deleted.add(id);
+    } catch {
+      // Continue.
+    }
+  }
+
+  return deleted;
+}
+
 export async function hideVideoAndPrunePlaylistsForUser(input: {
   userId: number;
   videoId: string;
@@ -307,72 +430,54 @@ export async function hideVideoAndPrunePlaylistsForUser(input: {
     };
   }
 
-  const removedFromPlaylistIds = new Set<string>();
-  const deletedPlaylistIds = new Set<string>();
-  let removedItemCount = 0;
-
   try {
-    const playlists = await getPlaylists(input.userId);
+    // ── Optimized batch path ────────────────────────────────────────────────
+    // 1. Find all playlist items referencing the hidden video across all user playlists
+    const itemsToRemove = await findPlaylistItemsByVideoIdBatch(
+      input.userId,
+      normalizedVideoId,
+    );
 
-    for (const playlist of playlists) {
-      let current = await getPlaylistById(playlist.id, input.userId);
-
-      if (!current || current.videos.length === 0) {
-        continue;
-      }
-
-      let matchIndex = current.videos.findIndex(
-        (video) => (normalizeYouTubeVideoId(video.id) ?? video.id) === normalizedVideoId,
-      );
-
-      while (matchIndex >= 0) {
-        const match = current.videos[matchIndex];
-        const updated = await removePlaylistItem(
-          playlist.id,
-          matchIndex,
-          input.userId,
-          match?.playlistItemId ?? null,
-        );
-
-        if (!updated) {
-          break;
-        }
-
-        removedItemCount += 1;
-        removedFromPlaylistIds.add(playlist.id);
-        current = updated;
-        matchIndex = current.videos.findIndex(
-          (video) =>
-            (normalizeYouTubeVideoId(video.id) ?? video.id) === normalizedVideoId,
-        );
-      }
-
-      if (!removedFromPlaylistIds.has(playlist.id)) {
-        continue;
-      }
-
-      const refreshed = await getPlaylistById(playlist.id, input.userId);
-
-      if (!refreshed || refreshed.videos.length === 0) {
-        const deleted = await deletePlaylist(playlist.id, input.userId);
-        if (deleted) {
-          deletedPlaylistIds.add(playlist.id);
-        }
-      }
+    if (itemsToRemove.length === 0) {
+      return {
+        ok: true as const,
+        removedItemCount: 0,
+        removedFromPlaylistIds: [] as string[],
+        deletedPlaylistIds: [] as string[],
+        activePlaylistDeleted: false,
+      };
     }
-  } catch {
-    // Keep block/hide resilient even if playlist pruning partially fails.
-  }
 
-  return {
-    ok: true as const,
-    removedItemCount,
-    removedFromPlaylistIds: [...removedFromPlaylistIds],
-    deletedPlaylistIds: [...deletedPlaylistIds],
-    activePlaylistDeleted: Boolean(
-      input.activePlaylistId && deletedPlaylistIds.has(input.activePlaylistId),
-    ),
-  };
+    // 2. Batch-delete all found items
+    const { removedCount, affectedPlaylistIds } =
+      await batchRemovePlaylistItems(itemsToRemove);
+
+    // 3. Find and delete playlists that are now empty
+    const affectedIds = [...affectedPlaylistIds];
+    const deletedPlaylistIds = await batchDeleteEmptyPlaylists(
+      affectedIds,
+      input.userId,
+    );
+
+    return {
+      ok: true as const,
+      removedItemCount: removedCount,
+      removedFromPlaylistIds: affectedIds,
+      deletedPlaylistIds: [...deletedPlaylistIds],
+      activePlaylistDeleted: Boolean(
+        input.activePlaylistId && deletedPlaylistIds.has(input.activePlaylistId),
+      ),
+    };
+  } catch {
+    // Keep block/hide resilient even if batch pruning fails.
+    return {
+      ok: true as const,
+      removedItemCount: 0,
+      removedFromPlaylistIds: [] as string[],
+      deletedPlaylistIds: [] as string[],
+      activePlaylistDeleted: false,
+    };
+  }
 }
 
 export async function unhideVideoForUser(input: { userId: number; videoId: string }) {

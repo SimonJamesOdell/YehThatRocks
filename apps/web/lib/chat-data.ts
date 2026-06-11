@@ -236,17 +236,15 @@ async function pruneStaleOnlinePresence(excludeUserId: number): Promise<number[]
 
   const wentOfflineUserIds: number[] = [];
 
-  for (const staleUserId of staleUserIds) {
-    const deletedRows = await prisma.$executeRawUnsafe(
-      `
-        DELETE FROM online
-        WHERE ${userIdCol} = ?
-          AND ${staleConditionSql}
-      `,
-      staleUserId,
+  // Batch-delete all stale users in one query instead of N individual DELETEs.
+  if (staleUserIds.length > 0) {
+    const placeholders = staleUserIds.map(() => "?").join(", ");
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM online WHERE ${userIdCol} IN (${placeholders}) AND ${staleConditionSql}`,
+      ...staleUserIds,
     );
 
-    if (Number(deletedRows ?? 0) > 0) {
+    for (const staleUserId of staleUserIds) {
       wentOfflineUserIds.push(staleUserId);
       onlinePresenceTouchedAt.delete(staleUserId);
     }

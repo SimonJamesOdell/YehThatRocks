@@ -1,5 +1,7 @@
 "use client";
 
+import { memo, useCallback } from "react";
+
 type AuthUnavailableDialogProps = {
   message: string;
   isRetrying: boolean;
@@ -12,7 +14,7 @@ type AuthUnavailableDialogProps = {
   onDismiss: () => void;
 };
 
-export function AuthUnavailableDialog({
+export const AuthUnavailableDialog = memo(function AuthUnavailableDialog({
   message,
   isRetrying,
   retryLabel,
@@ -23,6 +25,10 @@ export function AuthUnavailableDialog({
   onRetry,
   onDismiss,
 }: AuthUnavailableDialogProps) {
+  const stopPropagation = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation();
+  }, []);
+
   return (
     <div className="authStatusModalOverlay" onClick={onDismiss}>
       <section
@@ -32,7 +38,7 @@ export function AuthUnavailableDialog({
         aria-live="polite"
         aria-labelledby="auth-unavailable-title"
         aria-describedby="auth-unavailable-message"
-        onClick={(event) => event.stopPropagation()}
+        onClick={stopPropagation}
       >
         <div className="authStatusModalCopy">
           <strong id="auth-unavailable-title">Auth server unavailable</strong>
@@ -62,4 +68,4 @@ export function AuthUnavailableDialog({
       </section>
     </div>
   );
-}
+});

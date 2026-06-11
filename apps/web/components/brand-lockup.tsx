@@ -2,14 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import type { Ref } from "react";
+import { memo, type Ref } from "react";
 
 type BrandLockupProps = {
   logoRef?: Ref<HTMLAnchorElement>;
   onLogoClick: () => void;
 };
 
-export function BrandLockup({ logoRef, onLogoClick }: BrandLockupProps) {
+export const BrandLockup = memo(function BrandLockup({ logoRef, onLogoClick }: BrandLockupProps) {
   return (
     <div className="brandLockup">
       <Link href="/" aria-label="Yeh That Rocks home" ref={logoRef} onClick={onLogoClick}>
@@ -26,4 +26,4 @@ export function BrandLockup({ logoRef, onLogoClick }: BrandLockupProps) {
       <h1 className="brandTagline">The world&apos;s loudest website</h1>
     </div>
   );
-}
+});

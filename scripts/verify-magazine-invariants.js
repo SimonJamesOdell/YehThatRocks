@@ -35,6 +35,7 @@ function main() {
 
   const shellDynamicSource = [
     readFileStrict(files.shellDynamic, ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/shell-dynamic-rendering.tsx'), ROOT),
     readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
     readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
     readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
@@ -165,13 +166,13 @@ function main() {
   // The article slug navigation must not carry a video ID query param.
   assertContains(
     shellDynamicSource,
-    "router.push(`/magazine/${encodeURIComponent(track.slug)}`)",
+    "router.push(`/magazine/${encodeURIComponent(slug)}`)",
     "Magazine rail card onClick navigates to article slug without appending ?v=",
     failures,
   );
   assertNotContains(
     shellDynamicSource,
-    "router.push(`/magazine/${encodeURIComponent(track.slug)}?v=",
+    "router.push(`/magazine/${encodeURIComponent(slug)}?v=",
     "Magazine rail card onClick must not append a video ID to the article URL",
     failures,
   );

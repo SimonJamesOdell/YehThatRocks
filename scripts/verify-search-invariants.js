@@ -109,10 +109,11 @@ function main() {
 
   // --- Search API route: public, no authentication required ---
   assertNotContains(searchRouteSource, "requireApiAuth", "Search GET route does not require authentication (public endpoint)", failures);
-  assertContains(searchRouteSource, "searchCatalog(query)", "Search API delegates to searchCatalog", failures);
+  assertContains(searchRouteSource, "searchCatalog(query", "Search API delegates to searchCatalog", failures);
   assertContains(searchRouteSource, "searchParams.get(\"q\")", "Search API reads query from searchParams.q", failures);
   assertContains(searchRouteSource, "NextResponse.json({", "Search API returns JSON response", failures);
   assertContains(searchRouteSource, "query,", "Search API response includes query echo", failures);
+  assertContains(searchRouteSource, "limit,", "Search API response includes pagination limit", failures);
   assertContains(searchRouteSource, "...results", "Search API spreads catalog results into response", failures);
 
   // --- Search flags API route: authenticated, query-aware moderation ---
@@ -154,7 +155,7 @@ function main() {
   assertContains(catalogDataSource, "artistSearchCache.set(searchCacheKey", "Catalog data writes artist search cache after query completion", failures);
 
   // Canonical-only result mapping (no seed substitutions when DB returns zero rows).
-  assertContains(catalogDataSource, "videos: videos.map(mapVideo)", "searchCatalog returns canonical mapped videos", failures);
+  assertContains(catalogDataSource, "videos.map(mapVideo)", "searchCatalog returns canonical mapped videos", failures);
   assertContains(catalogDataSource, "artists: artists.map(mapArtist)", "searchCatalog returns canonical mapped artists", failures);
 
   // --- Search flag persistence and UI wiring ---
@@ -169,7 +170,7 @@ function main() {
   assertContains(globalCssSource, ".searchResultBlockButton", "Search UI includes dedicated block button styling", failures);
 
   // Result limit: capped at 50
-  assertContains(catalogDataSource, "LIMIT 50", "searchCatalog caps video results to 50 per query", failures);
+  assertContains(catalogDataSource, "Math.max(limit + offset, 50)", "searchCatalog caps video results to at least 50 per query", failures);
 
   // Suggestion routing invariants: track shortcuts go directly to selected video.
   assertContains(catalogDataSource, "SELECT videoId, title", "suggestCatalog track query fetches videoId for direct navigation", failures);

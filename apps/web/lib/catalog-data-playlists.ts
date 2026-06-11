@@ -14,6 +14,14 @@ import {
 import { loadTableColumns, pickColumn } from "@/lib/catalog-data-db";
 import { hasDatabaseUserScope, mapPlaylistFallbackRowToDetail } from "@/lib/catalog-data-internal-helpers";
 
+// ── Schema preference cache ────────────────────────────────────────────────────
+// During migration from legacy (camelCase) to mapped (snake_case) column names,
+// the code tries both schemas.  Cache the preferred variant with a short TTL so
+// repeated calls don't double-fire every time.
+
+let cachedSchemaVariant: "legacy" | "mapped" | null = null;
+let schemaVariantCheckedAt = 0;
+
 // ── Private helpers ───────────────────────────────────────────────────────────
 
 function toPlaylistSummary(playlist: PlaylistDetail): PlaylistSummary {
@@ -23,6 +31,13 @@ function toPlaylistSummary(playlist: PlaylistDetail): PlaylistSummary {
     itemCount: playlist.videos.length,
     leadVideoId: playlist.videos[0]?.id ?? "",
   };
+}
+
+function getPreferredSchemaVariant(): "legacy" | "mapped" | null {
+  if (cachedSchemaVariant && Date.now() - schemaVariantCheckedAt < 300_000) {
+    return cachedSchemaVariant;
+  }
+  return null;
 }
 
 // ── Public exports ────────────────────────────────────────────────────────────
@@ -44,62 +59,85 @@ export async function getPlaylists(userId?: number): Promise<PlaylistSummary[]> 
       leadVideoId: string | null;
     };
 
-    const rowsByLegacySchema = await (async () => {
-      try {
-        return await prisma.$queryRaw<PlaylistSummaryRow[]>`
-          SELECT
-            p.id AS id,
-            p.name AS name,
-            (
-              SELECT COUNT(*)
-              FROM playlistitems pi
-              WHERE pi.playlistId = p.id
-            ) AS itemCount,
-            (
-              SELECT pi.videoId
-              FROM playlistitems pi
-              WHERE pi.playlistId = p.id
-              ORDER BY pi.id ASC
-              LIMIT 1
-            ) AS leadVideoId
-          FROM playlistnames p
-          WHERE p.userId = ${userId}
-          ORDER BY p.id DESC
-          LIMIT 24
-        `;
-      } catch {
-        return [] as PlaylistSummaryRow[];
-      }
-    })();
+    const execLegacyQuery = () =>
+      prisma.$queryRaw<PlaylistSummaryRow[]>`
+        SELECT
+          p.id AS id,
+          p.name AS name,
+          (
+            SELECT COUNT(*)
+            FROM playlistitems pi
+            WHERE pi.playlistId = p.id
+          ) AS itemCount,
+          (
+            SELECT pi.videoId
+            FROM playlistitems pi
+            WHERE pi.playlistId = p.id
+            ORDER BY pi.id ASC
+            LIMIT 1
+          ) AS leadVideoId
+        FROM playlistnames p
+        WHERE p.userId = ${userId}
+        ORDER BY p.id DESC
+        LIMIT 24
+      `;
 
-    const rowsByMappedSchema = await (async () => {
-      try {
-        return await prisma.$queryRaw<PlaylistSummaryRow[]>`
-          SELECT
-            p.id AS id,
-            p.name AS name,
-            (
-              SELECT COUNT(*)
-              FROM playlistitems pi
-              WHERE pi.playlist_id = p.id
-            ) AS itemCount,
-            (
-              SELECT v.videoId
-              FROM playlistitems pi
-              LEFT JOIN videos v ON v.id = pi.video_id
-              WHERE pi.playlist_id = p.id
-              ORDER BY pi.id ASC
-              LIMIT 1
-            ) AS leadVideoId
-          FROM playlistnames p
-          WHERE p.user_id = ${userId}
-          ORDER BY p.id DESC
-          LIMIT 24
-        `;
-      } catch {
-        return [] as PlaylistSummaryRow[];
+    const execMappedQuery = () =>
+      prisma.$queryRaw<PlaylistSummaryRow[]>`
+        SELECT
+          p.id AS id,
+          p.name AS name,
+          (
+            SELECT COUNT(*)
+            FROM playlistitems pi
+            WHERE pi.playlist_id = p.id
+          ) AS itemCount,
+          (
+            SELECT v.videoId
+            FROM playlistitems pi
+            LEFT JOIN videos v ON v.id = pi.video_id
+            WHERE pi.playlist_id = p.id
+            ORDER BY pi.id ASC
+            LIMIT 1
+          ) AS leadVideoId
+        FROM playlistnames p
+        WHERE p.user_id = ${userId}
+        ORDER BY p.id DESC
+        LIMIT 24
+      `;
+
+    const pref = getPreferredSchemaVariant();
+    let rowsByLegacySchema: PlaylistSummaryRow[] = [];
+    let rowsByMappedSchema: PlaylistSummaryRow[] = [];
+
+    // Try preferred schema first, fall back to the other only if needed.
+    if (pref === "legacy") {
+      try { rowsByLegacySchema = await execLegacyQuery(); } catch { /* noop */ }
+      if (rowsByLegacySchema.length === 0) {
+        try { rowsByMappedSchema = await execMappedQuery(); } catch { /* noop */ }
       }
-    })();
+    } else if (pref === "mapped") {
+      try { rowsByMappedSchema = await execMappedQuery(); } catch { /* noop */ }
+      if (rowsByMappedSchema.length === 0) {
+        try { rowsByLegacySchema = await execLegacyQuery(); } catch { /* noop */ }
+      }
+    } else {
+      // Cold start: try both, update cache.
+      try { rowsByLegacySchema = await execLegacyQuery(); } catch { /* noop */ }
+      try { rowsByMappedSchema = await execMappedQuery(); } catch { /* noop */ }
+    }
+
+    // Update the schema variant cache based on which query produced results.
+    if (rowsByLegacySchema.length > 0 && rowsByMappedSchema.length === 0) {
+      cachedSchemaVariant = "legacy";
+      schemaVariantCheckedAt = Date.now();
+    } else if (rowsByMappedSchema.length > 0 && rowsByLegacySchema.length === 0) {
+      cachedSchemaVariant = "mapped";
+      schemaVariantCheckedAt = Date.now();
+    } else if (rowsByLegacySchema.length > 0 || rowsByMappedSchema.length > 0) {
+      // Both returned results — keep checking both during migration.
+      schemaVariantCheckedAt = Date.now();
+    }
 
     const legacyTotal = rowsByLegacySchema.reduce((sum: number, row: PlaylistSummaryRow) => {
       const count =
@@ -179,31 +217,42 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
   }
 
   try {
-    const playlistRowsByLegacyOwner = await (async () => {
-      try {
-        return await prisma.$queryRaw<Array<{ id: number | bigint; name: string | null }>>`
-          SELECT id, name
-          FROM playlistnames
-          WHERE id = ${numericId} AND userId = ${userId}
-          LIMIT 1
-        `;
-      } catch {
-        return [] as Array<{ id: number | bigint; name: string | null }>;
-      }
-    })();
+    const execLegacyOwner = () =>
+      prisma.$queryRaw<Array<{ id: number | bigint; name: string | null }>>`
+        SELECT id, name
+        FROM playlistnames
+        WHERE id = ${numericId} AND userId = ${userId}
+        LIMIT 1
+      `;
 
-    const playlistRowsByMappedOwner = await (async () => {
-      try {
-        return await prisma.$queryRaw<Array<{ id: number | bigint; name: string | null }>>`
-          SELECT id, name
-          FROM playlistnames
-          WHERE id = ${numericId} AND user_id = ${userId}
-          LIMIT 1
-        `;
-      } catch {
-        return [] as Array<{ id: number | bigint; name: string | null }>;
+    const execMappedOwner = () =>
+      prisma.$queryRaw<Array<{ id: number | bigint; name: string | null }>>`
+        SELECT id, name
+        FROM playlistnames
+        WHERE id = ${numericId} AND user_id = ${userId}
+        LIMIT 1
+      `;
+
+    type OwnerRow = { id: number | bigint; name: string | null };
+    let playlistRowsByLegacyOwner: OwnerRow[] = [];
+    let playlistRowsByMappedOwner: OwnerRow[] = [];
+
+    const pref = getPreferredSchemaVariant();
+    if (pref === "legacy") {
+      try { playlistRowsByLegacyOwner = await execLegacyOwner(); } catch { /* noop */ }
+      if (playlistRowsByLegacyOwner.length === 0) {
+        try { playlistRowsByMappedOwner = await execMappedOwner(); } catch { /* noop */ }
       }
-    })();
+    } else if (pref === "mapped") {
+      try { playlistRowsByMappedOwner = await execMappedOwner(); } catch { /* noop */ }
+      if (playlistRowsByMappedOwner.length === 0) {
+        try { playlistRowsByLegacyOwner = await execLegacyOwner(); } catch { /* noop */ }
+      }
+    } else {
+      // Cold start
+      try { playlistRowsByLegacyOwner = await execLegacyOwner(); } catch { /* noop */ }
+      try { playlistRowsByMappedOwner = await execMappedOwner(); } catch { /* noop */ }
+    }
 
     const playlist = playlistRowsByLegacyOwner[0] ?? playlistRowsByMappedOwner[0];
 

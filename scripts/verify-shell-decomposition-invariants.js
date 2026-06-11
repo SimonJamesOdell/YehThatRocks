@@ -29,7 +29,10 @@ const files = {
 function main() {
   const failures = [];
 
-  const shellDynamicSource = readFileStrict(files.shellDynamic, ROOT);
+  const shellDynamicSource = [
+    readFileStrict(files.shellDynamic, ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/shell-dynamic-rendering.tsx'), ROOT),
+  ].join('\n');
 
   // ── Desktop Intro hook ──────────────────────────────────────────────────
   const useDesktopIntroSource = readFileStrict(files.useDesktopIntro, ROOT);
@@ -107,7 +110,7 @@ function main() {
 
   assertContains(shellDynamicSource, "useChatState(", "Shell imports and calls useChatState hook", failures);
   assertContains(shellDynamicSource, "from \"@/components/use-chat-state\"", "Shell imports useChatState from its own module", failures);
-  assertContains(shellDynamicSource, "isMagazineLoading ?", "Shell gates magazine empty state behind loading flag", failures);
+  assertContains(shellDynamicSource, "isLoading={isMagazineLoading}", "Shell gates magazine empty state behind loading flag", failures);
   assertContains(shellDynamicSource, "Loading articles...", "Shell shows loading text while magazine data is in-flight", failures);
 
   // SSE and chat fetch must not be duplicated in shell core

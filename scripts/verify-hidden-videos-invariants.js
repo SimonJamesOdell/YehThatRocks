@@ -50,6 +50,7 @@ function main() {
   const shellLayoutSource = readFileStrict(files.shellLayout, ROOT);
   const shellDynamicSource = [
     readFileStrict(files.shellDynamic, ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/components/shell-dynamic-rendering.tsx'), ROOT),
     readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
     readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
     readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
@@ -79,8 +80,8 @@ function main() {
   assertContains(catalogDataSource, "export async function getHiddenVideoIdsForUser", "Catalog data exposes hidden video lookup", failures);
   assertContains(catalogDataSource, "export async function hideVideoForUser", "Catalog data exposes hide operation", failures);
   assertContains(catalogDataSource, "export async function hideVideoAndPrunePlaylistsForUser", "Catalog data exposes hide+playlist-prune operation", failures);
-  assertContains(catalogDataSource, "const playlists = await getPlaylists(input.userId);", "Hide+prune operation enumerates user playlists", failures);
-  assertContains(catalogDataSource, "const deleted = await deletePlaylist(playlist.id, input.userId);", "Hide+prune operation deletes empty playlists", failures);
+  assertContains(catalogDataSource, "findPlaylistItemsByVideoIdBatch", "Hide+prune operation batch-finds playlist items", failures);
+  assertContains(catalogDataSource, "batchDeleteEmptyPlaylists", "Hide+prune operation batch-deletes empty playlists", failures);
   assertContains(catalogDataSource, "export async function unhideVideoForUser", "Catalog data exposes unhide operation", failures);
   assertContains(apiSchemasSource, "export const hiddenVideoMutationSchema", "API schemas define hidden video mutation payload", failures);
   assertContains(apiRouteSource, "export async function GET", "Hidden videos route supports GET", failures);

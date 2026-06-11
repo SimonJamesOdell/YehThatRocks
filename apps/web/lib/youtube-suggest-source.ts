@@ -12,7 +12,8 @@ export function parseYouTubeSuggestSource(source: string): YouTubeSuggestSource 
     return null;
   }
 
-  const normalizedVideoId = normalizeYouTubeVideoId(trimmed);
+  // Lazily computed — only needed for plain video ID fallback at end of function.
+  let _normalizedVideoId: string | null | undefined;
 
   try {
     const url = new URL(trimmed);
@@ -48,18 +49,15 @@ export function parseYouTubeSuggestSource(source: string): YouTubeSuggestSource 
       }
     }
 
-    const playlistIdFromQuery = maybeNormalizePlaylistId(url.searchParams.get("list"));
+    const listParam = url.searchParams.get("list");
+    const playlistIdFromQuery = maybeNormalizePlaylistId(listParam);
 
     if (playlistIdFromQuery) {
       return { kind: "playlist", playlistId: playlistIdFromQuery };
     }
 
-    if (pathLower.startsWith("/playlist")) {
-      const explicitPlaylist = maybeNormalizePlaylistId(url.searchParams.get("list"));
-      if (explicitPlaylist) {
-        return { kind: "playlist", playlistId: explicitPlaylist };
-      }
-    }
+    // /playlist paths without a list param produce no valid playlist ID;
+    // let parsing fall through to the video-ID and bare-playlist-ID checks below.
   } catch {
     const playlistParamMatch = trimmed.match(/[?&]list=([A-Za-z0-9_-]{10,})/i);
     if (playlistParamMatch?.[1]) {
@@ -67,6 +65,7 @@ export function parseYouTubeSuggestSource(source: string): YouTubeSuggestSource 
     }
   }
 
+  const normalizedVideoId = (_normalizedVideoId ??= normalizeYouTubeVideoId(trimmed));
   if (normalizedVideoId) {
     return { kind: "video", videoId: normalizedVideoId };
   }

@@ -9,7 +9,10 @@ export async function GET(request: NextRequest) {
   if (limited) return limited;
 
   const query = request.nextUrl.searchParams.get("q") ?? "";
-  const results = await searchCatalog(query);
+  const limit = Math.max(1, Math.min(200, Number(request.nextUrl.searchParams.get("limit")) || 50));
+  const offset = Math.max(0, Number(request.nextUrl.searchParams.get("offset")) || 0);
+
+  const results = await searchCatalog(query, { limit, offset });
 
   // Filter blocked videos if user is authenticated
   const authResult = await getOptionalApiAuth(request);
@@ -19,6 +22,8 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     query,
+    limit,
+    offset,
     ...results
   });
 }

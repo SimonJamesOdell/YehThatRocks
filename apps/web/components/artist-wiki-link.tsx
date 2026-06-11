@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
 import { getArtistWikiPath, withVideoContext } from "@/lib/artist-routing";
@@ -26,7 +26,7 @@ export function ArtistWikiLink({ artistName, videoId, className, children, title
 
   const targetHref = withVideoContext(href, videoId, true);
 
-  const openWiki = () => {
+  const openWiki = useCallback(() => {
     if (disabled) {
       return;
     }
@@ -39,7 +39,20 @@ export function ArtistWikiLink({ artistName, videoId, className, children, title
       window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     }
     router.push(targetHref);
-  };
+  }, [disabled, targetHref, router]);
+
+  const handleClick = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openWiki();
+  }, [openWiki]);
+
+  const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    openWiki();
+  }, [openWiki]);
 
   if (asButton) {
     return (
@@ -48,11 +61,7 @@ export function ArtistWikiLink({ artistName, videoId, className, children, title
         className={className}
         title={title ?? `Open ${artistName} wiki`}
         disabled={disabled}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openWiki();
-        }}
+        onClick={handleClick}
       >
         {children ?? artistName}
       </button>
@@ -65,20 +74,8 @@ export function ArtistWikiLink({ artistName, videoId, className, children, title
       tabIndex={0}
       className={className}
       title={title ?? `Open ${artistName} wiki`}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        openWiki();
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" && event.key !== " ") {
-          return;
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-        openWiki();
-      }}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
     >
       {children ?? artistName}
     </span>

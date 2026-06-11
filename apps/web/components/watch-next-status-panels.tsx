@@ -1,5 +1,7 @@
 "use client";
 
+import { memo } from "react";
+
 type WatchNextStatusPanelsProps = {
   watchNextLoadFailed: boolean;
   hasVisibleVideos: boolean;
@@ -11,7 +13,7 @@ type WatchNextStatusPanelsProps = {
   onOpenAutoplaySettings: () => void;
 };
 
-export function WatchNextStatusPanels({
+export const WatchNextStatusPanels = memo(function WatchNextStatusPanels({
   watchNextLoadFailed,
   hasVisibleVideos,
   onRetryLoadMore,
@@ -74,4 +76,4 @@ export function WatchNextStatusPanels({
       ) : null}
     </>
   );
-}
+});

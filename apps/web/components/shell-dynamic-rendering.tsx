@@ -6,6 +6,10 @@ import { fetchArtistVideoCountBatched } from "@/components/artist-count-batcher"
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { PlaylistSummaryCardContent } from "@/components/playlist-summary-card-content";
+import { QueueTrackCardContent } from "@/components/queue-track-card-content";
+import { RightRailLoadingState } from "@/components/right-rail-loading-state";
+import { RightRailPlaylistEmptyState } from "@/components/right-rail-playlist-empty-state";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { VideoGenreLink } from "@/components/video-genre-link";
 import { finitePercentOrNull } from "@/components/shell-dynamic-utils";
@@ -15,6 +19,10 @@ import { fetchWithAuthRetry as fetchWithAuthRetryClient } from "@/lib/client-aut
 import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import { getArtistPagePath } from "@/lib/artist-routing";
 import { CHAT_OPENED_VIDEO_ACTIVITY_SUPPRESS_KEY } from "@/lib/storage-keys";
+import type { PlaylistRailSummary } from "@/components/use-playlist-rail";
+import type { ShellMagazineTrack } from "@/components/use-shell-admin-state";
+import { MagazineGenerateNowButton } from "@/components/magazine-generate-now-button";
+import { resolveVideoGenreNavigationTarget } from "@/lib/video-genre-navigation";
 
 import { REQUEST_VIDEO_REPLAY_EVENT, EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 export { REQUEST_VIDEO_REPLAY_EVENT };
@@ -631,5 +639,267 @@ export function PerformanceDial({
       <strong>{label}</strong>
       {detail ? <small>{detail}</small> : null}
     </div>
+  );
+}
+
+// ── Queue panel (extracted from shell-dynamic-core) ────────────────────────────
+
+type QueuePanelProps = {
+  tracks: VideoRecord[];
+  activeVideoId: string;
+  clickedRelatedVideoId: string | null;
+  onTrackClick: (videoId: string) => void;
+  onPrefetch: (track: VideoRecord) => void;
+  onRemove: (videoId: string) => void;
+  onClear: () => void;
+};
+
+export function QueuePanel({
+  tracks,
+  activeVideoId,
+  clickedRelatedVideoId,
+  onTrackClick,
+  onPrefetch,
+  onRemove,
+  onClear,
+}: QueuePanelProps) {
+  return (
+    <div className="relatedStack relatedStackPlaylist">
+      <div className="rightRailPlaylistBar">
+        <span className="rightRailPlaylistLabel">
+          Current queue • {tracks.length} {tracks.length === 1 ? "track" : "tracks"}
+        </span>
+        {tracks.length > 0 ? (
+          <div className="rightRailPlaylistActions">
+            <button
+              type="button"
+              className="rightRailPlaylistClose"
+              onClick={onClear}
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
+      </div>
+      <div className="relatedStackPlaylistBody">
+        {tracks.length > 0 ? (
+          tracks.map((track, index) => (
+            <div
+              key={`${track.id}:${index}`}
+              className="relatedCardSlot"
+              style={{ "--related-index": index } as CSSProperties}
+            >
+              <button
+                type="button"
+                className="relatedCardHideButton"
+                aria-label={`Remove ${track.title} from temporary queue`}
+                title="Remove from temporary queue"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onRemove(track.id);
+                }}
+              >
+                ×
+              </button>
+              <Link
+                href={`/?v=${track.id}`}
+                className={`relatedCard linkedCard relatedCardTransition rightRailPlaylistTrackCard${track.id === activeVideoId ? " relatedCardActive" : ""}${clickedRelatedVideoId === track.id ? " relatedCardClickFlash" : ""}`}
+                onClick={() => onTrackClick(track.id)}
+                onMouseEnter={() => onPrefetch(track)}
+                onFocus={() => onPrefetch(track)}
+                onPointerDown={() => onPrefetch(track)}
+              >
+                <QueueTrackCardContent track={track} index={index} />
+              </Link>
+            </div>
+          ))
+        ) : (
+          <p className="rightRailStatus">Queue is empty.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Playlist index panel (extracted from shell-dynamic-core) ───────────────────
+
+type PlaylistIndexPanelProps = {
+  isLoading: boolean;
+  error: string | null;
+  summaries: PlaylistRailSummary[];
+  isCreating: boolean;
+  deletingPlaylistId: string | null;
+  onDeletePlaylist: (playlist: { id: string; name: string }) => void;
+  getActivatePlaylistHref: (playlistId: string) => string;
+  onCreate: () => void;
+};
+
+export function PlaylistIndexPanel({
+  isLoading,
+  error,
+  summaries,
+  isCreating,
+  deletingPlaylistId,
+  onDeletePlaylist,
+  getActivatePlaylistHref,
+  onCreate,
+}: PlaylistIndexPanelProps) {
+  if (isLoading) {
+    return <RightRailLoadingState message="Loading playlists..." />;
+  }
+
+  if (error) {
+    return <p className="rightRailStatus">{error}</p>;
+  }
+
+  if (summaries.length === 0) {
+    return (
+      <RightRailPlaylistEmptyState
+        isCreating={isCreating}
+        onCreate={onCreate}
+      />
+    );
+  }
+
+  return (
+    <>
+      {summaries.map((playlist) => {
+        const hasLeadThumbnail = playlist.itemCount > 0 && playlist.leadVideoId !== "__placeholder__";
+        const isDeleting = deletingPlaylistId === playlist.id;
+        return (
+          <Link
+            key={playlist.id}
+            href={getActivatePlaylistHref(playlist.id)}
+            className="relatedCard linkedCard rightRailPlaylistCard"
+            data-video-id={hasLeadThumbnail ? playlist.leadVideoId : undefined}
+            prefetch={false}
+          >
+            <button
+              type="button"
+              className="rightRailPlaylistCardDelete"
+              aria-label={`Delete ${playlist.name}`}
+              title="Delete playlist"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDeletePlaylist({ id: playlist.id, name: playlist.name });
+              }}
+              disabled={deletingPlaylistId !== null}
+            >
+              {isDeleting ? "…" : "🗑"}
+            </button>
+            <PlaylistSummaryCardContent
+              playlist={playlist}
+              hasLeadThumbnail={hasLeadThumbnail}
+            />
+            </Link>
+        );
+      })}
+    </>
+  );
+}
+
+// ── Magazine rail content (extracted from shell-dynamic-core) ──────────────────
+
+type MagazineRailContentProps = {
+  isLoading: boolean;
+  tracks: ShellMagazineTrack[];
+  isAdmin: boolean;
+  deletingSlugs: Record<string, boolean>;
+  deleteErrors: Record<string, string>;
+  onDeleteArticle: (track: ShellMagazineTrack) => Promise<void>;
+  onNavigateToArticle: (slug: string) => void;
+  onNavigateToGenre: (genre: string) => void;
+};
+
+export function MagazineRailContent({
+  isLoading,
+  tracks,
+  isAdmin,
+  deletingSlugs,
+  deleteErrors,
+  onDeleteArticle,
+  onNavigateToArticle,
+  onNavigateToGenre,
+}: MagazineRailContentProps) {
+  if (isLoading) {
+    return <p className="chatStatus">Loading articles...</p>;
+  }
+
+  if (tracks.length === 0) {
+    return <p className="chatStatus">No magazine articles are available yet.</p>;
+  }
+
+  return (
+    <>
+      <div className="magazineRailHeader">
+        <strong>Latest Articles</strong>
+        {isAdmin ? <MagazineGenerateNowButton /> : null}
+      </div>
+      {tracks.map((track) => (
+        <article
+          key={track.slug}
+          className="magazineRailCard magazineRailCardClickable"
+          onClick={() => {
+            window.scrollTo(0, 0);
+            onNavigateToArticle(track.slug);
+          }}
+          role="button"
+          tabIndex={0}
+          aria-label={`Open magazine article: ${track.artist} - ${track.title}`}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`}
+            alt={`${track.artist} - ${track.title} thumbnail`}
+            width={168}
+            height={96}
+            className="magazineRailThumb"
+            loading="lazy"
+          />
+          {isAdmin ? (
+            <button
+              type="button"
+              className="magazineAdminDeleteButton"
+              aria-label={`Delete article: ${track.title}`}
+              disabled={Boolean(deletingSlugs[track.slug])}
+              onClick={async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                await onDeleteArticle(track);
+              }}
+            >
+              {deletingSlugs[track.slug] ? "…" : "✕"}
+            </button>
+          ) : null}
+          <div className="magazineRailBody">
+            <div className="messageMeta">
+              <strong>{track.artist}</strong>
+              {track.kicker ? (
+                <span>{track.kicker}</span>
+              ) : (
+                <span
+                  role="link"
+                  tabIndex={0}
+                  style={{ cursor: "pointer", textDecoration: "underline" }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onNavigateToGenre(track.genre);
+                  }}
+                >
+                  {track.genre}
+                </span>
+              )}
+            </div>
+            <p>{track.title}</p>
+            {deleteErrors[track.slug] ? (
+              <p className="magazineRailAdminDeleteError">{deleteErrors[track.slug]}</p>
+            ) : null}
+          </div>
+        </article>
+      ))}
+    </>
   );
 }

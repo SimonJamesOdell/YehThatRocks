@@ -44,7 +44,7 @@ import { usePerformanceMetrics } from "@/components/use-performance-metrics";
 import { useSearchAutocomplete, type SearchSuggestion } from "@/components/use-search-autocomplete";
 import { useChatState, type ChatMode, type ChatMessage, type OnlineUser } from "@/components/use-chat-state";
 import { usePlaylistRail, type RightRailMode, type PlaylistRailVideo, type PlaylistRailPayload, type PlaylistRailSummary } from "@/components/use-playlist-rail";
-import { PerformanceDial, SharedVideoMessageCard, WatchNextCard } from "@/components/shell-dynamic-rendering";
+import { MagazineRailContent, PerformanceDial, PlaylistIndexPanel, QueuePanel, SharedVideoMessageCard, WatchNextCard } from "@/components/shell-dynamic-rendering";
 import { useRouteChangeTracking } from "@/components/use-route-change-tracking";
 import { useShellAdminState } from "@/components/use-shell-admin-state";
 import { useShellKeyboardShortcuts } from "@/components/use-shell-keyboard-shortcuts";
@@ -170,6 +170,63 @@ const routeLoadingLabel = pathname.endsWith("/wiki") || pendingOverlayOpenKind =
 const isCategoriesOverlayPendingOrActive = isCategoriesRoute
 const isArtistsOverlayPendingOrActive = isArtistsOverlayPath(pathname)
 */
+// ── Auth dialogs (extracted from ShellDynamicInner render body) ────────────────
+
+type ShellAuthDialogsProps = {
+  authStatus: "clear" | "unavailable";
+  authStatusMessage: string | null;
+  isAuthUnavailableDialogRequested: boolean;
+  isAuthUnavailableDialogDismissed: boolean;
+  isRetryingAuthStatus: boolean;
+  onAuthDismiss: () => void;
+  onAuthRetry: () => void;
+  requestedVideoId: string | null;
+  isResolvingRequestedVideo: boolean;
+  requestedVideoPendingRetryAfterMs: number | null;
+  requestedVideoPendingReason: CurrentVideoResolvePayload["pendingReason"] | null;
+  onVideoRetryNow: () => void;
+};
+
+function ShellAuthDialogs({
+  authStatus,
+  authStatusMessage,
+  isAuthUnavailableDialogRequested,
+  isAuthUnavailableDialogDismissed,
+  isRetryingAuthStatus,
+  onAuthDismiss,
+  onAuthRetry,
+  requestedVideoId,
+  isResolvingRequestedVideo,
+  requestedVideoPendingRetryAfterMs,
+  requestedVideoPendingReason,
+  onVideoRetryNow,
+}: ShellAuthDialogsProps) {
+  return (
+    <>
+      {authStatus === "unavailable" && authStatusMessage && isAuthUnavailableDialogRequested && !isAuthUnavailableDialogDismissed ? (
+        <AuthUnavailableDialog
+          message={authStatusMessage}
+          isRetrying={isRetryingAuthStatus}
+          retryLabel="Retry auth now"
+          retryButtonLabel="Try again"
+          retryBusyLabel="Trying again..."
+          dismissLabel="Dismiss auth availability notice"
+          dismissButtonLabel="Dismiss"
+          onRetry={onAuthRetry}
+          onDismiss={onAuthDismiss}
+        />
+      ) : null}
+      {requestedVideoId && isResolvingRequestedVideo && requestedVideoPendingRetryAfterMs !== null ? (
+        <CurrentVideoRetryDialog
+          pendingReason={requestedVideoPendingReason}
+          retryAfterMs={requestedVideoPendingRetryAfterMs}
+          onRetryNow={onVideoRetryNow}
+        />
+      ) : null}
+    </>
+  );
+}
+
 function ShellDynamicInner({
   initialVideo,
   initialRelatedVideos,
@@ -2525,26 +2582,20 @@ function ShellDynamicInner({
           </section>
         </div>
       ) : null}
-      {authStatus === "unavailable" && authStatusMessage && isAuthUnavailableDialogRequested && !isAuthUnavailableDialogDismissed ? (
-        <AuthUnavailableDialog
-          message={authStatusMessage}
-          isRetrying={isRetryingAuthStatus}
-          retryLabel="Retry auth now"
-          retryButtonLabel="Try again"
-          retryBusyLabel="Trying again..."
-          dismissLabel="Dismiss auth availability notice"
-          dismissButtonLabel="Dismiss"
-          onRetry={() => void retryAuthStateCheck({ showDialogOnUnavailable: true })}
-          onDismiss={() => setIsAuthUnavailableDialogDismissed(true)}
-        />
-      ) : null}
-      {requestedVideoId && isResolvingRequestedVideo && requestedVideoPendingRetryAfterMs !== null ? (
-        <CurrentVideoRetryDialog
-          pendingReason={requestedVideoPendingReason}
-          retryAfterMs={requestedVideoPendingRetryAfterMs}
-          onRetryNow={() => setRequestedVideoRetryNonce((value) => value + 1)}
-        />
-      ) : null}
+      <ShellAuthDialogs
+        authStatus={authStatus}
+        authStatusMessage={authStatusMessage}
+        isAuthUnavailableDialogRequested={isAuthUnavailableDialogRequested}
+        isAuthUnavailableDialogDismissed={isAuthUnavailableDialogDismissed}
+        isRetryingAuthStatus={isRetryingAuthStatus}
+        onAuthDismiss={() => setIsAuthUnavailableDialogDismissed(true)}
+        onAuthRetry={() => void retryAuthStateCheck({ showDialogOnUnavailable: true })}
+        requestedVideoId={requestedVideoId}
+        isResolvingRequestedVideo={isResolvingRequestedVideo}
+        requestedVideoPendingRetryAfterMs={requestedVideoPendingRetryAfterMs}
+        requestedVideoPendingReason={requestedVideoPendingReason}
+        onVideoRetryNow={() => setRequestedVideoRetryNonce((value) => value + 1)}
+      />
       <section
         className={[
           "heroGrid",
@@ -2621,95 +2672,16 @@ function ShellDynamicInner({
                   </p>
                 ) : null}
                 {chatMode === "magazine" ? (
-                  isMagazineLoading ? (
-                    <p className="chatStatus">Loading articles...</p>
-                  ) : visibleMagazineTracks.length === 0 ? (
-                    <p className="chatStatus">No magazine articles are available yet.</p>
-                  ) : (
-                    <>
-                      <div className="magazineRailHeader">
-                        <strong>Latest Articles</strong>
-                         {isAdmin ? <MagazineGenerateNowButton /> : null}
-                      </div>
-                      {visibleMagazineTracks.map((track) => (
-                        <article
-                          key={track.slug}
-                          className="magazineRailCard magazineRailCardClickable"
-                          onClick={() => {
-                            window.scrollTo(0, 0);
-                            router.push(`/magazine/${encodeURIComponent(track.slug)}`);
-                          }}
-                          onKeyDown={handleButtonLikeKeyDown(() => {
-                            window.scrollTo(0, 0);
-                            router.push(`/magazine/${encodeURIComponent(track.slug)}`);
-                          })}
-                          role="button"
-                          tabIndex={0}
-                          aria-label={`Open magazine article: ${track.artist} - ${track.title}`}
-                        >
-                          <Image
-                            src={`https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`}
-                            alt={`${track.artist} - ${track.title} thumbnail`}
-                            width={168}
-                            height={96}
-                            className="magazineRailThumb"
-                            loading="lazy"
-                            sizes="84px"
-                          />
-                          {isAdmin ? (
-                            <button
-                              type="button"
-                              className="magazineAdminDeleteButton"
-                              aria-label={`Delete article: ${track.title}`}
-                              disabled={Boolean(deletingMagazineSlugs[track.slug])}
-                              onClick={async (event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                await handleDeleteMagazineArticle(track);
-                              }}
-                              onKeyDown={handleStopPropagationKeyDown}
-                            >
-                              {deletingMagazineSlugs[track.slug] ? "…" : "✕"}
-                            </button>
-                          ) : null}
-                          <div className="magazineRailBody">
-                            <div className="messageMeta">
-                              <strong>{track.artist}</strong>
-                              {track.kicker ? (
-                                <span>{track.kicker}</span>
-                              ) : (
-                                <span
-                                  role="link"
-                                  tabIndex={0}
-                                  style={{ cursor: "pointer", textDecoration: "underline" }}
-                                  onClick={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    router.push(resolveVideoGenreNavigationTarget(track.genre).href);
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (event.key !== "Enter" && event.key !== " ") {
-                                      return;
-                                    }
-
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    router.push(resolveVideoGenreNavigationTarget(track.genre).href);
-                                  }}
-                                >
-                                  {track.genre}
-                                </span>
-                              )}
-                            </div>
-                            <p>{track.title}</p>
-                            {magazineDeleteErrors[track.slug] ? (
-                              <p className="magazineRailAdminDeleteError">{magazineDeleteErrors[track.slug]}</p>
-                            ) : null}
-                          </div>
-                        </article>
-                      ))}
-                    </>
-                  )
+                  <MagazineRailContent
+                    isLoading={isMagazineLoading}
+                    tracks={visibleMagazineTracks}
+                    isAdmin={isAdmin}
+                    deletingSlugs={deletingMagazineSlugs}
+                    deleteErrors={magazineDeleteErrors}
+                    onDeleteArticle={handleDeleteMagazineArticle}
+                    onNavigateToArticle={(slug) => { window.scrollTo(0, 0); router.push(`/magazine/${encodeURIComponent(slug)}`); }}
+                    onNavigateToGenre={(genre) => router.push(resolveVideoGenreNavigationTarget(genre).href)}
+                  />
                 ) : chatMode === "online" ? (
                   <>
                     {FORUM_SECTIONS.map((section) => (
@@ -3150,61 +3122,15 @@ function ShellDynamicInner({
               )}
             </div>
           ) : rightRailMode === "queue" ? (
-            <div className="relatedStack relatedStackPlaylist">
-              <div className="rightRailPlaylistBar">
-                <span className="rightRailPlaylistLabel">
-                  Current queue • {temporaryQueueVideos.length} {temporaryQueueVideos.length === 1 ? "track" : "tracks"}
-                </span>
-                {temporaryQueueVideos.length > 0 ? (
-                  <div className="rightRailPlaylistActions">
-                    <button
-                      type="button"
-                      className="rightRailPlaylistClose"
-                      onClick={handleClearTemporaryQueue}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-              <div className="relatedStackPlaylistBody">
-                {temporaryQueueVideos.length > 0 ? (
-                  temporaryQueueVideos.map((track, index) => (
-                    <div
-                      key={`${track.id}:${index}`}
-                      className="relatedCardSlot"
-                      style={{ "--related-index": index } as CSSProperties}
-                    >
-                      <button
-                        type="button"
-                        className="relatedCardHideButton"
-                        aria-label={`Remove ${track.title} from temporary queue`}
-                        title="Remove from temporary queue"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          handleRemoveFromTemporaryQueue(track.id);
-                        }}
-                      >
-                        ×
-                      </button>
-                      <Link
-                        href={`/?v=${track.id}`}
-                        className={`relatedCard linkedCard relatedCardTransition rightRailPlaylistTrackCard${track.id === currentVideo.id ? " relatedCardActive" : ""}${clickedRelatedVideoId === track.id ? " relatedCardClickFlash" : ""}`}
-                        onClick={() => handleWatchNextTrackClick(track.id)}
-                        onMouseEnter={() => prefetchRelatedSelection(track)}
-                        onFocus={() => prefetchRelatedSelection(track)}
-                        onPointerDown={() => prefetchRelatedSelection(track)}
-                      >
-                        <QueueTrackCardContent track={track} index={index} />
-                      </Link>
-                    </div>
-                  ))
-                ) : (
-                  <p className="rightRailStatus">Queue is empty.</p>
-                )}
-              </div>
-            </div>
+            <QueuePanel
+              tracks={temporaryQueueVideos}
+              activeVideoId={currentVideo.id}
+              clickedRelatedVideoId={clickedRelatedVideoId}
+              onTrackClick={handleWatchNextTrackClick}
+              onPrefetch={prefetchRelatedSelection}
+              onRemove={handleRemoveFromTemporaryQueue}
+              onClear={handleClearTemporaryQueue}
+            />
           ) : (
             <div className="relatedStack relatedStackPlaylist">
               {activePlaylistId ? (
@@ -3251,51 +3177,16 @@ function ShellDynamicInner({
               ) : null}
               <div className="relatedStackPlaylistBody" ref={playlistStackBodyRef}>
               {!activePlaylistId ? (
-                isPlaylistSummaryLoading ? (
-                  <RightRailLoadingState message="Loading playlists..." />
-                ) : playlistSummaryError ? (
-                  <p className="rightRailStatus">{playlistSummaryError}</p>
-                ) : playlistRailSummaries.length > 0 ? (
-                  playlistRailSummaries.map((playlist) => {
-                    const hasLeadThumbnail = playlist.itemCount > 0 && playlist.leadVideoId !== "__placeholder__";
-                    const isDeleting = playlistBeingDeletedId === playlist.id;
-                    return (
-                      <Link
-                        key={playlist.id}
-                        href={getActivatePlaylistHref(playlist.id)}
-                        className="relatedCard linkedCard rightRailPlaylistCard"
-                        data-video-id={hasLeadThumbnail ? playlist.leadVideoId : undefined}
-                        prefetch={false}
-                      >
-                        <button
-                          type="button"
-                          className="rightRailPlaylistCardDelete"
-                          aria-label={`Delete ${playlist.name}`}
-                          title="Delete playlist"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            setConfirmDeleteRailPlaylist({ id: playlist.id, name: playlist.name });
-                          }}
-                          disabled={playlistBeingDeletedId !== null}
-                        >
-                          {isDeleting ? "…" : "🗑"}
-                        </button>
-                        <PlaylistSummaryCardContent
-                          playlist={playlist}
-                          hasLeadThumbnail={hasLeadThumbnail}
-                        />
-                      </Link>
-                    );
-                  })
-                ) : (
-                  <RightRailPlaylistEmptyState
-                    isCreating={isCreatingRailPlaylist}
-                    onCreate={() => {
-                      void handleCreatePlaylistFromRail();
-                    }}
-                  />
-                )
+                <PlaylistIndexPanel
+                  isLoading={isPlaylistSummaryLoading}
+                  error={playlistSummaryError}
+                  summaries={playlistRailSummaries}
+                  isCreating={isCreatingRailPlaylist}
+                  deletingPlaylistId={playlistBeingDeletedId}
+                  onDeletePlaylist={setConfirmDeleteRailPlaylist}
+                  getActivatePlaylistHref={getActivatePlaylistHref}
+                  onCreate={() => { void handleCreatePlaylistFromRail(); }}
+                />
               ) : isPlaylistRailLoading || isCreatingActivePlaylist ? (
                 <RightRailLoadingState message={isCreatingActivePlaylist ? "Creating playlist..." : "Loading playlist tracks..."} />
               ) : playlistRailError ? (

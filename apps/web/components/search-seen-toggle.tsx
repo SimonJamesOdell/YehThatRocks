@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { memo, useCallback, useEffect } from "react";
 
 import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
 
@@ -13,12 +13,14 @@ type SearchSeenToggleProps = {
 const HIDE_SEEN_CLASS = "searchResultsHideSeen";
 const SEARCH_HIDE_SEEN_TOGGLE_KEY_PREFIX = "ytr-toggle-hide-seen-search";
 
-export function SearchSeenToggle({ trackStackId, hasSeen, isAuthenticated }: SearchSeenToggleProps) {
+export const SearchSeenToggle = memo(function SearchSeenToggle({ trackStackId, hasSeen, isAuthenticated }: SearchSeenToggleProps) {
   const toggleKey = `${SEARCH_HIDE_SEEN_TOGGLE_KEY_PREFIX}:${trackStackId}`;
   const [hideSeen, setHideSeen] = useSeenTogglePreference({
     key: toggleKey,
     isAuthenticated,
   });
+
+  const toggleHideSeen = useCallback(() => setHideSeen((v) => !v), [setHideSeen]);
 
   useEffect(() => {
     const el = document.getElementById(trackStackId);
@@ -35,10 +37,10 @@ export function SearchSeenToggle({ trackStackId, hasSeen, isAuthenticated }: Sea
     <button
       type="button"
       className={`newPageSeenToggle${hideSeen ? " newPageSeenToggleActive" : ""}`}
-      onClick={() => setHideSeen((v) => !v)}
+      onClick={toggleHideSeen}
       aria-pressed={hideSeen}
     >
       {hideSeen ? "Showing unseen only" : "Show unseen only"}
     </button>
   );
-}
+});

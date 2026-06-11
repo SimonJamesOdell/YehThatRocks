@@ -502,16 +502,31 @@ function startPlaylistBatchIngestion(args: {
   }
 
   const job = (async () => {
+    // Process videos concurrently in batches to speed up playlist/channel imports.
+    // Each importVideoFromDirectSource involves YouTube API calls + DB writes;
+    // concurrent processing cuts total wall-clock time dramatically.
+    const BATCH_CONCURRENCY = 6;
     let mutatedCatalog = false;
-    for (const videoId of videoIds) {
+
+    for (let offset = 0; offset < videoIds.length; offset += BATCH_CONCURRENCY) {
+      const batch = videoIds.slice(offset, offset + BATCH_CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map((videoId) =>
+          importVideoFromDirectSource(videoId, { discoverRelated: false }),
+        ),
+      );
+
+      for (const settled of results) {
+        if (settled.status !== "fulfilled") continue;
+        const result = settled.value;
       try {
-        const result = await importVideoFromDirectSource(videoId, { discoverRelated: false });
         if (result.videoId && result.decision.allowed) {
           await applyMetadataHints(result.videoId, { artist, track }, false);
           mutatedCatalog = true;
         }
       } catch {
-        // Continue processing remaining playlist items.
+        // Continue processing remaining items.
+        }
       }
     }
 

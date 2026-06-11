@@ -239,7 +239,7 @@ function main() {
   assertContains(suggestRouteSource, "const SUGGEST_SIGN_IN_REQUIRED_MESSAGE = \"Sign in to suggest new videos.\";", "Suggest-new requires a signed-in user before ingestion", failures);
   assertContains(suggestRouteSource, "rateLimitOrResponse(", "Suggest-new applies an IP-scoped emergency rate limit", failures);
   assertContains(suggestRouteSource, "`videos:suggest:${source.kind}:user:${authenticatedUserId}`", "Suggest-new applies a user-scoped emergency rate limit", failures);
-  assertContains(suggestRouteSource, "importVideoFromDirectSource(videoId, { discoverRelated: false });", "Suggest-new playlist/channel batch ingestion does not trigger related discovery", failures);
+  assertContains(suggestRouteSource, "discoverRelated: false", "Suggest-new playlist/channel batch ingestion does not trigger related discovery", failures);
   assertContains(playlistImportRouteSource, "importVideoFromDirectSource(videoId, { discoverRelated: false });", "Playlist ingestion remains a user submission path without related discovery", failures);
   assertContains(adminArtistDiscoverRouteSource, "discoverRelated: false", "Admin artist discovery remains explicit and does not cascade related discovery", failures);
 

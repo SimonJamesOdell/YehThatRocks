@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BoundedMap } from "@/lib/bounded-map";
 
 import { isLikelyUnavailableThumbnailDimensions } from "@/lib/youtube-thumbnail-health";
 
@@ -23,8 +24,10 @@ type ThumbState = "unknown" | "ready" | "broken";
 // Keyed by videoId (not URL). The probe always uses hqdefault which returns
 // HTTP 404 for private/deleted/unavailable videos, unlike mqdefault which
 // returns a generic placeholder image (200 OK) even for unavailable videos.
-const thumbnailHealthCache = new Map<string, ThumbState>();
-const unavailableReportSent = new Set<string>();
+// Bounded to prevent unbounded growth during long-lived SPA sessions.
+const THUMBNAIL_CACHE_MAX = 500;
+const thumbnailHealthCache = new BoundedMap<string, ThumbState>(THUMBNAIL_CACHE_MAX);
+const unavailableReportSent = new BoundedMap<string, boolean>(THUMBNAIL_CACHE_MAX);
 
 function buildThumbUrl(videoId: string, format: "mqdefault" | "hqdefault") {
   return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/${format}.jpg`;
@@ -38,10 +41,10 @@ function buildProbeUrl(videoId: string) {
 
 function reportUnavailable(videoId: string, reason: string) {
   const reportKey = `${videoId}:${reason}`;
-  if (unavailableReportSent.has(reportKey)) {
+  if (unavailableReportSent.get(reportKey)) {
     return;
   }
-  unavailableReportSent.add(reportKey);
+  unavailableReportSent.set(reportKey, true);
 
   void fetch("/api/videos/unavailable", {
     method: "POST",
@@ -153,6 +156,23 @@ export function YouTubeThumbnailImage({
     }
   }, [hideClosestSelector, reportReason, shouldReportUnavailable, state, videoId]);
 
+  const handleImgError = useCallback((event: React.SyntheticEvent<HTMLImageElement>) => {
+    const target = event.currentTarget;
+    if (hideClosestSelector) {
+      const closest = target.closest(hideClosestSelector);
+      if (closest instanceof HTMLElement) {
+        closest.style.display = "none";
+        closest.setAttribute("data-thumbnail-broken", "1");
+      }
+    }
+    if (shouldReportUnavailable) {
+      reportUnavailable(videoId, reportReason);
+    }
+    onBrokenThumbnail?.(videoId);
+    thumbnailHealthCache.set(videoId, "broken");
+    setThumbState({ videoId, state: "broken" });
+  }, [hideClosestSelector, onBrokenThumbnail, reportReason, shouldReportUnavailable, videoId]);
+
   if (state === "broken") {
     return <span ref={brokenMarkerRef} aria-hidden="true" style={{ display: "none" }} />;
   }
@@ -171,22 +191,7 @@ export function YouTubeThumbnailImage({
       loading={loading}
       decoding={decoding}
       fetchPriority={fetchPriority}
-      onError={(event) => {
-        const target = event.currentTarget;
-        if (hideClosestSelector) {
-          const closest = target.closest(hideClosestSelector);
-          if (closest instanceof HTMLElement) {
-            closest.style.display = "none";
-            closest.setAttribute("data-thumbnail-broken", "1");
-          }
-        }
-        if (shouldReportUnavailable) {
-          reportUnavailable(videoId, reportReason);
-        }
-        onBrokenThumbnail?.(videoId);
-        thumbnailHealthCache.set(videoId, "broken");
-        setThumbState({ videoId, state: "broken" });
-      }}
+      onError={handleImgError}
     />
   );
 }

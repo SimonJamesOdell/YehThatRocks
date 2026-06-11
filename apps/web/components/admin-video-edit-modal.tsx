@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
@@ -77,7 +77,17 @@ export function AdminVideoEditModal({ isOpen, videoId, onClose, onSaveComplete }
       return;
     }
 
+    // Reset state and trigger load when modal opens.
+    // loadVideoDetails immediately sets isAdminEditLoading=true,
+    // acting as a natural guard against double-fire in Strict Mode.
     setAdminEditVideoRowId(null);
+    setAdminEditError(null);
+    setAdminEditStatus(null);
+    setIsAdminEditLoading(false);
+    setIsAdminEditSaving(false);
+    setIsAutoClassifyingGenre(false);
+
+    void loadVideoDetails();
   }, [isOpen, videoId]);
 
   async function loadVideoDetails() {
@@ -236,11 +246,6 @@ export function AdminVideoEditModal({ isOpen, videoId, onClose, onSaveComplete }
     } finally {
       setIsAutoClassifyingGenre(false);
     }
-  }
-
-  // Load video details when modal opens
-  if (isOpen && !adminEditVideoRowId && !isAdminEditLoading && adminEditError === null) {
-    void loadVideoDetails();
   }
 
   if (!isOpen) {

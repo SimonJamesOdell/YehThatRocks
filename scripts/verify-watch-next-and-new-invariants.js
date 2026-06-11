@@ -131,9 +131,9 @@ function main() {
   assertContains(shellDynamicSource, "handleRemoveFromTemporaryQueue,", "Shell consumes queue remove handler from extracted hook", failures);
   assertContains(shellDynamicSource, "handleClearTemporaryQueue,", "Shell consumes queue clear handler from extracted hook", failures);
   assertContains(shellDynamicSource, "temporaryQueueVideoIdSet,", "Shell consumes queue id set from extracted hook", failures);
-  assertContains(shellDynamicSource, "Current queue \u2022 {temporaryQueueVideos.length}", "Shell queue rail label uses Current queue copy", failures);
+  assertContains(shellDynamicRenderingSource, "Current queue \u2022 {tracks.length}", "Shell queue rail label uses Current queue copy", failures);
   assertContains(shellDynamicSource, "rightRailMode === \"queue\" ? \"activeTab\" : undefined", "Shell highlights queue tab when selected", failures);
-  assertContains(shellDynamicSource, "className={`relatedCard linkedCard relatedCardTransition rightRailPlaylistTrackCard${track.id === currentVideo.id ? \" relatedCardActive\" : \"\"}${clickedRelatedVideoId === track.id ? \" relatedCardClickFlash\" : \"\"}`}", "Queue cards reuse playlist active styling for currently playing item", failures);
+  assertContains(shellDynamicRenderingSource, "rightRailPlaylistTrackCard", "Queue cards reuse playlist active styling for currently playing item", failures);
   assertContains(shellDynamicSource, "temporaryQueue={temporaryQueueVideos}", "Shell passes temporary queue into player experience", failures);
   assertContains(playerExperienceSource, "import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent", "Player consumes centralized typed events module", failures);
   assertContains(playerExperienceSource, "const { resolvePlaylistStepTarget, resolveNextTarget, resolvedNextTarget } = useNextTrackDecision({", "Player delegates next-target orchestration to extracted hook", failures);

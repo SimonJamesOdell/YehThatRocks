@@ -1779,7 +1779,13 @@ export async function updateFavourite(
   };
 }
 
-export async function searchCatalog(query: string) {
+type SearchCatalogOptions = { limit?: number; offset?: number };
+
+export async function searchCatalog(query: string, options?: SearchCatalogOptions) {
+  const limit = Math.max(1, Math.min(200, options?.limit ?? 50));
+  const offset = Math.max(0, options?.offset ?? 0);
+  const fetchLimit = Math.min(Math.max(limit + offset, 50), 200);
+
   if (!hasDatabaseUrl()) {
     throw new Error("searchCatalog requires a configured DATABASE_URL.");
   }
@@ -1821,7 +1827,7 @@ export async function searchCatalog(query: string) {
             WHERE MATCH(title, parsedArtist, parsedTrack) AGAINST(${booleanQuery} IN BOOLEAN MODE)
               AND COALESCE(approved, 0) = 1
             ORDER BY score DESC
-            LIMIT 50
+            LIMIT ${fetchLimit}
           `
         : Promise.resolve([]),
       findArtistsInDatabase({
@@ -1879,7 +1885,7 @@ export async function searchCatalog(query: string) {
             OR parsedTrack LIKE ${likePattern}
           )
         ORDER BY favourited DESC
-        LIMIT 50
+        LIMIT ${fetchLimit}
       `;
     }
 
@@ -1911,7 +1917,7 @@ export async function searchCatalog(query: string) {
     );
 
     return {
-      videos: videos.map(mapVideo),
+      videos: videos.slice(offset, offset + limit).map(mapVideo),
       artists: artists.map((a: { name: string; genre1: string | null; country: string | null }) => ({
         id: normalizeArtistKey(a.name),
         name: a.name,

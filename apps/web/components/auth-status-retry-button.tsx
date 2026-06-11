@@ -1,13 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { memo, useState } from "react";
 
 type AuthStatusRetryButtonProps = {
   label?: string;
 };
 
-export function AuthStatusRetryButton({ label = "Retry auth" }: AuthStatusRetryButtonProps) {
+export const AuthStatusRetryButton = memo(function AuthStatusRetryButton({ label = "Retry auth" }: AuthStatusRetryButtonProps) {
   const router = useRouter();
   const [isPending, setIsPending] = useState(false);
 
@@ -28,4 +28,4 @@ export function AuthStatusRetryButton({ label = "Retry auth" }: AuthStatusRetryB
       {isPending ? "Retrying..." : label}
     </button>
   );
-}
+});

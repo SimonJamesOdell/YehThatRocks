@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { MouseEvent } from "react";
+import { memo, useCallback, type MouseEvent } from "react";
 
 import {
   normalizeArtistLetter,
@@ -16,14 +16,14 @@ type ArtistsLetterNavProps = {
   variant?: "panel" | "mobile";
 };
 
-export function ArtistsLetterNav({ v, resume, variant = "panel" }: ArtistsLetterNavProps) {
+export const ArtistsLetterNav = memo(function ArtistsLetterNav({ v, resume, variant = "panel" }: ArtistsLetterNavProps) {
   const { selectedLetter, selectLetter } = useArtistsLetterContext();
 
-  function onLetterClick(event: MouseEvent<HTMLAnchorElement>, letter: string) {
+  const onLetterClick = useCallback((event: MouseEvent<HTMLAnchorElement>, letter: string) => {
     event.preventDefault();
     const normalized = normalizeArtistLetter(letter);
     selectLetter(normalized);
-  }
+  }, [selectLetter]);
 
   const wrapperClassName = variant === "mobile"
     ? "artistAlphabetBar artistAlphabetBarMobileOnly"
@@ -56,4 +56,4 @@ export function ArtistsLetterNav({ v, resume, variant = "panel" }: ArtistsLetter
       </div>
     </nav>
   );
-}
+});

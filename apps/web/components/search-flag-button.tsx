@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 import { parseJsonOrNull } from "@/lib/parse-json";
 
@@ -17,7 +17,7 @@ type SearchFlagButtonProps = {
   searchQuery: string;
 };
 
-export function SearchFlagButton({ videoId, title, searchQuery }: SearchFlagButtonProps) {
+export const SearchFlagButton = memo(function SearchFlagButton({ videoId, title, searchQuery }: SearchFlagButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [reason, setReason] = useState<SearchFlagReason>("not-relevant");
   const [correction, setCorrection] = useState("");
@@ -81,6 +81,33 @@ export function SearchFlagButton({ videoId, title, searchQuery }: SearchFlagButt
     }
   }
 
+  const openModal = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsOpen(true);
+  }, []);
+
+  const closeModal = useCallback(() => {
+    if (!isPending) setIsOpen(false);
+  }, [isPending]);
+
+  const stopPropagation = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation();
+  }, []);
+
+  const handleReasonChange = useCallback((event: React.ChangeEvent<HTMLSelectElement>) => {
+    setReason(event.target.value as SearchFlagReason);
+    setCorrection("");
+  }, []);
+
+  const handleCorrectionChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setCorrection(event.target.value);
+  }, []);
+
+  const handleSubmitClick = useCallback(() => {
+    void handleSubmit();
+  }, [videoId, reason, correction, searchQuery]);
+
   return (
     <>
       <button
@@ -88,11 +115,7 @@ export function SearchFlagButton({ videoId, title, searchQuery }: SearchFlagButt
         className="top100CardFlagButton"
         aria-label={`Flag ${title} for review`}
         title="Flag result"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          setIsOpen(true);
-        }}
+        onClick={openModal}
       >
         ⚑
       </button>
@@ -103,13 +126,9 @@ export function SearchFlagButton({ videoId, title, searchQuery }: SearchFlagButt
             role="dialog"
             aria-modal="true"
             aria-label="Flag search result"
-            onClick={() => {
-              if (!isPending) {
-                setIsOpen(false);
-              }
-            }}
+            onClick={closeModal}
           >
-            <div className="newFlagModalPanel" onClick={(event) => event.stopPropagation()}>
+            <div className="newFlagModalPanel" onClick={stopPropagation}>
               <h3>Flag Search Result</h3>
               <p className="newFlagModalMeta">{title}</p>
               <label className="newFlagModalField" htmlFor="search-flag-reason">
@@ -118,10 +137,7 @@ export function SearchFlagButton({ videoId, title, searchQuery }: SearchFlagButt
               <select
                 id="search-flag-reason"
                 value={reason}
-                onChange={(event) => {
-                  setReason(event.target.value as SearchFlagReason);
-                  setCorrection("");
-                }}
+                onChange={handleReasonChange}
                 disabled={isPending}
               >
                 {SEARCH_FLAG_REASONS.map((r) => (
@@ -146,7 +162,7 @@ export function SearchFlagButton({ videoId, title, searchQuery }: SearchFlagButt
                     type="text"
                     placeholder={reason === "wrong-artist" ? "e.g., Metallica" : "e.g., Enter Sandman"}
                     value={correction}
-                    onChange={(event) => setCorrection(event.target.value)}
+                    onChange={handleCorrectionChange}
                     disabled={isPending}
                   />
                 </div>
@@ -155,16 +171,14 @@ export function SearchFlagButton({ videoId, title, searchQuery }: SearchFlagButt
               <div className="newFlagModalActions">
                 <button
                   type="button"
-                  onClick={() => setIsOpen(false)}
+                  onClick={closeModal}
                   disabled={isPending}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    void handleSubmit();
-                  }}
+                  onClick={handleSubmitClick}
                   disabled={isPending}
                 >
                   {isPending ? "Submitting..." : "Submit flag"}
@@ -177,4 +191,4 @@ export function SearchFlagButton({ videoId, title, searchQuery }: SearchFlagButt
         : null}
     </>
   );
-}
+});

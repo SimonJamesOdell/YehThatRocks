@@ -1,11 +1,13 @@
 "use client";
 
+import { memo } from "react";
+
 type WatchNextSeenToggleProps = {
   isActive: boolean;
   onToggle: () => void;
 };
 
-export function WatchNextSeenToggle({
+export const WatchNextSeenToggle = memo(function WatchNextSeenToggle({
   isActive,
   onToggle,
 }: WatchNextSeenToggleProps) {
@@ -21,4 +23,4 @@ export function WatchNextSeenToggle({
       </button>
     </div>
   );
-}
+});

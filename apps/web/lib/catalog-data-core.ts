@@ -118,8 +118,9 @@ registerFullCacheInvalidator(clearCatalogVideoCaches);
  * export async function getHiddenVideoIdsForUser
  * export async function hideVideoForUser
  * export async function hideVideoAndPrunePlaylistsForUser
- * const playlists = await getPlaylists(input.userId);
- * const deleted = await deletePlaylist(playlist.id, input.userId);
+ * findPlaylistItemsByVideoIdBatch
+ * batchRemovePlaylistItems
+ * batchDeleteEmptyPlaylists
  * export async function unhideVideoForUser
  *
  * Search legacy markers:
@@ -132,7 +133,9 @@ registerFullCacheInvalidator(clearCatalogVideoCaches);
  * if (!normalized) {
  * videos: await getTopVideos(),
  * artists: await getArtists(),
- * genres: (await getGenres()).slice(0, 6)
+ * genres: (await getGenres()).slice(0, 6),
+ * limit
+ * offset
  * console.error("[searchCatalog] query failed"
  * getSearchRankingSignals({
  * rankingSignals.suppressedVideoIds.has(video.videoId)
@@ -145,9 +148,10 @@ registerFullCacheInvalidator(clearCatalogVideoCaches);
  * artistSearchCache.set(searchCacheKey)
  * videos: videos.map(mapVideo)
  * artists: artists.map(mapArtist)
- * LIMIT 50
+ * LIMIT ${fetchLimit}
  * SELECT videoId, title
  * url: `/?v=${encodeURIComponent(r.videoId)}&resume=1`
+ * Math.max(limit + offset, 50)
  *
  * Classification legacy markers:
  * const ARTIST_CATALOG_EVIDENCE_CACHE_TTL_MS =

@@ -22,6 +22,7 @@ const files = mapRelativeFiles(ROOT, {
   addButton: "apps/web/components/add-to-playlist-button.tsx",
   playlistSummaryCard: "apps/web/components/playlist-summary-card-content.tsx",
   shell: "apps/web/components/shell-dynamic-core.tsx",
+  shellRendering: "apps/web/components/shell-dynamic-rendering.tsx",
   playlistRailHook: "apps/web/components/use-playlist-rail.ts",
   player: "apps/web/components/player-experience-core.tsx",
   playlistSequenceHook: "apps/web/components/use-playlist-sequence.ts",
@@ -44,7 +45,7 @@ function main() {
   const addButtonSource = sources.addButton;
   const playlistSummaryCardSource = sources.playlistSummaryCard;
   const playlistRailHookSource = sources.playlistRailHook;
-  const shellSource = joinFileSources([files.shell, files.playlistRailHook], ROOT);
+  const shellSource = joinFileSources([files.shell, files.shellRendering, files.playlistRailHook], ROOT);
   const playerSource = joinFileSources([files.player, files.playlistSequenceHook], ROOT);
   const cssSource = joinFileSources([files.css, files.playlistCss, files.browseCss, files.trackCardsCss], ROOT);
 
@@ -155,7 +156,7 @@ function main() {
   assertContains(shellSource, "const [confirmDeleteRailPlaylist, setConfirmDeleteRailPlaylist] = useState<{ id: string; name: string } | null>(null);", "Shell tracks pending playlist delete confirmation state", failures);
   assertContains(shellSource, "const handleDeletePlaylistFromRail = useCallback(async (playlistId: string)", "Shell has delete handler for playlist rail card", failures);
   assertContains(shellSource, "className=\"rightRailPlaylistCardDelete\"", "Playlist rail cards have delete button", failures);
-  assertContains(shellSource, "setConfirmDeleteRailPlaylist({ id: playlist.id, name: playlist.name });", "Playlist rail delete button opens confirmation modal", failures);
+  assertContains(shellSource, "onDeletePlaylist({ id: playlist.id, name: playlist.name })", "Playlist rail delete button opens confirmation modal", failures);
   assertContains(shellSource, "void handleDeletePlaylistFromRail(playlistId);", "Playlist rail confirmation modal invokes delete handler", failures);
   assertContains(playlistSummaryCardSource, "className=\"rightRailPlaylistCardBody\"", "Playlist summary cards render a dedicated body wrapper class", failures);
   assertContains(cssSource, ".rightRailPlaylistCardDelete {", "CSS defines delete button for rail cards", failures);
