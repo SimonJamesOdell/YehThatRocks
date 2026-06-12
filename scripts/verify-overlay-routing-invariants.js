@@ -337,7 +337,7 @@ function main() {
   assertNotContains(shellLayoutSource, "function renderServiceUnavailablePanel()", "Shell layout no longer keeps local duplicated renderServiceUnavailablePanel helper", failures);
 
   // Overlay scroll-reset invariants.
-  assertContains(overlayScrollResetSource, "export function OverlayScrollReset()", "Single shared scroll-reset component exported as OverlayScrollReset", failures);
+  assertContains(overlayScrollResetSource, "export function OverlayScrollReset(", "Single shared scroll-reset component exported as OverlayScrollReset", failures);
   assertContains(overlayScrollResetSource, "useOverlayScrollContainerRef", "Scroll-reset reads the shared overlay scroll container ref", failures);
   assertContains(shellDynamicSource, "<OverlayScrollContainerProvider overlayScrollContainerRef={favouritesBlindInnerRef}>", "Shell provides shared overlay scroll container ref context", failures);
   assertContains(overlayScrollResetSource, 'window.scrollTo({ top: 0, left: 0, behavior: "auto" })', "Scroll-reset resets window scroll position", failures);

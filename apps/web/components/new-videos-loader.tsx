@@ -763,7 +763,7 @@ export function NewVideosLoader({
 
   return (
     <>
-      <OverlayScrollReset />
+      <OverlayScrollReset activeVideoId={activeVideoId} />
       <OverlayHeader close={false}>
         <div className="newPageHeaderStack">
           <div className="newPageHeaderRow">

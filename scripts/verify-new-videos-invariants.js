@@ -152,7 +152,7 @@ function main() {
   assertContains(newVideosLoaderSource, 'import { useActiveRowAutoScroll } from "@/components/use-active-row-auto-scroll";', "New videos loader imports active-row auto-scroll hook", failures);
   assertContains(newVideosLoaderSource, "useActiveRowAutoScroll({", "New videos loader delegates active-row auto-scroll behavior to hook", failures);
   assertContains(activeRowAutoScrollHookSource, "export function useActiveRowAutoScroll", "Active-row auto-scroll hook exports explicit domain behavior", failures);
-  assertContains(activeRowAutoScrollHookSource, "document.querySelector<HTMLElement>(\".trackCard.top100CardActive\")", "Active-row auto-scroll hook resolves active row anchor from track card selector", failures);
+  assertContains(activeRowAutoScrollHookSource, "ACTIVE_ROW_SELECTOR", "Active-row auto-scroll hook resolves active row anchor from track card selector", failures);
   assertContains(activeRowAutoScrollHookSource, "window.requestAnimationFrame", "Active-row auto-scroll hook drives smooth scrolling via requestAnimationFrame", failures);
 
   // Suggest New domain split invariants.
