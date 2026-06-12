@@ -824,7 +824,7 @@ export function MagazineRailContent({
   onNavigateToGenre,
 }: MagazineRailContentProps) {
   if (isLoading) {
-    return <p className="chatStatus">Loading articles...</p>;
+    return <RightRailLoadingState message="Loading articles..." />;
   }
 
   if (tracks.length === 0) {

@@ -2665,7 +2665,7 @@ function ShellDynamicInner({
                   </>
               </div>
               <div className="chatList" ref={chatListRef}>
-                {isChatLoading ? <p className="chatStatus">Loading chat...</p> : null}
+                {isChatLoading ? <RightRailLoadingState message="Loading chat..." /> : null}
                 {!isChatLoading && chatMode === "global" && chatMessages.length === 0 ? (
                   <p className="chatStatus">
                     No chat messages yet. Start the noise.
