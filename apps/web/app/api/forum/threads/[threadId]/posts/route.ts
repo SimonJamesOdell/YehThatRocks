@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
+import { parseRequestJson } from "@/lib/request-json";
 import { createPost } from "@/lib/forum-data";
 
 export async function POST(
@@ -23,14 +24,11 @@ export async function POST(
     return NextResponse.json({ error: "Invalid thread ID" }, { status: 400 });
   }
 
-  let body: { content?: string };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  const parsedJson = await parseRequestJson<{ content?: string }>(request);
+  if (!parsedJson.ok) {
+    return parsedJson.response;
   }
-
-  const { content } = body;
+  const { content } = parsedJson.data;
 
   if (!content || typeof content !== "string" || content.trim().length < 2) {
     return NextResponse.json(

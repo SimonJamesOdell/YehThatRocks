@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
+import { parseRequestJson } from "@/lib/request-json";
 import { getLatestThreads, createThread } from "@/lib/forum-data";
 
 export async function GET(request: NextRequest) {
@@ -26,14 +27,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
-  let body: { sectionId?: string; title?: string; content?: string };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  const parsedJson = await parseRequestJson<{ sectionId?: string; title?: string; content?: string }>(request);
+  if (!parsedJson.ok) {
+    return parsedJson.response;
   }
-
-  const { sectionId, title, content } = body;
+  const { sectionId, title, content } = parsedJson.data;
 
   if (!sectionId || !title || !content) {
     return NextResponse.json(

@@ -10,6 +10,8 @@ import { truncate } from "@/lib/catalog-data-utils";
 import { rateLimitOrResponse } from "@/lib/rate-limit";
 import { parseRequestJson } from "@/lib/request-json";
 
+const HTTP_FORBIDDEN = 403;
+
 type MarkUnavailableBody = {
   videoId?: string;
   reason?: string;
@@ -324,7 +326,7 @@ async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityC
 
 export async function POST(request: NextRequest) {
   if (isObviousCrawlerRequest(request)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return NextResponse.json({ error: "Forbidden" }, { status: HTTP_FORBIDDEN });
   }
 
   const optionalAuth = await getOptionalApiAuth(request);

@@ -17,6 +17,9 @@ import { prisma } from "@/lib/db";
 import { parseRequestJson } from "@/lib/request-json";
 import { recordExternalApiUsage } from "@/lib/api-usage-telemetry";
 import { parseJsonOrNull } from "@/lib/parse-json";
+
+const HTTP_FORBIDDEN = 403;
+
 import { maybeNormalizePlaylistId } from "@/lib/youtube-playlist";
 import { PLAYBACK_MIN_CONFIDENCE } from "@/lib/playback-config";
 import { parseYouTubeSuggestSource } from "@/lib/youtube-suggest-source";
@@ -612,7 +615,7 @@ export async function POST(request: NextRequest) {
     if (retryRejected && !canRetryRejectedIngest) {
       return NextResponse.json(
         { ok: false, error: "Only admins with bypass approval permission can clear and retry rejected entries." },
-        { status: 403 },
+        { status: HTTP_FORBIDDEN },
       );
     }
 

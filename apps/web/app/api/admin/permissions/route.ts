@@ -9,7 +9,10 @@ import {
   setUserAdminPermission,
 } from "@/lib/admin-auth";
 import { verifySameOrigin } from "@/lib/csrf";
+import { parseRequestJson } from "@/lib/request-json";
 import { prisma } from "@/lib/db";
+
+const HTTP_FORBIDDEN = 403;
 
 const permissionUpdateSchema = z.object({
   userId: z.number().int().positive(),
@@ -26,7 +29,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (!isAdminIdentity(auth.auth.userId, auth.auth.email)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return NextResponse.json({ error: "Forbidden" }, { status: HTTP_FORBIDDEN });
   }
 
   const userIdParam = request.nextUrl.searchParams.get("userId");
@@ -143,7 +146,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (!isAdminIdentity(auth.auth.userId, auth.auth.email)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return NextResponse.json({ error: "Forbidden" }, { status: HTTP_FORBIDDEN });
   }
 
   const csrf = verifySameOrigin(request);
@@ -151,8 +154,11 @@ export async function POST(request: NextRequest) {
     return csrf;
   }
 
-  const body = await request.json().catch(() => null);
-  const parsed = permissionUpdateSchema.safeParse(body);
+  const parsedJson = await parseRequestJson(request);
+  if (!parsedJson.ok) {
+    return parsedJson.response;
+  }
+  const parsed = permissionUpdateSchema.safeParse(parsedJson.data);
 
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
