@@ -131,6 +131,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
     postCount: number;
     viewCount: number;
     isPinned: boolean;
+    isLocked: boolean;
     createdAt: Date;
   }> = [
     {
@@ -142,6 +143,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 5,
       viewCount: 142,
       isPinned: false,
+      isLocked: false,
       createdAt: new Date("2026-06-12T06:30:00Z"),
     },
     {
@@ -153,6 +155,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 3,
       viewCount: 89,
       isPinned: false,
+      isLocked: false,
       createdAt: new Date("2026-06-11T22:15:00Z"),
     },
     {
@@ -164,6 +167,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 7,
       viewCount: 203,
       isPinned: true,
+      isLocked: false,
       createdAt: new Date("2026-06-10T14:00:00Z"),
     },
     {
@@ -175,6 +179,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 12,
       viewCount: 315,
       isPinned: false,
+      isLocked: false,
       createdAt: new Date("2026-06-12T04:45:00Z"),
     },
     {
@@ -186,6 +191,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 8,
       viewCount: 178,
       isPinned: false,
+      isLocked: false,
       createdAt: new Date("2026-06-11T16:20:00Z"),
     },
     {
@@ -197,6 +203,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 4,
       viewCount: 67,
       isPinned: false,
+      isLocked: false,
       createdAt: new Date("2026-06-11T09:00:00Z"),
     },
     {
@@ -208,6 +215,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 6,
       viewCount: 94,
       isPinned: false,
+      isLocked: false,
       createdAt: new Date("2026-06-10T20:30:00Z"),
     },
     {
@@ -219,6 +227,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 9,
       viewCount: 231,
       isPinned: false,
+      isLocked: false,
       createdAt: new Date("2026-06-12T08:10:00Z"),
     },
     {
@@ -230,6 +239,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 3,
       viewCount: 156,
       isPinned: false,
+      isLocked: false,
       createdAt: new Date("2026-06-09T12:45:00Z"),
     },
     {
@@ -241,6 +251,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 11,
       viewCount: 287,
       isPinned: false,
+      isLocked: false,
       createdAt: new Date("2026-06-11T18:00:00Z"),
     },
     {
@@ -252,6 +263,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 15,
       viewCount: 342,
       isPinned: false,
+      isLocked: false,
       createdAt: new Date("2026-06-10T10:15:00Z"),
     },
     {
@@ -263,6 +275,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 6,
       viewCount: 112,
       isPinned: false,
+      isLocked: false,
       createdAt: new Date("2026-06-12T02:30:00Z"),
     },
     {
@@ -274,6 +287,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 8,
       viewCount: 198,
       isPinned: false,
+      isLocked: false,
       createdAt: new Date("2026-06-11T14:50:00Z"),
     },
     {
@@ -285,6 +299,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 3,
       viewCount: 55,
       isPinned: false,
+      isLocked: false,
       createdAt: new Date("2026-06-12T07:00:00Z"),
     },
     {
@@ -296,6 +311,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
       postCount: 2,
       viewCount: 41,
       isPinned: false,
+      isLocked: false,
       createdAt: new Date("2026-06-11T20:00:00Z"),
     },
   ];
@@ -305,6 +321,7 @@ function buildSeedThreads(): ForumThreadSummary[] {
     ...def,
     sectionTitle: resolveSectionTitle(def.sectionId),
     latestPostAt: new Date(def.createdAt.getTime() + def.postCount * 3600000),
+    isLocked: def.isLocked,
   }));
 }
 
