@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
       take: 30,
     });
 
-    const usersWithPermissions = await Promise.all(users.map(async (user) => {
+    const usersWithPermissions = await Promise.all(users.map(async (user: { id: number; email: string | null; screenName: string | null }) => {
       const permissions = await getUserAdminPermissions(user.id);
       const superAdmin = isAdminIdentity(user.id, user.email ?? "");
       const hasAdminPanelAccess = superAdmin || permissions.includes("admin.panel.view");
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      users: recentUsers.map((user) => ({
+      users: recentUsers.map((user: { id: number; email: string | null; screenName: string | null }) => ({
         id: user.id,
         email: user.email,
         screenName: user.screenName,

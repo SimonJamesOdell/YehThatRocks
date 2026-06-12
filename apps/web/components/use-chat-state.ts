@@ -175,13 +175,13 @@ export function useChatState({
   }, [isForumOverlayRoute]);
 
   // Load chat history whenever mode / auth changes.
-  // For "online" mode we also keep a 30 s refresh so presence stays current.
   useEffect(() => {
     if (!shouldLoadChat) {
       return;
     }
 
-    if (chatMode === "magazine") {
+    // Magazine and forum (online) rails are static content — no chat loading needed.
+    if (chatMode === "magazine" || chatMode === "online") {
       setChatMessages([]);
       setOnlineUsers([]);
       setChatError(null);
@@ -235,15 +235,8 @@ export function useChatState({
 
     void loadChat();
 
-    // Only the "online" presence tab needs periodic refresh.
-    const intervalId =
-      chatMode === "online"
-        ? window.setInterval(() => { void loadChat(); }, 30_000)
-        : undefined;
-
     return () => {
       cancelled = true;
-      if (intervalId !== undefined) window.clearInterval(intervalId);
     };
   }, [chatMode, checkAuthState, fetchWithAuthRetry, onAuthLost, shouldLoadChat]);
 

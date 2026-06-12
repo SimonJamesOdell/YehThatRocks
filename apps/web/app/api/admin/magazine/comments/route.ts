@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
 
   await ensureMagazineCommentsTable();
 
-  const rows = await prisma.$queryRawUnsafe<Array<{
+  type ModerationRow = {
     id: bigint | number;
     articleSlug: string;
     userId: number;
@@ -52,7 +52,9 @@ export async function GET(request: NextRequest) {
     reviewedAt: Date | null;
     screenName: string | null;
     email: string | null;
-  }>>(
+  };
+
+  const rows = await prisma.$queryRawUnsafe<ModerationRow[]>(
     `
       SELECT
         c.id AS id,
@@ -79,7 +81,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    queue: rows.map((row) => ({
+    queue: rows.map((row: ModerationRow) => ({
       id: Number(row.id),
       articleSlug: row.articleSlug,
       userId: row.userId,

@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
   }
 
   // delete_user: remove account and all dependent auth/session/comment data.
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: { $executeRawUnsafe: (query: string, ...values: unknown[]) => Promise<number> }) => {
     await tx.$executeRawUnsafe(
       `
         DELETE pi

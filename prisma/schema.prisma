@@ -104,6 +104,8 @@ model User {
   location                String?                  @db.VarChar(255)
   playlists               PlaylistName[]
   messages                Message[]
+  forumThreads            ForumThread[]
+  forumPosts              ForumPost[]
   authSessions            AuthSession[]
   authAudits              AuthAuditLog[]
   emailVerificationTokens EmailVerificationToken[]
@@ -362,6 +364,40 @@ model LyricsCache {
   @@unique([normalizedArtist, normalizedTrack], map: "lyrics_cache_signature_key")
   @@index([updatedAt])
   @@map("lyrics_cache")
+}
+
+model ForumThread {
+  id        Int      @id @default(autoincrement())
+  sectionId String   @map("section_id") @db.VarChar(64)
+  title     String   @db.VarChar(255)
+  userId    Int      @map("user_id")
+  isPinned  Boolean  @default(false) @map("is_pinned")
+  isLocked  Boolean  @default(false) @map("is_locked")
+  viewCount Int      @default(0) @map("view_count")
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+  user      User     @relation(fields: [userId], references: [id])
+  posts     ForumPost[]
+
+  @@index([sectionId, isPinned(sort: Desc), createdAt(sort: Desc)], map: "idx_forum_threads_section")
+  @@index([createdAt(sort: Desc)], map: "idx_forum_threads_created")
+  @@index([userId])
+  @@map("forum_threads")
+}
+
+model ForumPost {
+  id        Int         @id @default(autoincrement())
+  threadId  Int         @map("thread_id")
+  userId    Int         @map("user_id")
+  content   String      @db.Text
+  createdAt DateTime    @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime    @updatedAt @map("updated_at") @db.DateTime(3)
+  thread    ForumThread @relation(fields: [threadId], references: [id])
+  user      User        @relation(fields: [userId], references: [id])
+
+  @@index([threadId, createdAt], map: "idx_forum_posts_thread")
+  @@index([userId])
+  @@map("forum_posts")
 }
 
 model MagazineArticle {

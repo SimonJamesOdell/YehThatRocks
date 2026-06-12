@@ -2685,10 +2685,21 @@ function ShellDynamicInner({
                 ) : chatMode === "online" ? (
                   <>
                     {FORUM_SECTIONS.map((section) => (
-                      <article key={section.id} className="chatMessage forumSectionCard">
+                      <article
+                        key={section.id}
+                        className="chatMessage forumSectionCard chatMessageClickable"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Browse ${section.title} forum section`}
+                        onClick={() => router.push("/forum")}
+                        onKeyDown={handleButtonLikeKeyDown(() => router.push("/forum"))}
+                      >
                         <div>
                           <div className="messageMeta">
                             <strong>{section.title}</strong>
+                            <span className="chatMessageMetaRight">
+                              <span className="chatMessageTimestamp">Forum</span>
+                            </span>
                           </div>
                           <p>{section.description}</p>
                         </div>
