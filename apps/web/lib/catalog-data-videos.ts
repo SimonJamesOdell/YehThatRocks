@@ -1680,7 +1680,19 @@ export async function getActiveVideoCount(): Promise<number> {
   }
 }
 
+let dataSourceStatusCache: {
+  expiresAt: number;
+  payload: DataSourceStatus;
+} | null = null;
+
+const DATA_SOURCE_STATUS_CACHE_MS = 30_000;
+
 export async function getDataSourceStatus(): Promise<DataSourceStatus> {
+  const now = Date.now();
+  if (dataSourceStatusCache && dataSourceStatusCache.expiresAt > now) {
+    return dataSourceStatusCache.payload;
+  }
+
   const envConfigured = hasDatabaseUrl();
 
   if (!envConfigured) {
@@ -1711,11 +1723,16 @@ export async function getDataSourceStatus(): Promise<DataSourceStatus> {
           fallback: 0,
           exactCount: () => prisma.artist.count(),
         }),
-        prisma.genre.count(),
+        getInteractiveTableCount({
+          cacheKey: "catalog-status-genres",
+          tableName: "genres",
+          fallback: 0,
+          exactCount: () => prisma.genre.count(),
+        }),
       ]),
     );
 
-    return {
+    const payload: DataSourceStatus = {
       mode: "database",
       envConfigured: true,
       videoCount,
@@ -1723,6 +1740,13 @@ export async function getDataSourceStatus(): Promise<DataSourceStatus> {
       genreCount,
       detail: "Connected to the retained Yeh MySQL dataset.",
     };
+
+    dataSourceStatusCache = {
+      payload,
+      expiresAt: now + DATA_SOURCE_STATUS_CACHE_MS,
+    };
+
+    return payload;
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     return {
