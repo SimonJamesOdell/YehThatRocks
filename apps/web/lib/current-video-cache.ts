@@ -1,14 +1,17 @@
 import type { VideoRecord } from "@/lib/catalog";
 import type { CurrentVideoResolveResult } from "@/lib/current-video-route-service";
+import { BoundedMap } from "@/lib/bounded-map";
 
 type CachedVideoRecord = VideoRecord;
 type CachedVideoPayload = CurrentVideoResolveResult;
 
-export const currentVideoCache = new Map<string, { expiresAt: number; payload: CachedVideoPayload }>();
-export const currentVideoPendingCache = new Map<string, { expiresAt: number; payload: CachedVideoPayload }>();
-export const currentVideoInflight = new Map<string, Promise<CachedVideoPayload>>();
-export const currentVideoRelatedPoolCache = new Map<string, { expiresAt: number; videos: CachedVideoRecord[] }>();
-export const currentVideoRelatedPoolInflight = new Map<string, Promise<CachedVideoRecord[]>>();
+const CURRENT_VIDEO_CACHE_MAX_ENTRIES = 500;
+
+export const currentVideoCache = new BoundedMap<string, { expiresAt: number; payload: CachedVideoPayload }>(CURRENT_VIDEO_CACHE_MAX_ENTRIES);
+export const currentVideoPendingCache = new BoundedMap<string, { expiresAt: number; payload: CachedVideoPayload }>(CURRENT_VIDEO_CACHE_MAX_ENTRIES);
+export const currentVideoInflight = new BoundedMap<string, Promise<CachedVideoPayload>>(CURRENT_VIDEO_CACHE_MAX_ENTRIES);
+export const currentVideoRelatedPoolCache = new BoundedMap<string, { expiresAt: number; videos: CachedVideoRecord[] }>(CURRENT_VIDEO_CACHE_MAX_ENTRIES);
+export const currentVideoRelatedPoolInflight = new BoundedMap<string, Promise<CachedVideoRecord[]>>(CURRENT_VIDEO_CACHE_MAX_ENTRIES);
 
 export function clearCurrentVideoRouteCaches() {
   currentVideoCache.clear();

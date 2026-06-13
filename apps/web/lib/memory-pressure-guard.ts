@@ -24,7 +24,7 @@ type MemoryReliefState = {
 const DEFAULT_CHECK_INTERVAL_MS = 15_000;
 const DEFAULT_COOLDOWN_MS = 60_000;
 const DEFAULT_HEAP_USED_RATIO_THRESHOLD = 0.74;
-const DEFAULT_RSS_MB_THRESHOLD = 200;
+const DEFAULT_RSS_MB_THRESHOLD = 400;
 
 let guardStarted = false;
 const guardState: MemoryReliefState = {
@@ -98,7 +98,6 @@ export function shouldRunMemoryRelief(
 async function relieveMemoryPressure(snapshot: MemorySnapshot, nowMs: number) {
   const [
     currentVideoCacheModule,
-    videoCacheModule,
     artistCacheModule,
     genreCacheModule,
     historyCacheModule,
@@ -106,7 +105,6 @@ async function relieveMemoryPressure(snapshot: MemorySnapshot, nowMs: number) {
     runtimeProfilerModule,
   ] = await Promise.all([
     import("@/lib/current-video-cache"),
-    import("@/lib/catalog-data-videos"),
     import("@/lib/catalog-data-artists"),
     import("@/lib/catalog-data-genres"),
     import("@/lib/catalog-data-history"),
@@ -115,7 +113,7 @@ async function relieveMemoryPressure(snapshot: MemorySnapshot, nowMs: number) {
   ]);
 
   currentVideoCacheModule.clearCurrentVideoRouteCaches();
-  videoCacheModule.clearVideosCaches();
+  // Video caches are expensive to rebuild; skip them during memory pressure relief.
   artistCacheModule.clearArtistCaches();
   genreCacheModule.clearGenreCaches();
   historyCacheModule.clearHistoryCaches();
