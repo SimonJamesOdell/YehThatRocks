@@ -24,6 +24,7 @@ import { clearVideosCaches } from "@/lib/catalog-data-videos";
 import { clearFavouritesCaches } from "@/lib/catalog-data-favourites";
 import { clearHiddenVideoIdsCaches } from "@/lib/catalog-data-hidden";
 import { clearHistoryCaches } from "@/lib/catalog-data-history";
+import { scheduleCategoriesNewSnapshotBuild } from "@/lib/categories-new-snapshots";
 import { clearSitemapDataCaches } from "@/lib/sitemap-data";
 
 export function clearCatalogVideoCaches() {
@@ -32,7 +33,7 @@ export function clearCatalogVideoCaches() {
   clearGenreCaches();
   clearSitemapDataCaches();
   void invalidateRuntimeCategoryCaches();
-  // Category snapshots rebuild lazily on next page load — no eager full rebuild.
+  scheduleCategoriesNewSnapshotBuild();
   clearIngestionCaches();
   clearFavouritesCaches();
   clearHiddenVideoIdsCaches();
