@@ -698,14 +698,18 @@ export async function buildAdminHealthPayload() {
 
 /**
  * Lightweight performance payload for the public /api/status/performance endpoint.
- * Deliberately does NOT start background sampling intervals, write to DB, or read
- * filesystem metrics — it only returns in-memory state already available.
+ * Deliberately does NOT start background sampling intervals or write to DB.
+ * Filesystem reads (disk, swap, network) are one-off stateless calls — safe for
+ * public polling.
  */
 export async function buildPublicPerformancePayload() {
   const liveCpuHostFields = getLiveCpuHostFields();
   const cpuUsagePercent = liveCpuHostFields?.cpuUsagePercent ?? null;
   const cpuAverageUsagePercent = liveCpuHostFields?.cpuAverageUsagePercent ?? null;
   const cpuPeakCoreUsagePercent = liveCpuHostFields?.cpuPeakCoreUsagePercent ?? null;
+  const diskUsagePercent = await computeDiskUsagePercent();
+  const swapUsagePercent = await computeSwapUsagePercent();
+  const networkUsagePercent = await computeNetworkUsagePercent();
   const memoryUsagePercent = Math.round(
     ((os.totalmem() - os.freemem()) / Math.max(1, os.totalmem())) * 100,
   );
@@ -730,6 +734,9 @@ export async function buildPublicPerformancePayload() {
         cpuAverageUsagePercent,
         cpuPeakCoreUsagePercent,
         memoryUsagePercent,
+        diskUsagePercent,
+        swapUsagePercent,
+        networkUsagePercent,
       },
     },
   };

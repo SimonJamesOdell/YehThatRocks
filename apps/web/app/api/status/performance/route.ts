@@ -14,9 +14,9 @@ export async function GET() {
       cpuAverageUsagePercent: payload.health.host.cpuAverageUsagePercent,
       cpuPeakCoreUsagePercent: payload.health.host.cpuPeakCoreUsagePercent,
       memoryUsagePercent: payload.health.host.memoryUsagePercent,
-      diskUsagePercent: null,
-      swapUsagePercent: null,
-      networkUsagePercent: null,
+      diskUsagePercent: payload.health.host.diskUsagePercent,
+      swapUsagePercent: payload.health.host.swapUsagePercent,
+      networkUsagePercent: payload.health.host.networkUsagePercent,
     },
     runtime,
   }, {
