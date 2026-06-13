@@ -24,8 +24,12 @@ function CloseLinkInner() {
     }
 
     event.preventDefault();
-    dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href: closeHref });
-  }, [closeHref]);
+    // Read v from the live URL rather than the rendered closeHref, which can
+    // be stale if React hasn't re-rendered after a video switch inside an overlay.
+    const currentV = new URLSearchParams(window.location.search).get("v");
+    const href = currentV ? `/?v=${encodeURIComponent(currentV)}&resume=1` : "/";
+    dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href });
+  }, []);
 
   return (
     <Link
