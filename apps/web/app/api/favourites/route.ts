@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { favouriteMutationSchema } from "@/lib/api-schemas";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
-import { filterHiddenVideos, getFavouriteVideos, getFavouriteVideosPage, getVideoForSharing, updateFavourite } from "@/lib/catalog-data";
-import { insertChatMessage } from "@/lib/chat-data";
-import { chatEvents, chatChannel } from "@/lib/chat-events";
-import { buildActivityMessage } from "@/lib/chat-shared-video";
+import { filterHiddenVideos, getFavouriteVideos, getFavouriteVideosPage, updateFavourite } from "@/lib/catalog-data";
 import { parseClampedIntParam } from "@/lib/request-query";
 
 export async function GET(request: NextRequest) {
@@ -65,33 +62,6 @@ export async function POST(request: NextRequest) {
   }
 
   const updated = await updateFavourite(result.data.videoId, result.data.action, result.auth.userId);
-
-  if (result.data.action === "add") {
-    const sharedVideo = await getVideoForSharing(result.data.videoId);
-    const content = buildActivityMessage(
-      "favourited",
-      result.data.videoId,
-      sharedVideo?.title,
-      sharedVideo?.channelTitle,
-    );
-    if (content) {
-      void (async () => {
-        try {
-          const message = await insertChatMessage({
-            userId: result.auth.userId,
-            mode: "global",
-            videoId: undefined,
-            content,
-          });
-          if (message) {
-            chatEvents.emit(chatChannel("global", null), message);
-          }
-        } catch {
-          // Never let broadcast failure affect the favourite response.
-        }
-      })();
-    }
-  }
 
   return NextResponse.json(updated);
 }
