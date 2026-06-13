@@ -170,7 +170,7 @@ describe("memory pressure guard heuristics", () => {
     expect(relieved).toBe(true);
     expect(memoryUsageSpy).toHaveBeenCalled();
     expect(clearCurrentVideoRouteCachesMock).toHaveBeenCalledTimes(1);
-    expect(clearVideosCachesMock).toHaveBeenCalledTimes(1);
+    expect(clearVideosCachesMock).not.toHaveBeenCalled();
     expect(clearArtistCachesMock).toHaveBeenCalledTimes(1);
     expect(clearGenreCachesMock).toHaveBeenCalledTimes(1);
     expect(clearHistoryCachesMock).toHaveBeenCalledTimes(1);
