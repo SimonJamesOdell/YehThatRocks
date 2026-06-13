@@ -1499,11 +1499,6 @@ export function PlayerExperience({
       allowDirectIframeInteractionRef.current = true;
       setAllowDirectIframeInteraction(true);
 
-      // Pause the player so audio doesn't play behind the restriction overlay.
-      if (playerRef.current && typeof playerRef.current.pauseVideo === "function") {
-        playerRef.current.pauseVideo();
-      }
-
       logPlayerDebug("bot-challenge:direct-iframe-mode", {
         videoId: currentVideoRef.current.id,
         trigger,

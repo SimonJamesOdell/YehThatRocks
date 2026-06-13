@@ -2789,7 +2789,7 @@
 .playerMount.playerMountHidden,
 .playerFrame.playerFramePolicyBlocked > iframe,
 .playerFrame.playerFramePolicyBlocked .playerMount iframe {
-  display: none;
+  pointer-events: none;
 }
 
 .playerFrame.playerFrameLoading > iframe,
