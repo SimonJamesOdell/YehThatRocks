@@ -19,6 +19,13 @@ const CATEGORIES_NEW_SNAPSHOT_PRESSURE_BACKOFF_MS = Math.max(
   5_000,
   Math.min(120_000, Number(process.env.CATEGORIES_NEW_SNAPSHOT_PRESSURE_BACKOFF_MS || "30_000")),
 );
+// Pause between each genre during a full snapshot rebuild
+// to avoid saturating MySQL on small VPS instances.
+// Default 1.5s. Set to 0 for no delay.
+const CATEGORIES_SNAPSHOT_INTER_GENRE_DELAY_MS = Math.max(
+  0,
+  Math.min(30_000, Number(process.env.CATEGORIES_SNAPSHOT_INTER_GENRE_DELAY_MS || "1500")),
+);
 
 export type CategoriesNewTopLevelCard = GenreCard & {
   slug: string;
