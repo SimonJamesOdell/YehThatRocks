@@ -1,0 +1,8 @@
+[Unit]
+Description=YehThatRocks Sitemap Builder
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c "docker cp /tmp/build-sitemaps.mjs yehthatrocks-web-1:/app/scripts/build-sitemaps.mjs && docker exec -w /app -e SITEMAPS_OUT=/tmp/sitemaps yehthatrocks-web-1 node scripts/build-sitemaps.mjs && docker cp yehthatrocks-web-1:/tmp/sitemaps/. /srv/yehthatrocks/sitemaps/"
+User=root
