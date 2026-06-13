@@ -8,7 +8,26 @@ export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
       {
+        userAgent: "GPTBot",
+        crawlDelay: 30,
+        allow: "/",
+        disallow: ["/api/", "/account/", "/admin/"],
+      },
+      {
+        userAgent: "Applebot",
+        crawlDelay: 30,
+        allow: "/",
+        disallow: ["/api/", "/account/", "/admin/"],
+      },
+      {
+        userAgent: "Amazonbot",
+        crawlDelay: 30,
+        allow: "/",
+        disallow: ["/api/", "/account/", "/admin/"],
+      },
+      {
         userAgent: "*",
+        crawlDelay: 10,
         allow: "/",
         disallow: ["/api/", "/account/", "/admin/"],
       },
