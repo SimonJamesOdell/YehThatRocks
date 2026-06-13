@@ -8,8 +8,10 @@ type CacheEntry = {
 };
 
 const DEFAULT_TTL_MS = 1_000;
+/** TTL used when the DB cache table was empty and live fallback queries ran. */
+export const FALLBACK_TTL_MS = 30_000;
 const MIN_TTL_MS = 250;
-const MAX_TTL_MS = 10_000;
+const MAX_TTL_MS = 60_000;
 
 export function readDashboardResponseCacheTtlMs(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.ADMIN_DASHBOARD_RESPONSE_CACHE_TTL_MS;

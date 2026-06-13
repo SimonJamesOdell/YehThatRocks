@@ -488,6 +488,10 @@ export function getRuntimeProfilingSnapshot(): RuntimeProfilingSnapshot {
 }
 
 export async function getRuntimeProfilingSnapshotWithDbHistory(): Promise<RuntimeProfilingSnapshot> {
+  // Lazy-start performance telemetry sampling so dbHistoricalProfiling has data.
+  // Dynamic import avoids circular dependency (perf-sample-persistence imports runtime-profiler).
+  void import("@/lib/perf-sample-persistence").then((m) => m.startPerfSampling());
+
   const snapshot = getRuntimeProfilingSnapshot();
   if (snapshot.observability.dbProfilingReport.status !== "missing") {
     return snapshot;

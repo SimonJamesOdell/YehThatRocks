@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiAuth } from "@/lib/admin-auth";
 import { getMetadataQualityStats } from "@/lib/admin-metadata-quality";
 import {
+  FALLBACK_TTL_MS,
   getCachedDashboardResponsePayload,
   getDashboardResponseInFlight,
   setCachedDashboardResponsePayload,
@@ -44,14 +45,16 @@ async function loadLiveUserCounters() {
   };
 }
 
-async function loadDashboardPayloadFromCacheTable(): Promise<Record<string, unknown>> {
+type DashboardPayloadWithMeta = { payload: Record<string, unknown>; usedFallback: boolean };
+
+async function loadDashboardPayloadFromCacheTable(): Promise<DashboardPayloadWithMeta> {
   // Read from pre-computed cache table — no side effects, super fast
   const cacheRows = await prisma.$queryRaw<Array<{ payload: string; computed_at: Date }>>`
     SELECT payload, computed_at FROM admin_dashboard_cache WHERE id = 1
   `.catch(() => []);
 
   if (cacheRows.length === 0) {
-    return createEmptyDashboardPayload();
+    return { payload: createEmptyDashboardPayload(), usedFallback: false };
   }
 
   const cacheRow = cacheRows[0];
@@ -67,6 +70,8 @@ async function loadDashboardPayloadFromCacheTable(): Promise<Record<string, unkn
       anonymousUsers: liveUserCounters.anonymousUsers,
     };
   }
+
+  let usedFallback = false;
 
   if (payload.analytics.hourlyRecent.length === 0) {
     const [hourlyAnalyticsRows, hourlyAuthRows] = await Promise.all([
@@ -92,9 +97,10 @@ async function loadDashboardPayloadFromCacheTable(): Promise<Record<string, unkn
     ]);
 
     payload.analytics.hourlyRecent = buildHourlyRecentRows(hourlyAnalyticsRows, hourlyAuthRows);
+    usedFallback = true;
   }
 
-  return payload as Record<string, unknown>;
+  return { payload: payload as Record<string, unknown>, usedFallback };
 }
 
 function createEmptyDashboardPayload() {
@@ -543,30 +549,32 @@ export async function GET(request: NextRequest) {
   const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
 
   if (!forceRefresh) {
-    const cachedPayload = getCachedDashboardResponsePayload();
-    if (cachedPayload) {
-      return NextResponse.json(cachedPayload);
+    const cachedResult = getCachedDashboardResponsePayload();
+    if (cachedResult) {
+      return NextResponse.json(cachedResult);
     }
 
     const inFlight = getDashboardResponseInFlight();
     if (inFlight) {
-      const payload = await inFlight;
-      return NextResponse.json(payload);
+      const result = await inFlight;
+      return NextResponse.json(result);
     }
   }
 
-  const loadPayload = loadDashboardPayloadFromCacheTable();
+  const loadResult = loadDashboardPayloadFromCacheTable();
   if (!forceRefresh) {
-    setDashboardResponseInFlight(loadPayload);
+    // Store the payload-extraction promise so in-flight dedup returns a plain payload.
+    setDashboardResponseInFlight(loadResult.then((r) => r.payload));
   }
 
-  const payload = await loadPayload.finally(() => {
+  const { payload, usedFallback } = await loadResult.finally(() => {
     if (!forceRefresh) {
       setDashboardResponseInFlight(null);
     }
   });
 
-  setCachedDashboardResponsePayload(payload);
+  const ttlMs = usedFallback ? FALLBACK_TTL_MS : undefined;
+  setCachedDashboardResponsePayload(payload, { ttlMs });
 
   return NextResponse.json(payload);
 }

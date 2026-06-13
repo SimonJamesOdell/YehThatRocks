@@ -26,6 +26,39 @@ type AdminPendingVideoRow = PendingQueueVideoRow & {
   updatedAt: Date | null;
 };
 
+// --- Pending video count cache ---
+const PENDING_COUNT_TTL_MS = Math.max(
+  2_000,
+  Number(process.env.PENDING_COUNT_TTL_MS || "10000"),
+);
+
+type PendingCountCacheEntry = {
+  value: number;
+  expiresAt: number;
+};
+
+let pendingCountCache: PendingCountCacheEntry | null = null;
+let pendingCountInFlight: Promise<number> | null = null;
+
+async function queryPendingVideoCount(): Promise<number> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(
+    `SELECT COUNT(*) AS total FROM videos WHERE ${PENDING_VIDEO_APPROVAL_WHERE_CLAUSE}`,
+  );
+  return Number(rows[0]?.total ?? 0);
+}
+
+async function getPendingVideoCount(options?: { forceRefresh?: boolean }): Promise<number> {
+  const forceRefresh = options?.forceRefresh === true;
+  const now = Date.now();
+  if (!forceRefresh && pendingCountCache && pendingCountCache.expiresAt > now) return pendingCountCache.value;
+  if (pendingCountInFlight) return pendingCountInFlight;
+  pendingCountInFlight = queryPendingVideoCount()
+    .then((value) => { pendingCountCache = { value, expiresAt: Date.now() + PENDING_COUNT_TTL_MS }; return value; })
+    .catch(() => (pendingCountCache ? pendingCountCache.value : 0))
+    .finally(() => { pendingCountInFlight = null; });
+  return pendingCountInFlight;
+}
+
 let pendingEnrichmentInFlight: Promise<void> | null = null;
 let pendingEnrichmentLastStartedAt = 0;
 const PENDING_ENRICHMENT_MIN_INTERVAL_MS = 30_000;
@@ -135,14 +168,10 @@ export async function GET(request: NextRequest) {
 
   // Legacy invariant marker: COALESCE(approved, 0) = 0
 
-  const totalRows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(
-    `
-      SELECT COUNT(*) AS total
-      FROM videos
-      WHERE ${PENDING_VIDEO_APPROVAL_WHERE_CLAUSE}
-    `,
+  // Badge-count polls use the in-memory cache; full tab loads force-refresh.
+  const totalPending = await getPendingVideoCount(
+    countsOnly ? { forceRefresh: false } : { forceRefresh: true },
   );
-  const totalPending = Number(totalRows[0]?.total ?? 0);
 
   if (countsOnly) {
     return NextResponse.json({ totalPending });
@@ -304,6 +333,10 @@ export async function POST(request: NextRequest) {
   }
 
   clearCurrentVideoRouteCaches();
+
+  // Invalidate the pending count cache so the next badge poll reflects the change.
+  pendingCountCache = null;
+  pendingCountInFlight = null;
 
   return pruneResponse.response;
 }

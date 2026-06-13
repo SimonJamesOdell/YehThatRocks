@@ -91,6 +91,9 @@ let cpuMinuteHistory: CpuMinuteBucket[] = [];
 let adminHostMetricSamplingStarted = false;
 let adminHostMetricPersistInFlight: Promise<void> | null = null;
 let hostHealthCollectionInFlight: Promise<HostHealthMetrics> | null = null;
+let adminHostMetricSamplingTimer: ReturnType<typeof setInterval> | null = null;
+let liveCpuSamplingTimer: ReturnType<typeof setInterval> | null = null;
+let lastAdminActivityMs = 0;
 let lastPersistedAdminHostMetricBucketStartMs: number | null = null;
 let liveCpuSamplingStarted = false;
 let previousLiveCpuSnapshot: CpuSnapshot | null = null;
@@ -101,6 +104,8 @@ const CPU_BUCKET_MS = 60 * 1000;
 const ADMIN_HOST_METRIC_SAMPLE_MS = readPositiveNumberEnv("ADMIN_HOST_METRIC_SAMPLE_INTERVAL_MS", CPU_BUCKET_MS, CPU_BUCKET_MS);
 const ADMIN_CPU_LIVE_SAMPLE_MS = readPositiveNumberEnv("ADMIN_CPU_LIVE_SAMPLE_MS", 250, 100);
 // Full host-health payloads can be cached longer because live CPU fields are patched in on read.
+// Sampling intervals self-stop after this many ms of admin inactivity to prevent perpetual DB writes.
+const ADMIN_IDLE_TIMEOUT_MS = readPositiveNumberEnv("ADMIN_IDLE_TIMEOUT_MS", 5 * 60 * 1000, 30 * 1000);
 const ADMIN_HEALTH_CACHE_MS = readPositiveNumberEnv("ADMIN_HEALTH_CACHE_MS", 3_000, 250);
 
 let adminHealthPayloadCache: {
@@ -118,6 +123,10 @@ function getCurrentBucketStartMs(now = Date.now()) {
   return Math.floor(now / CPU_BUCKET_MS) * CPU_BUCKET_MS;
 }
 
+function touchAdminActivity() {
+  lastAdminActivityMs = Date.now();
+}
+
 function getLiveCpuHostFields() {
   if (!latestLiveCpuMetrics) {
     return null;
@@ -132,6 +141,7 @@ function getLiveCpuHostFields() {
 
 export function getAdminCpuDialSnapshot(): AdminCpuDialSnapshot | null {
   startLiveCpuSampling();
+  touchAdminActivity();
   const liveCpuHostFields = getLiveCpuHostFields();
 
   if (!liveCpuHostFields) {
@@ -151,14 +161,29 @@ function startLiveCpuSampling() {
     return;
   }
 
+  touchAdminActivity();
+  if (lastAdminActivityMs === 0) {
+    lastAdminActivityMs = Date.now();
+  }
+
   liveCpuSamplingStarted = true;
   previousLiveCpuSnapshot = getCpuSnapshot();
 
   const timer = setInterval(() => {
+    if (lastAdminActivityMs > 0 && Date.now() - lastAdminActivityMs > ADMIN_IDLE_TIMEOUT_MS) {
+      if (liveCpuSamplingTimer) {
+        clearInterval(liveCpuSamplingTimer);
+        liveCpuSamplingTimer = null;
+      }
+      liveCpuSamplingStarted = false;
+      previousLiveCpuSnapshot = null;
+      return;
+    }
+
     const nextSnapshot = getCpuSnapshot();
 
     if (previousLiveCpuSnapshot) {
-      const metrics = buildCpuUsageMetrics(previousLiveCpuSnapshot, nextSnapshot);
+      const metrics = buildCpuUsageMetrics(previousLiveCpuSnapshot!, nextSnapshot);
       if (metrics.currentPercent !== null) {
         latestLiveCpuMetrics = metrics;
       }
@@ -168,6 +193,7 @@ function startLiveCpuSampling() {
   }, ADMIN_CPU_LIVE_SAMPLE_MS);
 
   timer.unref?.();
+  liveCpuSamplingTimer = timer;
 }
 
 function getCpuSnapshot(): CpuSnapshot {
@@ -585,14 +611,28 @@ export function startAdminHostMetricSampling() {
     return;
   }
 
+  touchAdminActivity();
+  if (lastAdminActivityMs === 0) {
+    lastAdminActivityMs = Date.now();
+  }
+
   adminHostMetricSamplingStarted = true;
   void persistAdminHostMetricSample();
 
   const timer = setInterval(() => {
+    if (lastAdminActivityMs > 0 && Date.now() - lastAdminActivityMs > ADMIN_IDLE_TIMEOUT_MS) {
+      if (adminHostMetricSamplingTimer) {
+        clearInterval(adminHostMetricSamplingTimer);
+        adminHostMetricSamplingTimer = null;
+      }
+      adminHostMetricSamplingStarted = false;
+      return;
+    }
     void persistAdminHostMetricSample();
   }, ADMIN_HOST_METRIC_SAMPLE_MS);
 
   timer.unref?.();
+  adminHostMetricSamplingTimer = timer;
 }
 
 export async function readAdminHostMetricHistory() {
@@ -634,6 +674,7 @@ export async function readAdminHostMetricHistory() {
 
 export async function buildAdminHealthPayload() {
   startAdminHostMetricSampling();
+  touchAdminActivity();
   startLiveCpuSampling();
 
   const now = Date.now();

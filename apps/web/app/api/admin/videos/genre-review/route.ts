@@ -174,7 +174,43 @@ const moderateGenreReviewSchema = z.object({
   parsedTrack: z.string().trim().max(255).nullable().optional(),
 });
 
-async function getGenreReviewRemaining() {
+const GENRE_REVIEW_COUNT_TTL_MS = Math.max(
+  2_000,
+  Number(process.env.GENRE_REVIEW_COUNT_TTL_MS || "10000"),
+);
+
+type GenreReviewCountCacheEntry = {
+  value: number;
+  expiresAt: number;
+};
+
+let genreReviewCountCache: GenreReviewCountCacheEntry | null = null;
+let genreReviewCountInFlight: Promise<number> | null = null;
+
+async function getGenreReviewRemaining(options?: { forceRefresh?: boolean }) {
+  const forceRefresh = options?.forceRefresh === true;
+  const now = Date.now();
+
+  if (!forceRefresh && genreReviewCountCache && genreReviewCountCache.expiresAt > now) {
+    return genreReviewCountCache.value;
+  }
+
+  if (genreReviewCountInFlight) {
+    return genreReviewCountInFlight;
+  }
+
+  genreReviewCountInFlight = queryExactGenreReviewRemaining()
+    .then((value) => {
+      genreReviewCountCache = { value, expiresAt: Date.now() + GENRE_REVIEW_COUNT_TTL_MS };
+      return value;
+    })
+    .catch(() => (genreReviewCountCache ? genreReviewCountCache.value : 0))
+    .finally(() => { genreReviewCountInFlight = null; });
+
+  return genreReviewCountInFlight;
+}
+
+async function queryExactGenreReviewRemaining(): Promise<number> {
   const rows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(
     `SELECT COUNT(*) AS total FROM admin_genre_review_queue`,
   );
@@ -238,12 +274,13 @@ export async function GET(request: NextRequest) {
   const countsOnly = request.nextUrl.searchParams.get("countsOnly") === "1";
 
   if (countsOnly) {
-    const remaining = await getGenreReviewRemaining();
+    // Badge-count polls use the in-memory cache; full tab loads force-refresh.
+    const remaining = await getGenreReviewRemaining({ forceRefresh: false });
     return NextResponse.json({ remaining });
   }
 
   const [remaining, currentVideo] = await Promise.all([
-    getGenreReviewRemaining(),
+    getGenreReviewRemaining({ forceRefresh: true }),
     fetchGenreReviewCurrentVideo(),
   ]);
 
@@ -314,7 +351,7 @@ export async function POST(request: NextRequest) {
       suggestion.reason,
     );
 
-    const remaining = await getGenreReviewRemaining();
+    const remaining = await getGenreReviewRemaining({ forceRefresh: true });
     const currentVideo = await fetchGenreReviewCurrentVideo();
     clearCatalogVideoCaches();
     clearCurrentVideoRouteCaches();
@@ -370,7 +407,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Video is not in the genre review queue" }, { status: 404 });
     }
 
-    const remaining = await getGenreReviewRemaining();
+    const remaining = await getGenreReviewRemaining({ forceRefresh: true });
     clearCatalogVideoCaches();
     clearCurrentVideoRouteCaches();
 
@@ -402,7 +439,7 @@ export async function POST(request: NextRequest) {
   clearCatalogVideoCaches();
   clearCurrentVideoRouteCaches();
 
-  const remaining = await getGenreReviewRemaining();
+  const remaining = await getGenreReviewRemaining({ forceRefresh: true });
 
   return NextResponse.json({
     ok: true,

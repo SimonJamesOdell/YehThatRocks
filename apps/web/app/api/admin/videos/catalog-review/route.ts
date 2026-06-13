@@ -25,7 +25,8 @@ export async function GET(request: NextRequest) {
   await ensureCatalogReviewQueueReady();
   const countsOnly = request.nextUrl.searchParams.get("countsOnly") === "1";
 
-  const remaining = await getCatalogReviewQueueCount({ forceRefresh: true });
+  // Badge-count polls use the in-memory cache; full tab loads force-refresh.
+  const remaining = await getCatalogReviewQueueCount({ forceRefresh: !countsOnly });
   if (countsOnly) {
     return NextResponse.json({ remaining });
   }
