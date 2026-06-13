@@ -291,6 +291,10 @@ async function buildCategoriesNewSnapshotRows(buildVersion: number) {
     };
 
     await writeCategoriesNewSnapshot(buildVersion, getCategorySnapshotKey(slug), detailPayload);
+
+    if (CATEGORIES_SNAPSHOT_INTER_GENRE_DELAY_MS > 0) {
+      await sleep(CATEGORIES_SNAPSHOT_INTER_GENRE_DELAY_MS);
+    }
   }
 }
 
