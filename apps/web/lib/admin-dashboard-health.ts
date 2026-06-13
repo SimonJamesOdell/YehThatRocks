@@ -695,3 +695,42 @@ export async function buildAdminHealthPayload() {
 
   return payload;
 }
+
+/**
+ * Lightweight performance payload for the public /api/status/performance endpoint.
+ * Deliberately does NOT start background sampling intervals, write to DB, or read
+ * filesystem metrics — it only returns in-memory state already available.
+ */
+export async function buildPublicPerformancePayload() {
+  const liveCpuHostFields = getLiveCpuHostFields();
+  const cpuUsagePercent = liveCpuHostFields?.cpuUsagePercent ?? null;
+  const cpuAverageUsagePercent = liveCpuHostFields?.cpuAverageUsagePercent ?? null;
+  const cpuPeakCoreUsagePercent = liveCpuHostFields?.cpuPeakCoreUsagePercent ?? null;
+  const memoryUsagePercent = Math.round(
+    ((os.totalmem() - os.freemem()) / Math.max(1, os.totalmem())) * 100,
+  );
+
+  return {
+    meta: {
+      generatedAt: new Date().toISOString(),
+    },
+    health: {
+      nodeUptimeSec: Math.floor(process.uptime()),
+      memory: {
+        rssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+        heapUsedMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+        heapTotalMb: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+      },
+      host: {
+        platform: process.platform,
+        loadAvg: os.loadavg(),
+        totalMemMb: Math.round(os.totalmem() / 1024 / 1024),
+        freeMemMb: Math.round(os.freemem() / 1024 / 1024),
+        cpuUsagePercent,
+        cpuAverageUsagePercent,
+        cpuPeakCoreUsagePercent,
+        memoryUsagePercent,
+      },
+    },
+  };
+}

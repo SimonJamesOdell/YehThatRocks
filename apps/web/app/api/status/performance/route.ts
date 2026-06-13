@@ -1,16 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-import { requireAdminApiAuth } from "@/lib/admin-auth";
-import { buildAdminHealthPayload } from "@/lib/admin-dashboard-health";
+import { buildPublicPerformancePayload } from "@/lib/admin-dashboard-health";
 import { getRuntimeProfilingSnapshotWithDbHistory } from "@/lib/runtime-profiler";
 
-export async function GET(request: NextRequest) {
-  const auth = await requireAdminApiAuth(request);
-  if (!auth.ok) {
-    return auth.response;
-  }
-
-  const payload = await buildAdminHealthPayload();
+export async function GET() {
+  const payload = await buildPublicPerformancePayload();
   const runtime = await getRuntimeProfilingSnapshotWithDbHistory();
 
   return NextResponse.json({
@@ -20,9 +14,9 @@ export async function GET(request: NextRequest) {
       cpuAverageUsagePercent: payload.health.host.cpuAverageUsagePercent,
       cpuPeakCoreUsagePercent: payload.health.host.cpuPeakCoreUsagePercent,
       memoryUsagePercent: payload.health.host.memoryUsagePercent,
-      diskUsagePercent: payload.health.host.diskUsagePercent,
-      swapUsagePercent: payload.health.host.swapUsagePercent,
-      networkUsagePercent: payload.health.host.networkUsagePercent,
+      diskUsagePercent: null,
+      swapUsagePercent: null,
+      networkUsagePercent: null,
     },
     runtime,
   }, {
