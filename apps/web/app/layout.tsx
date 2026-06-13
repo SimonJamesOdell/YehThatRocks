@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Metal_Mania } from "next/font/google";
 import Script from "next/script";
 
-import { startAdminHostMetricSampling } from "@/lib/admin-dashboard-health";
 import { YouTubeIframeApiLoader } from "@/components/youtube-iframe-api-loader";
 import "./globals.css";
 
@@ -48,7 +47,6 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  startAdminHostMetricSampling();
 
   return (
     <html lang="en">

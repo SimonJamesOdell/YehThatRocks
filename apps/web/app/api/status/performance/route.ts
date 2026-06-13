@@ -1,9 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
+import { requireAdminApiAuth } from "@/lib/admin-auth";
 import { buildAdminHealthPayload } from "@/lib/admin-dashboard-health";
 import { getRuntimeProfilingSnapshotWithDbHistory } from "@/lib/runtime-profiler";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAdminApiAuth(request);
+  if (!auth.ok) {
+    return auth.response;
+  }
+
   const payload = await buildAdminHealthPayload();
   const runtime = await getRuntimeProfilingSnapshotWithDbHistory();
 
