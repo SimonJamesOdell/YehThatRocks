@@ -197,7 +197,7 @@ const SEARCHING_ALTERNATIVE_OVERLAY_MESSAGE = "This video is unavailable. Search
 const COPYRIGHT_CLAIM_OVERLAY_MESSAGE = "This video is no longer available due to a copyright claim on YouTube.";
 const REMOVED_PRIVATE_OVERLAY_MESSAGE = "This video is unavailable on YouTube because it was removed, deleted, or made private.";
 const BROKEN_UPSTREAM_AUTOADVANCE_MS = 20000;
-const BOT_BLOCK_CONFIRMATION_DELAY_MS = 3200;
+const BOT_BLOCK_CONFIRMATION_DELAY_MS = 5000;
 const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstream video provider for this track. This is not a YehThatRocks failure. Please try the refresh button and if that does not work, choose another track.";
 const DELETED_TRACK_OVERLAY_MESSAGE = "This track was removed from YehThatRocks.";
 const EARLY_PLAYBACK_VERIFICATION_MS = 3500;
@@ -1498,6 +1498,11 @@ export function PlayerExperience({
       playbackStallLastObservedAtRef.current = null;
       allowDirectIframeInteractionRef.current = true;
       setAllowDirectIframeInteraction(true);
+
+      // Pause the player so audio doesn't play behind the restriction overlay.
+      if (playerRef.current && typeof playerRef.current.pauseVideo === "function") {
+        playerRef.current.pauseVideo();
+      }
 
       logPlayerDebug("bot-challenge:direct-iframe-mode", {
         videoId: currentVideoRef.current.id,
