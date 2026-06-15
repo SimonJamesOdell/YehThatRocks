@@ -405,6 +405,7 @@ export async function refreshArtistProjectionForName(artistName: string) {
           FROM videos v${videoArtistIndexHint}
           WHERE ${videoArtistNormExpr} = ?
             AND v.videoId IS NOT NULL
+            AND COALESCE(v.approved, 0) = 1
             ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
         `,
         normalizedArtist,
@@ -415,6 +416,7 @@ export async function refreshArtistProjectionForName(artistName: string) {
           FROM videos v${videoArtistIndexHint}
           WHERE ${videoArtistNormExpr} = ?
             AND v.videoId IS NOT NULL
+            AND COALESCE(v.approved, 0) = 1
             ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
           ORDER BY v.id ASC
           LIMIT 1
@@ -563,13 +565,35 @@ export async function upsertVerifiedExternalArtistCandidate(candidate: {
   const existingVideoCount = Number(existingStat?.videoCount ?? 0);
 
   if (existingVideoCount <= 0) {
-    await upsertArtistStatsRow({
-      name: displayName,
-      country: candidate.country ?? existingStat?.country ?? null,
-      genre: candidate.genre ?? existingStat?.genre ?? "Rock / Metal",
-      videoCount: 1,
-      thumbnailVideoId: candidate.thumbnailVideoId ?? existingStat?.thumbnailVideoId ?? null,
-    }, "external-verified");
+    // Refresh may have failed or the row was deleted — do a real COUNT
+    // instead of hardcoding 1 so the count stays consistent with what
+    // getVideosByArtist and getNewestVideos actually return.
+    const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
+    const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
+    const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
+
+    const countRows = await prisma.$queryRawUnsafe<Array<{ videoCount: number | null }>>(
+      `
+        SELECT COUNT(v.id) AS videoCount
+        FROM videos v${videoArtistIndexHint}
+        WHERE ${videoArtistNormExpr} = ?
+          AND v.videoId IS NOT NULL
+          AND COALESCE(v.approved, 0) = 1
+          ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
+      `,
+      normalizedArtist,
+    );
+
+    const actualVideoCount = Number(countRows[0]?.videoCount ?? 0);
+    if (actualVideoCount > 0) {
+      await upsertArtistStatsRow({
+        name: displayName,
+        country: candidate.country ?? existingStat?.country ?? null,
+        genre: candidate.genre ?? existingStat?.genre ?? "Rock / Metal",
+        videoCount: actualVideoCount,
+        thumbnailVideoId: candidate.thumbnailVideoId ?? existingStat?.thumbnailVideoId ?? null,
+      }, "external-verified");
+    }
   }
 
   invalidateArtistLookupCaches();
@@ -1372,6 +1396,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
             FROM videos v
             WHERE ${videoArtistNormExpr} <> ''
               AND v.videoId IS NOT NULL
+              AND COALESCE(v.approved, 0) = 1
               ${parsedArtistNumericClause}
               ${parsedArtistPrefixClause}
               ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
@@ -1427,6 +1452,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
       FROM videos v
       WHERE ${videoArtistNormExpr} <> ''
         AND v.videoId IS NOT NULL
+        AND COALESCE(v.approved, 0) = 1
         ${videoNumericClause}
         ${videoPrefixClause}
       GROUP BY ${videoArtistNormExpr}
@@ -1456,6 +1482,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
         FROM videosbyartist va
         INNER JOIN videos v ON ${joinVideoExpr} = va.${vaVideoRefCol}
         WHERE ${vaArtistNormExpr} <> ''
+          AND COALESCE(v.approved, 0) = 1
           ${vaNumericClause}
           ${vaPrefixClause}
           AND EXISTS (
