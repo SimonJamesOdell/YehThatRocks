@@ -1921,6 +1921,20 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
           `;
 
           rows = await prisma.$queryRawUnsafe<ArtistVideoRow[]>(relaxedQuery, ...relaxedParams);
+
+          // The LIKE fallback matches any video whose normalized artist contains
+          // the slug terms — which can conflate distinct artists that share a
+          // word stem (e.g. "wiz" matching "wiz khalifa"). Post-filter to only
+          // include videos whose slugified parsedArtist matches the searched
+          // artist exactly, so artist pages stay scoped correctly.
+          if (rows.length > 0) {
+            const targetSlug = slugify(artistName);
+            rows = rows.filter((row) => {
+              const rowArtistName = (row.parsedArtist ?? "").trim();
+              if (!rowArtistName) return false;
+              return slugify(rowArtistName) === targetSlug;
+            });
+          }
         }
       }
 
