@@ -5,6 +5,7 @@ import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { clearCatalogVideoCaches, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";
 import { prisma } from "@/lib/db";
+import { triggerArtistDiscoveryIfNew } from "@/lib/artist-discovery";
 import { mapAdminPruneResultToDeleteResponse } from "@/lib/admin-prune-delete-response";
 
 const updateSchema = z.object({
@@ -205,6 +206,15 @@ export async function PATCH(request: NextRequest) {
 
   clearCatalogVideoCaches();
   clearCurrentVideoRouteCaches();
+
+  // If this update approved a previously-unapproved video, trigger artist discovery
+  // to find more tracks by the same artist (only if this is the first approval).
+  if (parsed.approved === true && updated?.videoId) {
+    const discoveryArtistName = (parsed.parsedArtist ?? updated.parsedArtist ?? "").trim();
+    if (discoveryArtistName) {
+      triggerArtistDiscoveryIfNew(discoveryArtistName, updated.videoId);
+    }
+  }
 
   return NextResponse.json({ ok: true, video: updatedWithGenre });
 }

@@ -2130,7 +2130,33 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
 }
 
 export function maybeStartAutomaticRelatedBackfill(offset: number) {
-  debugCatalog("auto-related-backfill:disabled", { offset, reason: AUTOMATED_TRACK_DISCOVERY_DISABLED_REASON });
+  if (!canRunAutomatedTrackDiscovery()) {
+    debugCatalog("auto-related-backfill:disabled", { offset, reason: AUTOMATED_TRACK_DISCOVERY_DISABLED_REASON });
+    return;
+  }
+
+  if (!ENABLE_YOUTUBE_RELATED_DISCOVERY || !hasDatabaseUrl()) {
+    debugCatalog("auto-related-backfill:skipped", { offset, hasDb: hasDatabaseUrl(), relatedDiscoveryEnabled: ENABLE_YOUTUBE_RELATED_DISCOVERY });
+    return;
+  }
+
+  const budgetUnits = YOUTUBE_RELATED_DISCOVERY_DAILY_BUDGET_UNITS;
+
+  debugCatalog("auto-related-backfill:starting", { offset, budgetUnits });
+
+  void runQuotaBackfill(budgetUnits)
+    .then((result) => {
+      debugCatalog("auto-related-backfill:complete", {
+        seedsAttempted: result.seedsAttempted,
+        fetchedNodes: result.fetchedNodes,
+        discoveredNewVideos: result.discoveredNewVideos,
+        unitsEstimated: result.unitsEstimated,
+      });
+    })
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      debugCatalog("auto-related-backfill:error", { message });
+    });
 }
 
 // ── Admin imports / pruning ───────────────────────────────────────────────────

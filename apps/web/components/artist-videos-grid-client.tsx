@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useLiveSearchParams } from "@/components/use-live-search-params";
 
 import { ArtistVideoLink } from "@/components/artist-video-link";
 import { ArtistCreatePlaylistButton } from "@/components/artist-create-playlist-button";
@@ -37,7 +37,7 @@ export function ArtistVideosGridClient({
   isAuthenticated,
   isAdmin,
 }: ArtistVideosGridClientProps) {
-  const searchParams = useSearchParams();
+  const searchParams = useLiveSearchParams();
   const [videos, setVideos] = useState<VideoRecord[]>(initialVideos);
   const [hidingVideoIds, setHidingVideoIds] = useState<string[]>([]);
   const [videoPendingHideConfirm, setVideoPendingHideConfirm] = useState<VideoRecord | null>(null);
@@ -188,9 +188,11 @@ export function ArtistVideosGridClient({
             isAuthenticated={isAuthenticated}
             isAdmin={isAdmin}
             isSeen={seenVideoIdSet.has(video.id)}
+            isActive={video.id === videoId}
             useCornerActions
             adminThumbnailArtistSlug={artistSlug}
             adminThumbnailArtistName={artistName}
+            navigatePathname={`/artist/${artistSlug}`}
             onHideVideo={handleHideVideo}
             isHidePending={hidingVideoIds.includes(video.id)}
           />

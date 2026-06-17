@@ -1,34 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import {
-  getStoredVideoById,
-  hasDatabaseUrl,
-  importVideoFromDirectSource,
-  normalizeArtistKey,
-  normalizeYouTubeVideoId,
-  pruneVideoAndAssociationsByVideoId,
-} from "@/lib/catalog-data";
+import { discoverTracksForArtist } from "@/lib/artist-discovery";
+import { hasDatabaseUrl } from "@/lib/catalog-data";
 import { requireAdminApiAuthWithPermission } from "@/lib/admin-auth";
 import { verifySameOrigin } from "@/lib/csrf";
-import { parseJsonOrNull } from "@/lib/parse-json";
 import { parseRequestJson } from "@/lib/request-json";
-import { recordExternalApiUsage } from "@/lib/api-usage-telemetry";
-
-const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || "";
 
 const discoverSchema = z.object({
   artistName: z.string().trim().min(1).max(255),
   maxResults: z.number().int().min(1).max(50).optional(),
 });
-
-type YouTubeSearchResponse = {
-  items?: Array<{
-    id?: {
-      videoId?: string;
-    };
-  }>;
-};
 
 export async function POST(request: NextRequest) {
   const auth = await requireAdminApiAuthWithPermission(request, "admin.videos.pending.moderate");
@@ -56,134 +38,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Database is not configured." }, { status: 503 });
   }
 
-  if (!YOUTUBE_DATA_API_KEY) {
-    return NextResponse.json({ ok: false, error: "YouTube API key is not configured." }, { status: 503 });
-  }
-
   const artistName = parsed.data.artistName.trim();
-  const normalizedRequestedArtist = normalizeArtistKey(artistName);
   const maxResults = parsed.data.maxResults ?? 20;
 
-  const endpoint = new URL("https://www.googleapis.com/youtube/v3/search");
-  endpoint.searchParams.set("part", "snippet");
-  endpoint.searchParams.set("type", "video");
-  endpoint.searchParams.set("videoCategoryId", "10");
-  endpoint.searchParams.set("maxResults", String(maxResults));
-  endpoint.searchParams.set("order", "relevance");
-  endpoint.searchParams.set("q", `\"${artistName}\" official music video`);
-  endpoint.searchParams.set("key", YOUTUBE_DATA_API_KEY);
+  const result = await discoverTracksForArtist(artistName, maxResults);
 
-  const response = await fetch(endpoint, {
-    headers: {
-      "User-Agent": "YehThatRocks/1.0",
-    },
-    cache: "no-store",
-  }).catch(() => null);
-
-  if (!response?.ok) {
-    void recordExternalApiUsage({
-      provider: "youtube",
-      endpoint: "search.list",
-      units: 100,
-      success: false,
-      statusCode: response?.status ?? null,
-      note: "admin-artist-discovery-search-failed",
-    });
-
-    return NextResponse.json({ ok: false, error: "Could not query YouTube for this artist." }, { status: 502 });
-  }
-
-  void recordExternalApiUsage({
-    provider: "youtube",
-    endpoint: "search.list",
-    units: 100,
-    success: true,
-    statusCode: response.status,
-    note: "admin-artist-discovery-search",
-  });
-
-  const payload = await parseJsonOrNull<YouTubeSearchResponse>(response);
-  const candidateIds = Array.from(
-    new Set(
-      (payload?.items ?? [])
-        .map((item) => normalizeYouTubeVideoId(item.id?.videoId ?? ""))
-        .filter((videoId): videoId is string => Boolean(videoId)),
-    ),
-  );
-
-  if (candidateIds.length === 0) {
-    return NextResponse.json({ ok: true, artistName, scanned: 0, imported: 0, queued: 0, skipped: 0, prunedAsMismatch: 0 });
-  }
-
-  let imported = 0;
-  let queued = 0;
-  let skipped = 0;
-  let prunedAsMismatch = 0;
-
-  // Process candidates in concurrent batches to reduce wall-clock time.
-  // Each candidate needs ~2 HTTP calls (oEmbed + embed check) plus DB writes;
-  // running them 4 at a time cuts total latency by ~3x.
-  const BATCH_SIZE = 4;
-  const processCandidate = async (videoId: string) => {
-    const existedBefore = Boolean(await getStoredVideoById(videoId, { includeUnapproved: true }));
-
-    // Artist discovery is intended to queue new candidates for moderation. If the
-    // video already exists, skip re-hydration/import to avoid unnecessary CPU work.
-    if (existedBefore) {
-      return { action: "skip" as const };
-    }
-
-    const result = await importVideoFromDirectSource(videoId, {
-      discoverRelated: false,
-      // Skip the server-side YouTube embed check — VPS IPs are often
-      // bot-detected and blocked. The admin will verify during review.
-      skipEmbedCheck: true,
-      // Defer expensive LLM classification and MusicBrainz genre lookups.
-      // These will run during admin review, not during bulk discovery.
-      deferMetadataClassification: true,
-    });
-
-    if (!result.videoId || !result.decision.allowed) {
-      return { action: "skip" as const };
-    }
-
-    const persisted = await getStoredVideoById(videoId, { includeUnapproved: true });
-    const parsedArtist = (persisted?.parsedArtist ?? persisted?.channelTitle ?? "").trim();
-    const normalizedParsedArtist = parsedArtist ? normalizeArtistKey(parsedArtist) : "";
-    const isArtistMatch = normalizedParsedArtist.length > 0 && normalizedParsedArtist === normalizedRequestedArtist;
-
-    if (!isArtistMatch) {
-      await pruneVideoAndAssociationsByVideoId(videoId, "admin-artist-discovery-artist-mismatch").catch(() => undefined);
-      return { action: "prune_mismatch" as const };
-    }
-
-    return { action: "queued" as const };
-  };
-
-  for (let i = 0; i < candidateIds.length; i += BATCH_SIZE) {
-    const batch = candidateIds.slice(i, i + BATCH_SIZE);
-    const results = await Promise.all(batch.map(processCandidate));
-
-    for (const result of results) {
-      if (result.action === "skip") {
-        skipped += 1;
-      } else if (result.action === "prune_mismatch") {
-        imported += 1;
-        prunedAsMismatch += 1;
-      } else if (result.action === "queued") {
-        imported += 1;
-        queued += 1;
-      }
-    }
+  if (!result.ok) {
+    return NextResponse.json({ ok: false, error: result.error }, { status: 502 });
   }
 
   return NextResponse.json({
     ok: true,
-    artistName,
-    scanned: candidateIds.length,
-    imported,
-    queued,
-    skipped,
-    prunedAsMismatch,
+    artistName: result.artistName,
+    scanned: result.scanned,
+    imported: result.imported,
+    queued: result.queued,
+    skipped: result.skipped,
+    prunedAsMismatch: result.prunedAsMismatch,
   });
 }

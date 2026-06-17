@@ -8,6 +8,7 @@ import { pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { scheduleCatalogVisibilityInvalidation } from "@/lib/catalog-visibility-invalidation";
 import { clearCurrentVideoRouteCaches } from "@/lib/current-video-cache";
 import { prisma } from "@/lib/db";
+import { triggerArtistDiscoveryIfNew } from "@/lib/artist-discovery";
 import { mapAdminPruneResultToDeleteResponse } from "@/lib/admin-prune-delete-response";
 
 const moderatePendingSchema = z.object({
@@ -244,6 +245,11 @@ export async function POST(request: NextRequest) {
         }
 
         scheduleCatalogVisibilityInvalidation("admin-pending-approve");
+
+        const discoveryArtistName = (parsed.parsedArtist ?? "").trim();
+        if (discoveryArtistName) {
+          triggerArtistDiscoveryIfNew(discoveryArtistName, videoId);
+        }
       })().catch(() => {
         // Best-effort async approve; moderation UI already advanced optimistically.
       });
@@ -303,6 +309,11 @@ export async function POST(request: NextRequest) {
     }
 
     scheduleCatalogVisibilityInvalidation("admin-pending-approve");
+
+    const discoveryArtistName = (parsed.parsedArtist ?? "").trim();
+    if (discoveryArtistName) {
+      triggerArtistDiscoveryIfNew(discoveryArtistName, videoId);
+    }
 
     return NextResponse.json({ ok: true, videoId, action: "approve" });
   }

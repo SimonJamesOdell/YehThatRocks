@@ -1,0 +1,13 @@
+[Unit]
+Description=YehThatRocks Daily Video Discovery
+After=network-online.target yehthatrocks.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/yehthatrocks
+EnvironmentFile=-/srv/yehthatrocks/.env.production
+ExecStart=/usr/bin/bash -lc 'PORT="$${APP_PORT:-3000}"; CURL_TIMEOUT="$${DISCOVERY_DAILY_CURL_TIMEOUT_S:-600}"; URL="http://127.0.0.1:$${PORT}/api/cron/daily-discovery"; echo "[daily-discovery] POSTing to $${URL} (curl timeout: $${CURL_TIMEOUT}s)"; if [ -n "$${CRON_SECRET:-}" ]; then /usr/bin/curl -fsSv --write-out "\n[daily-discovery] HTTP %%{http_code}\n" --connect-timeout 10 --max-time "$${CURL_TIMEOUT}" -X POST -H "Authorization: Bearer $${CRON_SECRET}" "$${URL}"; else /usr/bin/curl -fsSv --write-out "\n[daily-discovery] HTTP %%{http_code}\n" --connect-timeout 10 --max-time "$${CURL_TIMEOUT}" -X POST "$${URL}"; fi'
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=daily-discovery

@@ -48,7 +48,10 @@ export async function GET(_request: NextRequest, context: ArtistRouteContext) {
   if (contextVideoId && !matchingVideos.some((video) => video.id === contextVideoId)) {
     const contextStored = await getStoredVideoById(contextVideoId, { includeUnapproved: true });
     const contextArtist = (contextStored?.parsedArtist ?? contextStored?.channelTitle ?? "").trim();
-    if (contextStored && contextArtist && slugify(contextArtist) === artist.slug) {
+    // Show the context video whenever it exists and we have an artist resolved.
+    // The strict slugify check can reject valid videos whose channel title includes
+    // extra text (e.g. "Sakharov - Topic" → slug "sakharov-topic" ≠ "sakharov").
+    if (contextStored && contextArtist) {
       matchingVideos.unshift(mapVideo(contextStored));
     }
   }

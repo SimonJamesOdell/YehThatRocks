@@ -21,12 +21,14 @@ type ArtistVideoLinkProps = {
   isAuthenticated?: boolean;
   isAdmin?: boolean;
   isSeen?: boolean;
+  isActive?: boolean;
   useCornerActions?: boolean;
   titleMode?: "parsedTrackOrTitle" | "parsedTrackOnly";
   adminThumbnailPinTarget?: "artist" | "category-artist";
   adminThumbnailGenre?: string;
   adminThumbnailArtistSlug?: string;
   adminThumbnailArtistName?: string;
+  navigatePathname?: string;
   onHideVideo?: (video: VideoRecord) => void;
   isHidePending?: boolean;
 };
@@ -36,12 +38,14 @@ export function ArtistVideoLink({
   isAuthenticated = true,
   isAdmin = false,
   isSeen = false,
+  isActive = false,
   useCornerActions = false,
   titleMode = "parsedTrackOrTitle",
   adminThumbnailPinTarget = "artist",
   adminThumbnailGenre,
   adminThumbnailArtistSlug,
   adminThumbnailArtistName,
+  navigatePathname,
   onHideVideo,
   isHidePending = false,
 }: ArtistVideoLinkProps) {
@@ -83,8 +87,9 @@ export function ArtistVideoLink({
 
   const openVideoFromCard = useCallback(() => {
     warmSelection();
-    router.push(`/?v=${encodeURIComponent(video.id)}&resume=1`);
-  }, [router, video.id, warmSelection]);
+    const basePath = navigatePathname ?? "/";
+    router.push(`${basePath}?v=${encodeURIComponent(video.id)}&resume=1`);
+  }, [router, video.id, warmSelection, navigatePathname]);
 
   const handleRemoveFavourite = useCallback(async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -170,7 +175,7 @@ export function ArtistVideoLink({
 
   return (
     <article
-      className={`categoryVideoCard${isSeen ? " categoryVideoCardSeen artistVideoCardSeen" : ""}${useCornerActions ? " categoryVideoCardCornerActions" : ""}`}
+      className={`categoryVideoCard${isSeen ? " categoryVideoCardSeen artistVideoCardSeen" : ""}${isActive ? " categoryVideoCardActive" : ""}${useCornerActions ? " categoryVideoCardCornerActions" : ""}`}
       role="link"
       tabIndex={0}
       aria-label={`Play ${video.title}`}

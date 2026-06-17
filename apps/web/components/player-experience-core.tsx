@@ -438,6 +438,7 @@ export function PlayerExperience({
   const footerPlaylistMenuRef = useRef<HTMLDivElement | null>(null);
   const autoplayMenuRef = useRef<HTMLDivElement | null>(null);
   const shareToChatResetTimeoutRef = useRef<number | null>(null);
+  const artistAutoPlayLastSlugRef = useRef<string | null>(null);
   const playerPreferencesSaveTimeoutRef = useRef<number | null>(null);
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
   const [isPlayerPreferencesServerHydrated, setIsPlayerPreferencesServerHydrated] = useState(() => !isLoggedIn);
@@ -948,7 +949,7 @@ export function PlayerExperience({
     currentVideoId: currentVideo.id,
     autoplayEnabled,
     isDockedDesktop,
-    shouldUseRouteQueueRegardlessOfDocked: pathname === "/new" || pathname === "/top100",
+    shouldUseRouteQueueRegardlessOfDocked: pathname === "/new" || pathname === "/top100" || pathname.startsWith("/artist/"),
     routeAutoplayQueueIds,
     getRandomWatchNextId: () => getRandomWatchNextId({
       queue,
@@ -1133,7 +1134,11 @@ export function PlayerExperience({
   const showDockCloseButton = isDockedDesktop && pathname !== "/";
   const isDockedNewRoute = showDockCloseButton && pathname === "/new";
   const isDockedTop100Route = showDockCloseButton && pathname === "/top100";
+  const isDockedArtistRoute = showDockCloseButton && pathname.startsWith("/artist/");
   const routeAutoplaySource = resolveRouteAutoplaySource(pathname);
+  const dockedArtistName = isDockedArtistRoute && routeAutoplaySource?.type === "artist"
+    ? decodeURIComponent(routeAutoplaySource.slug).replace(/-/g, " ")
+    : null;
   const isDockedRouteListAutoplayActive = showDockCloseButton
     && autoplayEnabled
     && Boolean(routeAutoplaySource)
@@ -2462,6 +2467,36 @@ export function PlayerExperience({
     return () => unsubscribe();
   }, [executeManualNavigation]);
 
+  // When entering an artist overlay page, auto-start playing the first artist video
+  // if the current video is not already in the artist's autoplay queue.
+  useEffect(() => {
+    if (!pathname.startsWith("/artist/")) {
+      artistAutoPlayLastSlugRef.current = null;
+      return;
+    }
+
+    if (routeAutoplayQueueIds.length === 0) return;
+    if (!autoplayEnabled) return;
+
+    const artistSlug = pathname.slice("/artist/".length).split("/")[0] ?? "";
+    if (!artistSlug) return;
+
+    // Only trigger once per artist entry
+    if (artistAutoPlayLastSlugRef.current === artistSlug) return;
+
+    const firstVideoId = routeAutoplayQueueIds[0];
+    if (!firstVideoId) return;
+
+    // Don't re-navigate if already playing a video from this artist's queue
+    if (routeAutoplayQueueIds.includes(currentVideo.id)) {
+      artistAutoPlayLastSlugRef.current = artistSlug;
+      return;
+    }
+
+    artistAutoPlayLastSlugRef.current = artistSlug;
+    executeManualNavigation(firstVideoId, { useNativeHistory: true });
+  }, [pathname, routeAutoplayQueueIds, currentVideo.id, autoplayEnabled, executeManualNavigation]);
+
   async function reportUnavailableFromPlayer(reason: string): Promise<ReportUnavailableResult> {
     if (reportedUnavailableVideoIdRef.current === currentVideo.id) {
       logPlayerDebug("report-unavailable:already-reported", {
@@ -3669,7 +3704,7 @@ export function PlayerExperience({
   }
 
   function handleDockedRouteListNextTrack() {
-    if ((!isDockedNewRoute && !isDockedTop100Route) || footerActionsBlocked || routeAutoplayQueueIds.length === 0) {
+    if ((!isDockedNewRoute && !isDockedTop100Route && !isDockedArtistRoute) || footerActionsBlocked || routeAutoplayQueueIds.length === 0) {
       return;
     }
 
@@ -5617,14 +5652,14 @@ export function PlayerExperience({
                 ) : null}
               </div>
             ) : null}
-            {isDockedNewRoute || isDockedTop100Route ? (
+            {isDockedNewRoute || isDockedTop100Route || isDockedArtistRoute ? (
               <button
                 type="button"
                 className="primaryActionToggleButton primaryActionDockedNextButton"
                 onClick={handleDockedRouteListNextTrack}
                 disabled={footerActionsBlocked || routeAutoplayQueueIds.length === 0}
-                aria-label={isDockedTop100Route ? "Next track in Top 100" : "Next track in New"}
-                title={isDockedTop100Route ? "Next track in Top 100" : "Next track in New"}
+                aria-label={isDockedArtistRoute ? `Next track by ${dockedArtistName ?? "this artist"}` : isDockedTop100Route ? "Next track in Top 100" : "Next track in New"}
+                title={isDockedArtistRoute ? `Next track by ${dockedArtistName ?? "this artist"}` : isDockedTop100Route ? "Next track in Top 100" : "Next track in New"}
               >
                 <span className="primaryNavGlyph" aria-hidden="true">⇥</span>
               </button>

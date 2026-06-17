@@ -242,21 +242,27 @@ export function useRouteAutoplayQueue({
   useEffect(() => {
     const nonDockedRouteQueueSource =
       !isDockedDesktop
-      && (pathname === "/new" || pathname === "/top100")
+      && (pathname === "/new" || pathname === "/top100" || pathname.startsWith("/artist/"))
       && !activePlaylistId;
 
     if (!nonDockedRouteQueueSource) {
+      setRouteAutoplayQueueIds([]);
       return;
     }
 
-    const routeSourceType = pathname === "/new" ? "new" : "top100";
+    const routeAutoplaySource = resolveRouteAutoplaySource(pathname);
+
+    if (!routeAutoplaySource) {
+      setRouteAutoplayQueueIds([]);
+      return;
+    }
 
     let cancelled = false;
     let receivedSyncedQueue = false;
 
     const handleRouteQueueSync = (event: Event) => {
       const detail = (event as CustomEvent<{ source?: string; videoIds?: string[] }>).detail;
-      if (detail?.source !== routeSourceType || !Array.isArray(detail.videoIds)) {
+      if (detail?.source !== routeAutoplaySource.type || !Array.isArray(detail.videoIds)) {
         return;
       }
 
@@ -264,7 +270,7 @@ export function useRouteAutoplayQueue({
       setRouteAutoplayQueueIds(Array.from(new Set(detail.videoIds.filter((videoId): videoId is string => Boolean(videoId)))));
     };
 
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && (routeAutoplaySource.type === "new" || routeAutoplaySource.type === "top100")) {
       window.addEventListener(routeAutoplayQueueSyncEvent, handleRouteQueueSync as EventListener);
     }
 
@@ -272,7 +278,7 @@ export function useRouteAutoplayQueue({
       try {
         const [hiddenSet, rawIds] = await Promise.all([
           fetchHiddenVideoIdSet(),
-          fetchAutoplaySourceVideoIds({ type: routeSourceType }),
+          fetchAutoplaySourceVideoIds(routeAutoplaySource),
         ]);
 
         const dedupedVisibleIds = Array.from(new Set(rawIds.filter((videoId) => !hiddenSet.has(videoId))));
@@ -291,7 +297,7 @@ export function useRouteAutoplayQueue({
 
     return () => {
       cancelled = true;
-      if (typeof window !== "undefined") {
+      if (typeof window !== "undefined" && (routeAutoplaySource.type === "new" || routeAutoplaySource.type === "top100")) {
         window.removeEventListener(routeAutoplayQueueSyncEvent, handleRouteQueueSync as EventListener);
       }
     };

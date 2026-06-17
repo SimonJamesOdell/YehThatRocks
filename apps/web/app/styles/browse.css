@@ -1762,6 +1762,24 @@
   box-shadow: var(--glow);
 }
 
+/* Now-playing highlight for artist video grid */
+.categoryVideoCard.categoryVideoCardActive {
+  border-color: rgba(255, 180, 50, 0.85);
+  box-shadow: 0 0 18px rgba(255, 160, 20, 0.42), var(--glow, none);
+  background: linear-gradient(180deg, rgba(200, 120, 20, 0.38), rgba(100, 50, 8, 0.52));
+}
+
+.categoryVideoCard.categoryVideoCardActive:hover {
+  border-color: rgba(255, 200, 70, 0.92);
+  box-shadow: 0 0 24px rgba(255, 160, 20, 0.56), var(--glow, none);
+}
+
+.artistVideoGrid .categoryVideoCard.categoryVideoCardActive {
+  border-color: rgba(255, 180, 50, 0.85);
+  box-shadow: 0 0 18px rgba(255, 160, 20, 0.42);
+  background: linear-gradient(180deg, rgba(200, 120, 20, 0.38), rgba(100, 50, 8, 0.52));
+}
+
 .artistVideoThumbBadges {
   position: absolute;
   left: 8px;
@@ -2509,4 +2527,3 @@
   background: rgba(255, 255, 255, 0.08);
   color: var(--text);
 }
-
