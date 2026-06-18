@@ -193,12 +193,12 @@ export function useRouteAutoplayQueue({
     let receivedSyncedQueue = false;
 
     const handleRouteQueueSync = (event: Event) => {
-      if (routeAutoplaySource.type !== "new" && routeAutoplaySource.type !== "top100") {
+      if (routeAutoplaySource!.type !== "new" && routeAutoplaySource!.type !== "top100") {
         return;
       }
 
       const detail = (event as CustomEvent<{ source?: string; videoIds?: string[] }>).detail;
-      if (detail?.source !== routeAutoplaySource.type || !Array.isArray(detail.videoIds)) {
+      if (detail?.source !== routeAutoplaySource!.type || !Array.isArray(detail.videoIds)) {
         return;
       }
 
@@ -214,7 +214,7 @@ export function useRouteAutoplayQueue({
       try {
         const [hiddenSet, rawIds] = await Promise.all([
           fetchHiddenVideoIdSet(),
-          fetchAutoplaySourceVideoIds(routeAutoplaySource),
+          fetchAutoplaySourceVideoIds(routeAutoplaySource!),
         ]);
 
         const dedupedVisibleIds = Array.from(new Set(rawIds.filter((videoId) => !hiddenSet.has(videoId))));
@@ -233,7 +233,7 @@ export function useRouteAutoplayQueue({
 
     return () => {
       cancelled = true;
-      if (typeof window !== "undefined" && (routeAutoplaySource.type === "new" || routeAutoplaySource.type === "top100")) {
+      if (typeof window !== "undefined" && (routeAutoplaySource!.type === "new" || routeAutoplaySource!.type === "top100")) {
         window.removeEventListener(routeAutoplayQueueSyncEvent, handleRouteQueueSync as EventListener);
       }
     };
@@ -262,7 +262,7 @@ export function useRouteAutoplayQueue({
 
     const handleRouteQueueSync = (event: Event) => {
       const detail = (event as CustomEvent<{ source?: string; videoIds?: string[] }>).detail;
-      if (detail?.source !== routeAutoplaySource.type || !Array.isArray(detail.videoIds)) {
+      if (detail?.source !== routeAutoplaySource!.type || !Array.isArray(detail.videoIds)) {
         return;
       }
 
@@ -278,7 +278,7 @@ export function useRouteAutoplayQueue({
       try {
         const [hiddenSet, rawIds] = await Promise.all([
           fetchHiddenVideoIdSet(),
-          fetchAutoplaySourceVideoIds(routeAutoplaySource),
+          fetchAutoplaySourceVideoIds(routeAutoplaySource!),
         ]);
 
         const dedupedVisibleIds = Array.from(new Set(rawIds.filter((videoId) => !hiddenSet.has(videoId))));
@@ -297,7 +297,7 @@ export function useRouteAutoplayQueue({
 
     return () => {
       cancelled = true;
-      if (typeof window !== "undefined" && (routeAutoplaySource.type === "new" || routeAutoplaySource.type === "top100")) {
+      if (typeof window !== "undefined" && (routeAutoplaySource!.type === "new" || routeAutoplaySource!.type === "top100")) {
         window.removeEventListener(routeAutoplayQueueSyncEvent, handleRouteQueueSync as EventListener);
       }
     };

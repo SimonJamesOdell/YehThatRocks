@@ -107,15 +107,15 @@
     "maintain:deps:install": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-dependency-maintenance-task.ps1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "^1.61.0",
     "cross-env": "^10.1.0",
     "prisma": "7.8.0",
-    "turbo": "^2.9.16"
+    "turbo": "^2.9.18"
   },
   "dependencies": {
-    "@prisma/adapter-mariadb": "^7.8.0",
-    "@prisma/client": "^7.8.0",
+    "@prisma/adapter-mariadb": "7.8.0",
+    "@prisma/client": "7.8.0",
     "dotenv": "^17.4.2",
-    "mysql2": "^3.22.4"
+    "mysql2": "^3.22.5"
   }
 }

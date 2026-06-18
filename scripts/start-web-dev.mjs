@@ -175,7 +175,8 @@ async function main() {
   await initializeAdminCacheIfPossible(env);
   await resetNextDevCache();
 
-  const nextCode = await runCommand("next", ["dev", "--hostname", "0.0.0.0", "--port", port], {
+  const nextBin = path.join(REPO_ROOT, "node_modules", ".bin", "next");
+  const nextCode = await runCommand(nextBin, ["dev", "--hostname", "0.0.0.0", "--port", port], {
     cwd: WEB_CWD,
     env,
   });

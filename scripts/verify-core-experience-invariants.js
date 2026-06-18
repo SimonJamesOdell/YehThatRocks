@@ -37,6 +37,7 @@ const files = {
   cronRelatedBackfillRoute: path.join(ROOT, "apps/web/app/api/cron/related-backfill/route.ts"),
   suggestRoute: path.join(ROOT, "apps/web/app/api/videos/suggest/route.ts"),
   adminArtistDiscoverRoute: path.join(ROOT, "apps/web/app/api/admin/artists/discover/route.ts"),
+  artistDiscovery: path.join(ROOT, "apps/web/lib/artist-discovery.ts"),
   playlistImportRoute: path.join(ROOT, "apps/web/app/api/playlists/import/route.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   catalogDataVideos: path.join(ROOT, "apps/web/lib/catalog-data-videos.ts"),
@@ -92,6 +93,7 @@ function main() {
   const cronRelatedBackfillRouteSource = readFileStrict(files.cronRelatedBackfillRoute, ROOT);
   const suggestRouteSource = readFileStrict(files.suggestRoute, ROOT);
   const adminArtistDiscoverRouteSource = readFileStrict(files.adminArtistDiscoverRoute, ROOT);
+  const artistDiscoverySource = readFileStrict(files.artistDiscovery, ROOT);
   const playlistImportRouteSource = readFileStrict(files.playlistImportRoute, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const catalogDataVideosSource = readFileStrict(files.catalogDataVideos, ROOT);
@@ -241,7 +243,8 @@ function main() {
   assertContains(suggestRouteSource, "`videos:suggest:${source.kind}:user:${authenticatedUserId}`", "Suggest-new applies a user-scoped emergency rate limit", failures);
   assertContains(suggestRouteSource, "discoverRelated: false", "Suggest-new playlist/channel batch ingestion does not trigger related discovery", failures);
   assertContains(playlistImportRouteSource, "importVideoFromDirectSource(videoId, { discoverRelated: false });", "Playlist ingestion remains a user submission path without related discovery", failures);
-  assertContains(adminArtistDiscoverRouteSource, "discoverRelated: false", "Admin artist discovery remains explicit and does not cascade related discovery", failures);
+  assertContains(adminArtistDiscoverRouteSource, "discoverTracksForArtist", "Admin artist discovery delegates to the guarded shared discoverTracksForArtist helper", failures);
+  assertContains(artistDiscoverySource, "discoverRelated: false", "Artist discovery helper blocks cascading related discovery", failures);
 
   // Catalog data support invariants for fallback sourcing.
   assertContains(catalogDataVideosSource, "const rankedVideoIds = Array.from(new Set(rankedVideoIdRows.map((row) => row.videoId).filter(Boolean))).slice(0, fetchLimit);", "Ranked top-pool builder deduplicates candidate video ids before hydration", failures);

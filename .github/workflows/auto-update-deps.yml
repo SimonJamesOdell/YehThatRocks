@@ -1,0 +1,73 @@
+name: Auto-Update Dependencies
+
+on:
+  schedule:
+    # Daily at 03:17 UTC (matches the Windows Scheduled Task time)
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (report only, no commits)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  update:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run dependency maintenance
+        shell: pwsh
+        run: |
+          $dryRun = "${{ inputs.dry_run }}" -eq "true"
+          $scriptPath = Join-Path $PWD "scripts\maintain-dependencies.ps1"
+          $args = @{
+            RepoRoot   = $PWD
+            SkipPush   = $false
+            DryRun     = $dryRun
+            ReportPath = Join-Path $PWD "dependency-update-report.txt"
+          }
+          & $scriptPath @args
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-update-report
+          path: dependency-update-report.txt
+          retention-days: 30
+
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const report = fs.readFileSync("dependency-update-report.txt", "utf8");
+            const truncated = report.slice(-60000);
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: "⚠️ Automated dependency update failed",
+              body: "The daily dependency maintenance pipeline failed.\n\n```\n" + truncated + "\n```\n\nWorkflow run: " + process.env.GITHUB_SERVER_URL + "/" + process.env.GITHUB_REPOSITORY + "/actions/runs/" + process.env.GITHUB_RUN_ID,
+              labels: ["dependencies", "automated"]
+            });
