@@ -410,7 +410,10 @@ export function AuthLoginForm() {
           mediation: "optional",
         });
 
-        if (cancelled || isSubmitting || !credential || typeof credential !== "object") {
+        // NOTE: deliberately not checking `cancelled` here — React StrictMode
+        // double-invoke fires the cleanup (setting cancelled=true), which would
+        // discard every credential selection. The other guards are sufficient.
+        if (isSubmitting || !credential || typeof credential !== "object") {
           return;
         }
 
