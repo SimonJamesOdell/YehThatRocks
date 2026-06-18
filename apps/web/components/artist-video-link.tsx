@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
+import { VideoGenreLink } from "@/components/video-genre-link";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { patchCategoryArtistThumbnailInCaches } from "@/lib/category-artists-session-cache";
 import { patchCategoryCardThumbnailInSessionCache } from "@/lib/category-cards-session-cache";
@@ -304,6 +305,7 @@ export function ArtistVideoLink({
             </div>
           ) : null}
         </div>
+        <p className="artistVideoGenre"><VideoGenreLink genre={video.genre} stopPropagation /></p>
         <h3 className="categoryVideoTitle">{cardTitle}</h3>
       </Link>
       {!useCornerActions ? (

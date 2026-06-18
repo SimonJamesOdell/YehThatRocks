@@ -1625,6 +1625,16 @@
   margin-bottom: 0;
 }
 
+.artistVideoGenre {
+  margin: 0 0 4px;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  color: #ffb6aa;
+}
+
 .categoryVideoHideButton {
   position: absolute;
   top: 18px;
