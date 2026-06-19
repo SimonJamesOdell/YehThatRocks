@@ -1861,6 +1861,7 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
       title: string;
       parsedArtist: string | null;
       parsedTrack: string | null;
+      genre: string | null;
       favourited: number;
       description: string | null;
     };
@@ -1870,12 +1871,13 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
       const videoArtistNormExpr = getVideoArtistNormalizationExpr("v", videoArtistNormColumn);
       const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
 
-      const query = `
+       const query = `
         SELECT
           v.videoId,
           v.title,
           NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
           NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
+          NULLIF(TRIM(v.genre), '') AS genre,
           v.favourited,
           v.description
         FROM videos v${videoArtistIndexHint}
@@ -1908,6 +1910,7 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
               v.title,
               NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
               NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
+              NULLIF(TRIM(v.genre), '') AS genre,
               v.favourited,
               v.description
             FROM videos v${videoArtistIndexHint}

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveSearchParams } from "@/components/use-live-search-params";
 
 import { ArtistVideoLink } from "@/components/artist-video-link";
@@ -61,6 +62,44 @@ export function ArtistVideosGridClient({
   const wasOpenedFromSourceRoute = sourceRoute !== null;
   const returnToParam = searchParams.get("returnTo")?.trim() ?? "";
   const videoId = searchParams.get("v")?.trim() ?? "";
+  const router = useRouter();
+  const autoPlayRedirectedRef = useRef(false);
+
+  // When the artist page loads without a specific video, pick the right video
+  // to highlight/play. If the user arrived from a page where a video was already
+  // playing (carried in the returnTo param), and that video is in this artist's
+  // list, keep it — the player stays uninterrupted and the grid just highlights
+  // it. Otherwise, auto-play the first track in the grid.
+  useEffect(() => {
+    if (autoPlayRedirectedRef.current) return;
+    if (videoId) return;
+
+    // Check if the returnTo param carries a video that's already playing
+    let targetId: string | null = null;
+    if (returnToParam) {
+      try {
+        const returnToQuery = returnToParam.includes("?")
+          ? new URLSearchParams(returnToParam.slice(returnToParam.indexOf("?")))
+          : null;
+        const returnToVideoId = returnToQuery?.get("v")?.trim();
+        if (returnToVideoId && visibleVideos.some((v) => v.id === returnToVideoId)) {
+          targetId = returnToVideoId;
+        }
+      } catch {
+        // malformed returnTo — fall through to first-video logic
+      }
+    }
+
+    if (!targetId) {
+      const first = visibleVideos[0];
+      if (!first?.id) return;
+      targetId = first.id;
+    }
+
+    autoPlayRedirectedRef.current = true;
+    router.replace(`/artist/${encodeURIComponent(artistSlug)}?v=${encodeURIComponent(targetId)}&resume=1`);
+  }, [artistSlug, returnToParam, videoId, visibleVideos]);
+
   const closeToSourceHref = useMemo(() => {
     if (sourceRoute && returnToParam.startsWith(sourceRoute) && !returnToParam.startsWith("//")) {
       return returnToParam;

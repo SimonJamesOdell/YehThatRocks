@@ -332,9 +332,9 @@ export function CategoryNewArtistsBrowser({ snapshot, parentPath = "/categories_
                   gridTemplateColumns: `repeat(${safeColumns}, minmax(0, 1fr))`,
                 }}
               >
-                {rowArtists.map((artist) => (
+                {rowArtists.map((artist, i) => (
                   <Link
-                    key={artist.slug}
+                    key={`${artist.slug}-${row}-${i}`}
                     href={`/categories/${encodeURIComponent(slug)}/artists/${encodeURIComponent(artist.slug)}?name=${encodeURIComponent(artist.name)}`}
                     prefetch={false}
                     className="catalogCard linkedCard artistResultCard"

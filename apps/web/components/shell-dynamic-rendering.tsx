@@ -167,7 +167,9 @@ export function SharedVideoMessageCard({
   const resolvedId = preview?.id ?? videoId;
   const fallbackChannel = fallbackChannelTitle?.trim() || null;
   const resolvedTitle = preview?.title?.trim() || fallbackTitle?.trim() || null;
-  const parsedArtist = preview?.parsedArtist?.trim() || preview?.channelTitle?.trim() || fallbackChannel || null;
+  const previewParsedArtist = preview?.parsedArtist?.trim() || null;
+  const previewChannelTitle = preview?.channelTitle?.trim() || null;
+  const parsedArtist = previewParsedArtist || previewChannelTitle || fallbackChannel || null;
   const parsedArtistPagePath = parsedArtist ? getArtistPagePath(parsedArtist) : null;
   const genreLabel = preview?.genre?.trim() || null;
   const parsedTrack = preview?.parsedTrack?.trim() || null;

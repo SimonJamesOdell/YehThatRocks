@@ -2269,6 +2269,41 @@
     transform: translateX(2px);
   }
 
+  /* Connecting overlay — moderate size bump to offset dock scaling so the
+     "connecting…" message and retry button stay legible at docked size. */
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerConnectingBox {
+    width: min(686px, 100%);
+    padding: 24px 22px 18px;
+    gap: 14px;
+  }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerConnectingBox p {
+    font-size: 2.2rem;
+    line-height: 1.2;
+  }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerConnectingBox .playerBootRefreshBtn {
+    width: 100%;
+    height: auto;
+    min-height: 38px;
+    font-size: 2.4rem;
+    padding: 8px 10px;
+    border-radius: 8px;
+  }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerConnectingBox .playerBootRefreshBtn svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerConnectingBox .playerBootRefreshBtn span {
+    display: inline;
+  }
+
+  .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerConnectingCenter {
+    padding: 14px;
+  }
+
   .playerChromeDockedDesktop.playerChromeUndocking .overlayPlayBtn,
   .playerChromeDockedDesktop.playerChromeUndockSettling .overlayPlayBtn {
     width: 111px;
