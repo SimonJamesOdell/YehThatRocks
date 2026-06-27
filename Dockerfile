@@ -32,7 +32,8 @@ RUN npm config set fetch-retries 5 && \
 
 COPY . .
 RUN npx prisma generate
-RUN npm run build
+ENV NODE_OPTIONS="--max-old-space-size=3072"
+RUN TURBO_CONCURRENCY=1 npm run build
 
 # --- Runner ---
 FROM base AS runner
