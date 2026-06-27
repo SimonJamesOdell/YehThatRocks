@@ -7,6 +7,7 @@ const path = require("node:path");
 const https = require("node:https");
 const mysql = require("mysql2/promise");
 const { maybeShareMagazineArticle } = require("./lib/facebook-group-magazine-share");
+const { isRockMetalGenre } = require("./lib/genre-scope");
 
 const NEWS_FEEDS = [
   { name: "BBC Entertainment", url: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml" },
@@ -1067,6 +1068,21 @@ async function run() {
             }),
           );
           continue; // Try next candidate instead of aborting
+        }
+
+        // Validate rock/metal genre
+        const genreValid = isRockMetalGenre(candidate.video.genre);
+        if (!genreValid) {
+          console.error(
+            JSON.stringify({
+              event: "skipped-non-rock-metal-genre",
+              videoId: candidate.video.videoId,
+              artist: candidate.video.artist,
+              track: candidate.video.track,
+              genre: candidate.video.genre,
+            }),
+          );
+          continue;
         }
 
         selected.push({

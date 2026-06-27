@@ -25,6 +25,7 @@ const https = require("node:https");
 const path = require("node:path");
 const fs = require("node:fs");
 const { maybeShareMagazineArticle } = require("./lib/facebook-group-magazine-share");
+const { isRockMetalGenre } = require("./lib/genre-scope");
 
 // ── Args parsing ──────────────────────────────────────────────────────────
 
@@ -73,6 +74,16 @@ if (!ENABLE_MAGAZINE_GENERATION) {
 if (!artist || !track || !videoId || !genre) {
   console.error("Usage: node scripts/generate-magazine-article.js --artist=NAME --track=NAME --videoId=ID --genre=NAME");
   console.error("Optional: --deck='...' --dry-run --overwrite");
+  process.exit(1);
+}
+
+if (!isRockMetalGenre(genre)) {
+  console.error(
+    JSON.stringify({
+      event: "rejected-non-rock-metal-genre",
+      error: `Genre "${genre}" is not a valid rock/metal genre`,
+    }),
+  );
   process.exit(1);
 }
 
