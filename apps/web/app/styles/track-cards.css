@@ -917,6 +917,7 @@
   margin: 0;
   font-size: 0.98rem;
   line-height: 1;
+  margin-left: -2px;
 }
 
 .searchResultsHideSeen .top100CardSeen {

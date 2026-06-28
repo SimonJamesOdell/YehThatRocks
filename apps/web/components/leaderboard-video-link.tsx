@@ -565,7 +565,7 @@ export function LeaderboardVideoLink({
         </Link>
       )}
       <div className="top100CardAction">
-        {!isFavourited ? (
+        {!isFavourited && isAuthenticated ? (
           <div
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
