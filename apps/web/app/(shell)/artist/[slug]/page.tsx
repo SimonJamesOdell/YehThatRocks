@@ -89,7 +89,13 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
     // The strict slugify check can reject valid videos whose channel title includes
     // extra text (e.g. "Sakharov - Topic" → slug "sakharov-topic" ≠ "sakharov").
     if (contextStored && contextArtist) {
-      artistVideosRaw = [mapVideo(contextStored), ...artistVideosRaw];
+      const contextSlug = slugify(contextArtist);
+      // Only include the context video when its resolved artist actually
+      // matches the current page artist. A prefix match (artistSlug + "-")
+      // handles YouTube channel suffixes like " - Topic".
+      if (contextSlug === slug || contextSlug.startsWith(`${slug}-`)) {
+        artistVideosRaw = [mapVideo(contextStored), ...artistVideosRaw];
+      }
     }
   }
 
