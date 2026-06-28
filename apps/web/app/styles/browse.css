@@ -26,7 +26,6 @@
   .categoriesCatalogGrid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     grid-template-rows: repeat(2, minmax(0, 1fr));
-    row-gap: 5px;
     height: 100%;
     align-content: stretch;
     padding-block: 7px;
@@ -35,14 +34,14 @@
 
   .categoryBucketCard {
     min-height: 0;
-    height: calc(100% - var(--categoryParentCardDesktopOffset, 80px) + 25px);
+    height: calc(100% - var(--categoryParentCardDesktopOffset, 80px) + 20px);
     align-self: start;
     overflow: hidden;
   }
 
   .categoryCard.categoryBucketCard {
     min-height: 0;
-    height: calc(100% - var(--categoryParentCardDesktopOffset, 80px) + 25px);
+    height: calc(100% - var(--categoryParentCardDesktopOffset, 80px) + 20px);
   }
 }
 
