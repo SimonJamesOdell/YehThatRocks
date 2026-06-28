@@ -305,7 +305,7 @@ export function ArtistVideoLink({
             </div>
           ) : null}
         </div>
-        <p className="artistVideoGenre"><VideoGenreLink genre={video.genre} stopPropagation /></p>
+        <p className="artistVideoGenre"><VideoGenreLink genre={video.genre} stopPropagation nestedInLink /></p>
         <h3 className="categoryVideoTitle">{cardTitle}</h3>
       </Link>
       {!useCornerActions ? (
