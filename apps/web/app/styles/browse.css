@@ -34,14 +34,14 @@
 
   .categoryBucketCard {
     min-height: 0;
-    height: calc(100% - var(--categoryParentCardDesktopOffset, 80px) + 15px);
+    height: calc(100% - var(--categoryParentCardDesktopOffset, 80px) + 25px);
     align-self: start;
     overflow: hidden;
   }
 
   .categoryCard.categoryBucketCard {
     min-height: 0;
-    height: calc(100% - var(--categoryParentCardDesktopOffset, 80px) + 15px);
+    height: calc(100% - var(--categoryParentCardDesktopOffset, 80px) + 25px);
   }
 }
 
@@ -1943,7 +1943,7 @@
     border-color 220ms ease,
     box-shadow 220ms ease,
     transform 220ms ease;
-  min-height: 190px;
+  min-height: 200px;
   align-content: start;
   text-decoration: none;
   color: inherit;
@@ -1951,12 +1951,12 @@
 }
 
 .categoryCard.categoryBucketCard {
-  min-height: 265px;
+  min-height: 275px;
 }
 
 @media (min-width: 1280px) {
   .catalogCard.categoryCard.linkedCard.categoryCardCascade.categoryBucketCard {
-    min-height: 280px;
+    min-height: 290px;
   }
 }
 
