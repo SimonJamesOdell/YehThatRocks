@@ -147,6 +147,13 @@ function main() {
   assertNotContains(artistVideosGridClientSource, "#1f64ff", "Artist grid source-route close button has no inline blue colour override", failures);
   assertNotContains(artistVideosGridClientSource, "linear-gradient(180deg, #1f64ff", "Artist grid source-route close button has no inline blue gradient", failures);
 
+  // Artist video link must pass nestedInLink to VideoGenreLink to prevent nested <a> hydration errors.
+  assertContains(artistVideoLinkSource, "<VideoGenreLink genre={video.genre} stopPropagation nestedInLink />", "Artist video card passes nestedInLink to VideoGenreLink to avoid nested anchor tags", failures);
+
+  // Artist page must filter context video by artist match before prepending to video grid.
+  assertContains(artistPageSource, "contextSlug === slug || contextSlug.startsWith(`${slug}-`)", "Artist page validates context video artist matches current artist slug before prepending to grid", failures);
+  assertContains(artistPageSource, "slugify(contextArtist)", "Artist page slugifies context video artist for comparison", failures);
+
   finishInvariantCheck({
     failures,
     failureHeader: "Artists UI invariant check failed.",

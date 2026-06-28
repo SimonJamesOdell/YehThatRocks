@@ -261,6 +261,15 @@ function main() {
   assertContains(adminDashboardRouteSource, "getMetadataQualityStats", "dashboard route delegates metadata quality to the shared lib", failures);
   assertNotContains(adminDashboardRouteSource, "METADATA_QUALITY_CACHE_TTL_MS", "dashboard route no longer inlines the metadata quality cache TTL", failures);
 
+  // --- Autocomplete suggestion navigation must dispatch MANUAL_VIDEO_NAVIGATION_REQUEST ---
+  const searchAutocompleteSource = readFileStrict(path.join(ROOT, "apps/web/components/use-search-autocomplete.ts"), ROOT);
+  assertContains(searchAutocompleteSource, 'import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract"', "Autocomplete imports event dispatch helpers", failures);
+  assertContains(searchAutocompleteSource, 'import { navigateVideoHref } from "@/components/player-video-navigation"', "Autocomplete imports navigateVideoHref for consistent video navigation", failures);
+  assertContains(searchAutocompleteSource, "dispatchAppEvent(EVENT_NAMES.MANUAL_VIDEO_NAVIGATION_REQUEST", "Autocomplete dispatches MANUAL_VIDEO_NAVIGATION_REQUEST on track suggestion click", failures);
+  assertContains(searchAutocompleteSource, "navigateVideoHref({", "Autocomplete uses navigateVideoHref for track suggestion navigation", failures);
+  assertContains(searchAutocompleteSource, "useNativeHistory: true", "Autocomplete uses native history for track suggestion navigation", failures);
+  assertContains(searchAutocompleteSource, "targetVideoId === currentVideoId", "Autocomplete skips navigation when target video is already current", failures);
+
   finishInvariantCheck({
     failures,
     failureHeader: "Search invariant check failed.",
