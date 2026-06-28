@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { useRouter } from "next/navigation";
 
+import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { navigateVideoHref } from "@/components/player-video-navigation";
+
 type RouterInstance = ReturnType<typeof useRouter>;
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -164,12 +167,43 @@ export function useSearchAutocomplete({
     }
   }
 
+  function extractVideoIdFromUrl(url: string): string | null {
+    try {
+      const params = new URLSearchParams(url.split("?")[1] ?? "");
+      return params.get("v") || null;
+    } catch {
+      return null;
+    }
+  }
+
   function handleSuggestionClick(suggestion: SearchSuggestion) {
-    const url = suggestion.type === "track"
-      ? suggestion.url
-      : `${suggestion.url}?v=${encodeURIComponent(currentVideoId)}&resume=1`;
     setShowSuggestions(false);
     setSearchValue("");
+
+    if (suggestion.type === "track") {
+      const targetVideoId = extractVideoIdFromUrl(suggestion.url);
+      // Skip navigation if the target video is already the current one.
+      if (targetVideoId && targetVideoId === currentVideoId) {
+        return;
+      }
+      if (targetVideoId) {
+        // Signal the player that a manual video navigation is requested.
+        // The player experience core listens for this event to properly
+        // set up the video transition (mask, playback unlock, etc.).
+        dispatchAppEvent(EVENT_NAMES.MANUAL_VIDEO_NAVIGATION_REQUEST, { videoId: targetVideoId });
+      }
+      // Use navigateVideoHref for consistent navigation with the rest of
+      // the app — it dispatches LIVE_SEARCH_PARAMS_EVENT and popstate for
+      // proper state synchronization in useLiveSearchParams.
+      navigateVideoHref({
+        href: suggestion.url,
+        useNativeHistory: true,
+        routerPush: (href) => router.push(href, { scroll: false }),
+      });
+      return;
+    }
+
+    const url = `${suggestion.url}?v=${encodeURIComponent(currentVideoId)}&resume=1`;
     router.push(url);
   }
 
