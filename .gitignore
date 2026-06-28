@@ -68,3 +68,4 @@ fix-mysql-user.ps1
 # CodeWhale / misc
 .deepseek/
 tunnel-result.txt
+vnc-client.html
