@@ -169,6 +169,12 @@ function main() {
   assertContains(globalCssSource, "width: 24px;", "Top 100 favourite button keeps circular 24px dimensions", failures);
   assertContains(globalCssSource, "border-radius: 999px;", "Top 100 favourite button remains circular", failures);
 
+  // Favourites button must be hidden when the user is not authenticated.
+  assertContains(top100LinkSource, "!isFavourited && isAuthenticated", "Leaderboard video link gates favourites button on isAuthenticated", failures);
+
+  // Heart glyph centering: Unicode ♥ has asymmetric metrics; negative margin-left compensates.
+  assertContains(globalCssSource, "margin-left: -2px;", "Favourite button heart glyph has -2px margin-left for visual centering", failures);
+
   finishInvariantCheck({
     failures,
     failureHeader: "Top 100 UI invariant check failed.",

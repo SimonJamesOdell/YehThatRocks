@@ -26,6 +26,7 @@ const files = {
   suggestRoute: path.join(ROOT, "apps/web/app/api/videos/suggest/route.ts"),
   suggestSourceParser: path.join(ROOT, "apps/web/lib/youtube-suggest-source.ts"),
   top100VideosLoader: path.join(ROOT, "apps/web/components/top100-videos-loader.tsx"),
+  leaderboardVideoLink: path.join(ROOT, "apps/web/components/leaderboard-video-link.tsx"),
   newestRoute: path.join(ROOT, "apps/web/app/api/videos/newest/route.ts"),
   hideVideoConfirmModal: path.join(ROOT, "apps/web/components/hide-video-confirm-modal.tsx"),
   seenToggleHook: path.join(ROOT, "apps/web/components/use-seen-toggle-preference.ts"),
@@ -53,6 +54,7 @@ function main() {
   const suggestRouteSource = readFileStrict(files.suggestRoute, ROOT);
   const suggestSourceParserSource = readFileStrict(files.suggestSourceParser, ROOT);
   const top100VideosLoaderSource = readFileStrict(files.top100VideosLoader, ROOT);
+  const leaderboardVideoLinkSource = readFileStrict(files.leaderboardVideoLink, ROOT);
   const newestRouteSource = readFileStrict(files.newestRoute, ROOT);
   const hideVideoConfirmModalSource = readFileStrict(files.hideVideoConfirmModal, ROOT);
   const seenToggleHookSource = readFileStrict(files.seenToggleHook, ROOT);
@@ -230,6 +232,12 @@ function main() {
   assertContains(cssSource, ".trackCard.leaderboardCard.top100CardActive > .top100CardAction,", "Active row action buttons restore absolute positioning over the > * glow rule", failures);
   assertContains(cssSource, ".trackCard.leaderboardCard.top100CardActive > .top100CardFlagButton {", "Active row flag button has position:absolute override for glow state", failures);
   assertContains(schemaSource, "@@map(\"rejected_videos\")", "Rejected video model maps to rejected_videos table", failures);
+
+  // Favourites button must be hidden when the user is not authenticated.
+  assertContains(leaderboardVideoLinkSource, "!isFavourited && isAuthenticated", "Leaderboard video link gates favourites button on isAuthenticated", failures);
+
+  // Heart glyph centering: Unicode ♥ has asymmetric metrics; negative margin-left compensates.
+  assertContains(cssSource, "margin-left: -2px;", "Favourite button heart glyph has -2px margin-left for visual centering", failures);
 
   finishInvariantCheck({
     failures,
