@@ -27,11 +27,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
-  const parsedJson = await parseRequestJson<{ sectionId?: string; title?: string; content?: string }>(request);
+  const parsedJson = await parseRequestJson<{ sectionId?: string; title?: string; content?: string; video1Id?: string; video2Id?: string }>(request);
   if (!parsedJson.ok) {
     return parsedJson.response;
   }
-  const { sectionId, title, content } = parsedJson.data;
+  const { sectionId, title, content, video1Id, video2Id } = parsedJson.data;
 
   if (!sectionId || !title || !content) {
     return NextResponse.json(
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const thread = await createThread(sectionId, title, authState.user.id, content);
+  const thread = await createThread(sectionId, title, authState.user.id, content, video1Id, video2Id);
 
   if (!thread) {
     return NextResponse.json({ error: "Failed to create thread" }, { status: 500 });

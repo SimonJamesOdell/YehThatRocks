@@ -106,6 +106,8 @@ model User {
   messages                Message[]
   forumThreads            ForumThread[]
   forumPosts              ForumPost[]
+  forumVotes              ForumVote[]
+  forumSectionSeens       ForumSectionSeen[]
   authSessions            AuthSession[]
   authAudits              AuthAuditLog[]
   emailVerificationTokens EmailVerificationToken[]
@@ -374,13 +376,17 @@ model ForumThread {
   isPinned  Boolean  @default(false) @map("is_pinned")
   isLocked  Boolean  @default(false) @map("is_locked")
   viewCount Int      @default(0) @map("view_count")
+  video1Id  String?  @map("video1_id") @db.VarChar(11)
+  video2Id  String?  @map("video2_id") @db.VarChar(11)
   createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(3)
   user      User     @relation(fields: [userId], references: [id])
   posts     ForumPost[]
+  votes     ForumVote[]
 
   @@index([sectionId, isPinned(sort: Desc), createdAt(sort: Desc)], map: "idx_forum_threads_section")
   @@index([createdAt(sort: Desc)], map: "idx_forum_threads_created")
+  @@index([updatedAt(sort: Desc)], map: "idx_forum_threads_updated")
   @@index([userId])
   @@map("forum_threads")
 }
@@ -398,6 +404,33 @@ model ForumPost {
   @@index([threadId, createdAt], map: "idx_forum_posts_thread")
   @@index([userId])
   @@map("forum_posts")
+}
+
+model ForumVote {
+  id        Int         @id @default(autoincrement())
+  threadId  Int         @map("thread_id")
+  userId    Int         @map("user_id")
+  vote      Int         @db.TinyInt
+  createdAt DateTime    @default(now()) @map("created_at") @db.DateTime(3)
+  thread    ForumThread @relation(fields: [threadId], references: [id])
+  user      User        @relation(fields: [userId], references: [id])
+
+  @@unique([threadId, userId], map: "uq_forum_vote_thread_user")
+  @@index([threadId])
+  @@map("forum_votes")
+}
+
+model ForumSectionSeen {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  sectionId  String   @map("section_id") @db.VarChar(64)
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.DateTime(3)
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, sectionId], map: "uq_forum_section_seen_user_section")
+  @@index([userId])
+  @@index([sectionId])
+  @@map("forum_section_seen")
 }
 
 model MagazineArticle {

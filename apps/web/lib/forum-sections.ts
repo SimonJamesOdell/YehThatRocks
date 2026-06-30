@@ -26,11 +26,6 @@ export const FORUM_SECTIONS: ForumSection[] = [
     description: "Best live performances, festival sets, and concert footage worth revisiting.",
   },
   {
-    id: "riff-lab",
-    title: "Riff Lab",
-    description: "Break down riffs, tones, and production details with fellow musicians and fans.",
-  },
-  {
     id: "requests-recommendations",
     title: "Requests and Recommendations",
     description: "Ask for similar artists, specific moods, or genre paths and get tailored suggestions.",

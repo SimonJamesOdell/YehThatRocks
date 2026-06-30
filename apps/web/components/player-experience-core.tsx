@@ -102,6 +102,7 @@ type PlayerExperienceProps = {
   isAdmin?: boolean;
   isDockedDesktop?: boolean;
   suppressAuthWall?: boolean;
+  stopOnEnd?: boolean;
   seenVideoIds?: Set<string>;
   onHideVideoAction?: (track: VideoRecord) => void | Promise<void>;
   onAddVideoToPlaylistAction?: (track: VideoRecord) => void | Promise<void>;
@@ -396,6 +397,7 @@ export function PlayerExperience({
   isAdmin: initialIsAdmin = false,
   isDockedDesktop = false,
   suppressAuthWall = false,
+  stopOnEnd = false,
   seenVideoIds,
   onHideVideoAction,
   onAddVideoToPlaylistAction,
@@ -438,6 +440,7 @@ export function PlayerExperience({
   const footerPlaylistMenuRef = useRef<HTMLDivElement | null>(null);
   const autoplayMenuRef = useRef<HTMLDivElement | null>(null);
   const shareToChatResetTimeoutRef = useRef<number | null>(null);
+  const stopOnEndRef = useRef(stopOnEnd);
   const artistAutoPlayLastSlugRef = useRef<string | null>(null);
   const playerPreferencesSaveTimeoutRef = useRef<number | null>(null);
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
@@ -3351,6 +3354,10 @@ export function PlayerExperience({
   }
 
   function triggerEndOfVideoAction(options?: { forceAutoplayAdvance?: boolean }) {
+    if (stopOnEndRef.current) {
+      return;
+    }
+
     const showEndedChoiceOverlay = () => {
       showEndedChoiceOverlayState({
         setEndedChoiceLoading,

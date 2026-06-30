@@ -47,14 +47,15 @@ export function ForumVideoEmbed({ videoId, metadata }: ForumVideoEmbedProps) {
 
   return (
     <div className="forumEmbeddedPlayer" onClick={handlePlayerClick}>
-      <div className="playerChrome playerChromeDockedDesktop">
+      <div className="playerChrome">
         <div className="playerDockLayer">
           <PlayerExperience
             currentVideo={video}
             queue={[video]}
             isLoggedIn={false}
-            isDockedDesktop={true}
+            isDockedDesktop={false}
             suppressAuthWall={true}
+            stopOnEnd={true}
           />
         </div>
       </div>

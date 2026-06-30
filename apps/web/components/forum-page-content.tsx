@@ -2,16 +2,20 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import type { ForumThreadSummary } from "@/lib/forum-data";
 import { FORUM_SECTIONS } from "@/lib/forum-sections";
 import { OverlayHeader } from "@/components/overlay-header";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
+import { ForumFormToolbar } from "@/components/forum-form-toolbar";
 
 type ForumPageContentProps = {
   latestThreads: ForumThreadSummary[];
   isAuthenticated: boolean;
+  /** The currently selected section ID from the URL, or null for "Latest" */
+  selectedSectionId: string | null;
 };
 
 /** Format a date for forum display: "Jun 12, 2:30 PM" style */
@@ -41,12 +45,38 @@ function getUserProfileHref(screenName: string, userId: number): string {
   return `/u/${encodeURIComponent(screenName)}`;
 }
 
+function formatAbsoluteDate(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const month = months[d.getMonth()];
+  const day = d.getDate();
+  const hours = d.getHours();
+  const minutes = d.getMinutes().toString().padStart(2, "0");
+  const ampm = hours >= 12 ? "PM" : "AM";
+  const displayHours = hours % 12 || 12;
+  return `${month} ${day}, ${displayHours}:${minutes} ${ampm}`;
+}
+
 function ThreadCard({ thread }: { thread: ForumThreadSummary }) {
+  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
+  const replyCount = Math.max(0, thread.postCount - 1);
+  const href = `/forum/thread/${thread.id}`;
+  const displayDate = mounted ? formatForumDate(thread.createdAt) : formatAbsoluteDate(thread.createdAt);
+  const displayLatest = thread.latestPostAt
+    ? (mounted ? formatForumDate(thread.latestPostAt) : formatAbsoluteDate(thread.latestPostAt))
+    : null;
+
   return (
-    <Link
-      href={`/forum/thread/${thread.id}`}
+    <div
       className="forumThreadCard"
+      role="link"
+      tabIndex={0}
       aria-label={`Thread: ${thread.title}`}
+      onClick={() => router.push(href)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(href); } }}
     >
       <div className="forumThreadCardMain">
         <div className="forumThreadCardLeft">
@@ -72,26 +102,37 @@ function ThreadCard({ thread }: { thread: ForumThreadSummary }) {
             {thread.isLocked && <span className="forumLockedBadge" title="Locked"> 🔒</span>}
           </h3>
           <div className="forumThreadCardMeta">
-            <Link
-              href={getUserProfileHref(thread.userScreenName, thread.userId)}
+            <span
               className="forumThreadAuthor"
-              onClick={(e) => e.stopPropagation()}
+              role="link"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(getUserProfileHref(thread.userScreenName, thread.userId));
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  router.push(getUserProfileHref(thread.userScreenName, thread.userId));
+                }
+              }}
             >
               {thread.userScreenName}
-            </Link>
+            </span>
             <span className="forumMetaSep">·</span>
-            <span className="forumThreadTimestamp">{formatForumDate(thread.createdAt)}</span>
+            <span className="forumThreadTimestamp">{displayDate}</span>
             <span className="forumMetaSep">·</span>
             <span className="forumThreadSection">{thread.sectionTitle}</span>
           </div>
         </div>
       </div>
       <div className="forumThreadCardStats">
-        <span className="forumStat" title={`${thread.postCount} replies`}>
+        <span className="forumStat" title={`${replyCount} replies`}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
-          {thread.postCount}
+          {replyCount}
         </span>
         <span className="forumStat" title={`${thread.viewCount} views`}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -105,39 +146,15 @@ function ThreadCard({ thread }: { thread: ForumThreadSummary }) {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <polyline points="9 18 15 12 9 6" />
             </svg>
-            {formatForumDate(thread.latestPostAt)}
+            {displayLatest}
           </span>
         )}
       </div>
-    </Link>
+    </div>
   );
 }
 
-function SectionCard({
-  section,
-  isSelected,
-  onClick,
-}: {
-  section: { id: string; title: string; description: string };
-  isSelected: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={`forumSectionCardButton ${isSelected ? "forumSectionCardSelected" : ""}`}
-      onClick={onClick}
-      aria-pressed={isSelected}
-      aria-label={`Browse ${section.title}`}
-    >
-      <h2>{section.title}</h2>
-      <p>{section.description}</p>
-    </button>
-  );
-}
-
-export function ForumPageContent({ latestThreads, isAuthenticated }: ForumPageContentProps) {
-  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+export function ForumPageContent({ latestThreads, isAuthenticated, selectedSectionId }: ForumPageContentProps) {
   const [showNewThreadForm, setShowNewThreadForm] = useState(false);
 
   const selectedSection = selectedSectionId
@@ -151,42 +168,24 @@ export function ForumPageContent({ latestThreads, isAuthenticated }: ForumPageCo
   return (
     <>
       <OverlayScrollReset />
-      <OverlayHeader title="Forum" />
-
-      <main className="forumPage" role="main" aria-label="Forum">
-        {/* Section navigation */}
-        <section className="forumSectionGrid panel" aria-label="Forum sections">
-          <button
-            type="button"
-            className={`forumSectionCardButton ${!selectedSectionId ? "forumSectionCardSelected" : ""}`}
-            onClick={() => { setSelectedSectionId(null); setShowNewThreadForm(false); }}
-            aria-pressed={!selectedSectionId}
-            aria-label="All sections"
-          >
-            <h2>All Sections</h2>
-            <p>Latest discussions across every forum category</p>
-          </button>
-          {FORUM_SECTIONS.map((section) => (
-            <SectionCard
-              key={section.id}
-              section={section}
-              isSelected={selectedSectionId === section.id}
-              onClick={() => {
-                setSelectedSectionId(section.id);
-                setShowNewThreadForm(false);
-              }}
-            />
-          ))}
-        </section>
-
-        {/* Section header + new thread button */}
-        {selectedSection && (
-          <div className="forumSectionHeader">
-            <div>
-              <h2 className="forumSectionHeaderTitle">{selectedSection.title}</h2>
-              <p className="forumSectionHeaderDesc">{selectedSection.description}</p>
-            </div>
-            {isAuthenticated && (
+      <OverlayHeader
+        title={selectedSection ? selectedSection.title : "Latest Threads"}
+        breadcrumb={
+          selectedSection ? (
+            <>
+              <Link href="/forum" className="categoryHeaderBreadcrumbLink">Forum</Link>
+              <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">{" /\u00A0"}</span>
+            </>
+          ) : (
+            <>
+              <span className="categoryHeaderBreadcrumbCurrent">Forum</span>
+              <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true">{" /\u00A0"}</span>
+            </>
+          )
+        }
+        actions={
+          selectedSection ? (
+            isAuthenticated ? (
               <button
                 type="button"
                 className="forumNewThreadButton"
@@ -195,27 +194,48 @@ export function ForumPageContent({ latestThreads, isAuthenticated }: ForumPageCo
               >
                 {showNewThreadForm ? "Cancel" : "+ New Thread"}
               </button>
-            )}
-            {!isAuthenticated && (
+            ) : (
               <Link href="/login" className="forumNewThreadButton">
                 Sign in to post
               </Link>
-            )}
-          </div>
-        )}
+            )
+          ) : undefined
+        }
+      />
+
+      <main className="forumPage" role="main" aria-label="Forum">
 
         {/* New thread form (hidden by default, shown on button click) */}
         {selectedSection && showNewThreadForm && isAuthenticated && (
           <section className="forumContributePanel panel" aria-label="Start a new thread">
-            <div className="forumContributeHeader">
-              <h2>New thread in {selectedSection.title}</h2>
-            </div>
             <form className="forumContributeForm" onSubmit={(e) => {
               e.preventDefault();
               const form = e.currentTarget;
               const formData = new FormData(form);
               const title = formData.get("title") as string;
               const content = formData.get("content") as string;
+              const isTrackBattle = selectedSectionId === "track-battles";
+              const video1Raw = isTrackBattle ? (formData.get("video1") as string) : null;
+              const video2Raw = isTrackBattle ? (formData.get("video2") as string) : null;
+
+              // Parse video IDs (plain ID, youtube URL, yehthatrocks URL)
+              const parseVideoId = (input: string | null): string | null => {
+                if (!input) return null;
+                const trimmed = input.trim();
+                if (!trimmed) return null;
+                const plainMatch = trimmed.match(/^[\w-]{11}$/);
+                if (plainMatch) return plainMatch[0];
+                const urlMatch = trimmed.match(/[?&]v=([\w-]{11})/) || trimmed.match(/youtu\.be\/([\w-]{11})/);
+                if (urlMatch) return urlMatch[1];
+                return null;
+              };
+              const video1Id = parseVideoId(video1Raw);
+              const video2Id = parseVideoId(video2Raw);
+
+              if (isTrackBattle && (!video1Id || !video2Id)) {
+                alert("Both video IDs are required for a track battle. Enter a YouTube video ID or yehthatrocks URL for each.");
+                return;
+              }
 
               fetch("/api/forum/threads", {
                 method: "POST",
@@ -224,10 +244,18 @@ export function ForumPageContent({ latestThreads, isAuthenticated }: ForumPageCo
                   sectionId: selectedSectionId,
                   title: title.trim(),
                   content: content.trim(),
+                  ...(isTrackBattle ? { video1Id, video2Id } : {}),
                 }),
               })
-                .then((res) => {
-                  if (!res.ok) throw new Error("Failed to create thread");
+                .then(async (res) => {
+                  if (!res.ok) {
+                    let msg = `Server returned ${res.status}`;
+                    try {
+                      const body = await res.json();
+                      if (body.error) msg = body.error;
+                    } catch { /* ignore parse errors */ }
+                    throw new Error(msg);
+                  }
                   return res.json();
                 })
                 .then((data) => {
@@ -248,17 +276,49 @@ export function ForumPageContent({ latestThreads, isAuthenticated }: ForumPageCo
                   maxLength={255}
                 />
               </label>
+
+              {/* Track battle video inputs */}
+              {selectedSectionId === "track-battles" && (
+                <>
+                  <label>
+                    <span>Track 1 — Video ID or URL</span>
+                    <input
+                      type="text"
+                      name="video1"
+                      placeholder="YouTube video ID, youtu.be link, or yehthatrocks URL"
+                      required
+                    />
+                  </label>
+                  <label>
+                    <span>Track 2 — Video ID or URL</span>
+                    <input
+                      type="text"
+                      name="video2"
+                      placeholder="YouTube video ID, youtu.be link, or yehthatrocks URL"
+                      required
+                    />
+                  </label>
+                </>
+              )}
+
               <label>
                 <span>Opening post</span>
                 <textarea
+                  id="forumNewThreadContent"
                   rows={5}
                   name="content"
-                  placeholder="Start the discussion..."
+                  placeholder={selectedSectionId === "track-battles" ? "Make your case for which track is better..." : "Start the discussion..."}
                   required
                   minLength={10}
                 />
               </label>
-              <button type="submit">Post thread</button>
+              <div className="forumToolbar">
+                <ForumFormToolbar
+                  textareaId="forumNewThreadContent"
+                  onInsert={() => {}}
+                />
+                <button type="submit">Post thread</button>
+              </div>
             </form>
           </section>
         )}

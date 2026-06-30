@@ -20,6 +20,8 @@ export type ForumThreadSummary = {
   userAvatarUrl: string | null;
   postCount: number;
   viewCount: number;
+  video1Id: string | null;
+  video2Id: string | null;
   latestPostAt: Date | null;
   isPinned: boolean;
   isLocked: boolean;
@@ -36,9 +38,16 @@ export type ForumPostDetail = {
   createdAt: Date;
 };
 
+export type ThreadVoteCounts = {
+  votes1: number;
+  votes2: number;
+};
+
 export type ForumThreadDetail = {
   thread: ForumThreadSummary;
   posts: ForumPostDetail[];
+  voteCounts?: ThreadVoteCounts | null;
+  userVote?: number | null;
 };
 
 // ── Raw DB row types ───────────────────────────────────────────────────────
@@ -54,6 +63,8 @@ type RawThreadRow = {
   is_pinned: number | boolean;
   is_locked: number | boolean;
   view_count: number;
+  video1_id: string | null;
+  video2_id: string | null;
   created_at: Date;
   updated_at: Date;
   post_count: number | bigint;
@@ -99,6 +110,8 @@ function rowToThreadSummary(row: RawThreadRow): ForumThreadSummary {
     userAvatarUrl: row.avatar_url,
     postCount: Number(row.post_count),
     viewCount: Number(row.view_count),
+    video1Id: row.video1_id ?? null,
+    video2Id: row.video2_id ?? null,
     latestPostAt: row.latest_post_at,
     isPinned: Boolean(row.is_pinned),
     isLocked: Boolean(row.is_locked),
@@ -132,6 +145,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
     userAvatarUrl: string | null;
     postCount: number;
     viewCount: number;
+    video1Id: string | null;
+    video2Id: string | null;
     isPinned: boolean;
     isLocked: boolean;
     createdAt: Date;
@@ -144,6 +159,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 5,
       viewCount: 142,
+      video1Id: null,
+      video2Id: null,
       isPinned: false,
       isLocked: false,
       createdAt: new Date("2026-06-12T06:30:00Z"),
@@ -156,6 +173,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 3,
       viewCount: 89,
+      video1Id: null,
+      video2Id: null,
       isPinned: false,
       isLocked: false,
       createdAt: new Date("2026-06-11T22:15:00Z"),
@@ -168,6 +187,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 7,
       viewCount: 203,
+      video1Id: null,
+      video2Id: null,
       isPinned: true,
       isLocked: false,
       createdAt: new Date("2026-06-10T14:00:00Z"),
@@ -180,6 +201,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 12,
       viewCount: 315,
+      video1Id: "E0ozmU9cJDg",
+      video2Id: "9d4ui9q7Agw",
       isPinned: false,
       isLocked: false,
       createdAt: new Date("2026-06-12T04:45:00Z"),
@@ -192,6 +215,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 8,
       viewCount: 178,
+      video1Id: "dH7pN2KdBw4",
+      video2Id: "8qHxN3jFw5b",
       isPinned: false,
       isLocked: false,
       createdAt: new Date("2026-06-11T16:20:00Z"),
@@ -204,6 +229,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 4,
       viewCount: 67,
+      video1Id: null,
+      video2Id: null,
       isPinned: false,
       isLocked: false,
       createdAt: new Date("2026-06-11T09:00:00Z"),
@@ -216,6 +243,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 6,
       viewCount: 94,
+      video1Id: null,
+      video2Id: null,
       isPinned: false,
       isLocked: false,
       createdAt: new Date("2026-06-10T20:30:00Z"),
@@ -228,6 +257,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 9,
       viewCount: 231,
+      video1Id: null,
+      video2Id: null,
       isPinned: false,
       isLocked: false,
       createdAt: new Date("2026-06-12T08:10:00Z"),
@@ -240,6 +271,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 3,
       viewCount: 156,
+      video1Id: null,
+      video2Id: null,
       isPinned: false,
       isLocked: false,
       createdAt: new Date("2026-06-09T12:45:00Z"),
@@ -252,6 +285,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 11,
       viewCount: 287,
+      video1Id: null,
+      video2Id: null,
       isPinned: false,
       isLocked: false,
       createdAt: new Date("2026-06-11T18:00:00Z"),
@@ -264,6 +299,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 15,
       viewCount: 342,
+      video1Id: null,
+      video2Id: null,
       isPinned: false,
       isLocked: false,
       createdAt: new Date("2026-06-10T10:15:00Z"),
@@ -276,6 +313,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 6,
       viewCount: 112,
+      video1Id: null,
+      video2Id: null,
       isPinned: false,
       isLocked: false,
       createdAt: new Date("2026-06-12T02:30:00Z"),
@@ -288,6 +327,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 8,
       viewCount: 198,
+      video1Id: null,
+      video2Id: null,
       isPinned: false,
       isLocked: false,
       createdAt: new Date("2026-06-11T14:50:00Z"),
@@ -300,6 +341,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 3,
       viewCount: 55,
+      video1Id: null,
+      video2Id: null,
       isPinned: false,
       isLocked: false,
       createdAt: new Date("2026-06-12T07:00:00Z"),
@@ -312,6 +355,8 @@ function buildSeedThreads(): ForumThreadSummary[] {
       userAvatarUrl: null,
       postCount: 2,
       viewCount: 41,
+      video1Id: null,
+      video2Id: null,
       isPinned: false,
       isLocked: false,
       createdAt: new Date("2026-06-11T20:00:00Z"),
@@ -362,6 +407,8 @@ const LATEST_THREADS_QUERY = `
     t.is_pinned,
     t.is_locked,
     t.view_count,
+    t.video1_id,
+    t.video2_id,
     t.created_at,
     t.updated_at,
     COALESCE(pc.cnt, 0) AS post_count,
@@ -394,6 +441,8 @@ const SECTION_THREADS_QUERY = `
     t.is_pinned,
     t.is_locked,
     t.view_count,
+    t.video1_id,
+    t.video2_id,
     t.created_at,
     t.updated_at,
     COALESCE(pc.cnt, 0) AS post_count,
@@ -525,6 +574,7 @@ export async function getThreadDetail(threadId: number): Promise<ForumThreadDeta
         t.id, t.section_id, t.title, t.user_id,
         u.screen_name, u.email, u.avatar_url,
         t.is_pinned, t.is_locked, t.view_count,
+        t.video1_id, t.video2_id,
         t.created_at, t.updated_at,
         COALESCE(pc.cnt, 0) AS post_count,
         lp.latest_post_at
@@ -554,9 +604,13 @@ export async function getThreadDetail(threadId: number): Promise<ForumThreadDeta
       threadId,
     );
 
+    // Fetch vote counts
+    const voteCounts = await getVoteCounts(threadId).catch(() => null);
+
     return {
       thread,
       posts: postRows.map(rowToPostDetail),
+      voteCounts,
     };
   } catch {
     return null;
@@ -631,19 +685,26 @@ export async function createThread(
   title: string,
   userId: number,
   content: string,
+  video1Id?: string | null,
+  video2Id?: string | null,
 ): Promise<ForumThreadSummary | null> {
   if (!validateSectionId(sectionId)) return null;
   if (!title.trim() || !content.trim() || !userId) return null;
 
+  const v1 = video1Id?.trim() || null;
+  const v2 = video2Id?.trim() || null;
+
   try {
     return await prisma.$transaction(async (tx) => {
-      // Insert thread
+      // Insert thread (with optional video IDs for track battles)
+      const hasVideos = v1 && v2;
       await tx.$executeRawUnsafe(
-        `INSERT INTO forum_threads (section_id, title, user_id, created_at, updated_at)
-         VALUES (?, ?, ?, NOW(3), NOW(3))`,
-        sectionId,
-        title.trim(),
-        userId,
+        hasVideos
+          ? `INSERT INTO forum_threads (section_id, title, user_id, video1_id, video2_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, NOW(3), NOW(3))`
+          : `INSERT INTO forum_threads (section_id, title, user_id, created_at, updated_at)
+             VALUES (?, ?, ?, NOW(3), NOW(3))`,
+        ...(hasVideos ? [sectionId, title.trim(), userId, v1, v2] : [sectionId, title.trim(), userId]),
       );
 
       // Get the inserted thread ID (reliable within transaction — same connection)
@@ -670,6 +731,7 @@ export async function createThread(
           t.id, t.section_id, t.title, t.user_id,
           u.screen_name, u.email, u.avatar_url,
           t.is_pinned, t.is_locked, t.view_count,
+          t.video1_id, t.video2_id,
           t.created_at, t.updated_at,
           1 AS post_count,
           t.created_at AS latest_post_at
@@ -701,33 +763,38 @@ export async function createPost(
   if (!content.trim() || !userId || !threadId) return null;
 
   try {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO forum_posts (thread_id, user_id, content, created_at, updated_at)
-       VALUES (?, ?, ?, NOW(3), NOW(3))`,
-      threadId,
-      userId,
-      content.trim(),
-    );
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO forum_posts (thread_id, user_id, content, created_at, updated_at)
+         VALUES (?, ?, ?, NOW(3), NOW(3))`,
+        threadId,
+        userId,
+        content.trim(),
+      );
 
-    const idRows = await prisma.$queryRawUnsafe<Array<{ id: number }>>(
-      `SELECT LAST_INSERT_ID() AS id`,
-    );
-    const postId = Number(idRows[0]?.id);
-    if (!postId || postId <= 0) return null;
+      const idRows = await tx.$queryRawUnsafe<Array<{ id: number }>>(
+        `SELECT LAST_INSERT_ID() AS id`,
+      );
+      const postId = Number(idRows[0]?.id);
+      if (!postId || postId <= 0) return null;
 
-    const rows = await prisma.$queryRawUnsafe<RawPostRow[]>(
-      `SELECT
-        p.id, p.thread_id, p.user_id,
-        u.screen_name, u.email, u.avatar_url,
-        p.content, p.created_at
-      FROM forum_posts p
-      LEFT JOIN users u ON u.id = p.user_id
-      WHERE p.id = ?`,
-      postId,
-    );
+      const rows = await tx.$queryRawUnsafe<RawPostRow[]>(
+        `SELECT
+          p.id, p.thread_id, p.user_id,
+          u.screen_name, u.email, u.avatar_url,
+          p.content, p.created_at
+        FROM forum_posts p
+        LEFT JOIN users u ON u.id = p.user_id
+        WHERE p.id = ?`,
+        postId,
+      );
 
-    return rows.length > 0 ? rowToPostDetail(rows[0]) : null;
-  } catch {
+      return rows.length > 0 ? rowToPostDetail(rows[0]) : null;
+    });
+
+    return result;
+  } catch (err) {
+    console.error("[forum-data] createPost failed:", err);
     return null;
   }
 }
@@ -743,6 +810,82 @@ export async function incrementThreadViewCount(threadId: number): Promise<void> 
     );
   } catch {
     // Best-effort; view counts are not critical.
+  }
+}
+
+// ── Voting (track battles) ────────────────────────────────────────────────────
+
+type RawVoteCountRow = {
+  vote: number;
+  cnt: number | bigint;
+};
+
+/**
+ * Get vote counts for a thread. Returns { votes1, votes2 }.
+ */
+export async function getVoteCounts(threadId: number): Promise<ThreadVoteCounts | null> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<RawVoteCountRow[]>(
+      `SELECT vote, COUNT(*) AS cnt
+       FROM forum_votes
+       WHERE thread_id = ?
+       GROUP BY vote`,
+      threadId,
+    );
+    let votes1 = 0;
+    let votes2 = 0;
+    for (const row of rows) {
+      if (row.vote === 1) votes1 = Number(row.cnt);
+      else if (row.vote === 2) votes2 = Number(row.cnt);
+    }
+    return { votes1, votes2 };
+  } catch {
+    return null;
+  }
+}
+
+type RawUserVoteRow = {
+  vote: number;
+};
+
+/**
+ * Get the current user's vote for a thread (1, 2, or null if not voted).
+ */
+export async function getUserVote(threadId: number, userId: number): Promise<number | null> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<RawUserVoteRow[]>(
+      `SELECT vote FROM forum_votes WHERE thread_id = ? AND user_id = ?`,
+      threadId,
+      userId,
+    );
+    return rows.length > 0 ? rows[0].vote : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Cast or change a vote on a track battle thread.
+ * vote must be 1 or 2. Uses INSERT ... ON DUPLICATE KEY UPDATE for idempotent upsert.
+ */
+export async function castVote(
+  threadId: number,
+  userId: number,
+  vote: number,
+): Promise<ThreadVoteCounts | null> {
+  if (vote !== 1 && vote !== 2) return null;
+  try {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO forum_votes (thread_id, user_id, vote, created_at)
+       VALUES (?, ?, ?, NOW(3))
+       ON DUPLICATE KEY UPDATE vote = VALUES(vote)`,
+      threadId,
+      userId,
+      vote,
+    );
+    return getVoteCounts(threadId);
+  } catch {
+    return null;
   }
 }
 

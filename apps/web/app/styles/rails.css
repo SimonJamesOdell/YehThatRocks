@@ -132,6 +132,19 @@
   background-color: rgba(220, 22, 5, 0.25) !important;
 }
 
+.leftRail.panel.translucent .forumSectionCard.forumSectionActive {
+  background: #8b0000 !important;
+  border-color: #cc3333 !important;
+}
+
+.leftRail.panel.translucent .forumSectionCard.forumSectionActive .messageMeta strong {
+  color: #ff9999 !important;
+}
+
+.leftRail.panel.translucent .forumSectionCard.forumSectionActive p {
+  color: #ffaaaa !important;
+}
+
 .railTabs {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -359,7 +372,7 @@
 
 .forumSectionCard {
   grid-template-columns: minmax(0, 1fr);
-  padding: 12px 10px;
+  padding: 10px 10px;
   transition: background 0.12s;
 }
 
@@ -378,6 +391,55 @@
 
 .forumSectionCard p {
   line-height: 1.4;
+}
+
+.forumSectionCard.forumSectionActive {
+  background: #8b0000 !important;
+  border-color: #cc3333 !important;
+}
+
+.forumSectionCard.forumSectionActive .messageMeta strong {
+  color: #ff9999 !important;
+}
+
+.forumSectionCard.forumSectionActive p {
+  color: #ffaaaa !important;
+}
+
+.forumSectionCard.forumSectionActive:hover {
+  background: #a01010 !important;
+}
+
+.forumNewBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(220, 22, 5, 0.35);
+  color: rgba(255, 200, 180, 0.95);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-right: 6px;
+}
+
+.forumRailLoading {
+  display: grid;
+  gap: 4px;
+  padding: 4px 2px;
+}
+
+.forumRailSkeleton {
+  height: 68px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  animation: forumSkeletonPulse 2s ease-in-out infinite;
+}
+
+@keyframes forumSkeletonPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
 }
 
 .magazineRailCard {
@@ -737,4 +799,3 @@
   width: 100%;
   border-radius: 8px;
 }
-

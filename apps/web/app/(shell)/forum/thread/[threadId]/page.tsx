@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { ForumThreadContent } from "@/components/forum-thread-content";
-import { getThreadDetail, resolveVideoMetadataMap } from "@/lib/forum-data";
+import { getThreadDetail, incrementThreadViewCount, resolveVideoMetadataMap } from "@/lib/forum-data";
 import { getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
 
 type ThreadPageProps = {
@@ -35,6 +35,9 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
   if (!threadDetail) {
     notFound();
   }
+
+  // Fire-and-forget view count increment
+  incrementThreadViewCount(id).catch(() => {});
 
   const videoMetadataMap = await resolveVideoMetadataMap(threadDetail.posts);
   console.log("[thread-dbg] videoMetadataMap:", videoMetadataMap ? Object.entries(videoMetadataMap).map(([k, v]) => ({ id: k, title: v.title, artist: v.parsedArtist, genre: v.genre })) : null);

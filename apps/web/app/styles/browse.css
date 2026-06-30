@@ -977,17 +977,16 @@
 
 .forumEmbeddedPlayer {
     transform-origin: 0 0;
-    aspect-ratio: 16 / 10;
+    aspect-ratio: 16 / 9;
     background: #000;
     border-radius: 10px;
     width: 100%;
     margin: 8px 0;
     overflow: hidden;
-    transform: scale(.7);
+    transform: scale(.65);
     border: 8px solid black;
 }
 
-/* Give the chrome height so it fills the wrapper */
 .forumEmbeddedPlayer .playerChrome {
   height: 100%;
 }
@@ -996,58 +995,12 @@
   height: 100%;
 }
 
-
-
-/* Hide the dock close button — doesn't apply in the forum embed context */
 .forumEmbeddedPlayer .overlayDockCloseBtn {
   display: none;
 }
 
-/* Footer controls — reset docked left-rail positioning, show below player */
-.forumEmbeddedPlayer .playerFooterReserve .primaryActions {
-  position: static !important;
-  width: auto !important;
-  transform: none !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
-
-/* Overlay — ensure it's visible by default in the forum */
-.forumEmbeddedPlayer .playerOverlay .overlayTop {
-  opacity: 1 !important;
-  visibility: visible !important;
-  pointer-events: auto !important;
-}
-
-/* Neutralise the shell's docked transform — no left-rail shift in the forum */
-.forumEmbeddedPlayer .playerChromeDockedDesktop .playerFrame,
-.forumEmbeddedPlayer .playerChromeDockedDesktop .playerLoadingFallback {
-  transform: none;
-}
-
-/* Restore video info bar at top (40px visual = 80px CSS at scale(0.5)) */
-.forumEmbeddedPlayer .playerChromeDockedDesktop .overlayTitleRow {
-  opacity: 1 !important;
-  transform: none !important;
-  pointer-events: auto !important;
-}
-
-.forumEmbeddedPlayer .playerChromeDockedDesktop .overlayTop {
-  padding-top: 6px !important;
-  padding-bottom: 38px !important;
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 1) 0px, rgba(0, 0, 0, 1) 80px, transparent 110px) !important;
-}
-
-/* Shift bottom controls down by 80px CSS (40px visual) */
-.forumEmbeddedPlayer .playerChromeDockedDesktop .overlayBottom {
-  padding-top: 126px !important; /* was 46px, +80px */
-}
-
-/* Play/pause 20% larger (111×1.2≈133), shifted down 20px (10px visual) */
-.forumEmbeddedPlayer .playerChromeDockedDesktop .overlayPlayBtn {
-  width: 133px !important;
-  height: 133px !important;
-  margin-top: -34px !important; /* was -54px, +20px */
+.forumEmbeddedPlayer .playerFooterReserve {
+  display: none;
 }
 
 /* Prevent forumPostContent p margins from leaking into the overlay title stack */
@@ -1245,9 +1198,16 @@
   margin-bottom: 0;
 }
 
+/* Collapse the extra layout height from the embedded player's
+   transform: scale(0.65), which leaves ~35% dead space in flow */
+.forumPostContent:has(.forumEmbeddedPlayer) {
+  margin-bottom: calc(-19.6875%);
+}
+
 .forumReplyPanel {
   display: grid;
   gap: 10px;
+  padding: 16px;
 }
 
 .forumReplyTitle {
@@ -1322,6 +1282,123 @@
   margin: 0;
   color: rgba(255, 200, 180, 0.6);
   font-size: 0.88rem;
+}
+
+/* ── Track Battle header ──────────────────────────────────────────── */
+
+.forumBattleHeader {
+  margin-bottom: 14px;
+}
+
+.forumBattleVideos {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.forumBattleVideo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 12px;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.forumBattleVideoVoted {
+  border-color: rgba(220, 90, 60, 0.6);
+  background: rgba(220, 90, 60, 0.06);
+}
+
+.forumBattleVs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 48px;
+  font-family: var(--font-display), cursive;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: rgba(220, 90, 60, 0.8);
+}
+
+.forumBattleVoteBar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.forumBattleVoteInfo {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.forumBattleVoteCount {
+  font-size: 0.82rem;
+  color: rgba(255, 200, 190, 0.6);
+}
+
+.forumBattleVotePct {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255, 200, 190, 0.85);
+}
+
+.forumBattleVoteTrack {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.forumBattleVoteFill {
+  height: 100%;
+  background: rgba(220, 90, 60, 0.7);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+  min-width: 0;
+}
+
+.forumBattleVoteButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border: 1px solid rgba(220, 90, 60, 0.5);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(138, 18, 20, 0.75), rgba(55, 6, 8, 0.8));
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  text-decoration: none;
+  text-align: center;
+}
+
+.forumBattleVoteButton:hover {
+  background: linear-gradient(180deg, rgba(180, 24, 26, 0.85), rgba(75, 10, 13, 0.9));
+  border-color: rgba(255, 120, 90, 0.7);
+}
+
+.forumBattleVoteButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.forumBattleVoteButtonActive {
+  background: linear-gradient(180deg, rgba(60, 160, 60, 0.5), rgba(20, 80, 20, 0.5));
+  border-color: rgba(100, 220, 100, 0.5);
+}
+
+.forumBattleVoteButtonActive:hover {
+  background: linear-gradient(180deg, rgba(70, 180, 70, 0.6), rgba(30, 100, 30, 0.6));
+  border-color: rgba(130, 240, 130, 0.6);
 }
 
 .favouritesPlaylistCircleButton {
