@@ -37,6 +37,7 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
   }
 
   const videoMetadataMap = await resolveVideoMetadataMap(threadDetail.posts);
+  console.log("[thread-dbg] videoMetadataMap:", videoMetadataMap ? Object.entries(videoMetadataMap).map(([k, v]) => ({ id: k, title: v.title, artist: v.parsedArtist, genre: v.genre })) : null);
 
   return (
     <ForumThreadContent

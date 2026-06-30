@@ -5,6 +5,8 @@
 
 import { prisma } from "@/lib/db";
 import { FORUM_SECTIONS } from "@/lib/forum-sections";
+import { getStoredVideoById } from "@/lib/catalog-data-db";
+import { mapVideo } from "@/lib/catalog-data-utils";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -563,8 +565,10 @@ export async function getThreadDetail(threadId: number): Promise<ForumThreadDeta
 
 /**
  * Resolve video metadata for all [video:XXXXX] tags found in forum post content.
- * Queries the database directly — no seed fallback.
- * Returns a Map of videoId → metadata, or null if no videos found or DB unreachable.
+ * Uses the same pipeline as the main player (getStoredVideoById → mapVideo) so
+ * the embedded player receives channelTitle resolved as a display artist.
+ * Returns a plain Record (serializable across server/client boundary), or null
+ * if no videos found or DB unreachable.
  */
 export type ResolvedVideoMeta = {
   title: string;
@@ -577,7 +581,7 @@ export type ResolvedVideoMeta = {
 
 export async function resolveVideoMetadataMap(
   posts: Array<{ content: string }>,
-): Promise<Map<string, ResolvedVideoMeta> | null> {
+): Promise<Record<string, ResolvedVideoMeta> | null> {
   const ids = new Set<string>();
   for (const post of posts) {
     for (const m of post.content.matchAll(/\[video:([\w-]{11})\]/g)) {
@@ -586,38 +590,33 @@ export async function resolveVideoMetadataMap(
   }
   if (ids.size === 0) return null;
 
-  const idList = [...ids];
-  const placeholders = idList.map(() => "?").join(",");
-
+  // Fetch each video through the same pipeline the main player uses
+  // (getStoredVideoById → mapVideo), so channelTitle is a resolved
+  // display artist, not a raw YouTube channel title.
   try {
-    const rows = await prisma.$queryRawUnsafe<
-      Array<{
-        videoId: string;
-        title: string;
-        channelTitle: string;
-        parsedArtist: string | null;
-        parsedTrack: string | null;
-        artistVideoCount: number | null;
-        genre: string;
-      }>
-    >(
-      `SELECT videoId, title, channelTitle, parsedArtist, parsedTrack, artistVideoCount, genre
-       FROM videos WHERE videoId IN (${placeholders})`,
-      ...idList,
+    const results = await Promise.all(
+      [...ids].map(async (videoId) => {
+        const stored = await getStoredVideoById(videoId, { includeUnapproved: true });
+        if (!stored) return null;
+        const video = mapVideo(stored);
+        return { videoId, video };
+      }),
     );
 
-    const map = new Map<string, ResolvedVideoMeta>();
-    for (const row of rows) {
-      map.set(row.videoId, {
-        title: row.title,
-        channelTitle: row.channelTitle,
-        parsedArtist: row.parsedArtist,
-        parsedTrack: row.parsedTrack,
-        artistVideoCount: row.artistVideoCount,
-        genre: row.genre,
-      });
+    const record: Record<string, ResolvedVideoMeta> = {};
+    for (const result of results) {
+      if (!result) continue;
+      record[result.videoId] = {
+        title: result.video.title,
+        channelTitle: result.video.channelTitle,
+        parsedArtist: result.video.parsedArtist ?? null,
+        parsedTrack: result.video.parsedTrack ?? null,
+        artistVideoCount: result.video.artistVideoCount ?? null,
+        genre: result.video.genre,
+      };
     }
-    return map;
+
+    return Object.keys(record).length > 0 ? record : null;
   } catch {
     return null;
   }

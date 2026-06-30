@@ -14,7 +14,7 @@ import type { VideoEmbedMetadata } from "@/components/forum-video-embed";
 type ForumThreadContentProps = {
   threadDetail: ForumThreadDetail;
   isAuthenticated: boolean;
-  videoMetadataMap?: Map<string, VideoEmbedMetadata> | null;
+  videoMetadataMap?: Record<string, VideoEmbedMetadata> | null;
 };
 
 function formatForumDate(date: Date | string): string {
@@ -50,7 +50,7 @@ function PostCard({
 }: {
   post: ForumThreadDetail["posts"][number];
   isOpeningPost: boolean;
-  videoMetadataMap?: Map<string, VideoEmbedMetadata> | null;
+  videoMetadataMap?: Record<string, VideoEmbedMetadata> | null;
 }) {
   return (
     <article className={`forumPostCard ${isOpeningPost ? "forumPostCardOpening" : ""}`}>

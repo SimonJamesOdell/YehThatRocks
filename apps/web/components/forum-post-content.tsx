@@ -5,7 +5,7 @@ import { ForumVideoEmbed, type VideoEmbedMetadata } from "@/components/forum-vid
 
 type ForumPostContentProps = {
   content: string;
-  videoMetadataMap?: Map<string, VideoEmbedMetadata> | null;
+  videoMetadataMap?: Record<string, VideoEmbedMetadata> | null;
 };
 
 export function ForumPostContent({ content, videoMetadataMap }: ForumPostContentProps) {
@@ -44,7 +44,7 @@ export function ForumPostContent({ content, videoMetadataMap }: ForumPostContent
     <>
       {parts.map((part, i) => {
         if (part.type === "video") {
-          return <ForumVideoEmbed key={`v-${i}`} videoId={part.value} metadata={videoMetadataMap?.get(part.value) ?? null} />;
+          return <ForumVideoEmbed key={`v-${i}`} videoId={part.value} metadata={videoMetadataMap?.[part.value] ?? null} />;
         }
         // Split text parts by newlines into paragraphs
         return (
