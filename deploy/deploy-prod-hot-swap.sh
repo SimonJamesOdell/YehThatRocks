@@ -351,6 +351,26 @@ if wait_for_public_health "$STATUS_URL" "$HEALTH_TIMEOUT_SEC"; then
       echo "[deploy] magazine-autogen.timer enabled (every 6h), next run at: $TIMER_NEXT_ELAPSE"
     fi
 
+    echo "[deploy] installing daily-discovery systemd timer"
+    cp "$REPO_DIR/deploy/systemd/daily-discovery.service" /etc/systemd/system/daily-discovery.service
+    cp "$REPO_DIR/deploy/systemd/daily-discovery.timer" /etc/systemd/system/daily-discovery.timer
+    systemctl daemon-reload
+    systemctl enable --now daily-discovery.timer
+    echo "[deploy] validating daily-discovery.service"
+    if systemctl start daily-discovery.service; then
+      echo "[deploy] daily-discovery.service smoke run passed"
+    else
+      echo "[deploy] WARNING: daily-discovery.service smoke run failed (non-fatal — timer will retry on schedule)" >&2
+      journalctl -u daily-discovery.service -n 40 --no-pager >&2 || true
+    fi
+    DAILY_DISCOVERY_TIMER_NEXT_ELAPSE="$(systemctl show daily-discovery.timer --property=NextElapseUSecRealtime --value || true)"
+    if [ -z "$DAILY_DISCOVERY_TIMER_NEXT_ELAPSE" ] || [ "$DAILY_DISCOVERY_TIMER_NEXT_ELAPSE" = "n/a" ]; then
+      echo "[deploy] WARNING: daily-discovery.timer next-run value unavailable from systemctl show" >&2
+      systemctl status daily-discovery.timer --no-pager >&2 || true
+    else
+      echo "[deploy] daily-discovery.timer enabled (daily at 04:00 UTC), next run at: $DAILY_DISCOVERY_TIMER_NEXT_ELAPSE"
+    fi
+
     echo "[deploy] installing admin-dashboard-cache-maintenance systemd timer"
     cp "$REPO_DIR/deploy/systemd/admin-dashboard-cache-maintenance.service" /etc/systemd/system/admin-dashboard-cache-maintenance.service
     cp "$REPO_DIR/deploy/systemd/admin-dashboard-cache-maintenance.timer" /etc/systemd/system/admin-dashboard-cache-maintenance.timer
