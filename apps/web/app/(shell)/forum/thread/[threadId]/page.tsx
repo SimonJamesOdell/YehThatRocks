@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { ForumThreadContent } from "@/components/forum-thread-content";
-import { getThreadDetail } from "@/lib/forum-data";
+import { getThreadDetail, resolveVideoMetadataMap } from "@/lib/forum-data";
 import { getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
 
 type ThreadPageProps = {
@@ -36,7 +36,13 @@ export default async function ThreadPage({ params }: ThreadPageProps) {
     notFound();
   }
 
+  const videoMetadataMap = await resolveVideoMetadataMap(threadDetail.posts);
+
   return (
-    <ForumThreadContent threadDetail={threadDetail} isAuthenticated={isAuthenticated} />
+    <ForumThreadContent
+      threadDetail={threadDetail}
+      isAuthenticated={isAuthenticated}
+      videoMetadataMap={videoMetadataMap}
+    />
   );
 }

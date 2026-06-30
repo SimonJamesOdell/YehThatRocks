@@ -7,10 +7,14 @@ import { useState } from "react";
 import type { ForumThreadDetail } from "@/lib/forum-data";
 import { OverlayHeader } from "@/components/overlay-header";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
+import { ForumFormToolbar } from "@/components/forum-form-toolbar";
+import { ForumPostContent } from "@/components/forum-post-content";
+import type { VideoEmbedMetadata } from "@/components/forum-video-embed";
 
 type ForumThreadContentProps = {
   threadDetail: ForumThreadDetail;
   isAuthenticated: boolean;
+  videoMetadataMap?: Map<string, VideoEmbedMetadata> | null;
 };
 
 function formatForumDate(date: Date | string): string {
@@ -42,9 +46,11 @@ function getUserProfileHref(screenName: string, userId: number): string {
 function PostCard({
   post,
   isOpeningPost,
+  videoMetadataMap,
 }: {
   post: ForumThreadDetail["posts"][number];
   isOpeningPost: boolean;
+  videoMetadataMap?: Map<string, VideoEmbedMetadata> | null;
 }) {
   return (
     <article className={`forumPostCard ${isOpeningPost ? "forumPostCardOpening" : ""}`}>
@@ -80,9 +86,7 @@ function PostCard({
             {isOpeningPost && <span className="forumPostOpBadge">OP</span>}
           </div>
           <div className="forumPostContent">
-            {post.content.split("\n").map((line, i) => (
-              <p key={i}>{line || "\u00A0"}</p>
-            ))}
+            <ForumPostContent content={post.content} videoMetadataMap={videoMetadataMap} />
           </div>
         </div>
       </div>
@@ -90,7 +94,7 @@ function PostCard({
   );
 }
 
-export function ForumThreadContent({ threadDetail, isAuthenticated }: ForumThreadContentProps) {
+export function ForumThreadContent({ threadDetail, isAuthenticated, videoMetadataMap }: ForumThreadContentProps) {
   const { thread, posts } = threadDetail;
   const [replyContent, setReplyContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -129,21 +133,21 @@ export function ForumThreadContent({ threadDetail, isAuthenticated }: ForumThrea
   return (
     <>
       <OverlayScrollReset />
-      <OverlayHeader title={thread.title} />
+      <OverlayHeader
+        title={thread.title}
+        breadcrumb={
+          <>
+            <Link href="/forum" className="categoryHeaderBreadcrumbLink">Forum</Link>
+            <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true"> / </span>
+            <Link href={`/forum?section=${encodeURIComponent(thread.sectionId)}`} className="categoryHeaderBreadcrumbLink">{thread.sectionTitle}</Link>
+            <span className="categoryHeaderBreadcrumbSeparator" aria-hidden="true"> / </span>
+          </>
+        }
+      />
 
       <main className="forumThreadPage" role="main" aria-label={`Thread: ${thread.title}`}>
         {/* Thread header */}
         <div className="forumThreadHeader panel">
-          <div className="forumThreadHeaderTop">
-            <h1 className="forumThreadTitle">
-              {thread.isPinned && <span className="forumPinnedBadge" title="Pinned">📌 </span>}
-              {thread.title}
-              {thread.isLocked && <span className="forumLockedBadge" title="Locked"> 🔒</span>}
-            </h1>
-            <Link href="/forum" className="forumBackLink">
-              ← Back to forum
-            </Link>
-          </div>
           <div className="forumThreadHeaderMeta">
             <span className="forumThreadHeaderSection">{thread.sectionTitle}</span>
             <span className="forumMetaSep">·</span>
@@ -160,6 +164,7 @@ export function ForumThreadContent({ threadDetail, isAuthenticated }: ForumThrea
               key={post.id}
               post={post}
               isOpeningPost={idx === 0}
+              videoMetadataMap={videoMetadataMap}
             />
           ))}
         </div>
@@ -174,6 +179,7 @@ export function ForumThreadContent({ threadDetail, isAuthenticated }: ForumThrea
             <h2 className="forumReplyTitle">Post a reply</h2>
             <form className="forumReplyForm" onSubmit={handleReply}>
               <textarea
+                id="forumReplyContent"
                 rows={4}
                 value={replyContent}
                 onChange={(e) => setReplyContent(e.target.value)}
@@ -183,9 +189,15 @@ export function ForumThreadContent({ threadDetail, isAuthenticated }: ForumThrea
                 disabled={isSubmitting}
               />
               {error && <p className="forumReplyError">{error}</p>}
-              <button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Posting..." : "Post reply"}
-              </button>
+              <div className="forumToolbar">
+                <ForumFormToolbar
+                  textareaId="forumReplyContent"
+                  onInsert={setReplyContent}
+                />
+                <button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Posting..." : "Post reply"}
+                </button>
+              </div>
             </form>
           </section>
         ) : (

@@ -376,7 +376,7 @@ const LATEST_THREADS_QUERY = `
     FROM forum_posts
     GROUP BY thread_id
   ) pc ON pc.thread_id = t.id
-  ORDER BY t.is_pinned DESC, t.created_at DESC
+  ORDER BY t.is_pinned DESC, t.updated_at DESC, t.created_at DESC
   LIMIT ?
 `;
 
@@ -409,8 +409,37 @@ const SECTION_THREADS_QUERY = `
     GROUP BY thread_id
   ) pc ON pc.thread_id = t.id
   WHERE t.section_id = ?
-  ORDER BY t.is_pinned DESC, t.created_at DESC
+  ORDER BY t.is_pinned DESC, t.updated_at DESC, t.created_at DESC
   LIMIT ?
+`;
+
+const SECTION_COUNTS_QUERY = `
+  SELECT section_id, COUNT(*) AS thread_count
+  FROM forum_threads
+  GROUP BY section_id
+`;
+
+/**
+ * Count unseen threads (created after lastSeen) and threads with new posts
+ * (latest post created after lastSeen) per section for a given user.
+ * Returns zero for sections the user has never visited.
+ */
+const SECTION_UNSEEN_COUNTS_QUERY = `
+  SELECT
+    t.section_id,
+    COUNT(DISTINCT CASE
+      WHEN t.created_at > COALESCE(ss.last_seen_at, '1970-01-01')
+      THEN t.id
+    END) AS new_threads,
+    COUNT(DISTINCT CASE
+      WHEN lp.latest_post_at > COALESCE(ss.last_seen_at, '1970-01-01')
+       AND t.created_at <= COALESCE(ss.last_seen_at, '1970-01-01')
+      THEN t.id
+    END) AS updated_threads
+  FROM forum_threads t
+  LEFT JOIN forum_section_seen ss ON ss.section_id = t.section_id AND ss.user_id = ?
+  LEFT JOIN (SELECT thread_id, MAX(created_at) AS latest_post_at FROM forum_posts GROUP BY thread_id) lp ON lp.thread_id = t.id
+  GROUP BY t.section_id
 `;
 
 const THREAD_POSTS_QUERY = `
@@ -528,11 +557,69 @@ export async function getThreadDetail(threadId: number): Promise<ForumThreadDeta
       posts: postRows.map(rowToPostDetail),
     };
   } catch {
-    // Seed fallback
-    const seedThread = SEED_THREADS.find((t) => t.id === threadId);
-    if (!seedThread) return null;
-    const posts = SEED_POSTS.filter((p) => p.threadId === threadId);
-    return { thread: seedThread, posts };
+    return null;
+  }
+}
+
+/**
+ * Resolve video metadata for all [video:XXXXX] tags found in forum post content.
+ * Queries the database directly — no seed fallback.
+ * Returns a Map of videoId → metadata, or null if no videos found or DB unreachable.
+ */
+export type ResolvedVideoMeta = {
+  title: string;
+  channelTitle: string;
+  parsedArtist: string | null;
+  parsedTrack: string | null;
+  artistVideoCount: number | null;
+  genre: string;
+};
+
+export async function resolveVideoMetadataMap(
+  posts: Array<{ content: string }>,
+): Promise<Map<string, ResolvedVideoMeta> | null> {
+  const ids = new Set<string>();
+  for (const post of posts) {
+    for (const m of post.content.matchAll(/\[video:([\w-]{11})\]/g)) {
+      ids.add(m[1]);
+    }
+  }
+  if (ids.size === 0) return null;
+
+  const idList = [...ids];
+  const placeholders = idList.map(() => "?").join(",");
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<
+      Array<{
+        videoId: string;
+        title: string;
+        channelTitle: string;
+        parsedArtist: string | null;
+        parsedTrack: string | null;
+        artistVideoCount: number | null;
+        genre: string;
+      }>
+    >(
+      `SELECT videoId, title, channelTitle, parsedArtist, parsedTrack, artistVideoCount, genre
+       FROM videos WHERE videoId IN (${placeholders})`,
+      ...idList,
+    );
+
+    const map = new Map<string, ResolvedVideoMeta>();
+    for (const row of rows) {
+      map.set(row.videoId, {
+        title: row.title,
+        channelTitle: row.channelTitle,
+        parsedArtist: row.parsedArtist,
+        parsedTrack: row.parsedTrack,
+        artistVideoCount: row.artistVideoCount,
+        genre: row.genre,
+      });
+    }
+    return map;
+  } catch {
+    return null;
   }
 }
 
@@ -550,47 +637,54 @@ export async function createThread(
   if (!title.trim() || !content.trim() || !userId) return null;
 
   try {
-    // Insert thread
-    const insertResult = await prisma.$executeRawUnsafe(
-      `INSERT INTO forum_threads (section_id, title, user_id, created_at, updated_at)
-       VALUES (?, ?, ?, NOW(3), NOW(3))`,
-      sectionId,
-      title.trim(),
-      userId,
-    );
+    return await prisma.$transaction(async (tx) => {
+      // Insert thread
+      await tx.$executeRawUnsafe(
+        `INSERT INTO forum_threads (section_id, title, user_id, created_at, updated_at)
+         VALUES (?, ?, ?, NOW(3), NOW(3))`,
+        sectionId,
+        title.trim(),
+        userId,
+      );
 
-    // Get the inserted thread ID
-    const idRows = await prisma.$queryRawUnsafe<Array<{ id: number }>>(
-      `SELECT LAST_INSERT_ID() AS id`,
-    );
-    const threadId = Number(idRows[0]?.id);
-    if (!threadId || threadId <= 0) return null;
+      // Get the inserted thread ID (reliable within transaction — same connection)
+      const idRows = await tx.$queryRawUnsafe<Array<{ id: number }>>(
+        `SELECT LAST_INSERT_ID() AS id`,
+      );
+      const threadId = Number(idRows[0]?.id);
+      if (!threadId || threadId <= 0) {
+        throw new Error("Failed to retrieve new thread ID");
+      }
 
-    // Insert opening post
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO forum_posts (thread_id, user_id, content, created_at, updated_at)
-       VALUES (?, ?, ?, NOW(3), NOW(3))`,
-      threadId,
-      userId,
-      content.trim(),
-    );
+      // Insert opening post
+      await tx.$executeRawUnsafe(
+        `INSERT INTO forum_posts (thread_id, user_id, content, created_at, updated_at)
+         VALUES (?, ?, ?, NOW(3), NOW(3))`,
+        threadId,
+        userId,
+        content.trim(),
+      );
 
-    // Return the created thread summary
-    const rows = await prisma.$queryRawUnsafe<RawThreadRow[]>(
-      `SELECT
-        t.id, t.section_id, t.title, t.user_id,
-        u.screen_name, u.email, u.avatar_url,
-        t.is_pinned, t.is_locked, t.view_count,
-        t.created_at, t.updated_at,
-        1 AS post_count,
-        t.created_at AS latest_post_at
-      FROM forum_threads t
-      LEFT JOIN users u ON u.id = t.user_id
-      WHERE t.id = ?`,
-      threadId,
-    );
+      // Return the created thread summary
+      const rows = await tx.$queryRawUnsafe<RawThreadRow[]>(
+        `SELECT
+          t.id, t.section_id, t.title, t.user_id,
+          u.screen_name, u.email, u.avatar_url,
+          t.is_pinned, t.is_locked, t.view_count,
+          t.created_at, t.updated_at,
+          1 AS post_count,
+          t.created_at AS latest_post_at
+        FROM forum_threads t
+        LEFT JOIN users u ON u.id = t.user_id
+        WHERE t.id = ?`,
+        threadId,
+      );
 
-    return rows.length > 0 ? rowToThreadSummary(rows[0]) : null;
+      if (rows.length === 0) {
+        throw new Error("Failed to fetch created thread summary");
+      }
+      return rowToThreadSummary(rows[0]);
+    });
   } catch {
     return null;
   }
@@ -651,6 +745,84 @@ export async function incrementThreadViewCount(threadId: number): Promise<void> 
   } catch {
     // Best-effort; view counts are not critical.
   }
+}
+
+// ── Section metadata ─────────────────────────────────────────────────────────
+
+type SectionCountRow = {
+  section_id: string;
+  thread_count: number | bigint;
+};
+
+type SectionUnseenRow = {
+  section_id: string;
+  new_threads: number | bigint;
+  updated_threads: number | bigint;
+};
+
+/**
+ * Get thread counts for every valid forum section.
+ * Falls back to counting seed data when DB is unavailable.
+ */
+export async function getSectionThreadCounts(): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  for (const s of FORUM_SECTIONS) map.set(s.id, 0);
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<SectionCountRow[]>(SECTION_COUNTS_QUERY);
+    for (const row of rows) {
+      map.set(row.section_id, Number(row.thread_count));
+    }
+    return map;
+  } catch {
+    // Seed fallback
+    for (const t of SEED_THREADS) {
+      map.set(t.sectionId, (map.get(t.sectionId) ?? 0) + 1);
+    }
+    return map;
+  }
+}
+
+/**
+ * Get unseen counts per section for a given user.
+ * Returns `{ newThreads, updatedThreads }` per sectionId.
+ */
+export async function getSectionUnseenCounts(
+  userId: number,
+): Promise<Map<string, { newThreads: number; updatedThreads: number }>> {
+  const map = new Map<string, { newThreads: number; updatedThreads: number }>();
+  for (const s of FORUM_SECTIONS) map.set(s.id, { newThreads: 0, updatedThreads: 0 });
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<SectionUnseenRow[]>(
+      SECTION_UNSEEN_COUNTS_QUERY,
+      userId,
+    );
+    for (const row of rows) {
+      map.set(row.section_id, {
+        newThreads: Number(row.new_threads),
+        updatedThreads: Number(row.updated_threads),
+      });
+    }
+    return map;
+  } catch {
+    return map;
+  }
+}
+
+/**
+ * Mark a section as seen by the current user (upserts lastSeenAt to NOW).
+ */
+export async function markSectionSeen(userId: number, sectionId: string): Promise<void> {
+  if (!validateSectionId(sectionId)) return;
+  try {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO forum_section_seen (user_id, section_id, last_seen_at)
+       VALUES (?, ?, NOW(3))
+       ON DUPLICATE KEY UPDATE last_seen_at = NOW(3)`,
+      userId, sectionId,
+    );
+  } catch { /* best-effort */ }
 }
 
 /** The seed threads — used by the left rail and as fallback. */

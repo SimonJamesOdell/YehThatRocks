@@ -583,7 +583,7 @@
   font-size: 0.78rem;
 }
 
-/* ── Section header bar ──────────────────────────────────────────── */
+/* ── Section header (used by thread detail page) ─────────────────── */
 
 .forumSectionHeader {
   display: flex;
@@ -763,6 +763,7 @@
 .forumContributePanel {
   display: grid;
   gap: 12px;
+  padding: 24px 20px;
 }
 
 .forumContributeHeader {
@@ -787,7 +788,9 @@
 
 .forumContributeForm label {
   display: grid;
-  gap: 6px;
+  grid-template-columns: 110px 1fr;
+  gap: 10px 14px;
+  align-items: baseline;
 }
 
 .forumContributeForm span {
@@ -828,6 +831,212 @@
 
 .forumContributeForm button[type="submit"]:hover {
   background: rgba(220, 22, 5, 0.38);
+}
+
+/* ── Form toolbar (emoji / video embed) ────────────────────────── */
+
+.forumToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 124px;
+}
+
+.forumToolbarLeft {
+  display: flex;
+  gap: 4px;
+}
+
+.forumToolbarGroup {
+  position: relative;
+}
+
+.forumToolbarButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 230, 222, 0.78);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.forumToolbarButton:hover {
+  background: rgba(220, 22, 5, 0.22);
+  border-color: rgba(255, 126, 102, 0.4);
+}
+
+/* ── Emoji panel ───────────────────────────────────────────────── */
+
+.forumEmojiPanel {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 6px;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(11, 4, 4, 0.97);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 50;
+}
+
+.forumEmojiButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+
+.forumEmojiButton:hover {
+  background: rgba(220, 22, 5, 0.25);
+}
+
+/* ── Video embed panel ─────────────────────────────────────────── */
+
+.forumVideoEmbedPanel {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 6px;
+  display: grid;
+  gap: 8px;
+  width: 320px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(11, 4, 4, 0.97);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 50;
+}
+
+.forumVideoEmbedRow {
+  display: flex;
+  gap: 6px;
+}
+
+.forumVideoEmbedInput {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 247, 243, 0.94);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.forumVideoEmbedInput::placeholder {
+  color: rgba(255, 230, 222, 0.35);
+}
+
+.forumVideoPreviewButton {
+  width: auto;
+  padding: 0 10px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.forumVideoEmbedError {
+  margin: 0;
+  font-size: 0.74rem;
+  color: rgba(255, 160, 140, 0.85);
+}
+
+.forumVideoPreview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.forumVideoPreviewThumb {
+  width: 120px;
+  height: 68px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ── Embedded video player ─────────────────────────────────────── */
+
+.forumEmbeddedPlayer {
+  margin: 8px 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #000;
+  width: 100%;
+  transform: scale(0.5);
+  transform-origin: top left;
+  aspect-ratio: 16 / 9;
+}
+
+/* Give the chrome height so it fills the wrapper */
+.forumEmbeddedPlayer .playerChrome {
+  height: 100%;
+}
+
+.forumEmbeddedPlayer .playerDockLayer {
+  height: 100%;
+}
+
+
+
+/* Hide the dock close button — doesn't apply in the forum embed context */
+.forumEmbeddedPlayer .overlayDockCloseBtn {
+  display: none;
+}
+
+/* Footer controls — reset docked left-rail positioning, show below player */
+.forumEmbeddedPlayer .playerFooterReserve .primaryActions {
+  position: static !important;
+  width: auto !important;
+  transform: none !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* Overlay — ensure it's visible by default in the forum */
+.forumEmbeddedPlayer .playerOverlay .overlayTop {
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+/* Neutralise the shell's docked transform — no left-rail shift in the forum */
+.forumEmbeddedPlayer .playerChromeDockedDesktop .playerFrame,
+.forumEmbeddedPlayer .playerChromeDockedDesktop .playerLoadingFallback {
+  transform: none;
+}
+
+
+
+
+
+/* ── Error state ───────────────────────────────────────────────── */
+
+.forumEmbeddedPlayerError {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: rgba(255, 180, 160, 0.7);
+  font-size: 0.82rem;
 }
 
 /* ── Empty state ─────────────────────────────────────────────────── */
