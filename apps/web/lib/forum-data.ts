@@ -593,8 +593,11 @@ export async function getThreadDetail(threadId: number): Promise<ForumThreadDeta
     );
 
     if (threadRows.length === 0) {
-      // Fall through to seed data
-      throw new Error("Thread not found");
+      // Fall back to seed data
+      const seedThread = SEED_THREADS.find((t) => t.id === threadId);
+      if (!seedThread) return null;
+      const seedPosts = SEED_POSTS.filter((p) => p.threadId === threadId);
+      return { thread: seedThread, posts: seedPosts, voteCounts: null };
     }
 
     const thread = rowToThreadSummary(threadRows[0]);
@@ -613,7 +616,11 @@ export async function getThreadDetail(threadId: number): Promise<ForumThreadDeta
       voteCounts,
     };
   } catch {
-    return null;
+    // Fall back to seed data on any error
+    const seedThread = SEED_THREADS.find((t) => t.id === threadId);
+    if (!seedThread) return null;
+    const seedPosts = SEED_POSTS.filter((p) => p.threadId === threadId);
+    return { thread: seedThread, posts: seedPosts, voteCounts: null };
   }
 }
 
