@@ -976,14 +976,15 @@
 /* ── Embedded video player ─────────────────────────────────────── */
 
 .forumEmbeddedPlayer {
-  margin: 8px 0;
-  border-radius: 10px;
-  overflow: hidden;
-  background: #000;
-  width: 100%;
-  transform: scale(0.5);
-  transform-origin: top left;
-  aspect-ratio: 16 / 9;
+    transform-origin: 0 0;
+    aspect-ratio: 16 / 10;
+    background: #000;
+    border-radius: 10px;
+    width: 100%;
+    margin: 8px 0;
+    overflow: hidden;
+    transform: scale(.7);
+    border: 8px solid black;
 }
 
 /* Give the chrome height so it fills the wrapper */
@@ -1024,9 +1025,35 @@
   transform: none;
 }
 
+/* Restore video info bar at top (40px visual = 80px CSS at scale(0.5)) */
+.forumEmbeddedPlayer .playerChromeDockedDesktop .overlayTitleRow {
+  opacity: 1 !important;
+  transform: none !important;
+  pointer-events: auto !important;
+}
 
+.forumEmbeddedPlayer .playerChromeDockedDesktop .overlayTop {
+  padding-top: 6px !important;
+  padding-bottom: 38px !important;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 1) 0px, rgba(0, 0, 0, 1) 80px, transparent 110px) !important;
+}
 
+/* Shift bottom controls down by 80px CSS (40px visual) */
+.forumEmbeddedPlayer .playerChromeDockedDesktop .overlayBottom {
+  padding-top: 126px !important; /* was 46px, +80px */
+}
 
+/* Play/pause 20% larger (111×1.2≈133), shifted down 20px (10px visual) */
+.forumEmbeddedPlayer .playerChromeDockedDesktop .overlayPlayBtn {
+  width: 133px !important;
+  height: 133px !important;
+  margin-top: -34px !important; /* was -54px, +20px */
+}
+
+/* Prevent forumPostContent p margins from leaking into the overlay title stack */
+.forumEmbeddedPlayer .overlayTitleStack p {
+  margin: 0;
+}
 
 /* ── Error state ───────────────────────────────────────────────── */
 

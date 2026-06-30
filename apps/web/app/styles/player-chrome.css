@@ -2159,8 +2159,8 @@
 
   .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerFrame > iframe,
   .playerChromeDockedDesktop:not(.playerChromeUndocking):not(.playerChromeUndockSettling) .playerFrame .playerMount iframe {
-    /* Slightly overscan the docked iframe so YouTube edge chrome cannot bleed in. */
-    transform: scale(1.02);
+    /* Slightly underscan the docked iframe to avoid clipping. */
+    transform: scale(0.99);
     transform-origin: center;
   }
 
@@ -2944,6 +2944,10 @@
   display: grid;
   gap: 4px;
   min-width: 0;
+}
+
+.overlayTitleStack p {
+  margin: 0;
 }
 
 .overlayRelatedCardGenre {

@@ -1,6 +1,8 @@
 "use client";
 
+import { useCallback } from "react";
 import { PlayerExperience } from "@/components/player-experience-core";
+import { dispatchAppEvent, EVENT_NAMES } from "@/lib/events-contract";
 import type { VideoRecord } from "@/lib/catalog";
 
 export type VideoEmbedMetadata = {
@@ -39,8 +41,12 @@ export function ForumVideoEmbed({ videoId, metadata }: ForumVideoEmbedProps) {
         description: "",
       };
 
+  const handlePlayerClick = useCallback(() => {
+    dispatchAppEvent(EVENT_NAMES.FORUM_EMBED_PLAYBACK_STARTED, null);
+  }, []);
+
   return (
-    <div className="forumEmbeddedPlayer">
+    <div className="forumEmbeddedPlayer" onClick={handlePlayerClick}>
       <div className="playerChrome playerChromeDockedDesktop">
         <div className="playerDockLayer">
           <PlayerExperience

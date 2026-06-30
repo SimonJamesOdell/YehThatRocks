@@ -45,6 +45,9 @@ export const EVENT_NAMES = {
   // Artists and filtering
   ARTISTS_LETTER_CHANGE: "ytr:artists-letter-change",
   ARTISTS_FILTER_CHANGE: "ytr:artists-filter-change",
+
+  // Forum embed — playback coordination
+  FORUM_EMBED_PLAYBACK_STARTED: "ytr:forum-embed-playback-started",
 } as const;
 
 export type QueueRemovalReason = "ended" | "manual-next" | "transition-sync";
@@ -100,6 +103,7 @@ export type EventPayloads = {
   [EVENT_NAMES.FAVOURITES_UPDATED]: null;
   [EVENT_NAMES.ARTISTS_LETTER_CHANGE]: { letter: string };
   [EVENT_NAMES.ARTISTS_FILTER_CHANGE]: { value: string };
+  [EVENT_NAMES.FORUM_EMBED_PLAYBACK_STARTED]: null;
 };
 
 // ============================================================================

@@ -67,7 +67,7 @@ import { trackPageView, trackVideoView } from "@/lib/analytics-client";
 import { dedupeVideos, filterHiddenVideos } from "@/lib/video-list-utils";
 import { buildSharedVideoMessage, parseSharedVideoMessage, parseActivityMessage } from "@/lib/chat-shared-video";
 import { prefetchCategoryCardsSessionCache } from "@/lib/category-cards-session-cache";
-import { FORUM_SECTIONS } from "@/lib/forum-sections";
+import { ForumSectionRail } from "@/components/forum-section-rail";
 import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT, EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
@@ -2303,6 +2303,30 @@ function ShellDynamicInner({
       window.removeEventListener(EVENT_NAMES.AUTH_MODAL_OPEN, handleAuthModalOpen);
     };
   }, []);
+
+  // Pause main player when a forum embed starts playback
+  useEffect(() => {
+    const handleForumEmbedPlayback = () => {
+      // Find the main player's YouTube iframe — not inside .forumEmbeddedPlayer
+      const iframe = document.querySelector(
+        '.playerStage iframe[src*="youtube"]',
+      ) as HTMLIFrameElement | null;
+      if (iframe?.contentWindow) {
+        iframe.contentWindow.postMessage(
+          JSON.stringify({
+            event: "command",
+            func: "pauseVideo",
+            args: [],
+          }),
+          "*",
+        );
+      }
+    };
+    window.addEventListener(EVENT_NAMES.FORUM_EMBED_PLAYBACK_STARTED, handleForumEmbedPlayback);
+    return () => {
+      window.removeEventListener(EVENT_NAMES.FORUM_EMBED_PLAYBACK_STARTED, handleForumEmbedPlayback);
+    };
+  }, []);
   const {
     getNavHref,
     openAutoplaySettingsOverlay,
@@ -2683,29 +2707,7 @@ function ShellDynamicInner({
                     onNavigateToGenre={(genre) => router.push(resolveVideoGenreNavigationTarget(genre).href)}
                   />
                 ) : chatMode === "online" ? (
-                  <>
-                    {FORUM_SECTIONS.map((section) => (
-                      <article
-                        key={section.id}
-                        className="chatMessage forumSectionCard chatMessageClickable"
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Browse ${section.title} forum section`}
-                        onClick={() => router.push("/forum")}
-                        onKeyDown={handleButtonLikeKeyDown(() => router.push("/forum"))}
-                      >
-                        <div>
-                          <div className="messageMeta">
-                            <strong>{section.title}</strong>
-                            <span className="chatMessageMetaRight">
-                              <span className="chatMessageTimestamp">Forum</span>
-                            </span>
-                          </div>
-                          <p>{section.description}</p>
-                        </div>
-                      </article>
-                    ))}
-                  </>
+                  <ForumSectionRail isForumOpen={isForumOverlayRoute} />
                 ) : (
                   chatMessages.map((message) => {
                     const isUserOnline = onlineUsers.some((u) => u.name === message.user.name);
