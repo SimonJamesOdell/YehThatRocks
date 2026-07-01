@@ -63,7 +63,6 @@ import {
   RANKED_VIDEO_ID_SLICE_CACHE_TTL_MS,
   TOP_POOL_CACHE_TTL_MS,
 } from "@/lib/video-constants";
-);
 
 const NEWEST_CACHE_TTL_MS = 60_000;
 const RELATED_VIDEOS_CACHE_TTL_MS = 60_000;
