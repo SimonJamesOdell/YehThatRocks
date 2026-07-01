@@ -372,6 +372,7 @@ model ForumThread {
   id        Int      @id @default(autoincrement())
   sectionId String   @map("section_id") @db.VarChar(64)
   title     String   @db.VarChar(255)
+  slug      String?  @unique @db.VarChar(300)
   userId    Int      @map("user_id")
   isPinned  Boolean  @default(false) @map("is_pinned")
   isLocked  Boolean  @default(false) @map("is_locked")

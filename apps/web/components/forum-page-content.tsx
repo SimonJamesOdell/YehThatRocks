@@ -63,7 +63,9 @@ function ThreadCard({ thread }: { thread: ForumThreadSummary }) {
   useEffect(() => { setMounted(true); }, []);
 
   const replyCount = Math.max(0, thread.postCount - 1);
-  const href = `/forum/thread/${thread.id}`;
+  const href = thread.slug
+    ? `/forum/thread/${thread.slug}`
+    : `/forum/thread/${thread.id}`;
   const displayDate = mounted ? formatForumDate(thread.createdAt) : formatAbsoluteDate(thread.createdAt);
   const displayLatest = thread.latestPostAt
     ? (mounted ? formatForumDate(thread.latestPostAt) : formatAbsoluteDate(thread.latestPostAt))
@@ -259,7 +261,10 @@ export function ForumPageContent({ latestThreads, isAuthenticated, selectedSecti
                   return res.json();
                 })
                 .then((data) => {
-                  window.location.href = `/forum/thread/${data.thread.id}`;
+                  const threadUrl = data.thread.slug
+                    ? `/forum/thread/${data.thread.slug}`
+                    : `/forum/thread/${data.thread.id}`;
+                  window.location.href = threadUrl;
                 })
                 .catch((err) => {
                   alert(err.message || "Failed to create thread");

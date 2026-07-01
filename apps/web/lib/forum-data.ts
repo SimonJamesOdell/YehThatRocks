@@ -12,6 +12,7 @@ import { mapVideo } from "@/lib/catalog-data-utils";
 
 export type ForumThreadSummary = {
   id: number;
+  slug: string | null;
   sectionId: string;
   sectionTitle: string;
   title: string;
@@ -54,6 +55,7 @@ export type ForumThreadDetail = {
 
 type RawThreadRow = {
   id: number;
+  slug: string | null;
   section_id: string;
   title: string;
   user_id: number;
@@ -102,6 +104,7 @@ function resolveSectionTitle(sectionId: string): string {
 function rowToThreadSummary(row: RawThreadRow): ForumThreadSummary {
   return {
     id: Number(row.id),
+    slug: row.slug ?? null,
     sectionId: row.section_id,
     sectionTitle: resolveSectionTitle(row.section_id),
     title: row.title,
@@ -129,6 +132,37 @@ function rowToPostDetail(row: RawPostRow): ForumPostDetail {
     content: row.content,
     createdAt: row.created_at,
   };
+}
+
+// ── Slug helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Generate a URL-safe slug from a thread title and ID.
+ * Format: sanitized-title-prefix-id (e.g. "my-thread-title-123")
+ */
+export function generateThreadSlug(title: string, threadId: number): string {
+  const base = title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 250); // leave room for "-" + id
+  return `${base}-${threadId}`;
+}
+
+/**
+ * Extract the numeric thread ID from a URL slug.
+ * The ID is expected to be the last numeric segment after the final hyphen.
+ * Returns null if no valid ID is found.
+ */
+export function parseThreadIdFromSlug(slug: string): number | null {
+  // Match the last sequence of digits at the end of the slug
+  // Handles formats like: "my-thread-123", "title-456", or just "789"
+  const match = slug.match(/(\d+)$/);
+  if (!match) return null;
+  const id = Number(match[1]);
+  return Number.isInteger(id) && id > 0 ? id : null;
 }
 
 // ── Seed data ───────────────────────────────────────────────────────────────
@@ -363,13 +397,17 @@ function buildSeedThreads(): ForumThreadSummary[] {
     },
   ];
 
-  return threadDefs.map((def, idx) => ({
-    id: idx + 1,
-    ...def,
-    sectionTitle: resolveSectionTitle(def.sectionId),
-    latestPostAt: new Date(def.createdAt.getTime() + def.postCount * 3600000),
-    isLocked: def.isLocked,
-  }));
+  return threadDefs.map((def, idx) => {
+    const id = idx + 1;
+    return {
+      id,
+      slug: generateThreadSlug(def.title, id),
+      ...def,
+      sectionTitle: resolveSectionTitle(def.sectionId),
+      latestPostAt: new Date(def.createdAt.getTime() + def.postCount * 3600000),
+      isLocked: def.isLocked,
+    };
+  });
 }
 
 const SEED_THREADS: ForumThreadSummary[] = buildSeedThreads();
@@ -398,6 +436,7 @@ const SEED_POSTS: ForumPostDetail[] = [
 const LATEST_THREADS_QUERY = `
   SELECT
     t.id,
+    t.slug,
     t.section_id,
     t.title,
     t.user_id,
@@ -432,6 +471,7 @@ const LATEST_THREADS_QUERY = `
 const SECTION_THREADS_QUERY = `
   SELECT
     t.id,
+    t.slug,
     t.section_id,
     t.title,
     t.user_id,
@@ -567,7 +607,7 @@ export async function getThreadDetail(threadId: number): Promise<ForumThreadDeta
     // Fetch thread row
     const threadRows = await prisma.$queryRawUnsafe<RawThreadRow[]>(
       `SELECT
-        t.id, t.section_id, t.title, t.user_id,
+        t.id, t.slug, t.section_id, t.title, t.user_id,
         u.screen_name, u.email, u.avatar_url,
         t.is_pinned, t.is_locked, t.view_count,
         t.video1_id, t.video2_id,
@@ -711,6 +751,14 @@ export async function createThread(
         throw new Error("Failed to retrieve new thread ID");
       }
 
+      // Generate and persist the SEO-friendly slug
+      const slug = generateThreadSlug(title.trim(), threadId);
+      await tx.$executeRawUnsafe(
+        `UPDATE forum_threads SET slug = ? WHERE id = ?`,
+        slug,
+        threadId,
+      );
+
       // Insert opening post
       await tx.$executeRawUnsafe(
         `INSERT INTO forum_posts (thread_id, user_id, content, created_at, updated_at)
@@ -723,7 +771,7 @@ export async function createThread(
       // Return the created thread summary
       const rows = await tx.$queryRawUnsafe<RawThreadRow[]>(
         `SELECT
-          t.id, t.section_id, t.title, t.user_id,
+          t.id, t.slug, t.section_id, t.title, t.user_id,
           u.screen_name, u.email, u.avatar_url,
           t.is_pinned, t.is_locked, t.view_count,
           t.video1_id, t.video2_id,
