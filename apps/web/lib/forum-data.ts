@@ -525,10 +525,10 @@ export async function getLatestThreads(limit = 20): Promise<ForumThreadSummary[]
       LATEST_THREADS_QUERY,
       limit,
     );
-    if (rows.length === 0) return SEED_THREADS.slice(0, limit);
+    if (rows.length === 0) return [];
     return rows.map(rowToThreadSummary);
   } catch {
-    return SEED_THREADS.slice(0, limit);
+    return [];
   }
 }
 
@@ -550,15 +550,11 @@ export async function getSectionThreads(
       limit,
     );
     if (rows.length === 0) {
-      return SEED_THREADS
-        .filter((t) => t.sectionId === sectionId)
-        .slice(0, limit);
+      return [];
     }
     return rows.map(rowToThreadSummary);
   } catch {
-    return SEED_THREADS
-      .filter((t) => t.sectionId === sectionId)
-      .slice(0, limit);
+    return [];
   }
 }
 
@@ -593,11 +589,7 @@ export async function getThreadDetail(threadId: number): Promise<ForumThreadDeta
     );
 
     if (threadRows.length === 0) {
-      // Fall back to seed data
-      const seedThread = SEED_THREADS.find((t) => t.id === threadId);
-      if (!seedThread) return null;
-      const seedPosts = SEED_POSTS.filter((p) => p.threadId === threadId);
-      return { thread: seedThread, posts: seedPosts, voteCounts: null };
+      return null;
     }
 
     const thread = rowToThreadSummary(threadRows[0]);
@@ -616,11 +608,7 @@ export async function getThreadDetail(threadId: number): Promise<ForumThreadDeta
       voteCounts,
     };
   } catch {
-    // Fall back to seed data on any error
-    const seedThread = SEED_THREADS.find((t) => t.id === threadId);
-    if (!seedThread) return null;
-    const seedPosts = SEED_POSTS.filter((p) => p.threadId === threadId);
-    return { thread: seedThread, posts: seedPosts, voteCounts: null };
+    return null;
   }
 }
 
@@ -924,10 +912,6 @@ export async function getSectionThreadCounts(): Promise<Map<string, number>> {
     }
     return map;
   } catch {
-    // Seed fallback
-    for (const t of SEED_THREADS) {
-      map.set(t.sectionId, (map.get(t.sectionId) ?? 0) + 1);
-    }
     return map;
   }
 }
