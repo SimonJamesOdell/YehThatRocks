@@ -7,12 +7,7 @@ WORKDIR /app
 # Copy package manifests first for layer caching
 COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/package.json
-COPY packages/config/package.json packages/config/package.json
-COPY packages/core/package.json packages/core/package.json
-COPY packages/schemas/package.json packages/schemas/package.json
-COPY packages/ui/package.json packages/ui/package.json
-COPY packages/api-client/package.json packages/api-client/package.json
-
+ 
 RUN npm config set fetch-retries 5 && \
     npm config set fetch-retry-factor 2 && \
     npm config set fetch-retry-mintimeout 20000 && \
