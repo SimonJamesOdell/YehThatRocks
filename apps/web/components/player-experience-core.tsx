@@ -12,6 +12,8 @@ import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { getArtistPagePath, withVideoContext } from "@/lib/artist-routing";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
+import { PlayerAutoplayConfigureModal } from "@/components/player-autoplay-configure-modal";
+import { PlayerShareModal } from "@/components/player-share-modal";
 import { RemoveFavouriteConfirmModal } from "@/components/remove-favourite-confirm-modal";
 import { useNextTrackDecision } from "@/hooks/use-next-track-decision";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
@@ -4741,99 +4743,20 @@ export function PlayerExperience({
           ) : null}
 
           {showShareModal ? (
-            <div
-              className="shareModalBackdrop"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Share this video"
-              onClick={() => setShowShareModal(false)}
-            >
-              <div className="shareModal" onClick={(event) => event.stopPropagation()}>
-                <div className="shareModalHeader">
-                  <strong>Share This Video</strong>
-                  <button
-                    type="button"
-                    className="overlayIconBtn"
-                    onClick={() => setShowShareModal(false)}
-                    aria-label="Close share modal"
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                </div>
-
-                <p className="shareModalSubtitle">Choose a platform, or copy the URL to share anywhere.</p>
-
-                <div className="shareModalGrid">
-                  {socialShareTargets.map((target) => (
-                    <button
-                      key={target.id}
-                      type="button"
-                      className="shareModalTarget"
-                      onClick={() => handleShareTargetOpen(target.href)}
-                    >
-                      {target.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="shareModalUrlRow">
-                  <label htmlFor="share-modal-url" className="shareUrlLabel">Share URL</label>
-                  <input
-                    id="share-modal-url"
-                    type="text"
-                    className="shareUrlInput"
-                    readOnly
-                    value={shareUrl}
-                    onFocus={(event) => event.currentTarget.select()}
-                    onClick={(event) => event.currentTarget.select()}
-                  />
-                  <button type="button" onClick={handleCopyShareUrlForModal}>
-                    {shareModalCopied ? "Copied!" : "Copy Link"}
-                  </button>
-                </div>
-              </div>
-            </div>
+            <PlayerShareModal
+              shareUrl={shareUrl}
+              copied={shareModalCopied}
+              socialTargets={socialShareTargets}
+              onClose={() => setShowShareModal(false)}
+              onCopy={handleCopyShareUrlForModal}
+              onShareTargetOpen={handleShareTargetOpen}
+            />
           ) : null}
 
-          {showAutoplayConfigureModal && typeof document !== "undefined"
-            ? createPortal(
-                <div
-                  className="shareModalBackdrop autoplayConfigureBackdrop"
-                  role="dialog"
-                  aria-modal="true"
-                  aria-label="Configure autoplay"
-                  onClick={() => setShowAutoplayConfigureModal(false)}
-                >
-                  <div className="shareModal autoplayConfigureModal" onClick={(event) => event.stopPropagation()}>
-                    <div className="shareModalHeader">
-                      <strong>Configure Autoplay</strong>
-                      <button
-                        type="button"
-                        className="overlayIconBtn"
-                        onClick={() => setShowAutoplayConfigureModal(false)}
-                        aria-label="Close configure autoplay modal"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="18" y1="6" x2="6" y2="18" />
-                          <line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                      </button>
-                    </div>
-                    <AutoplaySettingsEditor
-                      title="Sources"
-                      className="autoplaySettingsModalBody"
-                      onSaved={() => {
-                        setShowAutoplayConfigureModal(false);
-                      }}
-                    />
-                  </div>
-                </div>,
-                document.body,
-              )
-            : null}
+          <PlayerAutoplayConfigureModal
+            open={showAutoplayConfigureModal}
+            onClose={() => setShowAutoplayConfigureModal(false)}
+          />
 
           {showAdminVideoEditModal && typeof document !== "undefined"
             ? createPortal(
