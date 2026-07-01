@@ -67,6 +67,7 @@ function main() {
     readFileStrict(files.playerTypes, ROOT),
     readFileStrict(files.playerLogger, ROOT),
     readFileStrict(files.playerFormatters, ROOT),
+    readFileStrict(path.join(ROOT, "apps/web/components/player-share-modal.tsx"), ROOT),
   ].join("\n");
   const autoplaySettingsEditorSource = readFileStrict(files.autoplaySettingsEditor, ROOT);
   const accountSettingsPanelSource = readFileStrict(files.accountSettingsPanel, ROOT);

@@ -101,12 +101,18 @@ function main() {
     readFileStrict(files.catalogDataArtists, ROOT),
     readFileStrict(path.join(ROOT, "apps/web/lib/artist-constants.ts"), ROOT),
   ].join('\n');
-  const catalogDataGenresSource = readFileStrict(files.catalogDataGenres, ROOT);
+  const catalogDataGenresSource = [
+    readFileStrict(files.catalogDataGenres, ROOT),
+    readFileStrict(path.join(ROOT, "apps/web/lib/genre-constants.ts"), ROOT),
+  ].join('\n');
   const catalogDataHiddenSource = readFileStrict(files.catalogDataHidden, ROOT);
   const catalogDataHistorySource = readFileStrict(files.catalogDataHistory, ROOT);
   const catalogDataFavouritesSource = readFileStrict(files.catalogDataFavourites, ROOT);
   const catalogDataDbSource = readFileStrict(files.catalogDataDb, ROOT);
-  const catalogDataVideoIngestionSource = readFileStrict(files.catalogDataVideoIngestion, ROOT);
+  const catalogDataVideoIngestionSource = [
+    readFileStrict(files.catalogDataVideoIngestion, ROOT),
+    readFileStrict(path.join(ROOT, "apps/web/lib/video-ingestion-constants.ts"), ROOT),
+  ].join('\n');
   const metadataUtilsSource = readFileStrict(files.metadataUtils, ROOT);
   const boundedMapSource = readFileStrict(files.boundedMap, ROOT);
   const runtimeBootstrapSource = readFileStrict(files.runtimeBootstrap, ROOT);
