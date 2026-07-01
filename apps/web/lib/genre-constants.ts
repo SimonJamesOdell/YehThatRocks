@@ -1,0 +1,23 @@
+/**
+ * genre-constants.ts
+ * Constants for the genre/category domain, extracted from catalog-data-genres.ts.
+ */
+
+export const GENRE_RESULTS_CACHE_TTL_MS = 5 * 60 * 1000;
+export const GENRE_CARDS_CACHE_TTL_MS = 30 * 1000;
+export const CATEGORY_QUERY_TIMEOUT_MS = 2_500;
+export const CATEGORY_QUERY_DB_MAX_EXECUTION_MS = 1_200;
+export const CATEGORY_ARTIST_THUMB_TABLE_CACHE_TTL_MS = 60_000;
+export const CATEGORY_BUCKET_RUNTIME_CACHE_TABLE_CACHE_TTL_MS = 60_000;
+export const CATEGORY_BUCKET_RUNTIME_CACHE_STALE_MS = 6 * 60 * 60 * 1000;
+export const CATEGORY_ARTIST_RUNTIME_CACHE_TABLE_CACHE_TTL_MS = 60_000;
+export const CATEGORY_ARTIST_RUNTIME_CACHE_STALE_MS = 6 * 60 * 60 * 1000;
+export const CATEGORY_ARTIST_RUNTIME_CACHE_REBUILD_LIMIT = 25_000;
+export const CATEGORY_ARTIST_RUNTIME_CACHE_SUSPICIOUS_TOTALS = new Set([200, 400]);
+export const CATEGORY_ARTIST_DIRECT_QUERY_PAGE_LIMIT = 1_000;
+export const CATEGORY_PINNED_PREVIEW_CACHE_TTL_MS = 60_000;
+export const GENRE_ARTIST_SEED_CACHE_TTL_MS = 2 * 60 * 1000;
+export const GENRE_CACHE_MAX_ENTRIES = Math.max(
+  100,
+  Math.min(2_000, Number(process.env.GENRE_CACHE_MAX_ENTRIES || "600")),
+);
