@@ -14,7 +14,7 @@ interface ShellAuthDialogsProps {
   requestedVideoId: string | null;
   isResolvingRequestedVideo: boolean;
   requestedVideoPendingRetryAfterMs: number | null;
-  requestedVideoPendingReason: string | null | undefined;
+  requestedVideoPendingReason: "cooldown" | "concurrency-shed" | "timeout" | "resolver-error" | null | undefined;
   onVideoRetryNow: () => void;
 }
 
