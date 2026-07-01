@@ -38,7 +38,10 @@ function main() {
   const eventsSource = readFileStrict(files.events, ROOT);
   const artistsApiRouteSource = readFileStrict(files.artistsApiRoute, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
-  const catalogDataArtistsSource = readFileStrict(files.catalogDataArtists, ROOT);
+  const catalogDataArtistsSource = [
+    readFileStrict(files.catalogDataArtists, ROOT),
+    readFileStrict(path.join(ROOT, "apps/web/lib/artist-constants.ts"), ROOT),
+  ].join('\n');
   const schemaSource = readFileStrict(files.schema, ROOT);
   const performanceIndexesSource = readFileStrict(files.performanceIndexes, ROOT);
   const artistPageSource = readFileStrict(files.artistPage, ROOT);

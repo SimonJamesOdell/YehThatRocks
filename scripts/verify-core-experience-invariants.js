@@ -97,7 +97,10 @@ function main() {
   const playlistImportRouteSource = readFileStrict(files.playlistImportRoute, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const catalogDataVideosSource = readFileStrict(files.catalogDataVideos, ROOT);
-  const catalogDataArtistsSource = readFileStrict(files.catalogDataArtists, ROOT);
+  const catalogDataArtistsSource = [
+    readFileStrict(files.catalogDataArtists, ROOT),
+    readFileStrict(path.join(ROOT, "apps/web/lib/artist-constants.ts"), ROOT),
+  ].join('\n');
   const catalogDataGenresSource = readFileStrict(files.catalogDataGenres, ROOT);
   const catalogDataHiddenSource = readFileStrict(files.catalogDataHidden, ROOT);
   const catalogDataHistorySource = readFileStrict(files.catalogDataHistory, ROOT);
