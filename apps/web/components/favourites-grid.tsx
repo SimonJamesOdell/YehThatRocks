@@ -14,6 +14,7 @@ import { EVENT_NAMES, FAVOURITES_CREATE_PLAYLIST_FINISHED_EVENT, FAVOURITES_CREA
 import { createPlaylistFromVideoList } from "@/lib/playlist-create-from-video-list";
 import { parseJsonOrNull } from "@/lib/parse-json";
 import { getArtistPagePath } from "@/lib/artist-routing";
+import type { PlaylistSummary } from "@/components/player-types";
 
 const FAVOURITES_BATCH_SIZE = 100;
 

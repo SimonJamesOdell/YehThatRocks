@@ -15,6 +15,7 @@ import {
   normalizeArtistLetter,
 } from "@/lib/artists-letter-events";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
+import type { PlaylistSummary } from "@/components/player-types";
 
 type ArtistWithCount = ArtistRecord & { videoCount: number };
 
