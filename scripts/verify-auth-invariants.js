@@ -89,6 +89,7 @@ function main() {
   const shellLayoutSource = sources.shellLayout;
   const shellDynamicSource = joinFileSources([
     files.shellDynamic,
+    path.join(ROOT, "apps/web/components/shell-auth-dialogs.tsx"),
     path.join(ROOT, "apps/web/hooks/use-chat-state.ts"),
     path.join(ROOT, "apps/web/hooks/use-playlist-rail.ts"),
     path.join(ROOT, "apps/web/hooks/use-performance-metrics.ts"),

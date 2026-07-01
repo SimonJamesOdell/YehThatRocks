@@ -157,7 +157,10 @@ function runSourceChecks(failures) {
   const thumbnailPinClientSyncSource = readFileStrict(SOURCE_FILES.thumbnailPinClientSync, ROOT);
   const artistVideoLinkSource = readFileStrict(SOURCE_FILES.artistVideoLink, ROOT);
   const catalogDataCoreSource = readFileStrict(SOURCE_FILES.catalogDataCore, ROOT);
-  const catalogDataGenresSource = readFileStrict(SOURCE_FILES.catalogDataGenres, ROOT);
+  const catalogDataGenresSource = [
+    readFileStrict(SOURCE_FILES.catalogDataGenres, ROOT),
+    readFileStrict(path.join(ROOT, "apps/web/lib/genre-constants.ts"), ROOT),
+  ].join('\n');
   const warmCategoryCachesSource = readFileStrict(SOURCE_FILES.warmCategoryCaches, ROOT);
   const adminThumbnailPinsRouteSource = readFileStrict(SOURCE_FILES.adminThumbnailPinsRoute, ROOT);
   const genreBucketsSource = readFileStrict(SOURCE_FILES.genreBuckets, ROOT);
