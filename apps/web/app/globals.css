@@ -6,6 +6,9 @@
 @import './styles/player-auth-gate.css';
 @import './styles/player-magazine.css';
 @import './styles/player-chrome.css';
+@import './styles/player-dock.css';
+@import './styles/player-control-overlay.css';
+@import './styles/player-admin.css';
 @import './styles/player-overlays.css';
 @import './styles/player-actions.css';
 @import './styles/playlist-ui.css';
