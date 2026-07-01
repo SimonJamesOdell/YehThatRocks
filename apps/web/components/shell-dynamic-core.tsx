@@ -11,8 +11,7 @@ import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { ArtistsLetterProvider } from "@/components/artists-letter-provider";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
-import { AuthUnavailableDialog } from "@/components/auth-unavailable-dialog";
-import { CurrentVideoRetryDialog } from "@/components/current-video-retry-dialog";
+import { ShellAuthDialogs } from "@/components/shell-auth-dialogs";
 import { BrandLockup } from "@/components/brand-lockup";
 import { RightRailLyricsOverlay } from "@/components/right-rail-lyrics-overlay";
 import { RightRailLoadingState } from "@/components/right-rail-loading-state";
@@ -106,61 +105,6 @@ const isCategoriesOverlayPendingOrActive = isCategoriesRoute
 const isArtistsOverlayPendingOrActive = isArtistsOverlayPath(pathname)
 */
 // ── Auth dialogs (extracted from ShellDynamicInner render body) ────────────────
-
-type ShellAuthDialogsProps = {
-  authStatus: "clear" | "unavailable";
-  authStatusMessage: string | null;
-  isAuthUnavailableDialogRequested: boolean;
-  isAuthUnavailableDialogDismissed: boolean;
-  isRetryingAuthStatus: boolean;
-  onAuthDismiss: () => void;
-  onAuthRetry: () => void;
-  requestedVideoId: string | null;
-  isResolvingRequestedVideo: boolean;
-  requestedVideoPendingRetryAfterMs: number | null;
-  requestedVideoPendingReason: CurrentVideoResolvePayload["pendingReason"] | null;
-  onVideoRetryNow: () => void;
-};
-
-function ShellAuthDialogs({
-  authStatus,
-  authStatusMessage,
-  isAuthUnavailableDialogRequested,
-  isAuthUnavailableDialogDismissed,
-  isRetryingAuthStatus,
-  onAuthDismiss,
-  onAuthRetry,
-  requestedVideoId,
-  isResolvingRequestedVideo,
-  requestedVideoPendingRetryAfterMs,
-  requestedVideoPendingReason,
-  onVideoRetryNow,
-}: ShellAuthDialogsProps) {
-  return (
-    <>
-      {authStatus === "unavailable" && authStatusMessage && isAuthUnavailableDialogRequested && !isAuthUnavailableDialogDismissed ? (
-        <AuthUnavailableDialog
-          message={authStatusMessage}
-          isRetrying={isRetryingAuthStatus}
-          retryLabel="Retry auth now"
-          retryButtonLabel="Try again"
-          retryBusyLabel="Trying again..."
-          dismissLabel="Dismiss auth availability notice"
-          dismissButtonLabel="Dismiss"
-          onRetry={onAuthRetry}
-          onDismiss={onAuthDismiss}
-        />
-      ) : null}
-      {requestedVideoId && isResolvingRequestedVideo && requestedVideoPendingRetryAfterMs !== null ? (
-        <CurrentVideoRetryDialog
-          pendingReason={requestedVideoPendingReason}
-          retryAfterMs={requestedVideoPendingRetryAfterMs}
-          onRetryNow={onVideoRetryNow}
-        />
-      ) : null}
-    </>
-  );
-}
 
 function ShellDynamicInner({
   initialVideo,
