@@ -1,0 +1,1160 @@
+/* ─── Magazine draft surface ─────────────────────────────────────────────── */
+
+.magazinePage {
+  min-height: 100dvh;
+  width: 100%;
+  padding: 0 0 52px;
+  display: grid;
+  gap: 18px;
+}
+
+.magazineNotFoundPanel {
+  margin: 24px 0;
+  padding: clamp(20px, 3vw, 34px);
+  border: 1px solid rgba(255, 170, 145, 0.44);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 84, 45, 0.2), transparent 44%),
+    linear-gradient(160deg, rgba(34, 8, 6, 0.95), rgba(11, 4, 4, 0.96));
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 126, 96, 0.16) inset;
+  display: grid;
+  gap: 14px;
+}
+
+.magazineOverlayBar {
+  position: sticky;
+  top: 0;
+  z-index: 45;
+}
+
+.magazineOverlayBarBody {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.magazineOverlayBarTitle {
+  display: block;
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(1.05rem, 1.45vw, 1.35rem);
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: rgba(255, 245, 240, 0.96);
+}
+
+.magazineOverlayBar .categoryHeaderBreadcrumb {
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.82rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.magazineOverlayBar .categoryHeaderBreadcrumbCurrent {
+  display: inline-block;
+  min-width: 0;
+  max-width: min(52vw, 680px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.magazineBreadcrumbs {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 219, 210, 0.78);
+  font-size: 0.8rem;
+}
+
+.magazineBreadcrumbLink {
+  color: rgba(255, 229, 220, 0.92);
+  text-decoration: none;
+}
+
+.magazineBreadcrumbLink:hover {
+  text-decoration: underline;
+}
+
+.magazineBreadcrumbSeparator {
+  color: rgba(255, 189, 177, 0.7);
+}
+
+.magazineBreadcrumbCurrent {
+  min-width: 0;
+  max-width: min(72vw, 900px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 241, 236, 0.92);
+}
+
+.magazineHeaderBreadcrumbCurrent {
+  display: inline-block;
+  min-width: 0;
+  max-width: min(54vw, 760px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.magazineMasthead,
+.magazineHeroBar,
+.magazineCoverStory,
+.magazineSectionBlock,
+.magazineArticle,
+.magazineTrackCard {
+  background: rgba(12, 8, 8, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.25);
+}
+
+.magazineMasthead {
+  padding: 18px 22px 20px;
+  display: grid;
+  gap: 14px;
+  background:
+    radial-gradient(circle at 10% 10%, rgba(255, 105, 72, 0.14), transparent 42%),
+    linear-gradient(165deg, rgba(23, 8, 8, 0.95), rgba(8, 4, 4, 0.96));
+}
+
+.magazineMastheadBrand {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+
+.magazineMastheadLogo {
+  width: min(540px, 100%);
+  height: auto;
+}
+
+.magazineMastheadTagline {
+  margin: 0;
+  position: relative;
+  top: -18px;
+  left: 28px;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(1.05rem, 2vw, 1.4rem);
+  letter-spacing: 0.04em;
+  color: rgba(255, 244, 240, 0.92);
+}
+
+.magazineMastheadNav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.magazineMastheadNavLink {
+  text-decoration: none;
+  color: rgba(255, 235, 226, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.05);
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.magazineMastheadNavLink:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.34);
+}
+
+.magazineHeroBar {
+  padding: 22px;
+  display: grid;
+  gap: 10px;
+  background:
+    linear-gradient(160deg, rgba(34, 10, 9, 0.9), rgba(10, 5, 6, 0.95));
+}
+
+.magazineKicker {
+  margin: 0;
+  font-size: 0.76rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 204, 194, 0.8);
+}
+
+.magazineHero h1,
+.magazineArticle h1 {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  letter-spacing: 0.03em;
+  font-size: clamp(1.4rem, 2.8vw, 2.2rem);
+}
+
+.magazineSummary {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.74);
+  line-height: 1.6;
+}
+
+.magazineMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.82rem;
+}
+
+.magazineMetaActions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.magazinePrimaryCta,
+.magazineWatchCta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  text-decoration: none;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.magazinePrimaryCta {
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff4f0;
+}
+
+.magazinePrimaryCta:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.magazineCoverStory {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  min-height: clamp(320px, 40vh, 520px);
+  overflow: hidden;
+  transition: background 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+
+.magazineCoverStory:hover {
+  background: linear-gradient(180deg, rgba(170, 30, 17, 0.56), rgba(90, 9, 6, 0.7));
+  border-color: rgba(255, 116, 88, 0.78);
+  box-shadow: var(--glow);
+}
+
+.magazineCoverStoryLink {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+}
+
+.magazineCoverStoryThumb {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: cover;
+}
+
+.magazineCoverStoryBody {
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
+  padding: 20px;
+  display: grid;
+  gap: 10px;
+  align-content: center;
+}
+
+.magazineCoverStoryActions {
+  position: relative;
+  z-index: 3;
+  margin-top: 4px;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  justify-self: start;
+  pointer-events: none;
+}
+
+.magazineCoverStoryActions {
+  pointer-events: none;
+}
+
+.magazineCoverStoryActions .magazineWatchCta {
+  pointer-events: auto;
+}
+
+.magazineCoverStoryBody h2,
+.magazineSectionHeader h2 {
+  margin: 0;
+  font-size: clamp(1.18rem, 2.1vw, 1.7rem);
+  font-family: var(--font-display), sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.magazineCoverStoryBody p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.55;
+}
+
+.magazineSectionLabel {
+  margin: 0;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(255, 194, 182, 0.86);
+}
+
+.magazineSectionBlock {
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.magazineSectionHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.magazineSectionHeader span {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8rem;
+}
+
+.magazineTrackGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.magazineTrackCard {
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  grid-template-rows: 1fr auto;
+  min-height: 240px;
+  transition: background 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+
+.magazineTrackCard:hover {
+  background: linear-gradient(180deg, rgba(170, 30, 17, 0.56), rgba(90, 9, 6, 0.7));
+  border-color: rgba(255, 116, 88, 0.78);
+  box-shadow: var(--glow);
+}
+
+.magazineTrackLink {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  text-decoration: none;
+  color: inherit;
+}
+
+.magazineTrackLink:focus {
+  outline: none;
+}
+
+.magazineTrackActions {
+  grid-column: 1;
+  grid-row: 2;
+  padding: 10px 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.magazineTrackThumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.magazineTrackBody {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.magazineTrackGenre {
+  margin: 0;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: rgba(255, 196, 186, 0.8);
+}
+
+.magazineTrackBody h2 {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.magazineTrackBody h3,
+.magazineMiniCard h3 {
+  margin: 0;
+  font-size: 1.02rem;
+  color: rgba(255, 247, 244, 0.95);
+}
+
+.magazineTrackBody p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 1.5;
+}
+
+.magazineMiniGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.magazineMiniGridDense {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.magazineMiniCard {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.magazineMiniCard p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 1.5;
+}
+
+.magazineTrackActions,
+.magazineArticleActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.magazineWatchCta {
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 94, 78, 0.66);
+  background: linear-gradient(180deg, rgba(177, 34, 29, 0.9), rgba(95, 10, 8, 0.95));
+  color: #fff7f4;
+}
+
+.magazineWatchCta:hover {
+  filter: brightness(1.08);
+}
+
+.magazineTextLink {
+  color: rgba(255, 220, 210, 0.9);
+  text-decoration: none;
+  font-size: 0.84rem;
+}
+
+.magazineTextLink:hover {
+  text-decoration: underline;
+}
+
+.magazineAdminDeleteButton {
+  border: 1px solid rgba(255, 120, 110, 0.65);
+  background: rgba(70, 8, 8, 0.74);
+  color: rgba(255, 228, 224, 0.96);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.magazineAdminDeleteButton:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.magazineAdminDeleteButton:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.magazineAdminDeleteError {
+  margin: 0;
+  color: rgba(255, 138, 126, 0.92);
+  font-size: 0.78rem;
+}
+
+.magazineAdminGenerateWrap {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.magazineAdminGenerateButton {
+  border: 1px solid rgba(255, 120, 110, 0.65);
+  background: linear-gradient(180deg, rgba(177, 34, 29, 0.88), rgba(95, 10, 8, 0.95));
+  color: rgba(255, 240, 236, 0.98);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.magazineAdminGenerateButton:hover:not(:disabled) {
+  filter: brightness(1.09);
+}
+
+.magazineAdminGenerateButton:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.magazineAdminGenerateStatus,
+.magazineAdminGenerateError {
+  margin: 0;
+  font-size: 0.76rem;
+}
+
+.magazineAdminGenerateStatus {
+  color: rgba(223, 245, 214, 0.9);
+}
+
+.magazineAdminGenerateError {
+  color: rgba(255, 138, 126, 0.92);
+}
+
+.magazineArticle {
+  padding: 22px;
+  display: grid;
+  gap: 14px;
+}
+
+.magazineArticleHero {
+  padding: 20px 22px;
+  display: grid;
+  gap: 10px;
+  background:
+    radial-gradient(circle at 8% 8%, rgba(255, 98, 70, 0.2), transparent 42%),
+    linear-gradient(160deg, rgba(28, 9, 8, 0.95), rgba(10, 4, 4, 0.96));
+}
+
+.magazineArticleHeroBrand {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+}
+
+.magazineArticleHeroLogo {
+  width: min(440px, 100%);
+  height: auto;
+}
+
+.magazineArticleHeroTagline {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(0.95rem, 1.7vw, 1.2rem);
+  letter-spacing: 0.04em;
+  color: rgba(255, 236, 230, 0.9);
+  position: relative;
+  top: -12px;
+  left: 22px;
+}
+
+.magazineArticleMetaStrip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.magazineArticleMetaStrip span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 238, 233, 0.88);
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.magazineArticleLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.magazineArticle {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.magazineArticleSidebar {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.magazineArticleThumb {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  max-height: 420px;
+  object-fit: cover;
+}
+
+.magazineArticleQuickFacts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.magazineArticleQuickFacts > div {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.magazineArticleQuickFacts h2 {
+  margin: 0;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 203, 189, 0.86);
+}
+
+.magazineArticleQuickFacts p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.5;
+}
+
+.magazineArticleBlock {
+  display: grid;
+  gap: 8px;
+}
+
+.magazineArticleBlock h2 {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.magazineArticleBlock p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.76);
+  line-height: 1.62;
+}
+
+.magazineArticleSidebar {
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.magazineArticleSidebar h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-family: var(--font-display), sans-serif;
+  letter-spacing: 0.03em;
+}
+
+.magazineArticleSidebarList {
+  display: grid;
+  gap: 8px;
+}
+
+.magazineArticleSidebarItem {
+  display: grid;
+  gap: 4px;
+  text-decoration: none;
+  color: rgba(255, 247, 244, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+  transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.magazineArticleSidebarItem:hover {
+  background: linear-gradient(180deg, rgba(170, 30, 17, 0.56), rgba(90, 9, 6, 0.7));
+  border-color: rgba(255, 116, 88, 0.78);
+  box-shadow: 0 0 24px rgba(255, 0, 0, 0.6);
+}
+
+.magazineArticleSidebarItem strong {
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.magazineArticleSidebarItem span {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: rgba(255, 211, 198, 0.76);
+}
+
+.magazineArticleSidebarActions {
+  display: grid;
+  gap: 8px;
+}
+
+/* Article body rendered from structured blocks */
+.magazineArticleBody {
+  display: grid;
+  gap: 14px;
+}
+
+.magazineArticleBody p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.72;
+  font-size: 1rem;
+}
+
+.magazineArticleBody h2 {
+  margin: 8px 0 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(1.05rem, 1.8vw, 1.35rem);
+  letter-spacing: 0.02em;
+  color: rgba(255, 245, 240, 0.97);
+}
+
+.magazineArticleBody h2:first-child {
+  margin-top: 0;
+}
+
+.magazineArticleQuote {
+  border-left: 3px solid rgba(255, 94, 78, 0.7);
+  margin: 0;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 0 8px 8px 0;
+}
+
+.magazineArticleQuote p {
+  margin: 0;
+  font-style: italic;
+  color: rgba(255, 238, 232, 0.88);
+}
+
+.magazineArticleQuote cite {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: rgba(255, 211, 198, 0.7);
+  font-style: normal;
+}
+
+/* Article title and deck in hero */
+.magazineArticleTitle {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(1.3rem, 2.6vw, 2rem);
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.magazineArticleDeck {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: clamp(0.95rem, 1.5vw, 1.1rem);
+  line-height: 1.55;
+}
+
+/* Sidebar with thumbnails */
+.magazineArticleSidebarThumb {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  min-height: 92px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 4px;
+}
+
+.magazineArticleSidebarItem {
+  grid-template-columns: 1fr;
+}
+
+.magazineArticleSidebarMeta {
+  display: grid;
+  gap: 2px;
+}
+
+.magazineArticleSidebarMeta strong {
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
+.magazineArticleSidebarMeta span {
+  font-size: 0.8rem;
+  color: rgba(255, 230, 222, 0.82);
+}
+
+.magazineArticleSidebarMeta small {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: rgba(255, 203, 189, 0.7);
+}
+
+@media (max-width: 920px) {
+  .magazineCoverStory {
+    grid-template-columns: 1fr;
+  }
+
+  .magazineArticleLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .magazineArticleQuickFacts {
+    grid-template-columns: 1fr;
+  }
+
+  .magazineMiniGrid,
+  .magazineMiniGridDense {
+    grid-template-columns: 1fr;
+  }
+
+  .magazineTrackGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .magazinePage {
+    width: 100%;
+    padding-top: 0;
+  }
+
+  .magazineOverlayBar {
+    top: 0;
+  }
+
+  .magazineOverlayBar .favouritesBlindClose {
+    align-self: start;
+  }
+
+  .magazineBreadcrumbCurrent {
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .magazineHeaderBreadcrumbCurrent {
+    max-width: min(58vw, 360px);
+  }
+
+  .magazineTrackCard {
+    grid-template-columns: 1fr;
+  }
+
+  .magazineMastheadTagline {
+    left: 0;
+    top: -10px;
+    text-align: center;
+  }
+
+  .magazineArticleHeroTagline {
+    left: 0;
+    top: -8px;
+  }
+}
+
+/* Magazine comments */
+.magazineCommentsSection {
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(12, 8, 8, 0.8);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.25);
+}
+
+.magazineCommentsHeading {
+  margin: 8px 0 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(1.28rem, 2.35vw, 1.68rem);
+  letter-spacing: 0.02em;
+  color: rgba(255, 245, 240, 0.97);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.magazineCommentsHeading span {
+  font: inherit;
+  color: inherit;
+}
+
+.magazineCommentsHeadingStatus {
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.84rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 214, 201, 0.8);
+}
+
+.magazineCommentsComposer {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.magazineCommentsLabel {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 231, 224, 0.88);
+}
+
+.magazineCommentsTextarea {
+  width: 100%;
+  min-height: 100px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(10, 5, 5, 0.7);
+  color: rgba(255, 245, 240, 0.95);
+  padding: 11px 12px;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  resize: vertical;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.magazineCommentsTextarea::placeholder {
+  color: rgba(255, 200, 190, 0.5);
+}
+
+.magazineCommentsTextarea:hover:not(:disabled) {
+  border-color: rgba(255, 220, 210, 0.28);
+}
+
+.magazineCommentsTextarea:focus {
+  outline: none;
+  border-color: rgba(211, 67, 67, 0.6);
+  box-shadow: 0 0 0 3px rgba(170, 28, 28, 0.18);
+}
+
+.magazineCommentsTextarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.magazineCommentsComposerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.magazineCommentsCount {
+  margin: 0;
+  color: rgba(255, 220, 210, 0.76);
+  font-size: 0.9rem;
+}
+
+.magazineCommentsSubmitButton {
+  min-height: 42px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 1px solid rgba(226, 81, 81, 0.5);
+  background: linear-gradient(180deg, rgba(164, 34, 34, 0.8), rgba(86, 12, 12, 0.88));
+  color: rgba(255, 232, 224, 0.95);
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.93rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all 150ms ease;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
+}
+
+.magazineCommentsSubmitButton:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(191, 40, 40, 0.9), rgba(102, 15, 15, 0.96));
+  border-color: rgba(255, 175, 162, 0.7);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+}
+
+.magazineCommentsSubmitButton:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.magazineCommentsSubmitButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.magazineCommentsStatus {
+  margin: 0;
+}
+
+.magazineCommentsStatusInfo {
+  color: rgba(232, 247, 255, 0.9);
+}
+
+.magazineCommentsStatusError {
+  color: rgba(255, 148, 132, 0.95);
+}
+
+.magazineCommentsList {
+  display: grid;
+  gap: 12px;
+}
+
+.magazineCommentCard {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 13px 14px;
+  background: linear-gradient(180deg, rgba(24, 24, 26, 0.72), rgba(14, 14, 16, 0.76));
+  display: grid;
+  gap: 9px;
+  transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.magazineCommentCard:hover {
+  border-color: rgba(255, 158, 136, 0.7);
+  background: linear-gradient(180deg, rgba(105, 26, 21, 0.78), rgba(56, 14, 12, 0.82));
+  box-shadow: 0 8px 22px rgba(35, 8, 6, 0.35);
+}
+
+.magazineCommentCardOwn {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.magazineCommentCardLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.magazineCommentCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.magazineCommentAuthorMeta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.magazineCommentAvatar,
+.magazineCommentAvatarFallback {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  flex: 0 0 auto;
+}
+
+.magazineCommentAvatar {
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.magazineCommentAvatarFallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: rgba(255, 234, 226, 0.95);
+  background: linear-gradient(180deg, rgba(74, 74, 76, 0.8), rgba(34, 34, 36, 0.9));
+}
+
+.magazineCommentAuthor {
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.magazineCommentTimestamp {
+  margin: 0;
+  white-space: nowrap;
+  font-size: 0.74rem;
+}
+
+.magazineCommentBody {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.62;
+  color: rgba(255, 244, 239, 0.9);
+}
+
+.magazineCommentReviewNote {
+  margin: 0;
+  color: rgba(255, 211, 198, 0.86);
+}
+
+/* Comments wrapper in row 2, column 1 */
+.magazineArticleCommentsWrapper {
+  grid-column: 1;
+  grid-row: 2;
+  margin-top: 0;
+}
+
+@media (max-width: 680px) {
+  .magazineCommentsSection {
+    padding: 14px;
+  }
+
+  .magazineCommentsComposerRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .magazineCommentsSubmitButton {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .magazineCommentCardHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+}
+
+/* ─── end magazine draft ─────────────────────────────────────────────────── */

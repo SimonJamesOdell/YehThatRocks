@@ -5,7 +5,7 @@ const {
   readFileStrict,
   assertContains,
   finishInvariantCheck,
-} = require("./invariants/helpers");
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 const FILE = path.join(ROOT, "scripts", "magazine-facebook-browser-open.js");

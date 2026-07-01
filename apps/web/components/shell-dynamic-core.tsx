@@ -36,27 +36,27 @@ import { PlayerExperience } from "@/components/player-experience-core";
 import { SearchResultFavouriteButton } from "@/components/search-result-favourite-button";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { OverlayScrollContainerProvider } from "@/components/overlay-scroll-container-context";
-import { LIVE_SEARCH_PARAMS_EVENT, useLiveSearchParams } from "@/components/use-live-search-params";
-import { useTemporaryQueueController } from "@/components/use-temporary-queue-controller";
-import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
-import { useDesktopIntro } from "@/components/use-desktop-intro";
-import { usePerformanceMetrics } from "@/components/use-performance-metrics";
-import { useSearchAutocomplete, type SearchSuggestion } from "@/components/use-search-autocomplete";
-import { useChatState, type ChatMode, type ChatMessage, type OnlineUser } from "@/components/use-chat-state";
-import { usePlaylistRail, type RightRailMode, type PlaylistRailVideo, type PlaylistRailPayload, type PlaylistRailSummary } from "@/components/use-playlist-rail";
+import { LIVE_SEARCH_PARAMS_EVENT, useLiveSearchParams } from "@/hooks/use-live-search-params";
+import { useTemporaryQueueController } from "@/hooks/use-temporary-queue-controller";
+import { useSeenTogglePreference } from "@/hooks/use-seen-toggle-preference";
+import { useDesktopIntro } from "@/hooks/use-desktop-intro";
+import { usePerformanceMetrics } from "@/hooks/use-performance-metrics";
+import { useSearchAutocomplete, type SearchSuggestion } from "@/hooks/use-search-autocomplete";
+import { useChatState, type ChatMode, type ChatMessage, type OnlineUser } from "@/hooks/use-chat-state";
+import { usePlaylistRail, type RightRailMode, type PlaylistRailVideo, type PlaylistRailPayload, type PlaylistRailSummary } from "@/hooks/use-playlist-rail";
 import { MagazineRailContent, PerformanceDial, PlaylistIndexPanel, QueuePanel, SharedVideoMessageCard, WatchNextCard } from "@/components/shell-dynamic-rendering";
-import { useRouteChangeTracking } from "@/components/use-route-change-tracking";
-import { useShellAdminState } from "@/components/use-shell-admin-state";
-import { useShellKeyboardShortcuts } from "@/components/use-shell-keyboard-shortcuts";
-import { useShellOverlayEvents } from "@/components/use-shell-overlay-events";
-import { useShellOverlayPendingState } from "@/components/use-shell-overlay-pending-state";
-import { useShellDockOverlayTransitions } from "@/components/use-shell-dock-overlay-transitions";
-import { useShellOverlayRouteMeta } from "@/components/use-shell-overlay-route-meta";
-import { useWatchNextPrefetch } from "@/components/use-watch-next-prefetch";
-import { useWatchNextPayloadLoader } from "@/components/use-watch-next-payload-loader";
-import { useAuthSuccessListener } from "@/components/use-auth-success-listener";
-import { useIdleRoutePrefetch } from "@/components/use-idle-route-prefetch";
-import { useShellNavigationHelpers } from "@/components/use-shell-navigation-helpers";
+import { useRouteChangeTracking } from "@/hooks/use-route-change-tracking";
+import { useShellAdminState } from "@/hooks/use-shell-admin-state";
+import { useShellKeyboardShortcuts } from "@/hooks/use-shell-keyboard-shortcuts";
+import { useShellOverlayEvents } from "@/hooks/use-shell-overlay-events";
+import { useShellOverlayPendingState } from "@/hooks/use-shell-overlay-pending-state";
+import { useShellDockOverlayTransitions } from "@/hooks/use-shell-dock-overlay-transitions";
+import { useShellOverlayRouteMeta } from "@/hooks/use-shell-overlay-route-meta";
+import { useWatchNextPrefetch } from "@/hooks/use-watch-next-prefetch";
+import { useWatchNextPayloadLoader } from "@/hooks/use-watch-next-payload-loader";
+import { useAuthSuccessListener } from "@/hooks/use-auth-success-listener";
+import { useIdleRoutePrefetch } from "@/hooks/use-idle-route-prefetch";
+import { useShellNavigationHelpers } from "@/hooks/use-shell-navigation-helpers";
 import { dedupeRelatedRailVideos, finiteNumberOrNull, finitePercentOrNull, formatChatTimestamp, isFavouriteVideo, logFlow, logWatchNext, matchesPlaylistVideoOrder, sortVideosBySeen } from "@/components/shell-dynamic-utils";
 import { deriveShellOverlayRouteState, isProtectedOverlayPath, isRouteActive, isCategoriesOverlayPath } from "@/components/shell-dynamic-route-state";
 import { navItems, type VideoRecord } from "@/lib/catalog";
@@ -74,81 +74,16 @@ import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
 import { parseJsonOrNull } from "@/lib/parse-json";
 import { resolveVideoGenreNavigationTarget } from "@/lib/video-genre-navigation";
 applyRuntimeBootstrapPatches({ safePerformanceMeasure: true });
-type CurrentVideoResolvePayload = {
-  currentVideo?: VideoRecord;
-  relatedVideos?: VideoRecord[];
-  pending?: boolean;
-  pendingReason?: "cooldown" | "concurrency-shed" | "timeout" | "resolver-error";
-  retryAfterMs?: number;
-  denied?: { message?: string; reason?: string; videoId?: string };
-  watchNextAdvisory?: WatchNextAdvisory;
-};
-type WatchNextAdvisory = {
-  genreFilterActive: boolean;
-  genreFilters: string[];
-  constrainedByGenreFilter: boolean;
-  emptyDueToGenreFilter: boolean;
-};
-type LyricsRailPayload = {
-  artistName: string | null;
-  trackName: string | null;
-  lyrics: string | null;
-  available: boolean;
-  message: string | null;
-  source: string | null;
-  cached: boolean;
-};
-const DESKTOP_INTRO_LOGO_SRC = "/assets/images/yeh_main_logo.png?v=20260424-4";
-type ShellDynamicProps = {
-  initialVideo: VideoRecord;
-  initialRelatedVideos: VideoRecord[];
-  initialSeenVideoIds?: string[];
-  initialHiddenVideoIds?: string[];
-  isLoggedIn: boolean;
-  initialAuthStatus?: "clear" | "unavailable";
-  isAdmin: boolean;
-  children: ReactNode;
-};
-const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
-const LAST_RANDOM_START_VIDEO_ID_KEY = "ytr:last-random-start-video-id";
-const CURRENT_VIDEO_PREFETCH_TTL_MS = 25_000;
-const RELATED_FADE_STAGGER_MS = 22;
-const RELATED_FADE_OUT_BASE_MS = 120;
-const RELATED_FADE_IN_BASE_MS = 120;
-const STARTUP_RETRY_FAST_ATTEMPTS = 4;
-const STARTUP_RETRY_SLOW_DELAY_MS = 8_000;
-const STARTUP_RETRY_MAX_ATTEMPTS = 8;
-const REQUESTED_VIDEO_RETRY_FAST_ATTEMPTS = 4;
-const REQUESTED_VIDEO_RETRY_SLOW_DELAY_MS = 8_000;
-const RELATED_LOAD_BATCH_SIZE = 40;
-const RELATED_LOAD_AHEAD_PX = 560;
-const RELATED_MAX_VIDEOS = Number.MAX_SAFE_INTEGER;
-const RELATED_BACKGROUND_PREFETCH_TARGET = 35;
-const RELATED_BACKGROUND_PREFETCH_DELAY_MS = 650;
-const RELATED_LOAD_AHEAD_AGGRESSIVE_PX = 920;
-const RELATED_SCROLL_PREFETCH_BATCHES = 2;
-const RELATED_BACKGROUND_PREFETCH_TARGET_AGGRESSIVE = 45;
-const RELATED_BACKGROUND_PREFETCH_DELAY_FAST_MS = 280;
-const RELATED_BOOTSTRAP_MIN_VISIBLE = 8;
-const RELATED_LOADING_HINT_SHOW_DELAY_MS = 220;
-const RELATED_LOADING_HINT_HIDE_DELAY_MS = 320;
-const RELATED_FETCH_TIMEOUT_MS = 8_000;
-const RELATED_COLD_FETCH_RETRY_ATTEMPTS = 3;
-const RELATED_COLD_FETCH_RETRY_BASE_DELAY_MS = 250;
-const WATCH_NEXT_HIDE_ANIMATION_MS = 240;
-const WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-watch-next";
-const PREFETCH_FAILURE_BASE_BACKOFF_MS = 1_500;
-const PREFETCH_FAILURE_MAX_BACKOFF_MS = 20_000;
-const DOCK_MOVE_DURATION_MS = 520;
-const DOCK_CONTROLS_FADE_DURATION_MS = 220;
-const DOCK_CONTROLS_FADE_DELAY_MS = Math.max(0, DOCK_MOVE_DURATION_MS - DOCK_CONTROLS_FADE_DURATION_MS);
-const UNDOCK_SETTLE_DURATION_MS = 220;
-const FOOTER_REVEAL_DURATION_MS = 240;
+import type { CurrentVideoResolvePayload, WatchNextAdvisory, LyricsRailPayload, ShellDynamicProps } from "@/components/shell-types";
+import { FLOW_DEBUG_ENABLED, LAST_RANDOM_START_VIDEO_ID_KEY, CURRENT_VIDEO_PREFETCH_TTL_MS, RELATED_FADE_STAGGER_MS, RELATED_FADE_OUT_BASE_MS, RELATED_FADE_IN_BASE_MS, STARTUP_RETRY_FAST_ATTEMPTS, STARTUP_RETRY_SLOW_DELAY_MS, STARTUP_RETRY_MAX_ATTEMPTS, REQUESTED_VIDEO_RETRY_FAST_ATTEMPTS, REQUESTED_VIDEO_RETRY_SLOW_DELAY_MS, RELATED_LOAD_BATCH_SIZE, RELATED_LOAD_AHEAD_PX, RELATED_MAX_VIDEOS, RELATED_BACKGROUND_PREFETCH_TARGET, RELATED_BACKGROUND_PREFETCH_DELAY_MS, RELATED_LOAD_AHEAD_AGGRESSIVE_PX, RELATED_SCROLL_PREFETCH_BATCHES, RELATED_BACKGROUND_PREFETCH_TARGET_AGGRESSIVE, RELATED_BACKGROUND_PREFETCH_DELAY_FAST_MS, RELATED_BOOTSTRAP_MIN_VISIBLE, RELATED_LOADING_HINT_SHOW_DELAY_MS, RELATED_LOADING_HINT_HIDE_DELAY_MS, RELATED_FETCH_TIMEOUT_MS, RELATED_COLD_FETCH_RETRY_ATTEMPTS, RELATED_COLD_FETCH_RETRY_BASE_DELAY_MS, WATCH_NEXT_HIDE_ANIMATION_MS, WATCH_NEXT_HIDE_SEEN_TOGGLE_KEY, PREFETCH_FAILURE_BASE_BACKOFF_MS, PREFETCH_FAILURE_MAX_BACKOFF_MS, DOCK_MOVE_DURATION_MS, DOCK_CONTROLS_FADE_DURATION_MS, DOCK_CONTROLS_FADE_DELAY_MS, UNDOCK_SETTLE_DURATION_MS, FOOTER_REVEAL_DURATION_MS, FOOTER_REVEAL_ANIMATION_MS, FOOTER_EARLY_REVEAL_DELAY_MS, DESKTOP_INTRO_LOGO_SRC } from "@/components/shell-constants";
+// types moved to shell-types.ts
+
+
+// DESKTOP_INTRO_LOGO_SRC imported from shell-constants.ts
+
 // Duration of the primaryActionsReturn CSS animation (must stay in sync with player-actions.css).
-const FOOTER_REVEAL_ANIMATION_MS = 180;
 // Start the footer fade well before the undock movement ends so the controls
 // are already occupying their final layout slot when the player lands.
-const FOOTER_EARLY_REVEAL_DELAY_MS = 0;
 /* Invariant anchors retained while listener wiring is delegated to hooks:
 const handleDockHideRequest = () => {
 window.addEventListener(DOCK_HIDE_REQUEST_EVENT, handleDockHideRequest);

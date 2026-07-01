@@ -20,8 +20,8 @@ const SOURCE_FILES = {
   categoryVideosInfinite: path.join(ROOT, "apps/web/components/category-videos-infinite.tsx"),
   categoryCardsSessionCache: path.join(ROOT, "apps/web/lib/category-cards-session-cache.ts"),
   categoryArtistsSessionCache: path.join(ROOT, "apps/web/lib/category-artists-session-cache.ts"),
-  categoriesNewParentPage: path.join(ROOT, "apps/web/app/(shell)/categories_new/page.tsx"),
-  categoriesNewCategoryPage: path.join(ROOT, "apps/web/app/(shell)/categories_new/[slug]/page.tsx"),
+  categoriesNewParentPage: path.join(ROOT, "apps/web/app/(shell)/categories/page.tsx"),
+  categoriesNewCategoryPage: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/page.tsx"),
   categoriesNewGrid: path.join(ROOT, "apps/web/components/categories-new-grid.tsx"),
   categoriesNewArtistsBrowser: path.join(ROOT, "apps/web/components/category-new-artists-browser.tsx"),
   categoriesNewSnapshots: path.join(ROOT, "apps/web/lib/categories-new-snapshots.ts"),
@@ -45,40 +45,10 @@ const TOP_LEVEL_BUCKET_LABELS = new Set([
   "Progressive & Experimental",
 ].map((value) => value.toLowerCase()));
 
-function loadDatabaseEnv() {
-  const envPath = path.resolve(process.cwd(), "apps/web/.env.local");
-  if (!fs.existsSync(envPath)) {
-    return;
-  }
-
-  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-
-    const match = trimmed.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (!match) {
-      continue;
-    }
-
-    const [, key, rawValue] = match;
-    if (process.env[key]) {
-      continue;
-    }
-
-    process.env[key] = rawValue.replace(/^"/, "").replace(/"$/, "");
-  }
-}
-
-function hasFlag(name) {
-  return process.argv.includes(`--${name}`);
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const { loadDatabaseEnv } = require("./lib/runtime");
+const { hasFlag } = require("./lib/cli");
+const { setTimeout: sleepRaw } = require("node:timers/promises");
+function sleep(ms) { return sleepRaw(ms); }
 
 function getInvariantDatabaseUrl() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -229,9 +199,7 @@ function runSourceChecks(failures) {
   assertContains(catalogDataGenresSource, "const hasPositiveArtistCount = rows.some", "Top-level runtime cache reader self-heals zeroed artist count rows", failures);
   assertContains(warmCategoryCachesSource, "full=1&warm=1", "Category warmup refreshes full category artist runtime caches", failures);
 
-  assertContains(categoriesNewParentPageSource, "redirect(\"/categories\")", "Categories_new parent route redirects to canonical /categories", failures);
   assertContains(categoriesNewGridSource, "href={`${basePath}/${encodeURIComponent(card.slug)}`}", "Categories snapshot grid deep-links into canonical category detail routes", failures);
-  assertContains(categoriesNewCategoryPageSource, "redirect(`/categories/${encodeURIComponent(slug)}`)", "Categories_new detail route redirects to canonical /categories detail", failures);
   assertContains(categoriesNewArtistsBrowserSource, "Categories New", "Categories_new category browser presents the snapshot-backed breadcrumb", failures);
   assertContains(categoriesNewArtistsBrowserSource, "categoryBrowserArtistTotal", "Categories_new category browser shows embedded total artist counts immediately", failures);
   assertContains(categoriesNewArtistsBrowserSource, "VIRTUAL_OVERSCAN_ROWS", "Categories_new category browser virtualizes the precomputed artist grid", failures);

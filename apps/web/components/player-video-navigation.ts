@@ -1,4 +1,4 @@
-import { LIVE_SEARCH_PARAMS_EVENT } from "@/components/use-live-search-params";
+import { LIVE_SEARCH_PARAMS_EVENT } from "@/hooks/use-live-search-params";
 
 export function buildVideoNavigationHref({
   videoId,

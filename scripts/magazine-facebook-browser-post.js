@@ -73,19 +73,7 @@ function loadEnvFile(filePath) {
   }
 }
 
-function loadEnv() {
-  const candidatePaths = [
-    path.resolve(process.cwd(), ".env"),
-    path.resolve(process.cwd(), ".env.local"),
-    path.resolve(process.cwd(), ".env.production"),
-    path.resolve(process.cwd(), "apps/web/.env.local"),
-    path.resolve(process.cwd(), "apps/web/.env.production"),
-  ];
-
-  for (const candidatePath of candidatePaths) {
-    loadEnvFile(candidatePath);
-  }
-}
+const { loadEnv } = require("./lib/social-share-utils");
 
 function readState(statePath) {
   if (!fs.existsSync(statePath)) {

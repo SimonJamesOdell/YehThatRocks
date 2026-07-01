@@ -13,13 +13,13 @@ import { getArtistPagePath, withVideoContext } from "@/lib/artist-routing";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { RemoveFavouriteConfirmModal } from "@/components/remove-favourite-confirm-modal";
-import { useNextTrackDecision } from "@/components/use-next-track-decision";
+import { useNextTrackDecision } from "@/hooks/use-next-track-decision";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent, TEMP_QUEUE_DEQUEUE_EVENT, VIDEO_ENDED_EVENT } from "@/lib/events-contract";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
 import { addPlaylistItemClient, createPlaylistClient, listPlaylistsClient } from "@/lib/playlist-client-service";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
-import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
+import { useSeenTogglePreference } from "@/hooks/use-seen-toggle-preference";
 import { EndedChoiceCard } from "@/components/player-experience-ended-choice-card";
 import {
   resetEndedChoiceRuntimeForReshuffle,
@@ -48,14 +48,14 @@ import {
   resolveVerifiedPlaybackFailurePresentation,
   type ReportUnavailableResult,
 } from "@/components/player-experience-playback-failure-utils";
-import { useAdminSession } from "@/components/use-admin-session";
-import { useAdminVideoEdit } from "@/components/use-admin-video-edit";
-import { useFavouriteState } from "@/components/use-favourite-state";
-import { useLyricsAvailability } from "@/components/use-lyrics-availability";
-import { useRouteAutoplayQueue } from "@/components/use-route-autoplay-queue";
-import { useTopFallbackVideos } from "@/components/use-top-fallback-videos";
+import { useAdminSession } from "@/hooks/use-admin-session";
+import { useAdminVideoEdit } from "@/hooks/use-admin-video-edit";
+import { useFavouriteState } from "@/hooks/use-favourite-state";
+import { useLyricsAvailability } from "@/hooks/use-lyrics-availability";
+import { useRouteAutoplayQueue } from "@/hooks/use-route-autoplay-queue";
+import { useTopFallbackVideos } from "@/hooks/use-top-fallback-videos";
 import { getRandomWatchNextId } from "@/components/get-random-watch-next-id";
-import { useEndedChoiceFetching } from "@/components/use-ended-choice-fetching";
+import { useEndedChoiceFetching } from "@/hooks/use-ended-choice-fetching";
 import { executeEndOfVideoDecision } from "@/components/execute-end-of-video-decision";
 import {
   executeMuteToggleControl,
@@ -76,7 +76,7 @@ import {
 } from "@/components/player-share-controls";
 import { shareCurrentVideoToChat } from "@/components/player-share-chat";
 import { VideoGenreLink } from "@/components/video-genre-link";
-import { openAdminDeleteConfirm, openAdminEditOverlay, toggleShareMenu } from "@/components/player-overlay-actions";
+// player-overlay-actions inlined below — see handleOpenAdminEditOverlay, handleOpenAdminDeleteConfirmModal, handleShareMenuToggle
 import { buildVideoNavigationHref, navigateVideoHref } from "@/components/player-video-navigation";
 import { buildPathWithParams, clearPlaylistParams } from "@/components/player-search-params";
 import { buildEndedChoiceCandidateVideos, buildEndedChoiceVideos } from "@/components/build-ended-choice-videos";
@@ -88,147 +88,15 @@ import {
   getEndedChoiceGridColumns,
   shouldAutoPrimeEndedChoiceRunway as shouldAutoPrimeEndedChoiceRunwayFromLayout,
 } from "@/components/ended-choice-layout-utils";
-import { usePlaylistSequence } from "@/components/use-playlist-sequence";
-import { useLiveSearchParams } from "@/components/use-live-search-params";
+import { usePlaylistSequence } from "@/hooks/use-playlist-sequence";
+import { useLiveSearchParams } from "@/hooks/use-live-search-params";
 import { type AutoplayMixSettings } from "@/lib/player-preferences-shared";
 import { parseJsonOrNull } from "@/lib/parse-json";
+import type { PlayerExperienceProps, PlayerPreferencesResponse, PlaylistSummary, YouTubePlayer, YouTubeNamespace } from "@/components/player-types";
+import { AUTOPLAY_KEY, BROKEN_UPSTREAM_AUTOADVANCE_MS, HISTORY_KEY, HISTORY_LIMIT, LAST_PLAYLIST_ID_KEY, PLAYER_DEBUG_ENABLED, FLOW_DEBUG_ENABLED, PLAYER_VOLUME_KEY, PLAYER_MUTED_KEY, RESUME_KEY, UNAVAILABLE_PLAYER_CODES, UNAVAILABLE_OVERLAY_MESSAGE, BROKEN_UPSTREAM_OVERLAY_MESSAGE, SEARCHING_ALTERNATIVE_OVERLAY_MESSAGE, COPYRIGHT_CLAIM_OVERLAY_MESSAGE, REMOVED_PRIVATE_OVERLAY_MESSAGE, BOT_BLOCK_CONFIRMATION_DELAY_MS, UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE, DELETED_TRACK_OVERLAY_MESSAGE, EARLY_PLAYBACK_VERIFICATION_MS, STUCK_PLAYBACK_CHECK_MS, STUCK_PLAYBACK_MAX_RETRIES, STUCK_PLAYBACK_RETRY_DELAYS_MS, MID_PLAYBACK_BUFFERING_CHECK_MS, MID_PLAYBACK_BUFFERING_THRESHOLD_MS, PLAYBACK_STALL_DIRECT_IFRAME_THRESHOLD_MS, PLAYBACK_STALL_PROGRESS_EPSILON_SECONDS, PLAYER_LOAD_REFRESH_HINT_DELAY_MS, PLAYER_AUTO_RECONNECT_DELAY_MS, MANUAL_TRANSITION_MASK_TIMEOUT_MS, maxEndedChoiceVideos, ENDED_CHOICE_BATCH_SIZE, ENDED_CHOICE_INITIAL_PREFETCH_COUNT, ENDED_CHOICE_SCROLL_RUNWAY_COUNT, ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS, YOUTUBE_END_SCREEN_COVER_SECONDS, ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY, AUTOPLAY_FALLBACK_POOL_SIZE, NEW_AUTOPLAY_PLAYLIST_SIZE, ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT } from "@/components/player-constants";
+import { logPlayerDebug, logFlow } from "@/components/player-logger";
+import { toSafeNumber, normalizePlayerVolume, formatPlaybackTime, toTitleCaseWords } from "@/components/player-formatters";
 import { CHAT_OPENED_VIDEO_ACTIVITY_SUPPRESS_KEY } from "@/lib/storage-keys";
-
-type PlayerExperienceProps = {
-  currentVideo: VideoRecord;
-  queue: VideoRecord[];
-  temporaryQueue?: VideoRecord[];
-  isLoggedIn: boolean;
-  isAdmin?: boolean;
-  isDockedDesktop?: boolean;
-  suppressAuthWall?: boolean;
-  stopOnEnd?: boolean;
-  seenVideoIds?: Set<string>;
-  onHideVideoAction?: (track: VideoRecord) => void | Promise<void>;
-  onAddVideoToPlaylistAction?: (track: VideoRecord) => void | Promise<void>;
-  onDockHideRequestAction?: () => void;
-  onAuthRequiredAction?: () => void;
-  forcedUnavailableSignal?: number;
-  forcedUnavailableMessage?: string | null;
-  isRouteResolving?: boolean;
-  routeLoadingLabel?: string;
-  routeLoadingMessage?: string;
-};
-
-type PlaylistSummary = {
-  id: string;
-  name: string;
-  itemCount?: number;
-};
-
-type PlayerPreferencesResponse = {
-  autoplayEnabled?: boolean | null;
-  volume?: number | null;
-  autoplayMix?: AutoplayMixSettings | null;
-  autoplayGenreFilters?: string[] | null;
-};
-
-type YouTubePlayerStateChangeEvent = {
-  data: number;
-};
-
-type YouTubePlayerErrorEvent = {
-  data: number;
-};
-
-type YouTubePlayerReadyEvent = {
-  target: YouTubePlayer;
-};
-
-type YouTubePlayer = {
-  destroy: () => void;
-  cueVideoById?: (videoId: string) => void;
-  cueVideoByUrl?: (url: string) => void;
-  getCurrentTime: () => number;
-  getDuration: () => number;
-  getPlayerState: () => number;
-  getVolume: () => number;
-  isMuted: () => boolean;
-  loadVideoById: (videoId: string) => void;
-  loadVideoByUrl?: (url: string) => void;
-  mute: () => void;
-  pauseVideo: () => void;
-  playVideo: () => void;
-  seekTo: (seconds: number, allowSeekAhead: boolean) => void;
-  setVolume: (volume: number) => void;
-  unMute: () => void;
-};
-
-type YouTubeNamespace = {
-  Player: new (
-    element: HTMLDivElement,
-    config: {
-      videoId: string;
-      host?: string;
-      playerVars?: Record<string, number | string>;
-      events?: {
-        onReady?: (event: YouTubePlayerReadyEvent) => void;
-        onStateChange?: (event: YouTubePlayerStateChangeEvent) => void;
-        onError?: (event: YouTubePlayerErrorEvent) => void;
-      };
-    }
-  ) => YouTubePlayer;
-  PlayerState: {
-    ENDED: number;
-    PAUSED: number;
-    PLAYING: number;
-  };
-};
-
-declare global {
-  interface Window {
-    YT?: YouTubeNamespace;
-    onYouTubeIframeAPIReady?: () => void;
-    __ytrInitialPageLoadAutoplaySuppressed?: boolean;
-    __ytrInitialPageLoadVideoId?: string | null;
-  }
-}
-
-const UNAVAILABLE_PLAYER_CODES = new Set([5, 100, 101, 150]);
-const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_PLAYER === "1";
-const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
-const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. Please choose another track.";
-const BROKEN_UPSTREAM_OVERLAY_MESSAGE = "This video is no longer available on YouTube and has been removed from the catalog.";
-const SEARCHING_ALTERNATIVE_OVERLAY_MESSAGE = "This video is unavailable. Searching for an alternative upload\u2026";
-const COPYRIGHT_CLAIM_OVERLAY_MESSAGE = "This video is no longer available due to a copyright claim on YouTube.";
-const REMOVED_PRIVATE_OVERLAY_MESSAGE = "This video is unavailable on YouTube because it was removed, deleted, or made private.";
-const BROKEN_UPSTREAM_AUTOADVANCE_MS = 20000;
-const BOT_BLOCK_CONFIRMATION_DELAY_MS = 5000;
-const UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE = "We could not connect to the upstream video provider for this track. This is not a YehThatRocks failure. Please try the refresh button and if that does not work, choose another track.";
-const DELETED_TRACK_OVERLAY_MESSAGE = "This track was removed from YehThatRocks.";
-const EARLY_PLAYBACK_VERIFICATION_MS = 3500;
-const STUCK_PLAYBACK_CHECK_MS = 5000;
-const STUCK_PLAYBACK_MAX_RETRIES = 3;
-const STUCK_PLAYBACK_RETRY_DELAYS_MS = [500, 1500, 3000] as const;
-const MID_PLAYBACK_BUFFERING_CHECK_MS = 1000;
-const MID_PLAYBACK_BUFFERING_THRESHOLD_MS = 8000;
-const PLAYBACK_STALL_DIRECT_IFRAME_THRESHOLD_MS = 4500;
-const PLAYBACK_STALL_PROGRESS_EPSILON_SECONDS = 0.2;
-const PLAYER_LOAD_REFRESH_HINT_DELAY_MS = 2000;
-const PLAYER_AUTO_RECONNECT_DELAY_MS = 1200;
-const MANUAL_TRANSITION_MASK_TIMEOUT_MS = 8000;
-const AUTOPLAY_KEY = "yeh-player-autoplay";
-const HISTORY_KEY = "ytr:recent-history";
-const PLAYER_VOLUME_KEY = "yeh-player-volume";
-const PLAYER_MUTED_KEY = "yeh-player-muted";
-const LAST_PLAYLIST_ID_KEY = "ytr:last-playlist-id";
-const RESUME_KEY = "yeh-player-resume";
-const HISTORY_LIMIT = 100;
-const maxEndedChoiceVideos = 12;
-const ENDED_CHOICE_BATCH_SIZE = maxEndedChoiceVideos;
-const ENDED_CHOICE_INITIAL_PREFETCH_COUNT = 24;
-const ENDED_CHOICE_SCROLL_RUNWAY_COUNT = 24;
-const ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS = 3;
-const YOUTUBE_END_SCREEN_COVER_SECONDS = 0;
-const ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY = "ytr-toggle-hide-seen-ended-choice";
-const AUTOPLAY_FALLBACK_POOL_SIZE = 12;
-const NEW_AUTOPLAY_PLAYLIST_SIZE = 96;
-const ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT = EVENT_NAMES.NEW_ROUTE_QUEUE_SYNC;
 
 /* Invariant anchors retained while behavior is delegated to extracted helpers:
 const shouldUseTopFallback =
@@ -267,77 +135,11 @@ params.delete("pl");
 
 applyRuntimeBootstrapPatches({ suppressWebShareWarning: true });
 
-function logPlayerDebug(event: string, detail?: Record<string, unknown>) {
-  if (!PLAYER_DEBUG_ENABLED) {
-    return;
-  }
+// logger moved to player-logger.ts
 
-  const payload = detail ? ` ${JSON.stringify(detail)}` : "";
-  console.log(`[player] ${event}${payload}`);
-}
+// formatters moved to player-formatters.ts
 
-function logFlow(event: string, detail?: Record<string, unknown>) {
-  if (!FLOW_DEBUG_ENABLED) {
-    return;
-  }
-
-  const payload = detail ? ` ${JSON.stringify(detail)}` : "";
-  console.log(`[flow/player] ${event}${payload}`);
-}
-
-function toSafeNumber(value: unknown, fallback = 0) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function normalizePlayerVolume(value: unknown, fallback = 100) {
-  return Math.max(0, Math.min(100, Math.round(toSafeNumber(value, fallback))));
-}
-
-function formatPlaybackTime(value: number) {
-  const safeValue = Math.max(0, Math.floor(toSafeNumber(value, 0)));
-  const hours = Math.floor(safeValue / 3600);
-  const minutes = Math.floor((safeValue % 3600) / 60);
-  const seconds = safeValue % 60;
-
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
-
-function toTitleCaseWords(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/\b([a-z])/g, (match) => match.toUpperCase());
-}
-
-function inferTrackFromTitle(title: string, artist: string) {
-  const trimmedTitle = title.trim();
-  const trimmedArtist = artist.trim();
-  if (!trimmedTitle || !trimmedArtist) {
-    return trimmedTitle;
-  }
-
-  const separators = [" - ", " — ", " | "];
-  for (const separator of separators) {
-    const split = trimmedTitle.split(separator).map((part) => part.trim()).filter(Boolean);
-    if (split.length < 2) {
-      continue;
-    }
-
-    const [left, right] = split;
-    if (left.toLowerCase() === trimmedArtist.toLowerCase()) {
-      return right;
-    }
-
-    if (right.toLowerCase() === trimmedArtist.toLowerCase()) {
-      return left;
-    }
-  }
-
-  return trimmedTitle;
-}
+import { inferTrackFromTitle } from "@/lib/infer-track-title";
 
 function buildGeneratedPlaylistName() {
   const now = new Date();
@@ -4154,24 +3956,20 @@ export function PlayerExperience({
       }
 
       function handleOpenAdminEditOverlay() {
-        openAdminEditOverlay({
-          pauseActivePlayback,
-          openAdminVideoEdit: handleOpenAdminVideoEdit,
-        });
+        pauseActivePlayback();
+        void handleOpenAdminVideoEdit();
       }
 
       function handleOpenAdminDeleteConfirmModal() {
-        openAdminDeleteConfirm({
-          setAdminEditError,
-          setAdminEditStatus,
-          setShowShareMenu,
-          setShowAdminDeleteConfirmModal,
-        });
+        setAdminEditError(null);
+        setAdminEditStatus(null);
+        setShowShareMenu(false);
+        setShowAdminDeleteConfirmModal(true);
       }
 
       function handleShareMenuToggle(event: MouseEvent<HTMLButtonElement>) {
         event.stopPropagation();
-        toggleShareMenu({ setShowShareMenu });
+        setShowShareMenu((previous) => !previous);
       }
 
       async function handleCopyShareUrlForModal() {

@@ -6,40 +6,7 @@ const { PrismaClient } = require("@prisma/client");
 
 const APPLY_CONFIRM_TOKEN = "SWAP_ARTIST_TRACK";
 
-function loadDatabaseEnv() {
-  const candidateEnvPaths = [
-    path.resolve(process.cwd(), ".env.local"),
-    path.resolve(process.cwd(), "apps/web/.env.local"),
-    path.resolve(process.cwd(), ".env.production"),
-    path.resolve(process.cwd(), "apps/web/.env.production"),
-  ];
-
-  for (const envPath of candidateEnvPaths) {
-    if (!fs.existsSync(envPath)) {
-      continue;
-    }
-
-    const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) {
-        continue;
-      }
-
-      const match = trimmed.match(/^([A-Z0-9_]+)=(.*)$/);
-      if (!match) {
-        continue;
-      }
-
-      const [, key, rawValue] = match;
-      if (process.env[key]) {
-        continue;
-      }
-
-      process.env[key] = rawValue.replace(/^"/, "").replace(/"$/, "");
-    }
-  }
-}
+const { loadDatabaseEnv } = require("./lib/runtime");
 
 function getArgValue(name, fallback = "") {
   const prefix = `--${name}=`;

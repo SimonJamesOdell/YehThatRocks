@@ -6,7 +6,7 @@
 // seen-toggle persistence (hook, API, data layer), data-model (schema) invariants.
 
 const path = require("node:path");
-const { readFileStrict, assertContains, assertNotContains, finishInvariantCheck } = require("./invariants/helpers");
+const { readFileStrict, assertContains, assertNotContains, finishInvariantCheck } = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 
@@ -14,22 +14,22 @@ const files = {
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   newPage: path.join(ROOT, "apps/web/app/(shell)/new/page.tsx"),
   newVideosLoader: path.join(ROOT, "apps/web/components/new-videos-loader.tsx"),
-  newVideosDataLoaderHook: path.join(ROOT, "apps/web/components/use-new-videos-data-loader.ts"),
-  activeRowAutoScrollHook: path.join(ROOT, "apps/web/components/use-active-row-auto-scroll.ts"),
-  newVideosScrollPrefetchHook: path.join(ROOT, "apps/web/components/use-new-videos-scroll-prefetch.ts"),
-  newVideosModerationHook: path.join(ROOT, "apps/web/components/use-new-videos-moderation.ts"),
+  newVideosDataLoaderHook: path.join(ROOT, "apps/web/hooks/use-new-videos-data-loader.ts"),
+  activeRowAutoScrollHook: path.join(ROOT, "apps/web/hooks/use-active-row-auto-scroll.ts"),
+  newVideosScrollPrefetchHook: path.join(ROOT, "apps/web/hooks/use-new-videos-scroll-prefetch.ts"),
+  newVideosModerationHook: path.join(ROOT, "apps/web/hooks/use-new-videos-moderation.ts"),
   createPlaylistFromVideoListHelper: path.join(ROOT, "apps/web/lib/playlist-create-from-video-list.ts"),
   catalogDataVideos: path.join(ROOT, "apps/web/lib/catalog-data-videos.ts"),
   playlistData: path.join(ROOT, "apps/web/lib/catalog-data-playlists.ts"),
   suggestNewModal: path.join(ROOT, "apps/web/components/suggest-new-modal.tsx"),
-  suggestNewHook: path.join(ROOT, "apps/web/components/use-suggest-new-video.ts"),
+  suggestNewHook: path.join(ROOT, "apps/web/hooks/use-suggest-new-video.ts"),
   suggestRoute: path.join(ROOT, "apps/web/app/api/videos/suggest/route.ts"),
   suggestSourceParser: path.join(ROOT, "apps/web/lib/youtube-suggest-source.ts"),
   top100VideosLoader: path.join(ROOT, "apps/web/components/top100-videos-loader.tsx"),
   leaderboardVideoLink: path.join(ROOT, "apps/web/components/leaderboard-video-link.tsx"),
   newestRoute: path.join(ROOT, "apps/web/app/api/videos/newest/route.ts"),
   hideVideoConfirmModal: path.join(ROOT, "apps/web/components/hide-video-confirm-modal.tsx"),
-  seenToggleHook: path.join(ROOT, "apps/web/components/use-seen-toggle-preference.ts"),
+  seenToggleHook: path.join(ROOT, "apps/web/hooks/use-seen-toggle-preference.ts"),
   seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
   seenToggleData: path.join(ROOT, "apps/web/lib/seen-toggle-preference-data.ts"),
   apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
@@ -72,7 +72,7 @@ function main() {
   assertContains(newPageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "New page passes hidden ids into client loader", failures);
   assertNotContains(newPageSource, "getNewestVideos(", "New page does not block route open on server-side newest query", failures);
   assertContains(newVideosLoaderSource, 'loadingLabel="Loading new videos..."', "New route exposes a dedicated loading state", failures);
-  assertContains(newVideosLoaderSource, 'import { useLiveSearchParams } from "@/components/use-live-search-params";', "New videos loader reads active video from live search params", failures);
+  assertContains(newVideosLoaderSource, 'import { useLiveSearchParams } from "@/hooks/use-live-search-params";', "New videos loader reads active video from live search params", failures);
   assertContains(newVideosLoaderSource, "const activeVideoId = searchParams.get(\"v\");", "New videos loader derives active video id from live search params", failures);
   assertContains(newVideosLoaderSource, "const NEW_ROUTE_QUEUE_SYNC_EVENT = \"ytr:new-route-queue-sync\";", "New videos loader declares route queue sync event for player route-list next", failures);
   assertContains(newVideosLoaderSource, "source: \"new\"", "New videos loader emits route queue sync payload tagged with new source", failures);
@@ -105,9 +105,9 @@ function main() {
   assertContains(newVideosDataLoaderHookSource, "const isLoadingMoreRef = useRef(false);", "New videos data hook mirrors incremental loading in a ref for stable observer callbacks", failures);
   assertContains(newVideosDataLoaderHookSource, "const prefetchInFlightRef = useRef(false);", "New videos data hook prevents overlapping ahead-prefetch loops", failures);
   assertContains(newVideosDataLoaderHookSource, "const lastPrefetchAtRef = useRef(0);", "New videos data hook throttles viewport-driven prefetch checks", failures);
-  assertContains(newVideosLoaderSource, 'import { useNewVideosDataLoader } from "@/components/use-new-videos-data-loader";', "New videos loader imports data-loading hook", failures);
+  assertContains(newVideosLoaderSource, 'import { useNewVideosDataLoader } from "@/hooks/use-new-videos-data-loader";', "New videos loader imports data-loading hook", failures);
   assertContains(newVideosLoaderSource, "} = useNewVideosDataLoader({", "New videos loader delegates bootstrap and head-refresh behavior to data-loading hook", failures);
-  assertContains(newVideosLoaderSource, 'import { useNewVideosScrollPrefetch } from "@/components/use-new-videos-scroll-prefetch";', "New videos loader imports scroll prefetch hook", failures);
+  assertContains(newVideosLoaderSource, 'import { useNewVideosScrollPrefetch } from "@/hooks/use-new-videos-scroll-prefetch";', "New videos loader imports scroll prefetch hook", failures);
   assertContains(newVideosLoaderSource, "useNewVideosScrollPrefetch({", "New videos loader delegates scroll prefetch/read-ahead behavior to hook", failures);
   assertContains(newVideosScrollPrefetchHookSource, "type ScrollMetrics = {", "New videos scroll prefetch hook tracks scroll metrics from the active scroll container", failures);
   assertContains(newVideosScrollPrefetchHookSource, "const readActiveScrollMetrics = useCallback((metrics?: ScrollMetrics): ScrollMetrics => {", "New videos scroll prefetch hook resolves active overlay/window scroll metrics", failures);
@@ -143,7 +143,7 @@ function main() {
   assertNotContains(newVideosLoaderSource, "/api/watch-history", "New videos loader does not pad with watch-history rows", failures);
 
   // New videos moderation domain split invariants.
-  assertContains(newVideosLoaderSource, 'import { useNewVideosModeration } from "@/components/use-new-videos-moderation";', "New videos loader imports moderation hook", failures);
+  assertContains(newVideosLoaderSource, 'import { useNewVideosModeration } from "@/hooks/use-new-videos-moderation";', "New videos loader imports moderation hook", failures);
   assertContains(newVideosLoaderSource, "} = useNewVideosModeration({", "New videos loader delegates hide/flag mutation orchestration to moderation hook", failures);
   assertContains(newVideosModerationHookSource, "export function useNewVideosModeration", "New videos moderation hook exports explicit hide/flag domain behavior", failures);
   assertContains(newVideosModerationHookSource, 'import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";', "New videos moderation hook uses shared hidden-video mutation service", failures);
@@ -151,7 +151,7 @@ function main() {
   assertContains(newVideosModerationHookSource, "onRemoveVideoById(flaggingVideo.id);", "New videos moderation hook removes rows through explicit boundary callback", failures);
 
   // Active-row auto-scroll domain split invariants.
-  assertContains(newVideosLoaderSource, 'import { useActiveRowAutoScroll } from "@/components/use-active-row-auto-scroll";', "New videos loader imports active-row auto-scroll hook", failures);
+  assertContains(newVideosLoaderSource, 'import { useActiveRowAutoScroll } from "@/hooks/use-active-row-auto-scroll";', "New videos loader imports active-row auto-scroll hook", failures);
   assertContains(newVideosLoaderSource, "useActiveRowAutoScroll({", "New videos loader delegates active-row auto-scroll behavior to hook", failures);
   assertContains(activeRowAutoScrollHookSource, "export function useActiveRowAutoScroll", "Active-row auto-scroll hook exports explicit domain behavior", failures);
   assertContains(activeRowAutoScrollHookSource, "ACTIVE_ROW_SELECTOR", "Active-row auto-scroll hook resolves active row anchor from track card selector", failures);
@@ -159,7 +159,7 @@ function main() {
 
   // Suggest New domain split invariants.
   assertContains(newVideosLoaderSource, 'import { SuggestNewModal } from "@/components/suggest-new-modal";', "New videos loader imports Suggest New presentational modal", failures);
-  assertContains(newVideosLoaderSource, 'import { useSuggestNewVideo } from "@/components/use-suggest-new-video";', "New videos loader imports Suggest New domain hook", failures);
+  assertContains(newVideosLoaderSource, 'import { useSuggestNewVideo } from "@/hooks/use-suggest-new-video";', "New videos loader imports Suggest New domain hook", failures);
   assertContains(newVideosLoaderSource, "const {", "New videos loader destructures hook return for Suggest New state/actions", failures);
   assertContains(newVideosLoaderSource, "} = useSuggestNewVideo({", "New videos loader delegates Suggest New state machine to hook", failures);
   assertContains(newVideosLoaderSource, "<SuggestNewModal", "New videos loader renders Suggest New via dedicated modal component", failures);

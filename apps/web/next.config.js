@@ -1,6 +1,20 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  async redirects() {
+    return [
+      {
+        source: "/categories_new",
+        destination: "/categories",
+        permanent: true,
+      },
+      {
+        source: "/categories_new/:slug*",
+        destination: "/categories/:slug*",
+        permanent: true,
+      },
+    ];
+  },
   allowedDevOrigins: ["192.168.0.60"],
   images: {
     remotePatterns: [

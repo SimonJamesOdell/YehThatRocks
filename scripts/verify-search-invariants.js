@@ -7,7 +7,7 @@ const {
   assertContains,
   assertNotContains,
   finishInvariantCheck,
-} = require("./invariants/helpers");
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 
@@ -24,7 +24,7 @@ const files = {
   searchFlagButton: path.join(ROOT, "apps/web/components/search-flag-button.tsx"),
   searchResultVideoLink: path.join(ROOT, "apps/web/components/search-result-video-link.tsx"),
   searchSeenToggle: path.join(ROOT, "apps/web/components/search-seen-toggle.tsx"),
-  seenToggleHook: path.join(ROOT, "apps/web/components/use-seen-toggle-preference.ts"),
+  seenToggleHook: path.join(ROOT, "apps/web/hooks/use-seen-toggle-preference.ts"),
   seenToggleRoute: path.join(ROOT, "apps/web/app/api/seen-toggle-preferences/route.ts"),
   adminVideoEditModal: path.join(ROOT, "apps/web/components/admin-video-edit-modal.tsx"),
   adminVideoEditButton: path.join(ROOT, "apps/web/components/admin-video-edit-button.tsx"),
@@ -49,11 +49,11 @@ function main() {
   const searchFlagDataSource = readFileStrict(files.searchFlagData, ROOT);
   const shellDynamicSource = [
     readFileStrict(files.shellDynamic, ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-chat-state.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-playlist-rail.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-performance-metrics.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-desktop-intro.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-search-autocomplete.ts'), ROOT),
   ].join('\n');
   const searchFlagButtonSource = readFileStrict(files.searchFlagButton, ROOT);
   const searchResultVideoLinkSource = readFileStrict(files.searchResultVideoLink, ROOT);
@@ -262,7 +262,7 @@ function main() {
   assertNotContains(adminDashboardRouteSource, "METADATA_QUALITY_CACHE_TTL_MS", "dashboard route no longer inlines the metadata quality cache TTL", failures);
 
   // --- Autocomplete suggestion navigation must dispatch MANUAL_VIDEO_NAVIGATION_REQUEST ---
-  const searchAutocompleteSource = readFileStrict(path.join(ROOT, "apps/web/components/use-search-autocomplete.ts"), ROOT);
+  const searchAutocompleteSource = readFileStrict(path.join(ROOT, "apps/web/hooks/use-search-autocomplete.ts"), ROOT);
   assertContains(searchAutocompleteSource, 'import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract"', "Autocomplete imports event dispatch helpers", failures);
   assertContains(searchAutocompleteSource, 'import { navigateVideoHref } from "@/components/player-video-navigation"', "Autocomplete imports navigateVideoHref for consistent video navigation", failures);
   assertContains(searchAutocompleteSource, "dispatchAppEvent(EVENT_NAMES.MANUAL_VIDEO_NAVIGATION_REQUEST", "Autocomplete dispatches MANUAL_VIDEO_NAVIGATION_REQUEST on track suggestion click", failures);

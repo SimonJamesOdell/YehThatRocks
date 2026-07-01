@@ -56,13 +56,7 @@ function loadEnvFile(filePath) {
   }
 }
 
-function loadEnv() {
-  const cwd = process.cwd();
-  loadEnvFile(path.join(cwd, ".env"));
-  loadEnvFile(path.join(cwd, ".env.local"));
-  loadEnvFile(path.join(cwd, ".env.production"));
-  loadEnvFile(path.join(cwd, ".env.production.local"));
-}
+const { loadEnv } = require("./lib/social-share-utils");
 
 function resolveHomePath(...parts) {
   return path.join(os.homedir(), ...parts);

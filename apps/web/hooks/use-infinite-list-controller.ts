@@ -5,7 +5,7 @@ import { startTransition, useCallback, useState, type RefObject } from "react";
 import {
   type InfiniteScrollLoadOptions,
   useInfiniteScroll,
-} from "@/components/use-infinite-scroll";
+} from "@/hooks/use-infinite-scroll";
 
 type ObserverTarget = {
   ref: RefObject<Element | null>;

@@ -19,7 +19,7 @@ const files = mapRelativeFiles(ROOT, {
   favouritesManager: "apps/web/components/favourites-manager.tsx",
   searchResultFavouriteButton: "apps/web/components/search-result-favourite-button.tsx",
   playerExperience: "apps/web/components/player-experience-core.tsx",
-  useFavouriteState: "apps/web/components/use-favourite-state.ts",
+  useFavouriteState: "apps/web/hooks/use-favourite-state.ts",
   clientAuthFetch: "apps/web/lib/client-auth-fetch.ts",
   favouritesRoute: "apps/web/app/api/favourites/route.ts",
   userProfilePage: "apps/web/app/(shell)/u/[screenName]/page.tsx",

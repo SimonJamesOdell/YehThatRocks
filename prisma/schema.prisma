@@ -31,6 +31,8 @@ model Video {
   playlistItems   PlaylistItem[]
   artistVideos    ArtistVideo[]
   siteVideos      SiteVideo[]
+  favourites      Favourite[]
+  relatedCaches   RelatedCache[]
 
   @@fulltext([title, parsedArtist, parsedTrack])
   @@index([parsedArtistNorm], map: "idx_videos_parsed_artist_norm")
@@ -112,6 +114,7 @@ model User {
   authAudits              AuthAuditLog[]
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
+  favourites              Favourite[]
 
   @@map("users")
 }
@@ -179,9 +182,11 @@ model AuthAuditLog {
 model Favourite {
   id        Int       @id @default(autoincrement())
   userid    Int?
-  videoId   String?   @db.VarChar(20)
+  videoId   String?   @db.VarChar(32)
   createdAt DateTime?
   updatedAt DateTime?
+  user      User?     @relation(fields: [userid], references: [id])
+  video     Video?    @relation(fields: [videoId], references: [videoId])
 
   @@index([userid, videoId])
   @@index([videoId])
@@ -261,10 +266,11 @@ model OnlinePresence {
 
 model RelatedCache {
   id        Int       @id @default(autoincrement())
-  videoId   String?   @db.VarChar(20)
-  related   String?   @db.VarChar(20)
+  videoId   String?   @db.VarChar(32)
+  related   String?   @db.VarChar(32)
   createdAt DateTime?
   updatedAt DateTime?
+  video     Video?    @relation(fields: [videoId], references: [videoId])
 
   @@index([videoId, related])
   @@index([related, videoId])
@@ -297,7 +303,6 @@ model SiteVideo {
   createdAt DateTime? @map("created_at")
   video     Video?    @relation(fields: [videoId], references: [id])
 
-  @@index([videoId, status])
   @@index([status, videoId], map: "idx_site_videos_status_video_id")
   @@map("site_videos")
 }

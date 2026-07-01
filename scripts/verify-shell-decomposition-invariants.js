@@ -13,17 +13,17 @@ const {
   assertContains,
   assertNotContains,
   finishInvariantCheck,
-} = require("./invariants/helpers");
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 
 const files = {
   shellDynamic: path.join(ROOT, "apps/web/components/shell-dynamic-core.tsx"),
-  useDesktopIntro: path.join(ROOT, "apps/web/components/use-desktop-intro.ts"),
-  usePerformanceMetrics: path.join(ROOT, "apps/web/components/use-performance-metrics.ts"),
-  useSearchAutocomplete: path.join(ROOT, "apps/web/components/use-search-autocomplete.ts"),
-  useChatState: path.join(ROOT, "apps/web/components/use-chat-state.ts"),
-  usePlaylistRail: path.join(ROOT, "apps/web/components/use-playlist-rail.ts"),
+  useDesktopIntro: path.join(ROOT, "apps/web/hooks/use-desktop-intro.ts"),
+  usePerformanceMetrics: path.join(ROOT, "apps/web/hooks/use-performance-metrics.ts"),
+  useSearchAutocomplete: path.join(ROOT, "apps/web/hooks/use-search-autocomplete.ts"),
+  useChatState: path.join(ROOT, "apps/web/hooks/use-chat-state.ts"),
+  usePlaylistRail: path.join(ROOT, "apps/web/hooks/use-playlist-rail.ts"),
 };
 
 function main() {
@@ -47,7 +47,7 @@ function main() {
   assertContains(useDesktopIntroSource, "\"--desktop-intro-dx\"", "useDesktopIntro owns the CSS variable for dx", failures);
 
   assertContains(shellDynamicSource, "useDesktopIntro(", "Shell imports and calls useDesktopIntro hook", failures);
-  assertContains(shellDynamicSource, "from \"@/components/use-desktop-intro\"", "Shell imports useDesktopIntro from its own module", failures);
+  assertContains(shellDynamicSource, "from \"@/hooks/use-desktop-intro\"", "Shell imports useDesktopIntro from its own module", failures);
 
   // Timing constants must not be duplicated in shell core
   assertNotContains(shellDynamicSource, "const DESKTOP_INTRO_HOLD_MS =", "Shell core no longer defines DESKTOP_INTRO_HOLD_MS", failures);
@@ -63,7 +63,7 @@ function main() {
   assertContains(usePerformanceMetricsSource, "isPerformanceQuickLaunchVisible", "usePerformanceMetrics manages quick-launch visibility", failures);
 
   assertContains(shellDynamicSource, "usePerformanceMetrics(", "Shell imports and calls usePerformanceMetrics hook", failures);
-  assertContains(shellDynamicSource, "from \"@/components/use-performance-metrics\"", "Shell imports usePerformanceMetrics from its own module", failures);
+  assertContains(shellDynamicSource, "from \"@/hooks/use-performance-metrics\"", "Shell imports usePerformanceMetrics from its own module", failures);
 
   // Poll constant and fetch must not be duplicated in shell core
   assertNotContains(shellDynamicSource, "const PUBLIC_PERFORMANCE_POLL_MS =", "Shell core no longer defines PUBLIC_PERFORMANCE_POLL_MS", failures);
@@ -81,7 +81,7 @@ function main() {
   assertContains(useSearchAutocompleteSource, "suggestDebounceRef", "useSearchAutocomplete owns the debounce ref", failures);
 
   assertContains(shellDynamicSource, "useSearchAutocomplete(", "Shell imports and calls useSearchAutocomplete hook", failures);
-  assertContains(shellDynamicSource, "from \"@/components/use-search-autocomplete\"", "Shell imports useSearchAutocomplete from its own module", failures);
+  assertContains(shellDynamicSource, "from \"@/hooks/use-search-autocomplete\"", "Shell imports useSearchAutocomplete from its own module", failures);
 
   // Suggest fetch and debounce must not be in shell core
   assertNotContains(shellDynamicSource, "/api/search/suggest", "Shell core no longer directly calls the suggest API", failures);
@@ -109,7 +109,7 @@ function main() {
   assertContains(useChatStateSource, "isMagazineLoading,", "useChatState returns isMagazineLoading", failures);
 
   assertContains(shellDynamicSource, "useChatState(", "Shell imports and calls useChatState hook", failures);
-  assertContains(shellDynamicSource, "from \"@/components/use-chat-state\"", "Shell imports useChatState from its own module", failures);
+  assertContains(shellDynamicSource, "from \"@/hooks/use-chat-state\"", "Shell imports useChatState from its own module", failures);
   assertContains(shellDynamicSource, "isLoading={isMagazineLoading}", "Shell gates magazine empty state behind loading flag", failures);
   assertContains(shellDynamicSource, "Loading articles...", "Shell shows loading text while magazine data is in-flight", failures);
 
@@ -131,7 +131,7 @@ function main() {
   assertContains(usePlaylistRailSource, "handleAddToPlaylistFromWatchNext", "usePlaylistRail exports add-to-playlist handler", failures);
 
   assertContains(shellDynamicSource, "usePlaylistRail(", "Shell imports and calls usePlaylistRail hook", failures);
-  assertContains(shellDynamicSource, "from \"@/components/use-playlist-rail\"", "Shell imports usePlaylistRail from its own module", failures);
+  assertContains(shellDynamicSource, "from \"@/hooks/use-playlist-rail\"", "Shell imports usePlaylistRail from its own module", failures);
 
   // Playlist fetch must not be duplicated in shell core
   assertNotContains(shellDynamicSource, "fetchWithAuthRetry(`/api/playlists/", "Shell core no longer directly fetches playlist tracks", failures);

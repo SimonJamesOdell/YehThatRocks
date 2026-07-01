@@ -5,7 +5,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
-import { useInfiniteListController } from "@/components/use-infinite-list-controller";
+import { useInfiniteListController } from "@/hooks/use-infinite-list-controller";
 import type { HiddenVideoEntry } from "@/lib/catalog-data";
 import { fetchJsonWithLoaderContract } from "@/lib/frontend-data-loader";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";

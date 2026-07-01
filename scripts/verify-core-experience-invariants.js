@@ -14,7 +14,7 @@ const {
   assertNotContains,
   assertFileDoesNotExist,
   finishInvariantCheck,
-} = require("./invariants/helpers");
+} = require("./lib/test-harness");
 const { applyQueueResolutionRulePack } = require("./invariants/rule-packs/queue-resolution-pack");
 
 const ROOT = process.cwd();
@@ -52,8 +52,8 @@ const files = {
   boundedMap: path.join(ROOT, "apps/web/lib/bounded-map.ts"),
   runtimeBootstrap: path.join(ROOT, "apps/web/lib/runtime-bootstrap.ts"),
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
-  nextTrackDecisionHook: path.join(ROOT, "apps/web/components/use-next-track-decision.ts"),
-  temporaryQueueControllerHook: path.join(ROOT, "apps/web/components/use-temporary-queue-controller.ts"),
+  nextTrackDecisionHook: path.join(ROOT, "apps/web/hooks/use-next-track-decision.ts"),
+  temporaryQueueControllerHook: path.join(ROOT, "apps/web/hooks/use-temporary-queue-controller.ts"),
   playerNextTrackDomain: path.join(ROOT, "apps/web/domains/player/resolve-next-track-target.ts"),
   queueDomain: path.join(ROOT, "apps/web/domains/queue/temporary-queue.ts"),
   playlistDomain: path.join(ROOT, "apps/web/domains/playlist/playlist-step-target.ts"),
@@ -67,11 +67,11 @@ function main() {
 
   const shellDynamicSource = [
     readFileStrict(files.shellDynamic, ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-chat-state.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-playlist-rail.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-performance-metrics.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-desktop-intro.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-search-autocomplete.ts'), ROOT),
   ].join('\n');
   const shellDynamicRenderingSource = readFileStrict(files.shellDynamicRendering, ROOT);
   const queueTrackCardContentSource = readFileStrict(files.queueTrackCardContent, ROOT);

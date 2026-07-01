@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect } from "react";
 
-import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
+import { useSeenTogglePreference } from "@/hooks/use-seen-toggle-preference";
 
 type SearchSeenToggleProps = {
   trackStackId: string;

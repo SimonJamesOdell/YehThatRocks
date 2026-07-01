@@ -12,12 +12,12 @@ const {
   assertContains,
   assertCssRuleContains,
   finishInvariantCheck,
-} = require("./invariants/helpers");
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 
   const files = {
-    threadPage: path.join(ROOT, "apps/web/app/(shell)/forum/thread/[threadId]/page.tsx"),
+    threadPage: path.join(ROOT, "apps/web/app/(shell)/forum/thread/[slug]/page.tsx"),
     forumThreadContent: path.join(ROOT, "apps/web/components/forum-thread-content.tsx"),
     forumPostContent: path.join(ROOT, "apps/web/components/forum-post-content.tsx"),
     forumVideoEmbed: path.join(ROOT, "apps/web/components/forum-video-embed.tsx"),

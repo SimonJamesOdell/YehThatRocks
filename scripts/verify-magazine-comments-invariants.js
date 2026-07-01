@@ -5,7 +5,7 @@ const {
   readFileStrict,
   assertContains,
   finishInvariantCheck,
-} = require("./invariants/helpers");
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 
 import { PlaylistTrackCardContent } from "@/components/playlist-track-card-content";
-import type { PlaylistRailVideo } from "@/components/use-playlist-rail";
+import type { PlaylistRailVideo } from "@/hooks/use-playlist-rail";
 
 type PlaylistTrackRowCardProps = {
   track: PlaylistRailVideo;

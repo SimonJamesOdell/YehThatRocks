@@ -2,7 +2,7 @@
 
 import { createPortal } from "react-dom";
 
-import type { SuggestOutcome } from "@/components/use-suggest-new-video";
+import type { SuggestOutcome } from "@/hooks/use-suggest-new-video";
 
 type PendingConfirmation = {
   videoId: string;

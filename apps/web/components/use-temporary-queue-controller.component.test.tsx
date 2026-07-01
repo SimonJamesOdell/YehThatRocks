@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { EVENT_NAMES } from "@/lib/events-contract";
-import { useTemporaryQueueController } from "@/components/use-temporary-queue-controller";
+import { useTemporaryQueueController } from "@/hooks/use-temporary-queue-controller";
 
 function createVideo(id: string): VideoRecord {
   return {

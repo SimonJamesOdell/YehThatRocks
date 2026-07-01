@@ -1,0 +1,397 @@
+/* ─── Auth gate (full-screen sign-in wall) ───────────────────────────────── */
+
+.authGateScreen {
+  position: relative;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px 18px 40px;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.authGateBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image: url('/assets/images/guitarists.jpg');
+  background-size: cover;
+  background-position: center 30%;
+  background-repeat: no-repeat;
+}
+
+.authGateBackdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(165deg, rgba(18, 4, 4, 0.78), rgba(5, 1, 1, 0.84));
+}
+
+.authGatePanel {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.authGatePanelExpanded {
+  max-width: 640px;
+}
+
+.authGatePanelWide {
+  max-width: 1160px;
+}
+
+.authGateFormColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.authGateColumnTitle {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(1.4rem, 2.7vw, 2rem);
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: rgba(255, 247, 244, 0.97);
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .authGateBody.authGateBodySplit {
+    grid-template-columns: 1fr;
+  }
+}
+
+.authGateBrand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.authGateLogo {
+  width: clamp(240px, 62vw, 420px);
+  height: auto;
+}
+
+.authGateTagline {
+  position: relative;
+  top: -38px;
+  left: 35px;
+  font-size: 1.5rem;
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  color: #ffffff;
+  margin: 0 0 -18px;
+}
+
+.authGateBody {
+  background: rgba(18, 18, 18, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 28px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.authGateBody.authGateBodySplit {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(460px, 620px);
+  gap: 28px;
+  align-items: start;
+}
+
+.authGateVideoPreview {
+  display: grid;
+  gap: 14px;
+}
+
+.authGateArticleReturnButton {
+  justify-self: start;
+}
+
+.authGateVideoTitle {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(1.05rem, 2.2vw, 1.4rem);
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  text-align: center;
+  color: rgba(255, 244, 240, 0.96);
+  text-wrap: balance;
+}
+
+.authGateVideoPreviewImage {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.authGateVideoPreviewCopy {
+  display: grid;
+  gap: 6px;
+  text-align: center;
+}
+
+.authGateVideoPreviewCopy strong {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.authGateVideoPreviewCopy p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.66);
+  line-height: 1.5;
+}
+
+.authGateLead {
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.58);
+  margin: 0;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.authGateCount {
+  color: #ffd2c8;
+  font-weight: 700;
+}
+
+.authGateLinks {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding-top: 4px;
+  flex-wrap: wrap;
+}
+
+.authGateLink {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.42);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.authGateLink:hover {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.authGateLinkButton {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.authGateSubpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.authGateSubpanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.authGateSubpanelHeaderStacked {
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.authGateSubpanelHeader strong {
+  font-size: 1rem;
+}
+
+.authGateBackButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.84);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.authGateBackButton:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: #ffffff;
+}
+
+.authGateSubpanel .authForm {
+  max-width: none;
+  padding: 0;
+}
+
+.authGateSubpanel .authFormWide {
+  gap: 12px 14px;
+  align-items: start;
+}
+
+.authGateSubpanel .authForm label {
+  gap: 6px;
+}
+
+.authGateSubpanel .authMessage {
+  margin: 0;
+}
+
+.authGateMagazine {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 12px;
+  background: rgba(8, 8, 8, 0.42);
+}
+
+.authGateMagazineRail {
+  align-self: start;
+}
+
+.authGateMagazineBrand {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+
+.authGateMagazineLogo {
+  width: min(520px, 100%);
+  height: auto;
+}
+
+.authGateMagazineTagline {
+  margin: 0;
+  font-size: 1.85rem;
+  font-family: var(--font-display), sans-serif;
+  letter-spacing: 0.04em;
+  color: rgba(255, 244, 240, 0.92);
+  position: relative;
+  left: 50px;
+  top: -40px;
+}
+
+.authGateMagazineList {
+  display: grid;
+  gap: 8px;
+}
+
+.authGateMagazineListTitle {
+  margin: -2px 0 2px;
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 214, 202, 0.78);
+}
+
+.authGateMagazineItem {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 2px 10px;
+  text-decoration: none;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 247, 244, 0.92);
+  align-items: start;
+  transition: background 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+
+.authGateMagazineItemThumb {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  display: block;
+}
+
+.authGateMagazineItemTitle {
+  grid-column: 2;
+  align-self: end;
+  display: block;
+  line-height: 1.35;
+}
+
+.authGateMagazineItem small {
+  grid-column: 2;
+  color: rgba(255, 211, 198, 0.72);
+  font-size: 0.73rem;
+}
+
+.authGateMagazineItem:hover {
+  background: linear-gradient(180deg, rgba(170, 30, 17, 0.56), rgba(90, 9, 6, 0.7));
+  border-color: rgba(255, 116, 88, 0.78);
+  box-shadow: var(--glow);
+}
+
+.authGateMagazineMoreButton {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 244, 240, 0.86);
+  text-decoration: none;
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.authGateMagazineMoreButton:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.34);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+@media (max-width: 640px) {
+  .authGatePanelExpanded {
+    max-width: 480px;
+  }
+
+  .authGateSubpanel .authFormWide {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .authGateBody {
+    padding: 22px 16px 20px;
+  }
+}
+
+/* ─── end auth gate ──────────────────────────────────────────────────────── */

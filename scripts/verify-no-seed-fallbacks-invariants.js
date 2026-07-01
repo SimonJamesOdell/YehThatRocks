@@ -7,7 +7,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {
   finishInvariantCheck,
-} = require("./invariants/helpers");
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 const APP_ROOT = path.join(ROOT, "apps", "web");

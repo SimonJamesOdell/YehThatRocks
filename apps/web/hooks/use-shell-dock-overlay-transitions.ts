@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { usePlayerDockingAnimation } from "@/components/use-player-docking-animation";
+import { usePlayerDockingAnimation } from "@/hooks/use-player-docking-animation";
 
 type OverlayOpenKind = "wiki" | "video" | null;
 

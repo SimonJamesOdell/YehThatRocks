@@ -9,7 +9,7 @@ import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { OverlayHeader } from "@/components/overlay-header";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
 import { VideoGenreLink } from "@/components/video-genre-link";
-import { useInfiniteListController } from "@/components/use-infinite-list-controller";
+import { useInfiniteListController } from "@/hooks/use-infinite-list-controller";
 import { getArtistPagePath } from "@/lib/artist-routing";
 // Invariant anchor retained after hook extraction: useInfiniteScroll
 import { EVENT_NAMES, listenToAppEvent } from "@/lib/events-contract";

@@ -25,7 +25,7 @@ const files = {
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   newPage: path.join(ROOT, "apps/web/app/(shell)/new/page.tsx"),
   newLoader: path.join(ROOT, "apps/web/components/new-videos-loader.tsx"),
-  newDataLoaderHook: path.join(ROOT, "apps/web/components/use-new-videos-data-loader.ts"),
+  newDataLoaderHook: path.join(ROOT, "apps/web/hooks/use-new-videos-data-loader.ts"),
   top100Page: path.join(ROOT, "apps/web/app/(shell)/top100/page.tsx"),
   top100Loader: path.join(ROOT, "apps/web/components/top100-videos-loader.tsx"),
   categoryPage: path.join(ROOT, "apps/web/app/(shell)/categories/[slug]/page.tsx"),
@@ -51,11 +51,11 @@ function main() {
   const shellDynamicSource = [
     readFileStrict(files.shellDynamic, ROOT),
     readFileStrict(path.join(ROOT, 'apps/web/components/shell-dynamic-rendering.tsx'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-chat-state.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-playlist-rail.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-performance-metrics.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-desktop-intro.ts'), ROOT),
-    readFileStrict(path.join(ROOT, 'apps/web/components/use-search-autocomplete.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-chat-state.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-playlist-rail.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-performance-metrics.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-desktop-intro.ts'), ROOT),
+    readFileStrict(path.join(ROOT, 'apps/web/hooks/use-search-autocomplete.ts'), ROOT),
   ].join('\n');
   const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
   const newPageSource = readFileStrict(files.newPage, ROOT);
@@ -109,7 +109,7 @@ function main() {
 
   assertContains(newPageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "New page passes hidden ids to loader", failures);
   assertContains(newPageSource, "getShellRequestVideoState", "New page resolves hidden ids through shared shell request state helper", failures);
-  assertContains(newLoaderSource, 'import { useNewVideosDataLoader } from "@/components/use-new-videos-data-loader";', "New loader delegates data filtering/loading to dedicated hook", failures);
+  assertContains(newLoaderSource, 'import { useNewVideosDataLoader } from "@/hooks/use-new-videos-data-loader";', "New loader delegates data filtering/loading to dedicated hook", failures);
   assertContains(newDataLoaderHookSource, "filterHiddenVideos", "New data loader hook filters hidden videos", failures);
 
   assertContains(top100PageSource, "hiddenVideoIds={Array.from(hiddenVideoIds)}", "Top100 page passes hidden ids to loader", failures);

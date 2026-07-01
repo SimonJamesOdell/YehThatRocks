@@ -11,7 +11,7 @@ function applyQueueResolutionRulePack({
   failures,
 }) {
   assertContains(shellDynamicSource, "type RightRailMode = \"watch-next\" | \"playlist\" | \"queue\";", "Shell supports queue mode in right rail tab state", failures);
-  assertContains(shellDynamicSource, "import { useTemporaryQueueController } from \"@/components/use-temporary-queue-controller\";", "Shell delegates queue orchestration into dedicated hook", failures);
+  assertContains(shellDynamicSource, "import { useTemporaryQueueController } from \"@/hooks/use-temporary-queue-controller\";", "Shell delegates queue orchestration into dedicated hook", failures);
 
   assertContains(temporaryQueueControllerHookSource, "export function useTemporaryQueueController", "Temporary queue hook exists", failures);
   assertContains(temporaryQueueControllerHookSource, "import { mutateTemporaryQueue as mutateTemporaryQueueDomain, type QueueMutation } from \"@/domains/queue/temporary-queue\";", "Temporary queue hook uses queue domain mutation API", failures);
@@ -24,7 +24,7 @@ function applyQueueResolutionRulePack({
   assertContains(temporaryQueueControllerHookSource, "const previousVideoIdRef = useRef(currentVideoId);", "Temporary queue hook tracks previous video id", failures);
   assertContains(temporaryQueueControllerHookSource, "reason: \"transition-sync\"", "Temporary queue transition cleanup uses transition-sync reason", failures);
 
-  assertContains(playerExperienceSource, "import { useNextTrackDecision } from \"@/components/use-next-track-decision\";", "Player delegates next-target orchestration into hook", failures);
+  assertContains(playerExperienceSource, "import { useNextTrackDecision } from \"@/hooks/use-next-track-decision\";", "Player delegates next-target orchestration into hook", failures);
   assertContains(playerExperienceSource, "import { EVENT_NAMES, dispatchAppEvent, listenToAppEvent", "Player consumes centralized event contract", failures);
   assertContains(nextTrackDecisionHookSource, "export function useNextTrackDecision", "Next-track decision hook exists", failures);
   assertContains(nextTrackDecisionHookSource, "import {", "Next-track hook imports domain functions", failures);

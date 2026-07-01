@@ -16,7 +16,7 @@ import mysql from "mysql2/promise";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, "..");
 const WEB_CWD = path.join(REPO_ROOT, "apps", "web");
-const MAINTAIN_SCRIPT = path.join(REPO_ROOT, "scripts", "maintain-admin-dashboard-cache.js");
+const MAINTAIN_SCRIPT = path.join(REPO_ROOT, "scripts", "maintain-admin-dashboard-cache.mjs");
 
 async function removePathIfExists(targetPath) {
   try {

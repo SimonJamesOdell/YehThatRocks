@@ -17,32 +17,7 @@ import { getArtistPagePath } from "@/lib/artist-routing";
 
 const FAVOURITES_BATCH_SIZE = 100;
 
-function inferTrackFromTitle(title: string, artist: string) {
-  const trimmedTitle = title.trim();
-  const trimmedArtist = artist.trim();
-  if (!trimmedTitle || !trimmedArtist) {
-    return trimmedTitle;
-  }
-
-  const separators = [" - ", " — ", " | "];
-  for (const separator of separators) {
-    const split = trimmedTitle.split(separator).map((part) => part.trim()).filter(Boolean);
-    if (split.length < 2) {
-      continue;
-    }
-
-    const [left, right] = split;
-    if (left.toLowerCase() === trimmedArtist.toLowerCase()) {
-      return right;
-    }
-
-    if (right.toLowerCase() === trimmedArtist.toLowerCase()) {
-      return left;
-    }
-  }
-
-  return trimmedTitle;
-}
+import { inferTrackFromTitle } from "@/lib/infer-track-title";
 
 function inferArtistTrackFromTitleFallback(title: string) {
   const trimmedTitle = title.trim();

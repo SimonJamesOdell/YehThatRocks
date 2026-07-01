@@ -12,7 +12,7 @@ import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { dispatchAppEvent, EVENT_NAMES } from "@/lib/events-contract";
-import { useLiveSearchParams } from "@/components/use-live-search-params";
+import { useLiveSearchParams } from "@/hooks/use-live-search-params";
 import { getArtistPagePath } from "@/lib/artist-routing";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { navigateVideoHref } from "@/components/player-video-navigation";
@@ -51,32 +51,7 @@ let top100WarmWindowStartedAt = 0;
 let top100WarmCountInWindow = 0;
 const top100WarmByVideoId = new Map<string, number>();
 
-function inferTrackFromTitle(title: string, artist: string) {
-  const trimmedTitle = title.trim();
-  const trimmedArtist = artist.trim();
-  if (!trimmedTitle || !trimmedArtist) {
-    return trimmedTitle;
-  }
-
-  const separators = [" - ", " — ", " | "];
-  for (const separator of separators) {
-    const split = trimmedTitle.split(separator).map((part) => part.trim()).filter(Boolean);
-    if (split.length < 2) {
-      continue;
-    }
-
-    const [left, right] = split;
-    if (left.toLowerCase() === trimmedArtist.toLowerCase()) {
-      return right;
-    }
-
-    if (right.toLowerCase() === trimmedArtist.toLowerCase()) {
-      return left;
-    }
-  }
-
-  return trimmedTitle;
-}
+import { inferTrackFromTitle } from "@/lib/infer-track-title";
 
 function canWarmTop100Selection() {
   const now = Date.now();

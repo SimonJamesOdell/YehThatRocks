@@ -16,7 +16,7 @@ const {
   assertCssRuleContains,
   assertCssRuleNotContains,
   finishInvariantCheck,
-} = require("./invariants/helpers");
+} = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 
@@ -24,11 +24,11 @@ const files = {
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   autoplaySettingsEditor: path.join(ROOT, "apps/web/components/autoplay-settings-editor.tsx"),
   accountSettingsPanel: path.join(ROOT, "apps/web/components/account-settings-panel.tsx"),
-  useAdminSession: path.join(ROOT, "apps/web/components/use-admin-session.ts"),
-  useLyricsAvailability: path.join(ROOT, "apps/web/components/use-lyrics-availability.ts"),
-  usePlaylistSequence: path.join(ROOT, "apps/web/components/use-playlist-sequence.ts"),
-  useFavouriteState: path.join(ROOT, "apps/web/components/use-favourite-state.ts"),
-  useAdminVideoEdit: path.join(ROOT, "apps/web/components/use-admin-video-edit.ts"),
+  useAdminSession: path.join(ROOT, "apps/web/hooks/use-admin-session.ts"),
+  useLyricsAvailability: path.join(ROOT, "apps/web/hooks/use-lyrics-availability.ts"),
+  usePlaylistSequence: path.join(ROOT, "apps/web/hooks/use-playlist-sequence.ts"),
+  useFavouriteState: path.join(ROOT, "apps/web/hooks/use-favourite-state.ts"),
+  useAdminVideoEdit: path.join(ROOT, "apps/web/hooks/use-admin-video-edit.ts"),
   endedChoiceCard: path.join(ROOT, "apps/web/components/player-experience-ended-choice-card.tsx"),
   autoplayUtils: path.join(ROOT, "apps/web/components/player-experience-autoplay-utils.ts"),
   playbackFailureUtils: path.join(ROOT, "apps/web/components/player-experience-playback-failure-utils.ts"),
@@ -44,6 +44,10 @@ const files = {
   chatSharedVideo: path.join(ROOT, "apps/web/lib/chat-shared-video.ts"),
   artistWikiLink: path.join(ROOT, "apps/web/components/artist-wiki-link.tsx"),
   runtimeBootstrap: path.join(ROOT, "apps/web/lib/runtime-bootstrap.ts"),
+    playerConstants: path.join(ROOT, "apps/web/components/player-constants.ts"),
+    playerTypes: path.join(ROOT, "apps/web/components/player-types.ts"),
+    playerLogger: path.join(ROOT, "apps/web/components/player-logger.ts"),
+    playerFormatters: path.join(ROOT, "apps/web/components/player-formatters.ts"),
   appRoot: path.join(ROOT, "apps/web/app"),
 };
 
@@ -59,6 +63,10 @@ function main() {
     readFileStrict(files.usePlaylistSequence, ROOT),
     readFileStrict(files.useFavouriteState, ROOT),
     readFileStrict(files.useAdminVideoEdit, ROOT),
+    readFileStrict(files.playerConstants, ROOT),
+    readFileStrict(files.playerTypes, ROOT),
+    readFileStrict(files.playerLogger, ROOT),
+    readFileStrict(files.playerFormatters, ROOT),
   ].join("\n");
   const autoplaySettingsEditorSource = readFileStrict(files.autoplaySettingsEditor, ROOT);
   const accountSettingsPanelSource = readFileStrict(files.accountSettingsPanel, ROOT);

@@ -22,7 +22,7 @@ echo "[entrypoint] Seeding database..."
 npx prisma db execute --schema /app/prisma/schema.prisma --file /app/prisma/seed.sql 2>&1 || echo "[entrypoint] Seed skipped (non-fatal, data may already exist)"
 
 echo "[entrypoint] Initializing admin dashboard cache..."
-node /app/scripts/maintain-admin-dashboard-cache.js || echo "[entrypoint] Dashboard cache initialization failed (non-fatal)"
+node /app/scripts/maintain-admin-dashboard-cache.mjs || echo "[entrypoint] Dashboard cache initialization failed (non-fatal)"
 
 echo "[entrypoint] Starting admin dashboard cache scheduler in background..."
 node /app/scripts/schedule-admin-dashboard-maintenance.js &

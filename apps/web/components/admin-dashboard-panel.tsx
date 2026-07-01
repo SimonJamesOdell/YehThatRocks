@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAdminHealthStreaming } from "@/components/use-admin-health-streaming";
-import { useAdminVideoQueuePolling } from "@/components/use-admin-video-queue-polling";
-import { useAdminAnalyticsRefresh } from "@/components/use-admin-analytics-refresh";
+import { useAdminHealthStreaming } from "@/hooks/use-admin-health-streaming";
+import { useAdminVideoQueuePolling } from "@/hooks/use-admin-video-queue-polling";
+import { useAdminAnalyticsRefresh } from "@/hooks/use-admin-analytics-refresh";
 import { finiteOrNull, isAuthResponseError, readJson, readNoStoreJson } from "@/components/admin-dashboard-utils";
 import { mergePendingQueuePreservingCurrentOrder } from "@/components/admin-pending-queue-order";
 import { buildAnalyticsGraph, buildHostMetricsGraph, filterBucketsWithinRange } from "@/components/admin-dashboard-graph-builders";
@@ -15,11 +15,11 @@ import { AdminDashboardOverviewTab } from "@/components/admin-dashboard-overview
 import { AdminDashboardPermissionsTab } from "@/components/admin-dashboard-permissions-tab";
 import { AdminDashboardPerformanceTab } from "@/components/admin-dashboard-performance-tab";
 import { AdminDashboardVideosTab } from "@/components/admin-dashboard-videos-tab";
-import { useAdminAnalytics } from "@/components/use-admin-analytics";
-import { useAdminCategories } from "@/components/use-admin-categories";
-import { useAdminVideoModeration } from "@/components/use-admin-video-moderation";
-import { useAdminCatalogReview } from "@/components/use-admin-catalog-review";
-import { useAdminMagazine } from "@/components/use-admin-magazine";
+import { useAdminAnalytics } from "@/hooks/use-admin-analytics";
+import { useAdminCategories } from "@/hooks/use-admin-categories";
+import { useAdminVideoModeration } from "@/hooks/use-admin-video-moderation";
+import { useAdminCatalogReview } from "@/hooks/use-admin-catalog-review";
+import { useAdminMagazine } from "@/hooks/use-admin-magazine";
 import { resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
 import {
   AdminTab,

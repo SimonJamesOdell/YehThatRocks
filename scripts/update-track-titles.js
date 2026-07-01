@@ -110,27 +110,7 @@ function buildTitle(artist, track) {
   return `${artist} - ${track}`;
 }
 
-// ── Env loading ────────────────────────────────────────────────────────────
-
-function loadEnv() {
-  const candidates = [
-    path.resolve(process.cwd(), "apps/web/.env.local"),
-    path.resolve(process.cwd(), ".env.local"),
-    path.resolve(process.cwd(), ".env"),
-  ];
-  for (const p of candidates) {
-    if (!fs.existsSync(p)) continue;
-    for (const line of fs.readFileSync(p, "utf8").split(/\r?\n/)) {
-      const t = line.trim();
-      if (!t || t.startsWith("#")) continue;
-      const m = t.match(/^([A-Z0-9_]+)=(.*)$/);
-      if (!m) continue;
-      const [, key, raw] = m;
-      if (!process.env[key]) process.env[key] = raw.replace(/^"/, "").replace(/"$/, "");
-    }
-    break; // first found wins
-  }
-}
+const { loadEnv } = require("./lib/social-share-utils");
 
 // ── Main ───────────────────────────────────────────────────────────────────
 

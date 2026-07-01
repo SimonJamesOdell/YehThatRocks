@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
-import { useLyricsAvailability } from "@/components/use-lyrics-availability";
+import { useLyricsAvailability } from "@/hooks/use-lyrics-availability";
 
 export function usePlayerLyricsState({
   currentVideoId,

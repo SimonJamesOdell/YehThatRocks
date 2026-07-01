@@ -2,7 +2,7 @@
 
 import type { ChangeEventHandler, KeyboardEventHandler, MutableRefObject } from "react";
 
-import type { SearchSuggestion } from "@/components/use-search-autocomplete";
+import type { SearchSuggestion } from "@/hooks/use-search-autocomplete";
 
 type ShellSearchBarProps = {
   searchComboboxRef: MutableRefObject<HTMLDivElement | null>;

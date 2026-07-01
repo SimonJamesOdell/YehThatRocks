@@ -8,7 +8,7 @@ import type { MouseEvent } from "react";
 import type { ArtistRecord } from "@/lib/catalog";
 import { useArtistsLetterContext } from "@/components/artists-letter-provider";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
-import { useInfiniteScroll } from "@/components/use-infinite-scroll";
+import { useInfiniteScroll } from "@/hooks/use-infinite-scroll";
 import {
   isValidArtistLetter,
   normalizeArtistFilterValue,

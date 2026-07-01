@@ -2,7 +2,7 @@
 
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 
-import { LIVE_SEARCH_PARAMS_EVENT } from "@/components/use-live-search-params";
+import { LIVE_SEARCH_PARAMS_EVENT } from "@/hooks/use-live-search-params";
 import { parseJsonOrNull } from "@/lib/parse-json";
 
 const AUTOPLAY_FALLBACK_POOL_SIZE = 12;

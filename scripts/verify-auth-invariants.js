@@ -89,11 +89,11 @@ function main() {
   const shellLayoutSource = sources.shellLayout;
   const shellDynamicSource = joinFileSources([
     files.shellDynamic,
-    path.join(ROOT, "apps/web/components/use-chat-state.ts"),
-    path.join(ROOT, "apps/web/components/use-playlist-rail.ts"),
-    path.join(ROOT, "apps/web/components/use-performance-metrics.ts"),
-    path.join(ROOT, "apps/web/components/use-desktop-intro.ts"),
-    path.join(ROOT, "apps/web/components/use-search-autocomplete.ts"),
+    path.join(ROOT, "apps/web/hooks/use-chat-state.ts"),
+    path.join(ROOT, "apps/web/hooks/use-playlist-rail.ts"),
+    path.join(ROOT, "apps/web/hooks/use-performance-metrics.ts"),
+    path.join(ROOT, "apps/web/hooks/use-desktop-intro.ts"),
+    path.join(ROOT, "apps/web/hooks/use-search-autocomplete.ts"),
   ], ROOT);
   const historyPageSource = sources.historyPage;
   const favouritesPageSource = sources.favouritesPage;

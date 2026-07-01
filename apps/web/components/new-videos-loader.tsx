@@ -13,16 +13,16 @@ import { useOverlayScrollContainerRef } from "@/components/overlay-scroll-contai
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { OverlayHeader } from "@/components/overlay-header";
 import { RouteLoaderContractRow } from "@/components/route-loader-contract-row";
-import { useActiveRowAutoScroll } from "@/components/use-active-row-auto-scroll";
-import { LIVE_SEARCH_PARAMS_EVENT, useLiveSearchParams } from "@/components/use-live-search-params";
+import { useActiveRowAutoScroll } from "@/hooks/use-active-row-auto-scroll";
+import { LIVE_SEARCH_PARAMS_EVENT, useLiveSearchParams } from "@/hooks/use-live-search-params";
 // Invariant anchor for verify-new-videos-invariants.js:
-// import { useLiveSearchParams } from "@/components/use-live-search-params";
-import { useNewVideosDataLoader } from "@/components/use-new-videos-data-loader";
-import { useNewVideosGenrePreference } from "@/components/use-new-videos-genre-preference";
-import { useNewVideosModeration } from "@/components/use-new-videos-moderation";
-import { useNewVideosScrollPrefetch } from "@/components/use-new-videos-scroll-prefetch";
-import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
-import { useSuggestNewVideo } from "@/components/use-suggest-new-video";
+// import { useLiveSearchParams } from "@/hooks/use-live-search-params";
+import { useNewVideosDataLoader } from "@/hooks/use-new-videos-data-loader";
+import { useNewVideosGenrePreference } from "@/hooks/use-new-videos-genre-preference";
+import { useNewVideosModeration } from "@/hooks/use-new-videos-moderation";
+import { useNewVideosScrollPrefetch } from "@/hooks/use-new-videos-scroll-prefetch";
+import { useSeenTogglePreference } from "@/hooks/use-seen-toggle-preference";
+import { useSuggestNewVideo } from "@/hooks/use-suggest-new-video";
 import {
   doesVideoMatchNewGenreFilters,
   normalizeNewVideoGenreFilters,

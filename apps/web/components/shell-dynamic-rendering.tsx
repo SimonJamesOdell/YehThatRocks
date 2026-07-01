@@ -19,28 +19,16 @@ import { fetchWithAuthRetry as fetchWithAuthRetryClient } from "@/lib/client-aut
 import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import { getArtistPagePath } from "@/lib/artist-routing";
 import { CHAT_OPENED_VIDEO_ACTIVITY_SUPPRESS_KEY } from "@/lib/storage-keys";
-import type { PlaylistRailSummary } from "@/components/use-playlist-rail";
-import type { ShellMagazineTrack } from "@/components/use-shell-admin-state";
+import type { PlaylistRailSummary } from "@/hooks/use-playlist-rail";
+import type { ShellMagazineTrack } from "@/hooks/use-shell-admin-state";
 import { MagazineGenerateNowButton } from "@/components/magazine-generate-now-button";
 import { resolveVideoGenreNavigationTarget } from "@/lib/video-genre-navigation";
 
 import { REQUEST_VIDEO_REPLAY_EVENT, EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 export { REQUEST_VIDEO_REPLAY_EVENT };
 
-function inferTrackForWatchNext(title: string, artist: string): string {
-  const trimmedTitle = title.trim();
-  const trimmedArtist = artist.trim();
-  if (!trimmedTitle || !trimmedArtist) return trimmedTitle;
-  const separators = [" - ", " — ", " | "];
-  for (const separator of separators) {
-    const split = trimmedTitle.split(separator).map((part) => part.trim()).filter(Boolean);
-    if (split.length < 2) continue;
-    const [left, right] = split;
-    if (left.toLowerCase() === trimmedArtist.toLowerCase()) return right;
-    if (right.toLowerCase() === trimmedArtist.toLowerCase()) return left;
-  }
-  return trimmedTitle;
-}
+import { inferTrackFromTitle } from "@/lib/infer-track-title";
+const inferTrackForWatchNext = inferTrackFromTitle;
 
 const GENERIC_WATCH_NEXT_ARTIST_LABELS = new Set(["unknown artist", "unknown", "youtube"]);
 const sharedVideoPreviewCache = new Map<string, SharedVideoPreview | null>();

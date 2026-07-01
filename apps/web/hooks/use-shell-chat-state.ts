@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { useChatState, type ChatStateResult } from "@/components/use-chat-state";
+import { useChatState, type ChatStateResult } from "@/hooks/use-chat-state";
 
 export function useShellChatState({
   pathname,

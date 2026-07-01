@@ -23,13 +23,14 @@ const files = mapRelativeFiles(ROOT, {
   playlistSummaryCard: "apps/web/components/playlist-summary-card-content.tsx",
   shell: "apps/web/components/shell-dynamic-core.tsx",
   shellRendering: "apps/web/components/shell-dynamic-rendering.tsx",
-  playlistRailHook: "apps/web/components/use-playlist-rail.ts",
+  playlistRailHook: "apps/web/hooks/use-playlist-rail.ts",
   player: "apps/web/components/player-experience-core.tsx",
-  playlistSequenceHook: "apps/web/components/use-playlist-sequence.ts",
+  playlistSequenceHook: "apps/web/hooks/use-playlist-sequence.ts",
   css: "apps/web/app/globals.css",
   playlistCss: "apps/web/app/styles/playlist-ui.css",
   browseCss: "apps/web/app/styles/browse.css",
   trackCardsCss: "apps/web/app/styles/track-cards.css",
+  forumCss: "apps/web/app/styles/forum.css",
 });
 
 function main() {
@@ -47,7 +48,7 @@ function main() {
   const playlistRailHookSource = sources.playlistRailHook;
   const shellSource = joinFileSources([files.shell, files.shellRendering, files.playlistRailHook], ROOT);
   const playerSource = joinFileSources([files.player, files.playlistSequenceHook], ROOT);
-  const cssSource = joinFileSources([files.css, files.playlistCss, files.browseCss, files.trackCardsCss], ROOT);
+  const cssSource = joinFileSources([files.css, files.playlistCss, files.browseCss, files.trackCardsCss, files.forumCss], ROOT);
 
   // Playlists page grid invariants.
   assertContains(playlistsGridSource, "function normalizePlaylistSummaries(rows: unknown): PlaylistSummary[]", "Playlists grid defines summary normalization helper", failures);

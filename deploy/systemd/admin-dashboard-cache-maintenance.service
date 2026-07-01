@@ -5,4 +5,4 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/bash -lc 'CID=$(/usr/bin/docker ps --filter "label=com.docker.compose.project=yehthatrocks" --filter "label=com.docker.compose.service=web" -q | head -n1); if [ -z "$CID" ]; then echo "web container not running" >&2; exit 1; fi; /usr/bin/docker exec "$CID" node /app/scripts/maintain-admin-dashboard-cache.js'
+ExecStart=/usr/bin/bash -lc 'CID=$(/usr/bin/docker ps --filter "label=com.docker.compose.project=yehthatrocks" --filter "label=com.docker.compose.service=web" -q | head -n1); if [ -z "$CID" ]; then echo "web container not running" >&2; exit 1; fi; /usr/bin/docker exec "$CID" node /app/scripts/maintain-admin-dashboard-cache.mjs'

@@ -54,10 +54,7 @@ function loadEnvFile(filePath) {
   }
 }
 
-function loadEnv() {
-  loadEnvFile(path.resolve(process.cwd(), "apps/web/.env.local"));
-  loadEnvFile(path.resolve(process.cwd(), ".env"));
-}
+const { loadEnv } = require("./lib/social-share-utils");
 
 function stripHtml(input) {
   return String(input || "")

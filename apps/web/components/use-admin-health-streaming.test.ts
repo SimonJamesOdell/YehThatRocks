@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mergeCpuDialIntoHealthPayload } from "@/components/use-admin-health-streaming";
+import { mergeCpuDialIntoHealthPayload } from "@/hooks/use-admin-health-streaming";
 
 describe("mergeCpuDialIntoHealthPayload", () => {
   it("updates only CPU fields and preserves the rest of host health", () => {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const path = require("node:path");
-const { readFileStrict, assertContains, assertNotContains, assertContainsEither, finishInvariantCheck } = require("./invariants/helpers");
+const { readFileStrict, assertContains, assertNotContains, assertContainsEither, finishInvariantCheck } = require("./lib/test-harness");
 
 const ROOT = process.cwd();
 

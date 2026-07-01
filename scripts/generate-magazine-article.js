@@ -49,19 +49,7 @@ const deckOverride = typeof args["deck"] === "string" ? args["deck"] : null;
 const isDryRun = Boolean(args["dry-run"]);
 const overwrite = Boolean(args["overwrite"]);
 
-// ── Env ───────────────────────────────────────────────────────────────────
-
-function loadEnv() {
-  const envPath = path.join(process.cwd(), "apps/web/.env.local");
-  if (!fs.existsSync(envPath)) return;
-  const lines = fs.readFileSync(envPath, "utf8").split("\n");
-  for (const line of lines) {
-    const m = line.match(/^([A-Z_][A-Z0-9_]*)="?([^"]*)"?\s*$/);
-    if (m && !process.env[m[1]]) {
-      process.env[m[1]] = m[2];
-    }
-  }
-}
+const { loadEnv } = require("./lib/social-share-utils");
 loadEnv();
 
 const ENABLE_MAGAZINE_GENERATION = process.env.ENABLE_MAGAZINE_GENERATION === "1";

@@ -108,7 +108,7 @@ function checkSchemaInitialized(host, port, user, password, database) {
 function initializeAdminDashboardCache() {
   console.log("🔄 Initializing admin dashboard cache...");
   
-  const maintainProcess = spawn("node", ["scripts/maintain-admin-dashboard-cache.js"], {
+  const maintainProcess = spawn("node", ["scripts/maintain-admin-dashboard-cache.mjs"], {
     stdio: "inherit",
     cwd: process.cwd()
   });

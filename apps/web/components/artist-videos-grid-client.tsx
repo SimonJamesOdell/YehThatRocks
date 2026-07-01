@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLiveSearchParams } from "@/components/use-live-search-params";
+import { useLiveSearchParams } from "@/hooks/use-live-search-params";
 
 import { ArtistVideoLink } from "@/components/artist-video-link";
 import { ArtistCreatePlaylistButton } from "@/components/artist-create-playlist-button";
@@ -12,7 +12,7 @@ import { AdminArtistDiscoveryButton } from "@/components/admin-artist-discovery-
 import { CloseLink } from "@/components/close-link";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { OverlayHeader } from "@/components/overlay-header";
-import { useSeenTogglePreference } from "@/components/use-seen-toggle-preference";
+import { useSeenTogglePreference } from "@/hooks/use-seen-toggle-preference";
 import type { VideoRecord } from "@/lib/catalog";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";

@@ -3,12 +3,15 @@
 @import './styles/shell.css';
 @import './styles/header-nav.css';
 @import './styles/rails.css';
+@import './styles/player-auth-gate.css';
+@import './styles/player-magazine.css';
 @import './styles/player-chrome.css';
 @import './styles/player-overlays.css';
 @import './styles/player-actions.css';
 @import './styles/playlist-ui.css';
 @import './styles/track-cards.css';
 @import './styles/new-page.css';
+@import './styles/forum.css';
 @import './styles/browse.css';
 @import './styles/auth.css';
 @import './styles/account.css';
