@@ -58,6 +58,7 @@ import { resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
 import {
   AGE_RESTRICTED_PATTERNS,
   ALLOWED_VIDEO_TYPES,
+  AUTOMATED_TRACK_DISCOVERY_DISABLED_REASON,
   BACKFILL_CONCURRENCY,
   BOT_CHALLENGE_PATTERNS,
   canRunAutomatedTrackDiscovery,
