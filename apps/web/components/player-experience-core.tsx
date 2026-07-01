@@ -13,6 +13,7 @@ import { getArtistPagePath, withVideoContext } from "@/lib/artist-routing";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { PlayerAutoplayConfigureModal } from "@/components/player-autoplay-configure-modal";
+import { AdminDeleteConfirmModal } from "@/components/admin-delete-confirm-modal";
 import { PlayerShareModal } from "@/components/player-share-modal";
 import { RemoveFavouriteConfirmModal } from "@/components/remove-favourite-confirm-modal";
 import { useNextTrackDecision } from "@/hooks/use-next-track-decision";
@@ -5021,55 +5022,14 @@ export function PlayerExperience({
             )
             : null}
 
-          {showAdminDeleteConfirmModal && typeof document !== "undefined"
-            ? createPortal(
-                <div
-                  className="shareModalBackdrop"
-                  role="dialog"
-                  aria-modal="true"
-                  aria-label="Confirm permanent video deletion"
-                  onClick={() => {
-                    if (!isAdminDeleting) {
-                      setShowAdminDeleteConfirmModal(false);
-                    }
-                  }}
-                >
-                  <div className="shareModal adminVideoEditModal" onClick={(event) => event.stopPropagation()}>
-                    <div className="shareModalHeader">
-                      <strong>Delete Video Permanently</strong>
-                    </div>
-
-                    <p className="authMessage">
-                      This will remove this video from all related tables and cannot be undone.
-                    </p>
-                    <p className="authMessage">{displayTitle}</p>
-                    {adminEditError ? <p className="authMessage">{adminEditError}</p> : null}
-
-                    <div className="adminVideoEditActions">
-                      <button
-                        type="button"
-                        className="adminVideoEditButton adminVideoEditButtonSecondary"
-                        onClick={() => setShowAdminDeleteConfirmModal(false)}
-                        disabled={isAdminDeleting}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="adminVideoEditButton adminVideoEditButtonPrimary"
-                        onClick={() => {
-                          void handleAdminDeleteCurrentVideo();
-                        }}
-                        disabled={isAdminDeleting}
-                      >
-                        {isAdminDeleting ? "Deleting..." : "Delete permanently"}
-                      </button>
-                    </div>
-                  </div>
-                </div>,
-                document.body,
-              )
-            : null}
+          <AdminDeleteConfirmModal
+            open={showAdminDeleteConfirmModal}
+            displayTitle={displayTitle}
+            error={adminEditError}
+            isDeleting={isAdminDeleting}
+            onClose={() => setShowAdminDeleteConfirmModal(false)}
+            onConfirm={() => { void handleAdminDeleteCurrentVideo(); }}
+          />
 
           <HideVideoConfirmModal
             isOpen={endedChoiceHideConfirmVideo !== null}
