@@ -58,13 +58,11 @@ import { fetchRecentlyWatchedIds, getSeenVideoIdsForUser } from "@/lib/catalog-d
 import { getSearchRankingSignals } from "@/lib/search-flag-data";
 import { buildApprovedVideoPredicate } from "@/lib/catalog-data-internal-helpers";
 
-// ── Constants ────────────────────────────────────────────────────────────────
-
-const TOP_POOL_CACHE_TTL_MS = 5 * 60 * 1000;
-const MIN_RANKED_TOP_POOL_FETCH = 200;
-const RANKED_VIDEO_ID_SLICE_CACHE_TTL_MS = Math.max(
-  15_000,
-  Math.min(60_000, Number(process.env.RANKED_VIDEO_ID_SLICE_CACHE_TTL_MS || "30000")),
+import {
+  MIN_RANKED_TOP_POOL_FETCH,
+  RANKED_VIDEO_ID_SLICE_CACHE_TTL_MS,
+  TOP_POOL_CACHE_TTL_MS,
+} from "@/lib/video-constants";
 );
 
 const NEWEST_CACHE_TTL_MS = 60_000;
