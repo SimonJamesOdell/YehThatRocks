@@ -107,8 +107,8 @@ async function main() {
     }
 
     await fs.mkdir(SITEMAPS_DIR, { recursive: true });
-    await fs.writeFile(path.join(SITEMAPS_DIR, "0.xml"), buildSitemapUrlSet(entries), "utf8");
-    console.log(`  ✓ 0.xml (${entries.length} URLs)`);
+    await fs.writeFile(path.join(SITEMAPS_DIR, "pages.xml"), buildSitemapUrlSet(entries), "utf8");
+    console.log(`  ✓ pages.xml (${entries.length} URLs)`);
 
     // --- Video shards ---
     const countRows = await prisma.$queryRawUnsafe(
@@ -120,7 +120,7 @@ async function main() {
     const shardCount = Math.max(1, Math.ceil(totalVideos / VIDEO_SITEMAP_PAGE_SIZE));
     console.log(`  ${totalVideos} approved videos → ${shardCount} video shard(s)`);
 
-    const shardIds = [0, ...Array.from({ length: shardCount }, (_, i) => i + 1)];
+    const shardIds = ["pages", ...Array.from({ length: shardCount }, (_, i) => `videos-${i + 1}`)];
 
     for (let shard = 1; shard <= shardCount; shard++) {
       const offset = (shard - 1) * VIDEO_SITEMAP_PAGE_SIZE;
@@ -140,8 +140,9 @@ async function main() {
         priority: 0.7,
         changefreq: "monthly",
       }));
-      await fs.writeFile(path.join(SITEMAPS_DIR, `${shard}.xml`), buildSitemapUrlSet(videoEntries), "utf8");
-      console.log(`  ✓ ${shard}.xml (${videoEntries.length} URLs)`);
+      const name = `videos-${shard}`;
+      await fs.writeFile(path.join(SITEMAPS_DIR, `${name}.xml`), buildSitemapUrlSet(videoEntries), "utf8");
+      console.log(`  ✓ ${name}.xml (${videoEntries.length} URLs)`);
     }
 
     // --- Sitemap index ---
