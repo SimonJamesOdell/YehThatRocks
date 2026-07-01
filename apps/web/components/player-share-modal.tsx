@@ -9,7 +9,7 @@ interface ShareTarget {
 interface PlayerShareModalProps {
   shareUrl: string;
   copied: boolean;
-  socialTargets: ShareTarget[];
+  socialTargets: readonly ShareTarget[];
   onClose: () => void;
   onCopy: () => void;
   onShareTargetOpen: (href: string) => void;
