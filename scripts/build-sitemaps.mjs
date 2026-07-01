@@ -79,6 +79,7 @@ async function main() {
       { loc: buildUrl("/artists"), priority: 0.8, changefreq: "weekly" },
       { loc: buildUrl("/new"), priority: 0.8, changefreq: "daily" },
       { loc: buildUrl("/magazine"), priority: 0.8, changefreq: "daily" },
+      { loc: buildUrl("/forum"), priority: 0.8, changefreq: "daily" },
     ];
 
     // Categories
