@@ -1,6 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  outputFileTracingIncludes: {
+    "/**": [
+      "../../node_modules/mysql2/**",
+      "../../node_modules/@prisma/adapter-mariadb/**",
+      "../../node_modules/@prisma/engines/**",
+    ],
+  },
   async redirects() {
     return [
       {
