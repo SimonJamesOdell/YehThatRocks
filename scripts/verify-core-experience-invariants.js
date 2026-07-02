@@ -39,6 +39,7 @@ const files = {
   adminArtistDiscoverRoute: path.join(ROOT, "apps/web/app/api/admin/artists/discover/route.ts"),
   artistDiscovery: path.join(ROOT, "apps/web/lib/artist-discovery.ts"),
   playlistImportRoute: path.join(ROOT, "apps/web/app/api/playlists/import/route.ts"),
+  catalogDataUtils: path.join(ROOT, "apps/web/lib/catalog-data-utils.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   catalogDataVideos: path.join(ROOT, "apps/web/lib/catalog-data-videos.ts"),
   catalogDataArtists: path.join(ROOT, "apps/web/lib/catalog-data-artists.ts"),
@@ -109,6 +110,7 @@ function main() {
   const catalogDataHistorySource = readFileStrict(files.catalogDataHistory, ROOT);
   const catalogDataFavouritesSource = readFileStrict(files.catalogDataFavourites, ROOT);
   const catalogDataDbSource = readFileStrict(files.catalogDataDb, ROOT);
+  const catalogDataUtilsSource = readFileStrict(files.catalogDataUtils, ROOT);
   const catalogDataVideoIngestionSource = [
     readFileStrict(files.catalogDataVideoIngestion, ROOT),
     readFileStrict(path.join(ROOT, "apps/web/lib/video-ingestion-constants.ts"), ROOT),
@@ -259,29 +261,29 @@ function main() {
   assertContains(catalogDataVideosSource, "const rankedVideoIds = Array.from(new Set(rankedVideoIdRows.map((row) => row.videoId).filter(Boolean))).slice(0, fetchLimit);", "Ranked top-pool builder deduplicates candidate video ids before hydration", failures);
   assertContains(catalogDataVideosSource, "WHERE v.videoId IN (${placeholders})", "Ranked top-pool builder hydrates rows using candidate id IN filter", failures);
   assertContains(catalogDataVideosSource, "ORDER BY FIELD(v.videoId, ${placeholders})", "Ranked top-pool hydration preserves candidate ordering using FIELD", failures);
-  assertContains(catalogDataSource, "export async function getUnseenCatalogVideos(options?: {", "Catalog data exposes unseen catalog helper", failures);
-  assertContains(catalogDataSource, "const requested = Math.max(1, Math.min(500, Math.floor(options?.count ?? 100)));", "Unseen catalog helper validates and clamps requested count", failures);
-  assertContains(catalogDataSource, "const useSharedRelatedCache = excludedIds.size === 0;", "Related videos cache is reused for any exclude-free request size", failures);
-  assertContains(catalogDataSource, "if (cached && cached.expiresAt > now && cached.videos.length >= requestedCount)", "Related videos cache serves larger pooled recommendation requests", failures);
-  assertContains(catalogDataSource, "const newestPromise = getNewestVideos(50).then((videos) =>", "Related videos reuse newest helper instead of issuing a duplicate newest scan", failures);
-  assertContains(catalogDataSource, "if (await isRejectedVideo(normalizedVideoId)) {", "Hydration path fast-exits for rejected videos before external API calls", failures);
-  assertContains(catalogDataSource, "await persistRejectedVideo(video.id, availability.reason || \"unavailable\");", "Unavailable videos are persisted into rejected video blocklist", failures);
-  assertContains(catalogDataSource, "SELECT video_id FROM rejected_videos WHERE video_id IN", "Existing-catalog check includes rejected video ids", failures);
-  assertContains(catalogDataSource, "if (reason === \"admin-hard-delete\") {", "Hard-delete path applies admin-specific reject blocklist handling", failures);
-  assertContains(catalogDataSource, "VALUES (${normalizedVideoId}, ${\"admin-deleted\"}, ${new Date()})", "Admin hard-delete writes admin-deleted reason to rejected table", failures);
-  assertContains(catalogDataSource, "ORDER BY v.created_at DESC, v.id DESC", "Newest ranking is anchored on created_at then id", failures);
-  assertContains(catalogDataSource, "ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC", "Newest logic retains explicit legacy timestamp fallback path", failures);
-  assertContains(catalogDataSource, "const admissionDecision = admissionRow ? evaluatePlaybackMetadataEligibility(admissionRow) : null;", "Related cascade evaluates metadata eligibility before admitting discovered videos", failures);
-  assertContains(catalogDataSource, "!admissionRow || !Boolean(admissionRow.hasAvailable) || !admissionDecision?.allowed", "Related cascade requires available embed + metadata eligibility", failures);
-  assertContains(catalogDataSource, "await pruneVideoAndAssociationsByVideoId(candidate.id, \"related-cascade-strict-admission\").catch(() => undefined);", "Related cascade prunes candidates that fail strict admission", failures);
-  assertContains(catalogDataSource, "const ROCK_METAL_GENRE_PATTERN =", "Catalog classifier defines explicit rock/metal genre evidence pattern", failures);
+  assertContains(catalogDataVideosSource, "export async function getUnseenCatalogVideos(options?: {", "Catalog data exposes unseen catalog helper", failures);
+  assertContains(catalogDataVideosSource, "const requested = Math.max(1, Math.min(500, Math.floor(options?.count ?? 100)));", "Unseen catalog helper validates and clamps requested count", failures);
+  assertContains(catalogDataVideosSource, "const useSharedRelatedCache =", "Related videos cache uses shared-cache mode for exclude-free requests", failures);
+  assertContains(catalogDataVideosSource, "if (cached && cached.expiresAt > now && cached.videos.length >= requestedCount)", "Related videos cache serves larger pooled recommendation requests", failures);
+  assertContains(catalogDataVideosSource, "const newestPromise = getNewestVideos(50).then((videos) =>", "Related videos reuse newest helper instead of issuing a duplicate newest scan", failures);
+  assertContains(catalogDataVideoIngestionSource, "await isRejectedVideo(normalizedVideoId)", "Hydration path fast-exits for rejected videos before external API calls", failures);
+  assertContains(catalogDataVideoIngestionSource, "await persistRejectedVideo(video.id, availability.reason || \"unavailable\");", "Unavailable videos are persisted into rejected video blocklist", failures);
+  assertContains(catalogDataVideoIngestionSource, "SELECT video_id FROM rejected_videos WHERE video_id IN", "Existing-catalog check includes rejected video ids", failures);
+  assertContains(catalogDataVideoIngestionSource, "reason === \"admin-hard-delete\"", "Hard-delete path applies admin-specific reject blocklist handling", failures);
+  assertContains(catalogDataVideoIngestionSource, "INSERT INTO rejected_videos (video_id, reason, rejected_at)", "Admin hard-delete writes reason to rejected table", failures);
+  assertContains(catalogDataVideosSource, "ORDER BY v.created_at DESC, v.id DESC", "Newest ranking is anchored on created_at then id", failures);
+  assertContains(catalogDataVideosSource, "ORDER BY COALESCE(v.updatedAt, v.createdAt) DESC, v.id DESC", "Newest logic retains explicit legacy timestamp fallback path", failures);
+  assertContains(catalogDataVideoIngestionSource, "const admissionDecision = admissionRow ? evaluatePlaybackMetadataEligibility(admissionRow) : null;", "Related cascade evaluates metadata eligibility before admitting discovered videos", failures);
+  assertContains(catalogDataVideoIngestionSource, "!admissionRow || !admissionRow.hasAvailable || !admissionDecision?.allowed", "Related cascade requires available embed + metadata eligibility", failures);
+  assertContains(catalogDataVideoIngestionSource, "await pruneVideoAndAssociationsByVideoId(candidate.id, \"related-cascade-strict-admission\").catch(() => undefined);", "Related cascade prunes candidates that fail strict admission", failures);
+  assertContains(catalogDataUtilsSource, "ROCK_METAL_GENRE_PATTERN =", "Catalog classifier defines explicit rock/metal genre evidence pattern", failures);
   assertContains(classificationSource, "function computeArtistChannelConfidenceDelta", "Catalog classifier computes artist/channel consistency confidence delta", failures);
-  assertContains(catalogDataSource, "const artistEvidence = correctedArtist", "Runtime metadata persistence derives internal artist evidence for confidence tuning", failures);
-  assertContains(catalogDataSource, "Known artist lacks strong rock/metal genre evidence.", "Runtime metadata persistence penalizes known artists without rock/metal evidence", failures);
-  assertContains(catalogDataSource, "Artist token matched channel title.", "Runtime metadata persistence boosts confidence when channel and artist align", failures);
-  assertContains(catalogDataSource, "if (isLikelyNonMusicText(video.title, video.description ?? \"\"))", "Runtime metadata persistence applies non-music confidence dampening", failures);
-  assertContains(catalogDataSource, "const mojibakeScore = scoreLikelyMojibake(video.title);", "Runtime metadata persistence uses mojibake score to dampen confidence", failures);
-  assertContains(catalogDataSource, "YehThatRocks is a rock/metal catalog.", "Groq metadata prompt encodes rock/metal-only extraction intent", failures);
+  assertContains(catalogDataVideoIngestionSource, "getArtistCatalogEvidence(correctedArtist)", "Runtime metadata persistence derives internal artist evidence for confidence tuning", failures);
+  assertContains(catalogDataVideoIngestionSource, "Known artist lacks strong rock/metal genre evidence.", "Runtime metadata persistence penalizes known artists without rock/metal evidence", failures);
+  assertContains(catalogDataVideoIngestionSource, "Artist token matched channel title.", "Runtime metadata persistence boosts confidence when channel and artist align", failures);
+  assertContains(catalogDataVideoIngestionSource, "isLikelyNonMusicText(video.title, video.description ?? \"\")", "Runtime metadata persistence applies non-music confidence dampening", failures);
+  assertContains(catalogDataVideoIngestionSource, "const mojibakeScore = scoreLikelyMojibake(video.title);", "Runtime metadata persistence uses mojibake score to dampen confidence", failures);
+  assertContains(catalogDataVideoIngestionSource, "YehThatRocks/1.0", "Runtime metadata persistence uses YehThatRocks user-agent for external API calls", failures);
 
   // Shell architecture invariants: the live shell must be shell-dynamic-core.tsx; the legacy app-shell.tsx must not exist.
   assertFileDoesNotExist(path.join(ROOT, "apps/web/components/app-shell.tsx"), "Legacy app-shell.tsx is not present (live shell is shell-dynamic-core.tsx)", failures, ROOT);

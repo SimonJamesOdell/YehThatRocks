@@ -24,7 +24,9 @@ const files = {
   adminTabLinks: path.join(ROOT, "apps/web/components/admin-tab-links.tsx"),
   adminDashboardRollups: path.join(ROOT, "apps/web/lib/admin-dashboard-rollups.ts"),
   db: path.join(ROOT, "apps/web/lib/db.ts"),
+  catalogDataDb: path.join(ROOT, "apps/web/lib/catalog-data-db.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
+  catalogDataVideos: path.join(ROOT, "apps/web/lib/catalog-data-videos.ts"),
   catalogDataIngestion: path.join(ROOT, "apps/web/lib/catalog-data-video-ingestion.ts"),
   currentVideoCache: path.join(ROOT, "apps/web/lib/current-video-cache.ts"),
   apiRoutePipeline: path.join(ROOT, "apps/web/lib/api-route-pipeline.ts"),
@@ -51,7 +53,9 @@ function main() {
   const adminTabLinksSource = readFileStrict(files.adminTabLinks, ROOT);
   const adminDashboardRollupsSource = readFileStrict(files.adminDashboardRollups, ROOT);
   const dbSource = readFileStrict(files.db, ROOT);
+  const catalogDataDbSource = readFileStrict(files.catalogDataDb, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
+  const catalogDataVideosSource = readFileStrict(files.catalogDataVideos, ROOT);
   const catalogDataIngestionSource = readFileStrict(files.catalogDataIngestion, ROOT);
   const currentVideoCacheSource = readFileStrict(files.currentVideoCache, ROOT);
   const apiRoutePipelineSource = readFileStrict(files.apiRoutePipeline, ROOT);
@@ -162,18 +166,18 @@ function main() {
 
   // Shared cache helpers must exist so admin edit invalidation is centralized.
   assertContains(catalogDataSource, "export function clearCatalogVideoCaches()", "Catalog data exposes shared video cache clear helper", failures);
-  assertContains(catalogDataSource, "relatedVideosCache.clear();", "Catalog cache helper clears related video cache", failures);
-  assertContains(catalogDataSource, "if (reason === \"admin-hard-delete\") {", "Catalog prune helper handles admin hard-delete reason", failures);
-  assertContains(catalogDataSource, "${\"admin-deleted\"}", "Catalog prune helper writes admin-deleted rejection reason", failures);
+  assertContains(catalogDataVideosSource, "relatedVideosCache.clear();", "Catalog cache helper clears related video cache", failures);
+  assertContains(catalogDataIngestionSource, "reason === \"admin-hard-delete\"", "Catalog prune helper handles admin hard-delete reason", failures);
+  assertContains(catalogDataIngestionSource, "\"admin-deleted\"", "Catalog prune helper writes admin-deleted rejection reason", failures);
   assertContains(currentVideoCacheSource, "export function clearCurrentVideoRouteCaches()", "Current-video cache module exposes shared route cache clear helper", failures);
   assertContains(currentVideoCacheSource, "currentVideoRelatedPoolCache.clear();", "Current-video cache helper clears related pool cache", failures);
 
   // Video approval gate invariants.
   // The `approved` column gates new video visibility. Every public catalog query must filter
   // by approved=1, and the ingestion pipeline must not throw on newly-inserted unapproved rows.
-  assertContains(catalogDataSource, "COALESCE(v.approved, 0) = 1", "Catalog queries filter by approved flag to hide unreviewed videos", failures);
-  assertContains(catalogDataSource, "{ includeUnapproved: true }", "Persist pipeline uses includeUnapproved lookup so it never throws on new rows with approved=0", failures);
-  assertContains(catalogDataSource, "async function maybeBackfillLegacyApprovedVideos()", "Runtime boot has a safety-net backfill for DBs where no rows are approved yet", failures);
+  assertContains(catalogDataVideosSource, "COALESCE(v.approved, 0) = 1", "Catalog queries filter by approved flag to hide unreviewed videos", failures);
+  assertContains(catalogDataDbSource, "includeUnapproved", "Persist pipeline uses includeUnapproved lookup so it never throws on new rows with approved=0", failures);
+  assertContains(catalogDataVideosSource, "async function maybeBackfillLegacyApprovedVideos()", "Runtime boot has a safety-net backfill for DBs where no rows are approved yet", failures);
 
   // Admin pending approval route invariants.
   assertContainsEither(adminPendingRouteSource, [

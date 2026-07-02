@@ -16,6 +16,8 @@ const files = {
   historyList: path.join(ROOT, "apps/web/components/history-infinite-list.tsx"),
   watchHistoryRoute: path.join(ROOT, "apps/web/app/api/watch-history/route.ts"),
   apiSchemas: path.join(ROOT, "apps/web/lib/api-schemas.ts"),
+  catalogDataHistory: path.join(ROOT, "apps/web/lib/catalog-data-history.ts"),
+  catalogDataUtils: path.join(ROOT, "apps/web/lib/catalog-data-utils.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
   appRoot: path.join(ROOT, "apps/web/app"),
 };
@@ -27,6 +29,8 @@ function main() {
   const historyListSource = readFileStrict(files.historyList, ROOT);
   const watchHistoryRouteSource = readFileStrict(files.watchHistoryRoute, ROOT);
   const apiSchemasSource = readFileStrict(files.apiSchemas, ROOT);
+  const catalogDataHistorySource = readFileStrict(files.catalogDataHistory, ROOT);
+  const catalogDataUtilsSource = readFileStrict(files.catalogDataUtils, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
   const globalCssSource = collectCssFiles(files.appRoot)
     .map((filePath) => readFileStrict(filePath, ROOT))
@@ -88,11 +92,11 @@ function main() {
   assertContains(apiSchemasSource, "watchHistoryEventSchema", "api-schemas exports watchHistoryEventSchema", failures);
 
   // --- catalog-data: history data access ---
-  assertContains(catalogDataSource, "getWatchHistory", "catalog-data exports getWatchHistory function", failures);
-  assertContains(catalogDataSource, "recordVideoWatch", "catalog-data exports recordVideoWatch function", failures);
+  assertContains(catalogDataHistorySource, "getWatchHistory", "catalog-data exports getWatchHistory function", failures);
+  assertContains(catalogDataHistorySource, "recordVideoWatch", "catalog-data exports recordVideoWatch function", failures);
   // mapVideo must not fall back to the raw title as the channelTitle — only parsed/channel/inferred artist or "Unknown Artist"
-  assertContains(catalogDataSource, "const displayArtist =", "mapVideo resolves display artist through explicit fallback chain", failures);
-  assertContains(catalogDataSource, "\"Unknown Artist\";", "mapVideo fallback chain ends in Unknown Artist", failures);
+  assertContains(catalogDataUtilsSource, "const displayArtist =", "mapVideo resolves display artist through explicit fallback chain", failures);
+  assertContains(catalogDataUtilsSource, "\"Unknown Artist\";", "mapVideo fallback chain ends in Unknown Artist", failures);
   assertNotContains(catalogDataSource, "video.title.split(\"|\"", "mapVideo must not use raw title split as channelTitle fallback", failures);
 
   // --- CSS: history layout and thumbnail fix ---

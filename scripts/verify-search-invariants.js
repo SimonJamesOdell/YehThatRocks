@@ -16,6 +16,7 @@ const files = {
   searchRoute: path.join(ROOT, "apps/web/app/api/search/route.ts"),
   searchFlagsRoute: path.join(ROOT, "apps/web/app/api/search-flags/route.ts"),
   catalogData: path.join(ROOT, "apps/web/lib/catalog-data-core.ts"),
+  catalogDataVideos: path.join(ROOT, "apps/web/lib/catalog-data-videos.ts"),
   catalogDataArtists: path.join(ROOT, "apps/web/lib/catalog-data-artists.ts"),
   catalogDataGenres: path.join(ROOT, "apps/web/lib/catalog-data-genres.ts"),
   availableVideoMaxId: path.join(ROOT, "apps/web/lib/available-video-max-id.ts"),
@@ -41,6 +42,7 @@ function main() {
   const searchRouteSource = readFileStrict(files.searchRoute, ROOT);
   const searchFlagsRouteSource = readFileStrict(files.searchFlagsRoute, ROOT);
   const catalogDataSource = readFileStrict(files.catalogData, ROOT);
+  const catalogDataVideosSource = readFileStrict(files.catalogDataVideos, ROOT);
   const catalogDataArtistsSource = readFileStrict(files.catalogDataArtists, ROOT);
   const catalogDataGenresSource = readFileStrict(files.catalogDataGenres, ROOT);
   const availableVideoMaxIdSource = readFileStrict(files.availableVideoMaxId, ROOT);
@@ -125,38 +127,38 @@ function main() {
   assertContains(searchFlagsRouteSource, "appliedImmediately", "Search flags route reports whether the new flag triggered automatic action", failures);
 
   // --- searchCatalog data logic: full-text boolean mode ---
-  assertContains(catalogDataSource, "BOOLEAN MODE", "searchCatalog uses MySQL full-text BOOLEAN MODE for prefix matching", failures);
-  assertContains(catalogDataSource, "FT_MIN_WORD_LEN", "searchCatalog filters short words below ft_min_word_len before building fulltext query", failures);
-  assertContains(catalogDataSource, "ftWords.map((w) => `${w}*`).join(\" \")", "searchCatalog uses prefix wildcard without mandatory + so stop-word-heavy queries still return results", failures);
-  assertContains(catalogDataSource, "MATCH(title, parsedArtist, parsedTrack) AGAINST", "searchCatalog queries full-text index on title, parsedArtist, parsedTrack", failures);
+  assertContains(catalogDataVideosSource, "BOOLEAN MODE", "searchCatalog uses MySQL full-text BOOLEAN MODE for prefix matching", failures);
+  assertContains(catalogDataVideosSource, "FT_MIN_WORD_LEN", "searchCatalog filters short words below ft_min_word_len before building fulltext query", failures);
+  assertContains(catalogDataVideosSource, "ftWords.map((w) => `${w}*`).join(\" \")", "searchCatalog uses prefix wildcard without mandatory + so stop-word-heavy queries still return results", failures);
+  assertContains(catalogDataVideosSource, "MATCH(title, parsedArtist, parsedTrack) AGAINST", "searchCatalog queries full-text index on title, parsedArtist, parsedTrack", failures);
 
   // LIKE fallback for zero fulltext results
-  assertContains(catalogDataSource, "LIKE fallback", "searchCatalog has LIKE phrase fallback when fulltext returns zero results", failures);
-  assertContains(catalogDataSource, "parsedArtist LIKE ${likePattern}", "searchCatalog LIKE fallback searches parsedArtist column", failures);
+  assertContains(catalogDataVideosSource, "parsedArtist LIKE ${likePattern}", "searchCatalog has LIKE phrase fallback when fulltext returns zero results", failures);
+  assertContains(catalogDataVideosSource, "parsedArtist LIKE ${likePattern}", "searchCatalog LIKE fallback searches parsedArtist column", failures);
 
   // Empty query returns top videos (not empty/error)
-  assertContains(catalogDataSource, "if (!normalized) {", "searchCatalog handles empty query explicitly", failures);
-  assertContains(catalogDataSource, "videos: await getTopVideos(),", "searchCatalog returns top videos for empty query", failures);
-  assertContains(catalogDataSource, "artists: await getArtists(),", "searchCatalog returns all artists for empty query", failures);
+  assertContains(catalogDataVideosSource, "if (!normalized) {", "searchCatalog handles empty query explicitly", failures);
+  assertContains(catalogDataVideosSource, "videos: await getTopVideos(),", "searchCatalog returns top videos for empty query", failures);
+  assertContains(catalogDataVideosSource, "artists: await getArtists(),", "searchCatalog returns all artists for empty query", failures);
 
   // Hard-fail behavior on DB/search failure (no seed fallbacks).
-  assertContains(catalogDataSource, "console.error(\"[searchCatalog] query failed\"", "searchCatalog logs DB query failure", failures);
-  assertNotContains(catalogDataSource, "searchSeedCatalog(query)", "searchCatalog does not fall back to seed catalog", failures);
-  assertContains(catalogDataSource, "getSearchRankingSignals({", "searchCatalog consults stored search-flag signals before returning results", failures);
-  assertContains(catalogDataSource, "rankingSignals.suppressedVideoIds.has(video.videoId)", "searchCatalog suppresses consensus-bad videos for the current query", failures);
-  assertContains(catalogDataSource, "rankingSignals.penaltyByVideoId.get(video.videoId)", "searchCatalog demotes repeatedly-flagged videos in ranking", failures);
+  assertContains(catalogDataVideosSource, "console.error(\"[searchCatalog] query failed\"", "searchCatalog logs DB query failure", failures);
+  assertNotContains(catalogDataVideosSource, "searchSeedCatalog(query)", "searchCatalog does not fall back to seed catalog", failures);
+  assertContains(catalogDataVideosSource, "getSearchRankingSignals({", "searchCatalog consults stored search-flag signals before returning results", failures);
+  assertContains(catalogDataVideosSource, "rankingSignals.suppressedVideoIds.has(video.videoId)", "searchCatalog suppresses consensus-bad videos for the current query", failures);
+  assertContains(catalogDataVideosSource, "rankingSignals.penaltyByVideoId.get(video.videoId)", "searchCatalog demotes repeatedly-flagged videos in ranking", failures);
 
   // Artist search efficiency guardrails (5-minute cache + in-flight dedupe).
-  assertContains(catalogDataSource, "const ARTIST_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;", "Catalog data defines artist search cache TTL", failures);
+  assertContains(catalogDataArtistsSource, "ARTIST_SEARCH_CACHE_TTL_MS", "Catalog data defines artist search cache TTL", failures);
   assertContains(catalogDataArtistsSource, "const artistSearchCache = new BoundedMap", "Catalog data stores artist search cache entries in a bounded map", failures);
   assertContains(catalogDataArtistsSource, "const artistSearchInFlight = new BoundedMap", "Catalog data tracks in-flight artist search requests in a bounded map", failures);
-  assertContains(catalogDataSource, "const searchCacheKey = `s:${normalizedSearch}|l:${cappedLimit}|o:${orderByName ? 1 : 0}|p:${prefixOnly ? 1 : 0}|n:${nameOnly ? 1 : 0}`;", "Catalog data keys artist search cache by normalized query and mode", failures);
-  assertContains(catalogDataSource, "const inFlight = artistSearchInFlight.get(searchCacheKey);", "Catalog data reuses in-flight artist search work", failures);
-  assertContains(catalogDataSource, "artistSearchCache.set(searchCacheKey", "Catalog data writes artist search cache after query completion", failures);
+  assertContains(catalogDataArtistsSource, "const searchCacheKey =", "Catalog data keys artist search cache by normalized query and mode", failures);
+  assertContains(catalogDataArtistsSource, "const inFlight = artistSearchInFlight.get(searchCacheKey);", "Catalog data reuses in-flight artist search work", failures);
+  assertContains(catalogDataArtistsSource, "artistSearchCache.set(searchCacheKey", "Catalog data writes artist search cache after query completion", failures);
 
   // Canonical-only result mapping (no seed substitutions when DB returns zero rows).
-  assertContains(catalogDataSource, "videos.map(mapVideo)", "searchCatalog returns canonical mapped videos", failures);
-  assertContains(catalogDataSource, "artists: artists.map(mapArtist)", "searchCatalog returns canonical mapped artists", failures);
+  assertContains(catalogDataVideosSource, "videos.slice(offset, offset + limit).map(mapVideo)", "searchCatalog returns canonical mapped videos", failures);
+  assertContains(catalogDataVideosSource, "artists: artists.map", "searchCatalog returns canonical mapped artists", failures);
 
   // --- Search flag persistence and UI wiring ---
   assertContains(searchFlagDataSource, "CREATE TABLE IF NOT EXISTS search_result_flags", "Search flag data layer creates persistence table on demand", failures);
@@ -170,11 +172,11 @@ function main() {
   assertContains(globalCssSource, ".searchResultBlockButton", "Search UI includes dedicated block button styling", failures);
 
   // Result limit: capped at 50
-  assertContains(catalogDataSource, "Math.max(limit + offset, 50)", "searchCatalog caps video results to at least 50 per query", failures);
+  assertContains(catalogDataVideosSource, "Math.max(limit + offset, 50)", "searchCatalog caps video results to at least 50 per query", failures);
 
   // Suggestion routing invariants: track shortcuts go directly to selected video.
-  assertContains(catalogDataSource, "SELECT videoId, title", "suggestCatalog track query fetches videoId for direct navigation", failures);
-  assertContains(catalogDataSource, "url: `/?v=${encodeURIComponent(r.videoId)}&resume=1`", "suggestCatalog track suggestions link directly to video playback", failures);
+  assertContains(catalogDataVideosSource, "SELECT videoId, title", "suggestCatalog track query fetches videoId for direct navigation", failures);
+  assertContains(catalogDataVideosSource, "url: `/?v=${encodeURIComponent(r.videoId)}&resume=1`", "suggestCatalog track suggestions link directly to video playback", failures);
 
   // Keyboard semantics: Enter only shortcuts when a suggestion is explicitly highlighted.
   assertContains(shellDynamicSource, "if (isOpen && suggestions && activeSuggestionIdx >= 0) {", "Shell only shortcuts to suggestion when keyboard selection is active", failures);

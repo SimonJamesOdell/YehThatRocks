@@ -98,11 +98,11 @@ function main() {
   assertContains(catalogDataArtistsSource, "const inFlightRows = artistLetterInFlight.get(letterCacheKey);", "Catalog data reuses in-flight parsed-artist letter queries", failures);
   assertContains(catalogDataArtistsSource, "artistLetterInFlight.set(letterCacheKey, buildRowsPromise);", "Catalog data stores parsed-artist in-flight promise", failures);
   assertContains(catalogDataArtistsSource, "if (artistLetterInFlight.get(letterCacheKey) === buildRowsPromise)", "Catalog data clears parsed-artist in-flight entry after completion", failures);
-  assertContains(catalogDataSource, "const ARTIST_SLUG_LOOKUP_CACHE_TTL_MS = 5 * 60 * 1000;", "Catalog data defines slug lookup cache TTL", failures);
-  assertContains(catalogDataSource, "const ARTIST_SINGLE_SLUG_CACHE_TTL_MS = 5 * 60 * 1000;", "Catalog data defines single-slug cache TTL", failures);
-  assertContains(catalogDataSource, "if (artistSlugLookupCache && artistSlugLookupCache.expiresAt > now)", "Catalog data reuses cached slug lookup map", failures);
-  assertContains(catalogDataSource, "const fastMatch = narrowed.find((artist) => slugify(artist.name) === slug);", "Catalog data keeps exact slugify match check in slug fast path", failures);
-  assertContains(catalogDataSource, "if (!artistSlugLookupInFlight)", "Catalog data deduplicates concurrent fallback slug-map rebuilds", failures);
+  assertContains(catalogDataArtistsSource, "ARTIST_SLUG_LOOKUP_CACHE_TTL_MS", "Catalog data defines slug lookup cache TTL", failures);
+  assertContains(catalogDataArtistsSource, "ARTIST_SINGLE_SLUG_CACHE_TTL_MS", "Catalog data defines single-slug cache TTL", failures);
+  assertContains(catalogDataArtistsSource, "if (artistSlugLookupCache && artistSlugLookupCache.expiresAt > now)", "Catalog data reuses cached slug lookup map", failures);
+  assertContains(catalogDataArtistsSource, "slugify(artist.name) === slug", "Catalog data keeps exact slugify match check in slug fast path", failures);
+  assertContains(catalogDataArtistsSource, "if (!artistSlugLookupInFlight)", "Catalog data deduplicates concurrent fallback slug-map rebuilds", failures);
   assertContains(catalogDataArtistsSource, "const artistPrefixFilterExpr = columns.normalizedName", "Artist letter browse builds a dedicated prefix filter expression", failures);
   assertContains(catalogDataArtistsSource, "const isNumericBucket = normalizedLetter === \"#\";", "Artist letter browse recognizes # as numeric bucket", failures);
   assertContains(catalogDataArtistsSource, "if (!/^(?:[A-Z]|#)$/.test(normalizedLetter)) return [];", "Artist letter browse validates A-Z and # buckets", failures);

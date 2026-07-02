@@ -77,12 +77,12 @@ function main() {
   assertContains(migrationSource, "`hidden_videos_user_id_video_id_key`", "Hidden videos migration enforces unique user/video rows", failures);
 
   // Data helpers + API invariants.
-  assertContains(catalogDataSource, "export async function getHiddenVideoIdsForUser", "Catalog data exposes hidden video lookup", failures);
-  assertContains(catalogDataSource, "export async function hideVideoForUser", "Catalog data exposes hide operation", failures);
-  assertContains(catalogDataSource, "export async function hideVideoAndPrunePlaylistsForUser", "Catalog data exposes hide+playlist-prune operation", failures);
-  assertContains(catalogDataSource, "findPlaylistItemsByVideoIdBatch", "Hide+prune operation batch-finds playlist items", failures);
-  assertContains(catalogDataSource, "batchDeleteEmptyPlaylists", "Hide+prune operation batch-deletes empty playlists", failures);
-  assertContains(catalogDataSource, "export async function unhideVideoForUser", "Catalog data exposes unhide operation", failures);
+  assertContains(hiddenDataModuleSource, "export async function getHiddenVideoIdsForUser", "Catalog data exposes hidden video lookup", failures);
+  assertContains(hiddenDataModuleSource, "export async function hideVideoForUser", "Catalog data exposes hide operation", failures);
+  assertContains(hiddenDataModuleSource, "export async function hideVideoAndPrunePlaylistsForUser", "Catalog data exposes hide+playlist-prune operation", failures);
+  assertContains(hiddenDataModuleSource, "function findPlaylistItemsByVideoIdBatch", "Hide+prune operation batch-finds playlist items", failures);
+  assertContains(hiddenDataModuleSource, "function batchDeleteEmptyPlaylists", "Hide+prune operation batch-deletes empty playlists", failures);
+  assertContains(hiddenDataModuleSource, "export async function unhideVideoForUser", "Catalog data exposes unhide operation", failures);
   assertContains(apiSchemasSource, "export const hiddenVideoMutationSchema", "API schemas define hidden video mutation payload", failures);
   assertContains(apiRouteSource, "export async function GET", "Hidden videos route supports GET", failures);
   assertContains(apiRouteSource, "export async function POST", "Hidden videos route supports POST", failures);
