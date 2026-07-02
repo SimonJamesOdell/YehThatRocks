@@ -566,7 +566,7 @@ function pickGenreFromMusicBrainz(mbData: MusicBrainzArtistResult | null) {
     return null;
   }
 
-  const candidate = mbData.tags.find((tag) => resolveTopLevelGenreBucket(normalizeGenreForStorage(tag)) !== null);
+  const candidate = mbData.tags.find((tag) => resolveTopLevelGenreBucket(normalizeGenreForStorage(tag) ?? "") !== null);
   if (candidate) {
     return normalizeGenreForStorage(candidate);
   }

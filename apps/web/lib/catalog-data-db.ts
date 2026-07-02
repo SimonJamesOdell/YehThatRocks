@@ -562,6 +562,7 @@ export async function getVideoArtistNormalizationColumn() {
     return videoArtistNormalizationColumnCache;
   }
 
+  try {
     // Some environments have the normalized column present but effectively empty
     // (for example after partial migrations/imports). In that case, using it for
     // equality lookups returns zero rows even when parsedArtist is populated.
