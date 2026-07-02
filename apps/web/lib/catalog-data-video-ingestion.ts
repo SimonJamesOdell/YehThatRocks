@@ -2005,21 +2005,30 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
 
   const prominentArtistKeys = await loadProminentGenreArtistKeys();
 
-  // Select seeds randomly from the approved catalog, excluding videos
-  // that have been used as seeds within the last 7 days (cooldown period).
-  // When prominent artist keys are available, split seeds between prominent
-  // artists (~60%) and the broader catalog (~40%) for diversity.
+  const SEED_COOLDOWN_DAYS = 7;
+  const ARTIST_COOLDOWN_DAYS = 3;
+  const MAX_SEEDS_PER_ARTIST = 2;
+
+  // Select seeds randomly from the approved catalog with diversity controls:
+  // 1. Video-level cooldown: same video can't be a seed within 7 days.
+  // 2. Artist-level cooldown: same artist can't be re-seeded within 3 days.
+  // 3. Per-artist cap: at most 2 seeds per artist per run.
+  // 4. 50/50 split between prominent rock/metal artists and broad catalog.
   let seeds: Array<{ videoId: string }> = [];
 
-  const SEED_COOLDOWN_DAYS = 7;
-
-  const baseQuery = `
-    SELECT v.videoId
-    FROM videos v
+  // Shared WHERE clause for all seed queries.
+  const whereClause = `
     WHERE NOT EXISTS (
         SELECT 1 FROM related r
         WHERE r.videoId = v.videoId
           AND r.createdAt > DATE_SUB(NOW(), INTERVAL ${SEED_COOLDOWN_DAYS} DAY)
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM related r2
+        INNER JOIN videos rv ON rv.videoId = r2.videoId
+        WHERE rv.parsedArtist IS NOT NULL
+          AND LOWER(TRIM(rv.parsedArtist)) = LOWER(TRIM(v.parsedArtist))
+          AND r2.createdAt > DATE_SUB(NOW(), INTERVAL ${ARTIST_COOLDOWN_DAYS} DAY)
       )
       AND v.parsedArtist IS NOT NULL
       AND TRIM(v.parsedArtist) <> ''
@@ -2035,46 +2044,56 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
       )
   `;
 
+  // Wrap in a subquery that enforces the per-artist seed cap via ROW_NUMBER().
+  const artistLimitedQuery = (innerWhere: string) => `
+    SELECT t.videoId FROM (
+      SELECT v.videoId,
+             LOWER(TRIM(v.parsedArtist)) AS _ak,
+             ROW_NUMBER() OVER (
+               PARTITION BY LOWER(TRIM(v.parsedArtist))
+               ORDER BY RAND()
+             ) AS _rn
+      FROM videos v
+      ${innerWhere}
+    ) t
+    WHERE t._rn <= ${MAX_SEEDS_PER_ARTIST}
+    ORDER BY RAND()
+    LIMIT ?
+  `;
+
   if (prominentArtistKeys.length > 0) {
-    // Split: ~60% from prominent artists, ~40% from broader catalog.
-    const prominentCount = Math.max(1, Math.floor(maxSeeds * 0.6));
+    // 50/50 split: half from prominent artists, half from broad catalog.
+    const prominentCount = Math.max(1, Math.floor(maxSeeds * 0.5));
     const broadCount = maxSeeds - prominentCount;
 
-    const prominentQuery = `
-      ${baseQuery}
+    const prominentInnerWhere = `
+      ${whereClause}
         AND LOWER(TRIM(v.parsedArtist)) IN (${prominentArtistKeys.map(() => "?").join(",")})
-      ORDER BY RAND()
-      LIMIT ?
     `;
-
-    const broadQuery = `
-      ${baseQuery}
-      ORDER BY RAND()
-      LIMIT ?
-    `;
+    const broadInnerWhere = whereClause;
 
     const [prominentSeeds, broadSeeds] = await Promise.all([
       prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
-        prominentQuery,
+        artistLimitedQuery(prominentInnerWhere),
         PLAYBACK_MIN_CONFIDENCE,
         ...prominentArtistKeys,
         prominentCount,
       ),
       prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
-        broadQuery,
+        artistLimitedQuery(broadInnerWhere),
         PLAYBACK_MIN_CONFIDENCE,
         broadCount,
       ),
     ]);
 
-    // Merge and deduplicate.
+    // Merge and deduplicate across pools.
     const seedSet = new Set<string>();
     for (const s of prominentSeeds) seedSet.add(s.videoId);
     for (const s of broadSeeds) seedSet.add(s.videoId);
     seeds = Array.from(seedSet).map((videoId) => ({ videoId }));
   } else {
     seeds = await prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
-      `${baseQuery} ORDER BY RAND() LIMIT ?`,
+      artistLimitedQuery(whereClause),
       PLAYBACK_MIN_CONFIDENCE,
       maxSeeds,
     );
