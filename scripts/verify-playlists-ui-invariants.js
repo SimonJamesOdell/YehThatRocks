@@ -19,6 +19,8 @@ const files = mapRelativeFiles(ROOT, {
   editorApi: "apps/web/app/api/playlists/[id]/items/route.ts",
   schemas: "apps/web/lib/api-schemas.ts",
   data: "apps/web/lib/catalog-data-core.ts",
+  dataDb: "apps/web/lib/catalog-data-db.ts",
+  dataPlaylists: "apps/web/lib/catalog-data-playlists.ts",
   addButton: "apps/web/components/add-to-playlist-button.tsx",
   playlistSummaryCard: "apps/web/components/playlist-summary-card-content.tsx",
   shell: "apps/web/components/shell-dynamic-core.tsx",
@@ -70,7 +72,7 @@ function main() {
   // pickColumn ordering invariant: must iterate priority names first, not DB columns.
   // If this regresses to iterating columns first, sort_order is never selected (id wins)
   // and every reorder call silently returns null (no-op 404).
-  assertContains(dataSource, "for (const name of names)", "pickColumn iterates priority names first, not DB columns", failures);
+  assertContains(sources.dataDb, "for (const name of names)", "pickColumn iterates priority names first, not DB columns", failures);
 
   // Playlist rail concurrency invariant: must use a sequence counter, not a boolean
   // in-flight lock. The lock approach blocks rapid clicks; the sequence counter lets every
@@ -102,8 +104,8 @@ function main() {
   assertNotContains(editorApiSource, 'import { parseRequestJson } from "@/lib/request-json";', "Playlist items route avoids manual body parsing in favor of pipeline wrapper", failures);
   assertContains(editorApiSource, "removePlaylistItem(", "Playlist items route calls removePlaylistItem", failures);
   assertContains(editorApiSource, "reorderPlaylistItems(", "Playlist items route calls reorderPlaylistItems", failures);
-  assertContains(dataSource, "export async function removePlaylistItem", "Data layer removePlaylistItem exists", failures);
-  assertContains(dataSource, "export async function reorderPlaylistItems", "Data layer reorderPlaylistItems exists", failures);
+  assertContains(sources.dataPlaylists, "export async function removePlaylistItem", "Data layer removePlaylistItem exists", failures);
+  assertContains(sources.dataPlaylists, "export async function reorderPlaylistItems", "Data layer reorderPlaylistItems exists", failures);
 
   // Playlist editor invariants.
   assertContains(editorSource, "draggable={isAuthenticated && !isPending && removingIndex === null}", "Playlist rows are draggable", failures);
