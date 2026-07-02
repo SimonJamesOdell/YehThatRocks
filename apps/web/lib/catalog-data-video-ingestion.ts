@@ -2005,53 +2005,94 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
 
   const prominentArtistKeys = await loadProminentGenreArtistKeys();
 
-  const seeds = prominentArtistKeys.length > 0
-    ? await prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
-      `
-        SELECT v.videoId
-        FROM videos v
-        WHERE NOT EXISTS (SELECT 1 FROM related r WHERE r.videoId = v.videoId)
-          AND v.parsedArtist IS NOT NULL
-          AND TRIM(v.parsedArtist) <> ''
-          AND v.parsedTrack IS NOT NULL
-          AND TRIM(v.parsedTrack) <> ''
-          AND COALESCE(v.parseConfidence, 0) >= ?
-          AND LOWER(TRIM(v.parsedArtist)) IN (${prominentArtistKeys.map(() => "?").join(",")})
-          AND COALESCE(v.approved, 0) = 1
-          AND EXISTS (
-            SELECT 1
-            FROM site_videos sv
-            WHERE sv.video_id = v.id
-              AND sv.status = 'available'
-          )
-        ORDER BY v.favourited DESC, v.updated_at DESC, v.id DESC
-        LIMIT ?
-      `,
-      PLAYBACK_MIN_CONFIDENCE,
-      ...prominentArtistKeys,
-      maxSeeds,
-    )
-    : await prisma.$queryRaw<Array<{ videoId: string }>>`
-      SELECT v.videoId
-      FROM videos v
-      WHERE NOT EXISTS (SELECT 1 FROM related r WHERE r.videoId = v.videoId)
-        AND v.parsedArtist IS NOT NULL
-        AND TRIM(v.parsedArtist) <> ''
-        AND v.parsedTrack IS NOT NULL
-        AND TRIM(v.parsedTrack) <> ''
-        AND COALESCE(v.parseConfidence, 0) >= ${PLAYBACK_MIN_CONFIDENCE}
-        AND COALESCE(v.approved, 0) = 1
-        AND EXISTS (
-          SELECT 1
-          FROM site_videos sv
-          WHERE sv.video_id = v.id
-            AND sv.status = 'available'
-        )
-      ORDER BY v.favourited DESC, v.updated_at DESC, v.id DESC
-      LIMIT ${maxSeeds}
+  // Select seeds randomly from the approved catalog, excluding videos
+  // that have been used as seeds within the last 7 days (cooldown period).
+  // When prominent artist keys are available, split seeds between prominent
+  // artists (~60%) and the broader catalog (~40%) for diversity.
+  let seeds: Array<{ videoId: string }> = [];
+
+  const SEED_COOLDOWN_DAYS = 7;
+
+  const baseQuery = `
+    SELECT v.videoId
+    FROM videos v
+    WHERE NOT EXISTS (
+        SELECT 1 FROM related r
+        WHERE r.videoId = v.videoId
+          AND r.createdAt > DATE_SUB(NOW(), INTERVAL ${SEED_COOLDOWN_DAYS} DAY)
+      )
+      AND v.parsedArtist IS NOT NULL
+      AND TRIM(v.parsedArtist) <> ''
+      AND v.parsedTrack IS NOT NULL
+      AND TRIM(v.parsedTrack) <> ''
+      AND COALESCE(v.parseConfidence, 0) >= ?
+      AND COALESCE(v.approved, 0) = 1
+      AND EXISTS (
+        SELECT 1
+        FROM site_videos sv
+        WHERE sv.video_id = v.id
+          AND sv.status = 'available'
+      )
+  `;
+
+  if (prominentArtistKeys.length > 0) {
+    // Split: ~60% from prominent artists, ~40% from broader catalog.
+    const prominentCount = Math.max(1, Math.floor(maxSeeds * 0.6));
+    const broadCount = maxSeeds - prominentCount;
+
+    const prominentQuery = `
+      ${baseQuery}
+        AND LOWER(TRIM(v.parsedArtist)) IN (${prominentArtistKeys.map(() => "?").join(",")})
+      ORDER BY RAND()
+      LIMIT ?
     `;
 
+    const broadQuery = `
+      ${baseQuery}
+      ORDER BY RAND()
+      LIMIT ?
+    `;
+
+    const [prominentSeeds, broadSeeds] = await Promise.all([
+      prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
+        prominentQuery,
+        PLAYBACK_MIN_CONFIDENCE,
+        ...prominentArtistKeys,
+        prominentCount,
+      ),
+      prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
+        broadQuery,
+        PLAYBACK_MIN_CONFIDENCE,
+        broadCount,
+      ),
+    ]);
+
+    // Merge and deduplicate.
+    const seedSet = new Set<string>();
+    for (const s of prominentSeeds) seedSet.add(s.videoId);
+    for (const s of broadSeeds) seedSet.add(s.videoId);
+    seeds = Array.from(seedSet).map((videoId) => ({ videoId }));
+  } else {
+    seeds = await prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
+      `${baseQuery} ORDER BY RAND() LIMIT ?`,
+      PLAYBACK_MIN_CONFIDENCE,
+      maxSeeds,
+    );
+  }
+
   if (seeds.length === 0) return empty;
+
+  // Clear old related cache entries for the selected seeds so that
+  // re-used seeds (outside the cooldown window) get fresh YouTube results.
+  const seedVideoIds = seeds.map((s) => s.videoId);
+  await prisma.relatedCache.deleteMany({ where: { videoId: { in: seedVideoIds } } });
+
+  debugCatalog("runQuotaBackfill:seeds-selected", {
+    maxSeeds,
+    actualSeeds: seeds.length,
+    prominentArtistsAvailable: prominentArtistKeys.length > 0,
+    prominentArtistCount: prominentArtistKeys.length,
+  });
 
   let totalFetchedNodes = 0;
   let totalDiscoveredNewVideos = 0;
