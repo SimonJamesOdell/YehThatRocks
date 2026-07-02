@@ -154,6 +154,13 @@ export const TOP_LEVEL_GENRE_BUCKETS: readonly GenreBucket[] = [
       "industrial metal",
     ],
   },
+  {
+    label: "Rock / Metal",
+    terms: [
+      "rock",
+      "metal",
+    ],
+  },
 ];
 
 export const TOP_LEVEL_GENRE_BUCKET_LABELS = TOP_LEVEL_GENRE_BUCKETS.map((bucket) => bucket.label);

@@ -17,7 +17,6 @@ import {
   normalizeArtistKey,
   normalizeYouTubeVideoId,
   requireDatabaseUrl,
-  ROCK_METAL_GENRE_PATTERN,
   slugify,
   mapVideo,
   ENABLE_SAME_GENRE_RELATED,
@@ -38,6 +37,7 @@ import {
   hasGenreAllColumn,
 } from "@/lib/catalog-data-db";
 import { getLowerTrimmedDatabaseValue, getTrimmedDatabaseValue } from "@/lib/catalog-data-internal-helpers";
+import { resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
 import { clamp } from "@/lib/number-utils";
 
 // ── Cache constants ────────────────────────────────────────────────────────────
@@ -532,7 +532,7 @@ export async function getArtistCatalogEvidence(artistName: string) {
 
     const known = Number(rows[0]?.matchCount ?? 0) > 0;
     const genreBlob = (rows[0]?.genreBlob ?? "").trim();
-    const rockOrMetalGenreMatch = known && ROCK_METAL_GENRE_PATTERN.test(genreBlob);
+    const rockOrMetalGenreMatch = known && resolveTopLevelGenreBucket(genreBlob) !== null;
 
     knownArtistMatchCache.set(normalized, { expiresAt: now + KNOWN_ARTIST_MATCH_CACHE_TTL_MS, known });
     artistCatalogEvidenceCache.set(normalized, { expiresAt: now + ARTIST_CATALOG_EVIDENCE_CACHE_TTL_MS, known, rockOrMetalGenreMatch });

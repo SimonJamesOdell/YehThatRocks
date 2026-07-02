@@ -25,7 +25,6 @@ import {
   mapStoredVideoToPersistable,
   normalizeArtistKey,
   normalizeYouTubeVideoId,
-  ROCK_METAL_GENRE_PATTERN,
   truncate,
   escapeSqlIdentifier,
   type ParsedVideoMetadata,
@@ -497,7 +496,7 @@ function isLikelyNonMusicSignal(row: PlaybackDecisionRow) {
 function isRockOrMetalGenreValue(value: string | null | undefined) {
   const normalized = normalizeGenreForStorage(value);
   if (!normalized) return false;
-  return Boolean(resolveTopLevelGenreBucket(normalized) ?? ROCK_METAL_GENRE_PATTERN.test(normalized));
+  return resolveTopLevelGenreBucket(normalized) !== null;
 }
 
 function normalizeGenreForStorage(value: string | null | undefined) {
@@ -567,7 +566,7 @@ function pickGenreFromMusicBrainz(mbData: MusicBrainzArtistResult | null) {
     return null;
   }
 
-  const candidate = mbData.tags.find((tag) => ROCK_METAL_GENRE_PATTERN.test(tag));
+  const candidate = mbData.tags.find((tag) => resolveTopLevelGenreBucket(normalizeGenreForStorage(tag)) !== null);
   if (candidate) {
     return normalizeGenreForStorage(candidate);
   }
@@ -1538,7 +1537,7 @@ async function loadProminentGenreArtistKeys(maxPerGenre = 10, maxTotal = 70) {
       if (!artistKey) continue;
 
       const genre = (row.genre ?? "").trim();
-      const bucket = resolveTopLevelGenreBucket(genre) ?? (ROCK_METAL_GENRE_PATTERN.test(genre) ? "Rock / Metal" : null);
+      const bucket = resolveTopLevelGenreBucket(genre);
       if (!bucket) continue;
 
       const current = byBucket.get(bucket) ?? [];
