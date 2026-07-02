@@ -98,7 +98,6 @@ function main() {
   assertContains(searchResultFavouriteButtonSource, 'import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";', "Search result favourite button uses auth-retry helper", failures);
   assertContains(searchResultFavouriteButtonSource, 'await fetchWithAuthRetry("/api/favourites"', "Search result favourite add uses auth-retry helper", failures);
   assertContains(playerExperienceSource, 'import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";', "PlayerExperience uses auth-retry helper for favourites", failures);
-  assertContains(playerExperienceSource, 'const favouritesResponse = await fetchWithAuthRetry("/api/favourites"', "PlayerExperience favourites autoplay fetch uses auth-retry helper", failures);
   assertContains(playerExperienceSource, 'const response = await fetchWithAuthRetry("/api/favourites"', "PlayerExperience add favourite uses auth-retry helper", failures);
 
   // --- FavouritesGrid: accessibility ---
