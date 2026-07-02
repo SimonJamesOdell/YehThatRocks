@@ -57,6 +57,12 @@ const TABLE_SCHEMA_CACHE_MAX_ENTRIES = Math.max(
 
 const tableColumnsCache = new BoundedMap<string, TableColumnInfo[]>(TABLE_SCHEMA_CACHE_MAX_ENTRIES);
 const tableColumnsInFlight = new BoundedMap<string, Promise<TableColumnInfo[]>>(TABLE_SCHEMA_CACHE_MAX_ENTRIES);
+
+// Consolidated SHOW COLUMNS FROM videos result — fetched once, used by all video
+// column-detection functions instead of each running its own SHOW COLUMNS query.
+let videoColumnNamesCache: Set<string> | undefined;
+let videoColumnsLoadInFlight: Promise<Set<string>> | null = null;
+
 let videoForeignKeyRefsCache: VideoForeignKeyRef[] | undefined;
 
 let hasCheckedVideoMetadataColumns = false;
@@ -173,6 +179,35 @@ export async function loadVideoForeignKeyRefs(): Promise<VideoForeignKeyRef[]> {
   }
 }
 
+/**
+ * Loads all video column names once (shared across all video-column detection
+ * functions). Subsequent calls return the cached result immediately.
+ */
+async function ensureVideoColumnsLoaded(): Promise<Set<string>> {
+  if (videoColumnNamesCache) {
+    return videoColumnNamesCache;
+  }
+
+  if (videoColumnsLoadInFlight) {
+    return videoColumnsLoadInFlight;
+  }
+
+  videoColumnsLoadInFlight = (async () => {
+    try {
+      const columns = await prisma.$queryRaw<Array<{ Field: string }>>`SHOW COLUMNS FROM videos`;
+      videoColumnNamesCache = new Set(columns.map((column: any) => column.Field));
+    } catch {
+      videoColumnNamesCache = new Set<string>();
+    } finally {
+      videoColumnsLoadInFlight = null;
+    }
+
+    return videoColumnNamesCache;
+  })();
+
+  return videoColumnsLoadInFlight;
+}
+
 export async function ensureVideoMetadataColumnsAvailable() {
   if (hasCheckedVideoMetadataColumns || !hasDatabaseUrl()) {
     return videoMetadataColumnsAvailable;
@@ -180,13 +215,8 @@ export async function ensureVideoMetadataColumnsAvailable() {
 
   hasCheckedVideoMetadataColumns = true;
 
-  try {
-    const columns = await prisma.$queryRaw<Array<{ Field: string }>>`SHOW COLUMNS FROM videos`;
-    const names = new Set(columns.map((column: any) => column.Field));
-    videoMetadataColumnsAvailable = names.has("parsedArtist") && names.has("parsedTrack");
-  } catch {
-    videoMetadataColumnsAvailable = false;
-  }
+  const names = await ensureVideoColumnsLoaded();
+  videoMetadataColumnsAvailable = names.has("parsedArtist") && names.has("parsedTrack");
 
   return videoMetadataColumnsAvailable;
 }
@@ -198,12 +228,8 @@ export async function ensureVideoChannelTitleColumnAvailable() {
 
   hasCheckedVideoChannelTitleColumn = true;
 
-  try {
-    const columns = await prisma.$queryRaw<Array<{ Field: string }>>`SHOW COLUMNS FROM videos LIKE 'channelTitle'`;
-    videoChannelTitleColumnAvailable = columns.length > 0;
-  } catch {
-    videoChannelTitleColumnAvailable = false;
-  }
+  const names = await ensureVideoColumnsLoaded();
+  videoChannelTitleColumnAvailable = names.has("channelTitle");
 
   return videoChannelTitleColumnAvailable;
 }
@@ -294,16 +320,11 @@ export async function getArtistColumnMap() {
 export async function hasGenreAllColumn(): Promise<boolean> {
   if (genreAllColumnAvailableCache !== undefined) return genreAllColumnAvailableCache;
 
-  try {
-    const rows = await prisma.$queryRawUnsafe<Array<{ Field: string }>>(
-      "SHOW COLUMNS FROM artists LIKE 'genre_all'",
-    );
-    genreAllColumnAvailableCache = rows.length > 0;
-  } catch {
-    genreAllColumnAvailableCache = false;
-  }
+  // getArtistColumnMap fetches all artists columns once and sets
+  // genreAllColumnAvailableCache as a side effect.
+  await getArtistColumnMap();
 
-  return genreAllColumnAvailableCache;
+  return genreAllColumnAvailableCache ?? false;
 }
 
 let videoTitleFulltextIndexAvailableCache: boolean | undefined;
@@ -364,19 +385,8 @@ export async function hasVideoTitleFulltextIndex(): Promise<boolean> {
 export async function hasVideoGenreColumn(): Promise<boolean> {
   if (videoGenreColumnAvailableCache !== undefined) return videoGenreColumnAvailableCache;
 
-  try {
-    const rows = await prisma.$queryRawUnsafe<Array<{ Field: string }>>(
-      "SHOW COLUMNS FROM videos LIKE 'genre'",
-    );
-    videoGenreColumnAvailableCache = rows.length > 0;
-  } catch {
-    try {
-      await prisma.$queryRawUnsafe("SELECT genre FROM videos LIMIT 1");
-      videoGenreColumnAvailableCache = true;
-    } catch {
-      videoGenreColumnAvailableCache = false;
-    }
-  }
+  const names = await ensureVideoColumnsLoaded();
+  videoGenreColumnAvailableCache = names.has("genre");
 
   return videoGenreColumnAvailableCache;
 }
@@ -539,20 +549,18 @@ export async function getVideoArtistNormalizationColumn() {
     return videoArtistNormalizationColumnCache;
   }
 
-  try {
-    const columns = await prisma.$queryRawUnsafe<Array<{ Field: string }>>("SHOW COLUMNS FROM videos");
-    const available = new Set(columns.map((column: any) => column.Field));
-    const detectedColumn = [
-      "parsed_artist_norm",
-      "parsed_artist_normalized",
-      "normalized_parsed_artist",
-      "parsedArtistNormalized",
-    ].find((column) => available.has(column)) ?? null;
+  const names = await ensureVideoColumnsLoaded();
+  const detectedColumn = [
+    "parsed_artist_norm",
+    "parsed_artist_normalized",
+    "normalized_parsed_artist",
+    "parsedArtistNormalized",
+  ].find((column) => names.has(column)) ?? null;
 
-    if (!detectedColumn) {
-      videoArtistNormalizationColumnCache = null;
-      return videoArtistNormalizationColumnCache;
-    }
+  if (!detectedColumn) {
+    videoArtistNormalizationColumnCache = null;
+    return videoArtistNormalizationColumnCache;
+  }
 
     // Some environments have the normalized column present but effectively empty
     // (for example after partial migrations/imports). In that case, using it for
