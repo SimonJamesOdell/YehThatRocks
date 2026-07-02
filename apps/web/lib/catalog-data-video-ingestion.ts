@@ -1908,6 +1908,87 @@ export async function getExternalVideoById(videoId: string) {
 
 // ── Related discovery ─────────────────────────────────────────────────────────
 
+type VideoVersionInfo = {
+  videoId: string;
+  title: string;
+  channelTitle: string;
+  videoType: string;
+  viewCount: number;
+  description: string;
+};
+
+/**
+ * Ask the LLM to pick the best version of a track when two videos share the
+ * same artist + track. Used when simple type comparison (official vs not)
+ * is ambiguous — e.g. both are "official" or neither is.
+ *
+ * Returns "keep_new" or "keep_existing". Falls back to "keep_existing" on
+ * any error so we never lose an already-ingested video.
+ */
+async function pickBestVideoVersionViaLlm(
+  newVideo: VideoVersionInfo,
+  existing: VideoVersionInfo,
+): Promise<"keep_new" | "keep_existing"> {
+  try {
+    const prompt = [
+      "Two YouTube videos represent the same song by the same artist.",
+      "Pick the better version to keep in a music video catalog.",
+      "",
+      "Prefer (in order):",
+      "- Official music video over lyric/audio/visualizer",
+      "- Higher view count (all else equal)",
+      "- Official artist channel over fan/Vevo-auto-generated",
+      "- Clean title (no cruft like \"(HD)\", \"1080p\", uploader tags)",
+      "- Useful description (not auto-generated placeholder)",
+      "",
+      "Return JSON: {\"decision\": \"keep_A\"} or {\"decision\": \"keep_B\"}",
+      "",
+      `--- Video A (new candidate) ---`,
+      `title: ${newVideo.title}`,
+      `channel: ${newVideo.channelTitle}`,
+      `type: ${newVideo.videoType}`,
+      `views: ${newVideo.viewCount}`,
+      `description: ${newVideo.description || "(none)"}`,
+      "",
+      `--- Video B (existing) ---`,
+      `title: ${existing.title}`,
+      `channel: ${existing.channelTitle}`,
+      `type: ${existing.videoType}`,
+      `views: ${existing.viewCount}`,
+      `description: ${existing.description || "(none)"}`,
+    ].join("\n");
+
+    const result = await llmChatCompletion({
+      model: LLM_CLASSIFICATION_MODEL,
+      temperature: 0,
+      max_tokens: 50,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: "You pick the best music video version. Output JSON only." },
+        { role: "user", content: prompt },
+      ],
+    });
+
+    const raw = result?.choices?.[0]?.message?.content ?? "";
+    const parsed = extractJsonObject(raw);
+    const decision: string = (parsed?.decision ?? "").toString().trim().toLowerCase();
+
+    void recordExternalApiUsage({
+      provider: result?.provider ?? "deepseek",
+      endpoint: "chat/completions",
+      units: 1,
+      success: true,
+      statusCode: 200,
+      note: `pick-best-video-version ${decision}`,
+    });
+
+    if (decision === "keep_a") return "keep_new";
+    return "keep_existing";
+  } catch {
+    return "keep_existing";
+  }
+}
+
 export async function discoverRelatedVideosCascade(
   seedVideoId: string,
   options?: { maxDepth?: number; maxNewVideos?: number },
@@ -1957,6 +2038,11 @@ export async function discoverRelatedVideosCascade(
     const existingIds = await getExistingCatalogVideoIdSet(uniqueCandidates.map((c) => c.id));
     const newCandidates = uniqueCandidates.filter((c) => !existingIds.has(c.id));
 
+    // Track artist+track pairs seen in this cascade run to avoid
+    // ingesting multiple YouTube variants of the same song (official,
+    // lyric, live, audio, etc.) as separate tracks.
+    const seenArtistTrackKeys = new Set<string>();
+
     for (const candidate of newCandidates) {
       if (discoveredNewVideos >= maxNewVideos) break;
       if (!(await canAdmitMoreRelatedDiscoveryVideos(1))) break;
@@ -1967,6 +2053,121 @@ export async function discoverRelatedVideosCascade(
       });
 
       if (!hydrated) continue;
+
+      // ── Same-track deduplication ──────────────────────────────────────
+      // YouTube returns multiple video IDs for the same song (official,
+      // lyric, live, audio versions). Check whether another video with the
+      // same normalized artist + track already exists.
+      //
+      // Resolution strategy:
+      // 1. Fast path: if one is "official" and the other is not, keep official.
+      // 2. Ambiguous cases (both official, both not, or types unclear):
+      //    ask the LLM to pick the best version based on title quality,
+      //    channel authority, view count, and description.
+      const storedVideo = await getStoredVideoById(candidate.id, { includeUnapproved: true });
+      const candidateArtist = (storedVideo?.parsedArtist ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+      const candidateTrack = (storedVideo?.parsedTrack ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+
+      if (candidateArtist && candidateTrack) {
+        const artistTrackKey = `${candidateArtist}||${candidateTrack}`;
+
+        // Check in-memory set first (same-run dedup).
+        if (seenArtistTrackKeys.has(artistTrackKey)) {
+          await pruneVideoAndAssociationsByVideoId(candidate.id, "related-cascade-duplicate-track-inrun").catch(() => undefined);
+          continue;
+        }
+
+        // Check database for any other video with same artist + track.
+        try {
+          const duplicateRows = await prisma.$queryRawUnsafe<Array<{
+            videoId: string;
+            title: string;
+            channelTitle: string | null;
+            parsedVideoType: string | null;
+            viewCount: number | null;
+            description: string | null;
+          }>>(
+            `SELECT videoId, title, channelTitle, parsedVideoType, viewCount, description
+             FROM videos
+             WHERE LOWER(TRIM(COALESCE(parsedArtist, ''))) = ?
+               AND LOWER(TRIM(COALESCE(parsedTrack, ''))) = ?
+               AND videoId != ?
+             LIMIT 1`,
+            candidateArtist,
+            candidateTrack,
+            candidate.id,
+          );
+
+          const duplicate = duplicateRows[0];
+          if (duplicate) {
+            const candidateTypeRows = await prisma.$queryRawUnsafe<Array<{
+              parsedVideoType: string | null;
+              title: string;
+              channelTitle: string | null;
+              viewCount: number | null;
+              description: string | null;
+            }>>(
+              `SELECT parsedVideoType, title, channelTitle, viewCount, description
+               FROM videos WHERE videoId = ? LIMIT 1`,
+              candidate.id,
+            ).catch(() => [] as Array<{
+              parsedVideoType: string | null;
+              title: string;
+              channelTitle: string | null;
+              viewCount: number | null;
+              description: string | null;
+            }>);
+
+            const cand = candidateTypeRows[0];
+            if (!cand) continue;
+
+            const candType = (cand.parsedVideoType ?? "").trim().toLowerCase();
+            const existType = (duplicate.parsedVideoType ?? "").trim().toLowerCase();
+
+            // ── Fast path: clear official vs non-official ──────────────
+            if (candType === "official" && existType !== "official") {
+              await pruneVideoAndAssociationsByVideoId(duplicate.videoId, "related-cascade-replaced-by-official").catch(() => undefined);
+              // Fall through to admission.
+            } else if (existType === "official" && candType !== "official") {
+              await pruneVideoAndAssociationsByVideoId(candidate.id, "related-cascade-duplicate-track").catch(() => undefined);
+              continue;
+            } else {
+              // ── Ambiguous: ask the LLM ───────────────────────────────
+              const llmDecision = await pickBestVideoVersionViaLlm(
+                {
+                  videoId: candidate.id,
+                  title: cand.title,
+                  channelTitle: cand.channelTitle ?? "YouTube",
+                  videoType: cand.parsedVideoType ?? "unknown",
+                  viewCount: cand.viewCount ?? 0,
+                  description: (cand.description ?? "").slice(0, 300),
+                },
+                {
+                  videoId: duplicate.videoId,
+                  title: duplicate.title,
+                  channelTitle: duplicate.channelTitle ?? "YouTube",
+                  videoType: duplicate.parsedVideoType ?? "unknown",
+                  viewCount: duplicate.viewCount ?? 0,
+                  description: (duplicate.description ?? "").slice(0, 300),
+                },
+              );
+
+              if (llmDecision === "keep_existing") {
+                await pruneVideoAndAssociationsByVideoId(candidate.id, "related-cascade-duplicate-track-llm").catch(() => undefined);
+                continue;
+              }
+              // llmDecision === "keep_new": prune existing, keep candidate.
+              await pruneVideoAndAssociationsByVideoId(duplicate.videoId, "related-cascade-replaced-by-llm").catch(() => undefined);
+              // Fall through to admission.
+            }
+          }
+        } catch {
+          // Dedup check is best-effort; proceed if the query fails.
+        }
+
+        seenArtistTrackKeys.add(artistTrackKey);
+      }
+      // ── End same-track deduplication ──────────────────────────────────
 
       if (!(await canAdmitVideoByStrictMetadata(candidate.id))) {
         await pruneVideoAndAssociationsByVideoId(candidate.id, "related-cascade-strict-admission").catch(() => undefined);
