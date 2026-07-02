@@ -248,7 +248,7 @@ function runSourceChecks(failures) {
   assertContains(genreBucketsSource, 'label: "Progressive & Experimental"', "Top-level category bucket list includes Progressive & Experimental", failures);
 
   const topLevelBucketCount = (genreBucketsSource.match(/label:\s*"/g) || []).length;
-  assertInvariant(topLevelBucketCount === 8, "Top-level category bucket list defines exactly 8 categories", `count=${topLevelBucketCount}`, failures);
+  assertInvariant(topLevelBucketCount === 9, "Top-level category bucket list defines exactly 9 categories", `count=${topLevelBucketCount}`, failures);
 }
 
 async function runApiChecks({ baseUrl, maxApiDurationMs, minCoverage }, failures) {
