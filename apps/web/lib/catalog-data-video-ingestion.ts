@@ -2204,7 +2204,10 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
   const maxSeeds = Math.max(0, Math.floor(budgetUnits / 100));
   if (maxSeeds === 0) return empty;
 
+  console.error("[runQuotaBackfill] budgetUnits=%d maxSeeds=%d", budgetUnits, maxSeeds);
+
   const prominentArtistKeys = await loadProminentGenreArtistKeys();
+  console.error("[runQuotaBackfill] prominentArtistKeys=%d", prominentArtistKeys.length);
 
   const SEED_COOLDOWN_DAYS = 7;
   const ARTIST_COOLDOWN_DAYS = 3;
@@ -2300,12 +2303,15 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
     );
   }
 
+  console.error("[runQuotaBackfill] seedsSelected=%d", seeds.length);
+
   if (seeds.length === 0) return empty;
 
   // Clear old related cache entries for the selected seeds so that
   // re-used seeds (outside the cooldown window) get fresh YouTube results.
   const seedVideoIds = seeds.map((s) => s.videoId);
   await prisma.relatedCache.deleteMany({ where: { videoId: { in: seedVideoIds } } });
+  console.error("[runQuotaBackfill] cacheCleared seeds=%d", seedVideoIds.length);
 
   debugCatalog("runQuotaBackfill:seeds-selected", {
     maxSeeds,
