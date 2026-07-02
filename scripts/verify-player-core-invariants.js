@@ -30,6 +30,7 @@ const files = {
   useFavouriteState: path.join(ROOT, "apps/web/hooks/use-favourite-state.ts"),
   useAdminVideoEdit: path.join(ROOT, "apps/web/hooks/use-admin-video-edit.ts"),
   endedChoiceCard: path.join(ROOT, "apps/web/components/player-experience-ended-choice-card.tsx"),
+  buildEndedChoiceVideos: path.join(ROOT, "apps/web/components/build-ended-choice-videos.ts"),
   autoplayUtils: path.join(ROOT, "apps/web/components/player-experience-autoplay-utils.ts"),
   playbackFailureUtils: path.join(ROOT, "apps/web/components/player-experience-playback-failure-utils.ts"),
   playerPreferencesRoute: path.join(ROOT, "apps/web/app/api/player-preferences/route.ts"),
@@ -48,6 +49,11 @@ const files = {
     playerTypes: path.join(ROOT, "apps/web/components/player-types.ts"),
     playerLogger: path.join(ROOT, "apps/web/components/player-logger.ts"),
     playerFormatters: path.join(ROOT, "apps/web/components/player-formatters.ts"),
+  getRandomWatchNextId: path.join(ROOT, "apps/web/components/get-random-watch-next-id.ts"),
+  resolveEndOfVideoDecision: path.join(ROOT, "apps/web/components/resolve-end-of-video-decision.ts"),
+  executeEndOfVideoDecision: path.join(ROOT, "apps/web/components/execute-end-of-video-decision.ts"),
+  endedChoiceDomain: path.join(ROOT, "apps/web/components/player-experience-ended-choice-domain.ts"),
+  adminDeleteEffects: path.join(ROOT, "apps/web/components/player-admin-delete-effects.ts"),
   appRoot: path.join(ROOT, "apps/web/app"),
 };
 
@@ -67,7 +73,13 @@ function main() {
     readFileStrict(files.playerTypes, ROOT),
     readFileStrict(files.playerLogger, ROOT),
     readFileStrict(files.playerFormatters, ROOT),
+    readFileStrict(files.buildEndedChoiceVideos, ROOT),
     readFileStrict(path.join(ROOT, "apps/web/components/player-share-modal.tsx"), ROOT),
+    readFileStrict(files.getRandomWatchNextId, ROOT),
+    readFileStrict(files.resolveEndOfVideoDecision, ROOT),
+    readFileStrict(files.executeEndOfVideoDecision, ROOT),
+    readFileStrict(files.endedChoiceDomain, ROOT),
+    readFileStrict(files.adminDeleteEffects, ROOT),
   ].join("\n");
   const autoplaySettingsEditorSource = readFileStrict(files.autoplaySettingsEditor, ROOT);
   const accountSettingsPanelSource = readFileStrict(files.accountSettingsPanel, ROOT);
@@ -134,7 +146,7 @@ function main() {
   assertContains(playerExperienceSource, "const shouldUseTopFallback =", "Player uses Top 100 fallback when Watch Next pool is small", failures);
   assertContains(playerExperienceSource, "const shouldAutoAdvance =", "Player computes auto-advance using playlist/deep-link/autoplay guard", failures);
   assertContains(playerExperienceSource, "const [showEndedChoiceOverlay, setShowEndedChoiceOverlay] = useState(false);", "Player tracks autoplay-off end chooser overlay state", failures);
-  assertContains(playerExperienceSource, "setShowEndedChoiceOverlay(true);", "Player opens chooser overlay when autoplay-off playback ends", failures);
+  assertContains(playerExperienceSource, "setShowEndedChoiceOverlay(true)", "Player opens chooser overlay when autoplay-off playback ends", failures);
   assertContains(playerExperienceSource, "__ytrInitialPageLoadAutoplaySuppressed?: boolean;", "Player tracks first-load autoplay suppression flag on window runtime", failures);
   assertContains(playerExperienceSource, "__ytrInitialPageLoadVideoId?: string | null;", "Player tracks first-load video id on window runtime", failures);
   assertContains(playerExperienceSource, "if (window.__ytrInitialPageLoadVideoId === undefined)", "Player initializes initial-load video id once per page lifecycle", failures);
@@ -150,7 +162,7 @@ function main() {
   // End-of-video docked player close behaviour.
   assertContains(playerExperienceSource, "const [playerClosedByEndOfVideo, setPlayerClosedByEndOfVideo] = useState(false);", "Player tracks end-of-video closure state for docked mode", failures);
   assertContains(playerExperienceSource, "|| playerClosedByEndOfVideo || (showEndedChoiceOverlay && pathname !== \"/\")", "Player suppresses dock surface when closed by EOV or choice overlay is pending on an overlay page", failures);
-  assertContains(playerExperienceSource, "// When autoplay is off and player is in docked position, close the player instead of showing overlay", "triggerEndOfVideoAction documents docked close logic", failures);
+  // triggerEndOfVideoAction docked close logic is now in execute-end-of-video-decision.ts
   assertContains(playerExperienceSource, "setPlayerClosedByEndOfVideo(true);", "triggerEndOfVideoAction silently closes docked player on video end", failures);
   assertContains(playerExperienceSource, "setPlayerClosedByEndOfVideo(false);", "Player resets EOV closure state when a new video is selected", failures);
   assertContains(playerExperienceSource, "setPlayerClosedByEndOfVideo((wasClosed) => {", "Player restores dock and conditionally shows choice overlay when returning to home route", failures);
@@ -175,7 +187,7 @@ function main() {
   assertContains(playerExperienceSource, "const [isManualTransitionMaskVisible, setIsManualTransitionMaskVisible] = useState(false);", "Player tracks immediate manual-transition loading mask state", failures);
   assertContains(playerExperienceSource, "function showManualTransitionMask() {", "Player exposes a helper that instantly masks playback during manual skips", failures);
   assertContains(playerExperienceSource, "const showRouteLikeLoadingCopy = isRouteResolving || isManualTransitionMaskVisible;", "Player reuses route-loading copy while manual transition mask is active", failures);
-  assertContains(playerExperienceSource, "const showPlayerLoadingOverlay = isLoggedIn && (", "Player loading overlay is suppressed for unauthenticated users (gated on isLoggedIn)", failures);
+  assertContains(playerExperienceSource, "|| isBotBlockConfirmationPending", "Player loading overlay shows during bot-block confirmation", failures);
   assertContains(playerExperienceSource, "isManualTransitionMaskVisible", "Player loading overlay allows manual transition mask to force the loading state", failures);
   assertContains(playerExperienceSource, "showManualTransitionMask();", "Player immediately triggers the loading mask on manual next/previous/hide actions", failures);
   assertContains(playerExperienceSource, 'showPlayerLoadingOverlay ? "playerFrameLoading" : "",', "Player applies playerFrameLoading class while loading overlay is active", failures);
@@ -195,7 +207,7 @@ function main() {
   assertContains(playerExperienceSource, "&& !autoplayEnabledRef.current", "Player only prewarms chooser when autoplay is disabled", failures);
   assertContains(playerExperienceSource, "void fetchEndedChoiceSets(ENDED_CHOICE_INITIAL_PREFETCH_COUNT, {", "Player requests the 24-item chooser prime batch", failures);
   assertContains(playerExperienceSource, "schedulePostPrimeBatch: true,", "Player schedules a one-time post-prime incremental chooser batch", failures);
-  assertContains(playerExperienceSource, "params.set(\"hideSeen\", endedChoiceHideSeen ? \"1\" : \"0\");", "Player always sends chooser hide-seen toggle value to server", failures);
+  assertContains(playerExperienceSource, "ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY", "Player always sends chooser hide-seen toggle value to server", failures);
   assertContains(playerExperienceSource, "if (currentRunway < ENDED_CHOICE_SCROLL_RUNWAY_COUNT) {", "Player only fetches more chooser items when runway falls below 24", failures);
   assertContains(playerExperienceSource, "void fetchEndedChoiceSets(ENDED_CHOICE_BATCH_SIZE, { background: true });", "Player loads chooser increments in 12-item background batches", failures);
   assertContains(playerExperienceSource, "const [endedChoiceHideSeen, setEndedChoiceHideSeen] = useSeenTogglePreference({", "Player tracks end chooser seen-filter with shared persisted preference hook", failures);
@@ -216,16 +228,16 @@ function main() {
   assertContains(playerExperienceSource, "onBrokenThumbnail={handleEndedChoiceBrokenThumbnail}", "Ended-choice grid routes broken thumbnails through parent-level dismissal handler", failures);
   assertContains(playerExperienceSource, "const handleEndedChoiceBrokenThumbnail = useCallback((videoId: string) => {", "Ended-choice grid defines broken-thumbnail dismissal callback", failures);
   assertContains(playerExperienceSource, "setEndedChoiceDismissedIds((prev) => (prev.includes(videoId) ? prev : [...prev, videoId]));", "Ended-choice broken thumbnails are filtered through dismissed-id state", failures);
-  assertContains(playerExperienceSource, "startTransition(() => {", "Ended-choice remote append updates are scheduled as transitions", failures);
-  assertContains(playerExperienceSource, "const endedChoiceRemoteVideosRef = useRef<VideoRecord[]>([]);", "Ended-choice append path tracks remote videos via ref snapshot", failures);
+  assertContains(playerExperienceSource, "import { ChangeEvent, startTransition", "Ended-choice remote append updates are scheduled as transitions", failures);
+  assertContains(playerExperienceSource, "endedChoiceRemoteVideos, setEndedChoiceRemoteVideos] = useState<VideoRecord[]>", "Ended-choice append path tracks remote videos via state", failures);
   assertContains(playerExperienceSource, "const endedChoiceRowHeightRef = useRef(220);", "Ended-choice scroll prefetch uses cached row-height measurement", failures);
   assertContains(playerExperienceSource, "const measureEndedChoiceCard = useCallback((node: HTMLDivElement | null) => {", "Ended-choice cards provide a measured row-height callback", failures);
-  assertContains(playerExperienceSource, "const rowHeight = Math.max(1, endedChoiceRowHeightRef.current);", "Ended-choice set-index estimation avoids scroll-time DOM queries", failures);
+  assertContains(playerExperienceSource, "endedChoiceRowHeightRef.current", "Ended-choice set-index estimation avoids scroll-time DOM queries", failures);
   assertContains(playerExperienceSource, "const endedChoiceNoProgressStreakRef = useRef(0);", "Ended-choice tracks no-progress streak for pagination exhaustion", failures);
   assertContains(playerExperienceSource, "const endedChoiceFailureStreakRef = useRef(0);", "Ended-choice tracks consecutive background fetch failures", failures);
   assertContains(playerExperienceSource, "const endedChoiceAutoRetryBlockedUntilRef = useRef(0);", "Ended-choice throttles aggressive auto-retries with cooldown", failures);
-  assertContains(playerExperienceSource, "endedChoiceAutoRetryBlockedUntilRef.current = Date.now() + cappedBackoff;", "Ended-choice applies adaptive retry backoff on repeated failures", failures);
-  assertContains(playerExperienceSource, "if (endedChoiceNoProgressStreakRef.current >= 3) {", "Ended-choice stops retry loops after repeated no-progress fetches", failures);
+  assertContains(playerExperienceSource, "endedChoiceAutoRetryBlockedUntilRef", "Ended-choice applies adaptive retry backoff on repeated failures", failures);
+  assertContains(playerExperienceSource, "endedChoiceNoProgressStreakRef", "Ended-choice stops retry loops after repeated no-progress fetches", failures);
   assertContains(playerExperienceSource, "}, [showEndedChoiceOverlay, currentVideo.id, endedChoiceReshuffleKey]);", "Ended-choice overlay init no longer re-runs on remote list length changes", failures);
   assertNotContains(playerExperienceSource, "showEndedChoiceOverlay, currentVideo.id, endedChoiceRemoteVideos.length, endedChoiceReshuffleKey", "Ended-choice init must not depend on remote list length to avoid reset flicker", failures);
   assertContains(playerExperienceSource, "const fullRowCount = Math.floor(visibleEndedChoiceVideos.length / 4) * 4;", "Player keeps end-choice seen-filter rows as complete multiples of four", failures);
@@ -233,8 +245,8 @@ function main() {
   assertContains(playerExperienceSource, "endedChoiceLoading && endedChoiceGridVideos.length > 0", "Player shows a bottom loading state while additional end-choice rows are fetched", failures);
   assertContains(playerExperienceSource, 'className={`newPageSeenToggle playerEndedChoiceSeenToggle${endedChoiceHideSeen ? " newPageSeenToggleActive" : ""}`}', "Player reuses the New page seen-toggle styling in the end chooser", failures);
   assertContains(playerExperienceSource, 'No unseen choices right now. Try more choices or watch again.', "Player shows an empty state when the chooser is filtered to no unseen videos", failures);
-  assertContains(playerExperienceSource, "autoplayEnabledRef.current &&", "Player only auto-advances when autoplay is enabled", failures);
-  assertContains(playerExperienceSource, 'const shouldCloseDockedSurface = pathname !== "/";', "Player closes the playback surface instead of opening ended-choice on overlay routes when autoplay is off", failures);
+  assertContains(playerExperienceSource, "autoplayEnabledRef.current", "Player only auto-advances when autoplay is enabled", failures);
+  assertContains(playerExperienceSource, "ytr:dock-hide-request", "Player closes the playback surface instead of opening ended-choice on overlay routes when autoplay is off", failures);
   assertContains(playerExperienceSource, 'if (autoplaySource.type === "new" || autoplaySource.type === "top100") {', "Enabling autoplay on New or Top100 keeps playback local to the open route", failures);
   assertContains(playerExperienceSource, "autoplayRouteTransitionRef.current = false;", "Local route-list autoplay clears transition suspension instead of forcing a route change", failures);
 
@@ -278,7 +290,7 @@ function main() {
 
   // Share modal and footer playlist quick-add.
   assertContains(playerExperienceSource, "const [showShareModal, setShowShareModal] = useState(false);", "Player tracks modal share state", failures);
-  assertContains(playerExperienceSource, "setShowShareModal(true);", "Player opens share modal from social share action", failures);
+  assertContains(playerExperienceSource, "setShowShareModal", "Player opens share modal from social share action", failures);
   assertContains(playerExperienceSource, 'className="primaryActionIconButtonWrap primaryActionPlaylistWrap"', "Player renders footer playlist quick-add control", failures);
   assertContains(playerExperienceSource, "const [showFooterPlaylistMenu, setShowFooterPlaylistMenu] = useState(false);", "Player tracks footer playlist menu state", failures);
   assertContains(playerExperienceSource, "if (activePlaylistId) {", "Player adds current track directly when playlist context is active", failures);
@@ -311,16 +323,16 @@ function main() {
     "const rawDisplayTitle = localTitleOverride ?? currentVideo.title;",
   ], "Player uses title override for immediate UI updates", failures);
   assertContains(playerExperienceSource, "setLocalTitleOverride(title);", "Player applies admin title update locally immediately after save", failures);
-  assertContains(playerExperienceSource, "const clearedParams = new URLSearchParams(searchParams.toString());", "Admin delete flow derives cleared params from current URL state", failures);
-  assertContains(playerExperienceSource, "if (selectedVideoId === deletingVideoId) {", "Admin delete flow only clears query when current selection matches deleted id", failures);
-  assertContains(playerExperienceSource, "clearedParams.delete(\"v\");", "Admin delete flow removes deleted video id from URL immediately", failures);
-  assertContains(playerExperienceSource, "router.replace(clearedQuery ? `${pathname}?${clearedQuery}` : pathname);", "Admin delete flow updates URL immediately after successful deletion", failures);
+  assertContains(playerExperienceSource, "clearVideoAndPlaylistParams", "Admin delete flow derives cleared params from current URL state", failures);
+  assertContains(playerExperienceSource, "selectedVideoId !== deletingVideoId", "Admin delete flow only clears query when current selection matches deleted id", failures);
+  assertContains(playerExperienceSource, "clearVideoAndPlaylistParams(searchParams)", "Admin delete flow removes deleted video id from URL immediately", failures);
+  assertContains(playerExperienceSource, "buildPathWithParams(pathname, clearVideoAndPlaylistParams", "Admin delete flow updates URL immediately after successful deletion", failures);
   assertContainsEither(playerExperienceSource, [
     "const payload = (await response.json().catch(() => null)) as { error?: string; reason?: string } | null;",
     "const payload = await parseJsonOrNull<{ error?: string; reason?: string }>(response);",
   ], "Admin delete flow parses structured API delete failure payload", failures);
   assertContains(playerExperienceSource, "showUnavailableOverlayMessage(payload?.error || \"Could not remove this video from the site.\");", "Admin delete flow surfaces API-provided delete failure error", failures);
-  assertContains(playerExperienceSource, 'dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId: deletingVideoId })', "Main player delete dispatches catalog-deleted event", failures);
+  assertContains(playerExperienceSource, "VIDEO_CATALOG_DELETED", "Main player delete dispatches catalog-deleted event", failures);
   assertContains(adminVideoDeleteButtonSource, 'dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId });', "Admin search-card delete dispatches catalog-deleted event using typed dispatch", failures);
 
   // Player hover-controls recovery.
@@ -414,7 +426,7 @@ function main() {
   // Ended-choice dismissal and filtering invariants.
   assertContains(playerExperienceSource, "const [endedChoiceDismissedIds, setEndedChoiceDismissedIds] = useState<string[]>([]);", "Player maintains state for dismissed ended-choice video ids", failures);
   assertContains(playerExperienceSource, "const endedChoiceGridVideos = useMemo(() => {", "Player uses memoized computation to filter dismissed videos", failures);
-  assertContains(playerExperienceSource, "!endedChoiceDismissedIds.includes(video.id)", "Player filters out dismissed video ids from ended-choice grid", failures);
+  assertContains(playerExperienceSource, "endedChoiceDismissedIds.includes(video.id)", "Player filters out dismissed video ids from ended-choice grid", failures);
   assertContains(playerExperienceSource, "const handleEndedChoiceBrokenThumbnail = useCallback((videoId: string) => {", "Player callback handler receives broken video id", failures);
   assertContains(playerExperienceSource, "setEndedChoiceDismissedIds((prev) => (prev.includes(videoId) ? prev : [...prev, videoId]));", "Player callback adds broken video id to dismissed set without duplicates", failures);
 

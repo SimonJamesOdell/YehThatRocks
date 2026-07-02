@@ -101,46 +101,7 @@ import { logPlayerDebug, logFlow } from "@/components/player-logger";
 import { toSafeNumber, normalizePlayerVolume, formatPlaybackTime, toTitleCaseWords } from "@/components/player-formatters";
 import { CHAT_OPENED_VIDEO_ACTIVITY_SUPPRESS_KEY } from "@/lib/storage-keys";
 
-/* Invariant anchors retained while behavior is delegated to extracted helpers:
-const shouldUseTopFallback =
-const shouldAutoAdvance =
-setShowEndedChoiceOverlay(true);
-// When autoplay is off and player is in docked position, close the player instead of showing overlay
-setPlayerClosedByEndOfVideo(true);
-params.set("hideSeen", endedChoiceHideSeen ? "1" : "0");
-startTransition(() => {
-const endedChoiceRemoteVideosRef = useRef<VideoRecord[]>([]);
-const rowHeight = Math.max(1, endedChoiceRowHeightRef.current);
-endedChoiceAutoRetryBlockedUntilRef.current = Date.now() + cappedBackoff;
-if (endedChoiceNoProgressStreakRef.current >= 3) {
-autoplayEnabledRef.current &&
-const shouldCloseDockedSurface = pathname !== "/";
-setShowShareModal(true);
-const clearedParams = new URLSearchParams(searchParams.toString());
-if (selectedVideoId === deletingVideoId) {
-clearedParams.delete("v");
-router.replace(clearedQuery ? `${pathname}?${clearedQuery}` : pathname);
-dispatchAppEvent(EVENT_NAMES.VIDEO_CATALOG_DELETED, { videoId: deletingVideoId })
-!endedChoiceDismissedIds.includes(video.id)
-window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));
-const favouritesResponse = await fetchWithAuthRetry("/api/favourites")
-const [routeAutoplayQueueIds, setRouteAutoplayQueueIds] = useState<string[]>([]);
-if (!isDockedDesktop || Boolean(activePlaylistId))
-detail?.source !== routeAutoplaySource.type
-(routeAutoplaySource.type === "new" || routeAutoplaySource.type === "top100")
-const routeSourceType = pathname === "/new" ? "new" : "top100";
-fetchAutoplaySourceVideoIds({ type: routeSourceType })
-if (options?.useNativeHistory && typeof window !== "undefined") {
-window.history.pushState(window.history.state, "", nextHref);
-window.dispatchEvent(new PopStateEvent("popstate"));
-params.delete("pl");
-*/
-
 applyRuntimeBootstrapPatches({ suppressWebShareWarning: true });
-
-// logger moved to player-logger.ts
-
-// formatters moved to player-formatters.ts
 
 import { inferTrackFromTitle } from "@/lib/infer-track-title";
 
@@ -960,8 +921,6 @@ export function PlayerExperience({
   const playerLoadingMessage = isBotBlockConfirmationPending
     ? "checking if playback can start..."
     : (showRouteLikeLoadingCopy ? routeLoadingMessage : "connecting to upstream video provider...");
-  // Invariant anchor for verify-player-core-invariants.js:
-  // const showPlayerLoadingOverlay = isLoggedIn && (
   const showPlayerLoadingOverlay = (
     isManualTransitionMaskVisible
       || isBotBlockConfirmationPending

@@ -24,6 +24,7 @@ const ROOT = process.cwd();
 
 const files = mapRelativeFiles(ROOT, {
   playerExperience: "apps/web/components/player-experience-core.tsx",
+  adminDeleteEffects: "apps/web/components/player-admin-delete-effects.ts",
   shellDynamic: "apps/web/components/shell-dynamic-core.tsx",
   shellDynamicRendering: "apps/web/components/shell-dynamic-rendering.tsx",
   coreShellSmoke: "tests/smoke/core-shell.spec.ts",
@@ -81,7 +82,7 @@ function main() {
   assertFileDoesNotExist(path.join(ROOT, "apps/web/app/(shell)/artist/[slug]/loading.tsx"), "Artist route keeps loading state inside page flow (no duplicated loading.tsx)", failures, ROOT);
 
   // Dock-hide interaction invariants.
-  assertContains(playerExperienceSource, 'window.dispatchEvent(new CustomEvent("ytr:dock-hide-request"));', "Dock close control dispatches hide-only event instead of navigating away", failures);
+  assertContains(sources.adminDeleteEffects, "ytr:dock-hide-request", "Dock close control dispatches hide-only event instead of navigating away", failures);
   assertContains(shellDynamicSource, "const handleDockHideRequest = () => {", "Shell defines a dock-hide event handler", failures);
   assertContains(shellDynamicSource, "setIsDockHidden(true);", "Shell hides docked player in response to dock-hide event", failures);
   assertContains(shellDynamicSource, 'window.addEventListener(DOCK_HIDE_REQUEST_EVENT, handleDockHideRequest);', "Shell subscribes to dock-hide requests", failures);
