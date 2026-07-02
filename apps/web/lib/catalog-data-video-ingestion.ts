@@ -2204,10 +2204,7 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
   const maxSeeds = Math.max(0, Math.floor(budgetUnits / 100));
   if (maxSeeds === 0) return empty;
 
-  console.error("[runQuotaBackfill] budgetUnits=%d maxSeeds=%d", budgetUnits, maxSeeds);
-
   const prominentArtistKeys = await loadProminentGenreArtistKeys();
-  console.error("[runQuotaBackfill] prominentArtistKeys=%d", prominentArtistKeys.length);
 
   const SEED_COOLDOWN_DAYS = 7;
   const ARTIST_COOLDOWN_DAYS = 3;
@@ -2216,7 +2213,7 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
   // Select seeds randomly from the approved catalog with diversity controls:
   // 1. Video-level cooldown: same video can't be a seed within 7 days.
   // 2. Artist-level cooldown: same artist can't be re-seeded within 3 days.
-  // 3. Per-artist cap: at most 2 seeds per artist per run.
+  // 3. Per-artist cap: at most 2 seeds per artist per run (applied in TS).
   // 4. 50/50 split between prominent rock/metal artists and broad catalog.
   let seeds: Array<{ videoId: string }> = [];
 
@@ -2248,47 +2245,59 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
       )
   `;
 
-  // Wrap in a subquery that enforces the per-artist seed cap via ROW_NUMBER().
-  const artistLimitedQuery = (innerWhere: string) => `
-    SELECT t.videoId FROM (
-      SELECT v.videoId,
-             LOWER(TRIM(v.parsedArtist)) AS _ak,
-             ROW_NUMBER() OVER (
-               PARTITION BY LOWER(TRIM(v.parsedArtist))
-               ORDER BY RAND()
-             ) AS _rn
-      FROM videos v
-      ${innerWhere}
-    ) t
-    WHERE t._rn <= ${MAX_SEEDS_PER_ARTIST}
+  // Simple random query returning videoId + artist for TS-level dedup.
+  // Oversample 3× so the per-artist cap still yields enough seeds.
+  const randomSeedQuery = (innerWhere: string, limit: number) => `
+    SELECT v.videoId, LOWER(TRIM(v.parsedArtist)) AS artistKey
+    FROM videos v
+    ${innerWhere}
     ORDER BY RAND()
-    LIMIT ?
+    LIMIT ${limit}
   `;
+
+  // Apply per-artist cap in TypeScript (avoids expensive ROW_NUMBER() window function).
+  function applyArtistCap(
+    rows: Array<{ videoId: string; artistKey: string }>,
+    cap: number,
+  ): Array<{ videoId: string }> {
+    const seen = new Map<string, number>();
+    const result: Array<{ videoId: string }> = [];
+    for (const row of rows) {
+      const count = seen.get(row.artistKey) ?? 0;
+      if (count >= cap) continue;
+      seen.set(row.artistKey, count + 1);
+      result.push({ videoId: row.videoId });
+    }
+    return result;
+  }
 
   if (prominentArtistKeys.length > 0) {
     // 50/50 split: half from prominent artists, half from broad catalog.
-    const prominentCount = Math.max(1, Math.floor(maxSeeds * 0.5));
-    const broadCount = maxSeeds - prominentCount;
+    // Oversample to account for per-artist filtering.
+    const prominentTarget = Math.max(1, Math.floor(maxSeeds * 0.5));
+    const broadTarget = maxSeeds - prominentTarget;
+    const prominentLimit = Math.min(prominentTarget * 3, 500);
+    const broadLimit = Math.min(broadTarget * 3, 500);
 
     const prominentInnerWhere = `
       ${whereClause}
         AND LOWER(TRIM(v.parsedArtist)) IN (${prominentArtistKeys.map(() => "?").join(",")})
     `;
-    const broadInnerWhere = whereClause;
 
-    const [prominentSeeds, broadSeeds] = await Promise.all([
-      prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
-        artistLimitedQuery(prominentInnerWhere),
+    const [prominentRows, broadRows] = await Promise.all([
+      prisma.$queryRawUnsafe<Array<{ videoId: string; artistKey: string }>>(
+        randomSeedQuery(prominentInnerWhere, prominentLimit),
         PLAYBACK_MIN_CONFIDENCE,
         ...prominentArtistKeys,
-        prominentCount,
       ),
-      prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
-        artistLimitedQuery(broadInnerWhere),
+      prisma.$queryRawUnsafe<Array<{ videoId: string; artistKey: string }>>(
+        randomSeedQuery(whereClause, broadLimit),
         PLAYBACK_MIN_CONFIDENCE,
-        broadCount,
       ),
     ]);
+
+    const prominentSeeds = applyArtistCap(prominentRows, MAX_SEEDS_PER_ARTIST).slice(0, prominentTarget);
+    const broadSeeds = applyArtistCap(broadRows, MAX_SEEDS_PER_ARTIST).slice(0, broadTarget);
 
     // Merge and deduplicate across pools.
     const seedSet = new Set<string>();
@@ -2296,14 +2305,12 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
     for (const s of broadSeeds) seedSet.add(s.videoId);
     seeds = Array.from(seedSet).map((videoId) => ({ videoId }));
   } else {
-    seeds = await prisma.$queryRawUnsafe<Array<{ videoId: string }>>(
-      artistLimitedQuery(whereClause),
+    const rows = await prisma.$queryRawUnsafe<Array<{ videoId: string; artistKey: string }>>(
+      randomSeedQuery(whereClause, Math.min(maxSeeds * 3, 500)),
       PLAYBACK_MIN_CONFIDENCE,
-      maxSeeds,
     );
+    seeds = applyArtistCap(rows, MAX_SEEDS_PER_ARTIST).slice(0, maxSeeds);
   }
-
-  console.error("[runQuotaBackfill] seedsSelected=%d", seeds.length);
 
   if (seeds.length === 0) return empty;
 
@@ -2311,7 +2318,6 @@ export async function runQuotaBackfill(budgetUnits: number): Promise<{
   // re-used seeds (outside the cooldown window) get fresh YouTube results.
   const seedVideoIds = seeds.map((s) => s.videoId);
   await prisma.relatedCache.deleteMany({ where: { videoId: { in: seedVideoIds } } });
-  console.error("[runQuotaBackfill] cacheCleared seeds=%d", seedVideoIds.length);
 
   debugCatalog("runQuotaBackfill:seeds-selected", {
     maxSeeds,
