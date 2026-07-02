@@ -43,6 +43,7 @@ export type ChatStateResult = {
   chatMode: ChatMode;
   setChatMode: (mode: ChatMode) => void;
   chatMessages: ChatMessage[];
+  hasAttemptedChatLoad: boolean;
   onlineUsers: OnlineUser[];
   chatDraft: string;
   setChatDraft: (draft: string) => void;
@@ -101,6 +102,7 @@ export function useChatState({
   const [chatDraft, setChatDraft] = useState("");
   const [chatError, setChatError] = useState<string | null>(null);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [hasAttemptedChatLoad, setHasAttemptedChatLoad] = useState(false);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const [deletingMessageIds, setDeletingMessageIds] = useState<number[]>([]);
   const [flashingChatTabs, setFlashingChatTabs] = useState<Record<FlashableChatMode, boolean>>({
@@ -228,6 +230,7 @@ export function useChatState({
         }
       } finally {
         if (!cancelled) {
+          setHasAttemptedChatLoad(true);
           setIsChatLoading(false);
         }
       }
@@ -522,6 +525,7 @@ export function useChatState({
     chatMode,
     setChatMode,
     chatMessages,
+    hasAttemptedChatLoad,
     onlineUsers,
     chatDraft,
     setChatDraft,

@@ -496,7 +496,7 @@ function ShellDynamicInner({
   const {
     chatMode, setChatMode,
     chatMessages, onlineUsers, chatDraft, setChatDraft,
-    chatError, isChatLoading, isChatSubmitting, deletingMessageIds,
+    chatError, isChatLoading, hasAttemptedChatLoad, isChatSubmitting, deletingMessageIds,
     flashingChatTabs, chatListRef, latestMagazineTracks, isMagazineLoading,
     handleChatSubmit, handleDeleteChatMessage,
   } = useChatState({
@@ -2569,7 +2569,7 @@ function ShellDynamicInner({
               </div>
               <div className="chatList" ref={chatListRef}>
                 {isChatLoading ? <RightRailLoadingState message="Loading chat..." /> : null}
-                {!isChatLoading && chatMode === "global" && chatMessages.length === 0 ? (
+                {hasAttemptedChatLoad && !isChatLoading && chatMode === "global" && chatMessages.length === 0 ? (
                   <p className="chatStatus">
                     No chat messages yet. Start the noise.
                   </p>
