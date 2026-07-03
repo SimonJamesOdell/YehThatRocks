@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { MobileVideoList } from "../_components/mobile-video-card";
 import type { MobileVideo } from "../_components/mobile-player-context";
 
@@ -8,11 +8,15 @@ export default function MobileNewVideosPage() {
   const [videos, setVideos] = useState<MobileVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [skip, setSkip] = useState(0);
+  const skipRef = useRef(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const loadVideos = useCallback(async (currentSkip: number, append = false) => {
+    if (loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
     try {
       const res = await fetch(`/api/videos/newest?skip=${currentSkip}&take=30`);
       if (!res.ok) throw new Error("Failed to load");
@@ -20,12 +24,14 @@ export default function MobileNewVideosPage() {
       if (data.ok) {
         setVideos((prev) => append ? [...prev, ...data.videos] : data.videos);
         setHasMore(data.hasMore);
-        setSkip(data.nextOffset);
+        skipRef.current = data.nextOffset;
       }
     } catch (err) {
       if (!append) {
         setError(err instanceof Error ? err.message : "Failed to load");
       }
+    } finally {
+      loadingMoreRef.current = false;
     }
   }, []);
 
@@ -34,6 +40,7 @@ export default function MobileNewVideosPage() {
     async function init() {
       setLoading(true);
       setError(null);
+      skipRef.current = 0;
       await loadVideos(0);
       if (!cancelled) setLoading(false);
     }
@@ -42,14 +49,52 @@ export default function MobileNewVideosPage() {
   }, [loadVideos]);
 
   const handleLoadMore = useCallback(async () => {
+    if (!hasMore || loadingMoreRef.current) return;
     setLoadingMore(true);
-    await loadVideos(skip, true);
+    await loadVideos(skipRef.current, true);
     setLoadingMore(false);
-  }, [skip, loadVideos]);
+  }, [hasMore, loadVideos]);
 
   const handleRetry = useCallback(() => {
+    skipRef.current = 0;
     loadVideos(0);
   }, [loadVideos]);
+
+  // IntersectionObserver for infinite scroll
+  useEffect(() => {
+    if (!hasMore || loading) return;
+
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          void handleLoadMore();
+        }
+      },
+      { rootMargin: "400px 0px" },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loading, handleLoadMore]);
+
+  // Auto-load more if the page content doesn't fill the viewport
+  useEffect(() => {
+    if (!hasMore || loading || videos.length === 0) return;
+
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const raf = requestAnimationFrame(() => {
+      const rect = sentinel.getBoundingClientRect();
+      if (rect.top < window.innerHeight + 400) {
+        void handleLoadMore();
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [hasMore, loading, videos.length, handleLoadMore]);
 
   return (
     <div>
@@ -77,14 +122,12 @@ export default function MobileNewVideosPage() {
         <>
           <MobileVideoList videos={videos} />
           {hasMore && (
-            <button
-              type="button"
-              className="mobile-load-more"
-              onClick={handleLoadMore}
-              disabled={loadingMore}
-            >
-              {loadingMore ? "Loading..." : "Load More"}
-            </button>
+            <div ref={sentinelRef} style={{ height: 1, width: "100%" }} />
+          )}
+          {loadingMore && (
+            <div className="mobile-loading" style={{ padding: "16px 0" }}>
+              <div className="mobile-loading-spinner" />
+            </div>
           )}
         </>
       )}
