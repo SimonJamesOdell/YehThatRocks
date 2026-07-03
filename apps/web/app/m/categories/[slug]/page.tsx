@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { MobileVideoList } from "../../_components/mobile-video-card";
-import type { MobileVideo } from "../../_components/mobile-player-context";
+import { MobileVideoList } from "@/components/mobile/mobile-video-card";
+import type { MobileVideo } from "@/components/mobile/mobile-player-context";
 
 export default function MobileCategoryDetailPage() {
   const { slug } = useParams<{ slug: string }>();

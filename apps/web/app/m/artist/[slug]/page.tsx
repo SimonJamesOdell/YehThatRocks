@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { MobileVideoList } from "../../_components/mobile-video-card";
-import type { MobileVideo } from "../../_components/mobile-player-context";
+import { MobileVideoList } from "@/components/mobile/mobile-video-card";
+import type { MobileVideo } from "@/components/mobile/mobile-player-context";
 
 type ArtistInfo = {
   name: string;
