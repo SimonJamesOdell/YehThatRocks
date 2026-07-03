@@ -142,8 +142,8 @@ function main() {
   assertContains(playerExperienceSource, "mutateHiddenVideo<{ activePlaylistDeleted?: boolean }>", "Player uses shared hidden-video mutation helper", failures);
   assertContains(playerExperienceSource, "dispatchAppEvent(EVENT_NAMES.PLAYLISTS_UPDATED, null)", "Player refreshes playlist state after blocking current video", failures);
   assertContains(playerExperienceSource, "if (result.payload?.activePlaylistDeleted)", "Player handles active playlist deletion response after block", failures);
-  assertContains(playerExperienceSource, "params.delete(\"pl\");", "Player clears active playlist id when blocked track deletes playlist", failures);
-  assertContains(playerExperienceSource, "params.delete(\"pli\");", "Player clears active playlist index when blocked track deletes playlist", failures);
+  assertContains(playerExperienceSource, "clearPlaylistParams(new URLSearchParams(searchParams.toString()))", "Player clears playlist params when blocked track deletes playlist", failures);
+  assertContains(playerExperienceSource, "import { buildPathWithParams, clearPlaylistParams }", "Player imports clearPlaylistParams from shared search-params module", failures);
 
   // force-dynamic / dead-config guards.
   assertContains(shellLayoutSource, 'export const dynamic = "force-dynamic"', "Shell layout opts out of static generation via force-dynamic", failures);

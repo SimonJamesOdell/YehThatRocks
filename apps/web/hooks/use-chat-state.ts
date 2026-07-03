@@ -101,7 +101,7 @@ export function useChatState({
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [chatDraft, setChatDraft] = useState("");
   const [chatError, setChatError] = useState<string | null>(null);
-  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [isChatLoading, setIsChatLoading] = useState(true);
   const [hasAttemptedChatLoad, setHasAttemptedChatLoad] = useState(false);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const [deletingMessageIds, setDeletingMessageIds] = useState<number[]>([]);
