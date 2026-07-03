@@ -58,7 +58,7 @@ export function MobileYouTubePlayer({
       if (cancelled || !containerRef.current) return;
       if (typeof YT === "undefined" || !YT?.Player) return;
 
-      player = new YT.Player(containerRef.current, {
+      player = new (YT.Player as new (el: HTMLElement, cfg: Record<string, unknown>) => YTPlayer)(containerRef.current, {
         videoId: videoIdRef.current,
         playerVars: {
           autoplay: 1,
