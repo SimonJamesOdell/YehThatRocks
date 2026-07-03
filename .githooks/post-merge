@@ -1,0 +1,24 @@
+#!/bin/bash
+# Post-merge hook: clear Next.js / Turbopack cache when web source files change.
+# Prevents the "source is correct but browser shows stale compiled output" bug.
+
+WEB_ROOT="apps/web"
+NEXT_DEV_CACHE="$WEB_ROOT/.next/dev"
+TURBO_CACHE="$WEB_ROOT/.next/cache/turbopack"
+
+# Get list of files changed by the merge/pull
+CHANGED=$(git diff-tree -r --name-only --no-commit-id ORIG_HEAD HEAD 2>/dev/null)
+
+# Check if any changed files are under apps/web
+if echo "$CHANGED" | grep -q "^$WEB_ROOT/"; then
+    REMOVED=0
+    if [ -d "$NEXT_DEV_CACHE" ]; then
+        rm -rf "$NEXT_DEV_CACHE" && REMOVED=1
+    fi
+    if [ -d "$TURBO_CACHE" ]; then
+        rm -rf "$TURBO_CACHE" && REMOVED=1
+    fi
+    if [ $REMOVED -eq 1 ]; then
+        echo "🧹 post-merge: cleared Next.js dev cache ($(echo "$CHANGED" | grep "^$WEB_ROOT/" | wc -l) web files changed)"
+    fi
+fi

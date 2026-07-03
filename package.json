@@ -6,7 +6,8 @@
     "apps/*"
   ],
   "scripts": {
-    "prepare": "git config core.hooksPath .githooks && node -e \"const fs=require('fs'); const p='.githooks/pre-commit'; if(process.platform!=='win32'){try{fs.chmodSync(p,0o755)}catch(e){}}\"",
+    "prepare": "git config core.hooksPath .githooks && node -e \"const fs=require('fs'),path=require('path'); const dir='.githooks'; if(process.platform!=='win32'){try{fs.readdirSync(dir).forEach(f=>fs.chmodSync(path.join(dir,f),0o755))}catch(e){}}\"",
+    "clear-cache": "node -e \"const{rmSync,existsSync}=require('fs');['apps/web/.next/dev','apps/web/.next/cache/turbopack'].forEach(p=>{if(existsSync(p)){rmSync(p,{recursive:true,force:true});console.log('removed',p)}});console.log('🧹 Next.js dev cache cleared')\"",
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",

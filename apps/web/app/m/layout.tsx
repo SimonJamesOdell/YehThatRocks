@@ -9,6 +9,8 @@ import { MobileFavouriteButton } from "./_components/mobile-favourite-button";
 import { MobileVideoList } from "./_components/mobile-video-card";
 import type { MobileVideo } from "./_components/mobile-player-context";
 
+export const dynamic = "force-dynamic";
+
 const NAV_ITEMS = [
   { href: "/m", label: "Home" },
   { href: "/m/new", label: "New" },
