@@ -1049,6 +1049,20 @@
   margin: 0;
 }
 
+.mobile-watch-next-sentinel {
+  height: 1px;
+  width: 100%;
+}
+
+.mobile-player-related-end {
+  font-size: 0.78rem;
+  color: var(--mobile-text-muted);
+  text-align: center;
+  padding: 12px 0 4px;
+  margin: 0;
+  opacity: 0.7;
+}
+
 /* ── Retry Button ──────────────────────────────────────────────────── */
 .mobile-retry-button {
   display: inline-block;

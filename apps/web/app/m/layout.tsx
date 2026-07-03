@@ -36,6 +36,11 @@ function MobileShell({ children }: { children: ReactNode }) {
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [relatedVideos, setRelatedVideos] = useState<MobileVideo[]>([]);
   const [relatedLoading, setRelatedLoading] = useState(false);
+  const [hasMoreRelated, setHasMoreRelated] = useState(true);
+  const [isLoadingMoreRelated, setIsLoadingMoreRelated] = useState(false);
+  const relatedOffsetRef = useRef(0);
+  const isLoadingMoreRef = useRef(false);
+  const detailsRef = useRef<HTMLDivElement | null>(null);
   const navRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -55,23 +60,32 @@ function MobileShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!player.video) {
       setRelatedVideos([]);
+      setHasMoreRelated(true);
+      relatedOffsetRef.current = 0;
       return;
     }
 
     let cancelled = false;
     setRelatedLoading(true);
+    setHasMoreRelated(true);
+    relatedOffsetRef.current = 0;
 
     async function loadRelated() {
       try {
-        const genreSlug = slugify(player.video!.genre);
-        const res = await fetch(`/api/categories/${genreSlug}?limit=12`);
+        const res = await fetch(`/api/current-video?v=${encodeURIComponent(player.video!.id)}`, {
+          cache: "no-store",
+        });
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled) {
-          const filtered = (data.videos || []).filter(
-            (v: MobileVideo) => v.id !== player.video!.id
-          ).slice(0, 10);
-          setRelatedVideos(filtered);
+          const videos: MobileVideo[] = (data.relatedVideos || [])
+            .filter((v: MobileVideo) => v.id !== player.video!.id);
+          setRelatedVideos(videos);
+          relatedOffsetRef.current = videos.length;
+          // hasMore is only present for paged requests; assume true for initial batch
+          if (typeof data.hasMore === "boolean") {
+            setHasMoreRelated(data.hasMore);
+          }
         }
       } catch {
         // Silently fail
@@ -83,6 +97,75 @@ function MobileShell({ children }: { children: ReactNode }) {
     loadRelated();
     return () => { cancelled = true; };
   }, [player.video]);
+
+  const loadMoreRelated = useCallback(async () => {
+    if (!player.video || !hasMoreRelated || isLoadingMoreRef.current) return;
+
+    isLoadingMoreRef.current = true;
+    setIsLoadingMoreRelated(true);
+    try {
+      const offset = relatedOffsetRef.current;
+      const params = new URLSearchParams();
+      params.set("v", player.video.id);
+      params.set("count", "10");
+      params.set("offset", String(offset));
+
+      const res = await fetch(`/api/current-video?${params.toString()}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const newVideos: MobileVideo[] = (data.relatedVideos || [])
+        .filter((v: MobileVideo) => v.id !== player.video!.id);
+
+      if (typeof data.hasMore === "boolean") {
+        setHasMoreRelated(data.hasMore);
+      }
+
+      if (newVideos.length > 0) {
+        setRelatedVideos((prev) => {
+          const existingIds = new Set(prev.map((v) => v.id));
+          const deduped = newVideos.filter((v) => !existingIds.has(v.id));
+          relatedOffsetRef.current = prev.length + deduped.length;
+          return [...prev, ...deduped];
+        });
+      } else {
+        setHasMoreRelated(false);
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      isLoadingMoreRef.current = false;
+      setIsLoadingMoreRelated(false);
+    }
+  }, [player.video, hasMoreRelated]);
+
+  const handleDetailsScroll = useCallback(() => {
+    if (!player.video || !hasMoreRelated || !player.isFullscreen) return;
+
+    const container = detailsRef.current;
+    if (!container) return;
+
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distanceFromBottom < 600) {
+      void loadMoreRelated();
+    }
+  }, [player.video, hasMoreRelated, player.isFullscreen, loadMoreRelated]);
+
+  // Auto-load more if the content doesn't fill the scrollable area
+  useEffect(() => {
+    if (!player.video || !hasMoreRelated || !player.isFullscreen) return;
+    if (!detailsRef.current || relatedVideos.length === 0 || relatedLoading) return;
+
+    const container = detailsRef.current;
+    // Use requestAnimationFrame so the DOM has settled after render
+    const raf = requestAnimationFrame(() => {
+      if (container.scrollHeight <= container.clientHeight) {
+        void loadMoreRelated();
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [player.video, hasMoreRelated, player.isFullscreen, relatedVideos.length, relatedLoading, loadMoreRelated]);
 
   const isActive = useCallback(
     (href: string) => {
@@ -262,7 +345,7 @@ function MobileShell({ children }: { children: ReactNode }) {
             />
           </div>
 
-          <div className="mobile-player-details">
+          <div ref={detailsRef} className="mobile-player-details" onScroll={handleDetailsScroll}>
             <div className="mobile-player-meta">
               <Link
                 href={`/m/categories/${slugify(player.video.genre)}`}
@@ -279,21 +362,31 @@ function MobileShell({ children }: { children: ReactNode }) {
             </div>
 
             <div className="mobile-player-related">
-              {relatedLoading && (
+              {relatedLoading && relatedVideos.length === 0 && (
                 <div className="mobile-loading" style={{ padding: "20px 0" }}>
                   <div className="mobile-loading-spinner" />
                 </div>
               )}
 
-              {!relatedLoading && relatedVideos.length > 0 && (
+              {relatedVideos.length > 0 && (
                 <>
-                  <p className="mobile-player-related-title">More like this</p>
+                  <p className="mobile-player-related-title">Watch Next</p>
                   <MobileVideoList videos={relatedVideos} />
                 </>
               )}
 
               {!relatedLoading && relatedVideos.length === 0 && (
                 <p className="mobile-player-related-empty">No related videos found.</p>
+              )}
+
+              {isLoadingMoreRelated && (
+                <div className="mobile-loading" style={{ padding: "16px 0" }}>
+                  <div className="mobile-loading-spinner" />
+                </div>
+              )}
+
+              {!hasMoreRelated && relatedVideos.length > 10 && (
+                <p className="mobile-player-related-end">— End of Watch Next —</p>
               )}
             </div>
           </div>
