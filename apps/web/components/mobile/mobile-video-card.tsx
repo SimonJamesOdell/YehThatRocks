@@ -1,7 +1,7 @@
 "use client";
 
-import { useMobilePlayer, type MobileVideo } from "./mobile-player-context";
-import { MobileFavouriteButton } from "./mobile-favourite-button";
+import { useMobilePlayer, type MobileVideo } from "@/components/mobile/mobile-player-context";
+import { MobileFavouriteButton } from "@/components/mobile/mobile-favourite-button";
 
 type MobileVideoCardProps = {
   video: MobileVideo;

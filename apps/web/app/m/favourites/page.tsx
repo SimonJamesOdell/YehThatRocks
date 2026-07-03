@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { MobileVideoList } from "../_components/mobile-video-card";
-import { useMobilePlayer } from "../_components/mobile-player-context";
-import type { MobileVideo } from "../_components/mobile-player-context";
+import { MobileVideoList } from "@/components/mobile/mobile-video-card";
+import { useMobilePlayer } from "@/components/mobile/mobile-player-context";
+import type { MobileVideo } from "@/components/mobile/mobile-player-context";
 
 export default function MobileFavouritesPage() {
   const { auth } = useMobilePlayer();

@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { useMobilePlayer } from "./mobile-player-context";
-import { MobileYouTubePlayer } from "./mobile-youtube-player";
-import { MobileFavouriteButton } from "./mobile-favourite-button";
-import { MobileVideoList } from "./mobile-video-card";
-import type { MobileVideo } from "./mobile-player-context";
+import { useMobilePlayer } from "@/components/mobile/mobile-player-context";
+import { MobileYouTubePlayer } from "@/components/mobile/mobile-youtube-player";
+import { MobileFavouriteButton } from "@/components/mobile/mobile-favourite-button";
+import { MobileVideoList } from "@/components/mobile/mobile-video-card";
+import type { MobileVideo } from "@/components/mobile/mobile-player-context";
 
 const NAV_ITEMS = [
   { href: "/m", label: "Home" },

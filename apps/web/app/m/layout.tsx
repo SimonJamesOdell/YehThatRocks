@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { MobilePlayerProvider } from "./_components/mobile-player-context";
-import { MobileShell } from "./_components/mobile-shell";
+import { MobilePlayerProvider } from "@/components/mobile/mobile-player-context";
+import { MobileShell } from "@/components/mobile/mobile-shell";
 
 export const dynamic = "force-dynamic";
 

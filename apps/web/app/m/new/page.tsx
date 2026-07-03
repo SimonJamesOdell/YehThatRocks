@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { MobileVideoList } from "../_components/mobile-video-card";
-import type { MobileVideo } from "../_components/mobile-player-context";
+import { MobileVideoList } from "@/components/mobile/mobile-video-card";
+import type { MobileVideo } from "@/components/mobile/mobile-player-context";
 
 export default function MobileNewVideosPage() {
   const [videos, setVideos] = useState<MobileVideo[]>([]);

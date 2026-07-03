@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { YouTubePlayerHandle } from "./mobile-player-context";
+import type { YouTubePlayerHandle } from "@/components/mobile/mobile-player-context";
 
 type MobileYouTubePlayerProps = {
   videoId: string;
