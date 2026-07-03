@@ -39,9 +39,8 @@ test.describe("mobile shell smoke", () => {
     await expect(page.locator(".mobile-nav-link").filter({ hasText: "Favourites" })).toBeAttached();
     await expect(page.locator(".mobile-nav-link").filter({ hasText: "Search" })).toBeAttached();
 
-    // Footer links also present
+    // Footer links: Login / Register appears when unauthenticated; Account replaces it when logged in.
     await expect(page.locator(".mobile-nav-link").filter({ hasText: "Login / Register" })).toBeAttached();
-    await expect(page.locator(".mobile-nav-link").filter({ hasText: "Account" })).toBeAttached();
   });
 
   test("new route renders mobile shell", async ({ page }) => {
