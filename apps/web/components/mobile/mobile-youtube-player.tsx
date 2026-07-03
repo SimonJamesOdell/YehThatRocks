@@ -12,8 +12,15 @@ type MobileYouTubePlayerProps = {
   style?: React.CSSProperties;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type YTPlayer = any;
+type YTPlayer = {
+  playVideo(): void;
+  pauseVideo(): void;
+  stopVideo(): void;
+  destroy(): void;
+  addEventListener(event: string, listener: () => void): void;
+  removeEventListener(event: string, listener: () => void): void;
+  getPlayerState(): number;
+};
 
 // Runtime YouTube IFrame API globals loaded by YouTubeIframeApiLoader
 declare const YT: {
@@ -51,8 +58,7 @@ export function MobileYouTubePlayer({
       if (cancelled || !containerRef.current) return;
       if (typeof YT === "undefined" || !YT?.Player) return;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      player = new (YT.Player as any)(containerRef.current, {
+      player = new YT.Player(containerRef.current, {
         videoId: videoIdRef.current,
         playerVars: {
           autoplay: 1,
