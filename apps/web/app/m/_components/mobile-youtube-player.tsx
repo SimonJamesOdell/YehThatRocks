@@ -95,14 +95,14 @@ export function MobileYouTubePlayer({
       return () => {
         clearInterval(check);
         cancelled = true;
-        player?.destroy?.();
+        try { player?.destroy?.(); } catch { /* already unmounted */ }
         playerApiRef.current = null;
       };
     }
 
     return () => {
       cancelled = true;
-      player?.destroy?.();
+      try { player?.destroy?.(); } catch { /* already unmounted */ }
       playerApiRef.current = null;
     };
   }, [videoId, onReady, onEnd, onError, playerApiRef]);
