@@ -92,6 +92,7 @@ export async function proxy(request: NextRequest) {
     isBrowserPageRequest
     && !pathname.startsWith("/api")
     && pathname !== "/desktop-only"
+    && !pathname.startsWith("/m")
     && !isShareRoute
     && !isEmbedRoute
     && !isSitemapOrRobotsRequest
@@ -100,7 +101,7 @@ export async function proxy(request: NextRequest) {
 
   if (shouldRedirectToDesktopOnly) {
     const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/desktop-only";
+    redirectUrl.pathname = "/m";
     redirectUrl.search = "";
     return withSecurityHeaders(NextResponse.redirect(redirectUrl), pathname);
   }
@@ -112,6 +113,7 @@ export async function proxy(request: NextRequest) {
     isBrowserPageRequest
     && !pathname.startsWith("/api")
     && pathname !== "/desktop-only"
+    && !pathname.startsWith("/m")
     && !isEmbedRoute
     && !isSitemapOrRobotsRequest
     && !isMetadataCrawler;
@@ -201,7 +203,3 @@ export async function proxy(request: NextRequest) {
     pathname,
   );
 }
-
-export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
-};

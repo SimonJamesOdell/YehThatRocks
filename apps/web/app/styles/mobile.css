@@ -1,0 +1,854 @@
+/* ==========================================================================
+   Mobile Experience Styles
+   YehThatRocks — optimized for phones and tablets
+   ========================================================================== */
+
+/* ── CSS Custom Properties ─────────────────────────────────────────── */
+:root {
+  --mobile-bg: #0a0a0a;
+  --mobile-surface: #141414;
+  --mobile-surface-hover: #1e1e1e;
+  --mobile-border: #2a2a2a;
+  --mobile-text: #e8e8e8;
+  --mobile-text-muted: #999;
+  --mobile-accent: #ff7722;
+  --mobile-accent-glow: rgba(255, 119, 34, 0.3);
+  --mobile-topbar-height: 52px;
+  --mobile-player-bar-height: 60px;
+  --mobile-nav-width: 280px;
+  --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ── Shell ─────────────────────────────────────────────────────────── */
+.mobile-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--mobile-bg);
+  color: var(--mobile-text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* ── Top Bar ───────────────────────────────────────────────────────── */
+.mobile-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  height: var(--mobile-topbar-height);
+  padding: 0 12px;
+  background: rgba(10, 10, 10, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--mobile-border);
+}
+
+.mobile-hamburger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: none;
+  color: var(--mobile-text);
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+
+.mobile-hamburger:active {
+  background: var(--mobile-surface-hover);
+}
+
+.mobile-logo-link {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.mobile-logo-text {
+  font-family: var(--font-display), "Metal Mania", serif;
+  font-size: 1.15rem;
+  color: var(--mobile-accent);
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 12px var(--mobile-accent-glow);
+}
+
+.mobile-account-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: none;
+  color: var(--mobile-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 8px;
+  text-decoration: none;
+}
+
+.mobile-account-link:active {
+  background: var(--mobile-surface-hover);
+}
+
+/* ── Nav Drawer ────────────────────────────────────────────────────── */
+.mobile-nav-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.mobile-nav-focus-guard {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  pointer-events: none;
+}
+
+.mobile-nav-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 200;
+  width: var(--mobile-nav-width);
+  background: var(--mobile-surface);
+  border-right: 1px solid var(--mobile-border);
+  transform: translateX(-100%);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding-bottom: var(--mobile-safe-bottom);
+}
+
+.mobile-nav-drawer-open {
+  transform: translateX(0);
+}
+
+.mobile-nav-brand {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--mobile-border);
+}
+
+.mobile-nav-brand-text {
+  font-family: var(--font-display), "Metal Mania", serif;
+  font-size: 1.25rem;
+  color: var(--mobile-accent);
+  letter-spacing: 0.06em;
+}
+
+.mobile-nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 12px 0;
+  flex: 1;
+}
+
+.mobile-nav-link {
+  display: block;
+  padding: 14px 20px;
+  font-size: 1.05rem;
+  color: var(--mobile-text);
+  text-decoration: none;
+  transition: background 0.15s ease;
+  border-left: 3px solid transparent;
+}
+
+.mobile-nav-link:active,
+.mobile-nav-link:hover {
+  background: var(--mobile-surface-hover);
+}
+
+.mobile-nav-link-active {
+  color: var(--mobile-accent);
+  border-left-color: var(--mobile-accent);
+  background: rgba(255, 119, 34, 0.08);
+}
+
+.mobile-nav-footer {
+  padding: 12px 0;
+  border-top: 1px solid var(--mobile-border);
+}
+
+/* ── Main Content ──────────────────────────────────────────────────── */
+.mobile-content {
+  padding: 12px;
+  padding-bottom: calc(var(--mobile-player-bar-height) + 20px + var(--mobile-safe-bottom));
+  min-height: calc(100vh - var(--mobile-topbar-height));
+  min-height: calc(100dvh - var(--mobile-topbar-height));
+}
+
+/* When player bar is hidden, reduce bottom padding */
+.mobile-shell:not(:has(.mobile-player-bar)) .mobile-content {
+  padding-bottom: calc(20px + var(--mobile-safe-bottom));
+}
+
+/* ── Page Header ───────────────────────────────────────────────────── */
+.mobile-page-header {
+  margin-bottom: 16px;
+}
+
+.mobile-page-title {
+  font-family: var(--font-display), "Metal Mania", serif;
+  font-size: 1.5rem;
+  color: var(--mobile-accent);
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+
+.mobile-page-subtitle {
+  font-size: 0.9rem;
+  color: var(--mobile-text-muted);
+  margin: 4px 0 0;
+}
+
+/* ── Video Card ────────────────────────────────────────────────────── */
+.mobile-video-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-video-card {
+  display: flex;
+  gap: 12px;
+  padding: 0;
+  border: none;
+  background: var(--mobile-surface);
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.15s ease;
+}
+
+.mobile-video-card:active {
+  background: var(--mobile-surface-hover);
+}
+
+.mobile-video-card-thumb {
+  position: relative;
+  flex-shrink: 0;
+  width: 120px;
+  height: 68px;
+  background: #1a1a1a;
+  overflow: hidden;
+}
+
+.mobile-video-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mobile-video-card-play-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.mobile-video-card:active .mobile-video-card-play-icon {
+  opacity: 1;
+}
+
+.mobile-video-card-info {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 8px 8px 0;
+}
+
+.mobile-video-card-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0;
+  color: var(--mobile-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mobile-video-card-artist {
+  font-size: 0.8rem;
+  color: var(--mobile-text-muted);
+  margin: 3px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-video-card-genre {
+  font-size: 0.72rem;
+  color: var(--mobile-accent);
+  margin: 3px 0 0;
+  opacity: 0.8;
+}
+
+/* ── Empty State ───────────────────────────────────────────────────── */
+.mobile-empty-state {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--mobile-text-muted);
+}
+
+.mobile-empty-state p {
+  font-size: 1rem;
+  margin: 0;
+}
+
+/* ── Bottom Player Bar ─────────────────────────────────────────────── */
+.mobile-player-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  height: var(--mobile-player-bar-height);
+  padding: 0 6px 0 6px;
+  padding-bottom: var(--mobile-safe-bottom);
+  background: rgba(20, 20, 20, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--mobile-border);
+}
+
+.mobile-player-bar-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  color: var(--mobile-text);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.mobile-player-bar-button:active {
+  background: var(--mobile-surface-hover);
+}
+
+.mobile-player-bar-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.mobile-player-bar-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-player-bar-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-player-bar-artist {
+  font-size: 0.72rem;
+  color: var(--mobile-text-muted);
+  margin: 1px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-player-bar-controls {
+  color: var(--mobile-accent);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.mobile-player-bar-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: none;
+  color: var(--mobile-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+
+.mobile-player-bar-close:active {
+  background: var(--mobile-surface-hover);
+}
+
+/* ── Fullscreen Player ─────────────────────────────────────────────── */
+.mobile-player-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-player-fullscreen-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px;
+  padding-top: max(8px, env(safe-area-inset-top, 0px));
+  background: rgba(0, 0, 0, 0.9);
+  flex-shrink: 0;
+}
+
+.mobile-player-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: none;
+  color: var(--mobile-text);
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+
+.mobile-player-back:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.mobile-player-fullscreen-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-player-fullscreen-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-player-fullscreen-artist {
+  font-size: 0.78rem;
+  color: #aaa;
+  margin: 2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-player-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  flex-shrink: 0;
+}
+
+.mobile-player-wrapper > div {
+  width: 100%;
+  height: 100%;
+}
+
+.mobile-player-details {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  padding-bottom: var(--mobile-safe-bottom);
+  background: var(--mobile-bg);
+}
+
+.mobile-player-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mobile-player-genre-tag {
+  display: inline-block;
+  padding: 4px 10px;
+  background: rgba(255, 119, 34, 0.15);
+  color: var(--mobile-accent);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.mobile-player-favs {
+  font-size: 0.82rem;
+  color: var(--mobile-text-muted);
+}
+
+/* ── Categories Grid ───────────────────────────────────────────────── */
+.mobile-categories-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.mobile-category-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 12px;
+  background: var(--mobile-surface);
+  border: 1px solid var(--mobile-border);
+  border-radius: 10px;
+  color: var(--mobile-text);
+  text-decoration: none;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  min-height: 64px;
+}
+
+.mobile-category-card:active {
+  background: var(--mobile-surface-hover);
+  border-color: var(--mobile-accent);
+}
+
+/* ── Artists List ──────────────────────────────────────────────────── */
+.mobile-artists-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mobile-artist-link {
+  display: flex;
+  align-items: center;
+  padding: 14px 12px;
+  background: var(--mobile-surface);
+  border-radius: 8px;
+  color: var(--mobile-text);
+  text-decoration: none;
+  font-size: 0.92rem;
+  transition: background 0.15s ease;
+}
+
+.mobile-artist-link:active {
+  background: var(--mobile-surface-hover);
+}
+
+.mobile-artist-meta {
+  font-size: 0.75rem;
+  color: var(--mobile-text-muted);
+  margin-left: auto;
+}
+
+/* ── Alphabet Bar ──────────────────────────────────────────────────── */
+.mobile-alphabet-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0;
+  overflow-x: auto;
+  padding: 8px 0 12px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.mobile-alphabet-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-alphabet-letter {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  border: none;
+  background: none;
+  color: var(--mobile-text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.mobile-alphabet-letter:active,
+.mobile-alphabet-letter-active {
+  color: var(--mobile-accent);
+  background: rgba(255, 119, 34, 0.12);
+}
+
+/* ── Search ────────────────────────────────────────────────────────── */
+.mobile-search-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.mobile-search-input {
+  flex: 1;
+  padding: 12px 14px;
+  background: var(--mobile-surface);
+  border: 1px solid var(--mobile-border);
+  border-radius: 10px;
+  color: var(--mobile-text);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.mobile-search-input:focus {
+  border-color: var(--mobile-accent);
+}
+
+.mobile-search-input::placeholder {
+  color: var(--mobile-text-muted);
+}
+
+.mobile-search-button {
+  padding: 12px 18px;
+  background: var(--mobile-accent);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mobile-search-button:active {
+  opacity: 0.8;
+}
+
+/* ── Auth Forms ────────────────────────────────────────────────────── */
+.mobile-auth-form {
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.mobile-auth-title {
+  font-family: var(--font-display), "Metal Mania", serif;
+  font-size: 1.6rem;
+  color: var(--mobile-accent);
+  text-align: center;
+  margin: 0 0 20px;
+}
+
+.mobile-auth-field {
+  margin-bottom: 14px;
+}
+
+.mobile-auth-label {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--mobile-text-muted);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.mobile-auth-input {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--mobile-surface);
+  border: 1px solid var(--mobile-border);
+  border-radius: 10px;
+  color: var(--mobile-text);
+  font-size: 1rem;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.mobile-auth-input:focus {
+  border-color: var(--mobile-accent);
+}
+
+.mobile-auth-submit {
+  width: 100%;
+  padding: 14px;
+  background: var(--mobile-accent);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 6px;
+}
+
+.mobile-auth-submit:active {
+  opacity: 0.8;
+}
+
+.mobile-auth-error {
+  padding: 10px 14px;
+  background: rgba(255, 50, 50, 0.12);
+  color: #ff4444;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  margin-bottom: 14px;
+}
+
+.mobile-auth-link {
+  text-align: center;
+  margin-top: 16px;
+  font-size: 0.88rem;
+  color: var(--mobile-text-muted);
+}
+
+.mobile-auth-link a {
+  color: var(--mobile-accent);
+  text-decoration: none;
+}
+
+/* ── Account ───────────────────────────────────────────────────────── */
+.mobile-account-section {
+  background: var(--mobile-surface);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.mobile-account-section-title {
+  font-size: 0.85rem;
+  color: var(--mobile-text-muted);
+  margin: 0 0 6px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mobile-account-value {
+  font-size: 1rem;
+  color: var(--mobile-text);
+  margin: 0;
+}
+
+.mobile-account-button {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  background: var(--mobile-surface);
+  border: 1px solid var(--mobile-border);
+  border-radius: 10px;
+  color: #ff4444;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  margin-top: 12px;
+}
+
+.mobile-account-button:active {
+  background: var(--mobile-surface-hover);
+}
+
+/* ── Loading ───────────────────────────────────────────────────────── */
+.mobile-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  color: var(--mobile-text-muted);
+}
+
+.mobile-loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--mobile-border);
+  border-top-color: var(--mobile-accent);
+  border-radius: 50%;
+  animation: mobile-spin 0.7s linear infinite;
+}
+
+@keyframes mobile-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Load More ─────────────────────────────────────────────────────── */
+.mobile-load-more {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  margin-top: 14px;
+  background: var(--mobile-surface);
+  border: 1px solid var(--mobile-border);
+  border-radius: 10px;
+  color: var(--mobile-accent);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+}
+
+.mobile-load-more:active {
+  background: var(--mobile-surface-hover);
+}
+
+/* ── Tab Bar ───────────────────────────────────────────────────────── */
+.mobile-tab-bar {
+  display: flex;
+  gap: 0;
+  margin-bottom: 14px;
+  background: var(--mobile-surface);
+  border-radius: 10px;
+  padding: 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-tab {
+  flex: 1;
+  min-width: fit-content;
+  padding: 10px 14px;
+  border: none;
+  background: none;
+  color: var(--mobile-text-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 8px;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.mobile-tab-active {
+  background: rgba(255, 119, 34, 0.15);
+  color: var(--mobile-accent);
+}
+
+/* ── Utility: hidden when player fullscreen ────────────────────────── */
+.mobile-shell:has(.mobile-player-fullscreen) .mobile-topbar,
+.mobile-shell:has(.mobile-player-fullscreen) .mobile-content,
+.mobile-shell:has(.mobile-player-fullscreen) .mobile-player-bar {
+  display: none;
+}
