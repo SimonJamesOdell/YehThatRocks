@@ -1,7 +1,4 @@
-"use client";
-
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { getGenreSlug } from "@/lib/catalog-data-utils";
 
 type GenreCard = {
@@ -10,30 +7,19 @@ type GenreCard = {
   artistCount: number;
 };
 
-export default function MobileCategoriesPage() {
-  const [categories, setCategories] = useState<GenreCard[]>([]);
-  const [loading, setLoading] = useState(true);
+async function getCategories(): Promise<GenreCard[]> {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "http://localhost:3000";
+    const res = await fetch(`${baseUrl}/api/categories`, { cache: "no-store" });
+    const data = await res.json();
+    return data.categories || [];
+  } catch {
+    return [];
+  }
+}
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const res = await fetch("/api/categories");
-        const data = await res.json();
-        if (!cancelled) {
-          setCategories(data.categories || []);
-        }
-      } catch {
-        // Silently fail
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    return () => { cancelled = true; };
-  }, []);
+export default async function MobileCategoriesPage() {
+  const categories = await getCategories();
 
   return (
     <div>
@@ -42,19 +28,11 @@ export default function MobileCategoriesPage() {
         <p className="mobile-page-subtitle">Browse by genre</p>
       </div>
 
-      {loading && (
-        <div className="mobile-loading">
-          <div className="mobile-loading-spinner" />
-        </div>
-      )}
-
-      {!loading && categories.length === 0 && (
+      {categories.length === 0 ? (
         <div className="mobile-empty-state">
           <p>No categories available.</p>
         </div>
-      )}
-
-      {!loading && categories.length > 0 && (
+      ) : (
         <div className="mobile-categories-grid">
           {categories.map((cat) => {
             const slug = getGenreSlug(cat.genre);

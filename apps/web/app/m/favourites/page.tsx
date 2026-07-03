@@ -1,47 +1,31 @@
-"use client";
-
-import { useEffect, useState, useCallback } from "react";
+import { cookies } from "next/headers";
 import Link from "next/link";
 import { MobileVideoList } from "@/components/mobile/mobile-video-card";
-import { useMobilePlayer } from "@/components/mobile/mobile-player-context";
 import type { MobileVideo } from "@/components/mobile/mobile-player-context";
 
-export default function MobileFavouritesPage() {
-  const { auth } = useMobilePlayer();
-  const [videos, setVideos] = useState<MobileVideo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [needsAuth, setNeedsAuth] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+async function getFavourites(): Promise<{ videos: MobileVideo[]; needsAuth: boolean; error: string | null }> {
+  try {
+    const cookieStore = await cookies();
+    const allCookies = cookieStore.getAll().map((c) => `${c.name}=${c.value}`).join("; ");
 
-  const loadFavourites = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setNeedsAuth(false);
-    try {
-      const res = await fetch("/api/favourites");
-      if (res.status === 401) {
-        setNeedsAuth(true);
-        return;
-      }
-      if (!res.ok) throw new Error("Failed to load favourites");
-      const data = await res.json();
-      setVideos(data.favourites || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "http://localhost:3000";
+    const res = await fetch(`${baseUrl}/api/favourites`, {
+      headers: { cookie: allCookies },
+      cache: "no-store",
+    });
 
-  useEffect(() => {
-    let cancelled = false;
-    async function init() {
-      await loadFavourites();
-      if (cancelled) return;
-    }
-    init();
-    return () => { cancelled = true; };
-  }, [loadFavourites]);
+    if (res.status === 401) return { videos: [], needsAuth: true, error: null };
+    if (!res.ok) return { videos: [], needsAuth: false, error: "Failed to load favourites" };
+
+    const data = await res.json();
+    return { videos: data.favourites || [], needsAuth: false, error: null };
+  } catch {
+    return { videos: [], needsAuth: false, error: "Failed to load" };
+  }
+}
+
+export default async function MobileFavouritesPage() {
+  const { videos, needsAuth, error } = await getFavourites();
 
   return (
     <div>
@@ -50,31 +34,18 @@ export default function MobileFavouritesPage() {
         <p className="mobile-page-subtitle">Your saved tracks</p>
       </div>
 
-      {loading && (
-        <div className="mobile-loading">
-          <div className="mobile-loading-spinner" />
-        </div>
-      )}
-
-      {needsAuth && (
+      {needsAuth ? (
         <div className="mobile-empty-state">
           <p>You need to log in to see your favourites.</p>
           <Link href="/m/login" className="mobile-retry-button" style={{ textDecoration: "none", color: "#fff", display: "inline-block" }}>
             Log in
           </Link>
         </div>
-      )}
-
-      {error && (
+      ) : error ? (
         <div className="mobile-empty-state">
           <p>{error}</p>
-          <button type="button" className="mobile-retry-button" onClick={loadFavourites}>
-            Try Again
-          </button>
         </div>
-      )}
-
-      {!loading && !needsAuth && !error && (
+      ) : (
         <MobileVideoList videos={videos} />
       )}
     </div>
