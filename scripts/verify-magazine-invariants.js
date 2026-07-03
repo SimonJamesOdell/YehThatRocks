@@ -26,6 +26,7 @@ const files = {
   proxyMiddleware: path.join(ROOT, "apps/web/proxy.ts"),
   chatRoute: path.join(ROOT, "apps/web/app/api/chat/route.ts"),
   chatStreamRoute: path.join(ROOT, "apps/web/app/api/chat/stream/route.ts"),
+  mobileMagazineSlug: path.join(ROOT, "apps/web/app/m/magazine/[slug]/page.tsx"),
 };
 
 files.appRoot = path.join(ROOT, "apps/web/app");
@@ -221,6 +222,41 @@ function main() {
       "Magazine slug not-found uses magazineNotFoundPanel styling class",
       failures,
     );
+  }
+
+  // --- Mobile magazine proxy redirect ---
+  // When a mobile user lands on a shared magazine link, the proxy must
+  // redirect to the mobile magazine page, not just /m.
+  assertContains(
+    proxySource,
+    'pathname.startsWith("/magazine")',
+    "resolveMobilePathname maps /magazine routes to /m/magazine for mobile users",
+    failures,
+  );
+  assertContains(
+    proxySource,
+    'return "/m" + pathname',
+    "resolveMobilePathname preserves the magazine sub-path through mobile redirect",
+    failures,
+  );
+
+  // --- Mobile magazine article page exists ---
+  if (fs.existsSync(files.mobileMagazineSlug)) {
+    const mobileMagazineSource = readFileStrict(files.mobileMagazineSlug, ROOT);
+    assertContains(
+      mobileMagazineSource,
+      "mobile-magazine-article",
+      "Mobile magazine article page renders with mobile-magazine-article class",
+      failures,
+    );
+    assertContains(
+      mobileMagazineSource,
+      "getArticleBySlug",
+      "Mobile magazine article page fetches article data from magazine-data",
+      failures,
+    );
+  } else {
+    failures.push("Mobile magazine article page is missing — shared magazine links will break on mobile");
   }
 
   // --- Guest chat reads: proxy allows unauthenticated access to chat endpoints ---

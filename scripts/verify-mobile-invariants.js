@@ -35,6 +35,10 @@ const files = {
   mobileFavourites: path.join(ROOT, "apps/web/app/m/favourites/page.tsx"),
   mobileLogin: path.join(ROOT, "apps/web/app/m/login/page.tsx"),
   mobileAccount: path.join(ROOT, "apps/web/app/m/account/page.tsx"),
+  mobileMagazineSlug: path.join(ROOT, "apps/web/app/m/magazine/[slug]/page.tsx"),
+  mobileRegister: path.join(ROOT, "apps/web/app/m/register/page.tsx"),
+  mobileResetPassword: path.join(ROOT, "apps/web/app/m/reset-password/page.tsx"),
+  mobileVerifyEmail: path.join(ROOT, "apps/web/app/m/verify-email/page.tsx"),
   mobilePlayerContext: path.join(ROOT, "apps/web/app/m/_components/mobile-player-context.tsx"),
   mobileYouTubePlayer: path.join(ROOT, "apps/web/app/m/_components/mobile-youtube-player.tsx"),
   mobileVideoCard: path.join(ROOT, "apps/web/app/m/_components/mobile-video-card.tsx"),
@@ -57,6 +61,10 @@ const mobilePageFiles = [
   files.mobileFavourites,
   files.mobileLogin,
   files.mobileAccount,
+  files.mobileMagazineSlug,
+  files.mobileRegister,
+  files.mobileResetPassword,
+  files.mobileVerifyEmail,
 ];
 
 const mobileComponentFiles = [
@@ -101,8 +109,10 @@ function main() {
   // ── 2. Proxy redirect rules ────────────────────────────────────────
   const proxySource = readFileStrict(files.proxy, ROOT);
 
-  // Mobile redirect must go to /m, not /desktop-only
-  assertContains(proxySource, 'redirectUrl.pathname = "/m"', "proxy redirects mobile users to /m", failures);
+  // Mobile redirect uses resolveMobilePathname to map desktop routes to
+  // /m equivalents when they exist, falling back to /m otherwise.
+  assertContains(proxySource, "resolveMobilePathname", "proxy defines resolveMobilePathname mapper", failures);
+  assertContains(proxySource, 'redirectUrl.pathname = resolveMobilePathname(pathname)', "mobile redirect uses resolveMobilePathname", failures);
   assertNotContains(proxySource, 'redirectUrl.pathname = "/desktop-only"', "proxy no longer redirects to /desktop-only", failures);
 
   // /m prefix must be excluded from the redirect check
@@ -112,11 +122,29 @@ function main() {
   assertContains(proxySource, 'pathname !== "/desktop-only"', "proxy excludes /desktop-only from redirect", failures);
 
   // isBrowserPageNav must also exclude /m (silent auth refresh)
-  // Count occurrences of !pathname.startsWith — should appear at least twice (redirect guard + nav guard)
   const startsWithMCount = (proxySource.match(/pathname\.startsWith\("\/m"\)/g) || []).length;
   if (startsWithMCount < 2) {
     failures.push("proxy must exclude /m from both redirect AND isBrowserPageNav checks");
   }
+
+  // resolveMobilePathname maps routes with /m equivalents to their mobile
+  // page, preserving the path so deep-linked content loads directly.
+  assertContains(proxySource, 'pathname.startsWith("/magazine")', "resolveMobilePathname maps magazine routes to /m/magazine", failures);
+  assertContains(proxySource, 'return "/m/register"', "resolveMobilePathname maps /register to /m/register", failures);
+  assertContains(proxySource, 'return "/m/reset-password"', "resolveMobilePathname maps /reset-password to /m/reset-password", failures);
+  assertContains(proxySource, 'return "/m/verify-email"', "resolveMobilePathname maps /verify-email to /m/verify-email", failures);
+  assertContains(proxySource, 'return "/m"', "resolveMobilePathname falls back to /m", failures);
+
+  // Routes without /m equivalents still fall through to desktop layout
+  // (forum, user profiles, history, playlists) so shared links resolve.
+  assertContains(proxySource, "isDesktopOnlyContentRoute", "proxy defines isDesktopOnlyContentRoute guard for routes without mobile equivalents", failures);
+  assertContains(proxySource, 'pathname.startsWith("/forum")', "forum routes excluded from mobile redirect (no mobile equivalent yet)", failures);
+  assertContains(proxySource, 'pathname.startsWith("/u/")', "user profile routes excluded from mobile redirect (no mobile equivalent yet)", failures);
+  assertContains(proxySource, '!isDesktopOnlyContentRoute', "isDesktopOnlyContentRoute used in shouldRedirectToMobile guard", failures);
+
+  // Query string must be preserved through the mobile redirect so shared
+  // video links (?v=abc123) survive.
+  assertNotContains(proxySource, 'redirectUrl.search = ""', "proxy preserves query string through mobile redirect", failures);
 
   // ── 3. Mobile layout structure ─────────────────────────────────────
   const layoutSource = readFileStrict(files.mobileLayout, ROOT);
@@ -154,11 +182,24 @@ function main() {
   assertContains(playerContextSource, 'openFullscreen', "player context provides openFullscreen", failures);
   assertContains(playerContextSource, 'closeFullscreen', "player context provides closeFullscreen", failures);
 
-  // ── 5. Page structure — every page is a client component ────────────
+  // ── 5. Page structure — most pages are client components ────────────
+  // Magazine article and auth pages are server components (they fetch data
+  // or accept searchParams on the server).
+  const serverComponentPages = new Set([
+    files.mobileMagazineSlug,
+    files.mobileRegister,
+    files.mobileResetPassword,
+    files.mobileVerifyEmail,
+  ]);
   for (const pageFile of mobilePageFiles) {
     const source = readFileStrict(pageFile, ROOT);
-    assertContains(source, '"use client"', `${path.relative(ROOT, pageFile)} is a client component`, failures);
-    assertContains(source, 'export default function', `${path.relative(ROOT, pageFile)} has a default export`, failures);
+    const relPath = path.relative(ROOT, pageFile);
+    if (serverComponentPages.has(pageFile)) {
+      assertContains(source, 'export default', `${relPath} has a default export`, failures);
+      continue;
+    }
+    assertContains(source, '"use client"', `${relPath} is a client component`, failures);
+    assertContains(source, 'export default function', `${relPath} has a default export`, failures);
   }
 
   // ── 6. Page import hygiene — sub-pages import from ../_components/ ──
@@ -289,6 +330,18 @@ function main() {
   // Account
   assertContains(cssSource, ".mobile-account-section", "mobile CSS defines .mobile-account-section", failures);
   assertContains(cssSource, ".mobile-account-button", "mobile CSS defines .mobile-account-button", failures);
+
+  // Magazine article
+  assertContains(cssSource, ".mobile-magazine-article", "mobile CSS defines .mobile-magazine-article", failures);
+  assertContains(cssSource, ".mobile-magazine-thumb", "mobile CSS defines .mobile-magazine-thumb", failures);
+  assertContains(cssSource, ".mobile-magazine-body", "mobile CSS defines .mobile-magazine-body", failures);
+  assertContains(cssSource, ".mobile-magazine-cta", "mobile CSS defines .mobile-magazine-cta", failures);
+  assertContains(cssSource, ".mobile-magazine-related", "mobile CSS defines .mobile-magazine-related", failures);
+  assertContains(cssSource, ".mobile-magazine-comments", "mobile CSS defines .mobile-magazine-comments", failures);
+
+  // Verify email
+  assertContains(cssSource, ".mobile-verify-actions", "mobile CSS defines .mobile-verify-actions", failures);
+  assertContains(cssSource, ".mobile-verify-link", "mobile CSS defines .mobile-verify-link", failures);
 
   // ── 11. Desktop-only page still exists (not removed) ─────────────────
   const desktopOnlySource = readFileStrict(files.desktopOnlyPage, ROOT);

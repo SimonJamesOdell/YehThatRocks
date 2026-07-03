@@ -29,6 +29,26 @@ function isAuthOptionalApi(pathname: string) {
   return AUTH_OPTIONAL_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
+export function resolveMobilePathname(pathname: string): string {
+  // Routes that have /m equivalents — preserve the path so the mobile
+  // page for that content loads directly.
+  if (pathname.startsWith("/magazine")) {
+    return "/m" + pathname;
+  }
+  if (pathname === "/register") {
+    return "/m/register";
+  }
+  if (pathname.startsWith("/reset-password")) {
+    return "/m/reset-password";
+  }
+  if (pathname.startsWith("/verify-email")) {
+    return "/m/verify-email";
+  }
+  // Default: all other routes (home, new, categories, etc.) land on /m
+  // with query string intact for shared video links (?v=abc123).
+  return "/m";
+}
+
 function isMobileOrTabletRequest(request: NextRequest) {
   const userAgent = request.headers.get("user-agent") ?? "";
   const secChUaMobile = request.headers.get("sec-ch-ua-mobile");
@@ -88,7 +108,16 @@ export async function proxy(request: NextRequest) {
   const isEmbedRoute = pathname.startsWith("/embed/");
   const isSitemapOrRobotsRequest = pathname.startsWith("/sitemap") || pathname === "/robots.txt";
   const isMetadataCrawler = isMetadataCrawlerRequest(request);
-  const shouldRedirectToDesktopOnly =
+  // Routes that have no mobile equivalent yet — they fall through to the
+  // desktop layout so shared links (forum, profiles) still resolve rather
+  // than losing the user at /m. Plan: add mobile forum/profile pages in a
+  // follow-up and move those routes into resolveMobilePathname.
+  const isDesktopOnlyContentRoute =
+    pathname.startsWith("/forum") ||
+    pathname.startsWith("/u/") ||
+    pathname.startsWith("/playlists") ||
+    pathname === "/history";
+  const shouldRedirectToMobile =
     isBrowserPageRequest
     && !pathname.startsWith("/api")
     && pathname !== "/desktop-only"
@@ -97,12 +126,12 @@ export async function proxy(request: NextRequest) {
     && !isEmbedRoute
     && !isSitemapOrRobotsRequest
     && !isMetadataCrawler
+    && !isDesktopOnlyContentRoute
     && isMobileOrTabletRequest(request);
 
-  if (shouldRedirectToDesktopOnly) {
+  if (shouldRedirectToMobile) {
     const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/m";
-    redirectUrl.search = "";
+    redirectUrl.pathname = resolveMobilePathname(pathname);
     return withSecurityHeaders(NextResponse.redirect(redirectUrl), pathname);
   }
 

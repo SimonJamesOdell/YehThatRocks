@@ -98,6 +98,26 @@ test.describe("mobile shell smoke", () => {
     await expect(page.locator(".mobile-page-title")).toContainText("Account");
   });
 
+  test("register route renders the registration form", async ({ page }) => {
+    await page.goto("/m/register");
+    await expectMobileShell(page);
+    await expect(page.locator(".mobile-page-title")).toContainText("Register");
+    await expect(page.locator(".mobile-page-subtitle")).toContainText("Create your account");
+  });
+
+  test("reset-password route renders with or without token", async ({ page }) => {
+    await page.goto("/m/reset-password");
+    await expectMobileShell(page);
+    await expect(page.locator(".mobile-page-title")).toContainText("Reset password");
+  });
+
+  test("verify-email route renders status page", async ({ page }) => {
+    await page.goto("/m/verify-email");
+    await expectMobileShell(page);
+    await expect(page.locator(".mobile-page-title")).toContainText("Check your email");
+    await expect(page.locator(".mobile-verify-link").first()).toBeVisible();
+  });
+
   test("all mobile routes are reachable by direct navigation", async ({ page }) => {
     const routes = [
       { path: "/m", title: "Home" },
@@ -109,6 +129,9 @@ test.describe("mobile shell smoke", () => {
       { path: "/m/favourites", title: "Favourites" },
       { path: "/m/login", title: "Login" },
       { path: "/m/account", title: "Account" },
+      { path: "/m/register", title: "Register" },
+      { path: "/m/reset-password", title: "Reset password" },
+      { path: "/m/verify-email", title: "Check your email" },
     ];
 
     for (const route of routes) {

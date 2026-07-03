@@ -1092,3 +1092,168 @@
 .mobile-account-link svg[fill="currentColor"] {
   opacity: 0.8;
 }
+
+/* ── Mobile Magazine Article ────────────────────────────────────────── */
+.mobile-magazine-article {
+  padding: 0;
+}
+
+.mobile-magazine-back {
+  display: inline-block;
+  font-size: 0.85rem;
+  color: var(--mobile-text-muted);
+  text-decoration: none;
+  margin-bottom: 6px;
+}
+
+.mobile-magazine-artist {
+  font-size: 0.85rem;
+  color: var(--mobile-text-muted);
+  margin: 4px 0 0;
+}
+
+.mobile-magazine-thumb {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  display: block;
+  border-radius: 8px;
+  margin: 12px 0;
+}
+
+.mobile-magazine-thumb-placeholder {
+  background: #1a1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  color: #999;
+  font-size: 1.1rem;
+  font-weight: bold;
+}
+
+.mobile-magazine-body {
+  margin: 16px 0;
+  line-height: 1.7;
+  font-size: 0.95rem;
+  color: var(--mobile-text);
+}
+
+.mobile-magazine-h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 20px 0 8px;
+  color: var(--mobile-text);
+}
+
+.mobile-magazine-p {
+  margin: 0 0 12px;
+}
+
+.mobile-magazine-quote {
+  border-left: 3px solid var(--mobile-accent);
+  padding-left: 14px;
+  margin: 16px 0;
+  color: var(--mobile-text-muted);
+  font-style: italic;
+}
+
+.mobile-magazine-quote cite {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.8rem;
+  font-style: normal;
+  color: var(--mobile-text-muted);
+}
+
+.mobile-magazine-actions {
+  margin: 20px 0;
+}
+
+.mobile-magazine-cta {
+  display: block;
+  text-align: center;
+  padding: 14px 20px;
+  background: var(--mobile-accent);
+  color: #fff;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+
+.mobile-magazine-cta:active {
+  opacity: 0.85;
+}
+
+.mobile-magazine-related {
+  margin: 24px 0;
+  border-top: 1px solid var(--mobile-border);
+  padding-top: 16px;
+}
+
+.mobile-magazine-related-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--mobile-text);
+  margin: 0 0 12px;
+}
+
+.mobile-magazine-related-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-magazine-related-item {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  background: var(--mobile-surface);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--mobile-text);
+}
+
+.mobile-magazine-related-item strong {
+  font-size: 0.9rem;
+}
+
+.mobile-magazine-related-item span {
+  font-size: 0.82rem;
+  color: var(--mobile-text-muted);
+}
+
+.mobile-magazine-related-item small {
+  font-size: 0.72rem;
+  color: var(--mobile-accent);
+  margin-top: 2px;
+}
+
+.mobile-magazine-comments {
+  margin-top: 24px;
+  border-top: 1px solid var(--mobile-border);
+  padding-top: 16px;
+}
+
+/* ── Mobile Verify Email ────────────────────────────────────────────── */
+.mobile-verify-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.mobile-verify-link {
+  display: inline-block;
+  padding: 10px 20px;
+  background: var(--mobile-surface);
+  color: var(--mobile-text);
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.mobile-verify-link:active {
+  background: var(--mobile-surface-hover);
+}
