@@ -178,13 +178,34 @@ function main() {
     failures,
   );
 
-  // --- Root not-found redirects to home ---
+  // --- Root not-found page renders a proper 404 ---
+  // Redirect was replaced with a static 404 page to prevent a client-side
+  // navigation race. The page must not contain raw <html> or <body> tags —
+  // the root layout already provides those.
   if (fs.existsSync(files.rootNotFound)) {
     const rootNotFoundSource = readFileStrict(files.rootNotFound, ROOT);
     assertContains(
       rootNotFoundSource,
-      'redirect("/")',
-      "Root not-found page immediately redirects to the homepage",
+      "404",
+      "Root not-found page displays a 404 indicator",
+      failures,
+    );
+    assertContains(
+      rootNotFoundSource,
+      'href="/"',
+      "Root not-found page offers a back-to-home link",
+      failures,
+    );
+    assertNotContains(
+      rootNotFoundSource,
+      "<html",
+      "Root not-found page must not contain raw <html> tag (root layout provides it)",
+      failures,
+    );
+    assertNotContains(
+      rootNotFoundSource,
+      "<body",
+      "Root not-found page must not contain raw <body> tag (root layout provides it)",
       failures,
     );
   }
