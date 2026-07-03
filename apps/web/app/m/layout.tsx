@@ -358,7 +358,9 @@ function MobileShell({ children }: { children: ReactNode }) {
                   ❤️ {player.video.favourited.toLocaleString()}
                 </span>
               )}
-              <MobileFavouriteButton videoId={player.video.id} />
+              {player.auth?.isLoggedIn && (
+                <MobileFavouriteButton videoId={player.video.id} />
+              )}
             </div>
 
             <div className="mobile-player-related">
