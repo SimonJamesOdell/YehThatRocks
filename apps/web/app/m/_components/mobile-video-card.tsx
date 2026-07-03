@@ -8,7 +8,7 @@ type MobileVideoCardProps = {
 };
 
 export function MobileVideoCard({ video }: MobileVideoCardProps) {
-  const { playVideo } = useMobilePlayer();
+  const { playVideo, auth } = useMobilePlayer();
 
   const thumbnailUrl = `https://i.ytimg.com/vi/${encodeURIComponent(video.id)}/mqdefault.jpg`;
   const artistName = video.parsedArtist || video.channelTitle;
@@ -55,9 +55,11 @@ export function MobileVideoCard({ video }: MobileVideoCardProps) {
           )}
         </div>
       </div>
-      <div className="mobile-video-card-actions">
-        <MobileFavouriteButton videoId={video.id} size="sm" />
-      </div>
+      {auth?.isLoggedIn && (
+        <div className="mobile-video-card-actions">
+          <MobileFavouriteButton videoId={video.id} size="sm" />
+        </div>
+      )}
     </div>
   );
 }
