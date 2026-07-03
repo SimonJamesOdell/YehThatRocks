@@ -56,17 +56,9 @@ function MobileShell({ children }: { children: ReactNode }) {
           className="mobile-hamburger"
           aria-label={isNavOpen ? "Close navigation" : "Open navigation"}
           aria-expanded={isNavOpen}
-          onClick={() => setIsNavOpen((prev) => !prev)}
+          onMouseDown={() => setIsNavOpen((prev) => !prev)}
         >
-          {isNavOpen ? (
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="M3 6h18M3 12h18M3 18h18" />
-            </svg>
-          )}
+          {isNavOpen ? "\u2715" : "\u2630"}
         </button>
 
         <Link href="/m" className="mobile-logo-link">

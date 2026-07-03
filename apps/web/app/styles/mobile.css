@@ -852,3 +852,12 @@
 .mobile-shell:has(.mobile-player-fullscreen) .mobile-player-bar {
   display: none;
 }
+
+/* ── SVG pointer-events: ensure clicks land on buttons ────────────── */
+.mobile-hamburger svg,
+.mobile-account-link svg,
+.mobile-player-back svg,
+.mobile-player-bar-close svg,
+.mobile-player-bar-controls svg {
+  pointer-events: none;
+}

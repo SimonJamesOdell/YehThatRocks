@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 type UserInfo = {
@@ -10,10 +9,8 @@ type UserInfo = {
 };
 
 export default function MobileAccountPage() {
-  const router = useRouter();
   const [user, setUser] = useState<UserInfo | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [needsAuth, setNeedsAuth] = useState(false);
+  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -22,18 +19,17 @@ export default function MobileAccountPage() {
       try {
         const res = await fetch("/api/auth/me");
         if (res.status === 401) {
-          if (!cancelled) setNeedsAuth(true);
+          if (!cancelled) setChecked(true);
           return;
         }
         if (!res.ok) throw new Error("Failed to load");
         const data = await res.json();
         if (!cancelled && data.user) {
           setUser(data.user);
+          setChecked(true);
         }
       } catch {
-        // Silently fail
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setChecked(true);
       }
     }
 
@@ -41,37 +37,40 @@ export default function MobileAccountPage() {
     return () => { cancelled = true; };
   }, []);
 
-  async function handleLogout() {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      setUser(null);
-      setNeedsAuth(true);
-      router.push("/m");
-    } catch {
-      // Silently fail
-    }
+  function handleLogout() {
+    fetch("/api/auth/logout", { method: "POST" })
+      .finally(() => {
+        window.location.href = "/m";
+      });
   }
 
-  if (loading) {
-    return (
-      <div className="mobile-loading">
-        <div className="mobile-loading-spinner" />
-      </div>
-    );
-  }
-
-  if (needsAuth || !user) {
+  // Optimistic default: show logged-out state immediately.
+  // Only show the logged-in view once the auth check confirms it.
+  if (checked && user) {
     return (
       <div>
         <div className="mobile-page-header">
           <h1 className="mobile-page-title">Account</h1>
         </div>
-        <div className="mobile-empty-state">
-          <p>You are not logged in.</p>
-          <a href="/m/login" style={{ color: "var(--mobile-accent)", textDecoration: "none", marginTop: "12px", display: "inline-block" }}>
-            Log in →
-          </a>
+
+        <div className="mobile-account-section">
+          <p className="mobile-account-section-title">Screen Name</p>
+          <p className="mobile-account-value">{user.screenName || "—"}</p>
         </div>
+
+        <div className="mobile-account-section">
+          <p className="mobile-account-section-title">Email</p>
+          <p className="mobile-account-value">{user.email || "—"}</p>
+        </div>
+
+        <div className="mobile-account-section">
+          <p className="mobile-account-section-title">User ID</p>
+          <p className="mobile-account-value">#{user.id}</p>
+        </div>
+
+        <button type="button" className="mobile-account-button" onClick={handleLogout}>
+          Log Out
+        </button>
       </div>
     );
   }
@@ -81,25 +80,12 @@ export default function MobileAccountPage() {
       <div className="mobile-page-header">
         <h1 className="mobile-page-title">Account</h1>
       </div>
-
-      <div className="mobile-account-section">
-        <p className="mobile-account-section-title">Screen Name</p>
-        <p className="mobile-account-value">{user.screenName || "—"}</p>
+      <div className="mobile-empty-state">
+        <p>You are not logged in.</p>
+        <a href="/m/login" style={{ color: "var(--mobile-accent)", textDecoration: "none", marginTop: "12px", display: "inline-block" }}>
+          Log in →
+        </a>
       </div>
-
-      <div className="mobile-account-section">
-        <p className="mobile-account-section-title">Email</p>
-        <p className="mobile-account-value">{user.email || "—"}</p>
-      </div>
-
-      <div className="mobile-account-section">
-        <p className="mobile-account-section-title">User ID</p>
-        <p className="mobile-account-value">#{user.id}</p>
-      </div>
-
-      <button type="button" className="mobile-account-button" onClick={handleLogout}>
-        Log Out
-      </button>
     </div>
   );
 }
