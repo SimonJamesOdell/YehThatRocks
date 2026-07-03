@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { MobileVideoList } from "../_components/mobile-video-card";
 import type { MobileVideo } from "../_components/mobile-player-context";
 
@@ -9,29 +9,30 @@ export default function MobileTop100Page() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const loadVideos = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/videos/top?count=100");
+      if (!res.ok) throw new Error("Failed to load");
+      const data = await res.json();
+      setVideos(data.videos || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-
-    async function load() {
-      try {
-        const res = await fetch("/api/videos/top?count=100");
-        if (!res.ok) throw new Error("Failed to load");
-        const data = await res.json();
-        if (!cancelled) {
-          setVideos(data.videos || []);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+    async function init() {
+      await loadVideos();
+      if (cancelled) return;
     }
-
-    load();
+    init();
     return () => { cancelled = true; };
-  }, []);
+  }, [loadVideos]);
 
   return (
     <div>
@@ -48,7 +49,10 @@ export default function MobileTop100Page() {
 
       {error && (
         <div className="mobile-empty-state">
-          <p>Failed to load. Please try again.</p>
+          <p>{error}</p>
+          <button type="button" className="mobile-retry-button" onClick={loadVideos}>
+            Try Again
+          </button>
         </div>
       )}
 

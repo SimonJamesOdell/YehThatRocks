@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
   type ReactNode,
@@ -27,6 +28,13 @@ export interface YouTubePlayerHandle {
   destroy(): void;
 }
 
+type AuthState = {
+  isLoggedIn: boolean;
+  userId: number | null;
+  screenName: string | null;
+  checked: boolean;
+};
+
 type MobilePlayerState = {
   video: MobileVideo | null;
   isPlaying: boolean;
@@ -42,6 +50,8 @@ type MobilePlayerContextValue = {
   openFullscreen: () => void;
   closeFullscreen: () => void;
   playerApiRef: React.MutableRefObject<YouTubePlayerHandle | null>;
+  auth: AuthState;
+  refreshAuth: () => void;
 };
 
 const MobilePlayerContext = createContext<MobilePlayerContextValue | null>(null);
@@ -60,7 +70,37 @@ export function MobilePlayerProvider({ children }: { children: ReactNode }) {
     isPlaying: false,
     isFullscreen: false,
   });
+  const [auth, setAuth] = useState<AuthState>({
+    isLoggedIn: false,
+    userId: null,
+    screenName: null,
+    checked: false,
+  });
   const playerApiRef = useRef<YouTubePlayerHandle | null>(null);
+
+  const refreshAuth = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/me");
+      if (res.ok) {
+        const data = await res.json();
+        setAuth({
+          isLoggedIn: true,
+          userId: data.user?.id ?? null,
+          screenName: data.user?.screenName ?? null,
+          checked: true,
+        });
+      } else {
+        setAuth({ isLoggedIn: false, userId: null, screenName: null, checked: true });
+      }
+    } catch {
+      setAuth({ isLoggedIn: false, userId: null, screenName: null, checked: true });
+    }
+  }, []);
+
+  // Check auth on mount
+  useEffect(() => {
+    refreshAuth();
+  }, [refreshAuth]);
 
   const playVideo = useCallback((video: MobileVideo) => {
     setPlayer({ video, isPlaying: true, isFullscreen: true });
@@ -100,6 +140,8 @@ export function MobilePlayerProvider({ children }: { children: ReactNode }) {
         openFullscreen,
         closeFullscreen,
         playerApiRef,
+        auth,
+        refreshAuth,
       }}
     >
       {children}

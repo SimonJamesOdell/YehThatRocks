@@ -861,3 +861,234 @@
 .mobile-player-bar-controls svg {
   pointer-events: none;
 }
+
+/* ── Video Card Enhancements ────────────────────────────────────────── */
+.mobile-video-card-artist-link {
+  font-size: 0.8rem;
+  color: var(--mobile-text-muted);
+  text-decoration: none;
+  margin: 3px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.mobile-video-card-artist-link:active {
+  color: var(--mobile-accent);
+}
+
+.mobile-video-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.mobile-video-card-genre-link {
+  font-size: 0.72rem;
+  color: var(--mobile-accent);
+  text-decoration: none;
+  opacity: 0.85;
+}
+
+.mobile-video-card-genre-link:active {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.mobile-video-card-favcount {
+  font-size: 0.7rem;
+  color: var(--mobile-text-muted);
+  white-space: nowrap;
+}
+
+.mobile-video-card-actions {
+  display: flex;
+  align-items: flex-start;
+  padding: 8px 8px 8px 0;
+  flex-shrink: 0;
+}
+
+/* ── Favourite Button ──────────────────────────────────────────────── */
+.mobile-fav-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: none;
+  color: var(--mobile-text-muted);
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 0;
+  position: relative;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.mobile-fav-button:active {
+  background: var(--mobile-surface-hover);
+  transform: scale(0.92);
+}
+
+.mobile-fav-button-active {
+  color: #ff3344;
+}
+
+.mobile-fav-button-loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+@keyframes mobile-fav-spin {
+  to { transform: rotate(360deg); }
+}
+
+.mobile-fav-spinner {
+  animation: mobile-fav-spin 0.8s linear infinite;
+}
+
+.mobile-fav-error {
+  position: absolute;
+  bottom: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.65rem;
+  color: #ff4444;
+  white-space: nowrap;
+  background: var(--mobile-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  z-index: 1;
+}
+
+/* ── Artist Hero ───────────────────────────────────────────────────── */
+.mobile-artist-hero {
+  position: relative;
+  margin: -12px -12px 12px;
+  overflow: hidden;
+  aspect-ratio: 16 / 7;
+  max-height: 200px;
+}
+
+.mobile-artist-hero-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mobile-artist-hero-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  background: linear-gradient(transparent 30%, rgba(0, 0, 0, 0.85));
+}
+
+.mobile-artist-hero-name {
+  font-family: var(--font-display), "Metal Mania", serif;
+  font-size: 1.4rem;
+  color: #fff;
+  margin: 0;
+  letter-spacing: 0.03em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.mobile-artist-hero-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.mobile-artist-hero-genre {
+  font-size: 0.82rem;
+  color: var(--mobile-accent);
+}
+
+.mobile-artist-hero-count {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* ── Player Genre Link ─────────────────────────────────────────────── */
+.mobile-player-genre-link {
+  text-decoration: none;
+  display: inline-block;
+}
+
+.mobile-player-genre-link:active .mobile-player-genre-tag {
+  opacity: 0.8;
+}
+
+/* ── Player Related Videos ─────────────────────────────────────────── */
+.mobile-player-related {
+  margin-top: 16px;
+  border-top: 1px solid var(--mobile-border);
+  padding-top: 14px;
+}
+
+.mobile-player-related-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--mobile-text);
+  margin: 0 0 10px;
+}
+
+.mobile-player-related-empty {
+  font-size: 0.82rem;
+  color: var(--mobile-text-muted);
+  text-align: center;
+  padding: 16px 0;
+  margin: 0;
+}
+
+/* ── Retry Button ──────────────────────────────────────────────────── */
+.mobile-retry-button {
+  display: inline-block;
+  margin-top: 14px;
+  padding: 10px 24px;
+  background: var(--mobile-accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mobile-retry-button:active {
+  opacity: 0.8;
+}
+
+/* ── Nav User ──────────────────────────────────────────────────────── */
+.mobile-nav-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: rgba(255, 119, 34, 0.08);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--mobile-text);
+}
+
+.mobile-nav-logout {
+  color: #ff6666 !important;
+}
+
+.mobile-nav-logout:active {
+  background: rgba(255, 50, 50, 0.1) !important;
+}
+
+/* ── Account logged-in icon fill ───────────────────────────────────── */
+.mobile-account-link svg[fill="currentColor"] {
+  opacity: 0.8;
+}

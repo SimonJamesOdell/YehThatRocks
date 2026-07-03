@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, type FormEvent } from "react";
+import { useState, useCallback, useEffect, type FormEvent } from "react";
 import { MobileVideoList } from "../_components/mobile-video-card";
 import type { MobileVideo } from "../_components/mobile-player-context";
 
@@ -10,6 +10,7 @@ export default function MobileSearchPage() {
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastQuery, setLastQuery] = useState("");
 
   const doSearch = useCallback(async (e?: FormEvent) => {
     if (e) e.preventDefault();
@@ -19,6 +20,7 @@ export default function MobileSearchPage() {
     setLoading(true);
     setError(null);
     setSearched(true);
+    setLastQuery(q);
 
     try {
       const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=50`);
@@ -31,6 +33,21 @@ export default function MobileSearchPage() {
       setLoading(false);
     }
   }, [query]);
+
+  const handleRetry = useCallback(() => {
+    if (lastQuery) {
+      setLoading(true);
+      setError(null);
+      fetch(`/api/search?q=${encodeURIComponent(lastQuery)}&limit=50`)
+        .then((res) => {
+          if (!res.ok) throw new Error("Search failed");
+          return res.json();
+        })
+        .then((data) => setVideos(data.videos || []))
+        .catch((err) => setError(err instanceof Error ? err.message : "Search failed"))
+        .finally(() => setLoading(false));
+    }
+  }, [lastQuery]);
 
   return (
     <div>
@@ -61,12 +78,15 @@ export default function MobileSearchPage() {
       {error && (
         <div className="mobile-empty-state">
           <p>{error}</p>
+          <button type="button" className="mobile-retry-button" onClick={handleRetry}>
+            Try Again
+          </button>
         </div>
       )}
 
       {!loading && searched && videos.length === 0 && !error && (
         <div className="mobile-empty-state">
-          <p>No results found for &ldquo;{query}&rdquo;.</p>
+          <p>No results found for &ldquo;{lastQuery}&rdquo;.</p>
         </div>
       )}
 

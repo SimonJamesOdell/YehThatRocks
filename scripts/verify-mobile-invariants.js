@@ -179,11 +179,26 @@ function main() {
     assertContains(source, '../../_components/mobile-video-card', `${path.relative(ROOT, pageFile)} imports from ../../_components/`, failures);
   }
 
-  // ── 7. CSS is imported in globals ───────────────────────────────────
+  // ── 7. Video card element type and keyboard accessibility ────────────
+  const videoCardSource = readFileStrict(files.mobileVideoCard, ROOT);
+
+  // Outer element must be <div role="button"> — NOT a raw <button> (would
+  // cause nested-button hydration errors with inner MobileFavouriteButton).
+  assertNotContains(videoCardSource, "<button", "mobile-video-card outer element is not a <button> (prevents nested-button regression)", failures);
+  assertContains(videoCardSource, 'role="button"', "mobile-video-card preserves button semantics via ARIA role", failures);
+  assertContains(videoCardSource, "tabIndex={0}", "mobile-video-card is keyboard-focusable", failures);
+  assertContains(videoCardSource, "onKeyDown", "mobile-video-card handles keyboard activation", failures);
+
+  // ── 8. Categories page uses real API fields (not nonexistent slug/label) ──
+  const categoriesPageSource = readFileStrict(files.mobileCategories, ROOT);
+  assertContains(categoriesPageSource, "getGenreSlug", "categories page imports getGenreSlug for slug computation", failures);
+  assertContains(categoriesPageSource, "cat.genre", "categories page uses cat.genre from API response", failures);
+
+  // ── 9. CSS is imported in globals ───────────────────────────────────
   const globalsSource = readFileStrict(files.globalsCss, ROOT);
   assertContains(globalsSource, "@import './styles/mobile.css'", "globals.css imports mobile.css", failures);
 
-  // ── 8. CSS class coverage ──────────────────────────────────────────
+  // ── 10. CSS class coverage ──────────────────────────────────────────
   const cssSource = readFileStrict(files.mobileCss, ROOT);
 
   // Core shell classes
@@ -275,11 +290,11 @@ function main() {
   assertContains(cssSource, ".mobile-account-section", "mobile CSS defines .mobile-account-section", failures);
   assertContains(cssSource, ".mobile-account-button", "mobile CSS defines .mobile-account-button", failures);
 
-  // ── 9. Desktop-only page still exists (not removed) ─────────────────
+  // ── 11. Desktop-only page still exists (not removed) ─────────────────
   const desktopOnlySource = readFileStrict(files.desktopOnlyPage, ROOT);
   assertContains(desktopOnlySource, "Put the toy down", "desktop-only page still contains placeholder text", failures);
 
-  // ── 10. No desktop shell dependencies in mobile pages ───────────────
+  // ── 12. No desktop shell dependencies in mobile pages ───────────────
   const allMobileSources = [
     layoutSource,
     ...mobilePageFiles.map((f) => readFileStrict(f, ROOT)),

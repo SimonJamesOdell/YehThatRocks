@@ -23,7 +23,9 @@ export default function MobileNewVideosPage() {
         setSkip(data.nextOffset);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load");
+      if (!append) {
+        setError(err instanceof Error ? err.message : "Failed to load");
+      }
     }
   }, []);
 
@@ -31,6 +33,7 @@ export default function MobileNewVideosPage() {
     let cancelled = false;
     async function init() {
       setLoading(true);
+      setError(null);
       await loadVideos(0);
       if (!cancelled) setLoading(false);
     }
@@ -43,6 +46,10 @@ export default function MobileNewVideosPage() {
     await loadVideos(skip, true);
     setLoadingMore(false);
   }, [skip, loadVideos]);
+
+  const handleRetry = useCallback(() => {
+    loadVideos(0);
+  }, [loadVideos]);
 
   return (
     <div>
@@ -59,7 +66,10 @@ export default function MobileNewVideosPage() {
 
       {error && (
         <div className="mobile-empty-state">
-          <p>Failed to load videos. Please try again.</p>
+          <p>{error}</p>
+          <button type="button" className="mobile-retry-button" onClick={handleRetry}>
+            Try Again
+          </button>
         </div>
       )}
 

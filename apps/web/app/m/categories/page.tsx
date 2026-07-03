@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { getGenreSlug } from "@/lib/catalog-data-utils";
 
 type GenreCard = {
-  slug: string;
-  label: string;
-  count: number;
+  genre: string;
+  previewVideoId: string | null;
+  artistCount: number;
 };
 
 export default function MobileCategoriesPage() {
@@ -55,15 +56,18 @@ export default function MobileCategoriesPage() {
 
       {!loading && categories.length > 0 && (
         <div className="mobile-categories-grid">
-          {categories.map((cat) => (
-            <Link
-              key={cat.slug}
-              href={`/m/categories/${cat.slug}`}
-              className="mobile-category-card"
-            >
-              {cat.label}
-            </Link>
-          ))}
+          {categories.map((cat) => {
+            const slug = getGenreSlug(cat.genre);
+            return (
+              <Link
+                key={slug}
+                href={`/m/categories/${slug}`}
+                className="mobile-category-card"
+              >
+                {cat.genre}
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

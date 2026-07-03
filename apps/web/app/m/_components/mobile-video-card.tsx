@@ -1,6 +1,7 @@
 "use client";
 
 import { useMobilePlayer, type MobileVideo } from "./mobile-player-context";
+import { MobileFavouriteButton } from "./mobile-favourite-button";
 
 type MobileVideoCardProps = {
   video: MobileVideo;
@@ -10,12 +11,20 @@ export function MobileVideoCard({ video }: MobileVideoCardProps) {
   const { playVideo } = useMobilePlayer();
 
   const thumbnailUrl = `https://i.ytimg.com/vi/${encodeURIComponent(video.id)}/mqdefault.jpg`;
+  const artistName = video.parsedArtist || video.channelTitle;
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       className="mobile-video-card"
       onClick={() => playVideo(video)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          playVideo(video);
+        }
+      }}
     >
       <div className="mobile-video-card-thumb">
         <img
@@ -32,12 +41,24 @@ export function MobileVideoCard({ video }: MobileVideoCardProps) {
       </div>
       <div className="mobile-video-card-info">
         <h3 className="mobile-video-card-title">{video.title}</h3>
-        <p className="mobile-video-card-artist">
-          {video.parsedArtist || video.channelTitle}
-        </p>
-        <p className="mobile-video-card-genre">{video.genre}</p>
+        <span className="mobile-video-card-artist-link">
+          {artistName}
+        </span>
+        <div className="mobile-video-card-meta">
+          <span className="mobile-video-card-genre-link">
+            {video.genre}
+          </span>
+          {video.favourited > 0 && (
+            <span className="mobile-video-card-favcount">
+              ❤️ {video.favourited.toLocaleString()}
+            </span>
+          )}
+        </div>
       </div>
-    </button>
+      <div className="mobile-video-card-actions">
+        <MobileFavouriteButton videoId={video.id} size="sm" />
+      </div>
+    </div>
   );
 }
 
