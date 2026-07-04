@@ -40,6 +40,8 @@ const files = {
   mobileResetPassword: path.join(ROOT, "apps/web/app/m/reset-password/page.tsx"),
   mobileVerifyEmail: path.join(ROOT, "apps/web/app/m/verify-email/page.tsx"),
   mobilePlayerContext: path.join(ROOT, "apps/web/components/mobile/mobile-player-context.tsx"),
+  mobileShell: path.join(ROOT, "apps/web/components/mobile/mobile-shell.tsx"),
+  mobileFavouriteButton: path.join(ROOT, "apps/web/components/mobile/mobile-favourite-button.tsx"),
   mobileYouTubePlayer: path.join(ROOT, "apps/web/components/mobile/mobile-youtube-player.tsx"),
   mobileVideoCard: path.join(ROOT, "apps/web/components/mobile/mobile-video-card.tsx"),
   mobileCss: path.join(ROOT, "apps/web/app/styles/mobile.css"),
@@ -69,6 +71,8 @@ const mobilePageFiles = [
 
 const mobileComponentFiles = [
   files.mobilePlayerContext,
+  files.mobileShell,
+  files.mobileFavouriteButton,
   files.mobileYouTubePlayer,
   files.mobileVideoCard,
 ];
@@ -147,26 +151,33 @@ function main() {
   assertNotContains(proxySource, 'redirectUrl.search = ""', "proxy preserves query string through mobile redirect", failures);
 
   // ── 3. Mobile layout structure ─────────────────────────────────────
+  // Layout is a server component — thin wrapper rendering client MobileShell
   const layoutSource = readFileStrict(files.mobileLayout, ROOT);
-
-  assertContains(layoutSource, '"use client"', "mobile layout is a client component", failures);
+  assertNotContains(layoutSource, '"use client"', "mobile layout is a server component", failures);
   assertContains(layoutSource, 'MobilePlayerProvider', "mobile layout wraps children in MobilePlayerProvider", failures);
-  assertContains(layoutSource, 'className="mobile-shell"', "mobile layout renders mobile-shell div", failures);
-  assertContains(layoutSource, 'className="mobile-topbar"', "mobile layout renders topbar", failures);
-  assertContains(layoutSource, 'className="mobile-hamburger"', "mobile layout renders hamburger button", failures);
-  assertContains(layoutSource, 'className="mobile-logo-text"', "mobile layout renders logo text", failures);
-  assertContains(layoutSource, 'mobile-nav-drawer', "mobile layout renders nav drawer", failures);
-  assertContains(layoutSource, 'className="mobile-content"', "mobile layout renders content area", failures);
-  assertContains(layoutSource, 'className="mobile-player-bar"', "mobile layout renders bottom player bar", failures);
-  assertContains(layoutSource, 'className="mobile-player-fullscreen"', "mobile layout renders fullscreen player", failures);
-  assertContains(layoutSource, 'className="mobile-player-wrapper"', "mobile layout renders player wrapper", failures);
-  assertContains(layoutSource, 'function MobileShell', "mobile layout defines MobileShell function", failures);
-  assertContains(layoutSource, 'useMobilePlayer()', "mobile layout uses MobilePlayer context", failures);
+  assertContains(layoutSource, 'MobileShell', "mobile layout imports and renders MobileShell", failures);
+
+  // Shell component (client) contains all the UI — extracted from layout
+  // to fix Turbopack ChunkLoadError (client boundary outside app/ route tree)
+  const shellSource = readFileStrict(files.mobileShell, ROOT);
+
+  assertContains(shellSource, '"use client"', "mobile shell is a client component", failures);
+  assertContains(shellSource, 'function MobileShell', "mobile shell defines MobileShell function", failures);
+  assertContains(shellSource, 'useMobilePlayer()', "mobile shell uses MobilePlayer context", failures);
+  assertContains(shellSource, 'className="mobile-shell"', "mobile shell renders mobile-shell div", failures);
+  assertContains(shellSource, 'className="mobile-topbar"', "mobile shell renders topbar", failures);
+  assertContains(shellSource, 'className="mobile-hamburger"', "mobile shell renders hamburger button", failures);
+  assertContains(shellSource, 'className="mobile-logo-text"', "mobile shell renders logo text", failures);
+  assertContains(shellSource, 'mobile-nav-drawer', "mobile shell renders nav drawer", failures);
+  assertContains(shellSource, 'className="mobile-content"', "mobile shell renders content area", failures);
+  assertContains(shellSource, 'className="mobile-player-bar"', "mobile shell renders bottom player bar", failures);
+  assertContains(shellSource, 'className="mobile-player-fullscreen"', "mobile shell renders fullscreen player", failures);
+  assertContains(shellSource, 'className="mobile-player-wrapper"', "mobile shell renders player wrapper", failures);
 
   // Nav items must include all expected routes
   const navItems = ["/m", "/m/new", "/m/categories", "/m/artists", "/m/top100", "/m/favourites", "/m/search"];
   for (const item of navItems) {
-    assertContains(layoutSource, item, `mobile nav includes ${item}`, failures);
+    assertContains(shellSource, item, `mobile nav includes ${item}`, failures);
   }
 
   // ── 4. Player context integrity ────────────────────────────────────
