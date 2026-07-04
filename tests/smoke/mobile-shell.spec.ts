@@ -13,7 +13,8 @@ async function expectMobileShell(page: import("@playwright/test").Page) {
   await expect(hamburger).toBeVisible();
   await expect(hamburger).toHaveAttribute("aria-label", /Open navigation/i);
   await expect(page.locator(".mobile-logo-link")).toBeVisible();
-  await expect(page.locator(".mobile-logo-text")).toContainText("YEH THAT ROCKS");
+  await expect(page.locator(".mobile-logo-image")).toBeVisible();
+  await expect(page.locator(".mobile-logo-tagline")).toContainText("loudest website");
 }
 
 test.describe("mobile shell smoke", () => {

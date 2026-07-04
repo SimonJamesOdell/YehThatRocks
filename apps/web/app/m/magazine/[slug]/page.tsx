@@ -53,9 +53,13 @@ export default async function MobileMagazineArticlePage({ params }: Props) {
   return (
     <div className="mobile-magazine-article">
       <div className="mobile-page-header">
-        <Link href="/m" className="mobile-magazine-back">← Back</Link>
+        <Link href="/m" className="mobile-magazine-back" aria-label="Go back">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </Link>
         <h1 className="mobile-page-title">{article.title}</h1>
-        <p className="mobile-magazine-artist">{article.artist}{article.trackName ? ` — ${article.trackName}` : ""}</p>
+
       </div>
 
       {hasVideo ? (

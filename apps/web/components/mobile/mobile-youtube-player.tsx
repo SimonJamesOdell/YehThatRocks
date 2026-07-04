@@ -95,6 +95,9 @@ export function MobileYouTubePlayer({
         cancelled = true;
         try { player?.destroy?.(); } catch { /* already unmounted */ }
         playerApiRef.current = null;
+        if (containerRef.current) {
+          containerRef.current.innerHTML = "";
+        }
       };
     }
 
@@ -102,6 +105,11 @@ export function MobileYouTubePlayer({
       cancelled = true;
       try { player?.destroy?.(); } catch { /* already unmounted */ }
       playerApiRef.current = null;
+      // YouTube's destroy() removes the iframe; clear the container so React
+      // doesn't trip over a node that's already been removed from the DOM.
+      if (containerRef.current) {
+        containerRef.current.innerHTML = "";
+      }
     };
   }, [videoId, onReady, onEnd, onError, playerApiRef]);
 

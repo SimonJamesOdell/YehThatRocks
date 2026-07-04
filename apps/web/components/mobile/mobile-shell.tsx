@@ -190,8 +190,15 @@ export function MobileShell({ children }: { children: ReactNode }) {
           {isNavOpen ? "\u2715" : "\u2630"}
         </button>
 
-        <Link href="/m" className="mobile-logo-link">
-          <span className="mobile-logo-text">YEH THAT ROCKS</span>
+        <Link href="/m" className="mobile-logo-link" aria-label="Yeh That Rocks home">
+          <img
+            src="/assets/images/yeh_main_logo.png"
+            alt="Yeh That Rocks"
+            width="180"
+            height="55"
+            className="mobile-logo-image"
+          />
+          <span className="mobile-logo-tagline">The world&apos;s loudest website</span>
         </Link>
 
         {auth.checked && auth.isLoggedIn ? (
@@ -220,18 +227,6 @@ export function MobileShell({ children }: { children: ReactNode }) {
         className={`mobile-nav-drawer ${isNavOpen ? "mobile-nav-drawer-open" : ""}`}
         aria-hidden={!isNavOpen}
       >
-        <div className="mobile-nav-brand">
-          <span className="mobile-nav-brand-text">YEH THAT ROCKS</span>
-          {auth.checked && auth.isLoggedIn && auth.screenName && (
-            <div className="mobile-nav-user">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" stroke="none" style={{ opacity: 0.7 }}>
-                <circle cx="12" cy="8" r="4" />
-                <path d="M4 20c0-4 4-7 8-7s8 3 8 7" />
-              </svg>
-              <span>{auth.screenName}</span>
-            </div>
-          )}
-        </div>
         <ul className="mobile-nav-list">
           {NAV_ITEMS.map((item) => (
             <li key={item.href}>

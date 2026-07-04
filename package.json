@@ -104,8 +104,9 @@
     "prepare:ship:light": "npm run verify:light",
     "prepare:ship:full": "npm run maintain:deps && npm run verify:invariants && npm run verify:invariants:api && npm audit --audit-level=high",
     "ship:commit": "git add -A && git commit -m \"chore: ship candidate\"",
-    "ship:light": "node -e \"if(require('./package.json').name!=='yehthatrocks'){console.error('ERROR: ship must be run from the yeh2 project root');process.exit(1)}\" && npm run prepare:ship:light && npm run ship:commit",
-    "ship:full": "node -e \"if(require('./package.json').name!=='yehthatrocks'){console.error('ERROR: ship must be run from the yeh2 project root');process.exit(1)}\" && npm run prepare:ship:full && npm run ship:commit",
+    "ship:check-clean": "node -e \"var s=require('child_process').execSync('git status --porcelain',{encoding:'utf8'});if(s.trim()){console.error('ERROR: working tree is not clean. Commit or stash changes before shipping.');process.exit(1)}\"",
+    "ship:light": "node -e \"if(require('./package.json').name!=='yehthatrocks'){console.error('ERROR: ship must be run from the yeh2 project root');process.exit(1)}\" && npm run ship:check-clean && npm run prepare:ship:light && npm run ship:commit",
+    "ship:full": "node -e \"if(require('./package.json').name!=='yehthatrocks'){console.error('ERROR: ship must be run from the yeh2 project root');process.exit(1)}\" && npm run ship:check-clean && npm run prepare:ship:full && npm run ship:commit",
     "maintain:deps": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/maintain-dependencies.ps1",
     "maintain:deps:install": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-dependency-maintenance-task.ps1"
   },

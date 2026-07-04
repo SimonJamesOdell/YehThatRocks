@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { useMobilePlayer } from "@/components/mobile/mobile-player-context";
 
 export default function MobileLoginPage() {
   const router = useRouter();
+  const { refreshAuth } = useMobilePlayer();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,6 +35,7 @@ export default function MobileLoginPage() {
           return;
         }
 
+        await refreshAuth();
         router.push("/m");
       } else {
         if (!screenName.trim()) {
@@ -58,6 +61,7 @@ export default function MobileLoginPage() {
           return;
         }
 
+        await refreshAuth();
         router.push("/m");
       }
     } catch (err) {

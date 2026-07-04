@@ -40,20 +40,14 @@ export function MobileVideoCard({ video }: MobileVideoCardProps) {
         </div>
       </div>
       <div className="mobile-video-card-info">
+        <span className="mobile-video-card-genre">{video.genre}</span>
         <h3 className="mobile-video-card-title">{video.title}</h3>
-        <span className="mobile-video-card-artist-link">
-          {artistName}
-        </span>
-        <div className="mobile-video-card-meta">
-          <span className="mobile-video-card-genre-link">
-            {video.genre}
+        <span className="mobile-video-card-artist">{artistName}</span>
+        {video.favourited > 0 && (
+          <span className="mobile-video-card-favcount">
+            ❤️ {video.favourited.toLocaleString()}
           </span>
-          {video.favourited > 0 && (
-            <span className="mobile-video-card-favcount">
-              ❤️ {video.favourited.toLocaleString()}
-            </span>
-          )}
-        </div>
+        )}
       </div>
       {auth?.isLoggedIn && (
         <div className="mobile-video-card-actions">

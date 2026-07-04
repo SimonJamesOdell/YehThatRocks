@@ -5,15 +5,15 @@
 
 /* ── CSS Custom Properties ─────────────────────────────────────────── */
 :root {
-  --mobile-bg: #0a0a0a;
+  --mobile-bg: #080808;
   --mobile-surface: #141414;
   --mobile-surface-hover: #1e1e1e;
   --mobile-border: #2a2a2a;
-  --mobile-text: #e8e8e8;
-  --mobile-text-muted: #999;
-  --mobile-accent: #ff7722;
-  --mobile-accent-glow: rgba(255, 119, 34, 0.3);
-  --mobile-topbar-height: 52px;
+  --mobile-text: #f5f1eb;
+  --mobile-text-muted: #d3c1b8;
+  --mobile-accent: #b31214;
+  --mobile-accent-glow: rgba(179, 18, 20, 0.35);
+  --mobile-topbar-height: 68px;
   --mobile-player-bar-height: 60px;
   --mobile-nav-width: 280px;
   --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -66,16 +66,28 @@
 .mobile-logo-link {
   flex: 1;
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
   text-decoration: none;
+  gap: 2px;
 }
 
-.mobile-logo-text {
-  font-family: var(--font-display), "Metal Mania", serif;
-  font-size: 1.15rem;
-  color: var(--mobile-accent);
-  letter-spacing: 0.06em;
-  text-shadow: 0 0 12px var(--mobile-accent-glow);
+.mobile-logo-image {
+  max-width: 180px;
+  height: auto;
+  margin-top: 10px;
+}
+
+.mobile-logo-tagline {
+  font-family: var(--font-display), "Metal Mania", cursive;
+  font-size: 0.55rem;
+  color: var(--mobile-text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  margin-top: -17px;
+  margin-left: 29px;
 }
 
 .mobile-account-link {
@@ -138,13 +150,23 @@
 .mobile-nav-brand {
   padding: 16px 20px;
   border-bottom: 1px solid var(--mobile-border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
-.mobile-nav-brand-text {
-  font-family: var(--font-display), "Metal Mania", serif;
-  font-size: 1.25rem;
-  color: var(--mobile-accent);
-  letter-spacing: 0.06em;
+.mobile-nav-brand-logo {
+  max-width: 180px;
+  height: auto;
+}
+
+.mobile-nav-brand-tagline {
+  font-family: var(--font-display), "Metal Mania", cursive;
+  font-size: 0.65rem;
+  color: var(--mobile-text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .mobile-nav-list {
@@ -172,12 +194,51 @@
 .mobile-nav-link-active {
   color: var(--mobile-accent);
   border-left-color: var(--mobile-accent);
-  background: rgba(255, 119, 34, 0.08);
+  background: rgba(179, 18, 20, 0.08);
 }
 
 .mobile-nav-footer {
   padding: 12px 0;
   border-top: 1px solid var(--mobile-border);
+}
+
+/* ── Artist Header ────────────────────────────────────────────────── */
+.mobile-artist-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.mobile-artist-header-name {
+  font-family: var(--font-display), "Metal Mania", serif;
+  font-size: 1.3rem;
+  color: var(--mobile-text);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Back Button ──────────────────────────────────────────────────── */
+.mobile-back-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  border: none;
+  background: none;
+  color: var(--mobile-text-muted);
+  cursor: pointer;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.mobile-back-button:active {
+  background: var(--mobile-surface-hover);
+  color: var(--mobile-text);
 }
 
 /* ── Main Content ──────────────────────────────────────────────────── */
@@ -201,9 +262,10 @@
 .mobile-page-title {
   font-family: var(--font-display), "Metal Mania", serif;
   font-size: 1.5rem;
-  color: var(--mobile-accent);
+  color: var(--mobile-text);
   margin: 0;
   letter-spacing: 0.04em;
+  max-width: none;
 }
 
 .mobile-page-subtitle {
@@ -240,9 +302,10 @@
 .mobile-video-card-thumb {
   position: relative;
   flex-shrink: 0;
-  width: 120px;
-  height: 68px;
+  width: 102px;
+  height: 58px;
   background: #1a1a1a;
+  border-radius: 8px;
   overflow: hidden;
 }
 
@@ -271,13 +334,23 @@
 .mobile-video-card-info {
   flex: 1;
   min-width: 0;
-  padding: 8px 8px 8px 0;
+  padding: 6px 8px 6px 0;
+}
+
+.mobile-video-card-genre {
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.65rem;
+  color: #ffb6aa;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 3px;
 }
 
 .mobile-video-card-title {
-  font-size: 0.9rem;
+  font-family: var(--font-display), "Metal Mania", cursive;
+  font-size: 0.88rem;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.2;
   margin: 0;
   color: var(--mobile-text);
   display: -webkit-box;
@@ -287,19 +360,18 @@
 }
 
 .mobile-video-card-artist {
-  font-size: 0.8rem;
-  color: var(--mobile-text-muted);
-  margin: 3px 0 0;
+  font-size: 0.74rem;
+  color: rgba(214, 193, 184, 0.68);
+  margin: 2px 0 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.mobile-video-card-genre {
-  font-size: 0.72rem;
-  color: var(--mobile-accent);
-  margin: 3px 0 0;
-  opacity: 0.8;
+.mobile-video-card-favcount {
+  font-size: 0.68rem;
+  color: var(--mobile-text-muted);
+  margin-top: 2px;
 }
 
 /* ── Empty State ───────────────────────────────────────────────────── */
@@ -500,7 +572,7 @@
 .mobile-player-genre-tag {
   display: inline-block;
   padding: 4px 10px;
-  background: rgba(255, 119, 34, 0.15);
+  background: rgba(179, 18, 20, 0.15);
   color: var(--mobile-accent);
   border-radius: 6px;
   font-size: 0.8rem;
@@ -604,7 +676,7 @@
 .mobile-alphabet-letter:active,
 .mobile-alphabet-letter-active {
   color: var(--mobile-accent);
-  background: rgba(255, 119, 34, 0.12);
+  background: rgba(179, 18, 20, 0.12);
 }
 
 /* ── Search ────────────────────────────────────────────────────────── */
@@ -842,7 +914,7 @@
 }
 
 .mobile-tab-active {
-  background: rgba(255, 119, 34, 0.15);
+  background: rgba(179, 18, 20, 0.15);
   color: var(--mobile-accent);
 }
 
@@ -1088,7 +1160,7 @@
   gap: 8px;
   margin-top: 10px;
   padding: 8px 12px;
-  background: rgba(255, 119, 34, 0.08);
+  background: rgba(179, 18, 20, 0.08);
   border-radius: 8px;
   font-size: 0.85rem;
   color: var(--mobile-text);
@@ -1113,11 +1185,20 @@
 }
 
 .mobile-magazine-back {
-  display: inline-block;
-  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin: 0 0 4px -6px;
   color: var(--mobile-text-muted);
   text-decoration: none;
-  margin-bottom: 6px;
+  border-radius: 8px;
+}
+
+.mobile-magazine-back:active {
+  background: var(--mobile-surface-hover);
+  color: var(--mobile-text);
 }
 
 .mobile-magazine-artist {
@@ -1270,4 +1351,381 @@
 
 .mobile-verify-link:active {
   background: var(--mobile-surface-hover);
+}
+
+/* ── Home Tab Buttons ───────────────────────────────────────────────── */
+.mobile-home-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.mobile-home-tab {
+  flex: 1;
+  padding: 12px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(143, 18, 20, 0.88), rgba(63, 5, 7, 0.92));
+  color: var(--mobile-text);
+  font-family: var(--font-display), "Metal Mania", cursive;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  text-align: center;
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.mobile-home-tab:active {
+  background: linear-gradient(180deg, rgba(220, 22, 5, 0.92), rgba(98, 8, 4, 0.94));
+  box-shadow: 0 0 14px rgba(220, 22, 5, 0.45);
+}
+
+.mobile-home-tab-active {
+  background: linear-gradient(180deg, rgba(220, 22, 5, 0.88), rgba(98, 8, 4, 0.92));
+  box-shadow: 0 0 16px rgba(220, 22, 5, 0.5), inset 0 0 0 1px rgba(255, 164, 142, 0.25);
+}
+
+/* ── Home Page Layout ───────────────────────────────────────────────── */
+.mobile-home-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - var(--mobile-topbar-height) - 24px);
+  overflow: hidden;
+}
+
+/* ── Home Tab Content ───────────────────────────────────────────────── */
+.mobile-home-tab-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.mobile-home-section-label {
+  font-family: var(--font-display), "Metal Mania", cursive;
+  font-size: 0.8rem;
+  color: var(--mobile-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--mobile-border);
+}
+
+/* Chat panel — fills available space, input pinned at bottom */
+.mobile-chat-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Chat messages */
+.mobile-chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.mobile-chat-message {
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+  font-size: 0.82rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.mobile-chat-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.mobile-chat-avatar-fallback {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--mobile-accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.mobile-chat-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-chat-user {
+  font-weight: 700;
+  color: var(--mobile-text);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.mobile-chat-time {
+  font-size: 0.7rem;
+  color: rgba(255, 182, 170, 0.58);
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+.mobile-chat-text {
+  color: var(--mobile-text);
+  word-break: break-word;
+}
+
+/* Chat activity */
+.mobile-chat-activity {
+  margin-top: 2px;
+}
+
+.mobile-chat-activity-label {
+  font-size: 0.75rem;
+  color: var(--mobile-text-muted);
+  font-style: italic;
+}
+
+/* Shared video card */
+.mobile-chat-shared-video {
+  margin-top: 6px;
+  background: var(--mobile-surface);
+  border-radius: 8px;
+  border: 1px solid var(--mobile-border);
+  overflow: hidden;
+}
+
+.mobile-chat-shared-video-main {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--mobile-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mobile-chat-shared-video-main:active {
+  background: var(--mobile-surface-hover);
+}
+
+.mobile-chat-shared-thumb {
+  width: 80px;
+  height: 45px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.mobile-chat-shared-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-chat-shared-genre {
+  font-size: 0.65rem;
+  color: #ffb6aa;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+
+.mobile-chat-shared-artist {
+  font-family: var(--font-display), "Metal Mania", cursive;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255, 232, 223, 0.92);
+  text-decoration: none;
+}
+
+.mobile-chat-shared-artist[href]:active {
+  opacity: 0.7;
+}
+
+.mobile-chat-shared-sep {
+  color: var(--mobile-text-muted);
+}
+
+.mobile-chat-shared-track {
+  font-family: var(--font-display), "Metal Mania", cursive;
+  font-size: 0.78rem;
+  color: var(--mobile-text);
+  word-break: break-word;
+}
+
+/* Chat input */
+.mobile-chat-input-wrap {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--mobile-border);
+}
+
+.mobile-chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--mobile-text);
+  font-size: 0.88rem;
+  outline: none;
+}
+
+.mobile-chat-input:focus {
+  border-color: var(--mobile-accent);
+}
+
+.mobile-chat-input::placeholder {
+  color: var(--mobile-text-muted);
+}
+
+.mobile-chat-send {
+  padding: 10px 18px;
+  border: none;
+  border-radius: 8px;
+  background: var(--mobile-accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease;
+}
+
+.mobile-chat-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.mobile-chat-send:active:not(:disabled) {
+  opacity: 0.8;
+}
+
+.mobile-chat-login-button {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--mobile-accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-align: center;
+  text-decoration: none;
+}
+
+.mobile-chat-login-button:active {
+  opacity: 0.8;
+}
+
+/* Magazine cards */
+.mobile-magazine-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mobile-magazine-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  background: var(--mobile-surface);
+  border-radius: 10px;
+  overflow: hidden;
+  text-decoration: none;
+  color: var(--mobile-text);
+  border: 1px solid var(--mobile-border);
+}
+
+.mobile-magazine-card:active {
+  background: var(--mobile-surface-hover);
+}
+
+.mobile-magazine-card-thumb {
+  width: 102px;
+  height: 58px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.mobile-magazine-card-body {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 8px 8px 0;
+}
+
+.mobile-magazine-card-kicker {
+  font-size: 0.65rem;
+  color: #ffb6aa;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+
+.mobile-magazine-card-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 4px;
+}
+
+.mobile-magazine-card-artist {
+  font-size: 0.78rem;
+  color: var(--mobile-text-muted);
+}
+
+/* Forum cards */
+.mobile-forum-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mobile-forum-card {
+  display: block;
+  padding: 12px;
+  background: var(--mobile-surface);
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--mobile-text);
+  border: 1px solid var(--mobile-border);
+}
+
+.mobile-forum-card:active {
+  background: var(--mobile-surface-hover);
+}
+
+.mobile-forum-card-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.mobile-forum-card-desc {
+  font-size: 0.78rem;
+  color: var(--mobile-text-muted);
+  margin-bottom: 4px;
+}
+
+.mobile-forum-card-meta {
+  font-size: 0.7rem;
+  color: var(--mobile-accent);
+  opacity: 0.8;
 }

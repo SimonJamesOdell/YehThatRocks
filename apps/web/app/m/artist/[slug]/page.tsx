@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { MobileVideoList } from "@/components/mobile/mobile-video-card";
 import type { MobileVideo } from "@/components/mobile/mobile-player-context";
@@ -17,6 +17,7 @@ type ArtistInfo = {
 
 export default function MobileArtistDetailPage() {
   const { slug } = useParams<{ slug: string }>();
+  const router = useRouter();
   const [videos, setVideos] = useState<MobileVideo[]>([]);
   const [artist, setArtist] = useState<ArtistInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,6 +73,20 @@ export default function MobileArtistDetailPage() {
 
   return (
     <div>
+      <div className="mobile-artist-header">
+        <button
+          type="button"
+          className="mobile-back-button"
+          onClick={() => router.back()}
+          aria-label="Go back"
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </button>
+        <h1 className="mobile-artist-header-name">{displayName}</h1>
+      </div>
+
       {artist?.thumbnailVideoId && (
         <div className="mobile-artist-hero">
           <img
@@ -79,26 +94,11 @@ export default function MobileArtistDetailPage() {
             alt={displayName}
             className="mobile-artist-hero-img"
           />
-          <div className="mobile-artist-hero-overlay">
-            <h1 className="mobile-artist-hero-name">{displayName}</h1>
-            <div className="mobile-artist-hero-meta">
-              {artist.genre && <span className="mobile-artist-hero-genre">{artist.genre}</span>}
-              {artist.videoCount !== undefined && (
-                <span className="mobile-artist-hero-count">{artist.videoCount} videos</span>
-              )}
-            </div>
-          </div>
         </div>
       )}
 
-      {!artist?.thumbnailVideoId && (
-        <div className="mobile-page-header">
-          <h1 className="mobile-page-title">{displayName}</h1>
-          <p className="mobile-page-subtitle">
-            {artist?.genre && <span>{artist.genre}{" "}&middot;{" "}</span>}
-            {artist?.videoCount !== undefined && <span>{artist.videoCount} videos</span>}
-          </p>
-        </div>
+      {(artist?.videoCount !== undefined) && (
+        <p className="mobile-page-subtitle" style={{ marginTop: artist?.thumbnailVideoId ? 4 : 0 }}>{artist.videoCount} videos</p>
       )}
 
       {loading && (
