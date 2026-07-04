@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useMobilePlayer } from "@/components/mobile/mobile-player-context";
@@ -191,11 +192,13 @@ export function MobileShell({ children }: { children: ReactNode }) {
         </button>
 
         <Link href="/m" className="mobile-logo-link" aria-label="Yeh That Rocks home">
-          <img
-            src="/assets/images/yeh_main_logo.png"
+          <Image
+            src="/assets/images/yeh_main_logo.png?v=20260424-4"
             alt="Yeh That Rocks"
-            width="180"
-            height="55"
+            width={180}
+            height={55}
+            priority
+            unoptimized
             className="mobile-logo-image"
           />
           <span className="mobile-logo-tagline">The world&apos;s loudest website</span>
