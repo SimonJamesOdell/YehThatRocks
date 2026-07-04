@@ -74,6 +74,7 @@
 }
 
 .mobile-logo-image {
+  display: block;
   max-width: 180px;
   height: auto;
   margin-top: 10px;
@@ -86,8 +87,8 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
-  margin-top: -17px;
-  margin-left: 29px;
+  margin-top: -14px;
+  margin-left: 39px;
 }
 
 .mobile-account-link {
@@ -1384,6 +1385,23 @@
 }
 
 /* ── Home Page Layout ───────────────────────────────────────────────── */
+
+/* Lock every scrollable ancestor on the home page so only the tab
+   sections (chat / magazine / forum) scroll.  Body default margins
+   would otherwise allow a slight document-level overscroll. */
+html:has(.mobile-home-page),
+body:has(.mobile-home-page) {
+  overflow: hidden;
+}
+
+.mobile-shell:has(.mobile-home-page):not(:has(.mobile-player-fullscreen)) {
+  overflow: hidden;
+}
+
+.mobile-content:has(.mobile-home-page) {
+  overflow: hidden;
+}
+
 .mobile-home-page {
   display: flex;
   flex-direction: column;

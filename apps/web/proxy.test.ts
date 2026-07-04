@@ -1,6 +1,80 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveMobilePathname } from "@/proxy";
+import { isStaticAssetPath, resolveMobilePathname } from "@/proxy";
+
+describe("isStaticAssetPath", () => {
+  it("matches image file extensions", () => {
+    expect(isStaticAssetPath("/assets/images/yeh_main_logo.png")).toBe(true);
+    expect(isStaticAssetPath("/images/photo.jpg")).toBe(true);
+    expect(isStaticAssetPath("/images/photo.jpeg")).toBe(true);
+    expect(isStaticAssetPath("/icons/spinner.gif")).toBe(true);
+    expect(isStaticAssetPath("/icons/logo.svg")).toBe(true);
+    expect(isStaticAssetPath("/icons/logo.webp")).toBe(true);
+    expect(isStaticAssetPath("/favicon.ico")).toBe(true);
+  });
+
+  it("matches other static file extensions", () => {
+    expect(isStaticAssetPath("/styles/main.css")).toBe(true);
+    expect(isStaticAssetPath("/scripts/app.js")).toBe(true);
+    expect(isStaticAssetPath("/fonts/rock.woff2")).toBe(true);
+    expect(isStaticAssetPath("/fonts/rock.woff")).toBe(true);
+    expect(isStaticAssetPath("/fonts/rock.ttf")).toBe(true);
+    expect(isStaticAssetPath("/fonts/rock.eot")).toBe(true);
+    expect(isStaticAssetPath("/fonts/rock.otf")).toBe(true);
+    expect(isStaticAssetPath("/sounds/bell.mp3")).toBe(true);
+    expect(isStaticAssetPath("/videos/intro.mp4")).toBe(true);
+    expect(isStaticAssetPath("/videos/intro.webm")).toBe(true);
+    expect(isStaticAssetPath("/audio/clip.ogg")).toBe(true);
+    expect(isStaticAssetPath("/docs/report.pdf")).toBe(true);
+    expect(isStaticAssetPath("/data/config.xml")).toBe(true);
+    expect(isStaticAssetPath("/data/readme.txt")).toBe(true);
+    expect(isStaticAssetPath("/data/response.json")).toBe(true);
+    expect(isStaticAssetPath("/scripts/app.js.map")).toBe(true);
+  });
+
+  it("matches static asset directory prefixes", () => {
+    expect(isStaticAssetPath("/assets/anything")).toBe(true);
+    expect(isStaticAssetPath("/images/photo")).toBe(true);
+    expect(isStaticAssetPath("/favicons/favicon-32x32.png")).toBe(true);
+    expect(isStaticAssetPath("/sounds/bell")).toBe(true);
+  });
+
+  it("is case-insensitive for extensions", () => {
+    expect(isStaticAssetPath("/images/LOGO.PNG")).toBe(true);
+    expect(isStaticAssetPath("/images/Logo.Jpg")).toBe(true);
+    expect(isStaticAssetPath("/styles/main.CSS")).toBe(true);
+  });
+
+  it("returns false for page routes", () => {
+    expect(isStaticAssetPath("/")).toBe(false);
+    expect(isStaticAssetPath("/m")).toBe(false);
+    expect(isStaticAssetPath("/m/new")).toBe(false);
+    expect(isStaticAssetPath("/magazine")).toBe(false);
+    expect(isStaticAssetPath("/forum")).toBe(false);
+    expect(isStaticAssetPath("/artists")).toBe(false);
+    expect(isStaticAssetPath("/top100")).toBe(false);
+    expect(isStaticAssetPath("/search")).toBe(false);
+    expect(isStaticAssetPath("/login")).toBe(false);
+    expect(isStaticAssetPath("/register")).toBe(false);
+  });
+
+  it("returns false for API routes", () => {
+    expect(isStaticAssetPath("/api/chat")).toBe(false);
+    expect(isStaticAssetPath("/api/auth/me")).toBe(false);
+    expect(isStaticAssetPath("/api/videos")).toBe(false);
+  });
+
+  it("returns false for share and embed routes", () => {
+    expect(isStaticAssetPath("/s/abc123")).toBe(false);
+    expect(isStaticAssetPath("/share/abc123")).toBe(false);
+    expect(isStaticAssetPath("/embed/abc123")).toBe(false);
+  });
+
+  it("handles edge cases", () => {
+    expect(isStaticAssetPath("")).toBe(false);
+    expect(isStaticAssetPath("/api")).toBe(false);
+  });
+});
 
 describe("resolveMobilePathname", () => {
   it("maps /magazine routes to /m/magazine preserving the sub-path", () => {
@@ -37,9 +111,6 @@ describe("resolveMobilePathname", () => {
   });
 
   it("preserves the original pathname intent — /m prefix is not doubled", () => {
-    // resolveMobilePathname should never receive /m paths (the proxy
-    // already excludes them from redirect), but if it does, it falls back
-    // to /m rather than double-prefixing.
     expect(resolveMobilePathname("/m")).toBe("/m");
     expect(resolveMobilePathname("/m/categories")).toBe("/m");
   });

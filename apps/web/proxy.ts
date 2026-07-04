@@ -29,6 +29,16 @@ function isAuthOptionalApi(pathname: string) {
   return AUTH_OPTIONAL_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
+// Static assets from public/ must never be redirected — browsers requesting
+// images, fonts, favicons etc. need the actual file, not a mobile page.
+export function isStaticAssetPath(pathname: string): boolean {
+  return /\.(png|jpg|jpeg|gif|svg|webp|ico|css|js|woff2?|ttf|eot|otf|mp3|mp4|webm|ogg|pdf|xml|txt|json|map)$/i.test(pathname) ||
+    pathname.startsWith("/assets/") ||
+    pathname.startsWith("/images/") ||
+    pathname.startsWith("/favicons/") ||
+    pathname.startsWith("/sounds/");
+}
+
 export function resolveMobilePathname(pathname: string): string {
   // Routes that have /m equivalents — preserve the path so the mobile
   // page for that content loads directly.
@@ -111,6 +121,8 @@ export async function proxy(request: NextRequest) {
   requestHeaders.set("x-ytr-search", request.nextUrl.search);
 
   const isBrowserPageRequest = request.method === "GET" || request.method === "HEAD";
+  const isStaticAsset = isStaticAssetPath(pathname);
+
   const isShareRoute = pathname.startsWith("/s/") || pathname.startsWith("/share/");
   const isEmbedRoute = pathname.startsWith("/embed/");
   const isSitemapOrRobotsRequest = pathname.startsWith("/sitemap") || pathname === "/robots.txt";
@@ -126,6 +138,7 @@ export async function proxy(request: NextRequest) {
     pathname === "/history";
   const shouldRedirectToMobile =
     isBrowserPageRequest
+    && !isStaticAsset
     && !pathname.startsWith("/api")
     && pathname !== "/desktop-only"
     && !pathname.startsWith("/m")
