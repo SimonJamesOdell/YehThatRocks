@@ -99,6 +99,13 @@ function withSecurityHeaders(response: NextResponse, pathname = "") {
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Static assets must never be redirected — the config.matcher exclusion
+  // for _next/static can fail under Turbopack HMR when chunk hashes change.
+  if (pathname.startsWith("/_next/static") || pathname.startsWith("/_next/image")) {
+    return NextResponse.next();
+  }
+
   const requestHeaders = sanitizedAuthHeaders(request);
   requestHeaders.set("x-ytr-pathname", pathname);
   requestHeaders.set("x-ytr-search", request.nextUrl.search);
