@@ -12,8 +12,7 @@ type MobileYouTubePlayerProps = {
   style?: React.CSSProperties;
 };
 
-// YT.Player instance type — the YouTube IFrame API has no official types.
-type YTPlayer = Record<string, unknown>;
+type YTPlayer = any;
 
 // Runtime YouTube IFrame API globals loaded by YouTubeIframeApiLoader
 declare const YT: {
