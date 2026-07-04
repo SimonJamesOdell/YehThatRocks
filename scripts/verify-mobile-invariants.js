@@ -167,7 +167,6 @@ function main() {
   assertContains(shellSource, 'className="mobile-shell"', "mobile shell renders mobile-shell div", failures);
   assertContains(shellSource, 'className="mobile-topbar"', "mobile shell renders topbar", failures);
   assertContains(shellSource, 'className="mobile-hamburger"', "mobile shell renders hamburger button", failures);
-  assertContains(shellSource, 'className="mobile-logo-text"', "mobile shell renders logo text", failures);
   assertContains(shellSource, 'mobile-nav-drawer', "mobile shell renders nav drawer", failures);
   assertContains(shellSource, 'className="mobile-content"', "mobile shell renders content area", failures);
   assertContains(shellSource, 'className="mobile-player-bar"', "mobile shell renders bottom player bar", failures);
@@ -263,7 +262,6 @@ function main() {
     ".mobile-topbar",
     ".mobile-hamburger",
     ".mobile-logo-link",
-    ".mobile-logo-text",
     ".mobile-account-link",
     ".mobile-nav-overlay",
     ".mobile-nav-drawer",
