@@ -286,7 +286,7 @@ try {
 
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $nodeCmd.Source
-    $startInfo.WorkingDirectory = (Join-Path $RepoRoot "apps\web")
+    $startInfo.WorkingDirectory = (Split-Path $standaloneServerPath -Parent)
     $startInfo.Arguments = $standaloneServerPath
     $startInfo.UseShellExecute = $false
     $startInfo.RedirectStandardOutput = $false
