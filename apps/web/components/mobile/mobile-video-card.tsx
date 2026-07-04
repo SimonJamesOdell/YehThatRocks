@@ -5,9 +5,10 @@ import { MobileFavouriteButton } from "@/components/mobile/mobile-favourite-butt
 
 type MobileVideoCardProps = {
   video: MobileVideo;
+  initialFavourited?: boolean;
 };
 
-export function MobileVideoCard({ video }: MobileVideoCardProps) {
+export function MobileVideoCard({ video, initialFavourited }: MobileVideoCardProps) {
   const { playVideo, auth } = useMobilePlayer();
 
   const thumbnailUrl = `https://i.ytimg.com/vi/${encodeURIComponent(video.id)}/mqdefault.jpg`;
@@ -51,7 +52,7 @@ export function MobileVideoCard({ video }: MobileVideoCardProps) {
       </div>
       {auth?.isLoggedIn && (
         <div className="mobile-video-card-actions">
-          <MobileFavouriteButton videoId={video.id} size="sm" />
+          <MobileFavouriteButton videoId={video.id} size="sm" initialFavourited={initialFavourited} />
         </div>
       )}
     </div>
@@ -60,9 +61,10 @@ export function MobileVideoCard({ video }: MobileVideoCardProps) {
 
 type MobileVideoListProps = {
   videos: MobileVideo[];
+  initialFavourited?: boolean;
 };
 
-export function MobileVideoList({ videos }: MobileVideoListProps) {
+export function MobileVideoList({ videos, initialFavourited }: MobileVideoListProps) {
   if (videos.length === 0) {
     return (
       <div className="mobile-empty-state">
@@ -74,7 +76,7 @@ export function MobileVideoList({ videos }: MobileVideoListProps) {
   return (
     <div className="mobile-video-list">
       {videos.map((video) => (
-        <MobileVideoCard key={video.id} video={video} />
+        <MobileVideoCard key={video.id} video={video} initialFavourited={initialFavourited} />
       ))}
     </div>
   );

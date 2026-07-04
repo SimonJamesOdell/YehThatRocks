@@ -46,7 +46,7 @@ export default async function MobileFavouritesPage() {
           <p>{error}</p>
         </div>
       ) : (
-        <MobileVideoList videos={videos} />
+        <MobileVideoList videos={videos} initialFavourited />
       )}
     </div>
   );
