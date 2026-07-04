@@ -333,7 +333,7 @@ export default function MobileHomePage() {
           <div className="mobile-chat-panel">
           <div className="mobile-chat-list" ref={chatListRef} onScroll={handleChatScroll}>
             {chatLoading ? (
-              <div className="mobile-loading"><div className="mobile-loading-spinner" /></div>
+              <div className="mobile-loading"><span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span></div>
             ) : chatMessages.length === 0 ? (
               <p className="mobile-empty-state">No chat messages yet. Start the noise.</p>
             ) : (
@@ -402,7 +402,7 @@ export default function MobileHomePage() {
         {activeTab === "magazine" && (
           <div className="mobile-magazine-list">
             {magazineLoading ? (
-              <div className="mobile-loading"><div className="mobile-loading-spinner" /></div>
+              <div className="mobile-loading"><span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span></div>
             ) : magazineArticles.length === 0 ? (
               <p className="mobile-empty-state">No magazine articles yet.</p>
             ) : (
@@ -433,7 +433,7 @@ export default function MobileHomePage() {
         {activeTab === "forum" && (
           <div className="mobile-forum-list">
             {forumLoading ? (
-              <div className="mobile-loading"><div className="mobile-loading-spinner" /></div>
+              <div className="mobile-loading"><span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span></div>
             ) : forumSections.length === 0 ? (
               <p className="mobile-empty-state">No forum sections available.</p>
             ) : (

@@ -853,17 +853,14 @@
   color: var(--mobile-text-muted);
 }
 
-.mobile-loading-spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--mobile-border);
-  border-top-color: var(--mobile-accent);
-  border-radius: 50%;
-  animation: mobile-spin 0.7s linear infinite;
+.mobile-loading .playerBootBars {
+  height: 28px;
+  gap: 6px;
 }
 
-@keyframes mobile-spin {
-  to { transform: rotate(360deg); }
+.mobile-loading .playerBootBars span {
+  width: 5px;
+  height: 8px;
 }
 
 /* ── Load More ─────────────────────────────────────────────────────── */

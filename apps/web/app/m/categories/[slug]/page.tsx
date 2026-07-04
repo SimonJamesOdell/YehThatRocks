@@ -74,7 +74,7 @@ export default function MobileCategoryDetailPage() {
 
       {loading && (
         <div className="mobile-loading">
-          <div className="mobile-loading-spinner" />
+          <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
         </div>
       )}
 

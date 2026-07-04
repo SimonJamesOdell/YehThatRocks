@@ -359,7 +359,7 @@ export function MobileShell({ children }: { children: ReactNode }) {
             <div className="mobile-player-related">
               {relatedLoading && relatedVideos.length === 0 && (
                 <div className="mobile-loading" style={{ padding: "20px 0" }}>
-                  <div className="mobile-loading-spinner" />
+                  <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
                 </div>
               )}
 
@@ -376,7 +376,7 @@ export function MobileShell({ children }: { children: ReactNode }) {
 
               {isLoadingMoreRelated && (
                 <div className="mobile-loading" style={{ padding: "16px 0" }}>
-                  <div className="mobile-loading-spinner" />
+                  <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
                 </div>
               )}
 

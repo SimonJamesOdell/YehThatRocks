@@ -105,7 +105,7 @@ export default function MobileNewVideosPage() {
 
       {loading && (
         <div className="mobile-loading">
-          <div className="mobile-loading-spinner" />
+          <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
         </div>
       )}
 
@@ -126,7 +126,7 @@ export default function MobileNewVideosPage() {
           )}
           {loadingMore && (
             <div className="mobile-loading" style={{ padding: "16px 0" }}>
-              <div className="mobile-loading-spinner" />
+              <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
             </div>
           )}
         </>
