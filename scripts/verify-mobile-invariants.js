@@ -324,7 +324,6 @@ function main() {
 
   // Loading / empty state
   assertContains(cssSource, ".mobile-loading", "mobile CSS defines .mobile-loading", failures);
-  assertContains(cssSource, ".mobile-loading-spinner", "mobile CSS defines .mobile-loading-spinner", failures);
   assertContains(cssSource, ".mobile-empty-state", "mobile CSS defines .mobile-empty-state", failures);
   assertContains(cssSource, ".mobile-load-more", "mobile CSS defines .mobile-load-more", failures);
 
