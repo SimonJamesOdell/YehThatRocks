@@ -39,9 +39,9 @@ const files = {
   mobileRegister: path.join(ROOT, "apps/web/app/m/register/page.tsx"),
   mobileResetPassword: path.join(ROOT, "apps/web/app/m/reset-password/page.tsx"),
   mobileVerifyEmail: path.join(ROOT, "apps/web/app/m/verify-email/page.tsx"),
-  mobilePlayerContext: path.join(ROOT, "apps/web/app/m/_components/mobile-player-context.tsx"),
-  mobileYouTubePlayer: path.join(ROOT, "apps/web/app/m/_components/mobile-youtube-player.tsx"),
-  mobileVideoCard: path.join(ROOT, "apps/web/app/m/_components/mobile-video-card.tsx"),
+  mobilePlayerContext: path.join(ROOT, "apps/web/components/mobile/mobile-player-context.tsx"),
+  mobileYouTubePlayer: path.join(ROOT, "apps/web/components/mobile/mobile-youtube-player.tsx"),
+  mobileVideoCard: path.join(ROOT, "apps/web/components/mobile/mobile-video-card.tsx"),
   mobileCss: path.join(ROOT, "apps/web/app/styles/mobile.css"),
   globalsCss: path.join(ROOT, "apps/web/app/globals.css"),
   desktopOnlyPage: path.join(ROOT, "apps/web/app/desktop-only/page.tsx"),
@@ -190,6 +190,10 @@ function main() {
     files.mobileRegister,
     files.mobileResetPassword,
     files.mobileVerifyEmail,
+    files.mobileHome,
+    files.mobileTop100,
+    files.mobileFavourites,
+    files.mobileCategories,
   ]);
   for (const pageFile of mobilePageFiles) {
     const source = readFileStrict(pageFile, ROOT);
@@ -202,7 +206,7 @@ function main() {
     assertContains(source, 'export default function', `${relPath} has a default export`, failures);
   }
 
-  // ── 6. Page import hygiene — sub-pages import from ../_components/ ──
+  // ── 6. Page import hygiene — sub-pages import from @/components/mobile/ ──
   const subPageFiles = [
     files.mobileNew,
     files.mobileTop100,
@@ -211,13 +215,13 @@ function main() {
   ];
   for (const pageFile of subPageFiles) {
     const source = readFileStrict(pageFile, ROOT);
-    assertContains(source, '../_components/mobile-video-card', `${path.relative(ROOT, pageFile)} imports from ../_components/`, failures);
+    assertContains(source, '@/components/mobile/mobile-video-card', `${path.relative(ROOT, pageFile)} imports from @/components/mobile/`, failures);
   }
 
-  // Deep-nested pages import from ../../_components/
+  // Deep-nested pages import from @/components/mobile/
   for (const pageFile of [files.mobileCategoriesSlug, files.mobileArtistSlug]) {
     const source = readFileStrict(pageFile, ROOT);
-    assertContains(source, '../../_components/mobile-video-card', `${path.relative(ROOT, pageFile)} imports from ../../_components/`, failures);
+    assertContains(source, '@/components/mobile/mobile-video-card', `${path.relative(ROOT, pageFile)} imports from @/components/mobile/`, failures);
   }
 
   // ── 7. Video card element type and keyboard accessibility ────────────
