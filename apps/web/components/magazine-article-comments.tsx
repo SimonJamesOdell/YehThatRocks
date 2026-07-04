@@ -216,7 +216,7 @@ export function MagazineArticleComments({ slug }: MagazineArticleCommentsProps) 
 
         {authRequired ? (
           <p className="authMessage magazineCommentsStatus magazineCommentsStatusInfo">
-            You need an account to post. <Link href="/login">Sign in</Link>
+            You need an account to post. <Link href="/m/login">Sign in</Link>
           </p>
         ) : null}
         {notice ? <p className="authMessage magazineCommentsStatus magazineCommentsStatusInfo">{notice}</p> : null}

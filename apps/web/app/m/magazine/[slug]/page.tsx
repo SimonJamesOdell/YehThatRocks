@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 
 import { MagazineArticleComments } from "@/components/magazine-article-comments";
+import { MagazineCTA } from "@/components/mobile/magazine-cta";
 import { getArticleBySlug, getPublishedArticles, type MagazineBlock } from "@/lib/magazine-data";
 
 type Props = {
@@ -80,21 +81,7 @@ export default async function MobileMagazineArticlePage({ params }: Props) {
       </div>
 
       <div className="mobile-magazine-actions">
-        {hasVideo ? (
-          <Link
-            href={`/m?v=${article.videoId}`}
-            className="mobile-magazine-cta"
-          >
-            Watch now in YehThatRocks
-          </Link>
-        ) : (
-          <Link
-            href={`/m/artist/${artistSlug}`}
-            className="mobile-magazine-cta"
-          >
-            Explore {article.artist}
-          </Link>
-        )}
+        <MagazineCTA videoId={article.videoId ?? null} artist={article.artist} artistSlug={artistSlug} />
       </div>
 
       {relatedArticles.length > 0 && (
@@ -102,15 +89,24 @@ export default async function MobileMagazineArticlePage({ params }: Props) {
           <h2 className="mobile-magazine-related-title">More articles</h2>
           <div className="mobile-magazine-related-list">
             {relatedArticles.map((related) => (
-              <Link
+              <a
                 key={related.slug}
                 href={`/m/magazine/${related.slug}`}
-                className="mobile-magazine-related-item"
+                className="mobile-magazine-card"
               >
-                <strong>{related.artist}</strong>
-                {related.trackName ? <span>{related.trackName}</span> : null}
-                <small>{related.kicker ?? related.genre}</small>
-              </Link>
+                {related.videoId && (
+                  <img
+                    src={`https://i.ytimg.com/vi/${encodeURIComponent(related.videoId)}/mqdefault.jpg`}
+                    alt=""
+                    className="mobile-magazine-card-thumb"
+                    loading="lazy"
+                  />
+                )}
+                <div className="mobile-magazine-card-body">
+                  <div className="mobile-magazine-card-kicker">{related.kicker || related.genre}</div>
+                  <div className="mobile-magazine-card-title">{related.artist}{related.trackName ? ` — ${related.trackName}` : ""}</div>
+                </div>
+              </a>
             ))}
           </div>
         </div>
