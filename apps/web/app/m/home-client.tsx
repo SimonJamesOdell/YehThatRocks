@@ -185,18 +185,12 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
       setMagazineHasMore(cache.hasMore);
       magazineOffsetRef.current = cache.offset;
       setMagazineLoading(false);
-      // Restore scroll position after articles render.
-      // Double-RAF: first frame lets React paint the article list,
-      // second frame scrolls after the browser has laid out the new height.
+      // Restore scroll position saved on article click
       const savedY = sessionStorage.getItem(MAGAZINE_SCROLL_KEY);
       if (savedY) {
         const y = parseInt(savedY, 10);
         if (!isNaN(y) && y > 0) {
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              window.scrollTo(0, y);
-            });
-          });
+          setTimeout(() => window.scrollTo(0, y), 0);
         }
       }
       return;
@@ -301,19 +295,6 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
         break;
     }
   }, [activeTab, chatMessages.length, forumSections.length, loadChat, loadForum]);
-
-  // Save magazine scroll position on scroll + on unmount
-  useEffect(() => {
-    if (activeTab !== "magazine") return;
-    const save = () => {
-      try { sessionStorage.setItem(MAGAZINE_SCROLL_KEY, String(window.scrollY)); } catch { /* quota */ }
-    };
-    window.addEventListener("scroll", save, { passive: true });
-    return () => {
-      save(); // capture final position before navigation / tab switch
-      window.removeEventListener("scroll", save);
-    };
-  }, [activeTab]);
 
   // Persist magazine articles to sessionStorage so back-navigation restores them
   useEffect(() => {
@@ -578,6 +559,9 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
                   key={article.slug}
                   href={`/m/magazine/${encodeURIComponent(article.slug)}`}
                   className="mobile-magazine-card"
+                  onClick={() => {
+                    try { sessionStorage.setItem(MAGAZINE_SCROLL_KEY, String(window.scrollY)); } catch { /* quota */ }
+                  }}
                 >
                   {article.videoId && (
                     <img
