@@ -172,8 +172,12 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
         const data = await res.json();
         const newArticles: MagazineArticle[] = data.articles || [];
         if (newArticles.length > 0) {
-          setMagazineArticles((prev) => [...prev, ...newArticles]);
-          magazineOffsetRef.current = offset + newArticles.length;
+          setMagazineArticles((prev) => {
+            const existingSlugs = new Set(prev.map((a) => a.slug));
+            const deduped = newArticles.filter((a) => !existingSlugs.has(a.slug));
+            magazineOffsetRef.current = offset + deduped.length;
+            return [...prev, ...deduped];
+          });
         }
         setMagazineHasMore(data.hasMore ?? false);
       }
