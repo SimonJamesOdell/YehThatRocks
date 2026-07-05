@@ -296,16 +296,8 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
     );
 
     observer.observe(sentinel);
-    // Auto-load more if content doesn't fill the scrollable area
-    const raf = requestAnimationFrame(() => {
-      const rect = sentinel.getBoundingClientRect();
-      if (rect.top < window.innerHeight) {
-        void loadMoreMagazine();
-      }
-    });
     return () => {
       observer.disconnect();
-      cancelAnimationFrame(raf);
     };
   }, [activeTab, magazineHasMore, magazineLoading, loadMoreMagazine]);
 
