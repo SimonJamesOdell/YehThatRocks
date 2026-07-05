@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Metal_Mania } from "next/font/google";
-import Script from "next/script";
 
+import { PerformanceMeasureGuard } from "@/components/performance-measure-guard";
 import { YouTubeIframeApiLoader } from "@/components/youtube-iframe-api-loader";
 import "./globals.css";
 
@@ -57,37 +57,9 @@ export default function RootLayout({
         <link rel="preconnect" href="https://www.youtube.com" />
         <link rel="preconnect" href="https://www.youtube-nocookie.com" />
         <link rel="preconnect" href="https://i.ytimg.com" />
-        <Script id="performance-measure-guard" strategy="beforeInteractive">
-          {`(function () {
-            if (typeof window === "undefined" || typeof performance === "undefined") {
-              return;
-            }
-            var perf = performance;
-            if (perf.__ytrMeasurePatched) {
-              return;
-            }
-            var originalMeasure = perf.measure.bind(perf);
-            perf.__ytrMeasurePatched = true;
-            perf.measure = function () {
-              try {
-                return originalMeasure.apply(perf, arguments);
-              } catch (error) {
-                var message = error && error.message ? String(error.message) : String(error);
-                if (
-                  message.indexOf("negative time stamp") !== -1 ||
-                  message.indexOf("cannot have a negative time stamp") !== -1 ||
-                  message.indexOf("Failed to execute 'measure'") !== -1 ||
-                  message.indexOf("NotFound") !== -1
-                ) {
-                  return;
-                }
-                throw error;
-              }
-            };
-          })();`}
-        </Script>
       </head>
       <body className={metalMania.variable}>
+        <PerformanceMeasureGuard />
         <YouTubeIframeApiLoader />
         {children}
       </body>
