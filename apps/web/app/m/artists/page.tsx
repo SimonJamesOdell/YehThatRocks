@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
+import { MobileFixedScroll } from "@/components/mobile/mobile-fixed-scroll";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#".split("");
 
@@ -54,7 +55,7 @@ export default function MobileArtistsPage() {
   }, [letter, offset, loadArtists]);
 
   return (
-    <div>
+    <MobileFixedScroll>
       <div className="mobile-page-header">
         <h1 className="mobile-page-title">Artists</h1>
         <p className="mobile-page-subtitle">Browse 140,000+ artists A–Z</p>
@@ -73,46 +74,48 @@ export default function MobileArtistsPage() {
         ))}
       </div>
 
-      {loading && (
-        <div className="mobile-loading">
-          <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
-        </div>
-      )}
-
-      {!loading && artists.length === 0 && (
-        <div className="mobile-empty-state">
-          <p>No artists found for {letter}.</p>
-        </div>
-      )}
-
-      {!loading && artists.length > 0 && (
-        <>
-          <div className="mobile-artists-list">
-            {artists.map((artist) => (
-              <Link
-                key={artist.slug}
-                href={`/m/artist/${artist.slug}`}
-                className="mobile-artist-link"
-              >
-                <span>{artist.name}</span>
-                {artist.videoCount && (
-                  <span className="mobile-artist-meta">{artist.videoCount} videos</span>
-                )}
-              </Link>
-            ))}
+      <div className="mobile-results-scroll">
+        {loading && (
+          <div className="mobile-loading">
+            <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
           </div>
-          {hasMore && (
-            <button
-              type="button"
-              className="mobile-load-more"
-              onClick={handleLoadMore}
-              disabled={loadingMore}
-            >
-              {loadingMore ? "Loading..." : "Load More"}
-            </button>
-          )}
-        </>
-      )}
-    </div>
+        )}
+
+        {!loading && artists.length === 0 && (
+          <div className="mobile-empty-state">
+            <p>No artists found for {letter}.</p>
+          </div>
+        )}
+
+        {!loading && artists.length > 0 && (
+          <>
+            <div className="mobile-artists-list">
+              {artists.map((artist) => (
+                <Link
+                  key={artist.slug}
+                  href={`/m/artist/${artist.slug}`}
+                  className="mobile-artist-link"
+                >
+                  <span>{artist.name}</span>
+                  {artist.videoCount && (
+                    <span className="mobile-artist-meta">{artist.videoCount} videos</span>
+                  )}
+                </Link>
+              ))}
+            </div>
+            {hasMore && (
+              <button
+                type="button"
+                className="mobile-load-more"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+              >
+                {loadingMore ? "Loading..." : "Load More"}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </MobileFixedScroll>
   );
 }

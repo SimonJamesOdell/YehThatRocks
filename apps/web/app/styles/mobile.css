@@ -255,6 +255,47 @@
   padding-bottom: calc(20px + var(--mobile-safe-bottom));
 }
 
+/* ── Fixed Scroll Mode ──────────────────────────────────────────────── */
+/* Locks body scroll and restructures the shell so only the results
+   container scrolls internally. Activated by MobileFixedScroll. */
+
+html.mobile-fixed-scroll,
+html.mobile-fixed-scroll body {
+  overflow: hidden;
+  height: 100%;
+}
+
+html.mobile-fixed-scroll .mobile-shell {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+html.mobile-fixed-scroll .mobile-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Page wrapper that fills .mobile-content and lays out header + results vertically */
+.mobile-fixed-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Scrollable results container — use for the video list / artist list area */
+.mobile-results-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* ── Page Header ───────────────────────────────────────────────────── */
 .mobile-page-header {
   margin-bottom: 16px;

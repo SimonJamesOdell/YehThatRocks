@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { MobileVideoList } from "@/components/mobile/mobile-video-card";
 import type { MobileVideo } from "@/components/mobile/mobile-player-context";
+import { MobileFixedScroll } from "@/components/mobile/mobile-fixed-scroll";
 
 export default function MobileNewVideosPage() {
   const [videos, setVideos] = useState<MobileVideo[]>([]);
@@ -15,8 +16,10 @@ export default function MobileNewVideosPage() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const loadVideos = useCallback(async (currentSkip: number, append = false) => {
-    if (loadingMoreRef.current) return;
-    loadingMoreRef.current = true;
+    // Only guard concurrent load-more calls; initial load must always run
+    // (otherwise React Strict Mode double-mount blocks the second init).
+    if (append && loadingMoreRef.current) return;
+    if (append) loadingMoreRef.current = true;
     try {
       const res = await fetch(`/api/videos/newest?skip=${currentSkip}&take=30`);
       if (!res.ok) throw new Error("Failed to load");
@@ -31,7 +34,7 @@ export default function MobileNewVideosPage() {
         setError(err instanceof Error ? err.message : "Failed to load");
       }
     } finally {
-      loadingMoreRef.current = false;
+      if (append) loadingMoreRef.current = false;
     }
   }, []);
 
@@ -97,40 +100,42 @@ export default function MobileNewVideosPage() {
   }, [hasMore, loading, videos.length, handleLoadMore]);
 
   return (
-    <div>
+    <MobileFixedScroll>
       <div className="mobile-page-header">
         <h1 className="mobile-page-title">New Videos</h1>
         <p className="mobile-page-subtitle">Latest additions to the catalog</p>
       </div>
 
-      {loading && (
-        <div className="mobile-loading">
-          <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
-        </div>
-      )}
+      <div className="mobile-results-scroll">
+        {loading && (
+          <div className="mobile-loading">
+            <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
+          </div>
+        )}
 
-      {error && (
-        <div className="mobile-empty-state">
-          <p>{error}</p>
-          <button type="button" className="mobile-retry-button" onClick={handleRetry}>
-            Try Again
-          </button>
-        </div>
-      )}
+        {error && (
+          <div className="mobile-empty-state">
+            <p>{error}</p>
+            <button type="button" className="mobile-retry-button" onClick={handleRetry}>
+              Try Again
+            </button>
+          </div>
+        )}
 
-      {!loading && !error && (
-        <>
-          <MobileVideoList videos={videos} />
-          {hasMore && (
-            <div ref={sentinelRef} style={{ height: 1, width: "100%" }} />
-          )}
-          {loadingMore && (
-            <div className="mobile-loading" style={{ padding: "16px 0" }}>
-              <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
-            </div>
-          )}
-        </>
-      )}
-    </div>
+        {!loading && !error && (
+          <>
+            <MobileVideoList videos={videos} />
+            {hasMore && (
+              <div ref={sentinelRef} style={{ height: 1, width: "100%" }} />
+            )}
+            {loadingMore && (
+              <div className="mobile-loading" style={{ padding: "16px 0" }}>
+                <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </MobileFixedScroll>
   );
 }

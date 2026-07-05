@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback, useEffect, type FormEvent } from "react";
+import { useState, useCallback, type FormEvent } from "react";
+import { MobileFixedScroll } from "@/components/mobile/mobile-fixed-scroll";
 import { MobileVideoList } from "@/components/mobile/mobile-video-card";
 import type { MobileVideo } from "@/components/mobile/mobile-player-context";
 
@@ -50,7 +51,7 @@ export default function MobileSearchPage() {
   }, [lastQuery]);
 
   return (
-    <div>
+    <MobileFixedScroll>
       <div className="mobile-page-header">
         <h1 className="mobile-page-title">Search</h1>
       </div>
@@ -69,36 +70,38 @@ export default function MobileSearchPage() {
         </button>
       </form>
 
-      {loading && (
-        <div className="mobile-loading">
-          <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
-        </div>
-      )}
+      <div className="mobile-results-scroll">
+        {loading && (
+          <div className="mobile-loading">
+            <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
+          </div>
+        )}
 
-      {error && (
-        <div className="mobile-empty-state">
-          <p>{error}</p>
-          <button type="button" className="mobile-retry-button" onClick={handleRetry}>
-            Try Again
-          </button>
-        </div>
-      )}
+        {error && (
+          <div className="mobile-empty-state">
+            <p>{error}</p>
+            <button type="button" className="mobile-retry-button" onClick={handleRetry}>
+              Try Again
+            </button>
+          </div>
+        )}
 
-      {!loading && searched && videos.length === 0 && !error && (
-        <div className="mobile-empty-state">
-          <p>No results found for &ldquo;{lastQuery}&rdquo;.</p>
-        </div>
-      )}
+        {!loading && searched && videos.length === 0 && !error && (
+          <div className="mobile-empty-state">
+            <p>No results found for &ldquo;{lastQuery}&rdquo;.</p>
+          </div>
+        )}
 
-      {!loading && videos.length > 0 && (
-        <MobileVideoList videos={videos} />
-      )}
+        {!loading && videos.length > 0 && (
+          <MobileVideoList videos={videos} />
+        )}
 
-      {!searched && !loading && (
-        <div className="mobile-empty-state">
-          <p>Enter a search term above to find music.</p>
-        </div>
-      )}
-    </div>
+        {!searched && !loading && (
+          <div className="mobile-empty-state">
+            <p>Enter a search term above to find music.</p>
+          </div>
+        )}
+      </div>
+    </MobileFixedScroll>
   );
 }
