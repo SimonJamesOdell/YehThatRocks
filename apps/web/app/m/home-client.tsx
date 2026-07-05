@@ -96,18 +96,28 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
 
-  // Restore magazine cache if returning to the magazine tab
-  const magazineCache = initialTab === "magazine" ? readMagazineCache() : null;
-
   // Tab content state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialChatMessages ?? []);
   const [chatLoading, setChatLoading] = useState(!initialChatMessages);
   const [videoPreviews, setVideoPreviews] = useState<Record<string, { parsedArtist?: string | null; parsedTrack?: string | null; genre?: string | null }>>({});
-  const [magazineArticles, setMagazineArticles] = useState<MagazineArticle[]>(magazineCache?.articles ?? []);
+  const [magazineArticles, setMagazineArticles] = useState<MagazineArticle[]>([]);
   const [magazineLoading, setMagazineLoading] = useState(false);
-  const [magazineHasMore, setMagazineHasMore] = useState(magazineCache?.hasMore ?? true);
+  const [magazineHasMore, setMagazineHasMore] = useState(true);
   const [magazineLoadingMore, setMagazineLoadingMore] = useState(false);
-  const magazineOffsetRef = useRef(magazineCache?.offset ?? 0);
+  const magazineOffsetRef = useRef(0);
+
+  // Restore magazine cache from sessionStorage after hydration (client-only)
+  const magazineCacheRestoredRef = useRef(false);
+  useEffect(() => {
+    if (magazineCacheRestoredRef.current) return;
+    const cache = readMagazineCache();
+    if (cache && cache.articles.length > 0) {
+      setMagazineArticles(cache.articles);
+      setMagazineHasMore(cache.hasMore);
+      magazineOffsetRef.current = cache.offset;
+    }
+    magazineCacheRestoredRef.current = true;
+  }, []);
   const [forumSections, setForumSections] = useState<ForumSection[]>([]);
   const [forumLoading, setForumLoading] = useState(false);
   const chatListRef = useRef<HTMLDivElement>(null);
