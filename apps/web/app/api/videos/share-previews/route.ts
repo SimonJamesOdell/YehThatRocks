@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   const videoIds = rawIds
     .split(",")
     .map((id) => normalizeYouTubeVideoId(id.trim()))
-    .filter(Boolean);
+    .filter((id): id is string => id !== undefined);
 
   if (videoIds.length === 0) {
     return NextResponse.json({ videos: {} });
