@@ -185,12 +185,18 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
       setMagazineHasMore(cache.hasMore);
       magazineOffsetRef.current = cache.offset;
       setMagazineLoading(false);
-      // Restore scroll position after articles render
+      // Restore scroll position after articles render.
+      // Double-RAF: first frame lets React paint the article list,
+      // second frame scrolls after the browser has laid out the new height.
       const savedY = sessionStorage.getItem(MAGAZINE_SCROLL_KEY);
       if (savedY) {
         const y = parseInt(savedY, 10);
         if (!isNaN(y) && y > 0) {
-          setTimeout(() => window.scrollTo(0, y), 0);
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              window.scrollTo(0, y);
+            });
+          });
         }
       }
       return;
@@ -296,14 +302,17 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
     }
   }, [activeTab, chatMessages.length, forumSections.length, loadChat, loadForum]);
 
-  // Save magazine scroll position on scroll
+  // Save magazine scroll position on scroll + on unmount
   useEffect(() => {
     if (activeTab !== "magazine") return;
-    const onScroll = () => {
+    const save = () => {
       try { sessionStorage.setItem(MAGAZINE_SCROLL_KEY, String(window.scrollY)); } catch { /* quota */ }
     };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    window.addEventListener("scroll", save, { passive: true });
+    return () => {
+      save(); // capture final position before navigation / tab switch
+      window.removeEventListener("scroll", save);
+    };
   }, [activeTab]);
 
   // Persist magazine articles to sessionStorage so back-navigation restores them
