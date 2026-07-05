@@ -12,7 +12,7 @@ export function PerformanceMeasureGuard() {
     if (typeof window === "undefined" || typeof performance === "undefined") return;
 
     const perf = performance as unknown as Record<string, unknown> & {
-      measure: Performance["measure"];
+      measure: (...args: Parameters<Performance["measure"]>) => PerformanceMeasure | undefined;
       __ytrMeasurePatched?: boolean;
     };
 
