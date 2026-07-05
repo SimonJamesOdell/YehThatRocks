@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { parseSharedVideoMessage, parseActivityMessage } from "@/lib/chat-shared-video";
 import { useMobilePlayer } from "@/components/mobile/mobile-player-context";
@@ -52,8 +53,19 @@ type MobileHomePageClientProps = {
   initialChatMessages?: ChatMessage[];
 };
 
+const VALID_TABS: Tab[] = ["chat", "magazine", "forum"];
+
+function parseInitialTab(param: string | null): Tab {
+  if (param && VALID_TABS.includes(param as Tab)) {
+    return param as Tab;
+  }
+  return "chat";
+}
+
 export default function MobileHomePageClient({ initialChatMessages }: MobileHomePageClientProps) {
-  const [activeTab, setActiveTab] = useState<Tab>("chat");
+  const searchParams = useSearchParams();
+  const initialTab = parseInitialTab(searchParams.get("tab"));
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const { auth, playVideo } = useMobilePlayer();
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
