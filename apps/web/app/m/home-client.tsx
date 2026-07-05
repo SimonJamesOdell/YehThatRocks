@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { parseSharedVideoMessage, parseActivityMessage } from "@/lib/chat-shared-video";
 import { useMobilePlayer } from "@/components/mobile/mobile-player-context";
 import { formatChatTimestamp } from "@/components/shell-dynamic-utils";
@@ -106,9 +106,11 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
   const [magazineLoadingMore, setMagazineLoadingMore] = useState(false);
   const magazineOffsetRef = useRef(0);
 
-  // Restore magazine cache from sessionStorage after hydration (client-only)
+  // Restore magazine cache from sessionStorage after hydration (client-only).
+  // useLayoutEffect fires synchronously before any useEffect, so the tab-switch
+  // effect sees the restored articles and skips the unnecessary fetch.
   const magazineCacheRestoredRef = useRef(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (magazineCacheRestoredRef.current) return;
     const cache = readMagazineCache();
     if (cache && cache.articles.length > 0) {
