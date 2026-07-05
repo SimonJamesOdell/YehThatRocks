@@ -11,7 +11,7 @@ export function PerformanceMeasureGuard() {
   useLayoutEffect(() => {
     if (typeof window === "undefined" || typeof performance === "undefined") return;
 
-    const perf = performance as Record<string, unknown> & {
+    const perf = performance as unknown as Record<string, unknown> & {
       measure: Performance["measure"];
       __ytrMeasurePatched?: boolean;
     };
