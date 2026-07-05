@@ -527,10 +527,8 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
 
         {activeTab === "magazine" && (
           <div className="mobile-magazine-list" ref={magazineListRef} onScroll={handleMagazineScroll}>
-            {magazineLoading ? (
+            {(magazineLoading || magazineArticles.length === 0) ? (
               <div className="mobile-loading"><span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span></div>
-            ) : magazineArticles.length === 0 ? (
-              <p className="mobile-empty-state">No magazine articles yet.</p>
             ) : (
               magazineArticles.map((article) => (
                 <a
