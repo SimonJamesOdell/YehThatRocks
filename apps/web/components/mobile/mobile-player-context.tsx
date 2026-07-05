@@ -54,6 +54,18 @@ type MobilePlayerContextValue = {
   refreshAuth: () => void;
 };
 
+type MobilePlayerProviderProps = {
+  children: ReactNode;
+  /** Pre-resolved auth state from server-side layout. When provided,
+   *  the initial /api/auth/me roundtrip is skipped. */
+  initialAuth?: {
+    isLoggedIn: boolean;
+    userId: number | null;
+    screenName: string | null;
+    checked: true;
+  };
+};
+
 const MobilePlayerContext = createContext<MobilePlayerContextValue | null>(null);
 
 export function useMobilePlayer() {
@@ -64,18 +76,17 @@ export function useMobilePlayer() {
   return ctx;
 }
 
-export function MobilePlayerProvider({ children }: { children: ReactNode }) {
+export function MobilePlayerProvider({ children, initialAuth }: MobilePlayerProviderProps) {
   const [player, setPlayer] = useState<MobilePlayerState>({
     video: null,
     isPlaying: false,
     isFullscreen: false,
   });
-  const [auth, setAuth] = useState<AuthState>({
-    isLoggedIn: false,
-    userId: null,
-    screenName: null,
-    checked: false,
-  });
+  const [auth, setAuth] = useState<AuthState>(
+    initialAuth
+      ? { isLoggedIn: initialAuth.isLoggedIn, userId: initialAuth.userId, screenName: initialAuth.screenName, checked: true }
+      : { isLoggedIn: false, userId: null, screenName: null, checked: false },
+  );
   const playerApiRef = useRef<YouTubePlayerHandle | null>(null);
 
   const refreshAuth = useCallback(async () => {
@@ -97,10 +108,12 @@ export function MobilePlayerProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Check auth on mount
+  // Check auth on mount — only when not preloaded server-side
   useEffect(() => {
-    refreshAuth();
-  }, [refreshAuth]);
+    if (!initialAuth) {
+      refreshAuth();
+    }
+  }, [initialAuth, refreshAuth]);
 
   const playVideo = useCallback((video: MobileVideo) => {
     setPlayer({ video, isPlaying: true, isFullscreen: true });
