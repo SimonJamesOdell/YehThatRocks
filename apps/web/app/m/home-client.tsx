@@ -79,6 +79,7 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
   const [forumSections, setForumSections] = useState<ForumSection[]>([]);
   const [forumLoading, setForumLoading] = useState(false);
   const chatListRef = useRef<HTMLDivElement>(null);
+  const magazineListRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
 
   // Track whether initial data was provided — skip first fetch if so
@@ -215,6 +216,34 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
         break;
     }
   }, [activeTab, chatMessages.length, magazineArticles.length, forumSections.length, loadChat, loadMagazine, loadForum]);
+
+  // Preserve / restore magazine list scroll position across navigations
+  const MAGAZINE_SCROLL_KEY = "mobile-magazine-scroll";
+
+  const handleMagazineScroll = useCallback(() => {
+    const el = magazineListRef.current;
+    if (!el) return;
+    try { sessionStorage.setItem(MAGAZINE_SCROLL_KEY, String(el.scrollTop)); } catch { /* quota exceeded */ }
+  }, []);
+
+  // Restore scroll position when magazine articles load and tab is active
+  useEffect(() => {
+    if (activeTab !== "magazine" || magazineLoading || magazineArticles.length === 0) return;
+    const el = magazineListRef.current;
+    if (!el) return;
+    try {
+      const saved = sessionStorage.getItem(MAGAZINE_SCROLL_KEY);
+      if (saved) {
+        const scrollTop = parseInt(saved, 10);
+        if (!isNaN(scrollTop)) {
+          // Use requestAnimationFrame to ensure DOM has settled
+          requestAnimationFrame(() => {
+            el.scrollTop = scrollTop;
+          });
+        }
+      }
+    } catch { /* ignore */ }
+  }, [activeTab, magazineLoading, magazineArticles.length]);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "chat", label: "Chat" },
@@ -430,7 +459,7 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
         )}
 
         {activeTab === "magazine" && (
-          <div className="mobile-magazine-list">
+          <div className="mobile-magazine-list" ref={magazineListRef} onScroll={handleMagazineScroll}>
             {magazineLoading ? (
               <div className="mobile-loading"><span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span></div>
             ) : magazineArticles.length === 0 ? (
