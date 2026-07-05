@@ -301,9 +301,10 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
       if (saved) {
         const y = parseInt(saved, 10);
         if (!isNaN(y) && y > 0) {
-          requestAnimationFrame(() => {
-            window.scrollTo(0, y);
-          });
+          // Use a short timeout so the browser finishes laying out the
+          // restored article list before we try to scroll.
+          const id = setTimeout(() => window.scrollTo(0, y), 0);
+          return () => clearTimeout(id);
         }
       }
     } catch { /* ignore */ }
