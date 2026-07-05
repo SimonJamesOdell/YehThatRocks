@@ -557,7 +557,7 @@ function validateSectionId(sectionId: string): boolean {
 
 /**
  * Get latest threads across all sections, newest first (pinned first).
- * Falls back to seed data when DB is unavailable.
+ * Falls back gracefully when DB is unavailable.
  */
 export async function getLatestThreads(limit = 20): Promise<ForumThreadSummary[]> {
   try {
@@ -947,7 +947,7 @@ type SectionUnseenRow = {
 
 /**
  * Get thread counts for every valid forum section.
- * Falls back to counting seed data when DB is unavailable.
+ * Falls back gracefully when DB is unavailable.
  */
 export async function getSectionThreadCounts(): Promise<Map<string, number>> {
   const map = new Map<string, number>();

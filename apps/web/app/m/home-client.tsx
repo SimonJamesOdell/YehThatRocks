@@ -609,7 +609,7 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
               forumSections.map((section) => (
                 <a
                   key={section.id}
-                  href={`/forum?section=${encodeURIComponent(section.id)}`}
+                  href={`/m/forum?section=${encodeURIComponent(section.id)}`}
                   className="mobile-forum-card"
                 >
                   <div className="mobile-forum-card-title">{section.title}</div>
