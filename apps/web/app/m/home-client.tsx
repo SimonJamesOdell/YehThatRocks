@@ -172,7 +172,7 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
     }
   }, [sendChat]);
 
-  // ── Magazine: init (cache or fetch) + scroll restore ──────────────────
+  // ── Magazine: init (cache or fetch) ──────────────────────────────────
   const MAGAZINE_SCROLL_KEY = "mobile-magazine-scroll";
 
   useEffect(() => {
@@ -185,14 +185,6 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
       setMagazineHasMore(cache.hasMore);
       magazineOffsetRef.current = cache.offset;
       setMagazineLoading(false);
-      // Restore scroll position saved on article click
-      const savedY = sessionStorage.getItem(MAGAZINE_SCROLL_KEY);
-      if (savedY) {
-        const y = parseInt(savedY, 10);
-        if (!isNaN(y) && y > 0) {
-          setTimeout(() => window.scrollTo(0, y), 0);
-        }
-      }
       return;
     }
 
@@ -211,6 +203,18 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
       .catch(() => {})
       .finally(() => setMagazineLoading(false));
   }, [activeTab]);
+
+  // ── Magazine: scroll restore (separate effect — fires after articles are in the DOM) ──
+  useEffect(() => {
+    if (activeTab !== "magazine" || magazineArticles.length === 0) return;
+    const savedY = sessionStorage.getItem(MAGAZINE_SCROLL_KEY);
+    if (!savedY) return;
+    const y = parseInt(savedY, 10);
+    if (isNaN(y) || y <= 0) return;
+    // Small delay to let the browser finish laying out the article list
+    const id = setTimeout(() => window.scrollTo(0, y), 50);
+    return () => clearTimeout(id);
+  }, [activeTab, magazineArticles.length]);
 
   // Load more magazine articles (infinite scroll)
   const loadMoreMagazine = useCallback(async () => {
