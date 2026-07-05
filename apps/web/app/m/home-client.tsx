@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { parseSharedVideoMessage, parseActivityMessage } from "@/lib/chat-shared-video";
 import { useMobilePlayer } from "@/components/mobile/mobile-player-context";
 import { formatChatTimestamp } from "@/components/shell-dynamic-utils";
@@ -106,20 +106,6 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
   const [magazineLoadingMore, setMagazineLoadingMore] = useState(false);
   const magazineOffsetRef = useRef(0);
 
-  // Restore magazine cache from sessionStorage after hydration (client-only).
-  // useLayoutEffect fires synchronously before any useEffect, so the tab-switch
-  // effect sees the restored articles and skips the unnecessary fetch.
-  const magazineCacheRestoredRef = useRef(false);
-  useLayoutEffect(() => {
-    if (magazineCacheRestoredRef.current) return;
-    const cache = readMagazineCache();
-    if (cache && cache.articles.length > 0) {
-      setMagazineArticles(cache.articles);
-      setMagazineHasMore(cache.hasMore);
-      magazineOffsetRef.current = cache.offset;
-    }
-    magazineCacheRestoredRef.current = true;
-  }, []);
   const [forumSections, setForumSections] = useState<ForumSection[]>([]);
   const [forumLoading, setForumLoading] = useState(false);
   const chatListRef = useRef<HTMLDivElement>(null);
@@ -186,21 +172,45 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
     }
   }, [sendChat]);
 
-  // Fetch magazine articles (initial load)
-  const loadMagazine = useCallback(async () => {
+  // ── Magazine: init (cache or fetch) + scroll restore ──────────────────
+  const MAGAZINE_SCROLL_KEY = "mobile-magazine-scroll";
+
+  useEffect(() => {
+    if (activeTab !== "magazine") return;
+
+    // 1. Try sessionStorage cache first (back-navigation)
+    const cache = readMagazineCache();
+    if (cache && cache.articles.length > 0) {
+      setMagazineArticles(cache.articles);
+      setMagazineHasMore(cache.hasMore);
+      magazineOffsetRef.current = cache.offset;
+      setMagazineLoading(false);
+      // Restore scroll position after articles render
+      const savedY = sessionStorage.getItem(MAGAZINE_SCROLL_KEY);
+      if (savedY) {
+        const y = parseInt(savedY, 10);
+        if (!isNaN(y) && y > 0) {
+          setTimeout(() => window.scrollTo(0, y), 0);
+        }
+      }
+      return;
+    }
+
+    // 2. No cache — fetch from API
     setMagazineLoading(true);
     magazineOffsetRef.current = 0;
-    try {
-      const res = await fetch("/api/magazine/latest?limit=8&offset=0");
-      if (res.ok) {
-        const data = await res.json();
-        setMagazineArticles(data.articles || []);
-        setMagazineHasMore(data.hasMore ?? true);
-        magazineOffsetRef.current = (data.articles || []).length;
-      }
-    } catch { /* silent */ }
-    finally { setMagazineLoading(false); }
-  }, []);
+    fetch("/api/magazine/latest?limit=8&offset=0")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { articles?: MagazineArticle[]; hasMore?: boolean } | null) => {
+        if (data) {
+          setMagazineArticles(data.articles || []);
+          setMagazineHasMore(data.hasMore ?? true);
+          magazineOffsetRef.current = (data.articles || []).length;
+        }
+      })
+      .catch(() => {})
+      .finally(() => setMagazineLoading(false));
+  }, [activeTab]);
 
   // Load more magazine articles (infinite scroll)
   const loadMoreMagazine = useCallback(async () => {
@@ -274,28 +284,19 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
     fetchBatch();
   }, [chatMessages, videoPreviews]);
 
-  // Load tab content when tab changes
+  // Load tab content when tab changes (chat + forum only; magazine handled separately)
   useEffect(() => {
     switch (activeTab) {
       case "chat":
         if (!hasInitialChat.current && chatMessages.length === 0) loadChat();
         break;
-      case "magazine":
-        if (magazineArticles.length === 0) {
-          magazineOffsetRef.current = 0;
-          loadMagazine();
-        }
-        break;
       case "forum":
         if (forumSections.length === 0) loadForum();
         break;
     }
-  }, [activeTab, chatMessages.length, magazineArticles.length, forumSections.length, loadChat, loadMagazine, loadForum]);
+  }, [activeTab, chatMessages.length, forumSections.length, loadChat, loadForum]);
 
-  // Preserve / restore page scroll position when viewing magazine tab
-  const MAGAZINE_SCROLL_KEY = "mobile-magazine-scroll";
-
-  // Save window scroll position on scroll (only when magazine tab is active)
+  // Save magazine scroll position on scroll
   useEffect(() => {
     if (activeTab !== "magazine") return;
     const onScroll = () => {
@@ -304,23 +305,6 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, [activeTab]);
-
-  // Restore window scroll position after magazine articles load
-  useEffect(() => {
-    if (activeTab !== "magazine" || magazineLoading || magazineArticles.length === 0) return;
-    try {
-      const saved = sessionStorage.getItem(MAGAZINE_SCROLL_KEY);
-      if (saved) {
-        const y = parseInt(saved, 10);
-        if (!isNaN(y) && y > 0) {
-          // Use a short timeout so the browser finishes laying out the
-          // restored article list before we try to scroll.
-          const id = setTimeout(() => window.scrollTo(0, y), 0);
-          return () => clearTimeout(id);
-        }
-      }
-    } catch { /* ignore */ }
-  }, [activeTab, magazineLoading, magazineArticles.length]);
 
   // Persist magazine articles to sessionStorage so back-navigation restores them
   useEffect(() => {
