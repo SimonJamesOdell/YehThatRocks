@@ -111,6 +111,7 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
   const chatListRef = useRef<HTMLDivElement>(null);
   const magazineListRef = useRef<HTMLDivElement>(null);
   const magazineSentinelRef = useRef<HTMLDivElement>(null);
+  const tabContentRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
 
   // Track whether initial data was provided — skip first fetch if so
@@ -210,9 +211,14 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
     const savedY = sessionStorage.getItem(MAGAZINE_SCROLL_KEY);
     if (!savedY) return;
     const y = parseInt(savedY, 10);
-    if (isNaN(y) || y <= 0) return;
+    if (isNaN(y) || y < 0) return;
     // Small delay to let the browser finish laying out the article list
-    const id = setTimeout(() => window.scrollTo(0, y), 50);
+    const id = setTimeout(() => {
+      if (tabContentRef.current) {
+        tabContentRef.current.scrollTop = y;
+        sessionStorage.removeItem(MAGAZINE_SCROLL_KEY);
+      }
+    }, 50);
     return () => clearTimeout(id);
   }, [activeTab, magazineArticles.length]);
 
@@ -482,7 +488,7 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
       </div>
 
       {/* Tab content */}
-      <div className="mobile-home-tab-content">
+      <div className="mobile-home-tab-content" ref={tabContentRef}>
         {activeTab === "chat" && (
           <div className="mobile-chat-panel">
           <div className="mobile-chat-list" ref={chatListRef} onScroll={handleChatScroll}>
@@ -564,7 +570,7 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
                   href={`/m/magazine/${encodeURIComponent(article.slug)}`}
                   className="mobile-magazine-card"
                   onClick={() => {
-                    try { sessionStorage.setItem(MAGAZINE_SCROLL_KEY, String(window.scrollY)); } catch { /* quota */ }
+                    try { sessionStorage.setItem(MAGAZINE_SCROLL_KEY, String(tabContentRef.current?.scrollTop ?? 0)); } catch { /* quota */ }
                   }}
                 >
                   {article.videoId && (

@@ -161,4 +161,54 @@ test.describe("mobile shell smoke", () => {
     await page.locator(".mobile-player-back").click();
     await expect(page.locator(".mobile-player-fullscreen")).not.toBeVisible();
   });
+
+  test("magazine tab restores scroll position when returning from article", async ({ page }) => {
+    await page.goto("/m");
+
+    // Switch to Magazine tab
+    const magazineTab = page.locator(".mobile-home-tab").filter({ hasText: "Magazine" });
+    await expect(magazineTab).toBeVisible();
+    await magazineTab.click();
+
+    // Wait for magazine articles to load
+    const magazineCard = page.locator(".mobile-magazine-card").first();
+    try {
+      await expect(magazineCard).toBeVisible({ timeout: 15000 });
+    } catch {
+      test.skip(true, "No magazine articles loaded — skipping scroll-restoration test");
+      return;
+    }
+
+    // Scroll the tab-content container down so we have a non-zero position to restore
+    const tabContent = page.locator(".mobile-home-tab-content");
+    await tabContent.evaluate((el) => { el.scrollTop = 400; });
+    // Give the browser a moment to settle the scroll
+    await page.waitForTimeout(200);
+
+    // Read back the actual scroll position (may differ if content is shorter)
+    const savedScrollY = await tabContent.evaluate((el) => el.scrollTop);
+    if (savedScrollY < 50) {
+      test.skip(true, "Magazine list is too short to scroll meaningfully");
+      return;
+    }
+
+    // Click the first magazine article card to navigate to the article
+    await magazineCard.click();
+
+    // Wait for the article page to load
+    await expect(page.locator(".mobile-magazine-article")).toBeVisible({ timeout: 15000 });
+
+    // Navigate back to the home page's magazine tab
+    await page.goBack();
+
+    // Wait for the magazine list to reappear (articles restored from cache)
+    await expect(magazineCard).toBeVisible({ timeout: 10000 });
+
+    // Read the restored scroll position
+    const restoredScrollY = await tabContent.evaluate((el) => el.scrollTop);
+
+    // The restored position should be close to the saved position
+    // (allow a small tolerance — within 15px — for layout shifts)
+    expect(Math.abs(restoredScrollY - savedScrollY)).toBeLessThanOrEqual(15);
+  });
 });

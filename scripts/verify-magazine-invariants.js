@@ -3,7 +3,8 @@
 // Domain: Magazine guest access and route behaviour
 // Covers: chatMode initialisation on magazine routes, startup video selection
 // suppression, magazine rail navigation (no stray ?v= params), not-found pages,
-// shouldRunChat magazine exception, CSS classes for magazine overlay UI.
+// shouldRunChat magazine exception, CSS classes for magazine overlay UI,
+// mobile magazine scroll-position save/restore.
 
 const path = require("node:path");
 const fs = require("node:fs");
@@ -12,6 +13,7 @@ const {
   collectCssFiles,
   assertContains,
   assertNotContains,
+  assertCssRuleContains,
   finishInvariantCheck,
 } = require("./lib/test-harness");
 
@@ -27,6 +29,8 @@ const files = {
   chatRoute: path.join(ROOT, "apps/web/app/api/chat/route.ts"),
   chatStreamRoute: path.join(ROOT, "apps/web/app/api/chat/stream/route.ts"),
   mobileMagazineSlug: path.join(ROOT, "apps/web/app/m/magazine/[slug]/page.tsx"),
+  mobileHomeClient: path.join(ROOT, "apps/web/app/m/home-client.tsx"),
+  mobileCss: path.join(ROOT, "apps/web/app/styles/mobile.css"),
 };
 
 files.appRoot = path.join(ROOT, "apps/web/app");
@@ -49,6 +53,8 @@ function main() {
   const proxySource = readFileStrict(files.proxyMiddleware, ROOT);
   const chatRouteSource = readFileStrict(files.chatRoute, ROOT);
   const chatStreamRouteSource = readFileStrict(files.chatStreamRoute, ROOT);
+  const mobileHomeSource = readFileStrict(files.mobileHomeClient, ROOT);
+  const mobileCssSource = readFileStrict(files.mobileCss, ROOT);
 
   // --- File existence ---
   for (const [key, filePath] of Object.entries(files)) {
@@ -279,6 +285,121 @@ function main() {
   } else {
     failures.push("Mobile magazine article page is missing — shared magazine links will break on mobile");
   }
+
+  // --- Mobile magazine scroll-position save/restore ─────────────────────
+  // The mobile home page uses a tab-content scroll container (overflow-y: auto)
+  // with a locked document body (overflow: hidden).  Scroll position must be
+  // saved/restored from the tab-content element, not window.
+  assertContains(
+    mobileHomeSource,
+    "const tabContentRef = useRef<HTMLDivElement>(null);",
+    "Mobile home page declares tabContentRef for scroll-position tracking",
+    failures,
+  );
+  assertContains(
+    mobileHomeSource,
+    'className="mobile-home-tab-content" ref={tabContentRef}',
+    "tabContentRef is attached to .mobile-home-tab-content scroll container",
+    failures,
+  );
+  assertContains(
+    mobileHomeSource,
+    "sessionStorage.setItem(MAGAZINE_SCROLL_KEY, String(tabContentRef.current?.scrollTop ?? 0))",
+    "Magazine card onClick saves tabContentRef.current.scrollTop (not window.scrollY)",
+    failures,
+  );
+  assertNotContains(
+    mobileHomeSource,
+    "window.scrollY",
+    "Magazine scroll save must not reference window.scrollY (body is overflow:hidden)",
+    failures,
+  );
+  assertContains(
+    mobileHomeSource,
+    "tabContentRef.current.scrollTop = y;",
+    "Magazine scroll restore sets tabContentRef.current.scrollTop (not window.scrollTo)",
+    failures,
+  );
+  assertNotContains(
+    mobileHomeSource,
+    "window.scrollTo",
+    "Magazine scroll restore must not call window.scrollTo (body is overflow:hidden)",
+    failures,
+  );
+  assertContains(
+    mobileHomeSource,
+    "if (isNaN(y) || y < 0) return;",
+    "Scroll restore guard uses y < 0 (position 0 is valid)",
+    failures,
+  );
+  assertContains(
+    mobileHomeSource,
+    "sessionStorage.removeItem(MAGAZINE_SCROLL_KEY);",
+    "Scroll position is cleared from sessionStorage after successful restore",
+    failures,
+  );
+
+  // --- Mobile magazine scroll CSS invariants ────────────────────────────
+  assertContains(
+    mobileCssSource,
+    "html:has(.mobile-home-page),",
+    "Mobile CSS locks html scroll for home page",
+    failures,
+  );
+  assertContains(
+    mobileCssSource,
+    "body:has(.mobile-home-page)",
+    "Mobile CSS locks body scroll for home page",
+    failures,
+  );
+  assertCssRuleContains(
+    mobileCssSource,
+    "html:has(.mobile-home-page),",
+    "overflow: hidden",
+    "html:has(.mobile-home-page) must set overflow: hidden",
+    failures,
+  );
+  assertCssRuleContains(
+    mobileCssSource,
+    ".mobile-home-tab-content {",
+    "overflow-y: auto",
+    ".mobile-home-tab-content must be the scroll container (overflow-y: auto)",
+    failures,
+  );
+
+  // --- Mobile magazine cache persistence (back-navigation support) ──────
+  // Without cache persistence, the article list would be empty after
+  // navigating back, making scroll restoration irrelevant.
+  assertContains(
+    mobileHomeSource,
+    "const MAGAZINE_CACHE_KEY = \"mobile-magazine-cache\";",
+    "Mobile home page declares MAGAZINE_CACHE_KEY for article-list persistence",
+    failures,
+  );
+  assertContains(
+    mobileHomeSource,
+    "function readMagazineCache",
+    "Mobile home page defines readMagazineCache helper",
+    failures,
+  );
+  assertContains(
+    mobileHomeSource,
+    "function writeMagazineCache",
+    "Mobile home page defines writeMagazineCache helper",
+    failures,
+  );
+  assertContains(
+    mobileHomeSource,
+    "writeMagazineCache(magazineArticles, magazineHasMore, magazineOffsetRef.current);",
+    "Magazine articles are persisted to sessionStorage after every render",
+    failures,
+  );
+  assertContains(
+    mobileHomeSource,
+    "sessionStorage.getItem(MAGAZINE_CACHE_KEY)",
+    "Magazine cache is read from sessionStorage on tab activation",
+    failures,
+  );
 
   // --- Guest chat reads: proxy allows unauthenticated access to chat endpoints ---
   assertContains(
