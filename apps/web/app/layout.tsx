@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Metal_Mania } from "next/font/google";
-import Script from "next/script";
 
 import { YouTubeIframeApiLoader } from "@/components/youtube-iframe-api-loader";
 import "./globals.css";
@@ -51,9 +50,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <Script
-          id="performance-measure-guard"
-          strategy="beforeInteractive"
+        <script
           dangerouslySetInnerHTML={{
             __html: `
               (function () {
