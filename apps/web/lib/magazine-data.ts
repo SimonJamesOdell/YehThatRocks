@@ -96,16 +96,23 @@ const SEED_ARTICLES: MagazineArticle[] = [
 
 // ── DB access ─────────────────────────────────────────────────────────────
 
-async function queryArticles(limit: number): Promise<MagazineArticle[]> {
+async function queryArticles(limit: number, offset = 0): Promise<MagazineArticle[]> {
   const rows = await prisma.$queryRaw<RawArticleRow[]>`
     SELECT slug, title, kicker, deck, artist, track_name, genre, video_id,
            body, seo_description, seo_keywords, published_at
     FROM magazine_articles
     WHERE status = 'published'
     ORDER BY published_at DESC
-    LIMIT ${limit}
+    LIMIT ${limit} OFFSET ${offset}
   `;
   return rows.map(rowToArticle);
+}
+
+async function queryArticleCount(): Promise<number> {
+  const rows = await prisma.$queryRaw<[{ count: bigint }]>`
+    SELECT COUNT(*) as count FROM magazine_articles WHERE status = 'published'
+  `;
+  return Number(rows[0]?.count ?? 0);
 }
 
 async function queryArticleBySlug(slug: string): Promise<MagazineArticle | null> {
@@ -160,6 +167,40 @@ export async function getPublishedArticles(limit = 20): Promise<MagazineArticle[
 }
 
 /**
+ * Paginated variant of getPublishedArticles. Accepts an offset and returns
+ * both the matching articles and a hasMore flag for infinite scroll.
+ */
+export async function getPublishedArticlesPaginated(
+  limit: number,
+  offset: number,
+): Promise<{ articles: MagazineArticle[]; hasMore: boolean; total: number }> {
+  try {
+    const [rows, total] = await Promise.all([
+      queryArticles(limit + 6, offset), // over-fetch for thumbnail filtering
+      queryArticleCount(),
+    ]);
+    if (rows.length === 0) {
+      return { articles: [], hasMore: false, total };
+    }
+
+    // Run hqdefault HEAD checks in parallel
+    const checked = await Promise.all(
+      rows.map(async (article) => ({
+        article,
+        ok: article.videoId ? await checkHqThumbnailHealth(article.videoId) : true,
+      })),
+    );
+    const healthy = checked.filter((r) => r.ok).map((r) => r.article).slice(0, limit);
+    const hasMore = offset + healthy.length < total;
+    return { articles: healthy, hasMore, total };
+  } catch {
+    // On error, use seed articles but respect offset
+    const sliced = SEED_ARTICLES.slice(offset, offset + limit);
+    return { articles: sliced, hasMore: offset + sliced.length < SEED_ARTICLES.length, total: SEED_ARTICLES.length };
+  }
+}
+
+/**
  * Returns a single published article by slug.
  * Falls back to the matching seed article if the DB is unavailable.
  */
@@ -198,91 +239,69 @@ const _thumbHealthCache = new Map<string, { ok: boolean; at: number }>();
 const THUMB_HEALTH_TTL_MS = 30 * 60 * 1000;
 
 /**
- * HEAD-checks the hqdefault thumbnail URL for a YouTube video.
- * Returns true if the thumbnail is available, false on a definitive 4xx.
- * Returns true (fail-open) on network errors or timeouts so a transient
- * YouTube hiccup doesn't suppress valid articles.
- * Results are cached for 30 minutes per server process.
+ * Performs a HEAD request to YouTube's hqdefault thumbnail for the given videoId.
+ * hqdefault returns 404 for deleted/private/unavailable videos.
+ * If the HEAD fails for a transient reason (network error), returns true
+ * so we don't accidentally prune good articles.
  */
 async function checkHqThumbnailHealth(videoId: string): Promise<boolean> {
-  const hit = _thumbHealthCache.get(videoId);
-  if (hit && Date.now() - hit.at < THUMB_HEALTH_TTL_MS) return hit.ok;
+  const now = Date.now();
+  const cached = _thumbHealthCache.get(videoId);
+  if (cached && (now - cached.at) < THUMB_HEALTH_TTL_MS) {
+    return cached.ok;
+  }
+
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2500);
-    const res = await fetch(
-      `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`,
-      { method: "HEAD", signal: controller.signal, cache: "no-store" },
-    );
-    clearTimeout(timer);
-    const ok = res.status < 400;
-    _thumbHealthCache.set(videoId, { ok, at: Date.now() });
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    const res = await fetch(`https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`, {
+      method: "HEAD",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    const ok = res.ok;
+    _thumbHealthCache.set(videoId, { ok, at: now });
     return ok;
   } catch {
-    // Network error or timeout — fail-open, do not suppress the article.
+    // Network error — assume healthy (don't prune good articles on transient issues)
+    _thumbHealthCache.set(videoId, { ok: true, at: now });
     return true;
   }
 }
 
-// ── Video availability preflight ──────────────────────────────────────────
-
 /**
- * Checks whether a YouTube video is still publicly available via the oEmbed endpoint.
- * Returns true (available), false (definitively unavailable), null (network/timeout — unknown).
- */
-async function checkYouTubeOEmbed(videoId: string): Promise<boolean | null> {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2500);
-    const res = await fetch(
-      `https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${encodeURIComponent(videoId)}&format=json`,
-      { signal: controller.signal, cache: "no-store" },
-    );
-    clearTimeout(timer);
-    if (res.status === 200) return true;
-    if (res.status >= 400 && res.status < 500) return false;
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-// In-process cooldown so the preflight doesn't run on every listing request.
-let _lastPruneMs = 0;
-const PRUNE_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
-
-/**
- * Checks all published articles' videos via the YouTube oEmbed API and deletes
- * any article whose video is definitively no longer available.
- * Rate-limited to once per hour within the same server process.
- * Returns the number of articles deleted.
+ * Prunes articles whose YouTube video is no longer available.
+ * Called by the /api/magazine/latest route handler. Returns the number removed.
  */
 export async function pruneUnavailableArticles(): Promise<number> {
-  const now = Date.now();
-  if (now - _lastPruneMs < PRUNE_COOLDOWN_MS) return 0;
-  _lastPruneMs = now;
+  try {
+    const slugs = await querySlugs();
+    if (slugs.length === 0) return 0;
 
-  const rows = await prisma.$queryRaw<{ id: number; videoId: string | null }[]>`
-    SELECT id, video_id AS videoId FROM magazine_articles WHERE status = 'published'
-  `;
-  if (rows.length === 0) return 0;
-
-  const checks = await Promise.allSettled(
-    rows
-      .filter((row: { id: number; videoId: string | null }) => row.videoId !== null) // Only check articles with videos
-      .map(async (row: { id: number; videoId: string | null }) => ({ id: row.id, available: await checkYouTubeOEmbed(row.videoId!) })),
-  );
-
-  const toDelete = checks
-    .filter(
-      (r: PromiseSettledResult<{ id: number; available: boolean | null }>): r is PromiseFulfilledResult<{ id: number; available: boolean | null }> =>
-        r.status === "fulfilled",
-    )
-    .filter((r: PromiseFulfilledResult<{ id: number; available: boolean | null }>) => r.value.available === false)
-    .map((r: PromiseFulfilledResult<{ id: number; available: boolean | null }>) => r.value.id);
-
-  if (toDelete.length === 0) return 0;
-
-  await prisma.magazineArticle.deleteMany({ where: { id: { in: toDelete } } });
-  return toDelete.length;
+    // Check all articles in parallel (capped at 20 concurrent)
+    const BATCH = 20;
+    let removed = 0;
+    for (let i = 0; i < slugs.length; i += BATCH) {
+      const batch = slugs.slice(i, i + BATCH);
+      const checks = await Promise.all(
+        batch.map(async (slug) => {
+          const article = await queryArticleBySlug(slug);
+          if (!article || !article.videoId) return null;
+          const ok = await checkHqThumbnailHealth(article.videoId);
+          return ok ? null : slug;
+        }),
+      );
+      const toRemove = checks.filter(Boolean) as string[];
+      for (const slug of toRemove) {
+        await prisma.$executeRaw`
+          UPDATE magazine_articles SET status = 'draft' WHERE slug = ${slug}
+        `;
+        removed++;
+      }
+    }
+    return removed;
+  } catch {
+    return 0;
+  }
 }

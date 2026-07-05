@@ -76,10 +76,14 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
   const [videoPreviews, setVideoPreviews] = useState<Record<string, { parsedArtist?: string | null; parsedTrack?: string | null; genre?: string | null }>>({});
   const [magazineArticles, setMagazineArticles] = useState<MagazineArticle[]>([]);
   const [magazineLoading, setMagazineLoading] = useState(false);
+  const [magazineHasMore, setMagazineHasMore] = useState(true);
+  const [magazineLoadingMore, setMagazineLoadingMore] = useState(false);
+  const magazineOffsetRef = useRef(0);
   const [forumSections, setForumSections] = useState<ForumSection[]>([]);
   const [forumLoading, setForumLoading] = useState(false);
   const chatListRef = useRef<HTMLDivElement>(null);
   const magazineListRef = useRef<HTMLDivElement>(null);
+  const magazineSentinelRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
 
   // Track whether initial data was provided — skip first fetch if so
@@ -141,18 +145,41 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
     }
   }, [sendChat]);
 
-  // Fetch magazine articles
+  // Fetch magazine articles (initial load)
   const loadMagazine = useCallback(async () => {
     setMagazineLoading(true);
+    magazineOffsetRef.current = 0;
     try {
-      const res = await fetch("/api/magazine/latest?limit=8");
+      const res = await fetch("/api/magazine/latest?limit=8&offset=0");
       if (res.ok) {
         const data = await res.json();
         setMagazineArticles(data.articles || []);
+        setMagazineHasMore(data.hasMore ?? true);
+        magazineOffsetRef.current = (data.articles || []).length;
       }
     } catch { /* silent */ }
     finally { setMagazineLoading(false); }
   }, []);
+
+  // Load more magazine articles (infinite scroll)
+  const loadMoreMagazine = useCallback(async () => {
+    if (!magazineHasMore || magazineLoadingMore) return;
+    setMagazineLoadingMore(true);
+    try {
+      const offset = magazineOffsetRef.current;
+      const res = await fetch(`/api/magazine/latest?limit=8&offset=${offset}`);
+      if (res.ok) {
+        const data = await res.json();
+        const newArticles: MagazineArticle[] = data.articles || [];
+        if (newArticles.length > 0) {
+          setMagazineArticles((prev) => [...prev, ...newArticles]);
+          magazineOffsetRef.current = offset + newArticles.length;
+        }
+        setMagazineHasMore(data.hasMore ?? false);
+      }
+    } catch { /* silent */ }
+    finally { setMagazineLoadingMore(false); }
+  }, [magazineHasMore, magazineLoadingMore]);
 
   // Fetch forum sections
   const loadForum = useCallback(async () => {
@@ -209,7 +236,10 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
         if (!hasInitialChat.current && chatMessages.length === 0) loadChat();
         break;
       case "magazine":
-        if (magazineArticles.length === 0) loadMagazine();
+        if (magazineArticles.length === 0) {
+          magazineOffsetRef.current = 0;
+          loadMagazine();
+        }
         break;
       case "forum":
         if (forumSections.length === 0) loadForum();
@@ -244,6 +274,36 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
       }
     } catch { /* ignore */ }
   }, [activeTab, magazineLoading, magazineArticles.length]);
+
+  // IntersectionObserver for magazine infinite scroll
+  useEffect(() => {
+    if (activeTab !== "magazine" || !magazineHasMore || magazineLoading) return;
+
+    const sentinel = magazineSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          void loadMoreMagazine();
+        }
+      },
+      { rootMargin: "200px 0px" },
+    );
+
+    observer.observe(sentinel);
+    // Auto-load more if content doesn't fill the scrollable area
+    const raf = requestAnimationFrame(() => {
+      const rect = sentinel.getBoundingClientRect();
+      if (rect.top < window.innerHeight) {
+        void loadMoreMagazine();
+      }
+    });
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(raf);
+    };
+  }, [activeTab, magazineHasMore, magazineLoading, loadMoreMagazine]);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "chat", label: "Chat" },
@@ -485,6 +545,14 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
                   </div>
                 </a>
               ))
+            )}
+            {magazineHasMore && !magazineLoading && (
+              <div ref={magazineSentinelRef} style={{ height: 1, width: "100%" }} />
+            )}
+            {magazineLoadingMore && (
+              <div className="mobile-loading" style={{ padding: "16px 0" }}>
+                <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
+              </div>
             )}
           </div>
         )}
