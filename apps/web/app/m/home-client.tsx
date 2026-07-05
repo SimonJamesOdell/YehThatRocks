@@ -280,14 +280,25 @@ export default function MobileHomePageClient({ initialChatMessages }: MobileHome
   }, [activeTab, magazineLoading, magazineArticles.length]);
 
   // IntersectionObserver for magazine infinite scroll
+  const magazineObserverPrimedRef = useRef(false);
+
   useEffect(() => {
     if (activeTab !== "magazine" || !magazineHasMore || magazineLoading) return;
 
     const sentinel = magazineSentinelRef.current;
     if (!sentinel) return;
 
+    // Reset the priming flag when the observer is re-created
+    magazineObserverPrimedRef.current = false;
+
     const observer = new IntersectionObserver(
       (entries) => {
+        // Skip the initial callback that fires on observe —
+        // the sentinel is often already in view when first rendered.
+        if (!magazineObserverPrimedRef.current) {
+          magazineObserverPrimedRef.current = true;
+          return;
+        }
         if (entries[0]?.isIntersecting) {
           void loadMoreMagazine();
         }
