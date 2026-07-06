@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useMobilePlayer, type MobileVideo } from "@/components/mobile/mobile-player-context";
 import { MobileFavouriteButton } from "@/components/mobile/mobile-favourite-button";
+import { getArtistPagePath } from "@/lib/artist-routing";
 
 type MobileVideoCardProps = {
   video: MobileVideo;
@@ -12,7 +14,12 @@ export function MobileVideoCard({ video, initialFavourited }: MobileVideoCardPro
   const { playVideo, auth } = useMobilePlayer();
 
   const thumbnailUrl = `https://i.ytimg.com/vi/${encodeURIComponent(video.id)}/mqdefault.jpg`;
-  const artistName = video.parsedArtist || video.channelTitle;
+  const parsedArtistCandidate = video.parsedArtist?.trim() || video.channelTitle?.trim() || "";
+  const parsedTrackCandidate = video.parsedTrack?.trim() || "";
+  const hasParsedTitlePattern = Boolean(parsedArtistCandidate && parsedTrackCandidate);
+  const parsedArtistLabel = parsedArtistCandidate.toUpperCase();
+  const parsedArtistPagePath = parsedArtistCandidate ? getArtistPagePath(parsedArtistCandidate) : null;
+  const mobileArtistPath = parsedArtistPagePath ? `/m${parsedArtistPagePath}` : null;
 
   return (
     <div
@@ -42,8 +49,27 @@ export function MobileVideoCard({ video, initialFavourited }: MobileVideoCardPro
       </div>
       <div className="mobile-video-card-info">
         <span className="mobile-video-card-genre">{video.genre}</span>
-        <h3 className="mobile-video-card-title">{video.title}</h3>
-        <span className="mobile-video-card-artist">{artistName}</span>
+        <h3 className="mobile-video-card-title">
+          {hasParsedTitlePattern ? (
+            <>
+              {mobileArtistPath ? (
+                <Link
+                  href={mobileArtistPath}
+                  className="mobile-video-card-artist-link"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {parsedArtistLabel}
+                </Link>
+              ) : (
+                <span>{parsedArtistLabel}</span>
+              )}
+              <span aria-hidden="true"> - </span>
+              <span>{parsedTrackCandidate}</span>
+            </>
+          ) : (
+            video.title
+          )}
+        </h3>
         {video.favourited > 0 && (
           <span className="mobile-video-card-favcount">
             ❤️ {video.favourited.toLocaleString()}
