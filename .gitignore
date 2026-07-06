@@ -62,6 +62,9 @@ audit.ps1
 setup-and-fix.ps1
 fix-mysql-user.ps1
 
+# Local backup files (database dumps, restore scripts)
+backups/live/
+
 # Local ship password hash
 .ship-password.json
 
