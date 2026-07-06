@@ -235,7 +235,7 @@ export function ForumPageContent({ latestThreads, isAuthenticated, selectedSecti
               const video2Id = parseVideoId(video2Raw);
 
               if (isTrackBattle && (!video1Id || !video2Id)) {
-                alert("Both video IDs are required for a track battle. Enter a YouTube video ID or yehthatrocks URL for each.");
+                alert("Both video IDs are required for a track battle. Enter a Video ID or yehthatrocks URL for each.");
                 return;
               }
 
@@ -290,7 +290,7 @@ export function ForumPageContent({ latestThreads, isAuthenticated, selectedSecti
                     <input
                       type="text"
                       name="video1"
-                      placeholder="YouTube video ID, youtu.be link, or yehthatrocks URL"
+                      placeholder="Video ID or yehthatrocks URL"
                       required
                     />
                   </label>
@@ -299,7 +299,7 @@ export function ForumPageContent({ latestThreads, isAuthenticated, selectedSecti
                     <input
                       type="text"
                       name="video2"
-                      placeholder="YouTube video ID, youtu.be link, or yehthatrocks URL"
+                      placeholder="Video ID or yehthatrocks URL"
                       required
                     />
                   </label>

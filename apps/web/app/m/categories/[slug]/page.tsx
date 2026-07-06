@@ -1,106 +1,37 @@
-"use client";
+import { notFound } from "next/navigation";
+import { getCategoriesNewCategorySnapshot } from "@/lib/categories-new-snapshots";
+import { MobileCategoryArtistList } from "@/components/mobile/mobile-category-artist-list";
 
-import { useEffect, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
-import { MobileVideoList } from "@/components/mobile/mobile-video-card";
-import type { MobileVideo } from "@/components/mobile/mobile-player-context";
+type Props = {
+  params: Promise<{ slug: string }>;
+};
 
-export default function MobileCategoryDetailPage() {
-  const { slug } = useParams<{ slug: string }>();
-  const [videos, setVideos] = useState<MobileVideo[]>([]);
-  const [genreLabel, setGenreLabel] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+export default async function MobileCategoryDetailPage({ params }: Props) {
+  const { slug } = await params;
+  const snapshot = await getCategoriesNewCategorySnapshot(slug);
 
-  const loadVideos = useCallback(async (currentOffset: number, append = false) => {
-    try {
-      const res = await fetch(`/api/categories/${encodeURIComponent(slug)}?limit=30&offset=${currentOffset}`);
-      if (!res.ok) {
-        if (res.status === 404) throw new Error("Category not found");
-        throw new Error("Failed to load");
-      }
-      const data = await res.json();
-      if (data.videos) {
-        setVideos((prev) => append ? [...prev, ...data.videos] : data.videos);
-        setHasMore(data.hasMore);
-        setOffset(data.nextOffset);
-        if (data.genre) {
-          setGenreLabel(data.genre);
-        }
-      }
-    } catch (err) {
-      if (!append) {
-        setError(err instanceof Error ? err.message : "Failed to load");
-      }
-    }
-  }, [slug]);
+  if (!snapshot) {
+    notFound();
+  }
 
-  useEffect(() => {
-    let cancelled = false;
-    async function init() {
-      setLoading(true);
-      setError(null);
-      setVideos([]);
-      setOffset(0);
-      setGenreLabel("");
-      await loadVideos(0);
-      if (!cancelled) setLoading(false);
-    }
-    init();
-    return () => { cancelled = true; };
-  }, [loadVideos]);
-
-  const handleLoadMore = useCallback(async () => {
-    setLoadingMore(true);
-    await loadVideos(offset, true);
-    setLoadingMore(false);
-  }, [offset, loadVideos]);
-
-  const handleRetry = useCallback(() => {
-    setError(null);
-    setLoading(true);
-    loadVideos(0).finally(() => setLoading(false));
-  }, [loadVideos]);
+  const { genre, totalArtists } = snapshot;
+  const artists = snapshot.artists.filter((a) => a.videoCount > 0);
 
   return (
     <div>
       <div className="mobile-page-header">
-        <h1 className="mobile-page-title">{genreLabel || slug.replace(/-/g, " ")}</h1>
-        <p className="mobile-page-subtitle">Browse videos in this genre</p>
+        <h1 className="mobile-page-title">{genre}</h1>
+        <p className="mobile-page-subtitle">
+          {totalArtists.toLocaleString()} artist{totalArtists !== 1 ? "s" : ""}
+        </p>
       </div>
 
-      {loading && (
-        <div className="mobile-loading">
-          <span className="playerBootBars" aria-hidden="true"><span /><span /><span /><span /><span /></span>
-        </div>
-      )}
-
-      {error && (
+      {artists.length === 0 ? (
         <div className="mobile-empty-state">
-          <p>{error}</p>
-          <button type="button" className="mobile-retry-button" onClick={handleRetry}>
-            Try Again
-          </button>
+          <p>No artists found in this category.</p>
         </div>
-      )}
-
-      {!loading && !error && (
-        <>
-          <MobileVideoList videos={videos} />
-          {hasMore && (
-            <button
-              type="button"
-              className="mobile-load-more"
-              onClick={handleLoadMore}
-              disabled={loadingMore}
-            >
-              {loadingMore ? "Loading..." : "Load More"}
-            </button>
-          )}
-        </>
+      ) : (
+        <MobileCategoryArtistList artists={artists} genre={genre} />
       )}
     </div>
   );

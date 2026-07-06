@@ -227,7 +227,7 @@ export function MobileForumSectionPage({
                     <input
                       type="text"
                       name="video1"
-                      placeholder="YouTube video ID, youtu.be link, or yehthatrocks URL"
+                      placeholder="Video ID or yehthatrocks URL"
                       required
                       className="m-forum-form-input"
                     />
@@ -237,7 +237,7 @@ export function MobileForumSectionPage({
                     <input
                       type="text"
                       name="video2"
-                      placeholder="YouTube video ID, youtu.be link, or yehthatrocks URL"
+                      placeholder="Video ID or yehthatrocks URL"
                       required
                       className="m-forum-form-input"
                     />

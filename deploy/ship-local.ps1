@@ -698,14 +698,20 @@ if (-not (Get-Command scp -ErrorAction SilentlyContinue)) {
 }
 
 Push-Location $RepoDir
+
+# ── Gate 0: clean worktree before any work begins ─────────────────────
+# Remove empty untracked directories first (git clean -nd noise), then
+# check for any remaining dirty state. Must run before cache cleanup,
+# dev server checks, or any other side-effect work.
+Remove-UntrackedEmptyDirectories -RepoRoot $RepoDir
+Ensure-CleanGitWorktree
+
 $devServerWasRunning = $false
 $shipStatePaths = Get-ShipStatePaths -RepoRoot $RepoDir
 $shipStatePath = [string]$shipStatePaths.StateFile
 $shipTarPath = [string]$shipStatePaths.TarFile
 try {
   if (-not $SkipLocalCleanup) {
-    Remove-UntrackedEmptyDirectories -RepoRoot $RepoDir
-
     $initialDevPid = Get-DevServerPid
     $devServerWasRunning = [bool]$initialDevPid
 
@@ -726,8 +732,6 @@ try {
       }
     }
   }
-
-  Ensure-CleanGitWorktree
 
   if (-not $SkipMigrationValidation) {
     Write-Host "Validating migrations for deployment safety..." -ForegroundColor Yellow

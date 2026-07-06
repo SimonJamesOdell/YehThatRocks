@@ -141,7 +141,7 @@ export function ForumFormToolbar({ textareaId, onInsert }: ForumFormToolbarProps
                   value={videoInput}
                   onChange={(e) => { setVideoInput(e.target.value); setVideoPreviewId(null); setVideoError(null); }}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleVideoPreview(); } }}
-                  placeholder="YouTube video ID or yehthatrocks URL"
+                  placeholder="Video ID or yehthatrocks URL"
                 />
                 <button
                   type="button"

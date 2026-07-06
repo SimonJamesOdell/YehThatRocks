@@ -247,17 +247,20 @@ export function MobileForumThreadPage({
   return (
     <MobileFixedScroll>
       <div className="mobile-page-header">
-        <div className="m-forum-thread-header">
+        <div className="mobile-artist-header" style={{ marginBottom: 0 }}>
           <Link
             href={`/m/forum?section=${encodeURIComponent(thread.sectionId)}`}
-            className="m-forum-thread-back"
+            className="mobile-back-button"
+            aria-label={`Back to ${thread.sectionTitle}`}
           >
-            ← {thread.sectionTitle}
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
           </Link>
+          <h1 className="mobile-artist-header-name m-forum-thread-title">
+            {thread.title}
+          </h1>
         </div>
-        <h1 className="mobile-page-title" style={{ fontSize: "1.1rem", marginBottom: 0 }}>
-          {thread.title}
-        </h1>
         <p className="mobile-page-subtitle">
           by {thread.userScreenName} · {thread.postCount} posts · {thread.viewCount} views
         </p>

@@ -221,6 +221,15 @@
   text-overflow: ellipsis;
 }
 
+/* Thread titles stay on one line, no ellipsis — full natural width */
+.m-forum-thread-title {
+  font-size: 1.1rem;
+  flex: 1;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 /* ── Back Button ──────────────────────────────────────────────────── */
 .mobile-back-button {
   display: flex;
@@ -299,6 +308,23 @@ html.mobile-fixed-scroll .mobile-content {
 /* ── Page Header ───────────────────────────────────────────────────── */
 .mobile-page-header {
   margin-bottom: 16px;
+}
+
+.mobile-page-header--with-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mobile-page-header--with-filter .mobile-page-title {
+  flex-shrink: 0;
+}
+
+.mobile-filter-input--inline {
+  max-width: 200px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  border-radius: 6px;
 }
 
 .mobile-page-title {
@@ -655,6 +681,62 @@ html.mobile-fixed-scroll .mobile-content {
   border-color: var(--mobile-accent);
 }
 
+/* ── Category Cards with Thumbnails ─────────────────────────────────── */
+.mobile-categories-grid--with-thumbs {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.mobile-category-card--with-thumb {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 0;
+  min-height: auto;
+  overflow: hidden;
+}
+
+.mobile-category-card-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+  background: var(--mobile-surface-hover);
+}
+
+.mobile-category-card-thumb--placeholder {
+  aspect-ratio: 16 / 9;
+  background: var(--mobile-surface-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-category-card-thumb--placeholder::after {
+  content: "🎵";
+  font-size: 1.8rem;
+  opacity: 0.35;
+}
+
+.mobile-category-card-body {
+  padding: 10px 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mobile-category-card-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--mobile-text);
+}
+
+.mobile-category-card-count {
+  font-size: 0.7rem;
+  color: var(--mobile-text-muted);
+}
+
 /* ── Artists List ──────────────────────────────────────────────────── */
 .mobile-artists-list {
   display: flex;
@@ -682,25 +764,73 @@ html.mobile-fixed-scroll .mobile-content {
   font-size: 0.75rem;
   color: var(--mobile-text-muted);
   margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ── Artist Link with Thumbnail ─────────────────────────────────────── */
+.mobile-artist-link--with-thumb {
+  padding: 8px 10px;
+  gap: 10px;
+}
+
+.mobile-artist-link-thumb {
+  width: 56px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: var(--mobile-surface-hover);
+}
+
+.mobile-artist-link-thumb--placeholder {
+  background: var(--mobile-surface-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-artist-link-thumb--placeholder::after {
+  content: "🎵";
+  font-size: 1rem;
+  opacity: 0.3;
+}
+
+.mobile-artist-link-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.mobile-artist-link-name {
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--mobile-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-artist-link-genre {
+  font-size: 0.7rem;
+  color: var(--mobile-accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Alphabet Bar ──────────────────────────────────────────────────── */
 .mobile-alphabet-bar {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 0;
-  overflow-x: auto;
   padding: 8px 0 12px;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-
-.mobile-alphabet-bar::-webkit-scrollbar {
-  display: none;
 }
 
 .mobile-alphabet-letter {
-  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -719,6 +849,31 @@ html.mobile-fixed-scroll .mobile-content {
 .mobile-alphabet-letter-active {
   color: var(--mobile-accent);
   background: rgba(179, 18, 20, 0.12);
+}
+
+/* ── Filter Bar ─────────────────────────────────────────────────────── */
+.mobile-filter-bar {
+  padding: 0 0 12px;
+}
+
+.mobile-filter-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--mobile-surface);
+  border: 1px solid var(--mobile-border);
+  border-radius: 8px;
+  color: var(--mobile-text);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.mobile-filter-input::placeholder {
+  color: var(--mobile-text-muted);
+}
+
+.mobile-filter-input:focus {
+  border-color: var(--mobile-accent);
 }
 
 /* ── Search ────────────────────────────────────────────────────────── */
@@ -923,6 +1078,11 @@ html.mobile-fixed-scroll .mobile-content {
 
 .mobile-load-more:active {
   background: var(--mobile-surface-hover);
+}
+
+.mobile-load-more-sentinel {
+  height: 1px;
+  width: 100%;
 }
 
 /* ── Tab Bar ───────────────────────────────────────────────────────── */
