@@ -278,6 +278,40 @@ try {
     if ([string]::IsNullOrWhiteSpace($databaseUrl)) {
       throw "DATABASE_URL is not configured. Set it in the environment or apps/web/.env.local before running verify:deps:full."
     }
+    # Verify MySQL is accepting TCP connections before starting the server.
+    # This prevents the MariaDB pool from permanently exhausting (active=0 idle=0)
+    # when the Docker container is briefly unavailable during a restart/recreate window.
+    $dbHost = "127.0.0.1"
+    $dbPort = 3307
+    if ($databaseUrl -match '@([^:]+):(\d+)/') {
+      $dbHost = $matches[1]
+      $dbPort = [int]$matches[2]
+    }
+    Write-Host "Checking MySQL connectivity at ${dbHost}:${dbPort} ..." -ForegroundColor Cyan
+    $dbReady = $false
+    $dbStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $dbTimeoutMs = 15000
+    while ($dbStopwatch.ElapsedMilliseconds -lt $dbTimeoutMs) {
+      try {
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        $iar = $tcp.BeginConnect($dbHost, $dbPort, $null, $null)
+        if ($iar.AsyncWaitHandle.WaitOne(2000, $false)) {
+          $tcp.EndConnect($iar)
+          $tcp.Close()
+          $dbReady = $true
+          break
+        }
+        $tcp.Close()
+      } catch {
+        # Retry.
+      }
+      Start-Sleep -Milliseconds 500
+    }
+    $dbStopwatch.Stop()
+    if (-not $dbReady) {
+      throw "MySQL is not accepting TCP connections at ${dbHost}:${dbPort} after $([math]::Round($dbStopwatch.Elapsed.TotalSeconds, 1))s. Ensure the Docker db container is running and healthy."
+    }
+    Write-Host "MySQL connectivity confirmed at ${dbHost}:${dbPort}" -ForegroundColor Green
 
     $authJwtSecret = Resolve-EnvValue -RepoRootPath $RepoRoot -Name "AUTH_JWT_SECRET"
     if ([string]::IsNullOrWhiteSpace($authJwtSecret) -or $authJwtSecret.Length -lt 32) {

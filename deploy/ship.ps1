@@ -47,6 +47,37 @@ function Clean-RepoTransientCaches([string]$RepoRoot) {
   }
 }
 
+function Ensure-CleanGitWorktree {
+  $statusOutput = (& git status --porcelain) -join "`n"
+  if ($LASTEXITCODE -ne 0) {
+    throw "Unable to determine git worktree status."
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($statusOutput)) {
+    throw @"
+Working tree is not clean. Commit or stash your changes before running ship.
+
+Pending changes:
+$statusOutput
+"@
+  }
+
+  # git status --porcelain does not report untracked empty directories.
+  # Use `git clean -nd` to detect anything that would be swept by a clean.
+  $cleanOutput = (& git clean -nd) -join "`n"
+  if ($LASTEXITCODE -ne 0) {
+    throw "Unable to run git clean dry-run check."
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($cleanOutput)) {
+    throw @"
+Working tree has untracked files or empty directories not in .gitignore:
+
+$cleanOutput
+"@
+  }
+}
+
 # Returns the PID of the process listening on port 3000, or $null.
 function Get-DevServerPid {
   $conn = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -145,6 +176,10 @@ if (-not $PrepareOnly -and [string]::IsNullOrWhiteSpace($VpsHost)) {
 Push-Location $RepoDir
 $devServerWasRunning = $false
 try {
+  # Gate 0: clean worktree before any side-effect work (cache cleanup,
+  # dev server stop, dependency maintenance, or Docker build).
+  Ensure-CleanGitWorktree
+
   if (-not $SkipLocalCleanup) {
     $devServerWasRunning = Stop-DevServer
     Clean-RepoTransientCaches -RepoRoot $RepoDir

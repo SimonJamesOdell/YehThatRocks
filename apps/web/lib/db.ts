@@ -86,6 +86,13 @@ function getPrismaDatabaseUrl() {
       );
     }
 
+    if (!url.searchParams.has("minimumIdle")) {
+      // Keep minimumIdle low so transient MySQL outages don't cause
+      // permanent pool exhaustion (active=0 idle=0). The pool will
+      // retry creating connections on demand instead of failing all at once.
+      url.searchParams.set("minimumIdle", "2");
+    }
+
     if (!url.searchParams.has("acquireTimeout")) {
       url.searchParams.set(
         "acquireTimeout",
