@@ -204,6 +204,7 @@ function main() {
     files.mobileTop100,
     files.mobileFavourites,
     files.mobileCategories,
+    files.mobileCategoriesSlug,
   ]);
   for (const pageFile of mobilePageFiles) {
     const source = readFileStrict(pageFile, ROOT);
@@ -228,13 +229,14 @@ function main() {
     assertContains(source, '@/components/mobile/mobile-video-card', `${path.relative(ROOT, pageFile)} imports from @/components/mobile/`, failures);
   }
 
-  // Deep-nested pages import from @/components/mobile/
-  for (const pageFile of [files.mobileCategoriesSlug, files.mobileArtistSlug]) {
+  // Artist page imports from @/components/mobile/
+  // (category detail page is now a server component using snapshots)
+  for (const pageFile of [files.mobileArtistSlug]) {
     const source = readFileStrict(pageFile, ROOT);
     assertContains(source, '@/components/mobile/mobile-video-card', `${path.relative(ROOT, pageFile)} imports from @/components/mobile/`, failures);
   }
 
-  // ── 7. Video card element type and keyboard accessibility ────────────
+  // ── 7. Video card element type, title pattern, and keyboard accessibility ──
   const videoCardSource = readFileStrict(files.mobileVideoCard, ROOT);
 
   // Outer element must be <div role="button"> — NOT a raw <button> (would
@@ -244,10 +246,29 @@ function main() {
   assertContains(videoCardSource, "tabIndex={0}", "mobile-video-card is keyboard-focusable", failures);
   assertContains(videoCardSource, "onKeyDown", "mobile-video-card handles keyboard activation", failures);
 
-  // ── 8. Categories page uses real API fields (not nonexistent slug/label) ──
+  // Title pattern: uses parsedArtist/parsedTrack like desktop WatchNextCard
+  assertContains(videoCardSource, "getArtistPagePath", "mobile-video-card imports getArtistPagePath for artist links", failures);
+  assertContains(videoCardSource, "hasParsedTitlePattern", "mobile-video-card uses hasParsedTitlePattern to choose title rendering", failures);
+  assertContains(videoCardSource, "parsedArtistCandidate", "mobile-video-card extracts parsedArtistCandidate", failures);
+  assertContains(videoCardSource, "parsedTrackCandidate", "mobile-video-card extracts parsedTrackCandidate", failures);
+  assertContains(videoCardSource, "parsedArtistLabel", "mobile-video-card computes uppercase artist label", failures);
+  assertContains(videoCardSource, 'mobile-video-card-artist-link', "mobile-video-card uses artist link class for parsed titles", failures);
+  assertContains(videoCardSource, "e.stopPropagation()", "mobile-video-card artist link stops propagation to prevent card activation", failures);
+
+  // Must NOT render a separate artist span below the title (was the duplicate)
+  assertNotContains(videoCardSource, 'className="mobile-video-card-artist"', "mobile-video-card no longer renders a separate artist-name span below title", failures);
+
+  // ── 8. Categories pages use snapshot data (same source as desktop) ──
   const categoriesPageSource = readFileStrict(files.mobileCategories, ROOT);
-  assertContains(categoriesPageSource, "getGenreSlug", "categories page imports getGenreSlug for slug computation", failures);
-  assertContains(categoriesPageSource, "cat.genre", "categories page uses cat.genre from API response", failures);
+  assertContains(categoriesPageSource, "getCategoriesNewTopLevelSnapshot", "categories page imports getCategoriesNewTopLevelSnapshot", failures);
+  assertContains(categoriesPageSource, "card.genre", "categories page uses card.genre from snapshot", failures);
+  assertContains(categoriesPageSource, "card.artistCount", "categories page shows artist count", failures);
+  assertContains(categoriesPageSource, ".previewVideoId", "categories page renders thumbnail previews", failures);
+
+  const categoriesSlugPageSource = readFileStrict(files.mobileCategoriesSlug, ROOT);
+  assertContains(categoriesSlugPageSource, "getCategoriesNewCategorySnapshot", "categories/[slug] page imports getCategoriesNewCategorySnapshot", failures);
+  assertContains(categoriesSlugPageSource, "notFound", "categories/[slug] page handles missing snapshot with notFound", failures);
+  assertContains(categoriesSlugPageSource, "MobileCategoryArtistList", "categories/[slug] page renders MobileCategoryArtistList", failures);
 
   // ── 9. CSS is imported in globals ───────────────────────────────────
   const globalsSource = readFileStrict(files.globalsCss, ROOT);
@@ -310,6 +331,7 @@ function main() {
     ".mobile-video-card-info",
     ".mobile-video-card-title",
     ".mobile-video-card-artist",
+    ".mobile-video-card-artist-link",
     ".mobile-video-card-genre",
   ];
   for (const cls of videoCardClasses) {
