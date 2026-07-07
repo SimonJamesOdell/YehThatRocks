@@ -4,6 +4,7 @@ import { AVAILABLE_SITE_VIDEOS_JOIN } from "@/lib/catalog-data-db";
 import { buildApprovedVideoPredicate } from "@/lib/catalog-data-internal-helpers";
 import { hasDatabaseUrl, normalizeYouTubeVideoId, withSoftTimeout } from "@/lib/catalog-data-utils";
 import { prisma } from "@/lib/db";
+import { type ForumThreadSummary, getLatestThreads, generateThreadSlug } from "@/lib/forum-data";
 import { getAllPublishedSlugs } from "@/lib/magazine-data";
 
 export const STATIC_SITEMAP_ID = 0;
@@ -15,6 +16,7 @@ const SITEMAP_RUNTIME_CACHE_TTL_MS = Math.max(
 );
 
 const ARTIST_STATIC_LIMIT = 2_000;
+const FORUM_STATIC_LIMIT = 2_000;
 const MAGAZINE_STATIC_LIMIT = 2_000;
 let hasWarnedSeedSitemapFallback = false;
 let sitemapShardCountCache: { expiresAt: number; value: number } | null = null;
@@ -229,7 +231,18 @@ export async function getStaticSitemapEntries(): Promise<SitemapUrlEntry[]> {
     changefreq: "monthly" as const,
   }));
 
-  return [...staticRoutes, ...categories, ...magazine, ...artists];
+  const threadSummaries = await withSoftTimeout(
+    "sitemap:getLatestThreads",
+    SITEMAP_QUERY_SOFT_TIMEOUT_MS,
+    () => getLatestThreads(FORUM_STATIC_LIMIT),
+  ).catch(() => [] as ForumThreadSummary[]);
+
+  const forum = threadSummaries.slice(0, FORUM_STATIC_LIMIT).map((t) => {
+    const slug = t.slug ?? generateThreadSlug(t.title, t.id);
+    return { loc: buildUrl(`/forum/thread/${slug}`), priority: 0.7, changefreq: "weekly" as const };
+  });
+
+  return [...staticRoutes, ...categories, ...magazine, ...artists, ...forum];
 }
 
 export async function getVideoSitemapEntries(shardId: number): Promise<SitemapUrlEntry[]> {

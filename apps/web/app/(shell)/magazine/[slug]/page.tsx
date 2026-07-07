@@ -14,6 +14,9 @@ type MagazineTrackPageProps = {
 
 export const revalidate = false;
 
+const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
+const FALLBACK_OG_IMAGE = `${SITE_ORIGIN}/images/guitar_back.png`;
+
 export async function generateStaticParams() {
   const slugs = await getAllPublishedSlugs();
   return slugs.map((slug) => ({ slug }));
@@ -24,18 +27,21 @@ export async function generateMetadata({ params }: MagazineTrackPageProps): Prom
   const article = await getArticleBySlug(slug);
   if (!article) return {};
 
-  const ogImage = article.videoId ? `https://i.ytimg.com/vi/${article.videoId}/maxresdefault.jpg` : undefined;
+  const ogImage = article.videoId ? `https://i.ytimg.com/vi/${article.videoId}/maxresdefault.jpg` : FALLBACK_OG_IMAGE;
   const title = `${article.title} | Yeh Magazine`;
   const description = article.seoDescription ?? article.deck ?? undefined;
+  const canonicalUrl = `${SITE_ORIGIN}/magazine/${article.slug}`;
+  const ogImageAlt = article.videoId ? `${article.artist}${article.trackName ? ` - ${article.trackName}` : ""}` : "YehThatRocks magazine artwork";
 
   return {
     title,
     description,
     keywords: article.seoKeywords ?? undefined,
+    alternates: { canonical: canonicalUrl },
     openGraph: {
       title,
       description,
-      ...(ogImage ? { images: [{ url: ogImage, width: 1280, height: 720, alt: `${article.artist}${article.trackName ? ` - ${article.trackName}` : ""}` }] } : {}),
+      images: [{ url: ogImage, width: article.videoId ? 1280 : 1200, height: article.videoId ? 720 : 630, alt: ogImageAlt }],
       type: "article",
       publishedTime: article.publishedAt.toISOString(),
     },
@@ -43,7 +49,7 @@ export async function generateMetadata({ params }: MagazineTrackPageProps): Prom
       card: "summary_large_image",
       title,
       description,
-      ...(ogImage ? { images: [ogImage] } : {}),
+      images: [ogImage],
     },
   };
 }
@@ -78,8 +84,23 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
   const hasVideo = article.videoId !== null && article.videoId !== undefined;
   const artistSlug = String(article.artist || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
+  // Article structured data for search engines
+  const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: article.title,
+    description: article.seoDescription ?? article.deck ?? undefined,
+    image: article.videoId ? `https://i.ytimg.com/vi/${article.videoId}/maxresdefault.jpg` : undefined,
+    datePublished: article.publishedAt.toISOString(),
+    author: { "@type": "Organization", name: "YehThatRocks" },
+    publisher: { "@type": "Organization", name: "YehThatRocks", url: SITE_ORIGIN },
+    url: `${SITE_ORIGIN}/magazine/${article.slug}`,
+    mainEntityOfPage: { "@type": "WebPage", "@id": `${SITE_ORIGIN}/magazine/${article.slug}` },
+  };
+
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }} />
       <OverlayScrollReset />
       <OverlayHeader
         breadcrumb={(

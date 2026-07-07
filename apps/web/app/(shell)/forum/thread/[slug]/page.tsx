@@ -42,6 +42,14 @@ export async function generateMetadata({ params }: ThreadPageProps): Promise<Met
   const title = detail.thread.title;
   const sectionTitle = detail.thread.sectionTitle;
 
+  // Build a safe share image from thread videos when available
+  const shareImage = detail.thread.video1Id
+    ? `https://i.ytimg.com/vi/${encodeURIComponent(detail.thread.video1Id)}/hqdefault.jpg`
+    : detail.thread.video2Id
+      ? `https://i.ytimg.com/vi/${encodeURIComponent(detail.thread.video2Id)}/hqdefault.jpg`
+      : `${SITE_ORIGIN}/images/guitar_back.png`;
+  const shareImageAlt = detail.thread.video1Id ? detail.thread.title : "YehThatRocks forum artwork";
+
   return {
     title,
     description: plainDescription || `Forum thread in ${sectionTitle}: ${title}`,
@@ -54,6 +62,13 @@ export async function generateMetadata({ params }: ThreadPageProps): Promise<Met
       type: "article",
       url: canonicalUrl,
       siteName: "Yeh That Rocks",
+      images: detail.thread.video1Id || detail.thread.video2Id ? [{ url: shareImage, width: 480, height: 360, alt: shareImageAlt }] : [{ url: shareImage, alt: shareImageAlt }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description: plainDescription || `Forum thread in ${sectionTitle}: ${title}`,
+      images: [shareImage],
     },
   };
 }
