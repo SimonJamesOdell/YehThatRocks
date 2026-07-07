@@ -61,11 +61,12 @@
 }
 
 .brandTagline {
-  max-width: none;
-  font-size: clamp(1.28rem, calc(1.18rem + 0.45vw), 1.52rem);
+  width: 100%;
+  box-sizing: border-box;
+  font-size: clamp(1.15rem, calc(var(--header-side-reserved) * 0.078), 1.6rem);
   line-height: 1;
   margin-top: -41px;
-  margin-left: 98px;
+  padding-left: calc(125 / 493 * 100%);
   white-space: nowrap;
 }
 
@@ -77,8 +78,7 @@
   .brandTagline {
     position: relative;
     z-index: 33;
-    margin-left: 68px;
-    font-size: 1.24rem;
+    font-size: clamp(1.05rem, calc(var(--header-side-reserved) * 0.065), 1.35rem);
     margin-top: -36px;
   }
 }
