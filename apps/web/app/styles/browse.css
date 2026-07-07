@@ -13,7 +13,7 @@
 
 @media (min-width: 1280px) {
   .categoriesFilterSection {
-    height: 100%;
+    height: 99%;
     overflow: hidden;
   }
 
@@ -26,8 +26,8 @@
   .categoriesCatalogGrid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     grid-template-rows: repeat(2, minmax(0, 1fr));
-    row-gap: 13px;
-    height: 100%;
+    row-gap: 21px;
+    height: 99%;
     align-content: stretch;
     padding-block: 7px;
     box-sizing: border-box;
