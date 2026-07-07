@@ -60,7 +60,7 @@ export function MagazineInfiniteGrid({ initialArticles, startOffset }: Props) {
           loadMore();
         }
       },
-      { rootMargin: "200px" },
+      { rootMargin: "800px" },
     );
 
     observer.observe(sentinel);

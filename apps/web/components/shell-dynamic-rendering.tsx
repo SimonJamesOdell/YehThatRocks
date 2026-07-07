@@ -865,7 +865,6 @@ export function MagazineRailContent({
           ) : null}
           <div className="magazineRailBody">
             <div className="messageMeta">
-              <strong>{track.artist}</strong>
               {track.kicker ? (
                 <span>{track.kicker}</span>
               ) : (
@@ -883,7 +882,7 @@ export function MagazineRailContent({
                 </span>
               )}
             </div>
-            <p>{track.title}</p>
+            <p className="magazineRailTitle">{track.title}</p>
             {deleteErrors[track.slug] ? (
               <p className="magazineRailAdminDeleteError">{deleteErrors[track.slug]}</p>
             ) : null}

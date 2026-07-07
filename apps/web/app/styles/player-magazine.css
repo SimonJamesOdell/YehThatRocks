@@ -404,9 +404,12 @@
   color: rgba(255, 196, 186, 0.8);
 }
 
-.magazineTrackBody h2 {
+.magazineTrackTitle {
   margin: 0;
   font-size: 1.02rem;
+  font-family: var(--font-display), cursive;
+  color: rgba(255, 247, 244, 0.95);
+  letter-spacing: 0.02em;
 }
 
 .magazineTrackBody h3,

@@ -32,14 +32,12 @@ export function MagazineLatestArticleCard({ article }: MagazineLatestArticleCard
           />
         ) : (
           <div className="magazineTrackThumb magazineTrackThumbPlaceholder" style={{ backgroundColor: "#1a1a1a", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <p style={{ color: "#999", textAlign: "center", padding: "1rem", fontSize: "0.9rem" }}>
-              {article.artist}
-            </p>
+            <p style={{ color: "#999", textAlign: "center", padding: "1rem", fontSize: "0.9rem" }}>Article</p>
           </div>
         )}
         <div className="magazineTrackBody">
           <p className="magazineTrackGenre">{article.kicker ?? article.genre}</p>
-          <h3>{article.title}</h3>
+          <h3 className="magazineTrackTitle">{article.title}</h3>
           {article.deck ? <p>{article.deck}</p> : null}
         </div>
       </Link>

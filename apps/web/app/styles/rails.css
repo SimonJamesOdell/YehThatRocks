@@ -523,6 +523,14 @@
   line-height: 1.35;
 }
 
+.magazineRailTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
 .magazineAdminDeleteButton {
   position: absolute;
   left: 14px;

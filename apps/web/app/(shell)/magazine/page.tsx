@@ -13,7 +13,7 @@ export const metadata = {
 };
 
 export default async function MagazineLandingPage() {
-  const articles = await getPublishedArticles(20);
+  const articles = await getPublishedArticles(21);
   const [leadArticle, ...restArticles] = articles;
 
   return (
