@@ -163,8 +163,10 @@ export function useDesktopIntro({
     setIsDesktopIntroPreload(false);
 
     desktopIntroMeasureRafRef.current = window.requestAnimationFrame(() => {
-      syncDesktopIntroTarget();
-      desktopIntroMeasureRafRef.current = null;
+      desktopIntroMeasureRafRef.current = window.requestAnimationFrame(() => {
+        syncDesktopIntroTarget();
+        desktopIntroMeasureRafRef.current = null;
+      });
     });
 
     desktopIntroHoldTimeoutRef.current = window.setTimeout(() => {
