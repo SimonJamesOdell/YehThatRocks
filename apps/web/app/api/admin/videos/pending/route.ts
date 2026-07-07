@@ -254,6 +254,10 @@ export async function POST(request: NextRequest) {
         // Best-effort async approve; moderation UI already advanced optimistically.
       });
 
+      // Invalidate the pending count cache so the next badge poll reflects the change.
+      pendingCountCache = null;
+      pendingCountInFlight = null;
+
       return NextResponse.json({ ok: true, videoId, action: "approve", queued: true });
     }
 
@@ -314,6 +318,10 @@ export async function POST(request: NextRequest) {
     if (discoveryArtistName) {
       triggerArtistDiscoveryIfNew(discoveryArtistName, videoId);
     }
+
+    // Invalidate the pending count cache so the next badge poll reflects the change.
+    pendingCountCache = null;
+    pendingCountInFlight = null;
 
     return NextResponse.json({ ok: true, videoId, action: "approve" });
   }
