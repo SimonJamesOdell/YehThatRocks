@@ -18,7 +18,7 @@ export default async function ShellLayout({ children }: { children: ReactNode })
 
   const [{ authState, user, isAdmin, hasAccessToken }, resolvedInitialVideo, dataSourceStatus] = await Promise.all([
     getShellRequestAuthState(),
-    getCurrentVideo(requestedVideoId, { allowRandomFallback: shouldUseRandomLandingVideo }),
+    getCurrentVideo(requestedVideoId, { skipPlaybackDecision: Boolean(requestedVideoId), allowRandomFallback: shouldUseRandomLandingVideo }),
     getDataSourceStatus(),
   ]);
 
