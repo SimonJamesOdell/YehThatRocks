@@ -81,6 +81,8 @@
     "facebook:group-share:dry-run": "node scripts/facebook-group-autoshare.js --dry-run",
     "reddit:subreddit-share": "node scripts/reddit-subreddit-autoshare.js",
     "reddit:subreddit-share:dry-run": "node scripts/reddit-subreddit-autoshare.js --dry-run",
+    "facebook:new-video-share": "node scripts/facebook-group-new-video-share.js",
+    "facebook:new-video-share:dry-run": "node scripts/facebook-group-new-video-share.js --dry-run",
     "verify:magazine": "node scripts/verify-magazine-invariants.js",
     "verify:magazine-browser-flow": "node scripts/verify-magazine-browser-open-flow-invariants.js",
     "verify:magazine-comments": "node scripts/verify-magazine-comments-invariants.js",

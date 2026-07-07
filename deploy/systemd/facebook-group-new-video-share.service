@@ -1,0 +1,18 @@
+[Unit]
+Description=YehThatRocks Facebook group new-video browser post (user)
+After=network-online.target graphical-session.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/.local/share/yehthatrocks/facebook-new-video-browser
+EnvironmentFile=-%h/.config/yehthatrocks/facebook-new-video-browser.env
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+ExecStart=/usr/bin/node %h/.local/share/yehthatrocks/facebook-new-video-browser/facebook-group-new-video-browser-post.js
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=new-video-browser-post
+
+[Install]
+WantedBy=default.target

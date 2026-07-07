@@ -1,0 +1,11 @@
+{
+  "name": "facebook-new-video-share",
+  "private": true,
+  "version": "1.0.0",
+  "type": "commonjs",
+  "dependencies": {
+    "@prisma/client": "7.8.0",
+    "@prisma/adapter-mariadb": "7.8.0",
+    "mysql2": "^3.22.5"
+  }
+}

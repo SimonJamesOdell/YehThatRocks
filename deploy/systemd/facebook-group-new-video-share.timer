@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Facebook group new-video share every 2 hours with up to 20 min random jitter
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=2h
+RandomizedDelaySec=1200
+Persistent=true
+Unit=facebook-group-new-video-browser-post.service
+
+[Install]
+WantedBy=timers.target
