@@ -58,7 +58,7 @@ export function MobileYouTubePlayer({
           modestbranding: 1,
           rel: 0,
           iv_load_policy: 3,
-          cc_load_policy: 3,
+          cc_load_policy: 0,
         },
         events: {
           onReady: () => {

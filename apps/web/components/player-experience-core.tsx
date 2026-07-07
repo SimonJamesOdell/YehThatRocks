@@ -2447,7 +2447,7 @@ export function PlayerExperience({
         videoId: currentVideo.id,
         playerVars: {
           autoplay: 0,
-          cc_load_policy: 3,
+          cc_load_policy: 0,
           controls: 0,
           disablekb: 1,
           enablejsapi: 1,
