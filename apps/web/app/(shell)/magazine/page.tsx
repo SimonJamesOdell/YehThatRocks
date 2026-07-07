@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { OverlayHeader } from "@/components/overlay-header";
 import { ScrollToTop } from "@/components/scroll-to-top";
-import { MagazineLatestArticleCard } from "@/components/magazine-latest-article-card";
+import { MagazineInfiniteGrid } from "@/components/magazine-infinite-grid";
 import { getPublishedArticles } from "@/lib/magazine-data";
 
 export const revalidate = 3600;
@@ -47,19 +47,15 @@ export default async function MagazineLandingPage() {
       ) : null}
 
       {restArticles.length > 0 ? (
-        <section className="magazineSectionBlock panel" aria-label="Latest articles">
-          <div className="magazineSectionHeader">
-            <h2>Latest Articles</h2>
-          </div>
-          <div className="magazineTrackGrid">
-            {restArticles.map((article) => (
-              <MagazineLatestArticleCard key={article.slug} article={article} />
-            ))}
-          </div>
-        </section>
-      ) : null}
+        <MagazineInfiniteGrid
+          initialArticles={restArticles}
+          startOffset={articles.length}
+        />
+      ) : (
+        // No initial articles from SSR — let the grid fetch its own from offset 1
+        <MagazineInfiniteGrid initialArticles={[]} startOffset={1} />
+      )}
       </main>
     </>
   );
 }
-
