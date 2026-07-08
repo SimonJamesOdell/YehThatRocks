@@ -7,6 +7,11 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+# PowerShell 7.4+ maps native-command stderr to ErrorActionPreference.
+# mysqladmin emits an unavoidable password-on-cli warning to stderr even
+# with --silent, which would otherwise terminate the script here. Disable
+# this bridge so native stderr is non-fatal, matching legacy behavior.
+$PSNativeCommandUseErrorActionPreference = $false
 
 function Invoke-Step {
   param(
@@ -29,8 +34,21 @@ function Test-CoreApiReady {
     return $false
   }
 
-  $topStatusCode = Get-HttpStatusCode -Url "$BaseUrl/api/videos/top?take=1"
-  if ($null -eq $topStatusCode -or $topStatusCode -lt 200 -or $topStatusCode -ge 300) {
+  # Verify the top videos endpoint returns actual data, not just a 2xx shell.
+  # A 200 with an empty video array means the Prisma pool has exhausted
+  # (active=0 idle=0) and the API is serving degraded responses.
+  try {
+    $topResp = Invoke-WebRequest -Uri "$BaseUrl/api/videos/top?count=1" -Method Get -UseBasicParsing -TimeoutSec 5
+    if ($topResp.StatusCode -lt 200 -or $topResp.StatusCode -ge 300) {
+      return $false
+    }
+    $topJson = $topResp.Content | ConvertFrom-Json
+    $videos = $topJson.videos
+    if (-not $videos -or @($videos).Count -eq 0) {
+      # Server is up but returning empty data -- DB pool likely exhausted.
+      return $false
+    }
+  } catch {
     return $false
   }
 
@@ -278,40 +296,91 @@ try {
     if ([string]::IsNullOrWhiteSpace($databaseUrl)) {
       throw "DATABASE_URL is not configured. Set it in the environment or apps/web/.env.local before running verify:deps:full."
     }
-    # Verify MySQL is accepting TCP connections before starting the server.
-    # This prevents the MariaDB pool from permanently exhausting (active=0 idle=0)
-    # when the Docker container is briefly unavailable during a restart/recreate window.
+    # Verify MySQL is healthy and actually serving queries before starting the server.
+    # A raw TCP check is not enough -- MySQL can accept TCP connections while still
+    # performing crash recovery, loading the InnoDB buffer pool, or running
+    # FLUSH TABLES. If the Prisma pool initializes during that window it can
+    # permanently exhaust (active=0 idle=0), requiring a server restart.
+    # We run mysqladmin ping (or SELECT 1) inside the container to confirm the
+    # database is truly ready at the query level.
     $dbHost = "127.0.0.1"
     $dbPort = 3307
-    if ($databaseUrl -match '@([^:]+):(\d+)/') {
+    $dbUser = "root"
+    $dbPass = ""
+    if ($databaseUrl -match '^mysql://([^:]+):([^@]+)@([^:]+):(\d+)/') {
+      $dbUser = $matches[1]
+      $dbPass = $matches[2]
+      $dbHost = $matches[3]
+      $dbPort = [int]$matches[4]
+    } elseif ($databaseUrl -match '@([^:]+):(\d+)/') {
       $dbHost = $matches[1]
       $dbPort = [int]$matches[2]
     }
-    Write-Host "Checking MySQL connectivity at ${dbHost}:${dbPort} ..." -ForegroundColor Cyan
+
+    $isLocalDb = ($dbHost -eq "127.0.0.1" -or $dbHost -eq "localhost" -or $dbHost -eq "::1")
+    $containerName = $null
+    if ($isLocalDb) {
+      try {
+        $containerName = (docker ps --filter "publish=$dbPort" --format "{{.Names}}" 2>$null) -split "`n" | Select-Object -First 1
+        if ([string]::IsNullOrWhiteSpace($containerName)) {
+          $containerName = $null
+        }
+      } catch {
+        $containerName = $null
+      }
+    }
+
+    Write-Host "Checking MySQL readiness at ${dbHost}:${dbPort} ..." -ForegroundColor Cyan
     $dbReady = $false
     $dbStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    $dbTimeoutMs = 15000
+    $dbTimeoutMs = 30000
+
     while ($dbStopwatch.ElapsedMilliseconds -lt $dbTimeoutMs) {
-      try {
-        $tcp = New-Object System.Net.Sockets.TcpClient
-        $iar = $tcp.BeginConnect($dbHost, $dbPort, $null, $null)
-        if ($iar.AsyncWaitHandle.WaitOne(2000, $false)) {
-          $tcp.EndConnect($iar)
-          $tcp.Close()
+      if ($containerName) {
+        # Docker-based: run mysqladmin ping inside the container for a real query-level check.
+        # Use MYSQL_PWD env var to avoid the "password on CLI" stderr warning.
+        docker exec -e MYSQL_PWD="$dbPass" $containerName mysqladmin ping -u $dbUser --silent *>$null
+        if ($LASTEXITCODE -eq 0) {
           $dbReady = $true
           break
         }
-        $tcp.Close()
-      } catch {
-        # Retry.
+
+        # Fallback: try SELECT 1 via mysql client inside the container.
+        docker exec -e MYSQL_PWD="$dbPass" $containerName mysql -u $dbUser -e "SELECT 1" *>$null
+        if ($LASTEXITCODE -eq 0) {
+          $dbReady = $true
+          break
+        }
+      } else {
+        # Non-Docker: fall back to TCP connectivity check.
+        try {
+          $tcp = New-Object System.Net.Sockets.TcpClient
+          $iar = $tcp.BeginConnect($dbHost, $dbPort, $null, $null)
+          if ($iar.AsyncWaitHandle.WaitOne(2000, $false)) {
+            $tcp.EndConnect($iar)
+            $tcp.Close()
+            $dbReady = $true
+            break
+          }
+          $tcp.Close()
+        } catch {
+          # Retry.
+        }
       }
-      Start-Sleep -Milliseconds 500
+
+      Start-Sleep -Milliseconds 1000
     }
     $dbStopwatch.Stop()
     if (-not $dbReady) {
-      throw "MySQL is not accepting TCP connections at ${dbHost}:${dbPort} after $([math]::Round($dbStopwatch.Elapsed.TotalSeconds, 1))s. Ensure the Docker db container is running and healthy."
+      throw "MySQL is not ready to serve queries at ${dbHost}:${dbPort} after $([math]::Round($dbStopwatch.Elapsed.TotalSeconds, 1))s. Ensure the Docker db container is running and healthy."
     }
-    Write-Host "MySQL connectivity confirmed at ${dbHost}:${dbPort}" -ForegroundColor Green
+
+    # Give MySQL a brief stabilization window after confirming readiness.
+    # The server may still be warming its buffer pool or finishing background
+    # threads even after accepting queries. A short wait prevents the Prisma
+    # pool from initializing during a transient window.
+    Write-Host "MySQL readiness confirmed at ${dbHost}:${dbPort} -- stabilizing (3s) ..." -ForegroundColor Green
+    Start-Sleep -Seconds 3
 
     $authJwtSecret = Resolve-EnvValue -RepoRootPath $RepoRoot -Name "AUTH_JWT_SECRET"
     if ([string]::IsNullOrWhiteSpace($authJwtSecret) -or $authJwtSecret.Length -lt 32) {
