@@ -19,6 +19,7 @@ model Video {
   parseConfidence Float?
   parsedAt        DateTime?      @db.DateTime
   parsedArtistNorm String?       @map("parsed_artist_norm") @db.VarChar(255)
+  genreNorm        String?        @map("genre_norm") @db.VarChar(255)
   channelTitle    String?        @map("channelTitle") @db.VarChar(255)
   thumbnail       String?        @db.VarChar(500)
   viewCount       Int?           @map("viewCount")
@@ -37,6 +38,7 @@ model Video {
   @@fulltext([title, parsedArtist, parsedTrack])
   @@index([parsedArtistNorm], map: "idx_videos_parsed_artist_norm")
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "idx_videos_created_at_id")
+  @@index([genreNorm, approved, favourited(sort: Desc)], map: "idx_videos_genre_norm_approved_fav")
   @@map("videos")
 }
 

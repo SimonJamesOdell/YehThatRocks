@@ -107,6 +107,7 @@ let artistVideoColumnMapCache:
 
 let videoArtistNormalizationColumnCache: string | null | undefined;
 let videoGenreColumnAvailableCache: boolean | undefined;
+let videoGenreNormColumnAvailableCache: boolean | undefined;
 
 // ── Schema introspection ──────────────────────────────────────────────────────
 
@@ -389,6 +390,16 @@ export async function hasVideoGenreColumn(): Promise<boolean> {
   videoGenreColumnAvailableCache = names.has("genre");
 
   return videoGenreColumnAvailableCache;
+}
+
+// Returns true when the videos table has a pre-normalized `genre_norm` column.
+export async function hasVideoGenreNormColumn(): Promise<boolean> {
+  if (videoGenreNormColumnAvailableCache !== undefined) return videoGenreNormColumnAvailableCache;
+
+  const names = await ensureVideoColumnsLoaded();
+  videoGenreNormColumnAvailableCache = names.has("genre_norm");
+
+  return videoGenreNormColumnAvailableCache;
 }
 
 export async function ensureVideoGenreColumnAvailable(): Promise<boolean> {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Top-level mock setup ──────────────────────────────────────────────────────
 
@@ -8,6 +8,7 @@ const getArtistColumnMapMock = vi.fn();
 const hasGenreAllColumnMock = vi.fn();
 const hasVideoTitleFulltextIndexMock = vi.fn();
 const hasVideoGenreColumnMock = vi.fn();
+const hasVideoGenreNormColumnMock = vi.fn();
 const getVideoArtistNormalizationColumnMock = vi.fn();
 const getVideoArtistNormalizationIndexHintClauseMock = vi.fn();
 const getRuntimeProfilingSnapshotMock = vi.fn();
@@ -30,6 +31,7 @@ vi.mock("@/lib/catalog-data-db", async () => {
     hasGenreAllColumn: hasGenreAllColumnMock,
     hasVideoTitleFulltextIndex: hasVideoTitleFulltextIndexMock,
     hasVideoGenreColumn: hasVideoGenreColumnMock,
+    hasVideoGenreNormColumn: hasVideoGenreNormColumnMock,
     getVideoArtistNormalizationColumn: getVideoArtistNormalizationColumnMock,
     getVideoArtistNormalizationIndexHintClause: getVideoArtistNormalizationIndexHintClauseMock,
   };
@@ -139,6 +141,7 @@ describe("getVideosByGenre — artist genre FULLTEXT strategy", () => {
     queryRawMock.mockReset();
     hasGenreAllColumnMock.mockReset();
     hasVideoGenreColumnMock.mockReset();
+    hasVideoGenreNormColumnMock.mockReset();
     getArtistColumnMapMock.mockReset();
     getVideoArtistNormalizationColumnMock.mockReset();
     getVideoArtistNormalizationIndexHintClauseMock.mockReset();
@@ -150,6 +153,7 @@ describe("getVideosByGenre — artist genre FULLTEXT strategy", () => {
       genreColumns: ["genre1", "genre2"],
     });
     hasVideoGenreColumnMock.mockResolvedValue(true);
+    hasVideoGenreNormColumnMock.mockResolvedValue(true);
     getVideoArtistNormalizationColumnMock.mockResolvedValue("parsed_artist_norm");
     getVideoArtistNormalizationIndexHintClauseMock.mockResolvedValue("");
   });
@@ -293,6 +297,7 @@ describe("getVideosByGenre — textMatchedVideos FULLTEXT strategy", () => {
     hasGenreAllColumnMock.mockReset();
     hasVideoTitleFulltextIndexMock.mockReset();
     hasVideoGenreColumnMock.mockReset();
+    hasVideoGenreNormColumnMock.mockReset();
     getArtistColumnMapMock.mockReset();
     getVideoArtistNormalizationColumnMock.mockReset();
     getVideoArtistNormalizationIndexHintClauseMock.mockReset();
@@ -301,6 +306,7 @@ describe("getVideosByGenre — textMatchedVideos FULLTEXT strategy", () => {
     hasGenreAllColumnMock.mockResolvedValue(true);
     hasVideoTitleFulltextIndexMock.mockResolvedValue(true);
     hasVideoGenreColumnMock.mockResolvedValue(true);
+    hasVideoGenreNormColumnMock.mockResolvedValue(true);
     getArtistColumnMapMock.mockResolvedValue({
       name: "artist",
       normalizedName: null,
@@ -313,12 +319,13 @@ describe("getVideosByGenre — textMatchedVideos FULLTEXT strategy", () => {
 
   // Helper: drive getVideosByGenre all the way to the textMatchedVideos fallback.
   // The waterfall is:
-  //   1. $queryRaw: getGenreKeywordVideos → empty
-  //   2. $queryRawUnsafe: artist genre lookup (MATCH on genre_all) → empty
-  //   3. $queryRaw: getArtistsByGenre internal MATCH → returns 1 artist so we don't early-exit
-  //   4. $queryRaw: FULLTEXT video lookup using artist names → empty
-  //   5. $queryRawUnsafe: artist normalized name video lookup → empty
-  //   6. textMatchedVideos → the call we want to observe
+  //   1. $queryRawUnsafe: getStrictGenreColumnVideos (v.genre_norm) → empty
+  //   2. $queryRaw: getGenreKeywordVideos (FULLTEXT on title/artist/track) → empty
+  //   3. $queryRawUnsafe: artist genre lookup (MATCH on genre_all) → empty
+  //   4. $queryRaw: getArtistsByGenre internal MATCH → returns 1 artist so we don't early-exit
+  //   5. $queryRaw: FULLTEXT video lookup using artist names → empty
+  //   6. $queryRawUnsafe: artist normalized name video lookup → empty
+  //   7. textMatchedVideos → the call we want to observe
   async function driveToTextMatch(genre: string) {
     queryRawMock.mockImplementation((sql: unknown) => {
       const text = String(sql);
@@ -845,4 +852,3 @@ describe("runtime cache maintenance write-pressure guards", () => {
     expect(deleteCacheRowsCall).toBeUndefined();
   });
 });
-

@@ -32,6 +32,7 @@ import {
   getVideoArtistNormalizationIndexHintClause,
   hasGenreAllColumn,
   hasVideoGenreColumn,
+  hasVideoGenreNormColumn,
   hasVideoTitleFulltextIndex,
 } from "@/lib/catalog-data-db";
 import { getRuntimeProfilingSnapshot, isRuntimeSqlPressureElevated } from "@/lib/runtime-profiler";
@@ -2192,7 +2193,6 @@ export async function getVideosByGenre(
   const expandedGenreTerms = getExpandedGenreTerms(genre);
   const cacheKey = expandedGenreTerms.join("|") || genre.trim().toLowerCase();
   const normalizedGenre = expandedGenreTerms[0] ?? normalizeGenreTerm(genre);
-  const normalizedGenrePattern = buildGenreRegexPattern(expandedGenreTerms);
   const requestedOffset = Math.max(0, Number.isFinite(options?.offset) ? Number(options?.offset) : 0);
   const requestedLimit = Math.max(1, Math.min(120, Number.isFinite(options?.limit) ? Number(options?.limit) : 24));
   const minRequiredRows = requestedOffset + requestedLimit;
@@ -2260,40 +2260,29 @@ export async function getVideosByGenre(
       return [] as RankedVideoRow[];
     }
 
-    const videoGenreColumnExists = await hasVideoGenreColumn();
-    if (!videoGenreColumnExists) {
+    const videoGenreNormColumnExists = await hasVideoGenreNormColumn();
+    if (!videoGenreNormColumnExists) {
       return [] as RankedVideoRow[];
     }
-
-    const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
 
     const normalizedGenrePlaceholders = expandedGenreTerms.map(() => "?").join(", ");
 
     return prisma.$queryRawUnsafe<RankedVideoRow[]>(
       `SELECT /*+ MAX_EXECUTION_TIME(${CATEGORY_QUERY_DB_MAX_EXECUTION_MS}) */
          v.videoId, v.title, NULL AS channelTitle, v.favourited, v.description
-       FROM videos v
+       FROM videos v USE INDEX (idx_videos_genre_norm_approved_fav)
        WHERE v.videoId IS NOT NULL
-         AND v.genre IS NOT NULL
-         AND TRIM(v.genre) <> ''
-         AND COALESCE(v.approved, 0) = 1
+         AND v.genre_norm IS NOT NULL
+         AND v.genre_norm <> ''
+         AND v.approved = 1
          AND EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND sv.status = 'available')
          AND NOT EXISTS (SELECT 1 FROM site_videos sv WHERE sv.video_id = v.id AND (sv.status IS NULL OR sv.status <> 'available'))
-         AND (
-           ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
-           OR LOWER(v.genre) REGEXP ?
-         )
+         AND v.genre_norm IN (${normalizedGenrePlaceholders})
        ORDER BY
-         CASE
-           WHEN ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders}) THEN 0
-           ELSE 1
-         END,
          v.favourited DESC,
          COALESCE(v.viewCount, 0) DESC,
          v.videoId ASC
        LIMIT ${fetchQueryLimit}`,
-      ...expandedGenreTerms,
-      normalizedGenrePattern,
       ...expandedGenreTerms,
     );
   };
