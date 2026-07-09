@@ -53,7 +53,6 @@ export const TOP_LEVEL_GENRE_BUCKETS: readonly GenreBucket[] = [
       "anarcho punk",
       "crust punk",
       "d beat",
-      "crossover thrash",
       "powerviolence",
       "screamo",
       "emo",
