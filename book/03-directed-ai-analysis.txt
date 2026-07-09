@@ -86,75 +86,17 @@ know to ask "what cache, what key, and what TTL?"
 The AI generates explanations. You filter them. Together, you converge
 on the truth faster than either could alone.
 
-
-Vibe Coding and the Verification Surface
-
-There is a term circulating in the industry: "vibe coding." It describes
-the practice of prompting an AI to generate code, running it, and
-iterating based on what you observe — operating at the level of behavior
-rather than implementation. I describe myself on LinkedIn as an expert
-vibe-coder, and I mean it literally. YehThatRocks was built by vibing.
-
-Some critics use "vibe coding" dismissively, as shorthand for accepting
-AI output without scrutiny. That version of the term deserves the
-criticism it gets — but it is not what most people who call themselves
-vibe-coders are actually doing. Most of them are doing what I am doing:
-describing what they want, watching what happens, and course-correcting
-when it goes wrong. They are debugging through behavior, not through
-code reading. They are just doing it without the verification surface.
-
-And that is not a moral failing. It is a starting point.
-
-Before I ever got going with programming, people used to type in BASIC
-programs they found in magazines. Programming has always been a wide open
-field, one where anyone with the right aptitude, curiosity and determination
-can go from building BASIC programs to writing professional quality 
-software. No gate-keepers, no moat, no annointed masters deciding which
-accolytes deserve the right to practice the craft.
-
-When I got my first modem and started learning how the web works, the web 
-I entered was largely built by amateurs, people who had reverse-engineered 
-Perl scripts they barely understood, who shipped things that worked without
-knowing whether the code was "clean." That energy built the open web. It 
-built the dot-com era. It built the platform that made my entire career 
-possible. Nobody called it "unserious" back then. They called it "having a go."
-
-Vibe coding is the modern equivalent. It is the thing that lets anyone
-with an idea describe it to a machine and see it come to life. It is
-the magazine-listing spirit reborn in the age of LLMs. It is
-democratising. It is exciting. It is, I hope, going to return us to
-a version of the web where one developer with an LLM and a vision can
-build something that matters — something that used to be possible and
-has become harder and harder as the industry professionalised.
-
-I am a vibe-coder. This is not an admission of unprofessionalism.
-
-I am a vibe-coder who added a verification surface.
-
-An expert vibe-coder.
-
-Directed AI analysis is what happens when you take the vibe-coding
-impulse — describe what you want, watch what happens, iterate — and
-give it a sensor network. You're still vibing. You're still not reading
-the code. You're still operating at the level of behavior and
-conversation. But now, when the system does something wrong, you don't
-just notice it manually. An invariant catches it. And when you fix it,
-you add an invariant so that class of failure can never recur. The vibe
-gets more reliable over time, not less.
-
-This is not a different thing. It is the same thing, matured. The
-spectrum runs from "I prompted and it worked" through "I prompted, it
-didn't work, I argued until it did" to "I prompted, it worked, and
-thirty invariants verified that it worked before I even looked at the
-browser." All of it is vibe coding. The verification surface just makes
-it accountable.
-
-If you are a vibe-coder today — if you are building things with AI, not
-reading the code, iterating on behavior — you are already doing directed
-AI analysis. You are just doing it with a smaller sensor network. This
-book is not an argument that you should stop vibing and become serious.
-It is an argument that you should keep vibing, and add invariants as you
-go, until the vibe is backed by a surface you trust more than your eyes.
+The adversarial loop is also how you learn your own system. Every time
+the AI explains a bug, it is teaching you the architecture. Every time
+you push back and demand a better explanation, you are absorbing how the
+components fit together. You do not need to read code to understand the
+system — you absorb it through argument. This is the same process by
+which a CTO maintains an internal model of a system their team is
+building. The CTO does not read pull requests. They answer for the
+system's behavior to upper management. They direct, they question, they
+hold the model. The directed AI developer is a CTO with an AI team
+instead of a human team. The role is the same: answer for the outcome,
+not the implementation.
 
 
 A Real Example

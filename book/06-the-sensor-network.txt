@@ -136,6 +136,85 @@ pattern more precisely. This is usually easier than fixing a behavioral
 test that made incorrect assumptions about outputs.
 
 
+Performance as a Sensor
+
+Correctness is not the only property that matters. A system that
+produces the right answer in ten seconds is a broken system.
+
+The same pattern that builds correctness sensors builds performance
+sensors. You observe a symptom — a page that takes three seconds to
+render, an API endpoint that times out under load, a database query
+that scans more rows than it should. You describe the symptom to the
+AI. The AI reads the code, identifies the bottleneck, and proposes a
+fix. But before it fixes anything, you direct it to build profiling
+infrastructure — tooling that measures and reports the performance
+characteristics of the system.
+
+In a traditional project, adding profiling means a developer reads the
+code, identifies hotspots, adds instrumentation, collects data, and
+repeats. In a directed AI project, you do not read the code and you
+do not add instrumentation yourself. You direct the AI to build the
+profiling tools, run them against the live system, and report the
+results. The tools stay in place as permanent sensors.
+
+YehThatRocks accumulated profiling infrastructure the same way it
+accumulated correctness invariants — one incident at a time:
+
+- Database-level profiling: the AI built a system that captures slow
+  query logs, EXPLAIN output, and index usage statistics from the
+  production MySQL instance. A deployment script exports profiling
+  data on demand. A freshness monitor alerts if the profiling data
+  is stale.
+
+- Hotspot-specific test scripts: when a particular query or pattern
+  showed signs of degrading, the AI wrote a focused script that
+  exercises that pattern under controlled conditions and reports
+  timing data. These scripts (test-artist-genre-filter-hotspot,
+  test-playlist-item-join-hotspot, test-related-join-hotspot, and
+  others) remain in the repository as permanent regression detectors.
+  If a future change causes that query to regress, the script catches
+  it before deployment.
+
+- Application-level monitoring: the AI built a monitor-performance.js
+  script that samples API response times, page render metrics, and
+  cache hit rates. It runs as a background task and surfaces anomalies.
+
+- Hotspot documentation: each significant optimization was documented
+  in a HOTSPOT_*_ANALYSIS.md file, recording what was slow, why, what
+  was changed, and how to verify the fix. These documents are not
+  executable guarantees, but they are durable records of analysis that
+  future AI sessions can reference.
+
+The profiling tools were not designed up front. They were commissioned
+one at a time, in response to specific symptoms. A page felt slow —
+the AI built a render profiler. A query hit the slow log — the AI
+built an EXPLAIN capture. The tools accumulated, just as the
+correctness invariants did. They are sensors. They detect when the
+system is slow, just as the invariants detect when the system is wrong.
+
+The same adversarial loop applies. You observe a performance symptom.
+You describe it to the AI. The AI reads the code and proposes an
+explanation. You argue about the metrics — "the query plan says it's
+using a full table scan, but the index exists, so why isn't the planner
+using it?" The AI traces the planner behavior, identifies the reason,
+and implements a fix. The profiling tools verify that the fix worked.
+The tools stay in place to catch regressions.
+
+Performance sensors are harder to write than correctness sensors
+because performance is a continuous property, not a boolean one.
+"Does this route render in under 200ms?" is harder to assert than
+"Does this route use the OverlayHeader component?" The performance
+sensor must define thresholds, account for variability, and avoid
+false positives from noisy environments.
+
+But the principle is the same. You do not read the code. You direct
+the AI to build tools that measure what matters. You argue with the
+AI about what the measurements mean. You leave the tools in place.
+The sensor network grows to cover performance the same way it grows
+to cover correctness — one incident, one sensor, one permanent
+guarantee.
+
+
 The Maturity Threshold
 
 There is a point at which the sensor network reaches maturity. This is

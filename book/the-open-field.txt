@@ -1,0 +1,245 @@
+THE OPEN FIELD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Programming has always been an open field.
+
+Before I ever wrote a line of production code, I was a teenager at
+Bournemouth College, typing in graphics demos in Pascal and assembly,
+trying to build a 3D engine in 320x200 VGA mode. I had no formal
+training. I had no mentor. I had curiosity and a modem.
+
+When I first got online, I discovered Matt's Script Archive — a
+repository of Perl scripts that anyone could download, read, modify,
+and deploy. I reverse-engineered those scripts to understand how the
+web worked. The web I entered was largely built by amateurs, people
+who had cobbled together Perl scripts they barely understood, who
+shipped things that worked without knowing whether the code was "clean."
+That energy built the open web. It built the dot-com era. It built the
+platform that made my entire career possible. Nobody called it
+"unserious" back then. They called it "having a go."
+
+The thing I valued most about programming as a field was that nobody
+could stop you from doing it. You didn't need a degree. You didn't
+need permission. You needed a machine, an internet connection, and the
+willingness to figure things out. Programming rewarded curiosity and
+determination, not credentials.
+
+I am watching that spirit return, and it is the most exciting thing
+to happen to our industry in decades.
+
+
+The Gatekeepers
+
+There is a term circulating: "vibe coding." It describes the practice
+of prompting an AI to generate code, running it, and iterating based on
+what you observe — operating at the level of behavior rather than
+implementation. I describe myself on LinkedIn as an expert vibe-coder,
+and I mean it literally. YehThatRocks was built by vibing.
+
+Some critics use "vibe coding" dismissively, as shorthand for accepting
+AI output without scrutiny. I have seen developers on LinkedIn insist
+that AI code generation will create a mountain of technical debt, that
+you must review every line, that the technology is not ready for serious
+work. They describe vibe coding as reckless, amateurish, dangerous.
+
+They are doing what every established generation does when a new tool
+lowers the barrier to entry: they are policing the boundary between
+who is allowed to build and who is not.
+
+To be fair, some of them have good reasons to worry. They have seen
+AI-generated code produce garbage. They have cleaned up after people
+who shipped AI output without testing it. Their skepticism is earned.
+But their conclusion — that the answer is more gatekeeping, more review,
+more insistence that only trained professionals should write code —
+is wrong.
+
+Not because their technical concerns are invalid. Because their
+gatekeeping instinct is solving the wrong problem.
+
+
+The BASIC Magazine Era
+
+Before I ever wrote code professionally, people typed in BASIC programs
+from magazines. Line by line, character by character, they transcribed
+code they didn't fully understand into machines that ran it. Sometimes
+it worked. Often it didn't — a typo on line 340, a missing GOSUB, a
+syntax error that took an hour to find. They debugged by running the
+program, observing the behavior, and squinting at the listing until
+they spotted the mistake.
+
+Nobody told those people they were being reckless. Nobody insisted that
+they needed to understand compiler theory before they were allowed to
+type RUN. The culture celebrated them for having a go.
+
+Some of those people became professional programmers. Most didn't. But
+all of them experienced something that our industry has spent the last
+thirty years making harder: the feeling that you can build something
+real with nothing but curiosity and effort.
+
+Vibe coding is the magazine-listing spirit reborn in the age of LLMs.
+It is the thing that lets anyone with an idea describe it to a machine
+and see it come to life. It is democratising. It is exciting. It is,
+I hope, going to return us to a version of the web where one developer
+with an LLM and a vision can build something that matters — something
+that used to be possible and has become harder as the industry
+professionalised.
+
+The critics who dismiss vibe coding as unserious are missing the point.
+The people typing BASIC from magazines were unserious too. That was
+the point. They were having a go. And some of them became the engineers
+who built the modern web.
+
+
+The Spectrum
+
+Vibe coding is not a single practice. It is a spectrum.
+
+At one end: "Build me a website that shows cat pictures." The AI
+generates something. It works or it doesn't. The user ships or iterates.
+This is the level the critics imagine when they dismiss the practice.
+
+Further along: "Build me a website that lets users sign up, log in,
+upload cat pictures, and browse other people's cats." The AI generates
+a full-stack application. The user tests it manually. When something
+breaks, they describe the symptom and ask the AI to fix it. They are
+debugging through behavior, not code reading. They are doing directed
+analysis — they just don't know the term yet.
+
+At the far end: "Build me a music video discovery platform with
+authentication, a YouTube player, playlists, a forum, a magazine,
+global chat, and mobile support. Guard it with thirty invariant scripts
+that verify architectural properties before every deploy. Add
+performance profiling tools that catch query regressions. Build a
+three-layer migration validation system that prevents deployment
+failures." The AI generates 250,000 lines of code. The user never reads
+a single line. The system ships to production and stays up.
+
+All of it is vibe coding. The spectrum runs from "I prompted and it
+worked" through "I prompted, it didn't work, I argued until it did" to
+"I prompted, it worked, and thirty invariants verified that it worked
+before I even looked at the browser." The verification surface does not
+make it a different practice. It makes it accountable.
+
+This book is not an argument that you should stop vibing and become
+serious. It is an argument that you should keep vibing — and add
+invariants as you go, until the vibe is backed by a surface you trust
+more than your eyes.
+
+
+Why Beginners Have the Advantage
+
+The no-peeking rule is hard for experienced developers. Every instinct
+from decades of reading code tells us to open the file, trace the logic,
+find the bug ourselves. Breaking that habit is an act of will.
+
+Beginners have no habit to break. They cannot read code effectively
+anyway — they haven't built the pattern-matching machinery that experts
+rely on. Being told "don't read the code, verify the behavior" is not
+a constraint for them. It is permission. Permission to build things
+without first spending years learning to read things.
+
+This is the inversion that the gatekeepers miss. They assume that
+reading code is the foundation and AI is a crutch. The reality is that
+AI-assisted development inverts the learning path. The beginner verifies
+behavior first — they see what the system does. Over time, through the
+adversarial loop, they absorb the architecture through argument. They
+learn how the system works without ever tracing its internals. And
+eventually, if they want to, they can learn to read the code. But they
+don't have to. The verification surface is enough.
+
+I came to this paradigm through necessity — illness made it impossible
+for me to read code the traditional way. A beginner comes to it through
+opportunity — AI makes it possible to build without reading code. Both
+paths lead to the same place: a developer who directs, verifies, and
+ships, without ever opening a source file.
+
+If you are a beginner reading this book, you have an advantage I never
+had. You don't have thirty years of muscle memory telling you to peek
+at the code. You can start with the verification surface from day one.
+You can build things that would have taken me years to learn to build,
+and you can do it now.
+
+This is not cheating. This is programming in the age of AI. The open
+field is open again.
+
+
+Boring Is Free
+
+One of the most tedious experiences in a traditional programming career
+is implementing the same security and infrastructure boilerplate for
+every new project. Authentication. CSRF protection. Rate limiting. Error
+boundaries. Connection pooling. Password hashing. These are things that
+every production application needs, that every senior developer knows
+how to build, and that every junior developer learns the hard way — by
+shipping without them and discovering the consequences.
+
+In an AI-assisted workflow, boring is free. You express the concern
+("make it secure," "add rate limiting," "handle database connection
+failures gracefully") and the AI generates the implementation. You do
+not need to know how bcrypt works. You do not need to understand JWT
+token rotation. You do not need to have memorised the OWASP Top Ten.
+You need to know that these concerns exist and that they should be
+expressed.
+
+This is the criticism that classical programmers level at beginner
+vibe-coders: "They don't know about security. They'll ship a production
+app with no CSRF protection and get their users hacked." The criticism
+is valid as far as it goes — a beginner who doesn't know to ask about
+security will not get security. But it mistakes a learning problem for
+a gatekeeping justification.
+
+Every developer learns security the same way: by shipping something
+insecure, discovering the vulnerability, and learning to prevent it next
+time. In the traditional path, this means reading documentation,
+understanding attack vectors, and hand-crafting protections — a process
+that takes years. In the AI-assisted path, it means the same discovery
+("someone exploited my form"), followed by directing the AI to fix it
+("add CSRF protection to all mutation routes"), followed by adding an
+invariant ("every POST/PATCH/DELETE route must call verifySameOrigin").
+The learning is faster because the implementation is automated, but the
+learning still happens. You still learn what CSRF is. You just don't
+learn it by writing the protection yourself. You learn it by directing
+the AI to write it, arguing about the edge cases, and adding a permanent
+sensor that prevents its absence from recurring.
+
+The critics are right that you need to know about these things. They are
+wrong that you need to implement them yourself. Express the concern. Let
+the AI handle the details. Add an invariant. Move on. Boring is free.
+
+
+Approval Friction
+
+I work in YOLO mode. Every change the AI proposes is applied immediately
+without an approval prompt. This is not recklessness. It is recognition
+that the approval step is the wrong place for quality control.
+
+When the AI generates a change and I have to click "approve" before it
+takes effect, what am I approving? I have not read the code. I will
+never read the code. The approval button is asking me to vouch for
+something I deliberately do not inspect. It is theatre — it looks like
+diligence but provides no actual guarantee.
+
+The real quality control happens after the change is applied. I test the
+behavior. I run the invariants. If the system still works correctly,
+the change was good. If it doesn't, I describe the symptom and the AI
+fixes it — or I revert to the last commit and try a different approach.
+The approval prompt is friction between intention and verification. It
+adds no safety and costs attention.
+
+Version control is the safety net, not approval prompts. Before any
+significant direction, make a commit. If the AI goes off the rails —
+and it will, occasionally — you can revert to the last known-good state
+and start again. The cost of a wrong turn is a few minutes of lost
+conversation, not hours of clawing back broken functionality. Commit
+often. Commit before every major direction change. Commit when something
+works. The commit history is your undo stack.
+
+This is not advanced advice. It is the first thing a beginner should
+learn after learning to describe what they want. The AI is powerful
+but it is not careful. It will sometimes break things that were working.
+Version control means you never have to waste tokens coaxing the AI to
+restore functionality it accidentally destroyed. You just revert and
+restate the objective more clearly.
+
+Commit early. Commit often. Work in YOLO mode. Trust the verification
+surface, not the approval prompt.

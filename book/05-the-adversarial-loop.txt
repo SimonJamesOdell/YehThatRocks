@@ -46,8 +46,54 @@ A directed AI analysis session has a rhythm:
    invariant that prevents this class of failure from recurring.
 
 7. REPEAT. The next feature, the next bug, the next session. The loop
-   tightens as the surface grows. Fewer things go wrong. When they do,
-   they are caught faster and fixed with less argument.
+    tightens as the surface grows. Fewer things go wrong. When they do,
+    they are caught faster and fixed with less argument.
+
+
+The Human Sensor
+
+Before invariants catch anything, you catch it.
+
+The adversarial loop starts with human observation, not automated
+verification. You are the first sensor. You click the buttons. You
+navigate the pages. You notice that the Watch Now link goes to the wrong
+video, that the mobile layout shows the artist name twice, that the page
+takes three seconds to load. No invariant would have caught these things
+— because you hadn't commissioned it yet.
+
+Manual QA is not a temporary phase that the verification surface
+eventually replaces. It is the permanent front end of the sensor
+network. The invariants catch regressions — things that used to work and
+have stopped. Manual QA catches new failures — things that have never
+worked correctly, or things that have degraded in ways no existing
+sensor covers.
+
+This is the bridge between simple vibe coding and directed AI analysis.
+In vibe coding, the developer observes a problem and prompts the AI to
+fix it. In directed AI analysis, the developer observes a problem,
+prompts the AI to fix it, and then commissions an invariant so that
+class of problem can never recur. The observation step is identical.
+The difference is what happens after the fix.
+
+For beginners, this means you do not need to build a verification
+surface before you start building features. You start by vibing. You
+describe what you want. You test it manually. When it breaks, you
+describe the symptom and the AI fixes it. After a few cycles, you will
+notice that the same kinds of things keep breaking. That is the moment
+to add your first invariant. The verification surface grows organically
+from the failures you actually observe, not from a theoretical list of
+things that might go wrong.
+
+For experienced developers, manual QA is the same skill you have always
+used — testing your own work, noticing when behavior is off, forming
+hypotheses about causes. The difference is that instead of opening the
+code to investigate, you describe the symptom to the AI and argue. Your
+QA skills are more valuable than ever. They are the front end of the
+entire quality assurance pipeline.
+
+Manual QA is not a weakness of the approach. It is the approach. The
+verification surface amplifies your observations. It does not replace
+them.
 
 
 Why Argument Matters

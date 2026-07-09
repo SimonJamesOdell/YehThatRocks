@@ -177,6 +177,73 @@ issues that individual invariants might miss. After the audit,
 commission invariants that prevent the issues from recurring.
 
 
+Pattern 7: Commissioning Performance Analysis
+
+When the system is slow, do not ask the AI to "make it faster." That
+will produce superficial changes — cache headers, minification, code
+splitting — that may or may not address the actual bottleneck.
+
+Instead, direct the AI to build profiling infrastructure:
+
+- "The artist page feels slow when there are more than a few genres.
+  Build a script that exercises the artist genre filter query under
+  load and reports EXPLAIN output, row counts, and execution time.
+  Do not optimise anything yet — just build the profiling tool."
+
+- "I'm seeing a query in the MySQL slow log related to video
+  availability. Write a hotspot test script that isolates that query,
+  runs it with realistic parameters, and captures the query plan."
+
+- "Build a deploy-time script that captures database profiling data
+  from the production instance: slow query log, index usage stats,
+  and table sizes. Make it runnable on demand."
+
+After the profiling tool exists, run it. Direct the AI to interpret
+the output:
+
+- "The EXPLAIN shows a full table scan on the site_videos table with
+  260,000 rows. The query filters by site_id and availability_status.
+  Is there an index that covers those columns? If not, why isn't the
+  planner using one?"
+
+- "The hotspot test shows the query takes 1.2 seconds on the first
+  run and 50ms on subsequent runs. That suggests the first run is
+  hitting disk and subsequent runs are hitting the buffer pool. Is
+  1.2 seconds acceptable for a cold-cache query on this dataset?"
+
+Argue about the interpretation until you understand the cause. Then
+direct the AI to implement a fix, and verify with the profiling tool:
+
+- "Add a composite index on (site_id, availability_status). Run the
+  hotspot test again and confirm the query plan uses the index and
+  execution time is under 100ms even on cold cache."
+
+Leave the profiling tool in place:
+
+- "Keep this hotspot test script in the repository. It should fail
+  if the query plan regresses to a full table scan or if execution
+  time exceeds 500ms."
+
+The profiling tool is now a sensor. It catches performance regressions
+in the same way that invariants catch correctness regressions. The
+pattern is identical: observe symptom, build measurement, argue about
+cause, fix, leave sensor in place.
+
+Do not:
+
+- Ask the AI to optimise without profiling first. You will get
+  superficial changes that make the code harder to read (harder for
+  the AI to read, that is — but the AI still reads it, and
+  unnecessary complexity in one area can cause the AI to make wrong
+  assumptions in another).
+
+- Accept "it's faster now" without measurements. Demand before-and-after
+  numbers from the profiling tool.
+
+- Remove profiling tools after the fix. They are sensors. They guard
+  against regression. They are the performance equivalent of invariants.
+
+
 These patterns are not a complete taxonomy. They are what worked for
 one project. Your project will develop its own patterns. The common
 thread is structural, not linguistic: describe what should happen,

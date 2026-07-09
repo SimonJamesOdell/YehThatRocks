@@ -158,6 +158,48 @@ Extrapolation is risky. But the trend is clear: if the verification
 surface compounds, the cost of software trends toward zero.
 
 
+Looking Forward
+
+This book has argued for a specific claim: that directed AI analysis,
+backed by a compounding verification surface, can produce a complex
+production web application without the developer reading a single line
+of code. The claim is demonstrated by YehThatRocks — one project, one
+developer, one domain. It is not a universal proof.
+
+Could the same approach build a database engine? A compiler? An embedded
+system? A game engine? I don't know. Nobody has tried — or if they have,
+they haven't published the results.
+
+But I recently heard about a developer who vibe-coded a new game for
+the original PlayStation 1. He did not have developer kits or official
+SDKs. He built his own toolchain in Rust — a systems language with
+notoriously strict memory semantics — and produced a working title that
+runs on twenty-five-year-old hardware. Rust. For a PS1 game. Vibe-coded.
+
+This is not proof that AI can build anything. It is a single anecdote,
+unverified, from someone I do not know. But it is a glimpse of where
+this might be heading. If a solo developer can build a working PS1
+toolchain and game by directing an AI, the boundary between "works for
+web apps" and "works for anything" is thinner than it appears. The
+models are improving. The tooling is maturing. The harnesses — the
+verification surfaces, the profiling infrastructure, the deployment
+gates — are getting more sophisticated.
+
+The principle may generalize. Directed AI analysis works for web
+applications because web applications are well-understood patterns
+implemented in well-supported frameworks. The same might be true of
+compilers, databases, or game engines — they are also well-understood
+patterns, just in different domains with stricter constraints. The AI
+does not need to be creative. It needs to be comprehensive and correct.
+Directed by someone who knows what correctness means.
+
+This is speculation, not argument. The book rests on the evidence in
+Chapter 9 — one project, three months, $300, zero lines read. Everything
+else is extrapolation. But extrapolation from a working system is more
+useful than prediction from no system at all. The open question is not
+whether AI can build software. It is how far the principle extends.
+
+
 The Gap
 
 There is a gap between what is possible and what most developers believe
@@ -186,3 +228,27 @@ application for $300 in three months.
 
 The only thing stopping you from doing the same is the belief that
 you need to read the code. You don't.
+
+There is one more way to think about this. Classical code is like a
+robot. It is designed, built, and deployed. It does exactly what it was
+programmed to do, and when it breaks, a human opens the chassis and
+rewires it. The code is a static artifact. The developer is the
+mechanic.
+
+AI-driven code with an LLM at the nucleus is different. It is closer to
+a living organism. The codebase is the organism's memory — it grows and
+adapts in response to the environment. The developer feeds it
+descriptions of desired behavior. The invariants act as an immune
+system, detecting and rejecting harmful changes. When the organism is
+stressed — a slow query, a broken feature, a deployment failure — the
+developer and the AI diagnose the problem together and the organism
+heals. It learns. It gets stronger.
+
+This is not a metaphor I expect to hold up under rigorous scrutiny.
+Organisms do not have commit histories. But the feeling of working this
+way is not the feeling of building a machine. It is the feeling of
+tending a garden. You plant the seeds. You water them. You pull the
+weeds. You do not control every cell. You create the conditions for
+growth and you guide it.
+
+The open field is open. Go tend your garden.

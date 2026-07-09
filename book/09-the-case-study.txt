@@ -57,7 +57,7 @@ At Public Beta (April 7, 2026 — four days from initial commit):
   artist browsing, genre categories, admin dashboard
 - Hours spent reading code: 0
 
-The initial commit (April 3) was 17,640 lines across 151 files. By the
+The initial commit (April 3) was 17,640 lines across 151 files — the AI's own generated codebase, produced from a conversational description of what the system should do. There was no specification document written by the developer. The AI built its own understanding of the requirements and got stuck in. By the
 time the beta went live on April 7, the project had grown through
 approximately seventeen incremental commits — each one adding features
 alongside the invariants that guarded them.
@@ -140,10 +140,22 @@ No data loss. All database operations used transactions or idempotent
 operations. The Prisma schema was well-indexed from the start. No
 migration caused data corruption.
 
-No significant performance regressions. The AI's caching strategy
-(bounded maps with in-flight deduplication, per-domain TTLs) prevented
-the most common performance failure mode in AI-generated code:
-unbounded memory growth and N+1 queries.
+No significant performance regressions. This was not luck — it was the
+result of the same directed-analysis pattern applied to performance
+instead of correctness. When a page felt slow or a query appeared in
+the MySQL slow log, the AI was directed to build profiling tools
+rather than make blind optimizations. The repository accumulated
+database profiling scripts (export-db-profiling.sh, start-db-profiling.sh),
+a performance monitor (monitor-performance.js), hotspot-specific test
+scripts (covering the artist genre filter, playlist item joins, related
+video joins, video classification audits, and site-video availability
+summaries), and analysis documents (HOTSPOT_9_OPTIMIZATION.md,
+HOTSPOT_10_ANALYSIS.md) recording what was slow, why, and what was
+changed. Each optimization added tooling that stayed in place as a
+permanent regression detector. The AI's caching strategy — bounded maps
+with in-flight deduplication and per-domain TTLs — prevented the most
+common performance failure mode in AI-generated code: unbounded memory
+growth and N+1 queries.
 
 No security vulnerabilities reported. The CSRF protection, input
 validation, rate limiting, and proper password hashing prevented

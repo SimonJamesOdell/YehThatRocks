@@ -1,0 +1,150 @@
+APPENDIX E
+Your First AI-Assisted Project
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If you have read this far and you are new to AI-assisted development,
+this appendix is for you. It is a concrete first step — something you
+can do right now, in the next hour, to start building with AI.
+
+If you are an experienced developer who already knows the tools, you
+can skip this appendix. Think of it as a BASIC GOTO statement — jump
+straight to the next one. This is for the person who just installed
+their first AI coding tool and is staring at a blank prompt.
+
+
+Before You Start: Version Control
+
+You need version control. This is not optional. The AI will sometimes
+break things that were working. When that happens, you want to be able
+to go back to the last known-good state instantly, rather than spending
+tokens and frustration trying to coax the AI into restoring something
+it just destroyed.
+
+If you don't already use Git, set it up now. You don't need to know
+everything about Git. You need to know three things:
+
+1. How to create a repository: git init
+2. How to save your work: git add . && git commit -m "describe what changed"
+3. How to go back: git checkout . (undo unstaged changes) or git reset
+   --hard HEAD (go back to the last commit)
+
+That's it. Do this before every significant direction change. Do it
+when something works. Do it when you're about to ask the AI for a big
+refactor. The commit history is your undo stack. Build the habit on day
+one.
+
+If you are using an AI coding tool that has an auto-commit feature,
+enable it. If your tool asks you to approve every change before it is
+applied — YOLO mode is better. The approval step is theatre. You haven't
+read the code and you won't read the code. The real verification happens
+after the change is applied, when you test the behavior. If it's wrong,
+you revert. Accept the change, test it, and only then decide if it was
+correct.
+
+
+Step One: Describe Your First Feature
+
+Open your AI coding tool. Describe what you want to build. Do not
+describe how to build it. Describe what the user should experience.
+
+A good description:
+
+  "Build a website that shows a list of my favourite albums. Each album
+  should show the cover art, the artist name, and the release year. When
+  I click an album, it should show the track list. I should be able to
+  add new albums by typing the title and artist."
+
+A bad description:
+
+  "Create a React app with a component called AlbumList that fetches
+  data from an API endpoint. Use useState and useEffect. Style it with
+  Tailwind."
+
+The AI knows how to build things. Your job is to say what to build.
+Let the AI choose the stack, the architecture, and the implementation.
+If the AI chooses something you don't like, you can redirect it later.
+Start with the outcome.
+
+Commit. Always commit after the initial scaffold works.
+
+
+Step Two: Test It
+
+Run the application. Click the buttons. Navigate the pages. Try to break
+it. What happens when you add an album with no title? What happens when
+you click an album that has no tracks? What happens when you reload the
+page?
+
+You are doing manual QA. This is the most important skill in AI-assisted
+development. You do not need to know how the code works. You need to
+know whether the behavior matches your description. If it does, good.
+If it doesn't, go to step three.
+
+Commit when you're satisfied that the feature works.
+
+
+Step Three: Argue
+
+Something is wrong. The track list doesn't show up. The cover art is
+broken. The new album form doesn't clear after submitting.
+
+Describe exactly what you did, what you expected, and what actually
+happened:
+
+  "I added a new album called 'Dark Side of the Moon' by Pink Floyd.
+  I expected it to appear in the album list. It didn't appear. I
+  refreshed the page and it's still not there. The form cleared after
+  I submitted, which looked like it worked, but the album is missing."
+
+The AI will propose an explanation. Read it. Does it make sense? Does
+it account for everything you observed? If not, push back:
+
+  "You said the form submission failed, but the form cleared after I
+  submitted. If the submission failed, why did the form clear?"
+
+Argue until the AI reaches an explanation that accounts for all the
+evidence. Then tell it to fix the problem. Test again. Commit.
+
+
+Step Four: Add Your First Invariant
+
+After the fix works, add a sensor that prevents this problem from
+recurring:
+
+  "Write a script that checks whether the album creation form
+  successfully persists new albums to the database and returns them
+  in the album list. Run it before every deployment."
+
+The AI will write the script. Run it. It should pass on the current
+code. If someone (or the AI) later introduces a change that breaks
+album creation, this script will catch it before it reaches you.
+
+You now have a verification surface. It is one script. It checks one
+thing. But it is a permanent guarantee that this specific class of
+failure can never recur without detection.
+
+This is the entire paradigm in miniature. Describe a feature. Test it
+manually. When it breaks, argue with the AI. Fix it. Add an invariant.
+Repeat. Each cycle makes the system more reliable. Each invariant is
+technical credit that compounds.
+
+You do not need thirty invariants to start. You need one. You just
+built it.
+
+
+Step Five: Keep Going
+
+The next feature will be easier. Some of the things that went wrong
+last time are now guarded by the invariant you just added. The AI will
+generate code under a slightly tighter set of constraints. You will
+spend less time arguing and more time shipping.
+
+This is the compounding effect. It works at any scale. One invariant
+is infinitely better than zero. Two is better than one. The surface
+grows with every incident, and every addition makes the next feature
+cheaper to verify.
+
+You are now doing directed AI analysis. You may still call it vibe
+coding. The label doesn't matter. What matters is that you are building,
+testing, arguing, and adding guarantees — in that order, in every cycle.
+The open field is open. Go build something.

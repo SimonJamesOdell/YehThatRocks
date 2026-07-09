@@ -17,6 +17,11 @@ CHAPTER SPINE
                source code as literature and handed the read/write lock
                exclusively to the LLM.
 
+             — The Open Field
+               Programming has always been an open field. Vibe coding as
+               democratisation, the BASIC magazine era, the gatekeeping
+               impulse, and why beginners have the advantage.
+
   Chapter  2 — The Verification Surface
                Invariants replace review. How to build sensors that catch
                entire categories of failure, and why line-by-line review
@@ -81,6 +86,12 @@ CHAPTER SPINE
   Appendix D — The Numbers
                Tokens consumed, costs per feature, PR acceptance rates,
                production incidents, and the economics of the approach.
+
+  Appendix E — Your First AI-Assisted Project
+               A concrete getting-started guide for beginners. Version
+               control, describing features, manual QA, arguing with
+               the AI, and adding your first invariant. With a BASIC
+               GOTO note for advanced readers.
 
 
 MANUSCRIPT NOTE

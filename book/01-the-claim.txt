@@ -52,6 +52,16 @@ everything, every time. It is the ideal audience for code — and that means
 we can stop optimizing for the imperfect human audience we used to write
 for.
 
+This has a deeper implication: the codebase is not a storage format. It
+is the AI's memory. When the AI needs to understand how a feature works,
+it reads the relevant files. When it needs to modify behavior, it reads
+the callers, the dependencies, and the invariants. The codebase is
+retrieval-augmented generation — RAG — loaded on demand for whatever
+purpose the session requires: inspection, explanation, modification,
+analysis. You are not storing code in a repository. You are providing
+persistent context for the AI's next session. The code is the memory. The
+AI is the processor. You are the director.
+
 
 The Database Analogy
 
@@ -74,6 +84,35 @@ failed and the AI cannot explain why.
 This is not laziness. It is not recklessness. It is the same engineering
 discipline that every DBA applies to their database — applied to the
 entire codebase.
+
+The analogy extends further than you might think. Before this project,
+I had never heard of Prisma. The AI chose the ORM, designed the schema,
+and generated the migrations. I did not review the SQL. I did not need
+to know Prisma's query syntax. I verified that the API returned the
+correct data and that the invariants passed. The tool is feedstock too,
+not just the code. The LLM selects, configures, and operates the
+toolchain. You direct, verify, and ship.
+
+This is also the answer to one of the oldest frustrations in software
+development: reusable code dies with its ecosystem. I was a Perl
+programmer once. I built reusable libraries for authentication, session
+management, and database access. When Perl declined and PHP rose, those
+libraries became worthless — not because the code was bad, but because
+the ecosystem had moved on. I rebuilt them in PHP. Then PHP declined
+and JavaScript rose. I rebuilt them again. The pattern repeated across
+frameworks, languages, and decades.
+
+Reusable code is an investment in an asset that depreciates with its
+platform. Reusable knowledge — the specification of what a system should
+do, the invariants it must maintain, the architectural patterns it must
+follow — is an investment in an asset that survives any platform. The
+AI implements the specification in whatever stack is current. Next year,
+when the stack changes, the specification remains valid. You direct the
+AI to reimplement it. The code is ephemeral. The invariants are durable.
+
+This is not a theory. It is what happened when I moved from PHP to
+Node.js, and from Node.js to this project. The code was rewritten each
+time. The knowledge of what the system should do survived.
 
 
 The Exclusive Read/Write Lock
