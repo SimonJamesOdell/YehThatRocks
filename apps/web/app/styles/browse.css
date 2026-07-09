@@ -1337,6 +1337,39 @@
   }
 }
 
+.artistWikiGenerationNote {
+  color: rgba(255, 210, 195, 0.6);
+  font-size: 0.85rem;
+  max-width: 420px;
+  margin: 8px auto 0;
+  line-height: 1.5;
+}
+
+.artistWikiRetryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 12px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--btn-blood-start), var(--btn-blood-end));
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--glow);
+  transition: filter 0.15s;
+}
+
+.artistWikiRetryButton:hover {
+  filter: brightness(1.12);
+}
+
+.artistWikiRetryButton:active {
+  filter: brightness(0.95);
+}
+
 .contractHint {
   color: var(--muted);
   font-size: 0.9rem;

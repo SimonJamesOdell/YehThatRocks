@@ -121,13 +121,12 @@ function main() {
   assertContains(artistPageSource, 'getArtistRouteSourceVideoIds(', "Artist detail page uses lightweight source membership lookup for Top100/New badges", failures);
   assertNotContains(artistPageSource, 'getTopVideos(100)', "Artist detail page no longer fetches full Top100 rows just to annotate badges", failures);
   assertNotContains(artistPageSource, 'getNewestVideos(100)', "Artist detail page no longer fetches full New rows just to annotate badges", failures);
-  assertContains(artistWikiPageSource, 'const wiki = await getOrCreateArtistWiki(artist.name, slug);', "Artist wiki page resolves cached-or-generated wiki content", failures);
+  assertContains(artistWikiPageSource, 'getCachedWikiOnly(artist.name, slug)', "Artist wiki page checks server cache via getCachedWikiOnly", failures);
+  assertContains(artistWikiPageSource, 'WikiContentClient', "Artist wiki page renders WikiContentClient for generation handling", failures);
   assertContains(artistWikiPageSource, 'const verifiedExternal = await verifyExternalArtistBySlug(slug);', "Artist wiki page attempts external verification when slug lookup misses", failures);
   assertContains(artistWikiPageSource, 'await upsertVerifiedExternalArtistCandidate({', "Artist wiki page promotes verified external artists into projection", failures);
   assertContains(artistWikiPageSource, 'artist = await getArtistBySlug(slug);', "Artist wiki page retries slug lookup after external promotion", failures);
-  assertContains(artistWikiPageSource, 'className="artistWikiTopRow"', "Artist wiki page renders overview and image top row", failures);
-  assertContains(artistWikiPageSource, '<h2>Formation and Backstory</h2>', "Artist wiki page renders formation section", failures);
-  assertContains(artistWikiPageSource, '<h2>Sources</h2>', "Artist wiki page renders sources section", failures);
+  // Wiki content (overview, formation, sources) rendered by client component — verified in verify-wiki-invariants.js
   assertContains(artistRoutingSource, 'export function getArtistWikiPath(artistName: string)', "Artist routing exposes artist wiki path helper", failures);
   assertContains(artistRoutingSource, 'return slug ? `/artist/${encodeURIComponent(slug)}/wiki` : null;', "Artist routing builds /artist/<slug>/wiki routes", failures);
   assertContains(artistWikiLinkSource, 'const targetHref = withVideoContext(href, videoId, true);', "Artist wiki link preserves current video context", failures);

@@ -7,7 +7,7 @@ import { slugifyArtistName } from "@/lib/artist-routing";
 import { getMusicBrainzArtistData } from "@/lib/musicbrainz";
 import { parseJsonOrNull } from "@/lib/parse-json";
 
-const WIKI_CACHE_VERSION = 3;
+const WIKI_CACHE_VERSION = 4;
 const WIKI_CACHE_DIR = path.join(process.cwd(), ".cache", "artist-wiki");
 const ENABLE_ARTIST_WIKI_GENERATION = process.env.ENABLE_ARTIST_WIKI_GENERATION === "1";
 
@@ -69,6 +69,11 @@ export type ExternalArtistVerification = {
   genre: string | null;
   sources: Array<{ title: string; url: string }>;
 };
+
+export type WikiGenerationState = 
+  | { status: "cached"; wiki: ArtistWikiDocument }
+  | { status: "generating" }
+  | { status: "error"; message: string; retryable: boolean };
 
 function normalizeImageUrl(value: unknown) {
   const candidate = trimText(value);
@@ -327,6 +332,8 @@ async function fetchWithTimeout(url: string, timeoutMs = 5000) {
   }
 }
 
+// ─── Source collection ──────────────────────────────────────────────────────
+
 async function fetchWikipediaSource(artistName: string): Promise<ExternalSource | null> {
   try {
     const searchResponse = await fetchWithTimeout(
@@ -426,14 +433,75 @@ async function fetchCatalogSource(artistName: string): Promise<ExternalSource | 
   }
 }
 
+/**
+ * DuckDuckGo Instant Answer API — returns structured data for many well-known artists.
+ * No API key required. Rate-limited at ~1 req/s for anonymous access.
+ */
+async function fetchDuckDuckGoSource(artistName: string): Promise<ExternalSource | null> {
+  try {
+    const response = await fetchWithTimeout(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(`${artistName} musician band`)}&format=json&no_html=1&skip_disambig=1`,
+      6000,
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = await parseJsonOrNull<{
+      Abstract?: string;
+      AbstractURL?: string;
+      AbstractSource?: string;
+      AbstractText?: string;
+      Heading?: string;
+      Image?: string;
+      RelatedTopics?: Array<{ Text?: string; FirstURL?: string; Icon?: { URL?: string } }>;
+    }>(response);
+
+    if (!payload) {
+      return null;
+    }
+
+    const abstractText = payload.AbstractText || payload.Abstract || "";
+    const abstractUrl = payload.AbstractURL || "";
+    const heading = payload.Heading || "";
+
+    // Only use if there's substantive content
+    if (!abstractText || abstractText.length < 40) {
+      return null;
+    }
+
+    // Verify the result is actually about the artist
+    const resultLower = `${heading} ${abstractText.slice(0, 200)}`.toLowerCase();
+    const artistLower = artistName.toLowerCase();
+    if (!resultLower.includes(artistLower)) {
+      return null;
+    }
+
+    return {
+      title: heading || `DuckDuckGo: ${artistName}`,
+      url: abstractUrl || `https://duckduckgo.com/?q=${encodeURIComponent(artistName)}+band`,
+      snippet: abstractText.slice(0, 500),
+      imageUrl: normalizeImageUrl(payload.Image) || undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Collects external sources for an artist from multiple providers.
+ * Runs Wikipedia + MusicBrainz + DuckDuckGo + catalog in parallel.
+ */
 async function collectSources(artistName: string) {
-  const [catalog, wikipedia, musicBrainz] = await Promise.all([
+  const [catalog, wikipedia, musicBrainz, duckDuckGo] = await Promise.all([
     fetchCatalogSource(artistName),
     fetchWikipediaSource(artistName),
     fetchMusicBrainzSource(artistName),
+    fetchDuckDuckGoSource(artistName),
   ]);
 
-  return [catalog, wikipedia, musicBrainz].filter((item): item is ExternalSource => Boolean(item));
+  return [catalog, wikipedia, musicBrainz, duckDuckGo].filter((item): item is ExternalSource => Boolean(item));
 }
 
 export async function verifyExternalArtistBySlug(slugHint: string): Promise<ExternalArtistVerification | null> {
@@ -478,8 +546,29 @@ export async function verifyExternalArtistBySlug(slugHint: string): Promise<Exte
   };
 }
 
+/**
+ * Returns true if at least one source comes from Wikipedia, MusicBrainz, or has
+ * substantive DuckDuckGo abstract content — meaning we have enough external data
+ * to generate a non-hallucinated wiki.
+ */
 function hasTrustedExternalSource(sources: ExternalSource[]) {
-  return sources.some((source) => source.title.startsWith("Wikipedia:") || source.title.startsWith("MusicBrainz:"));
+  if (sources.length === 0) {
+    return false;
+  }
+
+  const hasWikipedia = sources.some((s) => s.title.startsWith("Wikipedia:"));
+  const hasMusicBrainz = sources.some((s) => s.title.startsWith("MusicBrainz:"));
+  
+  if (hasWikipedia || hasMusicBrainz) {
+    return true;
+  }
+
+  // DuckDuckGo with a substantial snippet is also a valid source
+  const hasDuckDuckGo = sources.some(
+    (s) => s.title.startsWith("DuckDuckGo:") || (s.snippet && s.snippet.length >= 80),
+  );
+
+  return hasDuckDuckGo;
 }
 
 async function generateWikiDocument(artistName: string, slug: string): Promise<ArtistWikiDocument> {
@@ -585,6 +674,8 @@ async function generateWikiDocument(artistName: string, slug: string): Promise<A
   return sanitizeWikiDocument(artistName, slug, model, parsedPayload, sources);
 }
 
+// ─── Cache layer ────────────────────────────────────────────────────────────
+
 function getWikiCacheFile(slug: string) {
   return path.join(WIKI_CACHE_DIR, `${slug}.json`);
 }
@@ -613,7 +704,18 @@ async function writeCachedWiki(slug: string, wiki: ArtistWikiDocument) {
   await rename(tempPath, finalPath);
 }
 
-export async function getOrCreateArtistWiki(artistName: string, slugHint?: string) {
+// ─── Public API ─────────────────────────────────────────────────────────────
+
+/**
+ * Gets or creates an artist wiki. Returns null only when:
+ * - Artist name is not plausible
+ * - No slug can be derived
+ * - Generation is disabled AND no cache exists
+ *
+ * Never returns null for generation errors — instead throws so callers can
+ * handle the retry case.
+ */
+export async function getOrCreateArtistWiki(artistName: string, slugHint?: string): Promise<ArtistWikiDocument | null> {
   const trimmedSlugHint = slugHint?.trim();
   const slug = trimmedSlugHint || slugifyArtistName(artistName);
 
@@ -635,11 +737,59 @@ export async function getOrCreateArtistWiki(artistName: string, slugHint?: strin
     return null;
   }
 
-  try {
-    const generated = await generateWikiDocument(artistName, slug);
-    await writeCachedWiki(slug, generated);
-    return generated;
-  } catch {
+  // Throw on generation failure so the caller can present a retry UI
+  const generated = await generateWikiDocument(artistName, slug);
+  await writeCachedWiki(slug, generated);
+  return generated;
+}
+
+/**
+ * Generates a wiki for the given artist, caching the result.
+ * Throws on failure so the API route and client can handle retries.
+ */
+export async function generateAndCacheWiki(artistName: string, slugHint?: string): Promise<ArtistWikiDocument> {
+  const slug = slugHint?.trim() || slugifyArtistName(artistName);
+
+  if (!slug) {
+    throw new Error("WIKI_INVALID_SLUG");
+  }
+
+  if (!isPlausibleArtistName(artistName)) {
+    throw new Error("WIKI_ARTIST_NAME_REJECTED");
+  }
+
+  // Check cache first
+  const cached = await readCachedWiki(slug);
+  if (cached) {
+    return cached;
+  }
+
+  if (!ENABLE_ARTIST_WIKI_GENERATION) {
+    throw new Error("WIKI_GENERATION_DISABLED");
+  }
+
+  const generated = await generateWikiDocument(artistName, slug);
+  await writeCachedWiki(slug, generated);
+  return generated;
+}
+
+/**
+ * Reads a cached wiki entry. Does NOT attempt generation.
+ * Used by the page's server component for the fast path.
+ */
+export async function getCachedWikiOnly(artistName: string, slugHint?: string): Promise<ArtistWikiDocument | null> {
+  const slug = slugHint?.trim() || slugifyArtistName(artistName);
+
+  if (!slug || !isPlausibleArtistName(artistName)) {
     return null;
   }
+
+  return readCachedWiki(slug);
+}
+
+/**
+ * Checks whether generation is enabled in the current environment.
+ */
+export function isWikiGenerationEnabled() {
+  return ENABLE_ARTIST_WIKI_GENERATION;
 }

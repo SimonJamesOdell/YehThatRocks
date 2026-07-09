@@ -1,10 +1,14 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 
 import { CloseLink } from "@/components/close-link";
 import { OverlayHeader } from "@/components/overlay-header";
+import { WikiContentClient } from "@/components/wiki-content-client";
 import { getArtistBySlug, upsertVerifiedExternalArtistCandidate } from "@/lib/catalog-data";
-import { getOrCreateArtistWiki, verifyExternalArtistBySlug } from "@/lib/artist-wiki";
+import { getCachedWikiOnly, isWikiGenerationEnabled } from "@/lib/artist-wiki";
+import { verifyExternalArtistBySlug } from "@/lib/artist-wiki";
 import { getArtistPagePath, withVideoContext } from "@/lib/artist-routing";
 
 type ArtistWikiPageProps = {
@@ -12,51 +16,45 @@ type ArtistWikiPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-function resolveInternalWikiHref(rawUrl: string) {
-  if (!rawUrl) {
-    return null;
+export async function generateMetadata({ params, searchParams }: ArtistWikiPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const videoId = typeof resolvedSearchParams?.v === "string" ? resolvedSearchParams.v : undefined;
+
+  const artist = await getArtistBySlug(slug);
+
+  if (!artist) {
+    // Still return a basic metadata frame for pages not yet in the catalog
+    const derivedName = slug
+      .split("-")
+      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+      .join(" ");
+    return {
+      title: `${derivedName} — Artist Wiki | YehThatRocks`,
+      description: `Learn about ${derivedName} — biography, discography, members, and more on YehThatRocks.`,
+      openGraph: {
+        title: `${derivedName} — Artist Wiki | YehThatRocks`,
+        description: `Learn about ${derivedName} — biography, discography, members, and more.`,
+        type: "article",
+      },
+    };
   }
 
-  const trimmed = rawUrl.trim();
-  if (!trimmed) {
-    return null;
-  }
+  const wiki = await getCachedWikiOnly(artist.name, slug);
 
-  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
-    return trimmed;
-  }
-
-  try {
-    const parsed = new URL(trimmed);
-    const host = parsed.hostname.toLowerCase();
-    const isKnownInternalHost =
-      host === "localhost"
-      || host === "127.0.0.1"
-      || host === "yehthatrocks.com"
-      || host === "www.yehthatrocks.com";
-
-    if (!isKnownInternalHost) {
-      return null;
-    }
-
-    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-  } catch {
-    return null;
-  }
-}
-
-function renderList(items: string[], emptyLabel = "No verified entries yet.") {
-  if (items.length === 0) {
-    return <p>{emptyLabel}</p>;
-  }
-
-  return (
-    <ul className="artistWikiList">
-      {items.map((item) => (
-        <li key={item}>{item}</li>
-      ))}
-    </ul>
-  );
+  return {
+    title: `${artist.name} — Artist Wiki | YehThatRocks`,
+    description: wiki?.sections.overview
+      ? wiki.sections.overview.slice(0, 160)
+      : `Artist wiki for ${artist.name} — biography, discography, members, and more on YehThatRocks.`,
+    openGraph: {
+      title: `${artist.name} — Artist Wiki | YehThatRocks`,
+      description: wiki?.sections.overview?.slice(0, 200)
+        || `Artist wiki for ${artist.name} on YehThatRocks.`,
+      type: "article",
+      images: wiki?.images?.[0]?.url ? [{ url: wiki.images[0].url }] : undefined,
+    },
+  };
 }
 
 export default async function ArtistWikiPage({ params, searchParams }: ArtistWikiPageProps) {
@@ -84,19 +82,11 @@ export default async function ArtistWikiPage({ params, searchParams }: ArtistWik
     notFound();
   }
 
-  const wiki = await getOrCreateArtistWiki(artist.name, slug);
-
-  if (!wiki) {
-    notFound();
-  }
-
+  // Server-side cache check (fast, no generation)
+  const cachedWiki = await getCachedWikiOnly(artist.name, slug);
+  const generationEnabled = isWikiGenerationEnabled();
   const artistPagePath = getArtistPagePath(artist.name);
   const artistPageHref = artistPagePath ? withVideoContext(artistPagePath, videoId, resume === "1") : "/artists";
-  const filteredSources = wiki.sources.filter((source) => {
-    const internalHref = resolveInternalWikiHref(source.url);
-    const title = source.title.trim().toLowerCase();
-    return !internalHref && !title.startsWith("yehthatrocks:");
-  });
 
   return (
     <>
@@ -118,85 +108,26 @@ export default async function ArtistWikiPage({ params, searchParams }: ArtistWik
         <CloseLink />
       </OverlayHeader>
 
-      <section className="artistWikiPage" aria-label={`${artist.name} wiki`}>
-        <div className="artistWikiFlow">
-          <div className="artistWikiTopRow">
-            <article className="artistWikiSection artistWikiOverviewSection">
-              <h2>Overview</h2>
-              <p>{wiki.sections.overview}</p>
-              <Link href={artistPageHref} className="artistWikiOverviewAction">
-                More by {artist.name} &gt;
-              </Link>
-            </article>
-
-            {wiki.images[0] ? (
-              <figure className="artistWikiLeadFigure">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={wiki.images[0].url}
-                  alt={`${wiki.artistName} photo`}
-                  loading="eager"
-                  fetchPriority="high"
-                  className="artistWikiLeadImage"
-                />
-              </figure>
-            ) : null}
+      <Suspense
+        fallback={
+          <div className="routeContractRow artistLoadingCenter" aria-live="polite" aria-busy="true">
+            <span className="playerBootBars" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <span />
+            </span>
+            <span>Loading artist wiki...</span>
           </div>
-
-          <article className="artistWikiSection">
-            <h2>Formation and Backstory</h2>
-            <p>{wiki.sections.formationAndBackstory}</p>
-          </article>
-
-          <article className="artistWikiSection">
-            <h2>Style and Influences</h2>
-            <p>{wiki.sections.styleAndInfluences}</p>
-          </article>
-
-          <article className="artistWikiSection">
-            <h2>Members</h2>
-            <h3>Current</h3>
-            {renderList(wiki.sections.members.current)}
-            <h3>Former</h3>
-            {renderList(wiki.sections.members.former)}
-            <p className="artistWikiNote">{wiki.sections.members.notes}</p>
-          </article>
-
-          <article className="artistWikiSection">
-            <h2>Discography</h2>
-            <h3>Studio Albums</h3>
-            {renderList(wiki.sections.discography.studioAlbums)}
-            <h3>Live Albums</h3>
-            {renderList(wiki.sections.discography.liveAlbums)}
-            <h3>EPs and Compilations</h3>
-            {renderList(wiki.sections.discography.epsAndCompilations)}
-            <h3>Notable Tracks</h3>
-            {renderList(wiki.sections.discography.notableTracks)}
-          </article>
-
-          <article className="artistWikiSection">
-            <h2>Legacy and Notes</h2>
-            <p>{wiki.sections.legacyAndNotes}</p>
-          </article>
-
-          <article className="artistWikiSection">
-            <h2>Sources</h2>
-            {filteredSources.length > 0 ? (
-              <ul className="artistWikiSourceList">
-                {filteredSources.map((source) => (
-                  <li key={source.url}>
-                    <a href={source.url} target="_blank" rel="noopener noreferrer">
-                      {source.title}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>No external references were available during generation.</p>
-            )}
-          </article>
-        </div>
-      </section>
+        }
+      >
+        <WikiContentClient
+          artistName={artist.name}
+          slug={slug}
+          cachedWiki={cachedWiki}
+          generationEnabled={generationEnabled}
+        />
+      </Suspense>
     </>
   );
 }
