@@ -69,8 +69,9 @@ YouTube-backed player, queue and playlist management, AI-powered
 recommendations, a forum, a magazine, global chat, and more. It is
 approximately 250,000 lines of code. It was built in three months for
 about $300 in AI costs. I never read a single line of the source code —
-not out of discipline, but because I couldn't, and then because I
-discovered I didn't need to.
+not out of discipline, and not because I couldn't; by the time I started
+this project I had already recoverd, but whilst I was going through that
+situation, I had already discovered that I simply didn't need to.
 
 This book is the argument for why that approach worked, why it is not a
 fluke, and why most of the software industry is doing the math from the
