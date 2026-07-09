@@ -1,0 +1,163 @@
+CHAPTER 6
+The Sensor Network
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Every bug that reaches production is a sensor that hasn't been built yet.
+
+This is the operational principle behind the verification surface. Each
+failure — whether discovered in QA, in staging, or in production — is an
+opportunity to add a permanent guarantee. The sensor network grows with
+every incident. Eventually, the network catches most failures before
+they reach a human observer.
+
+This chapter describes how the sensor network is built, how it compounds,
+and what happens when it reaches maturity.
+
+
+The Lifecycle of a Sensor
+
+A sensor is born when a failure is observed. The failure might be a
+crash, a wrong behavior, a missing feature, or a deployment problem.
+The lifecycle follows a standard pattern:
+
+1. INCIDENT. Something goes wrong. You observe it — in QA, in staging,
+   or (worst case) in production.
+
+2. TRIAGE. You describe the symptom to the AI. You argue with it until
+   it identifies the root cause.
+
+3. FIX. The AI implements the fix. You verify that the symptom is gone.
+
+4. SENSOR. You direct the AI to write an invariant that would have caught
+   this failure before it reached you. Not a test for this specific
+   scenario — an invariant that catches this entire class of failure
+   anywhere in the system.
+
+5. DEPLOY. The sensor is added to the verification suite. From this point
+   forward, no deployment can proceed if this class of failure exists.
+
+Step 4 is the most important and the most frequently skipped. Fixing the
+specific instance is necessary. Adding the sensor is what prevents the
+next instance. Without the sensor, you will encounter the same class of
+failure again — in a different module, with different symptoms, caused by
+a different change. With the sensor, that class of failure is closed
+forever.
+
+
+The Categories Multiply
+
+In the early weeks of YehThatRocks, the sensor network was sparse.
+Failures were caught manually. Each incident resulted in a fix and a
+sensor.
+
+Here are some of the categories that were closed:
+
+- Deployments failing due to duplicate migration operations. Sensor:
+  pre-deployment validation script that compares consecutive Prisma
+  migration files for duplicate CREATE/DROP operations.
+
+- API routes missing CSRF protection. Sensor: source invariant that
+  asserts every POST/PATCH/DELETE route handler calls verifySameOrigin.
+
+- Overlay routes missing close buttons. Sensor: source invariant that
+  asserts every overlay page uses the OverlayHeader component.
+
+- Playback decisions occurring during SSR for read-only routes. Sensor:
+  source invariant that asserts playback decision functions are not
+  called during server rendering for magazine and article routes.
+
+- Database connection pool exhaustion during transient MySQL outages.
+  Sensor: deployment gate that verifies minimumIdle is set and
+  connection limits are per-worker.
+
+- New videos page showing videos the user has hidden. Sensor: source
+  invariant that asserts the hidden-video filter is applied to the
+  new-videos query before rendering.
+
+Each of these sensors was commissioned after a specific incident. Each
+now prevents that incident from recurring — not just in the original
+location, but anywhere the pattern could appear.
+
+After three months, the sensor network contains over thirty invariants.
+New features rarely trigger failures because most of the ways they
+could fail are already guarded. When a failure does occur, it is
+usually a genuinely new category — one that no existing sensor covers.
+The network grows, and the space of possible failures shrinks.
+
+
+The Sensor as Documentation
+
+Traditional projects document their architecture in wiki pages and
+README files. These documents drift. They become outdated. Developers
+stop reading them.
+
+The sensor network is documentation that cannot drift. Each invariant
+is an executable specification of a property the system must maintain.
+If the property is violated, the invariant fails. If the invariant
+fails, the deploy is blocked. There is no gap between what the
+documentation says and what the system does — because the documentation
+is the system.
+
+When a new developer joins a traditional project, they read wiki pages
+and hope they are accurate. When a new developer joins a directed AI
+project, they run the invariant suite. Every passing invariant is a
+guarantee about the system. Every failing invariant is a problem that
+needs attention. The new developer does not need to know the codebase.
+They need to know the invariants.
+
+In my workflow, the "new developer" is the AI itself. Each session, the
+AI loads the project context, reads the invariants, and understands what
+the system must do. It does not need to guess. It does not need to infer
+conventions from existing code. The invariants tell it what correctness
+means.
+
+
+When Sensors Fail
+
+Sensors are code, and code can be wrong. A sensor might produce false
+positives — failing when the system is actually correct. Or false
+negatives — passing when the system is actually wrong.
+
+False positives are annoying but safe. They block deployment
+unnecessarily. You direct the AI to fix the sensor. The deployment
+proceeds. The sensor network is temporarily unreliable but the system
+is protected.
+
+False negatives are dangerous. They allow a failure to reach production
+that the sensor should have caught. When this happens, you have
+discovered that the sensor has a gap in its coverage. You direct the
+AI to close the gap. The sensor becomes stronger.
+
+This is the same failure mode as any test suite. The difference is that
+the sensors in a directed AI project are structural — they assert
+patterns, not behaviors. A false negative in a structural sensor means
+the pattern description was incomplete. The fix is to describe the
+pattern more precisely. This is usually easier than fixing a behavioral
+test that made incorrect assumptions about outputs.
+
+
+The Maturity Threshold
+
+There is a point at which the sensor network reaches maturity. This is
+not a specific number of invariants. It is the point at which most
+development sessions produce zero new sensor commissions — because the
+existing sensors already catch every failure that occurs.
+
+At this point, the verification surface is essentially complete for the
+current architecture. New features are verified by existing sensors.
+Bugs are caught before the developer sees them. The adversarial loop
+becomes shorter because the AI's first explanation is more often correct
+— the sensors have encoded enough of the system's constraints that the
+AI's reasoning is better grounded.
+
+Reaching maturity does not mean development stops. It means the rate
+of sensor commissioning drops. Most of the easy categories are closed.
+The remaining categories are subtle — interactions between modules,
+race conditions, performance degradations. These are the same categories
+that traditional testing struggles with. The sensor network cannot
+catch everything, but it catches everything that the developer has
+learned to describe as a structural property.
+
+The network never stops growing. But it grows slower, and the system
+grows more reliable, and the developer spends less time arguing and
+more time building.

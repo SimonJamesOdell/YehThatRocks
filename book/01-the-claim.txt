@@ -1,0 +1,123 @@
+CHAPTER 1
+The Claim
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Code is dog food for the JIT compiler.
+
+I mean this literally. The JavaScript engine that executes your web
+application does not care whether your variable names are descriptive,
+whether your functions are decomposed elegantly, or whether your
+architecture follows clean-code principles. It cares about one thing:
+can this be compiled to efficient machine code and executed?
+
+Source code, in the runtime, is feedstock. It is consumed, transformed,
+and discarded. The artifact that matters is the behavior of the running
+system.
+
+For decades, we have treated source code as something else entirely.
+We have treated it as literature. We have developed aesthetic preferences
+about it. We have held code reviews where senior engineers debate
+naming conventions and function boundaries. We have built entire
+methodologies — Clean Code, SOLID, Design Patterns — around the premise
+that code should be beautiful, readable, and maintainable by humans.
+
+This made sense when humans were the only readers. It made sense when the
+primary cost of software was the labor of developers writing and
+maintaining code by hand. It made sense when the only way to understand
+what a system did was to read its source.
+
+It no longer makes sense.
+
+
+The Reader Has Changed
+
+The primary reader of source code in my workflow is not a human. It is a
+large language model — an AI that can ingest thousands of lines of code
+in seconds, reason about their behavior, identify inconsistencies, and
+propose changes. This reader does not care about aesthetics. It does not
+get confused by inconsistent naming. It does not need functions to be
+short or classes to have single responsibilities. It needs the code to be
+correct, and it needs enough context to verify that correctness.
+
+When the reader changes, the writing should change. You do not write a
+letter to your friend the same way you write a legal contract. You do not
+write documentation for end users the same way you write API reference
+material. And you should not write code for an LLM the same way you write
+code for a human colleague.
+
+The LLM is a better reader than any human. It never gets tired. It never
+skips a line because it looks boring. It never assumes that a function
+named "getUser" probably does the right thing and moves on. It reads
+everything, every time. It is the ideal audience for code — and that means
+we can stop optimizing for the imperfect human audience we used to write
+for.
+
+
+The Database Analogy
+
+Consider a MySQL database. When you issue an INSERT statement, the
+database engine writes data to disk in its internal format — ibdata1
+files, binary logs, index structures. As a database administrator, you do
+not inspect these files after every write. You do not hold "storage format
+reviews" where senior DBAs debate the byte alignment of InnoDB pages.
+
+You trust the storage engine. You verify with SELECT statements. You
+monitor replication lag and query performance. You only dive into raw
+storage files when something breaks at a level the engine cannot explain.
+
+The code in an AI-assisted project should be treated the same way. The
+LLM is the storage engine. The source files are ibdata1. Your invariants
+are the SELECT statements. Your QA session is the application-level smoke
+test. You only inspect code directly when the verification surface has
+failed and the AI cannot explain why.
+
+This is not laziness. It is not recklessness. It is the same engineering
+discipline that every DBA applies to their database — applied to the
+entire codebase.
+
+
+The Exclusive Read/Write Lock
+
+In my workflow, the LLM has an exclusive read/write lock over the source
+code. I do not open files in an editor. I do not make manual edits. I do
+not review pull requests by reading diffs. I describe what the system
+should do, the AI generates the implementation, and I verify the behavior.
+
+This is not a gimmick. It is a discipline. The moment I open a file and
+start reading code, I have broken the paradigm. I have introduced a human
+reader back into a system that was designed for a machine reader. I have
+started forming opinions about code quality that are irrelevant to
+correctness. I have substituted my aesthetic judgment for the system's
+behavioral verification.
+
+The no-peeking rule is the hardest part of this approach to maintain.
+Every instinct from two decades of software development tells me to look
+at the code. Every time something goes wrong, the first impulse is to
+open the file and trace the logic. Resisting that impulse — and instead
+describing the symptom to the AI and arguing with it until it finds the
+root cause — is an act of will.
+
+But it is necessary. Because the moment you look at the code, you start
+trusting your eyes instead of your verification surface. And your eyes
+are not as reliable as you think.
+
+
+What This Chapter Argues
+
+1. Source code is an intermediate representation between specification
+   and behavior, not the canonical artifact of software development.
+
+2. The primary reader of code in an AI-assisted workflow is the AI
+   itself, and code should be optimized for that reader.
+
+3. Treating code as the sole prerogative of the LLM — granting it an
+   exclusive read/write lock — is not reckless. It is the same
+   engineering discipline that database administrators apply every day.
+
+4. The hardest part of this paradigm is not technical. It is
+   psychological. It is resisting the instinct to read code, and
+   trusting the verification surface instead.
+
+The rest of this book explains how to build that verification surface,
+how to direct the AI without reading its output, and what happens when
+you commit to the paradigm fully.

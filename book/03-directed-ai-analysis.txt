@@ -1,0 +1,192 @@
+CHAPTER 3
+Directed AI Analysis
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You do not read the code. But you do read the AI's reasoning about the
+code. This is a different kind of reading, and it is the core skill of
+the paradigm.
+
+When something goes wrong — a feature doesn't work, an invariant fails,
+a production incident occurs — the traditional developer opens the
+relevant source files and traces the logic. They form hypotheses about
+what might be wrong, test those hypotheses by reading more code, and
+eventually identify the root cause.
+
+In the directed AI analysis workflow, you do something different. You
+describe the symptom to the AI. You observe the AI's explanation. You
+argue with it when the explanation doesn't account for the evidence.
+You push back, you demand alternative hypotheses, you insist on root
+causes rather than surface fixes. You do not read the code — but you
+interrogate the AI's understanding of the code until it converges on
+the truth.
+
+This is genuine intellectual labor. It requires all the skills of
+traditional debugging — hypothesis formation, evidence evaluation,
+logical reasoning — but applied to a conversation rather than a codebase.
+
+
+The Conversation as Debugger
+
+A traditional debugging session looks like this:
+
+1. Observe symptom.
+2. Form hypothesis about cause.
+3. Read relevant code to test hypothesis.
+4. If hypothesis is wrong, return to step 2.
+5. If hypothesis is right, implement fix.
+6. Verify fix resolves symptom.
+
+A directed AI analysis session looks like this:
+
+1. Observe symptom.
+2. Describe symptom to AI.
+3. AI proposes an explanation.
+4. Evaluate explanation against observed behavior.
+5. If explanation is wrong, explain why and demand a better one.
+6. If explanation is right, direct AI to implement fix.
+7. Direct AI to add invariant preventing recurrence.
+8. Verify fix resolves symptom and invariant catches it.
+
+The difference is who reads the code. In traditional debugging, you read
+it. In directed analysis, the AI reads it and you evaluate the AI's
+conclusions.
+
+This is faster for two reasons. First, the AI reads faster than you do.
+Second, the AI's reading is comprehensive — it doesn't skip sections,
+it doesn't get tired, it doesn't assume things are fine because they
+look familiar. When the AI reports that a certain function is the root
+cause, it has actually read that function and traced its callers. When
+you report the same thing after traditional debugging, you have probably
+read a fraction of what the AI read.
+
+
+The Adversarial Stance
+
+The most important skill in directed AI analysis is the willingness to
+argue. The AI's first explanation is often wrong. Its second explanation
+is sometimes wrong. Its third explanation is usually close.
+
+You must treat every AI explanation as a hypothesis to be tested, not a
+conclusion to be accepted. You must demand evidence. You must identify
+inconsistencies and push back. You must insist that the explanation
+accounts for all observed behavior, not just the most obvious symptom.
+
+This adversarial stance is not hostility. It is the same critical
+thinking you apply to your own debugging hypotheses. The difference is
+that you are applying it to someone else's reasoning — someone who reads
+faster than you but reasons less carefully.
+
+Experienced developers have an advantage here. Two decades of debugging
+have calibrated your bullshit detector. You know what a plausible bug
+sounds like and what a hand-waving explanation sounds like. When the AI
+says "it might be a race condition," you know to ask "between what and
+what, and under what timing?" When the AI says "the cache is stale," you
+know to ask "what cache, what key, and what TTL?"
+
+The AI generates explanations. You filter them. Together, you converge
+on the truth faster than either could alone.
+
+
+Vibe Coding and the Verification Surface
+
+There is a term circulating in the industry: "vibe coding." It describes
+the practice of prompting an AI to generate code, running it, and
+iterating based on what you observe — operating at the level of behavior
+rather than implementation. I describe myself on LinkedIn as an expert
+vibe-coder, and I mean it literally. YehThatRocks was built by vibing.
+
+Some critics use "vibe coding" dismissively, as shorthand for accepting
+AI output without scrutiny. That version of the term deserves the
+criticism it gets — but it is not what most people who call themselves
+vibe-coders are actually doing. Most of them are doing what I am doing:
+describing what they want, watching what happens, and course-correcting
+when it goes wrong. They are debugging through behavior, not through
+code reading. They are just doing it without the verification surface.
+
+And that is not a moral failing. It is a starting point.
+
+Before I ever got going with programming, people used to type in BASIC
+programs they found in magazines. Programming has always been a wide open
+field, one where anyone with the right aptitude, curiosity and determination
+can go from building BASIC programs to writing professional quality 
+software. No gate-keepers, no moat, no annointed masters deciding which
+accolytes deserve the right to practice the craft.
+
+When I got my first modem and started learning how the web works, the web 
+I entered was largely built by amateurs, people who had reverse-engineered 
+Perl scripts they barely understood, who shipped things that worked without
+knowing whether the code was "clean." That energy built the open web. It 
+built the dot-com era. It built the platform that made my entire career 
+possible. Nobody called it "unserious" back then. They called it "having a go."
+
+Vibe coding is the modern equivalent. It is the thing that lets anyone
+with an idea describe it to a machine and see it come to life. It is
+the magazine-listing spirit reborn in the age of LLMs. It is
+democratising. It is exciting. It is, I hope, going to return us to
+a version of the web where one developer with an LLM and a vision can
+build something that matters — something that used to be possible and
+has become harder and harder as the industry professionalised.
+
+I am a vibe-coder. This is not an admission of unprofessionalism.
+
+I am a vibe-coder who added a verification surface.
+
+An expert vibe-coder.
+
+Directed AI analysis is what happens when you take the vibe-coding
+impulse — describe what you want, watch what happens, iterate — and
+give it a sensor network. You're still vibing. You're still not reading
+the code. You're still operating at the level of behavior and
+conversation. But now, when the system does something wrong, you don't
+just notice it manually. An invariant catches it. And when you fix it,
+you add an invariant so that class of failure can never recur. The vibe
+gets more reliable over time, not less.
+
+This is not a different thing. It is the same thing, matured. The
+spectrum runs from "I prompted and it worked" through "I prompted, it
+didn't work, I argued until it did" to "I prompted, it worked, and
+thirty invariants verified that it worked before I even looked at the
+browser." All of it is vibe coding. The verification surface just makes
+it accountable.
+
+If you are a vibe-coder today — if you are building things with AI, not
+reading the code, iterating on behavior — you are already doing directed
+AI analysis. You are just doing it with a smaller sensor network. This
+book is not an argument that you should stop vibing and become serious.
+It is an argument that you should keep vibing, and add invariants as you
+go, until the vibe is backed by a surface you trust more than your eyes.
+
+
+A Real Example
+
+During the development of YehThatRocks, the magazine page occasionally
+showed a "Watch Now" button that linked to the wrong video. The symptom
+was intermittent and hard to reproduce.
+
+In a traditional workflow, I would have opened the magazine page
+component, traced the video resolution logic, and eventually discovered
+that the server-side rendering path was making a playback decision that
+the client-side path was supposed to make.
+
+In the directed analysis workflow, I described the symptom to the AI:
+"On the magazine page, the Watch Now button sometimes links to the wrong
+video. It doesn't happen every time. It seems related to page load."
+
+The AI's first explanation was about client-side state management.
+I pushed back: "If it were client-side state, it would be consistent
+within a session. This varies between page loads."
+
+The AI's second explanation identified the SSR playback decision path
+as the likely cause. I asked: "Why would SSR make a playback decision
+at all? The magazine page shouldn't need one."
+
+The AI traced the dependency chain and found that a shared component
+was triggering a playback decision during server rendering. The fix
+was to skip the playback decision during SSR for that specific route.
+
+Then I directed the AI to add a source invariant: "Playback decisions
+must not be made during server-side rendering for read-only routes."
+The invariant now catches this class of failure in any route, not just
+the magazine page.
+
+Total time: about twenty minutes. Lines of code read: zero.

@@ -1,0 +1,205 @@
+APPENDIX D
+The Numbers
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This appendix provides the quantitative data behind the YehThatRocks
+case study. All numbers are approximate but grounded in the actual
+development process from April to July 2026.
+
+
+Costs
+
+Total AI API costs: ~$300
+  Model: DeepSeek via CodeWhale (DeepSeek V3 and V4 during development)
+  Provider pricing: approximately $0.43 per million input tokens
+  No other AI service costs (self-hosted where possible)
+
+Infrastructure costs:
+  VPS hosting: ~$12/month (Hetzner)
+  Domain: standard registration
+  YouTube Data API: free tier (10,000 units/day)
+  No other paid services
+
+Development tools:
+  CodeWhale: free tier sufficient
+  VSCode: free
+  GitHub: free
+  No paid IDE plugins or AI subscriptions beyond API usage
+
+Total project cost: approximately $350 including hosting
+
+
+Scale
+
+Source lines (approximate, as measured by the AI):
+  TypeScript/TSX: ~180,000 lines
+  CSS: ~30,000 lines
+  SQL/Prisma schema: ~5,000 lines
+  Configuration (JSON, TOML, env): ~5,000 lines
+  Scripts (JS, PowerShell, Bash): ~10,000 lines
+  Documentation (Markdown): ~20,000 lines
+  Total: ~250,000 lines
+
+Files:
+  app/ directory: ~192 files
+  lib/ directory: ~175 files
+  components/ directory: ~185 files
+  scripts/ directory: ~50 files
+  deploy/ directory: ~20 files
+  Configuration: ~15 files
+  Documentation: ~10 files
+  Total: ~650 files
+
+Database:
+  Models: 25+ (Prisma schema)
+  Migrations: 30+
+  Indexes: 50+
+  Rows at public beta: ~266,000 videos, ~140,000 artists
+
+
+Velocity
+
+Timeline:
+  April 2026: Project start, core architecture, authentication
+  May 2026: Video catalog, player, playlists, search, favourites
+  June 2026: Magazine, forum, admin dashboard, public beta (June 4)
+  July 2026: Mobile support, refinement, invariants, publishing
+
+Feature velocity (approximate):
+  Major features shipped: 20+
+  Commits: 100+ (squashed; actual PR count higher)
+  Average features per week: 1-2 major, several minor
+  Peak: 3 major features in one week (forum, magazine, admin dashboard)
+
+Invariant velocity:
+  Month 1: ~5 invariants
+  Month 2: ~15 invariants (total ~20)
+  Month 3: ~10 invariants (total ~30)
+  Rate decreasing as surface matures
+
+
+Incidents
+
+Production incidents reaching users: fewer than 10
+  Duplicate migration failures: ~4 (before validation system)
+  Connection pool exhaustion: 2
+  SSR playback decision flash: 1
+  Mobile rendering issues: 2
+  No security incidents reported
+
+Pre-production failures caught by invariants: unknown (hundreds)
+  The invariants run before every deploy. They catch failures that
+  would otherwise reach QA or production. The exact number is not
+  tracked, but each invariant catches multiple instances over time.
+
+Incident resolution times:
+  Average: ~30 minutes (from symptom observation to fix verified)
+  Fastest: ~15 minutes (mobile duplicate artist names)
+  Slowest: ~2 hours (migration validation system)
+  All resolved through adversarial loop without reading code
+
+
+Comparison to Traditional Development
+
+If YehThatRocks had been built traditionally:
+
+A project of this scope — a full-stack web application with
+authentication, video integration, real-time features, an admin
+dashboard, a magazine, a forum, and mobile support — would typically
+require a team of three to five developers and would take considerably
+longer than three months. A realistic estimate might be nine to
+eighteen months for a team of that size, depending on experience and
+whether they were working full-time.
+
+At UK market rates, a senior developer costs approximately £80,000 per
+year. A team of three seniors for twelve months would cost roughly
+£240,000 in salary alone — before infrastructure, tooling, or
+management overhead. At US rates, the figure is higher still.
+
+The AI-assisted approach shipped the same scope in three months with
+one developer directing. The AI API cost was approximately $300. But
+that is not the relevant cost comparison, because the developer was
+still working for those three months — directing, arguing, verifying,
+and designing. The developer's time is by far the most expensive
+component.
+
+What the AI replaced was not the developer. It was the other two to
+four developers on the hypothetical team, and most of the calendar
+time. One person, amplified by an LLM and guarded by a verification
+surface, produced the output of a small team in a fraction of the
+time.
+
+The economic win is not that the AI API bill is cheap. The economic
+win is that one experienced developer, working with an AI, can ship
+what would otherwise require a team — and can do it faster. The API
+bill is nearly noise compared to the value of the time saved and
+the team not hired.
+
+In numbers:
+
+  Traditional approach (estimated):
+    Team: 3-5 senior developers
+    Timeline: 9-18 months
+    Salary cost: £240,000-£360,000 (UK) or $540,000-$810,000 (US)
+    Infrastructure and tooling: additional
+    Management overhead: additional
+    Risk: hiring, onboarding, team churn, coordination tax
+
+  AI-assisted approach (actual):
+    Team: 1 developer (director)
+    Timeline: 3 months
+    Developer time: 3 months of full-time directing
+    AI API cost: ~$300
+    Infrastructure: ~$36 (3 months hosting)
+    Total out-of-pocket: ~$350
+
+The cost difference is not the $300 API bill versus a developer's
+salary. It is one person's attention versus a team's attention, and
+three months versus a year or more. The AI did not make the developer
+cheaper. It made the developer cover more ground.
+
+These comparisons are imperfect. The AI-assisted approach is not a
+drop-in replacement for a traditional team. It requires a specific
+set of skills and a specific discipline. Not every developer can
+(or wants to) work this way. But for those who can, the economics
+are transformative — not because the AI is cheap, but because the
+developer's time is now leveraged across a much larger surface area.
+
+
+Token Usage (Approximate)
+
+These numbers are estimates based on the CodeWhale session logs and
+API usage patterns:
+
+Average session length: ~50,000-100,000 tokens
+Sessions per feature: 2-5 (commission, debug, refine, invariant)
+Total sessions over 3 months: ~200-300
+Total tokens: approximately 15-30 million
+
+At $0.43/million input tokens and higher output token costs, the
+total API spend of ~$300 is consistent with these estimates.
+
+The cost per feature is dominated by the adversarial loop — arguing
+with the AI until it converges on the correct implementation. Features
+that require less argument are cheaper. Features that require more
+argument are more expensive. The verification surface reduces argument
+over time, making features cheaper as the project matures.
+
+
+Caveats
+
+These numbers are from one project by one developer. They are not
+statistically significant. They may not generalize. Your project may
+require more or less argument, more or fewer invariants, more or less
+cost.
+
+The point of this appendix is not to promise specific results. It is
+to demonstrate that the directed AI paradigm is economically viable
+for at least one class of project (complex web application) by at
+least one developer (experienced, disciplined, adversarial).
+
+The paradigm is young. The tools are improving. The economics will
+shift. But the direction of the shift is clear: the cost of software
+is trending toward the cost of directing it, not the cost of writing
+it. This appendix is a snapshot of that trend at an early point on
+the curve.

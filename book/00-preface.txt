@@ -1,0 +1,151 @@
+PREFACE
+Who This Book Is For and What It Will Teach You
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This book is not about AI. It is about what becomes possible when you stop
+treating source code as the artifact of record in software development, and
+start treating it as what it actually is in the age of large language
+models: an intermediate representation, a transient format, a private
+protocol between one machine and another.
+
+I started programming in 1996 at Bournemouth College, where a GNVQ
+Advanced IT course taught me Pascal, C, and assembly language. I became
+obsessed with DOS graphics demos — 320x200, 256-colour VGA mode — and
+started building a 3D engine inspired by Quake. I abandoned that project
+when 3dfx launched their Voodoo cards and suddenly my software renderer
+felt obsolete overnight.
+
+I got my first modem and decided I wanted to understand everything about
+how the web worked. I taught myself Perl by reverse-engineering scripts
+from Matt's Script Archive, a popular repository at the time. When I
+moved to the UAE as an expat, the market didn't want Perl, so I became
+a PHP developer, building web applications for clients including the
+Abu Dhabi Municipality. Later I led a team in Dubai rebuilding a diamond
+wholesaler's legacy PHP application as a modern Vue.js and Node.js
+platform. After returning to the UK during the pandemic, I worked as a
+senior React developer for a fintech in Canary Wharf.
+
+It was that fintech job that taught me the lesson this entire book is
+built on. We were a team composed entirely of senior developers, under
+standing orders to test our own work thoroughly and review each other's
+work thoroughly. And despite all of that — all the experience, all the
+peer review — every submission still went through a highly complex and
+stringent QA process. The QA team did not care that we were seniors.
+They did not care that we had already reviewed each other's code. They
+verified behavior, not credentials.
+
+I internalised this lesson: senior developers make mistakes. Peer review
+misses things. The only reliable answer — for human code or machine code
+— is a rigorous verification process that checks what the system actually
+does, not who wrote it or how it looks.
+
+And then I got sick.
+
+One symptom of the illness was an impairment of my short-term memory that
+made it impossible to hold enough information in my mind at once to
+program the traditional way. It was as if my natural context window had
+been drastically truncated. I could still reason effectively. My
+long-term memory and my decades of experience were intact. But I could
+not hold a codebase in my head. I could not trace logic across files.
+I could not do the thing that had been my job for nearly thirty years.
+
+Faced with potentially being permanently unable to work as a programmer —
+it was not clear at the time that I would eventually recover — I had no
+choice but to use a large language model as a kind of wheelchair for my
+brain. The LLM could hold the context I could not. It could read the
+code I could not. It could trace the logic I could not follow. And I
+could still do the things I had always been able to do: reason about
+what a system should do, recognise when behaviour was wrong, argue with
+explanations that didn't add up, and direct analysis toward root causes.
+
+This was not a strategic choice. It was not a philosophical stance. It
+was sheer stubbornness in the face of a situation I had not chosen and
+could not control. I had to make it work because there was no
+alternative.
+
+And it worked. In 2026, using this approach, I built YehThatRocks — a
+music video discovery and curation platform with authentication, a
+YouTube-backed player, queue and playlist management, AI-powered
+recommendations, a forum, a magazine, global chat, and more. It is
+approximately 250,000 lines of code. It was built in three months for
+about $300 in AI costs. I never read a single line of the source code —
+not out of discipline, but because I couldn't, and then because I
+discovered I didn't need to.
+
+This book is the argument for why that approach worked, why it is not a
+fluke, and why most of the software industry is doing the math from the
+wrong balance sheet.
+
+Who this book is for:
+
+- Experienced developers who sense that AI-assisted programming could be
+  more than an autocomplete tool, but who haven't yet found the paradigm
+  that unlocks it.
+
+- Technical leaders who need a coherent framework for evaluating whether
+  AI-generated code is trustworthy, and who suspect that "review every
+  line" is not a sustainable answer.
+
+- Skeptics who have seen AI-generated code produce garbage and concluded
+  the technology isn't ready. You may be right about the technology.
+  You are probably wrong about the workflow.
+
+- Anyone who has heard a developer on LinkedIn insist that AI code
+  generation will cause a mountain of technical debt, and wondered whether
+  they might be missing something.
+
+What this book is not:
+
+- A tutorial on prompt engineering. There are no magic phrases here.
+  The patterns that work are structural, not linguistic.
+
+- A celebration of AI. The AI is a tool. The interesting thing is what
+  you do with it.
+
+- A prediction about the future of software engineering. I don't know
+  what will happen. I know what happened when I tried something specific
+  and stuck with it.
+
+- A story about superior intellect or iron discipline. The approach
+  described in this book was born from necessity, not virtue. I did not
+  choose to stop reading code. I was forced to. The discovery that it
+  works better this way was an accident.
+
+What this book will teach you:
+
+- How to build a verification surface that makes line-by-line code review
+  unnecessary — and why that surface is a better investment than reading
+  code ever was. This lesson was learned at a fintech where even senior
+  developers' code went through stringent QA. LLMs make mistakes, but so
+  do senior developers, and the same QA process catches both.
+
+- How to direct an AI through adversarial dialogue: describing desired
+  behavior, observing symptoms, arguing with wrong explanations, and
+  converging on root causes without ever inspecting the implementation.
+
+- How to think about technical debt differently when code is a derived
+  artifact rather than a hand-crafted one.
+
+- How to commission invariant scripts that compound in value over time,
+  each one preventing an entire category of failure from recurring.
+
+- Why not reading the code is not a shortcut — it is a consequence of
+  having a verification surface that is more reliable than your eyes.
+
+The core argument of this book is simple. For decades, we have treated
+source code as the canonical representation of software — the thing that
+matters, the thing we review, the thing we maintain. In an AI-assisted
+workflow, code is not the canonical representation. It is an intermediate
+format between a specification (what you want the system to do) and a
+behavior (what the system actually does). The canonical artifacts are the
+invariants that define correct behavior, and the observed behavior itself.
+
+If you understand this, everything else follows.
+
+If you don't, you will spend your career reviewing AI-generated code
+line by line, never trusting it, never scaling beyond what you can
+personally read — and never understanding why the people who stopped
+doing that are shipping faster than you.
+
+Simon James Odell
+July 2026

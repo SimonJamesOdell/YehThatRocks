@@ -1,0 +1,191 @@
+CHAPTER 8
+The No-Peeking Rule
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+I did not choose to stop reading code. I was forced to.
+
+In 2025, I went through an illness. One symptom was an impairment of my
+short-term memory that made it impossible to hold enough context in my
+mind to program the traditional way. I could not trace logic across
+files. I could not hold a codebase in my head. I could not do the thing
+that had been my job for nearly thirty years.
+
+My long-term memory was intact. I could still reason about system
+design. I could still recognise when behaviour was wrong. I could still
+argue with explanations that didn't add up. But I could not read code.
+
+I had no choice. I used a large language model as a wheelchair for my
+brain — the LLM held the context I couldn't, read the code I couldn't,
+traced the logic I couldn't follow. And because I had no alternative, I
+simply had to make it work.
+
+What I discovered — gradually, and then all at once — was that this was
+not a compromise. It was not a degraded form of development that I
+tolerated because I had no choice. It was a better form of development
+that I had never tried because I had never been forced to.
+
+This chapter is about what that discovery means, and why not reading the
+code is not a discipline you impose on yourself. It is a consequence of
+having something better than code reading: a verification surface that
+tells you whether the system works.
+
+
+The Fintech Lesson
+
+Before I got sick, I worked as a senior React developer at a fintech in
+Canary Wharf, London. We were a team composed entirely of senior
+developers. We were under standing orders to test our own work
+thoroughly and to review each other's work thoroughly.
+
+And despite all of that — all the experience, all the peer review —
+every submission still went through a highly complex and stringent QA
+process. The QA team did not care that we were seniors. They did not
+care that we had already reviewed each other's code. They verified
+behavior, not credentials.
+
+This was the insight that everything else is built on: senior developers
+make mistakes. Peer review misses things. The only reliable answer is a
+rigorous verification process that checks what the system actually does,
+not who wrote it or how it looks.
+
+When I later found myself unable to read code, I applied this same logic
+to the LLM. The LLM makes mistakes — just like senior developers do. The
+LLM's code needs verification — just like senior developers' code does.
+And the same QA process that catches human mistakes catches machine
+mistakes too.
+
+This is not a double standard. It is a single standard, applied
+consistently. If you would not trust a senior developer's code without
+QA, you should not trust an LLM's code without QA. And if you have QA
+that is thorough enough to catch senior developers' mistakes, it is
+thorough enough to catch LLM mistakes too.
+
+The fintech did not ask its developers to review their own code and then
+ship it. They asked them to review their own code, and then submit it to
+QA. The QA was the gate. The review was supplementary. In the LLM
+workflow, the invariants are the QA. The adversarial loop is the review
+— but it is not the gate. The invariants are the gate.
+
+
+Why Not Reading Code Is Not a Shortcut
+
+When you read code, you are doing two things at once. You are trying to
+understand what the code does, and you are trying to determine whether
+it is correct.
+
+The first task — understanding what the code does — is something the LLM
+can do faster and more thoroughly than you can. It reads every line. It
+traces every dependency. It never gets tired, never skips a section
+because it looks familiar, never assumes a function does what it says
+it does.
+
+The second task — determining whether it is correct — cannot be done
+reliably by reading code. You cannot determine correctness by
+inspection. You can only determine correctness by observing behavior.
+If the invariants pass and the system does what you expect, the code is
+correct — regardless of how it looks. If the invariants fail or the
+system behaves unexpectedly, the code is wrong — regardless of how it
+looks.
+
+When you read code instead of running invariants, you are substituting
+a weaker signal (does this look right?) for a stronger signal (do the
+guarantees hold?). You are betting that your eyes are more reliable
+than an automated verification surface. For most developers, on most
+codebases, this bet loses.
+
+
+What Happens When You Peek
+
+This book is not an argument that you should never read code. If you
+can read code, and you want to read code, read code.
+
+But you should understand what happens when you do.
+
+When you peek at the code, you form opinions. You notice that a variable
+is poorly named. You see a function that could be decomposed. You spot
+an abstraction that seems unnecessary. These are aesthetic judgments,
+not correctness judgments. But they feel important, because you have
+been trained for decades to treat them as important.
+
+When you act on those opinions — when you direct the AI to refactor the
+poorly-named variable or decompose the long function — you are spending
+attention on things that do not change the system's behavior. The
+invariants still pass. The system still works. You have made the code
+more aesthetically pleasing to a human reader, and added no value to
+the user.
+
+This is not a sin. It is just inefficient. And if you do it often enough,
+you will spend more time on aesthetics than on behavior, and your
+development velocity will approach that of a traditional developer who
+writes and reviews code by hand. You will have the costs of the old
+paradigm without the benefits of the new one.
+
+I do not read the code because I don't need to. I don't need to because
+whilst I couldn't do it I learned that I didn't need to. You may be able 
+to read it just fine. Now that I've fully recovered so can I. But you
+should ask yourself, before you open that file: is reading this code
+going to tell me something that the invariants haven't already told me?
+Is it going to catch a problem that the verification surface would miss?
+
+If the answer is no — and it usually is — let the AI read the code. You
+have better things to do.
+
+
+How I Work Without Reading Code
+
+When something goes wrong, I do not open the file. I do not look at the
+stack trace. I describe the symptom to the AI. 
+
+( Ok, sometimes I copy paste the stack trace, or the console logs... )
+
+"The Watch Now button on the magazine page loads the wrong video. It
+doesn't happen every time. It seems related to page reloads."
+
+The AI reads the code. It proposes an explanation. I evaluate the
+explanation against what I observed. If the explanation doesn't account
+for the evidence, I push back. If it does, I direct the AI to fix it
+and add an invariant that prevents the class of failure from recurring.
+
+When I am curious about how something works, I ask the AI to explain it.
+The explanation comes at the level of architecture and behavior, not
+implementation details. This is the level I reason at.
+
+When the AI's explanation doesn't make sense, I push back. I do not
+verify by reading the code. If the explanation is wrong, the behavior
+will reveal it. The adversarial loop will converge.
+
+This is not a technique I developed through training or discipline; my 
+brain was literally malfunctioning! I developed this technique through
+sheer necessity, and then refined through practice. It works. It works 
+better than reading code ever did, because it scales to codebases I 
+could never hold in my head, even with short-term memory fully intact.
+
+
+A Note on Recovery
+
+As I mentioned; I eventually recovered from the illness. 
+
+My short-term memory returned.
+
+I can read code again.
+
+I just don't need to.
+
+
+The approach I was forced into turned out to be better than the approach
+I had spent thirty years practicing. The verification surface catches
+more than my eyes ever did. The adversarial loop converges faster than
+my debugging ever did. The invariant portfolio compounds in value in a
+way that my personal knowledge never could.
+
+The no-peeking rule is not a cage I am trapped in. It is a door I walked
+through and decided not to walk back out of.
+
+You may not have the same constraint that forced me through that door.
+But you have the same opportunity. You do not need to get sick to
+discover that there is a better way to build software. You just need to
+try it, and to trust the verification surface more than you trust your
+eyes.
+
+The surface is more reliable. I say this as someone who spent thirty
+years trusting my eyes. The surface wins.

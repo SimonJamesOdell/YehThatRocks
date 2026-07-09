@@ -1,0 +1,200 @@
+CHAPTER 9
+The Case Study
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+YehThatRocks is a music video discovery and curation platform. It lets
+users browse a catalog of over 50,000 rock and metal music videos,
+watch them through a YouTube-backed player, create playlists, favourite
+tracks, chat with other users, read a magazine, participate in a forum,
+and more.
+
+It is a complex, production-grade web application. It was built in three
+months, from first prompt to public beta, for approximately $300 in AI
+costs. The developer never read a single line of the source code.
+
+This chapter is the case study. Architecture, numbers, incidents, and
+what actually went wrong.
+
+
+The Stack
+
+YehThatRocks is a monorepo containing a Next.js 14 application with the
+App Router, TypeScript throughout, Prisma ORM with MySQL/MariaDB, and a
+YouTube IFrame API integration for video playback.
+
+The frontend is a single-page shell with persistent player, dock/minimize
+behavior, overlay routing, and responsive mobile support. The backend
+includes authentication (JWT with refresh token rotation), rate limiting,
+CSRF protection, admin dashboards, and AI-powered video metadata
+classification using DeepSeek.
+
+The codebase is approximately 250,000 lines of TypeScript, CSS, SQL, and
+configuration. It contains:
+
+- ~192 files under app/ (routes and API endpoints)
+- ~175 files under lib/ (domain logic, data access, utilities)
+- ~185 files under components/ (React components)
+- ~30 invariant verification scripts
+- ~15 deployment and admin scripts
+- A three-layer migration validation system
+- Prisma schema with 25+ models and appropriate indexes
+
+The architecture follows a domain-module pattern. Catalog data is split
+into per-domain modules (artists, genres, videos, ingestion, playlists,
+favourites, history). Each module manages its own caches with bounded
+maps and in-flight deduplication. A barrel module coordinates
+cross-domain cache invalidation.
+
+
+The Numbers
+
+At Public Beta (April 7, 2026 — four days from initial commit):
+
+- Lines of code: approximately 20,000–25,000
+- Files: approximately 170
+- Invariant verification scripts: 2–4
+- Features: authentication, video player, playlists, search, favourites,
+  artist browsing, genre categories, admin dashboard
+- Hours spent reading code: 0
+
+The initial commit (April 3) was 17,640 lines across 151 files. By the
+time the beta went live on April 7, the project had grown through
+approximately seventeen incremental commits — each one adding features
+alongside the invariants that guarded them.
+
+As of July 2026 (three months later):
+
+- Lines of code: approximately 250,000
+- Files: approximately 650
+- Invariant verification scripts: ~30, plus API smoke checks and
+  deployment gates
+- Features: all of the above, plus magazine, forum, global chat,
+  mobile support, SEO, and AI-powered video classification
+- Production incidents: fewer than 10, none causing significant downtime
+- Deployment failures before migration validation system: ~66% of
+  schema-change deploys
+- Deployment failures after migration validation system: 0
+- Total AI cost: approximately $300 (initially GitHub Copilot, then
+  DeepSeek API via CodeWhale)
+- Hours spent reading code across the entire project: 0
+
+The codebase grew by a factor of ten between beta and the present. The
+number of invariants grew by a factor of approximately ten as well. The
+verification surface scaled with the code, not after it.
+
+
+What Went Wrong
+
+The development process was not smooth. Here are the significant
+incidents and how they were resolved:
+
+Duplicate Migration Failures. In the first weeks, approximately two out
+of every three deployments that included Prisma schema changes failed
+with P3018 "Duplicate key name" errors. The AI's pre-commit hooks were
+auto-generating migrations that duplicated existing manual migrations.
+The fix was a three-layer validation system: pre-commit detection,
+pre-deployment validation, and production deploy intelligence. Total
+time to resolve: approximately two hours. Lines of code read: 0.
+
+Database Connection Pool Exhaustion. During a transient MySQL outage,
+the connection pool drained to zero (active=0, idle=0) and the
+application could not recover even after the database came back online.
+The AI had set default pool parameters that didn't account for recovery
+from zero. The fix was to set minimumIdle to 2 and implement per-worker
+connection limit calculation. The invariant added was a deployment gate
+that verifies pool configuration. Total time: approximately one hour.
+Lines read: 0.
+
+SSR Playback Decision Flash. The magazine page occasionally showed a
+Watch Now button linking to the wrong video. The AI had written a shared
+component that triggered playback decisions during server-side rendering
+for routes that shouldn't make playback decisions. The fix was to skip
+the playback decision during SSR for read-only routes, and to add a
+source invariant preventing this pattern from recurring. Total time:
+approximately twenty minutes. Lines read: 0.
+
+Mobile Duplicate Artist Names. On mobile, Watch Next cards showed the
+artist name twice — once from parsed metadata and once from the display
+field. The AI had used a different rendering pattern on mobile than on
+desktop. The fix was to unify the pattern and add an invariant asserting
+that mobile cards use the same parsed artist/track display as desktop.
+Total time: approximately fifteen minutes. Lines read: 0.
+
+In each case, the process was the same: observe symptom, describe to AI,
+argue until root cause identified, direct fix, commission invariant.
+The adversarial loop converged faster with each incident as the sensor
+network grew stronger.
+
+
+What Didn't Go Wrong
+
+Several classes of failure that are common in traditional projects
+never occurred:
+
+No authentication bypasses. The JWT implementation, refresh token
+rotation, and CSRF protection worked correctly from the first
+deployment. The adversarial loop had argued the AI through several
+rounds of refinement before the auth system was considered complete.
+
+No data loss. All database operations used transactions or idempotent
+operations. The Prisma schema was well-indexed from the start. No
+migration caused data corruption.
+
+No significant performance regressions. The AI's caching strategy
+(bounded maps with in-flight deduplication, per-domain TTLs) prevented
+the most common performance failure mode in AI-generated code:
+unbounded memory growth and N+1 queries.
+
+No security vulnerabilities reported. The CSRF protection, input
+validation, rate limiting, and proper password hashing prevented
+the most common web application vulnerabilities.
+
+
+The Verification Surface
+
+At public beta (April 7, 2026), the verification surface consisted of
+only two to four invariant scripts. The first invariants appeared in
+commit five — "Favourites grid, player UI polish, card click-flash,
+invariant scripts" — on April 5, two days before the beta went live.
+The surface was small but present from the very beginning.
+
+Three months later, the surface has grown to approximately thirty
+scripts, organized into layers:
+
+Source invariants: asserting structural properties like overlay header
+usage, close button hrefs, playlist item ordering, autoplay settings
+propagation, and classification invariant patterns. These read source
+files directly and verify architectural rules.
+
+API smoke checks: verifying that critical endpoints return valid
+responses with correct schemas.
+
+Deployment gates: validating migration integrity, dependency audits,
+and clean working tree before every ship.
+
+Architectural invariants: asserting that domain modules are used
+correctly, that queue resolution follows the rule pack, that playback
+decisions don't leak into SSR, and that cache invalidation is wired
+correctly.
+
+The full suite runs in approximately three minutes and is executed
+before every deployment. Each script was commissioned in response to
+a specific failure or risk, and each one prevents an entire category
+of failure from recurring.
+
+
+What This Proves
+
+YehThatRocks is not the largest or most complex web application ever
+built. It is not a proof that AI can replace developers. It is a proof
+that a specific workflow — directed AI analysis, adversarial debugging,
+compounding invariants — can produce production-grade software at a
+fraction of the traditional cost, without requiring the developer to
+read the code.
+
+The workflow scaled from zero to 250,000 lines without slowing down.
+The verification surface grew more valuable with every incident. The
+developer's role shifted from code production to system direction.
+
+This is not the only way to build software with AI. It is one way. It
+worked for this project. The evidence is public.

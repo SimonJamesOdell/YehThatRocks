@@ -1,0 +1,145 @@
+APPENDIX B
+The Verification Scripts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This appendix catalogs the invariant verification scripts that guard
+YehThatRocks. Each entry describes what the script guards against, how
+it was commissioned, and what category of failure it prevents.
+
+The scripts are CommonJS Node.js modules in the scripts/ directory.
+They are designed to run without a running application server — they
+verify source code patterns and file structure, not runtime behavior.
+
+The shared test harness is at scripts/lib/test-harness.js. All verify
+scripts import from this harness and use its assertion utilities:
+readFileStrict, assertContains, assertNotContains, assertFileDoesNotExist,
+finishInvariantCheck, and addFailure.
+
+
+Source Invariants
+
+verify-core-experience-invariants.js
+  Guards: Queue resolution follows the rule pack, Watch Next rendering
+  uses correct components, current-video API returns valid decisions,
+  catalog data sources follow the domain-module pattern.
+  Commissioned: Iteratively, as each domain was stabilized.
+  Category: Architectural drift across all core user-facing paths.
+
+verify-player-core-invariants.js
+  Guards: Player controls use correct event dispatch, autoplay settings
+  propagate through the correct hooks, playback decisions follow the
+  resolution chain.
+  Commissioned: After multiple incidents where player behavior diverged
+  between desktop and mobile.
+  Category: Player behavior consistency.
+
+verify-overlay-routing-invariants.js
+  Guards: Every overlay route presents a close button, overlay routes
+  do not inadvertently trigger playback decisions, dock routing follows
+  the shell's overlay state machine.
+  Commissioned: After users reported being unable to close certain
+  overlay pages.
+  Category: Navigation correctness and accessibility.
+
+verify-categories-invariants.js
+  Guards: Category pages use the correct genre browsing components,
+  category cards link to the correct routes, genre filtering is applied
+  consistently.
+  Commissioned: During the category browsing feature implementation.
+  Category: Browse experience consistency.
+
+verify-auth-invariants.js
+  Guards: Auth routes use the pipeline (requireAuthOnly or
+  withAuthAndBody), CSRF checks are present on all mutation routes,
+  cookie settings are correct.
+  Commissioned: Before the auth system was considered complete.
+  Category: Authentication and authorization correctness.
+
+verify-favourites-invariants.js
+  Guards: Favourite buttons dispatch the correct events, favourite
+  state is synchronized between components, remove-confirm modal
+  functions correctly.
+  Commissioned: After users reported favourites not persisting.
+  Category: Favourites data integrity.
+
+verify-new-videos-invariants.js
+  Guards: New videos page applies hidden-video filter, seen-toggle
+  preference is respected, video list rendering uses the shared
+  video-list-utils.
+  Commissioned: After the hidden-video feature was added.
+  Category: Video list filtering correctness.
+
+verify-magazine-invariants.js
+  Guards: Magazine articles render with correct metadata, Watch Now
+  buttons use the correct video resolution path, SSR does not trigger
+  playback decisions for magazine routes.
+  Commissioned: After the SSR playback decision flash incident.
+  Category: Magazine rendering correctness.
+
+verify-magazine-comments-invariants.js
+verify-forum-invariants.js
+verify-mobile-invariants.js
+verify-classification-invariants.js
+verify-no-seed-fallbacks-invariants.js
+verify-cache-delivery-invariants.js
+verify-budget-guardrails.js
+verify-hidden-videos-invariants.js
+verify-search-invariants.js
+verify-shell-decomposition-invariants.js
+verify-shared-utils-invariants.js
+verify-playlists-ui-invariants.js
+verify-artists-ui-invariants.js
+verify-top100-ui-invariants.js
+verify-watch-next-and-new-invariants.js
+verify-thumbnail-preflight-invariants.js
+verify-history-ui-invariants.js
+verify-admin-invariants.js
+
+[Each of these scripts follows the same pattern: read specific source
+files, assert patterns exist or don't exist, collect failures, exit
+with a non-zero code if any failures were found. Full source is
+available in the project repository.]
+
+
+API Smoke Checks
+
+verify-core-experience-api-smoke.js
+  Guards: GET /api/current-video returns valid JSON with required
+  fields, response matches the VideoRecord schema.
+  Commissioned: First API smoke check, established the pattern.
+
+verify-new-videos-api-smoke.js
+verify-auth-api-smoke.js
+verify-playlists-api-smoke.js
+verify-categories-api-smoke.js
+
+
+Deployment Gates
+
+verify-deps-full.ps1
+  Guards: All dependencies are installed, MySQL is running and
+  query-ready, the application can connect to the database, API
+  endpoints respond correctly, Prisma client is generated.
+  Commissioned: After multiple deployment failures due to missing
+  dependencies or stale Prisma client.
+  Category: Deployment readiness.
+
+Deployment scripts in deploy/:
+  validate-migrations.sh — Guards against duplicate migration operations
+  migrate-safely.sh — Guards against P3018, P3015, P3021 migration errors
+  migration-validation-hook.sh — Pre-commit guard against bad migrations
+  ship-local.ps1 — Full pre-ship validation pipeline
+
+
+How to Read This Appendix
+
+Each script name tells you what surface it guards. The scripts are the
+documentation. When a new developer (human or AI) joins the project,
+running the invariant suite tells them everything they need to know
+about what the system guarantees. The scripts are executable
+specifications. They are always current because they are always run.
+
+If you want to understand what YehThatRocks guarantees, read the
+scripts. If you want to understand how the code implements those
+guarantees, ask the AI. Do not read the code directly. The code is
+derived from these invariants, not the other way around.

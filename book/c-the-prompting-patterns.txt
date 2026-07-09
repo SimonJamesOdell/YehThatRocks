@@ -1,0 +1,184 @@
+APPENDIX C
+The Prompting Patterns
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This appendix describes the specific patterns of direction, argument,
+and commissioning that produce working code from an LLM without reading
+the output. These are not magic phrases. They are structural patterns
+for directing AI analysis.
+
+They are organized by the phase of the adversarial loop they apply to.
+
+
+Pattern 1: Commissioning Features
+
+When you want the AI to implement a new feature, describe:
+
+- What the user should experience. Not what the code should do, but
+  what the user should see and do. "When a user clicks the Watch Now
+  button on a magazine article, the player should load the video
+  associated with that article and begin playing."
+
+- What should NOT happen. Negative constraints prevent the AI from
+  making reasonable but wrong choices. "The player should not navigate
+  away from the current context. The magazine page should remain
+  visible behind the player."
+
+- What invariants already apply. Reference existing patterns the AI
+  should follow. "Use the same video resolution path that the shell
+  layout uses for initial video loading."
+
+- What to verify. "After implementing, the player should show the
+  correct video, the magazine page should not reload, and the existing
+  invariants should still pass."
+
+Do not describe:
+
+- How to implement it. Do not mention React hooks, state management,
+  API calls, or component structure. The AI chooses the implementation.
+  Your job is to define correct behavior.
+
+- Edge cases you haven't observed. Only define constraints you know
+  matter. If you define too many hypothetical constraints, the AI
+  will over-engineer the implementation.
+
+
+Pattern 2: Describing Symptoms
+
+When something is wrong, describe:
+
+- What you did. "I opened the magazine page and clicked Watch Now on
+  the article about Metallica."
+
+- What you expected. "I expected the player to load the Metallica
+  video from that article."
+
+- What actually happened. "The player loaded a different video. It
+  seems to be a video I watched earlier in this session."
+
+- When it happens. "It doesn't happen every time. It seems more
+  likely when I reload the page first."
+
+- What you've already checked. "The invariants pass. The magazine
+  API returns the correct video ID. The problem is somewhere between
+  the API response and the player loading."
+
+Do not:
+
+- Speculate about the cause. "I think the cache is stale" or "Maybe
+  a race condition." Let the AI form the hypothesis. Your speculation
+  will bias the AI toward confirming your guess rather than finding
+  the actual cause.
+
+- Describe code you peeked at. If you broke the no-peeking rule, do
+  not mention it. Let the AI discover the code from scratch. Your
+  peek might have shown you something irrelevant.
+
+
+Pattern 3: Evaluating Explanations
+
+When the AI proposes an explanation, evaluate it:
+
+- Does it account for all observed behavior? If the explanation
+  predicts the wrong video should load every time, but the symptom
+  is intermittent, the explanation is wrong. "If the cache were
+  stale, the wrong video would load consistently. But sometimes
+  the correct video loads. Your explanation doesn't account for
+  the intermittency."
+
+- Is it specific enough? "The state was inconsistent" is not an
+  explanation. "Which state? Inconsistent with what? When did it
+  become inconsistent?" Demand specifics.
+
+- Does it suggest a fix? A good explanation tells you what to
+  change. "The SSR path made a playback decision that the client
+  path was supposed to make, and the two paths disagreed." This
+  suggests a specific fix: stop making playback decisions during SSR.
+
+- Does it generalize? A good explanation identifies a class of
+  failure, not a single instance. "This could happen in any route
+  that renders during SSR and includes a component that triggers
+  playback decisions." This suggests a class of fix: prevent
+  playback decisions during SSR for all read-only routes.
+
+
+Pattern 4: Arguing Productively
+
+The adversarial stance is essential but must be productive:
+
+- Challenge the explanation, not the AI. "That explanation doesn't
+  account for why the symptom is intermittent." Not "You're wrong."
+
+- Suggest alternative hypotheses only when you have evidence. "What
+  if the timing of the SSR render matters? Could that explain the
+  intermittency?" Not "Maybe it's something else entirely."
+
+- Accept partial explanations. "The SSR path is probably involved,
+  but why would it produce different results on different loads?"
+  Build on what the AI got right while pushing for more.
+
+- Recognize convergence. When the explanation accounts for all the
+  evidence, accept it. Do not keep arguing for the sake of argument.
+  "That explains the intermittency, the SSR path, and why the fix
+  would prevent this in other routes. Let's implement that."
+
+- Demand evidence. If the AI claims a certain function is the cause,
+  ask how it determined that. "Did you trace the callers of that
+  function? What path leads from the magazine page to the playback
+  decision?" The AI should be able to describe the dependency chain.
+
+
+Pattern 5: Commissioning Invariants
+
+After a fix is implemented and verified, commission an invariant:
+
+- Describe the class of failure, not the instance. "Any route that
+  shouldn't make playback decisions must not make them during SSR."
+  Not "The magazine page must not make playback decisions during SSR."
+
+- Describe how to detect it. "Check that the getPlaybackDecision
+  function is not called during server-side rendering for routes
+  that don't need playback decisions."
+
+- Define the scope. "This applies to all routes that don't pass
+  a requestedVideoId parameter to the shell layout."
+
+- Ask the AI to write the invariant script. "Write a verification
+  script that asserts this property by reading the relevant source
+  files and checking for the pattern."
+
+- Verify the invariant catches the original failure. "Does this
+  script fail if I revert the fix?" It should.
+
+- Verify the invariant doesn't produce false positives. "Does this
+  script pass on the current codebase?" It should.
+
+
+Pattern 6: Commissioning Audits
+
+Periodically, commission a structural audit:
+
+- "Read every overlay route page and check whether it uses the
+  OverlayHeader component. List any that don't."
+
+- "Read every API route handler and check whether mutation methods
+  (POST, PATCH, DELETE, PUT) call verifySameOrigin. List any that
+  don't."
+
+- "Read every component that fetches data and check whether it uses
+  AbortController for cleanup. List any that don't."
+
+- "Read the entire scripts/ directory and identify duplicated
+  patterns. Propose a shared library that eliminates the duplication."
+
+These audits are the equivalent of CODE_SMELLS.md. They are
+commissioned on demand, not run automatically. They find systemic
+issues that individual invariants might miss. After the audit,
+commission invariants that prevent the issues from recurring.
+
+
+These patterns are not a complete taxonomy. They are what worked for
+one project. Your project will develop its own patterns. The common
+thread is structural, not linguistic: describe what should happen,
+observe what actually happens, argue about the gap, and commission
+permanent guarantees.

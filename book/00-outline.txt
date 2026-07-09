@@ -1,0 +1,92 @@
+CODE BLIND
+How I Built a 250,000-Line Production Web Application in Three Months
+for $300 Without Ever Reading a Single Line of Code
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+by Simon James Odell
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CHAPTER SPINE
+────────────
+
+  Preface — Who This Book Is For and What It Will Teach You
+
+  Chapter  1 — The Claim
+               Code is dog food for the JIT compiler. I stopped treating
+               source code as literature and handed the read/write lock
+               exclusively to the LLM.
+
+  Chapter  2 — The Verification Surface
+               Invariants replace review. How to build sensors that catch
+               entire categories of failure, and why line-by-line review
+               is a substitute for meaningful guarantees.
+
+  Chapter  3 — Directed AI Analysis
+               You don't read code. You read the AI's reasoning about the
+               code. You argue with it, you push back, you reject wrong
+               explanations until it converges on the right one.
+
+  Chapter  4 — Technical Credit
+               The new economic unit of software development. Traditional
+               technical debt accrues interest. Directed AI development
+               accrues interest-bearing credit.
+
+  Chapter  5 — The Adversarial Loop
+               Debugging through dialogue, not through code reading.
+               Decades of experience calibrate your bullshit detector.
+               You test hypotheses through conversation, not inspection.
+
+  Chapter  6 — The Sensor Network
+               Each bug fix adds a permanent invariant. Each invariant
+               prevents that entire class of failure forever. The
+               verification surface compounds with every iteration.
+
+  Chapter  7 — Code as Derived Artifact
+               The canonical hierarchy is inverted. Invariants and
+               observed behavior are the source of truth. Code is a
+               transient, regeneratable output — like MySQL's ibdata1.
+
+  Chapter  8 — The No-Peeking Rule
+               Why you must never look at the code, and what happens
+               when you do. The discipline required to maintain the
+               paradigm, and how it forces better verification.
+
+  Chapter  9 — The Case Study
+               YehThatRocks by the numbers: 250K LOC, $300, three months.
+               Architecture, PRs, invariants, production incidents, and
+               what actually went wrong (and didn't).
+
+  Chapter 10 — Paradigm Shift
+               What this means for the industry. Why the LinkedIn skeptics
+               are doing the math from the wrong balance sheet. How the
+               role of "developer" changes when code is no longer the
+               artifact of record.
+
+  Appendix A — The Conversation
+               The full CodeWhale session transcript that articulated the
+               paradigm in real time — including the part where the AI
+               got it wrong and the author pushed back.
+
+  Appendix B — The Verification Scripts
+               A catalog of the invariant scripts that guard YehThatRocks,
+               annotated with what each guards against and how it was
+               commissioned.
+
+  Appendix C — The Prompting Patterns
+               The specific patterns of direction, argument, and
+               commissioning that produce working code from an LLM
+               without reading the output.
+
+  Appendix D — The Numbers
+               Tokens consumed, costs per feature, PR acceptance rates,
+               production incidents, and the economics of the approach.
+
+
+MANUSCRIPT NOTE
+───────────────
+Chapters are written as .txt files in this folder. Each chapter is a
+complete, self-contained piece of prose suitable for conversion to any
+publishing format. The tone is direct, unapologetic, and grounded in the
+specifics of a project that actually shipped. No hand-waving. No hype.
+Just the approach, the evidence, and the argument.

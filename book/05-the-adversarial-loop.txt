@@ -1,0 +1,126 @@
+CHAPTER 5
+The Adversarial Loop
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The AI does not get things right the first time. This is not a weakness
+of the approach — it is the approach.
+
+Every feature, every bug fix, every architectural change follows the same
+pattern: describe, argue, converge, verify. The adversarial loop is the
+engine that produces correct software without human code reading. This
+chapter describes how it works and why it requires skills that
+experienced developers already possess.
+
+
+The Shape of a Session
+
+A directed AI analysis session has a rhythm:
+
+1. COMMISSION. You describe what you want. Not how to implement it — what
+   the system should do, what properties it should have, what behavior
+   should change. The AI generates code. You do not read it. You test it.
+
+2. OBSERVE. You interact with the running system. You click the buttons.
+   You check the invariants. You look at the output. Something is wrong —
+   a feature doesn't work, an invariant fails, a behavior is missing.
+
+3. DESCRIBE. You tell the AI what you observed. You are specific: "When
+   I click the Watch Now button on the magazine page, the player loads
+   a video I've already hidden." Not "the magazine page is broken."
+
+4. ARGUE. The AI proposes an explanation. You evaluate it. Does it
+   account for everything you observed? Does it make sense given what
+   you know about the system? If not, you push back. You explain why
+   the explanation is insufficient. You demand a better one.
+
+   ( there is no point ever getting angry with the AI, or calling it 
+    names... just saying... )
+
+5. CONVERGE. After one or more rounds of argument, the AI reaches an
+   explanation that accounts for the evidence. You recognize it as
+   correct because it explains everything you observed and nothing
+   contradicts it. You direct the AI to fix it.
+
+6. VERIFY. The AI implements the fix. You test it again. The symptom
+   is gone. The invariants pass. You direct the AI to add a new
+   invariant that prevents this class of failure from recurring.
+
+7. REPEAT. The next feature, the next bug, the next session. The loop
+   tightens as the surface grows. Fewer things go wrong. When they do,
+   they are caught faster and fixed with less argument.
+
+
+Why Argument Matters
+
+The AI's first explanation is usually a surface-level description of
+what happened, not a root-cause analysis. "The wrong video loaded because
+the state was stale." This is not an explanation — it is a restatement
+of the symptom in different words.
+
+Your job is to reject insufficient explanations until the AI reaches
+a genuine root cause. "The state was stale because the SSR path made a
+playback decision that the client path was supposed to make, and the
+two paths disagreed about which video was current."
+
+Getting to this level requires pushing back at each layer of the AI's
+reasoning. You must ask: why was the state stale? What set it? What
+should have set it instead? How do we prevent this from happening in any
+other route?
+
+The AI will answer each question. Some answers will be wrong. You will
+identify the wrong ones by their failure to account for the evidence
+or by their inconsistency with what you know about the system's
+architecture. You will push back. The AI will try again.
+
+This is not magic. It is the Socratic method applied to a machine. You
+ask questions until the machine reaches a conclusion you can verify.
+
+
+The Skills You Need
+
+The adversarial loop requires skills that experienced developers already
+have:
+
+Hypothesis evaluation. You must be able to look at a proposed explanation
+and determine whether it accounts for the evidence. This is the same skill
+you use when debugging your own code: "If the cache were stale, the
+symptom would be consistent across reloads. But it's intermittent.
+Therefore the cache is not the cause."
+
+Architectural knowledge. You must understand your system's architecture
+well enough to recognize when the AI's explanation violates it. "The
+magazine page shouldn't be making playback decisions at all. Why is it?"
+This knowledge comes from having specified the architecture, not from
+having read the code.
+
+Persistence. The AI will propose wrong explanations. It will repeat
+itself. It will miss obvious connections. You must keep pushing until
+it converges. This is the hardest skill to develop and the most
+important.
+
+Bullshit detection. Experience has calibrated your sense of when
+something doesn't add up. The AI says "it might be a timing issue."
+You know to ask "timing of what relative to what?" The AI's answer
+will either be specific enough to act on or vague enough to reject.
+Your bullshit detector is the filter.
+
+
+A Note on Humility
+
+The adversarial loop requires a posture that does not come naturally
+to most experienced developers: you must trust the AI's reading of the
+code more than you trust your own, if you were to read it.
+
+This is uncomfortable. You have spent decades believing that your ability
+to read and understand code is your most valuable skill. It is. But the
+AI can do it faster and more comprehensively. Your most valuable skill
+in this paradigm is not reading code — it is evaluating explanations,
+forming hypotheses, and directing analysis.
+
+The AI is the code reader. You are the director. The director does not
+operate the camera, but the film is theirs. The director does not need
+to know which lens was used, but they need to know whether the shot
+conveys the right emotion.
+
+You do not read the code. You read the AI's reasoning about the code.
+And your decades of experience make you a very good reader of reasoning.
