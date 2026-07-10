@@ -290,6 +290,7 @@
 
 .hideVideoConfirmThumb {
   width: 100%;
+  height: auto;
   aspect-ratio: 16 / 9;
   display: block;
   object-fit: cover;
