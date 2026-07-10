@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { CategoriesNewGrid } from "@/components/categories-new-grid";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { getCategoriesNewTopLevelSnapshot } from "@/lib/categories-new-snapshots";
+import { buildBreadcrumbList } from "@/lib/schema-org";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -46,10 +47,16 @@ export default async function CategoriesPage() {
     })),
   };
 
+  const categoriesBreadcrumbJsonLd = buildBreadcrumbList([
+    { name: "Home", url: SITE_ORIGIN },
+    { name: "Categories", url: `${SITE_ORIGIN}/categories` },
+  ]);
+
   if (cards.length === 0) {
     return (
       <>
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(categoriesJsonLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(categoriesBreadcrumbJsonLd) }} />
         <OverlayScrollReset />
         <article className="catalogCard categoryNoVideos">
           <p className="statusLabel">Categories</p>
@@ -63,6 +70,7 @@ export default async function CategoriesPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(categoriesJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(categoriesBreadcrumbJsonLd) }} />
       <OverlayScrollReset />
       <CategoriesNewGrid cards={cards} basePath="/categories" />
     </>

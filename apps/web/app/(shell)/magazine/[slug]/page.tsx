@@ -7,6 +7,7 @@ import { MagazineArticleLandingTracker } from "@/components/magazine-article-lan
 import { MagazineArticleComments } from "@/components/magazine-article-comments";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { getArticleBySlug, getAllPublishedSlugs, getPublishedArticles, type MagazineBlock } from "@/lib/magazine-data";
+import { buildArticle, buildBreadcrumbList } from "@/lib/schema-org";
 
 type MagazineTrackPageProps = {
   params: Promise<{ slug: string }>;
@@ -84,23 +85,25 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
   const hasVideo = article.videoId !== null && article.videoId !== undefined;
   const artistSlug = String(article.artist || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
-  // Article structured data for search engines
-  const articleJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "Article",
+  // ── Schema.org structured data ────────────────────────────────────────
+  const articleJsonLd = buildArticle({
     headline: article.title,
     description: article.seoDescription ?? article.deck ?? undefined,
-    image: article.videoId ? `https://i.ytimg.com/vi/${article.videoId}/maxresdefault.jpg` : undefined,
-    datePublished: article.publishedAt.toISOString(),
-    author: { "@type": "Organization", name: "YehThatRocks" },
-    publisher: { "@type": "Organization", name: "YehThatRocks", url: SITE_ORIGIN },
     url: `${SITE_ORIGIN}/magazine/${article.slug}`,
-    mainEntityOfPage: { "@type": "WebPage", "@id": `${SITE_ORIGIN}/magazine/${article.slug}` },
-  };
+    datePublished: article.publishedAt.toISOString(),
+    imageUrl: article.videoId ? `https://i.ytimg.com/vi/${article.videoId}/maxresdefault.jpg` : undefined,
+  });
+
+  const breadcrumbJsonLd = buildBreadcrumbList([
+    { name: "Home", url: SITE_ORIGIN },
+    { name: "Magazine", url: `${SITE_ORIGIN}/magazine` },
+    { name: article.title, url: `${SITE_ORIGIN}/magazine/${article.slug}` },
+  ]);
 
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
       <OverlayScrollReset />
       <OverlayHeader
         breadcrumb={(

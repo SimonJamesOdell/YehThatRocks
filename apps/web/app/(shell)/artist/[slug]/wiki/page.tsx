@@ -10,11 +10,14 @@ import { getArtistBySlug, upsertVerifiedExternalArtistCandidate } from "@/lib/ca
 import { getCachedWikiOnly, isWikiGenerationEnabled } from "@/lib/artist-wiki";
 import { verifyExternalArtistBySlug } from "@/lib/artist-wiki";
 import { getArtistPagePath, withVideoContext } from "@/lib/artist-routing";
+import { buildArtistWikiProfilePage, buildBreadcrumbList } from "@/lib/schema-org";
 
 type ArtistWikiPageProps = {
   params: Promise<{ slug: string }>;
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
+
+const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
 
 export async function generateMetadata({ params, searchParams }: ArtistWikiPageProps): Promise<Metadata> {
   const { slug } = await params;
@@ -88,8 +91,25 @@ export default async function ArtistWikiPage({ params, searchParams }: ArtistWik
   const artistPagePath = getArtistPagePath(artist.name);
   const artistPageHref = artistPagePath ? withVideoContext(artistPagePath, videoId, resume === "1") : "/artists";
 
+  // ── Schema.org structured data ──────────────────────────────────────────
+  const wikiJsonLd = buildArtistWikiProfilePage({
+    artistName: artist.name,
+    slug,
+    description: cachedWiki?.sections.overview?.slice(0, 160) ?? null,
+    thumbnailVideoId: artist.thumbnailVideoId,
+  });
+
+  const wikiBreadcrumbJsonLd = buildBreadcrumbList([
+    { name: "Home", url: SITE_ORIGIN },
+    { name: "Artists", url: `${SITE_ORIGIN}/artists` },
+    { name: artist.name, url: `${SITE_ORIGIN}/artist/${encodeURIComponent(slug)}` },
+    { name: "Wiki", url: `${SITE_ORIGIN}/artist/${encodeURIComponent(slug)}/wiki` },
+  ]);
+
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(wikiJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(wikiBreadcrumbJsonLd) }} />
       <OverlayHeader close={false}>
         <strong>
           <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { CategoryNewArtistsBrowser } from "@/components/category-new-artists-browser";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { getCategoriesNewCategorySnapshot } from "@/lib/categories-new-snapshots";
+import { buildCollectionPage, buildBreadcrumbList } from "@/lib/schema-org";
 
 const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
 
@@ -53,29 +54,25 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
   }
 
   const { genre } = snapshot;
-  const categoryJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "CollectionPage",
+
+  const categoryJsonLd = buildCollectionPage({
     name: `${genre} | YehThatRocks`,
-    description: `Browse ${genre} on YehThatRocks.`,
     url: `${SITE_ORIGIN}/categories/${slug}`,
-    isPartOf: { "@type": "WebSite", name: "YehThatRocks", url: SITE_ORIGIN },
-    breadcrumb: {
-      "@type": "BreadcrumbList",
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Genres", item: `${SITE_ORIGIN}/categories` },
-        { "@type": "ListItem", position: 2, name: genre, item: `${SITE_ORIGIN}/categories/${slug}` },
-      ],
-    },
-  };
+    description: `Browse ${genre} on YehThatRocks.`,
+  });
+
+  const categoryBreadcrumbJsonLd = buildBreadcrumbList([
+    { name: "Home", url: SITE_ORIGIN },
+    { name: "Categories", url: `${SITE_ORIGIN}/categories` },
+    { name: genre, url: `${SITE_ORIGIN}/categories/${slug}` },
+  ]);
 
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(categoryJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(categoryBreadcrumbJsonLd) }} />
       <OverlayScrollReset />
       <CategoryNewArtistsBrowser snapshot={snapshot} parentPath="/categories" />
     </>
   );
 }
-
-

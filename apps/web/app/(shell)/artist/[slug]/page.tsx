@@ -4,6 +4,12 @@ import { notFound } from "next/navigation";
 import { ArtistVideosGridClient } from "@/components/artist-videos-grid-client";
 import { getArtistBySlug, getArtistRouteSourceVideoIds, getStoredVideoById, getVideosByArtist, mapVideo, slugify } from "@/lib/catalog-data";
 import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
+import {
+  buildVideoObject,
+  buildMusicRecording,
+  buildBreadcrumbList,
+  buildMusicGroup,
+} from "@/lib/schema-org";
 
 const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
 
@@ -85,14 +91,8 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
   if (contextVideoId && !artistVideosRaw.some((video: ArtistVideoRow) => video.id === contextVideoId)) {
     const contextStored = await getStoredVideoById(contextVideoId, { includeUnapproved: true });
     const contextArtist = (contextStored?.parsedArtist ?? contextStored?.channelTitle ?? "").trim();
-    // Show the context video whenever it exists and we have an artist resolved.
-    // The strict slugify check can reject valid videos whose channel title includes
-    // extra text (e.g. "Sakharov - Topic" → slug "sakharov-topic" ≠ "sakharov").
     if (contextStored && contextArtist) {
       const contextSlug = slugify(contextArtist);
-      // Only include the context video when its resolved artist actually
-      // matches the current page artist. A prefix match (artistSlug + "-")
-      // handles YouTube channel suffixes like " - Topic".
       if (contextSlug === slug || contextSlug.startsWith(`${slug}-`)) {
         artistVideosRaw = [mapVideo(contextStored), ...artistVideosRaw];
       }
@@ -121,19 +121,61 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
     .filter((video: ArtistVideoRow) => !seenVideoIds.has(video.id))
     .concat(artistVideos.filter((video: ArtistVideoRow) => seenVideoIds.has(video.id)));
 
-  const musicGroupJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "MusicGroup",
-    name: artist.name,
-    url: `${SITE_ORIGIN}/artist/${slug}`,
-    ...(artist.thumbnailVideoId ? { image: `https://i.ytimg.com/vi/${encodeURIComponent(artist.thumbnailVideoId)}/hqdefault.jpg` } : {}),
-    ...(artist.genre ? { genre: artist.genre } : {}),
-    ...(artist.country && artist.country !== "Unknown" ? { foundingLocation: { "@type": "Place", name: artist.country } } : {}),
-  };
+  // ── Schema.org structured data ──────────────────────────────────────────
+  const musicGroupJsonLd = buildMusicGroup({
+    artistName: artist.name,
+    slug,
+    genre: artist.genre,
+    country: artist.country,
+    thumbnailVideoId: artist.thumbnailVideoId,
+  });
+
+  const breadcrumbJsonLd = contextVideoId && artist
+    ? buildBreadcrumbList([
+        { name: "Home", url: SITE_ORIGIN },
+        { name: artist.name, url: `${SITE_ORIGIN}/artist/${encodeURIComponent(slug)}` },
+        { name: contextVideoId, url: `${SITE_ORIGIN}/artist/${encodeURIComponent(slug)}?v=${encodeURIComponent(contextVideoId)}` },
+      ])
+    : buildBreadcrumbList([
+        { name: "Home", url: SITE_ORIGIN },
+        { name: artist.name, url: `${SITE_ORIGIN}/artist/${encodeURIComponent(slug)}` },
+      ]);
+
+  // VideoObject for the context video if present
+  const contextVideo = contextVideoId
+    ? await getStoredVideoById(contextVideoId, { includeUnapproved: true })
+    : null;
+  const videoJsonLd = contextVideo && contextVideo.videoId
+    ? buildVideoObject({
+        videoId: contextVideo.videoId,
+        title: contextVideo.title,
+        description: contextVideo.description,
+        artist: contextVideo.parsedArtist || contextVideo.channelTitle,
+        trackName: contextVideo.parsedTrack,
+        genre: contextVideo.genre ?? artist.genre,
+      })
+    : null;
+
+  const musicRecordingJsonLd = contextVideo && contextVideo.videoId && contextVideo.parsedTrack
+    ? buildMusicRecording({
+        trackName: contextVideo.parsedTrack,
+        artistName: contextVideo.parsedArtist || contextVideo.channelTitle || artist.name,
+        genre: contextVideo.genre ?? artist.genre,
+        url: `${SITE_ORIGIN}/artist/${encodeURIComponent(slug)}?v=${encodeURIComponent(contextVideo.videoId)}`,
+        videoId: contextVideo.videoId,
+      })
+    : null;
 
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(musicGroupJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
+      {videoJsonLd ? (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(videoJsonLd) }} />
+      ) : null}
+      {musicRecordingJsonLd ? (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(musicRecordingJsonLd) }} />
+      ) : null}
       <ArtistVideosGridClient
         artistName={artist.name}
         artistSlug={slug}

@@ -2,6 +2,12 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 
 import { getCurrentVideo } from "@/lib/catalog-data";
+import {
+  buildVideoObject,
+  buildMusicRecording,
+  buildBreadcrumbList,
+  buildWebSite,
+} from "@/lib/schema-org";
 
 const SITE_NAME = "YehThatRocks";
 const DEFAULT_TITLE = "YehThatRocks | The World's LOUDEST Website";
@@ -88,25 +94,55 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
 
 const SITE_ORIGIN_STATIC = "https://yehthatrocks.com";
 
-export default function Home() {
+type HomeComponentProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function Home({ searchParams }: HomeComponentProps) {
   // The shell layout owns the persistent player. The home route adds SEO-visible
   // content that is visually hidden but readable by search engines and screen readers.
-  const websiteJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebSite",
-    name: "YehThatRocks",
-    url: SITE_ORIGIN_STATIC,
-    description:
-      "Stream and discover rock and metal music videos. 266,000+ videos across 153 genres including Heavy Metal, Thrash, Doom, Prog, Classic Rock, and more.",
-    potentialAction: {
-      "@type": "SearchAction",
-      target: {
-        "@type": "EntryPoint",
-        urlTemplate: `${SITE_ORIGIN_STATIC}/artists?q={search_term_string}`,
-      },
-      "query-input": "required name=search_term_string",
-    },
-  };
+
+  // ── Site-wide WebSite schema ────────────────────────────────────────────
+  const websiteJsonLd = buildWebSite();
+
+  // ── Video-specific schema when ?v= is present ───────────────────────────
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const rawVideoId = typeof resolvedSearchParams?.v === "string" ? resolvedSearchParams.v : undefined;
+  const selectedVideo = rawVideoId ? await getCurrentVideo(rawVideoId) : null;
+
+  const videoJsonLd = selectedVideo?.id
+    ? buildVideoObject({
+        videoId: selectedVideo.id,
+        title: selectedVideo.title,
+        description: selectedVideo.description,
+        artist: selectedVideo.parsedArtist || selectedVideo.channelTitle,
+        trackName: selectedVideo.parsedTrack,
+        genre: selectedVideo.genre,
+        interactionCount: selectedVideo.favourited,
+      })
+    : null;
+
+  const musicRecordingJsonLd = selectedVideo?.id && selectedVideo.parsedTrack && (selectedVideo.parsedArtist || selectedVideo.channelTitle)
+    ? buildMusicRecording({
+        trackName: selectedVideo.parsedTrack,
+        artistName: selectedVideo.parsedArtist || selectedVideo.channelTitle,
+        genre: selectedVideo.genre,
+        url: `${SITE_ORIGIN_STATIC}/?v=${encodeURIComponent(selectedVideo.id)}`,
+        videoId: selectedVideo.id,
+      })
+    : null;
+
+  // ── BreadcrumbList ──────────────────────────────────────────────────────
+  const artistForBreadcrumb = selectedVideo?.parsedArtist || selectedVideo?.channelTitle;
+  const breadcrumbJsonLd = selectedVideo?.id && artistForBreadcrumb
+    ? buildBreadcrumbList([
+        { name: "Home", url: SITE_ORIGIN_STATIC },
+        { name: artistForBreadcrumb, url: `${SITE_ORIGIN_STATIC}/artist/${encodeURIComponent(artistForBreadcrumb.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""))}` },
+        { name: selectedVideo.parsedTrack || selectedVideo.title, url: `${SITE_ORIGIN_STATIC}/?v=${encodeURIComponent(selectedVideo.id)}` },
+      ])
+    : buildBreadcrumbList([
+        { name: "Home", url: SITE_ORIGIN_STATIC },
+      ]);
 
   return (
     <>
@@ -114,6 +150,22 @@ export default function Home() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
       />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+      {videoJsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(videoJsonLd) }}
+        />
+      ) : null}
+      {musicRecordingJsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(musicRecordingJsonLd) }}
+        />
+      ) : null}
       <div className="seoLandingContent">
         <h1>YehThatRocks — Rock &amp; Metal Music Video Discovery</h1>
         <p>
@@ -142,4 +194,3 @@ export default function Home() {
     </>
   );
 }
-
