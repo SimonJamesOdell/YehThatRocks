@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { headers } from "next/headers";
+import { headers, cookies } from "next/headers";
 import { ShellDynamic } from "@/components/shell-dynamic-core";
 import { ServiceFailurePanel } from "@/components/service-failure-panel";
 import { getCurrentVideo, getDataSourceStatus } from "@/lib/catalog-data";
@@ -16,9 +16,20 @@ export default async function ShellLayout({ children }: { children: ReactNode })
   const requestedVideoId = searchParams.get("v") ?? undefined;
   const shouldUseRandomLandingVideo = requestPathname === "/" && searchParams.toString().length === 0;
 
+  // Read recently-started video IDs from cookie (set by client-side startup effect).
+  // Format: colon-separated 11-char YouTube IDs, most-recent-first.
+  const recentStartsRaw = (await cookies()).get("ytr-recent-starts")?.value ?? "";
+  const recentVideoIds = recentStartsRaw
+    ? recentStartsRaw.split(":").filter((id) => id.length === 11)
+    : [];
+
   const [{ authState, user, isAdmin, hasAccessToken }, resolvedInitialVideo, dataSourceStatus] = await Promise.all([
     getShellRequestAuthState(),
-    getCurrentVideo(requestedVideoId, { skipPlaybackDecision: Boolean(requestedVideoId), allowRandomFallback: shouldUseRandomLandingVideo }),
+    getCurrentVideo(requestedVideoId, {
+      skipPlaybackDecision: Boolean(requestedVideoId),
+      allowRandomFallback: shouldUseRandomLandingVideo,
+      recentVideoIds,
+    }),
     getDataSourceStatus(),
   ]);
 
@@ -26,7 +37,7 @@ export default async function ShellLayout({ children }: { children: ReactNode })
   // fall back to any approved catalog video instead of showing a global outage panel.
   const initialVideo = resolvedInitialVideo
     ?? (requestedVideoId
-      ? await getCurrentVideo(undefined, { allowRandomFallback: true })
+      ? await getCurrentVideo(undefined, { allowRandomFallback: true, recentVideoIds })
       : null);
 
   if (!initialVideo) {
@@ -79,4 +90,3 @@ export default async function ShellLayout({ children }: { children: ReactNode })
     </ShellDynamic>
   );
 }
-
