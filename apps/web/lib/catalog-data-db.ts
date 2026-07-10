@@ -695,7 +695,8 @@ export async function getFastVideoByVideoIdRows(
       NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
       ${genreSelectExpr}
       COALESCE(v.favourited, 0) AS favourited,
-      v.description
+      v.description,
+      COALESCE(v.approved, 0) AS approved
     FROM videos v FORCE INDEX (videos_videoId_key)
     WHERE v.videoId = ?
       ${approvalFilter}
@@ -714,7 +715,8 @@ export async function getFastVideoByVideoIdRows(
       NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
       ${genreSelectExpr}
       COALESCE(v.favourited, 0) AS favourited,
-      v.description
+      v.description,
+      COALESCE(v.approved, 0) AS approved
     FROM videos v
     WHERE v.videoId = ?
       ${approvalFilter}

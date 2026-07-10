@@ -108,7 +108,9 @@ export type RankedVideoRow = {
   parsedTrack?: string | null;
   genre?: string | null;
   favourited: number;
+  viewCount?: number;
   description: string | null;
+  approved?: number | boolean | null;
 };
 
 export type StoredVideoRow = RankedVideoRow & {
@@ -345,6 +347,7 @@ export function mapVideo(video: {
   genre?: string | null;
   favourited: number | bigint | null;
   description: string | null;
+  approved?: number | boolean | null;
 }): VideoRecord {
   const favouritedValue =
     typeof video.favourited === "bigint"
@@ -382,6 +385,7 @@ export function mapVideo(video: {
     genre,
     favourited: Number.isFinite(favouritedValue) ? favouritedValue : 0,
     description: video.description ?? "Legacy video entry from the retained Yeh database.",
+    approved: typeof video.approved === "number" ? video.approved !== 0 : video.approved ? true : undefined,
   };
 }
 

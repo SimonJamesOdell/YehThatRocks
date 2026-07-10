@@ -288,6 +288,51 @@ function main() {
   // Shell architecture invariants: the live shell must be shell-dynamic-core.tsx; the legacy app-shell.tsx must not exist.
   assertFileDoesNotExist(path.join(ROOT, "apps/web/components/app-shell.tsx"), "Legacy app-shell.tsx is not present (live shell is shell-dynamic-core.tsx)", failures, ROOT);
 
+  // ── Shared video card invariants ───────────────────────────────────────────────
+  // Artist resolution priority: when parsedArtist is missing from the API
+  // (e.g. oEmbed fallback for unapproved videos), prefer fallbackChannel from
+  // the share message over previewChannelTitle (which may be the YouTube
+  // uploader name rather than the catalog-parsed artist).
+  assertContains(shellDynamicRenderingSource,
+    "let parsedArtist = previewParsedArtist || fallbackChannel || previewChannelTitle || null;",
+    "SharedVideoMessageCard resolves artist: catalog parsedArtist > message fallback > API channelTitle", failures);
+
+  // ── Unapproved video share gate ────────────────────────────────────────────────
+  // The chat share preview must be hidden when the current video is not approved.
+  assertContains(shellDynamicSource,
+    "chatShareState !== \"hidden\" && currentVideo.approved !== false",
+    "Chat share preview is gated on currentVideo.approved !== false", failures);
+
+  // The player share button must be hidden when the current video is not approved.
+  assertContains(playerExperienceSource,
+    "currentVideo.approved !== false",
+    "Player share button is gated on currentVideo.approved !== false", failures);
+
+  // ── getVideoForSharing must not leak unapproved videos ─────────────────────────
+  // Unapproved videos should not be shareable — getVideoForSharing filters
+  // approved-only by default. A prior attempt added includeUnapproved:true;
+  // this invariant guards against that regression.
+  assertNotContains(catalogDataVideosSource,
+    "includeUnapproved: true",
+    "getVideoForSharing does not leak unapproved videos via includeUnapproved", failures);
+
+  // ── approved field plumbing ────────────────────────────────────────────────────
+  // VideoRecord must carry the approved flag so UI surfaces can gate on it.
+  const catalogSource = readFileStrict(path.join(ROOT, "apps/web/lib/catalog.ts"), ROOT);
+  assertContains(catalogSource,
+    "approved?: boolean;",
+    "VideoRecord carries approved?: boolean", failures);
+
+  // mapVideo must return the approved field.
+  assertContains(catalogDataUtilsSource,
+    "approved: typeof video.approved === \"number\" ? video.approved !== 0 : video.approved ? true : undefined,",
+    "mapVideo normalizes approved from DB 0/1 to boolean", failures);
+
+  // SQL queries must SELECT the approved column.
+  assertContains(catalogDataDbSource,
+    "COALESCE(v.approved, 0) AS approved",
+    "getFastVideoByVideoIdRows queries the approved column", failures);
+
   finishInvariantCheck({
     failures,
     failureHeader: "Core experience invariant check failed.",

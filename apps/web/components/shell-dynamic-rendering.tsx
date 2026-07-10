@@ -157,7 +157,13 @@ export function SharedVideoMessageCard({
   const resolvedTitle = preview?.title?.trim() || fallbackTitle?.trim() || null;
   const previewParsedArtist = preview?.parsedArtist?.trim() || null;
   const previewChannelTitle = preview?.channelTitle?.trim() || null;
-  const parsedArtist = previewParsedArtist || previewChannelTitle || fallbackChannel || null;
+  // Prefer parsedArtist from the catalog (highest confidence). When it is
+  // missing the video was not found in our DB; the API may have fallen back
+  // to YouTube oEmbed, whose channelTitle is the uploader name rather than
+  // the parsed artist. In that case prefer the fallbackChannel from the share
+  // message, which carries the displayArtist computed by mapVideo at share time.
+  let parsedArtist = previewParsedArtist || fallbackChannel || previewChannelTitle || null;
+
   const parsedArtistPagePath = parsedArtist ? getArtistPagePath(parsedArtist) : null;
   const genreLabel = preview?.genre?.trim() || null;
   const parsedTrack = preview?.parsedTrack?.trim() || null;

@@ -276,6 +276,11 @@ async function getRankedVideoIdSlice(mode: "top" | "newest", limit: number): Pro
   }
 }
 
+import {
+  weightedRandomSelect,
+  WEIGHTED_POOL_SIZE,
+} from "@/lib/weighted-random-select";
+
 async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
   const fetchLimit = Math.max(limit, MIN_RANKED_TOP_POOL_FETCH);
   const now = Date.now();
@@ -314,6 +319,7 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
               NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
               ${genreSelectExpr}
               COALESCE(v.favourited, 0) AS favourited,
+              COALESCE(v.viewCount, 0) AS viewCount,
               v.description
             FROM videos v
             WHERE v.videoId IN (${placeholders})
@@ -381,6 +387,7 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
               ${parsedTrackExpr} AS parsedTrack,
               ${genreExpr} AS genre,
               ${favouritedExpr} AS favourited,
+              ${viewExpr} AS viewCount,
               ${descriptionExpr} AS description
             FROM videos v
             WHERE v.${externalVideoCol} IS NOT NULL
@@ -555,7 +562,7 @@ async function filterPlayableNewestRows(rows: RankedVideoRow[], targetCount: num
 
 export async function getCurrentVideo(
   videoId?: string,
-  options?: { skipPlaybackDecision?: boolean; allowRandomFallback?: boolean },
+  options?: { skipPlaybackDecision?: boolean; allowRandomFallback?: boolean; recentVideoIds?: string[] },
 ) {
   const normalizedVideoId = normalizeYouTubeVideoId(videoId);
   const hasGenreColumn = await hasVideoGenreColumn();
@@ -709,10 +716,11 @@ export async function getCurrentVideo(
           : options?.allowRandomFallback === false
             ? await getRankedTopPool(1)
             : await (async () => {
-                const pool = await getRankedTopPool(50);
+                const pool = await getRankedTopPool(WEIGHTED_POOL_SIZE);
                 if (pool.length === 0) return pool;
-                const randomIndex = Math.floor(Math.random() * pool.length);
-                return [pool[randomIndex]];
+                const recentIds = options?.recentVideoIds ?? [];
+                const randomIndex = weightedRandomSelect(pool, recentIds);
+                return randomIndex >= 0 ? [pool[randomIndex]] : [];
               })();
 
         const video = videos[0];
@@ -727,9 +735,10 @@ export async function getCurrentVideo(
         if (!normalizedVideoId) {
           const backfilledLegacyApprovals = await maybeBackfillLegacyApprovedVideos();
           if (backfilledLegacyApprovals) {
-            const retryPool = await getRankedTopPool(50);
+            const retryPool = await getRankedTopPool(WEIGHTED_POOL_SIZE);
             if (retryPool.length > 0) {
-              const retryRandomIndex = Math.floor(Math.random() * retryPool.length);
+              const recentIds = options?.recentVideoIds ?? [];
+              const retryRandomIndex = weightedRandomSelect(retryPool, recentIds);
               const retryVideo = retryPool[retryRandomIndex];
               if (retryVideo) {
                 debugCatalog("getCurrentVideo:return-query-video-after-backfill", {

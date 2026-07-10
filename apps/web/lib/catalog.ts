@@ -12,6 +12,7 @@ export type VideoRecord = {
   isFavouriteSource?: boolean;
   isTop100Source?: boolean;
   isNewSource?: boolean;
+  approved?: boolean;
 };
 
 export type ArtistRecord = {

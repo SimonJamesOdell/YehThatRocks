@@ -1049,6 +1049,24 @@ function ShellDynamicInner({
         return;
       }
       window.sessionStorage.setItem(LAST_RANDOM_START_VIDEO_ID_KEY, nextVideoId);
+
+      // Persist recent startup video IDs to a cookie so the server can apply
+      // recency decay for the next page load, reducing back-to-back repeats.
+      try {
+        const COOKIE_NAME = "ytr-recent-starts";
+        const MAX_RECENT = 5;
+        const rawCookie = document.cookie
+          .split("; ")
+          .find((row) => row.startsWith(`${COOKIE_NAME}=`));
+        const existingIds = rawCookie
+          ? decodeURIComponent(rawCookie.slice(COOKIE_NAME.length + 1)).split(":").filter((id) => id.length === 11)
+          : [];
+        const updatedIds = [nextVideoId, ...existingIds.filter((id) => id !== nextVideoId)].slice(0, MAX_RECENT);
+        document.cookie = `${COOKIE_NAME}=${encodeURIComponent(updatedIds.join(":"))};path=/;max-age=86400;SameSite=Lax`;
+      } catch {
+        // Cookie write is best-effort; sessionStorage already covers client-side recall.
+      }
+
       logFlow(FLOW_DEBUG_ENABLED, "startup-selection:navigate", {
         source,
         nextVideoId,
@@ -2677,7 +2695,7 @@ function ShellDynamicInner({
               {chatMode === "global" ? (
                 isAuthenticated ? (
                   <>
-                    {chatShareState !== "hidden" && (
+                    {chatShareState !== "hidden" && currentVideo.approved !== false && (
                     <div className="chatSharePreview" role="region" aria-label="Share current video">
                       <SharedVideoMessageCard
                         videoId={currentVideo.id}
