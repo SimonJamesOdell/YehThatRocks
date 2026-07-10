@@ -53,8 +53,8 @@ export function weightedRandomSelect(
 
   for (let i = 0; i < pool.length; i++) {
     const video = pool[i];
-    const fav = video.favourited ?? 0;
-    const views = video.viewCount ?? 0;
+    const fav = Number(video.favourited ?? 0);
+    const views = Number(video.viewCount ?? 0);
 
     // Dampened logarithmic engagement weight — popular videos get a boost but
     // don't swamp the pool.
