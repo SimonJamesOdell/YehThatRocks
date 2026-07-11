@@ -15,6 +15,21 @@
 const SITE_ORIGIN = (process.env.NEXT_PUBLIC_SITE_ORIGIN || "https://yehthatrocks.com").replace(/\/$/, "");
 const SITE_NAME = "YehThatRocks";
 
+// ── OG Image URL builder ────────────────────────────────────────────────────────
+
+/**
+ * Build a dynamic OG image URL for the /og endpoint.
+ *
+ * Usage:
+ *   buildOgImageUrl({ type: "video", artist: "Metallica", title: "One", genre: "Thrash Metal" })
+ *   // => "https://yehthatrocks.com/og?type=video&artist=Metallica&title=One&genre=Thrash+Metal"
+ */
+export function buildOgImageUrl(params: Record<string, string>): string {
+  const origin = (process.env.NEXT_PUBLIC_SITE_ORIGIN || "https://yehthatrocks.com").replace(/\/$/, "");
+  const qs = new URLSearchParams(params);
+  return `${origin}/og?${qs.toString()}`;
+}
+
 // ── Shared types ────────────────────────────────────────────────────────────────
 
 export interface BreadcrumbItem {

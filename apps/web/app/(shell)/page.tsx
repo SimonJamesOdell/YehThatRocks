@@ -7,6 +7,7 @@ import {
   buildMusicRecording,
   buildBreadcrumbList,
   buildWebSite,
+  buildOgImageUrl,
 } from "@/lib/schema-org";
 
 const SITE_NAME = "YehThatRocks";
@@ -23,12 +24,12 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
   const host = requestHeaders.get("x-forwarded-host") || requestHeaders.get("host") || "yehthatrocks.com";
   const proto = requestHeaders.get("x-forwarded-proto") || "https";
   const siteOrigin = `${proto}://${host}`;
-  const fallbackShareImage = `${siteOrigin}/images/guitar_back.png`;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const rawVideoId = typeof resolvedSearchParams?.v === "string" ? resolvedSearchParams.v : undefined;
   const selectedVideo = rawVideoId ? await getCurrentVideo(rawVideoId) : null;
 
   if (!selectedVideo?.id) {
+    const ogHomeImage = buildOgImageUrl({ type: "genre", name: "Rock & Metal" });
     return {
       title: DEFAULT_TITLE,
       description: DEFAULT_DESCRIPTION,
@@ -43,8 +44,10 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
         type: "website",
         images: [
           {
-            url: fallbackShareImage,
-            alt: "YehThatRocks background artwork",
+            url: ogHomeImage,
+            width: 1200,
+            height: 630,
+            alt: "YehThatRocks — Rock & Metal Music Videos",
           },
         ],
       },
@@ -52,7 +55,7 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
         card: "summary_large_image",
         title: DEFAULT_TITLE,
         description: DEFAULT_DESCRIPTION,
-        images: [fallbackShareImage],
+        images: [ogHomeImage],
       },
     };
   }
@@ -60,7 +63,10 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
   const shareUrl = `${siteOrigin}/?v=${encodeURIComponent(selectedVideo.id)}`;
   const shareTitle = `${selectedVideo.title} | ${SITE_NAME}`;
   const shareDescription = `Watch ${selectedVideo.title} on ${SITE_NAME}.`;
-  const shareImage = `https://i.ytimg.com/vi/${encodeURIComponent(selectedVideo.id)}/hqdefault.jpg`;
+  const artist = selectedVideo.parsedArtist || selectedVideo.channelTitle || "";
+  const track = selectedVideo.parsedTrack || selectedVideo.title;
+  const genre = selectedVideo.genre || "";
+  const ogVideoImage = buildOgImageUrl({ type: "video", artist, title: track, genre });
 
   return {
     title: shareTitle,
@@ -76,9 +82,9 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
       type: "video.other",
       images: [
         {
-          url: shareImage,
-          width: 480,
-          height: 360,
+          url: ogVideoImage,
+          width: 1200,
+          height: 630,
           alt: selectedVideo.title,
         },
       ],
@@ -87,7 +93,7 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
       card: "summary_large_image",
       title: shareTitle,
       description: shareDescription,
-      images: [shareImage],
+      images: [ogVideoImage],
     },
   };
 }

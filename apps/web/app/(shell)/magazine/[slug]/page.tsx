@@ -7,7 +7,7 @@ import { MagazineArticleLandingTracker } from "@/components/magazine-article-lan
 import { MagazineArticleComments } from "@/components/magazine-article-comments";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { getArticleBySlug, getAllPublishedSlugs, getPublishedArticles, type MagazineBlock } from "@/lib/magazine-data";
-import { buildArticle, buildBreadcrumbList } from "@/lib/schema-org";
+import { buildArticle, buildBreadcrumbList, buildOgImageUrl } from "@/lib/schema-org";
 
 type MagazineTrackPageProps = {
   params: Promise<{ slug: string }>;
@@ -16,7 +16,6 @@ type MagazineTrackPageProps = {
 export const revalidate = false;
 
 const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
-const FALLBACK_OG_IMAGE = `${SITE_ORIGIN}/images/guitar_back.png`;
 
 export async function generateStaticParams() {
   const slugs = await getAllPublishedSlugs();
@@ -28,11 +27,14 @@ export async function generateMetadata({ params }: MagazineTrackPageProps): Prom
   const article = await getArticleBySlug(slug);
   if (!article) return {};
 
-  const ogImage = article.videoId ? `https://i.ytimg.com/vi/${article.videoId}/maxresdefault.jpg` : FALLBACK_OG_IMAGE;
   const title = `${article.title} | Yeh Magazine`;
   const description = article.seoDescription ?? article.deck ?? undefined;
   const canonicalUrl = `${SITE_ORIGIN}/magazine/${article.slug}`;
-  const ogImageAlt = article.videoId ? `${article.artist}${article.trackName ? ` - ${article.trackName}` : ""}` : "YehThatRocks magazine artwork";
+  const ogImageUrl = buildOgImageUrl({
+    type: "magazine",
+    title: article.title,
+    kicker: article.kicker ?? article.artist ?? "",
+  });
 
   return {
     title,
@@ -42,7 +44,7 @@ export async function generateMetadata({ params }: MagazineTrackPageProps): Prom
     openGraph: {
       title,
       description,
-      images: [{ url: ogImage, width: article.videoId ? 1280 : 1200, height: article.videoId ? 720 : 630, alt: ogImageAlt }],
+      images: [{ url: ogImageUrl, width: 1200, height: 630, alt: article.title }],
       type: "article",
       publishedTime: article.publishedAt.toISOString(),
     },
@@ -50,7 +52,7 @@ export async function generateMetadata({ params }: MagazineTrackPageProps): Prom
       card: "summary_large_image",
       title,
       description,
-      images: [ogImage],
+      images: [ogImageUrl],
     },
   };
 }

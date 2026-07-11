@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getVideosByGenreAndYear, type SeoVideoItem } from "@/lib/programmatic-seo-data";
-import { buildBreadcrumbList, buildCollectionPage } from "@/lib/schema-org";
+import { buildBreadcrumbList, buildCollectionPage, buildOgImageUrl } from "@/lib/schema-org";
 
 const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
 
@@ -23,6 +23,7 @@ export async function generateMetadata({ params }: BestOfGenreYearProps): Promis
 
   const title = `Best ${genreDisplay} Songs of ${year} | YehThatRocks`;
   const description = `Discover the best ${genreDisplay.toLowerCase()} music videos from ${year}. Curated by community favourites on YehThatRocks.`;
+  const ogImageUrl = buildOgImageUrl({ type: "genre", name: genreDisplay });
 
   return {
     title,
@@ -34,11 +35,13 @@ export async function generateMetadata({ params }: BestOfGenreYearProps): Promis
       url: `/best-of/${genre}/${year}`,
       siteName: "YehThatRocks",
       type: "website",
+      images: [{ url: ogImageUrl, width: 1200, height: 630, alt: `Best ${genreDisplay} of ${year}` }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
+      images: [ogImageUrl],
     },
   };
 }

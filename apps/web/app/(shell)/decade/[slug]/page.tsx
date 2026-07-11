@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getVideosByDecade, getDecadeConfig, getAllDecadeSlugs, type SeoVideoItem } from "@/lib/programmatic-seo-data";
-import { buildBreadcrumbList, buildCollectionPage } from "@/lib/schema-org";
+import { buildBreadcrumbList, buildCollectionPage, buildOgImageUrl } from "@/lib/schema-org";
 
 const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
 
@@ -22,6 +22,7 @@ export async function generateMetadata({ params }: DecadePageProps): Promise<Met
 
   const title = `Best ${config.label} Rock & Metal Videos | YehThatRocks`;
   const description = `The best rock and metal music videos from the ${config.label}. Discover classic tracks from ${config.startYear}–${config.endYear} on YehThatRocks.`;
+  const ogImageUrl = buildOgImageUrl({ type: "genre", name: `${config.label} Rock & Metal` });
 
   return {
     title,
@@ -33,11 +34,13 @@ export async function generateMetadata({ params }: DecadePageProps): Promise<Met
       url: `/decade/${slug}`,
       siteName: "YehThatRocks",
       type: "website",
+      images: [{ url: ogImageUrl, width: 1200, height: 630, alt: `Best ${config.label} Rock & Metal Videos` }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
+      images: [ogImageUrl],
     },
   };
 }

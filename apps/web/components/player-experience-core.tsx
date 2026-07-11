@@ -4187,6 +4187,7 @@ export function PlayerExperience({
                     alt=""
                     aria-hidden="true"
                     className="playerAuthWallThumb"
+                    loading="lazy"
                   />
                   <div className="playerAuthWallContent">
                     <strong className="playerAuthWallTitle">Sign in to watch</strong>
@@ -4209,6 +4210,7 @@ export function PlayerExperience({
                     alt=""
                     aria-hidden="true"
                     className="playerConnectingThumb"
+                    loading="lazy"
                   />
                   <div className="playerConnectingShade" aria-hidden="true" />
                   <div className="playerConnectingTop">

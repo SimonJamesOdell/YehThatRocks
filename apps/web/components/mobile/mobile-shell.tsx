@@ -288,6 +288,7 @@ export function MobileShell({ children }: { children: ReactNode }) {
               src={thumbnailUrl!}
               alt=""
               className="mobile-player-bar-thumb"
+              loading="lazy"
             />
             <div className="mobile-player-bar-info">
               <p className="mobile-player-bar-title">{player.video.title}</p>

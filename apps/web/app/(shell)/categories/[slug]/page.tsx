@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 
 import { CategoryNewArtistsBrowser } from "@/components/category-new-artists-browser";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { getCategoriesNewCategorySnapshot } from "@/lib/categories-new-snapshots";
-import { buildCollectionPage, buildBreadcrumbList } from "@/lib/schema-org";
+import { buildCollectionPage, buildBreadcrumbList, buildOgImageUrl } from "@/lib/schema-org";
 
 const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
 
@@ -13,6 +14,7 @@ export async function generateMetadata({ params }: CategoryPageProps): Promise<M
   if (!snapshot) return {};
   const title = `${snapshot.genre} Artists | YehThatRocks`;
   const description = `Browse precomputed artists and counts for ${snapshot.genre} on YehThatRocks.`;
+  const ogImageUrl = buildOgImageUrl({ type: "genre", name: snapshot.genre });
   return {
     title,
     description,
@@ -23,11 +25,13 @@ export async function generateMetadata({ params }: CategoryPageProps): Promise<M
       url: `/categories/${slug}`,
       siteName: "YehThatRocks",
       type: "website",
+      images: [{ url: ogImageUrl, width: 1200, height: 630, alt: `${snapshot.genre} on YehThatRocks` }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
+      images: [ogImageUrl],
     },
   };
 }
@@ -41,16 +45,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
   const snapshot = await getCategoriesNewCategorySnapshot(slug);
 
   if (!snapshot) {
-    return (
-      <>
-        <OverlayScrollReset />
-        <article className="catalogCard categoryNoVideos">
-          <p className="statusLabel">Categories</p>
-          <h3>Snapshot not available</h3>
-          <p>This category snapshot has not been built yet. Trigger a catalog change to publish one.</p>
-        </article>
-      </>
-    );
+    notFound();
   }
 
   const { genre } = snapshot;

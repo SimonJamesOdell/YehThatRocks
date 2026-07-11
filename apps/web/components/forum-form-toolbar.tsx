@@ -158,6 +158,7 @@ export function ForumFormToolbar({ textareaId, onInsert }: ForumFormToolbarProps
                     src={`https://i.ytimg.com/vi/${videoPreviewId}/mqdefault.jpg`}
                     alt="Video thumbnail preview"
                     className="forumVideoPreviewThumb"
+                    loading="lazy"
                   />
                   <button
                     type="button"

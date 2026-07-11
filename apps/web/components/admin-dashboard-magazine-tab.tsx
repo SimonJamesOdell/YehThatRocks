@@ -52,6 +52,7 @@ export function AdminDashboardMagazineTab({
                 <img
                   src={`https://i.ytimg.com/vi/${article.videoId}/mqdefault.jpg`}
                   alt={article.title}
+                  loading="lazy"
                   style={{ width: 72, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)" }}
                 />
               ) : (

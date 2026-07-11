@@ -9,6 +9,7 @@ import {
   buildMusicRecording,
   buildBreadcrumbList,
   buildMusicGroup,
+  buildOgImageUrl,
 } from "@/lib/schema-org";
 
 const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
@@ -19,9 +20,7 @@ export async function generateMetadata({ params }: ArtistPageProps): Promise<Met
   if (!artist) return {};
   const title = `${artist.name} Videos | YehThatRocks`;
   const description = `Watch ${artist.name} music videos on YehThatRocks — the home of rock and metal streaming.`;
-  const ogImage = artist.thumbnailVideoId
-    ? [{ url: `https://i.ytimg.com/vi/${encodeURIComponent(artist.thumbnailVideoId)}/hqdefault.jpg`, width: 480, height: 360, alt: `${artist.name} music video` }]
-    : [{ url: `${SITE_ORIGIN}/images/guitar_back.png`, alt: "YehThatRocks" }];
+  const ogImageUrl = buildOgImageUrl({ type: "artist", name: artist.name, genre: artist.genre || "" });
   return {
     title,
     description,
@@ -32,13 +31,13 @@ export async function generateMetadata({ params }: ArtistPageProps): Promise<Met
       url: `/artist/${slug}`,
       siteName: "YehThatRocks",
       type: "website",
-      images: ogImage,
+      images: [{ url: ogImageUrl, width: 1200, height: 630, alt: `${artist.name} music videos on YehThatRocks` }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [ogImage[0].url],
+      images: [ogImageUrl],
     },
   };
 }
