@@ -70,5 +70,6 @@ backups/live/
 
 # CodeWhale / misc
 .deepseek/
+.codewhale/
 tunnel-result.txt
 vnc-client.html
