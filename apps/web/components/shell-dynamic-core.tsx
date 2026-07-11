@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
-import { Suspense, memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import { AuthLoginForm } from "@/components/auth-login-form";
@@ -196,6 +196,7 @@ function ShellDynamicInner({
   const deniedRequestedVideoIdRef = useRef<string | null>(null);
   const hasResolvedInitialVideoRef = useRef(Boolean(requestedVideoId));
   const startupHydratedVideoIdRef = useRef<string | null>(null);
+  const lastSyncedInitialVideoIdRef = useRef<string | null>(null);
   const prefetchedRelatedIdsRef = useRef<Set<string>>(new Set());
   const prefetchedCurrentVideoPayloadRef = useRef<Map<string, { expiresAt: number; payload: CurrentVideoResolvePayload }>>(new Map());
   const inFlightCurrentVideoPrefetchRef = useRef<Set<string>>(new Set());
@@ -212,6 +213,24 @@ function ShellDynamicInner({
     setRequestedVideoPendingRetryAfterMs(null);
     setRequestedVideoPendingReason(null);
   }, [requestedVideoId]);
+
+  // Sync client state with server-provided initialVideo when the URL explicitly
+  // requests a video and the server resolved it correctly. This fixes a race
+  // where navigating from overlays (e.g., magazine "Watch now" buttons) would
+  // leave currentVideo stale until the API fetch completed.
+  // useLayoutEffect fires synchronously before paint, so the user never sees
+  // the stale intermediate frame.
+  useLayoutEffect(() => {
+    if (
+      requestedVideoId &&
+      initialVideo.id === requestedVideoId &&
+      initialVideo.id !== lastSyncedInitialVideoIdRef.current
+    ) {
+      lastSyncedInitialVideoIdRef.current = initialVideo.id;
+      setCurrentVideo(initialVideo);
+    }
+  }, [initialVideo.id, requestedVideoId, initialVideo]);
+
   const relatedLoadInFlightRef = useRef(false);
   const relatedFetchOffsetRef = useRef<number | null>(null);
   const watchNextAutoRecoverAttemptRef = useRef(0);
