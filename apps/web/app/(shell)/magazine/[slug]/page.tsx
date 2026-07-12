@@ -30,11 +30,15 @@ export async function generateMetadata({ params }: MagazineTrackPageProps): Prom
   const title = `${article.title} | Yeh Magazine`;
   const description = article.seoDescription ?? article.deck ?? undefined;
   const canonicalUrl = `${SITE_ORIGIN}/magazine/${article.slug}`;
-  const ogImageUrl = buildOgImageUrl({
-    type: "magazine",
-    title: article.title,
-    kicker: article.kicker ?? article.artist ?? "",
-  });
+  // Prefer YouTube thumbnail for Facebook sharing — short, static URL that
+  // never breaks; fall back to dynamic OG image only when there's no video.
+  const ogImageUrl = article.videoId
+    ? `https://i.ytimg.com/vi/${article.videoId}/maxresdefault.jpg`
+    : buildOgImageUrl({
+        type: "magazine",
+        title: article.title,
+        kicker: article.kicker ?? article.artist ?? "",
+      });
 
   return {
     title,

@@ -149,12 +149,6 @@ export async function proxy(request: NextRequest) {
     && !isDesktopOnlyContentRoute
     && isMobileOrTabletRequest(request);
 
-  if (shouldRedirectToMobile) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = resolveMobilePathname(pathname);
-    return withSecurityHeaders(NextResponse.redirect(redirectUrl), pathname);
-  }
-
   // For browser page navigations (non-API), silently refresh when the access
   // token is absent/expired but a refresh token is present, so returning users
   // are transparently re-authenticated instead of hitting the auth gate.
@@ -185,6 +179,14 @@ export async function proxy(request: NextRequest) {
       silentRefreshUrl.search = `?next=${encodeURIComponent(next)}`;
       return withSecurityHeaders(NextResponse.redirect(silentRefreshUrl), pathname);
     }
+  }
+
+  // Mobile redirect runs *after* silent refresh so mobile returning users
+  // get their session refreshed before being redirected to /m.
+  if (shouldRedirectToMobile) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = resolveMobilePathname(pathname);
+    return withSecurityHeaders(NextResponse.redirect(redirectUrl), pathname);
   }
 
   const { accessToken } = readAuthCookies(request);

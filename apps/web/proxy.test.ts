@@ -1,6 +1,29 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { isStaticAssetPath, resolveMobilePathname } from "@/proxy";
+// ── Hoisted mock fns — initialized before module imports ───────────────────
+const { mockReadAuthCookies, mockVerifyToken } = vi.hoisted(() => ({
+  mockReadAuthCookies: vi.fn(),
+  mockVerifyToken: vi.fn(),
+}));
+
+vi.mock("@/lib/auth-cookies", () => ({
+  readAuthCookies: mockReadAuthCookies,
+  setAccessAuthCookie: vi.fn(),
+  setAuthCookies: vi.fn(),
+  clearAuthCookies: vi.fn(),
+}));
+
+vi.mock("@/lib/auth-jwt", () => ({
+  verifyToken: mockVerifyToken,
+  signAccessToken: vi.fn(),
+  signRefreshToken: vi.fn(),
+  isTokenValidationError: vi.fn().mockReturnValue(true),
+}));
+
+vi.stubEnv("AUTH_JWT_SECRET", "test-secret-at-least-32-characters-long!!");
+vi.stubEnv("NODE_ENV", "development");
+
+import { isStaticAssetPath, resolveMobilePathname, proxy } from "@/proxy";
 
 describe("isStaticAssetPath", () => {
   it("matches image file extensions", () => {
@@ -118,5 +141,197 @@ describe("resolveMobilePathname", () => {
   it("handles edge cases: empty string, query-like paths", () => {
     expect(resolveMobilePathname("")).toBe("/m");
     expect(resolveMobilePathname("/?v=abc")).toBe("/m");
+  });
+});
+
+// ── Auth persistence: proxy middleware behavior ─────────────────────────────
+
+/**
+ * Creates a NextURL-like object that the proxy can read/write and
+ * NextResponse.redirect() can serialize.
+ */
+function createNextUrl(pathname: string, search: string) {
+  const url = new URL(`https://yehthatrocks.com${pathname}${search}`);
+  // Attach clone to a plain URL — writable pathname/search come for free.
+  (url as any).clone = () => createNextUrl(url.pathname, url.search);
+  return url as URL & { clone(): ReturnType<typeof createNextUrl> };
+}
+
+function mockRequest(overrides: {
+  method?: string;
+  pathname?: string;
+  search?: string;
+  cookies?: Record<string, string>;
+  userAgent?: string;
+} = {}) {
+  const {
+    method = "GET",
+    pathname = "/",
+    search = "",
+    cookies = {},
+    userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140",
+  } = overrides;
+
+  const cookieMap = new Map(Object.entries(cookies));
+  const nextUrl = createNextUrl(pathname, search);
+
+  return {
+    method,
+    nextUrl,
+    url: nextUrl.href,
+    cookies: {
+      get(name: string) {
+        const value = cookieMap.get(name);
+        return value ? { value, name } : undefined;
+      },
+    },
+    headers: new Headers({
+      "user-agent": userAgent,
+      "x-forwarded-for": "127.0.0.1",
+    }),
+  } as unknown as import("next/server").NextRequest;
+}
+
+/**
+ * Helper: extracts the Location header from a redirect response, or null.
+ */
+function redirectLocation(response: Response | null): string | null {
+  if (!response) return null;
+  return response.headers.get("Location");
+}
+
+describe("proxy auth persistence", () => {
+  beforeEach(() => {
+    mockReadAuthCookies.mockReset();
+    mockVerifyToken.mockReset();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // ── Unauthenticated user: no cookies ────────────────────────────────────
+  it("passes through when no tokens are present", async () => {
+    mockReadAuthCookies.mockReturnValue({
+      accessToken: undefined,
+      refreshToken: undefined,
+    });
+
+    const req = mockRequest({ pathname: "/" });
+    const res = await proxy(req);
+
+    // Should not redirect — user is just a guest
+    expect(redirectLocation(res)).toBeNull();
+    expect(res.status).not.toBe(302);
+  });
+
+  // ── Authenticated user: valid access token ──────────────────────────────
+  it("passes through when access token is valid", async () => {
+    mockReadAuthCookies.mockReturnValue({
+      accessToken: "valid-access-token",
+      refreshToken: "valid-refresh-token",
+    });
+    mockVerifyToken.mockResolvedValue({ uid: 1, email: "test@test.com" });
+
+    const req = mockRequest({ pathname: "/" });
+    const res = await proxy(req);
+
+    // Should not redirect — user is authenticated
+    expect(redirectLocation(res)).toBeNull();
+    expect(mockVerifyToken).toHaveBeenCalled();
+  });
+
+  // ── Returning user: expired access token, valid refresh token ───────────
+  it("redirects to silent-refresh when access token is expired but refresh token exists", async () => {
+    mockReadAuthCookies.mockReturnValue({
+      accessToken: "expired-access-token",
+      refreshToken: "valid-refresh-token",
+    });
+    // Access token verification fails (expired)
+    mockVerifyToken.mockRejectedValue(new Error("JWTExpired"));
+
+    const req = mockRequest({ pathname: "/" });
+    const res = await proxy(req);
+
+    // Should redirect to silent-refresh with the original path as `next`
+    const location = redirectLocation(res);
+    expect(location).not.toBeNull();
+    expect(location!).toContain("/api/auth/silent-refresh");
+    expect(location!).toContain("next=");
+  });
+
+  // ── Returning user: missing refresh token ───────────────────────────────
+  it("passes through when access token is expired and no refresh token exists", async () => {
+    mockReadAuthCookies.mockReturnValue({
+      accessToken: "expired-access-token",
+      refreshToken: undefined,
+    });
+    mockVerifyToken.mockRejectedValue(new Error("JWTExpired"));
+
+    const req = mockRequest({ pathname: "/" });
+    const res = await proxy(req);
+
+    // No refresh token to use — user must re-authenticate
+    expect(redirectLocation(res)).toBeNull();
+  });
+
+  // ── API routes: silent refresh never triggers on API calls ──────────────
+  it("does not trigger silent refresh for API POST requests", async () => {
+    mockReadAuthCookies.mockReturnValue({
+      accessToken: "expired-access-token",
+      refreshToken: "valid-refresh-token",
+    });
+
+    const req = mockRequest({ method: "POST", pathname: "/api/auth/login" });
+    const res = await proxy(req);
+
+    // Silent refresh only applies to GET/HEAD browser navigations
+    expect(redirectLocation(res)).toBeNull();
+    // verifyToken should not be called for POST (isBrowserPageNav is false)
+    expect(mockVerifyToken).not.toHaveBeenCalled();
+  });
+
+  // ── Returning user with query string: preserves search params ───────────
+  it("preserves search params in the silent-refresh redirect", async () => {
+    mockReadAuthCookies.mockReturnValue({
+      accessToken: "expired-access-token",
+      refreshToken: "valid-refresh-token",
+    });
+    mockVerifyToken.mockRejectedValue(new Error("JWTExpired"));
+
+    const req = mockRequest({
+      pathname: "/",
+      search: "?v=abc123&from=facebook",
+    });
+    const res = await proxy(req);
+
+    const location = redirectLocation(res);
+    expect(location).not.toBeNull();
+    // The next parameter should encode the full path + search
+    expect(location!).toContain("next=");
+    expect(location!).toContain(encodeURIComponent("/?v=abc123&from=facebook"));
+  });
+
+  // ── Mobile returning user: silent refresh before mobile redirect ────────
+  it("triggers silent refresh for mobile users before mobile redirect", async () => {
+    mockReadAuthCookies.mockReturnValue({
+      accessToken: "expired-access-token",
+      refreshToken: "valid-refresh-token",
+    });
+    mockVerifyToken.mockRejectedValue(new Error("JWTExpired"));
+
+    // Mobile user-agent — silent refresh must fire before mobile redirect
+    const req = mockRequest({
+      pathname: "/",
+      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)",
+    });
+    const res = await proxy(req);
+
+    // Should redirect to silent-refresh first (NOT to /m)
+    const location = redirectLocation(res);
+    expect(location).not.toBeNull();
+    // Must NOT be a mobile redirect — silent refresh comes first
+    expect(location!).not.toContain("/m");
+    expect(location!).toContain("/api/auth/silent-refresh");
   });
 });
