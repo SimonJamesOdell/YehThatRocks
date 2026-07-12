@@ -724,6 +724,26 @@ async function classifyPersistedVideoGenre(videoId: string): Promise<GenreClassi
     }
   }
 
+  // Deduplicate artist_stats and musicbrainz when they return the same genre.
+  // artist_stats is typically a cached copy of a prior MusicBrainz lookup for the
+  // same artist. Treating both as independent signals doubles the weight of a
+  // single underlying source and can create a feedback loop that auto-removes
+  // valid rock/metal videos when MusicBrainz matches the wrong artist.
+  const artistStatsSignal = signals.find((s) => s.source === "artist-stats");
+  const musicbrainzSignal = signals.find((s) => s.source === "musicbrainz");
+  if (artistStatsSignal && musicbrainzSignal) {
+    const asGenre = artistStatsSignal.genre.toLowerCase().trim();
+    const mbGenre = musicbrainzSignal.genre.toLowerCase().trim();
+    if (asGenre === mbGenre) {
+      // Same genre from both — keep only the higher-confidence copy.
+      if (artistStatsSignal.confidence >= musicbrainzSignal.confidence) {
+        signals.splice(signals.indexOf(musicbrainzSignal), 1);
+      } else {
+        signals.splice(signals.indexOf(artistStatsSignal), 1);
+      }
+    }
+  }
+
   if (signals.length === 0) {
     return {
       action: "queue",

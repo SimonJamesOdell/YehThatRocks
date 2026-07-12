@@ -647,7 +647,15 @@ export async function POST(request: NextRequest) {
     const alreadyInCatalog = !retryRejected && existingRows.length > 0;
 
     const discoverRelatedForSuggestion = false;
-    const result = await importVideoFromDirectSource(source.videoId, { discoverRelated: discoverRelatedForSuggestion });
+    // When an admin is retrying a previously rejected video, force-approve so that
+    // genre classification is skipped. The admin's explicit retry action is their
+    // assertion that the video belongs in the approval queue — re-running the same
+    // classifier that rejected it is a no-op feedback loop.
+    const forceApproveRetry = retryRejected;
+    const result = await importVideoFromDirectSource(source.videoId, {
+      discoverRelated: discoverRelatedForSuggestion,
+      forceApprove: forceApproveRetry,
+    });
     if (!result.videoId) {
       return NextResponse.json({ ok: false, error: "Invalid YouTube URL or video id." }, { status: 400 });
     }
