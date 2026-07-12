@@ -88,11 +88,11 @@ export function useShellDockOverlayTransitions({
       shouldRunFooterRevealRef.current = false;
       setIsUndockSettling(false);
       setIsFooterRevealActive(false);
-      if (isMagazineOverlayRoute && isRootVideoCloseTarget) {
-        window.location.href = nextHref;
-      } else {
-        onPush(nextHref);
-      }
+      // Use client-side navigation for all overlay close targets, including
+      // magazine → video transitions. The magazine is rendered within the
+      // same React tree as the shell, so router.push() works correctly
+      // without a full page reload.
+      onPush(nextHref);
       return;
     }
 

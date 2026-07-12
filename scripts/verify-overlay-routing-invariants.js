@@ -40,6 +40,7 @@ const files = mapRelativeFiles(ROOT, {
   chatStreamRoute: "apps/web/app/api/chat/stream/route.ts",
   categoriesGrid: "apps/web/components/categories-new-grid.tsx",
   overlayScrollReset: "apps/web/components/overlay-scroll-reset.tsx",
+  dockOverlayTransitions: "apps/web/hooks/use-shell-dock-overlay-transitions.ts",
   appRoot: "apps/web/app",
 });
 
@@ -73,6 +74,7 @@ function main() {
   const chatStreamRouteSource = sources.chatStreamRoute;
   const categoriesGridSource = sources.categoriesGrid;
   const overlayScrollResetSource = sources.overlayScrollReset;
+  const dockOverlayTransitionsSource = sources.dockOverlayTransitions;
   const cssSource = loadCssSourceFromRoots([files.appRoot], ROOT);
 
   // Route loading/page duplication guardrails.
@@ -338,6 +340,24 @@ function main() {
   assertContains(categoryErrorBoundarySource, 'import { ServiceFailurePanel } from "@/components/service-failure-panel";', "Category error boundary imports shared service-failure panel", failures);
   assertContains(shareVideoPageSource, 'import { ServiceFailurePanel } from "@/components/service-failure-panel";', "Share page imports shared service-failure panel", failures);
   assertNotContains(shellLayoutSource, "function renderServiceUnavailablePanel()", "Shell layout no longer keeps local duplicated renderServiceUnavailablePanel helper", failures);
+
+  // --- Overlay close must not use full-page reload for magazine routes ---
+  // The magazine overlay lives in the same React tree as the shell, so
+  // closing it (via "Watch Now" or the close button) must use client-side
+  // router.push(), not window.location.href which reloads the entire SPA.
+  // Verify the dock overlay transitions hook no longer hard-reloads.
+  assertNotContains(
+    dockOverlayTransitionsSource,
+    "window.location.href",
+    "Dock overlay transitions hook must not use window.location.href for overlay close navigation (use onPush/router.push)",
+    failures,
+  );
+  assertContains(
+    dockOverlayTransitionsSource,
+    "onPush(nextHref);",
+    "Dock overlay transitions hook uses onPush(nextHref) for client-side navigation on overlay close",
+    failures,
+  );
 
   // Overlay scroll-reset invariants.
   assertContains(overlayScrollResetSource, "export function OverlayScrollReset(", "Single shared scroll-reset component exported as OverlayScrollReset", failures);

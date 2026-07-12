@@ -425,6 +425,32 @@ function main() {
     failures,
   );
 
+  // --- Magazine arrival flag is reset when user authenticates ---
+  // didArriveOnMagazineRouteRef persists across renders and controls
+  // shouldHidePlayerForMagazineGuest. It must be cleared when auth succeeds
+  // so the player appears immediately after sign-in on a magazine route.
+  assertContains(
+    shellDynamicSource,
+    "didArriveOnMagazineRouteRef.current = false;",
+    "Shell resets the magazine arrival flag at least once (useAuthSuccessListener + auto-login success paths)",
+    failures,
+  );
+  // Verify the flag appears in the useAuthSuccessListener callback (auth state sync).
+  const authSuccessListenerIdx = shellDynamicSource.indexOf("useAuthSuccessListener((state, source) => {");
+  const magazineRefInAuthSuccessIdx = shellDynamicSource.indexOf(
+    "didArriveOnMagazineRouteRef.current = false;",
+    authSuccessListenerIdx,
+  );
+  if (magazineRefInAuthSuccessIdx === -1) {
+    failures.push("didArriveOnMagazineRouteRef.current = false must appear inside useAuthSuccessListener callback");
+  }
+  // Verify the flag also appears in the auto-login effect (separate from useAuthSuccessListener).
+  // Count occurrences — there should be at least 3 (useAuthSuccessListener + 2 auto-login success paths).
+  const refResetCount = (shellDynamicSource.match(/didArriveOnMagazineRouteRef\.current = false;/g) || []).length;
+  if (refResetCount < 3) {
+    failures.push(`didArriveOnMagazineRouteRef.current = false appears ${refResetCount} times; expected at least 3 (useAuthSuccessListener + 2 auto-login success paths)`);
+  }
+
   // --- Guest chat composer visible when unauthenticated ---
   assertContains(
     shellDynamicSource,

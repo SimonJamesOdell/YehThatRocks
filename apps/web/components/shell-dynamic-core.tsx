@@ -68,7 +68,8 @@ import { buildSharedVideoMessage, parseSharedVideoMessage, parseActivityMessage 
 import { prefetchCategoryCardsSessionCache } from "@/lib/category-cards-session-cache";
 import { ForumSectionRail } from "@/components/forum-section-rail";
 import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT, EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
-import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
+import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
+import { publishAuthStateChange } from "@/lib/auth-sync";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
 import { parseJsonOrNull } from "@/lib/parse-json";
 import { resolveVideoGenreNavigationTarget } from "@/lib/video-genre-navigation";
@@ -849,6 +850,95 @@ function ShellDynamicInner({
     setAuthStatusMessage(null);
     setIsAuthUnavailableDialogRequested(false);
   }, [initialAuthStatus, isLoggedIn]);
+  // ── Auto-login for unauthenticated users on initial page load ────────────
+  // When the server reports no valid access token, try to authenticate the
+  // user silently before showing the guest experience. This handles:
+  // 1. Returning users whose access token expired but refresh token is valid
+  //    (the proxy's silent-refresh may have been missed or failed transiently).
+  // 2. Brand-new visitors: auto-create an anonymous account so they land
+  //    authenticated on first visit.
+  // Respects explicit sign-outs via AUTO_LOGIN_SUPPRESS_ONCE_KEY.
+  const hasAttemptedAutoLoginRef = useRef(false);
+  useEffect(() => {
+    if (isLoggedIn || hasAttemptedAutoLoginRef.current) {
+      return;
+    }
+    hasAttemptedAutoLoginRef.current = true;
+
+    // Honour explicit sign-out: if the user deliberately logged out,
+    // don't re-authenticate them automatically.
+    if (typeof window !== "undefined" && window.sessionStorage.getItem(AUTO_LOGIN_SUPPRESS_ONCE_KEY) === "1") {
+      window.sessionStorage.removeItem(AUTO_LOGIN_SUPPRESS_ONCE_KEY);
+      return;
+    }
+
+    let cancelled = false;
+
+    const tryAutoLogin = async () => {
+      // Step 1: Try refreshing the existing session (silent refresh).
+      try {
+        const refreshRes = await fetch("/api/auth/refresh", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        if (!cancelled && refreshRes.ok) {
+          setIsAuthenticated(true);
+          setAuthStatus("clear");
+          setAuthStatusMessage(null);
+          didArriveOnMagazineRouteRef.current = false;
+          publishAuthStateChange("authenticated");
+          router.refresh();
+          return;
+        }
+      } catch {
+        // Refresh failed — fall through to anonymous account creation.
+      }
+
+      if (cancelled) return;
+
+      // Step 2: Try creating an anonymous account for brand-new visitors.
+      // The anonymous endpoint already sets auth cookies on success (201),
+      // so no separate login call is needed.
+      try {
+        // Get a suggested screen name.
+        const suggestRes = await fetch("/api/auth/anonymous?screenName=", {
+          method: "GET",
+          credentials: "same-origin",
+        });
+        if (!suggestRes.ok) return;
+        const suggestData = await suggestRes.json() as { ok?: boolean; screenName?: string };
+        if (!suggestData.ok || !suggestData.screenName) return;
+
+        if (cancelled) return;
+
+        // Create the anonymous account — this sets auth cookies directly.
+        const createRes = await fetch("/api/auth/anonymous", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ screenName: suggestData.screenName }),
+        });
+        if (!cancelled && createRes.ok) {
+          setIsAuthenticated(true);
+          setAuthStatus("clear");
+          setAuthStatusMessage(null);
+          didArriveOnMagazineRouteRef.current = false;
+          publishAuthStateChange("authenticated");
+          router.refresh();
+        }
+      } catch {
+        // Anonymous account creation failed — user remains a guest.
+      }
+    };
+
+    void tryAutoLogin();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, router]);
   useEffect(() => {
     if (authStatus !== "unavailable" || !authStatusMessage) {
       setIsAuthUnavailableDialogDismissed(false);
@@ -2269,6 +2359,9 @@ function ShellDynamicInner({
     setAuthStatus("clear");
     setAuthStatusMessage(null);
     setIsAuthModalOpen(false);
+    // Reset magazine arrival flag so the player can appear immediately
+    // after authenticating while on a magazine route.
+    didArriveOnMagazineRouteRef.current = false;
 
     if (source === "cross-tab") {
       router.refresh();
