@@ -6,6 +6,7 @@ import { OverlayHeader } from "@/components/overlay-header";
 import { MagazineArticleLandingTracker } from "@/components/magazine-article-landing-tracker";
 import { MagazineArticleComments } from "@/components/magazine-article-comments";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
+import { CloseLink } from "@/components/close-link";
 import { getArticleBySlug, getAllPublishedSlugs, getPublishedArticles, type MagazineBlock } from "@/lib/magazine-data";
 import { buildArticle, buildBreadcrumbList, buildOgImageUrl } from "@/lib/schema-org";
 
@@ -121,6 +122,7 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
             </span>
           </>
         )}
+        closeSlot={hasVideo ? <CloseLink videoId={article.videoId} /> : undefined}
       />
 
       <main className="magazinePage" role="main" aria-label="Magazine article">
