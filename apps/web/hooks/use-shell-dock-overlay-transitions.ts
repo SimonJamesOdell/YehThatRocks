@@ -88,7 +88,11 @@ export function useShellDockOverlayTransitions({
       shouldRunFooterRevealRef.current = false;
       setIsUndockSettling(false);
       setIsFooterRevealActive(false);
-      onPush(nextHref);
+      if (isMagazineOverlayRoute && isRootVideoCloseTarget) {
+        window.location.href = nextHref;
+      } else {
+        onPush(nextHref);
+      }
       return;
     }
 
