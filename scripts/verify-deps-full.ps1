@@ -29,7 +29,16 @@ function Test-CoreApiReady {
     [string]$BaseUrl
   )
 
-  $statusCode = Get-HttpStatusCode -Url "$BaseUrl/api/status"
+  $statusResult = Get-HttpStatusCode -Url "$BaseUrl/api/status"
+  $statusCode = $statusResult.StatusCode
+  $statusError = $statusResult.Error
+
+  # Log first failure for diagnosis
+  if ($null -ne $statusError) {
+    Write-Warning "Test-CoreApiReady: /api/status failed: $statusError"
+    return $false
+  }
+
   if ($null -eq $statusCode -or $statusCode -lt 200 -or $statusCode -ge 300) {
     return $false
   }
@@ -38,17 +47,18 @@ function Test-CoreApiReady {
   # A 200 with an empty video array means the Prisma pool has exhausted
   # (active=0 idle=0) and the API is serving degraded responses.
   try {
-    $topResp = Invoke-WebRequest -Uri "$BaseUrl/api/videos/top?count=1" -Method Get -UseBasicParsing -TimeoutSec 5
+    $topResp = Invoke-WebRequest -Uri "$BaseUrl/api/videos/top?count=1" -Method Get -UseBasicParsing -TimeoutSec 5 -NoProxy
     if ($topResp.StatusCode -lt 200 -or $topResp.StatusCode -ge 300) {
       return $false
     }
     $topJson = $topResp.Content | ConvertFrom-Json
     $videos = $topJson.videos
     if (-not $videos -or @($videos).Count -eq 0) {
-      # Server is up but returning empty data -- DB pool likely exhausted.
+      Write-Warning "Test-CoreApiReady: /api/videos/top returned empty data -- DB pool may be exhausted."
       return $false
     }
   } catch {
+    Write-Warning "Test-CoreApiReady: /api/videos/top request failed: $_"
     return $false
   }
 
@@ -61,16 +71,19 @@ function Wait-ForCoreApiReady {
     [int]$TimeoutSeconds
   )
 
+  $attempt = 0
   $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
   while ($stopwatch.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+    $attempt++
     if (Test-CoreApiReady -BaseUrl $BaseUrl) {
+      Write-Host "API ready after $attempt attempt(s) in $([math]::Round($stopwatch.Elapsed.TotalSeconds, 1))s" -ForegroundColor Green
       return
     }
 
     Start-Sleep -Milliseconds 700
   }
 
-  throw "Timed out waiting for healthy API readiness at $BaseUrl after $TimeoutSeconds seconds."
+  throw "Timed out waiting for healthy API readiness at $BaseUrl after $TimeoutSeconds seconds ($attempt attempts). Check warnings above for details."
 }
 
 function Get-HttpStatusCode {
@@ -79,10 +92,10 @@ function Get-HttpStatusCode {
   )
 
   try {
-    $resp = Invoke-WebRequest -Uri $Url -Method Get -UseBasicParsing -TimeoutSec 5 -SkipHttpErrorCheck
-    return [int]$resp.StatusCode
+    $resp = Invoke-WebRequest -Uri $Url -Method Get -UseBasicParsing -TimeoutSec 5 -SkipHttpErrorCheck -NoProxy
+    return @{ StatusCode = [int]$resp.StatusCode; Error = $null }
   } catch {
-    return $null
+    return @{ StatusCode = $null; Error = $_.Exception.Message }
   }
 }
 
