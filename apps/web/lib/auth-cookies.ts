@@ -41,7 +41,7 @@ function getAuthCookieOptions(maxAge: number) {
 
   return {
     httpOnly: true as const,
-    sameSite: "strict" as const,
+    sameSite: "lax" as const,
     secure: isSecureCookie(),
     path: "/",
     maxAge,
@@ -52,7 +52,7 @@ function getAuthCookieOptions(maxAge: number) {
 function getAuthCookieOptionsWithoutDomain(maxAge: number) {
   return {
     httpOnly: true as const,
-    sameSite: "strict" as const,
+    sameSite: "lax" as const,
     secure: isSecureCookie(),
     path: "/",
     maxAge,
@@ -61,7 +61,7 @@ function getAuthCookieOptionsWithoutDomain(maxAge: number) {
 
 type CookieClearOptions = {
   httpOnly: boolean;
-  sameSite: "strict";
+  sameSite: "lax";
   secure: boolean;
   path: string;
   maxAge: number;
