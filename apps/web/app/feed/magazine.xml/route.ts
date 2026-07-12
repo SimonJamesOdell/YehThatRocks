@@ -39,6 +39,27 @@ function buildUtmParams(campaign: string): string {
 export const revalidate = 3600;
 
 export async function GET() {
+  // During Docker build, DATABASE_URL is not available and the prisma proxy
+  // throws. Return an empty RSS feed as the build-time prerender fallback;
+  // ISR will populate real data at runtime on the first request.
+  if (!process.env.DATABASE_URL) {
+    const emptyXml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>YehThatRocks — Rock &amp; Metal Magazine</title>
+    <link>${SITE_ORIGIN}/magazine</link>
+    <description>Rock and metal magazine articles from YehThatRocks</description>
+    <atom:link href="${SITE_ORIGIN}/feed/magazine.xml" rel="self" type="application/rss+xml"/>
+  </channel>
+</rss>`;
+    return new Response(emptyXml, {
+      headers: {
+        "Content-Type": "application/rss+xml; charset=utf-8",
+        "Cache-Control": "public, max-age=60",
+      },
+    });
+  }
+
   const rows = await prisma.$queryRawUnsafe<MagazineFeedRow[]>(
     `SELECT slug, title, deck, artist, genre, body, published_at AS publishedAt
      FROM magazine_articles
