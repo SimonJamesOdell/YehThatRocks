@@ -92,48 +92,6 @@ export function useShellDockOverlayTransitions({
       return;
     }
 
-    // Magazine overlays: navigate first so the video starts loading
-    // immediately. Keep the overlay frozen in place for 200ms, then
-    // play the 500ms lift animation. Total 700ms for the video to load.
-    if (isMagazineOverlayRoute && shouldHoldOverlayForVideoSwitch) {
-      if (overlayCloseTimeoutRef.current !== null) {
-        window.clearTimeout(overlayCloseTimeoutRef.current);
-        overlayCloseTimeoutRef.current = null;
-      }
-
-      // Keep the overlay visible during navigation.
-      setIsOverlayClosing(true);
-      shouldRunFooterRevealRef.current = false;
-      setIsUndockSettling(false);
-      setIsFooterRevealActive(false);
-
-      // Navigate now — starts the video loading.
-      onPush(nextHref);
-
-      // Pause the CSS lift animation so the overlay stays in place.
-      requestAnimationFrame(() => {
-        const panel = document.querySelector(".favouritesBlind") as HTMLElement | null;
-        if (panel) {
-          panel.style.animationPlayState = "paused";
-        }
-      });
-
-      // After 200ms, resume the animation. 500ms duration.
-      overlayCloseTimeoutRef.current = window.setTimeout(() => {
-        const panel = document.querySelector(".favouritesBlind") as HTMLElement | null;
-        if (panel) {
-          panel.style.animationPlayState = "running";
-        }
-
-        overlayCloseTimeoutRef.current = window.setTimeout(() => {
-          setIsOverlayClosing(false);
-          overlayCloseTimeoutRef.current = null;
-        }, 500);
-      }, 200);
-
-      return;
-    }
-
     if (isOverlayToOverlayCloseTarget) {
       setIsOverlayClosing(false);
       shouldRunFooterRevealRef.current = false;
@@ -152,11 +110,7 @@ export function useShellDockOverlayTransitions({
     shouldRunFooterRevealRef.current = true;
     earlyFooterRevealFiredRef.current = false;
 
-    // Navigate during the close animation so the shell shows its loading
-    // state (not the old video) while the new video resolves. The /new
-    // page already works this way; magazine overlays now follow suit.
-    const shouldNavigateDuringCloseAnimation =
-      (pathname === "/new" || isMagazineOverlayRoute) && shouldHoldOverlayForVideoSwitch;
+    const shouldNavigateDuringCloseAnimation = pathname === "/new" && shouldHoldOverlayForVideoSwitch;
 
     if (footerRevealEarlyTimeoutRef.current !== null) {
       window.clearTimeout(footerRevealEarlyTimeoutRef.current);
