@@ -20,12 +20,6 @@ type UseShellDockOverlayTransitionsParams = {
   setPendingOverlayCloseVideoId: (videoId: string | null) => void;
   setPendingOverlayCloseHref: (href: string | null) => void;
   onPush: (href: string) => void;
-  /** When provided, used instead of onPush for magazine overlay close transitions.
-   *  Magazine→video navigations share a layout with the home page, so Next.js
-   *  preserves the layout and the server never re-renders it. This callback should
-   *  call router.refresh() after pushing to force a server re-render so the
-   *  correct initialVideo is resolved. */
-  onMagazineClosePush?: (href: string) => void;
   onOverlayShown?: () => void;
   dockMoveDurationMs: number;
   footerRevealDurationMs: number;
@@ -47,7 +41,6 @@ export function useShellDockOverlayTransitions({
   setPendingOverlayCloseVideoId,
   setPendingOverlayCloseHref,
   onPush,
-  onMagazineClosePush,
   onOverlayShown,
   dockMoveDurationMs,
   footerRevealDurationMs,
@@ -95,15 +88,7 @@ export function useShellDockOverlayTransitions({
       shouldRunFooterRevealRef.current = false;
       setIsUndockSettling(false);
       setIsFooterRevealActive(false);
-      // Magazine → video transitions share the (shell) layout with the home
-      // page, so Next.js preserves the layout and the server never re-renders
-      // it. Use onMagazineClosePush (which calls router.refresh()) to force
-      // a server re-render so the correct initialVideo is resolved.
-      if (isMagazineOverlayRoute && onMagazineClosePush) {
-        onMagazineClosePush(nextHref);
-      } else {
-        onPush(nextHref);
-      }
+      onPush(nextHref);
       return;
     }
 
@@ -189,7 +174,6 @@ export function useShellDockOverlayTransitions({
     footerEarlyRevealDelayMs,
     footerRevealDurationMs,
     isMagazineOverlayRoute,
-    onMagazineClosePush,
     onPush,
     pathname,
     playerChromeRef,

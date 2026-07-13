@@ -749,14 +749,6 @@ function ShellDynamicInner({
     onPush: (href) => {
       router.push(href);
     },
-    onMagazineClosePush: (href) => {
-      // Magazine → video transitions share the (shell) layout. A regular
-      // router.push preserves the layout, leaving initialVideo stale (the
-      // default video loaded behind the magazine). Use a full navigation so
-      // the server re-renders the layout with getCurrentVideo resolving the
-      // requested video correctly from first paint.
-      window.location.href = href;
-    },
     onOverlayShown: () => {
       setIsMobileCommunityOpen(false);
     },
