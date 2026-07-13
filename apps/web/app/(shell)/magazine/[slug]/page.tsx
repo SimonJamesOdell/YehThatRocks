@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { OverlayHeader } from "@/components/overlay-header";
 import { MagazineArticleLandingTracker } from "@/components/magazine-article-landing-tracker";
 import { MagazineArticleComments } from "@/components/magazine-article-comments";
+import { MagazineWatchCta } from "@/components/magazine-watch-cta";
 import { OverlayScrollReset } from "@/components/overlay-scroll-reset";
 import { CloseLink } from "@/components/close-link";
 import { getArticleBySlug, getAllPublishedSlugs, getPublishedArticles, type MagazineBlock } from "@/lib/magazine-data";
@@ -150,13 +151,10 @@ export default async function MagazineTrackPage({ params }: MagazineTrackPagePro
 
             <div className="magazineArticleActions">
               {hasVideo ? (
-                <Link
-                  href={`/?v=${article.videoId}&resume=1`}
-                  className="magazineWatchCta"
-                  data-overlay-close="true"
-                >
-                  Watch now in YehThatRocks
-                </Link>
+                <MagazineWatchCta
+                  videoId={article.videoId!}
+                  artist={article.artist}
+                />
               ) : (
                 <Link
                   href={`/artists/${artistSlug}`}

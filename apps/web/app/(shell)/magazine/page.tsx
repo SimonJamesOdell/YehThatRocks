@@ -3,6 +3,7 @@ import Link from "next/link";
 import { OverlayHeader } from "@/components/overlay-header";
 import { ScrollToTop } from "@/components/scroll-to-top";
 import { MagazineInfiniteGrid } from "@/components/magazine-infinite-grid";
+import { MagazineWatchCta } from "@/components/magazine-watch-cta";
 import { getPublishedArticles } from "@/lib/magazine-data";
 
 export const revalidate = 3600;
@@ -40,7 +41,9 @@ export default async function MagazineLandingPage() {
             <h2>{leadArticle.title}</h2>
             {leadArticle.deck ? <p>{leadArticle.deck}</p> : null}
             <div className="magazineCoverStoryActions">
-              <Link href={`/?v=${leadArticle.videoId}&resume=1`} className="magazineWatchCta" data-overlay-close="true">Watch Now</Link>
+              {leadArticle.videoId ? (
+                <MagazineWatchCta videoId={leadArticle.videoId} />
+              ) : null}
             </div>
           </div>
         </section>

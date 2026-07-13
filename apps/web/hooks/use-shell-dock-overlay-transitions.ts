@@ -83,7 +83,7 @@ export function useShellDockOverlayTransitions({
       setPendingOverlayCloseHref(null);
     }
 
-    if (!shouldShowOverlayPanel || isMagazineOverlayRoute) {
+    if (!shouldShowOverlayPanel) {
       setIsOverlayClosing(false);
       shouldRunFooterRevealRef.current = false;
       setIsUndockSettling(false);
