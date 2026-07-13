@@ -151,6 +151,10 @@ export function MobileShell({ children }: { children: ReactNode }) {
     }
   }, [player.video, hasMoreRelated, player.isFullscreen, loadMoreRelated]);
 
+  const handlePlayerEnd = useCallback(() => {
+    // No-op: navigated by MobileShell's autoplay logic via /api/current-video
+  }, []);
+
   // Auto-load more if the content doesn't fill the scrollable area
   useEffect(() => {
     if (!player.video || !hasMoreRelated || !player.isFullscreen) return;
@@ -338,7 +342,7 @@ export function MobileShell({ children }: { children: ReactNode }) {
             <MobileYouTubePlayer
               videoId={player.video.id}
               playerApiRef={playerApiRef}
-              onEnd={() => {}}
+              onEnd={handlePlayerEnd}
             />
           </div>
 

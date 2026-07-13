@@ -694,6 +694,12 @@ function ShellDynamicInner({
       ? artistLetterParam.toUpperCase()
       : "A";
   const resumeParam = searchParams.get("resume") ?? undefined;
+  const handlePush = useCallback(
+    (href: string) => {
+      router.push(href);
+    },
+    [router],
+  );
   const {
     overlayRouteKey,
     isCategoriesOverlayPendingOrActive,
@@ -710,9 +716,7 @@ function ShellDynamicInner({
     isCategoriesRoute,
     shouldShowOverlayPanel,
     isOverlayClosing,
-    onPush: (href) => {
-      router.push(href);
-    },
+    onPush: handlePush,
   });
   const isCategoriesParentOverlayPendingOrActive = isCategoriesOverlayPendingOrActive
     && (
@@ -746,9 +750,7 @@ function ShellDynamicInner({
     setPendingOverlayOpenKind,
     setPendingOverlayCloseVideoId,
     setPendingOverlayCloseHref,
-    onPush: (href) => {
-      router.push(href);
-    },
+    onPush: handlePush,
     onOverlayShown: () => {
       setIsMobileCommunityOpen(false);
     },
