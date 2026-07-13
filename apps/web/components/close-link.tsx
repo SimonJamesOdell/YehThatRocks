@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { Suspense, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
 
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { useLiveSearchParams } from "@/hooks/use-live-search-params";
 
 function CloseLinkInner({ videoId }: { videoId?: string }) {
-  const searchParams = useSearchParams();
+  const searchParams = useLiveSearchParams();
   // When an explicit videoId is provided (e.g. from a magazine article page),
   // use it as the close target instead of reading ?v= from the current URL.
   // The magazine page URL has no ?v= param, so without this override the close
@@ -30,15 +30,17 @@ function CloseLinkInner({ videoId }: { videoId?: string }) {
     }
 
     event.preventDefault();
-    // Prefer the explicit videoId prop; fall back to the live URL's ?v=
-    // (which can be stale if React hasn't re-rendered after a video switch
-    // inside an overlay).
-    const currentV = videoId ?? new URLSearchParams(window.location.search).get("v") ?? undefined;
+    // Prefer the explicit videoId prop; fall back to the live search params.
+    // useLiveSearchParams syncs from window.location.search and listens for
+    // LIVE_SEARCH_PARAMS_EVENT (dispatched by navigateVideoHref after native
+    // history.pushState), so it's always current even when Next.js's
+    // useSearchParams lags behind.
+    const currentV = videoId ?? searchParams.get("v") ?? undefined;
     const href = currentV
       ? `/?v=${encodeURIComponent(currentV)}&resume=1`
       : "/";
     dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href });
-  }, [videoId]);
+  }, [videoId, searchParams]);
 
   return (
     <Link

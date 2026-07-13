@@ -2398,7 +2398,7 @@ export function PlayerExperience({
       }
 
       if (playerRef.current) {
-        const didSwitch = switchPlayerVideo(playerRef.current, currentVideo.id);
+        const didSwitch = switchPlayerVideo(playerRef.current, currentVideoRef.current.id);
 
         logFlow("player:switch-existing", {
           currentVideoId: currentVideo.id,
@@ -2444,7 +2444,7 @@ export function PlayerExperience({
 
       playerRef.current = new window.YT.Player(playerElementRef.current, {
         host: playerHostMode === "nocookie" ? "https://www.youtube-nocookie.com" : "https://www.youtube.com",
-        videoId: currentVideo.id,
+        videoId: currentVideoRef.current.id,
         playerVars: {
           autoplay: 0,
           cc_load_policy: 0,

@@ -110,7 +110,12 @@ export function useShellDockOverlayTransitions({
     shouldRunFooterRevealRef.current = true;
     earlyFooterRevealFiredRef.current = false;
 
-    const shouldNavigateDuringCloseAnimation = pathname === "/new" && shouldHoldOverlayForVideoSwitch;
+    // When switching to a different video, navigate during the close animation
+    // so the new video starts loading while the overlay covers the transition.
+    // The /new page and magazine overlays both benefit from this — the pending
+    // overlay state keeps the overlay visible until the video resolves.
+    const shouldNavigateDuringCloseAnimation =
+      (pathname === "/new" || isMagazineOverlayRoute) && shouldHoldOverlayForVideoSwitch;
 
     if (footerRevealEarlyTimeoutRef.current !== null) {
       window.clearTimeout(footerRevealEarlyTimeoutRef.current);

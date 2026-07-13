@@ -136,14 +136,14 @@ function main() {
   // --- Startup video selection suppressed on magazine routes ---
   assertContains(
     shellDynamicSource,
-    "// Don't inject a ?v= into the URL while the user is browsing the magazine",
+    "// Don't inject a ?v= into the URL while the user is browsing the",
     "Startup video selection effect documents the magazine suppression rationale",
     failures,
   );
   // The isMagazineOverlayRoute early return must appear before hasResolvedInitialVideoRef check.
   // Use single-line markers that are unique to the startup selection effect.
   const magazineCommentIdx = shellDynamicSource.indexOf(
-    "// Don't inject a ?v= into the URL while the user is browsing the magazine",
+    "// Don't inject a ?v= into the URL while the user is browsing the",
   );
   const startupResolvedGuardIdx = shellDynamicSource.indexOf("if (hasResolvedInitialVideoRef.current)");
   if (magazineCommentIdx === -1) {

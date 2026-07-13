@@ -5,6 +5,7 @@ import { ShellDynamic } from "@/components/shell-dynamic-core";
 import { ServiceFailurePanel } from "@/components/service-failure-panel";
 import { getCurrentVideo, getDataSourceStatus } from "@/lib/catalog-data";
 import { getShellRequestAuthState, getShellRequestVideoState } from "@/lib/shell-request-state";
+import { getArticleBySlug } from "@/lib/magazine-data";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,26 @@ export default async function ShellLayout({ children }: { children: ReactNode })
   const requestedVideoId = searchParams.get("v") ?? undefined;
   const shouldUseRandomLandingVideo = requestPathname === "/" && searchParams.toString().length === 0;
 
+  // When the user lands directly on a magazine article page, seed the initial
+  // video with the article's videoId so the shell boots with the correct video
+  // already loaded. This prevents the "Watch Now" race condition on initial
+  // page load where the startup resolver can overwrite the URL with a random
+  // fallback video — the fallback is now the article's own video.
+  let magazineArticleVideoId: string | undefined;
+  if (!requestedVideoId && requestPathname.startsWith("/magazine/")) {
+    const slug = requestPathname.slice("/magazine/".length).split("/")[0];
+    if (slug.length > 0) {
+      try {
+        const article = await getArticleBySlug(slug);
+        magazineArticleVideoId = article?.videoId ?? undefined;
+      } catch {
+        // Fall back to normal behaviour if the article lookup fails.
+      }
+    }
+  }
+
+  const effectiveVideoId = requestedVideoId ?? magazineArticleVideoId;
+
   // Read recently-started video IDs from cookie (set by client-side startup effect).
   // Format: colon-separated 11-char YouTube IDs, most-recent-first.
   const recentStartsRaw = (await cookies()).get("ytr-recent-starts")?.value ?? "";
@@ -25,9 +46,9 @@ export default async function ShellLayout({ children }: { children: ReactNode })
 
   const [{ authState, user, isAdmin, hasAccessToken }, resolvedInitialVideo, dataSourceStatus] = await Promise.all([
     getShellRequestAuthState(),
-    getCurrentVideo(requestedVideoId, {
-      skipPlaybackDecision: Boolean(requestedVideoId),
-      allowRandomFallback: shouldUseRandomLandingVideo,
+    getCurrentVideo(effectiveVideoId, {
+      skipPlaybackDecision: Boolean(effectiveVideoId),
+      allowRandomFallback: shouldUseRandomLandingVideo && !effectiveVideoId,
       recentVideoIds,
     }),
     getDataSourceStatus(),
@@ -36,7 +57,7 @@ export default async function ShellLayout({ children }: { children: ReactNode })
   // If the URL requests a specific video that is missing/unapproved/unplayable,
   // fall back to any approved catalog video instead of showing a global outage panel.
   const initialVideo = resolvedInitialVideo
-    ?? (requestedVideoId
+    ?? (effectiveVideoId
       ? await getCurrentVideo(undefined, { allowRandomFallback: true, recentVideoIds })
       : null);
 

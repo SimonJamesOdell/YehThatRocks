@@ -1137,10 +1137,30 @@ function ShellDynamicInner({
     if (requestedVideoId) {
       return;
     }
-    // Don't inject a ?v= into the URL while the user is browsing the magazine —
-    // wait until they leave the magazine overlay before selecting a startup video.
-    if (isMagazineOverlayRoute) {
-      return;
+    // useLiveSearchParams lags by one render after a client-side navigation.
+    // During that window, requestedVideoId is stale (null) even though the URL
+    // already has a ?v= from the user's click. Without this live-URL check,
+    // the startup effect fires with the stale initialVideo (the random SSR
+    // video), overwrites the URL with router.replace(?v=RANDOM), and corrupts
+    // the user's intended navigation — causing the "first click shows wrong
+    // video" bug on both /new and magazine overlays.
+    if (typeof window !== "undefined") {
+      const liveV = new URLSearchParams(window.location.search).get("v");
+      if (liveV) {
+        return;
+      }
+      // Don't inject a ?v= into the URL while the user is browsing the
+      // magazine — wait until they leave the magazine overlay before
+      // selecting a startup video. Use window.location.pathname rather
+      // than the pathname state variable: during initial hydration the
+      // React state may not yet reflect the actual route, causing the
+      // guard to fail and the startup effect to overwrite the URL with
+      // the random SSR video.
+      const livePathname = window.location.pathname;
+      if (livePathname === "/magazine" || livePathname.startsWith("/magazine/")) {
+        setIsResolvingInitialVideo(false);
+        return;
+      }
     }
     // Don't re-run startup if we already resolved a video in this session
     // (e.g. user navigated to a route without ?v= after startup completed)

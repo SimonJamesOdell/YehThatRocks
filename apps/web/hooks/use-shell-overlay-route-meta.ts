@@ -98,10 +98,21 @@ export function useShellOverlayRouteMeta({
     }
 
     if (anchor.dataset.overlayClose === "true") {
-      const closeHref = anchor.getAttribute("href") ?? "/";
       event.preventDefault();
+      // Always derive the close href from the live window.location.search,
+      // never from the anchor's href attribute. The DOM attribute is the
+      // SSR value and may be stale after a native history.pushState (used
+      // by navigateVideoHref for /new and /top100 video clicks) or while
+      // an RSC payload is in flight. This also eliminates the race between
+      // this capture handler and CloseLink's onClick — both now use the
+      // same live source, so the didNavigate guard in handleOverlayCloseRequest
+      // always sees the correct video ID regardless of which fires first.
+      const liveV = new URLSearchParams(window.location.search).get("v");
+      const href = liveV
+        ? `/?v=${encodeURIComponent(liveV)}&resume=1`
+        : "/";
       window.dispatchEvent(new CustomEvent(OVERLAY_CLOSE_REQUEST_EVENT, {
-        detail: { href: closeHref },
+        detail: { href },
       }));
       return;
     }
