@@ -197,6 +197,7 @@ export function PlayerExperience({
   const manualTransitionMaskTimeoutRef = useRef<number | null>(null);
   const botBlockConfirmationTimeoutRef = useRef<number | null>(null);
   const playlistDropAnimationTimeoutRef = useRef<number | null>(null);
+  const cursorIdleTimeoutRef = useRef<number | null>(null);
   const hasAutoReconnectAttemptedRef = useRef(false);
   const isPlayerReadyRef = useRef(false);
   const initialRequestedVideoIdRef = useRef<string | null>(requestedVideoId);
@@ -497,7 +498,17 @@ export function PlayerExperience({
 
   useEffect(() => {
     function onFullscreenChange() {
-      setIsFullscreen(!!document.fullscreenElement);
+      const enteringFullscreen = !!document.fullscreenElement;
+      setIsFullscreen(enteringFullscreen);
+
+      if (cursorIdleTimeoutRef.current !== null) {
+        window.clearTimeout(cursorIdleTimeoutRef.current);
+        cursorIdleTimeoutRef.current = null;
+      }
+
+      if (!enteringFullscreen) {
+        setShowControls(true);
+      }
     }
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
@@ -931,6 +942,7 @@ export function PlayerExperience({
     isPlayerReady ? "playerFrameLoaded" : "",
     showPlayerLoadingOverlay ? "playerFrameLoading" : "",
     allowDirectIframeInteraction ? "playerFramePolicyBlocked" : "",
+    isFullscreen && isPlaying && !showControls ? "playerFrameFullscreenIdle" : "",
   ].filter(Boolean).join(" ");
 
   useEffect(() => {
@@ -3065,6 +3077,11 @@ export function PlayerExperience({
         botBlockConfirmationTimeoutRef.current = null;
       }
 
+      if (cursorIdleTimeoutRef.current !== null) {
+        window.clearTimeout(cursorIdleTimeoutRef.current);
+        cursorIdleTimeoutRef.current = null;
+      }
+
       clearStuckPlaybackRetryTimer();
       clearStuckPlaybackWatchdogTimer();
       clearEarlyPlaybackVerificationTimer();
@@ -4171,6 +4188,23 @@ export function PlayerExperience({
                   setShowControls(false);
                   setShowShareMenu(false);
                 }
+              }}
+              onMouseMove={() => {
+                if (!isFullscreen || !isPlaying) {
+                  return;
+                }
+
+                if (cursorIdleTimeoutRef.current !== null) {
+                  window.clearTimeout(cursorIdleTimeoutRef.current);
+                }
+
+                setShowControls(true);
+
+                cursorIdleTimeoutRef.current = window.setTimeout(() => {
+                  setShowControls(false);
+                  setShowShareMenu(false);
+                  cursorIdleTimeoutRef.current = null;
+                }, 3000);
               }}
               onFocusCapture={handlePlayerFrameFocusCapture}
               onBlurCapture={handlePlayerFrameBlurCapture}

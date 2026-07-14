@@ -551,6 +551,10 @@
   background: #000;
 }
 
+.playerFrameFullscreenIdle {
+  cursor: none;
+}
+
 .playerEndScreenCover {
   position: absolute;
   inset: 0;
