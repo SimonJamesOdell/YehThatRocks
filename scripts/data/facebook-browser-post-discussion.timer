@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the discussion Facebook browser poster once daily
+
+[Timer]
+OnCalendar=09:00
+Persistent=true
+Unit=facebook-browser-post@discussion.service
+
+[Install]
+WantedBy=timers.target

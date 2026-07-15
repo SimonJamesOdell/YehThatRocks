@@ -1,0 +1,10 @@
+{
+  "name": "facebook-browser-post",
+  "private": true,
+  "version": "1.0.0",
+  "type": "commonjs",
+  "dependencies": {
+    "playwright": "^1.60.0",
+    "@prisma/client": "7.8.0"
+  }
+}

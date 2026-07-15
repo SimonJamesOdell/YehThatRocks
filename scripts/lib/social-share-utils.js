@@ -181,6 +181,138 @@ async function getTopPlayableCandidates(prisma, poolSize) {
     .filter((row) => row.videoId.length > 0);
 }
 
+// ---------------------------------------------------------------------------
+// Versus mode — two contrasting candidates
+// ---------------------------------------------------------------------------
+
+/**
+ * Pick two contrasting videos from the playable pool. Uses the same
+ * popularity-sorted pool as getTopPlayableCandidates but selects two
+ * candidates from different tiers to create an interesting head-to-head.
+ */
+async function getVersusCandidates(prisma, poolSize = 600) {
+  const pool = await getTopPlayableCandidates(prisma, poolSize);
+  if (pool.length < 2) {
+    return null;
+  }
+
+  // Pick candidate A from the top tier (first 30% of pool).
+  const topCutoff = Math.max(2, Math.floor(pool.length * 0.3));
+  const topTier = pool.slice(0, topCutoff);
+  const idxA = Math.floor(Math.random() * topTier.length);
+  const candidateA = topTier[idxA];
+
+  // Pick candidate B from the rest of the pool (different genre preferred).
+  const restPool = pool.filter((v) => v.videoId !== candidateA.videoId);
+  if (restPool.length === 0) {
+    return null;
+  }
+
+  // Prefer a different genre for contrast.
+  const differentGenre = restPool.filter(
+    (v) => String(v.genre || "").toLowerCase() !== String(candidateA.genre || "").toLowerCase(),
+  );
+  const bPool = differentGenre.length > 0 ? differentGenre : restPool;
+  const idxB = Math.floor(Math.random() * bPool.length);
+  const candidateB = bPool[idxB];
+
+  return { candidateA, candidateB };
+}
+
+// ---------------------------------------------------------------------------
+// Roundup mode — top N
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch the top `count` playable videos by favourited count for a weekly
+ * or daily roundup post.
+ */
+async function getRoundupCandidates(prisma, count = 5) {
+  const limit = Math.max(3, Math.min(count, 10));
+  return getTopPlayableCandidates(prisma, limit);
+}
+
+// ---------------------------------------------------------------------------
+// URL helpers
+// ---------------------------------------------------------------------------
+
+function trimTrailingSlash(value) {
+  return String(value || "").trim().replace(/\/$/, "");
+}
+
+// ---------------------------------------------------------------------------
+// HTTP-based candidates (for Linux box without direct DB access)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch a single spotlight candidate from the secure API endpoint.
+ * Used when DATABASE_URL is not available but FB_BROWSER_API_URL + secret are set.
+ */
+async function fetchSpotlightCandidate(apiUrl, secret) {
+  const url = new URL(trimTrailingSlash(apiUrl) + "/api/facebook-browser/candidates");
+  url.searchParams.set("mode", "spotlight");
+  url.searchParams.set("secret", secret);
+
+  const response = await fetch(url.toString(), {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`API returned ${response.status}: ${body}`);
+  }
+
+  const data = await response.json();
+  return data.candidate || null;
+}
+
+/**
+ * Fetch a versus pair from the secure API endpoint.
+ */
+async function fetchVersusCandidates(apiUrl, secret) {
+  const url = new URL(trimTrailingSlash(apiUrl) + "/api/facebook-browser/candidates");
+  url.searchParams.set("mode", "versus");
+  url.searchParams.set("secret", secret);
+
+  const response = await fetch(url.toString(), {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`API returned ${response.status}: ${body}`);
+  }
+
+  const data = await response.json();
+  if (!data.candidateA || !data.candidateB) return null;
+  return { candidateA: data.candidateA, candidateB: data.candidateB };
+}
+
+/**
+ * Fetch roundup tracks from the secure API endpoint.
+ */
+async function fetchRoundupCandidates(apiUrl, secret, count = 5) {
+  const url = new URL(trimTrailingSlash(apiUrl) + "/api/facebook-browser/candidates");
+  url.searchParams.set("mode", "roundup");
+  url.searchParams.set("secret", secret);
+  url.searchParams.set("count", String(count));
+
+  const response = await fetch(url.toString(), {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`API returned ${response.status}: ${body}`);
+  }
+
+  const data = await response.json();
+  return Array.isArray(data.tracks) ? data.tracks : [];
+}
+
 module.exports = {
   loadEnvFile,
   loadEnv,
@@ -191,4 +323,9 @@ module.exports = {
   writeState,
   pickWeightedCandidate,
   getTopPlayableCandidates,
+  getVersusCandidates,
+  getRoundupCandidates,
+  fetchSpotlightCandidate,
+  fetchVersusCandidates,
+  fetchRoundupCandidates,
 };

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the roundup Facebook browser poster once daily
+
+[Timer]
+OnCalendar=20:00
+Persistent=true
+Unit=facebook-browser-post@roundup.service
+
+[Install]
+WantedBy=timers.target

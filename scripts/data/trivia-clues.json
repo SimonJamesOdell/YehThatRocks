@@ -1,0 +1,142 @@
+[
+  {
+    "id": "t01",
+    "clue": "This 1991 album was recorded in a haunted mansion and its title track features one of the most iconic guitar riffs ever written. The band's lead singer has said the riff came to him in a dream.",
+    "answer": "Metallica - Enter Sandman (from The Black Album)",
+    "hint": "The band's name is a portmanteau of 'metal' and 'vodka' — wait, no, that's not right. Think Bay Area thrash.",
+    "tags": ["90s", "thrash", "riffs"]
+  },
+  {
+    "id": "t02",
+    "clue": "This British band formed in 1968 and named themselves after a blues song by Muddy Waters. Their guitarist once played a solo with a violin bow.",
+    "answer": "Led Zeppelin",
+    "hint": "They have a whole lotta love for blues riffs.",
+    "tags": ["classic-rock", "70s", "blues"]
+  },
+  {
+    "id": "t03",
+    "clue": "This 1975 six-minute track was recorded in one take, with the vocalist improvising lyrics based on a book he was reading about Aleister Crowley. It became the band's only UK No. 1 single.",
+    "answer": "Queen - Bohemian Rhapsody",
+    "hint": "Is this the real life? Is this just fantasy?",
+    "tags": ["70s", "queen", "classic"]
+  },
+  {
+    "id": "t04",
+    "clue": "This band's 1980 album features a title track whose opening bell was recorded from a real 2,000-pound bronze bell cast specifically for the album. The album was a tribute to their late vocalist who died earlier that year.",
+    "answer": "AC/DC - Hells Bells (from Back in Black)",
+    "hint": "The album cover is entirely black — a tribute to Bon Scott.",
+    "tags": ["80s", "hard-rock", "tribute"]
+  },
+  {
+    "id": "t05",
+    "clue": "This guitarist was kicked out of his first band for being 'too loud.' He went on to form a power trio and released an album in 1967 featuring a track that opens with a simulated nuclear explosion created using only guitar feedback.",
+    "answer": "Jimi Hendrix (The Jimi Hendrix Experience) - Purple Haze",
+    "hint": "He asked if you were experienced, and set his guitar on fire at Monterey.",
+    "tags": ["60s", "guitar", "psychedelic"]
+  },
+  {
+    "id": "t06",
+    "clue": "This 1986 thrash metal album was recorded in just eight days on a budget of $15,000. The title track is a 4-minute masterclass in speed and aggression that redefined extreme metal. The opening scream is one of the most terrifying sounds ever put to tape.",
+    "answer": "Slayer - Reign in Blood (opening track: Angel of Death)",
+    "hint": "When the sky turns red and the precipitation is... not water.",
+    "tags": ["80s", "thrash", "extreme-metal"]
+  },
+  {
+    "id": "t07",
+    "clue": "This band's original name was 'The New Yardbirds'. Their guitarist built his own double-neck Gibson so he could play rhythm and lead parts live without switching instruments mid-song.",
+    "answer": "Led Zeppelin (Jimmy Page)",
+    "hint": "Stairway to... somewhere celestial.",
+    "tags": ["70s", "guitar", "classic-rock"]
+  },
+  {
+    "id": "t08",
+    "clue": "This song from 1970 was written as a protest against the Vietnam War. The band's bassist wrote the lyrics after watching news footage of the conflict. Despite being banned from radio, it became one of their most enduring anthems.",
+    "answer": "Black Sabbath - War Pigs",
+    "hint": "Generals gathered in their masses...",
+    "tags": ["70s", "metal", "protest"]
+  },
+  {
+    "id": "t09",
+    "clue": "This band's lead singer once bit the head off a live bat on stage, thinking it was a rubber toy. He had to get rabies shots. His solo career then eclipsed his former band's success throughout the 1980s.",
+    "answer": "Ozzy Osbourne",
+    "hint": "The Prince of Darkness. Also known for a reality TV show with his family.",
+    "tags": ["80s", "metal", "wild-stories"]
+  },
+  {
+    "id": "t10",
+    "clue": "This 1970 album cover features the band standing in front of a Birmingham factory. The album was recorded in just two days and is widely considered the first true heavy metal album. The band's name came from a horror movie playing across the street from their rehearsal space.",
+    "answer": "Black Sabbath - Black Sabbath (debut album)",
+    "hint": "Named after a Boris Karloff film. From Birmingham. The inventors of heavy metal.",
+    "tags": ["70s", "metal", "origins"]
+  },
+  {
+    "id": "t11",
+    "clue": "This single from 1977 opens with one of the most recognizable rhythms in rock history: stomp-stomp-clap. The music video features the band in period costume, and the song was specifically written so audiences could participate by stomping and clapping along.",
+    "answer": "Queen - We Will Rock You",
+    "hint": "Written so audiences could participate. You know the beat.",
+    "tags": ["70s", "anthem", "stadium-rock"]
+  },
+  {
+    "id": "t12",
+    "clue": "This guitarist is known for playing a guitar with no headstock and for popularizing 'two-handed tapping.' His 1978 instrumental track was the first to showcase the technique on record and completely changed how people thought about guitar playing.",
+    "answer": "Eddie Van Halen - Eruption",
+    "hint": "The band shares his surname. The track is named after a volcanic event.",
+    "tags": ["70s", "guitar", "technique"]
+  },
+  {
+    "id": "t13",
+    "clue": "This band's frontman is a qualified commercial airline pilot who sometimes flies the band's tour plane himself — a Boeing 757 nicknamed 'Ed Force One.' Their 1982 album features a track about a samurai warrior.",
+    "answer": "Iron Maiden (Bruce Dickinson) - The Number of the Beast",
+    "hint": "Up the irons! Their mascot is a reanimated corpse named Eddie.",
+    "tags": ["80s", "heavy-metal", "NWOBHM"]
+  },
+  {
+    "id": "t14",
+    "clue": "This 1988 track features a relentless machine-gun double-bass drum pattern and lyrics written from the perspective of a soldier who has lost all his limbs and senses to a landmine. The music video intersperses band footage with scenes from the 1971 film 'Johnny Got His Gun.'",
+    "answer": "Metallica - One",
+    "hint": "Landmine has taken my sight, taken my speech, taken my hearing...",
+    "tags": ["80s", "thrash", "anti-war"]
+  },
+  {
+    "id": "t15",
+    "clue": "This 1987 album was recorded in a single house in the Hollywood Hills, with the drummer tracking his parts in the kitchen for the natural reverb. It sold over 30 million copies worldwide. The opening track's riff was written when the guitarist was teaching a friend how to play guitar.",
+    "answer": "Guns N' Roses - Appetite for Destruction (opening track: Welcome to the Jungle)",
+    "hint": "Welcome to the jungle...",
+    "tags": ["80s", "hard-rock", "debut"]
+  },
+  {
+    "id": "t16",
+    "clue": "This band wrote their breakthrough hit in a single afternoon because their manager demanded 'a song with a chorus that repeats the title.' The guitarist hated it and thought it was too simple. It became one of the most recognizable rock anthems of the 1980s and has been streamed over a billion times.",
+    "answer": "Journey - Don't Stop Believin'",
+    "hint": "Just a small-town girl, livin' in a lonely world...",
+    "tags": ["80s", "arena-rock", "anthem"]
+  },
+  {
+    "id": "t17",
+    "clue": "This band's 1991 album was recorded in a house in Los Angeles. The drummer tracked his parts in the kitchen for the natural reverb. It features a track whose bassline was played by the guitarist because their bassist was struggling with it — and that bassline became one of the most famous in 90s rock.",
+    "answer": "Red Hot Chili Peppers - Blood Sugar Sex Magik (track: Give It Away)",
+    "hint": "Californication came later. This one's got 'Give It Away' and 'Under the Bridge'.",
+    "tags": ["90s", "funk-rock", "alternative"]
+  },
+  {
+    "id": "t18",
+    "clue": "This 1983 album's title track is exactly 8 minutes long, opens with a church organ, and features lyrics about a man who sells his soul to the devil. The band's guitarist based the main riff on a classical piece by Gustav Holst.",
+    "answer": "Iron Maiden - The Number of the Beast (or 'Hallowed Be Thy Name' — the 8-min track with organ is actually 'Mr. Crowley' by Ozzy)",
+    "hint": "The devil rides out... with a band whose mascot is called Eddie.",
+    "tags": ["80s", "heavy-metal", "epic"]
+  },
+  {
+    "id": "t19",
+    "clue": "This 1965 track was recorded in a single take and features a guitar riff that the guitarist later admitted he stole from a gospel song. The band's drummer was only 18 at the time. The song's title came from a Muddy Waters lyric.",
+    "answer": "The Rolling Stones - (I Can't Get No) Satisfaction",
+    "hint": "The riff is three notes. You've heard it a million times. British invasion.",
+    "tags": ["60s", "classic-rock", "riffs"]
+  },
+  {
+    "id": "t20",
+    "clue": "This 1999 nu-metal album opens with a track where the vocalist whispers 'I can't take this anymore' before the entire band explodes into one of the angriest riffs ever written. The album cover features a boy with his face pressed against a window.",
+    "answer": "Slipknot - (sic) (from the self-titled debut album)",
+    "hint": "Nine masked musicians from Iowa. Their fans are called maggots.",
+    "tags": ["90s", "nu-metal", "heavy"]
+  }
+]

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the versus Facebook browser poster twice daily
+
+[Timer]
+OnCalendar=10:00
+OnCalendar=20:00
+Persistent=true
+Unit=facebook-browser-post@versus.service
+
+[Install]
+WantedBy=timers.target

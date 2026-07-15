@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the spotlight Facebook browser poster every 4 hours
+
+[Timer]
+OnBootSec=20min
+OnUnitActiveSec=4h
+Persistent=true
+Unit=facebook-browser-post@spotlight.service
+
+[Install]
+WantedBy=timers.target

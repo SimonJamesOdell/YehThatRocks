@@ -1,0 +1,18 @@
+[Unit]
+Description=YehThatRocks Facebook browser post: %I (user)
+After=network-online.target graphical-session.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/.local/share/yehthatrocks/facebook-browser
+EnvironmentFile=-%h/.config/yehthatrocks/facebook-browser.env
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+ExecStart=/usr/bin/node %h/.local/share/yehthatrocks/facebook-browser/facebook-browser-post.js --mode %I
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=facebook-browser-post-%I
+
+[Install]
+WantedBy=default.target

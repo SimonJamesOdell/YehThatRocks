@@ -1,0 +1,127 @@
+[
+  {
+    "id": "d01",
+    "text": "What's the one track that never fails to give you goosebumps — and why?",
+    "tags": ["personal", "goosebumps", "favourite"]
+  },
+  {
+    "id": "d02",
+    "text": "You can only listen to ONE album for the rest of the month. Which one are you picking?",
+    "tags": ["album", "desert-island", "hypothetical"]
+  },
+  {
+    "id": "d03",
+    "text": "What's a band you slept on for years, then one day it clicked and you couldn't stop listening?",
+    "tags": ["discovery", "late-bloomer", "personal"]
+  },
+  {
+    "id": "d04",
+    "text": "Best guitar riff of all time. Go. 🎸",
+    "tags": ["riff", "guitar", "debate"]
+  },
+  {
+    "id": "d05",
+    "text": "What track do you put on when you need to get HYPED?",
+    "tags": ["energy", "hype", "playlist"]
+  },
+  {
+    "id": "d06",
+    "text": "Name a cover version that's actually BETTER than the original. We'll wait. 👀",
+    "tags": ["covers", "debate", "controversial"]
+  },
+  {
+    "id": "d07",
+    "text": "What's the most underrated band in rock/metal right now? Give us a track to check out.",
+    "tags": ["underrated", "discovery", "recommendation"]
+  },
+  {
+    "id": "d08",
+    "text": "First gig you ever went to — who was it, and how old were you?",
+    "tags": ["nostalgia", "live-music", "personal"]
+  },
+  {
+    "id": "d09",
+    "text": "What's a song with lyrics that genuinely hit you hard? Drop the line that gets you.",
+    "tags": ["lyrics", "emotional", "personal"]
+  },
+  {
+    "id": "d10",
+    "text": "If you could bring back ONE band for one more album, who would it be?",
+    "tags": ["hypothetical", "nostalgia", "fantasy"]
+  },
+  {
+    "id": "d11",
+    "text": "What track is on your 'no skip' list — the one you have NEVER skipped when it comes on?",
+    "tags": ["no-skip", "favourite", "consistency"]
+  },
+  {
+    "id": "d12",
+    "text": "Best album opener of all time? That first track that sets the tone perfectly.",
+    "tags": ["album", "opener", "sequencing"]
+  },
+  {
+    "id": "d13",
+    "text": "What's a band you wish more people knew about? Drop a link and convert someone today.",
+    "tags": ["discovery", "underground", "recommendation"]
+  },
+  {
+    "id": "d14",
+    "text": "Guilty pleasure track — the one you'd never admit to at a metal show but play on repeat in the car. Spill it. 🫣",
+    "tags": ["guilty-pleasure", "fun", "confession"]
+  },
+  {
+    "id": "d15",
+    "text": "What's the heaviest breakdown you've ever heard? The one that makes you pull the stank face every time. 💀",
+    "tags": ["breakdown", "heavy", "reaction"]
+  },
+  {
+    "id": "d16",
+    "text": "Best live performance you've ever seen — and what made it unforgettable?",
+    "tags": ["live-music", "concert", "personal"]
+  },
+  {
+    "id": "d17",
+    "text": "What album has ZERO skips? Front to back, every track is essential.",
+    "tags": ["album", "perfect-album", "debate"]
+  },
+  {
+    "id": "d18",
+    "text": "Which drummer made you want to pick up sticks? 🥁",
+    "tags": ["drums", "inspiration", "musicianship"]
+  },
+  {
+    "id": "d19",
+    "text": "What's your 'comfort album' — the one you reach for when life gets heavy?",
+    "tags": ["comfort", "emotional", "personal"]
+  },
+  {
+    "id": "d20",
+    "text": "Best music video of all time? Not the best song — the best VIDEO. Visuals matter.",
+    "tags": ["music-video", "visual", "debate"]
+  },
+  {
+    "id": "d21",
+    "text": "What track has the best bassline in rock or metal? 🎸",
+    "tags": ["bass", "groove", "musicianship"]
+  },
+  {
+    "id": "d22",
+    "text": "What's a collaboration you'd love to see happen — two artists who've never worked together?",
+    "tags": ["collaboration", "fantasy", "hypothetical"]
+  },
+  {
+    "id": "d23",
+    "text": "Most emotional guitar solo? The one that says more in notes than any lyrics could.",
+    "tags": ["guitar-solo", "emotional", "musicianship"]
+  },
+  {
+    "id": "d24",
+    "text": "What band or artist got you INTO rock/metal in the first place? Your gateway drug.",
+    "tags": ["origin-story", "gateway", "personal"]
+  },
+  {
+    "id": "d25",
+    "text": "What's a track that sounds COMPLETELY different live vs the studio version — and which version do you prefer?",
+    "tags": ["live-vs-studio", "production", "debate"]
+  }
+]
