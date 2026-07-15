@@ -12,7 +12,7 @@ const metalMania = Metal_Mania({
 });
 
 const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") || "https://yehthatrocks.com";
-const DEFAULT_SHARE_IMAGE = "/images/guitar_back.png";
+const DEFAULT_SHARE_IMAGE = "/images/yeh_share_fb.png";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_ORIGIN),

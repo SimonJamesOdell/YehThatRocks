@@ -29,7 +29,7 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
   const selectedVideo = rawVideoId ? await getCurrentVideo(rawVideoId) : null;
 
   if (!selectedVideo?.id) {
-    const ogHomeImage = buildOgImageUrl({ type: "genre", name: "Rock & Metal" });
+    const ogHomeImage = `${siteOrigin}/images/yeh_share_fb.png`;
     return {
       title: DEFAULT_TITLE,
       description: DEFAULT_DESCRIPTION,
