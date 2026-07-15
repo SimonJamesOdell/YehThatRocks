@@ -403,6 +403,44 @@ try {
     Write-Host "MySQL readiness confirmed at ${dbHost}:${dbPort} -- stabilizing (8s) ..." -ForegroundColor Green
     Start-Sleep -Seconds 8
 
+    # Pre-flight: verify the Prisma MariaDB adapter can connect before starting
+    # the Next.js server. The Next.js instrumentation.ts also does this warmup, but
+    # Next.js 16 may start the HTTP server before instrumentation register()
+    # completes. Running the check here — in a separate, controlled Node.js process —
+    # guarantees the pool parameters work before the server accepts requests.
+    # This uses the SAME pool configuration (connectionLimit, minimumIdle, etc.)
+    # that apps/web/lib/db.ts will apply.
+    $preflightScript = Join-Path $RepoRoot "scripts\test-prisma-preflight.cjs"
+    if (-not (Test-Path $preflightScript)) {
+      throw "Prisma pre-flight script not found at $preflightScript"
+    }
+
+    Write-Host "Verifying Prisma connectivity (pre-flight) ..." -ForegroundColor Cyan
+    $preflightOk = $false
+    $preflightAttempts = 0
+    $preflightMaxAttempts = 10
+    $preflightDeadline = (Get-Date).AddSeconds(30)
+    while ((Get-Date) -lt $preflightDeadline -and $preflightAttempts -lt $preflightMaxAttempts) {
+      $preflightAttempts++
+      $preflightProc = Start-Process -FilePath $nodeCmd.Source `
+        -ArgumentList $preflightScript `
+        -NoNewWindow -PassThru -Wait `
+        -Environment @{ DATABASE_URL = $databaseUrl }
+      if ($preflightProc.ExitCode -eq 0) {
+        $preflightOk = $true
+        break
+      }
+      if ($preflightAttempts -lt $preflightMaxAttempts) {
+        $delaySec = [math]::Pow(2, [math]::Min($preflightAttempts - 1, 4))
+        Write-Host "  Prisma pre-flight attempt $preflightAttempts failed — retrying in ${delaySec}s ..." -ForegroundColor Yellow
+        Start-Sleep -Seconds $delaySec
+      }
+    }
+    if (-not $preflightOk) {
+      throw "Prisma pre-flight failed after $preflightAttempts attempts. The Prisma MariaDB adapter cannot connect to MySQL. Check DATABASE_URL and MySQL health."
+    }
+    Write-Host "Prisma pre-flight OK after $preflightAttempts attempt(s)" -ForegroundColor Green
+
     $authJwtSecret = Resolve-EnvValue -RepoRootPath $RepoRoot -Name "AUTH_JWT_SECRET"
     if ([string]::IsNullOrWhiteSpace($authJwtSecret) -or $authJwtSecret.Length -lt 32) {
       throw "AUTH_JWT_SECRET must be configured (32+ chars) in the environment or apps/web/.env.local before running verify:deps:full."
