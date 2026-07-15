@@ -76,8 +76,13 @@ function getPrismaDatabaseUrl() {
   try {
     const url = new URL(databaseUrl);
     const defaultConnectionLimit = getDefaultConnectionLimit();
-    const defaultPoolTimeoutMs = process.env.NODE_ENV === "production" ? "30000" : "25000";
-    const defaultConnectTimeoutMs = process.env.NODE_ENV === "production" ? "5000" : "3500";
+    // Shorter timeouts mean failed connections are detected quickly and the
+    // pool can retry creating new ones. With minimumIdle=5, transient failures
+    // during startup won't permanently exhaust the pool — the idle floor
+    // ensures surviving connections keep the pool alive while replacements
+    // are created.
+    const defaultPoolTimeoutMs = process.env.NODE_ENV === "production" ? "10000" : "25000";
+    const defaultConnectTimeoutMs = process.env.NODE_ENV === "production" ? "3000" : "3500";
 
     if (!url.searchParams.has("connectionLimit")) {
       url.searchParams.set(
@@ -87,10 +92,15 @@ function getPrismaDatabaseUrl() {
     }
 
     if (!url.searchParams.has("minimumIdle")) {
-      // Keep minimumIdle low so transient MySQL outages don't cause
-      // permanent pool exhaustion (active=0 idle=0). The pool will
-      // retry creating connections on demand instead of failing all at once.
-      url.searchParams.set("minimumIdle", "2");
+      // Maintain enough idle connections that a failed connection doesn't
+      // leave the pool empty. mysql2 pools do not auto-recreate connections
+      // once every idle has failed — the pool enters a permanent exhausted
+      // state (active=0 idle=0) that never recovers. A higher floor prevents
+      // total exhaustion during startup when MySQL is still warming.
+      url.searchParams.set(
+        "minimumIdle",
+        process.env.PRISMA_MINIMUM_IDLE ?? (process.env.NODE_ENV === "production" ? "5" : "2"),
+      );
     }
 
     if (!url.searchParams.has("acquireTimeout")) {
