@@ -350,15 +350,20 @@ try {
 
     while ($dbStopwatch.ElapsedMilliseconds -lt $dbTimeoutMs) {
       if ($containerName) {
-        # Docker-based: run mysqladmin ping inside the container for a real query-level check.
+        # Docker-based: run a real query against the yeh database — not just
+        # mysqladmin ping. A TCP-level ping succeeds while MySQL is still
+        # loading its buffer pool or running crash recovery. SELECT COUNT(*)
+        # forces MySQL to touch real data pages, confirming it's truly
+        # query-ready before the Prisma pool initializes.
         # Use MYSQL_PWD env var to avoid the "password on CLI" stderr warning.
-        docker exec -e MYSQL_PWD="$dbPass" $containerName mysqladmin ping -u $dbUser --silent *>$null
+        docker exec -e MYSQL_PWD="$dbPass" $containerName mysql -u $dbUser yeh -e "SELECT COUNT(*) FROM videos" *>$null
         if ($LASTEXITCODE -eq 0) {
           $dbReady = $true
           break
         }
 
-        # Fallback: try SELECT 1 via mysql client inside the container.
+        # Fallback: try SELECT 1 for environments where the yeh database
+        # may not exist yet.
         docker exec -e MYSQL_PWD="$dbPass" $containerName mysql -u $dbUser -e "SELECT 1" *>$null
         if ($LASTEXITCODE -eq 0) {
           $dbReady = $true
@@ -388,12 +393,15 @@ try {
       throw "MySQL is not ready to serve queries at ${dbHost}:${dbPort} after $([math]::Round($dbStopwatch.Elapsed.TotalSeconds, 1))s. Ensure the Docker db container is running and healthy."
     }
 
-    # Give MySQL a brief stabilization window after confirming readiness.
-    # The server may still be warming its buffer pool or finishing background
-    # threads even after accepting queries. A short wait prevents the Prisma
-    # pool from initializing during a transient window.
-    Write-Host "MySQL readiness confirmed at ${dbHost}:${dbPort} -- stabilizing (3s) ..." -ForegroundColor Green
-    Start-Sleep -Seconds 3
+    # Give MySQL a generous stabilization window after confirming query readiness.
+    # Even after SELECT COUNT(*) succeeds, InnoDB may still be warming its
+    # adaptive hash index, change buffer, or redo log. The Prisma pool
+    # initialization via $connect() opens multiple connections concurrently
+    # (minimumIdle=2 + first-request demand), and if any connection fails during
+    # this post-warmup window the pool can permanently exhaust (active=0 idle=0).
+    # 8 seconds is conservative but reliably covers container-based MySQL startup.
+    Write-Host "MySQL readiness confirmed at ${dbHost}:${dbPort} -- stabilizing (8s) ..." -ForegroundColor Green
+    Start-Sleep -Seconds 8
 
     $authJwtSecret = Resolve-EnvValue -RepoRootPath $RepoRoot -Name "AUTH_JWT_SECRET"
     if ([string]::IsNullOrWhiteSpace($authJwtSecret) -or $authJwtSecret.Length -lt 32) {
