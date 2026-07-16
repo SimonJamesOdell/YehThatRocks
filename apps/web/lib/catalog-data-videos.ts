@@ -60,6 +60,7 @@ import { buildApprovedVideoPredicate } from "@/lib/catalog-data-internal-helpers
 
 import {
   MIN_RANKED_TOP_POOL_FETCH,
+  NEWEST_RANDOM_POOL_SIZE,
   RANKED_VIDEO_ID_SLICE_CACHE_TTL_MS,
   TOP_POOL_CACHE_TTL_MS,
 } from "@/lib/video-constants";
@@ -82,6 +83,8 @@ const ENABLE_LEGACY_APPROVAL_BOOTSTRAP = process.env.ENABLE_LEGACY_APPROVAL_BOOT
 
 let topPoolCache: { expiresAt: number; rows: RankedVideoRow[] } | undefined;
 let topPoolInFlight: { limit: number; promise: Promise<RankedVideoRow[]> } | undefined;
+let newestRandomPoolCache: { expiresAt: number; rows: RankedVideoRow[] } | undefined;
+let newestRandomPoolInFlight: { limit: number; promise: Promise<RankedVideoRow[]> } | undefined;
 const rankedVideoIdSliceCache = new BoundedMap<
   "top" | "newest",
   { expiresAt: number; ids: string[] }
@@ -133,6 +136,8 @@ let legacyApprovalBootstrapInFlight: Promise<boolean> | null = null;
 export function clearVideosCaches() {
   topPoolCache = undefined;
   topPoolInFlight = undefined;
+  newestRandomPoolCache = undefined;
+  newestRandomPoolInFlight = undefined;
   rankedVideoIdSliceCache.clear();
   rankedVideoIdSliceInFlight.clear();
   newestVideosCache = undefined;
@@ -430,6 +435,96 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
   }
 }
 
+/**
+ * Fetch the newest N videos for random selection.
+ *
+ * Uses the "newest" ranking (created_at DESC) instead of the favourited/viewed
+ * ranking used by getRankedTopPool.  Results are Fisher-Yates shuffled so the
+ * ordering carries no bias — callers get uniformly random ordering regardless
+ * of DB insertion order.  The pool is cached for TOP_POOL_CACHE_TTL_MS.
+ */
+async function getNewestVideoPool(limit: number): Promise<RankedVideoRow[]> {
+  const fetchLimit = Math.max(limit, 200);
+  const now = Date.now();
+
+  if (newestRandomPoolCache && newestRandomPoolCache.expiresAt > now && newestRandomPoolCache.rows.length >= limit) {
+    return newestRandomPoolCache.rows.slice(0, limit);
+  }
+
+  if (newestRandomPoolInFlight && newestRandomPoolInFlight.limit >= fetchLimit) {
+    const rows = await newestRandomPoolInFlight.promise;
+    return rows.slice(0, limit);
+  }
+
+  const hasGenreColumn = await hasVideoGenreColumn();
+  const genreSelectExpr = hasGenreColumn
+    ? "NULLIF(TRIM(v.genre), '') AS genre,"
+    : "NULL AS genre,";
+
+  const fetchPromise = (async () => {
+    const rankedVideoIds = await getRankedVideoIdSlice("newest", fetchLimit);
+
+    if (rankedVideoIds.length === 0) {
+      newestRandomPoolCache = { expiresAt: now + TOP_POOL_CACHE_TTL_MS, rows: [] };
+      return [] as RankedVideoRow[];
+    }
+
+    const placeholders = rankedVideoIds.map(() => "?").join(", ");
+    const rows = await prisma.$queryRawUnsafe<RankedVideoRow[]>(
+      `
+        SELECT
+          v.videoId,
+          v.title,
+          COALESCE(NULLIF(TRIM(v.parsedArtist), ''), NULLIF(TRIM(v.channelTitle), ''), NULL) AS channelTitle,
+          NULLIF(TRIM(v.parsedArtist), '') AS parsedArtist,
+          NULLIF(TRIM(v.parsedTrack), '') AS parsedTrack,
+          ${genreSelectExpr}
+          COALESCE(v.favourited, 0) AS favourited,
+          COALESCE(v.viewCount, 0) AS viewCount,
+          v.description
+        FROM videos v
+        WHERE v.videoId IN (${placeholders})
+        ORDER BY FIELD(v.videoId, ${placeholders})
+      `,
+      ...rankedVideoIds,
+      ...rankedVideoIds,
+    );
+
+    const dedupedRows = dedupeRankedRows(rows);
+
+    // Fisher-Yates shuffle for uniform randomness — the "newest" ordering at the
+    // DB level is only used to select the pool members; callers should not see
+    // any positional bias from insertion order.
+    for (let i = dedupedRows.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = dedupedRows[i];
+      dedupedRows[i] = dedupedRows[j]!;
+      dedupedRows[j] = tmp!;
+    }
+
+    newestRandomPoolCache = {
+      expiresAt: Date.now() + TOP_POOL_CACHE_TTL_MS,
+      rows: dedupedRows,
+    };
+
+    return dedupedRows;
+  })();
+
+  newestRandomPoolInFlight = {
+    limit: fetchLimit,
+    promise: fetchPromise,
+  };
+
+  try {
+    const rows = await fetchPromise;
+    return rows.slice(0, limit);
+  } finally {
+    if (newestRandomPoolInFlight?.promise === fetchPromise) {
+      newestRandomPoolInFlight = undefined;
+    }
+  }
+}
+
 async function getRelatedBaseRows(params: {
   normalizedVideoId: string;
   currentArtistNormalized: string | null;
@@ -716,7 +811,7 @@ export async function getCurrentVideo(
           : options?.allowRandomFallback === false
             ? await getRankedTopPool(1)
             : await (async () => {
-                const pool = await getRankedTopPool(WEIGHTED_POOL_SIZE);
+                const pool = await getNewestVideoPool(NEWEST_RANDOM_POOL_SIZE);
                 if (pool.length === 0) return pool;
                 const recentIds = options?.recentVideoIds ?? [];
                 const randomIndex = weightedRandomSelect(pool, recentIds);
@@ -735,7 +830,7 @@ export async function getCurrentVideo(
         if (!normalizedVideoId) {
           const backfilledLegacyApprovals = await maybeBackfillLegacyApprovedVideos();
           if (backfilledLegacyApprovals) {
-            const retryPool = await getRankedTopPool(WEIGHTED_POOL_SIZE);
+            const retryPool = await getNewestVideoPool(NEWEST_RANDOM_POOL_SIZE);
             if (retryPool.length > 0) {
               const recentIds = options?.recentVideoIds ?? [];
               const retryRandomIndex = weightedRandomSelect(retryPool, recentIds);
@@ -1022,6 +1117,26 @@ export async function getTopVideos(count = 100) {
     const videos = await getRankedTopPool(Math.max(count, 1));
 
     return videos.length > 0 ? videos.slice(0, count).map(mapVideo) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Public wrapper around getNewestVideoPool that returns VideoRecord[].
+ *
+ * Used by top-videos-cache for the random video selector — fetches the newest
+ * N videos (Fisher-Yates shuffled) and maps them to VideoRecord[] for
+ * consumption by the cache layer and API routes.
+ */
+export async function getNewestVideosForRandom(count: number) {
+  if (!hasDatabaseUrl()) {
+    return [];
+  }
+
+  try {
+    const rows = await getNewestVideoPool(Math.max(count, 1));
+    return rows.length > 0 ? rows.slice(0, count).map(mapVideo) : [];
   } catch {
     return [];
   }
