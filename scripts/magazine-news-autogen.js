@@ -283,7 +283,7 @@ async function getPlayableCandidates(conn, limit) {
       favourited: Number(r.favourited || 0),
       internalId: Number(r.internalId || 0),
     }))
-    .filter((r) => r.videoId.length === 11 && r.artist.length > 1);
+    .filter((r) => r.videoId.length === 11 && r.artist.length > 1 && isRockMetalGenre(r.genre));
 }
 
 async function getPublishedArticleVideoIds(conn) {
@@ -426,6 +426,7 @@ const VOICE_RULES = `VOICE RULES:
 - Address the reader directly when you want to make a point land. "You", "your", "sit down."
 - State opinions as facts. Do not qualify them. "This riff is better than anything released this decade" is a sentence. "This riff is arguably one of the better ones" is a waste of everyone's time.
 - Use contempt sparingly but precisely. Reserve it for the things that actually deserve it: lazy production, cowardly lyrics, bands that play it safe.
+- RED LINE — HUMAN SUFFERING: Never mock, dismiss, trivialise, or express contempt for real people's serious illness, death, disability, personal tragedy, grief, or suffering. Being an irreverent music journalist is fine. Being cruel about cancer, death, or human tragedy is not. If the news hook involves someone's illness or death, write about the music. Do not write "I don't care about X's cancer" or reduce a person's suffering to a punchline — it reads as sociopathic, not irreverent.
 - Rhetorical questions are weapons. Use them to puncture something before you explain why it collapses.
 - Paragraph length: 4-6 sentences. No thin one-liners masquerading as paragraphs.
 - Go deep on the music: riff construction, vocal delivery, drum work, production decisions, dynamics.
@@ -642,6 +643,9 @@ function validateArticleShape(article) {
   }
   if (/\bnot\b[^\n.!?]{0,100}\bit'?s\b/i.test(combined)) {
     throw new Error("Generated article uses forbidden 'not X it's Y' construction");
+  }
+  if (/\b(?:don'?t|do\s+not)\s+(?:give\s+a\s+\S+\s+|care)\s+about\s.{0,70}\b(?:cancer|tumou?r|leuk[ae]mia|terminal\s+(?:illness|diagnosis)|death|died|dying|dead|disease|illness|stroke|heart\s+attack|suffering|funeral|bereavement)\b/i.test(combined)) {
+    throw new Error("Generated article contains cruel or dismissive language about human illness/death/suffering");
   }
 
   return {
