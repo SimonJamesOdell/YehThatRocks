@@ -189,6 +189,7 @@ function ShellDynamicInner({
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isMobileCommunityOpen, setIsMobileCommunityOpen] = useState(false);
   const [hasClientMounted, setHasClientMounted] = useState(false);
+  const prevRetryNonceRef = useRef(0);
   const [hasBootstrappedWatchNext, setHasBootstrappedWatchNext] = useState(false);
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
   const lastVideoIdRef = useRef<string | null>(
@@ -1252,7 +1253,10 @@ function ShellDynamicInner({
     }
     // Guard against duplicate effect executions for the same requested id
     // while a resolve is already in flight (can happen during rapid rerenders).
-    if (requestedVideoId === lastVideoIdRef.current && isResolvingRequestedVideo) {
+    // Bypass the guard when the user manually requested a retry (nonce changed).
+    const isRetryBypass = requestedVideoRetryNonce !== prevRetryNonceRef.current;
+    prevRetryNonceRef.current = requestedVideoRetryNonce;
+    if (requestedVideoId === lastVideoIdRef.current && isResolvingRequestedVideo && !isRetryBypass) {
       return;
     }
     if (
@@ -1425,7 +1429,14 @@ function ShellDynamicInner({
         ? Math.min(2400, 350 * attempt)
         : REQUESTED_VIDEO_RETRY_SLOW_DELAY_MS;
 
-      if (sawPendingResponse || pendingReason !== null || pendingRetryAfterMs !== null) {
+      // When we already have the current video via optimistic match, the
+      // API call is only needed for relatedVideos / watchNextAdvisory.
+      // Don't show the retry dialog — the user already sees the video playing.
+      // Still schedule a background retry so fresh related data arrives.
+      const shouldShowRetryDialog = !hasOptimisticVideo
+        && (sawPendingResponse || pendingReason !== null || pendingRetryAfterMs !== null);
+
+      if (shouldShowRetryDialog) {
         setRequestedVideoPendingReason(pendingReason);
         setRequestedVideoPendingRetryAfterMs(
           pendingRetryAfterMs ?? delayMs,
@@ -1438,6 +1449,18 @@ function ShellDynamicInner({
         void resolveRequestedVideo(attempt + 1);
       }, nextDelayMs);
     };
+    // After scheduling the bakground retry, clear the resolving state
+    // when we have an optimistic video — the UI already shows the right video.
+    // The retryTimeoutId will fire to refresh related videos silently.
+    if (hasOptimisticVideo) {
+      setRequestedVideoPendingReason(null);
+      setRequestedVideoPendingRetryAfterMs(null);
+      setIsResolvingRequestedVideo(false);
+      if (!hasResolvedInitialVideoRef.current) {
+        hasResolvedInitialVideoRef.current = true;
+        setIsResolvingInitialVideo(false);
+      }
+    }
     void resolveRequestedVideo();
     return () => {
       ignore = true;
@@ -2650,6 +2673,12 @@ function ShellDynamicInner({
         requestedVideoPendingRetryAfterMs={requestedVideoPendingRetryAfterMs}
         requestedVideoPendingReason={requestedVideoPendingReason}
         onVideoRetryNow={() => setRequestedVideoRetryNonce((value) => value + 1)}
+        onVideoDismiss={() => {
+          setRequestedVideoPendingReason(null);
+          setRequestedVideoPendingRetryAfterMs(null);
+          setIsResolvingRequestedVideo(false);
+          setRequestedVideoRetryNonce((value) => value + 1); // cancel in-flight retry
+        }}
       />
       <section
         className={[

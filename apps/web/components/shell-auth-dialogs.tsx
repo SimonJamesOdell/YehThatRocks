@@ -16,6 +16,7 @@ interface ShellAuthDialogsProps {
   requestedVideoPendingRetryAfterMs: number | null;
   requestedVideoPendingReason: "cooldown" | "concurrency-shed" | "timeout" | "resolver-error" | null | undefined;
   onVideoRetryNow: () => void;
+  onVideoDismiss: () => void;
 }
 
 export function ShellAuthDialogs({
@@ -31,6 +32,7 @@ export function ShellAuthDialogs({
   requestedVideoPendingRetryAfterMs,
   requestedVideoPendingReason,
   onVideoRetryNow,
+  onVideoDismiss,
 }: ShellAuthDialogsProps) {
   return (
     <>
@@ -52,6 +54,7 @@ export function ShellAuthDialogs({
           pendingReason={requestedVideoPendingReason}
           retryAfterMs={requestedVideoPendingRetryAfterMs}
           onRetryNow={onVideoRetryNow}
+          onDismiss={onVideoDismiss}
         />
       ) : null}
     </>

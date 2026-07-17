@@ -6,6 +6,7 @@ type CurrentVideoRetryDialogProps = {
   pendingReason?: "cooldown" | "concurrency-shed" | "timeout" | "resolver-error" | null;
   retryAfterMs: number;
   onRetryNow: () => void;
+  onDismiss: () => void;
 };
 
 function formatCountdown(remainingMs: number) {
@@ -47,7 +48,7 @@ function buildDialogCopy(pendingReason?: CurrentVideoRetryDialogProps["pendingRe
   }
 }
 
-export function CurrentVideoRetryDialog({ pendingReason, retryAfterMs, onRetryNow }: CurrentVideoRetryDialogProps) {
+export function CurrentVideoRetryDialog({ pendingReason, retryAfterMs, onRetryNow, onDismiss }: CurrentVideoRetryDialogProps) {
   const [remainingMs, setRemainingMs] = useState(Math.max(0, Math.floor(retryAfterMs)));
   const copy = buildDialogCopy(pendingReason);
   const countdownMs = Math.max(100, Math.floor(retryAfterMs));
@@ -62,37 +63,48 @@ export function CurrentVideoRetryDialog({ pendingReason, retryAfterMs, onRetryNo
 
       if (elapsed >= countdownMs) {
         window.clearInterval(timerId);
+        onRetryNow();
       }
     }, 100);
 
     return () => {
       window.clearInterval(timerId);
     };
-  }, [countdownMs]);
+  }, [countdownMs, onRetryNow]);
 
   return (
-    <div className="currentVideoRetryOverlay" role="presentation">
+    <div className="nOverlay" role="presentation" onClick={onDismiss}>
       <section
-        className="currentVideoRetryDialog"
+        onClick={(event) => {
+          // Prevent overlay dismiss when clicking inside the dialog
+          event.stopPropagation();
+        }}
+        className="nDialog"
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="current-video-retry-title"
         aria-describedby="current-video-retry-message"
       >
-        <div className="currentVideoRetryCopy">
+        <div className="nCopy">
+          <button
+            type="button"
+            className="nClose"
+            onClick={onDismiss}
+            aria-label="Dismiss retry dialog"
+          >&times;</button>
           <strong id="current-video-retry-title">{copy.title}</strong>
-          <p className="currentVideoRetryEyebrow">{copy.eyebrow}</p>
+          <p className="nEyebrow">{copy.eyebrow}</p>
           <p id="current-video-retry-message">{copy.body}</p>
         </div>
-        <div className="currentVideoRetryCountdownWrap" aria-live="polite">
+        <div className="nCountdownWrap" aria-live="polite">
           <div
-            className="currentVideoRetryCountdown"
+            className="nCountdown"
             aria-hidden="true"
             style={{ "--countdown-ms": `${countdownMs}ms` } as CSSProperties}
           />
-          <div className="currentVideoRetryCountdownMeta">
+          <div className="nCountdownMeta">
             <span>Automatic retry in {formatCountdown(remainingMs)}</span>
-            <button type="button" className="currentVideoRetryButton" onClick={onRetryNow}>
+            <button type="button" className="nButton" onClick={onRetryNow}>
               Retry now
             </button>
           </div>
