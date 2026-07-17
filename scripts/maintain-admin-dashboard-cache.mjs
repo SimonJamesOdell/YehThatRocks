@@ -413,6 +413,115 @@ async function computeAdminDashboardData() {
     ORDER BY day_date ASC
   `.catch(() => []);
 
+  // -------------------------------------------------------------------------
+  // Compute weekly / monthly / yearly series with genuine distinct counts
+  // directly from analytics_events.  Summing daily COUNT(DISTINCT …) values
+  // double-counts visitors who appear on multiple days — a visitor who comes
+  // every day of the week counted as 7 instead of 1.
+  // -------------------------------------------------------------------------
+  const [weeklySeriesRaw, monthlySeriesRaw, yearlySeriesRaw] = await Promise.all([
+    prisma.$queryRaw`
+      SELECT
+        DATE_SUB(DATE(created_at), INTERVAL (DAYOFWEEK(created_at) + 5) % 7 DAY) AS period_start,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits,
+        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
+        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views
+      FROM analytics_events
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 90 DAY)
+      GROUP BY period_start
+      ORDER BY period_start ASC
+    `.catch(() => []),
+    prisma.$queryRaw`
+      SELECT
+        DATE_FORMAT(created_at, '%Y-%m-01') AS period_start,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits,
+        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
+        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views
+      FROM analytics_events
+      GROUP BY period_start
+      ORDER BY period_start ASC
+    `.catch(() => []),
+    prisma.$queryRaw`
+      SELECT
+        YEAR(created_at) AS period_start,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits,
+        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
+        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views
+      FROM analytics_events
+      GROUP BY period_start
+      ORDER BY period_start ASC
+    `.catch(() => []),
+  ]);
+
+  // Auth events & magazine landings are simple event counts (not distincts),
+  // so summing from the daily rollup is correct.  Build a lookup map.
+  const dailyAuthLandingsByDay = new Map();
+  for (const row of dailyAnalyticsRows) {
+    const dayStr = row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day);
+    dailyAuthLandingsByDay.set(dayStr, {
+      authEvents: toNumber(row.authEvents),
+      magazineExternalLandings: toNumber(row.magazineExternalLandings),
+    });
+  }
+
+  function sumFromDaily(periodStartIso, periodEndIso) {
+    let authEvents = 0;
+    let magazineExternalLandings = 0;
+    for (const [dayStr, values] of dailyAuthLandingsByDay) {
+      if (dayStr >= periodStartIso && dayStr < periodEndIso) {
+        authEvents += values.authEvents;
+        magazineExternalLandings += values.magazineExternalLandings;
+      }
+    }
+    return { authEvents, magazineExternalLandings };
+  }
+
+  function buildPeriodBucket(periodStart, periodEnd, label, row) {
+    const { authEvents, magazineExternalLandings } = sumFromDaily(
+      periodStart.toISOString().slice(0, 10),
+      periodEnd.toISOString().slice(0, 10),
+    );
+    return {
+      bucketStart: periodStart.toISOString(),
+      bucketEnd: periodEnd.toISOString(),
+      label,
+      pageViews: toNumber(row.page_views),
+      videoViews: toNumber(row.video_views),
+      uniqueVisitors: toNumber(row.unique_visitors),
+      returnVisits: toNumber(row.return_visits),
+      magazineExternalLandings,
+      authEvents,
+    };
+  }
+
+  const weeklySeries = weeklySeriesRaw.map((row) => {
+    const periodStart = row.period_start instanceof Date ? row.period_start : new Date(row.period_start);
+    const periodEnd = new Date(periodStart);
+    periodEnd.setUTCDate(periodEnd.getUTCDate() + 7);
+    const endLabel = new Date(periodEnd.getTime() - 86400000).toISOString().slice(0, 10);
+    return buildPeriodBucket(periodStart, periodEnd, `${periodStart.toISOString().slice(0, 10)} to ${endLabel}`, row);
+  });
+
+  const monthlySeries = monthlySeriesRaw.map((row) => {
+    const periodStartStr = String(row.period_start);
+    const [year, month] = periodStartStr.split("-").map(Number);
+    const periodStart = new Date(Date.UTC(year, month - 1, 1));
+    const periodEnd = new Date(Date.UTC(year, month, 1));
+    return buildPeriodBucket(periodStart, periodEnd, `${year}-${String(month).padStart(2, "0")}`, row);
+  });
+
+  const yearlySeries = yearlySeriesRaw.map((row) => {
+    const year = Number(row.period_start);
+    const periodStart = new Date(Date.UTC(year, 0, 1));
+    const periodEnd = new Date(Date.UTC(year + 1, 0, 1));
+    return buildPeriodBucket(periodStart, periodEnd, String(year), row);
+  });
+
+  // -------------------------------------------------------------------------
+
   const recentCutoffMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
   const recentDailyRows = dailyAnalyticsRows.filter((row) => {
     const rowDate = row.day instanceof Date ? row.day : new Date(row.day);
@@ -459,6 +568,28 @@ async function computeAdminDashboardData() {
         authEvents: toNumber(row.authEvents),
       })),
       hourlyRecent,
+      series: {
+        allTime: yearlySeries,
+        monthly: monthlySeries,
+        weekly: weeklySeries,
+        daily: dailyAnalyticsRows.map((row) => {
+          const dayStr = row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day);
+          const dayDate = new Date(`${dayStr}T00:00:00.000Z`);
+          const nextDay = new Date(dayDate);
+          nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+          return {
+            bucketStart: dayDate.toISOString(),
+            bucketEnd: nextDay.toISOString(),
+            label: dayStr,
+            pageViews: toNumber(row.pageViews),
+            videoViews: toNumber(row.videoViews),
+            uniqueVisitors: toNumber(row.uniqueVisitors),
+            returnVisits: toNumber(row.returnVisits),
+            magazineExternalLandings: toNumber(row.magazineExternalLandings),
+            authEvents: toNumber(row.authEvents),
+          };
+        }),
+      },
       newVsRepeat: {
         newVisitors: recentDailyRows.reduce((sum, row) => sum + toNumber(row.newVisitors), 0),
         repeatVisitors: recentDailyRows.reduce((sum, row) => sum + toNumber(row.repeatVisitors), 0),
