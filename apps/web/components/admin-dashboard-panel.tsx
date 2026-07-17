@@ -137,6 +137,7 @@ export function AdminDashboardPanel({
         uniqueVisitors: row.uniqueVisitors,
         returnVisits: row.returnVisits,
         magazineExternalLandings: 0,
+        sessions: 0,
         authEvents: row.authEvents,
       } as AnalyticsBucket;
     });
@@ -179,6 +180,7 @@ export function AdminDashboardPanel({
         pageViews: 0,
         videoViews: 0,
         uniqueVisitors: 0,
+        sessions: 0,
         returnVisits: 0,
         magazineExternalLandings: 0,
         authEvents: 0,
@@ -220,6 +222,7 @@ export function AdminDashboardPanel({
         pageViews: 0,
         videoViews: 0,
         uniqueVisitors: 0,
+        sessions: 0,
         returnVisits: 0,
         magazineExternalLandings: 0,
         authEvents: 0,
@@ -264,6 +267,7 @@ export function AdminDashboardPanel({
         pageViews: 0,
         videoViews: 0,
         uniqueVisitors: 0,
+        sessions: 0,
         returnVisits: 0,
         magazineExternalLandings: 0,
         authEvents: 0,
@@ -301,6 +305,7 @@ export function AdminDashboardPanel({
         pageViews: 0,
         videoViews: 0,
         uniqueVisitors: 0,
+        sessions: 0,
         returnVisits: 0,
         magazineExternalLandings: 0,
         authEvents: 0,
@@ -337,7 +342,7 @@ export function AdminDashboardPanel({
     return dailyRows.slice(-14);
   }, [analyticsSeries, analyticsZoomLevel, selectedAllTimeBucket, selectedMonthlyBucket, selectedWeeklyBucket, hourlySeries, padHourlyRows, padWeeklyRows, padMonthlyRows, padAllTimeRows]);
 
-  const [analyticsSeriesOn, setAnalyticsSeriesOn] = useState({ pageViews: true, videoViews: true, visitors: true, returnVisits: true, magazineExternalLandings: true, authEvents: true });
+  const [analyticsSeriesOn, setAnalyticsSeriesOn] = useState({ pageViews: true, videoViews: true, visitors: true, returnVisits: true, sessions: true, magazineExternalLandings: true, authEvents: true });
   const analyticsGraph = useMemo(
     () => buildAnalyticsGraph(displayedAnalyticsRows, analyticsSeriesOn),
     [analyticsSeriesOn, displayedAnalyticsRows],

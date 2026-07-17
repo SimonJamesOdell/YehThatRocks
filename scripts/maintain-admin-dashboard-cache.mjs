@@ -426,7 +426,8 @@ async function computeAdminDashboardData() {
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits,
         SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
-        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views
+        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
       FROM analytics_events
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 90 DAY)
       GROUP BY period_start
@@ -438,7 +439,8 @@ async function computeAdminDashboardData() {
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits,
         SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
-        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views
+        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
       FROM analytics_events
       GROUP BY period_start
       ORDER BY period_start ASC
@@ -449,7 +451,8 @@ async function computeAdminDashboardData() {
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits,
         SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
-        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views
+        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
       FROM analytics_events
       GROUP BY period_start
       ORDER BY period_start ASC
@@ -467,20 +470,31 @@ async function computeAdminDashboardData() {
     });
   }
 
-  function sumFromDaily(periodStartIso, periodEndIso) {
+  function sumSessionsFromDaily(periodStartIso, periodEndIso) {
     let authEvents = 0;
     let magazineExternalLandings = 0;
+    let sessions = 0;
     for (const [dayStr, values] of dailyAuthLandingsByDay) {
       if (dayStr >= periodStartIso && dayStr < periodEndIso) {
         authEvents += values.authEvents;
         magazineExternalLandings += values.magazineExternalLandings;
+        sessions += values.sessions;
       }
     }
-    return { authEvents, magazineExternalLandings };
+    return { authEvents, magazineExternalLandings, sessions };
+  }
+
+  // Also index sessions from daily rollup
+  for (const row of dailyAnalyticsRows) {
+    const dayStr = row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day);
+    const entry = dailyAuthLandingsByDay.get(dayStr);
+    if (entry) {
+      entry.sessions = toNumber(row.totalSessions);
+    }
   }
 
   function buildPeriodBucket(periodStart, periodEnd, label, row) {
-    const { authEvents, magazineExternalLandings } = sumFromDaily(
+    const { authEvents, magazineExternalLandings, sessions } = sumSessionsFromDaily(
       periodStart.toISOString().slice(0, 10),
       periodEnd.toISOString().slice(0, 10),
     );
@@ -492,6 +506,7 @@ async function computeAdminDashboardData() {
       videoViews: toNumber(row.video_views),
       uniqueVisitors: toNumber(row.unique_visitors),
       returnVisits: toNumber(row.return_visits),
+      sessions: sessions || toNumber(row.total_sessions),
       magazineExternalLandings,
       authEvents,
     };
@@ -521,6 +536,19 @@ async function computeAdminDashboardData() {
   });
 
   // -------------------------------------------------------------------------
+
+  // Active hours — when are people actually on the site?
+  const activeHoursRaw = await prisma.$queryRaw`
+    SELECT
+      HOUR(created_at) AS hour,
+      COUNT(*) AS events
+    FROM analytics_events
+    WHERE event_type = 'page_view'
+      AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
+    GROUP BY HOUR(created_at)
+    ORDER BY hour ASC
+  `.catch(() => []);
+  const activeHours = activeHoursRaw.map((r) => ({ hour: Number(r.hour), events: toNumber(r.events) }));
 
   const recentCutoffMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
   const recentDailyRows = dailyAnalyticsRows.filter((row) => {
@@ -585,6 +613,7 @@ async function computeAdminDashboardData() {
             videoViews: toNumber(row.videoViews),
             uniqueVisitors: toNumber(row.uniqueVisitors),
             returnVisits: toNumber(row.returnVisits),
+            sessions: toNumber(row.totalSessions),
             magazineExternalLandings: toNumber(row.magazineExternalLandings),
             authEvents: toNumber(row.authEvents),
           };
@@ -603,6 +632,12 @@ async function computeAdminDashboardData() {
         videoViews: recentDailyRows.reduce((sum, row) => sum + toNumber(row.videoViews), 0),
         uniqueVisitors: recentDailyRows.reduce((sum, row) => sum + toNumber(row.uniqueVisitors), 0),
         sessions: recentDailyRows.reduce((sum, row) => sum + toNumber(row.totalSessions), 0),
+      },
+      engagement: {
+        pagesPerSession: recentDailyRows.reduce((sum, row) => sum + toNumber(row.pageViews), 0)
+          / Math.max(1, recentDailyRows.reduce((sum, row) => sum + toNumber(row.totalSessions), 0)),
+        videosPerSession: recentDailyRows.reduce((sum, row) => sum + toNumber(row.videoViews), 0)
+          / Math.max(1, recentDailyRows.reduce((sum, row) => sum + toNumber(row.totalSessions), 0)),
       },
     },
     insights: {
@@ -632,6 +667,7 @@ async function computeAdminDashboardData() {
           errors: toNumber(row.errors),
         })),
       },
+      activeHours,
     },
   };
 

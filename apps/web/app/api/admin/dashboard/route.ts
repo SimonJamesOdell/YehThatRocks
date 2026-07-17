@@ -152,6 +152,10 @@ function createEmptyDashboardPayload() {
       newVsRepeat: { newVisitors: 0, repeatVisitors: 0 },
       registrationsPerDay: [],
       totals: { pageViews: 0, videoViews: 0, uniqueVisitors: 0, sessions: 0 },
+      engagement: {
+        pagesPerSession: 0,
+        videosPerSession: 0,
+      },
     },
     hostMetrics: { minute: [] },
     insights: {
@@ -165,6 +169,7 @@ function createEmptyDashboardPayload() {
         unknownType: 0,
       },
       ingestVelocity: [],
+      activeHours: [],
       groqSpend: {
         wikiCacheCount: 0,
         daily: [],
@@ -228,6 +233,7 @@ type AnalyticsSeriesBucket = {
   videoViews: number;
   uniqueVisitors: number;
   returnVisits: number;
+  sessions: number;
   magazineExternalLandings: number;
   authEvents: number;
 };
@@ -304,6 +310,7 @@ function aggregateSeriesBuckets(
       existing.returnVisits += row.returnVisits;
       existing.magazineExternalLandings += row.magazineExternalLandings;
       existing.authEvents += row.authEvents;
+      existing.sessions += (row.sessions ?? 0);
       continue;
     }
 
@@ -316,6 +323,7 @@ function aggregateSeriesBuckets(
       videoViews: row.videoViews,
       uniqueVisitors: row.uniqueVisitors,
       returnVisits: row.returnVisits,
+      sessions: row.sessions ?? 0,
       magazineExternalLandings: row.magazineExternalLandings,
       authEvents: row.authEvents,
     });
@@ -348,6 +356,7 @@ function buildDailySeriesFromRows(rows: Array<{
         videoViews: Number(row.videoViews ?? 0),
         uniqueVisitors: Number(row.uniqueVisitors ?? 0),
         returnVisits: Number(row.returnVisits ?? 0),
+        sessions: 0,
         magazineExternalLandings: Number(row.magazineExternalLandings ?? 0),
         authEvents: Number(row.authEvents ?? 0),
       } as AnalyticsSeriesBucket;
@@ -508,6 +517,10 @@ function normalizeDashboardPayload(rawPayload: unknown) {
       daily: normalizedDaily,
       hourlyRecent: normalizedHourlyRecent,
       series: normalizedSeries,
+      engagement: {
+        pagesPerSession: toSafeNumber((rawAnalytics.engagement as Record<string, unknown> | undefined)?.pagesPerSession),
+        videosPerSession: toSafeNumber((rawAnalytics.engagement as Record<string, unknown> | undefined)?.videosPerSession),
+      },
       registrationsPerDay: asArray(rawAnalytics.registrationsPerDay),
     },
     hostMetrics: {
@@ -517,6 +530,7 @@ function normalizeDashboardPayload(rawPayload: unknown) {
       ...base.insights,
       ...rawInsights,
       authActionBreakdown: asArray(rawInsights.authActionBreakdown),
+      activeHours: asArray(rawInsights.activeHours),
       ingestVelocity: asArray(rawInsights.ingestVelocity),
       groqSpend: {
         ...base.insights.groqSpend,

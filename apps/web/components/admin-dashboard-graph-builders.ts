@@ -39,6 +39,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
       returnVisitsPath: "",
       magazineExternalLandingsPath: "",
       authEventsPath: "",
+      sessionsPath: "",
       yTicks: [] as Array<{ y: number; value: number }>,
       xTicks: [] as Array<{ x: number; label: string }>,
       points: [] as Array<{
@@ -49,6 +50,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
         yReturnVisits: number;
         yMagazineExternalLandings: number;
         yAuthEvents: number;
+        ySessions: number;
         bucketStart: string;
         bucketEnd: string;
         label: string;
@@ -58,6 +60,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
         returnVisits: number;
         magazineExternalLandings: number;
         authEvents: number;
+        sessions: number;
       }>,
       axis: { paddingLeft, paddingRight, paddingTop, paddingBottom },
     };
@@ -87,6 +90,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
       yReturnVisits: paddingTop + chartHeight - (item.returnVisits / maxVal) * chartHeight,
       yMagazineExternalLandings: paddingTop + chartHeight - (item.magazineExternalLandings / maxVal) * chartHeight,
       yAuthEvents: paddingTop + chartHeight - (item.authEvents / maxVal) * chartHeight,
+      ySessions: paddingTop + chartHeight - ((item.sessions ?? 0) / maxVal) * chartHeight,
       bucketStart: item.bucketStart,
       bucketEnd: item.bucketEnd,
       label: item.label,
@@ -96,6 +100,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
       returnVisits: item.returnVisits,
       magazineExternalLandings: item.magazineExternalLandings,
       authEvents: item.authEvents,
+      sessions: item.sessions ?? 0,
     };
   });
 
@@ -131,6 +136,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
     returnVisitsPath: makePath(points.map((point) => point.yReturnVisits)),
     magazineExternalLandingsPath: makePath(points.map((point) => point.yMagazineExternalLandings)),
     authEventsPath: makePath(points.map((point) => point.yAuthEvents)),
+    sessionsPath: makePath(points.map((point) => point.ySessions)),
   };
 }
 

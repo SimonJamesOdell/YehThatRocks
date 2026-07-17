@@ -14,6 +14,7 @@ type AnalyticsSeriesOn = {
   videoViews: boolean;
   visitors: boolean;
   returnVisits: boolean;
+  sessions: boolean;
   magazineExternalLandings: boolean;
   authEvents: boolean;
 };
@@ -26,6 +27,7 @@ type AnalyticsPoint = {
   yReturnVisits: number;
   yMagazineExternalLandings: number;
   yAuthEvents: number;
+  ySessions: number;
   bucketStart: string;
   bucketEnd: string;
   label: string;
@@ -35,6 +37,7 @@ type AnalyticsPoint = {
   returnVisits: number;
   magazineExternalLandings: number;
   authEvents: number;
+  sessions: number;
 };
 
 type AnalyticsGraph = {
@@ -48,6 +51,7 @@ type AnalyticsGraph = {
   videoViewsPath: string;
   visitorsPath: string;
   returnVisitsPath: string;
+  sessionsPath: string;
   magazineExternalLandingsPath: string;
   authEventsPath: string;
 };
@@ -137,6 +141,32 @@ export function AdminDashboardOverviewTab({
           <div><strong>Artists</strong><p>{dashboard?.counts.artists ?? 0}</p></div>
         </div>
       </div>
+
+      {/* Engagement cards */}
+      {dashboard?.analytics.engagement ? (
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 0, marginBottom: 12 }}>
+          <div style={{
+            borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)",
+            background: "rgba(255,255,255,0.03)", padding: "10px 16px",
+            minWidth: 140, textAlign: "center",
+          }}>
+            <div style={{ fontSize: 10, opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.06em" }}>Pages / Session</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: "#ff9d5c" }}>
+              {dashboard.analytics.engagement.pagesPerSession.toFixed(1)}
+            </div>
+          </div>
+          <div style={{
+            borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)",
+            background: "rgba(255,255,255,0.03)", padding: "10px 16px",
+            minWidth: 140, textAlign: "center",
+          }}>
+            <div style={{ fontSize: 10, opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.06em" }}>Videos / Session</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: "#5fc1ff" }}>
+              {dashboard.analytics.engagement.videosPerSession.toFixed(1)}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {showHostMetricsGraph ? (
         <div style={{ display: "grid", gap: 8 }}>
@@ -259,6 +289,7 @@ export function AdminDashboardOverviewTab({
             { key: "returnVisits", label: "Return Visits", color: "#9e86ff" },
             { key: "magazineExternalLandings", label: "Magazine External Landings", color: "#ff4d4d" },
             { key: "authEvents", label: "Auth Events", color: "#ffd1c4" },
+            { key: "sessions" as keyof AnalyticsSeriesOn, label: "Sessions", color: "#f0c040" },
           ] as Array<{ key: keyof AnalyticsSeriesOn; label: string; color: string }>).map(({ key, label, color }) => (
             <button
               key={key}
@@ -316,6 +347,7 @@ export function AdminDashboardOverviewTab({
             {analyticsSeriesOn.returnVisits && <path d={analyticsGraph.returnVisitsPath} fill="none" stroke="#9e86ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
             {analyticsSeriesOn.magazineExternalLandings && <path d={analyticsGraph.magazineExternalLandingsPath} fill="none" stroke="#ff4d4d" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
             {analyticsSeriesOn.authEvents && <path d={analyticsGraph.authEventsPath} fill="none" stroke="#ffd1c4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+            {analyticsSeriesOn.sessions && <path d={analyticsGraph.sessionsPath} fill="none" stroke="#f0c040" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6 3" />}
             {analyticsGraph.points.map((point) => (
               <g
                 key={`${point.bucketStart}-${point.bucketEnd}`}
@@ -330,6 +362,7 @@ export function AdminDashboardOverviewTab({
                     returnVisits: point.returnVisits,
                     magazineExternalLandings: point.magazineExternalLandings,
                     authEvents: point.authEvents,
+                    sessions: point.sessions ?? 0,
                   });
                 }}
                 style={{ cursor: analyticsZoomLevel === "allTime" || analyticsZoomLevel === "monthly" || analyticsZoomLevel === "weekly" ? "pointer" : "default" }}
@@ -340,7 +373,8 @@ export function AdminDashboardOverviewTab({
                 {analyticsSeriesOn.returnVisits && <circle cx={point.x} cy={point.yReturnVisits} r="3.5" fill="#9e86ff" />}
                 {analyticsSeriesOn.magazineExternalLandings && <circle cx={point.x} cy={point.yMagazineExternalLandings} r="3.5" fill="#ff4d4d" />}
                 {analyticsSeriesOn.authEvents && <circle cx={point.x} cy={point.yAuthEvents} r="3.5" fill="#ffd1c4" />}
-                <title>{`${point.label} (${new Date(point.bucketStart).toLocaleString()} - ${new Date(point.bucketEnd).toLocaleString()}) — Page views: ${point.pageViews}, Video views: ${point.videoViews}, Visitors: ${point.uniqueVisitors}, Return visits: ${point.returnVisits}, Magazine external landings: ${point.magazineExternalLandings}, Auth events: ${point.authEvents}`}</title>
+                {analyticsSeriesOn.sessions && <circle cx={point.x} cy={point.ySessions} r="3" fill="#f0c040" />}
+                <title>{`${point.label} (${new Date(point.bucketStart).toLocaleString()} - ${new Date(point.bucketEnd).toLocaleString()}) — Page views: ${point.pageViews}, Video views: ${point.videoViews}, Visitors: ${point.uniqueVisitors}, Return visits: ${point.returnVisits}, Magazine external landings: ${point.magazineExternalLandings}, Auth events: ${point.authEvents}, Sessions: ${point.sessions ?? 0}`}</title>
               </g>
             ))}
           </>

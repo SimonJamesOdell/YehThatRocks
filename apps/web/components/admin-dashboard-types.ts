@@ -12,6 +12,7 @@ export type AnalyticsBucket = {
   videoViews: number;
   uniqueVisitors: number;
   returnVisits: number;
+  sessions: number;
   magazineExternalLandings: number;
   authEvents: number;
 };
@@ -76,6 +77,10 @@ export type DashboardPayload = {
     newVsRepeat: { newVisitors: number; repeatVisitors: number };
     registrationsPerDay: Array<{ day: string; count: number }>;
     totals: { pageViews: number; videoViews: number; uniqueVisitors: number; sessions: number };
+    engagement: {
+      pagesPerSession: number;
+      videosPerSession: number;
+    };
 
   };
   hostMetrics: {
@@ -105,6 +110,7 @@ export type DashboardPayload = {
       unknownType: number;
     };
     ingestVelocity: Array<{ day: string; count: number }>;
+    activeHours: Array<{ hour: number; events: number }>;
     groqSpend: {
       wikiCacheCount: number;
       daily: Array<{ day: string; classified: number; errors: number }>;
