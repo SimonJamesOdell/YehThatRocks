@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+const { execSync } = require("node:child_process");
 const { assertInvariant } = require("./smoke-assertions");
 const { asNumber, readArg } = require("./lib/cli");
+const { loadDatabaseEnv } = require("./lib/runtime");
 "use strict";
 
 
@@ -515,6 +517,47 @@ async function main() {
   }
 
   console.log("\nAuth API smoke check passed.");
+
+  // ── Teardown: delete the anonymous account created by this smoke run ──
+  try {
+    loadDatabaseEnv();
+    const dbUrl = process.env.DATABASE_URL;
+    if (!dbUrl) {
+      console.error(`[smoke] no DATABASE_URL; skipping cleanup of "${anonymousScreenName}"`);
+      return;
+    }
+
+    // Parse DATABASE_URL: mysql://user:pass@host:port/db
+    const m = dbUrl.match(/^mysql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)$/);
+    if (!m) {
+      console.error(`[smoke] unparseable DATABASE_URL; skipping cleanup of "${anonymousScreenName}"`);
+      return;
+    }
+
+    const [, user, pass, host, port, db] = m;
+    const escapedName = anonymousScreenName.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+    const deleteSql = [
+      `SET @uid := (SELECT id FROM users WHERE screen_name = '${escapedName}' LIMIT 1);`,
+      `DELETE FROM auth_sessions WHERE user_id = @uid;`,
+      `DELETE FROM users WHERE id = @uid;`,
+      `SELECT ROW_COUNT() AS deleted;`,
+    ].join(" ");
+
+    const result = execSync(
+      `mysql -u ${user} -p${pass} -h ${host} -P ${port} ${db} -e "${deleteSql.replace(/"/g, '\\"')}"`,
+      { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"] },
+    );
+
+    const deletedMatch = result.match(/(\d+)/);
+    const count = deletedMatch ? parseInt(deletedMatch[1], 10) : 0;
+    console.log(count > 0
+      ? `[smoke] cleaned up test account "${anonymousScreenName}" (${count} row(s))`
+      : `[smoke] test account "${anonymousScreenName}" was already gone (nothing to clean up)`);
+  } catch (cleanupError) {
+    // Teardown failure must not fail the smoke check itself.
+    // A leftover test account is harmless; a flaky cleanup is worse.
+    console.error(`[smoke] failed to clean up test account "${anonymousScreenName}":`, cleanupError.message);
+  }
 }
 
 main().catch((error) => {

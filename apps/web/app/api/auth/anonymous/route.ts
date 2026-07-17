@@ -193,6 +193,7 @@ export async function POST(request: NextRequest) {
       data: {
         screenName: username,
         passwordHash,
+        isAnonymous: true,
       },
       select: {
         id: true,

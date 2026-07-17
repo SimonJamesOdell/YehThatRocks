@@ -106,6 +106,7 @@ export async function POST(request: NextRequest) {
         email,
         screenName,
         passwordHash,
+        isAnonymous: false,
       },
       select: {
         id: true,

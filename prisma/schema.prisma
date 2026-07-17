@@ -106,6 +106,8 @@ model User {
   avatarUrl               String?                  @map("avatar_url") @db.VarChar(500)
   bio                     String?                  @db.Text
   location                String?                  @db.VarChar(255)
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  isAnonymous             Boolean                  @default(false) @map("is_anonymous")
   playlists               PlaylistName[]
   messages                Message[]
   forumThreads            ForumThread[]
