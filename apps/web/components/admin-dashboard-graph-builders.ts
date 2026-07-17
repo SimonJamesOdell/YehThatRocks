@@ -8,6 +8,7 @@ type AnalyticsSeriesOn = {
   videoViews: boolean;
   visitors: boolean;
   returnVisits: boolean;
+  sessions: boolean;
   magazineExternalLandings: boolean;
   authEvents: boolean;
 };
@@ -73,6 +74,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
     analyticsSeriesOn.returnVisits ? row.returnVisits : 0,
     analyticsSeriesOn.magazineExternalLandings ? row.magazineExternalLandings : 0,
     analyticsSeriesOn.authEvents ? row.authEvents : 0,
+    analyticsSeriesOn.sessions ? (row.sessions ?? 0) : 0,
   );
 
   const maxVal = Math.max(1, ...displayedAnalyticsRows.map((row) => enabledSeriesMaxPerDay(row)));
