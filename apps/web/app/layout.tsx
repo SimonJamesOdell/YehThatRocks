@@ -57,6 +57,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://www.youtube.com" />
         <link rel="preconnect" href="https://www.youtube-nocookie.com" />
         <link rel="preconnect" href="https://i.ytimg.com" />
+        <meta property="fb:app_id" content="1016139985071738" />
       </head>
       <body className={metalMania.variable}>
         <PerformanceMeasureGuard />

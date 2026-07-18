@@ -81,6 +81,7 @@ export async function GET(
   <meta property="og:url" content="${escapeHtml(shareUrl)}" />
   <meta property="og:site_name" content="${escapeHtml(SHARE_SITE_NAME)}" />
   <meta property="og:type" content="website" />
+  <meta property="fb:app_id" content="1016139985071738" />
 
   <meta property="og:image" content="${escapeHtml(primaryImageUrl)}" />
   <meta property="og:image:url" content="${escapeHtml(primaryImageUrl)}" />
