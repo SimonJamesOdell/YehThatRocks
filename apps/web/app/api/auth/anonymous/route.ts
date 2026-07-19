@@ -52,6 +52,8 @@ const BOT_UA_PATTERNS = [
   "MegaIndex",
   "SeekportBot",
   "LinkpadBot",
+  "ev-crawler",
+  "headline",
 ];
 
 /**
@@ -167,9 +169,11 @@ export async function POST(request: NextRequest) {
   // Block requests missing the Sec-Fetch-Site header or with wrong value.
   // Real browsers set this automatically to "same-origin" on same-site fetches;
   // JavaScript is forbidden from modifying this header.
-  // Allow localhost connections (127.0.0.1, ::1) through without the header —
-  // smoke tests and dev tools use direct fetch() which doesn't send it.
-  const clientIp = request.headers.get("x-real-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "127.0.0.1";
+  // Only skip this check when we can positively identify the request as coming
+  // from localhost — smoke tests and dev tools use direct fetch() which doesn't
+  // send Sec-Fetch-Site. Unknown origins (missing x-real-ip / x-forwarded-for)
+  // are NOT treated as localhost — they must pass the check.
+  const clientIp = request.headers.get("x-real-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
   const isLocalhost = clientIp === "127.0.0.1" || clientIp === "::1" || clientIp === "localhost";
   if (!isLocalhost) {
     const secFetchSite = request.headers.get("sec-fetch-site");
