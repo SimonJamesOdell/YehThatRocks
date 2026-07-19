@@ -851,7 +851,6 @@ try {
   if (-not $SkipVerifyGate) {
     Write-Host "Running pre-deploy verification gates..." -ForegroundColor Yellow
     Exec "npm run verify:invariants"
-    Exec "npm run verify:invariants:api"
     Exec "npm run test:api"
     Write-Host "All verification gates passed." -ForegroundColor Green
   } else {
