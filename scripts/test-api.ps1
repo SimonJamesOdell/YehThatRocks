@@ -110,8 +110,8 @@ $env:AUTH_JWT_SECRET = $jwtSecret
 $env:NEXT_PUBLIC_DISABLE_DESKTOP_INTRO = "1"
 
 $proc = Start-Process node -ArgumentList $serverJs -PassThru -NoNewWindow -RedirectStandardError "$repoRoot/test-api-server-stderr.log" -RedirectStandardOutput "$repoRoot/test-api-server-stdout.log"
-$pid = $proc.Id
-Write-Host "Server PID: $pid"
+$serverPid = $proc.Id
+Write-Host "Server PID: $serverPid"
 
 # --- Phase 3: Wait for readiness ---
 Write-Host "Waiting for $baseUrl ..."
@@ -136,7 +136,7 @@ $sw.Stop()
 
 if (-not $ready) {
     Write-StepFail "start:test-server" "Server did not become ready within ${TimeoutSeconds}s. Last error: $lastError"
-    Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+    Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue
     exit 1
 }
 
@@ -184,8 +184,8 @@ foreach ($test in $tests) {
 
 # --- Phase 5: Stop server and report ---
 Write-Step "stop:test-server"
-Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
-Write-Host "Server process $pid stopped."
+Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue
+Write-Host "Server process $serverPid stopped."
 
 # Clean up log files
 Remove-Item "$repoRoot/test-api-server-stderr.log", "$repoRoot/test-api-server-stdout.log" -ErrorAction SilentlyContinue
