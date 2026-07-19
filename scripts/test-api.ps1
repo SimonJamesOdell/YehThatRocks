@@ -2,7 +2,7 @@ param(
     [int] $Port = 3100,
     [switch] $SkipBuild,
     [switch] $RunAll,
-    [int] $TimeoutSeconds = 30
+    [int] $TimeoutSeconds = 60
 )
 
 $ErrorActionPreference = "Stop"
@@ -121,7 +121,7 @@ $lastError = ""
 
 while ($sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
     try {
-        $response = Invoke-WebRequest -Uri "$baseUrl/api/status" -UseBasicParsing -TimeoutSec 2
+        $response = Invoke-WebRequest -Uri "$baseUrl/api/status" -UseBasicParsing -TimeoutSec 15
         if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
             $ready = $true
             break
