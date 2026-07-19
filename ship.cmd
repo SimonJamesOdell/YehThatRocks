@@ -52,7 +52,7 @@ echo [✓] Working tree is clean — proceeding with ship checks...
 echo.
 
 if /I "%SHIP_MODE%"=="fast" (
-	set "SHIP_FLAGS=-SkipAutoDependencyMaintenance -SkipMigrationValidation -SkipLocalCleanup -SkipDockerPrune"
+	set "SHIP_FLAGS=-SkipAutoDependencyMaintenance -SkipMigrationValidation -SkipLocalCleanup -SkipDockerPrune -SkipVerifyGate"
 ) else if /I "%SHIP_MODE%"=="regular" (
 	pushd "%~dp0"
 	echo [regular] running npm audit

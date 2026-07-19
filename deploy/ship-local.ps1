@@ -21,6 +21,8 @@ param(
   [switch]$SkipAutoDependencyMaintenance,
   # Skip migration validation checks before deployment.
   [switch]$SkipMigrationValidation,
+  # Skip invariant verification and API smoke tests before building.
+  [switch]$SkipVerifyGate,
   # Resume a previously failed ship run from persisted checkpoint state.
   [switch]$Resume
 )
@@ -843,6 +845,17 @@ try {
       UpdatedAt = (Get-Date).ToString("o")
     }
     Write-ShipState -StateFilePath $shipStatePath -State $shipState
+  }
+
+  # ── Verification gate: invariants + API smoke tests ──────────────────
+  if (-not $SkipVerifyGate) {
+    Write-Host "Running pre-deploy verification gates..." -ForegroundColor Yellow
+    Exec "npm run verify:invariants"
+    Exec "npm run verify:invariants:api"
+    Exec "npm run test:api"
+    Write-Host "All verification gates passed." -ForegroundColor Green
+  } else {
+    Write-Warning "Skipping verification gates (-SkipVerifyGate)."
   }
 
   if ((Get-ShipStageRank -Stage ([string]$shipState.Stage)) -lt (Get-ShipStageRank -Stage "image-built")) {
