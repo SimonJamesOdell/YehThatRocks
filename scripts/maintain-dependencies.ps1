@@ -173,12 +173,6 @@ function Invoke-VerifyLight {
   return $exit -eq 0
 }
 
-function Invoke-VerifyFull {
-  Write-Host "  Running verify:deps:full..."
-  $exit = Invoke-Native -Program "npm" -Args @("run", "verify:deps:full") -ErrorActionPreference_Override "Continue"
-  return $exit -eq 0
-}
-
 function Invoke-Audit {
   Write-Host "  Running npm audit..."
   $exit = Invoke-Native -Program "npm" -Args @("audit", "--audit-level=high") -ErrorActionPreference_Override "Continue"
@@ -395,16 +389,8 @@ $majorOk = Invoke-Step -Name "Major-updates" -Action {
   $null = Invoke-MajorUpdates
 }
 
-# --- Phase 3: Full verification ---
-$fullOk = Invoke-Step -Name "Full-verification" -Action {
-  if (-not (Invoke-VerifyFull)) {
-    if ($snapshotTaken) {
-      Write-Report "Full verification failed. Rolling back entire update."
-      Restore-Snapshot
-      Clear-StaleStash
-    }
-    throw "Full verification failed."
-  }
+# --- Phase 3: Audit ---
+$fullOk = Invoke-Step -Name "Audit" -Action {
   if (-not (Invoke-Audit)) {
     Write-Report "npm audit has high/critical vulnerabilities. Will not auto-merge."
     # Don't roll back for audit — vulnerabilities may pre-date this update

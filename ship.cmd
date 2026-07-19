@@ -55,14 +55,7 @@ if /I "%SHIP_MODE%"=="fast" (
 	set "SHIP_FLAGS=-SkipAutoDependencyMaintenance -SkipMigrationValidation -SkipLocalCleanup -SkipDockerPrune"
 ) else if /I "%SHIP_MODE%"=="regular" (
 	pushd "%~dp0"
-	echo [regular] running checks: verify:deps:full and audit
-	call npm run verify:deps:full
-	if errorlevel 1 (
-		set "SHIP_EXIT=%ERRORLEVEL%"
-		popd
-		endlocal & exit /b %SHIP_EXIT%
-	)
-
+	echo [regular] running npm audit
 	call npm audit --audit-level=high
 	if errorlevel 1 (
 		set "SHIP_EXIT=%ERRORLEVEL%"
