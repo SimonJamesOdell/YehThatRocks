@@ -850,9 +850,77 @@ try {
   # ── Verification gate: invariants + API smoke tests ──────────────────
   if (-not $SkipVerifyGate) {
     Write-Host "Running pre-deploy verification gates..." -ForegroundColor Yellow
-    Exec "npm run verify:invariants"
-    Exec "npm run test:api"
-    Write-Host "All verification gates passed." -ForegroundColor Green
+
+    # Phase 1: Build the app (creates standalone server.js)
+    Exec "npm run verify:compile"
+
+    # Phase 2: Start production server so it warms up during static checks
+    $testPort = 3100
+    $testBaseUrl = "http://127.0.0.1:$testPort"
+    $testServerJs = Join-Path $RepoDir "apps\web\.next\standalone\apps\web\server.js"
+    $testEnvFile = Join-Path $RepoDir "apps\web\.env.local"
+
+    # Kill any stale process on the test port
+    $stale = Get-NetTCPConnection -LocalPort $testPort -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($stale) { Stop-Process -Id $stale.OwningProcess -Force -ErrorAction SilentlyContinue }
+
+    Write-Host "Starting production test server on port $testPort..." -ForegroundColor Yellow
+
+    # Resolve DATABASE_URL and AUTH_JWT_SECRET from .env.local
+    $testDbUrl = ""
+    $testJwtSecret = ""
+    if (Test-Path $testEnvFile) {
+      Get-Content $testEnvFile | ForEach-Object {
+        if ($_ -match '^\s*DATABASE_URL\s*=\s*(.+)$') { $testDbUrl = $Matches[1].Trim().Trim('"').Trim("'") }
+        if ($_ -match '^\s*AUTH_JWT_SECRET\s*=\s*(.+)$') { $testJwtSecret = $Matches[1].Trim().Trim('"').Trim("'") }
+      }
+    }
+    if (-not $testDbUrl) { $testDbUrl = [Environment]::GetEnvironmentVariable("DATABASE_URL", "Process") }
+    if (-not $testJwtSecret) { $testJwtSecret = [Environment]::GetEnvironmentVariable("AUTH_JWT_SECRET", "Process") }
+
+    $env:NODE_ENV = "production"
+    $env:HOSTNAME = "127.0.0.1"
+    $env:PORT = "$testPort"
+    $env:DATABASE_URL = $testDbUrl
+    $env:AUTH_JWT_SECRET = $testJwtSecret
+    $env:NEXT_PUBLIC_DISABLE_DESKTOP_INTRO = "1"
+
+    $testProc = Start-Process node -ArgumentList $testServerJs -PassThru -NoNewWindow
+    $testServerPid = $testProc.Id
+    Write-Host "Test server PID: $testServerPid"
+
+    # Wait for readiness
+    Write-Host "Waiting for $testBaseUrl/api/status ..."
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $ready = $false
+    $lastError = ""
+    while ($sw.Elapsed.TotalSeconds -lt 60) {
+      try {
+        $resp = Invoke-WebRequest -Uri "$testBaseUrl/api/status" -UseBasicParsing -TimeoutSec 10
+        if ($resp.StatusCode -ge 200 -and $resp.StatusCode -lt 300) { $ready = $true; break }
+        $lastError = "HTTP $($resp.StatusCode)"
+      } catch { $lastError = $_.Exception.Message }
+      Start-Sleep -Milliseconds 1000
+    }
+    $sw.Stop()
+    if (-not $ready) {
+      Stop-Process -Id $testServerPid -Force -ErrorAction SilentlyContinue
+      throw "Test server did not become ready within 60s. Last error: $lastError"
+    }
+    Write-Host "Test server ready after $([math]::Round($sw.Elapsed.TotalSeconds, 1))s" -ForegroundColor Green
+
+    try {
+      # Phase 3: Static invariant checks (server warms up in background)
+      Exec "npm run verify:ui-regressions"
+
+      # Phase 4: API smoke tests against the warm production server
+      Exec "npm run test:api"
+
+      Write-Host "All verification gates passed." -ForegroundColor Green
+    } finally {
+      Write-Host "Stopping test server (PID $testServerPid)..." -ForegroundColor Yellow
+      Stop-Process -Id $testServerPid -Force -ErrorAction SilentlyContinue
+    }
   } else {
     Write-Warning "Skipping verification gates (-SkipVerifyGate)."
   }

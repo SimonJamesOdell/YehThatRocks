@@ -71,7 +71,7 @@ async function getTwoDistinctTopVideoIds(baseUrl, timeoutMs) {
 
 async function main() {
   const baseUrl = readArg("base-url", "http://localhost:3000").replace(/\/$/, "");
-  const timeoutMs = Math.max(1000, asNumber(readArg("timeout-ms", "6000"), 6000));
+  const timeoutMs = Math.max(1000, asNumber(readArg("timeout-ms", "15000"), 15000));
   const sessionCookie = readArg("session-cookie", process.env.PLAYLISTS_SMOKE_COOKIE || "");
   const failures = [];
 

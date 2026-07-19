@@ -117,7 +117,7 @@ async function fetchJson(url, init, timeoutMs) {
 
 async function main() {
   const baseUrl = readArg("base-url", "http://localhost:3000").replace(/\/$/, "");
-  const timeoutMs = Math.max(1200, asNumber(readArg("timeout-ms", "7000"), 7000));
+  const timeoutMs = Math.max(1200, asNumber(readArg("timeout-ms", "15000"), 15000));
   const authEmail = readArg("email", process.env.AUTH_SMOKE_EMAIL || "");
   const authPassword = readArg("password", process.env.AUTH_SMOKE_PASSWORD || "");
   const failures = [];

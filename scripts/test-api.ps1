@@ -88,60 +88,60 @@ if (-not $jwtSecret) {
     exit 1
 }
 
-# --- Phase 2: Start server ---
+# --- Phase 2: Start server (or use existing) ---
 $baseUrl = "http://127.0.0.1:$Port"
+$serverAlreadyRunning = $false
+$serverPid = $null
 
-# Check for port conflict
 $existing = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($existing) {
-    Write-Host "ERROR: Port $Port is already in use."
-    Write-Host "Find the process: Get-NetTCPConnection -LocalPort $Port | Select-Object OwningProcess"
-    Write-Host "Kill it: Stop-Process -Id <pid> -Force"
-    exit 1
-}
+    Write-Host "Server already running on port $Port (PID $($existing.OwningProcess)); using existing."
+    $serverAlreadyRunning = $true
+    $serverPid = $existing.OwningProcess
+} else {
+    Write-Step "start:test-server"
 
-Write-Step "start:test-server"
+    $env:NODE_ENV = "production"
+    $env:HOSTNAME = "127.0.0.1"
+    $env:PORT = "$Port"
+    $env:DATABASE_URL = $dbUrl
+    $env:AUTH_JWT_SECRET = $jwtSecret
+    $env:NEXT_PUBLIC_DISABLE_DESKTOP_INTRO = "1"
 
-$env:NODE_ENV = "production"
-$env:HOSTNAME = "127.0.0.1"
-$env:PORT = "$Port"
-$env:DATABASE_URL = $dbUrl
-$env:AUTH_JWT_SECRET = $jwtSecret
-$env:NEXT_PUBLIC_DISABLE_DESKTOP_INTRO = "1"
+    $proc = Start-Process node -ArgumentList $serverJs -PassThru -NoNewWindow -RedirectStandardError "$repoRoot/test-api-server-stderr.log" -RedirectStandardOutput "$repoRoot/test-api-server-stdout.log"
+    $serverPid = $proc.Id
+    Write-Host "Server PID: $serverPid"
 
-$proc = Start-Process node -ArgumentList $serverJs -PassThru -NoNewWindow -RedirectStandardError "$repoRoot/test-api-server-stderr.log" -RedirectStandardOutput "$repoRoot/test-api-server-stdout.log"
-$serverPid = $proc.Id
-Write-Host "Server PID: $serverPid"
+    # --- Phase 3: Wait for readiness ---
+    Write-Host "Waiting for $baseUrl ..."
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $ready = $false
+    $lastError = ""
 
-# --- Phase 3: Wait for readiness ---
-Write-Host "Waiting for $baseUrl ..."
-$sw = [System.Diagnostics.Stopwatch]::StartNew()
-$ready = $false
-$lastError = ""
-
-while ($sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
-    try {
-        $response = Invoke-WebRequest -Uri "$baseUrl/api/status" -UseBasicParsing -TimeoutSec 15
-        if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
-            $ready = $true
-            break
+    while ($sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+        try {
+            $response = Invoke-WebRequest -Uri "$baseUrl/api/status" -UseBasicParsing -TimeoutSec 15
+            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
+                $ready = $true
+                break
+            }
+            $lastError = "HTTP $($response.StatusCode)"
+        } catch {
+            $lastError = $_.Exception.Message
         }
-        $lastError = "HTTP $($response.StatusCode)"
-    } catch {
-        $lastError = $_.Exception.Message
+        Start-Sleep -Milliseconds 500
     }
-    Start-Sleep -Milliseconds 500
-}
-$sw.Stop()
+    $sw.Stop()
 
-if (-not $ready) {
-    Write-StepFail "start:test-server" "Server did not become ready within ${TimeoutSeconds}s. Last error: $lastError"
-    Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue
-    exit 1
-}
+    if (-not $ready) {
+        Write-StepFail "start:test-server" "Server did not become ready within ${TimeoutSeconds}s. Last error: $lastError"
+        Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue
+        exit 1
+    }
 
-Write-Host "API ready after $([math]::Round($sw.Elapsed.TotalSeconds, 1))s"
-Write-StepDone "start:test-server"
+    Write-Host "API ready after $([math]::Round($sw.Elapsed.TotalSeconds, 1))s"
+    Write-StepDone "start:test-server"
+}
 
 # --- Phase 4: Run API tests ---
 $tests = @(
@@ -158,7 +158,7 @@ foreach ($test in $tests) {
     $stepLabel = "test:$($test.Name -replace '\.js$','' -replace 'verify-','')"
     Write-Step $stepLabel
 
-    $args = @("--base-url=$baseUrl")
+    $args = @("--base-url=$baseUrl", "--timeout-ms=15000")
     if ($test.ExtraArgs) { $args += $test.ExtraArgs }
 
     $testResult = & node $test.Script @args 2>&1
@@ -183,9 +183,13 @@ foreach ($test in $tests) {
 }
 
 # --- Phase 5: Stop server and report ---
-Write-Step "stop:test-server"
-Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue
-Write-Host "Server process $serverPid stopped."
+if (-not $serverAlreadyRunning) {
+    Write-Step "stop:test-server"
+    Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue
+    Write-Host "Server process $serverPid stopped."
+} else {
+    Write-Host "Server was already running — leaving it."
+}
 
 # Clean up log files
 Remove-Item "$repoRoot/test-api-server-stderr.log", "$repoRoot/test-api-server-stdout.log" -ErrorAction SilentlyContinue

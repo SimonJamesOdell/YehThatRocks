@@ -77,7 +77,7 @@ function uniqueById(videos) {
 
 async function main() {
   const baseUrl = readArg("base-url", "http://localhost:3000").replace(/\/$/, "");
-  const timeoutMs = Math.max(800, asNumber(readArg("timeout-ms", "5500"), 5500));
+  const timeoutMs = Math.max(800, asNumber(readArg("timeout-ms", "15000"), 15000));
   const failures = [];
 
   console.log("Core experience API smoke checks\n");

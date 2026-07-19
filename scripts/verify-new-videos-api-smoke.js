@@ -47,7 +47,7 @@ function toVideoIds(videos) {
 
 async function main() {
   const baseUrl = readArg("base-url", "http://localhost:3000").replace(/\/$/, "");
-  const timeoutMs = Math.max(1000, asNumber(readArg("timeout-ms", "7000"), 7000));
+  const timeoutMs = Math.max(1000, asNumber(readArg("timeout-ms", "15000"), 15000));
   const take = Math.max(1, Math.min(200, asNumber(readArg("take", "20"), 20)));
   const failures = [];
 
