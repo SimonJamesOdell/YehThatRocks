@@ -164,12 +164,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // In production, block requests missing the Sec-Fetch-Site header or with
-  // wrong value. Real browsers set this automatically to "same-origin" on
-  // same-site fetches; JavaScript is forbidden from modifying this header.
-  // Skip this check in dev/test so smoke tests (which use fetch() directly)
-  // can still exercise the anonymous flow.
-  if (process.env.NODE_ENV === "production") {
+  // Block requests missing the Sec-Fetch-Site header or with wrong value.
+  // Real browsers set this automatically to "same-origin" on same-site fetches;
+  // JavaScript is forbidden from modifying this header.
+  // Allow localhost connections (127.0.0.1, ::1) through without the header —
+  // smoke tests and dev tools use direct fetch() which doesn't send it.
+  const clientIp = request.headers.get("x-real-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "127.0.0.1";
+  const isLocalhost = clientIp === "127.0.0.1" || clientIp === "::1" || clientIp === "localhost";
+  if (!isLocalhost) {
     const secFetchSite = request.headers.get("sec-fetch-site");
     if (!secFetchSite || secFetchSite !== "same-origin") {
       return NextResponse.json({ error: "Invalid request" }, { status: 403 });
