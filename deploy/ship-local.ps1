@@ -889,6 +889,9 @@ try {
     $testServerPid = $testProc.Id
     Write-Host "Test server PID: $testServerPid"
 
+    # Clear NODE_ENV so it doesn't leak into subsequent commands (Vitest needs dev React)
+    $env:NODE_ENV = $null
+
     # Wait for readiness
     Write-Host "Waiting for $testBaseUrl/api/status ..."
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
