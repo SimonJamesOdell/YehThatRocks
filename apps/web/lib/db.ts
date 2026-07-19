@@ -4,7 +4,6 @@ import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { normalizePrismaQueryFingerprint } from "@/lib/query-fingerprint";
 import { recordPrismaOperation, recordPrismaQueryFingerprint } from "@/lib/runtime-profiler";
 import { startServerMemoryPressureGuard } from "@/lib/memory-pressure-guard";
-import { clamp } from "@/lib/number-utils";
 
 declare global {
   var __yehPrisma__: PrismaClient | undefined;
@@ -43,90 +42,31 @@ function normalizeQueryOperation(query: string) {
   return "SQL.OTHER";
 }
 
-function getWorkerCount() {
-  const raw = Number(process.env.WEB_CONCURRENCY ?? process.env.APP_INSTANCE_COUNT ?? "1");
-  if (!Number.isFinite(raw) || raw < 1) {
-    return 1;
-  }
-
-  return clamp(Math.floor(raw), 1, 64);
-}
-
-function getDefaultConnectionLimit() {
-  if (process.env.NODE_ENV !== "production") {
-    return "10";
-  }
-
-  // Target aggregate pool size across all workers, then split per worker.
-  const targetTotalRaw = Number(process.env.PRISMA_TARGET_TOTAL_CONNECTIONS ?? "128");
-  const targetTotal = Number.isFinite(targetTotalRaw)
-    ? clamp(Math.floor(targetTotalRaw), 32, 512)
-    : 128;
-  const perWorker = Math.floor(targetTotal / getWorkerCount());
-  return String(clamp(perWorker, 8, 24));
-}
-
-function getPrismaDatabaseUrl() {
-  const databaseUrl = process.env.DATABASE_URL;
-
-  if (!databaseUrl) {
-    return databaseUrl;
-  }
-
-  try {
-    const url = new URL(databaseUrl);
-    const defaultConnectionLimit = getDefaultConnectionLimit();
-    // Shorter timeouts mean failed connections are detected quickly and the
-    // pool can retry creating new ones. With minimumIdle=5, transient failures
-    // during startup won't permanently exhaust the pool — the idle floor
-    // ensures surviving connections keep the pool alive while replacements
-    // are created.
-    const defaultPoolTimeoutMs = process.env.NODE_ENV === "production" ? "10000" : "25000";
-    const defaultConnectTimeoutMs = process.env.NODE_ENV === "production" ? "3000" : "3500";
-
-    if (!url.searchParams.has("connectionLimit")) {
-      url.searchParams.set(
-        "connectionLimit",
-        process.env.PRISMA_CONNECTION_LIMIT ?? defaultConnectionLimit,
-      );
-    }
-
-    if (!url.searchParams.has("minimumIdle")) {
-      // Maintain enough idle connections that a failed connection doesn't
-      // leave the pool empty. mysql2 pools do not auto-recreate connections
-      // once every idle has failed — the pool enters a permanent exhausted
-      // state (active=0 idle=0) that never recovers. A higher floor prevents
-      // total exhaustion during startup when MySQL is still warming.
-      url.searchParams.set(
-        "minimumIdle",
-        process.env.PRISMA_MINIMUM_IDLE ?? (process.env.NODE_ENV === "production" ? "5" : "2"),
-      );
-    }
-
-    if (!url.searchParams.has("acquireTimeout")) {
-      url.searchParams.set(
-        "acquireTimeout",
-        process.env.PRISMA_POOL_TIMEOUT_MS ?? defaultPoolTimeoutMs,
-      );
-    }
-
-    if (!url.searchParams.has("connectTimeout")) {
-      url.searchParams.set(
-        "connectTimeout",
-        process.env.PRISMA_CONNECT_TIMEOUT_MS ?? defaultConnectTimeoutMs,
-      );
-    }
-
-    return url.toString();
-  } catch {
-    return databaseUrl;
-  }
+/**
+ * Parse DATABASE_URL into a mariadb-compatible pool config object.
+ * mariadb.createPool() with a URI string is broken (active=0 idle=0),
+ * but with an object config it works reliably. Prisma 7 requires
+ * a driver adapter (engineType="library"), so we parse here.
+ */
+function parseDbUrl(url: string) {
+  const u = new URL(url);
+  // Protocol: "mysql:" -> let PrismaMariaDb rewrite to "mariadb:"
+  // We pass an object, so mariadb.createPool gets an object.
+  return {
+    host: u.hostname,
+    port: parseInt(u.port, 10) || 3306,
+    user: decodeURIComponent(u.username),
+    password: decodeURIComponent(u.password),
+    database: u.pathname.replace(/^\//, ""),
+    connectionLimit: 10,
+    connectTimeout: 5000,
+  };
 }
 
 function createPrismaClient() {
-  const url = getPrismaDatabaseUrl();
+  const databaseUrl = process.env.DATABASE_URL;
 
-  if (!url) {
+  if (!databaseUrl) {
     // Return a lazy proxy that defers PrismaClient creation until first use.
     // This lets the app boot and serve the "Backend unavailable" UI without
     // DATABASE_URL being set.
@@ -142,7 +82,7 @@ function createPrismaClient() {
     });
   }
 
-  const adapter = new PrismaMariaDb(url);
+  const adapter = new PrismaMariaDb(parseDbUrl(databaseUrl));
 
   return new PrismaClient({
     adapter,
