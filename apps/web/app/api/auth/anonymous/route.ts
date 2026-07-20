@@ -54,6 +54,7 @@ const BOT_UA_PATTERNS = [
   "LinkpadBot",
   "ev-crawler",
   "headline",
+  "RootEvidence", // automated scraper creating anonymous accounts from Linode IPs
 ];
 
 /**
