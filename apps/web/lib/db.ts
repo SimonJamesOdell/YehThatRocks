@@ -10,6 +10,7 @@ declare global {
   var __yehPrismaShutdownHooks__: boolean | undefined;
   var __yehPrismaProfilingHookInstalled__: boolean | undefined;
   var __yehMemoryPressureGuardStarted__: boolean | undefined;
+  var __yehBootStateRestored__: boolean | undefined;
 }
 
 type PrismaQueryEvent = {
