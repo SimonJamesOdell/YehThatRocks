@@ -445,7 +445,8 @@ async function upsertCategoryArtistRuntimeCacheRows(genreNorm: string, artists: 
         offset + index,
       );
       if (marker) {
-        params.push(marker);
+        // Convert Date to MySQL DATETIME(3)-compatible string for Prisma raw SQL.
+        params.push(marker.toISOString().slice(0, 23).replace("T", " "));
       }
     }
 
