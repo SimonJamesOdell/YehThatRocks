@@ -10,6 +10,7 @@ import { handleUnhandledAuthError, isTransientDatabaseError } from "@/lib/auth-r
 import { isScreenNameTaken, normalizeScreenName } from "@/lib/auth-screen-name";
 import { createRefreshSession } from "@/lib/auth-sessions";
 import { createEmailVerificationToken } from "@/lib/auth-token-records";
+import { isAccountCreationBotUA } from "@/lib/crawler-guard";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
 import { rateLimitOrResponse } from "@/lib/rate-limit";
@@ -33,6 +34,12 @@ export async function POST(request: NextRequest) {
       },
       { status: 503 },
     );
+  }
+
+  // Block known crawler user agents from creating accounts.
+  // This check is always active — no real user has these UAs.
+  if (isAccountCreationBotUA(request.headers.get("user-agent"))) {
+    return NextResponse.json({ error: "Invalid request" }, { status: 403 });
   }
 
   try {

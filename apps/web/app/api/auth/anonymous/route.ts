@@ -9,6 +9,7 @@ import { hashPassword } from "@/lib/auth-password";
 import { handleUnhandledAuthError } from "@/lib/auth-route-error";
 import { SCREEN_NAME_MAX_LENGTH, SCREEN_NAME_MIN_LENGTH, isScreenNameTaken, normalizeScreenName } from "@/lib/auth-screen-name";
 import { createRefreshSession } from "@/lib/auth-sessions";
+import { isAccountCreationBotUA } from "@/lib/crawler-guard";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
 import { parseRequestJson } from "@/lib/request-json";
@@ -21,41 +22,10 @@ type AnonymousRequestBody = {
 const ANONYMOUS_CHECK_LIMIT_PER_IP = 90;
 const ANONYMOUS_CHECK_WINDOW_MS = 5 * 60 * 1000;
 const ANONYMOUS_CHECK_LIMIT_GLOBAL = 2000;
-const ANONYMOUS_CREATE_LIMIT_PER_IP = 3;
+const ANONYMOUS_CREATE_LIMIT_PER_IP = 1;
 const ANONYMOUS_CREATE_WINDOW_MS = 60 * 60 * 1000;
 const ANONYMOUS_CREATE_LIMIT_GLOBAL = 120;
 const ANONYMOUS_CREATE_GLOBAL_WINDOW_MS = 10 * 60 * 1000;
-
-/**
- * Known crawler/bot user-agent substrings.
- * Blocking these on account creation prevents automated registrations
- * while having zero impact on real users.
- */
-const BOT_UA_PATTERNS = [
-  "facebookexternalhit",
-  "Facebot",
-  "Twitterbot",
-  "Googlebot",
-  "Bingbot",
-  "Slurp",
-  "DuckDuckBot",
-  "Baiduspider",
-  "YandexBot",
-  "Sogou",
-  "Exabot",
-  "ia_archiver",
-  "Bytespider",
-  "PetalBot",
-  "SemrushBot",
-  "AhrefsBot",
-  "DotBot",
-  "MegaIndex",
-  "SeekportBot",
-  "LinkpadBot",
-  "ev-crawler",
-  "headline",
-  "RootEvidence", // automated scraper creating anonymous accounts from Linode IPs
-];
 
 /**
  * Generates a secure random string suitable for credentials.
@@ -69,15 +39,6 @@ function generateSecureCredential(length: number): string {
     result += chars[bytes[i] % chars.length];
   }
   return result;
-}
-
-/**
- * Returns true if the User-Agent matches a known bot/crawler pattern.
- */
-function isBotUserAgent(userAgent: string | null): boolean {
-  if (!userAgent) return false;
-  const ua = userAgent.toLowerCase();
-  return BOT_UA_PATTERNS.some((pattern) => ua.includes(pattern.toLowerCase()));
 }
 
 export async function GET(request: NextRequest) {
@@ -186,7 +147,7 @@ export async function POST(request: NextRequest) {
   // Block known crawler user agents from creating accounts.
   // This check is always active — no real user has these UAs.
   const userAgent = request.headers.get("user-agent");
-  if (isBotUserAgent(userAgent)) {
+  if (isAccountCreationBotUA(userAgent)) {
     return NextResponse.json({ error: "Invalid request" }, { status: 403 });
   }
 
