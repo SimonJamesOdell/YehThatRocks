@@ -1,0 +1,15 @@
+[Unit]
+Description=YehThatRocks Performance Monitor
+After=docker.service
+Requires=yehthatrocks-web-1.service
+PartOf=yehthatrocks-web-1.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/docker exec -w /app yehthatrocks-web-1 node scripts/monitor-performance.js --url=http://localhost:3000 --interval-ms=30000 --window-hours=168 --out-dir=logs/ --quiet
+Restart=always
+RestartSec=30
+User=root
+
+[Install]
+WantedBy=multi-user.target

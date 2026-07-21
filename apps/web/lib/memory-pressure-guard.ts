@@ -24,7 +24,7 @@ type MemoryReliefState = {
 const DEFAULT_CHECK_INTERVAL_MS = 15_000;
 const DEFAULT_COOLDOWN_MS = 60_000;
 const DEFAULT_HEAP_USED_RATIO_THRESHOLD = 0.74;
-const DEFAULT_RSS_MB_THRESHOLD = 400;
+const DEFAULT_RSS_MB_THRESHOLD = 280;
 
 let guardStarted = false;
 const guardState: MemoryReliefState = {
@@ -96,6 +96,15 @@ export function shouldRunMemoryRelief(
 }
 
 async function relieveMemoryPressure(snapshot: MemorySnapshot, nowMs: number) {
+  // Log pre-relief heap state to telemetry before clearing caches so the
+  // pressure spike is visible in performance_telemetry_samples.
+  try {
+    const { recordMemoryPressureReliefEvent } = await import("@/lib/perf-sample-persistence");
+    await recordMemoryPressureReliefEvent(snapshot, nowMs);
+  } catch {
+    // Best-effort — never let telemetry logging block cache relief.
+  }
+
   const [
     currentVideoCacheModule,
     artistCacheModule,
@@ -121,6 +130,17 @@ async function relieveMemoryPressure(snapshot: MemorySnapshot, nowMs: number) {
   runtimeProfilerModule.resetRuntimeProfiling();
 
   guardState.lastReliefAtMs = nowMs;
+
+  // Ask the V8 engine to perform a full garbage collection pass now that
+  // in-memory caches have been cleared. This is only effective when Node
+  // is started with --expose-gc; otherwise it is a silent no-op.
+  try {
+    if (typeof global.gc === "function") {
+      global.gc();
+    }
+  } catch {
+    // gc() may throw in some embedding environments; ignore.
+  }
 
   const heapUsedMb = Math.round(snapshot.heapUsedBytes / 1024 / 1024);
   const heapTotalMb = Math.round(snapshot.heapTotalBytes / 1024 / 1024);

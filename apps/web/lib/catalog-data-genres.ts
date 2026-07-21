@@ -30,6 +30,7 @@ import {
   getVideoArtistNormalizationColumn,
   getVideoArtistNormalizationExpr,
   getVideoArtistNormalizationIndexHintClause,
+  getVideoGenreNormLookupExpr,
   hasGenreAllColumn,
   hasVideoGenreColumn,
   hasVideoGenreNormColumn,
@@ -403,19 +404,33 @@ async function upsertCategoryArtistRuntimeCacheRows(genreNorm: string, artists: 
 
   await ensureCategoryArtistRuntimeCacheTable();
 
-  await prisma.$executeRawUnsafe(
-    `DELETE FROM category_artist_runtime_cache WHERE genre_norm = ?`,
-    genreNorm,
-  );
+  const isEmpty = artists.length === 0;
 
-  if (artists.length === 0) {
-    return;
+  // Snapshot a marker timestamp before we start so orphan cleanup can
+  // distinguish rows touched by this upsert from stale rows that belong
+  // to a prior (or concurrent) rebuild.
+  let marker: Date | null = null;
+  try {
+    const markerResult = await prisma.$queryRawUnsafe<Array<{ marker: Date }>>(
+      `SELECT UTC_TIMESTAMP(3) AS marker`,
+    );
+    marker = markerResult[0]?.marker ?? null;
+  } catch {
+    // If the marker query fails (e.g. in tests without a real DB), fall
+    // back to letting MySQL compute the timestamp inline via NOW(3).
   }
 
+  // Upsert rows in chunks using INSERT ... ON DUPLICATE KEY UPDATE.
+  // This removes the empty-cache window that the old DELETE-then-INSERT
+  // pattern created: existing rows stay visible until their replacements
+  // arrive, and new rows appear in the same atomic statement.
   const chunkSize = 200;
   for (let offset = 0; offset < artists.length; offset += chunkSize) {
     const chunk = artists.slice(offset, offset + chunkSize);
-    const valuesClause = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3))").join(", ");
+    // When marker is available, use it so orphan cleanup can match exactly.
+    // Otherwise fall back to NOW(3) — orphan cleanup will be skipped.
+    const timestampExpr = marker ? "?" : "NOW(3)";
+    const valuesClause = chunk.map(() => `(?, ?, ?, ?, ?, ?, ?, ${timestampExpr})`).join(", ");
     const params: Array<string | number | null> = [];
 
     for (let index = 0; index < chunk.length; index += 1) {
@@ -429,6 +444,9 @@ async function upsertCategoryArtistRuntimeCacheRows(genreNorm: string, artists: 
         row.dominantGenre || null,
         offset + index,
       );
+      if (marker) {
+        params.push(marker);
+      }
     }
 
     await prisma.$executeRawUnsafe(
@@ -444,8 +462,37 @@ async function upsertCategoryArtistRuntimeCacheRows(genreNorm: string, artists: 
           updated_at
         )
         VALUES ${valuesClause}
+        ON DUPLICATE KEY UPDATE
+          artist_name = VALUES(artist_name),
+          video_count = VALUES(video_count),
+          thumbnail_video_id = VALUES(thumbnail_video_id),
+          dominant_genre = VALUES(dominant_genre),
+          sort_index = VALUES(sort_index),
+          updated_at = VALUES(updated_at)
       `,
       ...params,
+    );
+  }
+
+  // Prune orphaned rows: any row for this genre that was NOT touched by the
+  // upsert above retains an older updated_at and belongs to an artist that
+  // is no longer in the source data set.
+  //
+  // When the source data set is empty (isEmpty), we still need to clear the
+  // genre entirely. In that case, all rows are orphans.
+  //
+  // When the marker is unavailable (e.g. in tests without a real DB), skip
+  // the orphan cleanup — the upsert already updated the rows that matter.
+  if (isEmpty) {
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM category_artist_runtime_cache WHERE genre_norm = ?`,
+      genreNorm,
+    );
+  } else if (marker) {
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM category_artist_runtime_cache WHERE genre_norm = ? AND updated_at < ?`,
+      genreNorm,
+      marker,
     );
   }
 
@@ -925,8 +972,15 @@ async function queryCategoryArtistsByGenreFromVideos(
   const requestedLimit = Math.max(1, Math.min(maxLimit, Number.isFinite(options.limit) ? Number(options.limit) : 48));
   const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
   const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
-  const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
-  const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
+  const hasGenreNorm = await hasVideoGenreNormColumn();
+  const genreLookup = getVideoGenreNormLookupExpr("v", hasGenreNorm);
+  // When filtering on an indexable column (genre_norm), let MySQL choose the best
+  // index (idx_videos_genre_norm_approved_fav) instead of forcing the artist-norm
+  // index. The FORCE INDEX is only beneficial when there is no genre_norm column
+  // and the query must scan by artist anyway.
+  const videoArtistIndexHint = genreLookup.usesIndexableColumn
+    ? ""
+    : await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
   const hasPinnedCategoryArtistThumbs = await hasCategoryArtistThumbnailTable();
 
   if (videoArtistNormColumn) {
@@ -949,7 +1003,7 @@ async function queryCategoryArtistsByGenreFromVideos(
          AND COALESCE(v.approved, 0) = 1
          ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
          AND (
-           ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+           ${genreLookup.sqlExpr} IN (${normalizedGenrePlaceholders})
            OR LOWER(v.genre) REGEXP ?
          )
        GROUP BY ${normalizedRef}
@@ -995,7 +1049,7 @@ async function queryCategoryArtistsByGenreFromVideos(
            AND COALESCE(v.approved, 0) = 1
            ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
            AND (
-             ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+             ${genreLookup.sqlExpr} IN (${normalizedGenrePlaceholders})
              OR LOWER(v.genre) REGEXP ?
            )
        ) ranked
@@ -1078,7 +1132,7 @@ async function queryCategoryArtistsByGenreFromVideos(
        AND COALESCE(v.approved, 0) = 1
        ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
        AND (
-         ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+         ${genreLookup.sqlExpr} IN (${normalizedGenrePlaceholders})
          OR LOWER(v.genre) REGEXP ?
        )
      GROUP BY ${videoArtistNormExpr}
@@ -1124,7 +1178,7 @@ async function queryCategoryArtistsByGenreFromVideos(
          AND COALESCE(v.approved, 0) = 1
          ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
          AND (
-           ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+           ${genreLookup.sqlExpr} IN (${normalizedGenrePlaceholders})
            OR LOWER(v.genre) REGEXP ?
          )
      ) ranked
@@ -1349,15 +1403,18 @@ export async function getCategoryArtistCountByGenre(genre: string): Promise<numb
 
   const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
   const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
-  const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
-  const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
+  const hasGenreNorm = await hasVideoGenreNormColumn();
+  const genreLookup = getVideoGenreNormLookupExpr("v", hasGenreNorm);
+  const videoArtistIndexHint = genreLookup.usesIndexableColumn
+    ? ""
+    : await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
   const normalizedGenrePlaceholders = normalizedGenreTerms.map(() => "?").join(", ");
 
   return queryCategoryArtistCountByTerms({
     normalizedGenrePlaceholders,
     normalizedGenrePattern,
     normalizedGenreTerms,
-    normalizedGenreSqlExpr,
+    normalizedGenreSqlExpr: genreLookup.sqlExpr,
     videoArtistNormColumn,
     videoArtistNormExpr,
     videoArtistIndexHint,
@@ -1592,8 +1649,11 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
 
   const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
   const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
-  const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
-  const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
+  const hasGenreNorm = await hasVideoGenreNormColumn();
+  const genreLookup = getVideoGenreNormLookupExpr("v", hasGenreNorm);
+  const videoArtistIndexHint = genreLookup.usesIndexableColumn
+    ? ""
+    : await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
   const normalizedGenrePlaceholders = normalizedGenreTerms.map(() => "?").join(", ");
 
   const matchers = buildCategoryArtistTabCountMatchers(genre);
@@ -1613,7 +1673,7 @@ export async function getCategoryArtistTabCountsByGenre(genre: string): Promise<
          AND COALESCE(v.approved, 0) = 1
          ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
          AND (
-           ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+           ${genreLookup.sqlExpr} IN (${normalizedGenrePlaceholders})
            OR LOWER(v.genre) REGEXP ?
          )
      ) ranked
@@ -1660,10 +1720,13 @@ export async function getVideosByGenreAndArtist(
   }
 
   const normalizedGenrePattern = buildGenreRegexPattern(normalizedGenreTerms);
-  const normalizedGenreSqlExpr = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(v.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))";
   const videoArtistNormColumn = await getVideoArtistNormalizationColumn();
     const videoArtistNormExpr = getCategoryArtistNormalizationExpr("v", videoArtistNormColumn);
-  const videoArtistIndexHint = await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
+  const hasGenreNorm = await hasVideoGenreNormColumn();
+  const genreLookup = getVideoGenreNormLookupExpr("v", hasGenreNorm);
+  const videoArtistIndexHint = genreLookup.usesIndexableColumn
+    ? ""
+    : await getVideoArtistNormalizationIndexHintClause(videoArtistNormColumn);
   const normalizedGenrePlaceholders = normalizedGenreTerms.map(() => "?").join(", ");
 
   const rows = await prisma.$queryRawUnsafe<Array<{
@@ -1689,7 +1752,7 @@ export async function getVideosByGenreAndArtist(
        AND COALESCE(v.approved, 0) = 1
        ${AVAILABLE_SITE_VIDEOS_EXISTS_CLAUSE}
        AND (
-         ${normalizedGenreSqlExpr} IN (${normalizedGenrePlaceholders})
+         ${genreLookup.sqlExpr} IN (${normalizedGenrePlaceholders})
          OR LOWER(v.genre) REGEXP ?
        )
      ORDER BY v.favourited DESC, COALESCE(v.viewCount, 0) DESC, v.id ASC

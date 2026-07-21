@@ -402,6 +402,25 @@ export async function hasVideoGenreNormColumn(): Promise<boolean> {
   return videoGenreNormColumnAvailableCache;
 }
 
+// Returns an SQL expression for genre-based filtering that prefers the pre-normalized
+// `genre_norm` column when available, falling back to runtime normalization of `genre`.
+export function getVideoGenreNormLookupExpr(alias: string, useGenreNorm: boolean): {
+  sqlExpr: string;
+  usesIndexableColumn: boolean;
+} {
+  if (useGenreNorm) {
+    return {
+      sqlExpr: `${alias}.genre_norm`,
+      usesIndexableColumn: true,
+    };
+  }
+
+  return {
+    sqlExpr: `LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${alias}.genre, '-', ' '), '_', ' '), '/', ' '), '.', ' '), ',', ' ')))`,
+    usesIndexableColumn: false,
+  };
+}
+
 export async function ensureVideoGenreColumnAvailable(): Promise<boolean> {
   const alreadyAvailable = await hasVideoGenreColumn();
   if (alreadyAvailable) {

@@ -157,6 +157,17 @@ if (
   global.__yehMemoryPressureGuardStarted__ = true;
 }
 
+// Restore accumulated Prisma telemetry totals from the last shutdown so
+// totalsSinceBoot survives Node.js restarts. Also registers SIGTERM/SIGINT
+// handlers that persist the current totals before exit.
+if (
+  process.env.NODE_ENV === "production" &&
+  !global.__yehBootStateRestored__
+) {
+  void import("@/lib/runtime-profiler").then((m) => m.restoreRuntimeProfilingBootState());
+  global.__yehBootStateRestored__ = true;
+}
+
 if (process.env.NODE_ENV !== "production") {
   global.__yehPrisma__ = prisma;
 }

@@ -144,6 +144,46 @@ let totalPrismaDurationMsSinceBoot = 0;
 let runtimeProfilingSnapshotCache: SnapshotCacheEntry | null = null;
 let dbHistoricalProfilingCache: DbHistoricalProfilingCacheEntry | null = null;
 let dbHistoricalProfilingInFlight: Promise<DbHistoricalProfilingSummary> | null = null;
+let bootStateRestored = false;
+let shutdownHandlersRegistered = false;
+
+function registerShutdownHandlers() {
+  if (shutdownHandlersRegistered) return;
+  shutdownHandlersRegistered = true;
+
+  const persistAndExit = async () => {
+    try {
+      const { saveBootTotals } = await import("@/lib/perf-sample-persistence");
+      await saveBootTotals(totalPrismaQueriesSinceBoot, totalPrismaDurationMsSinceBoot);
+    } catch {
+      // Best-effort during shutdown.
+    }
+    process.exit(0);
+  };
+
+  process.once("SIGTERM", () => { void persistAndExit(); });
+  process.once("SIGINT", () => { void persistAndExit(); });
+}
+
+export async function restoreRuntimeProfilingBootState() {
+  if (bootStateRestored) return;
+  bootStateRestored = true;
+
+  if (!process.env.DATABASE_URL) return;
+
+  try {
+    const { restoreBootTotals } = await import("@/lib/perf-sample-persistence");
+    const saved = await restoreBootTotals();
+    if (saved) {
+      totalPrismaQueriesSinceBoot = saved.totalQueries;
+      totalPrismaDurationMsSinceBoot = saved.totalDurationMs;
+    }
+  } catch {
+    // Best-effort — fresh counters on failure.
+  }
+
+  registerShutdownHandlers();
+}
 
 function round(value: number, digits = 2) {
   if (!Number.isFinite(value)) {

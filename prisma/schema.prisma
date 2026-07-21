@@ -38,7 +38,11 @@ model Video {
   @@fulltext([title, parsedArtist, parsedTrack])
   @@index([parsedArtistNorm], map: "idx_videos_parsed_artist_norm")
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "idx_videos_created_at_id")
+  @@index([updatedAt(sort: Desc), id(sort: Desc)], map: "idx_videos_updated_at_id")
+  @@index([favourited, viewCount, videoId], map: "idx_videos_favourited_views_videoId")
+  @@index([viewCount], map: "idx_videos_views")
   @@index([genreNorm, approved, favourited(sort: Desc)], map: "idx_videos_genre_norm_approved_fav")
+  @@index([parsedArtistNorm, favourited, viewCount, videoId, id], map: "idx_videos_parsed_artist_norm_fav_view_videoid_id")
   @@map("videos")
 }
 
@@ -211,6 +215,7 @@ model WatchHistory {
   @@unique([userId, videoId])
   @@index([userId, lastWatchedAt])
   @@index([videoId])
+  @@index([videoId, lastDurationSec], map: "idx_watch_history_video_id_duration_sec")
   @@map("watch_history")
 }
 
@@ -245,6 +250,7 @@ model PlaylistItem {
   playlist   PlaylistName @relation(fields: [playlistId], references: [id])
   video      Video        @relation(fields: [videoId], references: [id])
 
+  @@index([playlistId], map: "idx_playlistitems_playlist_id")
   @@map("playlistitems")
 }
 
@@ -308,6 +314,7 @@ model SiteVideo {
   video     Video?    @relation(fields: [videoId], references: [id])
 
   @@index([status, videoId], map: "idx_site_videos_status_video_id")
+  @@index([videoId, status], map: "idx_site_videos_video_id_status")
   @@map("site_videos")
 }
 

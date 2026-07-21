@@ -501,6 +501,7 @@ describe("getCategoryArtistsByGenre — split aggregation strategy", () => {
     queryRawUnsafeMock.mockReset();
     queryRawMock.mockReset();
     hasVideoGenreColumnMock.mockReset();
+    hasVideoGenreNormColumnMock.mockReset();
     getVideoArtistNormalizationColumnMock.mockReset();
     getVideoArtistNormalizationIndexHintClauseMock.mockReset();
 
@@ -575,6 +576,7 @@ describe("category artist count and tab-count runtime-cache optimization", () =>
     queryRawUnsafeMock.mockReset();
     queryRawMock.mockReset();
     hasVideoGenreColumnMock.mockReset();
+    hasVideoGenreNormColumnMock.mockReset();
     getVideoArtistNormalizationColumnMock.mockReset();
     getVideoArtistNormalizationIndexHintClauseMock.mockReset();
 
@@ -735,6 +737,7 @@ describe("runtime cache maintenance write-pressure guards", () => {
     queryRawUnsafeMock.mockReset();
     queryRawMock.mockReset();
     hasVideoGenreColumnMock.mockReset();
+    hasVideoGenreNormColumnMock.mockReset();
     getVideoArtistNormalizationColumnMock.mockReset();
     getVideoArtistNormalizationIndexHintClauseMock.mockReset();
 
