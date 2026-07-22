@@ -415,12 +415,19 @@ async function computeAdminDashboardData() {
 
   // -------------------------------------------------------------------------
   // Compute weekly / monthly / yearly series with genuine distinct counts
-  // directly from analytics_events.  Summing daily COUNT(DISTINCT …) values
-  // double-counts visitors who appear on multiple days — a visitor who comes
-  // every day of the week counted as 7 instead of 1.
+  // directly from analytics_events.  "return_visits" counts distinct
+  // visitor_ids with is_new_visitor=0 in the period — same definition as
+  // the daily rollup table.  This is the standard analytics definition:
+  // visitors who have visited before (at any point in history), regardless
+  // of how many days they visited this period.
+  //
+  // NOTE: use $queryRawUnsafe because the time-window literals are
+  // hardcoded constants, not user input.
   // -------------------------------------------------------------------------
+
   const [weeklySeriesRaw, monthlySeriesRaw, yearlySeriesRaw] = await Promise.all([
-    prisma.$queryRaw`
+    // --- Weekly series (90-day window) ----------------------------------
+    prisma.$queryRawUnsafe(`
       SELECT
         DATE_SUB(DATE(created_at), INTERVAL (DAYOFWEEK(created_at) + 5) % 7 DAY) AS period_start,
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
@@ -432,8 +439,10 @@ async function computeAdminDashboardData() {
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 90 DAY)
       GROUP BY period_start
       ORDER BY period_start ASC
-    `.catch(() => []),
-    prisma.$queryRaw`
+    `).catch(() => []),
+
+    // --- Monthly series (~2-year window) --------------------------------
+    prisma.$queryRawUnsafe(`
       SELECT
         DATE_FORMAT(created_at, '%Y-%m-01') AS period_start,
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
@@ -442,10 +451,13 @@ async function computeAdminDashboardData() {
         SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
       FROM analytics_events
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 730 DAY)
       GROUP BY period_start
       ORDER BY period_start ASC
-    `.catch(() => []),
-    prisma.$queryRaw`
+    `).catch(() => []),
+
+    // --- Yearly series (~5-year window) ---------------------------------
+    prisma.$queryRawUnsafe(`
       SELECT
         YEAR(created_at) AS period_start,
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
@@ -454,9 +466,10 @@ async function computeAdminDashboardData() {
         SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
       FROM analytics_events
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1825 DAY)
       GROUP BY period_start
       ORDER BY period_start ASC
-    `.catch(() => []),
+    `).catch(() => []),
   ]);
 
   // Auth events & magazine landings are simple event counts (not distincts),
@@ -512,13 +525,16 @@ async function computeAdminDashboardData() {
     };
   }
 
-  const weeklySeries = weeklySeriesRaw.map((row) => {
+  const weeklySeries = weeklySeriesRaw.reduce((acc, row) => {
+    if (row.period_start == null) return acc;
     const periodStart = row.period_start instanceof Date ? row.period_start : new Date(row.period_start);
+    if (isNaN(periodStart.getTime())) return acc;
     const periodEnd = new Date(periodStart);
     periodEnd.setUTCDate(periodEnd.getUTCDate() + 7);
     const endLabel = new Date(periodEnd.getTime() - 86400000).toISOString().slice(0, 10);
-    return buildPeriodBucket(periodStart, periodEnd, `${periodStart.toISOString().slice(0, 10)} to ${endLabel}`, row);
-  });
+    acc.push(buildPeriodBucket(periodStart, periodEnd, `${periodStart.toISOString().slice(0, 10)} to ${endLabel}`, row));
+    return acc;
+  }, []);
 
   const monthlySeries = monthlySeriesRaw.map((row) => {
     const periodStartStr = String(row.period_start);

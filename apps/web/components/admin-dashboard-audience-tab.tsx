@@ -25,7 +25,8 @@ export function AdminDashboardAudienceTab({
     );
   }
 
-  const totalReturning = audience.frequencyDistribution.reduce(
+  // Use the same is_new_visitor=0 definition as the daily/monthly chart
+  const totalReturning = audience.returningVisitorCount ?? audience.frequencyDistribution.reduce(
     (sum, f) => sum + f.people,
     0,
   );

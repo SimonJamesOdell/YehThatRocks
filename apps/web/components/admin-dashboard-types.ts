@@ -289,6 +289,7 @@ export type AudienceData = {
   generatedAt: string;
   frequencyDistribution: AudienceFrequencyBucket[];
   retentionCohorts: AudienceRetentionCohort[];
+  returningVisitorCount: number;
 };
 
 // Tab Routing

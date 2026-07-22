@@ -60,7 +60,7 @@ type AudienceRetentionRow = {
 async function loadAudienceData() {
   const nowIso = new Date().toISOString();
 
-  const [freqRows, retention7Rows, retention30Rows] = await Promise.all([
+  const [freqRows, returningCountRows, retention7Rows, retention30Rows] = await Promise.all([
     prisma.$queryRaw<AudienceFrequencyRow[]>`
       SELECT days_visited, COUNT(*) AS people
       FROM (
@@ -74,6 +74,14 @@ async function loadAudienceData() {
       ) t
       GROUP BY days_visited
       ORDER BY days_visited ASC
+    `.catch(() => []),
+    // Returning visitor count (matches daily/monthly definition: is_new_visitor=0)
+    prisma.$queryRaw<Array<{ count: bigint | number }>>`
+      SELECT COUNT(DISTINCT COALESCE(CAST(user_id AS CHAR), visitor_id)) AS count
+      FROM analytics_events
+      WHERE event_type = 'page_view'
+        AND is_new_visitor = 0
+        AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
     `.catch(() => []),
     // 7-day retention: of visitors who were NEW 7 days ago, how many came back in the 7 days since?
     prisma.$queryRaw<AudienceRetentionRow[]>`
@@ -149,10 +157,13 @@ async function loadAudienceData() {
     extractRetention(retention30Rows, "30-day"),
   ];
 
+  const returningVisitorCount = Number(returningCountRows[0]?.count ?? 0);
+
   return {
     generatedAt: nowIso,
     frequencyDistribution,
     retentionCohorts,
+    returningVisitorCount,
   };
 }
 
@@ -293,6 +304,7 @@ function createEmptyDashboardPayload() {
       generatedAt: nowIso,
       frequencyDistribution: [],
       retentionCohorts: [],
+      returningVisitorCount: 0,
     },
     hostMetrics: { minute: [] },
     insights: {
@@ -441,13 +453,18 @@ function aggregateSeriesBuckets(
     const bucketStartDate = bucketStartFn(bucketDate);
     const existing = aggregates.get(key);
     if (existing) {
+      // Summable metrics (event counts — safe to sum across buckets):
       existing.pageViews += row.pageViews;
       existing.videoViews += row.videoViews;
-      existing.uniqueVisitors += row.uniqueVisitors;
-      existing.returnVisits += row.returnVisits;
       existing.magazineExternalLandings += row.magazineExternalLandings;
       existing.authEvents += row.authEvents;
       existing.sessions += (row.sessions ?? 0);
+
+      // Non-summable metrics (COUNT DISTINCT per bucket — summing
+      // double-counts the same visitors across days).  The cache script
+      // (maintain-admin-dashboard-cache.mjs) computes these correctly
+      // from raw analytics_events; this fallback path can't reconstruct
+      // them, so leave the existing value as-is.
       continue;
     }
 
