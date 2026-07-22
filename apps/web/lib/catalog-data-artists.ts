@@ -1835,7 +1835,7 @@ export async function getArtistBySlug(slug: string) {
   }
 }
 
-export async function getVideosByArtist(artistName: string, limit = 500) {
+export async function getVideosByArtist(artistName: string, limit = 500): Promise<VideoRecord[]> {
   const safeLimit = clamp(Math.floor(limit), 1, 500);
   const normalizedArtist = normalizeArtistKey(artistName);
   if (!normalizedArtist) return [] as VideoRecord[];
@@ -1937,8 +1937,8 @@ export async function getVideosByArtist(artistName: string, limit = 500) {
       }
 
       const mapped = rows
-        .map((row: any) => mapVideo({ ...row, channelTitle: row.parsedArtist }))
-        .filter((video: any, index: number, allVideos: any[]) => allVideos.findIndex((candidate: any) => candidate.id === video.id) === index);
+        .map((row) => mapVideo({ ...row, channelTitle: row.parsedArtist }))
+        .filter((video, index, allVideos) => allVideos.findIndex((candidate) => candidate.id === video.id) === index);
 
       artistVideosCache.set(cacheKey, { expiresAt: Date.now() + ARTIST_VIDEOS_CACHE_TTL_MS, videos: mapped });
 

@@ -67,7 +67,7 @@ async function loadVideoGenresByIds(ids: number[]) {
     ...ids,
   ).catch(() => []);
 
-  return new Map(rows.map((row) => [Number(row.id), row.genre ?? null]));
+  return new Map(rows.map((row: { id: number; genre: string | null }) => [Number(row.id), row.genre ?? null]));
 }
 
 async function attachGenresToVideos<T extends { id: number }>(videos: T[]) {

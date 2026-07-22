@@ -2186,7 +2186,7 @@ function getArtistsByGenreFallback(genre: string) {
   return [] as ArtistRecord[];
 }
 
-export async function getArtistsByGenre(genre: string) {
+export async function getArtistsByGenre(genre: string): Promise<ArtistRecord[]> {
   const expandedTerms = getExpandedGenreTerms(genre);
   const cacheKey = expandedTerms.join("|") || genre.trim().toLowerCase();
   const now = Date.now();
