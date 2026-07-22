@@ -47,6 +47,136 @@ async function loadLiveUserCounters() {
 
 type DashboardPayloadWithMeta = { payload: Record<string, unknown>; usedFallback: boolean };
 
+type AudienceFrequencyRow = {
+  days_visited: bigint | number;
+  people: bigint | number;
+};
+
+type AudienceRetentionRow = {
+  cohort_size: bigint | number;
+  returned: bigint | number;
+};
+
+async function loadAudienceData() {
+  const nowIso = new Date().toISOString();
+
+  const [freqRows, retention7Rows, retention30Rows] = await Promise.all([
+    prisma.$queryRaw<AudienceFrequencyRow[]>`
+      SELECT days_visited, COUNT(*) AS people
+      FROM (
+        SELECT COALESCE(CAST(user_id AS CHAR), visitor_id) AS identity_val,
+               COUNT(DISTINCT DATE(created_at)) AS days_visited
+        FROM analytics_events
+        WHERE event_type = 'page_view'
+          AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
+        GROUP BY identity_val
+        HAVING days_visited > 1
+      ) t
+      GROUP BY days_visited
+      ORDER BY days_visited ASC
+    `.catch(() => []),
+    // 7-day retention: of visitors who were NEW 7 days ago, how many came back in the 7 days since?
+    prisma.$queryRaw<AudienceRetentionRow[]>`
+      SELECT
+        COUNT(DISTINCT cohort.identity_val) AS cohort_size,
+        COUNT(DISTINCT returnees.identity_val) AS returned
+      FROM (
+        SELECT DISTINCT COALESCE(CAST(user_id AS CHAR), visitor_id) AS identity_val
+        FROM analytics_events
+        WHERE event_type = 'page_view'
+          AND is_new_visitor = 1
+          AND DATE(created_at) = DATE_SUB(UTC_DATE(), INTERVAL 7 DAY)
+      ) cohort
+      LEFT JOIN (
+        SELECT DISTINCT COALESCE(CAST(user_id AS CHAR), visitor_id) AS identity_val
+        FROM analytics_events
+        WHERE event_type = 'page_view'
+          AND is_new_visitor = 0
+          AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 DAY)
+      ) returnees ON returnees.identity_val = cohort.identity_val
+    `.catch(() => []),
+    // 30-day retention: of visitors who were NEW 30 days ago, how many came back in the 30 days since?
+    prisma.$queryRaw<AudienceRetentionRow[]>`
+      SELECT
+        COUNT(DISTINCT cohort.identity_val) AS cohort_size,
+        COUNT(DISTINCT returnees.identity_val) AS returned
+      FROM (
+        SELECT DISTINCT COALESCE(CAST(user_id AS CHAR), visitor_id) AS identity_val
+        FROM analytics_events
+        WHERE event_type = 'page_view'
+          AND is_new_visitor = 1
+          AND DATE(created_at) = DATE_SUB(UTC_DATE(), INTERVAL 30 DAY)
+      ) cohort
+      LEFT JOIN (
+        SELECT DISTINCT COALESCE(CAST(user_id AS CHAR), visitor_id) AS identity_val
+        FROM analytics_events
+        WHERE event_type = 'page_view'
+          AND is_new_visitor = 0
+          AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
+      ) returnees ON returnees.identity_val = cohort.identity_val
+    `.catch(() => []),
+  ]);
+
+  // Group raw days_visited rows into label buckets so each label appears once
+  const groupedByLabel = new Map<string, { daysMin: number; daysMax: number; people: number }>();
+  for (const row of freqRows) {
+    const label = buildFrequencyLabel(Number(row.days_visited));
+    const existing = groupedByLabel.get(label);
+    if (existing) {
+      existing.people += Number(row.people);
+      existing.daysMin = Math.min(existing.daysMin, Number(row.days_visited));
+      existing.daysMax = Math.max(existing.daysMax, Number(row.days_visited));
+    } else {
+      groupedByLabel.set(label, {
+        daysMin: Number(row.days_visited),
+        daysMax: Number(row.days_visited),
+        people: Number(row.people),
+      });
+    }
+  }
+
+  const frequencyDistribution = Array.from(groupedByLabel.entries())
+    .map(([label, data]) => ({
+      label,
+      daysMin: data.daysMin,
+      daysMax: data.daysMax,
+      people: data.people,
+    }))
+    .sort((a, b) => a.daysMin - b.daysMin);
+
+  const retentionCohorts = [
+    extractRetention(retention7Rows, "7-day"),
+    extractRetention(retention30Rows, "30-day"),
+  ];
+
+  return {
+    generatedAt: nowIso,
+    frequencyDistribution,
+    retentionCohorts,
+  };
+}
+
+function buildFrequencyLabel(days: number): string {
+  if (days === 1) return "1 day";
+  if (days >= 2 && days <= 3) return "2–3 days";
+  if (days >= 4 && days <= 7) return "4–7 days";
+  if (days >= 8 && days <= 14) return "8–14 days";
+  return "15+ days";
+}
+
+function extractRetention(rows: AudienceRetentionRow[], label: string) {
+  const row = rows[0];
+  if (!row) {
+    return { label, cohortSize: 0, returned: 0, rate: 0 };
+  }
+
+  const cohortSize = Number(row.cohort_size);
+  const returned = Number(row.returned);
+  const rate = cohortSize > 0 ? Math.round((returned / cohortSize) * 100) : 0;
+
+  return { label, cohortSize, returned, rate };
+}
+
 async function loadDashboardPayloadFromCacheTable(): Promise<DashboardPayloadWithMeta> {
   // Read from pre-computed cache table — no side effects, super fast
   const cacheRows = await prisma.$queryRaw<Array<{ payload: string; computed_at: Date }>>`
@@ -99,6 +229,8 @@ async function loadDashboardPayloadFromCacheTable(): Promise<DashboardPayloadWit
     payload.analytics.hourlyRecent = buildHourlyRecentRows(hourlyAnalyticsRows, hourlyAuthRows);
     usedFallback = true;
   }
+
+  (payload as Record<string, unknown>).audience = await loadAudienceData();
 
   return { payload: payload as Record<string, unknown>, usedFallback };
 }
@@ -156,6 +288,11 @@ function createEmptyDashboardPayload() {
         pagesPerSession: 0,
         videosPerSession: 0,
       },
+    },
+    audience: {
+      generatedAt: nowIso,
+      frequencyDistribution: [],
+      retentionCohorts: [],
     },
     hostMetrics: { minute: [] },
     insights: {

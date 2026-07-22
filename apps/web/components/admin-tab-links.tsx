@@ -117,7 +117,7 @@ export function AdminTabLinks({
     <div className="accountTopBarActions">
       <Link href="/admin?tab=overview" className={tabClass("overview")}>Overview</Link>
       <Link href="/admin?tab=magazine" className={tabClass("magazine")}>Magazine</Link>
-      <Link href="/admin?tab=performance" className={tabClass("performance")}>Performance</Link>
+      <Link href="/admin?tab=audience" className={tabClass("audience")}>Audience</Link>
       <Link href="/admin?tab=categories" className={tabClass("categories")}>Categories</Link>
       <Link href="/admin?tab=videos" className={tabClass("videos")}>New Videos {pendingCount !== null ? `(${pendingCount})` : ""}</Link>
       <Link href="/admin?tab=catalog-review" className={tabClass("catalog-review")}>Catalog Cleanup {catalogReviewRemaining !== null ? `(${catalogReviewRemaining})` : ""}</Link>

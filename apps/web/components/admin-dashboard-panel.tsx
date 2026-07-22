@@ -13,7 +13,7 @@ import { AdminDashboardCategoriesTab } from "@/components/admin-dashboard-catego
 import { AdminDashboardMagazineTab } from "@/components/admin-dashboard-magazine-tab";
 import { AdminDashboardOverviewTab } from "@/components/admin-dashboard-overview-tab";
 import { AdminDashboardPermissionsTab } from "@/components/admin-dashboard-permissions-tab";
-import { AdminDashboardPerformanceTab } from "@/components/admin-dashboard-performance-tab";
+import { AdminDashboardAudienceTab } from "@/components/admin-dashboard-audience-tab";
 import { AdminDashboardVideosTab } from "@/components/admin-dashboard-videos-tab";
 import { useAdminAnalytics } from "@/hooks/use-admin-analytics";
 import { useAdminCategories } from "@/hooks/use-admin-categories";
@@ -37,7 +37,6 @@ import {
   AdminMagazineArticleRow,
   AdminMagazineCommentModerationAction,
   AdminMagazineCommentModerationRow,
-  PerfWindowResetResponse,
 } from "@/components/admin-dashboard-types";
 
 const HEALTH_FALLBACK_POLL_MS = 2_000;
@@ -91,7 +90,6 @@ export function AdminDashboardPanel({
   const [autoClassifyingVideoId, setAutoClassifyingVideoId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [refreshingAnalytics, setRefreshingAnalytics] = useState(false);
-  const [resettingPerfWindow, setResettingPerfWindow] = useState(false);
   const [analyticsZoomLevel, setAnalyticsZoomLevel] = useState<AnalyticsZoomLevel>("daily");
   const [selectedAllTimeBucket, setSelectedAllTimeBucket] = useState<AnalyticsBucket | null>(null);
   const [selectedMonthlyBucket, setSelectedMonthlyBucket] = useState<AnalyticsBucket | null>(null);
@@ -813,7 +811,7 @@ export function AdminDashboardPanel({
         await loadOverview();
       } else if (activeTab === "magazine") {
         await Promise.all([loadMagazineArticles(), loadMagazineCommentQueue()]);
-      } else if (activeTab === "performance") {
+      } else if (activeTab === "audience") {
         await loadOverview();
       } else if (activeTab === "categories") {
         await loadCategories();
@@ -1154,27 +1152,6 @@ export function AdminDashboardPanel({
     }
   }
 
-  async function resetPerfWindow() {
-    if (resettingPerfWindow) {
-      return;
-    }
-
-    setResettingPerfWindow(true);
-    setSaveMessage(null);
-
-    try {
-      const result = await postJson<PerfWindowResetResponse>("/api/admin/performance-samples", {});
-      if (!result.slowLog.enabled) {
-        setSaveMessage(`MySQL slow-log start could not be verified from the app: ${result.slowLog.warning ?? "unknown error"}`);
-      }
-      await refreshOverviewAnalytics();
-    } catch (resetError) {
-      setSaveMessage(resetError instanceof Error ? resetError.message : "Could not reset performance window.");
-    } finally {
-      setResettingPerfWindow(false);
-    }
-  }
-
   if (loading) {
     return <p className="authMessage">Loading admin dashboard...</p>;
   }
@@ -1185,7 +1162,7 @@ export function AdminDashboardPanel({
 
   const rollupStatusRelevantTab =
     activeTab === "overview"
-    || activeTab === "performance";
+    || activeTab === "audience";
   const rollupsUnavailableMessage = rollupStatusRelevantTab && dashboard?.meta.rollups?.available === false
     ? (dashboard.meta.rollups.message ?? "Rollup data is currently unavailable. Background rollup is running.")
     : null;
@@ -1261,13 +1238,9 @@ export function AdminDashboardPanel({
         />
       ) : null}
 
-      {activeTab === "performance" ? (
-        <AdminDashboardPerformanceTab
+      {activeTab === "audience" ? (
+        <AdminDashboardAudienceTab
           dashboard={dashboard}
-          resettingPerfWindow={resettingPerfWindow}
-          onResetPerfWindow={() => {
-            void resetPerfWindow();
-          }}
         />
       ) : null}
 

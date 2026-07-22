@@ -17,7 +17,7 @@ function isSameHostReferrer(referrer: string, currentHost: string) {
 
 export function MagazineArticleLandingTracker({ slug }: MagazineArticleLandingTrackerProps) {
   useEffect(() => {
-    const storageKey = `magazine-external-landing:${slug}`;
+    const storageKey = "magazine-external-landing";
 
     try {
       if (window.sessionStorage.getItem(storageKey) === "1") {

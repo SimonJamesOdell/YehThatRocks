@@ -83,6 +83,7 @@ export type DashboardPayload = {
     };
 
   };
+  audience: AudienceData;
   hostMetrics: {
     minute: Array<{
       bucketStart: string;
@@ -269,17 +270,26 @@ export type AdminMagazineCommentModerationAction =
   | "delete_comment"
   | "delete_user";
 
-// Performance Domain
-export type PerfWindowResetResponse = {
-  ok: boolean;
-  startedAt: string;
-  deletedSamples: number;
-  sampleIntervalSeconds: number;
-  slowLog: {
-    enabled: boolean;
-    warning: string | null;
-  };
+// Audience Domain
+export type AudienceFrequencyBucket = {
+  label: string;
+  daysMin: number;
+  daysMax: number | null;
+  people: number;
+};
+
+export type AudienceRetentionCohort = {
+  label: string;
+  cohortSize: number;
+  returned: number;
+  rate: number;
+};
+
+export type AudienceData = {
+  generatedAt: string;
+  frequencyDistribution: AudienceFrequencyBucket[];
+  retentionCohorts: AudienceRetentionCohort[];
 };
 
 // Tab Routing
-export type AdminTab = "overview" | "magazine" | "performance" | "categories" | "videos" | "catalog-review" | "genre-review" | "permissions";
+export type AdminTab = "overview" | "magazine" | "audience" | "categories" | "videos" | "catalog-review" | "genre-review" | "permissions";
