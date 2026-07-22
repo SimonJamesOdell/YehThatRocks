@@ -242,7 +242,7 @@ describe("useNextTrackDecision", () => {
     });
   });
 
-  it("does not auto-advance when autoplay is off and no higher-priority source applies", () => {
+  it("falls back to random even when autoplay is off (manual next button)", () => {
     const randomPicker = vi.fn(() => "rand");
 
     const { result } = renderHook(() => useNextTrackDecision({
@@ -259,8 +259,12 @@ describe("useNextTrackDecision", () => {
       getRandomWatchNextId: randomPicker,
     }));
 
-    expect(result.current.resolveNextTarget()).toBeNull();
-    expect(randomPicker).not.toHaveBeenCalled();
+    expect(result.current.resolveNextTarget()).toEqual({
+      videoId: "rand",
+      playlistItemIndex: null,
+      clearPlaylist: true,
+    });
+    expect(randomPicker).toHaveBeenCalled();
   });
 
   it("blocks random fallback when /new or /top100 requires route-local progression", () => {
