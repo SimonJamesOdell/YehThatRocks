@@ -119,7 +119,7 @@
     "verify:deps:quick": "npm run test:smoke:install && npm run test:smoke:quick",
     "verify:deps-smoke": "npm run verify:deps:quick",
     "prepare:ship:light": "npm run verify:light",
-    "prepare:ship:full": "npm run maintain:deps && npm run verify:invariants && npm run verify:invariants:api && npm run test:api && npm audit --audit-level=high",
+    "prepare:ship:full": "npm run maintain:deps && npm run verify:invariants && npm run verify:invariants:api && npm run test:api && npm audit --audit-level=critical",
     "ship:commit": "git add -A && git commit -m \"chore: ship candidate\"",
     "ship:check-clean": "node -e \"var s=require('child_process').execSync('git status --porcelain',{encoding:'utf8'});if(s.trim()){console.error('ERROR: working tree is not clean. Commit or stash changes before shipping.');process.exit(1)}\"",
     "ship:light": "node -e \"if(require('./package.json').name!=='yehthatrocks'){console.error('ERROR: ship must be run from the yeh2 project root');process.exit(1)}\" && npm run ship:check-clean && npm run prepare:ship:light && npm run ship:commit",

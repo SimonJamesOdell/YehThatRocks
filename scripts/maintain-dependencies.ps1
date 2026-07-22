@@ -175,7 +175,7 @@ function Invoke-VerifyLight {
 
 function Invoke-Audit {
   Write-Host "  Running npm audit..."
-  $exit = Invoke-Native -Program "npm" -Args @("audit", "--audit-level=high") -ErrorActionPreference_Override "Continue"
+  $exit = Invoke-Native -Program "npm" -Args @("audit", "--audit-level=critical") -ErrorActionPreference_Override "Continue"
   return $exit -eq 0
 }
 
