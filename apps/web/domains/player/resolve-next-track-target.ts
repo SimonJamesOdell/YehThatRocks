@@ -170,10 +170,6 @@ export function resolveNextTrackTarget(options: ResolveNextTrackTargetOptions): 
     {
       state: "random-fallback",
       evaluate: () => {
-        if (!options.autoplayEnabled) {
-          return { status: "unresolved" };
-        }
-
         if (options.shouldUseRouteQueueRegardlessOfDocked) {
           return { status: "blocked" };
         }

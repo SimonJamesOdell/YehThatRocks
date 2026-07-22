@@ -285,11 +285,20 @@ export type AudienceRetentionCohort = {
   rate: number;
 };
 
+export type AudienceWindowData = {
+  frequencyDistribution: AudienceFrequencyBucket[];
+  returningVisitorCount: number;
+  totalVisitorCount: number;
+};
+
 export type AudienceData = {
   generatedAt: string;
   frequencyDistribution: AudienceFrequencyBucket[];
   retentionCohorts: AudienceRetentionCohort[];
   returningVisitorCount: number;
+  totalVisitorCount: number;
+  window60: AudienceWindowData;
+  window90: AudienceWindowData;
 };
 
 // Tab Routing

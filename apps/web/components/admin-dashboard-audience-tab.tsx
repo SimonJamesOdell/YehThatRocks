@@ -1,11 +1,56 @@
-import type { DashboardPayload } from "@/components/admin-dashboard-types";
+import type { AudienceWindowData, DashboardPayload } from "@/components/admin-dashboard-types";
 
 type AdminDashboardAudienceTabProps = {
   dashboard: DashboardPayload | null;
 };
 
-function maxPeople(freq: DashboardPayload["audience"]["frequencyDistribution"]) {
+function maxPeople(freq: AudienceWindowData["frequencyDistribution"]) {
   return Math.max(1, ...freq.map((f) => f.people));
+}
+
+function FrequencySection({ label, data }: { label: string; data: AudienceWindowData }) {
+  const totalReturning = data.returningVisitorCount;
+  const peak = maxPeople(data.frequencyDistribution);
+  const didNotReturn = Math.max(0, data.totalVisitorCount - totalReturning);
+  const barMax = Math.max(peak, didNotReturn);
+
+  return (
+    <section className="panel featurePanel" style={{ marginTop: 6 }}>
+      <div className="panelHeading">
+        <span>Returning Visitor Frequency</span>
+        <strong>{label} &middot; {totalReturning} returning of {data.totalVisitorCount} total</strong>
+      </div>
+      <div style={{ padding: "8px 0" }}>
+        {data.frequencyDistribution.length === 0 && didNotReturn === 0 ? (
+          <p style={{ fontSize: 13, opacity: 0.4, padding: "20px 0", textAlign: "center" }}>
+            No returning visitor data yet.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
+              <span style={{ width: 80, textAlign: "right", opacity: 0.7, flexShrink: 0 }}>Did not return</span>
+              <div style={{ flex: 1, height: 20, borderRadius: 4, background: "rgba(255,111,67,0.12)", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: Math.round((didNotReturn / barMax) * 100) + "%", minWidth: didNotReturn > 0 ? 3 : 0, borderRadius: 4, background: "linear-gradient(90deg, rgba(255,111,67,0.45), rgba(255,111,67,0.75))" }} />
+              </div>
+              <span style={{ width: 50, fontWeight: 700, color: "#ff6f43", fontVariantNumeric: "tabular-nums" }}>{didNotReturn}</span>
+            </div>
+            {data.frequencyDistribution.map((bucket) => {
+              const barPct = Math.round((bucket.people / peak) * 100);
+              return (
+                <div key={bucket.daysMin} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
+                  <span style={{ width: 80, textAlign: "right", opacity: 0.7, flexShrink: 0 }}>{bucket.label}</span>
+                  <div style={{ flex: 1, height: 20, borderRadius: 4, background: "rgba(158,134,255,0.12)", position: "relative", overflow: "hidden" }}>
+                    <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: barPct + "%", minWidth: bucket.people > 0 ? 3 : 0, borderRadius: 4, background: "linear-gradient(90deg, rgba(158,134,255,0.45), rgba(158,134,255,0.75))", transition: "width 0.3s ease" }} />
+                  </div>
+                  <span style={{ width: 50, fontWeight: 700, color: "#9e86ff", fontVariantNumeric: "tabular-nums" }}>{bucket.people}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+  );
 }
 
 export function AdminDashboardAudienceTab({
@@ -24,14 +69,6 @@ export function AdminDashboardAudienceTab({
       </section>
     );
   }
-
-  // Use the same is_new_visitor=0 definition as the daily/monthly chart
-  const totalReturning = audience.returningVisitorCount ?? audience.frequencyDistribution.reduce(
-    (sum, f) => sum + f.people,
-    0,
-  );
-
-  const peak = maxPeople(audience.frequencyDistribution);
 
   // Extract today's numbers from the daily series (correct unique-visitor counts)
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -89,74 +126,9 @@ export function AdminDashboardAudienceTab({
         </div>
       ) : null}
 
-      {/* Visitor frequency — 30-day returning visitor loyalty */}
-      <section className="panel featurePanel">
-        <div className="panelHeading">
-          <span>Returning Visitor Frequency</span>
-          <strong>last 30 days &middot; {totalReturning} returning visitors</strong>
-        </div>
-        <div style={{ padding: "8px 0" }}>
-          {audience.frequencyDistribution.length === 0 ? (
-            <p style={{ fontSize: 13, opacity: 0.4, padding: "20px 0", textAlign: "center" }}>
-              No returning visitor data yet.
-            </p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {audience.frequencyDistribution.map((bucket) => {
-                const barPct = Math.round((bucket.people / peak) * 100);
-                return (
-                  <div
-                    key={bucket.daysMin}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      fontSize: 12,
-                    }}
-                  >
-                    <span style={{
-                      width: 80,
-                      textAlign: "right",
-                      opacity: 0.7,
-                      flexShrink: 0,
-                    }}>
-                      {bucket.label}
-                    </span>
-                    <div style={{
-                      flex: 1,
-                      height: 20,
-                      borderRadius: 4,
-                      background: "rgba(158,134,255,0.12)",
-                      position: "relative",
-                      overflow: "hidden",
-                    }}>
-                      <div style={{
-                        position: "absolute",
-                        left: 0,
-                        top: 0,
-                        bottom: 0,
-                        width: `${barPct}%`,
-                        minWidth: bucket.people > 0 ? 3 : 0,
-                        borderRadius: 4,
-                        background: "linear-gradient(90deg, rgba(158,134,255,0.45), rgba(158,134,255,0.75))",
-                        transition: "width 0.3s ease",
-                      }} />
-                    </div>
-                    <span style={{
-                      width: 50,
-                      fontWeight: 700,
-                      color: "#9e86ff",
-                      fontVariantNumeric: "tabular-nums",
-                    }}>
-                      {bucket.people}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </section>
+      <FrequencySection label="last 30 days" data={audience} />
+      <FrequencySection label="last 60 days" data={audience.window60} />
+      <FrequencySection label="last 90 days" data={audience.window90} />
 
       {/* Retention cohorts */}
       <section className="panel featurePanel" style={{ marginTop: 6 }}>

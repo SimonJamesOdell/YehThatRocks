@@ -57,10 +57,51 @@ type AudienceRetentionRow = {
   returned: bigint | number;
 };
 
-async function loadAudienceData() {
-  const nowIso = new Date().toISOString();
+function buildFrequencyLabel(days: number): string {
+  if (days === 1) return "1 day";
+  if (days === 2) return "2 days";
+  if (days === 3) return "3 days";
+  if (days >= 4 && days <= 5) return "4–5 days";
+  if (days >= 6 && days <= 10) return "6–10 days";
+  if (days >= 11 && days <= 20) return "11–20 days";
+  return "21+ days";
+}
 
-  const [freqRows, returningCountRows, retention7Rows, retention30Rows] = await Promise.all([
+function buildFrequencyDistribution(freqRows: AudienceFrequencyRow[]) {
+  const groupedByLabel = new Map<string, { daysMin: number; daysMax: number; people: number }>();
+  for (const row of freqRows) {
+    const label = buildFrequencyLabel(Number(row.days_visited));
+    const existing = groupedByLabel.get(label);
+    if (existing) {
+      existing.people += Number(row.people);
+      existing.daysMin = Math.min(existing.daysMin, Number(row.days_visited));
+      existing.daysMax = Math.max(existing.daysMax, Number(row.days_visited));
+    } else {
+      groupedByLabel.set(label, {
+        daysMin: Number(row.days_visited),
+        daysMax: Number(row.days_visited),
+        people: Number(row.people),
+      });
+    }
+  }
+  return Array.from(groupedByLabel.entries())
+    .map(([label, data]) => ({
+      label,
+      daysMin: data.daysMin,
+      daysMax: data.daysMax,
+      people: data.people,
+    }))
+    .sort((a, b) => a.daysMin - b.daysMin);
+}
+
+type AudienceWindowData = {
+  frequencyDistribution: ReturnType<typeof buildFrequencyDistribution>;
+  returningVisitorCount: number;
+  totalVisitorCount: number;
+};
+
+async function loadAudienceWindow(days: number): Promise<AudienceWindowData> {
+  const [freqRows, returningCountRows, totalVisitorRows] = await Promise.all([
     prisma.$queryRaw<AudienceFrequencyRow[]>`
       SELECT days_visited, COUNT(*) AS people
       FROM (
@@ -68,21 +109,42 @@ async function loadAudienceData() {
                COUNT(DISTINCT DATE(created_at)) AS days_visited
         FROM analytics_events
         WHERE event_type = 'page_view'
-          AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
+          AND is_new_visitor = 0
+          AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${days} DAY)
         GROUP BY identity_val
-        HAVING days_visited > 1
       ) t
       GROUP BY days_visited
       ORDER BY days_visited ASC
     `.catch(() => []),
-    // Returning visitor count (matches daily/monthly definition: is_new_visitor=0)
     prisma.$queryRaw<Array<{ count: bigint | number }>>`
       SELECT COUNT(DISTINCT COALESCE(CAST(user_id AS CHAR), visitor_id)) AS count
       FROM analytics_events
       WHERE event_type = 'page_view'
         AND is_new_visitor = 0
-        AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
+        AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${days} DAY)
     `.catch(() => []),
+    prisma.$queryRaw<Array<{ count: bigint | number }>>`
+      SELECT COUNT(DISTINCT COALESCE(CAST(user_id AS CHAR), visitor_id)) AS count
+      FROM analytics_events
+      WHERE event_type = 'page_view'
+        AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${days} DAY)
+    `.catch(() => []),
+  ]);
+
+  return {
+    frequencyDistribution: buildFrequencyDistribution(freqRows),
+    returningVisitorCount: Number(returningCountRows[0]?.count ?? 0),
+    totalVisitorCount: Number(totalVisitorRows[0]?.count ?? 0),
+  };
+}
+
+async function loadAudienceData() {
+  const nowIso = new Date().toISOString();
+
+  const [window30, window60, window90, retention7Rows, retention30Rows] = await Promise.all([
+    loadAudienceWindow(30),
+    loadAudienceWindow(60),
+    loadAudienceWindow(90),
     // 7-day retention: of visitors who were NEW 7 days ago, how many came back in the 7 days since?
     prisma.$queryRaw<AudienceRetentionRow[]>`
       SELECT
@@ -125,54 +187,28 @@ async function loadAudienceData() {
     `.catch(() => []),
   ]);
 
-  // Group raw days_visited rows into label buckets so each label appears once
-  const groupedByLabel = new Map<string, { daysMin: number; daysMax: number; people: number }>();
-  for (const row of freqRows) {
-    const label = buildFrequencyLabel(Number(row.days_visited));
-    const existing = groupedByLabel.get(label);
-    if (existing) {
-      existing.people += Number(row.people);
-      existing.daysMin = Math.min(existing.daysMin, Number(row.days_visited));
-      existing.daysMax = Math.max(existing.daysMax, Number(row.days_visited));
-    } else {
-      groupedByLabel.set(label, {
-        daysMin: Number(row.days_visited),
-        daysMax: Number(row.days_visited),
-        people: Number(row.people),
-      });
-    }
-  }
-
-  const frequencyDistribution = Array.from(groupedByLabel.entries())
-    .map(([label, data]) => ({
-      label,
-      daysMin: data.daysMin,
-      daysMax: data.daysMax,
-      people: data.people,
-    }))
-    .sort((a, b) => a.daysMin - b.daysMin);
-
   const retentionCohorts = [
     extractRetention(retention7Rows, "7-day"),
     extractRetention(retention30Rows, "30-day"),
   ];
 
-  const returningVisitorCount = Number(returningCountRows[0]?.count ?? 0);
-
   return {
     generatedAt: nowIso,
-    frequencyDistribution,
+    frequencyDistribution: window30.frequencyDistribution,
     retentionCohorts,
-    returningVisitorCount,
+    returningVisitorCount: window30.returningVisitorCount,
+    totalVisitorCount: window30.totalVisitorCount,
+    window60: {
+      frequencyDistribution: window60.frequencyDistribution,
+      returningVisitorCount: window60.returningVisitorCount,
+      totalVisitorCount: window60.totalVisitorCount,
+    },
+    window90: {
+      frequencyDistribution: window90.frequencyDistribution,
+      returningVisitorCount: window90.returningVisitorCount,
+      totalVisitorCount: window90.totalVisitorCount,
+    },
   };
-}
-
-function buildFrequencyLabel(days: number): string {
-  if (days === 1) return "1 day";
-  if (days >= 2 && days <= 3) return "2–3 days";
-  if (days >= 4 && days <= 7) return "4–7 days";
-  if (days >= 8 && days <= 14) return "8–14 days";
-  return "15+ days";
 }
 
 function extractRetention(rows: AudienceRetentionRow[], label: string) {
@@ -305,6 +341,9 @@ function createEmptyDashboardPayload() {
       frequencyDistribution: [],
       retentionCohorts: [],
       returningVisitorCount: 0,
+      totalVisitorCount: 0,
+      window60: { frequencyDistribution: [], returningVisitorCount: 0, totalVisitorCount: 0 },
+      window90: { frequencyDistribution: [], returningVisitorCount: 0, totalVisitorCount: 0 },
     },
     hostMetrics: { minute: [] },
     insights: {
