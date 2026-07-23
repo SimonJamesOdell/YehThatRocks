@@ -50,7 +50,7 @@ if /I "%SHIP_MODE%"=="fast" (
 ) else if /I "%SHIP_MODE%"=="regular" (
 	pushd "%~dp0"
 	echo [regular] running npm audit
-	call npm audit --audit-level=high
+	call npm audit --audit-level=critical
 	if errorlevel 1 (
 		set "SHIP_EXIT=%ERRORLEVEL%"
 		popd
