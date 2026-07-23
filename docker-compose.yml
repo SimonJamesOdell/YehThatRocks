@@ -4,6 +4,7 @@ services:
     command:
       - --innodb-redo-log-capacity=1G
       - --max-connections=300
+      - --skip-ssl
     environment:
       MYSQL_ROOT_PASSWORD: yehthatrocks
       MYSQL_DATABASE: yeh

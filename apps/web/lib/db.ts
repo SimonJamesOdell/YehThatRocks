@@ -61,7 +61,11 @@ function parseDbUrl(url: string) {
     database: u.pathname.replace(/^\//, ""),
     connectionLimit: 10,
     connectTimeout: 5000,
-    ssl: false,
+    // mariadb 3.x enables TLS by default. ssl: false is not recognized —
+    // it silently tries TLS and hangs. The connector requires an object
+    // with rejectUnauthorized: false to accept the self-signed cert
+    // that MySQL 8.0 generates on first boot.
+    ssl: { rejectUnauthorized: false },
   };
 }
 

@@ -6,6 +6,7 @@ services:
       - --default-authentication-plugin=mysql_native_password
       - --innodb-buffer-pool-size=256M
       - --max-connections=200
+      - --skip-ssl
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set in .env.production}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-yeh}
