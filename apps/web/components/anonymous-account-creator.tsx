@@ -57,7 +57,15 @@ export function AnonymousAccountCreator({ onSuccess }: AnonymousAccountCreatorPr
     setIsContinuing(true);
     setCredentials(null);
     try {
-      router.refresh();
+      await router.refresh();
+    } catch {
+      // router.refresh() can fail if the server render errors after
+      // auth state change. Fall back to a full page reload — the
+      // server will re-render cleanly with the new cookies.
+      window.location.reload();
+      return;
+    }
+    try {
       onSuccess?.();
     } finally {
       setIsContinuing(false);

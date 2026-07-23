@@ -2,8 +2,9 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AnonymousCredentialsModal } from "@/components/anonymous-credentials-modal";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { getGenreSlug, type GenreCard } from "@/lib/catalog-data-utils";
 
@@ -11,16 +12,20 @@ const WELCOME_DISMISSED_KEY = "ytr:welcome-dismissed";
 const GENRE_PREFERENCES_KEY = "ytr:genre-preferences";
 const LOGO_SRC = "/assets/images/yeh_main_logo.png?v=20260424-4";
 
-export function WelcomeModal({ onDismissed }: { onDismissed?: () => void }) {
+export function WelcomeModal({ onDismissed, isAuthenticated }: {
+  onDismissed?: () => void;
+  isAuthenticated?: boolean;
+}) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [categories, setCategories] = useState<GenreCard[]>([]);
-  // Genre selection: Set of genre labels that are checked. Starts empty; populated when cards load.
   const [selectedGenres, setSelectedGenres] = useState<Set<string>>(new Set());
-  // Phase 2 loading / error states.
   const [isCreatingAccount, setIsCreatingAccount] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
+  const [credentials, setCredentials] = useState<{ username: string; password: string } | null>(null);
+  const [isContinuing, setIsContinuing] = useState(false);
+  const isAuthenticatedRef = useRef(isAuthenticated ?? false);
 
   useEffect(() => {
     // Never show if user has explicitly dismissed permanently.
@@ -51,6 +56,11 @@ export function WelcomeModal({ onDismissed }: { onDismissed?: () => void }) {
       cancelled = true;
     };
   }, []);
+
+  // Keep ref in sync so handleContinue always reads current value.
+  useEffect(() => {
+    isAuthenticatedRef.current = isAuthenticated ?? false;
+  }, [isAuthenticated]);
 
   // Phase 2: show account creation prompt after genre selection.
   const [showAccountPrompt, setShowAccountPrompt] = useState(false);
@@ -87,62 +97,59 @@ export function WelcomeModal({ onDismissed }: { onDismissed?: () => void }) {
     onDismissed?.();
   }, [dontShowAgain, persistGenres, onDismissed]);
 
-  // Phase 1 → Phase 2: persist genres and show account prompt.
+  // Create anonymous account, then show credentials modal. No router.refresh() —
+  // we render the credentials modal inline to avoid the server re-render error.
+  const handleCreateAnonymous = useCallback(async () => {
+    setIsCreatingAccount(true);
+    setAccountError(null);
+    try {
+      const res = await fetch("/api/auth/anonymous", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error || "Failed to create account");
+      }
+      const data = await res.json() as { credentials?: { username: string; password: string } };
+      if (data?.credentials) {
+        setCredentials(data.credentials);
+      } else {
+        // Shouldn't happen, but handle gracefully.
+        handleDismiss();
+      }
+    } catch (err) {
+      setAccountError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setIsCreatingAccount(false);
+    }
+  }, [handleDismiss]);
+
+  const handleCredentialsContinue = useCallback(() => {
+    setIsContinuing(true);
+    setCredentials(null);
+    handleDismiss();
+    // Hard reload so the server picks up the new auth cookies and
+    // renders the authenticated experience from scratch.
+    window.location.reload();
+  }, [handleDismiss]);
+
+  // Phase 1 → Phase 2: persist genres. If already authenticated, dismiss;
+  // else show account prompt.
   const handleContinue = useCallback(() => {
     persistGenres();
-    setShowAccountPrompt(true);
-  }, [persistGenres]);
+    if (isAuthenticatedRef.current) {
+      handleDismiss();
+    } else {
+      setShowAccountPrompt(true);
+    }
+  }, [persistGenres, handleDismiss, isAuthenticatedRef]);
 
   // Skip account creation: just dismiss (genres already persisted in handleContinue).
   const handleSkip = useCallback(() => {
     handleDismiss();
   }, [handleDismiss]);
-
-  // Create anonymous account, then push genre preferences to server.
-  const handleCreateAnonymous = useCallback(async () => {
-    setIsCreatingAccount(true);
-    setAccountError(null);
-    const genreArray = Array.from(selectedGenres);
-    try {
-      // Step 1: Get a suggested screen name.
-      const suggestRes = await fetch("/api/auth/anonymous");
-      if (!suggestRes.ok) {
-        const suggestData = await suggestRes.json().catch(() => ({})) as { error?: string };
-        throw new Error(suggestData.error || "Failed to generate screen name");
-      }
-      const suggestJson = await suggestRes.json() as { screenName?: string };
-      const screenName = suggestJson.screenName;
-      if (!screenName) throw new Error("No screen name returned");
-
-      // Step 2: Create anonymous account with the suggested screen name.
-      const createRes = await fetch("/api/auth/anonymous", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ screenName }),
-      });
-      if (!createRes.ok) {
-        const data = await createRes.json().catch(() => ({})) as { error?: string };
-        throw new Error(data.error || "Failed to create account");
-      }
-      // Step 2: Push genre preferences to server (now authenticated via cookies).
-      await Promise.allSettled([
-        fetch("/api/player-preferences", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ autoplayGenreFilters: genreArray }),
-        }),
-        fetch("/api/new-videos-preferences", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ includeGenres: genreArray }),
-        }),
-      ]);
-      handleDismiss();
-    } catch (error) {
-      setAccountError(error instanceof Error ? error.message : "Something went wrong");
-      setIsCreatingAccount(false);
-    }
-  }, [selectedGenres, handleDismiss]);
 
   // Navigate to registration page; genres are already in localStorage from handleContinue.
   const handleRegister = useCallback(() => {
@@ -322,7 +329,6 @@ export function WelcomeModal({ onDismissed }: { onDismissed?: () => void }) {
                   type="button"
                   className="welcomeModalAccountButton welcomeModalAccountButton--secondary"
                   onClick={handleRegister}
-                  disabled={isCreatingAccount}
                 >
                   Register with Email
                 </button>
@@ -330,7 +336,6 @@ export function WelcomeModal({ onDismissed }: { onDismissed?: () => void }) {
                   type="button"
                   className="welcomeModalAccountButton welcomeModalAccountButton--ghost"
                   onClick={handleSkip}
-                  disabled={isCreatingAccount}
                 >
                   Skip — save locally only
                 </button>
@@ -354,6 +359,17 @@ export function WelcomeModal({ onDismissed }: { onDismissed?: () => void }) {
           </>
         )}
       </div>
+
+      {credentials ? (
+        <AnonymousCredentialsModal
+          username={credentials.username}
+          password={credentials.password}
+          canBrowserSaveCredentials={typeof window !== "undefined" && "credentials" in navigator}
+          isContinuing={isContinuing}
+          onClose={() => setCredentials(null)}
+          onContinue={handleCredentialsContinue}
+        />
+      ) : null}
     </div>
   );
 }

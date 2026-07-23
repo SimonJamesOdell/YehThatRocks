@@ -864,13 +864,10 @@ function ShellDynamicInner({
     setAuthStatusMessage(null);
     setIsAuthUnavailableDialogRequested(false);
   }, [initialAuthStatus, isLoggedIn]);
-  // ── Auto-login for unauthenticated users on initial page load ────────────
-  // When the server reports no valid access token, try to authenticate the
-  // user silently before showing the guest experience. This handles:
-  // 1. Returning users whose access token expired but refresh token is valid
-  //    (the proxy's silent-refresh may have been missed or failed transiently).
-  // 2. Brand-new visitors: auto-create an anonymous account so they land
-  //    authenticated on first visit.
+  // ── Auto-login for returning users on initial page load ──────────────────
+  // When the server reports no valid access token, try to restore the session
+  // silently via refresh token. Brand-new visitors are NOT auto-created here —
+  // the welcome modal handles onboarding and explicit account creation.
   // Respects explicit sign-outs via AUTO_LOGIN_SUPPRESS_ONCE_KEY.
   const hasAttemptedAutoLoginRef = useRef(false);
   useEffect(() => {
@@ -910,41 +907,8 @@ function ShellDynamicInner({
         // Refresh failed — fall through to anonymous account creation.
       }
 
-      if (cancelled) return;
-
-      // Step 2: Try creating an anonymous account for brand-new visitors.
-      // The anonymous endpoint already sets auth cookies on success (201),
-      // so no separate login call is needed.
-      try {
-        // Get a suggested screen name.
-        const suggestRes = await fetch("/api/auth/anonymous?screenName=", {
-          method: "GET",
-          credentials: "same-origin",
-        });
-        if (!suggestRes.ok) return;
-        const suggestData = await suggestRes.json() as { ok?: boolean; screenName?: string };
-        if (!suggestData.ok || !suggestData.screenName) return;
-
-        if (cancelled) return;
-
-        // Create the anonymous account — this sets auth cookies directly.
-        const createRes = await fetch("/api/auth/anonymous", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ screenName: suggestData.screenName }),
-        });
-        if (!cancelled && createRes.ok) {
-          setIsAuthenticated(true);
-          setAuthStatus("clear");
-          setAuthStatusMessage(null);
-          didArriveOnMagazineRouteRef.current = false;
-          publishAuthStateChange("authenticated");
-          router.refresh();
-        }
-      } catch {
-        // Anonymous account creation failed — user remains a guest.
-      }
+      // Brand-new visitors stay unauthenticated — the welcome modal handles
+      // onboarding and account creation explicitly.
     };
 
     void tryAutoLogin();
@@ -3359,7 +3323,7 @@ function ShellDynamicInner({
         )}
       </section>
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
-      <WelcomeModal onDismissed={() => setIsWelcomeBlockingIntro(false)} />
+      <WelcomeModal isAuthenticated={isAuthenticated} onDismissed={() => setIsWelcomeBlockingIntro(false)} />
       </main>
       </ArtistsLetterProvider>
     </OverlayScrollContainerProvider>
