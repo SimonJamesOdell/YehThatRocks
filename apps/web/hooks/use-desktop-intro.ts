@@ -159,11 +159,16 @@ export function useDesktopIntro({
     }
 
     clearDesktopIntroTimers();
-    setDesktopIntroDeltaX(0);
-    setDesktopIntroDeltaY(0);
-    setDesktopIntroScale(1);
-    setDesktopIntroPhase("hold");
-    setIsDesktopIntroPreload(false);
+    // When already in hold (e.g. unblocked after welcome modal), skip state
+    // resets to avoid flickering the already-visible logo.
+    const alreadyInHold = desktopIntroPhaseRef.current === "hold";
+    if (!alreadyInHold) {
+      setDesktopIntroDeltaX(0);
+      setDesktopIntroDeltaY(0);
+      setDesktopIntroScale(1);
+      setDesktopIntroPhase("hold");
+      setIsDesktopIntroPreload(false);
+    }
 
     desktopIntroMeasureRafRef.current = window.requestAnimationFrame(() => {
       desktopIntroMeasureRafRef.current = window.requestAnimationFrame(() => {
@@ -290,10 +295,24 @@ export function useDesktopIntro({
 
     if (blocked) {
       introWasBlockedRef.current = true;
+      // Preload the logo and show it behind the welcome modal so it's
+      // already visible when the modal is dismissed.
+      void prepareDesktopIntroLogo().then((ready) => {
+        if (ready && introWasBlockedRef.current) {
+          setDesktopIntroPhase("hold");
+          setIsDesktopIntroPreload(false);
+        }
+      });
       return;
     }
 
-    void startPreparedDesktopIntroSequence();
+    // When transitioning from blocked to unblocked (e.g. after welcome
+    // modal dismiss), skip the auto-start — the unblock effect below
+    // already calls startDesktopIntroSequence directly with the
+    // already-loaded logo, avoiding a flicker and stale preload state.
+    if (!introWasBlockedRef.current) {
+      void startPreparedDesktopIntroSequence();
+    }
 
     /*
       Legacy invariant anchors retained for verify:overlay-routing:
@@ -314,18 +333,18 @@ export function useDesktopIntro({
       window.removeEventListener("resize", handleResize);
       clearDesktopIntroTimers();
     };
-  }, [clearDesktopIntroTimers, startPreparedDesktopIntroSequence, syncDesktopIntroTarget]);
+  }, [clearDesktopIntroTimers, startPreparedDesktopIntroSequence, syncDesktopIntroTarget, prepareDesktopIntroLogo, blocked]);
 
   // When the intro was blocked (e.g. welcome modal) and later unblocked,
-  // start the sequence now.
+  // start the sequence now. The logo is already loaded and visible.
   useEffect(() => {
     if (!introWasBlockedRef.current || blocked || DESKTOP_INTRO_DISABLED) {
       return;
     }
 
     introWasBlockedRef.current = false;
-    void startPreparedDesktopIntroSequence();
-  }, [blocked, startPreparedDesktopIntroSequence]);
+    startDesktopIntroSequence();
+  }, [blocked, startDesktopIntroSequence]);
 
   // Replay the intro when the user navigates back to "/" via the brand logo.
   useEffect(() => {
