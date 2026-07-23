@@ -61,6 +61,7 @@ function parseDbUrl(url: string) {
     database: u.pathname.replace(/^\//, ""),
     connectionLimit: 10,
     connectTimeout: 5000,
+    ssl: false,
   };
 }
 
