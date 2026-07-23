@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import { AuthLoginForm } from "@/components/auth-login-form";
 import { AuthModal } from "@/components/auth-modal";
+import { WelcomeModal } from "@/components/welcome-modal";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { ArtistsLetterProvider } from "@/components/artists-letter-provider";
@@ -458,6 +459,16 @@ function ShellDynamicInner({
     return checkAuthState({ showDialogOnUnavailable: true });
   }, [checkAuthState]);
   // ── Custom hooks ──────────────────────────────────────────────────────────
+  const [isWelcomeBlockingIntro, setIsWelcomeBlockingIntro] = useState(true);
+
+  // If the welcome modal was permanently dismissed in a previous session,
+  // don't block the intro animation.
+  useEffect(() => {
+    if (typeof window !== "undefined" && localStorage.getItem("ytr:welcome-dismissed") === "1") {
+      setIsWelcomeBlockingIntro(false);
+    }
+  }, []);
+
   const {
     isDesktopIntroActive,
     isDesktopIntroPreload,
@@ -470,7 +481,7 @@ function ShellDynamicInner({
     shellDesktopIntroStyle: _shellDesktopIntroStyle,
     startPreparedDesktopIntroSequence,
     shouldReplayDesktopIntroOnHomeRef,
-  } = useDesktopIntro({ pathname });
+  } = useDesktopIntro({ pathname, blocked: isWelcomeBlockingIntro });
   const {
     searchValue, setSearchValue,
     suggestions, showSuggestions, setShowSuggestions,
@@ -3348,6 +3359,7 @@ function ShellDynamicInner({
         )}
       </section>
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+      <WelcomeModal onDismissed={() => setIsWelcomeBlockingIntro(false)} />
       </main>
       </ArtistsLetterProvider>
     </OverlayScrollContainerProvider>

@@ -5,7 +5,7 @@ export default async function MobileCategoriesPage() {
   const snapshot = await getCategoriesNewTopLevelSnapshot();
   const rawCards = snapshot?.cards ?? [];
   const cards = rawCards
-    .filter((card) => card.genre !== "Rock / Metal")
+    .filter((card) => card.genre?.trim() !== "Rock / Metal")
     .slice(0, 8);
 
   return (

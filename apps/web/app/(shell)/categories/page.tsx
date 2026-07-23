@@ -31,7 +31,7 @@ export const metadata: Metadata = {
 
 export default async function CategoriesPage() {
   const snapshot = await getCategoriesNewTopLevelSnapshot();
-  const cards = (snapshot?.cards ?? []).filter((card) => card.genre !== "Rock / Metal");
+  const cards = (snapshot?.cards ?? []).filter((card) => card.genre?.trim() !== "Rock / Metal");
 
   const categoriesJsonLd = {
     "@context": "https://schema.org",

@@ -58,8 +58,10 @@ export type DesktopIntroState = {
 
 export function useDesktopIntro({
   pathname,
+  blocked = false,
 }: {
   pathname: string;
+  blocked?: boolean;
 }): DesktopIntroState {
   // Legacy invariant anchor:
   // const [isDesktopIntroPreload, setIsDesktopIntroPreload] = useState(false);
@@ -78,6 +80,7 @@ export function useDesktopIntro({
   const desktopIntroPhaseRef = useRef<DesktopIntroPhase>("disabled");
   const desktopIntroLogoLoadIdRef = useRef(0);
   const shouldReplayDesktopIntroOnHomeRef = useRef(false);
+  const introWasBlockedRef = useRef(blocked);
 
   const isDesktopIntroActive =
     desktopIntroPhase === "hold"
@@ -273,6 +276,7 @@ export function useDesktopIntro({
   }, [prepareDesktopIntroLogo, startDesktopIntroSequence]);
 
   // Run the intro on first mount and re-run on resize while active.
+  // If blocked (e.g. welcome modal is showing), skip the auto-start.
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -281,6 +285,11 @@ export function useDesktopIntro({
     if (DESKTOP_INTRO_DISABLED) {
       setDesktopIntroPhase("disabled");
       setIsDesktopIntroPreload(false);
+      return;
+    }
+
+    if (blocked) {
+      introWasBlockedRef.current = true;
       return;
     }
 
@@ -306,6 +315,17 @@ export function useDesktopIntro({
       clearDesktopIntroTimers();
     };
   }, [clearDesktopIntroTimers, startPreparedDesktopIntroSequence, syncDesktopIntroTarget]);
+
+  // When the intro was blocked (e.g. welcome modal) and later unblocked,
+  // start the sequence now.
+  useEffect(() => {
+    if (!introWasBlockedRef.current || blocked || DESKTOP_INTRO_DISABLED) {
+      return;
+    }
+
+    introWasBlockedRef.current = false;
+    void startPreparedDesktopIntroSequence();
+  }, [blocked, startPreparedDesktopIntroSequence]);
 
   // Replay the intro when the user navigates back to "/" via the brand logo.
   useEffect(() => {
