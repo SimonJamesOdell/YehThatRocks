@@ -254,4 +254,158 @@
   .welcomeModalGetStarted {
     width: 100%;
   }
+
+  .welcomeModalAccountOptions {
+    gap: 8px;
+  }
+}
+
+/* ── Card checkbox overlay ────────────────────────────────────────────── */
+
+.welcomeModalCard {
+  position: relative;
+}
+
+.welcomeModalCardCheck {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  color: #fff;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: background 0.15s, border-color 0.15s;
+  pointer-events: none; /* clicks pass through to the card button */
+}
+
+.welcomeModalCard:hover .welcomeModalCardCheck,
+.welcomeModalCard:focus-visible .welcomeModalCardCheck {
+  border-color: rgba(255, 120, 60, 0.55);
+}
+
+/* ── Deselected (dark) card state ─────────────────────────────────────── */
+
+.welcomeModalCard--deselected {
+  opacity: 0.42;
+  filter: grayscale(0.6);
+}
+
+.welcomeModalCard--deselected:hover,
+.welcomeModalCard--deselected:focus-visible {
+  opacity: 0.6;
+  filter: grayscale(0.35);
+}
+
+.welcomeModalCard--deselected .welcomeModalCardCheck {
+  background: rgba(0, 0, 0, 0.7);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Selection count ──────────────────────────────────────────────────── */
+
+.welcomeModalSelectionCount {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+}
+
+/* ── Disabled Continue button ─────────────────────────────────────────── */
+
+.welcomeModalGetStarted:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.08);
+  transform: none;
+}
+
+.welcomeModalGetStarted:disabled:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: none;
+}
+
+/* ── Phase 2: Account options ─────────────────────────────────────────── */
+
+.welcomeModalAccountOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.welcomeModalAccountButton {
+  display: block;
+  width: 100%;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s, transform 0.12s, border-color 0.15s;
+  border: 1px solid transparent;
+  letter-spacing: 0.02em;
+}
+
+.welcomeModalAccountButton--primary {
+  color: #fff;
+  background: linear-gradient(135deg, #d42a14, #a11a0a);
+  border-color: rgba(255, 120, 60, 0.3);
+}
+
+.welcomeModalAccountButton--primary:hover {
+  background: linear-gradient(135deg, #e64122, #b81a0c);
+  transform: translateY(-1px);
+}
+
+.welcomeModalAccountButton--secondary {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.welcomeModalAccountButton--secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+}
+
+.welcomeModalAccountButton--ghost {
+  color: rgba(255, 255, 255, 0.55);
+  background: transparent;
+  border-color: transparent;
+  font-weight: 400;
+  font-size: 0.85rem;
+}
+
+.welcomeModalAccountButton--ghost:hover {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.welcomeModalAccountButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── Phase 2: Error message ──────────────────────────────────────────── */
+
+.welcomeModalError {
+  font-size: 0.84rem;
+  color: #f87171;
+  background: rgba(220, 38, 38, 0.12);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 0;
+  text-align: center;
 }

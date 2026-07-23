@@ -151,43 +151,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid request" }, { status: 403 });
   }
 
-  const createRateLimited = rateLimitOrResponse(
-    request,
-    "auth:anonymous:create",
-    ANONYMOUS_CREATE_LIMIT_PER_IP,
-    ANONYMOUS_CREATE_WINDOW_MS,
-  );
-
-  if (createRateLimited) {
-    await recordAuthAudit({
-      action: "register",
-      success: false,
-      detail: "Anonymous account create rate limited (per-IP)",
-      ...requestMeta,
-    });
-    return createRateLimited;
-  }
-
-  const createRateLimitedShared = rateLimitSharedOrResponse(
-    "auth:anonymous:create:global",
-    ANONYMOUS_CREATE_LIMIT_GLOBAL,
-    ANONYMOUS_CREATE_GLOBAL_WINDOW_MS,
-  );
-
-  if (createRateLimitedShared) {
-    await recordAuthAudit({
-      action: "register",
-      success: false,
-      detail: "Anonymous account create rate limited (global)",
-      ...requestMeta,
-    });
-    return createRateLimitedShared;
-  }
-
   try {
     const bodyResult = await parseRequestJson<AnonymousRequestBody>(request);
     const requestBody = bodyResult.ok ? bodyResult.data : null;
-    const username = normalizeScreenName(requestBody?.screenName ?? "");
+    let username = normalizeScreenName(requestBody?.screenName ?? "");
+
+    // Auto-generate a screen name when none is provided (e.g. from welcome modal).
+    // This mirrors the GET handler's suggestion logic.
+    if (username.length < SCREEN_NAME_MIN_LENGTH) {
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const suggestion = buildAnonymousScreenNameSuggestion();
+        if (!(await isScreenNameTaken(suggestion))) {
+          username = suggestion;
+          break;
+        }
+      }
+    }
 
     if (username.length < SCREEN_NAME_MIN_LENGTH || username.length > SCREEN_NAME_MAX_LENGTH) {
       return NextResponse.json(
@@ -196,6 +175,42 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 },
       );
+    }
+
+    // Rate-limit checks run AFTER validation so failed attempts don't
+    // consume the per-IP bucket (limit: 1/hour). Only requests that pass
+    // all pre-flight checks count toward the limit.
+    const createRateLimited = rateLimitOrResponse(
+      request,
+      "auth:anonymous:create",
+      ANONYMOUS_CREATE_LIMIT_PER_IP,
+      ANONYMOUS_CREATE_WINDOW_MS,
+    );
+
+    if (createRateLimited) {
+      await recordAuthAudit({
+        action: "register",
+        success: false,
+        detail: "Anonymous account create rate limited (per-IP)",
+        ...requestMeta,
+      });
+      return createRateLimited;
+    }
+
+    const createRateLimitedShared = rateLimitSharedOrResponse(
+      "auth:anonymous:create:global",
+      ANONYMOUS_CREATE_LIMIT_GLOBAL,
+      ANONYMOUS_CREATE_GLOBAL_WINDOW_MS,
+    );
+
+    if (createRateLimitedShared) {
+      await recordAuthAudit({
+        action: "register",
+        success: false,
+        detail: "Anonymous account create rate limited (global)",
+        ...requestMeta,
+      });
+      return createRateLimitedShared;
     }
 
     if (await isScreenNameTaken(username)) {

@@ -51,9 +51,14 @@ function normalizeQueryOperation(query: string) {
  */
 function parseDbUrl(url: string) {
   const u = new URL(url);
+  const isLocalhost =
+    u.hostname === "127.0.0.1" ||
+    u.hostname === "localhost" ||
+    u.hostname === "::1";
+
   // Protocol: "mysql:" -> let PrismaMariaDb rewrite to "mariadb:"
   // We pass an object, so mariadb.createPool gets an object.
-  return {
+  const config: Record<string, unknown> = {
     host: u.hostname,
     port: parseInt(u.port, 10) || 3306,
     user: decodeURIComponent(u.username),
@@ -61,12 +66,19 @@ function parseDbUrl(url: string) {
     database: u.pathname.replace(/^\//, ""),
     connectionLimit: 10,
     connectTimeout: 5000,
-    // mariadb 3.x enables TLS by default. ssl: false is not recognized —
-    // it silently tries TLS and hangs. The connector requires an object
-    // with rejectUnauthorized: false to accept the self-signed cert
-    // that MySQL 8.0 generates on first boot.
-    ssl: { rejectUnauthorized: false },
   };
+
+  // mariadb 3.x enables TLS by default. On remote hosts with self-signed
+  // certs (e.g. production MySQL 8.0), we need rejectUnauthorized: false.
+  // On localhost where SSL is typically disabled (--skip-ssl), we must
+  // explicitly set ssl: false so the connector doesn't try TLS at all.
+  if (isLocalhost) {
+    config.ssl = false;
+  } else {
+    config.ssl = { rejectUnauthorized: false };
+  }
+
+  return config;
 }
 
 function createPrismaClient() {

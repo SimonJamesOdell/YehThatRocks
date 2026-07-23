@@ -1,19 +1,26 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { getGenreSlug, type GenreCard } from "@/lib/catalog-data-utils";
 
 const WELCOME_DISMISSED_KEY = "ytr:welcome-dismissed";
+const GENRE_PREFERENCES_KEY = "ytr:genre-preferences";
 const LOGO_SRC = "/assets/images/yeh_main_logo.png?v=20260424-4";
 
 export function WelcomeModal({ onDismissed }: { onDismissed?: () => void }) {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [categories, setCategories] = useState<GenreCard[]>([]);
+  // Genre selection: Set of genre labels that are checked. Starts empty; populated when cards load.
+  const [selectedGenres, setSelectedGenres] = useState<Set<string>>(new Set());
+  // Phase 2 loading / error states.
+  const [isCreatingAccount, setIsCreatingAccount] = useState(false);
+  const [accountError, setAccountError] = useState<string | null>(null);
 
   useEffect(() => {
     // Never show if user has explicitly dismissed permanently.
@@ -30,6 +37,8 @@ export function WelcomeModal({ onDismissed }: { onDismissed?: () => void }) {
           (card: GenreCard) => card.genre?.trim() !== "Rock / Metal"
         );
         setCategories(cards);
+        // Initially all genres are selected.
+        setSelectedGenres(new Set(cards.map((card) => card.genre)));
         setIsOpen(true);
       })
       .catch(() => {
@@ -43,25 +52,119 @@ export function WelcomeModal({ onDismissed }: { onDismissed?: () => void }) {
     };
   }, []);
 
-  const handleClose = useCallback(() => {
+  // Phase 2: show account creation prompt after genre selection.
+  const [showAccountPrompt, setShowAccountPrompt] = useState(false);
+
+  const toggleGenre = useCallback((genre: string) => {
+    setSelectedGenres((prev) => {
+      const next = new Set(prev);
+      if (next.has(genre)) {
+        next.delete(genre);
+      } else {
+        next.add(genre);
+      }
+      return next;
+    });
+  }, []);
+
+  // Persist genre selections to localStorage.
+  const persistGenres = useCallback(() => {
+    const genreArray = Array.from(selectedGenres);
+    try {
+      localStorage.setItem(GENRE_PREFERENCES_KEY, JSON.stringify(genreArray));
+    } catch {
+      // Best-effort only.
+    }
+  }, [selectedGenres]);
+
+  // Full dismiss: store permanent dismissal if checked, persist genres, close.
+  const handleDismiss = useCallback(() => {
     if (dontShowAgain) {
       localStorage.setItem(WELCOME_DISMISSED_KEY, "1");
     }
+    persistGenres();
     setIsOpen(false);
     onDismissed?.();
-  }, [dontShowAgain, onDismissed]);
+  }, [dontShowAgain, persistGenres, onDismissed]);
 
-  // Close on Escape key.
+  // Phase 1 → Phase 2: persist genres and show account prompt.
+  const handleContinue = useCallback(() => {
+    persistGenres();
+    setShowAccountPrompt(true);
+  }, [persistGenres]);
+
+  // Skip account creation: just dismiss (genres already persisted in handleContinue).
+  const handleSkip = useCallback(() => {
+    handleDismiss();
+  }, [handleDismiss]);
+
+  // Create anonymous account, then push genre preferences to server.
+  const handleCreateAnonymous = useCallback(async () => {
+    setIsCreatingAccount(true);
+    setAccountError(null);
+    const genreArray = Array.from(selectedGenres);
+    try {
+      // Step 1: Get a suggested screen name.
+      const suggestRes = await fetch("/api/auth/anonymous");
+      if (!suggestRes.ok) {
+        const suggestData = await suggestRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(suggestData.error || "Failed to generate screen name");
+      }
+      const suggestJson = await suggestRes.json() as { screenName?: string };
+      const screenName = suggestJson.screenName;
+      if (!screenName) throw new Error("No screen name returned");
+
+      // Step 2: Create anonymous account with the suggested screen name.
+      const createRes = await fetch("/api/auth/anonymous", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ screenName }),
+      });
+      if (!createRes.ok) {
+        const data = await createRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error || "Failed to create account");
+      }
+      // Step 2: Push genre preferences to server (now authenticated via cookies).
+      await Promise.allSettled([
+        fetch("/api/player-preferences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ autoplayGenreFilters: genreArray }),
+        }),
+        fetch("/api/new-videos-preferences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ includeGenres: genreArray }),
+        }),
+      ]);
+      handleDismiss();
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : "Something went wrong");
+      setIsCreatingAccount(false);
+    }
+  }, [selectedGenres, handleDismiss]);
+
+  // Navigate to registration page; genres are already in localStorage from handleContinue.
+  const handleRegister = useCallback(() => {
+    router.push("/register");
+    handleDismiss();
+  }, [router, handleDismiss]);
+
+  // Close on Escape key — use dismiss in both phases.
   useEffect(() => {
     if (!isOpen) return;
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        handleClose();
+        if (showAccountPrompt) {
+          handleDismiss();
+        } else {
+          handleDismiss();
+        }
       }
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, handleClose]);
+  }, [isOpen, showAccountPrompt, handleDismiss]);
 
   // Prevent body scroll while modal is open.
   useEffect(() => {
@@ -77,13 +180,16 @@ export function WelcomeModal({ onDismissed }: { onDismissed?: () => void }) {
 
   if (!isOpen) return null;
 
+  const selectedCount = selectedGenres.size;
+  const totalCount = categories.length;
+
   return (
     <div className="welcomeModal" role="dialog" aria-modal="true" aria-label="Welcome to YehThatRocks">
-      {/* Backdrop */}
+      {/* Backdrop — dismisses in both phases */}
       <div
         className="welcomeModalBackdrop"
         aria-hidden="true"
-        onClick={handleClose}
+        onClick={showAccountPrompt ? handleDismiss : handleDismiss}
       />
 
       <div className="welcomeModalPanel">
@@ -104,7 +210,7 @@ export function WelcomeModal({ onDismissed }: { onDismissed?: () => void }) {
           <button
             type="button"
             className="welcomeModalClose"
-            onClick={handleClose}
+            onClick={handleDismiss}
             aria-label="Close welcome screen"
           >
             ✕
@@ -112,69 +218,141 @@ export function WelcomeModal({ onDismissed }: { onDismissed?: () => void }) {
         </div>
 
         {/* Body */}
-        <div className="welcomeModalBody">
-          <p className="welcomeModalBlurb">
-            <strong>50,000+ rock and metal tracks</strong> — stream free, no ads ever.
-            Browse <strong>8 curated genre buckets</strong> from Classic Metal to Death
-            Metal, Punk to Progressive. Discover new videos every day,{" "}
-            <strong>build playlists</strong>, save favourites, join the{" "}
-            <strong>community chat</strong>, browse the <strong>magazine</strong>, or dive into
-            the <strong>forum</strong>.
-          </p>
+        {!showAccountPrompt ? (
+          <>
+            <div className="welcomeModalBody">
+              <p className="welcomeModalBlurb">
+                <strong>50,000+ rock and metal tracks</strong> — stream free, no ads ever.
+                Browse <strong>8 curated genre buckets</strong> from Classic Metal to Death
+                Metal, Punk to Progressive. Discover new videos every day,{" "}
+                <strong>build playlists</strong>, save favourites, join the{" "}
+                <strong>community chat</strong>, browse the <strong>magazine</strong>, or dive into
+                the <strong>forum</strong>.
+              </p>
 
-          {categories.length > 0 ? (
-            <div className="welcomeModalGrid">
-                {categories.map((card) => {
-                  const slug = getGenreSlug(card.genre);
-                  return (
-                    <Link
-                      key={slug}
-                      href={`/categories/${encodeURIComponent(slug)}`}
-                      className="welcomeModalCard"
-                      onClick={handleClose}
-                    >
-                      {card.previewVideoId ? (
-                        <YouTubeThumbnailImage
-                          videoId={card.previewVideoId}
-                          alt=""
-                          className="welcomeModalCardThumb"
-                          format="mqdefault"
-                          loading="lazy"
-                          hideClosestSelector=".welcomeModalCard"
-                          reportReason="welcome-modal-thumbnail-load-error"
-                        />
-                      ) : (
-                        <div className="welcomeModalCardThumb" aria-hidden="true" />
-                      )}
-                      <span className="welcomeModalCardTitle">{card.genre}</span>
-                      <span className="welcomeModalCardCount">
-                        {card.artistCount.toLocaleString("en-US")} artist{card.artistCount !== 1 ? "s" : ""}
-                      </span>
-                    </Link>
-                  );
-                })}
+              <p className="welcomeModalPrompt">Select the genres you want to see:</p>
+
+              {categories.length > 0 ? (
+                <div className="welcomeModalGrid">
+                  {categories.map((card) => {
+                    const slug = getGenreSlug(card.genre);
+                    const isSelected = selectedGenres.has(card.genre);
+                    return (
+                      <button
+                        key={slug}
+                        type="button"
+                        className={`welcomeModalCard${isSelected ? "" : " welcomeModalCard--deselected"}`}
+                        onClick={() => toggleGenre(card.genre)}
+                        aria-pressed={isSelected}
+                        aria-label={`${isSelected ? "Deselect" : "Select"} ${card.genre}`}
+                      >
+                        <span className="welcomeModalCardCheck" aria-hidden="true">
+                          {isSelected ? "✓" : ""}
+                        </span>
+                        {card.previewVideoId ? (
+                          <YouTubeThumbnailImage
+                            videoId={card.previewVideoId}
+                            alt=""
+                            className="welcomeModalCardThumb"
+                            format="mqdefault"
+                            loading="lazy"
+                            hideClosestSelector=".welcomeModalCard"
+                            reportReason="welcome-modal-thumbnail-load-error"
+                          />
+                        ) : (
+                          <div className="welcomeModalCardThumb" aria-hidden="true" />
+                        )}
+                        <span className="welcomeModalCardTitle">{card.genre}</span>
+                        <span className="welcomeModalCardCount">
+                          {card.artistCount.toLocaleString("en-US")} artist{card.artistCount !== 1 ? "s" : ""}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+
+            {/* Footer — Phase 1 */}
+            <div className="welcomeModalFooter">
+              <label className="welcomeModalDontShow">
+                <input
+                  type="checkbox"
+                  checked={dontShowAgain}
+                  onChange={(event) => setDontShowAgain(event.target.checked)}
+                />
+                Don&rsquo;t show again
+              </label>
+              <span className="welcomeModalSelectionCount">
+                {selectedCount} of {totalCount} selected
+              </span>
+              <button
+                type="button"
+                className="welcomeModalGetStarted"
+                onClick={handleContinue}
+                disabled={selectedCount === 0}
+              >
+                Continue
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Phase 2: Account creation prompt */}
+            <div className="welcomeModalBody">
+              <p className="welcomeModalBlurb">
+                <strong>Save your preferences</strong> so your genre selections follow you
+                across devices. Create a free account or continue anonymously — either way,
+                your picks are applied to auto-play, the new videos page, and your
+                watch-next rail.
+              </p>
+              {accountError ? (
+                <p className="welcomeModalError">{accountError}</p>
+              ) : null}
+              <div className="welcomeModalAccountOptions">
+                <button
+                  type="button"
+                  className="welcomeModalAccountButton welcomeModalAccountButton--primary"
+                  onClick={handleCreateAnonymous}
+                  disabled={isCreatingAccount}
+                >
+                  {isCreatingAccount ? "Creating account…" : "Create Anonymous Account"}
+                </button>
+                <button
+                  type="button"
+                  className="welcomeModalAccountButton welcomeModalAccountButton--secondary"
+                  onClick={handleRegister}
+                  disabled={isCreatingAccount}
+                >
+                  Register with Email
+                </button>
+                <button
+                  type="button"
+                  className="welcomeModalAccountButton welcomeModalAccountButton--ghost"
+                  onClick={handleSkip}
+                  disabled={isCreatingAccount}
+                >
+                  Skip — save locally only
+                </button>
               </div>
-          ) : null}
-        </div>
+            </div>
 
-        {/* Footer */}
-        <div className="welcomeModalFooter">
-          <label className="welcomeModalDontShow">
-            <input
-              type="checkbox"
-              checked={dontShowAgain}
-              onChange={(event) => setDontShowAgain(event.target.checked)}
-            />
-            Don&rsquo;t show again
-          </label>
-          <button
-            type="button"
-            className="welcomeModalGetStarted"
-            onClick={handleClose}
-          >
-            Get Started
-          </button>
-        </div>
+            {/* Footer — Phase 2 (minimal) */}
+            <div className="welcomeModalFooter">
+              <label className="welcomeModalDontShow">
+                <input
+                  type="checkbox"
+                  checked={dontShowAgain}
+                  onChange={(event) => setDontShowAgain(event.target.checked)}
+                />
+                Don&rsquo;t show again
+              </label>
+              <span className="welcomeModalSelectionCount">
+                {selectedCount} genre{selectedCount !== 1 ? "s" : ""} selected
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

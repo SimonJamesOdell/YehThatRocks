@@ -805,6 +805,7 @@ export function NewVideosLoader({
                   onClick={() => setIsGenreMenuOpen((current) => !current)}
                   aria-expanded={isGenreMenuOpen}
                   aria-controls="new-genre-filter-panel"
+                  suppressHydrationWarning
                 >
                   {(selectedGenres.length > 0 || excludedGenres.length > 0)
                     ? `Genres: +${selectedGenres.length} / -${excludedGenres.length}`

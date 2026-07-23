@@ -103,6 +103,12 @@ export function useNewVideosDataLoader({
   const lastPrefetchAtRef = useRef(0);
   const allVideoIdsRef = useRef(new Set<string>());
 
+  // Generation counter incremented each time the main load effect re-runs
+  // (e.g. when genreFiltersKey changes).  Async operations capture the
+  // generation at call time and discard their results if a newer effect has
+  // started, preventing stale videos from polluting the reset state.
+  const loadGenerationRef = useRef(0);
+
   useEffect(() => {
     allVideoIdsRef.current = new Set(allVideos.map((video) => video.id));
   }, [allVideos]);
@@ -205,6 +211,7 @@ export function useNewVideosDataLoader({
       setIsLoadingMore(true);
       setLoadMoreError(null);
     }
+    const loadGen = loadGenerationRef.current;
 
     try {
       // Invariant marker: fetch(`/api/videos/newest?skip=${skip}&take=${take}`) remains the batch request shape.
@@ -236,6 +243,8 @@ export function useNewVideosDataLoader({
       const payload = result.data;
       const videos = Array.isArray(payload.videos) ? payload.videos : [];
       const received = videos.length;
+      // Discard results when a newer load effect has started (e.g. genre filter change).
+      if (loadGenerationRef.current !== loadGen) return { received: 0, added: 0, failed: false };
       const added = appendFetchedVideos(videos);
 
       const nextOffset = Number(payload.nextOffset);
@@ -283,6 +292,9 @@ export function useNewVideosDataLoader({
   }, [loadBatch, scrollBatchSize]);
 
   useEffect(() => {
+    // Increment generation to invalidate any in-flight operations from a previous effect run.
+    loadGenerationRef.current += 1;
+
     const loadVideos = async () => {
       if (!enabled) {
         setLoading(true);
@@ -361,6 +373,7 @@ export function useNewVideosDataLoader({
     if (!enabled || loading || document.visibilityState !== "visible") {
       return;
     }
+    const loadGen = loadGenerationRef.current;
 
     try {
       const result = await fetchJsonWithLoaderContract<NewVideosApiPayload>({
@@ -379,6 +392,8 @@ export function useNewVideosDataLoader({
 
       const payload = result.data;
       const videos = Array.isArray(payload.videos) ? payload.videos : [];
+      // Discard results when a newer load effect has started.
+      if (loadGenerationRef.current !== loadGen) return;
       const added = prependFetchedVideos(videos);
       if (added > 0) {
         // Keep pagination aligned after prepending fresh head entries.

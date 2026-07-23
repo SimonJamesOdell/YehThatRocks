@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { parseJsonOrNull } from "@/lib/parse-json";
+import { readGenrePreferences } from "@/lib/genre-preference-store";
 import {
   normalizeNewVideoGenreFilterState,
   normalizeNewVideoGenreFilters,
@@ -21,13 +22,29 @@ function readPersistedFilters() {
 
   try {
     const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) {
+    if (raw) {
+      const parsed = normalizeNewVideoGenreFilterState(JSON.parse(raw));
+      // If the persisted value is empty (e.g. written by a previous buggy
+      // visit), treat it as unset so we fall through to the welcome-modal
+      // genre-preference fallback.
+      if (parsed.includeGenres.length > 0 || parsed.excludeGenres.length > 0) {
+        return parsed;
+      }
+    }
+
+    // Normalize through the same pipeline so casing matches the facet comparison.
+    const welcomeGenres = readGenrePreferences();
+    if (welcomeGenres && welcomeGenres.length > 0) {
       return {
-        includeGenres: [],
+        includeGenres: normalizeNewVideoGenreFilters(welcomeGenres),
         excludeGenres: [],
       } satisfies NewVideoGenreFilterState;
     }
-    return normalizeNewVideoGenreFilterState(JSON.parse(raw));
+
+    return {
+      includeGenres: [],
+      excludeGenres: [],
+    } satisfies NewVideoGenreFilterState;
   } catch {
     return {
       includeGenres: [],
@@ -42,6 +59,12 @@ function writePersistedFilters(filters: NewVideoGenreFilterState) {
   }
 
   try {
+    // Remove the key when filters are empty so the welcome-genre fallback
+    // in readPersistedFilters can take effect on the next visit.
+    if (filters.includeGenres.length === 0 && filters.excludeGenres.length === 0) {
+      window.localStorage.removeItem(LOCAL_STORAGE_KEY);
+      return;
+    }
     window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(filters));
   } catch {
     // Best-effort persistence only.
@@ -49,16 +72,23 @@ function writePersistedFilters(filters: NewVideoGenreFilterState) {
 }
 
 export function useNewVideosGenrePreference(isAuthenticated: boolean) {
-  const [filters, setFilters] = useState<NewVideoGenreFilterState>({
-    includeGenres: [],
-    excludeGenres: [],
+  const [filters, setFilters] = useState<NewVideoGenreFilterState>(() => {
+    // For unauthenticated users, read persisted filters immediately so the
+    // first render already carries the correct genre selection.  Without
+    // this the "new" page data-loader fires with empty filters before the
+    // useEffect below has a chance to hydrate, producing the wrong videos
+    // and stale-generation duplicate-key errors.
+    if (!isAuthenticated) {
+      return readPersistedFilters();
+    }
+    return { includeGenres: [], excludeGenres: [] };
   });
   const [isServerHydrated, setIsServerHydrated] = useState(() => !isAuthenticated);
 
   useEffect(() => {
     if (!isAuthenticated) {
-      const local = readPersistedFilters();
-      setFilters(local);
+      // Filters were already initialised from localStorage via the lazy
+      // useState initializer above — nothing more to load.
       setIsServerHydrated(true);
       return;
     }
@@ -93,6 +123,14 @@ export function useNewVideosGenrePreference(isAuthenticated: boolean) {
           excludeGenres: payload?.excludeGenres,
           genres: payload?.genres,
         });
+
+        // If the server has no preferences yet (new account), keep the
+        // local fallback from the welcome modal or previous session.
+        if (next.includeGenres.length === 0 && next.excludeGenres.length === 0 && (local.includeGenres.length > 0 || local.excludeGenres.length > 0)) {
+          setIsServerHydrated(true);
+          return;
+        }
+
         setFilters(next);
         writePersistedFilters(next);
       } catch {
