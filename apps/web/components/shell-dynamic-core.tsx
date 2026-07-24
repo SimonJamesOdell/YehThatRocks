@@ -75,6 +75,7 @@ import { publishAuthStateChange } from "@/lib/auth-sync";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
 import { parseJsonOrNull } from "@/lib/parse-json";
 import { readGenrePreferences } from "@/lib/genre-preference-store";
+import { doesVideoMatchAutoplayGenres } from "@/lib/player-preferences-shared";
 import { resolveVideoGenreNavigationTarget } from "@/lib/video-genre-navigation";
 applyRuntimeBootstrapPatches({ safePerformanceMeasure: true });
 import type { CurrentVideoResolvePayload, WatchNextAdvisory, LyricsRailPayload, ShellDynamicProps } from "@/components/shell-types";
@@ -139,6 +140,8 @@ function ShellDynamicInner({
   })();
   const initialHydratedRelatedVideos = dedupeRelatedRailVideos(dedupeVideos(initialRelatedVideos), initialVideo.id);
   const [currentVideo, setCurrentVideo] = useState(initialVideo);
+  const currentVideoRef = useRef(currentVideo);
+  currentVideoRef.current = currentVideo;
   const [relatedVideos, setRelatedVideos] = useState<VideoRecord[]>(initialHydratedRelatedVideos);
   const [displayedRelatedVideos, setDisplayedRelatedVideos] = useState<VideoRecord[]>(initialHydratedRelatedVideos);
   const [relatedTransitionPhase, setRelatedTransitionPhase] = useState<"idle" | "fading-out" | "loading" | "fading-in">("idle");
@@ -2011,16 +2014,38 @@ function ShellDynamicInner({
   // When the welcome modal persists genre preferences (onboarding complete),
   // reset the watch-next rail so it re-fetches with the new genre filters.
   // This covers the case where the rail was populated before genres were saved.
+  // Also checks if the SSR-provided auto-chosen video matches the user's genre
+  // selections; if not, swaps it for a video that conforms.
   useEffect(() => {
     if (isAuthenticated) return;
     const unsubscribe = listenToAppEvent(
       EVENT_NAMES.WELCOME_GENRES_PERSISTED,
       () => {
         setWatchNextRefreshTick((tick) => tick + 1);
+
+        const genres = readGenrePreferences();
+        const video = currentVideoRef.current;
+        if (
+          genres &&
+          genres.length > 0 &&
+          video.id &&
+          !doesVideoMatchAutoplayGenres(video.genre, genres)
+        ) {
+          // The SSR auto-chosen video doesn't match the user's genre picks.
+          // Fetch a random video that does match and navigate to it.
+          fetch(`/api/current-video?autoplayGenreFilters=${encodeURIComponent(genres.join(","))}`)
+            .then((res) => res.json())
+            .then((data: { currentVideo?: { id?: string } }) => {
+              if (data.currentVideo?.id && data.currentVideo.id !== video.id) {
+                router.replace(`/?v=${encodeURIComponent(data.currentVideo.id)}`);
+              }
+            })
+            .catch(() => undefined);
+        }
       },
     );
     return unsubscribe;
-  }, [isAuthenticated]);
+  }, [isAuthenticated, router]);
   useEffect(() => {
     if (
       !watchNextLoadFailed
