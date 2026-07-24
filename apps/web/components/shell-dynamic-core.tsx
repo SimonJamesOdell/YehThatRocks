@@ -2045,7 +2045,9 @@ function ShellDynamicInner({
       },
     );
     return unsubscribe;
-  }, [isAuthenticated, router]);
+    // router is stable across renders (useRouter), no need for deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
   useEffect(() => {
     if (
       !watchNextLoadFailed
