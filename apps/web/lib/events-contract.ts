@@ -51,6 +51,9 @@ export const EVENT_NAMES = {
 
   // Onboarding — genre preferences
   WELCOME_GENRES_PERSISTED: "ytr:welcome-genres-persisted",
+
+  // Player — request next track (used to skip mismatched SSR video after onboarding)
+  REQUEST_NEXT_TRACK: "ytr:request-next-track",
 } as const;
 
 export type QueueRemovalReason = "ended" | "manual-next" | "transition-sync";
@@ -108,6 +111,7 @@ export type EventPayloads = {
   [EVENT_NAMES.ARTISTS_FILTER_CHANGE]: { value: string };
   [EVENT_NAMES.FORUM_EMBED_PLAYBACK_STARTED]: null;
   [EVENT_NAMES.WELCOME_GENRES_PERSISTED]: null;
+  [EVENT_NAMES.REQUEST_NEXT_TRACK]: null;
 };
 
 // ============================================================================

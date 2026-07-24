@@ -314,6 +314,7 @@ export function PlayerExperience({
     const nextVideoIdRef = useRef<string | null>(currentVideo.id);
     const nextPlaylistIndexRef = useRef<number | null>(null);
     const nextClearPlaylistRef = useRef(false);
+    const handleNextRef = useRef<() => void>(() => {});
     const activePlaylistIdRef = useRef<string | null>(activePlaylistId);
   const watchHistoryLevelRef = useRef<Map<string, number>>(new Map());
   const watchHistoryRefreshInFlightRef = useRef<Promise<boolean> | null>(null);
@@ -2249,6 +2250,18 @@ export function PlayerExperience({
     return () => unsubscribe();
   }, [executeManualNavigation]);
 
+  // Listen for REQUEST_NEXT_TRACK to skip to the next video (used when the
+  // SSR-provided video doesn't match the user's genre preferences post-onboarding).
+  useEffect(() => {
+    const unsubscribe = listenToAppEvent(
+      EVENT_NAMES.REQUEST_NEXT_TRACK,
+      () => {
+        handleNextRef.current();
+      },
+    );
+    return () => unsubscribe();
+  }, []);
+
   // When entering an artist overlay page, auto-start playing the first artist video
   // if the current video is not already in the artist's autoplay queue.
   useEffect(() => {
@@ -3493,6 +3506,7 @@ export function PlayerExperience({
       playlistItemIndex: nextTarget.playlistItemIndex,
     });
   }
+  handleNextRef.current = handleNext;
 
   function handleDockedRouteListNextTrack() {
     if ((!isDockedNewRoute && !isDockedTop100Route && !isDockedArtistRoute) || footerActionsBlocked || routeAutoplayQueueIds.length === 0) {

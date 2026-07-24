@@ -2032,15 +2032,9 @@ function ShellDynamicInner({
           !doesVideoMatchAutoplayGenres(video.genre, genres)
         ) {
           // The SSR auto-chosen video doesn't match the user's genre picks.
-          // Fetch a random video that does match and navigate to it.
-          fetch(`/api/current-video?autoplayGenreFilters=${encodeURIComponent(genres.join(","))}`)
-            .then((res) => res.json())
-            .then((data: { currentVideo?: { id?: string } }) => {
-              if (data.currentVideo?.id && data.currentVideo.id !== video.id) {
-                router.replace(`/?v=${encodeURIComponent(data.currentVideo.id)}`);
-              }
-            })
-            .catch(() => undefined);
+          // Trigger the autoplay "next video" which already respects genre
+          // preferences — avoids a page reload.
+          dispatchAppEvent(EVENT_NAMES.REQUEST_NEXT_TRACK, null);
         }
       },
     );
