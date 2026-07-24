@@ -28,7 +28,9 @@ export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal }: 
     // Never show if user has already completed onboarding:
     // - Explicit permanent dismissal via checkbox
     // - Genre preferences already saved (from a previous skip/save flow)
+    // - User is already signed in (SSR or auto-login resolved before this effect)
     if (typeof window === "undefined") return;
+    if (isAuthenticatedRef.current) return;
     if (localStorage.getItem(WELCOME_DISMISSED_KEY) === "1") return;
     if (localStorage.getItem(GENRE_PREFERENCES_KEY) !== null) return;
 
@@ -60,6 +62,11 @@ export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal }: 
   // Keep ref in sync so handleContinue always reads current value.
   useEffect(() => {
     isAuthenticatedRef.current = isAuthenticated ?? false;
+    // If the user becomes authenticated after the modal is open (e.g. auto-login
+    // succeeded), dismiss the modal silently — this user already has an account.
+    if (isAuthenticated && isOpen) {
+      setIsOpen(false);
+    }
   }, [isAuthenticated]);
 
   // Phase 2: show account creation prompt after genre selection.
