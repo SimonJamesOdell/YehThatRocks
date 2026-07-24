@@ -358,10 +358,10 @@ function main() {
   assertContains(shellDynamicSource, "function openAuthModal()", "Shell exposes an openAuthModal function", failures);
   assertContains(shellDynamicSource, "<AuthModal", "Shell renders the AuthModal component", failures);
   assertContains(shellDynamicSource, "isOpen={isAuthModalOpen}", "Shell passes isOpen prop to AuthModal", failures);
-  assertContains(shellDynamicSource, "onClose={() => setIsAuthModalOpen(false)}", "Shell passes onClose handler to AuthModal", failures);
+  assertContains(shellDynamicSource, "onClose={() => { setIsAuthModalOpen(false); setShouldAutoOpenAnonymous(false); }}", "Shell passes onClose handler to AuthModal closing both open and auto-open state", failures);
 
   // --- Shell: auto-login effect on initial mount for unauthenticated users ---
-  assertContains(shellDynamicSource, "// ── Auto-login for unauthenticated users on initial page load ────────────", "Shell documents the auto-login effect with a section banner", failures);
+  assertContains(shellDynamicSource, "// ── Auto-login for returning users on initial page load ──────────────────", "Shell documents the auto-login effect with a section banner", failures);
   assertContains(shellDynamicSource, "const hasAttemptedAutoLoginRef = useRef(false);", "Shell declares a hasAttemptedAutoLoginRef guard to prevent double auto-login", failures);
   assertContains(shellDynamicSource, "if (isLoggedIn || hasAttemptedAutoLoginRef.current)", "Auto-login effect returns early when already authenticated or already attempted", failures);
   assertContains(shellDynamicSource, "hasAttemptedAutoLoginRef.current = true;", "Auto-login effect sets the attempted guard before any async work", failures);
@@ -369,14 +369,28 @@ function main() {
   assertContains(shellDynamicSource, 'window.sessionStorage.getItem(AUTO_LOGIN_SUPPRESS_ONCE_KEY) === "1"', "Auto-login effect checks sessionStorage for the suppression flag", failures);
   assertContains(shellDynamicSource, 'window.sessionStorage.removeItem(AUTO_LOGIN_SUPPRESS_ONCE_KEY);', "Auto-login effect consumes the suppression flag once honoured", failures);
   assertContains(shellDynamicSource, '"/api/auth/refresh"', "Auto-login effect calls /api/auth/refresh as the first authentication attempt", failures);
-  assertContains(shellDynamicSource, '"/api/auth/anonymous?screenName="', "Auto-login effect fetches a suggested anonymous screen name as fallback", failures);
-  assertContains(shellDynamicSource, '"/api/auth/anonymous"', "Auto-login effect creates an anonymous account as fallback", failures);
+  // Brand-new visitors are NOT auto-created — the welcome modal handles onboarding.
+  assertContains(shellDynamicSource, "Brand-new visitors stay unauthenticated", "Auto-login effect documents that brand-new visitors are not auto-created", failures);
   assertContains(shellDynamicSource, "didArriveOnMagazineRouteRef.current = false;", "Auto-login effect resets the magazine arrival flag on successful auth", failures);
   assertContains(shellDynamicSource, 'publishAuthStateChange("authenticated");', "Auto-login effect broadcasts auth state change on success", failures);
   assertContains(shellDynamicSource, "router.refresh();", "Auto-login effect refreshes the router after successful auth", failures);
   assertContains(shellDynamicSource, "return () => {\n      cancelled = true;\n    };", "Auto-login effect has a cleanup function that cancels in-flight requests", failures);
-  // Anonymous endpoint sets cookies directly — no separate login call needed.
-  assertNotContains(shellDynamicSource, '"/api/auth/login"', "Auto-login effect must not redundantly call /api/auth/login (anonymous endpoint sets cookies)", failures);
+
+  // --- Shell: standalone anonymous signup modal integration ---
+  assertContains(shellDynamicSource, "const [isAnonymousSignupOpen, setIsAnonymousSignupOpen] = useState(false);", "Shell tracks anonymous signup modal open state", failures);
+  assertContains(shellDynamicSource, "function openAuthModalAnonymous()", "Shell exposes an openAuthModalAnonymous function", failures);
+  assertContains(shellDynamicSource, "setIsAnonymousSignupOpen(true);", "openAuthModalAnonymous opens the standalone AnonymousSignupModal", failures);
+  assertContains(shellDynamicSource, "import { AnonymousSignupModal }", "Shell imports AnonymousSignupModal", failures);
+  assertContains(shellDynamicSource, "<AnonymousSignupModal", "Shell renders the AnonymousSignupModal component", failures);
+  assertContains(shellDynamicSource, "isOpen={isAnonymousSignupOpen}", "Shell passes isOpen prop to AnonymousSignupModal", failures);
+
+  // --- AuthModal: autoOpenAnonymous prop passthrough ---
+  assertContains(authModalSource, "autoOpenAnonymous?: boolean", "AuthModal declares autoOpenAnonymous prop", failures);
+  assertContains(authModalSource, "<AuthLoginForm autoOpenAnonymous={autoOpenAnonymous}", "AuthModal passes autoOpenAnonymous to AuthLoginForm", failures);
+
+  // --- AuthLoginForm: autoOpenAnonymous prop ---
+  assertContains(loginFormSource, "autoOpenAnonymous?: boolean", "AuthLoginForm declares autoOpenAnonymous prop", failures);
+  assertContains(loginFormSource, "if (autoOpenAnonymous && !autoOpenTriggeredRef.current)", "AuthLoginForm auto-triggers anonymous flow when autoOpenAnonymous is true", failures);
 
   // --- Player auth wall: guest-facing sign-in overlay ---
   assertContains(playerExperienceSource, 'className="playerAuthWall"', "PlayerExperience renders a playerAuthWall overlay for unauthenticated users", failures);
