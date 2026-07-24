@@ -3,6 +3,7 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 
 import { LIVE_SEARCH_PARAMS_EVENT } from "@/hooks/use-live-search-params";
+import { readGenrePreferences } from "@/lib/genre-preference-store";
 import { parseJsonOrNull } from "@/lib/parse-json";
 
 const AUTOPLAY_FALLBACK_POOL_SIZE = 12;
@@ -53,7 +54,14 @@ export function usePlayerNavigationActions({
 }) {
   const resolveAutoplayRecoveryTarget = useCallback(async () => {
     try {
-      const response = await fetch(`/api/current-video?v=${encodeURIComponent(currentVideoIdRef.current.id)}&count=${AUTOPLAY_FALLBACK_POOL_SIZE}`, {
+      const autoplayRecoveryParams = new URLSearchParams();
+      autoplayRecoveryParams.set("v", currentVideoIdRef.current.id);
+      autoplayRecoveryParams.set("count", String(AUTOPLAY_FALLBACK_POOL_SIZE));
+      const localGenres = readGenrePreferences();
+      if (localGenres && localGenres.length > 0) {
+        autoplayRecoveryParams.set("autoplayGenreFilters", localGenres.join(","));
+      }
+      const response = await fetch(`/api/current-video?${autoplayRecoveryParams.toString()}`, {
         cache: "no-store",
       });
 

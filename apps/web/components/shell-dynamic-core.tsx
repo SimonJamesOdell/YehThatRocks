@@ -69,7 +69,7 @@ import { dedupeVideos, filterHiddenVideos } from "@/lib/video-list-utils";
 import { buildSharedVideoMessage, parseSharedVideoMessage, parseActivityMessage } from "@/lib/chat-shared-video";
 import { prefetchCategoryCardsSessionCache } from "@/lib/category-cards-session-cache";
 import { ForumSectionRail } from "@/components/forum-section-rail";
-import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT, EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
+import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT, EVENT_NAMES, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
 import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 import { publishAuthStateChange } from "@/lib/auth-sync";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
@@ -1754,6 +1754,15 @@ function ShellDynamicInner({
       if (isAuthenticated && watchNextHideSeen) {
         params.set("hideSeen", "1");
       }
+      // For unauthenticated users (local-only accounts), pass genre
+      // preferences from localStorage so the server can filter the
+      // watch-next rail without requiring a DB account.
+      if (!isAuthenticated) {
+        const localGenres = readGenrePreferences();
+        if (localGenres && localGenres.length > 0) {
+          params.set("autoplayGenreFilters", localGenres.join(","));
+        }
+      }
       if (!isFirstColdFetch) {
         params.set("count", String(batchCount));
         params.set("requestedCount", String(requestedBatchCount));
@@ -1999,6 +2008,19 @@ function ShellDynamicInner({
       refreshTick: watchNextRefreshTick,
     });
   }, [currentVideo.id, watchNextRefreshTick]);
+  // When the welcome modal persists genre preferences (onboarding complete),
+  // reset the watch-next rail so it re-fetches with the new genre filters.
+  // This covers the case where the rail was populated before genres were saved.
+  useEffect(() => {
+    if (isAuthenticated) return;
+    const unsubscribe = listenToAppEvent(
+      EVENT_NAMES.WELCOME_GENRES_PERSISTED,
+      () => {
+        setWatchNextRefreshTick((tick) => tick + 1);
+      },
+    );
+    return unsubscribe;
+  }, [isAuthenticated]);
   useEffect(() => {
     if (
       !watchNextLoadFailed

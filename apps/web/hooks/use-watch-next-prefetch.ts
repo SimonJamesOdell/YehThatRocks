@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, type MutableRefObject } from "react";
 
+import { readGenrePreferences } from "@/lib/genre-preference-store";
 import { PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 import type { VideoRecord } from "@/lib/catalog";
 
@@ -78,6 +79,15 @@ export function useWatchNextPrefetch({
     prefetchParams.set("v", videoId);
     if (isAuthenticated && watchNextHideSeen) {
       prefetchParams.set("hideSeen", "1");
+    }
+    // For unauthenticated users (local-only accounts), pass genre
+    // preferences so prefetched payloads include genre-filtered
+    // related videos that won't overwrite the filtered rail.
+    if (!isAuthenticated) {
+      const localGenres = readGenrePreferences();
+      if (localGenres && localGenres.length > 0) {
+        prefetchParams.set("autoplayGenreFilters", localGenres.join(","));
+      }
     }
 
     void fetch(`/api/current-video?${prefetchParams.toString()}`, {

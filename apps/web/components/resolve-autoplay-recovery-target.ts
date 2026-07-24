@@ -1,4 +1,5 @@
 import type { VideoRecord } from "@/lib/catalog";
+import { readGenrePreferences } from "@/lib/genre-preference-store";
 import { parseJsonOrNull } from "@/lib/parse-json";
 
 const RANDOM_NEXT_RECENT_EXCLUSION = 5;
@@ -13,7 +14,14 @@ export async function resolveAutoplayRecoveryTarget({
   historyStack: string[];
 }) {
   try {
-    const response = await fetch(`/api/current-video?v=${encodeURIComponent(currentVideoId)}&count=${fallbackPoolSize}`, {
+    const recoveryParams = new URLSearchParams();
+    recoveryParams.set("v", currentVideoId);
+    recoveryParams.set("count", String(fallbackPoolSize));
+    const localGenres = readGenrePreferences();
+    if (localGenres && localGenres.length > 0) {
+      recoveryParams.set("autoplayGenreFilters", localGenres.join(","));
+    }
+    const response = await fetch(`/api/current-video?${recoveryParams.toString()}`, {
       cache: "no-store",
     });
 

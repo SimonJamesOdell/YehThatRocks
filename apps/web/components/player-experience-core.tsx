@@ -1854,7 +1854,10 @@ export function PlayerExperience({
     const savedAutoplay = window.localStorage.getItem(AUTOPLAY_KEY);
     const savedHistory = window.sessionStorage.getItem(HISTORY_KEY);
 
-    setAutoplayEnabled(savedAutoplay === "true");
+    // Default to enabled when no explicit preference exists — matches the
+    // server-side default (null = no preference → enabled). Only explicit
+    // "false" in localStorage disables auto-play.
+    setAutoplayEnabled(savedAutoplay === null ? true : savedAutoplay === "true");
 
     const savedVolume = Number(window.localStorage.getItem(PLAYER_VOLUME_KEY));
     if (Number.isFinite(savedVolume)) {
