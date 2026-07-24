@@ -111,7 +111,8 @@ function main() {
   assertContains(autoplaySettingsEditorSource, 'fetch("/api/categories", {', "Autoplay settings editor loads available genre options", failures);
   assertContains(autoplaySettingsEditorSource, "setMix((current) => rebalanceAutoplayMix(current, key, value));", "Autoplay settings editor rebalances source percentages when sliders change", failures);
   assertContains(autoplaySettingsEditorSource, "autoplayMix: mix,", "Autoplay settings editor persists autoplay mix selections", failures);
-  assertContains(autoplaySettingsEditorSource, "autoplayGenreFilters: limitGenresEnabled ? selectedGenres : [],", "Autoplay settings editor persists autoplay genre filters only when the limiter is enabled", failures);
+  assertContains(autoplaySettingsEditorSource, "autoplayGenreFilters: effectiveGenreFilters,", "Autoplay settings editor persists computed effective genre filters", failures);
+  assertContains(autoplaySettingsEditorSource, "const effectiveGenreFilters = limitGenresEnabled ? selectedGenres : [];", "Autoplay settings editor gates genre filters on limiter toggle", failures);
   assertContains(accountSettingsPanelSource, '<AutoplaySettingsEditor className="accountAutoplayPanel" title="Sources" />', "Account settings exposes the autoplay editor with Sources heading", failures);
   assertContains(playerPreferencesRouteSource, "playerPreferenceMutationSchema.safeParse", "Player preferences API validates mutations with the shared schema", failures);
   assertContains(playerPreferencesRouteSource, "autoplayMix: parsed.data.autoplayMix,", "Player preferences API forwards autoplay mix updates to persistence", failures);

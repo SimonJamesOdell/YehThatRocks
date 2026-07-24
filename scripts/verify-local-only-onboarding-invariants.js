@@ -4,8 +4,10 @@
 // Verifies that users who choose "Skip — save locally only" in the welcome
 // modal have their genre preferences reflected in:
 //   1. The "new" page genre filters
-//   2. The auto-play button visibility and toggle behavior
+//   2. The auto-play button visibility, toggle behavior, and default-on state
 //   3. The watch-next rail genre filtering (via current-video API)
+//   4. The auto-chosen (SSR) video swap when it doesn't match genre picks
+//   5. All client-side /api/current-video call paths passing genre filters
 
 const path = require("node:path");
 const {
@@ -26,6 +28,9 @@ const files = {
   playerExperience: path.join(ROOT, "apps/web/components/player-experience-core.tsx"),
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
   eventsContract: path.join(ROOT, "apps/web/lib/events-contract.ts"),
+  watchNextPrefetch: path.join(ROOT, "apps/web/hooks/use-watch-next-prefetch.ts"),
+  playerNavigationActions: path.join(ROOT, "apps/web/hooks/use-player-navigation-actions.ts"),
+  resolveAutoplayRecoveryTarget: path.join(ROOT, "apps/web/components/resolve-autoplay-recovery-target.ts"),
 };
 
 function main() {
@@ -39,6 +44,9 @@ function main() {
   const playerExperienceSource = readFileStrict(files.playerExperience, ROOT);
   const currentVideoRouteSource = readFileStrict(files.currentVideoRoute, ROOT);
   const eventsContractSource = readFileStrict(files.eventsContract, ROOT);
+  const watchNextPrefetchSource = readFileStrict(files.watchNextPrefetch, ROOT);
+  const playerNavigationActionsSource = readFileStrict(files.playerNavigationActions, ROOT);
+  const resolveAutoplayRecoveryTargetSource = readFileStrict(files.resolveAutoplayRecoveryTarget, ROOT);
 
   // ── Event contract ───────────────────────────────────────────────────────
 
@@ -195,6 +203,95 @@ function main() {
     newVideosLoaderSource,
     "useNewVideosGenrePreference",
     "New videos loader consumes genre preference hook",
+    failures,
+  );
+
+  // ── Shell: listens for WELCOME_GENRES_PERSISTED to refresh watch-next rail ─
+
+  assertContains(
+    shellDynamicSource,
+    "listenToAppEvent",
+    "Shell imports listenToAppEvent for onboarding event handling",
+    failures,
+  );
+
+  assertContains(
+    shellDynamicSource,
+    "EVENT_NAMES.WELCOME_GENRES_PERSISTED",
+    "Shell listens for WELCOME_GENRES_PERSISTED to refresh watch-next rail",
+    failures,
+  );
+
+  // ── Shell: swaps auto-chosen video when it doesn't match genre picks ───────
+
+  assertContains(
+    shellDynamicSource,
+    "doesVideoMatchAutoplayGenres",
+    "Shell imports doesVideoMatchAutoplayGenres for video-swap check",
+    failures,
+  );
+
+  assertContains(
+    shellDynamicSource,
+    "router.replace",
+    "Shell uses router.replace to navigate to genre-matching video",
+    failures,
+  );
+
+  // ── Player: auto-play defaults to enabled when no explicit preference ──────
+
+  assertContains(
+    playerExperienceSource,
+    "savedAutoplay === null ? true",
+    "Player defaults autoplayEnabled to true when no localStorage preference exists",
+    failures,
+  );
+
+  // ── use-watch-next-prefetch: passes genre filters for unauthenticated ──────
+
+  assertContains(
+    watchNextPrefetchSource,
+    "readGenrePreferences",
+    "useWatchNextPrefetch imports readGenrePreferences for genre filters",
+    failures,
+  );
+
+  assertContains(
+    watchNextPrefetchSource,
+    "autoplayGenreFilters",
+    "useWatchNextPrefetch passes autoplayGenreFilters in prefetch params",
+    failures,
+  );
+
+  // ── use-player-navigation-actions: passes genre filters ────────────────────
+
+  assertContains(
+    playerNavigationActionsSource,
+    "readGenrePreferences",
+    "usePlayerNavigationActions imports readGenrePreferences for genre filters",
+    failures,
+  );
+
+  assertContains(
+    playerNavigationActionsSource,
+    "autoplayGenreFilters",
+    "usePlayerNavigationActions passes autoplayGenreFilters in recovery fetch",
+    failures,
+  );
+
+  // ── resolve-autoplay-recovery-target: passes genre filters ─────────────────
+
+  assertContains(
+    resolveAutoplayRecoveryTargetSource,
+    "readGenrePreferences",
+    "resolveAutoplayRecoveryTarget imports readGenrePreferences for genre filters",
+    failures,
+  );
+
+  assertContains(
+    resolveAutoplayRecoveryTargetSource,
+    "autoplayGenreFilters",
+    "resolveAutoplayRecoveryTarget passes autoplayGenreFilters in recovery fetch",
     failures,
   );
 

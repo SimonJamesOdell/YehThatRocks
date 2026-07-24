@@ -186,6 +186,12 @@ function main() {
   assertNotContains(currentVideoRouteSource, "paddedRelatedVideos = await filterHiddenVideos", "Current-video route avoids redundant hidden-video DB lookups during final filtering", failures);
   assertContains(currentVideoRouteSource, "return [...deduped, ...merged].slice(0, CURRENT_VIDEO_RELATED_POOL_SIZE);", "Current-video route enforces bounded merged pool size", failures);
 
+  // Genre-filter pool scaling: when genre filters are active, pool sizes are
+  // scaled up so the stream builder has enough source material for infinite
+  // scroll even after JavaScript-level genre filtering.
+  assertContains(currentVideoRouteSource, "GENRE_FILTER_POOL_MULTIPLIER", "Current-video route scales pool sizes when genre filters are active", failures);
+  assertContains(currentVideoRouteSource, "GENRE_FILTER_COUNT", "Current-video route computes filter count for pool scaling", failures);
+
   // Docked route-queue invariants.
   assertContains(useRouteAutoplayQueueSource, "const [routeAutoplayQueueIds, setRouteAutoplayQueueIds] = useState<string[]>([]);", "Route autoplay queue hook owns the queue-id state", failures);
   assertContains(playerExperienceSource, "const isRouteListOverlay = pathname === \"/new\" || pathname === \"/top100\";", "Player identifies New and Top100 as route-list overlays", failures);
