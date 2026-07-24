@@ -101,14 +101,21 @@ if ($existing) {
 } else {
     Write-Step "start:test-server"
 
-    $env:NODE_ENV = "production"
-    $env:HOSTNAME = "127.0.0.1"
-    $env:PORT = "$Port"
-    $env:DATABASE_URL = $dbUrl
-    $env:AUTH_JWT_SECRET = $jwtSecret
-    $env:NEXT_PUBLIC_DISABLE_DESKTOP_INTRO = "1"
-
-    $proc = Start-Process node -ArgumentList $serverJs -PassThru -NoNewWindow -RedirectStandardError "$repoRoot/test-api-server-stderr.log" -RedirectStandardOutput "$repoRoot/test-api-server-stdout.log"
+    # Use .NET ProcessStartInfo to reliably pass environment variables
+    # (Start-Process sometimes fails to propagate env vars on Windows)
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "node"
+    $psi.Arguments = $serverJs
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = "$repoRoot/test-api-server-stdout.log"
+    $psi.RedirectStandardError = "$repoRoot/test-api-server-stderr.log"
+    $psi.Environment["NODE_ENV"] = "production"
+    $psi.Environment["HOSTNAME"] = "127.0.0.1"
+    $psi.Environment["PORT"] = "$Port"
+    $psi.Environment["DATABASE_URL"] = $dbUrl
+    $psi.Environment["AUTH_JWT_SECRET"] = $jwtSecret
+    $psi.Environment["NEXT_PUBLIC_DISABLE_DESKTOP_INTRO"] = "1"
+    $proc = [System.Diagnostics.Process]::Start($psi)
     $serverPid = $proc.Id
     Write-Host "Server PID: $serverPid"
 
