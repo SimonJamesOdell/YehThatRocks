@@ -7,6 +7,7 @@ import type { CSSProperties } from "react";
 import { AuthLoginForm } from "@/components/auth-login-form";
 import { AuthModal } from "@/components/auth-modal";
 import { WelcomeModal } from "@/components/welcome-modal";
+import { AnonymousSignupModal } from "@/components/anonymous-signup-modal";
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { ArtistsLetterProvider } from "@/components/artists-letter-provider";
@@ -2316,8 +2317,14 @@ function ShellDynamicInner({
   const visibleNavItems = navItems.filter((item) => item.href !== "/");
   const protectedNavHrefs = new Set(["/favourites", "/playlists", "/history", "/account"]);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [shouldAutoOpenAnonymous, setShouldAutoOpenAnonymous] = useState(false);
+  const [isAnonymousSignupOpen, setIsAnonymousSignupOpen] = useState(false);
   function openAuthModal() {
     setIsAuthModalOpen(true);
+  }
+  function openAuthModalAnonymous() {
+    // Open the standalone anonymous signup modal — bypass AuthModal entirely.
+    setIsAnonymousSignupOpen(true);
   }
   useEffect(() => {
     const handleAuthModalOpen = () => {
@@ -2379,6 +2386,8 @@ function ShellDynamicInner({
     setAuthStatus("clear");
     setAuthStatusMessage(null);
     setIsAuthModalOpen(false);
+    setShouldAutoOpenAnonymous(false);
+    setIsAnonymousSignupOpen(false);
     // Reset magazine arrival flag so the player can appear immediately
     // after authenticating while on a magazine route.
     didArriveOnMagazineRouteRef.current = false;
@@ -3322,8 +3331,9 @@ function ShellDynamicInner({
           </aside>
         )}
       </section>
-      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
-      <WelcomeModal isAuthenticated={isAuthenticated} onDismissed={() => setIsWelcomeBlockingIntro(false)} />
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => { setIsAuthModalOpen(false); setShouldAutoOpenAnonymous(false); }} autoOpenAnonymous={shouldAutoOpenAnonymous} />
+      <AnonymousSignupModal isOpen={isAnonymousSignupOpen} onClose={() => setIsAnonymousSignupOpen(false)} />
+      <WelcomeModal isAuthenticated={isAuthenticated} onDismissed={() => setIsWelcomeBlockingIntro(false)} onOpenAuthModal={openAuthModalAnonymous} />
       </main>
       </ArtistsLetterProvider>
     </OverlayScrollContainerProvider>

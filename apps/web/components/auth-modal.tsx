@@ -9,9 +9,10 @@ import { AuthForgotPasswordForm } from "@/components/auth-forgot-password-form";
 type AuthModalProps = {
   isOpen: boolean;
   onClose: () => void;
+  autoOpenAnonymous?: boolean;
 };
 
-export function AuthModal({ isOpen, onClose }: AuthModalProps) {
+export function AuthModal({ isOpen, onClose, autoOpenAnonymous }: AuthModalProps) {
   const [view, setView] = useState<"login" | "register" | "forgot-password">("login");
 
   // Reset to login view each time the modal opens.
@@ -80,7 +81,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
         <div className="authModalBody">
           {view === "login" ? (
             <>
-              <AuthLoginForm />
+              <AuthLoginForm autoOpenAnonymous={autoOpenAnonymous} />
               <div className="authModalLinks">
                 <button
                   type="button"

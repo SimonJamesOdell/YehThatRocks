@@ -4,7 +4,6 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { AnonymousCredentialsModal } from "@/components/anonymous-credentials-modal";
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { getGenreSlug, type GenreCard } from "@/lib/catalog-data-utils";
 
@@ -12,19 +11,16 @@ const WELCOME_DISMISSED_KEY = "ytr:welcome-dismissed";
 const GENRE_PREFERENCES_KEY = "ytr:genre-preferences";
 const LOGO_SRC = "/assets/images/yeh_main_logo.png?v=20260424-4";
 
-export function WelcomeModal({ onDismissed, isAuthenticated }: {
+export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal }: {
   onDismissed?: () => void;
   isAuthenticated?: boolean;
+  onOpenAuthModal?: () => void;
 }) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [categories, setCategories] = useState<GenreCard[]>([]);
   const [selectedGenres, setSelectedGenres] = useState<Set<string>>(new Set());
-  const [isCreatingAccount, setIsCreatingAccount] = useState(false);
-  const [accountError, setAccountError] = useState<string | null>(null);
-  const [credentials, setCredentials] = useState<{ username: string; password: string } | null>(null);
-  const [isContinuing, setIsContinuing] = useState(false);
   const isAuthenticatedRef = useRef(isAuthenticated ?? false);
 
   useEffect(() => {
@@ -97,43 +93,12 @@ export function WelcomeModal({ onDismissed, isAuthenticated }: {
     onDismissed?.();
   }, [dontShowAgain, persistGenres, onDismissed]);
 
-  // Create anonymous account, then show credentials modal. No router.refresh() —
-  // we render the credentials modal inline to avoid the server re-render error.
-  const handleCreateAnonymous = useCallback(async () => {
-    setIsCreatingAccount(true);
-    setAccountError(null);
-    try {
-      const res = await fetch("/api/auth/anonymous", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(data.error || "Failed to create account");
-      }
-      const data = await res.json() as { credentials?: { username: string; password: string } };
-      if (data?.credentials) {
-        setCredentials(data.credentials);
-      } else {
-        // Shouldn't happen, but handle gracefully.
-        handleDismiss();
-      }
-    } catch (err) {
-      setAccountError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setIsCreatingAccount(false);
-    }
-  }, [handleDismiss]);
-
-  const handleCredentialsContinue = useCallback(() => {
-    setIsContinuing(true);
-    setCredentials(null);
+  // Opens the auth modal (which has the proper screen-name selection flow)
+  // and dismisses the welcome panel.
+  const handleCreateAnonymous = useCallback(() => {
     handleDismiss();
-    // Hard reload so the server picks up the new auth cookies and
-    // renders the authenticated experience from scratch.
-    window.location.reload();
-  }, [handleDismiss]);
+    onOpenAuthModal?.();
+  }, [handleDismiss, onOpenAuthModal]);
 
   // Phase 1 → Phase 2: persist genres. If already authenticated, dismiss;
   // else show account prompt.
@@ -313,17 +278,13 @@ export function WelcomeModal({ onDismissed, isAuthenticated }: {
                 your picks are applied to auto-play, the new videos page, and your
                 watch-next rail.
               </p>
-              {accountError ? (
-                <p className="welcomeModalError">{accountError}</p>
-              ) : null}
               <div className="welcomeModalAccountOptions">
                 <button
                   type="button"
                   className="welcomeModalAccountButton welcomeModalAccountButton--primary"
                   onClick={handleCreateAnonymous}
-                  disabled={isCreatingAccount}
                 >
-                  {isCreatingAccount ? "Creating account…" : "Create Anonymous Account"}
+                  Create Anonymous Account
                 </button>
                 <button
                   type="button"
@@ -359,17 +320,6 @@ export function WelcomeModal({ onDismissed, isAuthenticated }: {
           </>
         )}
       </div>
-
-      {credentials ? (
-        <AnonymousCredentialsModal
-          username={credentials.username}
-          password={credentials.password}
-          canBrowserSaveCredentials={typeof window !== "undefined" && "credentials" in navigator}
-          isContinuing={isContinuing}
-          onClose={() => setCredentials(null)}
-          onContinue={handleCredentialsContinue}
-        />
-      ) : null}
     </div>
   );
 }

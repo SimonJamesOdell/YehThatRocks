@@ -94,7 +94,7 @@ function markIntroSkipOnceForLegacyInvariant() {
   window.sessionStorage.setItem(INTRO_SKIP_ONCE_AFTER_LOGIN_KEY, "1");
 }
 
-export function AuthLoginForm() {
+export function AuthLoginForm({ autoOpenAnonymous }: { autoOpenAnonymous?: boolean }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement | null>(null);
   const hasAttemptedAutoLoginRef = useRef(false);
@@ -111,6 +111,15 @@ export function AuthLoginForm() {
   const [anonymousAvailability, setAnonymousAvailability] = useState<"idle" | "checking" | "available" | "taken" | "invalid">("idle");
   const [anonymousCredentials, setAnonymousCredentials] = useState<{ username: string; password: string } | null>(null);
   const [isAnonymousCredentialsContinuePending, setIsAnonymousCredentialsContinuePending] = useState(false);
+
+  // When opened from the welcome modal, auto-trigger the anonymous screen-name flow.
+  const autoOpenTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (autoOpenAnonymous && !autoOpenTriggeredRef.current) {
+      autoOpenTriggeredRef.current = true;
+      handleAnonymousEntry();
+    }
+  }, [autoOpenAnonymous]);
 
   function redirectAfterAuth() {
     const videoParam = new URLSearchParams(window.location.search).get("v");
