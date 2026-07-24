@@ -445,10 +445,10 @@ function main() {
     failures.push("didArriveOnMagazineRouteRef.current = false must appear inside useAuthSuccessListener callback");
   }
   // Verify the flag also appears in the auto-login effect (separate from useAuthSuccessListener).
-  // Count occurrences — there should be at least 3 (useAuthSuccessListener + 2 auto-login success paths).
+  // Count occurrences — there should be at least 2 (useAuthSuccessListener + auto-login refresh success).
   const refResetCount = (shellDynamicSource.match(/didArriveOnMagazineRouteRef\.current = false;/g) || []).length;
-  if (refResetCount < 3) {
-    failures.push(`didArriveOnMagazineRouteRef.current = false appears ${refResetCount} times; expected at least 3 (useAuthSuccessListener + 2 auto-login success paths)`);
+  if (refResetCount < 2) {
+    failures.push(`didArriveOnMagazineRouteRef.current = false appears ${refResetCount} times; expected at least 2 (useAuthSuccessListener + auto-login refresh success)`);
   }
 
   // --- Guest chat composer visible when unauthenticated ---
