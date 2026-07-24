@@ -411,17 +411,28 @@ export async function GET(request: NextRequest) {
   const playerPreferences = optionalAuth?.userId
     ? await getPlayerPreferencesForUser({ userId: optionalAuth.userId }).catch(() => null)
     : null;
-  const autoplayConfigEnabled = Boolean(playerPreferences?.autoplayEnabled);
+  // Auto-play is enabled by default for new users (null = no preference set yet).
+  // Only an explicit false value disables it.
+  const autoplayConfigEnabled = playerPreferences?.autoplayEnabled !== false;
   const effectiveAutoplayMix = requestMode === "ended-choice"
     ? { ...DEFAULT_AUTOPLAY_MIX }
     : autoplayConfigEnabled
       ? normalizeAutoplayMix(playerPreferences?.autoplayMix ?? DEFAULT_AUTOPLAY_MIX)
       : { ...DEFAULT_AUTOPLAY_MIX };
+  // Genre filters apply regardless of autoplay toggle — they control content
+  // in the watch-next rail and auto-play pool even when auto-advance is off.
   const effectiveAutoplayGenreFilters = requestMode === "ended-choice"
     ? []
-    : autoplayConfigEnabled
-      ? normalizeAutoplayGenreFilters(playerPreferences?.autoplayGenreFilters ?? [])
-      : [];
+    : normalizeAutoplayGenreFilters(
+        playerPreferences?.autoplayGenreFilters
+        // For unauthenticated users (local-only accounts), accept genre
+        // filters passed from the client via query parameter. This allows
+        // genre preferences from the welcome-modal onboarding flow to
+        // influence auto-play and the watch-next rail without requiring
+        // a server-side account.
+        ?? request.nextUrl.searchParams.get("autoplayGenreFilters")?.split(",").map((s) => s.trim()).filter(Boolean)
+        ?? [],
+      );
   const shouldFilterSeen = hideSeenOnly && Boolean(optionalAuth?.userId);
   const favouriteBlendRatio = requestMode === "ended-choice"
     ? ENDED_CHOICE_FAVOURITE_BLEND_RATIO

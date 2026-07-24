@@ -13,6 +13,12 @@ import { createEmailVerificationToken } from "@/lib/auth-token-records";
 import { isAccountCreationBotUA } from "@/lib/crawler-guard";
 import { verifySameOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/db";
+import {
+  setPlayerPreferencesForUser,
+} from "@/lib/player-preference-data";
+import {
+  normalizeAutoplayGenreFilters,
+} from "@/lib/player-preferences-shared";
 import { rateLimitOrResponse } from "@/lib/rate-limit";
 import { parseRequestJson } from "@/lib/request-json";
 
@@ -120,6 +126,19 @@ export async function POST(request: NextRequest) {
         email: true,
         screenName: true,
       },
+    });
+
+    // Seed player preferences for new users: auto-play enabled by default with
+    // any genre filters the client passed from the welcome-modal onboarding flow.
+    const genreFilters = normalizeAutoplayGenreFilters(
+      (bodyResult.data as Record<string, unknown> | null)?.genreFilters ?? [],
+    );
+    void setPlayerPreferencesForUser({
+      userId: user.id,
+      autoplayEnabled: true,
+      autoplayGenreFilters: genreFilters,
+    }).catch(() => {
+      // Non-critical; player preferences can be set later from settings UI.
     });
 
     const accessToken = await signAccessToken(user.id, user.email ?? email);

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { parseJsonOrNull } from "@/lib/parse-json";
+import { listenToAppEvent, EVENT_NAMES } from "@/lib/events-contract";
 import { readGenrePreferences } from "@/lib/genre-preference-store";
 import {
   normalizeNewVideoGenreFilterState,
@@ -87,10 +88,19 @@ export function useNewVideosGenrePreference(isAuthenticated: boolean) {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      // Filters were already initialised from localStorage via the lazy
-      // useState initializer above — nothing more to load.
+      // Listen for genre persistence from the welcome modal so we can
+      // re-read localStorage when the modal is dismissed. This covers
+      // the case where the hook initialized before genres were stored.
+      const unsubscribe = listenToAppEvent(
+        EVENT_NAMES.WELCOME_GENRES_PERSISTED,
+        () => {
+          const refreshed = readPersistedFilters();
+          setFilters(refreshed);
+        },
+      );
+
       setIsServerHydrated(true);
-      return;
+      return unsubscribe;
     }
 
     let cancelled = false;

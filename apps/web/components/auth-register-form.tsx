@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { parseJsonOrNull } from "@/lib/parse-json";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { publishAuthStateChange } from "@/lib/auth-sync";
+import { readGenrePreferences } from "@/lib/genre-preference-store";
 
 export function AuthRegisterForm() {
   const router = useRouter();
@@ -32,12 +33,16 @@ export function AuthRegisterForm() {
     setIsSubmitting(true);
 
     try {
+      const welcomeGenres = readGenrePreferences();
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ email, screenName, password, remember }),
+        body: JSON.stringify({
+          email, screenName, password, remember,
+          genreFilters: welcomeGenres ?? [],
+        }),
       });
 
       if (!response.ok) {

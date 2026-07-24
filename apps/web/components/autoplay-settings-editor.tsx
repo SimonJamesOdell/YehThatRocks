@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
 import { dispatchAppEvent, EVENT_NAMES } from "@/lib/events-contract";
 import { parseJsonOrNull } from "@/lib/parse-json";
+import { readGenrePreferences, writeGenrePreferences } from "@/lib/genre-preference-store";
 import {
   DEFAULT_AUTOPLAY_MIX,
   rebalanceAutoplayMix,
@@ -27,7 +28,29 @@ type AutoplaySettingsEditorProps = {
   title?: string;
   className?: string;
   onSaved?: () => void;
+  /** When false, settings are read from / written to localStorage instead of the server. */
+  isAuthenticated?: boolean;
 };
+
+const LOCAL_AUTOPLAY_MIX_KEY = "ytr:autoplay-mix";
+
+function readLocalAutoplayMix(): AutoplayMixSettings {
+  if (typeof window === "undefined") return { ...DEFAULT_AUTOPLAY_MIX };
+  try {
+    const raw = window.localStorage.getItem(LOCAL_AUTOPLAY_MIX_KEY);
+    if (!raw) return { ...DEFAULT_AUTOPLAY_MIX };
+    return normalizeAutoplayMix(JSON.parse(raw));
+  } catch {
+    return { ...DEFAULT_AUTOPLAY_MIX };
+  }
+}
+
+function writeLocalAutoplayMix(mix: AutoplayMixSettings) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(LOCAL_AUTOPLAY_MIX_KEY, JSON.stringify(mix));
+  } catch { /* best-effort */ }
+}
 
 const MIX_LABELS: Record<AutoplayMixKey, string> = {
   top100: "Top 100",
@@ -40,6 +63,7 @@ export function AutoplaySettingsEditor({
   title = "Sources",
   className,
   onSaved,
+  isAuthenticated = false,
 }: AutoplaySettingsEditorProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -57,6 +81,35 @@ export function AutoplaySettingsEditor({
       setIsLoading(true);
       setErrorMessage(null);
 
+      // ── Local-only path: read from localStorage ──
+      if (!isAuthenticated) {
+        if (cancelled) return;
+        const localMix = readLocalAutoplayMix();
+        const localGenres = readGenrePreferences() ?? [];
+        const normalizedGenres = normalizeAutoplayGenreFilters(localGenres);
+
+        // Also fetch categories for genre options (public endpoint, no auth needed).
+        let nextOptions: string[] = [];
+        try {
+          const catRes = await fetch("/api/categories", { method: "GET", cache: "no-store" });
+          const catPayload = catRes.ok ? await parseJsonOrNull<CategoriesResponse>(catRes) : null;
+          nextOptions = [...new Set(
+            (catPayload?.categories ?? [])
+              .map((entry) => (typeof entry.genre === "string" ? entry.genre.trim().toLowerCase() : ""))
+              .filter((genre) => genre.length > 0),
+          )].sort((a, b) => a.localeCompare(b));
+        } catch { /* options remain empty */ }
+
+        if (cancelled) return;
+        setMix(localMix);
+        setSelectedGenres(normalizedGenres);
+        setLimitGenresEnabled(normalizedGenres.length > 0);
+        setGenreOptions(nextOptions);
+        setIsLoading(false);
+        return;
+      }
+
+      // ── Authenticated path: read from server ──
       try {
         const [prefsResponse, categoriesResponse] = await Promise.all([
           fetchWithAuthRetry("/api/player-preferences", {
@@ -112,7 +165,7 @@ export function AutoplaySettingsEditor({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isAuthenticated]);
 
   const handleSliderChange = (key: AutoplayMixKey, value: number) => {
     setSavedMessage(null);
@@ -147,6 +200,20 @@ export function AutoplaySettingsEditor({
     setSavedMessage(null);
     setErrorMessage(null);
 
+    const effectiveGenreFilters = limitGenresEnabled ? selectedGenres : [];
+
+    // ── Local-only path: save to localStorage ──
+    if (!isAuthenticated) {
+      writeLocalAutoplayMix(mix);
+      writeGenrePreferences(effectiveGenreFilters);
+      dispatchAppEvent(EVENT_NAMES.AUTOPLAY_SETTINGS_UPDATED, null);
+      setSavedMessage("Autoplay settings saved locally.");
+      setIsSaving(false);
+      onSaved?.();
+      return;
+    }
+
+    // ── Authenticated path: save to server ──
     try {
       const response = await fetchWithAuthRetry("/api/player-preferences", {
         method: "POST",
@@ -155,7 +222,7 @@ export function AutoplaySettingsEditor({
         },
         body: JSON.stringify({
           autoplayMix: mix,
-          autoplayGenreFilters: limitGenresEnabled ? selectedGenres : [],
+          autoplayGenreFilters: effectiveGenreFilters,
         }),
       });
 
@@ -202,50 +269,50 @@ export function AutoplaySettingsEditor({
           ))}
         </div>
 
-        <div className="autoplaySettingsGenres">
-          <label className="autoplaySettingsGenresToggle">
-            <input
-              type="checkbox"
-              checked={limitGenresEnabled}
-              onChange={(event) => {
-                const enabled = event.currentTarget.checked;
-                setLimitGenresEnabled(enabled);
-                setSavedMessage(null);
-                if (!enabled) {
-                  setSelectedGenres([]);
-                }
-              }}
-            />
-            <span>Limit genres</span>
-          </label>
-          {limitGenresEnabled ? (
-            genreOptions.length === 0 ? (
-              <p className="autoplaySettingsStatus">No genres available right now.</p>
-            ) : (
+        {genreOptions.length > 0 ? (
+          <div className="autoplaySettingsGenres">
+            <label className="autoplaySettingsGenreEnableRow">
+              <input
+                type="checkbox"
+                checked={limitGenresEnabled}
+                onChange={(event) => {
+                  setLimitGenresEnabled(event.currentTarget.checked);
+                }}
+              />
+              <span>Limit to selected genres</span>
+            </label>
+
+            {limitGenresEnabled ? (
               <div className="autoplaySettingsGenreGrid">
                 {genreOptions.map((genre) => (
-                  <button
-                    key={genre}
-                    type="button"
-                    className={selectedGenres.includes(genre) ? "autoplaySettingsGenreChip autoplaySettingsGenreChipActive" : "autoplaySettingsGenreChip"}
-                    onClick={() => handleToggleGenre(genre)}
-                    aria-pressed={selectedGenres.includes(genre)}
-                  >
-                    {genre}
-                  </button>
+                  <label key={genre} className="autoplaySettingsGenreChip">
+                    <input
+                      type="checkbox"
+                      checked={selectedGenres.includes(genre)}
+                      onChange={() => {
+                        handleToggleGenre(genre);
+                      }}
+                    />
+                    <span>{genre}</span>
+                  </label>
                 ))}
               </div>
-            )
-          ) : null}
-        </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {errorMessage ? (
+          <p className="autoplaySettingsError">{errorMessage}</p>
+        ) : null}
+
+        {savedMessage ? (
+          <p className="autoplaySettingsSaved">{savedMessage}</p>
+        ) : null}
 
         <div className="autoplaySettingsActions">
           <button type="button" className="autoplaySettingsButtonSecondary" onClick={handleReset} disabled={isSaving}>Reset</button>
           <button type="button" className="autoplaySettingsButtonPrimary" onClick={handleSave} disabled={isSaving}>{isSaving ? "Saving..." : "Save autoplay settings"}</button>
         </div>
-
-        {savedMessage ? <p className="autoplaySettingsStatus">{savedMessage}</p> : null}
-        {errorMessage ? <p className="autoplaySettingsStatus autoplaySettingsStatusError">{errorMessage}</p> : null}
       </div>
     </div>
   );

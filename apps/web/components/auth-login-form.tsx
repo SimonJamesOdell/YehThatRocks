@@ -7,6 +7,7 @@ import { AnonymousCredentialsModal } from "@/components/anonymous-credentials-mo
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { publishAuthStateChange } from "@/lib/auth-sync";
 import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, INTRO_SKIP_ONCE_AFTER_LOGIN_KEY, ANONYMOUS_USERNAME_KEY } from "@/lib/storage-keys";
+import { readGenrePreferences } from "@/lib/genre-preference-store";
 import { parseJsonOrNull } from "@/lib/parse-json";
 // Invariant anchor retained after extracting shared storage keys:
 // const INTRO_SKIP_ONCE_AFTER_LOGIN_KEY = "ytr:intro-skip-once";
@@ -364,12 +365,16 @@ export function AuthLoginForm({ autoOpenAnonymous }: { autoOpenAnonymous?: boole
     setIsAnonymousSubmitting(true);
 
     try {
+      const welcomeGenres = readGenrePreferences();
       const response = await fetch("/api/auth/anonymous", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ screenName }),
+        body: JSON.stringify({
+          screenName,
+          genreFilters: welcomeGenres ?? [],
+        }),
       });
 
       const payload = (await parseJsonOrNull(response)) as AnonymousCreateResponse | null;

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AnonymousCredentialsModal } from "@/components/anonymous-credentials-modal";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { publishAuthStateChange } from "@/lib/auth-sync";
+import { readGenrePreferences } from "@/lib/genre-preference-store";
 import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, INTRO_SKIP_ONCE_AFTER_LOGIN_KEY, ANONYMOUS_USERNAME_KEY } from "@/lib/storage-keys";
 import { parseJsonOrNull } from "@/lib/parse-json";
 
@@ -283,10 +284,14 @@ export function AnonymousSignupModal({
     setIsSubmitting(true);
 
     try {
+      const welcomeGenres = readGenrePreferences();
       const response = await fetch("/api/auth/anonymous", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ screenName: name }),
+        body: JSON.stringify({
+          screenName: name,
+          genreFilters: welcomeGenres ?? [],
+        }),
       });
 
       const payload = (await parseJsonOrNull(response)) as AnonymousCreateResponse | null;

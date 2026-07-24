@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { YouTubeThumbnailImage } from "@/components/youtube-thumbnail-image";
 import { getGenreSlug, type GenreCard } from "@/lib/catalog-data-utils";
+import { dispatchAppEvent, EVENT_NAMES } from "@/lib/events-contract";
 
 const WELCOME_DISMISSED_KEY = "ytr:welcome-dismissed";
 const GENRE_PREFERENCES_KEY = "ytr:genre-preferences";
@@ -24,9 +25,12 @@ export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal }: 
   const isAuthenticatedRef = useRef(isAuthenticated ?? false);
 
   useEffect(() => {
-    // Never show if user has explicitly dismissed permanently.
+    // Never show if user has already completed onboarding:
+    // - Explicit permanent dismissal via checkbox
+    // - Genre preferences already saved (from a previous skip/save flow)
     if (typeof window === "undefined") return;
     if (localStorage.getItem(WELCOME_DISMISSED_KEY) === "1") return;
+    if (localStorage.getItem(GENRE_PREFERENCES_KEY) !== null) return;
 
     let cancelled = false;
 
@@ -90,6 +94,9 @@ export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal }: 
     }
     persistGenres();
     setIsOpen(false);
+    // Notify consumers (new-videos page, autoplay rail) that genre
+    // preferences were written so they can re-read localStorage.
+    dispatchAppEvent(EVENT_NAMES.WELCOME_GENRES_PERSISTED, null);
     onDismissed?.();
   }, [dontShowAgain, persistGenres, onDismissed]);
 

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnonymousCredentialsModal } from "@/components/anonymous-credentials-modal";
+import { readGenrePreferences } from "@/lib/genre-preference-store";
 import { parseJsonOrNull } from "@/lib/parse-json";
 
 type AnonymousAccountCreatorProps = {
@@ -24,10 +25,14 @@ export function AnonymousAccountCreator({ onSuccess }: AnonymousAccountCreatorPr
     setError(null);
 
     try {
+      const welcomeGenres = readGenrePreferences();
       const response = await fetch("/api/auth/anonymous", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify({
+          screenName: "",
+          genreFilters: welcomeGenres ?? [],
+        }),
       });
 
       if (!response.ok) {

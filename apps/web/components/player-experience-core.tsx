@@ -3833,10 +3833,6 @@ export function PlayerExperience({
   }
 
   async function handleSetAutoplayEnabled(value: boolean) {
-    if (!isLoggedIn) {
-      return;
-    }
-
     setAutoplayEnabled(value);
     setShowAutoplayMenu(false);
     window.localStorage.setItem(AUTOPLAY_KEY, value ? "true" : "false");
@@ -3874,10 +3870,6 @@ export function PlayerExperience({
   }
 
   function handleAutoplayMenuButtonClick() {
-    if (!isLoggedIn) {
-      return;
-    }
-
     setShowAutoplayMenu((current) => !current);
   }
 
@@ -4752,6 +4744,7 @@ export function PlayerExperience({
           <PlayerAutoplayConfigureModal
             open={showAutoplayConfigureModal}
             onClose={() => setShowAutoplayConfigureModal(false)}
+            isAuthenticated={isLoggedIn}
           />
 
           {showAdminVideoEditModal && typeof document !== "undefined"
@@ -5286,55 +5279,53 @@ export function PlayerExperience({
                 <span className="primaryActionWikiLabel">lyrics</span>
               </button>
             ) : null}
-            {isLoggedIn ? (
-              <div className="primaryActionIconButtonWrap primaryActionAutoplayWrap" ref={autoplayMenuRef}>
-                <button
-                  type="button"
-                  className={autoplayEnabled ? "primaryActionToggleButton primaryActionAutoplayButton primaryActionToggleButtonActive" : "primaryActionToggleButton primaryActionAutoplayButton"}
-                  onClick={handleAutoplayMenuButtonClick}
-                  disabled={footerActionsBlocked}
-                  aria-label="Autoplay options"
-                  title="Autoplay options"
-                >
-                  <span className="primaryActionGlyph" aria-hidden="true">⇮</span>
-                  <span>{autoplayEnabled ? "On" : "Off"}</span>
-                </button>
-                {showAutoplayMenu ? (
-                  <div className="primaryActionPlaylistMenu" role="menu" aria-label="Autoplay options">
+            <div className="primaryActionIconButtonWrap primaryActionAutoplayWrap" ref={autoplayMenuRef}>
+              <button
+                type="button"
+                className={autoplayEnabled ? "primaryActionToggleButton primaryActionAutoplayButton primaryActionToggleButtonActive" : "primaryActionToggleButton primaryActionAutoplayButton"}
+                onClick={handleAutoplayMenuButtonClick}
+                disabled={footerActionsBlocked}
+                aria-label="Autoplay options"
+                title="Autoplay options"
+              >
+                <span className="primaryActionGlyph" aria-hidden="true">⇮</span>
+                <span>{autoplayEnabled ? "On" : "Off"}</span>
+              </button>
+              {showAutoplayMenu ? (
+                <div className="primaryActionPlaylistMenu" role="menu" aria-label="Autoplay options">
+                  <button
+                    type="button"
+                    className="primaryActionPlaylistMenuAction"
+                    onClick={() => {
+                      void handleSetAutoplayEnabled(true);
+                    }}
+                  >
+                    Autoplay ON
+                  </button>
+                  <button
+                    type="button"
+                    className="primaryActionPlaylistMenuAction"
+                    onClick={() => {
+                      void handleSetAutoplayEnabled(false);
+                    }}
+                  >
+                    Autoplay OFF
+                  </button>
+                  {!isDockedRouteListAutoplayActive ? (
                     <button
                       type="button"
                       className="primaryActionPlaylistMenuAction"
                       onClick={() => {
-                        void handleSetAutoplayEnabled(true);
+                        setShowAutoplayMenu(false);
+                        setShowAutoplayConfigureModal(true);
                       }}
                     >
-                      Autoplay ON
+                      Configure Autoplay
                     </button>
-                    <button
-                      type="button"
-                      className="primaryActionPlaylistMenuAction"
-                      onClick={() => {
-                        void handleSetAutoplayEnabled(false);
-                      }}
-                    >
-                      Autoplay OFF
-                    </button>
-                    {!isDockedRouteListAutoplayActive ? (
-                      <button
-                        type="button"
-                        className="primaryActionPlaylistMenuAction"
-                        onClick={() => {
-                          setShowAutoplayMenu(false);
-                          setShowAutoplayConfigureModal(true);
-                        }}
-                      >
-                        Configure Autoplay
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
             {isDockedNewRoute || isDockedTop100Route || isDockedArtistRoute ? (
               <button
                 type="button"

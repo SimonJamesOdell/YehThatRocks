@@ -74,6 +74,7 @@ import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, PENDING_VIDEO_SELECTION_KEY } from "@/lib
 import { publishAuthStateChange } from "@/lib/auth-sync";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
 import { parseJsonOrNull } from "@/lib/parse-json";
+import { readGenrePreferences } from "@/lib/genre-preference-store";
 import { resolveVideoGenreNavigationTarget } from "@/lib/video-genre-navigation";
 applyRuntimeBootstrapPatches({ safePerformanceMeasure: true });
 import type { CurrentVideoResolvePayload, WatchNextAdvisory, LyricsRailPayload, ShellDynamicProps } from "@/components/shell-types";
@@ -460,15 +461,16 @@ function ShellDynamicInner({
     return checkAuthState({ showDialogOnUnavailable: true });
   }, [checkAuthState]);
   // ── Custom hooks ──────────────────────────────────────────────────────────
-  const [isWelcomeBlockingIntro, setIsWelcomeBlockingIntro] = useState(true);
-
-  // If the welcome modal was permanently dismissed in a previous session,
-  // don't block the intro animation.
-  useEffect(() => {
-    if (typeof window !== "undefined" && localStorage.getItem("ytr:welcome-dismissed") === "1") {
-      setIsWelcomeBlockingIntro(false);
-    }
-  }, []);
+  // If onboarding is already complete (permanent dismissal or saved genre
+  // preferences), don't block the intro animation waiting for the modal.
+  // Read localStorage in the initializer so the first render is correct —
+  // avoids a blocked→unblocked transition that adds delay.
+  const [isWelcomeBlockingIntro, setIsWelcomeBlockingIntro] = useState(() => {
+    if (typeof window === "undefined") return true;
+    if (localStorage.getItem("ytr:welcome-dismissed") === "1") return false;
+    if (localStorage.getItem("ytr:genre-preferences") !== null) return false;
+    return true;
+  });
 
   const {
     isDesktopIntroActive,
@@ -1235,16 +1237,15 @@ function ShellDynamicInner({
     if (requestedVideoId === lastVideoIdRef.current && isResolvingRequestedVideo && !isRetryBypass) {
       return;
     }
+    // For the startup video, the SSR data is unfiltered — we must still make
+    // the API call to fetch genre-filtered related videos and advisory.
     if (
       requestedVideoId === lastVideoIdRef.current &&
       currentVideo.id === requestedVideoId &&
-      !isResolvingRequestedVideo
+      !isResolvingRequestedVideo &&
+      startupHydratedVideoIdRef.current !== requestedVideoId
     ) {
-      // Data is already correct (populated by startup resolver or previous fetch).
-      // Clear the startup-hydration sentinel so the rail stops showing a loader.
-      if (startupHydratedVideoIdRef.current === requestedVideoId) {
-        startupHydratedVideoIdRef.current = null;
-      }
+      // Data is already correct (populated by a previous non-startup fetch).
       return;
     }
     let ignore = false;
@@ -1292,15 +1293,15 @@ function ShellDynamicInner({
         hasOptimisticVideo = true;
       }
     }
-    if (!hasOptimisticVideo) {
+    // Bypass the prefetch cache for the startup video — it contains unfiltered
+    // SSR data. We must make a fresh API call to get genre-filtered results.
+    const isStartupVideo = startupHydratedVideoIdRef.current === requestedVideoId;
+    if (!hasOptimisticVideo && !isStartupVideo) {
       const cached = prefetchedCurrentVideoPayloadRef.current.get(requestedVideoId);
       if (cached && cached.expiresAt > Date.now() && cached.payload.currentVideo?.id === requestedVideoId) {
         setCurrentVideo(cached.payload.currentVideo);
         setRelatedVideos(cached.payload.relatedVideos ?? []);
         setWatchNextAdvisory(cached.payload.watchNextAdvisory ?? null);
-        if (startupHydratedVideoIdRef.current === requestedVideoId) {
-          startupHydratedVideoIdRef.current = null;
-        }
         setIsResolvingRequestedVideo(false);
         if (!hasResolvedInitialVideoRef.current) {
           hasResolvedInitialVideoRef.current = true;
@@ -1318,6 +1319,15 @@ function ShellDynamicInner({
         currentVideoParams.set("v", requestedVideoId);
         if (isAuthenticated && watchNextHideSeen) {
           currentVideoParams.set("hideSeen", "1");
+        }
+        // For unauthenticated users (local-only accounts), pass genre
+        // preferences from localStorage so the server can filter auto-play
+        // and the watch-next rail without requiring a DB account.
+        if (!isAuthenticated) {
+          const localGenres = readGenrePreferences();
+          if (localGenres && localGenres.length > 0) {
+            currentVideoParams.set("autoplayGenreFilters", localGenres.join(","));
+          }
         }
         const response = await fetch(`/api/current-video?${currentVideoParams.toString()}`);
         const data = response.ok ? ((await response.json()) as CurrentVideoResolvePayload) : null;

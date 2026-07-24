@@ -6,9 +6,10 @@ import { AutoplaySettingsEditor } from "@/components/autoplay-settings-editor";
 interface PlayerAutoplayConfigureModalProps {
   open: boolean;
   onClose: () => void;
+  isAuthenticated?: boolean;
 }
 
-export function PlayerAutoplayConfigureModal({ open, onClose }: PlayerAutoplayConfigureModalProps) {
+export function PlayerAutoplayConfigureModal({ open, onClose, isAuthenticated }: PlayerAutoplayConfigureModalProps) {
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
@@ -38,6 +39,7 @@ export function PlayerAutoplayConfigureModal({ open, onClose }: PlayerAutoplayCo
           title="Sources"
           className="autoplaySettingsModalBody"
           onSaved={onClose}
+          isAuthenticated={isAuthenticated}
         />
       </div>
     </div>,

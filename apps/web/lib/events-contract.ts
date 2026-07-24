@@ -48,6 +48,9 @@ export const EVENT_NAMES = {
 
   // Forum embed — playback coordination
   FORUM_EMBED_PLAYBACK_STARTED: "ytr:forum-embed-playback-started",
+
+  // Onboarding — genre preferences
+  WELCOME_GENRES_PERSISTED: "ytr:welcome-genres-persisted",
 } as const;
 
 export type QueueRemovalReason = "ended" | "manual-next" | "transition-sync";
@@ -104,6 +107,7 @@ export type EventPayloads = {
   [EVENT_NAMES.ARTISTS_LETTER_CHANGE]: { letter: string };
   [EVENT_NAMES.ARTISTS_FILTER_CHANGE]: { value: string };
   [EVENT_NAMES.FORUM_EMBED_PLAYBACK_STARTED]: null;
+  [EVENT_NAMES.WELCOME_GENRES_PERSISTED]: null;
 };
 
 // ============================================================================
