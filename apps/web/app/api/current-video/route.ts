@@ -181,13 +181,20 @@ async function buildWatchNextRelatedStream(params: {
     autoplayGenreFilters: params.autoplayGenreFilters,
   });
 
+  // When genre filters are active (e.g. "Punk" only), the effective pool
+  // shrinks because filtering happens after fetching. Scale pool sizes up
+  // by the number of active filters relative to total buckets so the
+  // stream builder has enough source material for infinite scroll.
+  const GENRE_FILTER_COUNT = params.autoplayGenreFilters.length || 1;
+  const GENRE_FILTER_POOL_MULTIPLIER = Math.max(1, Math.ceil(8 / GENRE_FILTER_COUNT));
+
   return buildWatchNextRelatedStreamService({
     ...params,
     watchNextBatchSize: WATCH_NEXT_BATCH_SIZE,
     watchNextSourceSliceSize: WATCH_NEXT_SOURCE_SLICE_SIZE,
-    watchNextTopPoolSize: WATCH_NEXT_TOP_POOL_SIZE,
-    watchNextNewestPoolSize: WATCH_NEXT_NEWEST_POOL_SIZE,
-    watchNextRandomPoolMin: WATCH_NEXT_RANDOM_POOL_MIN,
+    watchNextTopPoolSize: WATCH_NEXT_TOP_POOL_SIZE * GENRE_FILTER_POOL_MULTIPLIER,
+    watchNextNewestPoolSize: WATCH_NEXT_NEWEST_POOL_SIZE * GENRE_FILTER_POOL_MULTIPLIER,
+    watchNextRandomPoolMin: WATCH_NEXT_RANDOM_POOL_MIN * GENRE_FILTER_POOL_MULTIPLIER,
     watchNextMix: params.autoplayMix,
     autoplayGenreFilters: params.autoplayGenreFilters,
     getTopPool: getCachedTopVideosForCurrentVideo,
