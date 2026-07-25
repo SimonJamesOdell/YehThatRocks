@@ -1,6 +1,7 @@
 services:
   db:
     image: mysql:8.0
+    restart: unless-stopped
     command:
       - --innodb-redo-log-capacity=1G
       - --max-connections=300
