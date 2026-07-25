@@ -48,13 +48,20 @@ function normalizeQueryOperation(query: string) {
  * mariadb.createPool() with a URI string is broken (active=0 idle=0),
  * but with an object config it works reliably. Prisma 7 requires
  * a driver adapter (engineType="library"), so we parse here.
+ *
+ * SSL is controlled by MYSQL_SSL_MODE (default: "disabled") because the
+ * mariadb 3.x driver hangs indefinitely — no error, no fast-fail — when
+ * ssl is enabled but the server has SSL disabled (e.g. MySQL with
+ * --skip-ssl). The pool timeout "active=0 idle=0 limit=10" gives zero
+ * indication that SSL negotiation is the actual cause.
+ *
+ * Valid MYSQL_SSL_MODE values:
+ *   disabled / false / off  — no SSL (safe default for --skip-ssl MySQL)
+ *   no_verify / require     — SSL with rejectUnauthorized: false
+ *   verify / reject_unauthorized — SSL with rejectUnauthorized: true
  */
 function parseDbUrl(url: string) {
   const u = new URL(url);
-  const isLocalhost =
-    u.hostname === "127.0.0.1" ||
-    u.hostname === "localhost" ||
-    u.hostname === "::1";
 
   // Protocol: "mysql:" -> let PrismaMariaDb rewrite to "mariadb:"
   // We pass an object, so mariadb.createPool gets an object.
@@ -65,17 +72,28 @@ function parseDbUrl(url: string) {
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, ""),
     connectionLimit: 10,
-    connectTimeout: 5000,
+    connectTimeout: Math.max(
+      2000,
+      parseInt(process.env.MYSQL_CONNECT_TIMEOUT || "5000", 10),
+    ),
   };
 
-  // mariadb 3.x enables TLS by default. On remote hosts with self-signed
-  // certs (e.g. production MySQL 8.0), we need rejectUnauthorized: false.
-  // On localhost where SSL is typically disabled (--skip-ssl), we must
-  // explicitly set ssl: false so the connector doesn't try TLS at all.
-  if (isLocalhost) {
-    config.ssl = false;
-  } else {
-    config.ssl = { rejectUnauthorized: false };
+  const sslMode = (process.env.MYSQL_SSL_MODE || "disabled").toLowerCase();
+  switch (sslMode) {
+    case "verify":
+    case "reject_unauthorized":
+      config.ssl = { rejectUnauthorized: true };
+      break;
+    case "require":
+    case "no_verify":
+      config.ssl = { rejectUnauthorized: false };
+      break;
+    case "disabled":
+    case "false":
+    case "off":
+    default:
+      config.ssl = false;
+      break;
   }
 
   return config;
@@ -114,6 +132,39 @@ function createPrismaClient() {
 }
 
 export const prisma = global.__yehPrisma__ ?? createPrismaClient();
+
+// ── Startup connectivity smoke-test ─────────────────────────────────────
+// Fires immediately after module load. If Prisma can't reach the database,
+// this logs a clear, searchable error instead of silently serving the
+// "Backend unavailable" UI with no indication of the real cause.
+if (process.env.DATABASE_URL && process.env.NODE_ENV === "production") {
+  const startupDeadlineMs = Math.max(
+    3000,
+    parseInt(process.env.MYSQL_CONNECT_TIMEOUT || "5000", 10) * 3,
+  );
+  const label = "[prisma-startup-smoke]";
+
+  Promise.race([
+    (prisma as { $queryRawUnsafe?: (sql: string) => Promise<unknown> })
+      .$queryRawUnsafe?.("SELECT 1"),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`timed out after ${startupDeadlineMs}ms`)),
+        startupDeadlineMs,
+      ),
+    ),
+  ])
+    .then(() => {
+      console.log(`${label} Database reachable — Prisma connectivity OK`);
+    })
+    .catch((error) => {
+      const code = (error as { code?: string })?.code ?? "UNKNOWN";
+      const message = (error as { message?: string })?.message ?? String(error);
+      console.error(
+        `${label} DATABASE UNREACHABLE — code=${code} message=${message}`,
+      );
+    });
+}
 
 if (process.env.DATABASE_URL && !global.__yehPrismaProfilingHookInstalled__) {
   const prismaWithProfilingHooks = prisma as PrismaClient & {
