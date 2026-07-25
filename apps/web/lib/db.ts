@@ -137,7 +137,11 @@ export const prisma = global.__yehPrisma__ ?? createPrismaClient();
 // Fires immediately after module load. If Prisma can't reach the database,
 // this logs a clear, searchable error instead of silently serving the
 // "Backend unavailable" UI with no indication of the real cause.
-if (process.env.DATABASE_URL && process.env.NODE_ENV === "production") {
+if (
+  process.env.DATABASE_URL &&
+  process.env.NODE_ENV === "production" &&
+  process.env.NEXT_PHASE !== "phase-production-build"
+) {
   const startupDeadlineMs = Math.max(
     3000,
     parseInt(process.env.MYSQL_CONNECT_TIMEOUT || "5000", 10) * 3,
