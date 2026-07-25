@@ -208,15 +208,20 @@ export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal }: 
           <>
             <div className="welcomeModalBody">
               <p className="welcomeModalBlurb">
-                <strong>50,000+ rock and metal tracks</strong> — stream free, no ads ever.
-                Browse <strong>8 curated genre buckets</strong> from Classic Metal to Death
-                Metal, Punk to Progressive. Discover new videos every day,{" "}
-                <strong>build playlists</strong>, save favourites, join the{" "}
-                <strong>community chat</strong>, browse the <strong>magazine</strong>, or dive into
-                the <strong>forum</strong>.
+                We have <strong>50,000+ rock and metal tracks</strong> to stream for free,
+                no ads EVER! Browse our curated categories from Classic Metal to Death
+                Metal, Punk to Progressive. Discover new artists and new tracks every day,{" "}
+                build playlists, save favourites, join the community chat, browse the{" "}
+                magazine, or dive into the forum. We are aiming to become the number one,{" "}
+                community driven and maintained, definitive, rock and metal music site on{" "}
+                the whole damn web. YehThatRocks is the world&rsquo;s LOUDEST website!{" "}
+                ROCK ON!
               </p>
 
-              <p className="welcomeModalPrompt">Select the genres you want to see:</p>
+              <p className="welcomeModalPrompt">
+                To get started, select your prefered genres so we can tailor the experience
+                for you:
+              </p>
 
               {categories.length > 0 ? (
                 <div className="welcomeModalGrid">
