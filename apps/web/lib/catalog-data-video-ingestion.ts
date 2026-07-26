@@ -55,11 +55,9 @@ import { PLAYBACK_MIN_CONFIDENCE } from "@/lib/playback-config";
 import { resolveTopLevelGenreBucket } from "@/lib/genre-buckets";
 
 import {
-  AGE_RESTRICTED_PATTERNS,
   ALLOWED_VIDEO_TYPES,
   AUTOMATED_TRACK_DISCOVERY_DISABLED_REASON,
   BACKFILL_CONCURRENCY,
-  BOT_CHALLENGE_PATTERNS,
   canRunAutomatedTrackDiscovery,
   ENABLE_YOUTUBE_RELATED_DISCOVERY,
   INGESTION_CACHE_MAX_ENTRIES,
@@ -293,32 +291,6 @@ function recordRelatedDiscoveryAdmission(units = 1) {
     success: true,
     statusCode: null,
   });
-}
-
-function containsAgeRestrictionMarker(html: string) {
-  return AGE_RESTRICTED_PATTERNS.some((pattern) => pattern.test(html));
-}
-
-function containsBotChallengeMarker(html: string) {
-  return BOT_CHALLENGE_PATTERNS.some((pattern) => pattern.test(html));
-}
-
-function extractPlayabilityStatus(html: string) {
-  const statusMatch = html.match(/"playabilityStatus"\s*:\s*\{[\s\S]{0,800}?"status"\s*:\s*"([A-Z_]+)"([\s\S]{0,1200}?)\}/i);
-  if (!statusMatch) return null;
-
-  const status = statusMatch[1]?.trim().toUpperCase() ?? "";
-  const chunk = statusMatch[2] ?? "";
-  const reasonMatch = chunk.match(/"reason"\s*:\s*"([^"]+)"/i);
-  const reason = reasonMatch?.[1]?.trim() ?? null;
-  return { status, reason };
-}
-
-function isUnavailablePlayabilityReason(reason: string | null | undefined) {
-  return (
-    typeof reason === "string" &&
-    /(video unavailable|private video|deleted|removed|copyright|terminated|not available|this video is unavailable)/i.test(reason)
-  );
 }
 
 function isLikelyNonMusicText(title: string, description: string) {
@@ -914,52 +886,89 @@ async function persistRejectedVideo(videoId: string, reason: string): Promise<vo
 
 // ── Embed playability check ───────────────────────────────────────────────────
 
+/**
+ * Check video embeddability via the YouTube Data API (videos.list, part=status,contentDetails)
+ * instead of scraping the embed HTML page. The embed page is aggressively bot-protected
+ * from datacenter IPs; the Data API is designed for programmatic access and reports
+ * `status.embeddable` and `contentDetails.contentRating.ytRating` reliably.
+ *
+ * Cost: 2 units per call (status + contentDetails parts). Compare: 100 units for search.list.
+ */
 async function checkEmbedPlayability(videoId: string): Promise<VideoAvailability> {
+  if (!YOUTUBE_DATA_API_KEY) {
+    return { status: "check-failed", reason: "embed:no-api-key" };
+  }
+
   try {
-    const response = await fetch(`https://www.youtube.com/embed/${encodeURIComponent(videoId)}?enablejsapi=1`, {
+    const url = new URL("https://www.googleapis.com/youtube/v3/videos");
+    url.searchParams.set("part", "status,contentDetails");
+    url.searchParams.set("id", videoId);
+    url.searchParams.set("key", YOUTUBE_DATA_API_KEY);
+
+    const response = await fetch(url, {
       headers: { "User-Agent": "YehThatRocks/1.0" },
     });
 
     if (!response.ok) {
-      if ([404, 410].includes(response.status)) {
-        return { status: "unavailable", reason: `embed:${response.status}` };
+      void recordExternalApiUsage({
+        provider: "youtube",
+        endpoint: "videos.list",
+        units: 2,
+        success: false,
+        statusCode: response.status,
+        note: `embed-check:${response.status}`,
+      });
+
+      if ([404].includes(response.status)) {
+        return { status: "unavailable", reason: `embed:api-${response.status}` };
       }
       if ([401, 403].includes(response.status)) {
-        return { status: "check-failed", reason: `embed:provider-blocked-${response.status}` };
+        return { status: "check-failed", reason: `embed:api-auth-${response.status}` };
       }
-      return { status: "check-failed", reason: `embed:${response.status}` };
+      return { status: "check-failed", reason: `embed:api-${response.status}` };
     }
 
-    const html = await response.text();
-    const playability = extractPlayabilityStatus(html);
+    void recordExternalApiUsage({
+      provider: "youtube",
+      endpoint: "videos.list",
+      units: 2,
+      success: true,
+      statusCode: response.status,
+      note: "embed-check",
+    });
 
-    if (containsBotChallengeMarker(html)) return { status: "check-failed", reason: "embed:bot-check" };
-    if (containsAgeRestrictionMarker(html)) return { status: "unavailable", reason: "embed:age-restricted" };
+    const data = await response.json();
+    const item = data?.items?.[0];
 
-    if (playability?.status === "LOGIN_REQUIRED" || playability?.status === "CONTENT_CHECK_REQUIRED") {
-      if (isUnavailablePlayabilityReason(playability.reason)) {
-        return { status: "unavailable", reason: "embed:playability-login-unavailable" };
-      }
-      return { status: "check-failed", reason: "embed:interactive-login-check" };
+    if (!item) {
+      return { status: "unavailable", reason: "embed:api-not-found" };
     }
 
-    if (playability && /^(ERROR|UNPLAYABLE|AGE_CHECK_REQUIRED)$/i.test(playability.status)) {
-      return { status: "unavailable", reason: "embed:playability-unavailable" };
+    // `embeddable` is false when the uploader disabled embedding or the video
+    // was claimed by a content owner who restricts embedding.
+    if (item?.status?.embeddable === false) {
+      return { status: "unavailable", reason: "embed:api-not-embeddable" };
     }
 
-    if (/"playabilityStatus"\s*:\s*\{\s*"status"\s*:\s*"OK"/i.test(html)) {
-      return { status: "available", reason: "embed:playability-ok" };
+    // ytAgeRestricted means the video requires sign-in for age verification
+    // and cannot be played in an embedded player without user interaction.
+    if (item?.contentDetails?.contentRating?.ytRating === "ytAgeRestricted") {
+      return { status: "unavailable", reason: "embed:api-age-restricted" };
     }
 
-    if (/video unavailable/i.test(html)) {
-      return { status: "unavailable", reason: "embed:video-unavailable" };
-    }
-
-    return { status: "available", reason: "embed:accessible-no-markers" };
+    return { status: "available", reason: "embed:api-ok" };
   } catch (error) {
+    void recordExternalApiUsage({
+      provider: "youtube",
+      endpoint: "videos.list",
+      units: 2,
+      success: false,
+      statusCode: null,
+      note: error instanceof Error ? error.message.slice(0, 120) : "request-error",
+    });
     return {
       status: "check-failed",
-      reason: `embed-network:${error instanceof Error ? error.message : "unknown"}`,
+      reason: `embed-api:${error instanceof Error ? error.message : "unknown"}`,
     };
   }
 }
