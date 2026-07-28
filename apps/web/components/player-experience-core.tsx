@@ -2851,7 +2851,28 @@ export function PlayerExperience({
               // sequential oEmbed → embed → watch-page verification (up to ~6 s).
               const restrictedVideoId = currentVideo.id;
               void reportUnavailableFromPlayer(reason).then((reportResult) => {
-                void navigateToReplacementVideoIfFound("on-error-restricted", restrictedVideoId, reportResult);
+                if (navigateToReplacementVideoIfFound("on-error-restricted", restrictedVideoId, reportResult)) {
+                  return;
+                }
+
+                // When the background report confirms the video is definitively unavailable
+                // (removed/private/deleted — not just age-restricted), switch from the
+                // direct-iframe "hot-damn" overlay to the appropriate unavailable overlay.
+                if (
+                  currentVideoRef.current.id === restrictedVideoId
+                  && allowDirectIframeInteractionRef.current
+                  && isUnavailableVerificationReason(reportResult.verificationReason)
+                ) {
+                  logPlayerDebug("onError:restricted-verified-unavailable", {
+                    videoId: restrictedVideoId,
+                    reason,
+                    verificationReason: reportResult.verificationReason,
+                    classification: reportResult.classification,
+                  });
+                  allowDirectIframeInteractionRef.current = false;
+                  setAllowDirectIframeInteraction(false);
+                  applyVerifiedPlaybackFailurePresentation("on-error-restricted-verified", reason, reportResult);
+                }
               });
               applyVerifiedPlaybackFailurePresentation("on-error-restricted", reason, {
                 shouldSkip: false,
@@ -4572,6 +4593,16 @@ export function PlayerExperience({
                     >
                       Watch on YouTube
                     </button>
+                    {isAdmin ? (
+                      <button
+                        type="button"
+                        className="playerPolicyBlockerButton playerPolicyBlockerDeleteBtn"
+                        onClick={handleOpenAdminDeleteConfirmModal}
+                        disabled={isAdminDeleting}
+                      >
+                        Remove from YehThatRocks
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
@@ -4653,6 +4684,16 @@ export function PlayerExperience({
                     onClick={acknowledgeUnavailableOverlay}
                   >
                     Choose another track
+                  </button>
+                ) : null}
+                {isAdmin && !isDeletedConfirmationOverlay && (isRemovedOrPrivateOverlay || isBrokenUpstreamOverlay) ? (
+                  <button
+                    type="button"
+                    className="videoUnavailableOverlayAcknowledge videoUnavailableOverlayDeleteBtn"
+                    onClick={handleOpenAdminDeleteConfirmModal}
+                    disabled={isAdminDeleting}
+                  >
+                    Remove from YehThatRocks
                   </button>
                 ) : null}
               </div>

@@ -391,6 +391,18 @@
   transform: translateY(0);
 }
 
+.playerPolicyBlockerDeleteBtn {
+  margin-top: 12px;
+  background: linear-gradient(180deg, rgba(200, 30, 20, 0.94), rgba(120, 8, 6, 0.96));
+  border-color: rgba(255, 150, 130, 0.65);
+}
+
+.videoUnavailableOverlayDeleteBtn {
+  margin-top: 10px;
+  background: linear-gradient(180deg, rgba(200, 30, 20, 0.92), rgba(110, 8, 6, 0.94));
+  border-color: rgba(255, 150, 130, 0.65);
+}
+
 @media (max-width: 760px) {
   .videoUnavailableOverlay {
     width: min(94%, 640px);
@@ -892,4 +904,3 @@
   display: block;
   margin-top: 4px;
 }
-
