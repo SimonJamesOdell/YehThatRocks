@@ -3153,10 +3153,21 @@ export function PlayerExperience({
       ? window.location.pathname
       : pathname;
     const navigationPathname = runtimePathname || "/";
+
+    // Build search params from the live window.location.search at call time
+    // rather than the useLiveSearchParams hook, whose state-based sync via
+    // useEffect can lag behind the actual URL by one render cycle.
+    const liveSearchString = typeof window !== "undefined"
+      ? window.location.search
+      : null;
+    const baseSearchString = (liveSearchString && liveSearchString.startsWith("?"))
+      ? liveSearchString.slice(1)
+      : searchParams.toString();
+
     const nextHref = buildVideoNavigationHref({
       videoId,
       pathname: navigationPathname,
-      baseSearchParams: new URLSearchParams(searchParams.toString()),
+      baseSearchParams: new URLSearchParams(baseSearchString),
       clearPlaylist: options?.clearPlaylist,
       playlistId: options?.playlistId,
       playlistItemIndex: options?.playlistItemIndex,

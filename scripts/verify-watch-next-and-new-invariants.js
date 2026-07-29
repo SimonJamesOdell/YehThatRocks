@@ -204,7 +204,10 @@ function main() {
   assertContains(playerExperienceSource, "useNativeHistory?: boolean;", "Player navigation options support native-history query updates", failures);
   assertContains(videoNavigationSource, 'if (useNativeHistory && typeof window !== "undefined") {', "Video navigation helper supports native history updates for query-only video changes", failures);
   assertContains(videoNavigationSource, 'window.history.pushState(window.history.state, "", href);', "Video navigation updates the URL through native history to avoid route reloads", failures);
-  assertContains(videoNavigationSource, 'window.dispatchEvent(new PopStateEvent("popstate"));', "Video navigation notifies search-param observers after native-history updates", failures);
+  // Synthetic PopStateEvent removed — Next.js App Router already monkey-patches
+  // history.pushState / replaceState to detect URL changes.  The synthetic event
+  // raced with Next.js's own detection, causing intermittent full-page reloads.
+  assertNotContains(videoNavigationSource, 'window.dispatchEvent(new PopStateEvent("popstate"));', "Video navigation no longer fires a synthetic PopStateEvent (Next.js monkey-patches pushState)", failures);
   assertContains(playerExperienceSource, "useNativeHistory: true,", "Docked New next-track opts into native-history navigation", failures);
   assertContains(playerExperienceSource, "const isDockedTop100Route = showDockCloseButton && pathname === \"/top100\";", "Player tracks docked Top100 route state for list-navigation actions", failures);
   assertContains(playerExperienceSource, "function handleDockedRouteListNextTrack()", "Player exposes a shared docked route-list next handler", failures);

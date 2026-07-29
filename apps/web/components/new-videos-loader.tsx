@@ -400,7 +400,10 @@ export function NewVideosLoader({
     const nextUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
     window.history.replaceState(window.history.state, "", nextUrl);
     window.dispatchEvent(new CustomEvent(LIVE_SEARCH_PARAMS_EVENT));
-    window.dispatchEvent(new PopStateEvent("popstate"));
+    // Do NOT fire a synthetic PopStateEvent — Next.js App Router already
+    // monkey-patches history.replaceState to detect URL changes.  A synthetic
+    // popstate races with Next.js's own detection and can cause the router
+    // to fall back to a full-page reload instead of a client-side transition.
   };
 
   const toggleGenreIncludeSelection = (genre: string) => {
