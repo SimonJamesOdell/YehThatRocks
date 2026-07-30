@@ -68,10 +68,10 @@ These are surgical, low-risk, and should be done first. Each stands alone.
 
 | # | Action | Effort | Risk | Depends on |
 |---|--------|--------|------|------------|
-| 3a | Delete `reference/main.css` (261 lines, zero imports across 2,166 files) | Low | Low — verify once more before deletion | — |
-| 3b | Remove dead root scripts: `diag.js`, `diagnose-discovery.sh`, `verify-discovery.sh`, `pending-check.sh`, `extract-favs.py` | Low | Low — git-preserved if needed | — |
-| 3c | Archive HOTSPOT_* and DEPLOYMENT_* MD files to `docs/archive/` | Low | Low — move, don't delete | — |
-| 3d | Audit `backups/` directory for irreplaceable data; archive or document | Low | Low — inspect first | — |
+| 3a | ~~Delete `reference/main.css`~~ | — | — | ✅ **Done (2026-07-31).** Confirmed zero imports across 7,001 files; deleted from disk |
+| 3b | ~~Remove dead root scripts~~ | — | — | ✅ **Done (2026-07-31).** `diag.js`, `diagnose-discovery.sh`, `verify-discovery.sh`, `pending-check.sh`, `extract-favs.py` — all confirmed dead, `git rm`'d |
+| 3c | ~~Archive HOTSPOT_*/DEPLOYMENT_* MD files~~ | — | — | ✅ **Done (2026-07-31).** 6 files moved to `docs/archive/` |
+| 3d | ~~Audit `backups/` directory~~ | — | — | ✅ **Done (2026-07-31).** `backups/live/` is in `.gitignore`, managed by `run_live_restore_diag.ps1`; no action needed |
 | 3e | Squash 51 migration directories into a baseline — only after a production schema freeze | Medium | Medium — irreversible | Coordinated with deploy |
 
 ### Phase 4 — CSS Modernization (technical debt on styling)
