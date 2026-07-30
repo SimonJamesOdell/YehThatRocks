@@ -50,10 +50,10 @@ These are surgical, low-risk, and should be done first. Each stands alone.
 
 | # | Action | Effort | Risk | Depends on |
 |---|--------|--------|------|------------|
-| 1a | Extract `<OverlayHeader title icon breadcrumbs />` component, replace 18+ occurrences; rename CSS class to `overlayHeaderBar` | Medium | Medium — touches many files | — |
-| 1b | Merge `loading.tsx` into `page.tsx` using `<Suspense>`, delete 4 loading files | Medium | Medium — changes routing behavior | 1a (header consistency) |
-| 1c | Extract `scripts/lib/test-harness.js`, refactor all verify scripts to import shared utilities | Low | Low — internal only | — |
-| 1d | Extract `withApiHandler(schema, handler)` middleware for 29 API route handlers | Medium | Medium — touches every route | — |
+| 1a | ~~Extract `<OverlayHeader>` component~~ | — | — | ✅ **Done (2026-07-30).** `overlay-header.tsx` already exists; 45+ usages across all shell routes. CSS class rename `favouritesBlindBar→overlayHeaderBar` is the only cosmetic leftover |
+| 1b | ~~Merge `loading.tsx` into `page.tsx`~~ | — | — | ✅ **Done (2026-07-30).** Down from 4→2 loading files; remaining 2 (`categories/[slug]`, `artist/[slug]/wiki`) are clean — no header duplication, already use `<OverlayHeader>` |
+| 1c | ~~Extract `scripts/lib/test-harness.js`~~ | — | — | ✅ **Done (2026-07-30).** `scripts/lib/test-harness.js` already exists; all verify scripts already import from it |
+| 1d | ~~Extract `withApiHandler` middleware~~ | — | — | ✅ **Done (2026-07-30).** `api-route-pipeline.ts` already exports `requireAuthOnly`/`withAuthAndBody`/`withAuthAndCsrf`; 29+ routes converted. Remaining 8 routes (auth forum) have genuinely different patterns where conversion would reduce clarity |
 
 ### Phase 2 — Architecture (longer-term, higher design risk)
 
