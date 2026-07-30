@@ -4,12 +4,17 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
 const shouldManageServer = !process.env.PLAYWRIGHT_BASE_URL;
 
 export default defineConfig({
-  testDir: "./tests/smoke",
+  testDir: "./tests",
   fullyParallel: false,
   timeout: 45_000,
   expect: {
     timeout: 15_000,
+    toHaveScreenshot: {
+      maxDiffPixels: 200,
+      animations: "disabled",
+    },
   },
+  snapshotDir: "./tests/visual/snapshots",
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL,
@@ -20,7 +25,16 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      testDir: "./tests/smoke",
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "visual",
+      testDir: "./tests/visual",
+      use: {
+        ...devices["Desktop Chrome"],
+        screenshot: "on",
+      },
     },
   ],
   webServer: shouldManageServer
