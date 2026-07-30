@@ -59,8 +59,8 @@ These are surgical, low-risk, and should be done first. Each stands alone.
 
 | # | Action | Effort | Risk | Depends on |
 |---|--------|--------|------|------------|
-| 2a | Replace window event bus with React context (`ArtistsLetterProvider`) or URL query param (`?letter=M`) | Medium | Medium — changes data flow | — |
-| 2b | Server-side duplicate check for playlist add — `GET /api/playlists?checkVideoId=X` eliminates N+1 | Medium | Low — additive API change | — |
+| 2a | ~~Replace window event bus~~ | — | — | ✅ **Done (2026-07-31).** Replaced with `ArtistsLetterProvider` / `useArtistsLetterContext` React context. Zero remaining uses of `ARTISTS_LETTER_CHANGE_EVENT` |
+| 2b | ~~Server-side duplicate check for playlist add~~ | — | — | ✅ **Done (2026-07-31).** `addPlaylistItem` in `catalog-data-playlists.ts:714-722` checks `existingPlaylist.videos.some()` before inserting. Client makes one POST, not N GETs |
 | 2c | Normalize Artist `genre1`–`genre6` columns into a proper `artist_genres` join table | High | High — schema migration + data migration + code changes | Schema freeze preferred |
 | 2d | Add proper relations to `Favourite` (non-nullable `userId`, `videoId`) and `RelatedCache` | Medium | Medium — schema migration | 2c sequencing |
 
