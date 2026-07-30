@@ -52,6 +52,13 @@ export function ArtistVideoLink({
 }: ArtistVideoLinkProps) {
   const router = useRouter();
   const hasWarmedRef = useRef(false);
+  const warmAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      warmAbortRef.current?.abort();
+    };
+  }, []);
   const [isFavourited, setIsFavourited] = useState(Number(video.favourited ?? 0) > 0);
   const [isRemovingFavourite, setIsRemovingFavourite] = useState(false);
   const [isPinningThumbnail, setIsPinningThumbnail] = useState(false);
@@ -81,8 +88,12 @@ export function ArtistVideoLink({
     }
 
     hasWarmedRef.current = true;
+    warmAbortRef.current?.abort();
+    const controller = new AbortController();
+    warmAbortRef.current = controller;
     void fetch(`/api/current-video?v=${encodeURIComponent(video.id)}`, {
       cache: "no-store",
+      signal: controller.signal,
     }).catch(() => undefined);
   }, [video]);
 
