@@ -32,7 +32,7 @@ const files = {
   playerNextTrackDomain: path.join(ROOT, "apps/web/domains/player/resolve-next-track-target.ts"),
   queueDomain: path.join(ROOT, "apps/web/domains/queue/temporary-queue.ts"),
   playlistDomain: path.join(ROOT, "apps/web/domains/playlist/playlist-step-target.ts"),
-  playerEvents: path.join(ROOT, "apps/web/lib/player-events.ts"),
+  playerEvents: path.join(ROOT, "apps/web/lib/events-contract.ts"),
   randomCatalogPool: path.join(ROOT, "apps/web/lib/random-catalog-pool.ts"),
   appRoot: path.join(ROOT, "apps/web/app"),
   useRouteAutoplayQueue: path.join(ROOT, "apps/web/hooks/use-route-autoplay-queue.ts"),
