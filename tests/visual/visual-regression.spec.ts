@@ -129,3 +129,43 @@ test.describe("visual regression — mobile", () => {
     });
   });
 });
+
+test.describe("visual regression — tablet", () => {
+  test.use({ viewport: { width: 768, height: 1024 } });
+
+  test("tablet — homepage", async ({ page }) => {
+    await page.goto(DEV_SERVER_URL, { waitUntil: "networkidle" });
+    await page.waitForTimeout(2000);
+    await expect(page).toHaveScreenshot("homepage-tablet.png", {
+      fullPage: false,
+      maxDiffPixels: 200,
+    });
+  });
+
+  test("tablet — artists overlay", async ({ page }) => {
+    await page.goto(`${DEV_SERVER_URL}/artists`, { waitUntil: "networkidle" });
+    await page.waitForTimeout(1500);
+    await expect(page).toHaveScreenshot("artists-overlay-tablet.png", {
+      fullPage: false,
+      maxDiffPixels: 200,
+    });
+  });
+
+  test("tablet — categories overlay", async ({ page }) => {
+    await page.goto(`${DEV_SERVER_URL}/categories`, { waitUntil: "networkidle" });
+    await page.waitForTimeout(1500);
+    await expect(page).toHaveScreenshot("categories-overlay-tablet.png", {
+      fullPage: false,
+      maxDiffPixels: 200,
+    });
+  });
+
+  test("tablet — mobile shell", async ({ page }) => {
+    await page.goto(`${DEV_SERVER_URL}/m`, { waitUntil: "networkidle" });
+    await page.waitForTimeout(2000);
+    await expect(page).toHaveScreenshot("homepage-mobile-tablet.png", {
+      fullPage: false,
+      maxDiffPixels: 200,
+    });
+  });
+});
