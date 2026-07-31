@@ -8,31 +8,41 @@ import { expect, test } from "@playwright/test";
  * generate or update baselines. When a page changes visually, the test fails
  * with a diff image — review and update the baseline if the change is intentional.
  *
- * Pages covered:
- *   1. Homepage (player shell + hero grid)
- *   2. Artists overlay
- *   3. Player experience (with a video loaded)
- *   4. Admin dashboard
- *   5. Categories overlay
- *   6. Search overlay (with results)
- *   7. New videos overlay
- *   8. Top 100 overlay
- *   9. Magazine landing
- *  10. Mobile shell (homepage)
+ * Masking: dynamic content areas (video cards, thumbnails, search results,
+ * leaderboard rows) are masked so that database updates don't cause false
+ * positives. Only the static shell is verified — header, navigation, player
+ * chrome, overlay frames, and layout structure.
  */
 
+// ── Mask selectors for dynamic content ──────────────────────────────────────
+
+const DYNAMIC_CONTENT = [
+  ".heroGridItemCard",
+  ".catalogCard",
+  ".leaderboardCard",
+  ".magazineArticleCard",
+  ".relatedCard",
+  ".categoryCard",
+  ".artistResultCard",
+  ".forumThreadCard",
+  ".searchResultCard",
+];
+
 const DEV_SERVER_URL = "http://127.0.0.1:3000";
+
+function maskLocators(page: import("@playwright/test").Page, extra: string[] = []): import("@playwright/test").Locator[] {
+  return [...DYNAMIC_CONTENT, ...extra].map((sel) => page.locator(sel));
+}
 
 test.describe("visual regression — desktop", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("01 — homepage shell + hero grid", async ({ page }) => {
     await page.goto(DEV_SERVER_URL, { waitUntil: "networkidle" });
-    // Let hero grid animations settle
     await page.waitForTimeout(2000);
     await expect(page).toHaveScreenshot("homepage-desktop.png", {
-      fullPage: false,
-      maxDiffPixels: 200,
+      fullPage: false, maxDiffPixels: 200,
+      mask: maskLocators(page),
     });
   });
 
@@ -40,8 +50,8 @@ test.describe("visual regression — desktop", () => {
     await page.goto(`${DEV_SERVER_URL}/artists`, { waitUntil: "networkidle" });
     await page.waitForTimeout(1500);
     await expect(page).toHaveScreenshot("artists-overlay-desktop.png", {
-      fullPage: false,
-      maxDiffPixels: 200,
+      fullPage: false, maxDiffPixels: 200,
+      mask: maskLocators(page, [".artistAlphabetButton"]),
     });
   });
 
@@ -49,8 +59,8 @@ test.describe("visual regression — desktop", () => {
     await page.goto(`${DEV_SERVER_URL}/categories`, { waitUntil: "networkidle" });
     await page.waitForTimeout(1500);
     await expect(page).toHaveScreenshot("categories-overlay-desktop.png", {
-      fullPage: false,
-      maxDiffPixels: 200,
+      fullPage: false, maxDiffPixels: 200,
+      mask: maskLocators(page),
     });
   });
 
@@ -58,8 +68,8 @@ test.describe("visual regression — desktop", () => {
     await page.goto(`${DEV_SERVER_URL}/search?q=metal`, { waitUntil: "networkidle" });
     await page.waitForTimeout(2000);
     await expect(page).toHaveScreenshot("search-overlay-desktop.png", {
-      fullPage: false,
-      maxDiffPixels: 200,
+      fullPage: false, maxDiffPixels: 200,
+      mask: maskLocators(page),
     });
   });
 
@@ -67,8 +77,8 @@ test.describe("visual regression — desktop", () => {
     await page.goto(`${DEV_SERVER_URL}/new`, { waitUntil: "networkidle" });
     await page.waitForTimeout(1500);
     await expect(page).toHaveScreenshot("new-videos-overlay-desktop.png", {
-      fullPage: false,
-      maxDiffPixels: 200,
+      fullPage: false, maxDiffPixels: 200,
+      mask: maskLocators(page),
     });
   });
 
@@ -76,8 +86,8 @@ test.describe("visual regression — desktop", () => {
     await page.goto(`${DEV_SERVER_URL}/top100`, { waitUntil: "networkidle" });
     await page.waitForTimeout(1500);
     await expect(page).toHaveScreenshot("top100-overlay-desktop.png", {
-      fullPage: false,
-      maxDiffPixels: 200,
+      fullPage: false, maxDiffPixels: 200,
+      mask: maskLocators(page),
     });
   });
 
@@ -85,34 +95,29 @@ test.describe("visual regression — desktop", () => {
     await page.goto(`${DEV_SERVER_URL}/magazine`, { waitUntil: "networkidle" });
     await page.waitForTimeout(1500);
     await expect(page).toHaveScreenshot("magazine-landing-desktop.png", {
-      fullPage: false,
-      maxDiffPixels: 200,
+      fullPage: false, maxDiffPixels: 200,
+      mask: maskLocators(page),
     });
   });
 
   test("08 — admin dashboard", async ({ page }) => {
     await page.goto(`${DEV_SERVER_URL}/admin`, { waitUntil: "networkidle" });
     await page.waitForTimeout(2000);
-    // Admin may show login/auth wall — that's fine, we're testing the visual
-    // integrity of whatever renders at /admin
     await expect(page).toHaveScreenshot("admin-dashboard-desktop.png", {
-      fullPage: false,
-      maxDiffPixels: 200,
+      fullPage: false, maxDiffPixels: 200,
     });
   });
 
   test("09 — player experience with video", async ({ page }) => {
-    // Load homepage, then navigate to a known working video
     await page.goto(DEV_SERVER_URL, { waitUntil: "networkidle" });
-    // Click a video card to open player overlay
     const videoCard = page.locator(".heroGridItemCard").first();
     if (await videoCard.isVisible({ timeout: 5000 }).catch(() => false)) {
       await videoCard.click();
       await page.waitForTimeout(3000);
     }
     await expect(page).toHaveScreenshot("player-experience-desktop.png", {
-      fullPage: false,
-      maxDiffPixels: 300,
+      fullPage: false, maxDiffPixels: 300,
+      mask: maskLocators(page, [".endedChoiceCard"]),
     });
   });
 });
@@ -124,8 +129,8 @@ test.describe("visual regression — mobile", () => {
     await page.goto(`${DEV_SERVER_URL}/m`, { waitUntil: "networkidle" });
     await page.waitForTimeout(2000);
     await expect(page).toHaveScreenshot("homepage-mobile.png", {
-      fullPage: false,
-      maxDiffPixels: 200,
+      fullPage: false, maxDiffPixels: 200,
+      mask: maskLocators(page),
     });
   });
 });
@@ -137,8 +142,8 @@ test.describe("visual regression — tablet", () => {
     await page.goto(DEV_SERVER_URL, { waitUntil: "networkidle" });
     await page.waitForTimeout(2000);
     await expect(page).toHaveScreenshot("homepage-tablet.png", {
-      fullPage: false,
-      maxDiffPixels: 200,
+      fullPage: false, maxDiffPixels: 200,
+      mask: maskLocators(page),
     });
   });
 
@@ -146,8 +151,8 @@ test.describe("visual regression — tablet", () => {
     await page.goto(`${DEV_SERVER_URL}/artists`, { waitUntil: "networkidle" });
     await page.waitForTimeout(1500);
     await expect(page).toHaveScreenshot("artists-overlay-tablet.png", {
-      fullPage: false,
-      maxDiffPixels: 200,
+      fullPage: false, maxDiffPixels: 200,
+      mask: maskLocators(page),
     });
   });
 
@@ -155,8 +160,8 @@ test.describe("visual regression — tablet", () => {
     await page.goto(`${DEV_SERVER_URL}/categories`, { waitUntil: "networkidle" });
     await page.waitForTimeout(1500);
     await expect(page).toHaveScreenshot("categories-overlay-tablet.png", {
-      fullPage: false,
-      maxDiffPixels: 200,
+      fullPage: false, maxDiffPixels: 200,
+      mask: maskLocators(page),
     });
   });
 
@@ -164,8 +169,8 @@ test.describe("visual regression — tablet", () => {
     await page.goto(`${DEV_SERVER_URL}/m`, { waitUntil: "networkidle" });
     await page.waitForTimeout(2000);
     await expect(page).toHaveScreenshot("homepage-mobile-tablet.png", {
-      fullPage: false,
-      maxDiffPixels: 200,
+      fullPage: false, maxDiffPixels: 200,
+      mask: maskLocators(page),
     });
   });
 });
