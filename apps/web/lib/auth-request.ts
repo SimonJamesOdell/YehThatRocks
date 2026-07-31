@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { readAuthCookies } from "@/lib/auth-cookies";
-import { isTokenValidationError, verifyToken } from "@/lib/auth-jwt";
+import { verifyToken } from "@/lib/auth-jwt";
 
 export type AuthContext = {
   userId: number | null; // Allow null for guest users
@@ -11,16 +11,6 @@ export type AuthContext = {
 
 function createUnauthorizedResponse() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
-
-function createAuthUnavailableResponse() {
-  return NextResponse.json(
-    {
-      error: "Auth verification unavailable",
-      code: "AUTH_UNAVAILABLE",
-    },
-    { status: 503 },
-  );
 }
 
 export async function requireApiAuth(request: NextRequest): Promise<
@@ -45,13 +35,11 @@ export async function requireApiAuth(request: NextRequest): Promise<
         isGuest: payload.isGuest,
       },
     };
-  } catch (error) {
-    return {
-      ok: false,
-      response: isTokenValidationError(error)
-        ? createUnauthorizedResponse()
-        : createAuthUnavailableResponse(),
-    };
+  } catch {
+    // Any failure to verify the token means the request is unauthorized.
+    // jwtVerify is a local operation — there is no external auth service that
+    // could be temporarily unavailable, so all errors map to 401.
+    return { ok: false, response: createUnauthorizedResponse() };
   }
 }
 

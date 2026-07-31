@@ -5,8 +5,8 @@ import { requireApiAuth } from "@/lib/auth-request";
 export async function GET(request: NextRequest) {
   const authResult = await requireApiAuth(request);
 
-  if (!authResult.ok) {
-    return authResult.response;
+  if (!authResult.ok || authResult.auth.userId === null) {
+    return authResult.response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   return NextResponse.json({
