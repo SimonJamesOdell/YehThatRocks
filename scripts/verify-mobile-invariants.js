@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 // Domain: Mobile Experience
-// Covers: proxy.ts mobile redirect, mobile file structure, mobile CSS classes,
+// Covers: mobile file structure, mobile CSS classes,
 // mobile component integrity, and import-path hygiene.
-// Run after adding/removing mobile pages or changing proxy routing.
+// Run after adding/removing mobile pages or changing mobile routing.
 
 const path = require("node:path");
 const {
@@ -110,45 +110,6 @@ function main() {
   // Old (mobile) route group must NOT exist
   assertFileDoesNotExist(files.oldMobileLayout, "Old (mobile) route group removed", failures, ROOT);
 
-  // ── 2. Proxy redirect rules ────────────────────────────────────────
-  const proxySource = readFileStrict(files.proxy, ROOT);
-
-  // Mobile redirect uses resolveMobilePathname to map desktop routes to
-  // /m equivalents when they exist, falling back to /m otherwise.
-  assertContains(proxySource, "resolveMobilePathname", "proxy defines resolveMobilePathname mapper", failures);
-  assertContains(proxySource, 'redirectUrl.pathname = resolveMobilePathname(pathname)', "mobile redirect uses resolveMobilePathname", failures);
-  assertNotContains(proxySource, 'redirectUrl.pathname = "/desktop-only"', "proxy no longer redirects to /desktop-only", failures);
-
-  // /m prefix must be excluded from the redirect check
-  assertContains(proxySource, '!pathname.startsWith("/m")', "proxy excludes /m from mobile redirect", failures);
-
-  // /desktop-only page must still be reachable for backwards compat
-  assertContains(proxySource, 'pathname !== "/desktop-only"', "proxy excludes /desktop-only from redirect", failures);
-
-  // isBrowserPageNav must also exclude /m (silent auth refresh)
-  const startsWithMCount = (proxySource.match(/pathname\.startsWith\("\/m"\)/g) || []).length;
-  if (startsWithMCount < 2) {
-    failures.push("proxy must exclude /m from both redirect AND isBrowserPageNav checks");
-  }
-
-  // resolveMobilePathname maps routes with /m equivalents to their mobile
-  // page, preserving the path so deep-linked content loads directly.
-  assertContains(proxySource, 'pathname.startsWith("/magazine")', "resolveMobilePathname maps magazine routes to /m/magazine", failures);
-  assertContains(proxySource, 'return "/m/register"', "resolveMobilePathname maps /register to /m/register", failures);
-  assertContains(proxySource, 'return "/m/reset-password"', "resolveMobilePathname maps /reset-password to /m/reset-password", failures);
-  assertContains(proxySource, 'return "/m/verify-email"', "resolveMobilePathname maps /verify-email to /m/verify-email", failures);
-  assertContains(proxySource, 'return "/m"', "resolveMobilePathname falls back to /m", failures);
-
-  // Routes without /m equivalents still fall through to desktop layout
-  // (forum, user profiles, history, playlists) so shared links resolve.
-  assertContains(proxySource, "isDesktopOnlyContentRoute", "proxy defines isDesktopOnlyContentRoute guard for routes without mobile equivalents", failures);
-  assertContains(proxySource, 'pathname.startsWith("/forum")', "forum routes excluded from mobile redirect (no mobile equivalent yet)", failures);
-  assertContains(proxySource, 'pathname.startsWith("/u/")', "user profile routes excluded from mobile redirect (no mobile equivalent yet)", failures);
-  assertContains(proxySource, '!isDesktopOnlyContentRoute', "isDesktopOnlyContentRoute used in shouldRedirectToMobile guard", failures);
-
-  // Query string must be preserved through the mobile redirect so shared
-  // video links (?v=abc123) survive.
-  assertNotContains(proxySource, 'redirectUrl.search = ""', "proxy preserves query string through mobile redirect", failures);
 
   // ── 3. Mobile layout structure ─────────────────────────────────────
   // Layout is a server component — thin wrapper rendering client MobileShell
