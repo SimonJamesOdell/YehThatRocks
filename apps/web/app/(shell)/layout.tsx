@@ -15,7 +15,9 @@ export default async function ShellLayout({ children }: { children: ReactNode })
   const requestSearch = requestHeaders.get("x-ytr-search") ?? "";
   const searchParams = new URLSearchParams(requestSearch);
   const requestedVideoId = searchParams.get("v") ?? undefined;
-  const shouldUseRandomLandingVideo = requestPathname === "/" && searchParams.toString().length === 0;
+  // Use a random landing video when no specific video is requested and we're not
+  // on a magazine article page (which resolves its own video from the slug).
+  const shouldUseRandomLandingVideo = !requestedVideoId && !requestPathname.startsWith("/magazine/");
 
   // When the user lands directly on a magazine article page, seed the initial
   // video with the article's videoId so the shell boots with the correct video
