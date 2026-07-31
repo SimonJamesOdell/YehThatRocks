@@ -81,11 +81,10 @@ export async function verifyToken(token: string, expectedType: TokenType) {
 }
 
 export function isTokenValidationError(error: unknown) {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  return error.message === "Unexpected token type"
-    || error.message === "Invalid token payload"
-    || TOKEN_VALIDATION_ERROR_NAMES.has(error.name);
+  // verifyToken only does local crypto + payload checks — no network, no DB,
+  // no I/O. Any error it throws is a token validation failure (bad format,
+  // expired, wrong signature, unexpected type, malformed payload).
+  // The 503 auth-unavailable path in auth-request.ts is preserved for genuine
+  // system failures, but verifyToken can't produce those at runtime.
+  return error instanceof Error;
 }
