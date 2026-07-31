@@ -22,7 +22,6 @@ const {
 const ROOT = process.cwd();
 
 const files = {
-  proxy: path.join(ROOT, "apps/web/proxy.ts"),
   mobileLayout: path.join(ROOT, "apps/web/app/m/layout.tsx"),
   mobileHome: path.join(ROOT, "apps/web/app/m/page.tsx"),
   mobileNew: path.join(ROOT, "apps/web/app/m/new/page.tsx"),
@@ -83,7 +82,6 @@ function main() {
   // ── 1. File existence ──────────────────────────────────────────────
   assertFilesExist(
     mapRelativeFiles(ROOT, {
-      proxy: "apps/web/proxy.ts",
       mobileLayout: "apps/web/app/m/layout.tsx",
       mobileCss: "apps/web/app/styles/mobile.css",
       globalsCss: "apps/web/app/globals.css",

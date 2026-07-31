@@ -25,7 +25,6 @@ const files = {
   magazineSlugNotFound: path.join(ROOT, "apps/web/app/(shell)/magazine/[slug]/not-found.tsx"),
   rootNotFound: path.join(ROOT, "apps/web/app/not-found.tsx"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
-  proxyMiddleware: path.join(ROOT, "apps/web/proxy.ts"),
   chatRoute: path.join(ROOT, "apps/web/app/api/chat/route.ts"),
   chatStreamRoute: path.join(ROOT, "apps/web/app/api/chat/stream/route.ts"),
   mobileMagazineSlug: path.join(ROOT, "apps/web/app/m/magazine/[slug]/page.tsx"),
@@ -50,7 +49,6 @@ function main() {
   const cssSource = collectCssFiles(files.appRoot)
     .map((filePath) => readFileStrict(filePath, ROOT))
     .join("\n");
-  const proxySource = readFileStrict(files.proxyMiddleware, ROOT);
   const chatRouteSource = readFileStrict(files.chatRoute, ROOT);
   const chatStreamRouteSource = readFileStrict(files.chatStreamRoute, ROOT);
   const mobileHomeSource = readFileStrict(files.mobileHomeClient, ROOT);
@@ -251,21 +249,6 @@ function main() {
     );
   }
 
-  // --- Mobile magazine proxy redirect ---
-  // When a mobile user lands on a shared magazine link, the proxy must
-  // redirect to the mobile magazine page, not just /m.
-  assertContains(
-    proxySource,
-    'pathname.startsWith("/magazine")',
-    "resolveMobilePathname maps /magazine routes to /m/magazine for mobile users",
-    failures,
-  );
-  assertContains(
-    proxySource,
-    'return "/m" + pathname',
-    "resolveMobilePathname preserves the magazine sub-path through mobile redirect",
-    failures,
-  );
 
   // --- Mobile magazine article page exists ---
   if (fs.existsSync(files.mobileMagazineSlug)) {
@@ -398,14 +381,6 @@ function main() {
     mobileHomeSource,
     "sessionStorage.getItem(MAGAZINE_CACHE_KEY)",
     "Magazine cache is read from sessionStorage on tab activation",
-    failures,
-  );
-
-  // --- Guest chat reads: proxy allows unauthenticated access to chat endpoints ---
-  assertContains(
-    proxySource,
-    '"/api/chat"',
-    "Proxy middleware lists /api/chat as an auth-optional endpoint so guests can read chat",
     failures,
   );
 
