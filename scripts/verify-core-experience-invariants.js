@@ -58,7 +58,7 @@ const files = {
   playerNextTrackDomain: path.join(ROOT, "apps/web/domains/player/resolve-next-track-target.ts"),
   queueDomain: path.join(ROOT, "apps/web/domains/queue/temporary-queue.ts"),
   playlistDomain: path.join(ROOT, "apps/web/domains/playlist/playlist-step-target.ts"),
-  playerEvents: path.join(ROOT, "apps/web/lib/player-events.ts"),
+  playerEvents: path.join(ROOT, "apps/web/lib/events-contract.ts"),
   relatedBackfillScript: path.join(ROOT, "scripts/backfill-related-links.js"),
   catalogIntegrityAuditScript: path.join(ROOT, "scripts/audit-catalog-integrity.js"),
 };
