@@ -3,6 +3,7 @@ import { Metal_Mania } from "next/font/google";
 
 import { PerformanceMeasureGuard } from "@/components/performance-measure-guard";
 import { YouTubeIframeApiLoader } from "@/components/youtube-iframe-api-loader";
+import { buildWebSite } from "@/lib/schema-org";
 import "./globals.css";
 
 const metalMania = Metal_Mania({
@@ -58,6 +59,10 @@ export default function RootLayout({
         <link rel="preconnect" href="https://www.youtube-nocookie.com" />
         <link rel="preconnect" href="https://i.ytimg.com" />
         <meta property="fb:app_id" content="1016139985071738" />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(buildWebSite()) }}
+        />
       </head>
       <body className={metalMania.variable}>
         <PerformanceMeasureGuard />
