@@ -31,6 +31,7 @@ export type PlaylistSummary = {
   name: string;
   itemCount: number;
   leadVideoId: string;
+  createdAt?: string;
 };
 
 export type PlaylistVideoRecord = VideoRecord & {

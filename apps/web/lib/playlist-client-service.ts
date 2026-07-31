@@ -29,6 +29,7 @@ export type PlaylistSummaryClient = {
   name: string;
   itemCount?: number;
   leadVideoId?: string;
+  createdAt?: string;
 };
 
 export type PlaylistVideoClient = {

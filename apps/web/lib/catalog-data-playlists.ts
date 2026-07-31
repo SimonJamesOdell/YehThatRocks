@@ -57,6 +57,7 @@ export async function getPlaylists(userId?: number): Promise<PlaylistSummary[]> 
       name: string | null;
       itemCount: number | bigint;
       leadVideoId: string | null;
+      createdAt: Date | string | null;
     };
 
     const execLegacyQuery = () =>
@@ -76,6 +77,7 @@ export async function getPlaylists(userId?: number): Promise<PlaylistSummary[]> 
             ORDER BY pi.id ASC
             LIMIT 1
           ) AS leadVideoId
+          , p.createdAt AS createdAt
         FROM playlistnames p
         WHERE p.userId = ${userId}
         ORDER BY p.id DESC
@@ -100,6 +102,7 @@ export async function getPlaylists(userId?: number): Promise<PlaylistSummary[]> 
             ORDER BY pi.id ASC
             LIMIT 1
           ) AS leadVideoId
+          , p.createdAt AS createdAt
         FROM playlistnames p
         WHERE p.user_id = ${userId}
         ORDER BY p.id DESC
@@ -198,6 +201,7 @@ export async function getPlaylists(userId?: number): Promise<PlaylistSummary[]> 
         name: row.name ?? "Untitled Playlist",
         itemCount: Number.isFinite(count) ? count : 0,
         leadVideoId: lead,
+        createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt ?? ""),
       };
     });
   } catch {

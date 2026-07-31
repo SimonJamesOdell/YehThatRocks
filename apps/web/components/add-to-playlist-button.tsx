@@ -22,6 +22,7 @@ type PlaylistSummary = {
   name: string;
   itemCount?: number;
   leadVideoId?: string;
+  createdAt?: string;
 };
 
 
@@ -464,6 +465,13 @@ export function AddToPlaylistButton({
 
     if (right.id === lastUsedPlaylistId) {
       return 1;
+    }
+
+    // Sort by createdAt descending (newest first); fall back to name
+    const leftCreated = left.createdAt ? new Date(left.createdAt).getTime() : 0;
+    const rightCreated = right.createdAt ? new Date(right.createdAt).getTime() : 0;
+    if (leftCreated !== rightCreated) {
+      return rightCreated - leftCreated;
     }
 
     return left.name.localeCompare(right.name);

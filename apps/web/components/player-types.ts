@@ -26,6 +26,7 @@ export type PlaylistSummary = {
   id: string;
   name: string;
   itemCount?: number;
+  createdAt?: string;
 };
 
 export type PlayerPreferencesResponse = {
