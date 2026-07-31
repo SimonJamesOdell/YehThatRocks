@@ -46,7 +46,8 @@ function applyQueueResolutionRulePack({
   assertContains(playerExperienceSource, "window.dispatchEvent(new CustomEvent(VIDEO_ENDED_EVENT, {", "ENDED state dispatches queue consumption event", failures);
   assertContains(playerExperienceSource, "reason: \"ended\"", "ENDED queue dequeue event includes ended reason", failures);
 
-  assertContains(playerEventsSource, 'export { VIDEO_ENDED_EVENT, TEMP_QUEUE_DEQUEUE_EVENT } from "@/lib/events-contract";', "Player events module re-exports queue events", failures);
+  assertContains(playerEventsSource, "export const VIDEO_ENDED_EVENT = EVENT_NAMES.VIDEO_ENDED;", "Player events module exports VIDEO_ENDED_EVENT", failures);
+  assertContains(playerEventsSource, "export const TEMP_QUEUE_DEQUEUE_EVENT = EVENT_NAMES.TEMP_QUEUE_DEQUEUE;", "Player events module exports TEMP_QUEUE_DEQUEUE_EVENT", failures);
 }
 
 module.exports = {
