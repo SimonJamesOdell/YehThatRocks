@@ -17,7 +17,7 @@ const schema = z.object({
   videoId: z.string().max(32).optional(),
 });
 
-// Rate limit — per IP. 15 events per 5 min = 3/min.
+// Sustained rate limit — per IP. 15 events per 5 min = 3/min.
 // Normal human browsing: ~2-4 page views per minute, so 3/min gives
 // comfortable headroom. A bot at 300/hr = 5/min = 25/5min gets blocked.
 const ANALYTICS_RATE_LIMIT = 15;
@@ -27,6 +27,17 @@ const ANALYTICS_RATE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 // 150 events per 5 min total across ALL IPs. Normal traffic peaks
 // around 150-300 events/day; this allows 1,800/hr before the cap.
 const ANALYTICS_GLOBAL_LIMIT = 150;
+
+// Burst limit — per IP, short window. Catches spike-batch-pause patterns.
+// 8 events per 30 sec = 16/min. A 30-second burst of 30+ requests from
+// one IP gets smothered here before it reaches the sustained limiter.
+const ANALYTICS_BURST_LIMIT = 8;
+const ANALYTICS_BURST_WINDOW_MS = 30 * 1000; // 30 seconds
+
+// Shared global burst cap — stops distributed spike attacks.
+// 50 events per 30 sec total across ALL IPs. A 30-second wave of
+// 150 distributed requests gets cut to 50 before the rest are blocked.
+const ANALYTICS_GLOBAL_BURST_LIMIT = 50;
 
 export async function POST(request: NextRequest) {
   // 1. Bot detection — combined UA + Cloudflare signals
@@ -63,6 +74,32 @@ export async function POST(request: NextRequest) {
   if (globalLimitResponse) {
     console.warn("[analytics] GLOBAL RATE LIMIT TRIGGERED — distributed attack suspected");
     return globalLimitResponse;
+  }
+
+  // 3c. Per-IP burst limit — catches spike-batch-pause patterns (30s window)
+  const burstResponse = rateLimitOrResponse(
+    request,
+    "analytics_burst",
+    ANALYTICS_BURST_LIMIT,
+    ANALYTICS_BURST_WINDOW_MS,
+  );
+  if (burstResponse) {
+    const cf = extractCfHeaders(request);
+    console.warn(
+      `[analytics] BURST LIMITED — ${cfHeadersSummary(cf)}`,
+    );
+    return burstResponse;
+  }
+
+  // 3d. Shared global burst cap — stops distributed spike attacks (30s window)
+  const globalBurstResponse = rateLimitSharedOrResponse(
+    "analytics_global_burst",
+    ANALYTICS_GLOBAL_BURST_LIMIT,
+    ANALYTICS_BURST_WINDOW_MS,
+  );
+  if (globalBurstResponse) {
+    console.warn("[analytics] GLOBAL BURST LIMIT TRIGGERED — distributed spike attack");
+    return globalBurstResponse;
   }
 
   // 4. Parse and validate body
