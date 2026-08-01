@@ -30,6 +30,13 @@ function pruneExpiredEntries(now: number) {
 }
 
 function getClientIp(request: NextRequest) {
+  // CF-Connecting-IP is the real client IP as seen by Cloudflare.
+  // nginx real_ip module should restore this into x-forwarded-for, but
+  // we check both as defense-in-depth.
+  const cfIp = request.headers.get("CF-Connecting-IP");
+  if (cfIp) {
+    return cfIp.trim();
+  }
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
     return forwarded.split(",")[0]?.trim() ?? "unknown";

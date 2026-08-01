@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { verifySameOrigin } from "@/lib/csrf";
-import { isObviousCrawlerRequest } from "@/lib/crawler-guard";
+import { isObviousCrawlerRequest, isBotRequest } from "@/lib/crawler-guard";
+import { extractCfHeaders, cfHeadersSummary } from "@/lib/cf-headers";
 import { prisma } from "@/lib/db";
 import { readAuthCookies } from "@/lib/auth-cookies";
 import { verifyToken } from "@/lib/auth-jwt";
 import { parseRequestJson } from "@/lib/request-json";
+import { rateLimitOrResponse } from "@/lib/rate-limit";
 import { z } from "zod";
 
 const schema = z.object({
@@ -15,14 +17,43 @@ const schema = z.object({
   videoId: z.string().max(32).optional(),
 });
 
+// Rate limit: 100 analytics events per 5 minutes per IP.
+// Well above normal human browsing (~20-30 pages in 5 min) but
+// blocks the 300/hr bot pattern cold.
+const ANALYTICS_RATE_LIMIT = 100;
+const ANALYTICS_RATE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+
+// Diagnostic threshold: log CF headers when a single IP sends
+// more than this many requests in the window.
+const DIAGNOSTIC_THRESHOLD = 50;
+
 export async function POST(request: NextRequest) {
-  if (isObviousCrawlerRequest(request)) {
+  // 1. Bot detection — combined UA + Cloudflare signals
+  if (isBotRequest(request)) {
     return new NextResponse(null, { status: 204 });
   }
 
+  // 2. CSRF check
   const csrfError = verifySameOrigin(request);
   if (csrfError) return csrfError;
 
+  // 3. Rate limiting — per-IP, shared across all analytics event types
+  const rateLimitResponse = rateLimitOrResponse(
+    request,
+    "analytics",
+    ANALYTICS_RATE_LIMIT,
+    ANALYTICS_RATE_WINDOW_MS,
+  );
+  if (rateLimitResponse) {
+    // Log diagnostic info when rate limit triggers — helps identify attacker
+    const cf = extractCfHeaders(request);
+    console.warn(
+      `[analytics] RATE LIMITED — ${cfHeadersSummary(cf)} UA="${request.headers.get("user-agent")?.slice(0, 120) ?? "none"}"`,
+    );
+    return rateLimitResponse;
+  }
+
+  // 4. Parse and validate body
   const bodyResult = await parseRequestJson<unknown>(request);
   if (!bodyResult.ok) {
     return NextResponse.json({ ok: false }, { status: 400 });
