@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db";
 import { readAuthCookies } from "@/lib/auth-cookies";
 import { verifyToken } from "@/lib/auth-jwt";
 import { parseRequestJson } from "@/lib/request-json";
-import { rateLimitOrResponse } from "@/lib/rate-limit";
+import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
 import { z } from "zod";
 
 const schema = z.object({
@@ -17,15 +17,16 @@ const schema = z.object({
   videoId: z.string().max(32).optional(),
 });
 
-// Rate limit: 100 analytics events per 5 minutes per IP.
-// Well above normal human browsing (~20-30 pages in 5 min) but
-// blocks the 300/hr bot pattern cold.
-const ANALYTICS_RATE_LIMIT = 100;
+// Rate limit — per IP. 15 events per 5 min = 3/min.
+// Normal human browsing: ~2-4 page views per minute, so 3/min gives
+// comfortable headroom. A bot at 300/hr = 5/min = 25/5min gets blocked.
+const ANALYTICS_RATE_LIMIT = 15;
 const ANALYTICS_RATE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 
-// Diagnostic threshold: log CF headers when a single IP sends
-// more than this many requests in the window.
-const DIAGNOSTIC_THRESHOLD = 50;
+// Shared global cap — backstop against distributed attacks.
+// 150 events per 5 min total across ALL IPs. Normal traffic peaks
+// around 150-300 events/day; this allows 1,800/hr before the cap.
+const ANALYTICS_GLOBAL_LIMIT = 150;
 
 export async function POST(request: NextRequest) {
   // 1. Bot detection — combined UA + Cloudflare signals
@@ -51,6 +52,17 @@ export async function POST(request: NextRequest) {
       `[analytics] RATE LIMITED — ${cfHeadersSummary(cf)} UA="${request.headers.get("user-agent")?.slice(0, 120) ?? "none"}"`,
     );
     return rateLimitResponse;
+  }
+
+  // 3b. Shared global rate limit — catches distributed attacks across many IPs
+  const globalLimitResponse = rateLimitSharedOrResponse(
+    "analytics_global",
+    ANALYTICS_GLOBAL_LIMIT,
+    ANALYTICS_RATE_WINDOW_MS,
+  );
+  if (globalLimitResponse) {
+    console.warn("[analytics] GLOBAL RATE LIMIT TRIGGERED — distributed attack suspected");
+    return globalLimitResponse;
   }
 
   // 4. Parse and validate body
