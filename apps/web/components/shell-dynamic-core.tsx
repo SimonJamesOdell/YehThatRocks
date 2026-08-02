@@ -2145,6 +2145,40 @@ function ShellDynamicInner({
     relatedTransitionPhase,
     rightRailMode,
   ]);
+  // When "showing unseen only" filters the visible list down to a handful of
+  // videos that don't overflow the scroll container, the normal scroll-based
+  // infinite load never fires. This effect detects a non-overflowing rail
+  // and proactively loads more so the user isn't stuck with just a few choices.
+  useEffect(() => {
+    if (
+      rightRailMode !== "watch-next"
+      || !hasMoreRelated
+      || isLoadingMoreRelated
+      || relatedTransitionPhase !== "idle"
+      || isWatchNextVideoSelectionPending
+    ) {
+      return;
+    }
+    const node = relatedStackRef.current;
+    if (!node || visibleWatchNextVideos.length === 0) {
+      return;
+    }
+    // Use rAF to let the browser layout settle after render
+    const rafId = requestAnimationFrame(() => {
+      if (node.scrollHeight <= node.clientHeight) {
+        void loadMoreRelatedVideos();
+      }
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [
+    hasMoreRelated,
+    isLoadingMoreRelated,
+    isWatchNextVideoSelectionPending,
+    loadMoreRelatedVideos,
+    relatedTransitionPhase,
+    rightRailMode,
+    visibleWatchNextVideos.length,
+  ]);
   useEffect(() => {
     // Straightforward flow:
     // 1) Wait for requested video id to settle
