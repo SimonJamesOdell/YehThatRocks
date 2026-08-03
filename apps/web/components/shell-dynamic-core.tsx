@@ -56,6 +56,8 @@ import { useShellOverlayRouteMeta } from "@/hooks/use-shell-overlay-route-meta";
 import { useWatchNextPrefetch } from "@/hooks/use-watch-next-prefetch";
 import { useWatchNextPayloadLoader } from "@/hooks/use-watch-next-payload-loader";
 import { useAuthSuccessListener } from "@/hooks/use-auth-success-listener";
+import { useAuthRecoveryPoll } from "@/hooks/use-auth-recovery-poll";
+import { useAdminOverlayPlayerPause } from "@/hooks/use-admin-overlay-player-pause";
 import { useIdleRoutePrefetch } from "@/hooks/use-idle-route-prefetch";
 import { useShellNavigationHelpers } from "@/hooks/use-shell-navigation-helpers";
 import { dedupeRelatedRailVideos, finiteNumberOrNull, finitePercentOrNull, formatChatTimestamp, isFavouriteVideo, logFlow, logWatchNext, matchesPlaylistVideoOrder, sortVideosBySeen } from "@/components/shell-dynamic-utils";
@@ -833,40 +835,8 @@ function ShellDynamicInner({
       return;
     }
     window.dispatchEvent(new Event(ADMIN_OVERLAY_ENTER_EVENT));
-
-    // Pause any playing YouTube embeds so audio does not leak through the admin
-    // overlay.  The admin route covers the player visually but the iframe can
-    // still produce sound — this stops it immediately on entry.
-    const pauseYouTubeIframes = () => {
-      const iframes = document.querySelectorAll<HTMLIFrameElement>(
-        'iframe[src*="youtube.com/embed/"]',
-      );
-      iframes.forEach((iframe) => {
-        try {
-          iframe.contentWindow?.postMessage(
-            JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-            "*",
-          );
-        } catch {
-          // Cross-origin or destroyed iframe — safe to ignore.
-        }
-      });
-    };
-
-    // Run immediately for already-loaded players.
-    pauseYouTubeIframes();
-
-    // Watch for late-loading YouTube iframes (e.g. initial page load where the
-    // player iframe hasn't been injected yet by the YouTube API).
-    const observer = new MutationObserver(() => {
-      pauseYouTubeIframes();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    return () => {
-      observer.disconnect();
-    };
   }, [isAdminOverlayRoute]);
+  useAdminOverlayPlayerPause(isAdminOverlayRoute);
   useEffect(() => {
     if (requestedVideoId) {
       setIsDockHidden(false);
@@ -2434,70 +2404,17 @@ function ShellDynamicInner({
     };
   }, [checkAuthState, isAuthenticated]);
   // ── Auth recovery poll ───────────────────────────────────────────────────
-  // When checkAuthState detects auth loss (not explicit logout), keep trying
-  // a silent refresh every 30 s so a transient failure doesn't force a manual
-  // re-login.  Explicit logout sets AUTO_LOGIN_SUPPRESS_ONCE_KEY in sessionStorage,
-  // which this poll checks before attempting recovery.
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    if (isAuthenticated) {
-      return;
-    }
-    if (window.sessionStorage.getItem("ytr:auth-recovery") !== "1") {
-      return;
-    }
-    let cancelled = false;
-    const attemptRecovery = async () => {
-      if (window.sessionStorage.getItem(AUTO_LOGIN_SUPPRESS_ONCE_KEY) === "1") {
-        // User explicitly signed out — stop recovery.
-        try { window.sessionStorage.removeItem("ytr:auth-recovery"); } catch { /* ignore */ }
-        return;
-      }
-      try {
-        const res = await fetch("/api/auth/refresh", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
-        });
-        if (!cancelled && res.ok) {
-          setIsAuthenticated(true);
-          setAuthStatus("clear");
-          setAuthStatusMessage(null);
-          publishAuthStateChange("authenticated");
-          try { window.sessionStorage.removeItem("ytr:auth-recovery"); } catch { /* ignore */ }
-          router.refresh();
-        }
-      } catch {
-        // Transient — will retry on the next interval tick.
-      }
-    };
-    void attemptRecovery();
-    const intervalId = window.setInterval(() => {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-      void attemptRecovery();
-    }, 30_000);
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        void attemptRecovery();
-      }
-    };
-    const onWindowOnline = () => {
-      void attemptRecovery();
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    window.addEventListener("online", onWindowOnline);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      window.removeEventListener("online", onWindowOnline);
-    };
-  }, [isAuthenticated, router]);
+  useAuthRecoveryPoll({
+    isAuthenticated,
+    onRecoverySuccess: useCallback(() => {
+      setIsAuthenticated(true);
+      setAuthStatus("clear");
+      setAuthStatusMessage(null);
+      publishAuthStateChange("authenticated");
+      try { window.sessionStorage.removeItem("ytr:auth-recovery"); } catch { /* ignore */ }
+      router.refresh();
+    }, [router]),
+  });
   useEffect(() => {
     if (isAuthenticated) {
       return;
