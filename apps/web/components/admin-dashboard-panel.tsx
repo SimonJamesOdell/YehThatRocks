@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useAuthSuccessListener } from "@/hooks/use-auth-success-listener";
+import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
 import { useAdminHealthStreaming } from "@/hooks/use-admin-health-streaming";
 import { useAdminVideoQueuePolling } from "@/hooks/use-admin-video-queue-polling";
 import { useAdminAnalyticsRefresh } from "@/hooks/use-admin-analytics-refresh";
@@ -53,6 +56,18 @@ export function AdminDashboardPanel({
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [clientAuthLost, setClientAuthLost] = useState(false);
+
+  // Detect client-side auth loss so the dashboard does not keep showing stale
+  // admin data after the session expires.  The server-side page auth check runs
+  // once at render time; this listener catches expiry that happens afterwards.
+  useAuthSuccessListener((state) => {
+    if (state === "logged-out") {
+      setClientAuthLost(true);
+      setError(null);
+      setLoading(false);
+    }
+  });
 
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
@@ -823,7 +838,12 @@ export function AdminDashboardPanel({
         await loadGenreReviewQueue();
       }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load admin data.");
+      const message = loadError instanceof Error ? loadError.message : "Failed to load admin data.";
+      if (isAuthResponseError(loadError)) {
+        setError("Unauthorized. Please sign in again.");
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -1152,12 +1172,45 @@ export function AdminDashboardPanel({
     }
   }
 
+  // Show the auth gate when we detect client-side auth loss — the server-side
+  // page check passed at render time but the session expired afterwards.
+  if (clientAuthLost) {
+    return (
+      <ProtectedAuthGatePanel
+        status="unauthenticated"
+        heading="🛠 Session"
+        headingDetail="Admin session expired"
+        unauthenticatedMessage="Your admin session has expired. Please sign in again to continue."
+        showRegisterAction={false}
+      />
+    );
+  }
+
   if (loading) {
     return <p className="authMessage">Loading admin dashboard...</p>;
   }
 
   if (error) {
-    return <p className="authMessage">{error}</p>;
+    const isAuthError =
+      error.includes("Unauthorized") ||
+      error.includes("Forbidden") ||
+      error.includes("sign in again");
+    return (
+      <section className="panel featurePanel">
+        <div className="panelHeading">
+          <span>🛠 Admin</span>
+          <strong>{isAuthError ? "Session expired" : "Error"}</strong>
+        </div>
+        <div className="interactiveStack">
+          <p className="authMessage">{error}</p>
+          {isAuthError ? (
+            <div className="primaryActions compactActions">
+              <Link href="/login" className="navLink navLinkActive">Sign in again</Link>
+            </div>
+          ) : null}
+        </div>
+      </section>
+    );
   }
 
   const rollupStatusRelevantTab =

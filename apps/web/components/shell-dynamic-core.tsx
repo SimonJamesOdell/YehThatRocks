@@ -422,15 +422,21 @@ function ShellDynamicInner({
       });
       resolvedState = await resolveAuthState();
     }
-    // When refresh rotates in a parallel request, one /api/auth/me probe can briefly
-    // read stale cookies and report 401. Retry once before forcing a sign-out.
+    // Transient refresh failures (token race, brief DB unavailability,
+    // network blip) can report 401 even though the session is still valid.
+    // Retry several times with increasing backoff before forcing a sign-out.
+    // The backoff steps are: 450 ms, 2 s, 5 s.
     if (resolvedState === "unauthenticated" && isAuthenticated) {
-      await new Promise<void>((resolve) => {
-        window.setTimeout(() => {
-          resolve();
-        }, 450);
-      });
-      resolvedState = await resolveAuthState();
+      const UNAUTHENTICATED_RETRY_DELAYS_MS = [450, 2_000, 5_000];
+      for (const delayMs of UNAUTHENTICATED_RETRY_DELAYS_MS) {
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, delayMs);
+        });
+        resolvedState = await resolveAuthState();
+        if (resolvedState !== "unauthenticated") {
+          break;
+        }
+      }
     }
     // Background tabs and wake-from-sleep transitions can briefly fail auth probes
     // without any real server outage. Avoid showing a blocking modal until the page
@@ -443,6 +449,16 @@ function ShellDynamicInner({
       setAuthStatusMessage(null);
       setIsAuthUnavailableDialogRequested(false);
       setIsAuthenticated(false);
+      // Flag this as a poll-detected auth loss so the recovery poll attempts
+      // silent re-authentication.  Explicit logout sets AUTO_LOGIN_SUPPRESS_ONCE_KEY
+      // which the recovery poll checks before trying a refresh.
+      try { window.sessionStorage.setItem("ytr:auth-recovery", "1"); } catch { /* quota */ }
+      // Publish the auth-state change so components that listen via
+      // useAuthSuccessListener (e.g. the admin dashboard panel, protected
+      // overlay gates) know the session was lost.  Without this event the
+      // chat rail correctly switches to "Sign in to chat" but the admin
+      // panel keeps showing stale data because it never hears about it.
+      publishAuthStateChange("logged-out");
       return "unauthenticated" as const;
     }
     if (resolvedState === "unavailable") {
@@ -817,6 +833,39 @@ function ShellDynamicInner({
       return;
     }
     window.dispatchEvent(new Event(ADMIN_OVERLAY_ENTER_EVENT));
+
+    // Pause any playing YouTube embeds so audio does not leak through the admin
+    // overlay.  The admin route covers the player visually but the iframe can
+    // still produce sound — this stops it immediately on entry.
+    const pauseYouTubeIframes = () => {
+      const iframes = document.querySelectorAll<HTMLIFrameElement>(
+        'iframe[src*="youtube.com/embed/"]',
+      );
+      iframes.forEach((iframe) => {
+        try {
+          iframe.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+            "*",
+          );
+        } catch {
+          // Cross-origin or destroyed iframe — safe to ignore.
+        }
+      });
+    };
+
+    // Run immediately for already-loaded players.
+    pauseYouTubeIframes();
+
+    // Watch for late-loading YouTube iframes (e.g. initial page load where the
+    // player iframe hasn't been injected yet by the YouTube API).
+    const observer = new MutationObserver(() => {
+      pauseYouTubeIframes();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+    };
   }, [isAdminOverlayRoute]);
   useEffect(() => {
     if (requestedVideoId) {
@@ -2384,6 +2433,71 @@ function ShellDynamicInner({
       window.removeEventListener("online", onWindowOnline);
     };
   }, [checkAuthState, isAuthenticated]);
+  // ── Auth recovery poll ───────────────────────────────────────────────────
+  // When checkAuthState detects auth loss (not explicit logout), keep trying
+  // a silent refresh every 30 s so a transient failure doesn't force a manual
+  // re-login.  Explicit logout sets AUTO_LOGIN_SUPPRESS_ONCE_KEY in sessionStorage,
+  // which this poll checks before attempting recovery.
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (isAuthenticated) {
+      return;
+    }
+    if (window.sessionStorage.getItem("ytr:auth-recovery") !== "1") {
+      return;
+    }
+    let cancelled = false;
+    const attemptRecovery = async () => {
+      if (window.sessionStorage.getItem(AUTO_LOGIN_SUPPRESS_ONCE_KEY) === "1") {
+        // User explicitly signed out — stop recovery.
+        try { window.sessionStorage.removeItem("ytr:auth-recovery"); } catch { /* ignore */ }
+        return;
+      }
+      try {
+        const res = await fetch("/api/auth/refresh", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        if (!cancelled && res.ok) {
+          setIsAuthenticated(true);
+          setAuthStatus("clear");
+          setAuthStatusMessage(null);
+          publishAuthStateChange("authenticated");
+          try { window.sessionStorage.removeItem("ytr:auth-recovery"); } catch { /* ignore */ }
+          router.refresh();
+        }
+      } catch {
+        // Transient — will retry on the next interval tick.
+      }
+    };
+    void attemptRecovery();
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      void attemptRecovery();
+    }, 30_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void attemptRecovery();
+      }
+    };
+    const onWindowOnline = () => {
+      void attemptRecovery();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("online", onWindowOnline);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("online", onWindowOnline);
+    };
+  }, [isAuthenticated, router]);
   useEffect(() => {
     if (isAuthenticated) {
       return;
@@ -2478,6 +2592,12 @@ function ShellDynamicInner({
     // Reset magazine arrival flag so the player can appear immediately
     // after authenticating while on a magazine route.
     didArriveOnMagazineRouteRef.current = false;
+
+    // Clear the recovery flag on successful auth (manual login or
+    // recovery poll success) so the poll doesn't linger.
+    if (state === "authenticated") {
+      try { window.sessionStorage.removeItem("ytr:auth-recovery"); } catch { /* ignore */ }
+    }
 
     if (source === "cross-tab") {
       router.refresh();
