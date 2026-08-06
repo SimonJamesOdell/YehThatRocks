@@ -58,40 +58,55 @@ type AudienceRetentionRow = {
 };
 
 function buildFrequencyLabel(days: number): string {
-  if (days === 1) return "1 day";
-  if (days === 2) return "2 days";
-  if (days === 3) return "3 days";
-  if (days >= 4 && days <= 5) return "4–5 days";
-  if (days >= 6 && days <= 10) return "6–10 days";
-  if (days >= 11 && days <= 20) return "11–20 days";
-  return "21+ days";
+  if (days >= 21) return "21+ days";
+  if (days >= 15) return "15+ days";
+  if (days >= 11) return "11+ days";
+  if (days >= 8) return "8+ days";
+  if (days >= 6) return "6+ days";
+  if (days >= 5) return "5+ days";
+  if (days >= 4) return "4+ days";
+  if (days >= 3) return "3+ days";
+  if (days >= 2) return "2+ days";
+  return "1+ day";
 }
 
 function buildFrequencyDistribution(freqRows: AudienceFrequencyRow[]) {
-  const groupedByLabel = new Map<string, { daysMin: number; daysMax: number; people: number }>();
-  for (const row of freqRows) {
-    const label = buildFrequencyLabel(Number(row.days_visited));
-    const existing = groupedByLabel.get(label);
-    if (existing) {
-      existing.people += Number(row.people);
-      existing.daysMin = Math.min(existing.daysMin, Number(row.days_visited));
-      existing.daysMax = Math.max(existing.daysMax, Number(row.days_visited));
-    } else {
-      groupedByLabel.set(label, {
-        daysMin: Number(row.days_visited),
-        daysMax: Number(row.days_visited),
-        people: Number(row.people),
+  // Sort by days_visited descending for cumulative computation.
+  // Each bucket counts visitors with ≥N return days, so numbers always descend.
+  const sorted = [...freqRows].sort(
+    (a, b) => Number(b.days_visited) - Number(a.days_visited),
+  );
+
+  const thresholds = [21, 15, 11, 8, 6, 5, 4, 3, 2, 1];
+  const cumulativeBuckets: Array<{
+    label: string;
+    daysMin: number;
+    daysMax: number;
+    people: number;
+  }> = [];
+
+  let runningTotal = 0;
+  for (const threshold of thresholds) {
+    // Accumulate people whose days_visited >= this threshold
+    while (
+      sorted.length > 0 &&
+      Number(sorted[0].days_visited) >= threshold
+    ) {
+      runningTotal += Number(sorted[0].people);
+      sorted.shift();
+    }
+    if (runningTotal > 0) {
+      cumulativeBuckets.push({
+        label: buildFrequencyLabel(threshold),
+        daysMin: threshold,
+        daysMax: 999,
+        people: runningTotal,
       });
     }
   }
-  return Array.from(groupedByLabel.entries())
-    .map(([label, data]) => ({
-      label,
-      daysMin: data.daysMin,
-      daysMax: data.daysMax,
-      people: data.people,
-    }))
-    .sort((a, b) => a.daysMin - b.daysMin);
+
+  // Ascending order for display (1+ day first, 21+ days last)
+  return cumulativeBuckets.reverse();
 }
 
 type AudienceWindowData = {

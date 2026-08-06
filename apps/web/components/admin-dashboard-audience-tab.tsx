@@ -185,9 +185,10 @@ export function AdminDashboardAudienceTab({
         <div style={{ fontSize: 12, opacity: 0.6, lineHeight: 1.6, padding: "8px 0" }}>
           <p style={{ margin: "0 0 8px" }}>
             <strong>Frequency</strong> — Of all distinct visitors who returned at least once in the last 30 days,
-            how many distinct days did each person visit? &ldquo;1 day&rdquo; means they came back exactly
-            once this month — a casual returner. &ldquo;8&ndash;14 days&rdquo; or &ldquo;15+ days&rdquo;
-            are your dedicated regulars.
+            how many returned on <em>at least</em> N distinct days? Each bucket is cumulative: everyone
+            in &ldquo;4+ days&rdquo; is also counted in &ldquo;3+ days,&rdquo; so the numbers
+            always descend. &ldquo;1+ day&rdquo; is all returning visitors.
+            &ldquo;8+ days&rdquo; and above are your dedicated regulars.
           </p>
           <p style={{ margin: 0 }}>
             <strong>Retention</strong> — Of the first-time visitors who showed up 7 (or 30) days ago,
