@@ -692,9 +692,9 @@ function Transfer-ImageToVps(
     $compressedSizeMB = [math]::Round((Get-Item $compressedPath).Length / 1MB, 1)
     Write-Host "Compressed image: $compressedSizeMB MB" -ForegroundColor Green
 
-    # Split into 100 MB chunks using PowerShell (no external split dependency)
-    Write-Host "Splitting compressed image into 100 MB chunks..." -ForegroundColor Yellow
-    $chunkSizeBytes = 100 * 1024 * 1024
+    # Split into 25 MB chunks using PowerShell (no external split dependency)
+    Write-Host "Splitting compressed image into 25 MB chunks..." -ForegroundColor Yellow
+    $chunkSizeBytes = 25 * 1024 * 1024
     $stream = $null
     try {
       $stream = [System.IO.File]::OpenRead($compressedPath)
