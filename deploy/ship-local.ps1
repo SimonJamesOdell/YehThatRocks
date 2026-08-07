@@ -24,7 +24,11 @@ param(
   # Skip invariant verification and API smoke tests before building.
   [switch]$SkipVerifyGate,
   # Resume a previously failed ship run from persisted checkpoint state.
-  [switch]$Resume
+  [switch]$Resume,
+  # Build the Docker image on the VPS instead of locally.
+  # Avoids transferring the image over SCP — only git push + SSH.
+  # Verification gates still run locally before the push.
+  [switch]$VpsBuild
 )
 
 Set-StrictMode -Version Latest
@@ -646,6 +650,24 @@ function Try-PruneDockerCaches {
   & docker container prune -f | Out-Null
 }
 
+function Invoke-VpsDockerBuild(
+  [string]$VpsHost,
+  [string]$VpsRepoDir,
+  [string]$ImageTag,
+  [string]$LatestTag,
+  [string]$CommitSha
+) {
+  Write-Host "Pulling latest code on VPS (checking out $CommitSha)..." -ForegroundColor Yellow
+  ExecNativeWithRetry -Program "ssh" -CommandArgs @($VpsHost,
+    "set -e; cd $VpsRepoDir; git fetch origin; git checkout $CommitSha")
+
+  Write-Host "Building Docker image on VPS (this will take a few minutes)..." -ForegroundColor Yellow
+  ExecNativeWithRetry -Program "ssh" -CommandArgs @($VpsHost,
+    "set -e; cd $VpsRepoDir; docker build --progress=plain -t $ImageTag -t $LatestTag .")
+
+  Write-Host "VPS build complete: $ImageTag" -ForegroundColor Green
+}
+
 function Transfer-ImageToVps(
   [string]$ImageTag,
   [string]$VpsHost,
@@ -1074,22 +1096,29 @@ try {
     Write-Warning "Skipping verification gates (-SkipVerifyGate)."
   }
 
-  if ((Get-ShipStageRank -Stage ([string]$shipState.Stage)) -lt (Get-ShipStageRank -Stage "image-built")) {
-    Write-Host "Building image locally with full progress output..." -ForegroundColor Yellow
-    ExecDockerBuildWithRetry -CommandArgs @(
-      "build",
-      "--progress=plain",
-      "-t", $shipState.ImageTag,
-      "-t", $shipState.LatestTag,
-      "."
-    )
-    $shipState.Stage = "image-built"
-    $shipState.UpdatedAt = (Get-Date).ToString("o")
-    Write-ShipState -StateFilePath $shipStatePath -State $shipState
-  }
+  if ($VpsBuild) {
+    Write-Host "Building image on VPS (no local build, no image transfer)..." -ForegroundColor Yellow
+    Invoke-VpsDockerBuild -VpsHost $VpsHost -VpsRepoDir $VpsRepoDir `
+      -ImageTag $shipState.ImageTag -LatestTag $shipState.LatestTag `
+      -CommitSha $currentSha
+  } else {
+    if ((Get-ShipStageRank -Stage ([string]$shipState.Stage)) -lt (Get-ShipStageRank -Stage "image-built")) {
+      Write-Host "Building image locally with full progress output..." -ForegroundColor Yellow
+      ExecDockerBuildWithRetry -CommandArgs @(
+        "build",
+        "--progress=plain",
+        "-t", $shipState.ImageTag,
+        "-t", $shipState.LatestTag,
+        "."
+      )
+      $shipState.Stage = "image-built"
+      $shipState.UpdatedAt = (Get-Date).ToString("o")
+      Write-ShipState -StateFilePath $shipStatePath -State $shipState
+    }
 
-  Write-Host "Transferring image to VPS (no registry)..." -ForegroundColor Yellow
-  Transfer-ImageToVps -ImageTag $shipState.ImageTag -VpsHost $VpsHost -ShipState $shipState -ShipStatePath $shipStatePath
+    Write-Host "Transferring image to VPS (no registry)..." -ForegroundColor Yellow
+    Transfer-ImageToVps -ImageTag $shipState.ImageTag -VpsHost $VpsHost -ShipState $shipState -ShipStatePath $shipStatePath
+  }
 
   $localDumpPath = $null
   $localScriptPath = $null
