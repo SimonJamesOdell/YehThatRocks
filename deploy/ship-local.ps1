@@ -661,9 +661,36 @@ function Transfer-ImageToVps(
 
     $compressedPath = Join-Path $ShipState.ChunksDir "image.tar.gz"
 
-    # docker save + gzip via bash (handles the pipeline more reliably than PowerShell)
-    ExecNative -Program "bash" -CommandArgs @("-c",
-      "docker save $ImageTag | gzip > '$compressedPath'")
+    # Save uncompressed tar, then compress with .NET GZipStream.
+    # Avoids bash+gzip path-mapping issues on Windows — pure PowerShell + Docker.
+    $tempTarPath = Join-Path $ShipState.ChunksDir "image.tar"
+    try {
+      ExecNative -Program "docker" -CommandArgs @("save", "-o", $tempTarPath, $ImageTag)
+
+      Write-Host "Compressing with GZipStream..." -ForegroundColor Yellow
+      $inStream = [System.IO.File]::OpenRead($tempTarPath)
+      $outStream = [System.IO.File]::Create($compressedPath)
+      $gzipStream = $null
+      try {
+        $gzipStream = New-Object System.IO.Compression.GZipStream($outStream, [System.IO.Compression.CompressionMode]::Compress)
+        $inStream.CopyTo($gzipStream)
+      } finally {
+        if ($gzipStream) { $gzipStream.Close() }
+        $inStream.Close()
+        $outStream.Close()
+      }
+    } finally {
+      if (Test-Path -LiteralPath $tempTarPath) {
+        Remove-Item -LiteralPath $tempTarPath -Force -ErrorAction SilentlyContinue
+      }
+    }
+
+    if (-not (Test-Path -LiteralPath $compressedPath)) {
+      throw "Compressed image was not created at '$compressedPath'."
+    }
+
+    $compressedSizeMB = [math]::Round((Get-Item $compressedPath).Length / 1MB, 1)
+    Write-Host "Compressed image: $compressedSizeMB MB" -ForegroundColor Green
 
     # Split into 100 MB chunks using PowerShell (no external split dependency)
     Write-Host "Splitting compressed image into 100 MB chunks..." -ForegroundColor Yellow
