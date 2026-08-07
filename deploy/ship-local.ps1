@@ -657,15 +657,73 @@ function Invoke-VpsDockerBuild(
   [string]$LatestTag,
   [string]$CommitSha
 ) {
-  Write-Host "Pulling latest code on VPS (checking out $CommitSha)..." -ForegroundColor Yellow
-  ExecNativeWithRetry -Program "ssh" -CommandArgs @($VpsHost,
-    "set -e; cd $VpsRepoDir; git fetch origin; git checkout $CommitSha")
+  $logPath = "/tmp/ytr-deploy-$CommitSha.log"
 
-  Write-Host "Building Docker image on VPS (this will take a few minutes)..." -ForegroundColor Yellow
-  ExecNativeWithRetry -Program "ssh" -CommandArgs @($VpsHost,
-    "set -e; cd $VpsRepoDir; docker build --progress=plain -t $ImageTag -t $LatestTag .")
+  # Build the full deploy chain as a single shell script.
+  # nohup keeps it alive if the SSH connection drops.
+  # The chain: git checkout -> docker build -> deploy with hot-swap.
+  # Completion markers let us poll for the result.
+  $chain = @(
+    "cd $VpsRepoDir",
+    "git fetch origin",
+    "git checkout $CommitSha",
+    "docker build --progress=plain -t $ImageTag -t $LatestTag .",
+    "WEB_IMAGE=$ImageTag SKIP_PULL=1 ./deploy/deploy-prod-hot-swap.sh",
+    'echo YTR_DEPLOY_OK || echo YTR_DEPLOY_FAILED'
+  ) -join " && "
 
-  Write-Host "VPS build complete: $ImageTag" -ForegroundColor Green
+  $launchScript = "nohup sh -c '$chain' > $logPath 2>&1 &"
+
+  Write-Host "Launching build + deploy on VPS (fire-and-forget)..." -ForegroundColor Yellow
+  Write-Host "  Log: $VpsHost`:$logPath" -ForegroundColor DarkYellow
+  ExecNativeWithRetry -Program "ssh" -CommandArgs @($VpsHost, $launchScript)
+
+  # Poll the log until completion or timeout
+  Write-Host "Waiting for VPS build + deploy (connection-safe)..." -ForegroundColor Yellow
+  Write-Host "  Build continues even if this session drops." -ForegroundColor DarkYellow
+  Write-Host "  Manual check: ssh $VpsHost tail -f $logPath" -ForegroundColor DarkYellow
+  Write-Host ""
+
+  $lastLine = 1
+  $maxWaitSeconds = 1200
+  $pollInterval = 5
+  $elapsed = 0
+
+  while ($elapsed -lt $maxWaitSeconds) {
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $tailOutput = & ssh $VpsHost "tail -n +$lastLine $logPath 2>/dev/null" 2>&1 | Out-String
+    $ErrorActionPreference = $previousErrorAction
+
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warning "SSH connection lost while polling — build continues on VPS."
+      Write-Host "  Check progress: ssh $VpsHost tail -f $logPath"
+      Write-Host "  Once complete, deploy is already live. No further action needed."
+      return
+    }
+
+    $trimmed = $tailOutput.Trim()
+    if ($trimmed) {
+      # Echo new log lines so the user sees build progress
+      Write-Host $trimmed
+      $newlineCount = ($tailOutput -split "`n").Count
+      $lastLine += $newlineCount
+    }
+
+    if ($tailOutput -match "YTR_DEPLOY_OK") {
+      Write-Host ""
+      Write-Host "VPS build + deploy complete: $ImageTag" -ForegroundColor Green
+      return
+    }
+    if ($tailOutput -match "YTR_DEPLOY_FAILED") {
+      throw "VPS build or deploy failed. Full log: ssh $VpsHost cat $logPath"
+    }
+
+    Start-Sleep -Seconds $pollInterval
+    $elapsed += $pollInterval
+  }
+
+  throw "Timed out waiting for VPS build after $maxWaitSeconds seconds. Check log: ssh $VpsHost cat $logPath"
 }
 
 function Transfer-ImageToVps(
