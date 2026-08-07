@@ -7,6 +7,9 @@ if /I "%~1"=="fast" (
 ) else if /I "%~1"=="slow" (
 	set "SHIP_MODE=slow"
 	shift
+) else if /I "%~1"=="vps" (
+	set "SHIP_MODE=vps"
+	shift
 )
 
 set "SHIP_PASSWORD=%~1"
@@ -59,6 +62,8 @@ if /I "%SHIP_MODE%"=="fast" (
 	popd
 
 	set "SHIP_FLAGS=-SkipAutoDependencyMaintenance"
+) else if /I "%SHIP_MODE%"=="vps" (
+	set "SHIP_FLAGS=-VpsBuild -SkipAutoDependencyMaintenance -SkipLocalCleanup -SkipDockerPrune"
 )
 
 :invoke_ship
