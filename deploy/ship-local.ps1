@@ -667,7 +667,7 @@ function Invoke-VpsDockerBuild(
     "cd $VpsRepoDir",
     "git fetch origin",
     "git checkout $CommitSha",
-    "docker build --progress=plain -t $ImageTag -t $LatestTag .",
+    "nice -n 19 ionice -c3 docker build --progress=plain --build-arg NODE_MAX_OLD_SPACE_SIZE=1536 --build-arg TURBO_CONCURRENCY=1 -t $ImageTag -t $LatestTag .",
     "WEB_IMAGE=$ImageTag SKIP_PULL=1 ./deploy/deploy-prod-hot-swap.sh",
     'echo YTR_DEPLOY_OK || echo YTR_DEPLOY_FAILED'
   ) -join " && "
@@ -685,7 +685,7 @@ function Invoke-VpsDockerBuild(
   Write-Host ""
 
   $lastLine = 1
-  $maxWaitSeconds = 1200
+  $maxWaitSeconds = 2400
   $pollInterval = 5
   $elapsed = 0
 
@@ -1165,6 +1165,8 @@ try {
       ExecDockerBuildWithRetry -CommandArgs @(
         "build",
         "--progress=plain",
+        "--build-arg", "NODE_MAX_OLD_SPACE_SIZE=8192",
+        "--build-arg", "TURBO_CONCURRENCY=8",
         "-t", $shipState.ImageTag,
         "-t", $shipState.LatestTag,
         "."

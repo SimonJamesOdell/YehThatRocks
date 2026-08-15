@@ -2,6 +2,10 @@ services:
   db:
     image: mysql:8.0
     restart: unless-stopped
+    # Never let the host OOM killer select mysqld — a forced kill mid-write can
+    # corrupt InnoDB. If the system runs out of memory during a VPS build, the
+    # kernel will pick a higher-scored victim (e.g. the build) instead.
+    oom_score_adj: -1000
     command:
       - --default-authentication-plugin=mysql_native_password
       - --innodb-buffer-pool-size=256M

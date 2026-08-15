@@ -27,8 +27,15 @@ RUN npm config set fetch-retries 5 && \
 
 COPY . .
 RUN npx prisma generate
-ENV NODE_OPTIONS="--max-old-space-size=3072"
-RUN TURBO_CONCURRENCY=1 npm run build
+# Build resource knobs, overridable per target.
+# - Local dev box (32 GB / 16 threads): large heap + high concurrency for speed.
+# - VPS (2 GB / 1 core): small heap + serial concurrency so the build cannot
+#   starve mysqld/nginx or trigger the host OOM killer.
+# - CI (GitHub Actions, 16 GB): uses the defaults below unchanged.
+ARG NODE_MAX_OLD_SPACE_SIZE=3072
+ARG TURBO_CONCURRENCY=1
+ENV NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}"
+RUN TURBO_CONCURRENCY=${TURBO_CONCURRENCY} npm run build
 
 # --- Runner ---
 FROM base AS runner
