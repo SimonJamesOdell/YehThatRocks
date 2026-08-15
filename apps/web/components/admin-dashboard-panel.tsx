@@ -355,7 +355,7 @@ export function AdminDashboardPanel({
     return dailyRows.slice(-14);
   }, [analyticsSeries, analyticsZoomLevel, selectedAllTimeBucket, selectedMonthlyBucket, selectedWeeklyBucket, hourlySeries, padHourlyRows, padWeeklyRows, padMonthlyRows, padAllTimeRows]);
 
-  const [analyticsSeriesOn, setAnalyticsSeriesOn] = useState({ pageViews: false, videoViews: false, visitors: true, returnVisits: true, sessions: true, magazineExternalLandings: true, authEvents: false });
+  const [analyticsSeriesOn, setAnalyticsSeriesOn] = useState({ pageViews: false, videoViews: false, visitors: true, newVisitors: true, returnVisits: true, sessions: true, magazineExternalLandings: true, authEvents: false });
   const analyticsGraph = useMemo(
     () => buildAnalyticsGraph(displayedAnalyticsRows, analyticsSeriesOn),
     [analyticsSeriesOn, displayedAnalyticsRows],

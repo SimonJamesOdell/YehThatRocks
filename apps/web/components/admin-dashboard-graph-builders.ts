@@ -7,6 +7,7 @@ type AnalyticsSeriesOn = {
   pageViews: boolean;
   videoViews: boolean;
   visitors: boolean;
+  newVisitors: boolean;
   returnVisits: boolean;
   sessions: boolean;
   magazineExternalLandings: boolean;
@@ -37,6 +38,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
       pageViewsPath: "",
       videoViewsPath: "",
       visitorsPath: "",
+      newVisitorsPath: "",
       returnVisitsPath: "",
       magazineExternalLandingsPath: "",
       authEventsPath: "",
@@ -48,6 +50,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
         yPageViews: number;
         yVideoViews: number;
         yVisitors: number;
+        yNewVisitors: number;
         yReturnVisits: number;
         yMagazineExternalLandings: number;
         yAuthEvents: number;
@@ -58,6 +61,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
         pageViews: number;
         videoViews: number;
         uniqueVisitors: number;
+        newVisitors: number;
         returnVisits: number;
         magazineExternalLandings: number;
         authEvents: number;
@@ -71,6 +75,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
     analyticsSeriesOn.pageViews ? row.pageViews : 0,
     analyticsSeriesOn.videoViews ? row.videoViews : 0,
     analyticsSeriesOn.visitors ? row.uniqueVisitors : 0,
+    analyticsSeriesOn.newVisitors ? (row.newVisitors ?? 0) : 0,
     analyticsSeriesOn.returnVisits ? row.returnVisits : 0,
     analyticsSeriesOn.magazineExternalLandings ? row.magazineExternalLandings : 0,
     analyticsSeriesOn.authEvents ? row.authEvents : 0,
@@ -89,6 +94,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
       yPageViews: paddingTop + chartHeight - (item.pageViews / maxVal) * chartHeight,
       yVideoViews: paddingTop + chartHeight - (item.videoViews / maxVal) * chartHeight,
       yVisitors: paddingTop + chartHeight - (item.uniqueVisitors / maxVal) * chartHeight,
+      yNewVisitors: paddingTop + chartHeight - ((item.newVisitors ?? 0) / maxVal) * chartHeight,
       yReturnVisits: paddingTop + chartHeight - (item.returnVisits / maxVal) * chartHeight,
       yMagazineExternalLandings: paddingTop + chartHeight - (item.magazineExternalLandings / maxVal) * chartHeight,
       yAuthEvents: paddingTop + chartHeight - (item.authEvents / maxVal) * chartHeight,
@@ -99,6 +105,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
       pageViews: item.pageViews,
       videoViews: item.videoViews,
       uniqueVisitors: item.uniqueVisitors,
+      newVisitors: item.newVisitors ?? 0,
       returnVisits: item.returnVisits,
       magazineExternalLandings: item.magazineExternalLandings,
       authEvents: item.authEvents,
@@ -135,6 +142,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
     pageViewsPath: makePath(points.map((point) => point.yPageViews)),
     videoViewsPath: makePath(points.map((point) => point.yVideoViews)),
     visitorsPath: makePath(points.map((point) => point.yVisitors)),
+    newVisitorsPath: makePath(points.map((point) => point.yNewVisitors)),
     returnVisitsPath: makePath(points.map((point) => point.yReturnVisits)),
     magazineExternalLandingsPath: makePath(points.map((point) => point.yMagazineExternalLandings)),
     authEventsPath: makePath(points.map((point) => point.yAuthEvents)),

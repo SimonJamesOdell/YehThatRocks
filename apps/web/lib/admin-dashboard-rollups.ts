@@ -284,18 +284,23 @@ async function maybeBackfillDailyHistory() {
           SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
           SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
           COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
-          COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits,
-          SUM(CASE WHEN event_type = 'page_view' AND is_new_visitor = 1 THEN 1 ELSE 0 END) AS new_visitors,
-          SUM(CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN 1 ELSE 0 END) AS repeat_visitors,
+          COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND first_day < day_date THEN visitor_id END) AS return_visits,
+          COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND first_day = day_date THEN visitor_id END) AS new_visitors,
+          COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND first_day < day_date THEN visitor_id END) AS repeat_visitors,
           COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
         FROM (
           SELECT
-            DATE(created_at) AS day_date,
-            event_type,
-            visitor_id,
-            is_new_visitor,
-            session_id
-          FROM analytics_events
+            DATE(ae.created_at) AS day_date,
+            ae.event_type,
+            ae.visitor_id,
+            ae.session_id,
+            fs.first_day
+          FROM analytics_events ae
+          JOIN (
+            SELECT visitor_id, MIN(DATE(created_at)) AS first_day
+            FROM analytics_events
+            GROUP BY visitor_id
+          ) fs ON fs.visitor_id = ae.visitor_id
         ) analytics_events_by_day
         GROUP BY day_date
       ) metrics
@@ -367,19 +372,24 @@ async function refreshRecentDailyRollups(options: { fullScan: boolean }) {
         SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
         SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits,
-        SUM(CASE WHEN event_type = 'page_view' AND is_new_visitor = 1 THEN 1 ELSE 0 END) AS new_visitors,
-        SUM(CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN 1 ELSE 0 END) AS repeat_visitors,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND first_day < day_date THEN visitor_id END) AS return_visits,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND first_day = day_date THEN visitor_id END) AS new_visitors,
+        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND first_day < day_date THEN visitor_id END) AS repeat_visitors,
         COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
       FROM (
         SELECT
-          DATE(created_at) AS day_date,
-          event_type,
-          visitor_id,
-          is_new_visitor,
-          session_id
-        FROM analytics_events
-        WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${intervalDays} DAY)
+          DATE(ae.created_at) AS day_date,
+          ae.event_type,
+          ae.visitor_id,
+          ae.session_id,
+          fs.first_day
+        FROM analytics_events ae
+        JOIN (
+          SELECT visitor_id, MIN(DATE(created_at)) AS first_day
+          FROM analytics_events
+          GROUP BY visitor_id
+        ) fs ON fs.visitor_id = ae.visitor_id
+        WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${intervalDays} DAY)
       ) analytics_events_by_day
       GROUP BY day_date
     ) metrics

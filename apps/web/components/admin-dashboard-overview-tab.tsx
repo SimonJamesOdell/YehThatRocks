@@ -13,6 +13,7 @@ type AnalyticsSeriesOn = {
   pageViews: boolean;
   videoViews: boolean;
   visitors: boolean;
+  newVisitors: boolean;
   returnVisits: boolean;
   sessions: boolean;
   magazineExternalLandings: boolean;
@@ -24,6 +25,7 @@ type AnalyticsPoint = {
   yPageViews: number;
   yVideoViews: number;
   yVisitors: number;
+  yNewVisitors: number;
   yReturnVisits: number;
   yMagazineExternalLandings: number;
   yAuthEvents: number;
@@ -34,6 +36,7 @@ type AnalyticsPoint = {
   pageViews: number;
   videoViews: number;
   uniqueVisitors: number;
+  newVisitors: number;
   returnVisits: number;
   magazineExternalLandings: number;
   authEvents: number;
@@ -50,6 +53,7 @@ type AnalyticsGraph = {
   pageViewsPath: string;
   videoViewsPath: string;
   visitorsPath: string;
+  newVisitorsPath: string;
   returnVisitsPath: string;
   sessionsPath: string;
   magazineExternalLandingsPath: string;
@@ -286,6 +290,7 @@ export function AdminDashboardOverviewTab({
             { key: "pageViews", label: "Page Views", color: "#ff9d5c" },
             { key: "videoViews", label: "Video Views", color: "#5fc1ff" },
             { key: "visitors", label: "Unique Visitors", color: "#7ce0a3" },
+            { key: "newVisitors", label: "New Visitors", color: "#4dd0e1" },
             { key: "returnVisits", label: "Return Visits", color: "#9e86ff" },
             { key: "magazineExternalLandings", label: "Magazine External Landings", color: "#ff4d4d" },
             { key: "authEvents", label: "Auth Events", color: "#ffd1c4" },
@@ -320,7 +325,7 @@ export function AdminDashboardOverviewTab({
       <svg
         viewBox={analyticsGraph.points.length > 0 ? `0 0 ${analyticsGraph.width} ${analyticsGraph.height}` : "0 0 680 250"}
         role="img"
-        aria-label="Analytics chart — page views, video views, unique visitors, return visits, magazine external landings, auth events"
+        aria-label="Analytics chart — page views, video views, unique visitors, new visitors, return visits, magazine external landings, auth events"
         style={{ width: "100%", height: "clamp(260px, 46vh, 620px)", borderRadius: 10, background: "rgba(255,255,255,0.04)" }}
       >
         {analyticsGraph.points.length === 0 ? (
@@ -344,6 +349,7 @@ export function AdminDashboardOverviewTab({
             {analyticsSeriesOn.pageViews && <path d={analyticsGraph.pageViewsPath} fill="none" stroke="#ff9d5c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
             {analyticsSeriesOn.videoViews && <path d={analyticsGraph.videoViewsPath} fill="none" stroke="#5fc1ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
             {analyticsSeriesOn.visitors && <path d={analyticsGraph.visitorsPath} fill="none" stroke="#7ce0a3" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+            {analyticsSeriesOn.newVisitors && <path d={analyticsGraph.newVisitorsPath} fill="none" stroke="#4dd0e1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
             {analyticsSeriesOn.returnVisits && <path d={analyticsGraph.returnVisitsPath} fill="none" stroke="#9e86ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
             {analyticsSeriesOn.magazineExternalLandings && <path d={analyticsGraph.magazineExternalLandingsPath} fill="none" stroke="#ff4d4d" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
             {analyticsSeriesOn.authEvents && <path d={analyticsGraph.authEventsPath} fill="none" stroke="#ffd1c4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
@@ -359,6 +365,7 @@ export function AdminDashboardOverviewTab({
                     pageViews: point.pageViews,
                     videoViews: point.videoViews,
                     uniqueVisitors: point.uniqueVisitors,
+                    newVisitors: point.newVisitors ?? 0,
                     returnVisits: point.returnVisits,
                     magazineExternalLandings: point.magazineExternalLandings,
                     authEvents: point.authEvents,
@@ -370,11 +377,12 @@ export function AdminDashboardOverviewTab({
                 {analyticsSeriesOn.pageViews && <circle cx={point.x} cy={point.yPageViews} r="3.5" fill="#ff9d5c" />}
                 {analyticsSeriesOn.videoViews && <circle cx={point.x} cy={point.yVideoViews} r="3.5" fill="#5fc1ff" />}
                 {analyticsSeriesOn.visitors && <circle cx={point.x} cy={point.yVisitors} r="3.5" fill="#7ce0a3" />}
+                {analyticsSeriesOn.newVisitors && <circle cx={point.x} cy={point.yNewVisitors} r="3.5" fill="#4dd0e1" />}
                 {analyticsSeriesOn.returnVisits && <circle cx={point.x} cy={point.yReturnVisits} r="3.5" fill="#9e86ff" />}
                 {analyticsSeriesOn.magazineExternalLandings && <circle cx={point.x} cy={point.yMagazineExternalLandings} r="3.5" fill="#ff4d4d" />}
                 {analyticsSeriesOn.authEvents && <circle cx={point.x} cy={point.yAuthEvents} r="3.5" fill="#ffd1c4" />}
                 {analyticsSeriesOn.sessions && <circle cx={point.x} cy={point.ySessions} r="3" fill="#f0c040" />}
-                <title>{`${point.label} (${new Date(point.bucketStart).toLocaleString()} - ${new Date(point.bucketEnd).toLocaleString()}) — Page views: ${point.pageViews}, Video views: ${point.videoViews}, Visitors: ${point.uniqueVisitors}, Return visits: ${point.returnVisits}, Magazine external landings: ${point.magazineExternalLandings}, Auth events: ${point.authEvents}, Sessions: ${point.sessions ?? 0}`}</title>
+                <title>{`${point.label} (${new Date(point.bucketStart).toLocaleString()} - ${new Date(point.bucketEnd).toLocaleString()}) — Page views: ${point.pageViews}, Video views: ${point.videoViews}, Visitors: ${point.uniqueVisitors}, New visitors: ${point.newVisitors ?? 0}, Return visits: ${point.returnVisits}, Magazine external landings: ${point.magazineExternalLandings}, Auth events: ${point.authEvents}, Sessions: ${point.sessions ?? 0}`}</title>
               </g>
             ))}
           </>

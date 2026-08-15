@@ -11,6 +11,7 @@ export type AnalyticsBucket = {
   pageViews: number;
   videoViews: number;
   uniqueVisitors: number;
+  newVisitors?: number;
   returnVisits: number;
   sessions: number;
   magazineExternalLandings: number;

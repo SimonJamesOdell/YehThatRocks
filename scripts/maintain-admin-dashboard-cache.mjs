@@ -158,17 +158,30 @@ async function refreshRollupTables() {
       COALESCE(reg.registrations, 0)
     FROM (
       SELECT
-        DATE(created_at) AS day_date,
-        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
-        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits,
-        SUM(CASE WHEN event_type = 'page_view' AND is_new_visitor = 1 THEN 1 ELSE 0 END) AS new_visitors,
-        SUM(CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN 1 ELSE 0 END) AS repeat_visitors,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
-      FROM analytics_events
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
-      GROUP BY DATE(created_at)
+        ev.day_date,
+        SUM(CASE WHEN ev.event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
+        SUM(CASE WHEN ev.event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.visitor_id END) AS unique_visitors,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.first_day < ev.day_date THEN ev.visitor_id END) AS return_visits,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.first_day = ev.day_date THEN ev.visitor_id END) AS new_visitors,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.first_day < ev.day_date THEN ev.visitor_id END) AS repeat_visitors,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.session_id END) AS total_sessions
+      FROM (
+        SELECT
+          DATE(ae.created_at) AS day_date,
+          ae.event_type,
+          ae.visitor_id,
+          ae.session_id,
+          fs.first_day
+        FROM analytics_events ae
+        JOIN (
+          SELECT visitor_id, MIN(DATE(created_at)) AS first_day
+          FROM analytics_events
+          GROUP BY visitor_id
+        ) fs ON fs.visitor_id = ae.visitor_id
+        WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
+      ) ev
+      GROUP BY ev.day_date
     ) metrics
     LEFT JOIN (
       SELECT DATE(created_at) AS day_date, COUNT(*) AS auth_events
@@ -429,46 +442,88 @@ async function computeAdminDashboardData() {
     // --- Weekly series (90-day window) ----------------------------------
     prisma.$queryRawUnsafe(`
       SELECT
-        DATE_SUB(DATE(created_at), INTERVAL (DAYOFWEEK(created_at) + 5) % 7 DAY) AS period_start,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits,
-        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
-        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
-      FROM analytics_events
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 90 DAY)
-      GROUP BY period_start
-      ORDER BY period_start ASC
+        ev.period_start,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.visitor_id END) AS unique_visitors,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.first_day < ev.period_start THEN ev.visitor_id END) AS return_visits,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.first_day >= ev.period_start THEN ev.visitor_id END) AS new_visitors,
+        SUM(CASE WHEN ev.event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
+        SUM(CASE WHEN ev.event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.session_id END) AS total_sessions
+      FROM (
+        SELECT
+          DATE_SUB(DATE(ae.created_at), INTERVAL (DAYOFWEEK(ae.created_at) + 5) % 7 DAY) AS period_start,
+          ae.event_type,
+          ae.visitor_id,
+          ae.session_id,
+          fs.first_day
+        FROM analytics_events ae
+        JOIN (
+          SELECT visitor_id, MIN(DATE(created_at)) AS first_day
+          FROM analytics_events
+          GROUP BY visitor_id
+        ) fs ON fs.visitor_id = ae.visitor_id
+        WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 90 DAY)
+      ) ev
+      GROUP BY ev.period_start
+      ORDER BY ev.period_start ASC
     `).catch(() => []),
 
     // --- Monthly series (~2-year window) --------------------------------
     prisma.$queryRawUnsafe(`
       SELECT
-        DATE_FORMAT(created_at, '%Y-%m-01') AS period_start,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits,
-        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
-        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
-      FROM analytics_events
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 730 DAY)
-      GROUP BY period_start
-      ORDER BY period_start ASC
+        ev.period_start,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.visitor_id END) AS unique_visitors,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.first_day < ev.period_start THEN ev.visitor_id END) AS return_visits,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.first_day >= ev.period_start THEN ev.visitor_id END) AS new_visitors,
+        SUM(CASE WHEN ev.event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
+        SUM(CASE WHEN ev.event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.session_id END) AS total_sessions
+      FROM (
+        SELECT
+          DATE_FORMAT(ae.created_at, '%Y-%m-01') AS period_start,
+          ae.event_type,
+          ae.visitor_id,
+          ae.session_id,
+          fs.first_day
+        FROM analytics_events ae
+        JOIN (
+          SELECT visitor_id, MIN(DATE(created_at)) AS first_day
+          FROM analytics_events
+          GROUP BY visitor_id
+        ) fs ON fs.visitor_id = ae.visitor_id
+        WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 730 DAY)
+      ) ev
+      GROUP BY ev.period_start
+      ORDER BY ev.period_start ASC
     `).catch(() => []),
 
     // --- Yearly series (~5-year window) ---------------------------------
     prisma.$queryRawUnsafe(`
       SELECT
-        YEAR(created_at) AS period_start,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN visitor_id END) AS unique_visitors,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' AND is_new_visitor = 0 THEN visitor_id END) AS return_visits,
-        SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
-        SUM(CASE WHEN event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
-        COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN session_id END) AS total_sessions
-      FROM analytics_events
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1825 DAY)
-      GROUP BY period_start
-      ORDER BY period_start ASC
+        ev.period_start,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.visitor_id END) AS unique_visitors,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND YEAR(ev.first_day) < ev.period_start THEN ev.visitor_id END) AS return_visits,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND YEAR(ev.first_day) = ev.period_start THEN ev.visitor_id END) AS new_visitors,
+        SUM(CASE WHEN ev.event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
+        SUM(CASE WHEN ev.event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.session_id END) AS total_sessions
+      FROM (
+        SELECT
+          YEAR(ae.created_at) AS period_start,
+          ae.event_type,
+          ae.visitor_id,
+          ae.session_id,
+          fs.first_day
+        FROM analytics_events ae
+        JOIN (
+          SELECT visitor_id, MIN(DATE(created_at)) AS first_day
+          FROM analytics_events
+          GROUP BY visitor_id
+        ) fs ON fs.visitor_id = ae.visitor_id
+        WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1825 DAY)
+      ) ev
+      GROUP BY ev.period_start
+      ORDER BY ev.period_start ASC
     `).catch(() => []),
   ]);
 
@@ -519,6 +574,7 @@ async function computeAdminDashboardData() {
       videoViews: toNumber(row.video_views),
       uniqueVisitors: toNumber(row.unique_visitors),
       returnVisits: toNumber(row.return_visits),
+      newVisitors: toNumber(row.new_visitors),
       sessions: sessions || toNumber(row.total_sessions),
       magazineExternalLandings,
       authEvents,
@@ -608,6 +664,7 @@ async function computeAdminDashboardData() {
         videoViews: toNumber(row.videoViews),
         uniqueVisitors: toNumber(row.uniqueVisitors),
         returnVisits: toNumber(row.returnVisits),
+        newVisitors: toNumber(row.newVisitors),
         magazineExternalLandings: toNumber(row.magazineExternalLandings),
         authEvents: toNumber(row.authEvents),
       })),
@@ -629,6 +686,7 @@ async function computeAdminDashboardData() {
             videoViews: toNumber(row.videoViews),
             uniqueVisitors: toNumber(row.uniqueVisitors),
             returnVisits: toNumber(row.returnVisits),
+            newVisitors: toNumber(row.newVisitors),
             sessions: toNumber(row.totalSessions),
             magazineExternalLandings: toNumber(row.magazineExternalLandings),
             authEvents: toNumber(row.authEvents),
