@@ -129,7 +129,7 @@ function main() {
   // Favourite count maintenance moved to database triggers for performance.
   // Invariant: updateFavourite must call add/delete operations, and triggers maintain the count.
   assertContains(catalogDataVideosSource, "export async function updateFavourite", "Favourite mutations are maintained via database-level persist with cache invalidation", failures);
-  assertContains(catalogDataVideosSource, "prisma.favourite.create({", "Favourite add operation persists to database", failures);
+  assertContains(catalogDataVideosSource, "prisma.favourite.createMany({", "Favourite add operation persists to database", failures);
   assertContains(catalogDataVideosSource, "prisma.favourite.deleteMany({", "Favourite remove operation deletes from database", failures);
   assertContains(catalogDataVideosSource, 'const { invalidateTopVideosCache } = await import("@/lib/top-videos-cache");', "Favourite mutations can invalidate Top 100 API cache", failures);
   assertContains(catalogDataVideosSource, "invalidateTopVideosCache();", "Favourite mutations invalidate Top 100 API cache after updates", failures);
