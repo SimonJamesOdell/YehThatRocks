@@ -4,6 +4,7 @@ import { favouriteMutationSchema } from "@/lib/api-schemas";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { filterHiddenVideos, getFavouriteVideos, getFavouriteVideosPage, updateFavourite } from "@/lib/catalog-data";
 import { parseClampedIntParam } from "@/lib/request-query";
+import { rateLimitOrResponse } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
   // Invariant anchor: requireApiAuth(request)
@@ -59,6 +60,11 @@ export async function POST(request: NextRequest) {
 
   if (!result.ok) {
     return result.response;
+  }
+
+  const rateLimited = rateLimitOrResponse(request, `favourites:${result.auth.userId}`, 60, 60 * 1000);
+  if (rateLimited) {
+    return rateLimited;
   }
 
   const updated = await updateFavourite(result.data.videoId, result.data.action, result.auth.userId);

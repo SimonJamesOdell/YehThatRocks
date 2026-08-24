@@ -197,6 +197,7 @@ model Favourite {
   video     Video?    @relation(fields: [videoId], references: [videoId])
 
   @@index([userid, videoId])
+  @@unique([userid, videoId], map: "uq_favourite_user_video")
   @@index([videoId])
   @@map("favourites")
 }
@@ -263,6 +264,7 @@ model Message {
   createdAt DateTime? @map("created_at")
   user      User?     @relation(fields: [userId], references: [id])
 
+  @@index([room, videoId, createdAt, id], map: "idx_messages_room_videoid_created")
   @@map("messages")
 }
 

@@ -8,6 +8,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
 import { parseRequestJson } from "@/lib/request-json";
 import { getVoteCounts, getUserVote, castVote } from "@/lib/forum-data";
+import { verifySameOrigin } from "@/lib/csrf";
+import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
 
 export async function GET(
   request: NextRequest,
@@ -42,6 +44,21 @@ export async function POST(
   const authState = await getCurrentAuthenticatedUserAuthState();
   if (authState.status !== "authenticated") {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
+  const csrfError = verifySameOrigin(request);
+  if (csrfError) {
+    return csrfError;
+  }
+
+  const ipRateLimited = rateLimitOrResponse(request, `forum:vote:${authState.user.id}`, 60, 60 * 1000);
+  if (ipRateLimited) {
+    return ipRateLimited;
+  }
+
+  const userRateLimited = rateLimitSharedOrResponse(`forum:vote:user:${authState.user.id}`, 120, 60 * 1000);
+  if (userRateLimited) {
+    return userRateLimited;
   }
 
   const { threadId: threadIdRaw } = await params;

@@ -8,6 +8,7 @@ import {
   doesVideoMatchNewGenreFilters,
   parseNewVideoGenreFilterStateFromParams,
 } from "@/lib/new-video-genre-filters";
+import { safeErrorMessage } from "@/lib/api-error";
 
 async function hydrateArtistVideoCounts<T extends { parsedArtist?: string | null; channelTitle?: string | null }>(videos: T[]) {
   const normalizedArtists = Array.from(
@@ -150,7 +151,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error: error instanceof Error ? error.message : "Failed to fetch newest videos",
+        error: safeErrorMessage(error, "Failed to fetch newest videos"),
       },
       { status: 500 },
     );

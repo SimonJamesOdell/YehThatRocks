@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getGenreCards } from "@/lib/catalog-data";
+import { safeErrorMessage } from "@/lib/api-error";
 
 export async function GET() {
   const startedAt = Date.now();
@@ -26,7 +27,7 @@ export async function GET() {
     );
   } catch (error) {
     const durationMs = Date.now() - startedAt;
-    const message = error instanceof Error ? error.message : "unknown error";
+    const message = safeErrorMessage(error, "unknown error");
 
     return NextResponse.json(
       {

@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requireAdminApiAuth } from "@/lib/admin-auth";
 import { verifySameOrigin } from "@/lib/csrf";
+import { safeErrorMessage } from "@/lib/api-error";
 
 const execFileAsync = promisify(execFile);
 const SCRIPT_TIMEOUT_MS = Math.max(30_000, Math.min(15 * 60_000, Number(process.env.MAGAZINE_DAILY_TIMEOUT_MS || "480000")));
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
       stderr: stderr || null,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Magazine generation run failed.";
+    const message = safeErrorMessage(error, "Magazine generation run failed.");
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

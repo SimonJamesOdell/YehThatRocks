@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
+import { safeErrorMessage } from "@/lib/api-error";
 
 // ===========================================================================
 // GET /api/facebook-browser/candidates
@@ -215,7 +216,6 @@ export async function GET(request: NextRequest) {
         );
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error, "internal server error") }, { status: 500 });
   }
 }

@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import path from "node:path";
 
 import { NextRequest, NextResponse } from "next/server";
+import { safeErrorMessage } from "@/lib/api-error";
 
 const execFileAsync = promisify(execFile);
 
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
       stderr: stderr || null,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Magazine daily run failed.";
+    const message = safeErrorMessage(error, "Magazine daily run failed.");
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

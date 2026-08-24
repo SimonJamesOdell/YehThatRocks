@@ -1890,16 +1890,10 @@ export async function updateFavourite(
     const normalizedVideoId = normalizeYouTubeVideoId(videoId) ?? videoId;
 
     if (action === "add") {
-      const existing = await prisma.favourite.findFirst({
-        where: { userid: userId, videoId: normalizedVideoId },
-        select: { id: true },
+      await prisma.favourite.createMany({
+        data: [{ userid: userId, videoId: normalizedVideoId }],
+        skipDuplicates: true,
       });
-
-      if (!existing) {
-        await prisma.favourite.create({
-          data: { userid: userId, videoId: normalizedVideoId },
-        });
-      }
     } else {
       await prisma.favourite.deleteMany({
         where: { userid: userId, videoId: normalizedVideoId },

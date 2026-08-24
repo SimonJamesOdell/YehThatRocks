@@ -8,6 +8,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
 import { parseRequestJson } from "@/lib/request-json";
 import { getLatestThreads, createThread } from "@/lib/forum-data";
+import { verifySameOrigin } from "@/lib/csrf";
+import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
   const rawLimit = Number(request.nextUrl.searchParams.get("limit") || "20");
@@ -25,6 +27,21 @@ export async function POST(request: NextRequest) {
   const authState = await getCurrentAuthenticatedUserAuthState();
   if (authState.status !== "authenticated") {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
+  const csrfError = verifySameOrigin(request);
+  if (csrfError) {
+    return csrfError;
+  }
+
+  const ipRateLimited = rateLimitOrResponse(request, `forum:thread:create:${authState.user.id}`, 10, 60 * 60 * 1000);
+  if (ipRateLimited) {
+    return ipRateLimited;
+  }
+
+  const userRateLimited = rateLimitSharedOrResponse(`forum:thread:create:user:${authState.user.id}`, 20, 60 * 60 * 1000);
+  if (userRateLimited) {
+    return userRateLimited;
   }
 
   const parsedJson = await parseRequestJson<{ sectionId?: string; title?: string; content?: string; video1Id?: string; video2Id?: string }>(request);
@@ -50,6 +67,20 @@ export async function POST(request: NextRequest) {
   if (typeof content !== "string" || content.trim().length < 10) {
     return NextResponse.json(
       { error: "Content must be at least 10 characters" },
+      { status: 400 },
+    );
+  }
+
+  if (title.length > 200) {
+    return NextResponse.json(
+      { error: "Title must be at most 200 characters" },
+      { status: 400 },
+    );
+  }
+
+  if (content.length > 10000) {
+    return NextResponse.json(
+      { error: "Content must be at most 10000 characters" },
       { status: 400 },
     );
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getGenreCards } from "@/lib/catalog-data";
+import { safeErrorMessage } from "@/lib/api-error";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error: error instanceof Error ? error.message : "Failed to build newest genre facets",
+        error: safeErrorMessage(error, "Failed to build newest genre facets"),
       },
       { status: 500 },
     );
