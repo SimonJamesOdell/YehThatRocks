@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
 import { safeErrorMessage } from "@/lib/api-error";
+import { HTTP_UNAUTHORIZED } from "@/lib/http-status";
 
 // ===========================================================================
 // GET /api/facebook-browser/candidates
@@ -179,7 +180,7 @@ function mapCandidate(row: Record<string, unknown>): VideoCandidate {
 
 export async function GET(request: NextRequest) {
   if (!validateSecret(request)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "unauthorized" }, { status: HTTP_UNAUTHORIZED });
   }
 
   const mode = (request.nextUrl.searchParams.get("mode") || "").toLowerCase();

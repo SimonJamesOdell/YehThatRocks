@@ -17,6 +17,7 @@ import { prisma } from "@/lib/db";
 import { parseRequestJson } from "@/lib/request-json";
 import { recordExternalApiUsage } from "@/lib/api-usage-telemetry";
 import { parseJsonOrNull } from "@/lib/parse-json";
+import { HTTP_UNAUTHORIZED } from "@/lib/http-status";
 
 const HTTP_FORBIDDEN = 403;
 
@@ -570,7 +571,7 @@ export async function POST(request: NextRequest) {
       : null;
 
   if (!authenticatedUserId) {
-    return NextResponse.json({ ok: false, error: SUGGEST_SIGN_IN_REQUIRED_MESSAGE }, { status: 401 });
+    return NextResponse.json({ ok: false, error: SUGGEST_SIGN_IN_REQUIRED_MESSAGE }, { status: HTTP_UNAUTHORIZED });
   }
 
   const canBypassApproval =

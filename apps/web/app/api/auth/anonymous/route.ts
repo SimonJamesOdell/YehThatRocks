@@ -11,6 +11,7 @@ import { SCREEN_NAME_MAX_LENGTH, SCREEN_NAME_MIN_LENGTH, isScreenNameTaken, norm
 import { createRefreshSession } from "@/lib/auth-sessions";
 import { isAccountCreationBotUA } from "@/lib/crawler-guard";
 import { verifySameOrigin } from "@/lib/csrf";
+import { HTTP_FORBIDDEN } from "@/lib/http-status";
 import { prisma } from "@/lib/db";
 import {
   setPlayerPreferencesForUser,
@@ -147,7 +148,7 @@ export async function POST(request: NextRequest) {
   if (!isLocalhost) {
     const secFetchSite = request.headers.get("sec-fetch-site");
     if (!secFetchSite || secFetchSite !== "same-origin") {
-      return NextResponse.json({ error: "Invalid request" }, { status: 403 });
+      return NextResponse.json({ error: "Invalid request" }, { status: HTTP_FORBIDDEN });
     }
   }
 
@@ -155,7 +156,7 @@ export async function POST(request: NextRequest) {
   // This check is always active — no real user has these UAs.
   const userAgent = request.headers.get("user-agent");
   if (isAccountCreationBotUA(userAgent)) {
-    return NextResponse.json({ error: "Invalid request" }, { status: 403 });
+    return NextResponse.json({ error: "Invalid request" }, { status: HTTP_FORBIDDEN });
   }
 
   try {

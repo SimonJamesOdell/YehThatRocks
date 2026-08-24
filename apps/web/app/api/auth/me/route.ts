@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireApiAuth } from "@/lib/auth-request";
+import { HTTP_UNAUTHORIZED } from "@/lib/http-status";
 
 export async function GET(request: NextRequest) {
   const authResult = await requireApiAuth(request);
@@ -9,7 +10,7 @@ export async function GET(request: NextRequest) {
     return authResult.response;
   }
   if (authResult.auth.userId === null) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: HTTP_UNAUTHORIZED });
   }
 
   return NextResponse.json({

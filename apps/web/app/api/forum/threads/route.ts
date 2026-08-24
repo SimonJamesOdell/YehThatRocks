@@ -10,6 +10,7 @@ import { parseRequestJson } from "@/lib/request-json";
 import { getLatestThreads, createThread } from "@/lib/forum-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
+import { HTTP_UNAUTHORIZED } from "@/lib/http-status";
 
 export async function GET(request: NextRequest) {
   const rawLimit = Number(request.nextUrl.searchParams.get("limit") || "20");
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authState = await getCurrentAuthenticatedUserAuthState();
   if (authState.status !== "authenticated") {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    return NextResponse.json({ error: "Authentication required" }, { status: HTTP_UNAUTHORIZED });
   }
 
   const csrfError = verifySameOrigin(request);

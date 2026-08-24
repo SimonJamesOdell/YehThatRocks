@@ -12,6 +12,7 @@ import { createRefreshSession } from "@/lib/auth-sessions";
 import { createEmailVerificationToken } from "@/lib/auth-token-records";
 import { isAccountCreationBotUA } from "@/lib/crawler-guard";
 import { verifySameOrigin } from "@/lib/csrf";
+import { HTTP_FORBIDDEN } from "@/lib/http-status";
 import { prisma } from "@/lib/db";
 import {
   setPlayerPreferencesForUser,
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
   // Block known crawler user agents from creating accounts.
   // This check is always active — no real user has these UAs.
   if (isAccountCreationBotUA(request.headers.get("user-agent"))) {
-    return NextResponse.json({ error: "Invalid request" }, { status: 403 });
+    return NextResponse.json({ error: "Invalid request" }, { status: HTTP_FORBIDDEN });
   }
 
   try {

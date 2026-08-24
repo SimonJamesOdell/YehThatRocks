@@ -10,6 +10,7 @@ import { parseRequestJson } from "@/lib/request-json";
 import { getVoteCounts, getUserVote, castVote } from "@/lib/forum-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
+import { HTTP_UNAUTHORIZED } from "@/lib/http-status";
 
 export async function GET(
   request: NextRequest,
@@ -43,7 +44,7 @@ export async function POST(
 ) {
   const authState = await getCurrentAuthenticatedUserAuthState();
   if (authState.status !== "authenticated") {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    return NextResponse.json({ error: "Authentication required" }, { status: HTTP_UNAUTHORIZED });
   }
 
   const csrfError = verifySameOrigin(request);

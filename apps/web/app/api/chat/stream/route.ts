@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { getOptionalApiAuth } from "@/lib/auth-request";
 import { chatChannel, chatEvents } from "@/lib/chat-events";
+import { HTTP_UNAUTHORIZED } from "@/lib/http-status";
 
 const streamQuerySchema = z.object({
   mode: z.enum(["global", "video"]).default("global"),
@@ -89,7 +90,7 @@ export async function GET(request: NextRequest) {
   const { mode, videoId } = parsed.data;
 
   if (mode !== "global" && !authContext) {
-    return new Response("Unauthorized", { status: 401 });
+    return new Response("Unauthorized", { status: HTTP_UNAUTHORIZED });
   }
 
   const clientIp = resolveClientIp(request);
