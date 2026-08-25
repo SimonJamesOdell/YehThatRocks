@@ -314,7 +314,6 @@ function Get-ShipStatePaths([string]$RepoRoot) {
     BaseDir = $baseDir
     StateFile = (Join-Path $baseDir "state.json")
     TarFile = (Join-Path $baseDir "image.tar")
-    ChunksDir = (Join-Path $baseDir "chunks")
   }
 }
 
@@ -366,38 +365,17 @@ function Test-LocalDockerImage([string]$ImageTag) {
   return ($LASTEXITCODE -eq 0)
 }
 
-function Ensure-ImagePresentFromTar([string]$ImageTag, [string]$ChunksDir) {
+function Ensure-ImagePresentFromTar([string]$ImageTag, [string]$LocalTarPath) {
   if (Test-LocalDockerImage -ImageTag $ImageTag) {
     return
   }
 
-  if (-not (Test-Path -LiteralPath $ChunksDir)) {
-    throw "Local image '$ImageTag' is missing and no resume chunks are available at '$ChunksDir'. Run ship without -Resume."
+  if (-not (Test-Path -LiteralPath $LocalTarPath)) {
+    throw "Local image '$ImageTag' is missing and no resume tar is available at '$LocalTarPath'. Run ship without -Resume."
   }
 
-  $chunks = @(Get-ChildItem -LiteralPath $ChunksDir -File | Where-Object { $_.Name -match '^chunk-\d{4}$' } | Sort-Object Name)
-  if ($chunks.Count -eq 0) {
-    throw "Local image '$ImageTag' is missing and chunk directory '$ChunksDir' is empty. Run ship without -Resume."
-  }
-
-  Write-Host "Rehydrating local Docker image from resume chunks ($($chunks.Count) chunks)..." -ForegroundColor Yellow
-  $combinedPath = Join-Path $ChunksDir "combined.tar.gz"
-  try {
-    $outStream = [System.IO.File]::OpenWrite($combinedPath)
-    try {
-      foreach ($chunk in $chunks) {
-        $bytes = [System.IO.File]::ReadAllBytes($chunk.FullName)
-        $outStream.Write($bytes, 0, $bytes.Length)
-      }
-    } finally {
-      $outStream.Close()
-    }
-    ExecNative -Program "docker" -CommandArgs @("load", "-i", $combinedPath)
-  } finally {
-    if (Test-Path -LiteralPath $combinedPath) {
-      Remove-Item -LiteralPath $combinedPath -Force -ErrorAction SilentlyContinue
-    }
-  }
+  Write-Host "Rehydrating local Docker image from resume tar..." -ForegroundColor Yellow
+  ExecNative -Program "docker" -CommandArgs @("load", "-i", $LocalTarPath)
 }
 
 function Test-RemoteFileExists([string]$VpsHost, [string]$RemotePath) {
@@ -734,157 +712,35 @@ function Transfer-ImageToVps(
 ) {
   $currentStageRank = Get-ShipStageRank -Stage ([string]$ShipState.Stage)
 
-  # ── Stage: tar-saved — compress and split image into 100 MB chunks ──
   if ($currentStageRank -lt (Get-ShipStageRank -Stage "tar-saved")) {
-    Write-Host "Saving and compressing local Docker image..." -ForegroundColor Yellow
-    Ensure-Directory -DirPath $ShipState.ChunksDir
-
-    $compressedPath = Join-Path $ShipState.ChunksDir "image.tar.gz"
-
-    # Save uncompressed tar, then compress with .NET GZipStream.
-    # Avoids bash+gzip path-mapping issues on Windows — pure PowerShell + Docker.
-    $tempTarPath = Join-Path $ShipState.ChunksDir "image.tar"
-    try {
-      ExecNative -Program "docker" -CommandArgs @("save", "-o", $tempTarPath, $ImageTag)
-
-      Write-Host "Compressing with GZipStream..." -ForegroundColor Yellow
-      $inStream = [System.IO.File]::OpenRead($tempTarPath)
-      $outStream = [System.IO.File]::Create($compressedPath)
-      $gzipStream = $null
-      try {
-        $gzipStream = New-Object System.IO.Compression.GZipStream($outStream, [System.IO.Compression.CompressionMode]::Compress)
-        $inStream.CopyTo($gzipStream)
-      } finally {
-        if ($gzipStream) { $gzipStream.Close() }
-        $inStream.Close()
-        $outStream.Close()
-      }
-    } finally {
-      if (Test-Path -LiteralPath $tempTarPath) {
-        Remove-Item -LiteralPath $tempTarPath -Force -ErrorAction SilentlyContinue
-      }
-    }
-
-    if (-not (Test-Path -LiteralPath $compressedPath)) {
-      throw "Compressed image was not created at '$compressedPath'."
-    }
-
-    $compressedSizeMB = [math]::Round((Get-Item $compressedPath).Length / 1MB, 1)
-    Write-Host "Compressed image: $compressedSizeMB MB" -ForegroundColor Green
-
-    # Split into 25 MB chunks using PowerShell (no external split dependency)
-    Write-Host "Splitting compressed image into 25 MB chunks..." -ForegroundColor Yellow
-    $chunkSizeBytes = 25 * 1024 * 1024
-    $stream = $null
-    try {
-      $stream = [System.IO.File]::OpenRead($compressedPath)
-      $buffer = New-Object byte[] $chunkSizeBytes
-      $chunkIndex = 0
-      while (($read = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-        $chunkName = "chunk-{0:D4}" -f $chunkIndex
-        $chunkPath = Join-Path $ShipState.ChunksDir $chunkName
-        if ($read -eq $buffer.Length) {
-          [System.IO.File]::WriteAllBytes($chunkPath, $buffer)
-        } else {
-          $sized = New-Object byte[] $read
-          [Array]::Copy($buffer, $sized, $read)
-          [System.IO.File]::WriteAllBytes($chunkPath, $sized)
-        }
-        $chunkIndex++
-      }
-    } finally {
-      if ($stream) { $stream.Close() }
-    }
-
-    $ShipState.UploadedChunks = @()
+    Write-Host "Saving local image tar archive..." -ForegroundColor Yellow
+    Ensure-Directory -DirPath (Split-Path -Parent $ShipState.LocalTarPath)
+    ExecNative -Program "docker" -CommandArgs @("save", "-o", $ShipState.LocalTarPath, $ImageTag)
     $ShipState.Stage = "tar-saved"
-    $ShipState.UpdatedAt = (Get-Date).ToString("o")
     Write-ShipState -StateFilePath $ShipStatePath -State $ShipState
     $currentStageRank = Get-ShipStageRank -Stage ([string]$ShipState.Stage)
   }
 
-  # ── Stage: tar-uploaded — transfer each chunk independently ──
   if ($currentStageRank -lt (Get-ShipStageRank -Stage "tar-uploaded")) {
-    $chunkFiles = @(Get-ChildItem -LiteralPath $ShipState.ChunksDir -File |
-      Where-Object { $_.Name -match '^chunk-\d{4}$' } |
-      Sort-Object Name)
+    Write-Host "Uploading image archive to VPS..." -ForegroundColor Yellow
+    ExecNativeWithRetry -Program "scp" -CommandArgs @($ShipState.LocalTarPath, "$VpsHost`:$($ShipState.RemoteTarPath)")
+    $ShipState.Stage = "tar-uploaded"
+    Write-ShipState -StateFilePath $ShipStatePath -State $ShipState
+    $currentStageRank = Get-ShipStageRank -Stage ([string]$ShipState.Stage)
+  }
 
-    if ($chunkFiles.Count -eq 0) {
-      throw "No chunk files found in $($ShipState.ChunksDir)"
-    }
-
-    $uploadedSet = @{}
-    foreach ($name in $ShipState.UploadedChunks) {
-      $uploadedSet[$name] = $true
-    }
-
-    $totalSize = ($chunkFiles | Measure-Object -Property Length -Sum).Sum
-    $totalChunks = $chunkFiles.Count
-    $uploadedSoFar = $ShipState.UploadedChunks.Count
-
-    Write-Host "Transferring $totalChunks chunks ($([math]::Round($totalSize / 1MB, 1)) MB total) to VPS..." -ForegroundColor Yellow
-
-    if ($uploadedSoFar -gt 0) {
-      Write-Host "  ($uploadedSoFar/$totalChunks chunks already uploaded on prior run — resuming)" -ForegroundColor DarkYellow
-    }
-
-    foreach ($chunkFile in $chunkFiles) {
-      if ($uploadedSet.ContainsKey($chunkFile.Name)) {
-        continue
-      }
-
-      $remoteChunkPath = "/tmp/yehthatrocks-image-$($ShipState.CommitSha).$($chunkFile.Name)"
-      $chunkSizeMB = [math]::Round($chunkFile.Length / 1MB, 1)
-
-      Write-Host "  Uploading chunk $($chunkFile.Name) ($chunkSizeMB MB)..." -ForegroundColor Cyan
-      ExecNativeWithRetry -Program "scp" -CommandArgs @(
-        $chunkFile.FullName,
-        "$VpsHost`:$remoteChunkPath"
-      )
-
-      # Verify the remote chunk exists with non-zero size before marking complete
-      if (-not (Test-RemoteFileExists -VpsHost $VpsHost -RemotePath $remoteChunkPath)) {
-        throw "Chunk $($chunkFile.Name) failed verification after upload — remote file missing or empty"
-      }
-
-      $ShipState.UploadedChunks += $chunkFile.Name
-      $ShipState.UpdatedAt = (Get-Date).ToString("o")
+  if ($currentStageRank -lt (Get-ShipStageRank -Stage "image-loaded")) {
+    if (-not (Test-RemoteFileExists -VpsHost $VpsHost -RemotePath $ShipState.RemoteTarPath)) {
+      Write-Warning "Resume checkpoint expected remote tar, but it is missing. Re-uploading tar..."
+      ExecNativeWithRetry -Program "scp" -CommandArgs @($ShipState.LocalTarPath, "$VpsHost`:$($ShipState.RemoteTarPath)")
+      $ShipState.Stage = "tar-uploaded"
       Write-ShipState -StateFilePath $ShipStatePath -State $ShipState
     }
 
-    $ShipState.Stage = "tar-uploaded"
-    $ShipState.UpdatedAt = (Get-Date).ToString("o")
-    Write-ShipState -StateFilePath $ShipStatePath -State $ShipState
-    $currentStageRank = Get-ShipStageRank -Stage ([string]$ShipState.Stage)
-  }
-
-  # ── Stage: image-loaded — verify all chunks present, reassemble, and load ──
-  if ($currentStageRank -lt (Get-ShipStageRank -Stage "image-loaded")) {
-    $chunkFiles = @(Get-ChildItem -LiteralPath $ShipState.ChunksDir -File |
-      Where-Object { $_.Name -match '^chunk-\d{4}$' })
-
-    # Verify every expected remote chunk exists
-    foreach ($chunkFile in $chunkFiles) {
-      $remoteChunkPath = "/tmp/yehthatrocks-image-$($ShipState.CommitSha).$($chunkFile.Name)"
-      if (-not (Test-RemoteFileExists -VpsHost $VpsHost -RemotePath $remoteChunkPath)) {
-        Write-Warning "Remote chunk $($chunkFile.Name) is missing. Re-uploading all missing chunks..."
-        $ShipState.Stage = "tar-saved"
-        $ShipState.UploadedChunks = @()
-        $ShipState.UpdatedAt = (Get-Date).ToString("o")
-        Write-ShipState -StateFilePath $ShipStatePath -State $ShipState
-        # Recurse — will re-enter the tar-uploaded stage
-        Transfer-ImageToVps -ImageTag $ImageTag -VpsHost $VpsHost -ShipState $ShipState -ShipStatePath $ShipStatePath
-        return
-      }
-    }
-
-    Write-Host "Reassembling chunks and loading image on VPS..." -ForegroundColor Yellow
-    $chunkGlob = "/tmp/yehthatrocks-image-$($ShipState.CommitSha).chunk-*"
-    $remoteLoad = "set -e; cat $chunkGlob | gunzip | docker load; rm -f $chunkGlob"
+    Write-Host "Loading uploaded image on VPS..." -ForegroundColor Yellow
+    $remoteLoad = "set -e; trap 'rm -f $($ShipState.RemoteTarPath)' EXIT; docker load -i $($ShipState.RemoteTarPath)"
     ExecNativeWithRetry -Program "ssh" -CommandArgs @($VpsHost, $remoteLoad)
-
     $ShipState.Stage = "image-loaded"
-    $ShipState.UpdatedAt = (Get-Date).ToString("o")
     Write-ShipState -StateFilePath $ShipStatePath -State $ShipState
   }
 }
@@ -935,7 +791,7 @@ Ensure-CleanGitWorktree
 $devServerWasRunning = $false
 $shipStatePaths = Get-ShipStatePaths -RepoRoot $RepoDir
 $shipStatePath = [string]$shipStatePaths.StateFile
-$shipChunksDir = [string]$shipStatePaths.ChunksDir
+$shipTarPath = [string]$shipStatePaths.TarFile
 try {
   if (-not $SkipLocalCleanup) {
     $initialDevPid = Get-DevServerPid
@@ -1037,15 +893,14 @@ try {
       CommitSha = $resumeSha
       ImageTag = [string]$loadedState.ImageTag
       LatestTag = [string]$loadedState.LatestTag
-      ChunksDir = [string]$loadedState.ChunksDir
+      LocalTarPath = [string]$loadedState.LocalTarPath
       RemoteTarPath = [string]$loadedState.RemoteTarPath
-      UploadedChunks = @([string[]]$loadedState.UploadedChunks)
       Stage = [string]$loadedState.Stage
       CreatedAt = [string]$loadedState.CreatedAt
       UpdatedAt = (Get-Date).ToString("o")
     }
 
-    Ensure-ImagePresentFromTar -ImageTag $shipState.ImageTag -ChunksDir $shipState.ChunksDir
+    Ensure-ImagePresentFromTar -ImageTag $shipState.ImageTag -LocalTarPath $shipState.LocalTarPath
     Write-Host ("Resuming ship from stage '{0}' for {1}" -f $shipState.Stage, $shipState.ImageTag) -ForegroundColor Yellow
   } else {
     if (Test-Path -LiteralPath $shipStatePath) {
@@ -1058,14 +913,13 @@ try {
     $remoteTarPath = "/tmp/yehthatrocks-image-$currentSha.tar"
 
     $shipState = @{
-      SchemaVersion = 2
+      SchemaVersion = 1
       Branch = $Branch
       CommitSha = $currentSha
       ImageTag = $imageTag
       LatestTag = $latestTag
-      ChunksDir = $shipChunksDir
+      LocalTarPath = $shipTarPath
       RemoteTarPath = $remoteTarPath
-      UploadedChunks = @()
       Stage = "init"
       CreatedAt = (Get-Date).ToString("o")
       UpdatedAt = (Get-Date).ToString("o")
@@ -1267,8 +1121,8 @@ try {
     Write-ShipState -StateFilePath $shipStatePath -State $shipState
   }
 
-  if (Test-Path -LiteralPath $shipState.ChunksDir) {
-    Remove-Item -LiteralPath $shipState.ChunksDir -Recurse -Force -ErrorAction SilentlyContinue
+  if (Test-Path -LiteralPath $shipState.LocalTarPath) {
+    Remove-Item -LiteralPath $shipState.LocalTarPath -Force -ErrorAction SilentlyContinue
   }
   Clear-ShipState -StateFilePath $shipStatePath
 
