@@ -704,6 +704,69 @@ function Invoke-VpsDockerBuild(
   throw "Timed out waiting for VPS build after $maxWaitSeconds seconds. Check log: ssh $VpsHost cat $logPath"
 }
 
+# Uploads the image tar to the VPS with resume support.
+# This connection kills sustained upload flows (client-side stall + RST after
+# roughly 60-90 seconds), so a single scp/sftp put of a large tar never
+# completes. sftp "reput" resumes from the partial remote file after each
+# reset until the whole file has arrived; a remote size check confirms the
+# transfer before it is accepted.
+function Upload-ImageTarToVps(
+  [string]$LocalTarPath,
+  [string]$VpsHost,
+  [string]$RemoteTarPath
+) {
+  $localSize = (Get-Item -LiteralPath $LocalTarPath).Length
+  $batchPath = Join-Path ([System.IO.Path]::GetTempPath()) ("ytr-sftp-" + [System.Guid]::NewGuid().ToString("N") + ".bat")
+
+  $verb = if (Test-RemoteFileExists -VpsHost $VpsHost -RemotePath $RemoteTarPath) { "reput" } else { "put" }
+  $maxAttempts = 12
+
+  for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+    [System.IO.File]::WriteAllText($batchPath, ('{0} "{1}" "{2}"' -f $verb, $LocalTarPath, $RemoteTarPath) + "`n", (New-Object System.Text.ASCIIEncoding))
+
+    Write-Host "Uploading image archive to VPS (attempt $attempt/$maxAttempts via sftp $verb)..." -ForegroundColor Yellow
+    $previousErrorActionPreference = $ErrorActionPreference
+    $rawOutput = $null
+    try {
+      $ErrorActionPreference = "Continue"
+      $rawOutput = & sftp -b $batchPath $VpsHost 2>&1
+    } finally {
+      $ErrorActionPreference = $previousErrorActionPreference
+    }
+    $exitCode = $LASTEXITCODE
+
+    $remoteSize = 0
+    if ($exitCode -eq 0) {
+      $remoteSizeOutput = ((& ssh $VpsHost "stat -c %s '$RemoteTarPath'" 2>$null) | Out-String).Trim()
+      if ($remoteSizeOutput -match '^\d+$') {
+        $remoteSize = [long]$remoteSizeOutput
+      }
+    }
+
+    if ($exitCode -eq 0 -and $remoteSize -eq $localSize) {
+      if (Test-Path -LiteralPath $batchPath) {
+        Remove-Item -LiteralPath $batchPath -Force -ErrorAction SilentlyContinue
+      }
+      Write-Host ("Image archive uploaded and verified on VPS ({0} MB)." -f [math]::Round($localSize / 1MB, 1)) -ForegroundColor Green
+      return
+    }
+
+    $output = (($rawOutput | ForEach-Object { $_.ToString() }) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join [Environment]::NewLine
+    if (-not [string]::IsNullOrWhiteSpace($output)) {
+      Write-Host $output.TrimEnd()
+    }
+    Write-Warning ("Upload interrupted or not yet verified (local {0} MB, remote {1} MB); resuming in 3s..." -f [math]::Round($localSize / 1MB, 1), [math]::Round($remoteSize / 1MB, 1))
+
+    $verb = "reput"
+    Start-Sleep -Seconds 3
+  }
+
+  if (Test-Path -LiteralPath $batchPath) {
+    Remove-Item -LiteralPath $batchPath -Force -ErrorAction SilentlyContinue
+  }
+  throw "Image upload to VPS did not complete after $maxAttempts attempts."
+}
+
 function Transfer-ImageToVps(
   [string]$ImageTag,
   [string]$VpsHost,
@@ -722,8 +785,7 @@ function Transfer-ImageToVps(
   }
 
   if ($currentStageRank -lt (Get-ShipStageRank -Stage "tar-uploaded")) {
-    Write-Host "Uploading image archive to VPS..." -ForegroundColor Yellow
-    ExecNativeWithRetry -Program "scp" -CommandArgs @($ShipState.LocalTarPath, "$VpsHost`:$($ShipState.RemoteTarPath)")
+    Upload-ImageTarToVps -LocalTarPath $ShipState.LocalTarPath -VpsHost $VpsHost -RemoteTarPath $ShipState.RemoteTarPath
     $ShipState.Stage = "tar-uploaded"
     Write-ShipState -StateFilePath $ShipStatePath -State $ShipState
     $currentStageRank = Get-ShipStageRank -Stage ([string]$ShipState.Stage)
@@ -732,7 +794,7 @@ function Transfer-ImageToVps(
   if ($currentStageRank -lt (Get-ShipStageRank -Stage "image-loaded")) {
     if (-not (Test-RemoteFileExists -VpsHost $VpsHost -RemotePath $ShipState.RemoteTarPath)) {
       Write-Warning "Resume checkpoint expected remote tar, but it is missing. Re-uploading tar..."
-      ExecNativeWithRetry -Program "scp" -CommandArgs @($ShipState.LocalTarPath, "$VpsHost`:$($ShipState.RemoteTarPath)")
+      Upload-ImageTarToVps -LocalTarPath $ShipState.LocalTarPath -VpsHost $VpsHost -RemoteTarPath $ShipState.RemoteTarPath
       $ShipState.Stage = "tar-uploaded"
       Write-ShipState -StateFilePath $ShipStatePath -State $ShipState
     }
@@ -777,6 +839,10 @@ if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
 
 if (-not (Get-Command scp -ErrorAction SilentlyContinue)) {
   throw "scp command not found. Install OpenSSH client with scp support."
+}
+
+if (-not (Get-Command sftp -ErrorAction SilentlyContinue)) {
+  throw "sftp command not found. Install OpenSSH client with sftp support."
 }
 
 Push-Location $RepoDir
