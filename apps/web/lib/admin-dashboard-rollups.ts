@@ -309,6 +309,7 @@ async function maybeBackfillDailyHistory() {
         FROM (
           SELECT DATE(created_at) AS day_date
           FROM auth_audit_logs
+          WHERE success = 1
         ) auth_audit_logs_by_day
         GROUP BY day_date
       ) auth ON auth.day_date = metrics.day_date
@@ -399,6 +400,7 @@ async function refreshRecentDailyRollups(options: { fullScan: boolean }) {
         SELECT DATE(created_at) AS day_date
         FROM auth_audit_logs
         WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${intervalDays} DAY)
+          AND success = 1
       ) auth_audit_logs_by_day
       GROUP BY day_date
     ) auth ON auth.day_date = metrics.day_date
@@ -482,7 +484,7 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       SELECT
         ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start
       FROM auth_audit_logs
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${authIntervalClause})
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${authIntervalClause}) AND success = 1
     ) auth_audit_logs_by_hour
     GROUP BY bucket_start
     ON DUPLICATE KEY UPDATE

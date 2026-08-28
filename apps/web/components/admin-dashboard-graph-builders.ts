@@ -82,23 +82,30 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
     analyticsSeriesOn.sessions ? (row.sessions ?? 0) : 0,
   );
 
-  const maxVal = Math.max(1, ...displayedAnalyticsRows.map((row) => enabledSeriesMaxPerDay(row)));
+  // Outlier-resistant Y scale: cap the axis at the 95th percentile of the
+  // per-bucket maxima so a single bot-spike bucket cannot crush the real
+  // values down to invisibility. Off-scale buckets clamp to the chart ceiling;
+  // raw values remain in `points` for the hover tooltip.
+  const maxes = displayedAnalyticsRows.map((row) => enabledSeriesMaxPerDay(row)).sort((a, b) => a - b);
+  const capIndex = Math.max(0, Math.min(maxes.length - 1, Math.ceil(maxes.length * 0.95) - 1));
+  const maxVal = Math.max(1, maxes[capIndex] ?? 1);
   const chartWidth = width - paddingLeft - paddingRight;
   const chartHeight = height - paddingTop - paddingBottom;
   const step = displayedAnalyticsRows.length > 1 ? chartWidth / (displayedAnalyticsRows.length - 1) : 0;
+  const toY = (value: number) => paddingTop + chartHeight - Math.min(1, value / maxVal) * chartHeight;
 
   const points = displayedAnalyticsRows.map((item, index) => {
     const x = paddingLeft + index * step;
     return {
       x,
-      yPageViews: paddingTop + chartHeight - (item.pageViews / maxVal) * chartHeight,
-      yVideoViews: paddingTop + chartHeight - (item.videoViews / maxVal) * chartHeight,
-      yVisitors: paddingTop + chartHeight - (item.uniqueVisitors / maxVal) * chartHeight,
-      yNewVisitors: paddingTop + chartHeight - ((item.newVisitors ?? 0) / maxVal) * chartHeight,
-      yReturnVisits: paddingTop + chartHeight - (item.returnVisits / maxVal) * chartHeight,
-      yMagazineExternalLandings: paddingTop + chartHeight - (item.magazineExternalLandings / maxVal) * chartHeight,
-      yAuthEvents: paddingTop + chartHeight - (item.authEvents / maxVal) * chartHeight,
-      ySessions: paddingTop + chartHeight - ((item.sessions ?? 0) / maxVal) * chartHeight,
+      yPageViews: toY(item.pageViews),
+      yVideoViews: toY(item.videoViews),
+      yVisitors: toY(item.uniqueVisitors),
+      yNewVisitors: toY(item.newVisitors ?? 0),
+      yReturnVisits: toY(item.returnVisits),
+      yMagazineExternalLandings: toY(item.magazineExternalLandings),
+      yAuthEvents: toY(item.authEvents),
+      ySessions: toY(item.sessions ?? 0),
       bucketStart: item.bucketStart,
       bucketEnd: item.bucketEnd,
       label: item.label,

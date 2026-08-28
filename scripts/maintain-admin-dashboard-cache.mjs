@@ -187,6 +187,7 @@ async function refreshRollupTables() {
       SELECT DATE(created_at) AS day_date, COUNT(*) AS auth_events
       FROM auth_audit_logs
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
+        AND success = 1
       GROUP BY DATE(created_at)
     ) auth ON auth.day_date = metrics.day_date
     ${registrationsDailyJoinSql}
@@ -249,6 +250,7 @@ async function refreshRollupTables() {
         ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start
       FROM auth_audit_logs
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
+        AND success = 1
     ) auth_audit_logs_by_hour
     GROUP BY bucket_start
     ON DUPLICATE KEY UPDATE
