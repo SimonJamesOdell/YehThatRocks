@@ -82,13 +82,20 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
     analyticsSeriesOn.sessions ? (row.sessions ?? 0) : 0,
   );
 
-  // Outlier-resistant Y scale: cap the axis at the 95th percentile of the
-  // per-bucket maxima so a single bot-spike bucket cannot crush the real
-  // values down to invisibility. Off-scale buckets clamp to the chart ceiling;
-  // raw values remain in `points` for the hover tooltip.
-  const maxes = displayedAnalyticsRows.map((row) => enabledSeriesMaxPerDay(row)).sort((a, b) => a - b);
-  const capIndex = Math.max(0, Math.min(maxes.length - 1, Math.ceil(maxes.length * 0.95) - 1));
-  const maxVal = Math.max(1, maxes[capIndex] ?? 1);
+  // Outlier-resistant Y scale: when the largest bucket dwarfs the rest (more
+  // than 3x the second-largest), clip the axis to the second-largest so a
+  // single historic spike (e.g. launch day) cannot crush recent values to
+  // invisibility. The off-scale bucket clamps to the chart ceiling; exact
+  // values remain in `points` for the hover tooltip.
+  const maxes = displayedAnalyticsRows
+    .map((row) => enabledSeriesMaxPerDay(row))
+    .filter((value) => value > 0)
+    .sort((a, b) => a - b);
+  const top = maxes.length > 0 ? maxes[maxes.length - 1] : 0;
+  const secondTop = maxes.length > 1 ? maxes[maxes.length - 2] : top;
+  const maxVal = top > secondTop * 3 && secondTop > 0
+    ? Math.max(1, secondTop)
+    : Math.max(1, top);
   const chartWidth = width - paddingLeft - paddingRight;
   const chartHeight = height - paddingTop - paddingBottom;
   const step = displayedAnalyticsRows.length > 1 ? chartWidth / (displayedAnalyticsRows.length - 1) : 0;
