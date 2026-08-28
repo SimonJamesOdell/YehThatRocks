@@ -83,3 +83,10 @@ deny 172.104.0.0/16;
 deny 173.255.192.0/18;
 deny 192.155.80.0/20;
 deny 198.58.96.0/19;
+
+# ── FBW Networks ───────────────────────────────────────────────
+# French datacenter host (AS211590, FR-FBW-NETWORKS). Actively
+# vulnerability-scanning the site via curl/8.7.1: .git/config,
+# .env, phpunit eval-stdin RCE, Consul/Vault/WordPress probes.
+# Observed 2026-08-28 from 185.177.72.54/.9/.22/.23/.24/.100.
+deny 185.177.72.0/24;

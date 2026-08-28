@@ -14,5 +14,4 @@ location ~ ^/sitemap/(.+)\.xml$ {
     add_header Cache-Control "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400";
     # Return 404 if the static file doesn't exist (fall back to Next.js would happen but
     # the sitemap builder pre-generates all known shards, so missing = doesn't exist).
-    try_files $uri =404;
 }
