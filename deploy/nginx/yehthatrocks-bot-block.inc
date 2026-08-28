@@ -12,20 +12,17 @@ if ($http_user_agent ~* "(GPTBot|Applebot|Amazonbot|MJ12bot|Bytespider|ClaudeBot
 }
 
 # Block the spoofed-browser scraper fleet. The fleet rotates obsolete browser
-# version tokens; it previously used Chrome 100-121 and has since moved to
-# Chrome 99 / 123 / 124 (plus old 71-95). Chrome/Firefox < 126 are 2.3+ years
-# old (Chrome 125 = May 2024) — no real user runs these in 2026.
-#
-# Deliberately NOT extended past 125: the residential-proxy fleet also spoofs
-# near-current versions (Chrome/131-136), which real users run too. Blocking
-# those would cost real visitors.
+# version tokens and has repeatedly moved its spoof range to dodge this block
+# (Chrome 100-121 -> 99/123/124 -> 131/133/136). Chrome/Firefox < 140 are
+# 1.5+ years old (Chrome 140 = Feb 2025) — the residential-proxy catalog
+# walker uses exactly this range, while real users are on Chrome 145+.
 #
 # Legitimate social/search crawlers that still embed old version tokens
-# (Facebook's crawler fetches with Chrome/74 from its 2a03:2880::/32 range)
-# are explicitly exempt — blocking them would break link previews for
+# (Facebook's crawler fetches with Chrome/74 and /139 from its 2a03:2880::/32
+# range) are explicitly exempt — blocking them would break link previews for
 # organic shares.
 set $spoofed_browser_bot 0;
-if ($http_user_agent ~* "(Chrome|Firefox)/([0-9]{1,2}\.|1(0[0-9]|1[0-9]|2[0-5])\.)") {
+if ($http_user_agent ~* "(Chrome|Firefox)/([0-9]{1,2}\.|1(0[0-9]|1[0-9]|2[0-9]|3[0-9])\.)") {
     set $spoofed_browser_bot 1;
 }
 if ($http_user_agent ~* "(meta-webindexer|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot|Discordbot|WhatsApp|Pinterest|TelegramBot|vkShare|redditbot|Googlebot|Google-InspectionTool|Bingbot|BingPreview|DuckDuckBot|YandexBot|Baiduspider|Applebot|Sogou|SeznamBot|MojeekBot)") {
