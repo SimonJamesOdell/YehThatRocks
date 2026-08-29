@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>YehThatRocks — one moment…</title>
+<style>
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: #0c0c13; color: #ececf2;
+    font-family: system-ui, -apple-system, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .box { text-align: center; padding: 24px; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+  p { font-size: 13px; opacity: 0.65; margin: 0; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>Checking your browser…</h1>
+  <p>This should only take a moment.</p>
+</div>
+<script>
+(() => {
+  const POW_SALT = "ytr-botok-v1:";
+  const POW_DIFFICULTY_BITS = 18;
+
+  async function sha256(bytes) {
+    return new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  }
+
+  function meets(digest) {
+    const fullBytes = POW_DIFFICULTY_BITS >> 3;
+    const remBits = POW_DIFFICULTY_BITS & 7;
+    for (let i = 0; i < fullBytes; i++) {
+      if (digest[i] !== 0) return false;
+    }
+    if (remBits > 0) {
+      const mask = 0xff << (8 - remBits);
+      if ((digest[fullBytes] & mask) !== 0) return false;
+    }
+    return true;
+  }
+
+  async function solve() {
+    const encoder = new TextEncoder();
+    const rand = new Uint8Array(12);
+    crypto.getRandomValues(rand);
+    const base = Array.from(rand, (b) => b.toString(16).padStart(2, "0")).join("");
+    let counter = 0;
+    for (;;) {
+      const nonce = base + counter.toString(16);
+      if (meets(await sha256(encoder.encode(POW_SALT + nonce)))) {
+        return nonce;
+      }
+      counter++;
+    }
+  }
+
+  async function main() {
+    const goto = document.referrer.startsWith(location.origin)
+      ? document.referrer
+      : "/";
+    try {
+      const nonce = await solve();
+      const res = await fetch("/api/bot-challenge", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nonce }),
+      });
+      location.replace(res.ok ? goto : "/");
+    } catch {
+      location.replace("/");
+    }
+  }
+
+  main();
+})();
+</script>
+</body>
+</html>
