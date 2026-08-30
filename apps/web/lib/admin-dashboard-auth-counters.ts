@@ -76,6 +76,7 @@ export async function getAdminDashboardAuthAuditCounters(): Promise<AuthAuditCou
         FROM auth_audit_logs
         WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
           AND success = 1
+          AND action IN ('login', 'register')
         GROUP BY DATE(created_at)
         ORDER BY day DESC
         LIMIT 14

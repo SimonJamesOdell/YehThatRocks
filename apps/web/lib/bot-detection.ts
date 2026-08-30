@@ -1,9 +1,11 @@
 // Shared user-agent bot detection.
 //
 // Used to keep bot/crawler traffic out of analytics and magazine-landing
-// metrics. Mirrors the nginx old-UA block (Chrome/Firefox <= 121) plus the
-// known crawler signatures and spoofed-device patterns observed in production
-// (e.g. "Android 10; K", "WOW64", Yandex, Facebook external hit).
+// metrics. Matches self-identified crawlers and known spoofed-device patterns.
+//
+// Deliberately NOT version-based: version strings are spoofed freely, and
+// out-of-date browsers are still used by real people. Version-gating was
+// removed to avoid turning those users away.
 
 const CRAWLER_FRAGMENTS = [
   "bot",
@@ -46,14 +48,6 @@ export function isBotUserAgent(userAgent: string | null | undefined): boolean {
 
   // 32-bit Firefox on 64-bit Windows (WOW64) — old scraper signature.
   if (ua.includes("wow64")) return true;
-
-  // Old Chrome <= 121 (mirrors the nginx old-UA block).
-  const chrome = ua.match(/chrome\/(\d+)/);
-  if (chrome && Number(chrome[1]) <= 121) return true;
-
-  // Old Firefox < 100.
-  const firefox = ua.match(/firefox\/(\d+)/);
-  if (firefox && Number(firefox[1]) < 100) return true;
 
   return false;
 }
