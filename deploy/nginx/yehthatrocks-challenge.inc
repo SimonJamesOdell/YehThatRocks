@@ -7,9 +7,19 @@
 # Scrapers that never execute JavaScript never get the cookie and never get
 # the page — regardless of which browser version they spoof.
 #
-# Known crawlers are skipped (they never carry the resume-walk signature).
+# Skipped unconditionally:
+#   - Known crawlers (they never carry the resume-walk signature).
+#   - Signed-in users (ytr_access / ytr_refresh cookies) — they already passed
+#     login, so they are not JS-less scrapers.
+#
+# Only the alphabetical-walk signature (letter=X) is challenged. Plain
+# /artist/*?resume=1 navigations (search suggestions, autoplay redirects,
+# video links) are real users and are never challenged.
 set $walker_challenge "";
 if ($http_user_agent ~* "(meta-webindexer|facebookexternalhit|Googlebot|Bingbot|DuckDuckBot)") {
+    set $walker_challenge "SKIP";
+}
+if ($http_cookie ~ "(ytr_access=|ytr_refresh=)") {
     set $walker_challenge "SKIP";
 }
 if ($http_cookie !~ "ytr_botok=") {
@@ -18,10 +28,13 @@ if ($http_cookie !~ "ytr_botok=") {
 if ($request_uri ~ "^/artist/") {
     set $walker_challenge "${walker_challenge}B";
 }
-if ($args ~ "resume=1") {
+if ($args ~ "letter=") {
     set $walker_challenge "${walker_challenge}C";
 }
-if ($walker_challenge = "ABC") {
+if ($args ~ "resume=1") {
+    set $walker_challenge "${walker_challenge}D";
+}
+if ($walker_challenge = "ABCD") {
     return 302 /__botchallenge;
 }
 
