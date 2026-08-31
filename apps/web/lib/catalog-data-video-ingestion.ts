@@ -2580,16 +2580,35 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
     new Set<string>(matchingRows.map((row: { parsedArtist: string | null }) => row.parsedArtist?.trim()).filter((v: string | undefined): v is string => Boolean(v))),
   );
 
-  const [siteVideoColumns, playlistColumns, favouriteColumns, artistVideoColumns, messageColumns, relatedColumns, videoFkRefs] =
-    await Promise.all([
-      loadTableColumns("site_videos"),
-      loadTableColumns("playlistitems"),
-      loadTableColumns("favourites"),
-      loadTableColumns("videosbyartist"),
-      loadTableColumns("messages"),
-      loadTableColumns("related"),
-      loadVideoForeignKeyRefs(),
-    ]);
+  const [
+    siteVideoColumns,
+    playlistColumns,
+    favouriteColumns,
+    artistVideoColumns,
+    messageColumns,
+    relatedColumns,
+    watchHistoryColumns,
+    hiddenVideoColumns,
+    analyticsEventColumns,
+    artistStatColumns,
+    magazineArticleColumns,
+    forumThreadColumns,
+    videoFkRefs,
+  ] = await Promise.all([
+    loadTableColumns("site_videos"),
+    loadTableColumns("playlistitems"),
+    loadTableColumns("favourites"),
+    loadTableColumns("videosbyartist"),
+    loadTableColumns("messages"),
+    loadTableColumns("related"),
+    loadTableColumns("watch_history"),
+    loadTableColumns("hidden_videos"),
+    loadTableColumns("analytics_events"),
+    loadTableColumns("artist_stats"),
+    loadTableColumns("magazine_articles"),
+    loadTableColumns("forum_threads"),
+    loadVideoForeignKeyRefs(),
+  ]);
 
   const executeWithRetry = async (query: string, params: unknown[]) => {
     const maxAttempts = 4;
@@ -2669,6 +2688,62 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
       await executeWithRetry(`DELETE FROM related WHERE ${escapeSqlIdentifier(relatedVideoRef.Field)} = ?`, [normalizedVideoId]);
     } else if (relatedRelatedRef) {
       await executeWithRetry(`DELETE FROM related WHERE ${escapeSqlIdentifier(relatedRelatedRef.Field)} = ?`, [normalizedVideoId]);
+    }
+
+    const watchHistoryRef = pickColumn(watchHistoryColumns, ["video_id", "videoId"]);
+    if (watchHistoryRef) {
+      await executeWithRetry(
+        `DELETE FROM watch_history WHERE ${escapeSqlIdentifier(watchHistoryRef.Field)} = ?`,
+        [normalizedVideoId],
+      );
+    }
+
+    const hiddenVideoRef = pickColumn(hiddenVideoColumns, ["video_id", "videoId"]);
+    if (hiddenVideoRef) {
+      await executeWithRetry(
+        `DELETE FROM hidden_videos WHERE ${escapeSqlIdentifier(hiddenVideoRef.Field)} = ?`,
+        [normalizedVideoId],
+      );
+    }
+
+    const analyticsEventRef = pickColumn(analyticsEventColumns, ["video_id", "videoId"]);
+    if (analyticsEventRef) {
+      await executeWithRetry(
+        `DELETE FROM analytics_events WHERE ${escapeSqlIdentifier(analyticsEventRef.Field)} = ?`,
+        [normalizedVideoId],
+      );
+    }
+
+    // Reference-column tables keep their parent row; only the video pointer is cleared.
+    const artistStatThumbRef = pickColumn(artistStatColumns, ["thumbnail_video_id"]);
+    if (artistStatThumbRef) {
+      await executeWithRetry(
+        `UPDATE artist_stats SET ${escapeSqlIdentifier(artistStatThumbRef.Field)} = NULL WHERE ${escapeSqlIdentifier(artistStatThumbRef.Field)} = ?`,
+        [normalizedVideoId],
+      );
+    }
+
+    const magazineArticleVideoRef = pickColumn(magazineArticleColumns, ["video_id", "videoId"]);
+    if (magazineArticleVideoRef) {
+      await executeWithRetry(
+        `UPDATE magazine_articles SET ${escapeSqlIdentifier(magazineArticleVideoRef.Field)} = NULL WHERE ${escapeSqlIdentifier(magazineArticleVideoRef.Field)} = ?`,
+        [normalizedVideoId],
+      );
+    }
+
+    const forumThreadVideo1Ref = pickColumn(forumThreadColumns, ["video1_id"]);
+    if (forumThreadVideo1Ref) {
+      await executeWithRetry(
+        `UPDATE forum_threads SET ${escapeSqlIdentifier(forumThreadVideo1Ref.Field)} = NULL WHERE ${escapeSqlIdentifier(forumThreadVideo1Ref.Field)} = ?`,
+        [normalizedVideoId],
+      );
+    }
+    const forumThreadVideo2Ref = pickColumn(forumThreadColumns, ["video2_id"]);
+    if (forumThreadVideo2Ref) {
+      await executeWithRetry(
+        `UPDATE forum_threads SET ${escapeSqlIdentifier(forumThreadVideo2Ref.Field)} = NULL WHERE ${escapeSqlIdentifier(forumThreadVideo2Ref.Field)} = ?`,
+        [normalizedVideoId],
+      );
     }
 
     for (const fkRef of videoFkRefs) {
