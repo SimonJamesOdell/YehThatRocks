@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Metal_Mania } from "next/font/google";
+import localFont from "next/font/local";
 
 import { PerformanceMeasureGuard } from "@/components/performance-measure-guard";
 import { YouTubeIframeApiLoader } from "@/components/youtube-iframe-api-loader";
@@ -7,8 +7,12 @@ import { UtmCapture } from "@/components/utm-capture";
 import { buildWebSite } from "@/lib/schema-org";
 import "./globals.css";
 
-const metalMania = Metal_Mania({
-  subsets: ["latin"],
+// Self-hosted Metal Mania (SIL OFL 1.1 — see ./fonts/OFL.txt).
+// Self-hosting keeps the Docker build hermetic: next/font/google downloads
+// from fonts.googleapis.com at build time and fails hard when the builder
+// cannot reach Google (seen as "Failed to fetch Metal Mania from Google Fonts").
+const metalMania = localFont({
+  src: "./fonts/metal-mania-latin-400-normal.woff2",
   weight: "400",
   variable: "--font-display"
 });
