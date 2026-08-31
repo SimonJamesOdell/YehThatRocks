@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAdminIdentity } from "@/lib/admin-auth";
 import { getOptionalApiAuth } from "@/lib/auth-request";
 import { prisma } from "@/lib/db";
-import { findAndReplaceUnavailableVideo, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { checkEmbedPlayability, findAndReplaceUnavailableVideo, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { isObviousCrawlerRequest } from "@/lib/crawler-guard";
 import { verifySameOrigin } from "@/lib/csrf";
 import { truncate } from "@/lib/catalog-data-utils";
@@ -125,11 +125,11 @@ function classifyUnavailableReason(reason: string): AvailabilityClassification {
     return "copyright-claim";
   }
 
-  if (/(private|deleted|removed|video-unavailable|oembed:(404|410)|embed:(404|410))/i.test(reason)) {
+  if (/(private|deleted|removed|video-unavailable|oembed:(404|410)|embed:(404|410)|api-not-found|upload-status)/i.test(reason)) {
     return "removed-or-private";
   }
 
-  if (/age-restricted/i.test(reason)) {
+  if (/(age-restricted|not-embeddable)/i.test(reason)) {
     return "embed-restricted";
   }
 
@@ -173,6 +173,27 @@ async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: num
 }
 
 async function verifyYouTubeAvailability(videoId: string): Promise<AvailabilityCheckResult> {
+  // Primary: the authenticated YouTube Data API (videos.list, part=status,contentDetails).
+  // It is programmatic and bot-check resistant, unlike the embed/watch page scrape
+  // fallback below which YouTube frequently bot-challenges from datacenter IPs.
+  const apiResult = await checkEmbedPlayability(videoId).catch(() => null);
+  if (apiResult) {
+    if (apiResult.status === "available") {
+      return { status: "available", reason: apiResult.reason, classification: "available" };
+    }
+
+    if (apiResult.status === "unavailable") {
+      return {
+        status: "unavailable",
+        reason: apiResult.reason,
+        classification: classifyUnavailableReason(apiResult.reason),
+      };
+    }
+
+    // apiResult.status === "check-failed" (no key / auth error / network error)
+    // falls through to the scrape-based fallback below.
+  }
+
   const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`;
 
   try {

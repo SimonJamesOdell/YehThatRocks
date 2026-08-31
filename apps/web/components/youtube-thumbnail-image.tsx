@@ -97,41 +97,61 @@ export function YouTubeThumbnailImage({
     }
 
     let cancelled = false;
-    const probe = new Image();
+    let retried = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-    probe.onload = () => {
-      if (cancelled) {
-        return;
-      }
+    const runProbe = () => {
+      const probe = new Image();
 
-      // YouTube fallback placeholders for unavailable videos can still load
-      // as tiny 120x90 images. Treat these as broken so cards are excluded.
-      const isLikelyUnavailablePlaceholder = isLikelyUnavailableThumbnailDimensions(
-        probe.naturalWidth,
-        probe.naturalHeight,
-      );
-      if (isLikelyUnavailablePlaceholder) {
+      probe.onload = () => {
+        if (cancelled) {
+          return;
+        }
+
+        // YouTube fallback placeholders for unavailable videos can still load
+        // as tiny 120x90 images. Treat these as broken so cards are excluded.
+        const isLikelyUnavailablePlaceholder = isLikelyUnavailableThumbnailDimensions(
+          probe.naturalWidth,
+          probe.naturalHeight,
+        );
+        if (isLikelyUnavailablePlaceholder) {
+          thumbnailHealthCache.set(videoId, "broken");
+          setThumbState({ videoId, state: "broken" });
+          return;
+        }
+
+        thumbnailHealthCache.set(videoId, "ready");
+        setThumbState({ videoId, state: "ready" });
+      };
+
+      probe.onerror = () => {
+        if (cancelled) {
+          return;
+        }
+
+        // A single failed thumbnail load is frequently transient (network blip,
+        // CDN hiccup). Retry once before declaring it broken so we don't flood
+        // the backend with spurious thumbnail-load-error reports.
+        if (!retried) {
+          retried = true;
+          retryTimer = setTimeout(runProbe, 350);
+          return;
+        }
+
         thumbnailHealthCache.set(videoId, "broken");
         setThumbState({ videoId, state: "broken" });
-        return;
-      }
+      };
 
-      thumbnailHealthCache.set(videoId, "ready");
-      setThumbState({ videoId, state: "ready" });
+      probe.src = probeUrl;
     };
 
-    probe.onerror = () => {
-      if (cancelled) {
-        return;
-      }
-      thumbnailHealthCache.set(videoId, "broken");
-      setThumbState({ videoId, state: "broken" });
-    };
-
-    probe.src = probeUrl;
+    runProbe();
 
     return () => {
       cancelled = true;
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+      }
     };
   }, [videoId, probeUrl]);
 

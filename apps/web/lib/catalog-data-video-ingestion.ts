@@ -894,7 +894,7 @@ async function persistRejectedVideo(videoId: string, reason: string): Promise<vo
  *
  * Cost: 2 units per call (status + contentDetails parts). Compare: 100 units for search.list.
  */
-async function checkEmbedPlayability(videoId: string): Promise<VideoAvailability> {
+export async function checkEmbedPlayability(videoId: string): Promise<VideoAvailability> {
   if (!YOUTUBE_DATA_API_KEY) {
     return { status: "check-failed", reason: "embed:no-api-key" };
   }
@@ -942,6 +942,13 @@ async function checkEmbedPlayability(videoId: string): Promise<VideoAvailability
 
     if (!item) {
       return { status: "unavailable", reason: "embed:api-not-found" };
+    }
+
+    // uploadStatus reports the uploader-side lifecycle: processed (normal),
+    // deleted, failed, or rejected. Anything other than processed is genuinely
+    // dead and cannot be played back.
+    if (item?.status?.uploadStatus && item.status.uploadStatus !== "processed") {
+      return { status: "unavailable", reason: `embed:api-upload-status-${item.status.uploadStatus}` };
     }
 
     // `embeddable` is false when the uploader disabled embedding or the video
