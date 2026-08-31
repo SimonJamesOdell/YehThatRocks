@@ -317,6 +317,7 @@ model SiteVideo {
 
   @@index([status, videoId], map: "idx_site_videos_status_video_id")
   @@index([videoId, status], map: "idx_site_videos_video_id_status")
+  @@unique([videoId], map: "site_videos_video_id_key")
   @@map("site_videos")
 }
 
