@@ -105,6 +105,53 @@ async function getMagazineLandingsTableExists() {
   return Number(rows[0]?.count ?? 0) > 0;
 }
 
+// ---------------------------------------------------------------------------
+// Bot-traffic classification
+//
+// A distributed botnet (residential proxies) has been inflating "unique
+// visitors" by sending a handful of analytics events per IP and then never
+// returning. The events carry a spoofed-but-plausible browser User-Agent, so
+// the reliable signal is behavioural: a "one-shot" IP — very few total events,
+// all within a short window — belonging to an anonymous, low-activity visitor.
+//
+// This recomputes is_suspected_bot for every row each run, so a real visitor
+// whose IP later accumulates more events graduates back out of the suspected
+// set. Downstream rollups and series exclude is_suspected_bot = 1 rows.
+// ---------------------------------------------------------------------------
+const BOT_ONE_SHOT_MAX_EVENTS = 5;
+const BOT_ONE_SHOT_MAX_SPAN_MINUTES = 60;
+
+async function classifySuspectedBotTraffic() {
+  const affected = await prisma.$executeRawUnsafe(`
+    UPDATE analytics_events e
+    LEFT JOIN (
+      SELECT v.visitor_id
+      FROM (
+        SELECT
+          visitor_id,
+          MAX(ip_hash) AS ip_hash,
+          COUNT(*) AS ev_count,
+          SUM(CASE WHEN user_id IS NOT NULL THEN 1 ELSE 0 END) AS authed_count
+        FROM analytics_events
+        GROUP BY visitor_id
+      ) v
+      JOIN (
+        SELECT ip_hash
+        FROM analytics_events
+        WHERE ip_hash IS NOT NULL
+        GROUP BY ip_hash
+        HAVING COUNT(*) <= ${BOT_ONE_SHOT_MAX_EVENTS}
+           AND TIMESTAMPDIFF(MINUTE, MIN(created_at), MAX(created_at)) <= ${BOT_ONE_SHOT_MAX_SPAN_MINUTES}
+      ) one_shot ON one_shot.ip_hash = v.ip_hash
+      WHERE v.ev_count <= ${BOT_ONE_SHOT_MAX_EVENTS}
+        AND v.authed_count = 0
+    ) bots ON bots.visitor_id = e.visitor_id
+    SET e.is_suspected_bot = (bots.visitor_id IS NOT NULL)
+  `);
+
+  return Number(affected ?? 0);
+}
+
 async function refreshRollupTables() {
   await ensureRollupTables();
 
@@ -180,6 +227,7 @@ async function refreshRollupTables() {
           GROUP BY visitor_id
         ) fs ON fs.visitor_id = ae.visitor_id
         WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
+          AND ae.is_suspected_bot = 0
       ) ev
       GROUP BY ev.day_date
     ) metrics
@@ -230,6 +278,7 @@ async function refreshRollupTables() {
         is_new_visitor
       FROM analytics_events
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
+        AND is_suspected_bot = 0
     ) analytics_events_by_hour
     GROUP BY bucket_start
     ON DUPLICATE KEY UPDATE
@@ -467,6 +516,7 @@ async function computeAdminDashboardData() {
           GROUP BY visitor_id
         ) fs ON fs.visitor_id = ae.visitor_id
         WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 90 DAY)
+          AND ae.is_suspected_bot = 0
       ) ev
       GROUP BY ev.period_start
       ORDER BY ev.period_start ASC
@@ -496,6 +546,7 @@ async function computeAdminDashboardData() {
           GROUP BY visitor_id
         ) fs ON fs.visitor_id = ae.visitor_id
         WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 730 DAY)
+          AND ae.is_suspected_bot = 0
       ) ev
       GROUP BY ev.period_start
       ORDER BY ev.period_start ASC
@@ -525,6 +576,7 @@ async function computeAdminDashboardData() {
           GROUP BY visitor_id
         ) fs ON fs.visitor_id = ae.visitor_id
         WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1825 DAY)
+          AND ae.is_suspected_bot = 0
       ) ev
       GROUP BY ev.period_start
       ORDER BY ev.period_start ASC
@@ -784,6 +836,11 @@ export async function maintainAdminDashboardCache() {
   try {
     console.log("Ensuring admin dashboard cache table...");
     await ensureAdminDashboardCacheTable();
+
+    console.log("Classifying suspected bot traffic...");
+    await classifySuspectedBotTraffic().catch((err) => {
+      console.warn("Bot classification failed (non-fatal):", err?.message ?? err);
+    });
 
     console.log("Refreshing analytics rollup tables...");
     await refreshRollupTables().catch((err) => {

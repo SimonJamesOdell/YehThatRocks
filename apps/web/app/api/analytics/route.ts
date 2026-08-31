@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { verifySameOrigin } from "@/lib/csrf";
-import { isObviousCrawlerRequest, isBotRequest } from "@/lib/crawler-guard";
-import { extractCfHeaders, cfHeadersSummary } from "@/lib/cf-headers";
+import { isBotRequest } from "@/lib/crawler-guard";
+import { isBotUserAgent } from "@/lib/bot-detection";
+import { extractCfHeaders, cfHeadersSummary, extractClientIp, hashClientIp } from "@/lib/cf-headers";
 import { prisma } from "@/lib/db";
 import { readAuthCookies } from "@/lib/auth-cookies";
 import { verifyToken } from "@/lib/auth-jwt";
@@ -40,8 +41,8 @@ const ANALYTICS_BURST_WINDOW_MS = 30 * 1000; // 30 seconds
 const ANALYTICS_GLOBAL_BURST_LIMIT = 50;
 
 export async function POST(request: NextRequest) {
-  // 1. Bot detection — combined UA + Cloudflare signals
-  if (isBotRequest(request)) {
+  // 1. Bot detection — combined UA + Cloudflare signals + spoofed-device UA
+  if (isBotRequest(request) || isBotUserAgent(request.headers.get("user-agent"))) {
     return new NextResponse(null, { status: 204 });
   }
 
@@ -127,6 +128,13 @@ export async function POST(request: NextRequest) {
     // Not logged in — fine
   }
 
+  // Capture per-event bot signals for post-hoc classification. The client IP
+  // is stored only as a one-way hash; the raw address is never persisted.
+  const clientIp = extractClientIp(request);
+  const ipHash = clientIp ? hashClientIp(clientIp) : null;
+  const rawUserAgent = request.headers.get("user-agent");
+  const userAgent = rawUserAgent ? rawUserAgent.slice(0, 512) : null;
+
   // Determine if this visitor has been seen before (all event types)
   const existing = await prisma.$queryRaw<Array<{ marker: number }>>`
     SELECT 1 AS marker
@@ -144,6 +152,8 @@ export async function POST(request: NextRequest) {
       is_new_visitor,
       user_id,
       video_id,
+      ip_hash,
+      user_agent,
       created_at
     )
     VALUES (
@@ -153,6 +163,8 @@ export async function POST(request: NextRequest) {
       ${isNewVisitor},
       ${userId},
       ${videoId ?? null},
+      ${ipHash},
+      ${userAgent},
       UTC_TIMESTAMP()
     )
   `.catch(() => null); // Fire-and-forget; don't fail the client if DB is down

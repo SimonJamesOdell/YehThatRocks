@@ -301,6 +301,7 @@ async function maybeBackfillDailyHistory() {
             FROM analytics_events
             GROUP BY visitor_id
           ) fs ON fs.visitor_id = ae.visitor_id
+          WHERE ae.is_suspected_bot = 0
         ) analytics_events_by_day
         GROUP BY day_date
       ) metrics
@@ -391,6 +392,7 @@ async function refreshRecentDailyRollups(options: { fullScan: boolean }) {
           GROUP BY visitor_id
         ) fs ON fs.visitor_id = ae.visitor_id
         WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${intervalDays} DAY)
+          AND ae.is_suspected_bot = 0
       ) analytics_events_by_day
       GROUP BY day_date
     ) metrics
@@ -463,6 +465,7 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
         is_new_visitor
       FROM analytics_events
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${analyticsIntervalClause})
+        AND is_suspected_bot = 0
     ) analytics_events_by_hour
     GROUP BY bucket_start
     ON DUPLICATE KEY UPDATE

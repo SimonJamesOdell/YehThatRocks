@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { createHash } from "node:crypto";
 
 /**
  * Cloudflare request signals available to origin servers behind CF proxy.
@@ -53,6 +54,52 @@ export function cfHeadersSummary(headers: CfHeaders): string {
   else if (headers.threatScore != null) parts.push(`threat=${headers.threatScore}`);
   if (headers.ja3Hash) parts.push(`ja3=${headers.ja3Hash}`);
   return parts.join(" ");
+}
+
+/**
+ * Extract the best-available client IP address from proxy headers.
+ *
+ * Order of precedence (site sits behind Cloudflare → nginx → Next.js):
+ *   1. CF-Connecting-IP (set by Cloudflare, the true visitor IP)
+ *   2. X-Real-IP (set by nginx from the restored real IP)
+ *   3. X-Forwarded-For first hop (set by nginx)
+ *
+ * The first value of X-Forwarded-For is the original client as seen by nginx;
+ * later values may be spoofed, so we only ever trust the leftmost hop we can
+ * independently attribute.
+ */
+export function extractClientIp(request: NextRequest): string | null {
+  const cfConnectingIp = request.headers.get("CF-Connecting-IP");
+  if (cfConnectingIp) {
+    const first = cfConnectingIp.split(",")[0]?.trim();
+    if (first) return first;
+  }
+
+  const xRealIp = request.headers.get("X-Real-IP");
+  if (xRealIp) {
+    const trimmed = xRealIp.trim();
+    if (trimmed) return trimmed;
+  }
+
+  const xForwardedFor = request.headers.get("X-Forwarded-For");
+  if (xForwardedFor) {
+    const first = xForwardedFor.split(",")[0]?.trim();
+    if (first) return first;
+  }
+
+  return null;
+}
+
+/**
+ * One-way hash of a client IP for pseudonymous storage on analytics events.
+ *
+ * SHA-256 is deliberately *not* salted with a deploy secret so the value is
+ * stable across restarts/deploys — the bot classifier groups events by this
+ * hash, so it must be consistent. It is pseudonymous (not directly reversible)
+ * and is never exposed to clients; it exists only to aggregate behaviour per IP.
+ */
+export function hashClientIp(ip: string): string {
+  return createHash("sha256").update(ip).digest("hex");
 }
 
 /**

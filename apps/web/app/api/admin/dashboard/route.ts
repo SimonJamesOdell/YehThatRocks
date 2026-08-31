@@ -125,6 +125,7 @@ async function loadAudienceWindow(days: number): Promise<AudienceWindowData> {
         FROM analytics_events
         WHERE event_type = 'page_view'
           AND is_new_visitor = 0
+          AND is_suspected_bot = 0
           AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${days} DAY)
         GROUP BY identity_val
       ) t
@@ -136,12 +137,14 @@ async function loadAudienceWindow(days: number): Promise<AudienceWindowData> {
       FROM analytics_events
       WHERE event_type = 'page_view'
         AND is_new_visitor = 0
+        AND is_suspected_bot = 0
         AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${days} DAY)
     `.catch(() => []),
     prisma.$queryRaw<Array<{ count: bigint | number }>>`
       SELECT COUNT(DISTINCT COALESCE(CAST(user_id AS CHAR), visitor_id)) AS count
       FROM analytics_events
       WHERE event_type = 'page_view'
+        AND is_suspected_bot = 0
         AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${days} DAY)
     `.catch(() => []),
   ]);
@@ -170,6 +173,7 @@ async function loadAudienceData() {
         FROM analytics_events
         WHERE event_type = 'page_view'
           AND is_new_visitor = 1
+          AND is_suspected_bot = 0
           AND DATE(created_at) = DATE_SUB(UTC_DATE(), INTERVAL 7 DAY)
       ) cohort
       LEFT JOIN (
@@ -177,6 +181,7 @@ async function loadAudienceData() {
         FROM analytics_events
         WHERE event_type = 'page_view'
           AND is_new_visitor = 0
+          AND is_suspected_bot = 0
           AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 DAY)
       ) returnees ON returnees.identity_val = cohort.identity_val
     `.catch(() => []),
@@ -190,6 +195,7 @@ async function loadAudienceData() {
         FROM analytics_events
         WHERE event_type = 'page_view'
           AND is_new_visitor = 1
+          AND is_suspected_bot = 0
           AND DATE(created_at) = DATE_SUB(UTC_DATE(), INTERVAL 30 DAY)
       ) cohort
       LEFT JOIN (
@@ -197,6 +203,7 @@ async function loadAudienceData() {
         FROM analytics_events
         WHERE event_type = 'page_view'
           AND is_new_visitor = 0
+          AND is_suspected_bot = 0
           AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
       ) returnees ON returnees.identity_val = cohort.identity_val
     `.catch(() => []),
