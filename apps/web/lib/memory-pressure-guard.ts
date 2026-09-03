@@ -23,7 +23,14 @@ type MemoryReliefState = {
 
 const DEFAULT_CHECK_INTERVAL_MS = 15_000;
 const DEFAULT_COOLDOWN_MS = 60_000;
-const DEFAULT_HEAP_USED_RATIO_THRESHOLD = 0.74;
+// Production finding: a heap-used *ratio* over-triggers here. The process has
+// no memory cap, so V8 keeps heapTotal small while heapUsed stays high
+// (e.g. ~130MB used / ~155MB total ≈ 0.84), which fired relief every cooldown
+// window and cleared the expensive current-video caches every minute —
+// guaranteeing cold resolvers on every page load. Only a ratio near saturation
+// is a real heap signal; the absolute RSS threshold remains the primary
+// out-of-memory guard.
+const DEFAULT_HEAP_USED_RATIO_THRESHOLD = 0.98;
 const DEFAULT_RSS_MB_THRESHOLD = 280;
 
 let guardStarted = false;

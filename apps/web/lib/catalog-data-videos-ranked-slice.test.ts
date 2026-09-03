@@ -23,7 +23,7 @@ describe("catalog-data ranked video ID slices", () => {
       const sql = strings.join(" ").replace(/\s+/g, " ").trim();
       seenSql.push(sql);
 
-      if (sql.includes("ORDER BY COALESCE(v.favourited, 0) DESC")) {
+      if (sql.includes("COALESCE(t.viewCount, 0) DESC")) {
         return Promise.resolve([
           { videoId: "ABCDEFGHIJK" },
           { videoId: "ABCDEFGHIJK" },
@@ -53,14 +53,20 @@ describe("catalog-data ranked video ID slices", () => {
     expect(Array.from(result.topVideoIds)).toEqual(["ABCDEFGHIJK"]);
     expect(Array.from(result.newestVideoIds)).toEqual(["LMNOPQRSTUV"]);
 
-    const topSql = seenSql.find((sql) => sql.includes("ORDER BY COALESCE(v.favourited, 0) DESC"));
+    const topSql = seenSql.find((sql) => sql.includes("COALESCE(t.viewCount, 0) DESC"));
     const newestSql = seenSql.find((sql) => sql.includes("ORDER BY v.created_at DESC, v.id DESC"));
 
-    expect(topSql).toContain("FROM site_videos sv FORCE INDEX (idx_site_videos_status_video_id)");
-    expect(topSql).toContain("INNER JOIN videos v ON v.id = sv.video_id");
+    // Top slice now pulls an index-ordered shortlist first, then re-ranks it
+    // with the exact favourite/view ranking so the query can use
+    // idx_videos_favourited_viewcount_videoid instead of filesorting the whole
+    // available catalog.
+    expect(topSql).toContain("FROM videos v");
     expect(topSql).toContain("sv.status = 'available'");
-    expect(topSql).toContain("GROUP BY v.id, v.videoId, v.favourited, v.viewCount");
-    expect(topSql).not.toContain("EXISTS (");
+    expect(topSql).toContain("EXISTS (");
+    expect(topSql).toContain("ORDER BY v.favourited DESC, v.viewCount DESC, v.videoId DESC");
+    expect(topSql).toContain("ORDER BY t.favourited DESC, COALESCE(t.viewCount, 0) DESC, t.videoId ASC");
+    expect(topSql).not.toContain("GROUP BY v.id, v.videoId, v.favourited, v.viewCount");
+    expect(topSql).not.toContain("FROM site_videos sv FORCE INDEX (idx_site_videos_status_video_id)");
     expect(topSql).not.toContain("SELECT DISTINCT sv.video_id");
     expect(topSql).not.toContain("available_sv");
 

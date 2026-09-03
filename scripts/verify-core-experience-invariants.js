@@ -176,6 +176,10 @@ function main() {
   assertContains(currentVideoRouteSource, "process.env.CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS", "Current-video API exposes configurable resolver concurrency for traffic spikes", failures);
   assertContains(currentVideoRouteSource, "pendingReason?: \"cooldown\" | \"concurrency-shed\" | \"timeout\" | \"resolver-error\"", "Current-video pending payload includes explicit overload reason metadata", failures);
   assertContains(currentVideoRouteSource, "retryAfterMs", "Current-video pending payload provides retry-after hint for client pacing", failures);
+  assertContains(currentVideoRouteSource, "CURRENT_VIDEO_TIMEOUT_PENDING_CACHE_TTL_MS = 12_000;", "Current-video API holds timeout pending responses longer so client retries don't spawn new heavy resolvers", failures);
+  assertContains(currentVideoRouteSource, "currentVideoPendingCache.delete(cacheKey);", "Current-video API clears pending payload once the slow resolver finally resolves", failures);
+  assertContains(currentVideoRouteSource, '"request:post-timeout-resolver-error"', "Current-video API engages failure cooldown when a resolver fails after the timeout race settled", failures);
+  assertContains(shellDynamicSource, "if (!hasOptimisticVideo && currentVideo.id === requestedVideoId) {", "Shell treats an already-displayed requested video as optimistic so the retry dialog never flashes over it", failures);
   assertNotContains(currentVideoRouteServiceSource, 'from "next/server"', "Current-video route service is free of HTTP-layer imports (next/server)", failures);
   assertNotContains(currentVideoRouteServiceSource, "NextResponse", "Current-video route service does not construct HTTP responses", failures);
 

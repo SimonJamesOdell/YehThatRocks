@@ -216,6 +216,15 @@ async function maybeBackfillLegacyApprovedVideos() {
 
 async function getRankedVideoIdSlice(mode: "top" | "newest", limit: number): Promise<string[]> {
   const fetchLimit = Math.max(1, Math.floor(limit));
+  // The "top" ranking (favourited DESC, viewCount DESC, videoId ASC) cannot be
+  // satisfied by an index order directly: viewCount is nullable and the old
+  // COALESCE-based ordering forces a full-scan filesort over every available
+  // video. Instead we pull a bounded shortlist in index order (fast backward
+  // scan over idx_videos_favourited_viewcount_videoid) and re-rank just that
+  // shortlist with the exact ordering. The shortlist is sized so the exact
+  // top-fetchLimit is always contained: fetchLimit is capped at 1,000 by
+  // callers, and the extra 1,000 rows absorb any boundary tie-group.
+  const shortlistLimit = Math.max(2_000, fetchLimit + 1_000);
   const now = Date.now();
   const cached = rankedVideoIdSliceCache.get(mode);
 
@@ -232,15 +241,25 @@ async function getRankedVideoIdSlice(mode: "top" | "newest", limit: number): Pro
   const queryPromise = (async () => {
     const rows = mode === "top"
       ? await prisma.$queryRaw<Array<{ videoId: string }>>`
-          SELECT
-            v.videoId
-          FROM site_videos sv FORCE INDEX (idx_site_videos_status_video_id)
-          INNER JOIN videos v ON v.id = sv.video_id
-          WHERE sv.status = 'available'
-            AND v.videoId IS NOT NULL
-            AND COALESCE(v.approved, 0) = 1
-          GROUP BY v.id, v.videoId, v.favourited, v.viewCount
-          ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC
+          SELECT t.videoId
+          FROM (
+            SELECT
+              v.videoId,
+              v.favourited,
+              v.viewCount
+            FROM videos v
+            WHERE v.videoId IS NOT NULL
+              AND v.approved = 1
+              AND EXISTS (
+                SELECT 1
+                FROM site_videos sv
+                WHERE sv.video_id = v.id
+                  AND sv.status = 'available'
+              )
+            ORDER BY v.favourited DESC, v.viewCount DESC, v.videoId DESC
+            LIMIT ${shortlistLimit}
+          ) t
+          ORDER BY t.favourited DESC, COALESCE(t.viewCount, 0) DESC, t.videoId ASC
           LIMIT ${fetchLimit}
         `
       : await prisma.$queryRaw<Array<{ videoId: string }>>`

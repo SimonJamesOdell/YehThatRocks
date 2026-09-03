@@ -12,10 +12,11 @@ const WELCOME_DISMISSED_KEY = "ytr:welcome-dismissed";
 const GENRE_PREFERENCES_KEY = "ytr:genre-preferences";
 const LOGO_SRC = "/assets/images/yeh_main_logo.png?v=20260424-4";
 
-export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal }: {
+export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal, onOpenLogin }: {
   onDismissed?: () => void;
   isAuthenticated?: boolean;
   onOpenAuthModal?: () => void;
+  onOpenLogin?: () => void;
 }) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
@@ -39,7 +40,7 @@ export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal }: 
     fetch("/api/categories/top-level-cards")
       .then((res) => res.json())
       .then((data) => {
-        if (cancelled) return;
+        if (cancelled || isAuthenticatedRef.current) return;
         const cards: GenreCard[] = (data.cards || []).filter(
           (card: GenreCard) => card.genre?.trim() !== "Rock / Metal"
         );
@@ -49,7 +50,7 @@ export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal }: 
         setIsOpen(true);
       })
       .catch(() => {
-        if (cancelled) return;
+        if (cancelled || isAuthenticatedRef.current) return;
         // Still show the modal even if categories fail to load.
         setIsOpen(true);
       });
@@ -64,10 +65,13 @@ export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal }: 
     isAuthenticatedRef.current = isAuthenticated ?? false;
     // If the user becomes authenticated after the modal is open (e.g. auto-login
     // succeeded), dismiss the modal silently — this user already has an account.
+    // Also release the intro block: the shell uses onDismissed to stop waiting
+    // for onboarding, and skipping it here freezes the desktop intro overlay.
     if (isAuthenticated && isOpen) {
       setIsOpen(false);
+      onDismissed?.();
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isOpen, onDismissed]);
 
   // Phase 2: show account creation prompt after genre selection.
   const [showAccountPrompt, setShowAccountPrompt] = useState(false);
@@ -129,6 +133,12 @@ export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal }: 
   const handleSkip = useCallback(() => {
     handleDismiss();
   }, [handleDismiss]);
+
+  // Returning users can sign in to an existing account instead of creating one.
+  const handleLogin = useCallback(() => {
+    handleDismiss();
+    onOpenLogin?.();
+  }, [handleDismiss, onOpenLogin]);
 
   // Navigate to registration page; genres are already in localStorage from handleContinue.
   const handleRegister = useCallback(() => {
@@ -279,6 +289,13 @@ export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal }: 
               </span>
               <button
                 type="button"
+                className="welcomeModalSignInLink"
+                onClick={handleLogin}
+              >
+                Already have an account? Sign in
+              </button>
+              <button
+                type="button"
                 className="welcomeModalGetStarted"
                 onClick={handleContinue}
                 disabled={selectedCount === 0}
@@ -293,9 +310,9 @@ export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal }: 
             <div className="welcomeModalBody">
               <p className="welcomeModalBlurb">
                 <strong>Save your preferences</strong> so your genre selections follow you
-                across devices. Create a free account or continue anonymously — either way,
-                your picks are applied to auto-play, the new videos page, and your
-                watch-next rail.
+                across devices. Create a free account, sign in to an existing one, or
+                continue anonymously — either way, your picks are applied to auto-play, the
+                new videos page, and your watch-next rail.
               </p>
               <div className="welcomeModalAccountOptions">
                 <button
@@ -311,6 +328,13 @@ export function WelcomeModal({ onDismissed, isAuthenticated, onOpenAuthModal }: 
                   onClick={handleRegister}
                 >
                   Register with Email
+                </button>
+                <button
+                  type="button"
+                  className="welcomeModalAccountButton welcomeModalAccountButton--login"
+                  onClick={handleLogin}
+                >
+                  Login with Existing Account
                 </button>
                 <button
                   type="button"

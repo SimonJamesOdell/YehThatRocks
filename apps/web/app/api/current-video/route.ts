@@ -42,11 +42,17 @@ const CURRENT_VIDEO_DEBUG_ENABLED = process.env.NODE_ENV === "development" && pr
 const CURRENT_VIDEO_CACHE_TTL_MS = 20_000;
 const CURRENT_VIDEO_FAILURE_COOLDOWN_MS = 8_000;
 const CURRENT_VIDEO_PENDING_CACHE_TTL_MS = 2_000;
+// When a resolver exceeds its time budget, keep serving the timeout pending
+// payload for much longer than a normal pending response. The underlying
+// resolver keeps working after the race answers, and a short TTL here lets
+// every client retry spawn yet another heavy resolver — a self-reinforcing
+// storm that keeps a cold/slow database from ever catching up.
+const CURRENT_VIDEO_TIMEOUT_PENDING_CACHE_TTL_MS = 12_000;
 const CURRENT_VIDEO_CACHE_MAX_ENTRIES = 300;
 const CURRENT_VIDEO_PENDING_CACHE_MAX_ENTRIES = 300;
 const CURRENT_VIDEO_RELATED_POOL_CACHE_MAX_ENTRIES = 120;
 const WATCH_NEXT_STREAM_CACHE_MAX_ENTRIES = 120;
-const CURRENT_VIDEO_RESOLVER_TIMEOUT_MS = 6_000;
+const CURRENT_VIDEO_RESOLVER_TIMEOUT_MS = 10_000;
 const parsedCurrentVideoMaxConcurrentResolvers = Number(process.env.CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS || "8");
 const CURRENT_VIDEO_MAX_CONCURRENT_RESOLVERS =
   Number.isFinite(parsedCurrentVideoMaxConcurrentResolvers)
@@ -562,6 +568,10 @@ export async function GET(request: NextRequest) {
     getCachedTopVideosForCurrentVideo,
     logEvent: logCurrentVideoRoute,
     onPayloadResolved: (payload, resolvedVideoId) => {
+      // A real payload supersedes any pending/timeout entry still cached for
+      // this key, so retries stop receiving stale "try again later" responses
+      // the moment the slow resolver finally finishes.
+      currentVideoPendingCache.delete(cacheKey);
       if (!isCustomRelatedRequest) {
         currentVideoCache.set(cacheKey, {
           expiresAt: Date.now() + CURRENT_VIDEO_CACHE_TTL_MS,
@@ -589,6 +599,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  let raceSettled = false;
   const boundedResolvePromise = Promise.race<CurrentVideoResolvePayload>([
     resolvePayloadPromise,
     new Promise<PendingPayload>((resolve) => {
@@ -596,15 +607,38 @@ export async function GET(request: NextRequest) {
         resolve({ pending: true, pendingReason: "timeout", retryAfterMs: 1_200 });
       }, CURRENT_VIDEO_RESOLVER_TIMEOUT_MS);
     }),
-  ]);
+  ]).then((payload) => {
+    raceSettled = true;
+    return payload;
+  });
+
+  // If the underlying resolver keeps working after the race already answered
+  // (timeout) and then fails, that failure must not go silent: engage the
+  // cooldown and drop the cached timeout payload so retries back off instead
+  // of starting fresh heavy resolvers against a failing backend. Pre-race
+  // failures propagate through the race into the catch below.
+  resolvePayloadPromise.catch(() => {
+    if (!raceSettled) {
+      return;
+    }
+    currentVideoResolverBlockedUntil = Date.now() + CURRENT_VIDEO_FAILURE_COOLDOWN_MS;
+    currentVideoPendingCache.delete(cacheKey);
+    logCurrentVideoRoute("request:post-timeout-resolver-error", {
+      requestedVideoId: v,
+      cooldownMs: CURRENT_VIDEO_FAILURE_COOLDOWN_MS,
+    });
+  });
 
   currentVideoInflight.set(cacheKey, boundedResolvePromise);
 
   try {
     const payload = await boundedResolvePromise;
     if ("pending" in payload && payload.pending) {
+      const pendingTtlMs = payload.pendingReason === "timeout"
+        ? CURRENT_VIDEO_TIMEOUT_PENDING_CACHE_TTL_MS
+        : CURRENT_VIDEO_PENDING_CACHE_TTL_MS;
       currentVideoPendingCache.set(cacheKey, {
-        expiresAt: Date.now() + CURRENT_VIDEO_PENDING_CACHE_TTL_MS,
+        expiresAt: Date.now() + pendingTtlMs,
         payload,
       });
     }

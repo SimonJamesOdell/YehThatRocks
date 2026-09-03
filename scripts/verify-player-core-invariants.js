@@ -387,6 +387,12 @@ function main() {
   assertContains(cssSource, ".playerFrame.playerFrameLoading .playerMount iframe {", "Loading mask hides mounted iframe while player loader is active", failures);
   assertContains(cssSource, "opacity: 0;", "Loading mask applies full iframe opacity suppression", failures);
 
+  // CSS: current-video retry dialog (timeout / cooldown / concurrency-shed).
+  assertContains(cssSource, ".nOverlay", "Current-video retry dialog overlay styles are defined", failures);
+  assertContains(cssSource, ".nDialog", "Current-video retry dialog panel styles are defined", failures);
+  assertContains(cssSource, ".nCountdown", "Current-video retry dialog countdown bar styles are defined", failures);
+  assertContains(cssSource, "@keyframes nCountdownShrink", "Current-video retry dialog countdown animation is defined", failures);
+
   // CSS: admin docked footer layout.
   assertContains(cssSource, ".playerChromeDockedDesktop .primaryActions.primaryActionsDockedAdmin,", "CSS defines admin-only docked footer layout mode", failures);
   assertContains(cssSource, "flex-wrap: wrap;", "Admin docked footer layout allows wrapped rows", failures);

@@ -269,6 +269,165 @@
   border-color: rgba(255, 255, 255, 0.28);
 }
 
+/* ── Current-video retry dialog (timeout / cooldown / concurrency-shed) ── */
+
+.nOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 20% 8%, rgba(255, 124, 88, 0.13), transparent 42%),
+    rgba(6, 2, 2, 0.64);
+  backdrop-filter: blur(9px) saturate(0.84);
+}
+
+.nDialog {
+  position: relative;
+  width: min(480px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 194, 168, 0.36);
+  background:
+    radial-gradient(circle at 10% 6%, rgba(255, 94, 56, 0.28), transparent 38%),
+    linear-gradient(158deg, rgba(38, 9, 7, 0.97), rgba(11, 4, 4, 0.98));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.56), 0 0 0 1px rgba(255, 126, 96, 0.2) inset;
+}
+
+.nDialog::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 3px;
+  border-radius: 16px 16px 0 0;
+  background: linear-gradient(90deg, rgba(255, 88, 48, 0.75), rgba(255, 180, 150, 0.46));
+}
+
+.nCopy {
+  display: grid;
+  gap: 8px;
+  padding-right: 34px;
+}
+
+.nCopy strong {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-family: var(--font-display), cursive;
+  font-size: 1.02rem;
+  color: #ffe3d7;
+}
+
+.nEyebrow {
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #ff9b7d;
+}
+
+.nCopy p:last-child {
+  margin: 0;
+  color: rgba(255, 230, 223, 0.95);
+  line-height: 1.6;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 194, 168, 0.16);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.nClose {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.nClose:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.nCountdownWrap {
+  display: grid;
+  gap: 10px;
+}
+
+.nCountdown {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.nCountdown::before {
+  content: "";
+  display: block;
+  height: 100%;
+  width: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(255, 88, 48, 0.9), rgba(255, 180, 150, 0.6));
+  transform-origin: left center;
+  animation: nCountdownShrink linear var(--countdown-ms, 1200ms) forwards;
+}
+
+@keyframes nCountdownShrink {
+  from {
+    transform: scaleX(1);
+  }
+
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.nCountdownMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.nCountdownMeta span {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.nButton {
+  padding: 9px 18px;
+  min-height: 40px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 120, 60, 0.3);
+  color: #fff;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: linear-gradient(135deg, #d42a14, #a11a0a);
+  cursor: pointer;
+  transition: background 150ms ease, transform 150ms ease, filter 150ms ease;
+}
+
+.nButton:hover {
+  background: linear-gradient(135deg, #e64122, #b81a0c);
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+
 .performanceQuickLaunch {
   position: fixed;
   top: 6px;

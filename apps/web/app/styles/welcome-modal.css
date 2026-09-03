@@ -378,6 +378,36 @@
   transform: translateY(-1px);
 }
 
+.welcomeModalAccountButton--login {
+  color: #ffd9cd;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 160, 130, 0.28);
+}
+
+.welcomeModalAccountButton--login:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 160, 130, 0.45);
+  transform: translateY(-1px);
+}
+
+.welcomeModalSignInLink {
+  margin-left: auto;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  background: transparent;
+  border: none;
+  padding: 6px 10px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.15s;
+}
+
+.welcomeModalSignInLink:hover {
+  color: #ffb8a6;
+}
+
 .welcomeModalAccountButton--ghost {
   color: rgba(255, 255, 255, 0.55);
   background: transparent;

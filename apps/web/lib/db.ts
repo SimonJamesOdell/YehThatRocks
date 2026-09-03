@@ -11,6 +11,7 @@ declare global {
   var __yehPrismaProfilingHookInstalled__: boolean | undefined;
   var __yehMemoryPressureGuardStarted__: boolean | undefined;
   var __yehBootStateRestored__: boolean | undefined;
+  var __yehCatalogWarmupStarted__: boolean | undefined;
 }
 
 type PrismaQueryEvent = {
@@ -228,6 +229,36 @@ if (
 ) {
   startServerMemoryPressureGuard();
   global.__yehMemoryPressureGuardStarted__ = true;
+}
+
+// Pre-build the expensive catalog pools on boot so the first
+// /api/current-video request after a deploy/restart is warm instead of paying
+// a cold 5-8s resolver (which previously tripped the 6s timeout). This is
+// best-effort and non-blocking; dynamic imports avoid a module-init cycle with
+// catalog-data-videos/random-catalog-pool, which import @/lib/db themselves.
+if (
+  process.env.NODE_ENV === "production" &&
+  !isLocalRuntime &&
+  !global.__yehCatalogWarmupStarted__
+) {
+  global.__yehCatalogWarmupStarted__ = true;
+  void (async () => {
+    try {
+      const [{ getTopVideos, getNewestVideos, getNewestVideosForRandom }, { getRandomCatalogPool }] = await Promise.all([
+        import("@/lib/catalog-data-videos"),
+        import("@/lib/random-catalog-pool"),
+      ]);
+
+      await Promise.allSettled([
+        getTopVideos(1_000),
+        getNewestVideos(200, 0),
+        getNewestVideosForRandom(1_000),
+        getRandomCatalogPool(),
+      ]);
+    } catch {
+      // Warmup is best-effort; never let it affect startup.
+    }
+  })();
 }
 
 // Restore accumulated Prisma telemetry totals from the last shutdown so

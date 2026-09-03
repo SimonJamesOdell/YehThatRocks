@@ -93,6 +93,13 @@ function main() {
   assertContains(welcomeModalSource, "onOpenAuthModal?.()", "handleCreateAnonymous calls onOpenAuthModal callback", failures);
   assertContains(welcomeModalSource, '"/register"', "handleRegister navigates to /register", failures);
 
+  // Existing-account login path (returning users)
+  assertContains(welcomeModalSource, "onOpenLogin?: () => void", "WelcomeModal accepts onOpenLogin callback prop", failures);
+  assertContains(welcomeModalSource, "handleLogin", "WelcomeModal has handleLogin handler", failures);
+  assertContains(welcomeModalSource, "onOpenLogin?.()", "handleLogin calls onOpenLogin callback", failures);
+  assertContains(welcomeModalSource, "welcomeModalAccountButton--login", "WelcomeModal Phase 2 has a login button for existing accounts", failures);
+  assertContains(welcomeModalSource, "welcomeModalSignInLink", "WelcomeModal Phase 1 has a sign-in link for existing accounts", failures);
+
   // Genre persistence
   assertContains(welcomeModalSource, "persistGenres", "WelcomeModal has persistGenres function", failures);
   assertContains(welcomeModalSource, "GENRE_PREFERENCES_KEY", "WelcomeModal uses GENRE_PREFERENCES_KEY for genre persistence", failures);
@@ -174,6 +181,11 @@ function main() {
   // WelcomeModal rendering in shell
   assertContains(shellDynamicSource, "<WelcomeModal", "Shell renders WelcomeModal component", failures);
   assertContains(shellDynamicSource, "onOpenAuthModal={openAuthModalAnonymous}", "Shell passes openAuthModalAnonymous as WelcomeModal onOpenAuthModal", failures);
+  assertContains(shellDynamicSource, "onOpenLogin={openAuthModal}", "Shell passes openAuthModal as WelcomeModal onOpenLogin for existing-account sign in", failures);
+
+  // Intro must never stay blocked once auth resolves (frozen-overlay regression guard).
+  assertContains(shellDynamicSource, "if (isLoggedIn) return false;", "Shell skips the intro block for SSR-authenticated users with empty onboarding storage", failures);
+  assertContains(shellDynamicSource, "if (isAuthenticated) {\n      setIsWelcomeBlockingIntro(false);", "Shell releases the intro block the moment auth resolves", failures);
 
   // auth-login-form retains its inline anonymous flow
   assertContains(authLoginFormSource, "isAnonymousFlowOpen", "AuthLoginForm retains isAnonymousFlowOpen state for inline anonymous flow", failures);

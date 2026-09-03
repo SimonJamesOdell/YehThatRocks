@@ -114,7 +114,8 @@ function main() {
   // Top 100 ranking must use favourite counts, not a boolean one-favourite flag.
   assertContains(catalogDataVideosSource, "WHERE v.videoId IS NOT NULL", "Top 100 pool filters to valid YouTube ids", failures);
   assertContains(catalogDataVideosSource, "COALESCE(v.favourited, 0) AS favourited", "Top 100 pool reads persisted favourite counters", failures);
-  assertContains(catalogDataVideosSource, "ORDER BY COALESCE(v.favourited, 0) DESC, COALESCE(v.viewCount, 0) DESC, v.videoId ASC", "Top 100 pool ranks by persisted favourite counters first", failures);
+  assertContains(catalogDataVideosSource, "ORDER BY t.favourited DESC, COALESCE(t.viewCount, 0) DESC, t.videoId ASC", "Top 100 pool ranks by persisted favourite counters first", failures);
+  assertContains(catalogDataVideosSource, "ORDER BY v.favourited DESC, v.viewCount DESC, v.videoId DESC", "Top 100 pool pulls an index-ordered shortlist before re-ranking", failures);
   assertNotContains(catalogDataVideosSource, "LEFT JOIN favourites f ON CONVERT(f.videoId USING utf8mb4) = CONVERT(v.videoId USING utf8mb4)", "Top 100 pool no longer joins favourites for ranking", failures);
   assertContains(catalogDataVideosSource, "export async function getTopVideos(count = 100)", "Top videos helper is exposed for API/cache path", failures);
   assertContains(catalogDataVideosSource, "const videos = await getRankedTopPool(Math.max(count, 1));", "Top videos helper resolves from ranked DB pool", failures);

@@ -488,10 +488,22 @@ function ShellDynamicInner({
   // avoids a blocked→unblocked transition that adds delay.
   const [isWelcomeBlockingIntro, setIsWelcomeBlockingIntro] = useState(() => {
     if (typeof window === "undefined") return true;
+    if (isLoggedIn) return false;
     if (localStorage.getItem("ytr:welcome-dismissed") === "1") return false;
     if (localStorage.getItem("ytr:genre-preferences") !== null) return false;
     return true;
   });
+
+  // Returning users whose session is restored after mount (auto-login) or who
+  // sign in while the welcome modal is open must never leave the desktop intro
+  // frozen in its blocked "hold" phase — that renders the whole shell at
+  // opacity 0 with the logo stuck on screen. Release the intro block the
+  // moment auth resolves, regardless of how the modal was dismissed.
+  useEffect(() => {
+    if (isAuthenticated) {
+      setIsWelcomeBlockingIntro(false);
+    }
+  }, [isAuthenticated]);
 
   const {
     isDesktopIntroActive,
@@ -1314,6 +1326,14 @@ function ShellDynamicInner({
         setCurrentVideo(relatedMatch);
         hasOptimisticVideo = true;
       }
+    }
+    // When the requested video is already on screen (SSR startup hydration or
+    // a previous resolution), treat it as optimistic so a slow response never
+    // flashes the retry dialog over a playing video. The fetch below still
+    // runs — and retries in the background — to refresh genre-filtered
+    // related videos and the watch-next advisory.
+    if (!hasOptimisticVideo && currentVideo.id === requestedVideoId) {
+      hasOptimisticVideo = true;
     }
     // Bypass the prefetch cache for the startup video — it contains unfiltered
     // SSR data. We must make a fresh API call to get genre-filtered results.
@@ -3457,7 +3477,7 @@ function ShellDynamicInner({
       </section>
       <AuthModal isOpen={isAuthModalOpen} onClose={() => { setIsAuthModalOpen(false); setShouldAutoOpenAnonymous(false); }} autoOpenAnonymous={shouldAutoOpenAnonymous} />
       <AnonymousSignupModal isOpen={isAnonymousSignupOpen} onClose={() => setIsAnonymousSignupOpen(false)} />
-      <WelcomeModal isAuthenticated={isAuthenticated} onDismissed={() => setIsWelcomeBlockingIntro(false)} onOpenAuthModal={openAuthModalAnonymous} />
+      <WelcomeModal isAuthenticated={isAuthenticated} onDismissed={() => setIsWelcomeBlockingIntro(false)} onOpenAuthModal={openAuthModalAnonymous} onOpenLogin={openAuthModal} />
       </main>
       </ArtistsLetterProvider>
     </OverlayScrollContainerProvider>
