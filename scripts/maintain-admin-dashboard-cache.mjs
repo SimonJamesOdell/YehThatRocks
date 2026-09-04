@@ -105,6 +105,31 @@ async function getMagazineLandingsTableExists() {
   return Number(rows[0]?.count ?? 0) > 0;
 }
 
+async function ensureMagazineLandingsManualExclusionColumn() {
+  if (!(await getMagazineLandingsTableExists())) {
+    return;
+  }
+
+  const columnRows = await prisma.$queryRawUnsafe(`
+    SELECT COUNT(*) AS count
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'magazine_article_external_landings'
+      AND column_name = 'manually_excluded'
+  `).catch(() => []);
+
+  if (Number(columnRows[0]?.count ?? 0) > 0) {
+    return;
+  }
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE magazine_article_external_landings
+    ADD COLUMN manually_excluded BOOLEAN NOT NULL DEFAULT false
+  `).catch(() => {
+    // Best-effort: retried on the next maintenance run.
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Bot-traffic classification
 //
@@ -154,6 +179,7 @@ async function classifySuspectedBotTraffic() {
 
 async function refreshRollupTables() {
   await ensureRollupTables();
+  await ensureMagazineLandingsManualExclusionColumn();
 
   const usersCreatedAtColumn = await getUsersCreatedAtColumn();
   const hasMagazineLandings = await getMagazineLandingsTableExists();
@@ -177,6 +203,7 @@ async function refreshRollupTables() {
         SELECT DATE(landed_at) AS day_date, COUNT(*) AS magazine_external_landings
         FROM magazine_article_external_landings
         WHERE landed_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
+          AND manually_excluded = 0
         GROUP BY DATE(landed_at)
       ) mag_landings ON mag_landings.day_date = metrics.day_date
     `
@@ -228,6 +255,7 @@ async function refreshRollupTables() {
         ) fs ON fs.visitor_id = ae.visitor_id
         WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
           AND ae.is_suspected_bot = 0
+          AND ae.manually_excluded = 0
       ) ev
       GROUP BY ev.day_date
     ) metrics
@@ -237,6 +265,7 @@ async function refreshRollupTables() {
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
         AND success = 1
         AND action IN ('login', 'register')
+        AND manually_excluded = 0
       GROUP BY DATE(created_at)
     ) auth ON auth.day_date = metrics.day_date
     ${registrationsDailyJoinSql}
@@ -279,6 +308,7 @@ async function refreshRollupTables() {
       FROM analytics_events
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
         AND is_suspected_bot = 0
+        AND manually_excluded = 0
     ) analytics_events_by_hour
     GROUP BY bucket_start
     ON DUPLICATE KEY UPDATE
@@ -302,6 +332,7 @@ async function refreshRollupTables() {
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 72 HOUR)
         AND success = 1
         AND action IN ('login', 'register')
+        AND manually_excluded = 0
     ) auth_audit_logs_by_hour
     GROUP BY bucket_start
     ON DUPLICATE KEY UPDATE
@@ -517,6 +548,7 @@ async function computeAdminDashboardData() {
         ) fs ON fs.visitor_id = ae.visitor_id
         WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 90 DAY)
           AND ae.is_suspected_bot = 0
+          AND ae.manually_excluded = 0
       ) ev
       GROUP BY ev.period_start
       ORDER BY ev.period_start ASC
@@ -547,6 +579,7 @@ async function computeAdminDashboardData() {
         ) fs ON fs.visitor_id = ae.visitor_id
         WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 730 DAY)
           AND ae.is_suspected_bot = 0
+          AND ae.manually_excluded = 0
       ) ev
       GROUP BY ev.period_start
       ORDER BY ev.period_start ASC
@@ -577,6 +610,7 @@ async function computeAdminDashboardData() {
         ) fs ON fs.visitor_id = ae.visitor_id
         WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1825 DAY)
           AND ae.is_suspected_bot = 0
+          AND ae.manually_excluded = 0
       ) ev
       GROUP BY ev.period_start
       ORDER BY ev.period_start ASC

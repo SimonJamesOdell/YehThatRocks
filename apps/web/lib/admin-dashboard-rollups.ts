@@ -132,12 +132,17 @@ async function buildMagazineExternalLandingsDailyJoinSql(options?: { recentDays?
   }
 
   const recentClause = buildRecentClauseSql("landed_at", options?.recentDays);
+  const whereClause = recentClause
+    ? `${recentClause} AND manually_excluded = 0`
+    : `WHERE manually_excluded = 0`;
+
+  await ensureColumnExists("magazine_article_external_landings", "manually_excluded", "BOOLEAN NOT NULL DEFAULT false");
 
   return `
     LEFT JOIN (
       SELECT DATE(landed_at) AS day_date, COUNT(*) AS magazine_external_landings
       FROM magazine_article_external_landings
-      ${recentClause}
+      ${whereClause}
       GROUP BY DATE(landed_at)
     ) mag_landings ON mag_landings.day_date = metrics.day_date
   `;
@@ -302,6 +307,7 @@ async function maybeBackfillDailyHistory() {
             GROUP BY visitor_id
           ) fs ON fs.visitor_id = ae.visitor_id
           WHERE ae.is_suspected_bot = 0
+            AND ae.manually_excluded = 0
         ) analytics_events_by_day
         GROUP BY day_date
       ) metrics
@@ -311,6 +317,7 @@ async function maybeBackfillDailyHistory() {
           SELECT DATE(created_at) AS day_date
           FROM auth_audit_logs
           WHERE success = 1 AND action IN ('login', 'register')
+            AND manually_excluded = 0
         ) auth_audit_logs_by_day
         GROUP BY day_date
       ) auth ON auth.day_date = metrics.day_date
@@ -393,6 +400,7 @@ async function refreshRecentDailyRollups(options: { fullScan: boolean }) {
         ) fs ON fs.visitor_id = ae.visitor_id
         WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${intervalDays} DAY)
           AND ae.is_suspected_bot = 0
+          AND ae.manually_excluded = 0
       ) analytics_events_by_day
       GROUP BY day_date
     ) metrics
@@ -404,6 +412,7 @@ async function refreshRecentDailyRollups(options: { fullScan: boolean }) {
         WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${intervalDays} DAY)
           AND success = 1
           AND action IN ('login', 'register')
+          AND manually_excluded = 0
       ) auth_audit_logs_by_day
       GROUP BY day_date
     ) auth ON auth.day_date = metrics.day_date
@@ -466,6 +475,7 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       FROM analytics_events
       WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${analyticsIntervalClause})
         AND is_suspected_bot = 0
+        AND manually_excluded = 0
     ) analytics_events_by_hour
     GROUP BY bucket_start
     ON DUPLICATE KEY UPDATE
@@ -488,7 +498,7 @@ async function refreshRecentHourlyRollups(options: { fullScan: boolean }) {
       SELECT
         ${HOURLY_BUCKET_SELECT_EXPR} AS bucket_start
       FROM auth_audit_logs
-      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${authIntervalClause}) AND success = 1 AND action IN ('login', 'register')
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), ${authIntervalClause}) AND success = 1 AND action IN ('login', 'register') AND manually_excluded = 0
     ) auth_audit_logs_by_hour
     GROUP BY bucket_start
     ON DUPLICATE KEY UPDATE

@@ -20,6 +20,25 @@ export type AnalyticsBucket = {
 
 export type AnalyticsZoomLevel = "allTime" | "monthly" | "weekly" | "daily" | "hourly";
 
+// Manual traffic adjustments — admin can drag the analytics graph handles to
+// smooth out false traffic spikes. Deltas are accumulated server-side and keyed
+// on (granularity, series, bucketStart). `hourly` is deliberately excluded: the
+// hourly series is transient and recomputed from short-lived rollups.
+export const TRAFFIC_ADJUSTMENT_SERIES_KEYS = [
+  "pageViews",
+  "videoViews",
+  "visitors",
+  "newVisitors",
+  "returnVisits",
+  "sessions",
+  "magazineExternalLandings",
+  "authEvents",
+] as const;
+
+export type TrafficAdjustmentSeries = (typeof TRAFFIC_ADJUSTMENT_SERIES_KEYS)[number];
+
+export type TrafficAdjustmentGranularity = "allTime" | "monthly" | "weekly" | "daily" | "hourly";
+
 // Dashboard Data Structures
 export type DashboardPayload = {
   meta: {

@@ -35,6 +35,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
     return {
       width,
       height,
+      maxVal: 1,
       pageViewsPath: "",
       videoViewsPath: "",
       visitorsPath: "",
@@ -149,6 +150,7 @@ export function buildAnalyticsGraph(displayedAnalyticsRows: AnalyticsBucket[], a
   return {
     width,
     height,
+    maxVal,
     yTicks,
     xTicks,
     points,

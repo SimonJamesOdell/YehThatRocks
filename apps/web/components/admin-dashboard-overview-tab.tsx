@@ -1,5 +1,9 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
 import { Dial } from "@/components/admin-dashboard-shared-ui";
-import type { AnalyticsBucket, AnalyticsZoomLevel, DashboardPayload } from "@/components/admin-dashboard-types";
+import type { AnalyticsBucket, AnalyticsZoomLevel, DashboardPayload, TrafficAdjustmentSeries } from "@/components/admin-dashboard-types";
 
 type HostMetricSeriesOn = {
   cpu: boolean;
@@ -46,6 +50,7 @@ type AnalyticsPoint = {
 type AnalyticsGraph = {
   width: number;
   height: number;
+  maxVal: number;
   axis: { paddingLeft: number; paddingRight: number; paddingTop: number; paddingBottom: number };
   yTicks: Array<{ y: number; value: number }>;
   xTicks: Array<{ x: number; label: string }>;
@@ -73,6 +78,107 @@ type HostMetricsGraph = {
   networkPath: string;
 };
 
+type SeriesYKey =
+  | "yPageViews"
+  | "yVideoViews"
+  | "yVisitors"
+  | "yNewVisitors"
+  | "yReturnVisits"
+  | "ySessions"
+  | "yMagazineExternalLandings"
+  | "yAuthEvents";
+
+type SeriesValueKey =
+  | "pageViews"
+  | "videoViews"
+  | "uniqueVisitors"
+  | "newVisitors"
+  | "returnVisits"
+  | "sessions"
+  | "magazineExternalLandings"
+  | "authEvents";
+
+type SeriesPathKey =
+  | "pageViewsPath"
+  | "videoViewsPath"
+  | "visitorsPath"
+  | "newVisitorsPath"
+  | "returnVisitsPath"
+  | "sessionsPath"
+  | "magazineExternalLandingsPath"
+  | "authEventsPath";
+
+const TRAFFIC_SERIES_META: Array<{
+  key: TrafficAdjustmentSeries;
+  label: string;
+  color: string;
+  yKey: SeriesYKey;
+  valueKey: SeriesValueKey;
+  pathKey: SeriesPathKey;
+  dash?: boolean;
+}> = [
+  { key: "pageViews", label: "Page Views", color: "#ff9d5c", yKey: "yPageViews", valueKey: "pageViews", pathKey: "pageViewsPath" },
+  { key: "videoViews", label: "Video Views", color: "#5fc1ff", yKey: "yVideoViews", valueKey: "videoViews", pathKey: "videoViewsPath" },
+  { key: "visitors", label: "Unique Visitors", color: "#7ce0a3", yKey: "yVisitors", valueKey: "uniqueVisitors", pathKey: "visitorsPath" },
+  { key: "newVisitors", label: "New Visitors", color: "#4dd0e1", yKey: "yNewVisitors", valueKey: "newVisitors", pathKey: "newVisitorsPath" },
+  { key: "returnVisits", label: "Return Visits", color: "#9e86ff", yKey: "yReturnVisits", valueKey: "returnVisits", pathKey: "returnVisitsPath" },
+  { key: "magazineExternalLandings", label: "Magazine External Landings", color: "#ff4d4d", yKey: "yMagazineExternalLandings", valueKey: "magazineExternalLandings", pathKey: "magazineExternalLandingsPath" },
+  { key: "authEvents", label: "Auth Events", color: "#ffd1c4", yKey: "yAuthEvents", valueKey: "authEvents", pathKey: "authEventsPath" },
+  { key: "sessions", label: "Sessions", color: "#f0c040", yKey: "ySessions", valueKey: "sessions", pathKey: "sessionsPath", dash: true },
+];
+
+// Hourly rollups only carry a subset of the series; everything else is editable.
+const HOURLY_EDITABLE_SERIES: ReadonlySet<TrafficAdjustmentSeries> = new Set([
+  "pageViews",
+  "videoViews",
+  "visitors",
+  "returnVisits",
+  "authEvents",
+]);
+
+function isSeriesEditableAtZoom(key: TrafficAdjustmentSeries, isHourlyZoom: boolean): boolean {
+  return !isHourlyZoom || HOURLY_EDITABLE_SERIES.has(key);
+}
+
+function pointerSvgY(event: { currentTarget: SVGCircleElement; clientX: number; clientY: number }): number | null {
+  const svg = event.currentTarget.ownerSVGElement;
+  if (!svg) {
+    return null;
+  }
+
+  const ctm = svg.getScreenCTM();
+  if (!ctm) {
+    return null;
+  }
+
+  const point = svg.createSVGPoint();
+  point.x = event.clientX;
+  point.y = event.clientY;
+
+  return point.matrixTransform(ctm.inverse()).y;
+}
+
+function valueFromGraphY(y: number, graph: AnalyticsGraph): number {
+  const chartHeight = graph.height - graph.axis.paddingTop - graph.axis.paddingBottom;
+  if (chartHeight <= 0) {
+    return 0;
+  }
+
+  const ratio = (graph.axis.paddingTop + chartHeight - y) / chartHeight;
+  const value = ratio * graph.maxVal;
+
+  return Math.max(0, Math.min(graph.maxVal, Math.round(value)));
+}
+
+function buildPreviewPath(points: AnalyticsPoint[], yKey: SeriesYKey, overrideIndex: number, overrideY: number): string {
+  return points
+    .map((point, index) => {
+      const y = index === overrideIndex ? overrideY : point[yKey];
+      return `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(" ");
+}
+
 type AdminDashboardOverviewTabProps = {
   dashboard: DashboardPayload | null;
   cpuAvgPeakText: string;
@@ -90,6 +196,14 @@ type AdminDashboardOverviewTabProps = {
   onToggleAnalyticsSeries: (key: keyof AnalyticsSeriesOn) => void;
   analyticsGraph: AnalyticsGraph;
   onSelectAnalyticsPoint: (point: AnalyticsBucket) => void;
+  trafficEditEnabled: boolean;
+  onToggleTrafficEdit: () => void;
+  onAdjustTrafficPoint: (payload: {
+    series: TrafficAdjustmentSeries;
+    bucketStart: string;
+    bucketEnd: string;
+    targetValue: number;
+  }) => Promise<void>;
 };
 
 export function AdminDashboardOverviewTab({
@@ -109,7 +223,130 @@ export function AdminDashboardOverviewTab({
   onToggleAnalyticsSeries,
   analyticsGraph,
   onSelectAnalyticsPoint,
+  trafficEditEnabled,
+  onToggleTrafficEdit,
+  onAdjustTrafficPoint,
 }: AdminDashboardOverviewTabProps) {
+  const isHourlyZoom = analyticsZoomLevel === "hourly";
+  const trafficEditingActive = trafficEditEnabled;
+  const [preview, setPreview] = useState<{
+    series: TrafficAdjustmentSeries;
+    bucketStart: string;
+    y: number;
+    value: number;
+  } | null>(null);
+  const activeDragRef = useRef<{
+    series: TrafficAdjustmentSeries;
+    bucketStart: string;
+    bucketEnd: string;
+    originalValue: number;
+    grabOffsetY: number;
+    latestValue: number;
+  } | null>(null);
+
+  useEffect(() => {
+    activeDragRef.current = null;
+    setPreview(null);
+  }, [analyticsZoomLevel, trafficEditEnabled]);
+
+  const previewPath = preview
+    ? (() => {
+        const index = analyticsGraph.points.findIndex((point) => point.bucketStart === preview.bucketStart);
+        return index < 0 ? null : { series: preview.series, index, y: preview.y };
+      })()
+    : null;
+
+  const startTrafficDrag = (
+    meta: (typeof TRAFFIC_SERIES_META)[number],
+    point: AnalyticsPoint,
+    event: { currentTarget: SVGCircleElement; clientX: number; clientY: number; pointerId: number; stopPropagation: () => void },
+  ) => {
+    if (!trafficEditingActive) {
+      return;
+    }
+
+    event.stopPropagation();
+
+    const svgY = pointerSvgY(event);
+    if (svgY == null) {
+      return;
+    }
+
+    activeDragRef.current = {
+      series: meta.key,
+      bucketStart: point.bucketStart,
+      bucketEnd: point.bucketEnd,
+      originalValue: point[meta.valueKey],
+      grabOffsetY: svgY - point[meta.yKey],
+      latestValue: point[meta.valueKey],
+    };
+
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture is best-effort; movement still updates via pointermove.
+    }
+  };
+
+  const moveTrafficDrag = (
+    meta: (typeof TRAFFIC_SERIES_META)[number],
+    point: AnalyticsPoint,
+    event: { currentTarget: SVGCircleElement; clientX: number; clientY: number; stopPropagation: () => void },
+  ) => {
+    const active = activeDragRef.current;
+    if (!active || active.series !== meta.key || active.bucketStart !== point.bucketStart) {
+      return;
+    }
+
+    event.stopPropagation();
+
+    const svgY = pointerSvgY(event);
+    if (svgY == null) {
+      return;
+    }
+
+    const chartHeight = analyticsGraph.height - analyticsGraph.axis.paddingTop - analyticsGraph.axis.paddingBottom;
+    const handleY = svgY - active.grabOffsetY;
+    const value = valueFromGraphY(handleY, analyticsGraph);
+    const clampedY = Math.max(
+      analyticsGraph.axis.paddingTop,
+      Math.min(analyticsGraph.axis.paddingTop + chartHeight, handleY),
+    );
+    active.latestValue = value;
+
+    setPreview({
+      series: active.series,
+      bucketStart: active.bucketStart,
+      y: clampedY,
+      value,
+    });
+  };
+
+  const endTrafficDrag = (meta: (typeof TRAFFIC_SERIES_META)[number], point: AnalyticsPoint) => {
+    const active = activeDragRef.current;
+    if (!active || active.series !== meta.key || active.bucketStart !== point.bucketStart) {
+      return;
+    }
+
+    activeDragRef.current = null;
+    const finalValue = active.latestValue;
+    setPreview(null);
+
+    if (finalValue !== active.originalValue) {
+      void onAdjustTrafficPoint({
+        series: active.series,
+        bucketStart: active.bucketStart,
+        bucketEnd: active.bucketEnd,
+        targetValue: finalValue,
+      });
+    }
+  };
+
+  const cancelTrafficDrag = () => {
+    activeDragRef.current = null;
+    setPreview(null);
+  };
+
   return (
     <div className="adminOverviewStack">
       <div className="adminOverviewHealthLayout">
@@ -286,6 +523,20 @@ export function AdminDashboardOverviewTab({
           >
             {refreshingAnalytics ? "Refreshing..." : "Refresh"}
           </button>
+          <button
+            type="button"
+            onClick={onToggleTrafficEdit}
+            style={{
+              borderRadius: 999,
+              border: `1px solid ${trafficEditEnabled ? "rgba(124,224,163,0.6)" : "rgba(255,255,255,0.18)"}`,
+              background: trafficEditEnabled ? "rgba(124,224,163,0.16)" : "rgba(255,255,255,0.04)",
+              color: trafficEditEnabled ? "#7ce0a3" : "rgba(255,255,255,0.9)",
+              padding: "7px 12px",
+              cursor: "pointer",
+            }}
+          >
+            {trafficEditEnabled ? "Editing traffic ✓" : "Edit traffic"}
+          </button>
           {([
             { key: "pageViews", label: "Page Views", color: "#ff9d5c" },
             { key: "videoViews", label: "Video Views", color: "#5fc1ff" },
@@ -320,13 +571,19 @@ export function AdminDashboardOverviewTab({
         </div>
       </div>
 
-      <p className="authMessage" style={{ margin: 0 }} />
+      {trafficEditEnabled ? (
+        <p className="authMessage" style={{ margin: "6px 0 0" }}>
+          {isHourlyZoom
+            ? "Drag a handle up or down to directly edit that record. Hourly only carries page views, video views, visitors, return visits and auth events."
+            : "Drag a handle up or down to directly edit that traffic record. The change is written to the source data and survives recomputes."}
+        </p>
+      ) : null}
 
       <svg
         viewBox={analyticsGraph.points.length > 0 ? `0 0 ${analyticsGraph.width} ${analyticsGraph.height}` : "0 0 680 250"}
         role="img"
         aria-label="Analytics chart — page views, video views, unique visitors, new visitors, return visits, magazine external landings, auth events"
-        style={{ width: "100%", height: "clamp(260px, 46vh, 620px)", borderRadius: 10, background: "rgba(255,255,255,0.04)" }}
+        style={{ width: "100%", height: "clamp(260px, 46vh, 620px)", borderRadius: 10, background: "rgba(255,255,255,0.04)", userSelect: "none" }}
       >
         {analyticsGraph.points.length === 0 ? (
           <text x="340" y="130" textAnchor="middle" fill="rgba(255,255,255,0.2)" style={{ fontSize: 13 }}>No data yet</text>
@@ -346,18 +603,28 @@ export function AdminDashboardOverviewTab({
             ))}
             <line x1={String(analyticsGraph.axis.paddingLeft)} y1={String(analyticsGraph.axis.paddingTop)} x2={String(analyticsGraph.axis.paddingLeft)} y2={String(analyticsGraph.height - analyticsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
             <line x1={String(analyticsGraph.axis.paddingLeft)} y1={String(analyticsGraph.height - analyticsGraph.axis.paddingBottom)} x2={String(analyticsGraph.width - analyticsGraph.axis.paddingRight)} y2={String(analyticsGraph.height - analyticsGraph.axis.paddingBottom)} stroke="rgba(255,255,255,0.24)" strokeWidth="1" />
-            {analyticsSeriesOn.pageViews && <path d={analyticsGraph.pageViewsPath} fill="none" stroke="#ff9d5c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-            {analyticsSeriesOn.videoViews && <path d={analyticsGraph.videoViewsPath} fill="none" stroke="#5fc1ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-            {analyticsSeriesOn.visitors && <path d={analyticsGraph.visitorsPath} fill="none" stroke="#7ce0a3" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-            {analyticsSeriesOn.newVisitors && <path d={analyticsGraph.newVisitorsPath} fill="none" stroke="#4dd0e1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-            {analyticsSeriesOn.returnVisits && <path d={analyticsGraph.returnVisitsPath} fill="none" stroke="#9e86ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-            {analyticsSeriesOn.magazineExternalLandings && <path d={analyticsGraph.magazineExternalLandingsPath} fill="none" stroke="#ff4d4d" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-            {analyticsSeriesOn.authEvents && <path d={analyticsGraph.authEventsPath} fill="none" stroke="#ffd1c4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-            {analyticsSeriesOn.sessions && <path d={analyticsGraph.sessionsPath} fill="none" stroke="#f0c040" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6 3" />}
+            {TRAFFIC_SERIES_META.filter((meta) => analyticsSeriesOn[meta.key]).map((meta) => {
+              const path = previewPath && previewPath.series === meta.key
+                ? buildPreviewPath(analyticsGraph.points, meta.yKey, previewPath.index, previewPath.y)
+                : analyticsGraph[meta.pathKey];
+
+              return (
+                <path
+                  key={`analytics-path-${meta.key}`}
+                  d={path}
+                  fill="none"
+                  stroke={meta.color}
+                  strokeWidth={meta.dash ? 2 : 2.5}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray={meta.dash ? "6 3" : undefined}
+                />
+              );
+            })}
             {analyticsGraph.points.map((point) => (
               <g
                 key={`${point.bucketStart}-${point.bucketEnd}`}
-                onClick={() => {
+                onClick={trafficEditEnabled ? undefined : () => {
                   onSelectAnalyticsPoint({
                     bucketStart: point.bucketStart,
                     bucketEnd: point.bucketEnd,
@@ -372,16 +639,45 @@ export function AdminDashboardOverviewTab({
                     sessions: point.sessions ?? 0,
                   });
                 }}
-                style={{ cursor: analyticsZoomLevel === "allTime" || analyticsZoomLevel === "monthly" || analyticsZoomLevel === "weekly" ? "pointer" : "default" }}
+                style={{ cursor: !trafficEditEnabled && (analyticsZoomLevel === "allTime" || analyticsZoomLevel === "monthly" || analyticsZoomLevel === "weekly") ? "pointer" : "default" }}
               >
-                {analyticsSeriesOn.pageViews && <circle cx={point.x} cy={point.yPageViews} r="3.5" fill="#ff9d5c" />}
-                {analyticsSeriesOn.videoViews && <circle cx={point.x} cy={point.yVideoViews} r="3.5" fill="#5fc1ff" />}
-                {analyticsSeriesOn.visitors && <circle cx={point.x} cy={point.yVisitors} r="3.5" fill="#7ce0a3" />}
-                {analyticsSeriesOn.newVisitors && <circle cx={point.x} cy={point.yNewVisitors} r="3.5" fill="#4dd0e1" />}
-                {analyticsSeriesOn.returnVisits && <circle cx={point.x} cy={point.yReturnVisits} r="3.5" fill="#9e86ff" />}
-                {analyticsSeriesOn.magazineExternalLandings && <circle cx={point.x} cy={point.yMagazineExternalLandings} r="3.5" fill="#ff4d4d" />}
-                {analyticsSeriesOn.authEvents && <circle cx={point.x} cy={point.yAuthEvents} r="3.5" fill="#ffd1c4" />}
-                {analyticsSeriesOn.sessions && <circle cx={point.x} cy={point.ySessions} r="3" fill="#f0c040" />}
+                {TRAFFIC_SERIES_META.filter((meta) => analyticsSeriesOn[meta.key]).map((meta) => {
+                  const y = preview && preview.series === meta.key && preview.bucketStart === point.bucketStart
+                    ? preview.y
+                    : point[meta.yKey];
+
+                  return (
+                    <circle
+                      key={`${meta.key}-dot`}
+                      cx={point.x}
+                      cy={y}
+                      r={meta.dash ? 3 : 3.5}
+                      fill={meta.color}
+                    />
+                  );
+                })}
+                {trafficEditingActive ? (
+                  TRAFFIC_SERIES_META.filter((meta) => analyticsSeriesOn[meta.key] && isSeriesEditableAtZoom(meta.key, isHourlyZoom)).map((meta) => {
+                    const y = preview && preview.series === meta.key && preview.bucketStart === point.bucketStart
+                      ? preview.y
+                      : point[meta.yKey];
+
+                    return (
+                      <circle
+                        key={`${meta.key}-handle`}
+                        cx={point.x}
+                        cy={y}
+                        r={11}
+                        fill="transparent"
+                        style={{ cursor: "ns-resize", touchAction: "none" }}
+                        onPointerDown={(event) => startTrafficDrag(meta, point, event)}
+                        onPointerMove={(event) => moveTrafficDrag(meta, point, event)}
+                        onPointerUp={() => endTrafficDrag(meta, point)}
+                        onPointerCancel={cancelTrafficDrag}
+                      />
+                    );
+                  })
+                ) : null}
                 <title>{`${point.label} (${new Date(point.bucketStart).toLocaleString()} - ${new Date(point.bucketEnd).toLocaleString()}) — Page views: ${point.pageViews}, Video views: ${point.videoViews}, Visitors: ${point.uniqueVisitors}, New visitors: ${point.newVisitors ?? 0}, Return visits: ${point.returnVisits}, Magazine external landings: ${point.magazineExternalLandings}, Auth events: ${point.authEvents}, Sessions: ${point.sessions ?? 0}`}</title>
               </g>
             ))}

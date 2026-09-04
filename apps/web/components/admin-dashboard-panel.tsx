@@ -7,7 +7,7 @@ import { ProtectedAuthGatePanel } from "@/components/protected-auth-gate-panel";
 import { useAdminHealthStreaming } from "@/hooks/use-admin-health-streaming";
 import { useAdminVideoQueuePolling } from "@/hooks/use-admin-video-queue-polling";
 import { useAdminAnalyticsRefresh } from "@/hooks/use-admin-analytics-refresh";
-import { finiteOrNull, isAuthResponseError, readJson, readNoStoreJson } from "@/components/admin-dashboard-utils";
+import { finiteOrNull, isAuthResponseError, postJson, readJson, readNoStoreJson } from "@/components/admin-dashboard-utils";
 import { mergePendingQueuePreservingCurrentOrder } from "@/components/admin-pending-queue-order";
 import { buildAnalyticsGraph, buildHostMetricsGraph, filterBucketsWithinRange } from "@/components/admin-dashboard-graph-builders";
 import { AdminDashboardCatalogReviewTab } from "@/components/admin-dashboard-catalog-review-tab";
@@ -40,6 +40,7 @@ import {
   AdminMagazineArticleRow,
   AdminMagazineCommentModerationAction,
   AdminMagazineCommentModerationRow,
+  TrafficAdjustmentSeries,
 } from "@/components/admin-dashboard-types";
 
 const HEALTH_FALLBACK_POLL_MS = 2_000;
@@ -356,6 +357,7 @@ export function AdminDashboardPanel({
   }, [analyticsSeries, analyticsZoomLevel, selectedAllTimeBucket, selectedMonthlyBucket, selectedWeeklyBucket, hourlySeries, padHourlyRows, padWeeklyRows, padMonthlyRows, padAllTimeRows]);
 
   const [analyticsSeriesOn, setAnalyticsSeriesOn] = useState({ pageViews: false, videoViews: false, visitors: true, newVisitors: true, returnVisits: true, sessions: true, magazineExternalLandings: true, authEvents: false });
+  const [trafficEditEnabled, setTrafficEditEnabled] = useState(false);
   const analyticsGraph = useMemo(
     () => buildAnalyticsGraph(displayedAnalyticsRows, analyticsSeriesOn),
     [analyticsSeriesOn, displayedAnalyticsRows],
@@ -379,6 +381,27 @@ export function AdminDashboardPanel({
       setRefreshingAnalytics(false);
     }
   }, [loadOverview]);
+
+  const adjustTrafficPoint = useCallback(async (payload: {
+    series: TrafficAdjustmentSeries;
+    bucketStart: string;
+    bucketEnd: string;
+    targetValue: number;
+  }) => {
+    try {
+      await postJson<{ ok: boolean; value: number }>("/api/admin/dashboard/traffic-adjustments", {
+        granularity: analyticsZoomLevel,
+        series: payload.series,
+        bucketStart: payload.bucketStart,
+        bucketEnd: payload.bucketEnd,
+        targetValue: payload.targetValue,
+      });
+      setSaveMessage("Traffic record updated.");
+      await loadOverview(false);
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "Traffic edit failed.");
+    }
+  }, [analyticsZoomLevel, loadOverview]);
 
   async function loadCategories() {
     const categoryPayload = await readJson<{ categories: CategoryRow[] }>("/api/admin/categories");
@@ -1255,6 +1278,11 @@ export function AdminDashboardPanel({
             setAnalyticsSeriesOn((previous) => ({ ...previous, [key]: !previous[key] }));
           }}
           analyticsGraph={analyticsGraph}
+          trafficEditEnabled={trafficEditEnabled}
+          onToggleTrafficEdit={() => {
+            setTrafficEditEnabled((previous) => !previous);
+          }}
+          onAdjustTrafficPoint={adjustTrafficPoint}
           onSelectAnalyticsPoint={(point) => {
             if (analyticsZoomLevel === "allTime") {
               setSelectedAllTimeBucket(point);
