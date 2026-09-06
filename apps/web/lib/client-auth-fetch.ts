@@ -25,7 +25,7 @@ function isRefreshEndpoint(input: RequestInfo | URL) {
   return false;
 }
 
-async function refreshAuthSession() {
+export async function refreshAuthSession() {
   if (refreshInFlight) {
     return refreshInFlight;
   }

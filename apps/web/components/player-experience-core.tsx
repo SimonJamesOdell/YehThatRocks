@@ -441,7 +441,9 @@ export function PlayerExperience({
   const hasActivePlaylistSequenceRef = useRef(false);
   const hasPlaybackStartedRef = useRef(false);
   const previousActivePlaylistIdRef = useRef<string | null>(activePlaylistId);
-  autoplayEnabledRef.current = autoplayEnabled;
+  // Never autoplay the shell's video behind the admin overlay — an open admin
+  // panel must stay quiet, and it must not begin playback if the session drops.
+  autoplayEnabledRef.current = autoplayEnabled && pathname !== "/admin";
   volumeRef.current = volume;
   isMutedRef.current = isMuted;
   isScrubbingRef.current = isScrubbing;

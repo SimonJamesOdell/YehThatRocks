@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { fetchWithAuthRetry } from "@/lib/client-auth-fetch";
+import { fetchWithAuthRetry, refreshAuthSession } from "@/lib/client-auth-fetch";
 
 const ADMIN_SESSION_REVALIDATE_INTERVAL_MS = 30_000;
+// Refresh the access token well before its 15-minute expiry so an open admin
+// panel never falls into the 401 window during active use.
+const ADMIN_SESSION_PROACTIVE_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
 export function useAdminSession({
   isLoggedIn,
@@ -78,6 +81,20 @@ export function useAdminSession({
       window.clearInterval(intervalId);
     };
   }, [revalidateAdminSession]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !isLoggedIn) {
+      return;
+    }
+
+    const refreshTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshAuthSession();
+      }
+    }, ADMIN_SESSION_PROACTIVE_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(refreshTimer);
+  }, [isLoggedIn]);
 
   return isLoggedIn && isAdminSessionActive;
 }
