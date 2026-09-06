@@ -42,7 +42,7 @@ describe("admin dashboard response cache", () => {
   it("reads and clamps configured TTL", () => {
     expect(readDashboardResponseCacheTtlMs({ ADMIN_DASHBOARD_RESPONSE_CACHE_TTL_MS: "10" } as NodeJS.ProcessEnv)).toBe(250);
     expect(readDashboardResponseCacheTtlMs({ ADMIN_DASHBOARD_RESPONSE_CACHE_TTL_MS: "750" } as NodeJS.ProcessEnv)).toBe(750);
-    expect(readDashboardResponseCacheTtlMs({ ADMIN_DASHBOARD_RESPONSE_CACHE_TTL_MS: "60000" } as NodeJS.ProcessEnv)).toBe(10_000);
+    expect(readDashboardResponseCacheTtlMs({ ADMIN_DASHBOARD_RESPONSE_CACHE_TTL_MS: "120000" } as NodeJS.ProcessEnv)).toBe(60_000);
     expect(readDashboardResponseCacheTtlMs({ ADMIN_DASHBOARD_RESPONSE_CACHE_TTL_MS: "bad" } as NodeJS.ProcessEnv)).toBe(1_000);
   });
 });

@@ -64,6 +64,27 @@ function eventBaseWhere(start: SqlDateTime, end: SqlDateTime, currentlyExcluded:
   return `created_at >= '${start}' AND created_at < '${end}' AND is_suspected_bot = 0 AND manually_excluded = ${currentlyExcluded}`;
 }
 
+/**
+ * Compute each visitor's true first-ever visit day, but only for visitors who
+ * have a page-view event inside the bucket being edited. The previous version
+ * grouped MIN(DATE(created_at)) over the entire analytics_events table on every
+ * edit, which is a full-table scan + GROUP BY even for a single-day bucket.
+ * Scoping the candidate set to active visitors keeps the result identical while
+ * letting MySQL drive the lookup through the (visitorId) index.
+ */
+function buildFirstDaySubquerySql(start: SqlDateTime, end: SqlDateTime, currentlyExcluded: 0 | 1): string {
+  return `
+    SELECT visitor_id, MIN(DATE(created_at)) AS first_day
+    FROM analytics_events
+    WHERE visitor_id IN (
+      SELECT DISTINCT visitor_id
+      FROM analytics_events
+      WHERE ${eventBaseWhere(start, end, currentlyExcluded)} AND event_type = 'page_view'
+    )
+    GROUP BY visitor_id
+  `;
+}
+
 function firstDayPredicate(
   granularity: TrafficAdjustmentGranularity,
   kind: "new" | "return",
@@ -154,9 +175,7 @@ async function readEventSeriesCurrentValue(
           SELECT ae.visitor_id, fs.first_day
           FROM analytics_events ae
           INNER JOIN (
-            SELECT visitor_id, MIN(DATE(created_at)) AS first_day
-            FROM analytics_events
-            GROUP BY visitor_id
+            ${buildFirstDaySubquerySql(start, end, 0)}
           ) fs ON fs.visitor_id = ae.visitor_id
           WHERE ${base} AND ae.event_type = 'page_view'
         ) ev
@@ -176,9 +195,7 @@ async function readEventSeriesCurrentValue(
           SELECT ae.visitor_id, fs.first_day
           FROM analytics_events ae
           INNER JOIN (
-            SELECT visitor_id, MIN(DATE(created_at)) AS first_day
-            FROM analytics_events
-            GROUP BY visitor_id
+            ${buildFirstDaySubquerySql(start, end, 0)}
           ) fs ON fs.visitor_id = ae.visitor_id
           WHERE ${base} AND ae.event_type = 'page_view'
         ) ev
@@ -195,6 +212,7 @@ async function readEventSeriesCurrentValue(
     case "magazineExternalLandings":
       if (granularity === "hourly") return 0;
       if (!(await hasMagazineLandingsTable())) return 0;
+      await ensureMagazineLandingsManualExclusionColumn();
       return queryCount(`
         SELECT COUNT(*) AS c
         FROM magazine_article_external_landings
@@ -278,9 +296,7 @@ function buildEventFirstDayEditSql(
           SELECT aev.visitor_id
           FROM analytics_events aev
           INNER JOIN (
-            SELECT visitor_id, MIN(DATE(created_at)) AS first_day
-            FROM analytics_events
-            GROUP BY visitor_id
+            ${buildFirstDaySubquerySql(start, end, currentlyExcluded)}
           ) fs ON fs.visitor_id = aev.visitor_id
           WHERE ${eventBaseWhere(start, end, currentlyExcluded)} AND aev.event_type = 'page_view' AND ${firstDayClause}
           GROUP BY aev.visitor_id, fs.first_day

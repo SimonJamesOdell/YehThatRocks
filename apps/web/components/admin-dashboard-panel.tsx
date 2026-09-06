@@ -397,7 +397,7 @@ export function AdminDashboardPanel({
         targetValue: payload.targetValue,
       });
       setSaveMessage("Traffic record updated.");
-      await loadOverview(false);
+      await loadOverview(true);
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "Traffic edit failed.");
     }
