@@ -4,6 +4,7 @@ import localFont from "next/font/local";
 import { PerformanceMeasureGuard } from "@/components/performance-measure-guard";
 import { YouTubeIframeApiLoader } from "@/components/youtube-iframe-api-loader";
 import { UtmCapture } from "@/components/utm-capture";
+import { BotChallengeSolver } from "@/components/bot-challenge-solver";
 import { buildWebSite } from "@/lib/schema-org";
 import "./globals.css";
 
@@ -72,6 +73,7 @@ export default function RootLayout({
       <body className={metalMania.variable}>
         <PerformanceMeasureGuard />
         <UtmCapture />
+        <BotChallengeSolver />
         <YouTubeIframeApiLoader />
         {children}
       </body>
