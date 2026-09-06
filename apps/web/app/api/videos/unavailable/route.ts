@@ -7,7 +7,7 @@ import { checkEmbedPlayability, findAndReplaceUnavailableVideo, pruneVideoAndAss
 import { isObviousCrawlerRequest } from "@/lib/crawler-guard";
 import { verifySameOrigin } from "@/lib/csrf";
 import { truncate } from "@/lib/catalog-data-utils";
-import { rateLimitOrResponse } from "@/lib/rate-limit";
+import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
 import { parseRequestJson } from "@/lib/request-json";
 
 const HTTP_FORBIDDEN = 403;
@@ -360,6 +360,20 @@ export async function POST(request: NextRequest) {
   );
   if (rateLimited) {
     return rateLimited;
+  }
+
+  // Global shared cap. This endpoint runs an outbound YouTube verification on
+  // every report, and a distributed botnet was flooding it (34k+ POSTs) to both
+  // poison the catalog and saturate the server. Legitimate "video unavailable"
+  // reports are rare, so a site-wide cap far below the attack rate is safe and
+  // stops the distributed-IP workaround for the per-IP limit above.
+  const globalLimited = rateLimitSharedOrResponse(
+    "videos:unavailable:global",
+    30,
+    5 * 60 * 1000,
+  );
+  if (globalLimited) {
+    return globalLimited;
   }
 
   const csrfError = verifySameOrigin(request);
