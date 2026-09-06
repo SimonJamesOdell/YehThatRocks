@@ -145,6 +145,13 @@ async function ensureMagazineLandingsManualExclusionColumn() {
 // ---------------------------------------------------------------------------
 const BOT_ONE_SHOT_MAX_EVENTS = 5;
 const BOT_ONE_SHOT_MAX_SPAN_MINUTES = 60;
+// Only (re)classify recent traffic. The previous implementation recomputed the
+// bot flag over the entire analytics_events table every maintenance run — a
+// full-table GROUP BY plus a full-table UPDATE every 5 minutes, which was the
+// dominant source of the production CPU and memory load. One-shot bot detection
+// is a "currently active" signal, so a rolling window is sufficient; older rows
+// keep their existing flag.
+const BOT_CLASSIFY_WINDOW_DAYS = 7;
 
 async function classifySuspectedBotTraffic() {
   const affected = await prisma.$executeRawUnsafe(`
@@ -158,12 +165,14 @@ async function classifySuspectedBotTraffic() {
           COUNT(*) AS ev_count,
           SUM(CASE WHEN user_id IS NOT NULL THEN 1 ELSE 0 END) AS authed_count
         FROM analytics_events
+        WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${BOT_CLASSIFY_WINDOW_DAYS} DAY)
         GROUP BY visitor_id
       ) v
       JOIN (
         SELECT ip_hash
         FROM analytics_events
         WHERE ip_hash IS NOT NULL
+          AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${BOT_CLASSIFY_WINDOW_DAYS} DAY)
         GROUP BY ip_hash
         HAVING COUNT(*) <= ${BOT_ONE_SHOT_MAX_EVENTS}
            AND TIMESTAMPDIFF(MINUTE, MIN(created_at), MAX(created_at)) <= ${BOT_ONE_SHOT_MAX_SPAN_MINUTES}
@@ -172,6 +181,7 @@ async function classifySuspectedBotTraffic() {
         AND v.authed_count = 0
     ) bots ON bots.visitor_id = e.visitor_id
     SET e.is_suspected_bot = (bots.visitor_id IS NOT NULL)
+    WHERE e.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${BOT_CLASSIFY_WINDOW_DAYS} DAY)
   `);
 
   return Number(affected ?? 0);
@@ -236,9 +246,9 @@ async function refreshRollupTables() {
         SUM(CASE WHEN ev.event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
         SUM(CASE WHEN ev.event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
         COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.visitor_id END) AS unique_visitors,
-        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.first_day < ev.day_date THEN ev.visitor_id END) AS return_visits,
-        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.first_day = ev.day_date THEN ev.visitor_id END) AS new_visitors,
-        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.first_day < ev.day_date THEN ev.visitor_id END) AS repeat_visitors,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.is_new_visitor = 0 THEN ev.visitor_id END) AS return_visits,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.is_new_visitor = 1 THEN ev.visitor_id END) AS new_visitors,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.is_new_visitor = 0 THEN ev.visitor_id END) AS repeat_visitors,
         COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.session_id END) AS total_sessions
       FROM (
         SELECT
@@ -246,13 +256,8 @@ async function refreshRollupTables() {
           ae.event_type,
           ae.visitor_id,
           ae.session_id,
-          fs.first_day
+          ae.is_new_visitor
         FROM analytics_events ae
-        JOIN (
-          SELECT visitor_id, MIN(DATE(created_at)) AS first_day
-          FROM analytics_events
-          GROUP BY visitor_id
-        ) fs ON fs.visitor_id = ae.visitor_id
         WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
           AND ae.is_suspected_bot = 0
           AND ae.manually_excluded = 0
@@ -528,8 +533,8 @@ async function computeAdminDashboardData() {
       SELECT
         ev.period_start,
         COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.visitor_id END) AS unique_visitors,
-        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.first_day < ev.period_start THEN ev.visitor_id END) AS return_visits,
-        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.first_day >= ev.period_start THEN ev.visitor_id END) AS new_visitors,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.is_new_visitor = 0 THEN ev.visitor_id END) AS return_visits,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.is_new_visitor = 1 THEN ev.visitor_id END) AS new_visitors,
         SUM(CASE WHEN ev.event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
         SUM(CASE WHEN ev.event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
         COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.session_id END) AS total_sessions
@@ -539,13 +544,8 @@ async function computeAdminDashboardData() {
           ae.event_type,
           ae.visitor_id,
           ae.session_id,
-          fs.first_day
+          ae.is_new_visitor
         FROM analytics_events ae
-        JOIN (
-          SELECT visitor_id, MIN(DATE(created_at)) AS first_day
-          FROM analytics_events
-          GROUP BY visitor_id
-        ) fs ON fs.visitor_id = ae.visitor_id
         WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 90 DAY)
           AND ae.is_suspected_bot = 0
           AND ae.manually_excluded = 0
@@ -559,8 +559,8 @@ async function computeAdminDashboardData() {
       SELECT
         ev.period_start,
         COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.visitor_id END) AS unique_visitors,
-        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.first_day < ev.period_start THEN ev.visitor_id END) AS return_visits,
-        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.first_day >= ev.period_start THEN ev.visitor_id END) AS new_visitors,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.is_new_visitor = 0 THEN ev.visitor_id END) AS return_visits,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.is_new_visitor = 1 THEN ev.visitor_id END) AS new_visitors,
         SUM(CASE WHEN ev.event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
         SUM(CASE WHEN ev.event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
         COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.session_id END) AS total_sessions
@@ -570,13 +570,8 @@ async function computeAdminDashboardData() {
           ae.event_type,
           ae.visitor_id,
           ae.session_id,
-          fs.first_day
+          ae.is_new_visitor
         FROM analytics_events ae
-        JOIN (
-          SELECT visitor_id, MIN(DATE(created_at)) AS first_day
-          FROM analytics_events
-          GROUP BY visitor_id
-        ) fs ON fs.visitor_id = ae.visitor_id
         WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 730 DAY)
           AND ae.is_suspected_bot = 0
           AND ae.manually_excluded = 0
@@ -590,8 +585,8 @@ async function computeAdminDashboardData() {
       SELECT
         ev.period_start,
         COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.visitor_id END) AS unique_visitors,
-        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND YEAR(ev.first_day) < ev.period_start THEN ev.visitor_id END) AS return_visits,
-        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND YEAR(ev.first_day) = ev.period_start THEN ev.visitor_id END) AS new_visitors,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.is_new_visitor = 0 THEN ev.visitor_id END) AS return_visits,
+        COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' AND ev.is_new_visitor = 1 THEN ev.visitor_id END) AS new_visitors,
         SUM(CASE WHEN ev.event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
         SUM(CASE WHEN ev.event_type = 'video_view' THEN 1 ELSE 0 END) AS video_views,
         COUNT(DISTINCT CASE WHEN ev.event_type = 'page_view' THEN ev.session_id END) AS total_sessions
@@ -601,13 +596,8 @@ async function computeAdminDashboardData() {
           ae.event_type,
           ae.visitor_id,
           ae.session_id,
-          fs.first_day
+          ae.is_new_visitor
         FROM analytics_events ae
-        JOIN (
-          SELECT visitor_id, MIN(DATE(created_at)) AS first_day
-          FROM analytics_events
-          GROUP BY visitor_id
-        ) fs ON fs.visitor_id = ae.visitor_id
         WHERE ae.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1825 DAY)
           AND ae.is_suspected_bot = 0
           AND ae.manually_excluded = 0
