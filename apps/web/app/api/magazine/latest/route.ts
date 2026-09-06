@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getPublishedArticlesPaginated, pruneUnavailableArticles } from "@/lib/magazine-data";
+import { noteBenignActivity } from "@/lib/trust";
 
 export async function GET(request: NextRequest) {
+  noteBenignActivity(request);
+
   const rawLimit = Number(request.nextUrl.searchParams.get("limit") || "8");
   const rawOffset = Number(request.nextUrl.searchParams.get("offset") || "0");
   const limit = Math.max(1, Math.min(20, Number.isFinite(rawLimit) ? rawLimit : 8));

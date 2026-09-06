@@ -4,10 +4,13 @@ import { filterHiddenVideos } from "@/lib/catalog-data";
 import { getOptionalApiAuth } from "@/lib/auth-request";
 import { clamp } from "@/lib/number-utils";
 import { getTopVideosFast, warmTopVideos } from "@/lib/top-videos-cache";
+import { noteBenignActivity } from "@/lib/trust";
 
 const TOP_VIDEOS_WAIT_MS = 2_000;
 
 export async function GET(request: NextRequest) {
+  noteBenignActivity(request);
+
   const countParam = request.nextUrl.searchParams.get("count") ?? "100";
   const skipParam = request.nextUrl.searchParams.get("skip");
   const takeParam = request.nextUrl.searchParams.get("take");

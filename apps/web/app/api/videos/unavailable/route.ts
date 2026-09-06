@@ -8,6 +8,7 @@ import { isObviousCrawlerRequest } from "@/lib/crawler-guard";
 import { verifySameOrigin } from "@/lib/csrf";
 import { truncate } from "@/lib/catalog-data-utils";
 import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
+import { assessHumanTrust } from "@/lib/trust";
 import { parseRequestJson } from "@/lib/request-json";
 
 const HTTP_FORBIDDEN = 403;
@@ -374,6 +375,18 @@ export async function POST(request: NextRequest) {
   );
   if (globalLimited) {
     return globalLimited;
+  }
+
+  // Human-trust gate: a cold, anonymous client that has not yet accumulated
+  // any evidence of being human (no account, no solved proof-of-work, no prior
+  // browsing from this IP) is rejected before we spend an outbound YouTube
+  // verification on it. Legitimate browsers warm up by simply using the site.
+  const trust = assessHumanTrust(request, optionalAuth);
+  if (!trust.trusted) {
+    return NextResponse.json(
+      { error: "Verification required before reporting videos", reason: trust.reason },
+      { status: 403 },
+    );
   }
 
   const csrfError = verifySameOrigin(request);

@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 
+import { noteBenignActivity } from "@/lib/trust";
+
 import { getRuntimeCachedTopLevelGenreCards } from "@/lib/catalog-data";
 import { ensureCategoriesNewSnapshotReady } from "@/lib/categories-new-snapshots";
 import { TOP_LEVEL_GENRE_BUCKETS } from "@/lib/genre-buckets";
 import type { GenreCard } from "@/lib/catalog-data-utils";
 
 export async function GET(request: Request) {
+  noteBenignActivity(request);
+
   const url = new URL(request.url);
   const shouldEnsureSnapshot = url.searchParams.get("ensureSnapshot") === "1";
   const shouldWaitForSnapshot = url.searchParams.get("waitForSnapshot") === "1";
