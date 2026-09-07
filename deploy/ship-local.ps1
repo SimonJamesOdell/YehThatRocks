@@ -207,7 +207,21 @@ function ExecNativeWithRetry(
       ($output -match "Connection closed by .* port 22") -or
       ($output -match "kex_exchange_identification") -or
       ($output -match "Connection reset") -or
-      ($output -match "Connection timed out")
+      ($output -match "Connection timed out") -or
+      ($output -match "Connection refused") -or
+      ($output -match "Failed to connect") -or
+      ($output -match "Broken pipe") -or
+      ($output -match "Network is unreachable") -or
+      ($output -match "No route to host") -or
+      ($output -match "Could not resolve host") -or
+      ($output -match "Temporary failure in name resolution") -or
+      ($output -match "Software caused connection abort") -or
+      ($output -match "Connection to .* closed by remote host") -or
+      ($output -match "unable to access") -or
+      ($output -match "fetch failed") -or
+      ($output -match "RPC failed") -or
+      ($output -match "early EOF") -or
+      ($output -match "The remote end hung up unexpectedly")
 
     if (-not $retryable -or $attempt -ge $MaxAttempts) {
       throw ("Command failed with exit code {0}; command {1}" -f $exitCode, $display)
@@ -256,14 +270,32 @@ function ExecDockerBuildWithRetry(
       ($output -match "rpc error: code = Unavailable") -or
       ($output -match "error reading from server: EOF") -or
       ($output -match "Cannot connect to the Docker daemon") -or
+      ($output -match "error during connect") -or
+      ($output -match "failed to solve: process") -or
+      ($output -match "did not complete successfully: exit code") -or
+      ($output -match "request to https?://[^ ]+ failed") -or
+      ($output -match "getaddrinfo") -or
+      ($output -match "ECONNRESET") -or
+      ($output -match "ETIMEDOUT") -or
+      ($output -match "fetch failed") -or
+      ($output -match "Could not resolve host") -or
+      ($output -match "Network is unreachable")
+
+    $daemonFailure =
+      ($output -match "Cannot connect to the Docker daemon") -or
       ($output -match "error during connect")
 
     if (-not $retryable -or $attempt -ge $MaxAttempts) {
       throw ("Command failed with exit code {0}; command {1}" -f $exitCode, $display)
     }
 
-    Write-Host "Pruning Docker builder cache before retry..." -ForegroundColor DarkYellow
-    & docker builder prune -af | Out-Null
+    # Only daemon-level failures benefit from a builder-cache prune. Pruning
+    # on a network fetch failure (npm/registry/prisma CDN) would discard the
+    # cached dependency layers and make the retry redo the expensive work.
+    if ($daemonFailure) {
+      Write-Host "Pruning Docker builder cache before retry..." -ForegroundColor DarkYellow
+      & docker builder prune -af | Out-Null
+    }
 
     Write-Warning ("Transient Docker build failure detected. Retrying in {0}s (attempt {1}/{2})..." -f $delaySeconds, $attempt, $MaxAttempts)
     Start-Sleep -Seconds $delaySeconds
@@ -351,11 +383,12 @@ function Clear-ShipState([string]$StateFilePath) {
 function Get-ShipStageRank([string]$Stage) {
   switch ($Stage) {
     "init" { return 0 }
-    "image-built" { return 1 }
-    "tar-saved" { return 2 }
-    "tar-uploaded" { return 3 }
-    "image-loaded" { return 4 }
-    "deployed" { return 5 }
+    "gates-passed" { return 1 }
+    "image-built" { return 2 }
+    "tar-saved" { return 3 }
+    "tar-uploaded" { return 4 }
+    "image-loaded" { return 5 }
+    "deployed" { return 6 }
     default { return -1 }
   }
 }
@@ -643,9 +676,10 @@ function Invoke-VpsDockerBuild(
   # Completion markers let us poll for the result.
   $chain = @(
     "cd $VpsRepoDir",
-    "git fetch origin",
+    'retry_sh() { n=$1; shift; i=1; while [ $i -le $n ]; do if "$@"; then return 0; fi; echo "[ship] retry $i/$n failed: $*" >&2; i=$((i+1)); sleep 5; done; return 1; }',
+    'retry_sh 5 git fetch origin',
     "git checkout $CommitSha",
-    "nice -n 19 ionice -c3 docker build --progress=plain --build-arg NODE_MAX_OLD_SPACE_SIZE=1536 --build-arg TURBO_CONCURRENCY=1 -t $ImageTag -t $LatestTag .",
+    "retry_sh 3 nice -n 19 ionice -c3 docker build --progress=plain --build-arg NODE_MAX_OLD_SPACE_SIZE=1536 --build-arg TURBO_CONCURRENCY=1 -t $ImageTag -t $LatestTag .",
     "WEB_IMAGE=$ImageTag SKIP_PULL=1 ./deploy/deploy-prod-hot-swap.sh",
     'echo YTR_DEPLOY_OK || echo YTR_DEPLOY_FAILED'
   ) -join " && "
@@ -666,6 +700,7 @@ function Invoke-VpsDockerBuild(
   $maxWaitSeconds = 2400
   $pollInterval = 5
   $elapsed = 0
+  $pollFailures = 0
 
   while ($elapsed -lt $maxWaitSeconds) {
     $previousErrorAction = $ErrorActionPreference
@@ -674,11 +709,19 @@ function Invoke-VpsDockerBuild(
     $ErrorActionPreference = $previousErrorAction
 
     if ($LASTEXITCODE -ne 0) {
-      Write-Warning "SSH connection lost while polling — build continues on VPS."
-      Write-Host "  Check progress: ssh $VpsHost tail -f $logPath"
-      Write-Host "  Once complete, deploy is already live. No further action needed."
-      return
+      $pollFailures += 1
+      Write-Warning "SSH connection lost while polling — build continues on VPS. Poll failure $pollFailures/5..."
+      if ($pollFailures -ge 5) {
+        Write-Host "  Check progress: ssh $VpsHost tail -f $logPath"
+        Write-Host "  Once complete, deploy is already live. No further action needed."
+        return
+      }
+      Start-Sleep -Seconds $pollInterval
+      $elapsed += $pollInterval
+      continue
     }
+
+    $pollFailures = 0
 
     $trimmed = $tailOutput.Trim()
     if ($trimmed) {
@@ -821,7 +864,10 @@ function Transfer-ImageToVps(
     }
 
     Write-Host "Loading uploaded image on VPS..." -ForegroundColor Yellow
-    $remoteLoad = "set -e; trap 'rm -f $($ShipState.RemoteTarPath)' EXIT; docker load -i $($ShipState.RemoteTarPath)"
+    # Keep the tar when loading fails so the retry (and a -Resume run) can
+    # re-run `docker load` without re-uploading the archive; remove it only
+    # once it has loaded successfully.
+    $remoteLoad = "set -e; docker load -i $($ShipState.RemoteTarPath) && rm -f $($ShipState.RemoteTarPath)"
     ExecNativeWithRetry -Program "ssh" -CommandArgs @($VpsHost, $remoteLoad)
     $ShipState.Stage = "image-loaded"
     Write-ShipState -StateFilePath $ShipStatePath -State $ShipState
@@ -927,10 +973,12 @@ try {
     Write-Warning "Skipping migration validation checks (-SkipMigrationValidation)."
   }
 
-  Exec "git fetch origin $Branch"
+  ExecNativeWithRetry -Program "git" -CommandArgs @("fetch", "origin", $Branch) -MaxAttempts 5 -InitialDelaySeconds 4
   Exec "git checkout $Branch"
 
-  if (-not $SkipAutoDependencyMaintenance) {
+  if ($Resume) {
+    Write-Host "Resume run — skipping automatic dependency maintenance for the fixed commit." -ForegroundColor DarkYellow
+  } elseif (-not $SkipAutoDependencyMaintenance) {
     ExecNative -Program "pwsh" -CommandArgs @(
       "-NoProfile",
       "-ExecutionPolicy",
@@ -948,7 +996,7 @@ try {
   }
 
   if (-not $SkipGitPush) {
-    Exec "git push origin $Branch"
+    ExecNativeWithRetry -Program "git" -CommandArgs @("push", "origin", $Branch) -MaxAttempts 5 -InitialDelaySeconds 4
   }
 
   $currentSha = (git rev-parse --short HEAD).Trim()
@@ -1015,7 +1063,10 @@ try {
   }
 
   # ── Verification gate: invariants + API smoke tests ──────────────────
-  if (-not $SkipVerifyGate) {
+  # Checkpointed: a -Resume run for the same commit skips the gates that
+  # already passed, so a mid-transfer connection drop no longer forces the
+  # whole test-and-build cycle to run again.
+  if (-not $SkipVerifyGate -and (Get-ShipStageRank -Stage ([string]$shipState.Stage)) -lt (Get-ShipStageRank -Stage "gates-passed")) {
     Write-Host "Running pre-deploy verification gates..." -ForegroundColor Yellow
 
     # Phase 1: Build the app (creates standalone server.js)
@@ -1091,6 +1142,12 @@ try {
       Write-Host "Stopping test server (PID $testServerPid)..." -ForegroundColor Yellow
       Stop-Process -Id $testServerPid -Force -ErrorAction SilentlyContinue
     }
+
+    $shipState.Stage = "gates-passed"
+    $shipState.UpdatedAt = (Get-Date).ToString("o")
+    Write-ShipState -StateFilePath $shipStatePath -State $shipState
+  } elseif (-not $SkipVerifyGate) {
+    Write-Host "Resuming — verification gates already passed for this commit; skipping." -ForegroundColor DarkYellow
   } else {
     Write-Warning "Skipping verification gates (-SkipVerifyGate)."
   }
@@ -1172,10 +1229,13 @@ try {
       $L17 = "docker exec -i " + '"$DB_CTR"' + " mysql -u" + '"$USR"' + " -p" + '"$PASS"' + " " + '"$DB"' + " < $remoteDumpPath"
       $L18 = "rm -f $remoteDumpPath $remoteScriptPath"
       $L19 = "echo '[db-restore] Complete.'"
-      $script = ($L1,$L2,$L3,$L4,$L5,$L6,$L7,$L8,$L9,$L10,$L11,$L12,$L13,$L14,$L15,$L16,$L17,$L18,$L19) -join "`n"
+      # set -e makes the restore fail loudly on any error. The dump is only
+      # deleted on success, so a retry after a dropped connection re-runs the
+      # full restore safely instead of half-completing.
+      $script = ($L1,'set -e',$L2,$L3,$L4,$L5,$L6,$L7,$L8,$L9,$L10,$L11,$L12,$L13,$L14,$L15,$L16,$L17,$L18,$L19) -join "`n"
       [System.IO.File]::WriteAllText($localScriptPath, $script + "`n")
-      ExecNative -Program "scp" -CommandArgs @($localScriptPath, "${VpsHost}:${remoteScriptPath}")
-      ExecNative -Program "ssh" -CommandArgs @($VpsHost, "sh $remoteScriptPath")
+      ExecNativeWithRetry -Program "scp" -CommandArgs @($localScriptPath, "${VpsHost}:${remoteScriptPath}") -MaxAttempts 5
+      ExecNativeWithRetry -Program "ssh" -CommandArgs @($VpsHost, "sh $remoteScriptPath") -MaxAttempts 5
     } catch {
       throw
     } finally {
