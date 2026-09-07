@@ -708,14 +708,16 @@ function Invoke-VpsDockerBuild(
 # This connection kills sustained upload flows (client-side stall + RST after
 # roughly 60-90 seconds), so a single scp/sftp put of a large tar never
 # completes. sftp "reput" resumes from the partial remote file after each
-# reset until the whole file has arrived; a remote size check confirms the
-# transfer before it is accepted.
+# reset until the whole file has arrived; the transfer is accepted only when
+# the remote file matches both the local byte count and its SHA-256 hash, so
+# a corrupt resume can never pass verification on size alone.
 function Upload-ImageTarToVps(
   [string]$LocalTarPath,
   [string]$VpsHost,
   [string]$RemoteTarPath
 ) {
   $localSize = (Get-Item -LiteralPath $LocalTarPath).Length
+  $localHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $LocalTarPath).Hash.ToLowerInvariant()
   $batchPath = Join-Path ([System.IO.Path]::GetTempPath()) ("ytr-sftp-" + [System.Guid]::NewGuid().ToString("N") + ".bat")
 
   $verb = if (Test-RemoteFileExists -VpsHost $VpsHost -RemotePath $RemoteTarPath) { "reput" } else { "put" }
@@ -736,19 +738,38 @@ function Upload-ImageTarToVps(
     $exitCode = $LASTEXITCODE
 
     $remoteSize = 0
+    $remoteHash = $null
     if ($exitCode -eq 0) {
       $remoteSizeOutput = ((& ssh $VpsHost "stat -c %s '$RemoteTarPath'" 2>$null) | Out-String).Trim()
       if ($remoteSizeOutput -match '^\d+$') {
         $remoteSize = [long]$remoteSizeOutput
       }
+
+      $remoteHashOutput = ((& ssh $VpsHost "sha256sum '$RemoteTarPath'" 2>$null) | Out-String).Trim()
+      $remoteHashMatch = [regex]::Match($remoteHashOutput, '^([0-9a-fA-F]{64})')
+      if ($remoteHashMatch.Success) {
+        $remoteHash = $remoteHashMatch.Groups[1].Value.ToLowerInvariant()
+      }
     }
 
-    if ($exitCode -eq 0 -and $remoteSize -eq $localSize) {
+    if ($exitCode -eq 0 -and $remoteSize -eq $localSize -and $remoteHash -eq $localHash) {
       if (Test-Path -LiteralPath $batchPath) {
         Remove-Item -LiteralPath $batchPath -Force -ErrorAction SilentlyContinue
       }
       Write-Host ("Image archive uploaded and verified on VPS ({0} MB)." -f [math]::Round($localSize / 1MB, 1)) -ForegroundColor Green
       return
+    }
+
+    # Size matches but the content hash does not: a previous "reput" resumed
+    # into a stale/corrupt partial and produced a wrong-byte file of the right
+    # size. Appending more bytes can never repair it — discard the remote file
+    # and restart with a fresh put so integrity cannot slip through on size alone.
+    if ($exitCode -eq 0 -and $remoteSize -eq $localSize -and $remoteHash -ne $localHash) {
+      Write-Warning "Uploaded archive failed SHA-256 verification (local $localHash, remote $remoteHash); discarding remote file and restarting with a fresh put..."
+      & ssh $VpsHost "rm -f '$RemoteTarPath'" *> $null
+      $verb = "put"
+      Start-Sleep -Seconds 2
+      continue
     }
 
     $output = (($rawOutput | ForEach-Object { $_.ToString() }) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join [Environment]::NewLine
