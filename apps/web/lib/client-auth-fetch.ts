@@ -1,4 +1,6 @@
-let refreshInFlight: Promise<boolean> | null = null;
+export type RefreshSessionResult = "ok" | "unauthorized" | "unavailable" | "blocked";
+
+let refreshInFlight: Promise<RefreshSessionResult> | null = null;
 
 // Backoff guard: after a failed refresh attempt we stop retrying for a while.
 // Without this, a stale admin tab with an expired session hammers
@@ -25,16 +27,27 @@ function isRefreshEndpoint(input: RequestInfo | URL) {
   return false;
 }
 
-export async function refreshAuthSession() {
+/**
+ * Attempt a session refresh and report the outcome precisely so callers can
+ * tell a dead session apart from a temporarily unreachable auth server:
+ *
+ * - "ok":            new tokens issued (or the request raced another tab).
+ * - "unauthorized":  the refresh token is invalid/expired/revoked — the
+ *                    server cleared the auth cookies. Definitive sign-out.
+ * - "unavailable":   network error or non-401 failure (503/500) — the
+ *                    session may still be valid; retry later.
+ * - "blocked":       a recent failure is still in its backoff window.
+ */
+export async function refreshAuthSession(): Promise<RefreshSessionResult> {
   if (refreshInFlight) {
     return refreshInFlight;
   }
 
   if (Date.now() < refreshRetryNotBeforeAt) {
-    return false;
+    return "blocked";
   }
 
-  const refreshPromise = (async () => {
+  const refreshPromise = (async (): Promise<RefreshSessionResult> => {
     try {
       const response = await fetch("/api/auth/refresh", {
         method: "POST",
@@ -47,7 +60,7 @@ export async function refreshAuthSession() {
 
       if (response.ok) {
         refreshRetryNotBeforeAt = 0;
-        return true;
+        return "ok";
       }
 
       // 401 = invalid/expired refresh token (server clears cookies): back off
@@ -56,10 +69,10 @@ export async function refreshAuthSession() {
         ? REFRESH_UNAUTHORIZED_BACKOFF_MS
         : REFRESH_NETWORK_FAILURE_BACKOFF_MS;
       refreshRetryNotBeforeAt = Date.now() + backoffMs;
-      return false;
+      return response.status === 401 ? "unauthorized" : "unavailable";
     } catch {
       refreshRetryNotBeforeAt = Date.now() + REFRESH_NETWORK_FAILURE_BACKOFF_MS;
-      return false;
+      return "unavailable";
     }
   })();
 
@@ -87,7 +100,7 @@ export async function fetchWithAuthRetry(input: RequestInfo | URL, init?: Reques
     return response;
   }
 
-  const didRefresh = await refreshAuthSession();
+  const didRefresh = (await refreshAuthSession()) === "ok";
 
   if (!didRefresh) {
     return response;

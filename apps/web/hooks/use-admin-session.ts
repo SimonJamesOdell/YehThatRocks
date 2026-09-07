@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { fetchWithAuthRetry, refreshAuthSession } from "@/lib/client-auth-fetch";
+import { refreshAuthSession } from "@/lib/client-auth-fetch";
 
 const ADMIN_SESSION_REVALIDATE_INTERVAL_MS = 30_000;
 // Refresh the access token well before its 15-minute expiry so an open admin
@@ -29,7 +29,7 @@ export function useAdminSession({
     }
 
     try {
-      const response = await fetchWithAuthRetry("/api/admin/dashboard", {
+      const response = await fetch("/api/admin/dashboard", {
         method: "GET",
         cache: "no-store",
       });
@@ -40,7 +40,31 @@ export function useAdminSession({
       }
 
       if (response.status === 401 || response.status === 403) {
-        setIsAdminSessionActive(false);
+        const refreshResult = await refreshAuthSession();
+
+        if (refreshResult === "ok") {
+          const retryResponse = await fetch("/api/admin/dashboard", {
+            method: "GET",
+            cache: "no-store",
+          });
+
+          if (retryResponse.ok) {
+            setIsAdminSessionActive(true);
+          }
+
+          // Refresh succeeded but the endpoint still rejects: a server-side
+          // anomaly, not a sign-out. Keep the current capability state.
+          return;
+        }
+
+        if (refreshResult === "unauthorized") {
+          // Definitive sign-out — the refresh token was rejected and the
+          // server cleared the auth cookies.
+          setIsAdminSessionActive(false);
+        }
+
+        // "blocked" / "unavailable": transient failure — keep the current
+        // capability state and let the next poll revalidate.
       }
     } catch {
       // Keep current capability state on transient network failures.

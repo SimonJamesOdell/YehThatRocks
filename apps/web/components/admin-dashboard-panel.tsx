@@ -67,6 +67,15 @@ export function AdminDashboardPanel({
       setClientAuthLost(true);
       setError(null);
       setLoading(false);
+      return;
+    }
+
+    // The auth recovery poll can silently re-authenticate after a transient
+    // failure (e.g. a refresh request that failed while the session was still
+    // valid). Restore the dashboard instead of keeping the expired-session
+    // gate up until a manual reload.
+    if (state === "authenticated") {
+      setClientAuthLost(false);
     }
   });
 

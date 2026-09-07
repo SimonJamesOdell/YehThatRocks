@@ -433,6 +433,14 @@ export function PlayerExperience({
 
   const currentVideoRef = useRef(currentVideo);
   const autoplayEnabledRef = useRef(autoplayEnabled);
+  // Auth-transition tracking: a session drop re-runs the player effect
+  // (isLoggedIn is one of its dependencies), which used to recreate the player
+  // and autoplay the previously loaded video behind the admin overlay. Detect
+  // the logged-in -> logged-out transition and suppress that one autoplay; the
+  // suppression clears on the next genuine video change.
+  const wasLoggedInRef = useRef(isLoggedIn);
+  const lastPlayerVideoIdRef = useRef<string | null>(null);
+  const suppressAutoplayAfterAuthLossRef = useRef(false);
   const volumeRef = useRef(volume);
   const isMutedRef = useRef(isMuted);
   const persistMutedPreferenceOnNextSyncRef = useRef(false);
@@ -2405,6 +2413,21 @@ export function PlayerExperience({
   }
 
   useEffect(() => {
+    // A logged-out transition re-runs this effect and used to autoplay the
+    // previous video behind the admin overlay. Detect the transition and
+    // suppress autoplay for this recreation; the flag clears on the next
+    // genuine video change.
+    const didLoseAuthSinceLastRun = wasLoggedInRef.current && !isLoggedIn;
+    const didChangeVideoSinceLastRun = lastPlayerVideoIdRef.current !== null
+      && lastPlayerVideoIdRef.current !== currentVideo.id;
+    wasLoggedInRef.current = isLoggedIn;
+    lastPlayerVideoIdRef.current = currentVideo.id;
+    if (didLoseAuthSinceLastRun) {
+      suppressAutoplayAfterAuthLossRef.current = true;
+    } else if (didChangeVideoSinceLastRun) {
+      suppressAutoplayAfterAuthLossRef.current = false;
+    }
+
     setIsPlayerReady(false);
     setIsPlaying(false);
     setCurrentTime(0);
@@ -2448,7 +2471,8 @@ export function PlayerExperience({
 
           setIsMuted(toSafeNumber(playerRef.current.getVolume(), 100) <= 0);
 
-          if (autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
+          if (autoplaySuppressedVideoIdRef.current !== currentVideo.id
+            && !suppressAutoplayAfterAuthLossRef.current) {
             const forceAutoAdvancePlayback = pendingAutoAdvanceVideoIdRef.current === currentVideo.id;
             const suppressForInitialPageLoad = shouldSuppressAutoplayForInitialPageLoad(currentVideo.id);
 
@@ -2531,7 +2555,8 @@ export function PlayerExperience({
                       setCurrentTime(safeTime);
                     }
 
-                    if (parsed.wasPlaying && !isInitialDeepLinkedSelection && canProgrammaticPlaybackStart()) {
+                    if (parsed.wasPlaying && !isInitialDeepLinkedSelection && canProgrammaticPlaybackStart()
+                      && !suppressAutoplayAfterAuthLossRef.current) {
                       event.target.playVideo();
                     }
                   }
@@ -2545,7 +2570,8 @@ export function PlayerExperience({
               router.replace(`${pathname}?${params.toString()}`);
             }
 
-            if (autoplaySuppressedVideoIdRef.current !== currentVideo.id) {
+            if (autoplaySuppressedVideoIdRef.current !== currentVideo.id
+              && !suppressAutoplayAfterAuthLossRef.current) {
               const forceAutoAdvancePlayback = pendingAutoAdvanceVideoIdRef.current === currentVideo.id;
               const suppressForInitialPageLoad = shouldSuppressAutoplayForInitialPageLoad(currentVideo.id);
 

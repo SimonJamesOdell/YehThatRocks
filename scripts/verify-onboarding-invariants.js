@@ -185,7 +185,10 @@ function main() {
 
   // Intro must never stay blocked once auth resolves (frozen-overlay regression guard).
   assertContains(shellDynamicSource, "if (isLoggedIn) return false;", "Shell skips the intro block for SSR-authenticated users with empty onboarding storage", failures);
-  assertContains(shellDynamicSource, "if (isAuthenticated) {\n      setIsWelcomeBlockingIntro(false);", "Shell releases the intro block the moment auth resolves", failures);
+  // Split into two single-line assertions so the check stays line-ending
+  // tolerant (Windows checkouts keep CRLF endings in the working copy).
+  assertContains(shellDynamicSource, "if (isAuthenticated) {", "Shell releases the intro block the moment auth resolves", failures);
+  assertContains(shellDynamicSource, "setIsWelcomeBlockingIntro(false);", "Shell releases the intro block the moment auth resolves", failures);
 
   // auth-login-form retains its inline anonymous flow
   assertContains(authLoginFormSource, "isAnonymousFlowOpen", "AuthLoginForm retains isAnonymousFlowOpen state for inline anonymous flow", failures);

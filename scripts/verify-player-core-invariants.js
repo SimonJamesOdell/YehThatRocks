@@ -307,7 +307,8 @@ function main() {
   assertContains(playerExperienceSource, "const [isAdminSessionActive, setIsAdminSessionActive] = useState(initialIsAdmin);", "Player tracks runtime admin-session capability state", failures);
   assertContains(playerExperienceSource, "return isLoggedIn && isAdminSessionActive;", "Player gates admin controls on active session capability", failures);
   assertContains(playerExperienceSource, "const revalidateAdminSession = useCallback(async () => {", "Player defines shared admin-session revalidation helper", failures);
-  assertContains(playerExperienceSource, "await fetchWithAuthRetry(\"/api/admin/dashboard\"", "Player revalidates admin capability against admin API guard", failures);
+  assertContains(playerExperienceSource, "await fetch(\"/api/admin/dashboard\", {", "Player revalidates admin capability against admin API guard", failures);
+  assertContains(playerExperienceSource, "refreshResult === \"unauthorized\"", "Player deactivates admin capability only on definitive session rejection", failures);
   assertContains(playerExperienceSource, "window.addEventListener(\"focus\", handleFocus);", "Player revalidates admin capability when tab gains focus", failures);
   assertContains(playerExperienceSource, "document.addEventListener(\"visibilitychange\", handleVisibilityChange);", "Player revalidates admin capability when tab becomes visible", failures);
   assertContains(playerExperienceSource, "window.setInterval(() => {", "Player periodically revalidates admin capability while visible", failures);

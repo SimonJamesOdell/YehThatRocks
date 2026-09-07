@@ -74,6 +74,8 @@ import { ForumSectionRail } from "@/components/forum-section-rail";
 import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT, EVENT_NAMES, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
 import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 import { publishAuthStateChange } from "@/lib/auth-sync";
+import type { RefreshSessionResult } from "@/lib/client-auth-fetch";
+import { probeClientAuthState } from "@/lib/client-auth-state";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
 import { parseJsonOrNull } from "@/lib/parse-json";
 import { readGenrePreferences } from "@/lib/genre-preference-store";
@@ -199,7 +201,7 @@ function ShellDynamicInner({
   const [hasClientMounted, setHasClientMounted] = useState(false);
   const prevRetryNonceRef = useRef(0);
   const [hasBootstrappedWatchNext, setHasBootstrappedWatchNext] = useState(false);
-  const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
+  const refreshPromiseRef = useRef<Promise<RefreshSessionResult> | null>(null);
   const lastVideoIdRef = useRef<string | null>(
     requestedVideoId && requestedVideoId === initialVideo.id ? requestedVideoId : null,
   );
@@ -351,11 +353,11 @@ function ShellDynamicInner({
     : undefined;
   const isMobileCommunityCollapsed = isMobileViewport && !isMobileCommunityOpen;
   // ── Auth callbacks (needed by hooks below) ───────────────────────────────
-  const refreshAuthSession = useCallback(async () => {
+  const refreshAuthSession = useCallback(async (): Promise<RefreshSessionResult> => {
     if (refreshPromiseRef.current) {
       return refreshPromiseRef.current;
     }
-    const refreshPromise = (async () => {
+    const refreshPromise = (async (): Promise<RefreshSessionResult> => {
       try {
         const response = await fetch("/api/auth/refresh", {
           method: "POST",
@@ -365,9 +367,18 @@ function ShellDynamicInner({
           },
           body: "{}",
         });
-        return response.ok;
+
+        if (response.ok) {
+          return "ok";
+        }
+
+        // The refresh route only answers 401 when the refresh token is
+        // invalid/expired/revoked (and it clears the auth cookies). Every
+        // other failure (503/500/network) is transient and the session may
+        // still be valid, so callers must not treat it as a sign-out.
+        return response.status === 401 ? "unauthorized" : "unavailable";
       } catch {
-        return false;
+        return "unavailable";
       }
     })();
     refreshPromiseRef.current = refreshPromise;
@@ -387,7 +398,7 @@ function ShellDynamicInner({
       if (response.status !== 401 && response.status !== 403) {
         return response;
       }
-      const didRefresh = await refreshAuthSession();
+      const didRefresh = (await refreshAuthSession()) === "ok";
       if (!didRefresh) {
         return response;
       }
@@ -399,46 +410,24 @@ function ShellDynamicInner({
   const checkAuthState = useCallback(async (options?: { showDialogOnUnavailable?: boolean }) => {
     const showDialogOnUnavailable = options?.showDialogOnUnavailable === true;
     const isDocumentVisible = typeof document === "undefined" || document.visibilityState === "visible";
-    const resolveAuthState = async () => {
-      try {
-        const response = await fetchWithAuthRetry("/api/auth/me");
-        if (response.status === 401 || response.status === 403) {
-          return "unauthenticated" as const;
-        }
-        if (!response.ok) {
-          return "unavailable" as const;
-        }
-        return "authenticated" as const;
-      } catch {
-        return "unavailable" as const;
-      }
-    };
-    let resolvedState = await resolveAuthState();
+    const delay = (ms: number) => new Promise<void>((resolve) => {
+      window.setTimeout(() => {
+        resolve();
+      }, ms);
+    });
+    let resolvedState = await probeClientAuthState(refreshAuthSession);
     // Tabs resuming from sleep can produce one-off network/auth hiccups.
     // Retry once before showing a blocking auth-unavailable modal.
     if (resolvedState === "unavailable" && isAuthenticated) {
-      await new Promise<void>((resolve) => {
-        window.setTimeout(() => {
-          resolve();
-        }, 900);
-      });
-      resolvedState = await resolveAuthState();
+      await delay(900);
+      resolvedState = await probeClientAuthState(refreshAuthSession);
     }
-    // Transient refresh failures (token race, brief DB unavailability,
-    // network blip) can report 401 even though the session is still valid.
-    // Retry several times with increasing backoff before forcing a sign-out.
-    // The backoff steps are: 450 ms, 2 s, 5 s.
+    // A definitive sign-out verdict deserves one short re-probe to absorb
+    // cross-tab cookie propagation races before forcing a sign-out. The
+    // retries for transient failures are handled by the regular poll.
     if (resolvedState === "unauthenticated" && isAuthenticated) {
-      const UNAUTHENTICATED_RETRY_DELAYS_MS = [450, 2_000, 5_000];
-      for (const delayMs of UNAUTHENTICATED_RETRY_DELAYS_MS) {
-        await new Promise<void>((resolve) => {
-          window.setTimeout(resolve, delayMs);
-        });
-        resolvedState = await resolveAuthState();
-        if (resolvedState !== "unauthenticated") {
-          break;
-        }
-      }
+      await delay(900);
+      resolvedState = await probeClientAuthState(refreshAuthSession);
     }
     // Background tabs and wake-from-sleep transitions can briefly fail auth probes
     // without any real server outage. Avoid showing a blocking modal until the page
@@ -477,7 +466,7 @@ function ShellDynamicInner({
     setIsAuthUnavailableDialogRequested(false);
     setIsAuthenticated(true);
     return "authenticated" as const;
-  }, [fetchWithAuthRetry, isAuthenticated]);
+  }, [refreshAuthSession, isAuthenticated]);
   const checkAuthStateForProtectedAction = useCallback(() => {
     return checkAuthState({ showDialogOnUnavailable: true });
   }, [checkAuthState]);
