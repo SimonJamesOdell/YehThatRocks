@@ -41,6 +41,11 @@ describe("requireHumanTrustOrResponse", () => {
     expect(res).toBeNull();
   });
 
+  it("returns null for a loopback client (local dev / smoke test)", () => {
+    const res = requireHumanTrustOrResponse(requestWith("127.0.0.1"), null, {});
+    expect(res).toBeNull();
+  });
+
   it("returns null for an authenticated account", () => {
     const res = requireHumanTrustOrResponse(
       requestWith("203.0.113.32"),

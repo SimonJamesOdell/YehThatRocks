@@ -97,6 +97,13 @@ async function fetchJson(url, init, timeoutMs) {
     const response = await fetch(url, {
       cache: "no-store",
       ...init,
+      headers: {
+        // Identify the smoke test as a loopback client so the Sec-Fetch-Site
+        // check and the human-trust gate exempt it (it is a local test tool,
+        // not a remote bot).
+        "x-forwarded-for": "127.0.0.1",
+        ...(init?.headers ?? {}),
+      },
       signal: controller.signal,
     });
 
