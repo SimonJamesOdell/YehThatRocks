@@ -2,8 +2,7 @@ import { NextRequest } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import type { AuthContext } from "@/lib/auth-request";
-import { BoundedMap } from "@/lib/bounded-map";
-import { getClientIp } from "@/lib/rate-limit";
+import { isFlagged, isWarm, recordBenignActivity } from "@/lib/trust-reputation";
 
 /**
  * Human-trust gate for sensitive, mutable endpoints.
@@ -21,6 +20,10 @@ import { getClientIp } from "@/lib/rate-limit";
  * so it is denied. A human who has been browsing the site for a couple of
  * minutes (or who signed in / solved the challenge) is allowed. Either way the
  * normal rate limits still apply.
+ *
+ * The warm-activity signal is now persisted (lib/trust-reputation.ts) so it
+ * survives restarts; this module keeps the synchronous assessment and the
+ * proof-of-work cookie verification.
  */
 
 const BOTOK_COOKIE = "ytr_botok";
@@ -74,57 +77,20 @@ export function verifyBotOkCookie(value: string | undefined): boolean {
   return timingSafeEqual(expected, provided);
 }
 
-type ActivityEntry = {
-  firstSeen: number;
-  lastSeen: number;
-  hits: number;
-};
-
-// In-memory, bounded behavioural log keyed by client IP. This mirrors the
-// existing in-memory rate-limit buckets and lives only as long as the web
-// process, which is exactly the horizon over which "warm vs cold" matters.
-const activityLog = new BoundedMap<string, ActivityEntry>(20_000);
-
-// "Warm" = the same IP has made at least this many benign requests with at
-// least this much wall-clock spread. A one-shot bot blasts its requests in
-// seconds and vanishes; a human lingers. These are deliberately lenient.
-const WARM_MIN_HITS = 2;
-const WARM_MIN_SPAN_MS = 2 * 60 * 1000;
-const ACTIVITY_WINDOW_MS = 30 * 60 * 1000;
-
 /**
  * Record that a client made a benign (read-only) request. Call this from the
  * high-traffic public read endpoints that a human hits while browsing.
  */
 export function noteBenignActivity(request: Request): void {
-  const key = getClientIp(request);
-  const now = Date.now();
-  const existing = activityLog.get(key);
-
-  if (!existing || now - existing.firstSeen > ACTIVITY_WINDOW_MS) {
-    activityLog.set(key, { firstSeen: now, lastSeen: now, hits: 1 });
-    return;
-  }
-
-  existing.lastSeen = now;
-  existing.hits += 1;
+  recordBenignActivity(request);
 }
 
-function isWarm(request: NextRequest): boolean {
-  const entry = activityLog.get(getClientIp(request));
-  if (!entry) {
-    return false;
-  }
-
-  const now = Date.now();
-  if (now - entry.lastSeen > ACTIVITY_WINDOW_MS) {
-    return false;
-  }
-
-  return entry.hits >= WARM_MIN_HITS && (now - entry.firstSeen) >= WARM_MIN_SPAN_MS;
-}
-
-export type TrustReason = "authenticated" | "proof-of-work" | "warm-activity" | "insufficient";
+export type TrustReason =
+  | "authenticated"
+  | "proof-of-work"
+  | "warm-activity"
+  | "flagged"
+  | "insufficient";
 
 export type TrustAssessment = {
   trusted: boolean;
@@ -134,8 +100,15 @@ export type TrustAssessment = {
 /**
  * Decide whether a client has accumulated enough evidence of being human to
  * use a sensitive endpoint. Cheapest/strongest signals are checked first.
+ *
+ * A flagged IP is refused outright before any evidence is considered — abuse
+ * history outranks a solved cookie or a warm IP.
  */
 export function assessHumanTrust(request: NextRequest, auth: AuthContext | null): TrustAssessment {
+  if (isFlagged(request)) {
+    return { trusted: false, reason: "flagged" };
+  }
+
   if (auth && auth.userId != null) {
     return { trusted: true, reason: "authenticated" };
   }

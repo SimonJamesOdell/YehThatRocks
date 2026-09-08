@@ -6,6 +6,8 @@ import { parseJsonOrNull } from "@/lib/parse-json";
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { publishAuthStateChange } from "@/lib/auth-sync";
 import { readGenrePreferences } from "@/lib/genre-preference-store";
+import { useHumanTrustChallenge } from "@/lib/use-human-trust-challenge";
+import { TrustChallengeInterstitial } from "@/components/trust-challenge-interstitial";
 
 export function AuthRegisterForm() {
   const router = useRouter();
@@ -13,6 +15,7 @@ export function AuthRegisterForm() {
   const [error, setError] = useState<string | null>(null);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
+  const { needsChallenge, dismissChallenge } = useHumanTrustChallenge();
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -58,6 +61,10 @@ export function AuthRegisterForm() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  if (needsChallenge) {
+    return <TrustChallengeInterstitial onComplete={dismissChallenge} />;
   }
 
   return (

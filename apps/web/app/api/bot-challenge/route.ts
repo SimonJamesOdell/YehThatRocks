@@ -1,12 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, createHmac } from "node:crypto";
 
+import { recordPowSolved } from "@/lib/trust-reputation";
+
 export const dynamic = "force-dynamic";
 
 const POW_SALT = "ytr-botok-v1:";
-const POW_DIFFICULTY_BITS = 18;
 const BOTOK_COOKIE = "ytr_botok";
 const BOTOK_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
+
+// Operator-tunable difficulty. Raising it during an active swarm costs bots
+// exponentially more CPU without changing the UX for a human (who solves once).
+function powDifficultyBits(): number {
+  const raw = Number(process.env.POW_DIFFICULTY_BITS ?? "18");
+  if (!Number.isFinite(raw)) {
+    return 18;
+  }
+  return Math.max(8, Math.min(40, Math.floor(raw)));
+}
+
+const POW_DIFFICULTY_BITS = powDifficultyBits();
 
 /**
  * Verify the client-side proof-of-work: sha256("ytr-botok-v1:" + nonce) must
@@ -47,6 +60,12 @@ function signBotOkCookie(nonce: string): string {
   return `${payload}:${sig}`;
 }
 
+export async function GET() {
+  // Lets the client learn the current difficulty before solving, so an
+  // operator can raise it without a code deploy.
+  return NextResponse.json({ difficulty: POW_DIFFICULTY_BITS });
+}
+
 export async function POST(request: NextRequest) {
   let body: { nonce?: unknown };
 
@@ -61,6 +80,9 @@ export async function POST(request: NextRequest) {
   if (!meetsPowDifficulty(nonce)) {
     return NextResponse.json({ error: "invalid proof" }, { status: 403 });
   }
+
+  // Persist the solve as client evidence — it feeds the human-trust tier.
+  recordPowSolved(request);
 
   const response = NextResponse.json({ ok: true });
   response.cookies.set(BOTOK_COOKIE, signBotOkCookie(nonce), {

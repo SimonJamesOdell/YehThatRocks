@@ -1,0 +1,85 @@
+/* Visible human-verification interstitial — shares the site's dark,
+   blood-red modal language (see tokens.css / auth-modal.css). */
+
+.trustChallengeOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 2, 2, 0.72);
+  backdrop-filter: blur(8px) saturate(0.82);
+}
+
+.trustChallengePanel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding: 36px 32px;
+  width: 100%;
+  max-width: 360px;
+  border-radius: var(--ui-modal-radius, 14px);
+  border: 1px solid rgba(255, 194, 168, 0.28);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(179, 18, 20, 0.22), transparent 58%),
+    linear-gradient(160deg, rgba(34, 8, 6, 0.96), rgba(11, 4, 4, 0.96));
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 126, 96, 0.16) inset;
+  color: var(--text, #f5f1eb);
+  font-family: var(--font-body, "Segoe UI", Arial, Helvetica, sans-serif);
+}
+
+.trustChallengeGlyph {
+  font-size: 2.2rem;
+  line-height: 1;
+  color: var(--accent, #b31214);
+  text-shadow: 0 0 14px rgba(179, 18, 20, 0.4);
+  animation: trustChallengePulse 1.2s ease-in-out infinite;
+}
+
+@keyframes trustChallengePulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+.trustChallengeTitle {
+  margin: 0;
+  font-family: var(--font-display, var(--font-body, "Segoe UI", Arial, sans-serif));
+  font-size: 1.25rem;
+  letter-spacing: 0.04em;
+  color: #fff;
+}
+
+.trustChallengeCopy {
+  margin: 0;
+  color: var(--muted, #d3c1b8);
+  font-size: 0.92rem;
+}
+
+.trustChallengeRetry {
+  margin-top: 4px;
+  padding: 10px 24px;
+  border: 1px solid rgba(255, 188, 170, 0.5);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(138, 18, 20, 0.95), rgba(55, 6, 8, 0.95));
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.92rem;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+}
+
+.trustChallengeRetry:hover {
+  filter: brightness(1.12);
+}

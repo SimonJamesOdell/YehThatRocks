@@ -130,7 +130,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -151,7 +151,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -163,6 +163,11 @@ sudo ln -sf /etc/nginx/sites-available/yehthatrocks /etc/nginx/sites-enabled/yeh
 sudo nginx -t
 sudo systemctl reload nginx
 ```
+
+> **Why `$remote_addr`, not `$proxy_add_x_forwarded_for`:** nginx is the sole
+> ingress. Appending lets a direct attacker spoof `X-Forwarded-For` and rotate
+> past per-IP rate limits and the trust gate. Overwriting with `$remote_addr`
+> pins the value to the actual client IP.
 
 ## 6. TLS With Certbot
 

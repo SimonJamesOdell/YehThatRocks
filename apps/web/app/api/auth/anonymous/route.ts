@@ -13,6 +13,7 @@ import { isAccountCreationBotUA } from "@/lib/crawler-guard";
 import { verifySameOrigin } from "@/lib/csrf";
 import { HTTP_FORBIDDEN } from "@/lib/http-status";
 import { prisma } from "@/lib/db";
+import { requireHumanTrustOrResponse } from "@/lib/require-human-trust";
 import {
   setPlayerPreferencesForUser,
 } from "@/lib/player-preference-data";
@@ -157,6 +158,13 @@ export async function POST(request: NextRequest) {
   const userAgent = request.headers.get("user-agent");
   if (isAccountCreationBotUA(userAgent)) {
     return NextResponse.json({ error: "Invalid request" }, { status: HTTP_FORBIDDEN });
+  }
+
+  // Require human evidence (proof-of-work cookie or warm activity) before
+  // allowing a cold client to create an anonymous account.
+  const trustResponse = requireHumanTrustOrResponse(request, null, { minimumTier: 2 });
+  if (trustResponse) {
+    return trustResponse;
   }
 
   try {

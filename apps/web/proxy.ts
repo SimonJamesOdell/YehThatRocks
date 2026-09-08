@@ -22,6 +22,29 @@ const MOBILE_OR_TABLET_USER_AGENT_PATTERN = /Android|webOS|iPhone|iPad|iPod|Blac
 const METADATA_CRAWLER_USER_AGENT_PATTERN = /facebookexternalhit|facebot|twitterbot|linkedinbot|slackbot|discordbot|whatsapp|telegrambot|googlebot|google-inspectiontool|adsbot-google|bingbot|bingpreview|duckduckbot|applebot/i;
 
 /**
+ * Emergency "I'm under attack" mode. When enabled, cold clients (no `ytr_botok`
+ * proof-of-work cookie) are redirected to /challenge before any page is served.
+ * This is a coarse load-shedding lever; the strong HMAC verification still
+ * happens at the origin (server-side trust gate) and the /challenge page issues
+ * a real cookie after a genuine solve.
+ */
+const ATTACK_MODE_ENABLED = process.env.ATTACK_MODE === "1" || process.env.ATTACK_MODE === "true";
+
+function hasPlausibleBotOkCookie(request: NextRequest): boolean {
+  const value = request.cookies.get("ytr_botok")?.value;
+  if (!value) {
+    return false;
+  }
+
+  const parts = value.split(":");
+  return (
+    parts.length === 3
+    && /^[0-9a-f]{1,128}$/i.test(parts[0] ?? "")
+    && /^\d{1,16}$/.test(parts[1] ?? "")
+  );
+}
+
+/**
  * Static assets from public/ must never be redirected — browsers requesting
  * images, fonts, favicons etc. need the actual file, not a mobile page.
  */
@@ -121,6 +144,28 @@ export function proxy(request: NextRequest) {
     pathname.startsWith("/u/") ||
     pathname.startsWith("/playlists") ||
     pathname === "/history";
+
+  if (ATTACK_MODE_ENABLED) {
+    const isChallengeRoute = pathname === "/challenge";
+    const shouldChallenge =
+      request.method === "GET"
+      && !isStaticAsset
+      && !pathname.startsWith("/api")
+      && !isShareRoute
+      && !isEmbedRoute
+      && !isSitemapOrRobotsRequest
+      && !isMetadataCrawler
+      && !isChallengeRoute
+      && !hasPlausibleBotOkCookie(request);
+
+    if (shouldChallenge) {
+      const challengeUrl = request.nextUrl.clone();
+      challengeUrl.pathname = "/challenge";
+      challengeUrl.search = "";
+      challengeUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+      return withSecurityHeaders(NextResponse.redirect(challengeUrl), pathname);
+    }
+  }
 
   const shouldRedirectToMobile =
     isBrowserPageRequest

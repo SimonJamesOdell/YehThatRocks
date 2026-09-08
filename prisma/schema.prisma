@@ -496,3 +496,22 @@ model AdminCatalogReviewQueueMeta {
 
   @@map("admin_catalog_review_queue_meta")
 }
+
+model ClientReputation {
+  id           Int       @id @default(autoincrement())
+  ipHash       String    @unique @map("ip_hash") @db.VarChar(64)
+  firstSeenAt  DateTime  @default(now()) @map("first_seen_at") @db.DateTime(3)
+  lastSeenAt   DateTime  @default(now()) @map("last_seen_at") @db.DateTime(3)
+  benignHits   Int       @default(0) @map("benign_hits")
+  warmAt       DateTime? @map("warm_at") @db.DateTime(3)
+  powSolvedAt  DateTime? @map("pow_solved_at") @db.DateTime(3)
+  powSolves    Int       @default(0) @map("pow_solves")
+  deniedCount  Int       @default(0) @map("denied_count")
+  lastDeniedAt DateTime? @map("last_denied_at") @db.DateTime(3)
+  flagged      Boolean   @default(false)
+  flagReason   String?   @map("flag_reason") @db.VarChar(255)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+
+  @@index([flagged, lastSeenAt], map: "idx_client_reputation_flagged_seen")
+  @@map("client_reputations")
+}

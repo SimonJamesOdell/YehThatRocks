@@ -9,6 +9,8 @@ import { publishAuthStateChange } from "@/lib/auth-sync";
 import { readGenrePreferences } from "@/lib/genre-preference-store";
 import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, INTRO_SKIP_ONCE_AFTER_LOGIN_KEY, ANONYMOUS_USERNAME_KEY } from "@/lib/storage-keys";
 import { parseJsonOrNull } from "@/lib/parse-json";
+import { useHumanTrustChallenge } from "@/lib/use-human-trust-challenge";
+import { TrustChallengeInterstitial } from "@/components/trust-challenge-interstitial";
 
 type AnonymousAvailabilityResponse = {
   ok?: boolean;
@@ -92,6 +94,7 @@ export function AnonymousSignupModal({
   const [availability, setAvailability] = useState<"idle" | "checking" | "available" | "taken" | "invalid">("idle");
   const [credentials, setCredentials] = useState<{ username: string; password: string } | null>(null);
   const [isCredentialsContinuePending, setIsCredentialsContinuePending] = useState(false);
+  const { needsChallenge, dismissChallenge } = useHumanTrustChallenge();
 
   const hasOpenedRef = useRef(false);
 
@@ -395,6 +398,7 @@ export function AnonymousSignupModal({
         if (!isBusy) onClose();
       }}
     >
+      {needsChallenge ? <TrustChallengeInterstitial onComplete={dismissChallenge} /> : null}
       {!credentials ? (
         <div
           className="authModalCard"
