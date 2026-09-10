@@ -63,6 +63,7 @@ import { useShellNavigationHelpers } from "@/hooks/use-shell-navigation-helpers"
 import { dedupeRelatedRailVideos, finiteNumberOrNull, finitePercentOrNull, formatChatTimestamp, isFavouriteVideo, logFlow, logWatchNext, matchesPlaylistVideoOrder, sortVideosBySeen } from "@/components/shell-dynamic-utils";
 import { deriveShellOverlayRouteState, isProtectedOverlayPath, isRouteActive, isCategoriesOverlayPath } from "@/components/shell-dynamic-route-state";
 import { navItems, type VideoRecord } from "@/lib/catalog";
+import { useVideoPageTitle } from "@/hooks/use-video-page-title";
 import { MagazineGenerateNowButton } from "@/components/magazine-generate-now-button";
 import { detectAppendOnly, filterSeenFromWatchNext } from "@/components/shell-dynamic-helpers";
 import { mutateHiddenVideo } from "@/lib/hidden-video-client-service";
@@ -146,6 +147,7 @@ function ShellDynamicInner({
   const [currentVideo, setCurrentVideo] = useState(initialVideo);
   const currentVideoRef = useRef(currentVideo);
   currentVideoRef.current = currentVideo;
+  useVideoPageTitle(currentVideo);
   const [relatedVideos, setRelatedVideos] = useState<VideoRecord[]>(initialHydratedRelatedVideos);
   const [displayedRelatedVideos, setDisplayedRelatedVideos] = useState<VideoRecord[]>(initialHydratedRelatedVideos);
   const [relatedTransitionPhase, setRelatedTransitionPhase] = useState<"idle" | "fading-out" | "loading" | "fading-in">("idle");
