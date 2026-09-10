@@ -433,6 +433,7 @@ export function PlayerExperience({
 
   const currentVideoRef = useRef(currentVideo);
   const autoplayEnabledRef = useRef(autoplayEnabled);
+  const isAdminOverlayRouteRef = useRef(false);
   // Auth-transition tracking: a session drop re-runs the player effect
   // (isLoggedIn is one of its dependencies), which used to recreate the player
   // and autoplay the previously loaded video behind the admin overlay. Detect
@@ -452,6 +453,7 @@ export function PlayerExperience({
   // Never autoplay the shell's video behind the admin overlay — an open admin
   // panel must stay quiet, and it must not begin playback if the session drops.
   autoplayEnabledRef.current = autoplayEnabled && pathname !== "/admin";
+  isAdminOverlayRouteRef.current = pathname === "/admin";
   volumeRef.current = volume;
   isMutedRef.current = isMuted;
   isScrubbingRef.current = isScrubbing;
@@ -1573,7 +1575,10 @@ export function PlayerExperience({
   }
 
   function canProgrammaticPlaybackStart() {
-    return hasUserGesturePlaybackUnlockRef.current;
+    // While the admin overlay route is open, suppress every programmatic
+    // playback start (autoplay, auto-advance, stuck-playback retry, resume)
+    // so the player cannot begin playing in the background behind the panel.
+    return hasUserGesturePlaybackUnlockRef.current && !isAdminOverlayRouteRef.current;
   }
 
   function shouldSuppressAutoplayForInitialPageLoad(videoId: string) {

@@ -17,7 +17,7 @@ export function useAdminOverlayPlayerPause(isAdminOverlayRoute: boolean) {
     }
     const pauseYouTubeIframes = () => {
       const iframes = document.querySelectorAll<HTMLIFrameElement>(
-        'iframe[src*="youtube.com/embed/"]',
+        'iframe[src*="youtube.com/embed/"], iframe[src*="youtube-nocookie.com/embed/"]',
       );
       iframes.forEach((iframe) => {
         try {
