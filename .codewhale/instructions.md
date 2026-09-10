@@ -26,6 +26,18 @@ not limited to:
    deployed (build errors, type errors, chunk instability) — not the pipeline.
    The pipeline is deliberately manual.
 
+## Commit and push (allowed)
+
+The agent may commit and push verified changes when the user asks it to. This
+permission is scoped to `git commit` and `git push` of work that is complete and
+has passed the relevant verification (invariant scripts / type checks). It does
+not extend the deployment boundary above: builds (`npm run build`), ship scripts
+(`npm run ship:*`), CI/CD, and deploy scripts remain manual and user-triggered.
+
+- Only commit after the requested change is complete and verified.
+- Use a clear, conventional commit message.
+- Push to the configured `origin` remote.
+
 ## Live database restore
 
 When the user asks to download the live database and set it up locally,
@@ -93,4 +105,6 @@ When working with Prisma migrations:
 The full release preparation gate is defined in `.github/copilot-instructions.md`
 under "Release preparation". The user runs the `ship` command themselves.
 The agent may assist with preparation steps (invariants, dependency maintenance,
-audit) but must never execute the final commit, push, or deploy.
+audit) and may commit and push verified changes when asked to (see
+"Commit and push (allowed)" above). The agent must never run the build, ship,
+CI/CD, or deploy steps itself — those remain user-triggered.
