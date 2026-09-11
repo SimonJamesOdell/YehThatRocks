@@ -47,6 +47,12 @@ run the existing script — do NOT manually dump/download/import:
 powershell -NoProfile -ExecutionPolicy Bypass -File run_live_restore_diag.ps1
 ```
 
+On Linux (no pwsh), use the bash port instead:
+
+```bash
+./run_live_restore_diag.sh
+```
+
 This script handles the full workflow: SSH dump with `--skip-triggers` (avoids
 DELIMITER issues), scp download, `docker cp` into the container, drop/recreate
 `yeh` database, import via `SOURCE`, and verification diagnostics.
