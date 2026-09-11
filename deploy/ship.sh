@@ -33,6 +33,14 @@
 #   --skip-docker-prune
 #   --skip-verify-gate
 #   --vps-build
+#   --local-build
+#
+# Build location (default: auto):
+#   When neither --vps-build nor --local-build is given, ship uses a local Docker
+#   build if the Docker daemon is available, and otherwise falls back to building
+#   the image on the VPS (same as 'ship vps'). The production server runs Docker,
+#   so a local Docker install is NOT required to ship from Linux — only if you
+#   want to build the image on this machine instead of on the VPS.
 #
 # Linux note: automatic dependency maintenance (scripts/maintain-dependencies.ps1)
 # is PowerShell-only and is skipped on Linux with a warning. Everything else is
@@ -61,6 +69,7 @@ SKIP_MIGRATION_VALIDATION=0
 SKIP_VERIFY_GATE=0
 RESUME=0
 VPS_BUILD=0
+LOCAL_BUILD_REQUESTED=0
 MODE="regular"
 SHIP_PASSWORD=""
 
@@ -127,6 +136,7 @@ while [ "$#" -gt 0 ]; do
     --skip-docker-prune)                SKIP_DOCKER_PRUNE=1; shift ;;
     --skip-verify-gate)                 SKIP_VERIFY_GATE=1; shift ;;
     --vps-build)           VPS_BUILD=1; shift ;;
+    --local-build)         LOCAL_BUILD_REQUESTED=1; shift ;;
     *) error "Unknown argument: $1" ;;
   esac
 done
@@ -198,9 +208,8 @@ password_gate() {
 # ---------------------------------------------------------------------------
 # Tool checks
 # ---------------------------------------------------------------------------
-require_docker_local() {
-  command -v docker >/dev/null 2>&1 || error "Docker CLI not found. Install Docker to use the local build+ship flow, or use: ship vps SECRET_PASSWORD"
-  docker info >/dev/null 2>&1 || error "Docker daemon is not reachable. Start Docker and retry."
+docker_available() {
+  command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
 }
 
 require_ssh() {
@@ -582,7 +591,7 @@ update_state_stage() {
 # Optional DB restore (dump local DB → VPS)
 # ---------------------------------------------------------------------------
 restore_db_on_vps() {
-  require_docker_local
+  docker_available || error "--restore-db requires local Docker (to dump the local database). Install Docker, or drop --restore-db."
   local ts remote_dump remote_script
   ts="$(date +%Y%m%d-%H%M%S)"
   local local_dump="/tmp/ytr-db-$ts.sql"
@@ -633,8 +642,24 @@ RESTORE
 password_gate
 
 require_ssh
-if [ "$VPS_BUILD" -eq 0 ]; then
-  require_docker_local
+
+# Resolve build location. The production server runs Docker, so a local Docker
+# install is not required to ship — the image can be built on the VPS instead.
+if [ "$VPS_BUILD" -eq 1 ]; then
+  info "VPS build requested — no local Docker required."
+elif [ "$LOCAL_BUILD_REQUESTED" -eq 1 ]; then
+  docker_available || error "Docker is required for a local build but is not available. Install Docker, or use: ship vps SECRET_PASSWORD"
+else
+  if docker_available; then
+    info "Local Docker available — building the image locally."
+  else
+    warn "Docker is not installed locally. Building the image on the VPS instead (same as 'ship vps')."
+    if [ "$RESTORE_DB" -eq 1 ]; then
+      warn "--restore-db requires local Docker and will be skipped on this run."
+      RESTORE_DB=0
+    fi
+    VPS_BUILD=1
+  fi
 fi
 
 # Gate 0: clean worktree before any side-effect work
