@@ -59,6 +59,32 @@ Key lessons encoded in this script:
 - `--single-transaction` can silently skip certain InnoDB tables; the script
   verifies counts afterward (videos, site_videos).
 
+## Production server access (SSH)
+
+The production server can be reached over SSH:
+
+```bash
+ssh root@206.189.122.114
+```
+
+**Only use this when the user explicitly grants permission** for the specific
+task at hand — e.g. inspecting live logs, running read-only diagnostic SQL
+against the production database, or checking the dashboard-cache maintenance
+schedule. Do not treat this note as standing permission to SSH in; confirm
+permission each session before connecting.
+
+Useful production context once connected:
+- Admin dashboard traffic data is computed by `scripts/maintain-admin-dashboard-cache.mjs`,
+  which must be running as a scheduled job on the server (cron or a systemd
+  timer). Check `crontab -l` and systemd timers to see how it is scheduled.
+- The production database is MySQL/MariaDB (the app uses the
+  `@prisma/adapter-mariadb` adapter). Prefer read-only queries unless the user
+  explicitly authorizes writes.
+- Live analytics tables: `analytics_events`, `auth_audit_logs`,
+  `magazine_article_external_landings`; rollups: `admin_dashboard_analytics_daily`,
+  `admin_dashboard_analytics_hourly`, `admin_dashboard_auth_hourly`; cache:
+  `admin_dashboard_cache`.
+
 ## Prisma and dev workflow
 
 - After importing a live database or changing `prisma/schema.prisma`, run
