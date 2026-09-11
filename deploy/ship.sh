@@ -492,6 +492,11 @@ vps_build_and_deploy() {
 run_verify_gate() {
   info "Running pre-deploy verification gates..."
 
+  # Regenerate the Prisma client before the local build. Prisma 7 no longer
+  # auto-generates on `npm install`, so a fresh checkout (or a schema change)
+  # otherwise fails `verify:compile` with "no exported member 'PrismaClient'".
+  run npx prisma generate
+
   run npm run verify:compile
 
   local server_js="$REPO_DIR/apps/web/.next/standalone/apps/web/server.js"
