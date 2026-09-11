@@ -213,11 +213,20 @@ async function readEventSeriesCurrentValue(
       if (granularity === "hourly") return 0;
       if (!(await hasMagazineLandingsTable())) return 0;
       await ensureMagazineLandingsManualExclusionColumn();
+      // Mirror the rollup's bot filter: exclude landings whose visitor was
+      // classified as a suspected bot, so the editable value matches the chart.
       return queryCount(`
         SELECT COUNT(*) AS c
-        FROM magazine_article_external_landings
+        FROM magazine_article_external_landings l
         WHERE landed_at >= '${start}' AND landed_at < '${end}'
           AND manually_excluded = 0
+          AND NOT EXISTS (
+            SELECT 1
+            FROM analytics_events ae
+            WHERE ae.visitor_id = l.visitor_id
+              AND ae.is_suspected_bot = 1
+            LIMIT 1
+          )
       `);
     default:
       return 0;

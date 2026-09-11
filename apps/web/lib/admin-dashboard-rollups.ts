@@ -131,19 +131,30 @@ async function buildMagazineExternalLandingsDailyJoinSql(options?: { recentDays?
     `;
   }
 
-  const recentClause = buildRecentClauseSql("landed_at", options?.recentDays);
-  const whereClause = recentClause
-    ? `${recentClause} AND manually_excluded = 0`
-    : `WHERE manually_excluded = 0`;
-
   await ensureColumnExists("magazine_article_external_landings", "manually_excluded", "BOOLEAN NOT NULL DEFAULT false");
+
+  // Exclude landings whose visitor was classified as a suspected bot by the
+  // behavioural one-shot classifier. The analytics_events rollups already drop
+  // is_suspected_bot = 1 rows from visitors/sessions; without this the
+  // magazine-landing series would keep counting Facebook crawler / link-preview
+  // fetches that the visitor/session metrics correctly filter out.
+  const recentClause = buildRecentClauseSql("l.landed_at", options?.recentDays);
+  const recentCondition = recentClause ? recentClause.replace(/^WHERE\s+/, "") : "";
 
   return `
     LEFT JOIN (
-      SELECT DATE(landed_at) AS day_date, COUNT(*) AS magazine_external_landings
-      FROM magazine_article_external_landings
-      ${whereClause}
-      GROUP BY DATE(landed_at)
+      SELECT DATE(l.landed_at) AS day_date, COUNT(*) AS magazine_external_landings
+      FROM magazine_article_external_landings l
+      WHERE l.manually_excluded = 0
+        ${recentCondition ? `AND ${recentCondition}` : ""}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM analytics_events ae
+          WHERE ae.visitor_id = l.visitor_id
+            AND ae.is_suspected_bot = 1
+          LIMIT 1
+        )
+      GROUP BY DATE(l.landed_at)
     ) mag_landings ON mag_landings.day_date = metrics.day_date
   `;
 }

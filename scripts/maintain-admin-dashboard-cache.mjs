@@ -209,14 +209,21 @@ async function refreshRollupTables() {
 
   const magazineLandingsDailyJoinSql = hasMagazineLandings
     ? `
-      LEFT JOIN (
-        SELECT DATE(landed_at) AS day_date, COUNT(*) AS magazine_external_landings
-        FROM magazine_article_external_landings
-        WHERE landed_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
-          AND manually_excluded = 0
-        GROUP BY DATE(landed_at)
-      ) mag_landings ON mag_landings.day_date = metrics.day_date
-    `
+    LEFT JOIN (
+      SELECT DATE(l.landed_at) AS day_date, COUNT(*) AS magazine_external_landings
+      FROM magazine_article_external_landings l
+      WHERE l.landed_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY)
+        AND l.manually_excluded = 0
+        AND NOT EXISTS (
+          SELECT 1
+          FROM analytics_events ae
+          WHERE ae.visitor_id = l.visitor_id
+            AND ae.is_suspected_bot = 1
+          LIMIT 1
+        )
+      GROUP BY DATE(l.landed_at)
+    ) mag_landings ON mag_landings.day_date = metrics.day_date
+  `
     : `
       LEFT JOIN (SELECT NULL AS day_date, 0 AS magazine_external_landings WHERE 1 = 0) mag_landings ON mag_landings.day_date = metrics.day_date
     `;
