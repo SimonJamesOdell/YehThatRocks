@@ -281,11 +281,11 @@ $clean"
 dev_server_pid() {
   local pid=""
   if command -v lsof >/dev/null 2>&1; then
-    pid="$(lsof -t -i :3000 -sTCP:LISTEN 2>/dev/null | head -n1)"
+    pid="$(lsof -t -i :3000 -sTCP:LISTEN 2>/dev/null | head -n1 || true)"
   elif command -v fuser >/dev/null 2>&1; then
-    pid="$(fuser 3000/tcp 2>/dev/null | tr -s ' ' '\n' | head -n1)"
+    pid="$(fuser 3000/tcp 2>/dev/null | tr -s ' ' '\n' | head -n1 || true)"
   elif command -v ss >/dev/null 2>&1; then
-    pid="$(ss -ltnp 'sport = :3000' 2>/dev/null | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' | head -n1)"
+    pid="$(ss -ltnp 'sport = :3000' 2>/dev/null | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' | head -n1 || true)"
   fi
   # Guard: only treat node/npm/yarn/bun processes as the dev server.
   if [ -n "$pid" ] && [ -d "/proc/$pid" ]; then
@@ -399,7 +399,7 @@ upload_image_tar() {
     fi
 
     remote_size="$(ssh -o BatchMode=yes "$VPS_HOST" "stat -c %s '$remote_tar' 2>/dev/null" || echo 0)"
-    remote_hash="$(ssh -o BatchMode=yes "$VPS_HOST" "sha256sum '$remote_tar' 2>/dev/null" | cut -d' ' -f1)"
+    remote_hash="$(ssh -o BatchMode=yes "$VPS_HOST" "sha256sum '$remote_tar' 2>/dev/null" | cut -d' ' -f1 || true)"
 
     if [ "$remote_size" = "$local_size" ] && [ "$remote_hash" = "$local_hash" ]; then
       info "Image archive uploaded and verified on VPS ($(( local_size / 1024 / 1024 )) MB)."
@@ -518,7 +518,7 @@ run_verify_gate() {
 
   # Kill any stale process on the test port
   local stale
-  stale="$(lsof -t -i ":$test_port" 2>/dev/null | head -n1)"
+  stale="$(lsof -t -i ":$test_port" 2>/dev/null | head -n1 || true)"
   [ -z "$stale" ] || kill "$stale" 2>/dev/null || true
 
   info "Starting production test server on port $test_port..."
