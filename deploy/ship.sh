@@ -173,25 +173,47 @@ ship_hash() {
     | base64 -w0
 }
 
+create_ship_password_file() {
+  local password="$1"
+  local salt hash
+  salt="$(head -c 32 /dev/urandom | base64 -w0)"
+  hash="$(ship_hash "$salt" "$password")"
+  printf '{"version":1,"salt":"%s","hash":"%s","createdAtUtc":"%s"}\n' \
+    "$salt" "$hash" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$REPO_DIR/.ship-password.json"
+  chmod 600 "$REPO_DIR/.ship-password.json"
+}
+
 password_gate() {
   local pw_file="$REPO_DIR/.ship-password.json"
+
   if [ ! -f "$pw_file" ]; then
+    # First run: set up the password.
+    if [ -n "$SHIP_PASSWORD" ]; then
+      # A password was passed as an argument — use it directly.
+      create_ship_password_file "$SHIP_PASSWORD"
+      info "Ship password initialized at $pw_file"
+      info "Re-run using: ship SECRET_PASSWORD"
+      exit 0
+    fi
+
     info "No ship password configured. Creating one now (this run exits after saving)."
-    local p1 p2 salt hash
+    local p1 p2
     read -rsp "Enter new ship password: " p1; echo
     read -rsp "Confirm new ship password: " p2; echo
     [ -n "$p1" ] || error "Ship password cannot be empty."
     [ "$p1" = "$p2" ] || error "Ship password confirmation did not match."
-    salt="$(head -c 32 /dev/urandom | base64 -w0)"
-    hash="$(ship_hash "$salt" "$p1")"
-    printf '{"version":1,"salt":"%s","hash":"%s","createdAtUtc":"%s"}\n' \
-      "$salt" "$hash" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$pw_file"
-    chmod 600 "$pw_file"
+    create_ship_password_file "$p1"
     info "Ship password initialized at $pw_file"
     info "Re-run using: ship SECRET_PASSWORD"
     exit 0
   fi
 
+  # Existing file: prompt for the password when none was passed as an argument,
+  # so a bare `ship` behaves like `sudo` instead of erroring out.
+  if [ -z "$SHIP_PASSWORD" ]; then
+    read -rsp "Enter ship password: " SHIP_PASSWORD || true
+    echo
+  fi
   [ -n "$SHIP_PASSWORD" ] || error "password required"
 
   local salt expected actual
