@@ -54,14 +54,16 @@ On Linux (no pwsh), use the bash port instead:
 ```
 
 This script handles the full workflow: SSH dump with `--skip-triggers` (avoids
-DELIMITER issues), scp download, `docker cp` into the container, drop/recreate
-`yeh` database, import via `SOURCE`, and verification diagnostics.
+DELIMITER issues), scp download, drop/recreate the local `yeh` database, import
+via the `mysql` client, and verification diagnostics. On Linux it targets the
+native MySQL (`mysql.service`, port 3306) and uses `sudo -n mysql` (native
+`root` uses `auth_socket`; see `/etc/sudoers.d/codewhale-mysql`).
 
 Key lessons encoded in this script:
 - Use `--skip-triggers` on `mysqldump` — trigger `DELIMITER ;;` blocks cannot
   be piped through non-interactive `mysql` clients.
-- Use `docker cp` + `SOURCE` instead of piping (`type | docker exec -i`) —
-  long INSERT lines get silently truncated through pipes on Windows.
+- Import via a file redirect (`mysql < dump.sql`), not a pipe — long INSERT
+  lines can get silently truncated through pipes on Windows.
 - `--single-transaction` can silently skip certain InnoDB tables; the script
   verifies counts afterward (videos, site_videos).
 
@@ -96,13 +98,14 @@ Useful production context once connected:
 - After importing a live database or changing `prisma/schema.prisma`, run
   `npx prisma generate` to regenerate the Prisma client.
 - Start the dev server with `npm -w web run dev` (or `npm run dev` for all
-  workspaces). The Docker MySQL container must be running first:
-  `docker compose up -d db`.
+  workspaces). The native MySQL server must be running first
+  (`sudo systemctl start mysql`). Local dev no longer uses Docker.
 - The `.env.local` at `apps/web/.env.local` needs `DATABASE_URL` pointing at
-  the local Docker MySQL (default: `mysql://yeh:yehthatrocks@localhost:3307/yeh`).
+  the local native MySQL (default: `mysql://yeh_local:yehthatrocks@localhost:3306/yeh`).
 - Stale manual dumps (`yeh_live_import.sql`, `yeh_live_import_clean.sql` in the
   repo root) are snapshots and may be out of date. Always use
-  `run_live_restore_diag.ps1` to pull the current live database.
+  `run_live_restore_diag.sh` (Linux) or `run_live_restore_diag.ps1` (Windows)
+  to pull the current live database.
 
 ## Invariant verification
 
