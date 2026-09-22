@@ -203,6 +203,10 @@ The scripts automatically avoid reusing items within their dedupe window. When a
 
 The existing `magazine-facebook-browser-post.js` is now a thin wrapper that delegates to `facebook-browser-post.js --mode magazine`. All existing cron jobs, npm scripts, and `MAGAZINE_BROWSER_POST_*` env vars continue to work unchanged.
 
+### Legacy magazine timer — retired
+
+The legacy `magazine-facebook-browser-post.timer` / `.service` systemd user units and the standalone deployed script were retired after they double-posted magazine articles: the legacy poster and the unified poster used different lock files (`magazine-facebook-browser.lock` vs `facebook-browser.lock`) while sharing one state file, so both fired at the same time and both posted the same article. Magazine posting is now handled exclusively by the unified `facebook-browser-post@magazine.service` (timer `facebook-browser-post-magazine.timer`). Do not re-enable the legacy timer.
+
 ---
 
 ## API-Based Auto-Share
