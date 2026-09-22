@@ -161,7 +161,7 @@ function main() {
   assertContains(playlistTrackCardContentSource, "<VideoGenreLink genre={genreLabel} stopPropagation nestedInLink />", "Playlist cards render genre labels as category deep links", failures);
   assertContains(favouritesGridSource, "<VideoGenreLink genre={genreLabel} stopPropagation />", "Favourites grid renders genre labels as category deep links", failures);
   assertContains(historyInfiniteListSource, "<VideoGenreLink genre={entry.video.genre} />", "History cards render genre labels as category deep links", failures);
-  assertContains(leaderboardVideoLinkSource, "<VideoGenreLink genre={categoryLabel} stopPropagation />", "Leaderboard cards render genre labels as category deep links", failures);
+  assertContains(leaderboardVideoLinkSource, "<VideoGenreLink genre={categoryLabel} stopPropagation className=\"leaderboardCategoryLink\" />", "Leaderboard cards render genre labels as category deep links", failures);
   assertContains(playerExperienceSource, "<VideoGenreLink genre={overlayGenreLabel} />", "Player overlay renders genre labels as category deep links", failures);
   assertContains(videoGenreLinkSource, "resolveVideoGenreNavigationTarget", "Video genre link component uses shared genre navigation target resolver", failures);
   assertContains(videoGenreNavigationSource, "resolveVideoGenreNavigationTarget", "Video genre navigation helper exposes resolver", failures);
