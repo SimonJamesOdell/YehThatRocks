@@ -6,6 +6,20 @@ export async function expectShellChrome(page: Page) {
   await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
 }
 
+export async function seedWelcomeModalDismissed(page: Page) {
+  // The anonymous first-visit "Welcome to YehThatRocks" onboarding modal
+  // intercepts pointer events and makes shell/navigation tests flaky. Pre-seed
+  // its permanent-dismissal flag so it never opens in suites that don't test
+  // onboarding. (onboarding-flow.spec.ts tests the modal and must NOT use this.)
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("ytr:welcome-dismissed", "1");
+    } catch {
+      // localStorage can be unavailable in some contexts; ignore.
+    }
+  });
+}
+
 export async function expectOverlayRoute(page: Page, routePrefix: string) {
   await expect(page).toHaveURL(new RegExp(`/${routePrefix}(\\?|$)`));
   await expectShellChrome(page);

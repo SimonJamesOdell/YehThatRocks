@@ -1,7 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { expectOverlayRoute, expectShellChrome } from "./helpers";
+import { expectOverlayRoute, expectShellChrome, seedWelcomeModalDismissed } from "./helpers";
 
 test.describe("core shell smoke", () => {
+  test.beforeEach(async ({ page }) => {
+    await seedWelcomeModalDismissed(page);
+  });
+
   test("home route renders the persistent player shell", async ({ page }) => {
     await page.goto("/");
 

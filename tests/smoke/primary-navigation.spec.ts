@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { closeOverlayAndExpectHome, expectOverlayRoute, expectShellChrome } from "./helpers";
+import { closeOverlayAndExpectHome, expectOverlayRoute, expectShellChrome, seedWelcomeModalDismissed } from "./helpers";
 
 const navLinks = [
   { label: "New", routePrefix: "new" },
@@ -13,6 +13,10 @@ const navLinks = [
 ] as const;
 
 test.describe("primary navigation coverage", () => {
+  test.beforeEach(async ({ page }) => {
+    await seedWelcomeModalDismissed(page);
+  });
+
   for (const nav of navLinks) {
     test(`primary nav link ${nav.label} opens overlay and keeps shell`, async ({ page }) => {
       await page.goto("/");

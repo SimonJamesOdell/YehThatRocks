@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { closeOverlayAndExpectHome, expectOverlayRoute, expectShellChrome } from "./helpers";
+import { closeOverlayAndExpectHome, expectOverlayRoute, expectShellChrome, seedWelcomeModalDismissed } from "./helpers";
 
 const overlayRoutes = [
   { route: "new" },
@@ -14,6 +14,10 @@ const overlayRoutes = [
 ] as const;
 
 test.describe("overlay route coverage", () => {
+  test.beforeEach(async ({ page }) => {
+    await seedWelcomeModalDismissed(page);
+  });
+
   for (const routeConfig of overlayRoutes) {
     test(`direct route /${routeConfig.route} renders overlay with persistent shell`, async ({ page }) => {
       await page.goto(`/`);
