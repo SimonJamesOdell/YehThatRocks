@@ -648,14 +648,14 @@ export async function POST(request: NextRequest) {
     const alreadyInCatalog = !retryRejected && existingRows.length > 0;
 
     const discoverRelatedForSuggestion = false;
-    // When an admin is retrying a previously rejected video, force-approve so that
-    // genre classification is skipped. The admin's explicit retry action is their
-    // assertion that the video belongs in the approval queue — re-running the same
-    // classifier that rejected it is a no-op feedback loop.
-    const forceApproveRetry = retryRejected;
+    // A retried rejected video is re-ingested with the embed check and genre
+    // classification skipped so the classifier that originally rejected it does
+    // not reject it again. It still lands in the admin pending queue — suggested
+    // videos are never auto-approved by this endpoint.
     const result = await importVideoFromDirectSource(source.videoId, {
       discoverRelated: discoverRelatedForSuggestion,
-      forceApprove: forceApproveRetry,
+      skipEmbedCheck: retryRejected,
+      deferMetadataClassification: retryRejected,
     });
     if (!result.videoId) {
       return NextResponse.json({ ok: false, error: "Invalid YouTube URL or video id." }, { status: 400 });
@@ -677,19 +677,6 @@ export async function POST(request: NextRequest) {
       artist: parsed.data.artist,
       track: parsed.data.track,
     }, true);
-
-    if (canBypassApproval && hasDatabaseUrl()) {
-      // Only set approved_at for newly-approved videos.  Existing approved
-      // videos keep their original approved_at so they don't falsely
-      // surface as "new" on the frontend.
-      await prisma.$executeRaw`
-        UPDATE videos
-        SET approved = ${true},
-            approved_at = COALESCE(approved_at, UTC_TIMESTAMP(3)),
-            updated_at = UTC_TIMESTAMP(3)
-        WHERE videoId = ${result.videoId}
-      `;
-    }
 
     clearCatalogVideoCaches();
 
@@ -752,7 +739,6 @@ export async function POST(request: NextRequest) {
       kind: "video",
       videoId: result.videoId,
       submissionStatus,
-      bypassApproved: canBypassApproval,
       alreadyInCatalog,
       rejectionCode,
       rejectionReason,

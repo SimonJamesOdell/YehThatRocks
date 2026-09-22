@@ -111,7 +111,7 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser }: UseSuggestN
       kind: "video",
       status: "ingested",
       title: "Ingestion succeeded",
-      detail: "Video ingested and classified successfully.",
+      detail: "Video ingested and queued for admin review before it appears publicly.",
       videoId: payload.videoId,
       artist: payload.artist,
       track: payload.track,

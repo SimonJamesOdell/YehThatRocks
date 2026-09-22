@@ -174,6 +174,9 @@ function main() {
   assertContains(suggestRouteSource, "fetchChannelUploadsPlaylistId", "Suggest New API resolves channel sources via uploads playlist", failures);
   assertContains(suggestRouteSource, "retryRejected && !canRetryRejectedIngest", "Suggest New API blocks retry-clear attempts without admin bypass permission", failures);
   assertContains(suggestRouteSource, "Only admins with bypass approval permission can clear and retry rejected entries.", "Suggest New API returns explicit authorization error when retry-clear is not permitted", failures);
+  assertNotContains(suggestRouteSource, "SET approved = ${true}", "Suggest New API never auto-approves submitted videos", failures);
+  assertContains(suggestRouteSource, "deferMetadataClassification: retryRejected", "Suggest New API retries rejected entries without force-approving them", failures);
+  assertNotContains(suggestRouteSource, "forceApprove: forceApproveRetry", "Suggest New API does not force-approve retried rejected entries", failures);
   assertContains(suggestSourceParserSource, "channelCustomName", "Suggest source parser supports legacy /c channel URLs", failures);
   assertContains(suggestSourceParserSource, "channelUsername", "Suggest source parser supports legacy /user channel URLs", failures);
 
