@@ -135,6 +135,17 @@ export function LeaderboardVideoLink({
     return `${pathname}?${params.toString()}`;
   }, [pathname, searchParams, track.id]);
 
+  const parsedArtistHref = useMemo(() => {
+    if (!parsedArtistPagePath) {
+      return null;
+    }
+
+    const params = new URLSearchParams();
+    params.set("from", rowVariant === "new" ? "new" : "top100");
+    params.set("returnTo", videoHref);
+    return `${parsedArtistPagePath}?${params.toString()}`;
+  }, [parsedArtistPagePath, rowVariant, videoHref]);
+
   useEffect(() => {
     return () => {
       if (clickFlashTimeoutRef.current !== null) {
@@ -320,7 +331,7 @@ export function LeaderboardVideoLink({
     router.push(parsedArtistPagePath);
   }, [parsedArtistPagePath, router, rowVariant, videoHref]);
 
-  const handleOpenParsedArtistPageByKeyboard = useCallback((event: ReactKeyboardEvent<HTMLSpanElement>) => {
+  const handleOpenParsedArtistPageByKeyboard = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
     if (!parsedArtistPagePath) {
       return;
     }
@@ -341,6 +352,41 @@ export function LeaderboardVideoLink({
 
     router.push(parsedArtistPagePath);
   }, [parsedArtistPagePath, router, rowVariant, videoHref]);
+
+  const handleOpenParsedArtistPageFromAnchor = useCallback((event: ReactMouseEvent<HTMLAnchorElement>) => {
+    if (!parsedArtistPagePath) {
+      return;
+    }
+
+    event.stopPropagation();
+
+    const isPrimaryButton = event.button === 0 || event.button === undefined;
+    if (!isPrimaryButton || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      // Let the browser handle modified clicks natively (open in new tab).
+      return;
+    }
+
+    event.preventDefault();
+    const params = new URLSearchParams();
+    params.set("from", rowVariant === "new" ? "new" : "top100");
+    params.set("returnTo", videoHref);
+    router.push(`${parsedArtistPagePath}?${params.toString()}`);
+  }, [parsedArtistPagePath, router, rowVariant, videoHref]);
+
+  const handleNewRowStretchLinkClick = useCallback((event: ReactMouseEvent<HTMLAnchorElement>) => {
+    if (event.defaultPrevented) {
+      return;
+    }
+
+    const isPrimaryButton = event.button === 0 || event.button === undefined;
+    if (!isPrimaryButton || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      // Let the browser handle modified clicks natively (open in new tab).
+      return;
+    }
+
+    event.preventDefault();
+    navigateToVideo();
+  }, [navigateToVideo]);
 
   const handleRemoveFavourite = useCallback(async (event: ReactMouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -403,21 +449,33 @@ export function LeaderboardVideoLink({
       </div>
       <div className="leaderboardMeta">
         {showCategoryLabel ? (
-          <p className="leaderboardVideoCategory"><VideoGenreLink genre={categoryLabel} stopPropagation /></p>
+          <p className="leaderboardVideoCategory"><VideoGenreLink genre={categoryLabel} stopPropagation className="leaderboardCategoryLink" /></p>
         ) : null}
         <h3>
           {parsedArtistCandidate && parsedTrackCandidate ? (
             <>
-              <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
-                <span
-                  role={parsedArtistPagePath ? "link" : undefined}
-                  tabIndex={parsedArtistPagePath ? 0 : undefined}
-                  onClick={handleOpenParsedArtistPage}
+              {isNewRow && parsedArtistPagePath ? (
+                <a
+                  href={parsedArtistHref ?? "#"}
+                  className="artistInlineLink leaderboardArtistAnchor"
+                  title={`Open ${parsedArtistCandidate} page`}
+                  onClick={handleOpenParsedArtistPageFromAnchor}
                   onKeyDown={handleOpenParsedArtistPageByKeyboard}
                 >
                   {parsedArtistLabel}
-                </span>
-              </ArtistWikiLink>
+                </a>
+              ) : (
+                <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
+                  <span
+                    role={parsedArtistPagePath ? "link" : undefined}
+                    tabIndex={parsedArtistPagePath ? 0 : undefined}
+                    onClick={handleOpenParsedArtistPage}
+                    onKeyDown={handleOpenParsedArtistPageByKeyboard}
+                  >
+                    {parsedArtistLabel}
+                  </span>
+                </ArtistWikiLink>
+              )}
               <span aria-hidden="true"> - </span>
               <span>{parsedTrackCandidate}</span>
             </>
@@ -501,13 +559,19 @@ export function LeaderboardVideoLink({
         </button>
       ) : null}
       {isNewRow ? (
-        <div
-          className="linkedCard leaderboardTrackLink"
-          data-overlay-capture-skip="true"
-          aria-current={isActive ? "true" : undefined}
-        >
-          {cardBody}
-        </div>
+        <>
+          <div className="linkedCard leaderboardTrackLink">
+            {cardBody}
+          </div>
+          <a
+            href={videoHref}
+            className="top100CardStretchLink"
+            data-overlay-capture-skip="true"
+            aria-current={isActive ? "true" : undefined}
+            aria-label={`Play ${track.title}`}
+            onClick={handleNewRowStretchLinkClick}
+          />
+        </>
       ) : (
         <Link
           href={videoHref}

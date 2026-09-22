@@ -630,6 +630,11 @@
   z-index: 32;
 }
 
+.trackCard.leaderboardCard.top100CardActive > .top100CardStretchLink {
+  position: absolute;
+  z-index: 1;
+}
+
 .trackCard.leaderboardCard.top100CardClickFlash {
   animation: top100CardClickFlash 220ms ease-out;
 }
@@ -653,6 +658,16 @@
 .top100CardWithPlaylistAction {
   position: relative;
   grid-template-columns: auto minmax(128px, 160px) minmax(0, 1fr) auto;
+}
+
+.top100CardStretchLink {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  display: block;
+  text-decoration: none;
+  color: inherit;
 }
 
 .top100CardAction {

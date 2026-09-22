@@ -873,6 +873,16 @@
   text-decoration-color: rgba(255, 186, 166, 0.9);
 }
 
+.leaderboardArtistAnchor,
+.leaderboardCategoryLink {
+  position: relative;
+  z-index: 2;
+}
+
+.trackCard.leaderboardCard .videoSeenBadgeOverlay {
+  pointer-events: none;
+}
+
 .leaderboardArtistVideoCount {
   margin: 3px 0 0;
   font-family: var(--font-body), sans-serif;
