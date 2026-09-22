@@ -51,7 +51,7 @@ const nextConfig = {
       },
     ];
   },
-  allowedDevOrigins: ["192.168.0.60"],
+  allowedDevOrigins: ["192.168.0.60", "127.0.0.1", "localhost"],
   images: {
     remotePatterns: [
       {
