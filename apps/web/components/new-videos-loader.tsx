@@ -258,7 +258,6 @@ export function NewVideosLoader({
   } = useSuggestNewVideo({
     isAuthenticated,
     isAdminUser,
-    router,
   });
   const overlayScrollContainerRef = useOverlayScrollContainerRef();
   const seenVideoIdSet = clientSeenVideoIds;

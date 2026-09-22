@@ -1,12 +1,9 @@
 "use client";
 
-import type { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 
 import { EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 import { parseJsonOrNull } from "@/lib/parse-json";
-
-type RouterInstance = ReturnType<typeof useRouter>;
 
 export type SuggestOutcome = {
   kind: "video" | "playlist";
@@ -21,7 +18,6 @@ export type SuggestOutcome = {
 type UseSuggestNewVideoOptions = {
   isAuthenticated: boolean;
   isAdminUser: boolean;
-  router: RouterInstance;
 };
 
 async function extractSuggestRequestError(response: Response, payloadError?: string) {
@@ -47,7 +43,7 @@ async function extractSuggestRequestError(response: Response, payloadError?: str
   return `Request failed (HTTP ${response.status}).`;
 }
 
-export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: UseSuggestNewVideoOptions) {
+export function useSuggestNewVideo({ isAuthenticated, isAdminUser }: UseSuggestNewVideoOptions) {
   const [isSuggestModalOpen, setIsSuggestModalOpen] = useState(false);
   const [suggestSource, setSuggestSource] = useState("");
   const [suggestArtist, setSuggestArtist] = useState("");
@@ -191,9 +187,8 @@ export function useSuggestNewVideo({ isAuthenticated, isAdminUser, router }: Use
 
     const href = `/?v=${encodeURIComponent(suggestOutcome.videoId)}&resume=1`;
     dispatchAppEvent(EVENT_NAMES.OVERLAY_CLOSE_REQUEST, { href });
-    router.push(href);
     closeSuggestModal();
-  }, [closeSuggestModal, router, suggestOutcome?.videoId]);
+  }, [closeSuggestModal, suggestOutcome?.videoId]);
 
   const submitSuggestNew = useCallback(async () => {
     if (!isAuthenticated) {
