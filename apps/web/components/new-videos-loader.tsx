@@ -272,6 +272,15 @@ export function NewVideosLoader({
       : genreFilteredVideos),
     [activeVideoId, deferredSeenRemovalIds, genreFilteredVideos, hideSeen, isAuthenticated, seenVideoIdSet],
   );
+  // The URL may carry ?v=<currently-loaded video> so playback survives the
+  // route change. Only treat that video as the "active" row of the New list
+  // when it is genuinely a visible member of the list — otherwise the loader
+  // must not highlight, scroll-to, or suppress the reset-to-top for a video
+  // that does not belong here.
+  const activeVideoIsInList = useMemo(
+    () => Boolean(activeVideoId) && visibleVideos.some((video) => video.id === activeVideoId),
+    [activeVideoId, visibleVideos],
+  );
   const actionableGenreFacets = useMemo(
     () => genreFacets.filter((facet) => {
       const normalized = facet.genre.trim().toLowerCase();
@@ -541,7 +550,7 @@ export function NewVideosLoader({
   }, [activeVideoId, hideSeen, seenVideoIdSet]);
 
   useActiveRowAutoScroll({
-    activeVideoId,
+    activeVideoId: activeVideoIsInList ? activeVideoId : null,
     isLoading: loading,
     visibleVideoCount: visibleVideos.length,
     overlayScrollContainerRef,
@@ -765,7 +774,7 @@ export function NewVideosLoader({
 
   return (
     <>
-      <OverlayScrollReset activeVideoId={activeVideoId} />
+      <OverlayScrollReset activeVideoId={activeVideoIsInList ? activeVideoId : null} />
       <OverlayHeader close={false}>
         <div className="newPageHeaderStack">
           <div className="newPageHeaderRow">

@@ -157,6 +157,14 @@ function main() {
   assertContains(activeRowAutoScrollHookSource, "ACTIVE_ROW_SELECTOR", "Active-row auto-scroll hook resolves active row anchor from track card selector", failures);
   assertContains(activeRowAutoScrollHookSource, "window.requestAnimationFrame", "Active-row auto-scroll hook drives smooth scrolling via requestAnimationFrame", failures);
 
+  // Active-video membership guard: the currently-loaded video must only be
+  // treated as the New list's active row when it is a visible member of the
+  // list — otherwise the loader resets to the top and never highlights a
+  // video that does not belong to the New list.
+  assertContains(newVideosLoaderSource, "const activeVideoIsInList = useMemo(", "New videos loader computes whether the active video is a visible list member", failures);
+  assertContains(newVideosLoaderSource, "activeVideoId: activeVideoIsInList ? activeVideoId : null", "New videos loader gates active-row auto-scroll on list membership", failures);
+  assertContains(newVideosLoaderSource, "<OverlayScrollReset activeVideoId={activeVideoIsInList ? activeVideoId : null} />", "New videos loader gates overlay scroll-reset on list membership", failures);
+
   // Suggest New domain split invariants.
   assertContains(newVideosLoaderSource, 'import { SuggestNewModal } from "@/components/suggest-new-modal";', "New videos loader imports Suggest New presentational modal", failures);
   assertContains(newVideosLoaderSource, 'import { useSuggestNewVideo } from "@/hooks/use-suggest-new-video";', "New videos loader imports Suggest New domain hook", failures);
