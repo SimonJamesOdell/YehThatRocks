@@ -37,9 +37,9 @@ test.describe("overlay route coverage", () => {
 
     await page.goto("/admin");
     await expect(page).toHaveURL(/\/admin(\?|$)/);
-    await expect(page.getByRole("link", { name: "Close" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Close", exact: true })).toBeVisible();
 
-    await page.getByRole("link", { name: "Close" }).click();
+    await page.getByRole("link", { name: "Close", exact: true }).click();
     await expect(page).toHaveURL(/\/(\?.*)?$/);
     await expectShellChrome(page);
   });

@@ -26,7 +26,10 @@ export async function expectOverlayRoute(page: Page, routePrefix: string) {
 }
 
 export async function closeOverlayAndExpectHome(page: Page, options?: { closeTimeoutMs?: number }) {
-  const closeLink = page.getByRole("link", { name: "Close" });
+  // exact: true so a "One Step Closer" style watch-next card can't be mistaken
+  // for the overlay Close control (accessible-name matching is a substring match
+  // by default and would hit "Closer").
+  const closeLink = page.getByRole("link", { name: "Close", exact: true });
 
   const closeTimeoutMs = options?.closeTimeoutMs ?? 15_000;
 
