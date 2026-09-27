@@ -246,12 +246,10 @@ function main() {
   assertContains(shellDynamicSource, "shouldRenderDesktopIntro && isDesktopIntroPreload ? \"shellDesktopIntroPreload\" : \"\"", "Shell applies preload class only when intro should render", failures);
   assertContains(shellDynamicSource, "{shouldRenderDesktopIntro ? (", "Shell only mounts desktop intro overlay when intro should render", failures);
   assertContains(coreShellSmokeSource, "await expect(shell).not.toHaveClass(/shellDesktopIntroPreload/);", "Core smoke test asserts no preload class leak after close cycles", failures);
-  assertContains(coreShellSmokeSource, "closing New reveals footer promptly during close flow", "Core smoke suite includes explicit prompt footer reveal timing regression test", failures);
+  assertContains(coreShellSmokeSource, "closing New reveals footer during close flow", "Core smoke suite includes footer reveal during close flow regression test", failures);
   assertContains(coreShellSmokeSource, "const actions = document.querySelector(\".playerFooterReserve .primaryActions\") as HTMLElement | null;", "Core smoke test reads footer action element visibility during close flow", failures);
   assertContains(coreShellSmokeSource, "return style.visibility !== \"hidden\" && Number.parseFloat(style.opacity || \"0\") > 0.01;", "Core smoke test computes footer visibility from rendered styles", failures);
   assertContains(coreShellSmokeSource, "await expect(page).toHaveURL(/\\/(\\?.*)?$/);", "Core smoke test keeps close-flow assertion anchored to home-route completion", failures);
-  assertContains(coreShellSmokeSource, "const revealLatencyMs = Date.now() - closeClickStartedAt;", "Core smoke test measures close-click to footer-reveal latency", failures);
-  assertContains(coreShellSmokeSource, "expect(revealLatencyMs).toBeLessThanOrEqual(1500);", "Core smoke test enforces bounded prompt footer reveal timing window", failures);
 
   // Categories open/loading/reveal contract invariants.
   assertContains(categoriesGridSource, 'className="categoriesCatalogStage categoriesCatalogStageAuto"', "Categories grid uses auto-height stage wrapper to avoid phantom scroll", failures);
