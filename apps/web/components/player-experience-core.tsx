@@ -2249,6 +2249,33 @@ export function PlayerExperience({
   }, [showEndedChoiceOverlay]);
 
   useEffect(() => {
+    function handleResumeRequest(payload: { videoId: string }) {
+      const requestedVideoId = typeof payload.videoId === "string" ? payload.videoId : null;
+
+      if (!requestedVideoId || requestedVideoId !== currentVideoRef.current.id) {
+        return;
+      }
+
+      if (showEndedChoiceOverlay) {
+        handleEndedChoiceWatchAgain();
+        return;
+      }
+
+      const runtimePlayer = playerRef.current;
+      if (!runtimePlayer || typeof runtimePlayer.playVideo !== "function") {
+        return;
+      }
+
+      hasUserGesturePlaybackUnlockRef.current = true;
+      notePlayAttempt();
+      runtimePlayer.playVideo();
+    }
+
+    const unsubscribe = listenToAppEvent(EVENT_NAMES.REQUEST_VIDEO_RESUME, handleResumeRequest);
+    return () => unsubscribe();
+  }, [showEndedChoiceOverlay]);
+
+  useEffect(() => {
     function handleManualVideoNavigationRequest(payload: { videoId: string }) {
       const requestedVideoId = typeof payload.videoId === "string" ? payload.videoId : null;
 

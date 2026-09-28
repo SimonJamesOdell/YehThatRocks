@@ -3,7 +3,7 @@
 import { useCallback, useMemo, type MouseEvent as ReactMouseEvent } from "react";
 
 import { isArtistsOverlayPath } from "@/components/shell-dynamic-route-state";
-import { OVERLAY_CLOSE_REQUEST_EVENT } from "@/lib/events-contract";
+import { OVERLAY_CLOSE_REQUEST_EVENT, EVENT_NAMES, dispatchAppEvent } from "@/lib/events-contract";
 
 type OverlayOpenKind = "wiki" | "video" | null;
 
@@ -137,6 +137,17 @@ export function useShellOverlayRouteMeta({
     }
 
     event.preventDefault();
+
+    // Re-selecting the video that is already in the URL is a no-op for
+    // router.push, so it can't wake a paused/closed docked player. Dispatch a
+    // resume request instead — the shell un-hides the dock and the player
+    // resumes playback.
+    const currentParams = new URLSearchParams(searchParamsString);
+    if (targetVideoId === currentParams.get("v")) {
+      dispatchAppEvent(EVENT_NAMES.REQUEST_VIDEO_RESUME, { videoId: targetVideoId });
+      return;
+    }
+
     const params = new URLSearchParams(searchParamsString);
     params.set("v", targetVideoId);
     params.delete("resume");

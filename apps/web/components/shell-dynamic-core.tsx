@@ -846,6 +846,12 @@ function ShellDynamicInner({
     }
   }, [requestedVideoId]);
   useEffect(() => {
+    const unsubscribe = listenToAppEvent(EVENT_NAMES.REQUEST_VIDEO_RESUME, () => {
+      setIsDockHidden(false);
+    });
+    return () => unsubscribe();
+  }, []);
+  useEffect(() => {
     if (shouldDockDesktopPlayer) {
       setIsDockHidden(false);
     }

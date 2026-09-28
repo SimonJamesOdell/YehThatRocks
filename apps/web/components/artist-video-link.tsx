@@ -99,9 +99,15 @@ export function ArtistVideoLink({
 
   const openVideoFromCard = useCallback(() => {
     warmSelection();
+
+    if (isActive) {
+      dispatchAppEvent(EVENT_NAMES.REQUEST_VIDEO_RESUME, { videoId: video.id });
+      return;
+    }
+
     const basePath = navigatePathname ?? "/";
     router.push(`${basePath}?v=${encodeURIComponent(video.id)}&resume=1`);
-  }, [router, video.id, warmSelection, navigatePathname]);
+  }, [isActive, router, video.id, warmSelection, navigatePathname]);
 
   const handleRemoveFavourite = useCallback(async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
