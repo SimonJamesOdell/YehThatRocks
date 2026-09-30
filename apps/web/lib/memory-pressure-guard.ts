@@ -31,7 +31,11 @@ const DEFAULT_COOLDOWN_MS = 60_000;
 // is a real heap signal; the absolute RSS threshold remains the primary
 // out-of-memory guard.
 const DEFAULT_HEAP_USED_RATIO_THRESHOLD = 0.98;
-const DEFAULT_RSS_MB_THRESHOLD = 280;
+// Production RSS sits ~280–300MB under normal load, so a 280MB threshold fired
+// cache relief roughly every minute (0% cache hit rate, cold resolvers on every
+// page load). Raised to 450MB so relief only triggers on genuine spikes (e.g.
+// magazine autogen / daily discovery), not steady-state operation.
+const DEFAULT_RSS_MB_THRESHOLD = 450;
 
 let guardStarted = false;
 const guardState: MemoryReliefState = {
