@@ -1,0 +1,13 @@
+## main...origin/main
+ M AUDIT_REMEDIATION_ROADMAP.md
+ M apps/web/package.json
+ M package-lock.json
+ M package.json
+--- log ---
+d8ede1c chore: ignore vps-perf-logs/ diagnostic output
+6c1e40c perf(web): raise memory-pressure RSS threshold 280→450MB
+5bf2ac4 fix(artist): resume/reopen same video from artist overlay
+c467e0e fix(invariants): align overlay-routing footer-reveal check with relaxed smoke test
+25f0acd fix: keep tab title synced with the actually-playing video on landing
+--- upstream ---
+origin/main

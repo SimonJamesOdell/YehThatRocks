@@ -177,3 +177,61 @@ invariant assertion; neither may be removed without replacing the coverage.**
 
 `npm run build` and `npm run ship:*` were intentionally NOT run (deployment
 boundary) — you invoke those locally.
+
+---
+
+## 6. 2026-09-30 — dependency security remediation (deploy gate failure)
+
+The regular ship gate (`deploy/ship.sh` / `ship.cmd` run
+`npm audit --audit-level=critical` first) started failing with 12 advisories
+(3 moderate, 8 high, **1 critical**). The critical was Next.js
+GHSA-vcvr-r3jv-pc5j (RCE via `next/og` ImageResponse, patched in 16.3.6);
+the installed tree was on 16.3.4.
+
+### What changed
+
+- `apps/web/package.json` — `next` 16.3.4 → **16.3.8** (critical RCE fix),
+  `nodemailer` 9.1.1 → **10.0.13** (5 advisories; the 9.x line is abandoned —
+  the only usage is `createTransport`/`sendMail` in `lib/auth-email.ts`, API
+  unchanged), `undici` 7.29.0 → **7.30.0** (9 advisories, all fixed on the
+  7.x line), `vitest` 4.1.9 → **4.1.11** (fixes the @vitest/mocker path
+  traversal, CVE-2026-84373).
+- `package.json` overrides — the three previously pinned versions were exactly
+  the last vulnerable releases of their lines: `brace-expansion` 1.1.18 →
+  **1.1.21** (nested 5.x copies pinned to **5.0.12** under `eslint`,
+  `@eslint/config-array`, `@typescript-eslint/typescript-estree`),
+  `fast-uri` 3.1.7 → **3.1.8**, `js-yaml` 4.3.1 → **4.3.2**.
+- Two nested overrides for the Prisma CLI chain (no stable Prisma release
+  fixes these yet — 7.10.0 still pins the vulnerable versions, and Prisma 8
+  is still RC): `"prisma": { "mysql2": "3.24.5" }` (was exact-pinned 3.15.3 —
+  plaintext-auth downgrade + zlib-bomb advisories) and
+  `"@prisma/config": { "deepmerge-ts": "8.0.2" }` (was exact-pinned 7.1.5 —
+  stack-exhaustion advisory).
+
+### Verification performed
+
+- `npm audit` — **0 vulnerabilities**; `npm audit --audit-level=critical`
+  exits 0 (ship gate passes again).
+- `npx prisma generate` — OK with the overridden CLI deps (config loads
+  through @prisma/config + deepmerge-ts 8, which is dual ESM/CJS).
+- `npx tsc --noEmit` in `apps/web` — clean (nodemailer 10 works with
+  `@types/nodemailer` 8.0.x).
+- `npm run verify:ui-regressions` — all invariant scripts pass.
+- `npx vitest run` — 9 failures, all pre-existing: a baseline run on the OLD
+  dependency set produced 11 failures including the same ones
+  (`catalog-data-video-ingestion-quality`, autoplay/route-queue tests,
+  `categories-new-snapshots` timeouts). No new failures from this change.
+
+### Notes for the next deploy
+
+- **The web build is your gate to run.** `verify:invariants` wraps
+  `npm run build`; in the agent sandbox the 16.3.8 build exited during Next's
+  type-check worker stage while plain `tsc` passes clean on the same tree, so
+  confirm the build locally. Docker builds use `npm ci` from this lockfile and
+  get exactly these versions.
+- Known pre-existing debt, not touched here: `apps/web` declares
+  `eslint@^10.4.1` while `eslint-config-next@16.x` peer-requires eslint ≤9,
+  so npm marks the nested eslint copy "invalid". It functions (lint resolves
+  the nested 9.x), but the two ranges should be reconciled eventually.
+- Watch the two Prisma overrides: when a stable Prisma release ships with
+  fixed pins, delete the nested overrides and upgrade normally.
