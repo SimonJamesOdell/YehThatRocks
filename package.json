@@ -148,12 +148,6 @@
   },
   "overrides": {
     "brace-expansion": "1.1.21",
-    "eslint": {
-      "brace-expansion": "5.0.12"
-    },
-    "@eslint/config-array": {
-      "brace-expansion": "5.0.12"
-    },
     "@typescript-eslint/typescript-estree": {
       "brace-expansion": "5.0.12"
     },

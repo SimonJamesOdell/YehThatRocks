@@ -235,3 +235,43 @@ the installed tree was on 16.3.4.
   the nested 9.x), but the two ranges should be reconciled eventually.
 - Watch the two Prisma overrides: when a stable Prisma release ships with
   fixed pins, delete the nested overrides and upgrade normally.
+
+---
+
+## 7. 2026-09-30 (same day) — Docker `npm ci` EUSAGE (lockfile out of sync)
+
+The first deploy attempt after the dependency fix failed in the Docker
+builder: `npm ci` exited EUSAGE — "Missing: eslint@10.11.0 from lock file"
+plus the whole eslint-10 dependency subtree.
+
+### Root cause
+
+`apps/web` declared `eslint@^10.4.1` while `@typescript-eslint/*@8.x` (and
+`eslint-config-next@16.x`'s plugin stack) only support eslint 9. npm 11
+(sandbox, node 24) resolved this peer conflict by installing a single
+`eslint@9.39.5` (marked "invalid" against the manifest) and wrote that
+shape into `package-lock.json`. npm 10 (the `node:22-alpine` Docker image)
+re-resolves the direct spec `^10.4.1` against the registry, gets 10.11.0,
+finds its subtree missing from the lockfile, and refuses `npm ci`.
+
+### Fix
+
+- `apps/web/package.json`: `eslint` `^10.4.1` → **`^9.39.5`** — the version
+  this stack actually supports (`@typescript-eslint` 8.x peers:
+  `^8.57.0 || ^9.0.0`). The eslint-10 manifest was never functional; the
+  flat config in `apps/web/eslint.config.mjs` is eslint-9 compatible and
+  `npx eslint .` now exits 0.
+- Removed the now-obsolete `eslint` / `@eslint/config-array` nested
+  `brace-expansion` overrides (those packages only exist in the eslint-10
+  tree); the `@typescript-eslint/typescript-estree` one stays.
+- Regenerated `package-lock.json` with **npm 10** (the container's npm
+  major) so the lockfile shape matches what the Docker build validates.
+
+### Verification
+
+- Exact Docker step `npm@10 ci --ignore-scripts --no-audit --no-fund` → exit 0.
+- `npm audit` → 0 vulnerabilities; `npm audit --audit-level=critical` → exit 0.
+- `npx prisma generate`, `npx tsc --noEmit`, `npx eslint .` → all exit 0.
+- Overrides confirmed in the npm-10 tree: brace-expansion 1.1.21 / 5.0.12,
+  fast-uri 3.1.8, js-yaml 4.3.2, prisma→mysql2 3.24.5,
+  @prisma/config→deepmerge-ts 8.0.2.
