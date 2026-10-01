@@ -28,8 +28,9 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
   const rawVideoId = typeof resolvedSearchParams?.v === "string" ? resolvedSearchParams.v : undefined;
   const selectedVideo = rawVideoId ? await getCurrentVideo(rawVideoId) : null;
 
+  // No ?v= (or an unknown video id) → the generated branded home card.
   if (!selectedVideo?.id) {
-    const ogHomeImage = `${siteOrigin}/images/yeh_share_fb.png`;
+    const ogHomeImage = buildOgImageUrl({ type: "home" });
     return {
       title: DEFAULT_TITLE,
       description: DEFAULT_DESCRIPTION,
@@ -63,10 +64,10 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
   const shareUrl = `${siteOrigin}/?v=${encodeURIComponent(selectedVideo.id)}`;
   const shareTitle = `${selectedVideo.title} | ${SITE_NAME}`;
   const shareDescription = `Watch ${selectedVideo.title} on ${SITE_NAME}.`;
-  const artist = selectedVideo.parsedArtist || selectedVideo.channelTitle || "";
-  const track = selectedVideo.parsedTrack || selectedVideo.title;
-  const genre = selectedVideo.genre || "";
-  const ogVideoImage = buildOgImageUrl({ type: "video", artist, title: track, genre });
+  // Use the real YouTube video thumbnail. hqdefault always exists (480×360);
+  // maxresdefault (1280×720) is larger and preferred by social crawlers when available.
+  const thumbPrimary = `https://i.ytimg.com/vi/${encodeURIComponent(selectedVideo.id)}/hqdefault.jpg`;
+  const thumbLarge = `https://i.ytimg.com/vi/${encodeURIComponent(selectedVideo.id)}/maxresdefault.jpg`;
 
   return {
     title: shareTitle,
@@ -82,9 +83,15 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
       type: "video.other",
       images: [
         {
-          url: ogVideoImage,
-          width: 1200,
-          height: 630,
+          url: thumbPrimary,
+          width: 480,
+          height: 360,
+          alt: selectedVideo.title,
+        },
+        {
+          url: thumbLarge,
+          width: 1280,
+          height: 720,
           alt: selectedVideo.title,
         },
       ],
@@ -93,7 +100,7 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
       card: "summary_large_image",
       title: shareTitle,
       description: shareDescription,
-      images: [ogVideoImage],
+      images: [thumbPrimary, thumbLarge],
     },
   };
 }

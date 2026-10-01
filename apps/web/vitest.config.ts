@@ -13,4 +13,10 @@ export default defineConfig({
       "@": path.resolve(__dirname),
     },
   },
+  oxc: {
+    // The project tsconfig sets `jsx: "preserve"` (Next.js compiles JSX itself).
+    // Vitest must compile JSX on its own so tests can import .tsx modules that
+    // contain JSX (e.g. page.tsx in social-share metadata tests).
+    jsx: { runtime: "automatic" },
+  },
 });

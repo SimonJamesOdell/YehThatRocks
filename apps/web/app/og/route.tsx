@@ -1,5 +1,7 @@
 import { ImageResponse } from "next/og";
 
+import { OG_LOGO_DATA_URI } from "@/lib/og-logo";
+
 export const runtime = "edge";
 
 const WIDTH = 1200;
@@ -88,6 +90,7 @@ function OgVideo({
       {/* CTA */}
       <div
         style={{
+          display: "flex",
           marginTop: "48px",
           fontSize: "26px",
           color: MUTED,
@@ -189,6 +192,7 @@ function OgArtist({ name, genre }: { name: string; genre: string }) {
 
       <div
         style={{
+          display: "flex",
           marginTop: "32px",
           fontSize: "26px",
           color: MUTED,
@@ -420,6 +424,97 @@ function OgGenre({ name }: { name: string }) {
   );
 }
 
+function OgHome() {
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        alignItems: "center",
+        padding: "64px 80px",
+        backgroundColor: BG,
+        backgroundImage:
+          "radial-gradient(ellipse at 50% 30%, rgba(230,126,34,0.14) 0%, transparent 55%), radial-gradient(ellipse at 50% 80%, rgba(230,126,34,0.06) 0%, transparent 50%)",
+        color: TEXT,
+        fontFamily: "sans-serif",
+        position: "relative",
+        textAlign: "center",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "6px",
+          backgroundColor: ACCENT,
+        }}
+      />
+
+      {/* Logo (rendered at exact 0.5x of the 1356x448 source) */}
+      <img
+        src={OG_LOGO_DATA_URI}
+        width={678}
+        height={224}
+        alt="YehThatRocks"
+      />
+
+      <div
+        style={{
+          display: "flex",
+          marginTop: "24px",
+          fontSize: "34px",
+          fontWeight: 600,
+          color: ACCENT,
+        }}
+      >
+        {"The World's LOUDEST Website"}
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          marginTop: "40px",
+          fontSize: "26px",
+          fontWeight: 500,
+          color: MUTED,
+        }}
+      >
+        {"Rock & Metal Music Video Discovery"}
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          bottom: "40px",
+          right: "60px",
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+          fontSize: "28px",
+          fontWeight: 700,
+          color: ACCENT,
+        }}
+      >
+        <span
+          style={{
+            display: "flex",
+            width: "36px",
+            height: "36px",
+            backgroundColor: ACCENT,
+            borderRadius: "6px",
+          }}
+        />
+        {BRAND}
+      </div>
+    </div>
+  );
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const type = searchParams.get("type") || "video";
@@ -457,6 +552,10 @@ export async function GET(request: Request) {
     case "genre": {
       const name = searchParams.get("name") || "Genre";
       return new ImageResponse(<OgGenre name={name} />, commonOptions);
+    }
+
+    case "home": {
+      return new ImageResponse(<OgHome />, commonOptions);
     }
 
     case "video":
