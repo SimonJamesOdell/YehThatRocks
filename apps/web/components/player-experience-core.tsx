@@ -99,7 +99,7 @@ import type { PlayerExperienceProps, PlayerPreferencesResponse, PlaylistSummary,
 import { AUTOPLAY_KEY, BROKEN_UPSTREAM_AUTOADVANCE_MS, HISTORY_KEY, HISTORY_LIMIT, LAST_PLAYLIST_ID_KEY, PLAYER_DEBUG_ENABLED, FLOW_DEBUG_ENABLED, PLAYER_VOLUME_KEY, PLAYER_MUTED_KEY, RESUME_KEY, UNAVAILABLE_PLAYER_CODES, UNAVAILABLE_OVERLAY_MESSAGE, BROKEN_UPSTREAM_OVERLAY_MESSAGE, SEARCHING_ALTERNATIVE_OVERLAY_MESSAGE, COPYRIGHT_CLAIM_OVERLAY_MESSAGE, REMOVED_PRIVATE_OVERLAY_MESSAGE, BOT_BLOCK_CONFIRMATION_DELAY_MS, UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE, DELETED_TRACK_OVERLAY_MESSAGE, EARLY_PLAYBACK_VERIFICATION_MS, STUCK_PLAYBACK_CHECK_MS, STUCK_PLAYBACK_MAX_RETRIES, STUCK_PLAYBACK_RETRY_DELAYS_MS, MID_PLAYBACK_BUFFERING_CHECK_MS, MID_PLAYBACK_BUFFERING_THRESHOLD_MS, PLAYBACK_STALL_DIRECT_IFRAME_THRESHOLD_MS, PLAYBACK_STALL_PROGRESS_EPSILON_SECONDS, PLAYER_LOAD_REFRESH_HINT_DELAY_MS, PLAYER_AUTO_RECONNECT_DELAY_MS, MANUAL_TRANSITION_MASK_TIMEOUT_MS, maxEndedChoiceVideos, ENDED_CHOICE_BATCH_SIZE, ENDED_CHOICE_INITIAL_PREFETCH_COUNT, ENDED_CHOICE_SCROLL_RUNWAY_COUNT, ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS, YOUTUBE_END_SCREEN_COVER_SECONDS, ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY, AUTOPLAY_FALLBACK_POOL_SIZE, NEW_AUTOPLAY_PLAYLIST_SIZE, ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT } from "@/components/player-constants";
 import { logPlayerDebug, logFlow } from "@/components/player-logger";
 import { toSafeNumber, normalizePlayerVolume, formatPlaybackTime, toTitleCaseWords } from "@/components/player-formatters";
-import { CHAT_OPENED_VIDEO_ACTIVITY_SUPPRESS_KEY } from "@/lib/storage-keys";
+import { AUTOPLAY_SUPPRESS_AFTER_AUTH_LOSS_KEY, CHAT_OPENED_VIDEO_ACTIVITY_SUPPRESS_KEY } from "@/lib/storage-keys";
 
 applyRuntimeBootstrapPatches({ suppressWebShareWarning: true });
 
@@ -438,10 +438,18 @@ export function PlayerExperience({
   // (isLoggedIn is one of its dependencies), which used to recreate the player
   // and autoplay the previously loaded video behind the admin overlay. Detect
   // the logged-in -> logged-out transition and suppress that one autoplay; the
-  // suppression clears on the next genuine video change.
+  // suppression clears on the next genuine video change or the next explicit
+  // user play.
   const wasLoggedInRef = useRef(isLoggedIn);
   const lastPlayerVideoIdRef = useRef<string | null>(null);
-  const suppressAutoplayAfterAuthLossRef = useRef(false);
+  // Persist the suppression in sessionStorage as well so it survives the
+  // auth-triggered reload (router.refresh / full reload) that would otherwise
+  // remount the player with a fresh in-memory ref and let the paused video
+  // start playing again.
+  const suppressAutoplayAfterAuthLossRef = useRef<boolean>(
+    typeof window !== "undefined"
+      && window.sessionStorage.getItem(AUTOPLAY_SUPPRESS_AFTER_AUTH_LOSS_KEY) === "1",
+  );
   const volumeRef = useRef(volume);
   const isMutedRef = useRef(isMuted);
   const persistMutedPreferenceOnNextSyncRef = useRef(false);
@@ -463,6 +471,24 @@ export function PlayerExperience({
   }
   activePlaylistIdRef.current = activePlaylistId;
   hasPlaybackStartedRef.current = hasPlaybackStarted;
+
+  function persistSuppressAutoplayAfterAuthLoss(suppressed: boolean) {
+    suppressAutoplayAfterAuthLossRef.current = suppressed;
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      if (suppressed) {
+        window.sessionStorage.setItem(AUTOPLAY_SUPPRESS_AFTER_AUTH_LOSS_KEY, "1");
+      } else {
+        window.sessionStorage.removeItem(AUTOPLAY_SUPPRESS_AFTER_AUTH_LOSS_KEY);
+      }
+    } catch {
+      // Ignore storage failures; the in-memory ref still applies for this mount.
+    }
+  }
 
   useEffect(() => {
     currentVideoRef.current = currentVideo;
@@ -2267,6 +2293,7 @@ export function PlayerExperience({
       }
 
       hasUserGesturePlaybackUnlockRef.current = true;
+      persistSuppressAutoplayAfterAuthLoss(false);
       notePlayAttempt();
       runtimePlayer.playVideo();
     }
@@ -2455,9 +2482,9 @@ export function PlayerExperience({
     wasLoggedInRef.current = isLoggedIn;
     lastPlayerVideoIdRef.current = currentVideo.id;
     if (didLoseAuthSinceLastRun) {
-      suppressAutoplayAfterAuthLossRef.current = true;
+      persistSuppressAutoplayAfterAuthLoss(true);
     } else if (didChangeVideoSinceLastRun) {
-      suppressAutoplayAfterAuthLossRef.current = false;
+      persistSuppressAutoplayAfterAuthLoss(false);
     }
 
     setIsPlayerReady(false);
@@ -3291,6 +3318,7 @@ export function PlayerExperience({
     const playlistIndex = playlistQueueIds.findIndex((candidateId) => candidateId === videoId);
 
     hasUserGesturePlaybackUnlockRef.current = true;
+    persistSuppressAutoplayAfterAuthLoss(false);
     setShowEndedChoiceOverlay(false);
     setEndedChoiceFromUnavailable(false);
     navigateToVideo(videoId, {
@@ -3527,6 +3555,7 @@ export function PlayerExperience({
       player: playerRef.current,
       onPlaybackUnlock: () => {
         hasUserGesturePlaybackUnlockRef.current = true;
+        persistSuppressAutoplayAfterAuthLoss(false);
       },
       onPlayAttempt: notePlayAttempt,
     });
@@ -3543,6 +3572,7 @@ export function PlayerExperience({
   ) {
     showManualTransitionMask();
     hasUserGesturePlaybackUnlockRef.current = true;
+    persistSuppressAutoplayAfterAuthLoss(false);
     pendingAutoAdvanceVideoIdRef.current = videoId;
     navigateToVideo(videoId, options);
   }
@@ -4067,6 +4097,7 @@ export function PlayerExperience({
           onHideEndedChoiceOverlay: () => setShowEndedChoiceOverlay(false),
           onPlaybackUnlock: () => {
             hasUserGesturePlaybackUnlockRef.current = true;
+            persistSuppressAutoplayAfterAuthLoss(false);
           },
           onPlayAttempt: notePlayAttempt,
         });
