@@ -147,7 +147,7 @@ function ShellDynamicInner({
   const [currentVideo, setCurrentVideo] = useState(initialVideo);
   const currentVideoRef = useRef(currentVideo);
   currentVideoRef.current = currentVideo;
-  useVideoPageTitle(currentVideo);
+  useVideoPageTitle(currentVideo, requestedVideoId);
   const [relatedVideos, setRelatedVideos] = useState<VideoRecord[]>(initialHydratedRelatedVideos);
   const [displayedRelatedVideos, setDisplayedRelatedVideos] = useState<VideoRecord[]>(initialHydratedRelatedVideos);
   const [relatedTransitionPhase, setRelatedTransitionPhase] = useState<"idle" | "fading-out" | "loading" | "fading-in">("idle");
