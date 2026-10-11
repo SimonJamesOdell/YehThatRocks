@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { addPlaylistItemSchema, addPlaylistItemsBulkSchema, removePlaylistItemSchema, reorderPlaylistItemsSchema } from "@/lib/api-schemas";
+import { handleRouteError } from "@/lib/api-error";
 import { requireAuthOnly, withAuthAndBody } from "@/lib/api-route-pipeline";
 import { addPlaylistItem, addPlaylistItems, filterHiddenVideos, removePlaylistItem, reorderPlaylistItems } from "@/lib/catalog-data";
 
@@ -12,81 +13,93 @@ type PlaylistItemsRouteContext = {
 const addPlaylistItemsRequestSchema = z.union([addPlaylistItemSchema, addPlaylistItemsBulkSchema]);
 
 export async function POST(request: NextRequest, context: PlaylistItemsRouteContext) {
-  const result = await withAuthAndBody(request, addPlaylistItemsRequestSchema, { authMode: "user" });
+  try {
+    const result = await withAuthAndBody(request, addPlaylistItemsRequestSchema, { authMode: "user" });
 
-  if (!result.ok) {
-    return result.response;
-  }
-
-  const { id } = await context.params;
-
-  if ("videoId" in result.data) {
-    const playlist = await addPlaylistItem(id, result.data.videoId, result.auth.userId);
-
-    if (!playlist) {
-      return NextResponse.json({ error: "Playlist or video not found" }, { status: 404 });
+    if (!result.ok) {
+      return result.response;
     }
 
+    const { id } = await context.params;
+
+    if ("videoId" in result.data) {
+      const playlist = await addPlaylistItem(id, result.data.videoId, result.auth.userId);
+
+      if (!playlist) {
+        return NextResponse.json({ error: "Playlist or video not found" }, { status: 404 });
+      }
+
+      return NextResponse.json(playlist, { status: 201 });
+    }
+
+    const uniqueVideoIds = Array.from(new Set(result.data.videoIds));
+    const playlist = await addPlaylistItems(id, uniqueVideoIds, result.auth.userId);
+    if (!playlist) {
+      return NextResponse.json({ error: "Playlist or videos not found" }, { status: 404 });
+    }
+
+    playlist.videos = await filterHiddenVideos(playlist.videos, result.auth.userId);
+
     return NextResponse.json(playlist, { status: 201 });
+  } catch (error) {
+    return handleRouteError(error, "playlists/[id]/items POST");
   }
-
-  const uniqueVideoIds = Array.from(new Set(result.data.videoIds));
-  const playlist = await addPlaylistItems(id, uniqueVideoIds, result.auth.userId);
-  if (!playlist) {
-    return NextResponse.json({ error: "Playlist or videos not found" }, { status: 404 });
-  }
-
-  playlist.videos = await filterHiddenVideos(playlist.videos, result.auth.userId);
-
-  return NextResponse.json(playlist, { status: 201 });
 }
 
 export async function DELETE(request: NextRequest, context: PlaylistItemsRouteContext) {
-  const result = await withAuthAndBody(request, removePlaylistItemSchema, { authMode: "user" });
+  try {
+    const result = await withAuthAndBody(request, removePlaylistItemSchema, { authMode: "user" });
 
-  if (!result.ok) {
-    return result.response;
+    if (!result.ok) {
+      return result.response;
+    }
+
+    const { id } = await context.params;
+    const playlist = await removePlaylistItem(
+      id,
+      result.data.playlistItemIndex ?? null,
+      result.auth.userId,
+      result.data.playlistItemId ?? null,
+    );
+
+    if (!playlist) {
+      return NextResponse.json({ error: "Playlist item not found" }, { status: 404 });
+    }
+
+    playlist.videos = await filterHiddenVideos(playlist.videos, result.auth.userId);
+
+    return NextResponse.json(playlist);
+  } catch (error) {
+    return handleRouteError(error, "playlists/[id]/items DELETE");
   }
-
-  const { id } = await context.params;
-  const playlist = await removePlaylistItem(
-    id,
-    result.data.playlistItemIndex ?? null,
-    result.auth.userId,
-    result.data.playlistItemId ?? null,
-  );
-
-  if (!playlist) {
-    return NextResponse.json({ error: "Playlist item not found" }, { status: 404 });
-  }
-
-  playlist.videos = await filterHiddenVideos(playlist.videos, result.auth.userId);
-
-  return NextResponse.json(playlist);
 }
 
 export async function PATCH(request: NextRequest, context: PlaylistItemsRouteContext) {
-  const result = await withAuthAndBody(request, reorderPlaylistItemsSchema, { authMode: "user" });
+  try {
+    const result = await withAuthAndBody(request, reorderPlaylistItemsSchema, { authMode: "user" });
 
-  if (!result.ok) {
-    return result.response;
+    if (!result.ok) {
+      return result.response;
+    }
+
+    const { id } = await context.params;
+    const playlist = await reorderPlaylistItems(
+      id,
+      result.data.fromIndex ?? null,
+      result.data.toIndex ?? null,
+      result.auth.userId,
+      result.data.fromPlaylistItemId ?? null,
+      result.data.toPlaylistItemId ?? null,
+    );
+
+    if (!playlist) {
+      return NextResponse.json({ error: "Playlist reorder failed" }, { status: 404 });
+    }
+
+    playlist.videos = await filterHiddenVideos(playlist.videos, result.auth.userId);
+
+    return NextResponse.json(playlist);
+  } catch (error) {
+    return handleRouteError(error, "playlists/[id]/items PATCH");
   }
-
-  const { id } = await context.params;
-  const playlist = await reorderPlaylistItems(
-    id,
-    result.data.fromIndex ?? null,
-    result.data.toIndex ?? null,
-    result.auth.userId,
-    result.data.fromPlaylistItemId ?? null,
-    result.data.toPlaylistItemId ?? null,
-  );
-
-  if (!playlist) {
-    return NextResponse.json({ error: "Playlist reorder failed" }, { status: 404 });
-  }
-
-  playlist.videos = await filterHiddenVideos(playlist.videos, result.auth.userId);
-
-  return NextResponse.json(playlist);
 }

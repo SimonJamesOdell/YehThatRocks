@@ -5,8 +5,8 @@
 // Guards the single sanitization choke point (lib/api-error.ts) and the routes
 // that previously returned `error.message` verbatim (Prisma/driver messages
 // contain table/constraint names, SQL fragments, and connection config — an
-// information-disclosure vector). New routes must use safeErrorMessage instead
-// of inlining `error instanceof Error ? error.message`.
+// information-disclosure vector). New routes must use safeErrorMessage or
+// handleRouteError instead of inlining `error instanceof Error ? error.message`.
 
 const path = require("node:path");
 const {
@@ -28,6 +28,12 @@ const files = mapRelativeFiles(ROOT, {
   facebookCandidates: "apps/web/app/api/facebook-browser/candidates/route.ts",
   adminMagazine: "apps/web/app/api/admin/magazine/generate/route.ts",
   cronMagazine: "apps/web/app/api/cron/magazine-daily/route.ts",
+  watchHistory: "apps/web/app/api/watch-history/route.ts",
+  chat: "apps/web/app/api/chat/route.ts",
+  playlistItems: "apps/web/app/api/playlists/[id]/items/route.ts",
+  forumThreads: "apps/web/app/api/forum/threads/route.ts",
+  forumVote: "apps/web/app/api/forum/threads/[threadId]/vote/route.ts",
+  forumPosts: "apps/web/app/api/forum/threads/[threadId]/posts/route.ts",
 });
 
 function main() {
@@ -39,6 +45,7 @@ function main() {
   assertContains(apiErrorSource, "export function safeErrorMessage", "api-error.ts exports safeErrorMessage", failures);
   assertContains(apiErrorSource, 'NODE_ENV === "development"', "safeErrorMessage gates detail behind dev mode", failures);
   assertContains(apiErrorSource, "export function handleRouteError", "api-error.ts exports handleRouteError", failures);
+  assertContains(apiErrorSource, "isTransientDbError(error) ? 503 : 500", "handleRouteError maps transient DB errors to 503", failures);
 
   // Every previously-leaking route must use safeErrorMessage and must NOT
   // inline the raw `error instanceof Error ? error.message` pattern.
@@ -55,6 +62,23 @@ function main() {
     const source = readFileStrict(filePath, ROOT);
     assertContains(source, "safeErrorMessage", `${name} uses safeErrorMessage`, failures);
     assertNotContains(source, "error instanceof Error ? error.message", `${name} no longer inlines raw error.message`, failures);
+  }
+
+  // Remaining DB-touching routes must wrap their bodies with handleRouteError
+  // (route-level defense-in-depth) and must NOT inline raw error.message.
+  const wrappedRoutes = [
+    ["watch-history", files.watchHistory],
+    ["chat", files.chat],
+    ["playlists/[id]/items", files.playlistItems],
+    ["forum/threads", files.forumThreads],
+    ["forum/threads/[threadId]/vote", files.forumVote],
+    ["forum/threads/[threadId]/posts", files.forumPosts],
+  ];
+
+  for (const [name, filePath] of wrappedRoutes) {
+    const source = readFileStrict(filePath, ROOT);
+    assertContains(source, "handleRouteError", `${name} wraps errors via handleRouteError`, failures);
+    assertNotContains(source, "error instanceof Error ? error.message", `${name} does not inline raw error.message`, failures);
   }
 
   finishInvariantCheck({

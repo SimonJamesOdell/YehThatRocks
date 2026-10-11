@@ -9,6 +9,7 @@ import { getCurrentAuthenticatedUserAuthState } from "@/lib/server-auth";
 import { parseRequestJson } from "@/lib/request-json";
 import { getLatestThreads, createThread } from "@/lib/forum-data";
 import { verifySameOrigin } from "@/lib/csrf";
+import { handleRouteError } from "@/lib/api-error";
 import { rateLimitOrResponse, rateLimitSharedOrResponse } from "@/lib/rate-limit";
 import { HTTP_UNAUTHORIZED } from "@/lib/http-status";
 
@@ -25,72 +26,76 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const authState = await getCurrentAuthenticatedUserAuthState();
-  if (authState.status !== "authenticated") {
-    return NextResponse.json({ error: "Authentication required" }, { status: HTTP_UNAUTHORIZED });
+  try {
+    const authState = await getCurrentAuthenticatedUserAuthState();
+    if (authState.status !== "authenticated") {
+      return NextResponse.json({ error: "Authentication required" }, { status: HTTP_UNAUTHORIZED });
+    }
+
+    const csrfError = verifySameOrigin(request);
+    if (csrfError) {
+      return csrfError;
+    }
+
+    const ipRateLimited = rateLimitOrResponse(request, `forum:thread:create:${authState.user.id}`, 10, 60 * 60 * 1000);
+    if (ipRateLimited) {
+      return ipRateLimited;
+    }
+
+    const userRateLimited = rateLimitSharedOrResponse(`forum:thread:create:user:${authState.user.id}`, 20, 60 * 60 * 1000);
+    if (userRateLimited) {
+      return userRateLimited;
+    }
+
+    const parsedJson = await parseRequestJson<{ sectionId?: string; title?: string; content?: string; video1Id?: string; video2Id?: string }>(request);
+    if (!parsedJson.ok) {
+      return parsedJson.response;
+    }
+    const { sectionId, title, content, video1Id, video2Id } = parsedJson.data;
+
+    if (!sectionId || !title || !content) {
+      return NextResponse.json(
+        { error: "sectionId, title, and content are required" },
+        { status: 400 },
+      );
+    }
+
+    if (typeof title !== "string" || title.trim().length < 3) {
+      return NextResponse.json(
+        { error: "Title must be at least 3 characters" },
+        { status: 400 },
+      );
+    }
+
+    if (typeof content !== "string" || content.trim().length < 10) {
+      return NextResponse.json(
+        { error: "Content must be at least 10 characters" },
+        { status: 400 },
+      );
+    }
+
+    if (title.length > 200) {
+      return NextResponse.json(
+        { error: "Title must be at most 200 characters" },
+        { status: 400 },
+      );
+    }
+
+    if (content.length > 10000) {
+      return NextResponse.json(
+        { error: "Content must be at most 10000 characters" },
+        { status: 400 },
+      );
+    }
+
+    const thread = await createThread(sectionId, title, authState.user.id, content, video1Id, video2Id);
+
+    if (!thread) {
+      return NextResponse.json({ error: "Failed to create thread" }, { status: 500 });
+    }
+
+    return NextResponse.json({ thread }, { status: 201 });
+  } catch (error) {
+    return handleRouteError(error, "forum threads POST");
   }
-
-  const csrfError = verifySameOrigin(request);
-  if (csrfError) {
-    return csrfError;
-  }
-
-  const ipRateLimited = rateLimitOrResponse(request, `forum:thread:create:${authState.user.id}`, 10, 60 * 60 * 1000);
-  if (ipRateLimited) {
-    return ipRateLimited;
-  }
-
-  const userRateLimited = rateLimitSharedOrResponse(`forum:thread:create:user:${authState.user.id}`, 20, 60 * 60 * 1000);
-  if (userRateLimited) {
-    return userRateLimited;
-  }
-
-  const parsedJson = await parseRequestJson<{ sectionId?: string; title?: string; content?: string; video1Id?: string; video2Id?: string }>(request);
-  if (!parsedJson.ok) {
-    return parsedJson.response;
-  }
-  const { sectionId, title, content, video1Id, video2Id } = parsedJson.data;
-
-  if (!sectionId || !title || !content) {
-    return NextResponse.json(
-      { error: "sectionId, title, and content are required" },
-      { status: 400 },
-    );
-  }
-
-  if (typeof title !== "string" || title.trim().length < 3) {
-    return NextResponse.json(
-      { error: "Title must be at least 3 characters" },
-      { status: 400 },
-    );
-  }
-
-  if (typeof content !== "string" || content.trim().length < 10) {
-    return NextResponse.json(
-      { error: "Content must be at least 10 characters" },
-      { status: 400 },
-    );
-  }
-
-  if (title.length > 200) {
-    return NextResponse.json(
-      { error: "Title must be at most 200 characters" },
-      { status: 400 },
-    );
-  }
-
-  if (content.length > 10000) {
-    return NextResponse.json(
-      { error: "Content must be at most 10000 characters" },
-      { status: 400 },
-    );
-  }
-
-  const thread = await createThread(sectionId, title, authState.user.id, content, video1Id, video2Id);
-
-  if (!thread) {
-    return NextResponse.json({ error: "Failed to create thread" }, { status: 500 });
-  }
-
-  return NextResponse.json({ thread }, { status: 201 });
 }

@@ -33,7 +33,8 @@ export function handleRouteError(
   fallback = "Internal server error",
 ): NextResponse {
   console.error(`[${context}]`, error);
-  return NextResponse.json({ error: safeErrorMessage(error, fallback) }, { status: 500 });
+  const status = isTransientDbError(error) ? 503 : 500;
+  return NextResponse.json({ error: safeErrorMessage(error, fallback) }, { status });
 }
 
 /**
