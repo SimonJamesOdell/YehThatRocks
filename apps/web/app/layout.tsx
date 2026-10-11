@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 
 import { PerformanceMeasureGuard } from "@/components/performance-measure-guard";
@@ -47,6 +47,13 @@ export const metadata: Metadata = {
       "Community-driven rock and metal streaming, discovery, chat, and catalogue depth rebuilt for the modern web.",
     images: [DEFAULT_SHARE_IMAGE],
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#080808",
 };
 
 export default function RootLayout({

@@ -48,6 +48,7 @@ const files = {
   desktopOnlyPage: path.join(ROOT, "apps/web/app/desktop-only/page.tsx"),
   // Old route group must NOT exist
   oldMobileLayout: path.join(ROOT, "apps/web/app/(mobile)/layout.tsx"),
+  rootLayout: path.join(ROOT, "apps/web/app/layout.tsx"),
 };
 
 const mobilePageFiles = [
@@ -354,6 +355,12 @@ function main() {
 
   // Mobile video card must NOT use the desktop YouTubeThumbnailImage
   assertNotContains(allMobileSources, 'YouTubeThumbnailImage', "mobile code does not import desktop thumbnail component", failures);
+
+  // ── 13. Root layout viewport (safe-area / theme-color) ────────────────
+  const rootLayoutSource = readFileStrict(files.rootLayout, ROOT);
+  assertContains(rootLayoutSource, "export const viewport", "root layout exports viewport config", failures);
+  assertContains(rootLayoutSource, 'viewportFit: "cover"', "root viewport opts into safe-area insets (viewport-fit=cover)", failures);
+  assertContains(rootLayoutSource, "themeColor:", "root viewport sets a theme color", failures);
 
   finishInvariantCheck({
     failures,
