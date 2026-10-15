@@ -86,6 +86,18 @@ function main() {
     "Player no longer derives the displayed title from parsedTrack",
     failures,
   );
+  assertContains(
+    player,
+    "overlayArtistHref",
+    "Player overlay keeps the artist link so users can browse more tracks by the artist",
+    failures,
+  );
+  assertContains(
+    player,
+    '<Link href={overlayArtistHref} className="overlayArtistLink">',
+    "Both player overlay sites render the artist link",
+    failures,
+  );
 
   // ── Deterministic duplicate-row resolution ────────────────────────────────
   assertContains(

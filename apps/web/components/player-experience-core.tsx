@@ -9,7 +9,7 @@ import type { VideoRecord } from "@/lib/catalog";
 import { inferArtistFromTitle } from "@/lib/catalog-metadata-utils";
 import { AutoplaySettingsEditor } from "@/components/autoplay-settings-editor";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
-import { getArtistPagePath } from "@/lib/artist-routing";
+import { getArtistPagePath, withVideoContext } from "@/lib/artist-routing";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { PlayerAutoplayConfigureModal } from "@/components/player-autoplay-configure-modal";
@@ -808,6 +808,12 @@ export function PlayerExperience({
   const metadataArtist = parsedArtistCandidate || "Unknown Artist";
   const hasArtistName = metadataArtist !== "Unknown Artist";
   const artistPagePath = getArtistPagePath(metadataArtist);
+  // The artist name links to the artist page so users can find more tracks by
+  // the same artist. Keep this secondary to the raw title, which remains the
+  // single source of truth for the displayed title.
+  const overlayArtistHref = hasArtistName && artistPagePath
+    ? withVideoContext(artistPagePath, currentVideo.id)
+    : null;
   const overlayArtistSlug = artistPagePath?.split("/")[2] ?? null;
   const overlayArtistVideoCountLabel = overlayArtistVideoCountResolvedForVideoId !== currentVideo.id || overlayArtistVideoCount === null
     ? null
@@ -4372,8 +4378,18 @@ export function PlayerExperience({
                       <div className="overlayTitleStack">
                         <p className="overlayRelatedCardGenre"><VideoGenreLink genre={overlayGenreLabel} /></p>
                         <p className="overlayTitle">{displayTitle}</p>
-                        {overlayArtistVideoCountLabel ? (
-                          <p className="overlayArtistVideoCount">{overlayArtistVideoCountLabel}</p>
+                        {overlayArtistHref || overlayArtistVideoCountLabel ? (
+                          <p className="overlayArtistVideoCount">
+                            {overlayArtistHref ? (
+                              <Link href={overlayArtistHref} className="overlayArtistLink">
+                                {metadataArtist}
+                              </Link>
+                            ) : null}
+                            {overlayArtistHref && overlayArtistVideoCountLabel ? (
+                              <span aria-hidden="true"> · </span>
+                            ) : null}
+                            {overlayArtistVideoCountLabel}
+                          </p>
                         ) : null}
                       </div>
                     </div>
@@ -4443,8 +4459,18 @@ export function PlayerExperience({
                       <div className="overlayTitleStack">
                         <p className="overlayRelatedCardGenre"><VideoGenreLink genre={overlayGenreLabel} /></p>
                         <p className="overlayTitle">{displayTitle}</p>
-                        {overlayArtistVideoCountLabel ? (
-                          <p className="overlayArtistVideoCount">{overlayArtistVideoCountLabel}</p>
+                        {overlayArtistHref || overlayArtistVideoCountLabel ? (
+                          <p className="overlayArtistVideoCount">
+                            {overlayArtistHref ? (
+                              <Link href={overlayArtistHref} className="overlayArtistLink">
+                                {metadataArtist}
+                              </Link>
+                            ) : null}
+                            {overlayArtistHref && overlayArtistVideoCountLabel ? (
+                              <span aria-hidden="true"> · </span>
+                            ) : null}
+                            {overlayArtistVideoCountLabel}
+                          </p>
                         ) : null}
                       </div>
                       {isAdmin ? (
