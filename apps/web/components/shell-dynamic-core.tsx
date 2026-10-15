@@ -74,6 +74,7 @@ import { prefetchCategoryCardsSessionCache } from "@/lib/category-cards-session-
 import { ForumSectionRail } from "@/components/forum-section-rail";
 import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVENT, PLAYLIST_CREATION_PROGRESS_EVENT, WATCH_HISTORY_UPDATED_EVENT, AUTOPLAY_SETTINGS_UPDATED_EVENT, RIGHT_RAIL_LYRICS_OPEN_EVENT, ADMIN_OVERLAY_ENTER_EVENT, DOCK_HIDE_REQUEST_EVENT, OVERLAY_CLOSE_REQUEST_EVENT, EVENT_NAMES, dispatchAppEvent, listenToAppEvent } from "@/lib/events-contract";
 import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
+import { buildOptimisticVideoFromPendingSelection } from "@/lib/pending-video-selection";
 import { publishAuthStateChange } from "@/lib/auth-sync";
 import type { RefreshSessionResult } from "@/lib/client-auth-fetch";
 import { probeClientAuthState } from "@/lib/client-auth-state";
@@ -1291,25 +1292,18 @@ function ShellDynamicInner({
         try {
           const pendingSelection = JSON.parse(rawPendingSelection) as Partial<VideoRecord> & { id?: string };
           if (pendingSelection.id === requestedVideoId) {
-            setCurrentVideo((previousVideo) => ({
-              ...previousVideo,
-              id: requestedVideoId,
-              title: typeof pendingSelection.title === "string" ? pendingSelection.title : previousVideo.title,
-              channelTitle:
-                typeof pendingSelection.channelTitle === "string"
-                  ? pendingSelection.channelTitle
-                  : previousVideo.channelTitle,
-              genre: typeof pendingSelection.genre === "string" ? pendingSelection.genre : previousVideo.genre,
-              favourited:
-                typeof pendingSelection.favourited === "number"
-                  ? pendingSelection.favourited
-                  : previousVideo.favourited,
-              description:
-                typeof pendingSelection.description === "string"
-                  ? pendingSelection.description
-                  : previousVideo.description,
-            }));
-            hasOptimisticVideo = true;
+            setCurrentVideo((previousVideo) => {
+              const optimisticVideo = buildOptimisticVideoFromPendingSelection(
+                pendingSelection,
+                requestedVideoId,
+                previousVideo,
+              );
+              if (optimisticVideo) {
+                hasOptimisticVideo = true;
+                return optimisticVideo;
+              }
+              return previousVideo;
+            });
             window.sessionStorage.removeItem(PENDING_VIDEO_SELECTION_KEY);
           }
         } catch {

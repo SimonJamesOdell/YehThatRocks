@@ -664,6 +664,31 @@ export function clearParsedArtistNormIndexCache() {
 
 // ── Primitive video queries ───────────────────────────────────────────────────
 
+/**
+ * Builds the deterministic ORDER BY clause for single-video lookups.
+ *
+ * Single source of truth: when the (legacy) table contains duplicate rows for
+ * the same `videoId`, always prefer the approved row first. The server-rendered
+ * metadata path filters to approved rows while the shell/player path relaxes
+ * that filter (includeUnapproved), so without an explicit approved-first
+ * ordering the two paths could resolve *different* duplicate rows and show
+ * different titles for the same video id.
+ */
+export function buildVideoByIdOrderByClause(preferParsedArtist: boolean) {
+  return preferParsedArtist
+    ? `
+      ORDER BY
+        COALESCE(v.approved, 0) DESC,
+        CASE
+          WHEN v.parsedArtist IS NULL OR TRIM(v.parsedArtist) = '' THEN 1
+          ELSE 0
+        END ASC,
+        v.updated_at DESC,
+        v.id DESC
+    `
+    : "ORDER BY COALESCE(v.approved, 0) DESC, v.updated_at DESC, v.id DESC";
+}
+
 export async function getFastVideoByVideoIdRows(
   normalizedVideoId: string,
   options?: { requireAvailable?: boolean; preferParsedArtist?: boolean; includeUnapproved?: boolean },
@@ -688,16 +713,7 @@ export async function getFastVideoByVideoIdRows(
       )
     `
     : "";
-  const orderByClause = preferParsedArtist
-    ? `
-      ORDER BY
-        CASE
-          WHEN v.parsedArtist IS NULL OR TRIM(v.parsedArtist) = '' THEN 1
-          ELSE 0
-        END ASC,
-        v.id DESC
-    `
-    : "ORDER BY v.updated_at DESC, v.id DESC";
+  const orderByClause = buildVideoByIdOrderByClause(preferParsedArtist);
 
   const hasGenreColumn = await hasVideoGenreColumn();
   const genreSelectExpr = hasGenreColumn

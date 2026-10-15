@@ -43,8 +43,9 @@ describe("useVideoPageTitle", () => {
 
     expect(document.title).toBe("Track X | YehThatRocks");
 
+    // A corrected title for the same video must still sync the tab.
     rerender({ video: makeVideo("xyz", "Track X (Updated)") });
-    expect(document.title).toBe("Track X | YehThatRocks");
+    expect(document.title).toBe("Track X (Updated) | YehThatRocks");
   });
 
   it("preserves the server-rendered title while currentVideo is a fallback for a different requested id", () => {
@@ -67,7 +68,7 @@ describe("useVideoPageTitle", () => {
     expect(document.title).toBe("Track X | YehThatRocks");
   });
 
-  it("does not re-write the title for the same video id", () => {
+  it("does not re-write the title when the computed title is unchanged", () => {
     let titleValue = "";
     let writes = 0;
     const originalDescriptor = Object.getOwnPropertyDescriptor(Document.prototype, "title");

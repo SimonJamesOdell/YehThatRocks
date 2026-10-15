@@ -32,7 +32,7 @@ export function useVideoPageTitle(
   currentVideo: VideoRecord,
   requestedVideoId: string | null,
 ) {
-  const lastTitledVideoIdRef = useRef<string | null>(null);
+  const lastWrittenTitleRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -51,10 +51,13 @@ export function useVideoPageTitle(
     if (requestedVideoId && currentVideo.id !== requestedVideoId) {
       return;
     }
-    if (lastTitledVideoIdRef.current === currentVideo.id) {
+    // Track the exact title we wrote (not just the video id) so a title edit
+    // on the same video keeps the tab in sync with the player.
+    const nextTitle = `${videoTitle} | ${SHARE_SITE_NAME}`;
+    if (lastWrittenTitleRef.current === nextTitle) {
       return;
     }
-    lastTitledVideoIdRef.current = currentVideo.id;
-    document.title = `${videoTitle} | ${SHARE_SITE_NAME}`;
+    lastWrittenTitleRef.current = nextTitle;
+    document.title = nextTitle;
   }, [currentVideo, requestedVideoId]);
 }
