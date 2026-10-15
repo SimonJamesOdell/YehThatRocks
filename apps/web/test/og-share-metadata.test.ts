@@ -39,7 +39,9 @@ describe("homepage generateMetadata (social share contract)", () => {
 
     const meta = await generateMetadata({ searchParams: Promise.resolve({ v: "VIDEO123" }) });
 
-    expect(meta.title).toBe("Test Track | YehThatRocks");
+    // The page/tab title is derived from the artist + track fields, which are
+    // the single source of truth for the displayed title.
+    expect(meta.title).toBe("Test Artist - Test Track | YehThatRocks");
     expect(meta.openGraph?.url).toBe("https://yehthatrocks.com/?v=VIDEO123");
     expect(meta.openGraph?.images).toEqual([
       { url: "https://i.ytimg.com/vi/VIDEO123/hqdefault.jpg", width: 480, height: 360, alt: "Test Track" },

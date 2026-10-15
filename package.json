@@ -75,7 +75,7 @@
     "verify:watch-next-and-new": "node scripts/verify-watch-next-and-new-invariants.js",
     "verify:thumbnail-preflight": "node scripts/verify-thumbnail-preflight-invariants.js",
     "verify:og-share": "node scripts/verify-og-share-invariants.js && npm -w web run test -- test/og-share-metadata.test.ts",
-    "verify:video-title": "node scripts/verify-video-title-invariants.js && npm -w web run test -- hooks/use-video-page-title.test.ts lib/catalog-data-db.test.ts lib/pending-video-selection.test.ts",
+    "verify:video-title": "node scripts/verify-video-title-invariants.js && npm -w web run test -- hooks/use-video-page-title.test.ts lib/catalog-data-db.test.ts lib/pending-video-selection.test.ts lib/video-display-title.test.ts",
     "verify:hidden-videos": "node scripts/verify-hidden-videos-invariants.js",
     "verify:search": "node scripts/verify-search-invariants.js",
     "verify:classification": "node scripts/verify-classification-invariants.js",

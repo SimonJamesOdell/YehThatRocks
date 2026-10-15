@@ -77,7 +77,7 @@ export function useAdminVideoEdit({
   playerFrameRef: RefObject<HTMLDivElement | null>;
   pointerPositionRef: RefObject<{ x: number; y: number } | null>;
   /** Called after a successful save with the latest editable metadata values */
-  onSaveSuccess: (title: string, channelTitle: string, parsedArtist: string, genre: string) => void;
+  onSaveSuccess: (title: string, channelTitle: string, parsedArtist: string, parsedTrack: string, genre: string) => void;
   /** Called from closeAdminVideoEditModal when the pointer is hovering the player */
   onShowControls: () => void;
 }): UseAdminVideoEditReturn {
@@ -339,6 +339,7 @@ export function useAdminVideoEdit({
         adminEditTitle,
         adminEditChannelTitle,
         adminEditParsedArtist,
+        adminEditParsedTrack,
         adminEditGenre.trim(),
       );
       closeAdminVideoEditModal();

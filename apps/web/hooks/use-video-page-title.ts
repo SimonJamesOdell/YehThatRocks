@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { SHARE_SITE_NAME } from "@/lib/share-metadata";
+import { buildVideoDisplayTitle } from "@/lib/video-display-title";
 
 /**
  * Keeps the browser-tab title in sync with the currently playing video.
@@ -38,7 +39,15 @@ export function useVideoPageTitle(
     if (typeof document === "undefined") {
       return;
     }
-    const videoTitle = currentVideo.title.trim();
+    // Artist + track fields are the single source of truth for the tab title,
+    // matching the player and the video cards. The raw title field is only
+    // shown on the transient "Now playing" overlay.
+    const videoTitle = buildVideoDisplayTitle({
+      title: currentVideo.title,
+      parsedArtist: currentVideo.parsedArtist,
+      parsedTrack: currentVideo.parsedTrack,
+      channelTitle: currentVideo.channelTitle,
+    });
     if (!videoTitle) {
       return;
     }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 
 import { getCurrentVideo } from "@/lib/catalog-data";
+import { buildVideoDisplayTitle } from "@/lib/video-display-title";
 import {
   buildVideoObject,
   buildMusicRecording,
@@ -62,8 +63,16 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
   }
 
   const shareUrl = `${siteOrigin}/?v=${encodeURIComponent(selectedVideo.id)}`;
-  const shareTitle = `${selectedVideo.title} | ${SITE_NAME}`;
-  const shareDescription = `Watch ${selectedVideo.title} on ${SITE_NAME}.`;
+  // Artist + track fields are the single source of truth for the page/tab
+  // title, matching the player and the video cards.
+  const displayTitle = buildVideoDisplayTitle({
+    title: selectedVideo.title,
+    parsedArtist: selectedVideo.parsedArtist,
+    parsedTrack: selectedVideo.parsedTrack,
+    channelTitle: selectedVideo.channelTitle,
+  });
+  const shareTitle = `${displayTitle} | ${SITE_NAME}`;
+  const shareDescription = `Watch ${displayTitle} on ${SITE_NAME}.`;
   // Use the real YouTube video thumbnail. hqdefault always exists (480×360);
   // maxresdefault (1280×720) is larger and preferred by social crawlers when available.
   const thumbPrimary = `https://i.ytimg.com/vi/${encodeURIComponent(selectedVideo.id)}/hqdefault.jpg`;

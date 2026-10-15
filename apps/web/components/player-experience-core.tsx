@@ -11,6 +11,7 @@ import { AutoplaySettingsEditor } from "@/components/autoplay-settings-editor";
 import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { getArtistPagePath, withVideoContext } from "@/lib/artist-routing";
 import { buildCanonicalShareUrl } from "@/lib/share-metadata";
+import { buildVideoDisplayTitle } from "@/lib/video-display-title";
 import { HideVideoConfirmModal } from "@/components/hide-video-confirm-modal";
 import { PlayerAutoplayConfigureModal } from "@/components/player-autoplay-configure-modal";
 import { AdminDeleteConfirmModal } from "@/components/admin-delete-confirm-modal";
@@ -98,10 +99,12 @@ import { parseJsonOrNull } from "@/lib/parse-json";
 import type { PlayerExperienceProps, PlayerPreferencesResponse, PlaylistSummary, YouTubePlayer, YouTubeNamespace } from "@/components/player-types";
 import { AUTOPLAY_KEY, BROKEN_UPSTREAM_AUTOADVANCE_MS, HISTORY_KEY, HISTORY_LIMIT, LAST_PLAYLIST_ID_KEY, PLAYER_DEBUG_ENABLED, FLOW_DEBUG_ENABLED, PLAYER_VOLUME_KEY, PLAYER_MUTED_KEY, RESUME_KEY, UNAVAILABLE_PLAYER_CODES, UNAVAILABLE_OVERLAY_MESSAGE, BROKEN_UPSTREAM_OVERLAY_MESSAGE, SEARCHING_ALTERNATIVE_OVERLAY_MESSAGE, COPYRIGHT_CLAIM_OVERLAY_MESSAGE, REMOVED_PRIVATE_OVERLAY_MESSAGE, BOT_BLOCK_CONFIRMATION_DELAY_MS, UPSTREAM_CONNECTIVITY_OVERLAY_MESSAGE, DELETED_TRACK_OVERLAY_MESSAGE, EARLY_PLAYBACK_VERIFICATION_MS, STUCK_PLAYBACK_CHECK_MS, STUCK_PLAYBACK_MAX_RETRIES, STUCK_PLAYBACK_RETRY_DELAYS_MS, MID_PLAYBACK_BUFFERING_CHECK_MS, MID_PLAYBACK_BUFFERING_THRESHOLD_MS, PLAYBACK_STALL_DIRECT_IFRAME_THRESHOLD_MS, PLAYBACK_STALL_PROGRESS_EPSILON_SECONDS, PLAYER_LOAD_REFRESH_HINT_DELAY_MS, PLAYER_AUTO_RECONNECT_DELAY_MS, MANUAL_TRANSITION_MASK_TIMEOUT_MS, maxEndedChoiceVideos, ENDED_CHOICE_BATCH_SIZE, ENDED_CHOICE_INITIAL_PREFETCH_COUNT, ENDED_CHOICE_SCROLL_RUNWAY_COUNT, ENDED_CHOICE_PREFETCH_BEFORE_END_SECONDS, YOUTUBE_END_SCREEN_COVER_SECONDS, ENDED_CHOICE_HIDE_SEEN_TOGGLE_KEY, AUTOPLAY_FALLBACK_POOL_SIZE, NEW_AUTOPLAY_PLAYLIST_SIZE, ROUTE_AUTOPLAY_QUEUE_SYNC_EVENT } from "@/components/player-constants";
 import { logPlayerDebug, logFlow } from "@/components/player-logger";
-import { toSafeNumber, normalizePlayerVolume, formatPlaybackTime } from "@/components/player-formatters";
+import { toSafeNumber, normalizePlayerVolume, formatPlaybackTime, toTitleCaseWords } from "@/components/player-formatters";
 import { AUTOPLAY_SUPPRESS_AFTER_AUTH_LOSS_KEY, CHAT_OPENED_VIDEO_ACTIVITY_SUPPRESS_KEY } from "@/lib/storage-keys";
 
 applyRuntimeBootstrapPatches({ suppressWebShareWarning: true });
+
+import { inferTrackFromTitle } from "@/lib/infer-track-title";
 
 function buildGeneratedPlaylistName() {
   const now = new Date();
@@ -343,6 +346,7 @@ export function PlayerExperience({
   const [localChannelTitleOverride, setLocalChannelTitleOverride] = useState<string | null>(null);
   const [localGenreOverride, setLocalGenreOverride] = useState<string | null>(null);
   const [localParsedArtistOverride, setLocalParsedArtistOverride] = useState<string | null>(null);
+  const [localParsedTrackOverride, setLocalParsedTrackOverride] = useState<string | null>(null);
   const [overlayArtistVideoCount, setOverlayArtistVideoCount] = useState<number | null>(null);
   const [overlayArtistVideoCountResolvedForVideoId, setOverlayArtistVideoCountResolvedForVideoId] = useState<string | null>(null);
   const endedChoiceOverlayRef = useRef<HTMLDivElement | null>(null);
@@ -416,11 +420,12 @@ export function PlayerExperience({
     isAdmin,
     playerFrameRef,
     pointerPositionRef,
-    onSaveSuccess: (title, channelTitle, parsedArtist, genre) => {
+    onSaveSuccess: (title, channelTitle, parsedArtist, parsedTrack, genre) => {
       setLocalTitleOverride(title);
       setLocalChannelTitleOverride(channelTitle);
       setLocalGenreOverride(genre);
       setLocalParsedArtistOverride(parsedArtist);
+      setLocalParsedTrackOverride(parsedTrack);
     },
     onShowControls: () => setShowControls(true),
   });
@@ -492,6 +497,7 @@ export function PlayerExperience({
     setLocalChannelTitleOverride(null);
     setLocalGenreOverride(null);
     setLocalParsedArtistOverride(null);
+    setLocalParsedTrackOverride(null);
     resetEndedChoiceRuntimeState({
       setEndedChoiceLoading,
       setEndedChoiceRemoteVideos,
@@ -787,15 +793,10 @@ export function PlayerExperience({
   const durationLabel = formatPlaybackTime(safeDuration);
   const shareUrl = buildCanonicalShareUrl(currentVideo.id);
   const rawDisplayTitle = localTitleOverride ?? currentVideo.title;
-  // The raw `title` field is the single source of truth for the video title.
-  // It is what the server renders into the browser tab (<title>) and what the
-  // player must show. `parsedArtist`/`parsedTrack` are secondary metadata and
-  // can disagree with `title`, so they must never be used to derive the
-  // displayed title.
-  const displayTitle = rawDisplayTitle.trim();
   const displayChannelTitle = localChannelTitleOverride ?? currentVideo.channelTitle;
   const currentVideoMetadata = currentVideo as VideoRecord & {
     parsedArtist?: string | null;
+    parsedTrack?: string | null;
     genre?: string | null;
   };
   const overlayGenreLabel = localGenreOverride?.trim() || currentVideoMetadata.genre?.trim() || "Rock / Metal";
@@ -806,14 +807,25 @@ export function PlayerExperience({
     || inferArtistFromTitle(rawDisplayTitle)?.trim()
     || "";
   const metadataArtist = parsedArtistCandidate || "Unknown Artist";
+  const parsedTrackCandidate =
+    localParsedTrackOverride?.trim()
+    || currentVideoMetadata.parsedTrack?.trim()
+    || inferTrackFromTitle(rawDisplayTitle, metadataArtist)
+    || "";
+  // Artist + track fields are the single source of truth for the displayed
+  // title across the site (player, cards, tab title). The raw title field is
+  // only shown on the transient "Now playing" overlay at the start of playback.
+  const displayTitle = buildVideoDisplayTitle({
+    title: rawDisplayTitle,
+    parsedArtist: parsedArtistCandidate,
+    parsedTrack: parsedTrackCandidate,
+  });
   const hasArtistName = metadataArtist !== "Unknown Artist";
+  const metadataTrack = parsedTrackCandidate || rawDisplayTitle.trim();
+  const overlayArtistLabel = metadataArtist.toUpperCase();
+  const overlayTrackLabel = toTitleCaseWords(metadataTrack);
   const artistPagePath = getArtistPagePath(metadataArtist);
-  // The artist name links to the artist page so users can find more tracks by
-  // the same artist. Keep this secondary to the raw title, which remains the
-  // single source of truth for the displayed title.
-  const overlayArtistHref = hasArtistName && artistPagePath
-    ? withVideoContext(artistPagePath, currentVideo.id)
-    : null;
+  const overlayArtistHref = artistPagePath ? withVideoContext(artistPagePath, currentVideo.id) : null;
   const overlayArtistSlug = artistPagePath?.split("/")[2] ?? null;
   const overlayArtistVideoCountLabel = overlayArtistVideoCountResolvedForVideoId !== currentVideo.id || overlayArtistVideoCount === null
     ? null
@@ -4377,19 +4389,19 @@ export function PlayerExperience({
                     <div className="overlayTitleRow">
                       <div className="overlayTitleStack">
                         <p className="overlayRelatedCardGenre"><VideoGenreLink genre={overlayGenreLabel} /></p>
-                        <p className="overlayTitle">{displayTitle}</p>
-                        {overlayArtistHref || overlayArtistVideoCountLabel ? (
-                          <p className="overlayArtistVideoCount">
-                            {overlayArtistHref ? (
-                              <Link href={overlayArtistHref} className="overlayArtistLink">
-                                {metadataArtist}
-                              </Link>
-                            ) : null}
-                            {overlayArtistHref && overlayArtistVideoCountLabel ? (
-                              <span aria-hidden="true"> · </span>
-                            ) : null}
-                            {overlayArtistVideoCountLabel}
-                          </p>
+                        <p className="overlayTitle">
+                          {overlayArtistHref ? (
+                            <Link href={overlayArtistHref} className="overlayArtistLink">
+                              {overlayArtistLabel}
+                            </Link>
+                          ) : (
+                            <span>{overlayArtistLabel}</span>
+                          )}
+                          <span aria-hidden="true"> - </span>
+                          <span>{overlayTrackLabel}</span>
+                        </p>
+                        {overlayArtistVideoCountLabel ? (
+                          <p className="overlayArtistVideoCount">{overlayArtistVideoCountLabel}</p>
                         ) : null}
                       </div>
                     </div>
@@ -4458,19 +4470,19 @@ export function PlayerExperience({
                     <div className="overlayTitleRow">
                       <div className="overlayTitleStack">
                         <p className="overlayRelatedCardGenre"><VideoGenreLink genre={overlayGenreLabel} /></p>
-                        <p className="overlayTitle">{displayTitle}</p>
-                        {overlayArtistHref || overlayArtistVideoCountLabel ? (
-                          <p className="overlayArtistVideoCount">
-                            {overlayArtistHref ? (
-                              <Link href={overlayArtistHref} className="overlayArtistLink">
-                                {metadataArtist}
-                              </Link>
-                            ) : null}
-                            {overlayArtistHref && overlayArtistVideoCountLabel ? (
-                              <span aria-hidden="true"> · </span>
-                            ) : null}
-                            {overlayArtistVideoCountLabel}
-                          </p>
+                        <p className="overlayTitle">
+                          {overlayArtistHref ? (
+                            <Link href={overlayArtistHref} className="overlayArtistLink">
+                              {overlayArtistLabel}
+                            </Link>
+                          ) : (
+                            <span>{overlayArtistLabel}</span>
+                          )}
+                          <span aria-hidden="true"> - </span>
+                          <span>{overlayTrackLabel}</span>
+                        </p>
+                        {overlayArtistVideoCountLabel ? (
+                          <p className="overlayArtistVideoCount">{overlayArtistVideoCountLabel}</p>
                         ) : null}
                       </div>
                       {isAdmin ? (
@@ -4665,7 +4677,7 @@ export function PlayerExperience({
               {showNowPlayingOverlay && !allowDirectIframeInteraction ? (
                 <div key={`${currentVideo.id}-${overlayInstance}`} className="nowPlayingOverlay nowPlayingOverlayAnimate">
                   <p className="statusLabel">Now playing</p>
-                  <strong>{displayTitle}</strong>
+                  <strong>{rawDisplayTitle.trim()}</strong>
                 </div>
               ) : null}
 
