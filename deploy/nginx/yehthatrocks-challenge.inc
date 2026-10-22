@@ -1,5 +1,6 @@
 # JS proof-of-work challenge for the catalog walker — a JS-less scraper that
-# fetches /artist/*?letter=X&resume=1&v=<id> alphabetically with no cookies.
+# fetches /artist/<slug> and /artists?letter=X&resume=1&v=<id> alphabetically
+# with no cookies.
 #
 # Requests matching that signature WITHOUT the ytr_botok cookie are sent to a
 # small proof-of-work page instead of the app. Real browsers solve it in well
@@ -25,7 +26,7 @@ if ($http_cookie ~ "(ytr_access=|ytr_refresh=)") {
 if ($http_cookie !~ "ytr_botok=") {
     set $walker_challenge "${walker_challenge}A";
 }
-if ($request_uri ~ "^/artist/") {
+if ($request_uri ~ "^(/artist/|/artists)") {
     set $walker_challenge "${walker_challenge}B";
 }
 if ($args ~ "letter=") {
