@@ -1,0 +1,9 @@
+[Unit]
+Description=Cloudflare attack-mode auto-toggle watcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/yehthatrocks/cf-attack-watch.env
+ExecStart=/bin/bash /srv/yehthatrocks/scripts/cf-attack-watch.sh
