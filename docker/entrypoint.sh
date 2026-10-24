@@ -25,7 +25,7 @@ echo "[entrypoint] Initializing admin dashboard cache..."
 node /app/scripts/maintain-admin-dashboard-cache.mjs || echo "[entrypoint] Dashboard cache initialization failed (non-fatal)"
 
 echo "[entrypoint] Starting admin dashboard cache scheduler in background..."
-node /app/scripts/schedule-admin-dashboard-maintenance.js &
+node /app/scripts/schedule-admin-dashboard-maintenance.mjs &
 SCHEDULER_PID=$!
 
 echo "[entrypoint] Starting application..."
