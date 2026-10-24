@@ -255,7 +255,7 @@ If UFW is enabled:
 
 ```bash
 sudo ufw allow OpenSSH
-sudo ufw allow 'Nginx Full'
+sudo ufw allow from 173.245.48.0/20 to any port 80,443 proto tcp  # allow each Cloudflare range (ips-v4 + ips-v6) on 80/443 — never 'Nginx Full'
 sudo ufw enable
 ```
 
