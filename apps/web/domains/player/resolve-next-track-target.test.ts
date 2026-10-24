@@ -111,7 +111,9 @@ describe("resolveNextTrackTarget", () => {
     });
   });
 
-  it("does not auto-advance through the route queue when autoplay is off", () => {
+  it("skips the route queue and falls back to random when autoplay is off", () => {
+    const randomPicker = vi.fn(() => "rand");
+
     expect(resolveNextTrackTarget({
       activePlaylistId: null,
       hasActivePlaylistContext: false,
@@ -123,8 +125,34 @@ describe("resolveNextTrackTarget", () => {
       isDockedDesktop: true,
       shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: ["r1", "r2", "r3"],
+      getRandomWatchNextId: randomPicker,
+    })).toEqual({
+      videoId: "rand",
+      playlistItemIndex: null,
+      clearPlaylist: true,
+    });
+
+    expect(randomPicker).toHaveBeenCalled();
+  });
+
+  it("still advances through the temporary queue when autoplay is off", () => {
+    expect(resolveNextTrackTarget({
+      activePlaylistId: null,
+      hasActivePlaylistContext: false,
+      playlistQueueIds: [],
+      effectivePlaylistIndex: null,
+      temporaryQueue: [createVideo("q1"), createVideo("q2")],
+      currentVideoId: "q1",
+      autoplayEnabled: false,
+      isDockedDesktop: true,
+      shouldUseRouteQueueRegardlessOfDocked: false,
+      routeAutoplayQueueIds: [],
       getRandomWatchNextId: vi.fn(() => "rand"),
-    })).toBeNull();
+    })).toEqual({
+      videoId: "q2",
+      playlistItemIndex: null,
+      clearPlaylist: true,
+    });
   });
 
   it("uses route queue when autoplay explicitly allows non-docked route queues", () => {
@@ -187,7 +215,7 @@ describe("resolveNextTrackTarget", () => {
     expect(randomPicker).not.toHaveBeenCalled();
   });
 
-  it("does not fall back to random when autoplay is off", () => {
+  it("falls back to random even when autoplay is off (manual next button)", () => {
     const randomPicker = vi.fn(() => "rand");
 
     expect(resolveNextTrackTarget({
@@ -202,8 +230,12 @@ describe("resolveNextTrackTarget", () => {
       shouldUseRouteQueueRegardlessOfDocked: false,
       routeAutoplayQueueIds: [],
       getRandomWatchNextId: randomPicker,
-    })).toBeNull();
+    })).toEqual({
+      videoId: "rand",
+      playlistItemIndex: null,
+      clearPlaylist: true,
+    });
 
-    expect(randomPicker).not.toHaveBeenCalled();
+    expect(randomPicker).toHaveBeenCalled();
   });
 });

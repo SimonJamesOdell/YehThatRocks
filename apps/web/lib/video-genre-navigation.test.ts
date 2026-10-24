@@ -19,10 +19,21 @@ describe("resolveVideoGenreNavigationTarget", () => {
     expect(target.href).toBe("/categories/doom-sludge?tab=doom");
   });
 
-  it("falls back to Rock & Alternative for generic fallback genre labels", () => {
+  it("routes the Rock / Metal catch-all bucket to its own category", () => {
     const target = resolveVideoGenreNavigationTarget("Rock / Metal");
+    expect(target.label).toBe("Rock / Metal");
+    expect(target.categoryLabel).toBe("Rock / Metal");
+    expect(target.categorySlug).toBe("rock-metal");
+    expect(target.tabId).toBe("all");
+    expect(target.href).toBe("/categories/rock-metal");
+  });
+
+  it("falls back to Rock & Alternative for genres outside the bucket system", () => {
+    const target = resolveVideoGenreNavigationTarget("Pop");
+    expect(target.label).toBe("Pop");
     expect(target.categoryLabel).toBe("Rock & Alternative");
-    expect(target.tabId).toBe("other-rock");
-    expect(target.href).toBe("/categories/rock-alternative?tab=other-rock");
+    expect(target.categorySlug).toBe("rock-alternative");
+    expect(target.tabId).toBe("all");
+    expect(target.href).toBe("/categories/rock-alternative");
   });
 });

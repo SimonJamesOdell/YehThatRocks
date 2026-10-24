@@ -161,7 +161,30 @@ describe("catalog-data-video-ingestion quality hardening", () => {
     expect(strong - weak).toBeGreaterThan(2.5);
   });
 
-  it("auto-removes when external signals are confidently non-rock", async () => {
+  it("auto-removes when stored and external genre evidence confidently agree on non-rock", async () => {
+    queryRawMock.mockResolvedValueOnce([
+      { genre: "Pop", parsedArtist: "Taylor Swift" },
+    ]);
+    queryRawUnsafeMock.mockResolvedValueOnce([
+      { genre: "Pop" },
+    ]);
+    getMusicBrainzArtistDataMock.mockResolvedValueOnce({
+      tags: [],
+      isRockOrMetal: false,
+      isDefinitelyNotRockOrMetal: false,
+      disambiguation: null,
+    });
+
+    const { videoIngestionInternals } = await import("@/lib/catalog-data-video-ingestion");
+    const decision = await videoIngestionInternals.classifyPersistedVideoGenre("abc123def45");
+
+    expect(decision.action).toBe("remove");
+    expect(decision.reason).toContain("genre-auto-remove");
+    expect(decision.proposedGenre?.toLowerCase()).toContain("pop");
+    expect(decision.confidence).toBeGreaterThanOrEqual(0.86);
+  });
+
+  it("does not auto-remove when artist_stats merely mirrors MusicBrainz for the same genre", async () => {
     queryRawMock.mockResolvedValueOnce([
       { genre: null, parsedArtist: "Taylor Swift" },
     ]);
@@ -178,10 +201,10 @@ describe("catalog-data-video-ingestion quality hardening", () => {
     const { videoIngestionInternals } = await import("@/lib/catalog-data-video-ingestion");
     const decision = await videoIngestionInternals.classifyPersistedVideoGenre("abc123def45");
 
-    expect(decision.action).toBe("remove");
-    expect(decision.reason).toContain("genre-auto-remove");
-    expect(decision.proposedGenre?.toLowerCase()).toContain("pop");
-    expect(decision.confidence).toBeGreaterThanOrEqual(0.86);
+    expect(decision.action).toBe("queue");
+    expect(decision.reason).toContain("genre-manual-review");
+    expect(decision.proposedGenre).toBeNull();
+    expect(decision.hasExternalNonRockEvidence).toBe(true);
   });
 
   it("keeps queue manual when only existing video genre is available", async () => {

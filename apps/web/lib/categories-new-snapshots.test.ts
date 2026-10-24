@@ -58,6 +58,12 @@ describe("categories-new snapshot build cache-first behavior", () => {
     getRuntimeProfilingSnapshotMock.mockReturnValue({});
     isRuntimeSqlPressureElevatedMock.mockReturnValue(false);
 
+    // The production builder paces genre writes with a 1.5s inter-genre delay to
+    // protect MySQL. These tests assert cache/DDL behavior, not pacing, so run
+    // the builds back-to-back. The module reads this at import time, and
+    // vi.resetModules() above re-imports it per test.
+    process.env.CATEGORIES_SNAPSHOT_INTER_GENRE_DELAY_MS = "0";
+
     const dbState = {
       activeBuildVersion: null as number | null,
       snapshots: new Map<string, string>(),

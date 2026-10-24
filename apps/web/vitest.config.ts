@@ -7,6 +7,13 @@ export default defineConfig({
     setupFiles: ["./test/setup.ts"],
     globals: true,
     include: ["**/*.test.ts", "**/*.test.tsx"],
+    exclude: [
+      "**/node_modules/**",
+      "**/.next/**",
+      "**/.turbo/**",
+      "**/dist/**",
+      "**/build/**",
+    ],
   },
   resolve: {
     alias: {
