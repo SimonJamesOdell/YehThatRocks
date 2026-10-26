@@ -3,10 +3,16 @@
 # with no cookies.
 #
 # Requests matching that signature WITHOUT the ytr_botok cookie are sent to a
-# small proof-of-work page instead of the app. Real browsers solve it in well
-# under a second and are never bothered again (the cookie lasts a week).
-# Scrapers that never execute JavaScript never get the cookie and never get
-# the page — regardless of which browser version they spoof.
+# small proof-of-work page instead of the app. Real browsers solve it once and
+# are never bothered again (the cookie lasts a week). Scrapers that never
+# execute JavaScript never get the cookie and never get the page — regardless
+# of which browser version they spoof.
+#
+# The page (bot-challenge.html) now reads the live difficulty from
+# GET /api/bot-challenge at solve time, so the operator can raise
+# POW_DIFFICULTY_BITS in the app container during a swarm and every fresh
+# walker instantly starts "donating" more CPU per solve — no nginx deploy
+# needed. Default difficulty is 24 bits; 28–32 is swarm mode.
 #
 # Skipped unconditionally:
 #   - Known crawlers (they never carry the resume-walk signature).

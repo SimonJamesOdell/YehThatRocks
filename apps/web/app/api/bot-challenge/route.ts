@@ -11,15 +11,24 @@ const BOTOK_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
 // Operator-tunable difficulty. Raising it during an active swarm costs bots
 // exponentially more CPU without changing the UX for a human (who solves once).
-function powDifficultyBits(): number {
-  const raw = Number(process.env.POW_DIFFICULTY_BITS ?? "18");
+//
+// This is the "volunteer computing" lever: every solve forces the client to
+// burn real CPU before it is admitted. The catalog walker solves tens of
+// thousands of times a day, so a few bits of extra difficulty turns into a
+// substantial involuntary donation of cycles to the anti-scraper fund.
+//
+// Default 24 bits (~16M hashes ≈ a second or two of a browser core, and
+// several seconds for a scripted solver per solve). During an active swarm
+// raise POW_DIFFICULTY_BITS to 28–32 to make each solve cost minutes.
+export function powDifficultyBits(): number {
+  const raw = Number(process.env.POW_DIFFICULTY_BITS ?? "24");
   if (!Number.isFinite(raw)) {
-    return 18;
+    return 24;
   }
   return Math.max(8, Math.min(40, Math.floor(raw)));
 }
 
-const POW_DIFFICULTY_BITS = powDifficultyBits();
+export const POW_DIFFICULTY_BITS = powDifficultyBits();
 
 /**
  * Verify the client-side proof-of-work: sha256("ytr-botok-v1:" + nonce) must
@@ -85,6 +94,7 @@ export async function POST(request: NextRequest) {
   recordPowSolved(request);
 
   const response = NextResponse.json({ ok: true });
+  response.headers.set("X-Ytr-Volunteer", "thanks for donating CPU cycles to the anti-scraper fund");
   response.cookies.set(BOTOK_COOKIE, signBotOkCookie(nonce), {
     httpOnly: true,
     secure: true,

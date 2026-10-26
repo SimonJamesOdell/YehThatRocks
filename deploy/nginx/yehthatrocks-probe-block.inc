@@ -29,3 +29,28 @@ location ~* (eval-stdin\.php|\.php($|\?)) {
 if ($args ~* "(allow_url_include|auto_prepend_file)") {
     return 444;
 }
+
+# AI-agent discovery probes (.well-known/mcp.json, ai-catalog.json,
+# agent-card.json, acp.json, etc.) — these are the 2026 wave of autonomous
+# agent scanners looking for tool endpoints. None of these exist here, so
+# answer with the teapot instead of waking the app.
+#
+# Anchored to exact names so the Let's Encrypt ACME challenge
+# (/.well-known/acme-challenge/...) is never shadowed.
+location ~* ^/\.well-known/(ucp|skills|poppy\.json|openid-configuration|oauth-protected-resource|oauth-authorization-server|mcp\.json|mcp/|http-message-signatures-directory|api-catalog|ai-catalog\.json|agent-skills|agent-card\.json|acp\.json)(/|$) {
+    return 418 "I'm a teapot";
+}
+
+# OpenAPI / versioned-API enumeration.
+location = /openapi.json {
+    return 418 "I'm a teapot";
+}
+location ~* ^/api/v1(/|$) {
+    return 418 "I'm a teapot";
+}
+
+# Chinese OA/CMS upload-path probes (Seeyon/ecology-style scanners) observed
+# hitting /Html/upload/file/...doc and /Files/UploadFiles/...jpg. Drop them.
+location ~* ^/(Html/upload|Files/UploadFiles)(/|$) {
+    return 444;
+}
