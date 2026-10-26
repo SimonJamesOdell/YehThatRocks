@@ -89,19 +89,27 @@ function firstDayPredicate(
   granularity: TrafficAdjustmentGranularity,
   kind: "new" | "return",
   bucketStartIso: string,
+  // The read queries select `first_day` through the `ev` derived-table alias,
+  // while the edit queries join the first-day subquery as `fs`. The previous
+  // version hardcoded `fs.` everywhere, which produced invalid SQL in the read
+  // path (`fs` is out of scope outside the derived table) and made the
+  // newVisitors / returnVisits reads silently fall back to 0.
+  alias: "fs" | "ev" = "fs",
 ): string {
+  const column = `${alias}.first_day`;
+
   if (granularity === "daily") {
     const day = toUtcDay(bucketStartIso);
-    return kind === "new" ? `fs.first_day = '${day}'` : `fs.first_day < '${day}'`;
+    return kind === "new" ? `${column} = '${day}'` : `${column} < '${day}'`;
   }
 
   if (granularity === "weekly" || granularity === "monthly") {
     const day = toUtcDay(bucketStartIso);
-    return kind === "new" ? `fs.first_day >= '${day}'` : `fs.first_day < '${day}'`;
+    return kind === "new" ? `${column} >= '${day}'` : `${column} < '${day}'`;
   }
 
   const year = new Date(bucketStartIso).getUTCFullYear();
-  return kind === "new" ? `YEAR(fs.first_day) = ${year}` : `YEAR(fs.first_day) < ${year}`;
+  return kind === "new" ? `YEAR(${column}) = ${year}` : `YEAR(${column}) < ${year}`;
 }
 
 async function hasMagazineLandingsTable(): Promise<boolean> {
@@ -143,7 +151,7 @@ async function ensureMagazineLandingsManualExclusionColumn(): Promise<void> {
 type CountRow = { c: bigint | number };
 
 async function queryCount(sql: string): Promise<number> {
-  const rows = await prisma.$queryRawUnsafe<CountRow[]>(sql).catch(() => []);
+  const rows = await prisma.$queryRawUnsafe<CountRow[]>(sql);
   const numeric = Number(rows[0]?.c ?? 0);
   return Number.isFinite(numeric) ? numeric : 0;
 }
@@ -179,7 +187,7 @@ async function readEventSeriesCurrentValue(
           ) fs ON fs.visitor_id = ae.visitor_id
           WHERE ${base} AND ae.event_type = 'page_view'
         ) ev
-        WHERE ${firstDayPredicate(granularity, "new", bucketStartIso)}
+        WHERE ${firstDayPredicate(granularity, "new", bucketStartIso, "ev")}
       `);
     case "returnVisits":
       if (granularity === "hourly") {
@@ -199,7 +207,7 @@ async function readEventSeriesCurrentValue(
           ) fs ON fs.visitor_id = ae.visitor_id
           WHERE ${base} AND ae.event_type = 'page_view'
         ) ev
-        WHERE ${firstDayPredicate(granularity, "return", bucketStartIso)}
+        WHERE ${firstDayPredicate(granularity, "return", bucketStartIso, "ev")}
       `);
     case "authEvents":
       return queryCount(`

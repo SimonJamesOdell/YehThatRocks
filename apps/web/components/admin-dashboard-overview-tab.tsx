@@ -242,9 +242,12 @@ export function AdminDashboardOverviewTab({
     originalValue: number;
     grabOffsetY: number;
     latestValue: number;
+    sequence: number;
   } | null>(null);
+  const dragSequenceRef = useRef(0);
 
   useEffect(() => {
+    dragSequenceRef.current += 1;
     activeDragRef.current = null;
     setPreview(null);
   }, [analyticsZoomLevel, trafficEditEnabled]);
@@ -272,6 +275,8 @@ export function AdminDashboardOverviewTab({
       return;
     }
 
+    dragSequenceRef.current += 1;
+
     activeDragRef.current = {
       series: meta.key,
       bucketStart: point.bucketStart,
@@ -279,6 +284,7 @@ export function AdminDashboardOverviewTab({
       originalValue: point[meta.valueKey],
       grabOffsetY: svgY - point[meta.yKey],
       latestValue: point[meta.valueKey],
+      sequence: dragSequenceRef.current,
     };
 
     try {
@@ -330,19 +336,38 @@ export function AdminDashboardOverviewTab({
 
     activeDragRef.current = null;
     const finalValue = active.latestValue;
-    setPreview(null);
-
-    if (finalValue !== active.originalValue) {
-      void onAdjustTrafficPoint({
-        series: active.series,
-        bucketStart: active.bucketStart,
-        bucketEnd: active.bucketEnd,
-        targetValue: finalValue,
-      });
+    if (finalValue === active.originalValue) {
+      setPreview(null);
+      return;
     }
+
+    const sequence = active.sequence;
+
+    // Keep the preview in place while the edit is persisted so the handle does
+    // not visibly snap back to its original position during the async POST +
+    // overview refresh. Clear it only once the edit resolves, and only if no
+    // newer drag has started in the meantime.
+    void (async () => {
+      try {
+        await onAdjustTrafficPoint({
+          series: active.series,
+          bucketStart: active.bucketStart,
+          bucketEnd: active.bucketEnd,
+          targetValue: finalValue,
+        });
+      } catch {
+        // The panel already surfaced the failure through its save message; the
+        // finally below restores the original position.
+      } finally {
+        if (dragSequenceRef.current === sequence) {
+          setPreview(null);
+        }
+      }
+    })();
   };
 
   const cancelTrafficDrag = () => {
+    dragSequenceRef.current += 1;
     activeDragRef.current = null;
     setPreview(null);
   };
@@ -525,6 +550,8 @@ export function AdminDashboardOverviewTab({
           </button>
           <button
             type="button"
+            data-testid="traffic-edit-toggle"
+            aria-pressed={trafficEditEnabled}
             onClick={onToggleTrafficEdit}
             style={{
               borderRadius: 999,
@@ -665,6 +692,7 @@ export function AdminDashboardOverviewTab({
                     return (
                       <circle
                         key={`${meta.key}-handle`}
+                        data-testid={`traffic-handle-${meta.key}`}
                         cx={point.x}
                         cy={y}
                         r={11}

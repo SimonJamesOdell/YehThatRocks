@@ -409,6 +409,9 @@ export function AdminDashboardPanel({
       await loadOverview(true);
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "Traffic edit failed.");
+      // Re-throw so the overview tab can restore the dragged handle to its
+      // original position instead of leaving the preview pinned.
+      throw error;
     }
   }, [analyticsZoomLevel, loadOverview]);
 
