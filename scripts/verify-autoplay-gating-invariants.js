@@ -37,6 +37,7 @@ const files = mapRelativeFiles(ROOT, {
   nextTrackTargetTest: "apps/web/domains/player/resolve-next-track-target.test.ts",
   preferencesShared: "apps/web/lib/player-preferences-shared.ts",
   preferencesSharedTest: "apps/web/lib/player-preferences-shared.test.ts",
+  playerCore: "apps/web/components/player-experience-core.tsx",
 });
 
 function countOccurrences(source, needle) {
@@ -52,6 +53,7 @@ function main() {
       nextTrackTargetTest: files.nextTrackTargetTest,
       preferencesShared: files.preferencesShared,
       preferencesSharedTest: files.preferencesSharedTest,
+      playerCore: files.playerCore,
     },
     failures,
     ROOT,
@@ -61,6 +63,7 @@ function main() {
   const nextTrackTest = readFileStrict(files.nextTrackTargetTest, ROOT);
   const preferencesSource = readFileStrict(files.preferencesShared, ROOT);
   const preferencesTest = readFileStrict(files.preferencesSharedTest, ROOT);
+  const playerSource = readFileStrict(files.playerCore, ROOT);
 
   // ── 1. Only the route queue may be gated on autoplayEnabled ────────────
   const autoplayGate = "if (!options.autoplayEnabled)";
@@ -128,6 +131,32 @@ function main() {
     preferencesTest,
     "does not over-match other subgenres that share the Rock / Metal catch-all bucket",
     "doesVideoMatchAutoplayGenres test asserts catch-all over-match regression",
+    failures,
+  );
+
+  // ── 3. Auth state changes must not recreate the player / autoplay a paused video ──
+  assertContains(
+    playerSource,
+    "const didGainAuthSinceLastRun = !wasLoggedInRef.current && isLoggedIn;",
+    "player detects the logged-out -> logged-in (session recovery) transition",
+    failures,
+  );
+  assertContains(
+    playerSource,
+    "if (didLoseAuthSinceLastRun || didGainAuthSinceLastRun)",
+    "player suppresses autoplay for both session loss and session recovery",
+    failures,
+  );
+  assertContains(
+    playerSource,
+    "[currentVideo.id, playerHostMode, playerReloadNonce]);",
+    "player creation effect no longer recreates the player on auth state changes",
+    failures,
+  );
+  assertNotContains(
+    playerSource,
+    "[currentVideo.id, isLoggedIn, playerHostMode, playerReloadNonce]);",
+    "player creation effect must not depend on isLoggedIn (auth flips must not autoplay a paused video)",
     failures,
   );
 

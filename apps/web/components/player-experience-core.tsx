@@ -2478,21 +2478,27 @@ export function PlayerExperience({
   }
 
   useEffect(() => {
-    // A logged-out transition re-runs this effect and used to autoplay the
-    // previous video behind the admin overlay. Detect the transition and
-    // suppress autoplay for this recreation; the flag clears on the next
-    // genuine video change.
+    // Auth-transition tracking. The player effect used to depend on isLoggedIn
+    // so a background auth probe (or the recovery poll) flipping the session
+    // state recreated the player, and onReady autoplayed the previously loaded
+    // — often paused — video behind whatever page was on screen, including the
+    // admin panel. Track both directions here and suppress the next
+    // programmatic start until the user explicitly plays or the video changes.
+    // The player effect below intentionally does NOT depend on isLoggedIn.
     const didLoseAuthSinceLastRun = wasLoggedInRef.current && !isLoggedIn;
+    const didGainAuthSinceLastRun = !wasLoggedInRef.current && isLoggedIn;
     const didChangeVideoSinceLastRun = lastPlayerVideoIdRef.current !== null
       && lastPlayerVideoIdRef.current !== currentVideo.id;
     wasLoggedInRef.current = isLoggedIn;
     lastPlayerVideoIdRef.current = currentVideo.id;
-    if (didLoseAuthSinceLastRun) {
+    if (didLoseAuthSinceLastRun || didGainAuthSinceLastRun) {
       persistSuppressAutoplayAfterAuthLoss(true);
     } else if (didChangeVideoSinceLastRun) {
       persistSuppressAutoplayAfterAuthLoss(false);
     }
+  }, [isLoggedIn, currentVideo.id]);
 
+  useEffect(() => {
     setIsPlayerReady(false);
     setIsPlaying(false);
     setCurrentTime(0);
@@ -3089,7 +3095,7 @@ export function PlayerExperience({
       clearStuckPlaybackWatchdogTimer();
       clearMidPlaybackBufferingCheck();
     };
-  }, [currentVideo.id, isLoggedIn, playerHostMode, playerReloadNonce]);
+  }, [currentVideo.id, playerHostMode, playerReloadNonce]);
 
   useEffect(() => {
     clearPlayerLoadRefreshHintTimer();
