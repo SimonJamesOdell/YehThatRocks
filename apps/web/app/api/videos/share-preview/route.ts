@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getVideoForSharing, normalizeYouTubeVideoId } from "@/lib/catalog-data";
+import { decoyVideoMetadata, isDecoyVideoId } from "@/lib/decoy-artists";
 
 type OEmbedPayload = {
   title?: string;
@@ -42,6 +43,13 @@ async function fetchYouTubeOEmbed(videoId: string): Promise<{ title: string; cha
 
 export async function GET(request: NextRequest) {
   const rawVideoId = request.nextUrl.searchParams.get("v") ?? "";
+
+  // Manufactured decoy IDs are answered synthetically — never forwarded to
+  // YouTube's oEmbed (which would bill us an upstream call per fake ID).
+  if (isDecoyVideoId(rawVideoId)) {
+    return NextResponse.json({ video: decoyVideoMetadata(rawVideoId) });
+  }
+
   const videoId = normalizeYouTubeVideoId(rawVideoId);
 
   if (!videoId) {

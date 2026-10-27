@@ -6,6 +6,7 @@ import {
   isStaticAssetPath,
   isMobileOrTabletRequest,
   isMetadataCrawlerRequest,
+  isConfidentWalkerRequest,
 } from "@/proxy";
 
 const MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148";
@@ -159,5 +160,51 @@ describe("proxy security headers", () => {
   it("sets Referrer-Policy", () => {
     const res = proxy(makeRequest("/", { "user-agent": DESKTOP_UA }));
     expect(res.headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
+  });
+});
+
+describe("confident walker decoy dump", () => {
+  const WALKER_PATH = "/artist/some-slug?letter=A&resume=1&v=dQw4w9WgXcQ";
+
+  it("detects the alphabetical-walk signature", () => {
+    expect(isConfidentWalkerRequest(makeRequest(WALKER_PATH, { "user-agent": DESKTOP_UA }))).toBe(true);
+  });
+
+  it("ignores partial signatures and non-artist routes", () => {
+    expect(isConfidentWalkerRequest(makeRequest("/artist/some-slug", { "user-agent": DESKTOP_UA }))).toBe(false);
+    expect(isConfidentWalkerRequest(makeRequest("/artist/some-slug?letter=A", { "user-agent": DESKTOP_UA }))).toBe(false);
+    expect(isConfidentWalkerRequest(makeRequest("/artist/some-slug?letter=A&resume=1", { "user-agent": DESKTOP_UA }))).toBe(false);
+    expect(isConfidentWalkerRequest(makeRequest("/new?letter=A&resume=1&v=x", { "user-agent": DESKTOP_UA }))).toBe(false);
+    expect(isConfidentWalkerRequest(makeRequest(WALKER_PATH, { "user-agent": DESKTOP_UA }, "POST"))).toBe(false);
+  });
+
+  it("ignores signed-in users", () => {
+    expect(isConfidentWalkerRequest(makeRequest(WALKER_PATH, { "user-agent": DESKTOP_UA, cookie: "ytr_access=abc" }))).toBe(false);
+    expect(isConfidentWalkerRequest(makeRequest(WALKER_PATH, { "user-agent": DESKTOP_UA, cookie: "ytr_refresh=abc" }))).toBe(false);
+  });
+
+  it("returns a JSON decoy dump for a confident walker", async () => {
+    const previous = process.env.DECOY_DUMP_BYTES;
+    process.env.DECOY_DUMP_BYTES = "16384";
+    try {
+      const res = proxy(makeRequest(WALKER_PATH, { "user-agent": DESKTOP_UA }));
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/json");
+      expect(res.headers.get("X-Robots-Tag")).toContain("noindex");
+      const body = await res.text();
+      expect(JSON.parse(body)).toBeInstanceOf(Array);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.DECOY_DUMP_BYTES;
+      } else {
+        process.env.DECOY_DUMP_BYTES = previous;
+      }
+    }
+  });
+
+  it("passes a normal artist page through unchanged", () => {
+    const res = proxy(makeRequest("/artist/some-slug?letter=A", { "user-agent": DESKTOP_UA }));
+    const contentType = res.headers.get("content-type");
+    expect(contentType ?? "").not.toContain("application/json");
   });
 });

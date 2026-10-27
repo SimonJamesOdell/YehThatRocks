@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { buildDecoyCatalogDump } from "@/lib/decoy-artists";
+
 /**
  * Proxy middleware (Next.js 16 `proxy.ts`).
  *
@@ -42,6 +44,69 @@ function hasPlausibleBotOkCookie(request: NextRequest): boolean {
     && /^[0-9a-f]{1,128}$/i.test(parts[0] ?? "")
     && /^\d{1,16}$/.test(parts[1] ?? "")
   );
+}
+
+/**
+ * The catalog walker's tell: GET /artist/<slug>?letter=X&resume=1&v=<id> with
+ * no session cookies. This exact combination is what the nginx challenge
+ * already flags, so by the time a request reaches the proxy it has either
+ * solved the proof-of-work (real walker) or is a rare signed-in deep-link
+ * (excluded below). Confident enough to answer with the decoy dump.
+ */
+const WALKER_DECOY_DEFAULT_BYTES = 256 * 1024;
+const WALKER_DECOY_MIN_BYTES = 16 * 1024;
+const WALKER_DECOY_MAX_BYTES = 64 * 1024 * 1024;
+
+function isWalkerDecoyDumpEnabled(): boolean {
+  const raw = process.env.DECOY_DUMP_ENABLED ?? "1";
+  return raw !== "0" && raw !== "false";
+}
+
+function walkerDecoyTargetBytes(): number {
+  const raw = Number(process.env.DECOY_DUMP_BYTES ?? WALKER_DECOY_DEFAULT_BYTES);
+  if (!Number.isFinite(raw)) {
+    return WALKER_DECOY_DEFAULT_BYTES;
+  }
+  return Math.max(WALKER_DECOY_MIN_BYTES, Math.min(WALKER_DECOY_MAX_BYTES, Math.floor(raw)));
+}
+
+export function isConfidentWalkerRequest(request: NextRequest): boolean {
+  if (request.method !== "GET") {
+    return false;
+  }
+
+  const { pathname } = request.nextUrl;
+  if (!pathname.startsWith("/artist/")) {
+    return false;
+  }
+
+  const params = request.nextUrl.searchParams;
+  const letter = params.get("letter");
+  const resume = params.get("resume");
+  const v = params.get("v");
+  if (!letter || !v || resume !== "1") {
+    return false;
+  }
+
+  // Signed-in users are never the walker (nginx also skips them).
+  if (request.cookies.get("ytr_access") || request.cookies.get("ytr_refresh")) {
+    return false;
+  }
+
+  return true;
+}
+
+function buildWalkerDecoyDumpResponse(): NextResponse {
+  const body = buildDecoyCatalogDump(walkerDecoyTargetBytes());
+  return new NextResponse(body, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Robots-Tag": "noindex, nofollow",
+      "X-Ytr-Volunteer": "enjoy the full catalog, friend",
+    },
+  });
 }
 
 /**
@@ -124,6 +189,13 @@ export function proxy(request: NextRequest) {
   // for _next/static can fail under Turbopack HMR when chunk hashes change.
   if (pathname.startsWith("/_next/static") || pathname.startsWith("/_next/image")) {
     return NextResponse.next();
+  }
+
+  // Answer a confident catalog walker with one big blob of synthetic catalog
+  // instead of the real page. The walker gets its "efficient download", but
+  // every slug and video ID in it is manufactured.
+  if (isWalkerDecoyDumpEnabled() && isConfidentWalkerRequest(request)) {
+    return withSecurityHeaders(buildWalkerDecoyDumpResponse(), pathname);
   }
 
   const requestHeaders = new Headers(request.headers);
