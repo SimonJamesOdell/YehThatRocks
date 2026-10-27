@@ -184,8 +184,10 @@ describe("confident walker decoy dump", () => {
   });
 
   it("returns a JSON decoy dump for a confident walker", async () => {
-    const previous = process.env.DECOY_DUMP_BYTES;
+    const previousBytes = process.env.DECOY_DUMP_BYTES;
+    const previousDrip = process.env.DECOY_DRIP_ENABLED;
     process.env.DECOY_DUMP_BYTES = "16384";
+    process.env.DECOY_DRIP_ENABLED = "0";
     try {
       const res = proxy(makeRequest(WALKER_PATH, { "user-agent": DESKTOP_UA }));
       expect(res.status).toBe(200);
@@ -194,10 +196,15 @@ describe("confident walker decoy dump", () => {
       const body = await res.text();
       expect(JSON.parse(body)).toBeInstanceOf(Array);
     } finally {
-      if (previous === undefined) {
+      if (previousBytes === undefined) {
         delete process.env.DECOY_DUMP_BYTES;
       } else {
-        process.env.DECOY_DUMP_BYTES = previous;
+        process.env.DECOY_DUMP_BYTES = previousBytes;
+      }
+      if (previousDrip === undefined) {
+        delete process.env.DECOY_DRIP_ENABLED;
+      } else {
+        process.env.DECOY_DRIP_ENABLED = previousDrip;
       }
     }
   });
