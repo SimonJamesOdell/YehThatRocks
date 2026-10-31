@@ -13,6 +13,8 @@ describe("isBotUserAgent", () => {
       "Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)",
       "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
       "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+      // Meta's newer crawler — full-site + catalog crawls, spoofs browser tokens
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 (compatible; meta-webindexer/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler))",
     ];
 
     for (const ua of bots) {

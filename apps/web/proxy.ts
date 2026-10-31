@@ -21,7 +21,7 @@ import { buildWalkerDumpResponse, isWalkerDumpEnabled } from "@/lib/walker-dump"
  */
 
 const MOBILE_OR_TABLET_USER_AGENT_PATTERN = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Windows Phone|Opera Mini|Mobile|Tablet|Kindle|Silk|PlayBook/i;
-const METADATA_CRAWLER_USER_AGENT_PATTERN = /facebookexternalhit|facebot|twitterbot|linkedinbot|slackbot|discordbot|whatsapp|telegrambot|googlebot|google-inspectiontool|adsbot-google|bingbot|bingpreview|duckduckbot|applebot/i;
+const METADATA_CRAWLER_USER_AGENT_PATTERN = /facebookexternalhit|facebot|twitterbot|linkedinbot|slackbot|discordbot|whatsapp|telegrambot|googlebot|google-inspectiontool|adsbot-google|bingbot|bingpreview|duckduckbot|applebot|meta-webindexer/i;
 
 /**
  * Emergency "I'm under attack" mode. When enabled, cold clients (no `ytr_botok`
@@ -48,10 +48,15 @@ function hasPlausibleBotOkCookie(request: NextRequest): boolean {
 
 /**
  * The catalog walker's tell: GET /artist/<slug>?letter=X&resume=1&v=<id> with
- * no session cookies. This exact combination is what the nginx challenge
- * already flags, so by the time a request reaches the proxy it has either
- * solved the proof-of-work (real walker) or is a rare signed-in deep-link
- * (excluded below). Confident enough to answer with the decoy dump.
+ * no session cookies and no crawler user-agent. This exact combination is what
+ * the nginx challenge already flags, so by the time a request reaches the
+ * proxy it has either solved the proof-of-work (real walker) or is a rare
+ * signed-in deep-link (excluded below).
+ *
+ * Metadata crawlers (Meta webindexer, Googlebot, Bingbot, DuckDuckBot, …) are
+ * explicitly NOT the walker: they follow the site's own letter+resume artist
+ * links, and the nginx challenge already skips them. Serving them the decoy
+ * dump would poison search/social indexing, so they get real pages.
  */
 export function isConfidentWalkerRequest(request: NextRequest): boolean {
   if (request.method !== "GET") {
@@ -60,6 +65,11 @@ export function isConfidentWalkerRequest(request: NextRequest): boolean {
 
   const { pathname } = request.nextUrl;
   if (!pathname.startsWith("/artist/")) {
+    return false;
+  }
+
+  // Metadata crawlers are exempt — never answer them with the decoy dump.
+  if (isMetadataCrawlerRequest(request)) {
     return false;
   }
 

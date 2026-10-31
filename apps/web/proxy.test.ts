@@ -183,6 +183,21 @@ describe("confident walker decoy dump", () => {
     expect(isConfidentWalkerRequest(makeRequest(WALKER_PATH, { "user-agent": DESKTOP_UA, cookie: "ytr_refresh=abc" }))).toBe(false);
   });
 
+  it("ignores metadata crawlers that follow the site's own links", () => {
+    const metaWebindexer = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 (compatible; meta-webindexer/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler))";
+    expect(isConfidentWalkerRequest(makeRequest(WALKER_PATH, { "user-agent": metaWebindexer }))).toBe(false);
+    expect(isConfidentWalkerRequest(makeRequest(WALKER_PATH, { "user-agent": CRAWLER_UA }))).toBe(false);
+    expect(isConfidentWalkerRequest(makeRequest(WALKER_PATH, { "user-agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)" }))).toBe(false);
+    expect(isConfidentWalkerRequest(makeRequest(WALKER_PATH, { "user-agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)" }))).toBe(false);
+  });
+
+  it("does not serve the decoy dump to metadata crawlers", () => {
+    const metaWebindexer = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 (compatible; meta-webindexer/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler))";
+    const res = proxy(makeRequest(WALKER_PATH, { "user-agent": metaWebindexer }));
+    const contentType = res.headers.get("content-type");
+    expect(contentType ?? "").not.toContain("application/json");
+  });
+
   it("returns a JSON decoy dump for a confident walker", async () => {
     const previousBytes = process.env.DECOY_DUMP_BYTES;
     const previousDrip = process.env.DECOY_DRIP_ENABLED;

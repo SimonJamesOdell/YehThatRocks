@@ -30,6 +30,7 @@ const CRAWLER_FRAGMENTS = [
   "linkedinbot",
   "applebot",
   "amazonbot",
+  "meta-webindexer",
 ];
 
 export function isBotUserAgent(userAgent: string | null | undefined): boolean {

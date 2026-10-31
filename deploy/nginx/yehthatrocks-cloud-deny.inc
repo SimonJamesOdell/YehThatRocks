@@ -90,3 +90,19 @@ deny 198.58.96.0/19;
 # .env, phpunit eval-stdin RCE, Consul/Vault/WordPress probes.
 # Observed 2026-08-28 from 185.177.72.54/.9/.22/.23/.24/.100.
 deny 185.177.72.0/24;
+
+# ── Oculus Networks (AS398781) ─────────────────────────────────
+# Datacenter proxy host. Runs a distributed crawler (Firefox/151.0
+# UA on Mac 10.15) scraping the video-list pages (/history, /playlists,
+# /new, /top100). Its prefixes are scattered /24s that rotate weekly, so
+# this is best-effort. The surrounding /16s are shared with unrelated
+# networks (e.g. 139.84.0.0/16 is LaSalle University), so only the
+# confirmed Oculus /24s are denied. Observed 2026-10-29..30.
+deny 139.84.112.0/24;
+deny 139.84.113.0/24;
+deny 139.100.95.0/24;
+deny 139.100.154.0/24;
+deny 139.100.156.0/24;
+deny 161.104.228.0/24;
+deny 161.104.237.0/24;
+deny 203.89.97.0/24;
