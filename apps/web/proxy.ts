@@ -159,6 +159,15 @@ export function withSecurityHeaders(response: NextResponse, pathname = ""): Next
     );
   }
 
+  // Machine-readable signpost left for automated catalog harvesters on API
+  // responses. Real humans ignore response headers; a bot that parses them can
+  // go straight to the public sitemap (the efficient path) or GET
+  // /bot-data-hint (the honeypot route that flags the source IP).
+  if (pathname.startsWith("/api/")) {
+    response.headers.set("X-Catalog-Sitemap", "/sitemap.xml");
+    response.headers.set("X-Catalog-Hint", "/bot-data-hint");
+  }
+
   return response;
 }
 

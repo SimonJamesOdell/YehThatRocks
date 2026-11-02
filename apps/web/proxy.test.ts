@@ -161,6 +161,18 @@ describe("proxy security headers", () => {
     const res = proxy(makeRequest("/", { "user-agent": DESKTOP_UA }));
     expect(res.headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
   });
+
+  it("sets catalog hint headers on API routes", () => {
+    const res = proxy(makeRequest("/api/current-video", { "user-agent": DESKTOP_UA }));
+    expect(res.headers.get("X-Catalog-Sitemap")).toBe("/sitemap.xml");
+    expect(res.headers.get("X-Catalog-Hint")).toBe("/bot-data-hint");
+  });
+
+  it("does not set catalog hint headers on non-API pages", () => {
+    const res = proxy(makeRequest("/", { "user-agent": DESKTOP_UA }));
+    expect(res.headers.get("X-Catalog-Sitemap")).toBeNull();
+    expect(res.headers.get("X-Catalog-Hint")).toBeNull();
+  });
 });
 
 describe("confident walker decoy dump", () => {

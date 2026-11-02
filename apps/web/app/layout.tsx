@@ -72,6 +72,10 @@ export default function RootLayout({
         <link rel="preconnect" href="https://www.youtube-nocookie.com" />
         <link rel="preconnect" href="https://i.ytimg.com" />
         <meta property="fb:app_id" content="1016139985071738" />
+        {/* Honeypot signpost for HTML-page scrapers: a human never follows it.
+            Any request to /bot-data-hint self-identifies as automated. */}
+        <meta name="catalog-sitemap" content="/sitemap.xml" />
+        <meta name="catalog-hint" content="/bot-data-hint" />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(buildWebSite()) }}
