@@ -96,6 +96,25 @@ WEB_IMAGE_FROM_ENV_FILE="${WEB_IMAGE_FROM_ENV_FILE//\"/}"
 WEB_IMAGE_FROM_ENV_FILE="${WEB_IMAGE_FROM_ENV_FILE//\'/}"
 WEB_IMAGE="${WEB_IMAGE:-${WEB_IMAGE_FROM_ENV_FILE:-$WEB_IMAGE_DEFAULT}}"
 
+# Persist the image that was actually deployed back to ENV_FILE so the systemd
+# unit (ExecStart `docker compose up -d`) and any future bare
+# `docker compose up -d` reconcile to the current image instead of a stale
+# WEB_IMAGE value. Runs only after a successful health check.
+persist_web_image() {
+  local image="$1"
+  if [ -z "$image" ]; then
+    echo "[deploy] WARNING: refusing to persist an empty WEB_IMAGE" >&2
+    return 0
+  fi
+
+  local tmp="${ENV_FILE}.tmp.$$"
+  # Drop any existing WEB_IMAGE= line, then append the deployed value.
+  grep -v '^WEB_IMAGE=' "$ENV_FILE" > "$tmp" 2>/dev/null || true
+  printf 'WEB_IMAGE=%s\n' "$image" >> "$tmp"
+  mv "$tmp" "$ENV_FILE"
+  echo "[deploy] persisted WEB_IMAGE=$image"
+}
+
 cleanup_docker_artifacts() {
   if [ "$CLEANUP_AFTER_DEPLOY" != "1" ]; then
     echo "[deploy] cleanup disabled"
@@ -295,6 +314,8 @@ WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" up -d --no-deps web
 echo "[deploy] verifying live health after swap: $STATUS_URL"
 if wait_for_public_health "$STATUS_URL" "$HEALTH_TIMEOUT_SEC"; then
   echo "[deploy] health check passed"
+
+  persist_web_image "$WEB_IMAGE"
 
   WEB_CONTAINER_ID="$(${COMPOSE[@]} ps -q web 2>/dev/null || true)"
   if [ -n "$WEB_CONTAINER_ID" ]; then
