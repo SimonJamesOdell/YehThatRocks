@@ -33,6 +33,32 @@ const CRAWLER_FRAGMENTS = [
   "meta-webindexer",
 ];
 
+// Unambiguous automation/client-library tokens. Real browsers never send these;
+// they come from scripts (curl, requests, headless scrapers) that call the
+// analytics endpoint directly. Kept separate from CRAWLER_FRAGMENTS because these
+// signal "not a browser at all" rather than "a known crawler".
+const AUTOMATION_UA_FRAGMENTS = [
+  "headlesschrome",
+  "phantomjs",
+  "python-requests",
+  "python-urllib",
+  "aiohttp",
+  "httpx",
+  "curl/",
+  "wget/",
+  "go-http-client",
+  "okhttp",
+  "java/",
+  "libwww-perl",
+  "node-fetch",
+  "axios/",
+  "undici",
+  "scrapy",
+  "zgrab",
+  "masscan",
+  "nikto",
+];
+
 export function isBotUserAgent(userAgent: string | null | undefined): boolean {
   const ua = (userAgent ?? "").toLowerCase().trim();
 
@@ -40,6 +66,9 @@ export function isBotUserAgent(userAgent: string | null | undefined): boolean {
   if (!ua) return true;
 
   if (CRAWLER_FRAGMENTS.some((fragment) => ua.includes(fragment))) return true;
+
+  // Script/automation libraries — never a human browser.
+  if (AUTOMATION_UA_FRAGMENTS.some((fragment) => ua.includes(fragment))) return true;
 
   // Android "K" device placeholder — a classic spoofed-mobile signature.
   if (/android \d+(?:\.\d+)?; k\b/.test(ua)) return true;

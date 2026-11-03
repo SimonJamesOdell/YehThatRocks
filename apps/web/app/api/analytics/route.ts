@@ -46,6 +46,15 @@ export async function POST(request: NextRequest) {
     return new NextResponse(null, { status: 204 });
   }
 
+  // 1b. Require a resolvable client IP in production. Requests that bypass
+  // Cloudflare/nginx (no CF-Connecting-IP / X-Real-IP / X-Forwarded-For) can't
+  // be rate-limited or behaviourally classified, so they are rejected outright.
+  // Local dev has no proxy and is exempt so analytics still works in development.
+  const clientIp = extractClientIp(request);
+  if (process.env.NODE_ENV === "production" && !clientIp) {
+    return new NextResponse(null, { status: 204 });
+  }
+
   // 2. CSRF check
   const csrfError = verifySameOrigin(request);
   if (csrfError) return csrfError;
@@ -130,7 +139,6 @@ export async function POST(request: NextRequest) {
 
   // Capture per-event bot signals for post-hoc classification. The client IP
   // is stored only as a one-way hash; the raw address is never persisted.
-  const clientIp = extractClientIp(request);
   const ipHash = clientIp ? hashClientIp(clientIp) : null;
   const rawUserAgent = request.headers.get("user-agent");
   const userAgent = rawUserAgent ? rawUserAgent.slice(0, 512) : null;

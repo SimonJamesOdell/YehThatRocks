@@ -44,4 +44,37 @@ describe("isBotUserAgent", () => {
     expect(isBotUserAgent(undefined)).toBe(true);
     expect(isBotUserAgent("")).toBe(true);
   });
+
+  it("detects automation and scripting-library UAs", () => {
+    const automation = [
+      "curl/8.7.1",
+      "Wget/1.21.4",
+      "python-requests/2.32.3",
+      "python-urllib3/2.2.2",
+      "aiohttp/3.9.5",
+      "Go-http-client/1.1",
+      "okhttp/4.12.0",
+      "node-fetch/1.0",
+      "axios/1.7.9",
+      "Java/1.8.0_201",
+      "libwww-perl/6.72",
+      "HeadlessChrome/91.0.4472.101",
+      "PhantomJS/2.1.1",
+      "Mozilla/5.0 (compatible; scrapy/2.11.0 +https://scrapy.org)",
+    ];
+
+    for (const ua of automation) {
+      expect(isBotUserAgent(ua), ua).toBe(true);
+    }
+  });
+
+  it("passes a real Linux desktop Chrome (headless fleets spoof this exact UA)", () => {
+    // This is a genuine desktop Chrome UA — the bot fleet spoofs it, but it is
+    // indistinguishable from a real Linux user, so it must NOT be hard-flagged.
+    expect(
+      isBotUserAgent(
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+      ),
+    ).toBe(false);
+  });
 });

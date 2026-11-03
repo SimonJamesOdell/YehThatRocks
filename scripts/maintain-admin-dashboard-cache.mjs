@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 
+import { buildBotClassificationSql, BOT_CLASSIFY_WINDOW_DAYS } from "./lib/bot-classifier-sql.mjs";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let prisma;
@@ -133,57 +135,25 @@ async function ensureMagazineLandingsManualExclusionColumn() {
 // ---------------------------------------------------------------------------
 // Bot-traffic classification
 //
-// A distributed botnet (residential proxies) has been inflating "unique
-// visitors" by sending a handful of analytics events per IP and then never
-// returning. The events carry a spoofed-but-plausible browser User-Agent, so
-// the reliable signal is behavioural: a "one-shot" IP — very few total events,
-// all within a short window — belonging to an anonymous, low-activity visitor.
+// A distributed botnet (residential proxies + headless browsers) has been
+// inflating "unique visitors" by sending a handful of analytics events per
+// visitor and per IP, with spoofed-but-plausible browser User-Agents. The
+// reliable signal is behavioural; the full rule set lives in
+// scripts/lib/bot-classifier-sql.mjs so the maintenance job and the one-off
+// reclassification script never drift apart.
 //
 // This recomputes is_suspected_bot for every row each run, so a real visitor
 // whose IP later accumulates more events graduates back out of the suspected
 // set. Downstream rollups and series exclude is_suspected_bot = 1 rows.
 // ---------------------------------------------------------------------------
-const BOT_ONE_SHOT_MAX_EVENTS = 5;
-const BOT_ONE_SHOT_MAX_SPAN_MINUTES = 60;
 // Only (re)classify recent traffic. The previous implementation recomputed the
 // bot flag over the entire analytics_events table every maintenance run — a
 // full-table GROUP BY plus a full-table UPDATE every 5 minutes, which was the
-// dominant source of the production CPU and memory load. One-shot bot detection
-// is a "currently active" signal, so a rolling window is sufficient; older rows
-// keep their existing flag.
-const BOT_CLASSIFY_WINDOW_DAYS = 7;
-
+// dominant source of the production CPU and memory load. The behavioural signals
+// are "currently active", so a rolling window is sufficient; older rows keep
+// their existing flag.
 async function classifySuspectedBotTraffic() {
-  const affected = await prisma.$executeRawUnsafe(`
-    UPDATE analytics_events e
-    LEFT JOIN (
-      SELECT v.visitor_id
-      FROM (
-        SELECT
-          visitor_id,
-          MAX(ip_hash) AS ip_hash,
-          COUNT(*) AS ev_count,
-          SUM(CASE WHEN user_id IS NOT NULL THEN 1 ELSE 0 END) AS authed_count
-        FROM analytics_events
-        WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${BOT_CLASSIFY_WINDOW_DAYS} DAY)
-        GROUP BY visitor_id
-      ) v
-      JOIN (
-        SELECT ip_hash
-        FROM analytics_events
-        WHERE ip_hash IS NOT NULL
-          AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${BOT_CLASSIFY_WINDOW_DAYS} DAY)
-        GROUP BY ip_hash
-        HAVING COUNT(*) <= ${BOT_ONE_SHOT_MAX_EVENTS}
-           AND TIMESTAMPDIFF(MINUTE, MIN(created_at), MAX(created_at)) <= ${BOT_ONE_SHOT_MAX_SPAN_MINUTES}
-      ) one_shot ON one_shot.ip_hash = v.ip_hash
-      WHERE v.ev_count <= ${BOT_ONE_SHOT_MAX_EVENTS}
-        AND v.authed_count = 0
-    ) bots ON bots.visitor_id = e.visitor_id
-    SET e.is_suspected_bot = (bots.visitor_id IS NOT NULL)
-    WHERE e.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${BOT_CLASSIFY_WINDOW_DAYS} DAY)
-  `);
-
+  const affected = await prisma.$executeRawUnsafe(buildBotClassificationSql(BOT_CLASSIFY_WINDOW_DAYS));
   return Number(affected ?? 0);
 }
 
