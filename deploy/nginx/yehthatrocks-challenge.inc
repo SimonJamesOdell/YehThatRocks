@@ -12,7 +12,10 @@
 # GET /api/bot-challenge at solve time, so the operator can raise
 # POW_DIFFICULTY_BITS in the app container during a swarm and every fresh
 # walker instantly starts "donating" more CPU per solve — no nginx deploy
-# needed. Default difficulty is 24 bits; 28–32 is swarm mode.
+# needed. Default difficulty is 18 bits (~0.5s); 24–28 is swarm mode. Note
+# that raising it also slows the silent background solver that runs on every
+# real visitor's first paint, so prefer Cloudflare Under Attack Mode for
+# swarm response.
 #
 # Skipped unconditionally:
 #   - Known crawlers (they never carry the resume-walk signature).

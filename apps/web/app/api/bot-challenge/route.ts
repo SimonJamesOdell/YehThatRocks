@@ -10,20 +10,25 @@ const BOTOK_COOKIE = "ytr_botok";
 const BOTOK_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
 // Operator-tunable difficulty. Raising it during an active swarm costs bots
-// exponentially more CPU without changing the UX for a human (who solves once).
+// exponentially more CPU — but NOTE: the silent background solver
+// (BotChallengeSolver, mounted in the root layout) shares this exact
+// difficulty and runs a *synchronous* JS hash loop on the main thread with a
+// 2,000,000-attempt cap (see lib/pow-client.ts). At 24+ bits that cap yields
+// only ~11% success, so normal browsers fail, never cache the solve, and
+// re-run the expensive loop on EVERY page load — freezing the page for
+// seconds each time.
 //
-// This is the "volunteer computing" lever: every solve forces the client to
-// burn real CPU before it is admitted. The catalog walker solves tens of
-// thousands of times a day, so a few bits of extra difficulty turns into a
-// substantial involuntary donation of cycles to the anti-scraper fund.
+// The default is therefore kept at 18 bits (~262K hashes ≈ half a second,
+// solved once per week), which the client budget covers comfortably.
 //
-// Default 24 bits (~16M hashes ≈ a second or two of a browser core, and
-// several seconds for a scripted solver per solve). During an active swarm
-// raise POW_DIFFICULTY_BITS to 28–32 to make each solve cost minutes.
+// To fight a JS-capable crawler swarm, prefer Cloudflare Under Attack Mode or
+// the nginx walker challenge (which stops JS-less scrapers outright) over
+// raising this knob past ~20. If you do raise it, move the silent solver off
+// the main thread first.
 export function powDifficultyBits(): number {
-  const raw = Number(process.env.POW_DIFFICULTY_BITS ?? "24");
+  const raw = Number(process.env.POW_DIFFICULTY_BITS ?? "18");
   if (!Number.isFinite(raw)) {
-    return 24;
+    return 18;
   }
   return Math.max(8, Math.min(40, Math.floor(raw)));
 }

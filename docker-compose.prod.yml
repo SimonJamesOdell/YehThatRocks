@@ -59,6 +59,11 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-noreply@example.com}
       NODE_ENV: production
+      # Bot-defense lever: proof-of-work difficulty in leading zero bits.
+      # 18 is the safe default (~0.5s solve). Raising it past ~20 also slows
+      # the silent background solver on every real visitor's first paint, so
+      # prefer Cloudflare Under Attack Mode for swarm response.
+      POW_DIFFICULTY_BITS: ${POW_DIFFICULTY_BITS:-18}
 
 volumes:
   db-data:

@@ -17,8 +17,8 @@
 # Config (env, e.g. via systemd EnvironmentFile):
 #   CF_API_TOKEN      Cloudflare API token (Zone Settings:Edit + Read)
 #   CF_ZONE_ID        zone id
-#   ATTACK_LOAD       1-min load avg >= this  => enable under_attack  (default 2.5)
-#   CALM_LOAD         1-min load avg <= this  => count as calm         (default 1.0)
+#   ATTACK_LOAD       1-min load avg >= this  => enable under_attack  (default 4.0)
+#   CALM_LOAD         1-min load avg <= this  => count as calm         (default 1.5)
 #   CALM_SAMPLES      consecutive calm samples before reverting        (default 10)
 #   BASELINE_LEVEL    security_level to restore when calm              (default high)
 #   STATE_DIR         where the calm counter lives                     (default /var/lib/cf-attack-watch)
@@ -29,8 +29,13 @@ DRY_RUN=0
 
 CF_API_TOKEN="${CF_API_TOKEN:-}"
 CF_ZONE_ID="${CF_ZONE_ID:-}"
-ATTACK_LOAD="${ATTACK_LOAD:-2.5}"
-CALM_LOAD="${CALM_LOAD:-1.0}"
+# 2-vCPU origin: the box's own cron jobs (daily-discovery, the 5-min
+# admin-dashboard cache maintenance, magazine autogen) routinely push the
+# 1-min load average to ~2.5-4. A 2.5 threshold therefore flapped
+# under_attack on/off for hours and challenged every real visitor. 4.0 only
+# trips on genuine sustained oversubscription (a real flood pushes 6-10+).
+ATTACK_LOAD="${ATTACK_LOAD:-4.0}"
+CALM_LOAD="${CALM_LOAD:-1.5}"
 CALM_SAMPLES="${CALM_SAMPLES:-10}"
 BASELINE_LEVEL="${BASELINE_LEVEL:-high}"
 STATE_DIR="${STATE_DIR:-/var/lib/cf-attack-watch}"
