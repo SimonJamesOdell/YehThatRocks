@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { vi } from "vitest";
 
 import {
   proxy,
@@ -139,6 +140,11 @@ describe("proxy mobile routing", () => {
     const res = proxy(makeRequest("/", { "user-agent": MOBILE_UA }, "POST"));
     expect(isRedirect(res)).toBe(false);
   });
+
+  it("does not redirect the /challenge route to mobile (attack-mode challenge must stay reachable)", () => {
+    const res = proxy(makeRequest("/challenge", { "user-agent": MOBILE_UA }));
+    expect(isRedirect(res)).toBe(false);
+  });
 });
 
 describe("proxy security headers", () => {
@@ -240,5 +246,54 @@ describe("confident walker decoy dump", () => {
     const res = proxy(makeRequest("/artist/some-slug?letter=A", { "user-agent": DESKTOP_UA }));
     const contentType = res.headers.get("content-type");
     expect(contentType ?? "").not.toContain("application/json");
+  });
+});
+
+describe("proxy attack mode (ATTACK_MODE=1)", () => {
+  let attackProxy: typeof proxy;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    process.env.ATTACK_MODE = "1";
+    const mod = await import("@/proxy");
+    attackProxy = mod.proxy;
+  });
+
+  afterEach(() => {
+    vi.resetModules();
+    delete process.env.ATTACK_MODE;
+  });
+
+  it("redirects a cold client to /challenge and preserves the original path", () => {
+    const res = attackProxy(makeRequest("/?v=abc123", { "user-agent": DESKTOP_UA }));
+    expect(isRedirect(res)).toBe(true);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("/challenge");
+    expect(location).toContain("next=");
+  });
+
+  it("lets a client with a plausible ytr_botok cookie through", () => {
+    const res = attackProxy(makeRequest("/", { "user-agent": DESKTOP_UA, cookie: "ytr_botok=abc:123:def" }));
+    expect(isRedirect(res)).toBe(false);
+  });
+
+  it("does not challenge signed-in users (access cookie)", () => {
+    const res = attackProxy(makeRequest("/", { "user-agent": DESKTOP_UA, cookie: "ytr_access=abc" }));
+    expect(isRedirect(res)).toBe(false);
+  });
+
+  it("does not challenge signed-in users (refresh cookie)", () => {
+    const res = attackProxy(makeRequest("/", { "user-agent": DESKTOP_UA, cookie: "ytr_refresh=abc" }));
+    expect(isRedirect(res)).toBe(false);
+  });
+
+  it("does not challenge API routes", () => {
+    const res = attackProxy(makeRequest("/api/auth/me", { "user-agent": DESKTOP_UA }));
+    expect(isRedirect(res)).toBe(false);
+  });
+
+  it("does not challenge the /challenge route itself (no redirect loop)", () => {
+    const res = attackProxy(makeRequest("/challenge", { "user-agent": DESKTOP_UA }));
+    expect(isRedirect(res)).toBe(false);
   });
 });

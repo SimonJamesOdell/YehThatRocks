@@ -29,6 +29,14 @@ const METADATA_CRAWLER_USER_AGENT_PATTERN = /facebookexternalhit|facebot|twitter
  * This is a coarse load-shedding lever; the strong HMAC verification still
  * happens at the origin (server-side trust gate) and the /challenge page issues
  * a real cookie after a genuine solve.
+ *
+ * Signed-in clients are deliberately NOT challenged: they have already proven
+ * they are human (or at least own an account) and carry `ytr_access` /
+ * `ytr_refresh` session cookies. Challenging them would bounce an idle browser
+ * session onto /challenge — a page outside the shell — and interrupt the
+ * client-side session restore (auto-login / refresh) flow, which logs users
+ * out. This mirrors the nginx walker challenge
+ * (deploy/nginx/yehthatrocks-challenge.inc), which also skips signed-in users.
  */
 const ATTACK_MODE_ENABLED = process.env.ATTACK_MODE === "1" || process.env.ATTACK_MODE === "true";
 
@@ -43,6 +51,19 @@ function hasPlausibleBotOkCookie(request: NextRequest): boolean {
     parts.length === 3
     && /^[0-9a-f]{1,128}$/i.test(parts[0] ?? "")
     && /^\d{1,16}$/.test(parts[1] ?? "")
+  );
+}
+
+/**
+ * True when the request carries auth session cookies (access or refresh). The
+ * presence of either cookie marks the client as signed-in for the attack-mode
+ * exemption — the same signal the nginx walker challenge already uses. The
+ * cookies are not verified here; that is the origin's job.
+ */
+function hasSessionCookies(request: NextRequest): boolean {
+  return Boolean(
+    request.cookies.get("ytr_access")?.value
+    || request.cookies.get("ytr_refresh")?.value,
   );
 }
 
@@ -217,6 +238,7 @@ export function proxy(request: NextRequest) {
       && !isSitemapOrRobotsRequest
       && !isMetadataCrawler
       && !isChallengeRoute
+      && !hasSessionCookies(request)
       && !hasPlausibleBotOkCookie(request);
 
     if (shouldChallenge) {
@@ -233,6 +255,7 @@ export function proxy(request: NextRequest) {
     && !isStaticAsset
     && !pathname.startsWith("/api")
     && pathname !== "/desktop-only"
+    && pathname !== "/challenge"
     && !pathname.startsWith("/m")
     && !isShareRoute
     && !isEmbedRoute
