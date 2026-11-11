@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { memo, useState } from "react";
 
 type AuthStatusRetryButtonProps = {
@@ -8,7 +7,6 @@ type AuthStatusRetryButtonProps = {
 };
 
 export const AuthStatusRetryButton = memo(function AuthStatusRetryButton({ label = "Retry auth" }: AuthStatusRetryButtonProps) {
-  const router = useRouter();
   const [isPending, setIsPending] = useState(false);
 
   function handleRetry() {
@@ -17,10 +15,11 @@ export const AuthStatusRetryButton = memo(function AuthStatusRetryButton({ label
     }
 
     setIsPending(true);
-    router.refresh();
-    window.setTimeout(() => {
-      setIsPending(false);
-    }, 400);
+    // A full document reload re-runs any Cloudflare browser challenge and
+    // re-renders server-side with the current auth cookies. A soft
+    // router.refresh() would itself be challenged and cannot recover from an
+    // expired cf_clearance.
+    window.location.reload();
   }
 
   return (

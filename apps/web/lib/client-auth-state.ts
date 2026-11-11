@@ -1,6 +1,7 @@
 "use client";
 
 import type { RefreshSessionResult } from "@/lib/client-auth-fetch";
+import { isOriginJsonResponse } from "@/lib/client-auth-fetch";
 
 export type ClientAuthProbeResult = "authenticated" | "unauthenticated" | "unavailable";
 
@@ -19,6 +20,11 @@ export type ClientAuthProbeResult = "authenticated" | "unauthenticated" | "unava
  * Only a definitive "unauthorized" verdict is reported as "unauthenticated";
  * transient failures report "unavailable" so an open admin panel is never
  * logged out by a server hiccup — the next poll simply retries.
+ *
+ * Bot-fight guard: an HTML interstitial (Cloudflare challenge, proxy error
+ * page) is never JSON, so it is classified as "unavailable" regardless of its
+ * HTTP status code. It must never be treated as "authenticated" (a 200
+ * challenge page) nor trigger a refresh based on a fake 401/403.
  */
 export async function probeClientAuthState(
   refreshSession: () => Promise<RefreshSessionResult>,
@@ -40,6 +46,12 @@ export async function probeClientAuthState(
     return "unavailable";
   }
 
+  // A non-JSON response is an interstitial, not the origin. Treat it as a
+  // transient failure and never let it influence the authenticated state.
+  if (!isOriginJsonResponse(response)) {
+    return "unavailable";
+  }
+
   if (response.status === 401 || response.status === 403) {
     const refreshResult = await refreshSession();
 
@@ -57,7 +69,7 @@ export async function probeClientAuthState(
     }
 
     response = await probe();
-    if (!response) {
+    if (!response || !isOriginJsonResponse(response)) {
       return "unavailable";
     }
   }

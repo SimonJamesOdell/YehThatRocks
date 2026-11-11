@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getRequestMetadata, recordAuthAudit } from "@/lib/auth-audit";
 import { clearAuthCookies, readAuthCookies, setAccessAuthCookie, setAuthCookies } from "@/lib/auth-cookies";
-import { isTokenValidationError, signAccessToken, signRefreshToken, verifyToken } from "@/lib/auth-jwt";
+import { signAccessToken, signRefreshToken, verifyToken } from "@/lib/auth-jwt";
 import { rotateRefreshSession } from "@/lib/auth-sessions";
 
 function isSafeRedirectTarget(next: string | null): next is string {
@@ -11,17 +11,20 @@ function isSafeRedirectTarget(next: string | null): next is string {
   return next.startsWith("/") && !next.startsWith("//");
 }
 
-function shouldClearCookiesOnFailure(error: unknown) {
-  if (isTokenValidationError(error)) return true;
-  if (!(error instanceof Error)) return false;
-  const { message } = error;
+/**
+ * See /api/auth/refresh for the rationale: only a genuinely dead session (or an
+ * invalid token) clears the auth cookies. Transient DB/rotation failures must
+ * redirect without clearing, or a healthy session is logged out by a hiccup.
+ */
+function isDeadSessionError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
   return (
-    message === "invalid signature"
-    || message === "token expired"
-    || message === "Session not found"
-    || message === "Session expired"
-    || message === "Refresh token reuse detected"
-    || message === "Session revoked"
+    error.message === "Session not found"
+    || error.message === "Session expired"
+    || error.message === "Session revoked"
   );
 }
 
@@ -36,10 +39,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL(destination, request.url));
   }
 
-  let payload: Awaited<ReturnType<typeof verifyToken>> | null = null;
-
+  let payload: Awaited<ReturnType<typeof verifyToken>>;
   try {
     payload = await verifyToken(refreshToken, "refresh");
+  } catch {
+    await recordAuthAudit({
+      action: "refresh",
+      success: false,
+      detail: "Silent refresh failed (invalid token)",
+      ...requestMeta,
+    });
+
+    const response = NextResponse.redirect(new URL(destination, request.url));
+    clearAuthCookies(response);
+    return response;
+  }
+
+  try {
     const accessToken = await signAccessToken(payload.uid, payload.email);
     const rotatedRefreshToken = await signRefreshToken(payload.uid, payload.email, payload.remember);
     await rotateRefreshSession(payload.uid, refreshToken, rotatedRefreshToken, payload.remember);
@@ -61,10 +77,8 @@ export async function GET(request: NextRequest) {
     if (error instanceof Error && error.message === "Session already rotated") {
       const response = NextResponse.redirect(new URL(destination, request.url));
 
-      if (payload) {
-        const racedAccessToken = await signAccessToken(payload.uid, payload.email);
-        setAccessAuthCookie(response, racedAccessToken);
-      }
+      const racedAccessToken = await signAccessToken(payload.uid, payload.email);
+      setAccessAuthCookie(response, racedAccessToken);
 
       await recordAuthAudit({
         action: "refresh",
@@ -76,21 +90,32 @@ export async function GET(request: NextRequest) {
       return response;
     }
 
-    const shouldClear = shouldClearCookiesOnFailure(error);
+    if (isDeadSessionError(error)) {
+      await recordAuthAudit({
+        action: "refresh",
+        success: false,
+        email: payload.email,
+        userId: payload.uid,
+        detail: "Silent refresh failed (session not found/expired/revoked)",
+        ...requestMeta,
+      });
 
+      const response = NextResponse.redirect(new URL(destination, request.url));
+      clearAuthCookies(response);
+      return response;
+    }
+
+    // Transient failure — keep cookies and redirect without clearing so the
+    // session survives a DB hiccup.
     await recordAuthAudit({
       action: "refresh",
       success: false,
-      detail: shouldClear ? "Silent refresh failed (invalid token/session)" : "Silent refresh failed (transient)",
+      email: payload.email,
+      userId: payload.uid,
+      detail: "Silent refresh failed (transient)",
       ...requestMeta,
     });
 
-    const response = NextResponse.redirect(new URL(destination, request.url));
-
-    if (shouldClear) {
-      clearAuthCookies(response);
-    }
-
-    return response;
+    return NextResponse.redirect(new URL(destination, request.url));
   }
 }

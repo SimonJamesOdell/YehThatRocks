@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestMetadata, recordAuthAudit } from "@/lib/auth-audit";
 import { clearAuthCookies, readAuthCookies, setAccessAuthCookie, setAuthCookies } from "@/lib/auth-cookies";
 import { verifySameOrigin } from "@/lib/csrf";
-import { isTokenValidationError, signAccessToken, signRefreshToken, verifyToken } from "@/lib/auth-jwt";
+import { signAccessToken, signRefreshToken, verifyToken } from "@/lib/auth-jwt";
 import { rotateRefreshSession } from "@/lib/auth-sessions";
 import { rateLimitOrResponse } from "@/lib/rate-limit";
 
@@ -15,23 +15,24 @@ const HTTP_UNAUTHORIZED = 401;
 const REFRESH_RATE_LIMIT = 30;
 const REFRESH_RATE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 
-function shouldClearCookiesOnRefreshFailure(error: unknown) {
-  if (isTokenValidationError(error)) {
-    return true;
-  }
-
+/**
+ * Only these session-rotation failures mean "the session is dead": clear the
+ * cookies and return 401 so the client performs a definitive sign-out. Every
+ * other rotation failure (DB unreachable, transaction timeout, serialisation
+ * error, …) is transient — the refresh token may still be valid, and clearing
+ * cookies there would log a healthy session out because of a hiccup. During
+ * bot-fight mode the origin is under load, which is exactly when transient DB
+ * failures happen, so this distinction is load-bearing.
+ */
+function isDeadSessionError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
   }
 
-  const message = error.message;
   return (
-    message === "invalid signature"
-    || message === "token expired"
-    || message === "Session not found"
-    || message === "Session expired"
-    || message === "Refresh token reuse detected"
-    || message === "Session revoked"
+    error.message === "Session not found"
+    || error.message === "Session expired"
+    || error.message === "Session revoked"
   );
 }
 
@@ -58,7 +59,6 @@ export async function POST(request: NextRequest) {
   }
 
   const { refreshToken } = readAuthCookies(request);
-  let payload: Awaited<ReturnType<typeof verifyToken>> | null = null;
 
   if (!refreshToken) {
     // Do NOT write an auth-audit row here. A request with no token carries no
@@ -68,14 +68,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing refresh token" }, { status: HTTP_UNAUTHORIZED });
   }
 
+  // Verify the token in isolation. A verification failure is a definitive
+  // sign-out: the token is malformed/expired/tampered with and must never be
+  // trusted again.
+  let payload: Awaited<ReturnType<typeof verifyToken>>;
   try {
     payload = await verifyToken(refreshToken, "refresh");
+  } catch {
+    await recordAuthAudit({
+      action: "refresh",
+      success: false,
+      detail: "Refresh failed (invalid token)",
+      ...requestMeta,
+    });
+
+    const response = NextResponse.json({ error: "Invalid refresh token" }, { status: HTTP_UNAUTHORIZED });
+    clearAuthCookies(response);
+    return response;
+  }
+
+  try {
     const accessToken = await signAccessToken(payload.uid, payload.email);
     const rotatedRefreshToken = await signRefreshToken(payload.uid, payload.email, payload.remember);
     await rotateRefreshSession(payload.uid, refreshToken, rotatedRefreshToken, payload.remember);
-    const response = NextResponse.json({ ok: true });
 
+    const response = NextResponse.json({ ok: true });
     setAuthCookies(response, accessToken, rotatedRefreshToken, payload.remember);
+
     await recordAuthAudit({
       action: "refresh",
       success: true,
@@ -89,11 +108,9 @@ export async function POST(request: NextRequest) {
     if (error instanceof Error && error.message === "Session already rotated") {
       const response = NextResponse.json({ ok: true, raced: true });
 
-      if (payload) {
-        // Preserve auth for the in-flight request while another tab/request finishes rotation.
-        const racedAccessToken = await signAccessToken(payload.uid, payload.email);
-        setAccessAuthCookie(response, racedAccessToken);
-      }
+      // Preserve auth for the in-flight request while another tab/request finishes rotation.
+      const racedAccessToken = await signAccessToken(payload.uid, payload.email);
+      setAccessAuthCookie(response, racedAccessToken);
 
       await recordAuthAudit({
         action: "refresh",
@@ -104,23 +121,33 @@ export async function POST(request: NextRequest) {
       return response;
     }
 
-    const shouldClearCookies = shouldClearCookiesOnRefreshFailure(error);
+    if (isDeadSessionError(error)) {
+      await recordAuthAudit({
+        action: "refresh",
+        success: false,
+        email: payload.email,
+        userId: payload.uid,
+        detail: "Refresh failed (session not found/expired/revoked)",
+        ...requestMeta,
+      });
 
+      const response = NextResponse.json({ error: "Invalid refresh token" }, { status: HTTP_UNAUTHORIZED });
+      clearAuthCookies(response);
+      return response;
+    }
+
+    // Transient failure (DB hiccup, transaction timeout, etc.). The refresh
+    // token may still be valid, so keep the session cookies and return 503 —
+    // the client treats this as "unavailable" and retries on the next poll.
     await recordAuthAudit({
       action: "refresh",
       success: false,
-      detail: shouldClearCookies ? "Refresh failed (invalid token/session)" : "Refresh failed (transient)",
+      email: payload.email,
+      userId: payload.uid,
+      detail: "Refresh failed (transient)",
       ...requestMeta,
     });
 
-    const response = shouldClearCookies
-      ? NextResponse.json({ error: "Invalid refresh token" }, { status: HTTP_UNAUTHORIZED })
-      : NextResponse.json({ error: "Refresh temporarily unavailable" }, { status: 503 });
-
-    if (shouldClearCookies) {
-      clearAuthCookies(response);
-    }
-
-    return response;
+    return NextResponse.json({ error: "Refresh temporarily unavailable" }, { status: 503 });
   }
 }

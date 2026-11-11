@@ -20,6 +20,13 @@ function jsonResponse(status: number) {
   );
 }
 
+function htmlResponse(status: number) {
+  return new Response("<html><body>Cloudflare challenge</body></html>", {
+    status,
+    headers: { "Content-Type": "text/html; charset=UTF-8" },
+  });
+}
+
 describe("refreshAuthSession", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
   let clockMs: number;
@@ -81,6 +88,24 @@ describe("refreshAuthSession", () => {
     vi.setSystemTime(new Date(clockMs + TRANSIENT_BACKOFF_MS));
     fetchMock.mockResolvedValueOnce(jsonResponse(200));
     await expect(refreshAuthSession()).resolves.toBe("ok");
+  });
+
+  it("treats a 200 HTML challenge page as unavailable, never ok", async () => {
+    fetchMock.mockResolvedValueOnce(htmlResponse(200));
+
+    await expect(refreshAuthSession()).resolves.toBe("unavailable");
+  });
+
+  it("treats a 401 HTML challenge page as unavailable, never unauthorized", async () => {
+    fetchMock.mockResolvedValueOnce(htmlResponse(401));
+
+    await expect(refreshAuthSession()).resolves.toBe("unavailable");
+  });
+
+  it("treats a 403 HTML challenge page as unavailable", async () => {
+    fetchMock.mockResolvedValueOnce(htmlResponse(403));
+
+    await expect(refreshAuthSession()).resolves.toBe("unavailable");
   });
 
   it("shares one in-flight refresh across concurrent callers", async () => {

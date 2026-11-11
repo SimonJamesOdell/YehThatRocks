@@ -76,7 +76,7 @@ import { PLAYLISTS_UPDATED_EVENT, RIGHT_RAIL_MODE_EVENT, PLAYLIST_RAIL_SYNC_EVEN
 import { AUTO_LOGIN_SUPPRESS_ONCE_KEY, PENDING_VIDEO_SELECTION_KEY } from "@/lib/storage-keys";
 import { buildOptimisticVideoFromPendingSelection } from "@/lib/pending-video-selection";
 import { publishAuthStateChange } from "@/lib/auth-sync";
-import type { RefreshSessionResult } from "@/lib/client-auth-fetch";
+import { classifyRefreshResponse, type RefreshSessionResult } from "@/lib/client-auth-fetch";
 import { probeClientAuthState } from "@/lib/client-auth-state";
 import { applyRuntimeBootstrapPatches } from "@/lib/runtime-bootstrap";
 import { parseJsonOrNull } from "@/lib/parse-json";
@@ -371,15 +371,11 @@ function ShellDynamicInner({
           body: "{}",
         });
 
-        if (response.ok) {
-          return "ok";
-        }
-
-        // The refresh route only answers 401 when the refresh token is
-        // invalid/expired/revoked (and it clears the auth cookies). Every
-        // other failure (503/500/network) is transient and the session may
-        // still be valid, so callers must not treat it as a sign-out.
-        return response.status === 401 ? "unauthorized" : "unavailable";
+        // Classify strictly: an HTML challenge interstitial (Cloudflare
+        // bot-fight / Under Attack Mode) must never read as "ok" or
+        // "unauthorized". This local refresh has no backoff so checkAuthState's
+        // one short re-probe can still confirm a definitive sign-out.
+        return classifyRefreshResponse(response);
       } catch {
         return "unavailable";
       }
@@ -921,29 +917,37 @@ function ShellDynamicInner({
     let cancelled = false;
 
     const tryAutoLogin = async () => {
-      // Step 1: Try refreshing the existing session (silent refresh).
-      try {
-        const refreshRes = await fetch("/api/auth/refresh", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
-        });
-        if (!cancelled && refreshRes.ok) {
-          setIsAuthenticated(true);
-          setAuthStatus("clear");
-          setAuthStatusMessage(null);
-          didArriveOnMagazineRouteRef.current = false;
-          publishAuthStateChange("authenticated");
-          router.refresh();
-          return;
-        }
-      } catch {
-        // Refresh failed — fall through to anonymous account creation.
+      // Try restoring the session via the refresh token. refreshAuthSession
+      // classifies HTML challenge interstitials as "unavailable" (never a fake
+      // "ok"), so a Cloudflare bot-fight challenge cannot masquerade as a
+      // successful restore.
+      const result = await refreshAuthSession();
+      if (cancelled) {
+        return;
       }
 
-      // Brand-new visitors stay unauthenticated — the welcome modal handles
-      // onboarding and account creation explicitly.
+      if (result === "ok") {
+        setIsAuthenticated(true);
+        setAuthStatus("clear");
+        setAuthStatusMessage(null);
+        didArriveOnMagazineRouteRef.current = false;
+        publishAuthStateChange("authenticated");
+        router.refresh();
+        return;
+      }
+
+      if (result === "unauthorized") {
+        // No recoverable session (missing/invalid/revoked refresh token).
+        // Brand-new visitors stay unauthenticated — the welcome modal handles
+        // onboarding and account creation explicitly.
+        return;
+      }
+
+      // Transient failure (network hiccup, server update, or a bot-fight
+      // challenge). Hand the session over to the auth-recovery poll, which
+      // keeps retrying with the shared backoff until it restores or observes
+      // a definitive sign-out.
+      try { window.sessionStorage.setItem("ytr:auth-recovery", "1"); } catch { /* quota */ }
     };
 
     void tryAutoLogin();
@@ -951,7 +955,7 @@ function ShellDynamicInner({
     return () => {
       cancelled = true;
     };
-  }, [isLoggedIn, router]);
+  }, [isLoggedIn, router, refreshAuthSession]);
   useEffect(() => {
     if (authStatus !== "unavailable" || !authStatusMessage) {
       setIsAuthUnavailableDialogDismissed(false);
@@ -1503,17 +1507,18 @@ function ShellDynamicInner({
     setDeniedPlaybackMessage(null);
     setForcedUnavailableMessage(null);
   }, [pathname, searchParamsKey]);
-  const retryAuthStateCheck = useCallback(async (options?: { showDialogOnUnavailable?: boolean }) => {
+  const retryAuthStateCheck = useCallback(() => {
     if (isRetryingAuthStatus) {
       return;
     }
     setIsRetryingAuthStatus(true);
-    try {
-      await checkAuthState({ showDialogOnUnavailable: options?.showDialogOnUnavailable === true });
-    } finally {
-      setIsRetryingAuthStatus(false);
-    }
-  }, [checkAuthState, isRetryingAuthStatus]);
+    // A full document reload re-runs any Cloudflare browser challenge and
+    // re-renders the shell server-side with the current cookies. A soft
+    // router.refresh() would itself be challenged and can never recover from
+    // an expired cf_clearance, which is exactly the "auth unavailable" state
+    // that needs manual recovery.
+    window.location.reload();
+  }, [isRetryingAuthStatus]);
   useEffect(() => {
     if (authStatus !== "unavailable" || !authStatusMessage) {
       return;
@@ -2786,7 +2791,7 @@ function ShellDynamicInner({
         isAuthUnavailableDialogDismissed={isAuthUnavailableDialogDismissed}
         isRetryingAuthStatus={isRetryingAuthStatus}
         onAuthDismiss={() => setIsAuthUnavailableDialogDismissed(true)}
-        onAuthRetry={() => void retryAuthStateCheck({ showDialogOnUnavailable: true })}
+        onAuthRetry={() => retryAuthStateCheck()}
         requestedVideoId={requestedVideoId}
         isResolvingRequestedVideo={isResolvingRequestedVideo}
         requestedVideoPendingRetryAfterMs={requestedVideoPendingRetryAfterMs}
