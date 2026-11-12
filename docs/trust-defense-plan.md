@@ -207,6 +207,46 @@ export function requireHumanTrustOrResponse(
 4. Flip `ATTACK_MODE` only if a swarm appears.
 5. Rollback lever: re-enable bot-fight, or set `TRUST_GATE_DISABLED=1`.
 
+## Keeping Under Attack Mode off signed-in users
+
+`scripts/cf-attack-watch.sh` flips the zone to `security_level=under_attack` when
+the origin is under load. That lever challenges **every** visitor — including a
+logged-in admin with the panel open — once their `cf_clearance` cookie expires,
+because Cloudflare challenges at the edge before the request ever reaches the
+app (and fetch/XHR calls cannot run the challenge JavaScript).
+
+Cloudflare terminates TLS and can see the `Cookie` header, so a WAF custom rule
+with a **Skip** action can exempt requests that already carry the app's session
+cookies. The origin still verifies the JWTs, so the rule only bypasses the
+Cloudflare challenge — never authentication.
+
+**The rule (dashboard or API):**
+
+- When: `(http.cookie contains "ytr_access=" or http.cookie contains "ytr_refresh=")`
+- Action: **Skip** → **Security Level** (API product value `securityLevel`)
+
+Install it idempotently with:
+
+```bash
+CF_API_TOKEN=<token with Zone WAF:Edit + Read> \
+CF_ZONE_ID=<zone id> \
+bash scripts/cf-auth-skip-rule.sh
+```
+
+or add it manually under **Security → Security rules → Create rule → Custom
+rules → Skip → Security Level**.
+
+> **Why cookie presence is enough:** `ytr_access`/`ytr_refresh` are signed JWTs.
+> A forged cookie only skips the Cloudflare challenge and then hits the origin,
+> where the trust gate and rate limits still apply — the same trade-off the
+> nginx walker challenge (`deploy/nginx/yehthatrocks-challenge.inc`) already makes
+> for signed-in users.
+
+> **Scope note:** this skips the *Security Level* (Under Attack Mode) challenge.
+> It does not, and cannot, skip Free-plan Bot Fight Mode. Super Bot Fight Mode
+> can additionally be skipped via the **All Super Bot Fight Mode rules** option
+> if the operator ever sees it flag logged-in humans.
+
 ## Honest limits
 
 Global IP reputation, datacenter/proxy ASN detection, TLS/JA3 fingerprinting, and

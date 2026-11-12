@@ -10,6 +10,12 @@
 # Super Bot Fight Mode (`fight_mode`) is deliberately NOT touched here — it is
 # safe to leave always-on because it only challenges obvious bots.
 #
+# IMPORTANT: `under_attack` challenges EVERY visitor (logged-in users included)
+# once their cf_clearance expires. To keep signed-in humans out of that
+# challenge, install the skip rule with `scripts/cf-auth-skip-rule.sh` — it adds
+# a WAF custom rule that skips the Security Level challenge for requests that
+# carry the app's `ytr_access` / `ytr_refresh` session cookies.
+#
 # Usage:
 #   cf-attack-watch.sh              # normal run: evaluate + toggle if needed
 #   cf-attack-watch.sh --dry-run    # log the decision without calling PATCH
