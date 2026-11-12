@@ -46,7 +46,7 @@ export default async function ShellLayout({ children }: { children: ReactNode })
     ? recentStartsRaw.split(":").filter((id) => id.length === 11)
     : [];
 
-  const [{ authState, user, isAdmin, hasAccessToken }, resolvedInitialVideo, dataSourceStatus] = await Promise.all([
+  const [{ authState, user, isAdmin, hasAccessToken, hasRefreshToken }, resolvedInitialVideo, dataSourceStatus] = await Promise.all([
     getShellRequestAuthState(),
     getCurrentVideo(effectiveVideoId, {
       skipPlaybackDecision: Boolean(effectiveVideoId),
@@ -82,11 +82,16 @@ export default async function ShellLayout({ children }: { children: ReactNode })
     );
   }
 
-  // isLoggedIn: true for authenticated users and for users with a valid access
-  // token during a transient DB outage (trusted pass-through).
+  // isLoggedIn: true for authenticated users, for users with a valid access
+  // token during a transient DB outage (trusted pass-through), and for
+  // returning users whose access token has expired but who still hold a
+  // refresh token. The client shell keeps such a session alive by silently
+  // refreshing the access token; flipping isLoggedIn to false here would log a
+  // healthy session out the moment a router.refresh() re-renders the shell.
   const isLoggedIn =
     authState.status === "authenticated" ||
-    (authState.status === "unavailable" && hasAccessToken);
+    (authState.status === "unavailable" && hasAccessToken) ||
+    hasRefreshToken;
 
   let seenVideoIds = new Set<string>();
   let hiddenVideoIds = new Set<string>();

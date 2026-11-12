@@ -14,7 +14,7 @@ type MobileInitialAuth = {
 
 async function resolveInitialAuth(): Promise<MobileInitialAuth | undefined> {
   try {
-    const { authState, user } = await getShellRequestAuthState();
+    const { authState, user, hasRefreshToken } = await getShellRequestAuthState();
     if (authState.status === "authenticated" && user) {
       return {
         isLoggedIn: true,
@@ -23,17 +23,19 @@ async function resolveInitialAuth(): Promise<MobileInitialAuth | undefined> {
         checked: true,
       };
     }
-    // Auth server responded but user is not authenticated — still pre-resolved
-    if (authState.status !== "unavailable") {
-      return {
-        isLoggedIn: false,
-        userId: null,
-        screenName: null,
-        checked: true,
-      };
+    // A returning user whose access token has expired still holds a refresh
+    // token — keep them logged in and let the client shell silently renew the
+    // access token, rather than flashing a logged-out state.
+    if (authState.status === "unavailable" && !hasRefreshToken) {
+      // Auth unavailable and no session cookie — fall back to client-side check
+      return undefined;
     }
-    // Auth unavailable — fall back to client-side check
-    return undefined;
+    return {
+      isLoggedIn: hasRefreshToken,
+      userId: null,
+      screenName: null,
+      checked: true,
+    };
   } catch {
     // Auth fetch failed — fall back to client-side check
     return undefined;

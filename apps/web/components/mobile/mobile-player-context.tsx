@@ -10,6 +10,9 @@ import {
   type ReactNode,
 } from "react";
 
+import { refreshAuthSession } from "@/lib/client-auth-fetch";
+import { probeClientAuthState } from "@/lib/client-auth-state";
+
 export type MobileVideo = {
   id: string;
   title: string;
@@ -90,30 +93,87 @@ export function MobilePlayerProvider({ children, initialAuth }: MobilePlayerProv
   const playerApiRef = useRef<YouTubePlayerHandle | null>(null);
 
   const refreshAuth = useCallback(async () => {
+    // Use the same hardened probe as the desktop shell: an expired access
+    // token is silently renewed via the refresh token, and HTML challenge
+    // interstitials / network failures are treated as transient ("unavailable")
+    // so a Cloudflare bot-fight page or a dropped request never logs a healthy
+    // mobile session out.
+    const result = await probeClientAuthState(refreshAuthSession);
+
+    if (result === "unavailable") {
+      // Transient — keep whatever state we already have, only mark as checked.
+      setAuth((prev) => (prev.checked ? prev : { ...prev, checked: true }));
+      return;
+    }
+
+    if (result === "unauthenticated") {
+      // Definitive sign-out (no/invalid/revoked refresh token).
+      setAuth({ isLoggedIn: false, userId: null, screenName: null, checked: true });
+      return;
+    }
+
+    // Authenticated — fetch the user detail for the account nav.
     try {
-      const res = await fetch("/api/auth/me");
+      const res = await fetch("/api/auth/me", { credentials: "same-origin", cache: "no-store" });
       if (res.ok) {
-        const data = await res.json();
+        const data = (await res.json()) as { user?: { id?: number | null; screenName?: string | null } };
         setAuth({
           isLoggedIn: true,
           userId: data.user?.id ?? null,
           screenName: data.user?.screenName ?? null,
           checked: true,
         });
-      } else {
-        setAuth({ isLoggedIn: false, userId: null, screenName: null, checked: true });
+        return;
       }
     } catch {
-      setAuth({ isLoggedIn: false, userId: null, screenName: null, checked: true });
+      // Fall through — the session is authenticated; keep the current details.
     }
+
+    setAuth((prev) => ({ ...prev, isLoggedIn: true, checked: true }));
   }, []);
 
-  // Check auth on mount — only when not preloaded server-side
+  // Reconcile auth on mount: even when the server pre-resolved a logged-out
+  // state (expired access token but valid refresh token), this silently
+  // restores the session. For genuinely logged-out visitors it simply confirms
+  // the state — no account is auto-created here.
   useEffect(() => {
-    if (!initialAuth) {
-      refreshAuth();
+    void refreshAuth();
+  }, [refreshAuth]);
+
+  // Keep a long-lived session alive while the tab is open: re-check on a timer
+  // and whenever the tab becomes visible / the network returns. This mirrors the
+  // desktop shell's 60s auth poll so an idle mobile tab does not drift to
+  // "logged out" once its 15-minute access token expires.
+  useEffect(() => {
+    if (!auth.isLoggedIn) {
+      return;
     }
-  }, [initialAuth, refreshAuth]);
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      void refreshAuth();
+    }, 60_000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshAuth();
+      }
+    };
+    const onWindowOnline = () => {
+      void refreshAuth();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("online", onWindowOnline);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("online", onWindowOnline);
+    };
+  }, [auth.isLoggedIn, refreshAuth]);
 
   const playVideo = useCallback((video: MobileVideo) => {
     setPlayer({ video, isPlaying: true, isFullscreen: true });

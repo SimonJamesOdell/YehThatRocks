@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { cookies } from "next/headers";
 
-import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
+import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from "@/lib/auth-config";
 import { isAdminIdentity } from "@/lib/admin-auth";
 import { getHiddenVideoIdsForUser, getSeenVideoIdsForUser } from "@/lib/catalog-data";
 import { withSoftTimeout } from "@/lib/catalog-data-utils";
@@ -13,7 +13,9 @@ const SHELL_VIDEO_STATE_TIMEOUT_MS = 3_000;
 const getShellRequestAuthStateInternal = cache(async () => {
   const cookieStore = await cookies();
   const accessToken = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value;
+  const refreshToken = cookieStore.get(REFRESH_TOKEN_COOKIE)?.value;
   const hasAccessToken = Boolean(accessToken);
+  const hasRefreshToken = Boolean(refreshToken);
   const authState = await withSoftTimeout(
     `shell-request-auth:${hasAccessToken ? "token" : "guest"}`,
     SHELL_AUTH_STATE_TIMEOUT_MS,
@@ -27,6 +29,7 @@ const getShellRequestAuthStateInternal = cache(async () => {
 
   return {
     hasAccessToken,
+    hasRefreshToken,
     authState,
     user,
     isAdmin,
