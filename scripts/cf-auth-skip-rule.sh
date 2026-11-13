@@ -55,10 +55,16 @@ RULE_JSON='{
   "description": "Skip Security Level challenge for signed-in users (ytr_access/ytr_refresh)"
 }'
 
-# 1. Resolve the entry point ruleset id for the custom-rules phase.
+# 1. Resolve the entry point ruleset id for the custom-rules phase. The API
+# returns pretty-printed JSON (`"id": "..."`), so the match tolerates optional
+# whitespace after the colon.
 entry_json="$(curl -sf -H "Authorization: Bearer $CF_API_TOKEN" \
   "$API_BASE/rulesets/phases/$PHASE/entrypoint" 2>/dev/null || true)"
-ruleset_id="$(printf '%s' "$entry_json" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)"
+ruleset_id="$(printf '%s' "$entry_json" \
+  | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]+"' \
+  | head -1 \
+  | grep -oE '"[^"]+"$' \
+  | tr -d '"' || true)"
 
 if [ -z "$ruleset_id" ]; then
   # No entry point ruleset exists yet — create it containing just this rule.
