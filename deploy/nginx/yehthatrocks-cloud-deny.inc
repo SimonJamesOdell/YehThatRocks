@@ -8,8 +8,12 @@
 # Keep ranges sorted by provider. Add new ranges as threat patterns emerge.
 
 # ── Tencent Cloud ──────────────────────────────────────────────
-# Confirmed bot attack source: 2026-07-22, 2026-08-01
+# Confirmed bot attack source: 2026-07-22, 2026-08-01, 2026-11-23 (active walker swarm)
 deny 43.172.0.0/15;
+# 2026-11-23: active catalog-walker swarm (AS132203, Singapore + Hong Kong).
+# Both /16s are datacenter-only — no residential users live here.
+deny 161.120.0.0/16;
+deny 43.162.0.0/16;
 
 # ── Alibaba Cloud ──────────────────────────────────────────────
 # Major scraping source; same threat profile as Tencent

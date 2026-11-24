@@ -24,9 +24,11 @@ npx prisma db execute --schema /app/prisma/schema.prisma --file /app/prisma/seed
 echo "[entrypoint] Initializing admin dashboard cache..."
 node /app/scripts/maintain-admin-dashboard-cache.mjs || echo "[entrypoint] Dashboard cache initialization failed (non-fatal)"
 
-echo "[entrypoint] Starting admin dashboard cache scheduler in background..."
-node /app/scripts/schedule-admin-dashboard-maintenance.mjs &
-SCHEDULER_PID=$!
+# NOTE: The recurring dashboard-cache maintenance scheduler is intentionally
+# NOT started here. It runs as a host-level systemd timer
+# (admin-dashboard-cache-maintenance.timer) which `docker exec`s the one-shot
+# maintain-admin-dashboard-cache.mjs. Starting an in-process daemon too caused
+# a double-run — maintenance fired every ~2.5 min and saturated MySQL.
 
 echo "[entrypoint] Starting application..."
 "$@" &
@@ -35,9 +37,6 @@ APP_PID=$!
 cleanup() {
   if [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; then
     kill "$APP_PID" 2>/dev/null || true
-  fi
-  if [ -n "$SCHEDULER_PID" ] && kill -0 "$SCHEDULER_PID" 2>/dev/null; then
-    kill "$SCHEDULER_PID" 2>/dev/null || true
   fi
 }
 
@@ -52,9 +51,5 @@ fi
 
 wait "$APP_PID"
 APP_EXIT_CODE=$?
-
-if [ -n "$SCHEDULER_PID" ] && kill -0 "$SCHEDULER_PID" 2>/dev/null; then
-  kill "$SCHEDULER_PID" 2>/dev/null || true
-fi
 
 exit "$APP_EXIT_CODE"

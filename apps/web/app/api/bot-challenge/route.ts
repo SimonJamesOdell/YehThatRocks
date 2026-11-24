@@ -10,25 +10,23 @@ const BOTOK_COOKIE = "ytr_botok";
 const BOTOK_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
 // Operator-tunable difficulty. Raising it during an active swarm costs bots
-// exponentially more CPU — but NOTE: the silent background solver
-// (BotChallengeSolver, mounted in the root layout) shares this exact
-// difficulty and runs a *synchronous* JS hash loop on the main thread with a
-// 2,000,000-attempt cap (see lib/pow-client.ts). At 24+ bits that cap yields
-// only ~11% success, so normal browsers fail, never cache the solve, and
-// re-run the expensive loop on EVERY page load — freezing the page for
-// seconds each time.
+// exponentially more CPU per solve.
 //
-// The default is therefore kept at 18 bits (~262K hashes ≈ half a second,
-// solved once per week), which the client budget covers comfortably.
+// Default is 24 bits (~16.7M hashes ≈ 30s of JS on one core). The silent
+// background solver (BotChallengeSolver, mounted in the root layout) shares
+// this difficulty, so the client solver (lib/pow-client.ts) hashes in small
+// chunks that yield to the event loop — the page stays responsive instead of
+// freezing, and a 60M-attempt cap gives ~97% solve success so real browsers
+// almost never re-run on every page load.
 //
-// To fight a JS-capable crawler swarm, prefer Cloudflare Under Attack Mode or
-// the nginx walker challenge (which stops JS-less scrapers outright) over
-// raising this knob past ~20. If you do raise it, move the silent solver off
-// the main thread first.
+// 18 bits was the historical default (cheap for the 2026-10/11 botnet's
+// headless Chrome to solve in bulk); 24 bits makes each walker solve ~64×
+// more expensive. Raise to 28–32 (via env) only for a short, extreme swarm —
+// past ~28 bits a real visitor's solve stretches into minutes.
 export function powDifficultyBits(): number {
-  const raw = Number(process.env.POW_DIFFICULTY_BITS ?? "18");
+  const raw = Number(process.env.POW_DIFFICULTY_BITS ?? "24");
   if (!Number.isFinite(raw)) {
-    return 18;
+    return 24;
   }
   return Math.max(8, Math.min(40, Math.floor(raw)));
 }

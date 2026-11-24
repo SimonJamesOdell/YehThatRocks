@@ -9,12 +9,20 @@ import { sha256Hex } from "@/lib/sha256";
  */
 
 export const POW_SALT = "ytr-botok-v1:";
-export const DEFAULT_POW_DIFFICULTY_BITS = 18;
+export const DEFAULT_POW_DIFFICULTY_BITS = 24;
 
 const SOLVED_AT_KEY = "ytr:botok:solved-at";
 // Re-solve a little before the 7-day httpOnly cookie expires.
 const SOLVE_TTL_MS = 6 * 24 * 60 * 60 * 1000;
-const MAX_ATTEMPTS = 2_000_000;
+// Sized for the 24-bit default: expected attempts ≈ 2^24 ≈ 16.7M, so a 60M
+// cap yields ~97% solve success. At the old 18-bit default this cap was far
+// larger than needed; it now matters only so a raised difficulty can't make
+// real browsers loop forever.
+const MAX_ATTEMPTS = 60_000_000;
+// Hashes per event-loop yield. ~50k hashes is a few milliseconds on a modern
+// core, so the page stays responsive while the silent solver runs instead of
+// freezing the main thread for the whole ~30s solve.
+const CHUNK_SIZE = 50_000;
 
 // Leading zero bits contributed by the first non-zero hex nibble.
 // Index = nibble value (1..15). Nibble 0 (value 4) is handled separately.
@@ -25,10 +33,9 @@ const LEADING_ZERO_BITS = [4, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0];
  * bits. Mirrors the server's meetsPowDifficulty check.
  */
 export function meetsPowDifficulty(hexDigest: string, difficultyBits: number): boolean {
-  // Fast path for the default 18-bit difficulty — matches the server rule
-  // "first two bytes zero, top two bits of the third byte zero".
+  // Fast path for the default 24-bit difficulty — first three bytes zero.
   if (difficultyBits === DEFAULT_POW_DIFFICULTY_BITS) {
-    return hexDigest.startsWith("0000") && "0123".includes(hexDigest[4] ?? "f");
+    return hexDigest.startsWith("000000");
   }
 
   let leading = 0;
@@ -45,16 +52,29 @@ export function meetsPowDifficulty(hexDigest: string, difficultyBits: number): b
   return leading >= difficultyBits;
 }
 
-export function solvePowNonce(difficultyBits: number = DEFAULT_POW_DIFFICULTY_BITS): string {
+/**
+ * Solve the proof-of-work for `difficultyBits`, yielding to the event loop
+ * every CHUNK_SIZE hashes so the main thread never freezes. Returns the nonce,
+ * or "" when the attempt budget is exhausted.
+ */
+export async function solvePowNonce(
+  difficultyBits: number = DEFAULT_POW_DIFFICULTY_BITS,
+): Promise<string> {
   const prefix = Array.from(crypto.getRandomValues(new Uint8Array(12)))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 
-  for (let counter = 0; counter < MAX_ATTEMPTS; counter += 1) {
-    const nonce = `${prefix}${counter.toString(16)}`;
-    if (meetsPowDifficulty(sha256Hex(POW_SALT + nonce), difficultyBits)) {
-      return nonce;
+  let counter = 0;
+  while (counter < MAX_ATTEMPTS) {
+    const chunkEnd = Math.min(counter + CHUNK_SIZE, MAX_ATTEMPTS);
+    for (; counter < chunkEnd; counter += 1) {
+      const nonce = `${prefix}${counter.toString(16)}`;
+      if (meetsPowDifficulty(sha256Hex(POW_SALT + nonce), difficultyBits)) {
+        return nonce;
+      }
     }
+    // Yield to the event loop so a multi-second solve never blocks UI.
+    await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
   return "";
@@ -100,7 +120,7 @@ export async function fetchPowDifficulty(): Promise<number> {
 /** Solve and submit the proof-of-work, returning true when the cookie was set. */
 export async function submitPowSolution(): Promise<boolean> {
   const difficulty = await fetchPowDifficulty();
-  const nonce = solvePowNonce(difficulty);
+  const nonce = await solvePowNonce(difficulty);
   if (!nonce) {
     return false;
   }
